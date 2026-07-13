@@ -1022,7 +1022,84 @@
   // `geoDb` (optional, §GEO-SPLIT): a SEPARATE sql.js handle carrying the geometry table for residents where
   // it can't live in `bdb` itself (Terminal_geo.db, 250MB, kept apart from Terminal_meta.db). Omitted → old
   // single-file behaviour, unchanged (SampleHouse/Duplex/SampleCastle all embed their own geometry).
-  function hostBind(placements, bdb, shim, geoDb, spaceBBox) {
+  // ── §OPENING-EXCL (FUNCTIONAL_SPACES_ENSEMBLE.md 2026-07-13, Task A) ──────────────────────────
+  // Wall-mounted devices (switches/outlets — hostBind SIDE mount) must land on SOLID wall, not
+  // inside a real door/window opening. Same boolean-interval primitive family as spaceGate's
+  // containment test and the §NOSPACES z-band overlap, on the wall's own RUN axis. GROUND TRUTH
+  // (poc_opening_exclusion_duplex.py, logs/poc_opening_duplex.log): Duplex's 18 REAL wall devices
+  // are 18/18 on solid wall (negative control), and 2 real telephone outlets sit inside a window's
+  // RUN interval but ABOVE its z-extent — proving the test must be 2D (run axis AND z); a run-only
+  // interval would false-flag real devices. The opening interval is the opening's own MEASURED
+  // world extent (true midpoint ± extractor bbox/2 — bbox_x/y/z are reliable world extents per
+  // §BUG-A) — frame width only, no invented swing-clearance pad. WalkerDoctrine §10 shape: ONE
+  // named function (_onSolidWall) every SIDE wall-mount is forced through, not per-site patches.
+  function _wallOpenings(bdb, geoDb) {
+    if (bdb.__dwOpenings) return bdb.__dwOpenings;               // once per walked DB handle
+    var ops = [];
+    try {
+      _rows(bdb, "SELECT m.guid g, m.ifc_class c, t.center_x x, t.center_y y, t.center_z z, " +
+        "t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
+        "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+        "WHERE m.ifc_class IN ('IfcDoor','IfcWindow')").forEach(function (o) {
+          var mid = _trueMidpoint(bdb, o.g, o, geoDb);           // §BUG-A: true world midpoint
+          ops.push({ g: o.g, c: o.c,
+            min: [mid.x - o.bx / 2, mid.y - o.by_ / 2, mid.z - o.bz / 2],
+            max: [mid.x + o.bx / 2, mid.y + o.by_ / 2, mid.z + o.bz / 2], verified: mid.verified });
+        });
+    } catch (e) { /* no meta/transforms tables → no openings known, check no-ops honestly */ }
+    bdb.__dwOpenings = ops;
+    return ops;
+  }
+  // An opening belongs to wall line L when its measured world bbox OVERLAPS the wall's own world
+  // bbox (pure measured-geometry association, no guessed proximity constant — POC-validated).
+  function _openingOnWall(o, L) {
+    var lox = Math.min(L.a[0], L.b[0]) - L.thick / 2, hix = Math.max(L.a[0], L.b[0]) + L.thick / 2;
+    var loy = Math.min(L.a[1], L.b[1]) - L.thick / 2, hiy = Math.max(L.a[1], L.b[1]) + L.thick / 2;
+    var loz = L.w.tz - L.w.bz / 2, hiz = L.w.tz + L.w.bz / 2;
+    return o.min[0] <= hix && o.max[0] >= lox && o.min[1] <= hiy && o.max[1] >= loy &&
+           o.min[2] <= hiz && o.max[2] >= loz;
+  }
+  // THE gate: is position p (world x/y/z, already on wall line L's face) on SOLID wall?
+  // Returns null when solid; else the blocking opening. 2D interval: run axis AND z (POC: the
+  // z leg is what keeps the 2 real above-window outlets legal).
+  function _onSolidWall(p, L, openings) {
+    var runc = L.horiz === 0 ? p.x : p.y;
+    for (var i = 0; i < openings.length; i++) {
+      var o = openings[i];
+      if (!_openingOnWall(o, L)) continue;
+      if (runc >= o.min[L.horiz] && runc <= o.max[L.horiz] &&
+          p.z >= o.min[2] && p.z <= o.max[2]) return o;
+    }
+    return null;
+  }
+  // Nearest solid run-coordinate on wall L for a device blocked by an opening: candidates are the
+  // blocking intervals' own measured edges ± the device's MEASURED half-extent along the run
+  // (null bbox → 0, the honest minimum — no invented pad), clamped to the wall's own run span.
+  // Returns the new run coordinate, or null (no solid position on this wall → caller refuses).
+  function _slideToSolid(p, L, openings, halfRun) {
+    var h = L.horiz, runc = h === 0 ? p.x : p.y;
+    var runLo = Math.min(L.a[h], L.b[h]), runHi = Math.max(L.a[h], L.b[h]);
+    var ivs = [];
+    for (var i = 0; i < openings.length; i++) {
+      var o = openings[i];
+      if (!_openingOnWall(o, L)) continue;
+      if (p.z < o.min[2] || p.z > o.max[2]) continue;            // z-clear openings don't block
+      ivs.push([o.min[h] - halfRun, o.max[h] + halfRun]);
+    }
+    var cands = [];
+    ivs.forEach(function (iv) { cands.push(iv[0], iv[1]); });
+    var best = null, bd = Infinity;
+    cands.forEach(function (c) {
+      if (c < runLo || c > runHi) return;                        // off the wall's own measured span
+      for (var i = 0; i < ivs.length; i++)
+        if (c > ivs[i][0] + 1e-9 && c < ivs[i][1] - 1e-9) return; // inside another opening
+      var d = Math.abs(c - runc);
+      if (d < bd) { bd = d; best = c; }
+    });
+    return best;
+  }
+
+  function hostBind(placements, bdb, shim, geoDb, spaceBBox, opts) {
     shim = shim || {};
     var reach = shim.reach_m != null ? shim.reach_m : 6;
     var hostClass = shim.host_ifc_class || 'IfcWall';
@@ -1059,6 +1136,10 @@
     var bound = [], refused = 0, refusedList = [];
 
     if (mount === 'SIDE') {
+      // §OPENING-EXCL — load the walked DB's real door/window world bboxes once (cached on the
+      // handle). opts.noOpeningCheck=true restores the pre-check walk (escape hatch, spaceGate style).
+      var openings = (opts && opts.noOpeningCheck) ? [] : _wallOpenings(bdb, geoDb);
+      var openingSlid = 0, openingRefused = 0;
       // ── wall-face projection (the original, unchanged geometry) ──
       var lines = hosts.map(function (w) {
         var horiz = w.bx >= w.by_ ? 0 : 1;                       // dominant horizontal axis = host run
@@ -1088,12 +1169,53 @@
         // Z: preserve the MEASURED rule-z by default (non-invent); use the shim mount height only when the
         // witness supplies a storey base (height isn't measured for that building).
         var pz = (shim.height_m != null && p.storeyZ != null) ? (p.storeyZ + shim.height_m) : p.z;
-        bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
+        // §OPENING-EXCL — the finalized face position must sit on SOLID wall, not in a real
+        // door/window opening's 2D interval (run axis AND z). Blocked → slide along the wall's
+        // own run to the nearest measured-solid position; no solid span at this z → honest REFUSE.
+        var blk = openings.length ? _onSolidWall({ x: fx, y: fy, z: pz }, bl, openings) : null;
+        if (blk) {
+          var halfRun = ((bl.horiz === 0 ? p.bx : p.by) || 0) / 2;   // measured class extent, null → 0
+          var solidRun = _slideToSolid({ x: fx, y: fy, z: pz }, bl, openings, halfRun);
+          if (solidRun == null) {
+            openingRefused++; refused++; refusedList.push(p);
+            console.log(TAG + ' §DW-OPENING-REFUSE ' + p.disc + '/' + p.ifc_class + ' host=' + bl.w.g +
+              ' z=' + pz.toFixed(2) + ' inside ' + blk.c + ' ' + blk.g + ' — no solid run position on this wall at this z');
+            return;
+          }
+          var moved = Math.abs(solidRun - (bl.horiz === 0 ? fx : fy));
+          if (bl.horiz === 0) fx = solidRun; else fy = solidRun;
+          openingSlid++;
+          console.log(TAG + ' §DW-OPENING-SLIDE ' + p.disc + '/' + p.ifc_class + ' host=' + bl.w.g +
+            ' was inside ' + blk.c + ' ' + blk.g + ' — slid ' + moved.toFixed(2) + 'm along the wall run to solid wall');
+        }
+        // §DEVICE-FACING (FUNCTIONAL_SPACES_ENSEMBLE.md 2026-07-13, Task C): yaw was run-axis-only
+        // (0 | π/2) — room-side AGNOSTIC, so ~half of wall devices faced INTO the wall. The raw
+        // transforms carry no signal (Duplex's 18 real devices: rotation_x/y/z all 0.0 — orientation
+        // is baked per-instance into the source meshes, not the transform). The REAL signal is the
+        // catalog: ad_product_dim ELEC_SWITCH/ELEC_OUTLET carry conn_points=[{"face":"BACK","type":
+        // "ELEC"}] (back connects INTO the wall → plate faces the room) and component_definitions'
+        // SIDE wall-mount rows are uniformly up_axis=Z, forward_axis=Y (36/36). So yaw maps local +Y
+        // (forward) onto the room-side perpendicular, RECOMPUTED from the FINAL (fx,fy) — not the
+        // pre-slide perp — because §OPENING-EXCL's slide moves the run coordinate, which can change
+        // whether the wall-line projection clamps to an endpoint (found by W-DW-OPENING-EXCL: a
+        // SampleCastle device slid 0.15m past its original clamped corner projection, so the
+        // pre-slide perpendicular pointed diagonally into the old corner instead of the final wall
+        // face — recomputing from the settled position is the only consistent ground truth).
+        var fabx = bl.b[0] - bl.a[0], faby = bl.b[1] - bl.a[1], fl2 = fabx * fabx + faby * faby;
+        var ft = fl2 > 0 ? ((fx - bl.a[0]) * fabx + (fy - bl.a[1]) * faby) / fl2 : 0;
+        ft = ft < 0 ? 0 : (ft > 1 ? 1 : ft);
+        var fcx = bl.a[0] + ft * fabx, fcy = bl.a[1] + ft * faby;
+        var fperpx = fx - fcx, fperpy = fy - fcy, fpl = Math.hypot(fperpx, fperpy) || 1;
+        var fyaw = Math.atan2(fperpy / fpl, fperpx / fpl) - Math.PI / 2;
+        bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: fyaw,   // §DEVICE-FACING (Task C)
           storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
           bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
           band: p.band, geometry_hash: p.geometry_hash });      // §NOSPACES carry-through (undefined on legacy walks)
       });
-      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
+      if (openingSlid || openingRefused) console.log(TAG + ' §DW-OPENING ' + hostClass + '/SIDE openings=' +
+        openings.length + ' slid=' + openingSlid + ' refused=' + openingRefused + ' (devices moved off real door/window intervals)');
+      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts,
+        openingChecked: openings.length, openingSlid: openingSlid, openingRefused: openingRefused };
     }
 
     // ── TOP / BOTTOM / CENTER: nearest host by XY, bind to its top/bottom/centre face ──
@@ -2184,7 +2306,7 @@
           Object.keys(mByCls).forEach(function (cls) {
             var grp = mByCls[cls], shim = _shimForFixture(mShim, disc, cls);
             if (!shim) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
-            var hb = hostBind(grp, bdb, shim, opts && opts.geoDb, null);
+            var hb = hostBind(grp, bdb, shim, opts && opts.geoDb, null, opts);
             if (hb.noHost) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
             mOut = mOut.concat(hb.bound, hb.refusedList || []);
             mBound += hb.bound.length; mFloat += hb.refused;
@@ -2275,7 +2397,7 @@
         var grp = byCls[cls];
         var shim = _shimForFixture(shimSrc, disc, cls);
         if (!shim) { rebuilt = rebuilt.concat(grp); totRefused += 0; return; }   // no shim for class → leave floating
-        var hb = hostBind(grp, bdb, shim, geoDb, (opts && opts.spaceGuid) ? sub[0] : null);
+        var hb = hostBind(grp, bdb, shim, geoDb, (opts && opts.spaceGuid) ? sub[0] : null, opts);
         if (hb.noHost) {
           rebuilt = rebuilt.concat(grp);                                          // host class absent in bldg → kept floating
           console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value +
@@ -2375,6 +2497,7 @@
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     spaceGate: spaceGate, _spaceContains: _spaceContains, _gateRooms: _gateRooms, _gateEnvelope: _gateEnvelope,
+    _onSolidWall: _onSolidWall, _wallOpenings: _wallOpenings, _slideToSolid: _slideToSolid, _trueMidpoint: _trueMidpoint,   // §OPENING-EXCL (Task A)
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
