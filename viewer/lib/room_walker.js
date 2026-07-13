@@ -413,6 +413,43 @@
     return { added: added, mni: mni, mxi: mxi, mnj: mnj, mxj: mxj };
   }
 
+  // §WALL-SNAP (compile_rooms.py port, 2026-07-13): raster quantization (RES=0.20m) plus
+  // _growRegion's seal-band recovery cap (SEAL=2 cells=0.4m) leave a compiled room's rect short of
+  // its TRUE (continuous-coordinate) wall face. Measured across 208 real non-suspect room-sides
+  // fleet-wide (HHS): 0/208 ever overshoot a wall — every side is short by 0.003-0.599m. SNAP_MAX_GAP
+  // is the measured worst case (0.599m) plus one RES step of headroom, not an arbitrary number. Move
+  // each side OUT (never in) to the nearest real wall's own measured near face — each side only ever
+  // reads the wall's NEAR face, so two rooms sharing one real wall each stop at their own side of it
+  // and can never be made to overlap by this function (same non-invent discipline as R-MERGE/R-REJECT).
+  var SNAP_MAX_GAP = 0.8; // m
+  function _snapRectToWalls(x0, y0, x1, y1, walls) {
+    var best = {};
+    for (var i = 0; i < walls.length; i++) {
+      var w = walls[i], wcx = w[0], wcy = w[1], wbx = w[3], wby = w[4];
+      var wx0 = wcx - wbx / 2, wx1 = wcx + wbx / 2;
+      var wy0 = wcy - wby / 2, wy1 = wcy + wby / 2;
+      var ovY = Math.min(y1, wy1) - Math.max(y0, wy0);
+      if (ovY > 0) {
+        var gXmin = x0 - wx1;
+        if (gXmin >= 0 && gXmin <= SNAP_MAX_GAP && (best.xmin === undefined || gXmin < best.xmin)) best.xmin = gXmin;
+        var gXmax = wx0 - x1;
+        if (gXmax >= 0 && gXmax <= SNAP_MAX_GAP && (best.xmax === undefined || gXmax < best.xmax)) best.xmax = gXmax;
+      }
+      var ovX = Math.min(x1, wx1) - Math.max(x0, wx0);
+      if (ovX > 0) {
+        var gYmin = y0 - wy1;
+        if (gYmin >= 0 && gYmin <= SNAP_MAX_GAP && (best.ymin === undefined || gYmin < best.ymin)) best.ymin = gYmin;
+        var gYmax = wy0 - y1;
+        if (gYmax >= 0 && gYmax <= SNAP_MAX_GAP && (best.ymax === undefined || gYmax < best.ymax)) best.ymax = gYmax;
+      }
+    }
+    if (best.xmin !== undefined) x0 -= best.xmin;
+    if (best.xmax !== undefined) x1 += best.xmax;
+    if (best.ymin !== undefined) y0 -= best.ymin;
+    if (best.ymax !== undefined) y1 += best.ymax;
+    return [x0, y0, x1, y1];
+  }
+
   // §MULTI-RECT: constrained maximal rectangle — both dims >= minCells (the NOISE_FLOOR in cells;
   // a thinner rect is rasterization fringe, not room space). Null if no such rect exists.
   // Same deterministic scan order / strict '>' tie-break as _inscribedRect.
@@ -574,6 +611,8 @@
           var gRect = dec.rects[c2];
           var rx0 = xs0 + gRect[0] * RES, rx1 = xs0 + (gRect[1] + 1) * RES;
           var ry0 = ys0 + gRect[2] * RES, ry1 = ys0 + (gRect[3] + 1) * RES;
+          var snapped = _snapRectToWalls(rx0, ry0, rx1, ry1, walls);
+          rx0 = snapped[0]; ry0 = snapped[1]; rx1 = snapped[2]; ry1 = snapped[3];
           rects.push({ cx: (rx0 + rx1) / 2, cy: (ry0 + ry1) / 2, sx: rx1 - rx0, sy: ry1 - ry0 });
         }
         var r0 = dec.rects[0];
@@ -718,6 +757,8 @@
         var gRect = dec.rects[c2];
         var rx0 = xs0 + gRect[0] * RES, rx1 = xs0 + (gRect[1] + 1) * RES;
         var ry0 = ys0 + gRect[2] * RES, ry1 = ys0 + (gRect[3] + 1) * RES;
+        var snapped = _snapRectToWalls(rx0, ry0, rx1, ry1, walls);
+        rx0 = snapped[0]; ry0 = snapped[1]; rx1 = snapped[2]; ry1 = snapped[3];
         rects.push({ cx: (rx0 + rx1) / 2, cy: (ry0 + ry1) / 2, sx: rx1 - rx0, sy: ry1 - ry0 });
       }
       var r0 = dec.rects[0];
