@@ -1027,6 +1027,44 @@
   // `geoDb` (optional, §GEO-SPLIT): a SEPARATE sql.js handle carrying the geometry table for residents where
   // it can't live in `bdb` itself (Terminal_geo.db, 250MB, kept apart from Terminal_meta.db). Omitted → old
   // single-file behaviour, unchanged (SampleHouse/Duplex/SampleCastle all embed their own geometry).
+  // ── §STOREY-ZBAND — shared, NAMED Z-selection primitives (WalkerDoctrine §10 shape: ONE shared gate,
+  // not N point-fixes — same move as real_placement_resolver.js, PR #693). Implements the fix for
+  // RESUME_DISC_WALKER_ENVELOPE_BOUND.md §STOREY-UNKNOWN's residual (11/270 SampleCastle ELEC fixtures
+  // bound to walls a full storey below: fixture z=8.21 on '02 tweede verdieping' → wall topping 2.62–5.77
+  // on '00'/'01'). Witness: W-DW-STOREY-BAND (modeller/tests/witness_dw_storey_band.js).
+  //
+  // _zOverlaps: closed-interval overlap — the general predicate for "this candidate host physically
+  // exists at the height the fixture will occupy". Interval-vs-interval on MEASURED extents, in
+  // deliberate contrast to point ± guessed-radius: the flat p.z±1.5m window was tried 2026-07-13 and
+  // REVERTED — instrumented post-mortem (§DIAG, logs/wdwsb_DIAG_fallback.log) proved it refused 29
+  // fixtures whose rule-z is poisoned (dz mined mid-building: dak IfcFlowController p.z=storeyZ+5.7=17.74),
+  // leaving them FLOATING 4m+ above the roof. The window around p.z was the invented constant; the
+  // measured intervals below are the tell-tale signal that was there all along.
+  function _zOverlaps(a0, a1, b0, b1) { return a1 >= b0 && a0 <= b1; }
+  // _mountBand: the placement's MEASURED final SIDE-mount interval [storey median .. mount height].
+  // Every endpoint traces to real data: p.storeyZ = median center_z of the storey's own elements
+  // (substrate(), extracted geometry); shim.height_m = the mined shim row. p.z is deliberately NOT
+  // used — for SIDE mounts the final z is storeyZ+height_m (host-independent, line ~1101 below), while
+  // p.z carries the raw rule dz which is only meaningful relative to the SOURCE storey (the poison the
+  // reverted window was built around). An explicit measured §NOSPACES band wins untouched; placements
+  // where no honest interval can be derived (no storeyZ / no height_m) return null → NO guard, legacy
+  // behaviour byte-identical.
+  function _mountBand(p, shim) {
+    if (p.band) return p.band;
+    if (p.storeyZ == null || shim.height_m == null) return null;
+    var mz = p.storeyZ + shim.height_m;
+    return [Math.min(p.storeyZ, mz), Math.max(p.storeyZ, mz)];
+  }
+  // §DW-ZTRACE — provenance trace for the final pz of every host-bound placement: which mount branch,
+  // which host won, which measured band gated it, and the arithmetic. OFF by default (270-line walks);
+  // flip on via DiscWalker.dwTraceZ(true) or window.__dwTraceZ=1 — the reusable version of the one-off
+  // instrumentation this bug needed twice.
+  var _traceZ = false;
+  function dwTraceZ(on) { _traceZ = !!on; return _traceZ; }
+  function _ztrace(msg) {
+    if (_traceZ || (typeof self !== 'undefined' && self.__dwTraceZ)) console.log(TAG + ' §DW-ZTRACE ' + msg);
+  }
+
   function hostBind(placements, bdb, shim, geoDb, spaceBBox) {
     shim = shim || {};
     var reach = shim.reach_m != null ? shim.reach_m : 6;
@@ -1073,11 +1111,16 @@
       });
       placements.forEach(function (p) {
         var best = Infinity, bl = null, bpt = null;
+        // §STOREY-ZBAND (2026-07-13, closes RESUME_DISC_WALKER_ENVELOPE_BOUND.md §STOREY-UNKNOWN residual):
+        // a candidate wall must vertically INTERSECT the placement's measured mount interval — an explicit
+        // §NOSPACES band when the placement carries one (schedule/measured-band walks, unchanged), else the
+        // derived [storeyZ .. storeyZ+height_m] interval (legacy density walks, previously PURE-2D here —
+        // which let a wall two floors down win: z=8.21 fixtures bound to walls topping at 2.62). Placements
+        // with neither signal keep the unguarded legacy behaviour (honest: no measured interval, no guard).
+        var zband = _mountBand(p, shim);
         for (var i = 0; i < lines.length; i++) {
           var L = lines[i], abx = L.b[0] - L.a[0], aby = L.b[1] - L.a[1];
-          // §NOSPACES stacked-host disambiguation (see TOP/BOTTOM path): band-carrying placements
-          // only bind walls that vertically intersect their own measured z-band.
-          if (p.band && (L.w.tz + L.w.bz / 2 < p.band[0] || L.w.tz - L.w.bz / 2 > p.band[1])) continue;
+          if (zband && !_zOverlaps(L.w.tz - L.w.bz / 2, L.w.tz + L.w.bz / 2, zband[0], zband[1])) continue;
           var l2 = abx * abx + aby * aby;
           var t = l2 > 0 ? ((p.x - L.a[0]) * abx + (p.y - L.a[1]) * aby) / l2 : 0;
           t = t < 0 ? 0 : (t > 1 ? 1 : t);
@@ -1085,7 +1128,27 @@
           var d = Math.hypot(p.x - cx, p.y - cy);
           if (d < best) { best = d; bl = L; bpt = [cx, cy]; }
         }
-        if (!bl || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse (stays floating)
+        if (!bl || best > reach) {
+          // §STOREY-ZBAND float re-base: a SIDE mount's z NEVER depends on the host (pz below is
+          // storeyZ+height_m for every bound sibling) — so a REFUSED placement with the same derivable
+          // measured interval keeps its envelope XY but carries that same measured mount z, NOT the raw
+          // rule-z (st.z + source dz), which is only meaningful relative to the SOURCE storey and put
+          // refused dak fixtures 4m+ above the roof (p.z=17.74 vs real roof 13.36 — the reverted-window
+          // post-mortem's actual blowup mechanism). Placements without the derived interval (p.band
+          // schedule walks: their z is building-local measured; no-storeyZ/no-height_m: no honest basis)
+          // are untouched. XY is never re-based — refusal still means "no real wall here", kept honest.
+          if (zband && !p.band && p.storeyZ != null && shim.height_m != null) {
+            _ztrace('SIDE REFUSE-REBASE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+              ' rule-z=' + (+p.z).toFixed(2) + ' → z=storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=' +
+              (p.storeyZ + shim.height_m).toFixed(2) + (bl ? ' (nearest in-band wall ' + best.toFixed(2) + 'm > reach ' + reach + ')' : ' (no wall intersects band)'));
+            p.z = p.storeyZ + shim.height_m;
+          } else {
+            _ztrace('SIDE REFUSE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+              (bl ? ' nearest=' + bl.w.g + ' dist=' + best.toFixed(2) + '>reach=' + reach : ' no-wall-in-band') +
+              ' → floats at rule-z p.z=' + (+p.z).toFixed(2));
+          }
+          refused++; refusedList.push(p); return;               // no host in reach → honest refuse (stays floating)
+        }
         // push from centreline to the room-side face: perpendicular toward the original (floating) point.
         var perpx = p.x - bpt[0], perpy = p.y - bpt[1], pl = Math.hypot(perpx, perpy) || 1;
         var faceOff = bl.thick / 2 + off;
@@ -1093,6 +1156,10 @@
         // Z: preserve the MEASURED rule-z by default (non-invent); use the shim mount height only when the
         // witness supplies a storey base (height isn't measured for that building).
         var pz = (shim.height_m != null && p.storeyZ != null) ? (p.storeyZ + shim.height_m) : p.z;
+        _ztrace('SIDE BIND cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+          ' host=' + bl.w.g + ' hostStorey="' + bl.w.st + '" hostZ=[' + (bl.w.tz - bl.w.bz / 2).toFixed(2) + ',' +
+          (bl.w.tz + bl.w.bz / 2).toFixed(2) + '] pz=' + ((shim.height_m != null && p.storeyZ != null)
+            ? ('storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=') : 'rule-z p.z=') + pz.toFixed(2));
         bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
           storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
           bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
@@ -1124,14 +1191,27 @@
         if (sameStorey && p.storey != null && h.st !== p.storey) continue;  // stacked-host disambiguation
         // §NOSPACES stacked-host disambiguation for measured-band placements (no storey names to match):
         // a candidate host must VERTICALLY INTERSECT the placement's own measured z-band — nearest-XY
-        // alone binds a ground-floor light to a level-3 covering. No-band placements are untouched.
-        if (p.band && (h.tz + h.bz / 2 < p.band[0] || h.tz - h.bz / 2 > p.band[1])) continue;
+        // alone binds a ground-floor light to a level-3 covering. No-band placements are untouched
+        // (§STOREY-ZBAND scope note: the SIDE-branch _mountBand derivation is NOT applied here — this
+        // branch's final pz comes from the HOST's own face, height_m is null on every TOP/BOTTOM/CENTER
+        // shim row in both dialects, and the instrumented SampleCastle run proved this branch never fires
+        // there (270/270 SIDE, 0 TBC) — no measured evidence a change is needed; same shared predicate).
+        if (p.band && !_zOverlaps(h.tz - h.bz / 2, h.tz + h.bz / 2, p.band[0], p.band[1])) continue;
         var d = Math.hypot(p.x - h.x, p.y - h.y);                 // XY proximity = host association
         if (d < best) { best = d; bh = h; }
       }
-      if (!bh || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse
+      if (!bh || best > reach) {
+        _ztrace(mount + ' REFUSE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(p.band || null) +
+          (bh ? ' nearest=' + bh.g + ' dist=' + best.toFixed(2) + '>reach=' + reach : ' no-host-in-band') +
+          ' → floats at rule-z p.z=' + (+p.z).toFixed(2));
+        refused++; refusedList.push(p); return;                   // no host in reach → honest refuse
+      }
       var horiz = bh.bx >= bh.by_ ? 0 : 1;                        // host run axis (for yaw)
       var pz = bh.tz + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the TRUE host + offset
+      _ztrace(mount + ' BIND cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(p.band || null) +
+        ' host=' + bh.g + ' hostStorey="' + bh.st + '" pz=hostTz(' + bh.tz.toFixed(2) + ')' +
+        (faceHalf ? (sign > 0 ? '+' : '-') + 'bz/2(' + (bh.bz / 2).toFixed(2) + ')' : '') +
+        (off ? (sign > 0 ? '+' : '-') + 'off(' + off + ')' : '') + '=' + pz.toFixed(2));
       bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified,
@@ -2263,7 +2343,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind,
+  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern, gate: gate, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
