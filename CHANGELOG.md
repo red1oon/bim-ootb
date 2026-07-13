@@ -4,6 +4,22 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.17.1](https://github.com/red1oon/bim-ootb/compare/v1.17.0...v1.17.1) (2026-07-13)
+
+
+### 🐛 Fixes
+
+* **pos:** cart panel + ⋯ dock survive the POS overlay's own ✕ close ([#771](https://github.com/red1oon/bim-ootb/issues/771)) ([95cd968](https://github.com/red1oon/bim-ootb/commit/95cd968a7ebcfa22f60d41b105ef60f5e37affac))
+* **rooms:** path routing — stairwp storey bug + real walkable raster ([#777](https://github.com/red1oon/bim-ootb/issues/777)) ([77d52d1](https://github.com/red1oon/bim-ootb/commit/77d52d174cdc92aa038bdf9ae0834a867192ea90))
+* **sw:** stop treating room_walker.js as an immutable lib/ vendor file ([#780](https://github.com/red1oon/bim-ootb/issues/780)) ([8895234](https://github.com/red1oon/bim-ootb/commit/8895234a905bd850085db4ac3cccd235c6673438))
+* **viewer:** Find-panel room selection is now room_guid-aware (§MULTI-RECT) ([#778](https://github.com/red1oon/bim-ootb/issues/778)) ([810a0ab](https://github.com/red1oon/bim-ootb/commit/810a0ab1e2f57c9bf0987def00f6236c25fabfed))
+* **viewer:** needle-inject trusted a successful patch as proof rooms were compiled ([#781](https://github.com/red1oon/bim-ootb/issues/781)) ([09008f7](https://github.com/red1oon/bim-ootb/commit/09008f7166c9e8d555ed0f744652aa39425ea1bb))
+* **viewer:** retire stale HHS room patch so needle runs the fixed walker ([#775](https://github.com/red1oon/bim-ootb/issues/775)) ([5595840](https://github.com/red1oon/bim-ootb/commit/55958401f881b300597d38fc9677b4b9772e07fe))
+* **viewer:** sync §SUSPECT-LARGE fix + regenerate HHS raster ([#779](https://github.com/red1oon/bim-ootb/issues/779)) ([3a55493](https://github.com/red1oon/bim-ootb/commit/3a554935d032e0f50b044afb7748985073e7be4b))
+* **viewer:** sync room_walker.js needle copy with §WALL-SNAP fix ([#776](https://github.com/red1oon/bim-ootb/issues/776)) ([085e470](https://github.com/red1oon/bim-ootb/commit/085e4707188a78457687c49299d54314156e766e))
+* **viewer:** sync room_walker.js needle-button copy with bim-compiler fixes ([#773](https://github.com/red1oon/bim-ootb/issues/773)) ([a06a67a](https://github.com/red1oon/bim-ootb/commit/a06a67ab0acf3da0aaf4e8c827b12fcc9993ebdd))
+* **viewer:** Zoom Across never revealed the #find-selected ERP drawer ([#772](https://github.com/red1oon/bim-ootb/issues/772)) ([2ba6a4e](https://github.com/red1oon/bim-ootb/commit/2ba6a4e97368d2a60822bd38b00165b6c85853f4))
+
 ## [1.17.0](https://github.com/red1oon/bim-ootb/compare/v1.16.0...v1.17.0) (2026-07-12)
 
 
