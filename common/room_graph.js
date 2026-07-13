@@ -272,8 +272,17 @@
       var repGuid = gr.guids[0];
       var zLo = Math.min(zA, zB), zHi = Math.max(zA, zB);
       var loWp = repGuid + '::' + sA.replace(/\W/g, '_') + '::lo', hiWp = repGuid + '::' + sB.replace(/\W/g, '_') + '::hi';
-      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: gcx, cy: gcy, cz: zLo };
-      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: gcx, cy: gcy, cz: zHi };
+      // §PATH_LEGAL_STAIRWP_STOREY (2026-07-13, real bug found live: user-reported path routing
+      // "cuts across space" traced to only 1/4 chords of a real cross-floor path ever being legality-
+      // tested). Root cause: these two nodes never carried a `storey` field at all — _legalizePath's
+      // same-storey gate (`a.storey == null` -> skip) therefore skipped EVERY chord touching a stair
+      // waypoint, including the two genuinely same-storey ones (room/door <-> stairwp on ITS OWN
+      // floor), not just the one genuinely cross-floor stairwp<->stairwp E3 hop. loWp sits at the
+      // LOWER of the two storeys' z (whichever of sA/sB that is), hiWp at the higher — same ternary
+      // wpForA/wpForB already use below, so this can never disagree with which node an edge treats
+      // as "storey sA's side" vs "storey sB's side".
+      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: gcx, cy: gcy, cz: zLo, storey: (zA <= zB) ? sA : sB };
+      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: gcx, cy: gcy, cz: zHi, storey: (zA <= zB) ? sB : sA };
       var wpForA = (zA <= zB) ? loWp : hiWp, wpForB = (zA <= zB) ? hiWp : loWp;
       edges.push({ a: circA, b: circB, doorGuid: repGuid, doorName: key, storey: sA + ' / ' + sB,
         kind: 'E3', w: Math.abs(zB - zA) || Math.abs(gr.zhi - gr.zlo), wpA: wpForA, wpB: wpForB });
