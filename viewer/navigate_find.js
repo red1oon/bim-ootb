@@ -2070,25 +2070,86 @@
       return _zoomToBoxFill(bb.center, bb.size, 'GROUP_ZOOM');
     }
 
+    // §ROOM-GUID-AWARE (2026-07-13, real bug found live: user-reported a multi-rect room's
+    // Find-panel selection binding to one small SUB-RECT instead of the room's own overall extent
+    // — reported symptoms "still too small" + "shifted into a wall" both traced to this). Verified
+    // on real data: HHS alone has 18/70 logical rooms split across 2-4 spatial_structure rows
+    // (§MULTI-RECT, a real, intentional compile feature for L-shaped/irregular rooms) sharing one
+    // `room_guid`, e.g. RM_Level_1_12 (9.95x7.96m, the real room) + RM_Level_1_12b (2.0x1.7m, a
+    // small offshoot ~7m away) both named "≈ Level 1 R12" — clicking either shows only ONE piece.
+    // This is the SAME gap ROOM_INTELLIGENCE_SCOREBOARD.md already named ("_roomSelect() sibling
+    // function still not room_guid-aware") — not a new invention, a previously-flagged fix landing
+    // now. Shared by both callers (WalkerDoctrine §10: one function, not two separate point-fixes)
+    // — mirrors the SAME room_guid-probe + fallback shape _allRoomVolumes() already uses correctly
+    // for the Room Lens shell view, just computing a UNION bbox (min/max corner across every
+    // sub-rect) instead of keeping each sub-rect as its own shell. Byte-identical fallback for any
+    // schema/row without room_guid (older DBs, real non-compiled IfcSpace rows): falls through to
+    // the exact single-row query this replaces.
+    function _roomUnionBBox(guid) {
+      if (!guid || !A.dbQuery) return null;
+      var hasRoomGuid = false;
+      try {
+        var ssCols = A.dbQuery("PRAGMA table_info(spatial_structure)");
+        hasRoomGuid = ssCols.some(function(c) { return c[1] === 'room_guid'; });
+      } catch (eCols) { /* hasRoomGuid stays false -> single-row fallback below */ }
+      // §ROOM-GUID-AWARE robustness: `guid` may be EITHER the group's canonical room_guid OR one
+      // individual sub-rect's own guid (e.g. a scene click resolving to "RM_Level_1_12b" directly,
+      // not via the now-deduped Find-panel list) — resolve to the canonical logical guid FIRST,
+      // then union every row sharing it, so the result is correct regardless of which guid a caller
+      // happens to pass. Caught by direct verification (node, this session): querying by a sub-rect's
+      // own guid without this resolve step returned rectCount=1 (that one sub-rect only), not the
+      // room's full union.
+      var logicalGuid = guid;
+      if (hasRoomGuid) {
+        try {
+          var rg = A.dbQuery("SELECT room_guid FROM spatial_structure WHERE guid = ? AND type='IfcSpace'", [guid]);
+          if (rg.length && rg[0][0]) logicalGuid = rg[0][0];
+        } catch (eRg) {}
+      }
+      var rows;
+      try {
+        rows = A.dbQuery("SELECT s.guid, s.name, p.name, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z" +
+          " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
+          " WHERE s.type='IfcSpace' AND (s.guid = ?" + (hasRoomGuid ? " OR s.room_guid = ?" : "") + ")",
+          hasRoomGuid ? [logicalGuid, logicalGuid] : [logicalGuid]);
+      } catch (e) { console.warn('[RP-TA] §ROOM_UNION_ERR', e.message); return null; }
+      if (!rows || !rows.length) return null;
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      var name = rows[0][1], storey = rows[0][2];
+      rows.forEach(function (r) {
+        var cx = r[3], cy = r[4], cz = r[5], sx = r[6] || 0, sy = r[7] || 0, sz = r[8] || 0;
+        if (cx == null) return;
+        x0 = Math.min(x0, cx - sx / 2); x1 = Math.max(x1, cx + sx / 2);
+        y0 = Math.min(y0, cy - sy / 2); y1 = Math.max(y1, cy + sy / 2);
+        z0 = Math.min(z0, cz - sz / 2); z1 = Math.max(z1, cz + sz / 2);
+      });
+      if (!isFinite(x0)) return null;
+      var out = { name: name, storey: storey, rectCount: rows.length,
+        cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, cz: (z0 + z1) / 2, sx: x1 - x0, sy: y1 - y0, sz: z1 - z0 };
+      console.log('[RP-TA] §ROOM_UNION_BBOX guid=' + guid + ' rects=' + out.rectCount +
+        ' box=' + out.sx.toFixed(2) + 'x' + out.sy.toFixed(2) + 'x' + out.sz.toFixed(2) +
+        ' center=' + out.cx.toFixed(2) + ',' + out.cy.toFixed(2) + ',' + out.cz.toFixed(2));
+      return out;
+    }
+
     // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
     // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
     function _roomSelect(guid) {
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
       try { _surfaceConstructionLink(guid, guid); } catch (e) {}
       try {
-        var nm = A.dbQuery("SELECT s.name, p.name, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z" +
-          " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid WHERE s.guid = ?", [guid]);
-        if (nm.length) { name = nm[0][0] || guid; var storey = nm[0][1];
+        var rw = _roomUnionBBox(guid);
+        if (rw) { name = rw.name || guid; var storey = rw.storey;
           if (storey) { storeySet = new Set();
             A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [storey])
               .forEach(function(r) { storeySet.add(r[0]); }); }
-          // §ROOM_ZOOM: frame the room's VOLUME (center+size from spatial_structure), not its few
-          // contained elements — a 2-element room would otherwise zoom to a tiny erroneous frame.
-          var rw = nm[0];
-          if (rw[2] != null && rw[5] != null && A.ifc2three && typeof THREE !== 'undefined') {
-            var cc = A.ifc2three(rw[2], rw[3], rw[4]);  // IFC size → Three: x→x, z→y, y→z (bbox parity)
+          // §ROOM_ZOOM: frame the room's VOLUME (center+size from spatial_structure, UNIONED across
+          // every §MULTI-RECT sub-rect this logical room owns), not its few contained elements — a
+          // 2-element room would otherwise zoom to a tiny erroneous frame.
+          if (rw.cx != null && rw.sx != null && A.ifc2three && typeof THREE !== 'undefined') {
+            var cc = A.ifc2three(rw.cx, rw.cy, rw.cz);  // IFC size → Three: x→x, z→y, y→z (bbox parity)
             zoomBox = { center: new THREE.Vector3(cc.x, cc.y, cc.z),
-              size: new THREE.Vector3(Math.max(rw[5] || 0.5, 0.5), Math.max(rw[7] || 0.5, 0.5), Math.max(rw[6] || 0.5, 0.5)) };
+              size: new THREE.Vector3(Math.max(rw.sx || 0.5, 0.5), Math.max(rw.sz || 0.5, 0.5), Math.max(rw.sy || 0.5, 0.5)) };
           }
         }
       } catch (e) { console.warn('[RP-TA] §ROOM_SELECT_ERR', e.message); }
@@ -2103,7 +2164,10 @@
       // longer what LIGHTS UP: multiple adjacent real elements each getting their own yellow fill/
       // silhouette read as fragmented "cut" seams where they meet. Real-element highlight only remains
       // the default when no room volume is available to draw a cuboid from.
-      var bound = _roomBoundingGuids(nm && nm.length ? nm[0] : null);
+      // §ROOM-GUID-AWARE: _roomBoundingGuids expects the array shape [name,parentName,cx,cy,cz,sx,sy,sz]
+      // — build it from the UNION bbox (rw, above) so real-wall lookup scans the room's whole footprint,
+      // not just one sub-rect.
+      var bound = _roomBoundingGuids(rw ? [rw.name, null, rw.cx, rw.cy, rw.cz, rw.sx, rw.sy, rw.sz] : null);
       if (bound.size && zoomBox) {
         _drawRoomCuboid(zoomBox.center, zoomBox.size);
         var _clip = _boxClipPlanes(zoomBox.center, zoomBox.size, 0.7);   // confine the ancestor shell to the cuboid (+0.7m)
@@ -2198,13 +2262,24 @@
           return;
         }
         _clearPathHighlight(); // leaving Path sub-mode — drop its line/zoom-only overlay (room shells stay, dims are reset by _roomLensOn above)
+        // §ROOM-GUID-AWARE (see _roomUnionBBox above): probe room_guid so a §MULTI-RECT logical
+        // room (N spatial_structure rows, one per sub-rect) collapses to ONE list entry instead of
+        // N identically-named duplicates each selecting only its own sub-rect (real bug, confirmed
+        // live 2026-07-13: HHS's "≈ Level 1 R12" listed twice, one entry only 2.0x1.7m — a small
+        // offshoot ~7m from the room's real 9.95x7.96m body).
+        var hasRoomGuidTree = false;
+        try {
+          var ssColsTree = A.dbQuery("PRAGMA table_info(spatial_structure)");
+          hasRoomGuidTree = ssColsTree.some(function(c) { return c[1] === 'room_guid'; });
+        } catch (eColsTree) {}
         var rooms = [];
         try {
           rooms = A.dbQuery("SELECT s.guid, s.name, p.name, s.object_type, s.predefined_type" +
+            (hasRoomGuidTree ? ", s.room_guid" : ", NULL") +
             " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
             " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL ORDER BY p.name, s.name");
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
-        var byGroup = {}, order = [], typed = 0;
+        var byGroup = {}, order = [], typed = 0, seenLogical = {}, dupRects = 0;
         rooms.forEach(function(r) {
           // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
           // (r[3]) is 'COMPILED' for EVERY synthetic room — that's not a useful Type-view bucket,
@@ -2213,10 +2288,14 @@
           // 'Office') still group by object_type first, unchanged.
           var typeKey = (r[3] && r[3] !== 'COMPILED') ? r[3] : r[4];
           var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
+          var logicalGuid = r[5] || r[0];   // room_guid, falling back to this row's own guid
+          if (seenLogical[logicalGuid]) { dupRects++; return; }   // §MULTI-RECT: 1 entry per logical room
+          seenLogical[logicalGuid] = true;
           if (_roomGroupBy === 'type' && typeKey) typed++;
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
-          byGroup[gk].push({ key: r[0], label: r[1] || '(unnamed)' });
+          byGroup[gk].push({ key: logicalGuid, label: r[1] || '(unnamed)' });
         });
+        if (dupRects) console.log('[RP-T3] §ROOM_TREE_DEDUP collapsed ' + dupRects + ' §MULTI-RECT sub-rect row(s) into their logical room entry');
         order.forEach(function(gk) {
           var groupRooms = byGroup[gk];
           var kids = groupRooms.map(function(rm) {
