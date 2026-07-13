@@ -889,7 +889,22 @@
           }
         } catch (e) { console.warn('[NEEDLE] §NEEDLE_PATCH_ERR ' + (e && e.message)); }
 
-        if (applied) {
+        // §NEEDLE-COMPILED-CHECK: `applied` only means the patch SQL ran without throwing — for
+        // HHS that patch is 4 lines regenerating storey_walkable_raster, NOT compiled room data
+        // (the old patch that DID carry compiled rows was retired, PR #775). Trusting `applied`
+        // alone skips RoomWalker entirely on a fresh DB, leaving raw uncompiled IfcSpace rows (no
+        // room_guid, none of the WALL-SNAP/SUSPECT-LARGE/§MULTI-RECT fixes) — and then persists
+        // that regressed state back into the IDB cache (§NEEDLE_PERSIST below), poisoning every
+        // later reload too. Same missing-column class of bug already fixed once at this file's
+        // `_roomsFromSpatialStructure` (~line 1887) via PRAGMA table_info — reuse that technique
+        // to require actual compiled evidence (a `room_guid` column), not just a successful patch.
+        var hasCompiledRooms = false;
+        try {
+          var ssColsCheck = A.dbQuery("PRAGMA table_info(spatial_structure)");
+          hasCompiledRooms = ssColsCheck.some(function(c) { return c[1] === 'room_guid'; });
+        } catch (eCols) { /* hasCompiledRooms stays false */ }
+
+        if (applied && hasCompiledRooms) {
           source = 'patch';
         } else {
           // S2.2 — walker source (any building): lazy-load the room_walker JS port, compile
@@ -906,10 +921,16 @@
           }
           if (!window.RoomWalker) throw new Error('RoomWalker unavailable after load');
           window.RoomWalker.walk(A.db, { write: true });
-          source = 'walker';
+          source = applied ? 'patch+walker' : 'walker';
         }
 
-        var cq = A.dbQuery("SELECT COUNT(*), COUNT(DISTINCT room_guid) FROM spatial_structure WHERE type='IfcSpace'");
+        var hasRoomGuidNow = false;
+        try {
+          var ssColsNow = A.dbQuery("PRAGMA table_info(spatial_structure)");
+          hasRoomGuidNow = ssColsNow.some(function(c) { return c[1] === 'room_guid'; });
+        } catch (eColsNow) { /* hasRoomGuidNow stays false */ }
+        var cq = A.dbQuery("SELECT COUNT(*), COUNT(DISTINCT " + (hasRoomGuidNow ? 'room_guid' : 'guid') +
+          ") FROM spatial_structure WHERE type='IfcSpace'");
         var rectsN = cq.length ? cq[0][0] : 0;
         var roomsN = cq.length ? cq[0][1] : 0;
         console.log('[NEEDLE] §NEEDLE_INJECT bld=' + bld + ' source=' + source + ' rooms=' + roomsN + ' rects=' + rectsN);
