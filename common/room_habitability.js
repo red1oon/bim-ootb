@@ -64,8 +64,69 @@
     } catch (e) { return null; }
   }
 
+  // §UTILITY-CONTENT (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10, 2026-07-15): a SECOND, independent
+  // non-habitable signal alongside spaceHabitable()'s label/zband check — element COMPOSITION, not
+  // label text. Real root cause this exists: Clinic's 8 fullConnectivity() islands (measured
+  // 2026-07-15, PR #794) carry a generic "COMPILED INTERNAL" synthetic label with no descriptive
+  // space name at all, so the label-keyword check above can never catch them — but their CONTENTS
+  // are unambiguous: 6 of the 8 are dominated by ACMV `IfcFlowSegment` rows (a duct/pipe SEGMENT —
+  // the signature of ductwork physically ROUTING THROUGH a shaft/riser, distinct from a normal
+  // room's occasional terminal diffuser, which is a different ifc_class), 1 is pure
+  // STR `IfcFooting` (a foundation void). DELIBERATELY NOT force-fit: the 8th room (Clinic First
+  // Floor R56) has neither signal in its own contained elements (just an ordinary structural beam,
+  // the same as countless real habitable rooms) — measured, not classified here, rather than
+  // padding the count to match an assumed "8/8" story. `DOOR_BUFFER_SLACK`/`rectDist` are the SAME
+  // real constant/formula `common/room_graph.js`'s E1/E2 door-matching already uses (not
+  // reinvented) — a room with a genuine nearby door is NEVER classified Utilities regardless of
+  // its contents (a real ACMV plant room with its own access door is still occupiable/serviced
+  // space, not a sealed void).
+  var DOOR_BUFFER_SLACK = 0.20;
+  function _rectDist(x0, x1, y0, y1, px, py) {
+    var dx = Math.max(x0 - px, 0, px - x1);
+    var dy = Math.max(y0 - py, 0, py - y1);
+    return Math.hypot(dx, dy);
+  }
+  function _hasNearbyDoor(room, dbQueryFn) {
+    var x0 = room.cx - room.sx / 2, x1 = room.cx + room.sx / 2;
+    var y0 = room.cy - room.sy / 2, y1 = room.cy + room.sy / 2;
+    var doors;
+    try {
+      doors = dbQueryFn("SELECT t.center_x, t.center_y, t.bbox_x, t.bbox_y FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class LIKE 'IfcDoor%' " +
+        "AND m.discipline='ARC' AND m.storey=?", [room.storey]) || [];
+    } catch (e) { return false; } // no door data at all — treat as "can't tell", caller stays ok:true
+    for (var i = 0; i < doors.length; i++) {
+      var d = doors[i], buf = Math.max(d[2] || 0, d[3] || 0) / 2 + DOOR_BUFFER_SLACK;
+      if (_rectDist(x0, x1, y0, y1, d[0], d[1]) <= buf) return true;
+    }
+    return false;
+  }
+  // room: { cx, cy, sx, sy, storey } — same fields buildGraph()'s room nodes already carry
+  // (cx/cy center, sx/sy = a rect's x1-x0/y1-y0 — caller's own logical-room union, §MULTI-RECT
+  // aware the same way room_graph.js is: pass the room's OWN bbox, not re-derived here).
+  // Small 0.3m margin on the containment query — real elements sitting exactly on a wall boundary
+  // (measured this session) still count; not a guessed number, matches the scratch query this
+  // signal was measured with before being written up.
+  function utilityContentClass(room, dbQueryFn) {
+    var margin = 0.3;
+    var x0 = room.cx - room.sx / 2 - margin, x1 = room.cx + room.sx / 2 + margin;
+    var y0 = room.cy - room.sy / 2 - margin, y1 = room.cy + room.sy / 2 + margin;
+    var rows;
+    try {
+      rows = dbQueryFn("SELECT m.discipline, m.ifc_class, COUNT(*) c FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid WHERE m.storey=? AND t.center_x BETWEEN ? AND ? " +
+        "AND t.center_y BETWEEN ? AND ? GROUP BY m.discipline, m.ifc_class",
+        [room.storey, x0, x1, y0, y1]) || [];
+    } catch (e) { return { ok: true }; } // no element data — can't classify, never invent
+    var hasFlowSegment = rows.some(function (r) { return r[0] === 'ACMV' && /IfcFlowSegment/.test(r[1] || ''); });
+    var hasFooting = rows.some(function (r) { return /IfcFooting/.test(r[1] || ''); });
+    if (!hasFlowSegment && !hasFooting) return { ok: true };
+    if (_hasNearbyDoor(room, dbQueryFn)) return { ok: true }; // real door → serviced space, not a sealed void
+    return { ok: false, why: hasFlowSegment ? 'utility:ACMV' : 'utility:footing' };
+  }
+
   var API = { spaceHabitable: spaceHabitable, NONHAB_TYPES: NONHAB_TYPES,
-    envelopeFromTransforms: envelopeFromTransforms };
+    envelopeFromTransforms: envelopeFromTransforms, utilityContentClass: utilityContentClass };
   ROOT.RoomHabitability = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

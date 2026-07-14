@@ -614,7 +614,6 @@
         else if (_treeMode === 'room') _buildRoomTree();
         else if (_treeMode === 'material') _buildMaterialTree();
         else if (_treeMode === 'phase') _buildPhaseTree();
-        else if (_treeMode === 'parts') _buildPartsTree();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
 
@@ -640,6 +639,12 @@
     var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
     var LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
     var PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10, 2026-07-15): real evidence
+    // already seen this session (Clinic doors named "M_Toilet Partition:0865 x 1500mm" near First
+    // Floor R58/R59) — same word-boundary discipline as LIFT_KEYWORDS/PLANT_KEYWORDS above, applied
+    // to a room's CONTAINED elements (rel_contained_in_space) rather than the room's own generic
+    // "COMPILED INTERNAL" label, which carries no descriptive signal for real synthetic rooms.
+    var RESTROOM_KEYWORDS = ["toilet", "restroom", "washroom", "lavatory", "wc"];
     function _partsCond(part) {
       if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
       var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
@@ -706,7 +711,7 @@
     ];
     function _probeLenses() {
       var bld = A.activeBuilding || '';
-      var room = false, material = false, phase = false, parts = false;
+      var room = false, material = false, phase = false;
       _roomHasVol = false;
       try {
         var hasSS = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
@@ -765,14 +770,8 @@
         } catch(e) { /* kernel_ops table may not exist yet */ }
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
-      try {
-        var partsCond = '(' + _partsCond('STAIRWAY') + ') OR (' + _partsCond('LIFT_SHAFT') + ') OR (' + _partsCond('PLANT_ROOM') + ')';
-        var pc = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE (" + partsCond + ")" +
-          (bld ? " AND building = ?" : ""), bld ? [bld] : []);
-        parts = !!(pc.length && pc[0].values[0][0] > 0);
-      } catch(e) { /* parts stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' parts=' + parts + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
-      return { room: room, material: material, phase: phase, parts: parts, spaceCount: _needleSpaceCount, needleState: _needleState };
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
+      return { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -788,7 +787,6 @@
       if (present.room) ax.push({ key: 'room', label: _t('ui_lens_room', 'Room') });
       if (present.material) ax.push({ key: 'material', label: _t('ui_lens_material', 'Material') });
       if (present.phase) ax.push({ key: 'phase', label: _t('ui_lens_phase', 'Phase') });
-      if (present.parts) ax.push({ key: 'parts', label: _t('ui_axis_parts', 'Parts') });
       return ax;
     }
 
@@ -1071,26 +1069,49 @@
         });
         if (pts.length > 1) {
           var geo = new THREE.BufferGeometry().setFromPoints(pts);
-          // §PATH_NEON: bright neon green, distinct from every other yellow highlight in this file
-          // (isolate/cuboid-fallback both use 0xffd400 — a path in the same hue was easy to miss).
+          // §PATH_ORANGE (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2/§9, 2026-07-15, supersedes the
+          // earlier neon-green §PATH_NEON): bright orange reads cleanly against BOTH the purple
+          // (habitable) and blue (corridor) room-shell category colors §9 introduced — green risked
+          // blending into the blue-family boxes, red risked an unintended "danger/error" read; user's
+          // own steer, verbatim: "bright orange as most bbxes drown the green dots". Thickness:
           // LineBasicMaterial.linewidth is silently ignored by nearly every browser/GPU (WebGL spec
-          // limitation) — a plain color swap alone still renders as a near-invisible 1px hairline, so
-          // small marker spheres are added at each waypoint room-center to keep the route legible even
-          // when the connecting line itself is thin.
-          var mat = new THREE.LineBasicMaterial({ color: 0x39ff14, linewidth: 3, transparent: true, opacity: 0.95, depthTest: false });
+          // limitation, unchanged from before) — a box-style scaled-duplicate trick (§BORDER_STRONG
+          // above) doesn't transfer to an arbitrary polyline (no single center to scale about), so
+          // legibility instead comes from a bigger core marker sphere + a larger, softer "halo" sphere
+          // behind it at each waypoint (same "duplicate underneath" spirit as §BORDER_STRONG, applied
+          // to spheres instead of box edges) — line itself stays a thin hairline, same as before.
+          var PATH_COLOR = 0xff9100;
+          var mat = new THREE.LineBasicMaterial({ color: PATH_COLOR, linewidth: 3, transparent: true, opacity: 0.95, depthTest: false });
           var line = new THREE.Line(geo, mat);
           line.renderOrder = 1003;
           A.scene.add(line);
           _pathExtraMeshes.push(line);
-          var markerGeo = new THREE.SphereGeometry(0.18, 12, 12);
-          var markerMat = new THREE.MeshBasicMaterial({ color: 0x39ff14, transparent: true, opacity: 0.9, depthTest: false });
-          pts.forEach(function(p) {
+          var markerGeo = new THREE.SphereGeometry(0.22, 12, 12);
+          var markerMat = new THREE.MeshBasicMaterial({ color: PATH_COLOR, transparent: true, opacity: 0.9, depthTest: false });
+          var haloGeo = new THREE.SphereGeometry(0.38, 12, 12);
+          var haloMat = new THREE.MeshBasicMaterial({ color: PATH_COLOR, transparent: true, opacity: 0.28, depthTest: false });
+          // §DOT_DROP (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §6/§9, threshold measured against real
+          // Clinic/HHS/Duplex data — see prompt file for the full distance survey): the path's own
+          // FIRST/LAST marker sits redundantly close to its neighbor waypoint only in the rare
+          // near-degenerate case (measured min 0.02m on HHS) — most room-center-to-door separations
+          // are 2-8m (real room depth, not clutter). Drop ONLY an endpoint marker, and only when it's
+          // genuinely within 1.0m of its one neighbor — never an interior waypoint (those are real,
+          // distinct positions along the route, not a redundant pair).
+          var DOT_DROP_DIST = 1.0;
+          var skip = pts.map(function() { return false; });
+          if (pts.length > 1 && pts[0].distanceTo(pts[1]) < DOT_DROP_DIST) skip[0] = true;
+          if (pts.length > 1 && pts[pts.length - 1].distanceTo(pts[pts.length - 2]) < DOT_DROP_DIST) skip[pts.length - 1] = true;
+          var dotsDropped = 0;
+          pts.forEach(function(p, pi) {
+            if (skip[pi]) { dotsDropped++; return; }
+            var halo = new THREE.Mesh(haloGeo, haloMat);
+            halo.position.copy(p); halo.renderOrder = 1004;
+            A.scene.add(halo); _pathExtraMeshes.push(halo);
             var marker = new THREE.Mesh(markerGeo, markerMat);
-            marker.position.copy(p);
-            marker.renderOrder = 1004;
-            A.scene.add(marker);
-            _pathExtraMeshes.push(marker);
+            marker.position.copy(p); marker.renderOrder = 1005;
+            A.scene.add(marker); _pathExtraMeshes.push(marker);
           });
+          if (dotsDropped) console.log('[RP-PATH] §DOT_DROP endpoints dropped=' + dotsDropped + ' (within ' + DOT_DROP_DIST + 'm of their one neighbor)');
         }
       }
       // Zoom to fit the union of the path rooms' boxes.
@@ -1794,6 +1815,20 @@
       return set;
     }
 
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2): category → shell/cuboid color
+    // pair (fill, wire). 'habitable' keeps the purple this file already used for the single
+    // selected-room cuboid (§ROOM-CUBOID below) — now a real per-CATEGORY color, not just a
+    // selection-only accent. 'corridor' keeps the pre-existing default blue (was every room's
+    // fixed default before this change — now deliberate, corridor-only). 'utilities' is a muted
+    // dark grey — reads as "present, low-priority" without an alarming/error connotation.
+    var ROOM_CATEGORY_COLORS = {
+      habitable: { fill: 0x9c6ade, wire: 0xd8b4fe },
+      corridor: { fill: 0x4fc3f7, wire: 0x7fd6fb },
+      utilities: { fill: 0x3a3a3a, wire: 0x5a5a5a }
+    };
+    function _categoryColor(category) {
+      return ROOM_CATEGORY_COLORS[category] || ROOM_CATEGORY_COLORS.habitable;
+    }
     // §RP-SHELL (option 3): a room's drawable OUTLINE is its IfcSpace volume (center+size), not a
     // mesh. Draw it as a translucent shine-through box so the Room axis shows the room MAP and a
     // selected room reads as a bright shell with its contents dimmer inside.
@@ -1832,17 +1867,19 @@
     // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
-    function _drawRoomCuboid(center, size) {
+    function _drawRoomCuboid(center, size, category) {
       if (!A.scene || typeof THREE === 'undefined') return;
       _clearRoomCuboid();
+      var cc = _categoryColor(category); // §ROOM_LENS_TAXONOMY: selected room reads as a BRIGHTER
+      // version of its own category color (purple/blue/dark), not a 4th unrelated fixed hue.
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
-      var fillMat = new THREE.MeshBasicMaterial({ color: 0x9c6ade, transparent: true, opacity: 0.5,
+      var fillMat = new THREE.MeshBasicMaterial({ color: cc.fill, transparent: true, opacity: 0.5,
         depthWrite: false, side: THREE.DoubleSide });
       var fill = new THREE.Mesh(boxGeo, fillMat); fill.position.copy(center);
       fill.renderOrder = 998; fill.userData._roomShell = true;
       A.scene.add(fill); _roomBoxes.push({ guid: '_cuboidFill', mesh: fill });
       var edges = new THREE.EdgesGeometry(boxGeo);
-      var lineMat = new THREE.LineBasicMaterial({ color: 0xd8b4fe, transparent: true, opacity: 1.0, depthTest: false });
+      var lineMat = new THREE.LineBasicMaterial({ color: cc.wire, transparent: true, opacity: 1.0, depthTest: false });
       var wire = new THREE.LineSegments(edges, lineMat); wire.position.copy(center);
       // §BORDER_STRONG: LineBasicMaterial.linewidth is silently ignored by nearly every browser/GPU
       // (WebGL spec limitation) -- a real 1px line reads as weak against a busy scene no matter the
@@ -1956,9 +1993,10 @@
           var ssCols = A.dbQuery("PRAGMA table_info(spatial_structure)");
           hasRoomGuid = ssCols.some(function(c) { return c[1] === 'room_guid'; });
         } catch (eCols) { /* hasRoomGuid stays false */ }
-        rows = A.dbQuery("SELECT guid, name, center_x, center_y, center_z, size_x, size_y, size_z," +
-          " object_type, predefined_type" + (hasRoomGuid ? ", room_guid" : ", NULL") +
-          " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL");
+        rows = A.dbQuery("SELECT s.guid, s.name, s.center_x, s.center_y, s.center_z, s.size_x, s.size_y, s.size_z," +
+          " s.object_type, s.predefined_type" + (hasRoomGuid ? ", s.room_guid" : ", NULL") + ", p.name" +
+          " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
+          " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL AND s.size_x IS NOT NULL");
         var groups = {}, order = [];
         (rows || []).forEach(function(r) {
           var lg = r[10] || r[0];   // logical room guid: room_guid, falling back to this row's own guid
@@ -1972,7 +2010,8 @@
               // token match find the keyword wherever it actually is — never invents a label, just
               // widens which already-real field is checked. Representative fields (name/type) come from
               // the FIRST row seen for this logical guid — identical across the set per §8's own design.
-              label: [r[8], r[9], r[1]].filter(Boolean).join(' '), z1: -Infinity, rects: [] };
+              label: [r[8], r[9], r[1]].filter(Boolean).join(' '), z1: -Infinity, rects: [],
+              cx: r[2], cy: r[3], sx: r[5], sy: r[6], storey: r[11] || '' };
             order.push(lg);
           }
           var g = groups[lg];
@@ -1980,6 +2019,15 @@
           if (z1 > g.z1) g.z1 = z1;   // conservative: if ANY sub-rect pokes above the envelope, check catches it
           g.rects.push({ cx: r[2], cy: r[3], cz: r[4], sx: r[5], sy: r[6], sz: r[7] });
         });
+        // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2/§10): category per logical
+        // room, for the room-shell FILL COLOR (not the Type-tree list — that's computed
+        // independently in _buildRoomTree(), same underlying signals, deliberately not unified
+        // into one shared cache yet — a follow-up cleanup, not a correctness issue, since both call
+        // the SAME deterministic classifiers on the SAME data and can never disagree). Only
+        // 'corridor'/'utilities' get a distinct shell color; every other real room (including a
+        // Restroom) stays 'habitable' — Restrooms are real occupiable space, just a richer Type-tree
+        // sub-category, not a separate shell hue.
+        var corridorLabelsShell = _corridorLabelsFor();
         order.forEach(function(lg) {
           var g = groups[lg];
           if (RH) {
@@ -1990,9 +2038,17 @@
               return;
             }
           }
+          var category = 'habitable';
+          if (corridorLabelsShell[lg]) category = 'corridor';
+          else if (RH && RH.utilityContentClass) {
+            try {
+              var ucShell = RH.utilityContentClass({ cx: g.cx, cy: g.cy, sx: g.sx, sy: g.sy, storey: g.storey }, A.dbQuery);
+              if (!ucShell.ok) category = 'utilities';
+            } catch (eUcShell) { /* leave habitable — never invent */ }
+          }
           g.rects.forEach(function(rc) {
             var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
-            out.push({ guid: g.guid, name: g.name,
+            out.push({ guid: g.guid, name: g.name, category: category,
               center: new THREE.Vector3(c.x, c.y, c.z),
               size: new THREE.Vector3(Math.max(rc.sx || 0.3, 0.3), Math.max(rc.sz || 0.3, 0.3), Math.max(rc.sy || 0.3, 0.3)) });
           });
@@ -2036,12 +2092,16 @@
       // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
       // distinct guid — same "N rects = ONE logical room" convention W-ROOM-FILL/W-HBA-MULTIRECT
       // already proved for hba_lens.js's outline drawing.
-      var rooms = {};
+      var rooms = {}, catCounts = {};
       vols.forEach(function(v) {
-        var mesh = _drawRoomShell(v.center, v.size, 0.10, 0x4fc3f7);
-        if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size });
+        var fillColor = _categoryColor(v.category).fill;
+        var mesh = _drawRoomShell(v.center, v.size, 0.10, fillColor);
+        if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size, category: v.category });
         rooms[v.guid] = true;
+        catCounts[v.category] = (catCounts[v.category] || 0) + 1;
       });
+      console.log('[RP-TA] §ROOM_LENS_CATEGORY habitable=' + (catCounts.habitable || 0) +
+        ' corridor=' + (catCounts.corridor || 0) + ' utilities=' + (catCounts.utilities || 0));
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
         ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
@@ -2202,6 +2262,7 @@
     }
 
     function _roomSelect(guid) {
+      if (_categoryRevealOn) _clearCategoryReveal(); // a leaf tap commits to one room — any active headline reveal is now stale
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
       var isCorridorRoom = guid.indexOf('CORRIDOR_ROOM::') === 0;
       if (!isCorridorRoom) { try { _surfaceConstructionLink(guid, guid); } catch (e) {} }
@@ -2236,8 +2297,16 @@
       // — build it from the UNION bbox (rw, above) so real-wall lookup scans the room's whole footprint,
       // not just one sub-rect.
       var bound = _roomBoundingGuids(rw ? [rw.name, null, rw.cx, rw.cy, rw.cz, rw.sx, rw.sy, rw.sz] : null);
+      // §ROOM_LENS_TAXONOMY: a CORRIDOR_ROOM::* guid IS a corridor by construction (no lookup
+      // needed — it never has a _roomBoxes shell entry since _allRoomVolumes() only queries real
+      // spatial_structure rows); every other room's category was already computed once by
+      // _roomLensOn() and lives on its _roomBoxes entry — reuse it, never recompute.
+      var selCategory = 'habitable';
+      if (isCorridorRoom) selCategory = 'corridor';
+      else { var rbMatch = _roomBoxes.filter(function(rb) { return rb.guid === guid; })[0];
+        if (rbMatch && rbMatch.category) selCategory = rbMatch.category; }
       if (bound.size && zoomBox) {
-        _drawRoomCuboid(zoomBox.center, zoomBox.size);
+        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
         var _clip = _boxClipPlanes(zoomBox.center, zoomBox.size, 0.7);   // confine the ancestor shell to the cuboid (+0.7m)
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=cuboid guid=' + guid + ' bound=' + bound.size +
           ' box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) + 'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7');
@@ -2246,33 +2315,86 @@
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=bounding-elements guid=' + guid + ' (no zoomBox available)');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, zoomMult: 1.8 });
       } else {
-        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size);
+        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=' + (zoomBox ? 'cuboid' : 'cuboid-fallback') + ' guid=' + guid + ' (no bounding mesh found)');
         _drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
       }
     }
 
-    // §DEPTH consistency: a Room-tree floor/type HEADER tap is a GROUP select — route it through the
-    // SAME B|G|I entry every other lens uses (was expand-only). Storey grouping → the floor's elements;
-    // Type grouping → the union of that type's rooms' contents. Group depth = 1.0 solid + fit-zoom,
-    // building(parent) = 0.1. (groupRooms = [{key,label}] for this header, captured at build time.)
-    function _roomGroupSelect(gk, groupRooms) {
-      var set = new Set();
-      try { _surfaceConstructionLink(gk, gk); } catch (e) {}
-      try {
-        if (_roomGroupBy === 'type') {
-          var keys = (groupRooms || []).map(function(r) { return r.key; });
-          if (keys.length) {
-            var ph = keys.map(function() { return '?'; }).join(',');
-            A.dbQuery("SELECT element_guid FROM rel_contained_in_space WHERE space_guid IN (" + ph + ")", keys)
-              .forEach(function(r) { set.add(r[0]); });
-          }
-        } else {
-          A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [gk])
-            .forEach(function(r) { set.add(r[0]); });
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §3/§9, 2026-07-15): a NEW, lightweight
+    // "reveal" for a Storey or Type headline tap — camera stays put, that group's own room-shell
+    // boxes brighten to their real category color, every real door serving those rooms lights up
+    // brown, tapping the SAME headline again clears it. This REPLACES the old _roomGroupSelect
+    // isolate-drill for normal room headers specifically (user's own framing: today's immediate
+    // zoom/isolate on a header tap is premature for someone still building a mental map of the
+    // floor — the reveal is the lighter first move; a single ROOM's leaf tap keeps the existing
+    // zoom-in unchanged, see _roomSelect). Raw Parts-migrated groups (Stairs/Lift-Shaft/Plant-Room)
+    // still use `_isolatePartsGroup` at the header level (see the render loop below) — those were
+    // never IfcSpace rows, there's no room-shell/category concept to reveal for them.
+    var _categoryRevealOn = null;   // null | the currently-revealed group key (gk)
+    var _revealDoorMeshes = [];     // brown door-marker meshes, disposed on toggle-off/switch
+    function _clearCategoryReveal() {
+      _revealDoorMeshes.forEach(function(m) {
+        if (m.parent) m.parent.remove(m);
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) m.material.dispose();
+      });
+      _revealDoorMeshes = [];
+      _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.material && rb.mesh.userData && rb.mesh.userData._roomShell) {
+          rb.mesh.material.opacity = 0.10;   // §RP-SHELL's own baseline shine-through opacity
+          rb.mesh.material.needsUpdate = true;
         }
-      } catch (e) { console.warn('[RP-TA] §ROOM_GROUP_ERR', e.message); }
-      _drillSelect(set, gk, 'ROOM_GROUP', { isItem: false }); // top-level group: floor solid, building 0.2
+      });
+      _categoryRevealOn = null;
+      if (A.markDirty) A.markDirty();
+    }
+    // Real door positions for a set of room guids — reuses room_graph.js's ALREADY-COMPUTED
+    // door-to-room edges (E1/E2/E9, each carrying the door's own real guid/position via its
+    // 'doorwp' node) instead of a new query; never invented, same graph the Path sub-mode uses.
+    function _doorPositionsForRooms(guids) {
+      var graph = _roomGraphFor();
+      if (!graph) return [];
+      var guidSet = {}; guids.forEach(function(g) { guidSet[g] = true; });
+      var seen = {}, out = [];
+      graph.edges.forEach(function(e) {
+        if (!e.doorGuid || seen[e.doorGuid]) return;
+        if (!guidSet[e.a] && !guidSet[e.b]) return;
+        seen[e.doorGuid] = true;
+        var n = graph.nodesByGuid[e.doorGuid];
+        if (n) out.push({ x: n.cx, y: n.cy, z: n.cz || 0 });
+      });
+      return out;
+    }
+    function _revealCategoryGroup(gk, groupRooms) {
+      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
+      _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
+      var guidSet = {};
+      (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
+      var brightened = 0;
+      _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
+          rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
+          rb.mesh.material.needsUpdate = true;
+          brightened++;
+        }
+      });
+      var doorPositions = _doorPositionsForRooms(Object.keys(guidSet));
+      if (A.scene && A.ifc2three && typeof THREE !== 'undefined' && doorPositions.length) {
+        var doorGeo = new THREE.SphereGeometry(0.2, 10, 10);
+        var doorMat = new THREE.MeshBasicMaterial({ color: 0x8d5524, transparent: true, opacity: 0.85, depthTest: false });
+        doorPositions.forEach(function(p) {
+          var c = A.ifc2three(p.x, p.y, p.z);
+          var m = new THREE.Mesh(doorGeo, doorMat);
+          m.position.set(c.x, c.y + 0.05, c.z);
+          m.renderOrder = 1002;
+          A.scene.add(m);
+          _revealDoorMeshes.push(m);
+        });
+      }
+      _categoryRevealOn = gk;
+      if (A.markDirty) A.markDirty();
+      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' doors=' + doorPositions.length);
     }
 
     // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
@@ -2309,6 +2431,7 @@
       // §RP Room sub-toggle: group rooms [Storey | Type]. Storey (default) nests rooms under
       // their IfcBuildingStorey (spatial_structure.parent_guid). Type nests by object_type/
       // predefined_type (null → "(untyped)" — non-invent; populates on DBs that carry it).
+      if (_categoryRevealOn) { _revealDoorMeshes.forEach(function(m) { if (m.parent) m.parent.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }); _revealDoorMeshes = []; _categoryRevealOn = null; } // _roomLensOn() below rebuilds _roomBoxes from scratch — any reveal state is now stale, drop it before it leaks door meshes
       if (_roomHasVol) {
         _roomLensOn();
         if (elIsoBar) {
@@ -2342,12 +2465,37 @@
         } catch (eColsTree) {}
         var rooms = [];
         try {
-          rooms = A.dbQuery("SELECT s.guid, s.name, p.name, s.object_type, s.predefined_type" +
+          rooms = A.dbQuery("SELECT s.guid, s.name, p.name, s.object_type, s.predefined_type," +
+            " s.center_x, s.center_y, s.size_x, s.size_y" +
             (hasRoomGuidTree ? ", s.room_guid" : ", NULL") +
             " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
             " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL ORDER BY p.name, s.name");
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
         var corridorLabels = (_roomGroupBy === 'type') ? _corridorLabelsFor() : {};
+        // §ROOM_LENS_TAXONOMY: Restrooms — one batched keyword-matched query (same SQL broad
+        // pre-filter + _keywordTokenMatch word-boundary discipline as LIFT_KEYWORDS/PLANT_KEYWORDS
+        // above), not N per-room queries. Maps through rel_contained_in_space's raw space_guid to
+        // this room's LOGICAL guid (a §MULTI-RECT room's sub-rects all share one room_guid).
+        var restroomLogicalGuids = {};
+        if (_roomGroupBy === 'type') {
+          try {
+            var rawToLogical = {};
+            rooms.forEach(function(r) { rawToLogical[r[0]] = r[9] || r[0]; });
+            var restroomCond = RESTROOM_KEYWORDS.map(function(w) { return "LOWER(m.element_name) LIKE '%" + w + "%'"; }).join(' OR ');
+            var rrows = A.dbQuery("SELECT rc.space_guid, m.element_name FROM rel_contained_in_space rc" +
+              " JOIN elements_meta m ON m.guid = rc.element_guid WHERE (" + restroomCond + ")");
+            rrows.forEach(function(rr) {
+              if (!_keywordTokenMatch(rr[1], RESTROOM_KEYWORDS)) return;
+              var lg = rawToLogical[rr[0]];
+              if (lg) restroomLogicalGuids[lg] = true;
+            });
+          } catch (eRr) { console.warn('[RP-TA] §RESTROOM_MATCH_ERR', eRr.message); }
+        }
+        // §ROOM_LENS_TAXONOMY: Utilities — real element-composition signal (ACMV IfcFlowSegment /
+        // STR IfcFooting dominated, zero real door nearby), see common/room_habitability.js
+        // utilityContentClass(). Cached per logical room (computed once per §MULTI-RECT group,
+        // using its first-encountered sub-rect as the representative bbox — same room either way).
+        var utilityLogicalGuids = {}, _utilityChecked = {};
         var byGroup = {}, order = [], typed = 0, seenLogical = {}, dupRects = 0;
         rooms.forEach(function(r) {
           // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
@@ -2355,12 +2503,27 @@
           // so fall through to predefined_type (r[4], e.g. INTERNAL_DOORPART/INTERNAL_SMALL/
           // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
           // 'Office') still group by object_type first, unchanged.
-          var logicalGuid = r[5] || r[0];   // room_guid, falling back to this row's own guid
+          var logicalGuid = r[9] || r[0];   // room_guid, falling back to this row's own guid
+          if (_roomGroupBy === 'type' && !_utilityChecked[logicalGuid] && window.RoomHabitability && window.RoomHabitability.utilityContentClass) {
+            _utilityChecked[logicalGuid] = true;
+            try {
+              var uc = window.RoomHabitability.utilityContentClass(
+                { cx: r[5], cy: r[6], sx: r[7], sy: r[8], storey: r[2] || '' }, A.dbQuery);
+              if (!uc.ok) utilityLogicalGuids[logicalGuid] = uc.why;
+            } catch (eUc) { /* no element data — leave unclassified, never invent */ }
+          }
           // §CORRIDOR-TYPE-LABEL: a real hallway-backbone match OVERRIDES whatever generic
           // predefined_type this room compiled with — takes priority over the fallthrough below,
           // since it's a stronger, door+wall-verified signal, not a compile-time placeholder.
+          // §ROOM_LENS_TAXONOMY precedence (richest/strongest real signal first): Utilities (element
+          // composition) > Corridor (door+wall backbone) > Restrooms (contained-element keyword) >
+          // existing object_type/predefined_type fallthrough. A room can only carry ONE typeKey —
+          // Utilities wins first since it's the strongest "this isn't occupiable at all" signal.
           var corridorMatch = corridorLabels[logicalGuid];
-          var typeKey = corridorMatch ? 'Hall / Corridor' : ((r[3] && r[3] !== 'COMPILED') ? r[3] : r[4]);
+          var typeKey = utilityLogicalGuids[logicalGuid] ? 'Utilities' :
+            (corridorMatch ? 'Hall / Corridor' :
+            (restroomLogicalGuids[logicalGuid] ? 'Restrooms' :
+            ((r[3] && r[3] !== 'COMPILED') ? r[3] : r[4])));
           var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
           if (seenLogical[logicalGuid]) { dupRects++; return; }   // §MULTI-RECT: 1 entry per logical room
           seenLogical[logicalGuid] = true;
@@ -2387,18 +2550,82 @@
             });
           }
         } catch (eCr) { console.warn('[RP-T3] §CORRIDOR_ROOM_TREE_ERR', eCr.message); }
+        // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10): Stairs/Lift-Shaft/
+        // Plant-Room — migrated OUT of the retired Parts axis into Room > Type (§8), same real
+        // queries as that axis used, just a new tree location. Type-mode ONLY (mirrors Hall/
+        // Corridor's own type-only gating above) — these are functional categories, not a
+        // per-storey concept the way a real room's own storey is. Each entry carries `raw:true`
+        // (+ `rawGuids` for a multi-row physical stair) so the render loop below isolates it via
+        // `_isolatePartsGroup` (raw element/guid-set isolate) instead of `_roomSelect` (room-volume
+        // cuboid+zoom) — these were never IfcSpace rows, there is no room volume to draw.
+        var partsInjectedCount = 0;
+        if (_roomGroupBy === 'type') {
+          try {
+            var bldClassTree = _buildingClass();
+            // §STAIR-GROUPS-REUSE: real physical-stair grouping (room_graph.js's own trusted
+            // extractor, WalkerDoctrine §10) — a genuine improvement over the retired Parts axis's
+            // raw `ifc_class LIKE 'IfcStair%'` count, which over-counted individual flight/run rows
+            // as separate stairs (Clinic: 7/8/13 depending on phrasing vs getStairGroups()'s
+            // correct 4 — see room_graph.js §STAIR-GROUPS comment).
+            if (window.RoomGraph && window.RoomGraph.getStairGroups) {
+              var sg = window.RoomGraph.getStairGroups(A.dbQuery, function() {});
+              if (sg.order.length) {
+                byGroup['Stairs'] = sg.order.map(function(key) {
+                  var gr = sg.groups[key];
+                  return { key: gr.guids[0], label: key, raw: true, rawGuids: gr.guids };
+                });
+                order.push('Stairs');
+                partsInjectedCount += sg.order.length;
+              }
+            }
+            _PARTS_GROUPS.forEach(function(pg) {
+              if (pg.type === 'STAIRWAY') return; // handled above via getStairGroups()
+              // §PLANT_ROOM_GATE_FIX Bug 2, unchanged gate — carried over verbatim from the retired Parts axis.
+              if (pg.type === 'PLANT_ROOM' && bldClassTree !== 'complex') {
+                console.log('[RP-T3] §PARTS_CLASS_GATE type=PLANT_ROOM buildingClass=' + bldClassTree + ' -> hidden (complex-only)');
+                return;
+              }
+              var prows = [];
+              try { prows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")"); }
+              catch (ePt) { console.warn('[RP-T3] §PARTS_MIGRATE_ERR', pg.type, ePt.message); }
+              var words = (pg.type === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
+              var beforeP = prows.length;
+              prows = prows.filter(function(r) { return _keywordTokenMatch(r[1], words); });
+              if (prows.length !== beforeP) {
+                console.log('[RP-T3] §PARTS_WORD_BOUNDARY_FILTER type=' + pg.type + ' before=' + beforeP + ' after=' + prows.length);
+              }
+              if (!prows.length) return;
+              var gk3 = (pg.type === 'LIFT_SHAFT') ? 'Lift Shaft' : 'Plant Room';
+              byGroup[gk3] = prows.map(function(r) { return { key: r[0], label: r[1] || '(unnamed)', raw: true }; });
+              order.push(gk3);
+              partsInjectedCount += prows.length;
+            });
+          } catch (ePm) { console.warn('[RP-T3] §PARTS_MIGRATE_ERR', ePm.message); }
+        }
+        if (partsInjectedCount) console.log('[RP-T3] §PARTS_MIGRATED_TO_TYPE rows=' + partsInjectedCount);
         if (dupRects) console.log('[RP-T3] §ROOM_TREE_DEDUP collapsed ' + dupRects + ' §MULTI-RECT sub-rect row(s) into their logical room entry');
         if (corridorRoomCount) console.log('[RP-T3] §CORRIDOR_ROOM_TREE added ' + corridorRoomCount + ' backprop-injected corridor room(s)');
         order.forEach(function(gk) {
           var groupRooms = byGroup[gk];
           var kids = groupRooms.map(function(rm) {
-            return _treeNode(rm.label, '', 1, { onTap: function() { _roomSelect(rm.key); } });
+            return _treeNode(rm.label, '', 1, { onTap: function() {
+              if (rm.raw) _isolatePartsGroup(rm.label, rm.rawGuids || [rm.key]);
+              else _roomSelect(rm.key);
+            } });
           });
-          // §DEPTH consistency: a floor/type header tap is a GROUP select (like Storey/Phase/Material) —
-          // render it solid via the same B|G|I entry. (Was expand-only → "doesn't treat it as Group".)
-          // Arrow still expands the children.
+          // §DEPTH / §ROOM_LENS_TAXONOMY: a floor/type header tap now does the NEW lightweight
+          // reveal (§3/§9 above) for a normal room group — camera stays put, that group's own
+          // shells brighten + doors light up brown, tap again to clear. A raw Parts-migrated group
+          // (Stairs/Lift-Shaft/Plant-Room) keeps the old isolate-drill (`_isolatePartsGroup`) —
+          // those were never room volumes, there's no shell to reveal. Arrow still expands children.
           elTree.appendChild(_treeNode(gk, groupRooms.length, 0,
-            { children: kids, onTap: function() { _roomGroupSelect(gk, groupRooms); } }));
+            { children: kids, onTap: function() {
+                if (groupRooms.length && groupRooms[0].raw) {
+                  var allGuids = [];
+                  groupRooms.forEach(function(rm) { (rm.rawGuids || [rm.key]).forEach(function(g) { allGuids.push(g); }); });
+                  _isolatePartsGroup(gk, allGuids);
+                } else _revealCategoryGroup(gk, groupRooms);
+            } }));
         });
         console.log('[RP-T3] §LENS_GROUPS lens=room mode=volume groupBy=' + _roomGroupBy +
           ' groups=' + order.length + ' rooms=' + rooms.length +
@@ -2527,9 +2754,10 @@
       });
     }
 
-    // Isolate a Parts group (or a single leaf, passed as a 1-element array) — plain filterByGuids,
-    // no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail (isoBar show)
-    // but takes the guid set directly since _buildPartsTree already has the rows in hand (no re-query).
+    // Isolate a raw element group (Stairs/Lift-Shaft/Plant-Room — see §ROOM_LENS_TAXONOMY in
+    // _buildRoomTree(), the sole caller now that the standalone Parts axis is retired) — plain
+    // filterByGuids, no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail
+    // (isoBar show) but takes the guid set directly since the caller already has the rows in hand.
     function _isolatePartsGroup(label, guids) {
       if (!A.db || !A.filterByGuids) return;
       if (A.filterStorey) A.filterStorey(null);
@@ -2544,49 +2772,14 @@
       }
     }
 
-    // ══ Parts axis — STAIRWAY/LIFT_SHAFT/PLANT_ROOM, contents-isolate (Room's FALLBACK style) ══
-    // Data-gated PER GROUP (same discipline as the axis itself, W-LENS-PROBE): a group only
-    // appears when its query returns >0 real elements_meta rows. No box/highlight lens — tapping
-    // a group or a leaf isolates via filterByGuids, same engine as every other axis (W-LENS-ISOLATE).
-    function _buildPartsTree() {
-      var groupsShown = 0, totalRows = 0;
-      var bldClass = _buildingClass();
-      _PARTS_GROUPS.forEach(function(pg) {
-        // §PLANT_ROOM_GATE_FIX Bug 2: config/building_taxonomy.yaml's `residential` building_class
-        // has NO PLANT_ROOM entry at all (advisory, n=1, complex-only per its own citation) — mirror
-        // that gate here so a residential/unclassed building never shows a Plant Room group, same as
-        // the bim-compiler checklistReport() this axis's query logic was ported from.
-        if (pg.type === 'PLANT_ROOM' && bldClass !== 'complex') {
-          console.log('[RP-T3] §PARTS_CLASS_GATE type=PLANT_ROOM buildingClass=' + bldClass + ' -> hidden (complex-only)');
-          return;
-        }
-        var rows = [];
-        try {
-          rows = A.dbQuery("SELECT guid, element_name FROM elements_meta WHERE (" + _partsCond(pg.type) + ")");
-        } catch(e) { console.warn('[RP-T3] §PARTS_TREE_ERR', pg.type, e.message); }
-        if (pg.type !== 'STAIRWAY') {
-          // §PLANT_ROOM_GATE_FIX Bug 1: LIFT_SHAFT/PLANT_ROOM used a bare SQL substring match —
-          // narrow the SQL's superset down to real word-boundary hits (STAIRWAY uses ifc_class,
-          // not a name keyword, so it's exempt — no false-positive mechanism to fix there).
-          var words = (pg.type === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
-          var before = rows.length;
-          rows = rows.filter(function(r) { return _keywordTokenMatch(r[1], words); });
-          if (rows.length !== before) {
-            console.log('[RP-T3] §PARTS_WORD_BOUNDARY_FILTER type=' + pg.type + ' before=' + before + ' after=' + rows.length);
-          }
-        }
-        if (!rows.length) return; // data-gated: no row for this part in this building → no group
-        groupsShown++; totalRows += rows.length;
-        var guids = rows.map(function(r) { return r[0]; });
-        var kids = rows.map(function(r) {
-          var label = r[1] || '(unnamed)';
-          return _treeNode(label, '', 1, { onTap: function() { _isolatePartsGroup(label, [r[0]]); } });
-        });
-        elTree.appendChild(_treeNode(pg.label, rows.length, 0,
-          { children: kids, onTap: function() { _isolatePartsGroup(pg.label, guids); } }));
-      });
-      console.log('[RP-T3] §LENS_GROUPS lens=parts groups=' + groupsShown + '/' + _PARTS_GROUPS.length + ' rows=' + totalRows);
-    }
+    // §ROOM_LENS_TAXONOMY (2026-07-15): the standalone Parts axis (STAIRWAY/LIFT_SHAFT/PLANT_ROOM)
+    // is RETIRED — its tree-building loop now lives inline inside _buildRoomTree()'s Type sub-mode
+    // (see §ROOM_LENS_TAXONOMY comment there), reusing the SAME `_PARTS_GROUPS`/`_partsCond`/
+    // `_keywordTokenMatch`/`_buildingClass` this file still keeps below, plus `_isolatePartsGroup`
+    // immediately above (still called from there). Removed here: the old `present.parts` axis-pill
+    // gate, the `_treeMode === 'parts'` dispatch, and this function's own tree-walk (dead code once
+    // its ONLY caller was removed) — Room is now the one axis a user reaches Stairs/Lift-Shaft/
+    // Plant-Room/Restrooms/Hall-Corridor/Utilities through, via the Type sub-toggle.
 
     // §MAT_SELECT: Material axis is a HIGHLIGHT lens (parity with Room/Phase).
     // §RP Material category — SQL-DERIVED (heuristic, deterministic) from material_name
