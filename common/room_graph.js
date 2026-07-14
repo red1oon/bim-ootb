@@ -681,6 +681,55 @@
     return comp;
   }
 
+  // §FULL-CONNECTIVITY (2026-07-14, user ask: "is there a simple test where every door can go to
+  // any other door via a covered path... is there no gap?"). components() above deliberately stays
+  // ROOM-ONLY (E1 edges only, a pre-existing honesty metric the spec doesn't ask to extend — see
+  // its own comment). This is the NEW, COMPLETE version: same union-find shape, but walks the
+  // FULL adjacency shortestPath()'s Dijkstra already uses (graph.nodesByGuid — the documented
+  // superset of rooms + circ/spine + stair + exit + waypoint nodes — and ALL edge kinds E1-E8, not
+  // just E1). A door only ever appears in this graph AS an edge (E1/E2/E7 carry doorGuid/doorName),
+  // never as its own node — so "every door reaches every other door with no gap" is exactly the
+  // question "is this full graph ONE connected component" (fullyConnected === true, components===1
+  // for a non-empty graph). Where it's NOT, `sizes`/`comp` let a caller name the actual isolated
+  // island(s) by node guid — see witness_full_connectivity.js for the concrete report pattern.
+  function fullConnectivity(graph) {
+    // §NOT-EVERY-NODE-IS-A-VERTEX (2026-07-14, real bug found building this): `graph.nodesByGuid`
+    // is a superset that also holds 'doorwp'/'stairwp' entries which are PURE POSITION LOOKUPS for
+    // two entirely separate on-demand systems (_detourForChord's per-chord visibility graph;
+    // shortestPath's path-rendering waypoint substitution) — most of them are NEVER an edge
+    // endpoint in `graph.edges` at all. Seeding the node universe from nodesByGuid wholesale
+    // produced ~200 phantom size-1 "islands" on Clinic that were never real gaps, just unused
+    // lookup entries. The correct universe: every 'room'/'circ'/'exit' node (the real destinations
+    // that must be reachable — a genuinely doorless room SHOULD show as a real isolated island)
+    // UNION every guid that actually appears as an edge endpoint (covers bridging nodes that ARE
+    // real graph vertices, e.g. spine/orphan-doorwp-via-E7, without also pulling in the untouched
+    // majority of doorwp/stairwp entries that never appear in `graph.edges` at all).
+    var adj = {};
+    function ensure(g) { if (!adj[g]) adj[g] = []; }
+    Object.keys(graph.nodesByGuid || {}).forEach(function (g) {
+      var n = graph.nodesByGuid[g];
+      if (n && (n.kind === 'room' || n.kind === 'circ' || n.kind === 'exit')) ensure(g);
+    });
+    (graph.edges || []).forEach(function (e) {
+      ensure(e.a); ensure(e.b);
+      adj[e.a].push(e.b); adj[e.b].push(e.a);
+    });
+    var comp = {}, cid = 0, sizes = [];
+    Object.keys(adj).forEach(function (g) {
+      if (comp[g] != null) return;
+      var stack = [g], size = 0; comp[g] = cid;
+      while (stack.length) {
+        var u = stack.pop(); size++;
+        adj[u].forEach(function (v) { if (comp[v] == null) { comp[v] = cid; stack.push(v); } });
+      }
+      sizes.push(size); cid++;
+    });
+    var totalNodes = Object.keys(adj).length;
+    var largestComponent = sizes.length ? Math.max.apply(null, sizes) : 0;
+    return { comp: comp, components: cid, sizes: sizes, totalNodes: totalNodes,
+      largestComponent: largestComponent, fullyConnected: totalNodes > 0 && cid === 1 };
+  }
+
   // §OCCUPANT-DIJKSTRA: walks the FULL graph — rooms + circ + exit nodes, E1-E4 edges — weighted by
   // real 3D distance (E1: room-center to room-center, unchanged formula so Duplex's existing
   // door-connected paths are byte-identical, see OCCUPANT_PATHFINDER.md W-PATH-DUPLEX-REGRESSION;
@@ -984,9 +1033,9 @@
   }
 
   var API = {
-    buildGraph: buildGraph, degree: degree, components: components, shortestPath: shortestPath,
-    escapeRoute: escapeRoute, isRoomDoor: isRoomDoor, stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK,
-    getStairGroups: getStairGroups
+    buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
+    shortestPath: shortestPath, escapeRoute: escapeRoute, isRoomDoor: isRoomDoor,
+    stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups
   };
   ROOT.RoomGraph = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
