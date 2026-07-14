@@ -149,7 +149,9 @@ async function initViewer() {
         // room_habitability.js above (only needed alongside navigate_find.js itself).
         // v3 (PATH_LEGAL_SEGMENTS.md, 2026-07-13): same-storey chord legality + visibility-graph
         // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
-        '../common/room_graph.js?v=3',
+        // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
+        // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
+        '../common/room_graph.js?v=4',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
