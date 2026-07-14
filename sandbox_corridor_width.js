@@ -144,5 +144,35 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { f
     bucket.openHi === false && bucket.span.hi === 17, 'openHi=' + bucket.openHi + ' span.hi=' + bucket.span.hi);
 }
 
+// ── Test G: commonSenseFilter — the composed (3)+(4) gate, tested as ONE unit ──
+{
+  const grounded = { storey: 'L1', openLo: false, openHi: false, runCoord: 0, span: { lo: 0, hi: 10 }, halfWidthLo: 1.2, halfWidthHi: 1.2 };
+  const floating = { storey: 'L1', openLo: true, openHi: true, stairLo: null, stairHi: null, runCoord: 0, span: { lo: 0, hi: 10 }, halfWidthLo: 1.2, halfWidthHi: 1.2 };
+  const outsideEnv = { storey: 'L1', openLo: false, openHi: false, runCoord: 100, span: { lo: 0, hi: 10 }, halfWidthLo: 1.2, halfWidthHi: 1.2 };
+  const envelopeByStorey = { L1: { x0: -5, x1: 15, y0: -5, y1: 15 } };
+  const result = HB.commonSenseFilter([grounded, floating, outsideEnv], envelopeByStorey);
+  chk('G1 grounded + within-envelope bucket kept', result.kept.indexOf(grounded) >= 0);
+  chk('G2 floating bucket (both ends open, no stair) dropped with reason=ungrounded',
+    result.dropped.some(d => d.bucket === floating && d.reason === 'ungrounded'));
+  chk('G3 bucket whose rect sits outside its storey envelope dropped with reason=outside-envelope',
+    result.dropped.some(d => d.bucket === outsideEnv && d.reason === 'outside-envelope'));
+  chk('G4 kept array excludes both rejected buckets', result.kept.length === 1);
+}
+
+// ── Test H: DEFAULT_PROFILE is a real, usable extension point — override without touching source ──
+{
+  const bucket = { axis: 'x', runCoord: 0, span: { lo: 0, hi: 10 } };
+  const wideProfile = Object.assign({}, HB.DEFAULT_PROFILE, { maxSideOffset: 10 });
+  const walls = [['ignored']]; // unused placeholder, bucketWidth reads wall objects not this
+  const farWall = { cx: 5, cy: 6, bx: 10, by: 0.2 }; // 5.9m net offset — rejected by DEFAULT_PROFILE, accepted by wideProfile
+  HB.bucketWidth(bucket, [farWall]); // default profile: 5.9m > maxSideOffset(3.0) -> falls back to default
+  const defaultResultWidth = bucket.halfWidthHi;
+  const bucket2 = { axis: 'x', runCoord: 0, span: { lo: 0, hi: 10 } };
+  HB.bucketWidth(bucket2, [farWall], wideProfile);
+  chk('H1 default profile rejects the far wall (falls back to defaultHalfWidth)', defaultResultWidth === HB.DEFAULT_PROFILE.defaultHalfWidth);
+  chk('H2 override profile (maxSideOffset=10) accepts the SAME far wall at its real offset',
+    Math.abs(bucket2.halfWidthHi - 5.9) < 0.01, 'halfWidthHi=' + bucket2.halfWidthHi);
+}
+
 console.log('\n§SANDBOX_CORRIDOR_WIDTH DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

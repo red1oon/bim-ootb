@@ -14,10 +14,27 @@
  *   5. terminateAtStair()    — an open (uncapped) end near a stair is a connecting space, not a
  *                              dead-end. Reuses room_graph.js's getStairGroups() — WalkerDoctrine
  *                              §10, the ONE trusted stair extractor, not a fresh ad-hoc query.
+ *   5b. commonSenseFilter()  — §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real
+ *                              walkway (1) is not a room, (2) is not too wide, (3) does not float
+ *                              in mid air, (4) is always connected to doors/stairs/walls. (1)+(2)
+ *                              are enforced inside growToWall/bucketWidth/classifyCorridorRooms;
+ *                              this step composes (3)+(4) — isGrounded() + distanceToEnclosure()
+ *                              — into one gate, run after stair-termination and before chains are
+ *                              built, so only real, grounded, enclosed buckets ever join a chain.
  *   6. walkBackbone()        — union-find merge of buckets whose grown spans cross (T-junction),
  *                              then an ordered walk of each resulting chain (serves BOTH path
  *                              routing/escape-route AND a flythrough camera path from the same
  *                              structure — user's explicit ask, one structure two consumers).
+ *
+ * §PLAUSIBILITY-PROFILE: every tunable number governing "is this a real corridor" (door count,
+ * width bounds, end-cap reach, stair clearance, overlap fraction, ...) lives in ONE object,
+ * DEFAULT_PROFILE, instead of scattered magic constants. Every step function takes an OPTIONAL
+ * trailing `profile` argument (buildBackbone/classifyCorridorRooms take it via `opts.profile`)
+ * defaulting to DEFAULT_PROFILE — omitting it (every call site today) reproduces today's exact
+ * numbers. This is a pure reorganization for inspectability, plus a ready extension point: this
+ * project's WalkerDoctrine already parameterizes walk behavior by BUILDING-CLASS, so a future
+ * per-class corridor profile (e.g. a wider default for an institutional/hospital class) is a
+ * drop-in caller-side change, not a structural one — see DEFAULT_PROFILE's own comment.
  *
  * WHY: room_graph.js's shortestPath() currently rescues a room's lone door onto ONE
  * per-storey `CIRC::<storey>` blob (see room_graph.js buildGraph() E2) and its _legalizePath()
@@ -43,17 +60,42 @@
   var ROOT = (typeof window !== 'undefined') ? window : {};
   var RoomGraph = (typeof module !== 'undefined' && module.exports) ? require('./room_graph.js') : ROOT.RoomGraph;
 
-  // §RUN_COORD_TOL: bucket-rounding width for "these doors share the same wall run." Grounded in
-  // real wall-thickness scale (typical interior wall 0.15-0.3m; this is generous slack for
-  // wall-centerline-vs-face offset across a building's doors, not fitted to one building's data).
-  var RUN_COORD_TOL = 0.6;
-  var MIN_DOORS_FOR_HALLWAY = 3;
-  // §STAIR_CLEARANCE: movement-clearance tolerance, per user's own steer ("stairs movement space
-  // can be of say 2 meter height flow onto the stairs contour").
-  var STAIR_CLEARANCE = 2.0;
-  // Slack added to a wall's own half-thickness when testing whether it actually crosses a
-  // corridor's runCoord line (real walls are rasterized transforms, not infinitely thin planes).
-  var WALL_CROSS_SLACK = 0.3;
+  // §PLAUSIBILITY-PROFILE (2026-07-14, consolidated from what were 6 separate scattered `var`
+  // constants across this file). EVERY tunable number that decides "is this a real corridor" now
+  // lives in ONE place instead of being spread across doorEdge/growToWall/bucketWidth/etc — a
+  // single, inspectable, swappable framework rather than ad hoc magic numbers per function. Every
+  // step function below takes an OPTIONAL trailing `profile` argument defaulting to this object —
+  // omitting it (the current behavior of every existing call site, in this file and in
+  // room_graph.js/navigate_find.js) reproduces EXACTLY today's numbers, so this is a pure
+  // reorganization, not a behavior change. The extension point is deliberate but NOT yet used for
+  // anything beyond today's one profile: this project's own WalkerDoctrine already parameterizes
+  // walk behavior by BUILDING-CLASS (residential vs Terminal-reference), so a future per-class
+  // corridor profile (e.g. a wider default for a hospital/institutional class) is a natural fit
+  // here WITHOUT any structural change — just a second profile object and a caller passing it in.
+  var DEFAULT_PROFILE = {
+    // bucket-rounding width for "these doors share the same wall run." Grounded in real
+    // wall-thickness scale (typical interior wall 0.15-0.3m; generous slack for
+    // wall-centerline-vs-face offset across a building's doors, not fitted to one building).
+    runCoordTol: 0.6,
+    minDoorsForHallway: 3,
+    // movement-clearance tolerance, per user's own steer ("stairs movement space can be of say
+    // 2 meter height flow onto the stairs contour").
+    stairClearance: 2.0,
+    // slack added to a wall's own half-thickness when testing whether it actually crosses a
+    // corridor's runCoord line (real walls are rasterized transforms, not infinitely thin planes).
+    wallCrossSlack: 0.3,
+    // §CORRIDOR-WIDTH-BOUNDS / §END-CAP-REACH-BOUND (2026-07-14) — see wallLiesFlatAgainst below
+    // for what these bound and why (host-wall self-match vs coincidental cross-building match).
+    minSideOffset: 0.5,
+    maxSideOffset: 3.0,
+    defaultHalfWidth: 1.2, // only used when no flanking wall is found on a side (rare: open-plan edge)
+    maxEndReach: 8.0,
+    // §COMMON-SENSE-FILTER — generous for one wall's thickness + measurement slack.
+    enclosureTolerance: 0.5,
+    // §CORRIDOR-OVERLAP-FRACTION — a room must have this fraction of its own area inside the
+    // matched bucket to count as "on the corridor", not just its centroid.
+    minOverlapFraction: 0.5
+  };
 
   // §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real walkway/corridor (1) is not
   // itself a room, (2) is not implausibly wide, (3) does not float in mid air, (4) is always
@@ -61,9 +103,10 @@
   // shape of problem established indoor-routing/space-boundary tools solve (IFC 2nd-level space
   // boundary generation, Revit Room/Space boundary resolution, space-syntax axial-map tools): a
   // bounded ray-cast to the NEAREST plausible bounding surface, never an unbounded "nearest match
-  // regardless of distance" search. Two small named verbs formalize that shared shape so both
+  // regardless of distance" search. Small named primitives formalize that shared shape so both
   // growToWall() (END caps, perpendicular walls) and bucketWidth() (SIDE walls, same-axis walls)
-  // apply the SAME plausibility discipline instead of each re-inventing its own ad hoc bound.
+  // apply the SAME plausibility discipline instead of each re-inventing its own ad hoc bound; see
+  // commonSenseFilter() further down for how they compose into the (3)+(4) gate.
   //   - wallLiesFlatAgainst(offset, minOffset, maxOffset): is this candidate wall's measured
   //     offset from the reference coordinate within a physically sane window? Too close (~0) is
   //     usually a self-match (the bucket's own host wall, or a door reveal/jamb stub) rather than
@@ -71,23 +114,25 @@
   //     of the building. minOffset=0 disables the "too close" half of the test (growToWall's end
   //     caps run PERPENDICULAR to the bucket's own doors, so there's no self-match risk there —
   //     only bucketWidth's SIDE-wall search, which scans SAME-axis walls, needs the floor too).
+  //     Deliberately profile-free (plain numeric bounds in, in/out of window out) — it's the one
+  //     generic low-level primitive every higher-level step feeds ITS OWN profile values into.
   function wallLiesFlatAgainst(offset, minOffset, maxOffset) {
     if (offset < minOffset || offset > maxOffset) return null;
     return offset;
   }
-  //   - distanceToEnclosure(x, y, envelope): 0 if the point sits within the building's own real
-  //     wall-derived footprint (+ a small tolerance for wall thickness), else how far outside it
-  //     sits. Backstops wallLiesFlatAgainst's per-wall bound with a whole-building sanity check —
-  //     the concrete symptom this guards ("half corridor... drawn perpendicular into mid air
-  //     outside building", user report 2026-07-14) is a corridor rect extending past where any
-  //     real wall exists at all, not just past ONE plausible flanking wall.
-  var ENCLOSURE_TOLERANCE = 0.5; // m — generous for one wall's thickness + measurement slack
-  function distanceToEnclosure(x, y, envelope) {
+  //   - distanceToEnclosure(x, y, envelope, profile): 0 if the point sits within the building's
+  //     own real wall-derived footprint (+ a small tolerance for wall thickness), else how far
+  //     outside it sits. Backstops wallLiesFlatAgainst's per-wall bound with a whole-building
+  //     sanity check — the concrete symptom this guards ("half corridor... drawn perpendicular
+  //     into mid air outside building", user report 2026-07-14) is a corridor rect extending past
+  //     where any real wall exists at all, not just past ONE plausible flanking wall.
+  function distanceToEnclosure(x, y, envelope, profile) {
+    profile = profile || DEFAULT_PROFILE;
     if (!envelope) return 0; // no envelope data — nothing to check against, don't false-flag
     var dx = Math.max(envelope.x0 - x, 0, x - envelope.x1);
     var dy = Math.max(envelope.y0 - y, 0, y - envelope.y1);
     var d = Math.hypot(dx, dy);
-    return (d <= ENCLOSURE_TOLERANCE) ? 0 : d;
+    return (d <= profile.enclosureTolerance) ? 0 : d;
   }
   //   - buildingEnvelope(walls): the real wall-derived footprint for one storey's worth of walls
   //     (reuses the SAME wall rows buildBackbone() already fetched — no new query). A plain bbox
@@ -106,7 +151,8 @@
   //     within walls" (user's own phrasing) — reject a bucket that is open on BOTH ends with NO
   //     stair anchor on EITHER end. That shape has nothing tying it to the building at all beyond
   //     its own door cluster: not a real hallway/circulation space, just a coincidental door
-  //     alignment (>=3 doors is a necessary but not sufficient signal on its own).
+  //     alignment (>=3 doors is a necessary but not sufficient signal on its own). No profile
+  //     needed — purely structural (openLo/openHi/stairLo/stairHi), no tunable number involved.
   function isGrounded(bucket) {
     var loOk = !bucket.openLo || !!bucket.stairLo;
     var hiOk = !bucket.openHi || !!bucket.stairHi;
@@ -126,10 +172,11 @@
   }
 
   // ── 2. correlateDoorEdges ────────────────────────────────────────────────────────────────────
-  function correlateDoorEdges(edges) {
+  function correlateDoorEdges(edges, profile) {
+    profile = profile || DEFAULT_PROFILE;
     var buckets = {}, order = [];
     edges.forEach(function (e) {
-      var rounded = Math.round(e.runCoord / RUN_COORD_TOL) * RUN_COORD_TOL;
+      var rounded = Math.round(e.runCoord / profile.runCoordTol) * profile.runCoordTol;
       var key = e.storey + '|' + e.axis + '|' + rounded.toFixed(2);
       if (!buckets[key]) {
         buckets[key] = { key: key, storey: e.storey, axis: e.axis, runCoord: rounded, doors: [] };
@@ -141,8 +188,9 @@
   }
 
   // ── 3. joinDoorways ──────────────────────────────────────────────────────────────────────────
-  function joinDoorways(buckets) {
-    return buckets.filter(function (b) { return b.doors.length >= MIN_DOORS_FOR_HALLWAY; });
+  function joinDoorways(buckets, profile) {
+    profile = profile || DEFAULT_PROFILE;
+    return buckets.filter(function (b) { return b.doors.length >= profile.minDoorsForHallway; });
   }
 
   // ── 4. growToWall ────────────────────────────────────────────────────────────────────────────
@@ -159,8 +207,8 @@
   // its along-axis (end) counterpart, using the SAME wallLiesFlatAgainst() bound (no MIN needed
   // here: this wall runs perpendicular to the bucket, so it can never be the bucket's own host
   // wall — no self-match risk the way bucketWidth's side-wall scan has).
-  var MAX_END_REACH = 8.0;
-  function growToWall(bucket, walls) {
+  function growToWall(bucket, walls, profile) {
+    profile = profile || DEFAULT_PROFILE;
     var alongs = bucket.doors.map(function (d) { return d.alongCoord; });
     var lo = Math.min.apply(null, alongs), hi = Math.max.apply(null, alongs);
     var rc = bucket.runCoord;
@@ -172,9 +220,9 @@
       var alongC = (bucket.axis === 'x') ? w.cx : w.cy;
       var perpLo = (bucket.axis === 'x') ? (w.cy - w.by / 2) : (w.cx - w.bx / 2);
       var perpHi = (bucket.axis === 'x') ? (w.cy + w.by / 2) : (w.cx + w.bx / 2);
-      if (rc < perpLo - WALL_CROSS_SLACK || rc > perpHi + WALL_CROSS_SLACK) return; // doesn't cross this line
-      if (alongC <= lo && (loCap === null || alongC > loCap) && wallLiesFlatAgainst(lo - alongC, 0, MAX_END_REACH) !== null) loCap = alongC;
-      if (alongC >= hi && (hiCap === null || alongC < hiCap) && wallLiesFlatAgainst(alongC - hi, 0, MAX_END_REACH) !== null) hiCap = alongC;
+      if (rc < perpLo - profile.wallCrossSlack || rc > perpHi + profile.wallCrossSlack) return; // doesn't cross this line
+      if (alongC <= lo && (loCap === null || alongC > loCap) && wallLiesFlatAgainst(lo - alongC, 0, profile.maxEndReach) !== null) loCap = alongC;
+      if (alongC >= hi && (hiCap === null || alongC < hiCap) && wallLiesFlatAgainst(alongC - hi, 0, profile.maxEndReach) !== null) hiCap = alongC;
     });
     bucket.span = { lo: (loCap !== null) ? loCap : lo, hi: (hiCap !== null) ? hiCap : hi };
     bucket.openLo = (loCap === null);
@@ -190,7 +238,6 @@
   // open corridor floor (no room modeled there) reads as illegal. Feeding this measured width back
   // into that legality test (see room_graph.js wiring) lets a real, wall-bounded corridor register
   // as walkable even without a raster, instead of every corridor chord failing detour.
-  var DEFAULT_HALF_WIDTH = 1.2; // m — only used when no flanking wall is found on that side (rare: an open-plan edge)
   // §CORRIDOR-WIDTH-BOUNDS (2026-07-14, user-reported: false-positive rate + a mis-ID'd corridor
   // shell on Clinic Second Floor, "taking the narrow wall next to it"). bucketWidth()'s wall scan
   // had NO plausibility bounds on the flanking-wall distance — two failure modes confirmed on real
@@ -205,15 +252,14 @@
   //    live on HHS: halfWidthLo up to ~7.8m on one side, ballooning bucketRect() into an 8m-wide
   //    strip that then swallowed large unrelated rooms (e.g. a 242m² room, 57% area overlap) as
   //    false-positive "Hall / Corridor" matches.
-  // Both bounded the same way: a candidate wall must sit between MIN and MAX_SIDE_OFFSET from rc to
-  // count as a real flanking wall; outside that window it's "no wall found on this side" (same
-  // fallback as before — DEFAULT_HALF_WIDTH). MIN is bigger than 2x a real wall's thickness
-  // (0.15-0.3m, see RUN_COORD_TOL comment above) so a host-wall self-match never qualifies; MAX is
-  // generous even for a wide hospital double-loaded corridor (~3.6m total width) without accepting
-  // an implausible cross-building match.
-  var MIN_SIDE_OFFSET = 0.5;
-  var MAX_SIDE_OFFSET = 3.0;
-  function bucketWidth(bucket, walls) {
+  // Both bounded the same way: a candidate wall must sit between profile.minSideOffset and
+  // .maxSideOffset from rc to count as a real flanking wall; outside that window it's "no wall
+  // found on this side" (same fallback as before — profile.defaultHalfWidth). minSideOffset is
+  // bigger than 2x a real wall's thickness (0.15-0.3m, see runCoordTol comment above) so a
+  // host-wall self-match never qualifies; maxSideOffset is generous even for a wide hospital
+  // double-loaded corridor (~3.6m total width) without accepting an implausible cross-building match.
+  function bucketWidth(bucket, walls, profile) {
+    profile = profile || DEFAULT_PROFILE;
     var rc = bucket.runCoord, lo = bucket.span.lo, hi = bucket.span.hi;
     var nearAbove = null, nearBelow = null;
     walls.forEach(function (w) {
@@ -225,11 +271,11 @@
       if (alongC + alongHalf < lo || alongC - alongHalf > hi) return; // must run alongside this corridor
       var perpC = (bucket.axis === 'x') ? w.cy : w.cx;
       var perpHalf = (bucket.axis === 'x') ? (w.by / 2) : (w.bx / 2);
-      if (perpC >= rc) { var d = wallLiesFlatAgainst((perpC - perpHalf) - rc, MIN_SIDE_OFFSET, MAX_SIDE_OFFSET); if (d !== null && (nearAbove === null || d < nearAbove)) nearAbove = d; }
-      else { var d2 = wallLiesFlatAgainst(rc - (perpC + perpHalf), MIN_SIDE_OFFSET, MAX_SIDE_OFFSET); if (d2 !== null && (nearBelow === null || d2 < nearBelow)) nearBelow = d2; }
+      if (perpC >= rc) { var d = wallLiesFlatAgainst((perpC - perpHalf) - rc, profile.minSideOffset, profile.maxSideOffset); if (d !== null && (nearAbove === null || d < nearAbove)) nearAbove = d; }
+      else { var d2 = wallLiesFlatAgainst(rc - (perpC + perpHalf), profile.minSideOffset, profile.maxSideOffset); if (d2 !== null && (nearBelow === null || d2 < nearBelow)) nearBelow = d2; }
     });
-    bucket.halfWidthHi = (nearAbove !== null) ? nearAbove : DEFAULT_HALF_WIDTH;
-    bucket.halfWidthLo = (nearBelow !== null) ? nearBelow : DEFAULT_HALF_WIDTH;
+    bucket.halfWidthHi = (nearAbove !== null) ? nearAbove : profile.defaultHalfWidth;
+    bucket.halfWidthLo = (nearBelow !== null) ? nearBelow : profile.defaultHalfWidth;
     return bucket;
   }
 
@@ -244,7 +290,8 @@
   // ── 5. terminateAtStair ──────────────────────────────────────────────────────────────────────
   // stairGroups: the `groups` map from RoomGraph.getStairGroups(dbQuery, log) — the ONE trusted
   // stair extractor (WalkerDoctrine §10), reused here rather than a fresh ad-hoc IfcStair% query.
-  function terminateAtStair(bucket, stairGroups, storeyOf) {
+  function terminateAtStair(bucket, stairGroups, profile) {
+    profile = profile || DEFAULT_PROFILE;
     var rc = bucket.runCoord;
     function endPoint(along) {
       return (bucket.axis === 'x') ? { x: along, y: rc } : { x: rc, y: along };
@@ -261,12 +308,12 @@
     }
     if (bucket.openLo) {
       var r = nearestStair(endPoint(bucket.span.lo));
-      bucket.stairLo = (r.dist <= STAIR_CLEARANCE) ? r.key : null;
+      bucket.stairLo = (r.dist <= profile.stairClearance) ? r.key : null;
       bucket.stairLoDist = r.dist;
     }
     if (bucket.openHi) {
       var r2 = nearestStair(endPoint(bucket.span.hi));
-      bucket.stairHi = (r2.dist <= STAIR_CLEARANCE) ? r2.key : null;
+      bucket.stairHi = (r2.dist <= profile.stairClearance) ? r2.key : null;
       bucket.stairHiDist = r2.dist;
     }
     return bucket;
@@ -287,7 +334,8 @@
   // Second-Floor bucket. Confirmed live: a phantom `spine(First Floor)->spine(Second Floor)`
   // edge with no real stair between them. Object references have no such ambiguity — safe to
   // compare by `===` since these are the SAME objects returned in `joined`/`chains`.
-  function walkBackbone(buckets) {
+  function walkBackbone(buckets, profile) {
+    profile = profile || DEFAULT_PROFILE;
     var n = buckets.length;
     var parent = buckets.map(function (_, i) { return i; });
     function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
@@ -302,8 +350,8 @@
         var yB = (A.axis === 'x') ? A.runCoord : B.runCoord;
         var aAlong = (A.axis === 'x') ? xB : yB;
         var bAlong = (B.axis === 'x') ? xB : yB;
-        var aIn = aAlong >= A.span.lo - WALL_CROSS_SLACK && aAlong <= A.span.hi + WALL_CROSS_SLACK;
-        var bIn = bAlong >= B.span.lo - WALL_CROSS_SLACK && bAlong <= B.span.hi + WALL_CROSS_SLACK;
+        var aIn = aAlong >= A.span.lo - profile.wallCrossSlack && aAlong <= A.span.hi + profile.wallCrossSlack;
+        var bIn = bAlong >= B.span.lo - profile.wallCrossSlack && bAlong <= B.span.hi + profile.wallCrossSlack;
         if (aIn && bIn) {
           union(i, j);
           crossings.push({ a: A, b: B, x: xB, y: yB });
@@ -347,6 +395,7 @@
   function buildBackbone(dbQuery, opts) {
     opts = opts || {};
     var log = opts.log || function () {};
+    var profile = opts.profile || DEFAULT_PROFILE;
 
     var doorRows = dbQuery("SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, " +
       "COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by2 " +
@@ -365,42 +414,32 @@
       (wallsByStorey[st] = wallsByStorey[st] || []).push({ cx: w[1], cy: w[2], bx: w[3], by: w[4] });
     });
 
-    var buckets = correlateDoorEdges(edges);
-    var joined = joinDoorways(buckets);
-    joined.forEach(function (b) { growToWall(b, wallsByStorey[b.storey] || []); });
-    joined.forEach(function (b) { bucketWidth(b, wallsByStorey[b.storey] || []); });
+    var buckets = correlateDoorEdges(edges, profile);
+    var joined = joinDoorways(buckets, profile);
+    joined.forEach(function (b) { growToWall(b, wallsByStorey[b.storey] || [], profile); });
+    joined.forEach(function (b) { bucketWidth(b, wallsByStorey[b.storey] || [], profile); });
 
     var stairGroupsResult = RoomGraph ? RoomGraph.getStairGroups(dbQuery, log) : { groups: {} };
-    joined.forEach(function (b) { terminateAtStair(b, stairGroupsResult.groups); });
+    joined.forEach(function (b) { terminateAtStair(b, stairGroupsResult.groups, profile); });
 
-    // §COMMON-SENSE-FILTER (2026-07-14) — two final sanity gates before a bucket is trusted as a
-    // real walkway, applied AFTER width/span/stair-termination are all known:
-    //  - isGrounded(): reject a bucket open on BOTH ends with no stair anchor on either — nothing
-    //    ties it to the building beyond a coincidental door alignment.
-    //  - distanceToEnclosure(): reject a bucket whose own measured rect corner sits outside that
-    //    STOREY's real wall-derived footprint — the concrete "floating in mid air outside the
-    //    building" symptom, as a whole-building backstop beyond the per-wall bounds above.
+    // §COMMON-SENSE-FILTER (2026-07-14) — final gate before a bucket is trusted as a real walkway,
+    // applied AFTER width/span/stair-termination are all known. See commonSenseFilter() (step 5b)
+    // for the composed (3)+(4) rule; never a silent drop — logged below when it fires.
     var envelopeByStorey = {};
     Object.keys(wallsByStorey).forEach(function (st) { envelopeByStorey[st] = buildingEnvelope(wallsByStorey[st]); });
-    var droppedUngrounded = 0, droppedOutsideEnvelope = 0;
-    joined = joined.filter(function (b) {
-      if (!isGrounded(b)) { droppedUngrounded++; return false; }
-      var env = envelopeByStorey[b.storey];
-      var rc = bucketRect(b);
-      var corners = [[rc.x0, rc.y0], [rc.x0, rc.y1], [rc.x1, rc.y0], [rc.x1, rc.y1]];
-      var outside = corners.some(function (c) { return distanceToEnclosure(c[0], c[1], env) > 0; });
-      if (outside) { droppedOutsideEnvelope++; return false; }
-      return true;
-    });
-    if (droppedUngrounded || droppedOutsideEnvelope) {
-      log('§COMMON_SENSE_FILTER droppedUngrounded=' + droppedUngrounded + ' droppedOutsideEnvelope=' + droppedOutsideEnvelope);
+    var filterResult = commonSenseFilter(joined, envelopeByStorey, profile);
+    joined = filterResult.kept;
+    if (filterResult.dropped.length) {
+      var reasonCounts = {};
+      filterResult.dropped.forEach(function (d) { reasonCounts[d.reason] = (reasonCounts[d.reason] || 0) + 1; });
+      log('§COMMON_SENSE_FILTER dropped=' + filterResult.dropped.length + ' reasons=' + JSON.stringify(reasonCounts));
     }
 
     var byStorey = {};
     joined.forEach(function (b) { (byStorey[b.storey] = byStorey[b.storey] || []).push(b); });
     var allChains = [], allCrossings = [];
     Object.keys(byStorey).forEach(function (st) {
-      var r = walkBackbone(byStorey[st]);
+      var r = walkBackbone(byStorey[st], profile);
       r.chains.forEach(function (ch) {
         var chainIndex = allChains.length + r.chains.indexOf(ch);
         ch.buckets.forEach(function (b) { b._chainIndex = chainIndex; });
@@ -429,12 +468,38 @@
   // A bucket's real walkable footprint as an AABB rect — span along its axis, measured
   // (or default) half-width perpendicular. Used by room_graph.js's _pointWalkable() fallback so a
   // real corridor registers as walkable even on a storey with no raster.
-  function bucketRect(b) {
-    var perpLo = b.runCoord - (b.halfWidthLo != null ? b.halfWidthLo : DEFAULT_HALF_WIDTH);
-    var perpHi = b.runCoord + (b.halfWidthHi != null ? b.halfWidthHi : DEFAULT_HALF_WIDTH);
+  function bucketRect(b, profile) {
+    profile = profile || DEFAULT_PROFILE;
+    var perpLo = b.runCoord - (b.halfWidthLo != null ? b.halfWidthLo : profile.defaultHalfWidth);
+    var perpHi = b.runCoord + (b.halfWidthHi != null ? b.halfWidthHi : profile.defaultHalfWidth);
     return (b.axis === 'x')
       ? { x0: b.span.lo, x1: b.span.hi, y0: perpLo, y1: perpHi }
       : { x0: perpLo, x1: perpHi, y0: b.span.lo, y1: b.span.hi };
+  }
+
+  // ── 5b. commonSenseFilter ────────────────────────────────────────────────────────────────────
+  // Composes isGrounded() + distanceToEnclosure() into the single (3)+(4) gate from
+  // §COMMON-SENSE-FILTER above — "not in mid air" + "always connected to doors/stairs/walls".
+  // Runs AFTER growToWall/bucketWidth/terminateAtStair (span, width, and stair-anchoring must
+  // already be known) and BEFORE walkBackbone (only grounded, enclosed buckets should ever join a
+  // chain). buckets: array of joined buckets (post width/span/stair). envelopeByStorey: storey ->
+  // buildingEnvelope() result for that storey. Returns { kept, dropped } — kept is the filtered
+  // array (feed straight into walkBackbone/classifyCorridorRooms); dropped is
+  // [{bucket, reason}] with reason one of 'ungrounded' | 'outside-envelope', for diagnostics —
+  // buildBackbone() logs a summary rather than dropping silently.
+  function commonSenseFilter(buckets, envelopeByStorey, profile) {
+    profile = profile || DEFAULT_PROFILE;
+    var kept = [], dropped = [];
+    buckets.forEach(function (b) {
+      if (!isGrounded(b)) { dropped.push({ bucket: b, reason: 'ungrounded' }); return; }
+      var env = envelopeByStorey ? envelopeByStorey[b.storey] : null;
+      var rc = bucketRect(b, profile);
+      var corners = [[rc.x0, rc.y0], [rc.x0, rc.y1], [rc.x1, rc.y0], [rc.x1, rc.y1]];
+      var outside = corners.some(function (c) { return distanceToEnclosure(c[0], c[1], env, profile) > 0; });
+      if (outside) { dropped.push({ bucket: b, reason: 'outside-envelope' }); return; }
+      kept.push(b);
+    });
+    return { kept: kept, dropped: dropped };
   }
 
   // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask: "long corridors well named under Type.Hall/
@@ -451,6 +516,7 @@
   function classifyCorridorRooms(dbQuery, opts) {
     opts = opts || {};
     var log = opts.log || function () {};
+    var profile = opts.profile || DEFAULT_PROFILE;
     var backbone = buildBackbone(dbQuery, opts);
     if (!backbone.joined.length) return {};
 
@@ -484,7 +550,7 @@
 
     var bucketsByStorey = {};
     backbone.joined.forEach(function (b, bi) {
-      (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b), chain: b._chainIndex != null ? b._chainIndex : null });
+      (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b, profile), chain: b._chainIndex != null ? b._chainIndex : null });
     });
 
     function rectOverlapArea(a, c) {
@@ -504,7 +570,6 @@
     // a real hallway segment (itself compiled as one or more IfcSpace rows) satisfies this trivially
     // (its own footprint effectively IS the corridor strip); an adjacent office/room whose centroid
     // drifted into an oversized rect does not.
-    var MIN_OVERLAP_FRACTION = 0.5;
     var result = {};
     Object.keys(rects).forEach(function (lg) {
       var r = rects[lg];
@@ -517,7 +582,7 @@
         var inside = cx >= rc.x0 && cx <= rc.x1 && cy >= rc.y0 && cy <= rc.y1;
         if (!inside) continue;
         var overlapArea = r.ownRects.reduce(function (s, rr) { return s + rectOverlapArea(rr, rc); }, 0);
-        if (totalArea > 0 && (overlapArea / totalArea) < MIN_OVERLAP_FRACTION) continue; // centroid drifted in, but the room's own body mostly sits outside — not really on this corridor
+        if (totalArea > 0 && (overlapArea / totalArea) < profile.minOverlapFraction) continue; // centroid drifted in, but the room's own body mostly sits outside — not really on this corridor
         result[lg] = { chain: candidates[i].chain };
         break;
       }
@@ -531,9 +596,17 @@
     growToWall: growToWall, bucketWidth: bucketWidth, bucketRect: bucketRect,
     terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
     buildBackbone: buildBackbone, classifyCorridorRooms: classifyCorridorRooms,
-    // §COMMON-SENSE-FILTER verbs — exported individually so a sandbox can test each in isolation
+    // §COMMON-SENSE-FILTER — commonSenseFilter is the composed (3)+(4) gate buildBackbone() uses;
+    // the 4 primitives it's built from are exported too so a sandbox can test each in isolation.
+    commonSenseFilter: commonSenseFilter,
     wallLiesFlatAgainst: wallLiesFlatAgainst, distanceToEnclosure: distanceToEnclosure,
-    buildingEnvelope: buildingEnvelope, isGrounded: isGrounded
+    buildingEnvelope: buildingEnvelope, isGrounded: isGrounded,
+    // DEFAULT_PROFILE — the single consolidated source of every tunable plausibility number (see
+    // §PLAUSIBILITY-PROFILE above). Exported read-only-by-convention so a caller can build a
+    // variant profile via `Object.assign({}, HallwayBackbone.DEFAULT_PROFILE, {maxSideOffset: 4})`
+    // and pass it as `opts.profile` to buildBackbone()/classifyCorridorRooms() — the extension
+    // point for a future building-class-specific profile, not used by any caller today.
+    DEFAULT_PROFILE: DEFAULT_PROFILE
   };
   ROOT.HallwayBackbone = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
