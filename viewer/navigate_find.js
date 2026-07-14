@@ -2050,6 +2050,20 @@
         // Restroom) stays 'habitable' — Restrooms are real occupiable space, just a richer Type-tree
         // sub-category, not a separate shell hue.
         var corridorLabelsShell = _corridorLabelsFor();
+        // §UTILITY-CONTENT-BATCH (2026-07-15, real perf fix — see room_habitability.js's own
+        // comment for the Hospital hang this replaces): ONE batched classification call for every
+        // logical room, not one call per room — was 2 SQL queries PER ROOM (600+ on Hospital's 311
+        // rooms), now exactly 2 total regardless of building size.
+        var utilityShellGuids = {};
+        if (RH && RH.classifyUtilityRooms) {
+          try {
+            var shellRoomDescs = order.map(function(lg) {
+              var g = groups[lg];
+              return { guid: lg, cx: g.cx, cy: g.cy, sx: g.sx, sy: g.sy, storey: g.storey };
+            });
+            utilityShellGuids = RH.classifyUtilityRooms(shellRoomDescs, A.dbQuery);
+          } catch (eUcShell) { /* leave everything habitable — never invent */ }
+        }
         order.forEach(function(lg) {
           var g = groups[lg];
           if (RH) {
@@ -2062,12 +2076,7 @@
           }
           var category = 'habitable';
           if (corridorLabelsShell[lg]) category = 'corridor';
-          else if (RH && RH.utilityContentClass) {
-            try {
-              var ucShell = RH.utilityContentClass({ cx: g.cx, cy: g.cy, sx: g.sx, sy: g.sy, storey: g.storey }, A.dbQuery);
-              if (!ucShell.ok) category = 'utilities';
-            } catch (eUcShell) { /* leave habitable — never invent */ }
-          }
+          else if (utilityShellGuids[lg]) category = 'utilities';
           g.rects.forEach(function(rc) {
             var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
             out.push({ guid: g.guid, name: g.name, category: category,
@@ -2513,11 +2522,25 @@
             });
           } catch (eRr) { console.warn('[RP-TA] §RESTROOM_MATCH_ERR', eRr.message); }
         }
-        // §ROOM_LENS_TAXONOMY: Utilities — real element-composition signal (ACMV IfcFlowSegment /
-        // STR IfcFooting dominated, zero real door nearby), see common/room_habitability.js
-        // utilityContentClass(). Cached per logical room (computed once per §MULTI-RECT group,
-        // using its first-encountered sub-rect as the representative bbox — same room either way).
-        var utilityLogicalGuids = {}, _utilityChecked = {};
+        // §ROOM_LENS_TAXONOMY / §UTILITY-CONTENT-BATCH: Utilities — real element-composition
+        // signal (ACMV IfcFlowSegment / STR IfcFooting dominated, zero real door nearby), see
+        // common/room_habitability.js classifyUtilityRooms(). ONE batched call for every logical
+        // room here (2 SQL queries total) instead of a per-room call — a per-room version of this
+        // caused a real hang on Hospital (311 rooms, see that file's own comment for the measured
+        // detail) before this fix.
+        var utilityLogicalGuids = {};
+        if (_roomGroupBy === 'type' && window.RoomHabitability && window.RoomHabitability.classifyUtilityRooms) {
+          try {
+            var seenForUtil = {}, utilRoomDescs = [];
+            rooms.forEach(function(r) {
+              var lg2 = r[9] || r[0];
+              if (seenForUtil[lg2]) return;
+              seenForUtil[lg2] = true;
+              utilRoomDescs.push({ guid: lg2, cx: r[5], cy: r[6], sx: r[7], sy: r[8], storey: r[2] || '' });
+            });
+            utilityLogicalGuids = window.RoomHabitability.classifyUtilityRooms(utilRoomDescs, A.dbQuery);
+          } catch (eUc) { /* leave everything unclassified — never invent */ }
+        }
         var byGroup = {}, order = [], typed = 0, seenLogical = {}, dupRects = 0;
         rooms.forEach(function(r) {
           // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
@@ -2526,14 +2549,6 @@
           // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
           // 'Office') still group by object_type first, unchanged.
           var logicalGuid = r[9] || r[0];   // room_guid, falling back to this row's own guid
-          if (_roomGroupBy === 'type' && !_utilityChecked[logicalGuid] && window.RoomHabitability && window.RoomHabitability.utilityContentClass) {
-            _utilityChecked[logicalGuid] = true;
-            try {
-              var uc = window.RoomHabitability.utilityContentClass(
-                { cx: r[5], cy: r[6], sx: r[7], sy: r[8], storey: r[2] || '' }, A.dbQuery);
-              if (!uc.ok) utilityLogicalGuids[logicalGuid] = uc.why;
-            } catch (eUc) { /* no element data — leave unclassified, never invent */ }
-          }
           // §CORRIDOR-TYPE-LABEL: a real hallway-backbone match OVERRIDES whatever generic
           // predefined_type this room compiled with — takes priority over the fallthrough below,
           // since it's a stronger, door+wall-verified signal, not a compile-time placeholder.
@@ -2780,13 +2795,31 @@
     // _buildRoomTree(), the sole caller now that the standalone Parts axis is retired) — plain
     // filterByGuids, no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail
     // (isoBar show) but takes the guid set directly since the caller already has the rows in hand.
+    // §RAW-ISOLATE-TOGGLE (2026-07-15, real user report on Hospital: "stairs does not untoggle" —
+    // tapping Stairs a 2nd time just re-ran the same isolate instead of clearing it, unlike the
+    // new category reveal (§ROOM_LENS_TAXONOMY §3) which DOES toggle off on repeat tap. User also
+    // confirmed switching BETWEEN raw groups already worked ("plants/stairs untoggle each other" —
+    // a new isolate naturally replaces the old one); only the SAME-label-twice case was missing.
+    // `label` is the tracking key for both header taps ("Stairs") and individual leaf taps (a
+    // specific stair's own name) — tapping the exact same one again clears back to normal.
+    var _rawIsolateOn = null;
     function _isolatePartsGroup(label, guids) {
       if (!A.db || !A.filterByGuids) return;
+      if (_rawIsolateOn === label) {
+        A.filterByGuids(null);
+        _rawIsolateOn = null;
+        if (elIsoBtn) elIsoBtn.style.display = '';
+        if (elShowAllBtn) elShowAllBtn.style.display = 'none';
+        if (A.markDirty) A.markDirty();
+        console.log('[RP-A1] §FILTER_ISOLATE_TOGGLE_OFF lens=parts group="' + label + '"');
+        return;
+      }
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       var set = new Set(guids);
       if (!set.size) { console.log('[RP-A1] §FILTER_ISOLATE_EMPTY lens=parts group="' + label + '"'); return; }
       _emitIsolate(set, 'parts="' + label + '"');
+      _rawIsolateOn = label;
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
