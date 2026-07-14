@@ -2186,15 +2186,19 @@
     // would correctly return null for it (nothing to query), so build the SAME {name,storey,
     // rectCount,cx,cy,cz,sx,sy,sz} shape directly from the room graph's own node instead — real
     // measured position/span either way, just a different (in-memory, not DB) source. sz (height)
-    // has no measured value for a synthetic hallway node — 3.0m is a generic floor-to-ceiling
-    // placeholder, not a measured number; documented as such, not silently invented as if real.
+    // has no measured real ceiling for a synthetic hallway node — per user steer (2026-07-14): this
+    // box is for PATH-OF-MOVEMENT first, not volumetric/ceiling accuracy, so a 2.0m human-clearance
+    // height is enough even where the real ceiling is much taller (a foyer/atrium-fronted corridor,
+    // say) — same movement-clearance convention as common/hallway_backbone.js's STAIR_CLEARANCE.
+    // Real ceiling height (for equipment placement etc) is Modeller's job later, not this walkway box.
+    var CORRIDOR_BOX_CLEARANCE_HEIGHT = 2.0;
     function _corridorRoomBBox(guid) {
       var graph = _roomGraphFor();
       var n = graph && graph.nodesByGuid && graph.nodesByGuid[guid];
       if (!n || n.kind !== 'room' || !n.rects || !n.rects.length) return null;
       var rc = n.rects[0];
       return { name: n.name, storey: n.storey, rectCount: 1,
-        cx: n.cx, cy: n.cy, cz: n.cz, sx: rc.x1 - rc.x0, sy: rc.y1 - rc.y0, sz: 3.0 };
+        cx: n.cx, cy: n.cy, cz: n.cz, sx: rc.x1 - rc.x0, sy: rc.y1 - rc.y0, sz: CORRIDOR_BOX_CLEARANCE_HEIGHT };
     }
 
     function _roomSelect(guid) {

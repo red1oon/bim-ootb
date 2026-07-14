@@ -30,38 +30,74 @@ const backbone = HallwayBackbone.buildBackbone(dbQuery, { log: () => {} });
 const bucketsByStorey = {};
 backbone.joined.forEach(b => { (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push(HallwayBackbone.bucketRect(b)); });
 
+// §CORRIDOR-OVERLAP-FRACTION (2026-07-14): re-derive with the room's own FOOTPRINT, not just its
+// centroid — a room only counts as "on the corridor" if >=50% of its own area sits inside the
+// bucket rect (see common/hallway_backbone.js classifyCorridorRooms). Centroid-inside alone is no
+// longer sufficient ground truth (that was the false-positive bug this fix closes: a large room's
+// centroid can drift inside an oversized rect while its own body sits mostly outside it).
 const hasRoomGuid = dbQuery('PRAGMA table_info(spatial_structure)').some(c => c[1] === 'room_guid');
-const spaceRows = dbQuery("SELECT s.guid, p.name" + (hasRoomGuid ? ', s.room_guid' : ', NULL') + ", s.center_x, s.center_y " +
+const spaceRows = dbQuery("SELECT s.guid, p.name" + (hasRoomGuid ? ', s.room_guid' : ', NULL') +
+  ", s.center_x, s.center_y, s.size_x, s.size_y " +
   "FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid " +
-  "WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL");
-const centroidByGuid = {};
-spaceRows.forEach(r => { const lg = r[2] || r[0]; if (!centroidByGuid[lg]) centroidByGuid[lg] = { storey: r[1], cx: r[3], cy: r[4] }; });
+  "WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL AND s.size_x IS NOT NULL");
+const roomByGuid = {}; // logicalGuid -> {storey, ownRects: [{x0,x1,y0,y1,area}], cx, cy}
+spaceRows.forEach(r => {
+  const lg = r[2] || r[0];
+  if (!roomByGuid[lg]) roomByGuid[lg] = { storey: r[1], ownRects: [], sumX: 0, sumY: 0, n: 0 };
+  const g = roomByGuid[lg];
+  const sx = r[5], sy = r[6];
+  g.ownRects.push({ x0: r[3] - sx / 2, x1: r[3] + sx / 2, y0: r[4] - sy / 2, y1: r[4] + sy / 2, area: sx * sy });
+  g.sumX += r[3]; g.sumY += r[4]; g.n++;
+});
+function rectOverlapArea(a, c) {
+  const ox = Math.max(0, Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0));
+  const oy = Math.max(0, Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0));
+  return ox * oy;
+}
+function bestOverlapFraction(g, rects) {
+  const totalArea = g.ownRects.reduce((s, rr) => s + rr.area, 0);
+  if (totalArea <= 0) return 0;
+  let best = 0;
+  rects.forEach(rc => {
+    const ov = g.ownRects.reduce((s, rr) => s + rectOverlapArea(rr, rc), 0);
+    best = Math.max(best, ov / totalArea);
+  });
+  return best;
+}
+const MIN_OVERLAP_FRACTION = 0.5;
+// §CORRIDOR-SHAPE (2026-07-14): ground truth also requires the shape bound now — a room must be
+// BOTH >=50% overlapping AND elongated enough (see common/hallway_backbone.js's
+// DEFAULT_PROFILE.minAspectRatio) to independently re-verify as "should be classified corridor".
+const MIN_ASPECT_RATIO = HallwayBackbone.DEFAULT_PROFILE.minAspectRatio;
+function meetsCorridorBar(g, rects) {
+  return bestOverlapFraction(g, rects) >= MIN_OVERLAP_FRACTION &&
+    HallwayBackbone.unionAspectRatio(g.ownRects) >= MIN_ASPECT_RATIO;
+}
 
 let allVerified = true, checkedCount = 0;
 guids.forEach(lg => {
-  const c = centroidByGuid[lg];
-  if (!c) { allVerified = false; return; }
-  const rects = bucketsByStorey[c.storey] || [];
-  const hit = rects.some(rc => c.cx >= rc.x0 && c.cx <= rc.x1 && c.cy >= rc.y0 && c.cy <= rc.y1);
-  if (!hit) allVerified = false;
+  const g = roomByGuid[lg];
+  if (!g) { allVerified = false; return; }
+  const rects = bucketsByStorey[g.storey] || [];
+  if (!meetsCorridorBar(g, rects)) allVerified = false;
   checkedCount++;
 });
-chk('G2 every classified room independently re-verified to sit inside a real backbone rect', allVerified, 'checked=' + checkedCount);
+chk('G2 every classified room independently re-verified to meet BOTH the overlap-fraction (>=' +
+  MIN_OVERLAP_FRACTION + ') and shape (aspect>=' + MIN_ASPECT_RATIO + ') bars, not just centroid',
+  allVerified, 'checked=' + checkedCount);
 
-// Rooms that were NOT classified as corridor must genuinely NOT sit in any bucket rect (no
-// false-negative check needed for a display override, but confirm the classifier isn't
-// over-matching — spot check a random non-classified room).
-const nonMatched = Object.keys(centroidByGuid).filter(g => !result[g]);
+// Rooms that were NOT classified as corridor must genuinely NOT meet BOTH bars either — confirms
+// the classifier isn't under- or over-matching against its own stated rule.
+const nonMatched = Object.keys(roomByGuid).filter(g => !result[g]);
 let overMatchFound = false;
 nonMatched.slice(0, 40).forEach(lg => {
-  const c = centroidByGuid[lg];
-  const rects = bucketsByStorey[c.storey] || [];
-  const hit = rects.some(rc => c.cx >= rc.x0 && c.cx <= rc.x1 && c.cy >= rc.y0 && c.cy <= rc.y1);
-  if (hit) overMatchFound = true;
+  const g = roomByGuid[lg];
+  const rects = bucketsByStorey[g.storey] || [];
+  if (meetsCorridorBar(g, rects)) overMatchFound = true;
 });
-chk('G3 no false negatives in a 40-room sample (a room truly inside a bucket rect was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
+chk('G3 no false negatives in a 40-room sample (a room meeting BOTH bars was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
 
-console.log('§SAMPLE classified=' + guids.length + ' total=' + Object.keys(centroidByGuid).length +
+console.log('§SAMPLE classified=' + guids.length + ' total=' + Object.keys(roomByGuid).length +
   ' chains touched=' + new Set(guids.map(g => result[g].chain)).size);
 
 console.log('\n§W-CORRIDOR-TYPE-LABEL DONE pass=' + pass + ' fail=' + fail);
