@@ -69,7 +69,12 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { f
       // host wall (must be excluded from width calc — offset ~0 on the "below" side)
       ['L1', 8, 0.0, 20, 0.2],
       // real opposite flanking wall, 2.0m north of the doors' wall
-      ['L1', 8, 2.0, 20, 0.2]
+      ['L1', 8, 2.0, 20, 0.2],
+      // end-cap walls (wide-in-y, perpendicular to the x-run bucket) just past the outermost doors
+      // on each side — needed so isGrounded()/distanceToEnclosure() accept this as a real, walled
+      // walkway rather than a floating door alignment (§COMMON-SENSE-FILTER).
+      ['L1', 0, 1.0, 0.2, 4],
+      ['L1', 16, 1.0, 0.2, 4]
     ],
     spaces: [
       // ROOM_CORRIDOR: fully inside the resulting corridor strip (y in [-1.2(default lo), 2.0])
@@ -96,6 +101,47 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { f
   const labels = HB.classifyCorridorRooms(dbQuery, { log: () => {} });
   chk('D1 ROOM_CORRIDOR (fully inside strip) classified as corridor', !!labels['S_CORR'], JSON.stringify(labels));
   chk('D2 ROOM_BIG (centroid-only drift, body mostly outside) REJECTED by overlap-fraction guard', !labels['S_BIG'], JSON.stringify(labels));
+}
+
+// ── Test E: wallLiesFlatAgainst / distanceToEnclosure / isGrounded — unit-level, no DB needed ──
+{
+  chk('E1 wallLiesFlatAgainst: offset inside [min,max] returns the offset', HB.wallLiesFlatAgainst(1.4, 0.5, 3.0) === 1.4);
+  chk('E2 wallLiesFlatAgainst: offset below min (self-match shape) rejected', HB.wallLiesFlatAgainst(0.05, 0.5, 3.0) === null);
+  chk('E3 wallLiesFlatAgainst: offset above max (cross-building shape) rejected', HB.wallLiesFlatAgainst(40, 0.5, 3.0) === null);
+  chk('E4 wallLiesFlatAgainst: min=0 disables the "too close" half (growToWall use)', HB.wallLiesFlatAgainst(0.01, 0, 8) === 0.01);
+
+  const env = { x0: 0, x1: 20, y0: 0, y1: 10 };
+  chk('E5 distanceToEnclosure: point well inside returns 0', HB.distanceToEnclosure(10, 5, env) === 0);
+  chk('E6 distanceToEnclosure: point just past the boundary (within tolerance) still 0', HB.distanceToEnclosure(20.3, 5, env) === 0);
+  chk('E7 distanceToEnclosure: point clearly outside returns a positive distance', HB.distanceToEnclosure(25, 5, env) > 0, 'd=' + HB.distanceToEnclosure(25, 5, env));
+  chk('E8 distanceToEnclosure: no envelope data never false-flags', HB.distanceToEnclosure(999, 999, null) === 0);
+
+  chk('E9 isGrounded: both ends wall-capped -> grounded', HB.isGrounded({ openLo: false, openHi: false }));
+  chk('E10 isGrounded: one end open but stair-anchored -> still grounded', HB.isGrounded({ openLo: true, stairLo: 'S1', openHi: false }));
+  chk('E11 isGrounded: BOTH ends open with no stair anchor -> floating, rejected', !HB.isGrounded({ openLo: true, openHi: true, stairLo: null, stairHi: null }));
+}
+
+// ── Test F: growToWall rejects an implausibly-far end-cap wall (MAX_END_REACH), same shape as
+// the width bug but along the corridor's own axis ("not in mid air", user's item 3) ──
+{
+  const bucket = { axis: 'x', runCoord: 0, doors: [{ alongCoord: 2 }, { alongCoord: 8 }, { alongCoord: 14 }] };
+  const walls = [
+    // a perpendicular (y-run) wall crossing rc=0, but 30m past the last door (14) — a
+    // coincidentally cross-axis-aligned wall from an unrelated part of the building
+    { cx: 44, cy: 1, bx: 0.2, by: 4 }
+  ];
+  HB.growToWall(bucket, walls);
+  chk('F1 implausibly-far end-cap (30m past last door) rejected, end stays open',
+    bucket.openHi === true && bucket.span.hi === 14, 'openHi=' + bucket.openHi + ' span.hi=' + bucket.span.hi);
+}
+{
+  const bucket = { axis: 'x', runCoord: 0, doors: [{ alongCoord: 2 }, { alongCoord: 8 }, { alongCoord: 14 }] };
+  const walls = [
+    { cx: 17, cy: 1, bx: 0.2, by: 4 }   // 3m past the last door — well within MAX_END_REACH
+  ];
+  HB.growToWall(bucket, walls);
+  chk('F2 plausible end-cap (3m past last door) accepted',
+    bucket.openHi === false && bucket.span.hi === 17, 'openHi=' + bucket.openHi + ' span.hi=' + bucket.span.hi);
 }
 
 console.log('\n§SANDBOX_CORRIDOR_WIDTH DONE pass=' + pass + ' fail=' + fail);

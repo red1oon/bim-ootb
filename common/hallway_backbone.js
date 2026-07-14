@@ -55,6 +55,64 @@
   // corridor's runCoord line (real walls are rasterized transforms, not infinitely thin planes).
   var WALL_CROSS_SLACK = 0.3;
 
+  // §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real walkway/corridor (1) is not
+  // itself a room, (2) is not implausibly wide, (3) does not float in mid air, (4) is always
+  // grounded — connected to doors, a stair edge, or bounded within real walls. This is the same
+  // shape of problem established indoor-routing/space-boundary tools solve (IFC 2nd-level space
+  // boundary generation, Revit Room/Space boundary resolution, space-syntax axial-map tools): a
+  // bounded ray-cast to the NEAREST plausible bounding surface, never an unbounded "nearest match
+  // regardless of distance" search. Two small named verbs formalize that shared shape so both
+  // growToWall() (END caps, perpendicular walls) and bucketWidth() (SIDE walls, same-axis walls)
+  // apply the SAME plausibility discipline instead of each re-inventing its own ad hoc bound.
+  //   - wallLiesFlatAgainst(offset, minOffset, maxOffset): is this candidate wall's measured
+  //     offset from the reference coordinate within a physically sane window? Too close (~0) is
+  //     usually a self-match (the bucket's own host wall, or a door reveal/jamb stub) rather than
+  //     a real bounding surface; too far is a coincidentally-aligned wall from an unrelated part
+  //     of the building. minOffset=0 disables the "too close" half of the test (growToWall's end
+  //     caps run PERPENDICULAR to the bucket's own doors, so there's no self-match risk there —
+  //     only bucketWidth's SIDE-wall search, which scans SAME-axis walls, needs the floor too).
+  function wallLiesFlatAgainst(offset, minOffset, maxOffset) {
+    if (offset < minOffset || offset > maxOffset) return null;
+    return offset;
+  }
+  //   - distanceToEnclosure(x, y, envelope): 0 if the point sits within the building's own real
+  //     wall-derived footprint (+ a small tolerance for wall thickness), else how far outside it
+  //     sits. Backstops wallLiesFlatAgainst's per-wall bound with a whole-building sanity check —
+  //     the concrete symptom this guards ("half corridor... drawn perpendicular into mid air
+  //     outside building", user report 2026-07-14) is a corridor rect extending past where any
+  //     real wall exists at all, not just past ONE plausible flanking wall.
+  var ENCLOSURE_TOLERANCE = 0.5; // m — generous for one wall's thickness + measurement slack
+  function distanceToEnclosure(x, y, envelope) {
+    if (!envelope) return 0; // no envelope data — nothing to check against, don't false-flag
+    var dx = Math.max(envelope.x0 - x, 0, x - envelope.x1);
+    var dy = Math.max(envelope.y0 - y, 0, y - envelope.y1);
+    var d = Math.hypot(dx, dy);
+    return (d <= ENCLOSURE_TOLERANCE) ? 0 : d;
+  }
+  //   - buildingEnvelope(walls): the real wall-derived footprint for one storey's worth of walls
+  //     (reuses the SAME wall rows buildBackbone() already fetched — no new query). A plain bbox
+  //     union, same convention as room_habitability.js's envelopeFromTransforms but wall-only and
+  //     per-storey (a corridor must stay within ITS OWN floor's footprint, not the whole building's).
+  function buildingEnvelope(walls) {
+    if (!walls || !walls.length) return null;
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    walls.forEach(function (w) {
+      x0 = Math.min(x0, w.cx - w.bx / 2); x1 = Math.max(x1, w.cx + w.bx / 2);
+      y0 = Math.min(y0, w.cy - w.by / 2); y1 = Math.max(y1, w.cy + w.by / 2);
+    });
+    return { x0: x0, x1: x1, y0: y0, y1: y1 };
+  }
+  //   - isGrounded(bucket): a real walkway is "always connected to either/and doors, stairs edge,
+  //     within walls" (user's own phrasing) — reject a bucket that is open on BOTH ends with NO
+  //     stair anchor on EITHER end. That shape has nothing tying it to the building at all beyond
+  //     its own door cluster: not a real hallway/circulation space, just a coincidental door
+  //     alignment (>=3 doors is a necessary but not sufficient signal on its own).
+  function isGrounded(bucket) {
+    var loOk = !bucket.openLo || !!bucket.stairLo;
+    var hiOk = !bucket.openHi || !!bucket.stairHi;
+    return loOk || hiOk; // at least ONE end must be wall-capped or stair-anchored
+  }
+
   // ── 1. doorEdge ──────────────────────────────────────────────────────────────────────────────
   // d: {guid, name, storey, cx, cy, bx, by}. rotation_z is NOT used — measured across this
   // extracted data (2026-07-14 scratch session) as always 0, unusable as an axis signal. The
@@ -92,6 +150,16 @@
   // user, "ignore supporting columns/beams for convenience"). A capping wall runs PERPENDICULAR to
   // this bucket's axis (a cross-wall stopping the corridor) — a wall running the SAME way as the
   // bucket is more of the corridor's own side wall, not a cap.
+  // §END-CAP-REACH-BOUND (2026-07-14, part of §COMMON-SENSE-FILTER above — "not in mid air"): this
+  // loop used to accept the nearest capping wall regardless of how far beyond the outermost door it
+  // sat. Real live data (Clinic + HHS dump, this session) shows genuine end-cap reach almost always
+  // under ~5m past the last door; two measured outliers (8.99m, 13.56m, both HHS) are exactly the
+  // shape of a coincidentally cross-axis-aligned wall from an unrelated part of the building, the
+  // SAME failure mode §CORRIDOR-WIDTH-BOUNDS fixed for the perpendicular (side) dimension — this is
+  // its along-axis (end) counterpart, using the SAME wallLiesFlatAgainst() bound (no MIN needed
+  // here: this wall runs perpendicular to the bucket, so it can never be the bucket's own host
+  // wall — no self-match risk the way bucketWidth's side-wall scan has).
+  var MAX_END_REACH = 8.0;
   function growToWall(bucket, walls) {
     var alongs = bucket.doors.map(function (d) { return d.alongCoord; });
     var lo = Math.min.apply(null, alongs), hi = Math.max.apply(null, alongs);
@@ -105,8 +173,8 @@
       var perpLo = (bucket.axis === 'x') ? (w.cy - w.by / 2) : (w.cx - w.bx / 2);
       var perpHi = (bucket.axis === 'x') ? (w.cy + w.by / 2) : (w.cx + w.bx / 2);
       if (rc < perpLo - WALL_CROSS_SLACK || rc > perpHi + WALL_CROSS_SLACK) return; // doesn't cross this line
-      if (alongC <= lo && (loCap === null || alongC > loCap)) loCap = alongC;
-      if (alongC >= hi && (hiCap === null || alongC < hiCap)) hiCap = alongC;
+      if (alongC <= lo && (loCap === null || alongC > loCap) && wallLiesFlatAgainst(lo - alongC, 0, MAX_END_REACH) !== null) loCap = alongC;
+      if (alongC >= hi && (hiCap === null || alongC < hiCap) && wallLiesFlatAgainst(alongC - hi, 0, MAX_END_REACH) !== null) hiCap = alongC;
     });
     bucket.span = { lo: (loCap !== null) ? loCap : lo, hi: (hiCap !== null) ? hiCap : hi };
     bucket.openLo = (loCap === null);
@@ -157,8 +225,8 @@
       if (alongC + alongHalf < lo || alongC - alongHalf > hi) return; // must run alongside this corridor
       var perpC = (bucket.axis === 'x') ? w.cy : w.cx;
       var perpHalf = (bucket.axis === 'x') ? (w.by / 2) : (w.bx / 2);
-      if (perpC >= rc) { var d = (perpC - perpHalf) - rc; if (d >= MIN_SIDE_OFFSET && d <= MAX_SIDE_OFFSET && (nearAbove === null || d < nearAbove)) nearAbove = d; }
-      else { var d2 = rc - (perpC + perpHalf); if (d2 >= MIN_SIDE_OFFSET && d2 <= MAX_SIDE_OFFSET && (nearBelow === null || d2 < nearBelow)) nearBelow = d2; }
+      if (perpC >= rc) { var d = wallLiesFlatAgainst((perpC - perpHalf) - rc, MIN_SIDE_OFFSET, MAX_SIDE_OFFSET); if (d !== null && (nearAbove === null || d < nearAbove)) nearAbove = d; }
+      else { var d2 = wallLiesFlatAgainst(rc - (perpC + perpHalf), MIN_SIDE_OFFSET, MAX_SIDE_OFFSET); if (d2 !== null && (nearBelow === null || d2 < nearBelow)) nearBelow = d2; }
     });
     bucket.halfWidthHi = (nearAbove !== null) ? nearAbove : DEFAULT_HALF_WIDTH;
     bucket.halfWidthLo = (nearBelow !== null) ? nearBelow : DEFAULT_HALF_WIDTH;
@@ -305,6 +373,29 @@
     var stairGroupsResult = RoomGraph ? RoomGraph.getStairGroups(dbQuery, log) : { groups: {} };
     joined.forEach(function (b) { terminateAtStair(b, stairGroupsResult.groups); });
 
+    // §COMMON-SENSE-FILTER (2026-07-14) — two final sanity gates before a bucket is trusted as a
+    // real walkway, applied AFTER width/span/stair-termination are all known:
+    //  - isGrounded(): reject a bucket open on BOTH ends with no stair anchor on either — nothing
+    //    ties it to the building beyond a coincidental door alignment.
+    //  - distanceToEnclosure(): reject a bucket whose own measured rect corner sits outside that
+    //    STOREY's real wall-derived footprint — the concrete "floating in mid air outside the
+    //    building" symptom, as a whole-building backstop beyond the per-wall bounds above.
+    var envelopeByStorey = {};
+    Object.keys(wallsByStorey).forEach(function (st) { envelopeByStorey[st] = buildingEnvelope(wallsByStorey[st]); });
+    var droppedUngrounded = 0, droppedOutsideEnvelope = 0;
+    joined = joined.filter(function (b) {
+      if (!isGrounded(b)) { droppedUngrounded++; return false; }
+      var env = envelopeByStorey[b.storey];
+      var rc = bucketRect(b);
+      var corners = [[rc.x0, rc.y0], [rc.x0, rc.y1], [rc.x1, rc.y0], [rc.x1, rc.y1]];
+      var outside = corners.some(function (c) { return distanceToEnclosure(c[0], c[1], env) > 0; });
+      if (outside) { droppedOutsideEnvelope++; return false; }
+      return true;
+    });
+    if (droppedUngrounded || droppedOutsideEnvelope) {
+      log('§COMMON_SENSE_FILTER droppedUngrounded=' + droppedUngrounded + ' droppedOutsideEnvelope=' + droppedOutsideEnvelope);
+    }
+
     var byStorey = {};
     joined.forEach(function (b) { (byStorey[b.storey] = byStorey[b.storey] || []).push(b); });
     var allChains = [], allCrossings = [];
@@ -439,7 +530,10 @@
     doorEdge: doorEdge, correlateDoorEdges: correlateDoorEdges, joinDoorways: joinDoorways,
     growToWall: growToWall, bucketWidth: bucketWidth, bucketRect: bucketRect,
     terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
-    buildBackbone: buildBackbone, classifyCorridorRooms: classifyCorridorRooms
+    buildBackbone: buildBackbone, classifyCorridorRooms: classifyCorridorRooms,
+    // §COMMON-SENSE-FILTER verbs — exported individually so a sandbox can test each in isolation
+    wallLiesFlatAgainst: wallLiesFlatAgainst, distanceToEnclosure: distanceToEnclosure,
+    buildingEnvelope: buildingEnvelope, isGrounded: isGrounded
   };
   ROOT.HallwayBackbone = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
