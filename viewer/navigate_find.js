@@ -580,6 +580,7 @@
     // data-gated axis row. Tears down any active lens, clears multi-select + all filters
     // (unify engine), then lists the new axis groups.
     function _setTreeMode(mode) {
+      var _stmT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       // §RP Task A: leaving the Room axis tears down room boxes + shape overlays + restores opacity.
       if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); _clearPathHighlight(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
@@ -599,6 +600,7 @@
       if (elTree) { elTree.style.display = ''; _treeRevealed = true; if (elTreeGrip) elTreeGrip.style.display = 'flex'; }
       buildTree();
       console.log('§FIND_MODE_TOGGLE mode=' + mode);
+      console.log('[RP-T3] §PERF_PROBE _setTreeMode(' + mode + ') total_ms=' + ((performance && performance.now) ? (performance.now() - _stmT0).toFixed(1) : '?')); // §13, the real per-tab-switch cost
       // §VIEWLOG: an axis change is a semantic view moment. Record it (skipped on replay/off).
       _pushView({ kind: 'axis', axis: mode, label: 'Axis: ' + mode, mode: 'axis' });
     }
@@ -709,7 +711,21 @@
       { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
       { type: 'PLANT_ROOM', label: 'Plant Room' }
     ];
+    // §PROBE-DEDUP (2026-07-15j, §13): a single axis-toggle tap calls _axes() TWICE — once in the
+    // toggle button's own pointerup handler (to compute the NEXT axis from the CURRENT list) and
+    // again inside _setTreeMode()'s _renderAxes() (to redraw the button showing the NEW state) —
+    // each running _probeLenses()'s ~4 real COUNT queries against A.db. The DB's data-presence
+    // (room/material/phase available) cannot legitimately change between these two calls in the
+    // same synchronous tap; a short TTL memo collapses the pair into ONE real probe per tap without
+    // risking staleness for genuine data changes (needle-inject etc. are always async, >>50ms away).
+    var _probeCacheResult = null, _probeCacheT = 0;
     function _probeLenses() {
+      var _plT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
+      var _now = _plT0 || (Date.now ? Date.now() : 0);
+      if (_probeCacheResult && (_now - _probeCacheT) < 50) {
+        console.log('[RP-T3] §LENS_PROBE_DEDUP_HIT age_ms=' + (_now - _probeCacheT).toFixed(1));
+        return _probeCacheResult;
+      }
       var bld = A.activeBuilding || '';
       var room = false, material = false, phase = false;
       _roomHasVol = false;
@@ -771,7 +787,10 @@
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
       console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
-      return { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
+      console.log('[RP-T3] §PERF_PROBE _probeLenses ms=' + ((performance && performance.now) ? (performance.now() - _plT0).toFixed(1) : '?')); // §13
+      _probeCacheResult = { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
+      _probeCacheT = _now;
+      return _probeCacheResult;
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -1996,6 +2015,7 @@
     // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
     // identical across a room's sub-rect set per §8's own design), never per sub-rect.
     function _allRoomVolumes() {
+      var _t0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
       var RH = window.RoomHabitability;
@@ -2092,10 +2112,12 @@
         // where §8 multi-rect data exists.
         console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
           ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+        console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
         return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
         ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+      console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
       return out;
     }
 
@@ -2115,6 +2137,7 @@
     // shell + dims its contents inside it (see _roomSelect). Shells live in _roomBoxes, disposed
     // on reset/axis-switch.
     function _roomLensOn() {
+      var _rlT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       _clearRoomBoxes();
       if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
       _dimXrayTo(0.12);
@@ -2136,6 +2159,7 @@
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
         ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
+      console.log('[RP-TA] §PERF_PROBE _roomLensOn total_ms=' + ((performance && performance.now) ? (performance.now() - _rlT0).toFixed(1) : '?')); // §13
     }
 
     // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
@@ -2393,8 +2417,27 @@
         if (!guidSet[e.a] && !guidSet[e.b]) return;
         seen[e.doorGuid] = true;
         var n = graph.nodesByGuid[e.doorGuid];
-        if (n) out.push({ x: n.cx, y: n.cy, z: n.cz || 0 });
+        if (n) out.push({ guid: e.doorGuid, x: n.cx, y: n.cy, z: n.cz || 0 });
       });
+      // §DOOR-REAL-BOX (2026-07-15k, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §5/§12 "real door mesh/box
+      // instead of a sphere marker"): one batched query for every door's REAL measured footprint
+      // (bbox_x/bbox_y, real leaf width) + yaw (rotation_z) — same discipline as classifyUtilityRooms
+      // just above (never one query per marker). Never invents a size: a door missing a row here
+      // just keeps its position with sizeX/sizeY/yaw undefined, and the caller falls back to the
+      // old sphere for that one marker only (never a fabricated box dimension).
+      if (out.length && A.dbQuery) {
+        try {
+          var ph = out.map(function() { return '?'; }).join(',');
+          var rows = A.dbQuery('SELECT guid, bbox_x, bbox_y, bbox_z, rotation_z FROM element_transforms WHERE guid IN (' + ph + ')',
+            out.map(function(o) { return o.guid; }));
+          var byGuid = {};
+          rows.forEach(function(r) { byGuid[r[0]] = { sizeX: r[1], sizeY: r[2], sizeZ: r[3], yaw: r[4] }; });
+          out.forEach(function(o) {
+            var d = byGuid[o.guid];
+            if (d) { o.sizeX = d.sizeX; o.sizeY = d.sizeY; o.sizeZ = d.sizeZ; o.yaw = d.yaw; }
+          });
+        } catch (e) { console.warn('[RP-TA] §DOOR_BOX_DIM_ERR', e.message); }
+      }
       return out;
     }
     function _revealCategoryGroup(gk, groupRooms) {
@@ -2412,16 +2455,34 @@
       });
       var doorPositions = _doorPositionsForRooms(Object.keys(guidSet));
       if (A.scene && A.ifc2three && typeof THREE !== 'undefined' && doorPositions.length) {
-        var doorGeo = new THREE.SphereGeometry(0.2, 10, 10);
+        // §DOOR-REAL-BOX: a box sized to the door's own real bbox_x/bbox_y/bbox_z + yawed by its
+        // real rotation_z reads as an actual door leaf, not an arbitrary sphere — real measured
+        // data, not invented. Every door SHARES one geometry+material per (sizeX,sizeY,sizeZ)
+        // combo would be ideal but doors legitimately vary in size building-to-building; a fresh
+        // BoxGeometry per marker is cheap (this reveal is capped at one room-category's doors,
+        // never the whole building) and disposed on toggle-off (see _clearCategoryReveal above).
+        var sphereGeo = null; // lazy singleton fallback, only built if a door is missing dims
         var doorMat = new THREE.MeshBasicMaterial({ color: 0x8d5524, transparent: true, opacity: 0.85, depthTest: false });
+        var boxCount = 0, sphereCount = 0;
         doorPositions.forEach(function(p) {
           var c = A.ifc2three(p.x, p.y, p.z);
-          var m = new THREE.Mesh(doorGeo, doorMat);
+          var m;
+          if (p.sizeX > 0 && p.sizeY > 0) {
+            var geo = new THREE.BoxGeometry(p.sizeX, (p.sizeZ > 0 ? p.sizeZ : 2.0), p.sizeY);
+            m = new THREE.Mesh(geo, doorMat);
+            m.rotation.y = -(p.yaw || 0); // ifc2three's Y-up convention: yaw sign flips vs. IFC's Z-up rotation_z
+            boxCount++;
+          } else {
+            if (!sphereGeo) sphereGeo = new THREE.SphereGeometry(0.2, 10, 10);
+            m = new THREE.Mesh(sphereGeo, doorMat);
+            sphereCount++;
+          }
           m.position.set(c.x, c.y + 0.05, c.z);
           m.renderOrder = 1002;
           A.scene.add(m);
           _revealDoorMeshes.push(m);
         });
+        console.log('[RP-TA] §DOOR_MARKER_SHAPE boxes=' + boxCount + ' spheres(no-real-dims-fallback)=' + sphereCount);
       }
       _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
@@ -3825,6 +3886,7 @@
       _highlightLensReset();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
+      _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
       _elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
       // Set search term and open
       panel.style.display = 'block';
