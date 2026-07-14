@@ -776,26 +776,40 @@
   // Dijkstra over that small graph. Returns the INTERIOR doorwp guids only (endpoints excluded —
   // caller already has them in `path`), or null if no legal detour exists (chord left as-is,
   // honest degrade — never invents a waypoint that isn't a real door).
-  function _detourForChord(graph, storey, ax, ay, bx, by) {
+  // §DETOUR-LOCALITY (2026-07-14, real user report — a room-to-room path visibly walked to the
+  // FAR end of a 13m-long room, away from the target, before doubling back): the visibility-graph
+  // candidate set below was scoped to the WHOLE STOREY, with no preference for waypoints actually
+  // BETWEEN the chord's two endpoints. Dijkstra over that graph finds the cheapest LEGAL chain —
+  // if the direct/nearby route is illegal, it will happily route via a real door at the opposite
+  // end of the building, because that's still "legal" and the small graph has no sense of overall
+  // direction. Root-caused with real data (Clinic, live-matching 205-room compile): chord R96->
+  // R106 illegal, detour picked R96's own door at y=27.6 (its far end) then a second waypoint at
+  // y=14.7, even though the target sits at y~12 — a real ~15m detour in the wrong direction first.
+  // Fix: try LOCAL candidates first (within the chord's own bounding box + a margin — generous
+  // enough for a genuine corridor jog, not enough to reach across an unrelated room). Only fall
+  // back to the full unrestricted storey-wide search if no local detour exists — never REMOVES a
+  // detour that used to work, only prefers a nearby one when one exists.
+  var DETOUR_LOCALITY_MARGIN = 6.0; // m — padding around the chord's own bbox for the local pass
+  function _detourCandidates(graph, storey, ax, ay, bx, by, localOnly) {
     var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
+    var x0 = Math.min(ax, bx) - DETOUR_LOCALITY_MARGIN, x1 = Math.max(ax, bx) + DETOUR_LOCALITY_MARGIN;
+    var y0 = Math.min(ay, by) - DETOUR_LOCALITY_MARGIN, y1 = Math.max(ay, by) + DETOUR_LOCALITY_MARGIN;
     Object.keys(graph.nodesByGuid).forEach(function (g) {
       var n = graph.nodesByGuid[g];
       // §HALLWAY-BACKBONE: real corridor spine points are ALSO valid detour candidates, not just
       // doorwp — a door-only visibility graph can genuinely have no legal edge between two doors
       // that face each other across an open corridor (every straight door-to-door chord crosses
       // the gap the raster marks non-walkable near a jutting wall corner), even though a real
-      // route along the corridor's own centerline exists. Observed live on Clinic First Floor
-      // before this fix: `§PATH_LEGAL_DETOUR_FAIL ... no legal detour among 139 doors` — the
-      // chord was then left AS-IS, undetoured, i.e. still crossing a wall. Adding spine nodes only
-      // ADDS candidate points/edges to this visibility graph — it can only turn a FAIL into a real
+      // route along the corridor's own centerline exists. Adding spine/circ nodes only ADDS
+      // candidate points/edges to this visibility graph — it can only turn a FAIL into a real
       // route, never remove an already-legal one.
-      // §CIRC-DETOUR-CANDIDATE (2026-07-14): a CIRC node — the stair-bridging hub E3/E6 hang off —
-      // was NOT a detour candidate either, same class of gap as spine's own fix above. A chord
-      // touching the CIRC<->SPINE bridge (E6) or a room's old CIRC fallback rescue could be illegal
-      // with zero rescue options even after adding spine, because the CIRC point itself was never
-      // offered as an intermediate stop. Additive only, same as spine.
-      if ((n.kind === 'doorwp' || n.kind === 'spine' || n.kind === 'circ') && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
+      if (!((n.kind === 'doorwp' || n.kind === 'spine' || n.kind === 'circ') && n.storey === storey)) return;
+      if (localOnly && (n.cx < x0 || n.cx > x1 || n.cy < y0 || n.cy > y1)) return;
+      pts.push({ id: g, x: n.cx, y: n.cy });
     });
+    return pts;
+  }
+  function _detourDijkstra(graph, storey, pts) {
     var n = pts.length, adj = [];
     for (var i = 0; i < n; i++) adj.push([]);
     for (var i = 0; i < n; i++) {
@@ -822,12 +836,22 @@
         if (nd < dist[e.to]) { dist[e.to] = nd; prev[e.to] = u; pq.push(e.to); }
       });
     }
-    if (dist[1] === Infinity) { _log('§PATH_LEGAL_DETOUR_FAIL storey=' + storey + ' no legal detour among ' + (n - 2) + ' doors'); return null; }
+    if (dist[1] === Infinity) return null;
     var hopIdx = [], cur = 1;
     while (cur !== -1) { hopIdx.unshift(cur); cur = prev[cur]; }
     var mid = [];
     for (var k = 1; k < hopIdx.length - 1; k++) mid.push(pts[hopIdx[k]].id);
     return mid;
+  }
+  function _detourForChord(graph, storey, ax, ay, bx, by) {
+    var localPts = _detourCandidates(graph, storey, ax, ay, bx, by, true);
+    var localResult = _detourDijkstra(graph, storey, localPts);
+    if (localResult) return localResult;
+    var globalPts = _detourCandidates(graph, storey, ax, ay, bx, by, false);
+    var globalResult = _detourDijkstra(graph, storey, globalPts);
+    if (!globalResult) { _log('§PATH_LEGAL_DETOUR_FAIL storey=' + storey + ' no legal detour among ' + (globalPts.length - 2) + ' doors'); return null; }
+    _log('§PATH_LEGAL_DETOUR_NONLOCAL storey=' + storey + ' no local detour within ' + DETOUR_LOCALITY_MARGIN + 'm margin, used a wider one');
+    return globalResult;
   }
 
   // §PATH_LEGAL_SEGMENTS.md — walk the just-built `path`, testing every consecutive same-storey
