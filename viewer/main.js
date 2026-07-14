@@ -150,6 +150,16 @@ async function initViewer() {
         // v3 (PATH_LEGAL_SEGMENTS.md, 2026-07-13): same-storey chord legality + visibility-graph
         // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
         '../common/room_graph.js?v=3',
+        // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
+        // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
+        // in the browser, despite passing every Node-based witness, because this line never
+        // existed): room_graph.js's buildGraph() reads window.HallwayBackbone (used for E5/E6/E7/E8
+        // spine wiring, corridor-room backprop, and classifyCorridorRooms' Type-tree label) but the
+        // script that DEFINES it was never added to this load list. Must load AFTER room_graph.js
+        // (room_graph.js's HallwayBackbone read happens inside buildGraph(), called later — fine)
+        // but hallway_backbone.js itself reads window.RoomGraph at its OWN top-level IIFE execution
+        // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
+        '../common/hallway_backbone.js?v=1',
         'navigate_find.js?v=48',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
