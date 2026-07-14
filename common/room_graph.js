@@ -621,7 +621,18 @@
       });
       Object.keys(nearestByChain).forEach(function (ck) {
         var sp = nearestByChain[ck].p, w = nearestByChain[ck].d;
-        edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Corridor junction', storey: g.storey, kind: 'E6', w: w });
+        // §CIRC-CLOSEBY-RENDER (2026-07-15h): unlike E2/E3, this edge never carried a `wp` —
+        // _publicHop()'s circ-substitution (line ~832) fell through to the raw arrivedGuid, i.e.
+        // CIRC::<storey>'s own (cx,cy), which is just whichever stair group's AVERAGED flight
+        // position happened to create that node first (circNode() call site, §E3 above) — not a
+        // point on THIS chain's corridor at all. A route hopping onto CIRC via this E6 edge (same-
+        // storey chain-to-chain bridge, or the spine-side leg of a stair crossing) rendered a
+        // segment straight to that unrelated averaged point instead of hugging the real corridor —
+        // the "x-crossing"/"detouring toward an unrelated adjoining space" user report. Fix: wpA
+        // points arrival-at-CIRC to the REAL spine waypoint `sp` this edge already bridges from —
+        // same closeby-verb shape as E3's wpA/wpB (prefer a genuinely near real point over the
+        // graph's own bookkeeping node), just for the same-storey case E3 didn't cover.
+        edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Corridor junction', storey: g.storey, kind: 'E6', w: w, wpA: sp.guid });
         circBridges++;
         log('§ISLAND_BRIDGE circ-per-chain storey=' + g.storey + ' chain=' + ck + ' spine=' + sp.guid + ' dist=' + w.toFixed(2) + 'm');
       });
