@@ -139,7 +139,15 @@
       var key = stairBaseKey(f[1]);
       if (!groups[key]) {
         groups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity,
-          xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity };
+          xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity,
+          // §STAIR-RUN-ENDS (2026-07-14, real user report — a rendered stair hop looked like a
+          // vertical "elevator shaft drop" instead of following the real stair run): a physical
+          // stair's bottom and top landings are NOT at the same XY — real run/offset as you climb
+          // (measured on HHS stair 576198: flight rows range Y=10.4 to Y=13.8, a real 3.4m
+          // horizontal offset). Track each END's own real position (the row nearest zlo / nearest
+          // zhi), not a single XY average across the whole stair — an average collapses both ends
+          // to the same point, which is what produced the vertical-drop artifact.
+          loRowZ: Infinity, loRowX: null, loRowY: null, hiRowZ: -Infinity, hiRowX: null, hiRowY: null };
         order.push(key);
       }
       var gr = groups[key];
@@ -152,6 +160,8 @@
       gr.xhi = Math.max(gr.xhi, cx + bx / 2);
       gr.ylo = Math.min(gr.ylo, cy - by / 2);
       gr.yhi = Math.max(gr.yhi, cy + by / 2);
+      if (cz < gr.loRowZ) { gr.loRowZ = cz; gr.loRowX = cx; gr.loRowY = cy; }
+      if (cz > gr.hiRowZ) { gr.hiRowZ = cz; gr.hiRowX = cx; gr.hiRowY = cy; }
     });
     return { groups: groups, order: order };
   }
@@ -454,8 +464,15 @@
       // LOWER of the two storeys' z (whichever of sA/sB that is), hiWp at the higher — same ternary
       // wpForA/wpForB already use below, so this can never disagree with which node an edge treats
       // as "storey sA's side" vs "storey sB's side".
-      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: gcx, cy: gcy, cz: zLo, storey: (zA <= zB) ? sA : sB };
-      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: gcx, cy: gcy, cz: zHi, storey: (zA <= zB) ? sB : sA };
+      // §STAIR-RUN-ENDS: each end uses its OWN real measured position (the flight row nearest
+      // that end's z), not the whole-stair average — see getStairGroups() comment for why (a
+      // real ~3.4m horizontal run offset was being collapsed to a vertical drop). Falls back to
+      // the average only if a real end-row position is somehow missing (defensive, never invents
+      // a NEW point — gcx/gcy is itself real, just less precise).
+      var loX = (gr.loRowX != null) ? gr.loRowX : gcx, loY = (gr.loRowY != null) ? gr.loRowY : gcy;
+      var hiX = (gr.hiRowX != null) ? gr.hiRowX : gcx, hiY = (gr.hiRowY != null) ? gr.hiRowY : gcy;
+      if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: loX, cy: loY, cz: zLo, storey: (zA <= zB) ? sA : sB };
+      if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: hiX, cy: hiY, cz: zHi, storey: (zA <= zB) ? sB : sA };
       var wpForA = (zA <= zB) ? loWp : hiWp, wpForB = (zA <= zB) ? hiWp : loWp;
       edges.push({ a: circA, b: circB, doorGuid: repGuid, doorName: key, storey: sA + ' / ' + sB,
         kind: 'E3', w: Math.abs(zB - zA) || Math.abs(gr.zhi - gr.zlo), wpA: wpForA, wpB: wpForB });
