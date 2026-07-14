@@ -2434,6 +2434,13 @@
       'id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL,' +
       'op_type TEXT NOT NULL, parameters TEXT NOT NULL,' +
       'input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
+    // §SE-7c: the T3 overlay pass below runs one UPDATE ... WHERE op_type=? AND output_guid=? PER
+    // ELEMENT (up to 122K times on a large building) — with no index, each is a full table scan of
+    // kernel_ops itself (also up to 122K rows), i.e. O(n^2). This index turns it into an indexed
+    // lookup per UPDATE — the actual dominant cost behind "regenerate Time Machine after a schedule
+    // change is slow" (materializeDefault's own writes were already fixed by §SE-5; this is a
+    // DIFFERENT table/query, never indexed). IF NOT EXISTS — safe to re-run, no data change.
+    db.run('CREATE INDEX IF NOT EXISTS idx_kernel_ops_guid ON kernel_ops(output_guid)');
 
     // ── T3 (§3.1): probe for a usable captured native IFC 4D schedule ──────────
     // If present + parseable, the generative timeline is rebased onto the real
