@@ -121,18 +121,37 @@
   // Returns { groups: {key: {guids,cx,cy,n,zlo,zhi,xlo,xhi,ylo,yhi}}, order: [key,...] (insertion order) }.
   function getStairGroups(dbQuery, log) {
     log = log || function () {};
-    var flightRows = [];
+    var flightRows = [], assemblyRows = [];
     var _stairSelect = "SELECT m.guid, m.element_name, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z" +
       ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid';
     try {
       flightRows = dbQuery(_stairSelect +
         " WHERE (m.ifc_class LIKE 'IfcStairFlight%' OR m.ifc_class LIKE 'IfcRampFlight%') AND t.center_z IS NOT NULL") || [];
-      if (!flightRows.length) {
-        flightRows = dbQuery(_stairSelect +
-          " WHERE (m.ifc_class LIKE 'IfcStair%' OR m.ifc_class LIKE 'IfcRamp%') AND t.center_z IS NOT NULL") || [];
-        if (flightRows.length) log('§ROOM_GRAPH_STAIR_FALLBACK assemblies=' + flightRows.length + ' (no flight rows in this building)');
-      }
     } catch (eFl) { log('§ROOM_GRAPH_STAIR_ERR ' + eFl.message); }
+    // §STAIR-FLIGHT-ASSEMBLY-MERGE (2026-07-14, real bug found via user report — Hospital: cross-
+    // floor paths universally failed, "no door-connected route", on every pair). Root cause: the
+    // OLD either/or fallback ("if flightRows.length is exactly 0, use assemblies instead") breaks
+    // the moment a SINGLE unrelated flight row exists anywhere in the building — Hospital has
+    // exactly 1 real IfcStairFlight ("Stair:Monolithic Stair:248870", an orphan, z-span only
+    // 1.1m — too short to bridge any two real storeys) alongside 61 real IfcStair ASSEMBLY rows
+    // ("Stair:180mm max riser 280mm going:*", real multi-floor stairs with real per-floor Z
+    // variants) that the strict either/or NEVER reached, because flightRows.length was 1, not 0.
+    // Fix: always query BOTH, then MERGE — an assembly-derived stair is added only if its
+    // stairBaseKey ISN'T already covered by a flight-derived group, so a building where flights
+    // and assemblies represent the SAME physical stairs (e.g. Duplex) never double-counts; a
+    // building where they're genuinely DIFFERENT stairs (Hospital) gets both.
+    var flightKeys = {};
+    flightRows.forEach(function (f) { flightKeys[stairBaseKey(f[1])] = true; });
+    try {
+      assemblyRows = dbQuery(_stairSelect +
+        " WHERE (m.ifc_class LIKE 'IfcStair%' OR m.ifc_class LIKE 'IfcRamp%') AND t.center_z IS NOT NULL") || [];
+    } catch (eAs) { log('§ROOM_GRAPH_STAIR_ASSEMBLY_ERR ' + eAs.message); }
+    var mergedAssemblyRows = assemblyRows.filter(function (a) { return !flightKeys[stairBaseKey(a[1])]; });
+    if (mergedAssemblyRows.length) {
+      log('§ROOM_GRAPH_STAIR_MERGE flightRows=' + flightRows.length + ' assemblyOnlyRows=' + mergedAssemblyRows.length +
+        ' (assembly stairs not already covered by a flight — merged in, not replacing)');
+    }
+    flightRows = flightRows.concat(mergedAssemblyRows);
 
     var groups = {}, order = [];
     flightRows.forEach(function (f) {
