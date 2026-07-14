@@ -65,30 +65,37 @@ function bestOverlapFraction(g, rects) {
   return best;
 }
 const MIN_OVERLAP_FRACTION = 0.5;
+// §CORRIDOR-SHAPE (2026-07-14): ground truth also requires the shape bound now — a room must be
+// BOTH >=50% overlapping AND elongated enough (see common/hallway_backbone.js's
+// DEFAULT_PROFILE.minAspectRatio) to independently re-verify as "should be classified corridor".
+const MIN_ASPECT_RATIO = HallwayBackbone.DEFAULT_PROFILE.minAspectRatio;
+function meetsCorridorBar(g, rects) {
+  return bestOverlapFraction(g, rects) >= MIN_OVERLAP_FRACTION &&
+    HallwayBackbone.unionAspectRatio(g.ownRects) >= MIN_ASPECT_RATIO;
+}
 
 let allVerified = true, checkedCount = 0;
 guids.forEach(lg => {
   const g = roomByGuid[lg];
   if (!g) { allVerified = false; return; }
   const rects = bucketsByStorey[g.storey] || [];
-  const frac = bestOverlapFraction(g, rects);
-  if (frac < MIN_OVERLAP_FRACTION) allVerified = false;
+  if (!meetsCorridorBar(g, rects)) allVerified = false;
   checkedCount++;
 });
-chk('G2 every classified room independently re-verified to have >=' + MIN_OVERLAP_FRACTION +
-  ' of its own area inside a real backbone rect (not just centroid)', allVerified, 'checked=' + checkedCount);
+chk('G2 every classified room independently re-verified to meet BOTH the overlap-fraction (>=' +
+  MIN_OVERLAP_FRACTION + ') and shape (aspect>=' + MIN_ASPECT_RATIO + ') bars, not just centroid',
+  allVerified, 'checked=' + checkedCount);
 
-// Rooms that were NOT classified as corridor must genuinely NOT meet the overlap-fraction bar
-// either — confirms the classifier isn't under- or over-matching against its own stated rule.
+// Rooms that were NOT classified as corridor must genuinely NOT meet BOTH bars either — confirms
+// the classifier isn't under- or over-matching against its own stated rule.
 const nonMatched = Object.keys(roomByGuid).filter(g => !result[g]);
 let overMatchFound = false;
 nonMatched.slice(0, 40).forEach(lg => {
   const g = roomByGuid[lg];
   const rects = bucketsByStorey[g.storey] || [];
-  const frac = bestOverlapFraction(g, rects);
-  if (frac >= MIN_OVERLAP_FRACTION) overMatchFound = true;
+  if (meetsCorridorBar(g, rects)) overMatchFound = true;
 });
-chk('G3 no false negatives in a 40-room sample (a room meeting the overlap-fraction bar was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
+chk('G3 no false negatives in a 40-room sample (a room meeting BOTH bars was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
 
 console.log('§SAMPLE classified=' + guids.length + ' total=' + Object.keys(roomByGuid).length +
   ' chains touched=' + new Set(guids.map(g => result[g].chain)).size);

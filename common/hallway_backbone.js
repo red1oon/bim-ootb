@@ -94,7 +94,20 @@
     enclosureTolerance: 0.5,
     // §CORRIDOR-OVERLAP-FRACTION — a room must have this fraction of its own area inside the
     // matched bucket to count as "on the corridor", not just its centroid.
-    minOverlapFraction: 0.5
+    minOverlapFraction: 0.5,
+    // §CORRIDOR-SHAPE (2026-07-14, user-reported: "Type.Hall/Corridor are still non corridors but
+    // mere rooms"). The overlap-fraction guard alone still lets a small, roughly SQUARE room
+    // through if it's simply small enough to sit almost entirely inside a bucket rect — real live
+    // data (Clinic, all 17 rooms classified before this fix): 11 of the 17 were near-square
+    // closets/small-office-shaped rooms (aspect ratio 1.08-1.44, area 4.7-11.4m² — e.g. "First
+    // Floor R10" at 2.4x2.2m, aspect 1.09), clearly not corridors despite high overlap fraction;
+    // the other 6 were genuinely elongated (aspect 1.88-3.86, e.g. "Second Floor R7" at 16.0x4.6m,
+    // aspect 3.48) and DO look like real corridor segments. A real corridor is elongated BY
+    // DEFINITION — that shape is what makes it a walkway rather than a room. 1.8 sits right below
+    // that real cluster's low end (1.88), cleanly separating the 6 genuine ones from the 11 boxy
+    // false positives (confirmed: applying this bound moved Clinic's classifiedRooms 17->6,
+    // dropping exactly those 11, keeping exactly those 6 — see debug dump, not eyeballed).
+    minAspectRatio: 1.8
   };
 
   // §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real walkway/corridor (1) is not
@@ -477,6 +490,21 @@
       : { x0: perpLo, x1: perpHi, y0: b.span.lo, y1: b.span.hi };
   }
 
+  // §CORRIDOR-SHAPE (2026-07-14, user-reported: "Type.Hall/Corridor are still non corridors but
+  // mere rooms" — see DEFAULT_PROFILE.minAspectRatio's own comment for the real measured evidence).
+  // A real corridor is elongated BY DEFINITION — that shape is what makes it a walkway rather than
+  // a room — so classifyCorridorRooms() rejects a candidate whose own union bounding box (across
+  // all its §MULTI-RECT sub-rects — a shape property of the ROOM, not of which bucket it might
+  // match, hence checked once per room, not per candidate) isn't elongated enough. Promoted to a
+  // module-level primitive (matching wallLiesFlatAgainst/distanceToEnclosure/etc.) so it's
+  // independently sandbox-testable, not buried inside classifyCorridorRooms().
+  function unionAspectRatio(ownRects) {
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    ownRects.forEach(function (rr) { x0 = Math.min(x0, rr.x0); x1 = Math.max(x1, rr.x1); y0 = Math.min(y0, rr.y0); y1 = Math.max(y1, rr.y1); });
+    var w = x1 - x0, h = y1 - y0;
+    return (w > 0 && h > 0) ? Math.max(w, h) / Math.min(w, h) : 0;
+  }
+
   // ── 5b. commonSenseFilter ────────────────────────────────────────────────────────────────────
   // Composes isGrounded() + distanceToEnclosure() into the single (3)+(4) gate from
   // §COMMON-SENSE-FILTER above — "not in mid air" + "always connected to doors/stairs/walls".
@@ -573,6 +601,7 @@
     var result = {};
     Object.keys(rects).forEach(function (lg) {
       var r = rects[lg];
+      if (unionAspectRatio(r.ownRects) < profile.minAspectRatio) return; // not elongated enough to be a real corridor, regardless of overlap
       var cx = r.sumX / r.n, cy = r.sumY / r.n;
       var candidates = bucketsByStorey[r.storey];
       if (!candidates) return;
@@ -600,7 +629,7 @@
     // the 4 primitives it's built from are exported too so a sandbox can test each in isolation.
     commonSenseFilter: commonSenseFilter,
     wallLiesFlatAgainst: wallLiesFlatAgainst, distanceToEnclosure: distanceToEnclosure,
-    buildingEnvelope: buildingEnvelope, isGrounded: isGrounded,
+    buildingEnvelope: buildingEnvelope, isGrounded: isGrounded, unionAspectRatio: unionAspectRatio,
     // DEFAULT_PROFILE — the single consolidated source of every tunable plausibility number (see
     // §PLAUSIBILITY-PROFILE above). Exported read-only-by-convention so a caller can build a
     // variant profile via `Object.assign({}, HallwayBackbone.DEFAULT_PROFILE, {maxSideOffset: 4})`

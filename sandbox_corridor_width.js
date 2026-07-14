@@ -82,7 +82,12 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { f
       // ROOM_BIG: centroid (8, 1.5) sits inside the corridor strip's y-range, but the room's own
       // 6x10 body extends far beyond it (y:[-3.5,6.5]) — most of its area is OUTSIDE the strip (a
       // real room bordering the corridor, not part of it)
-      ['S_BIG', 'L1', null, 8, 1.5, 6, 10]
+      ['S_BIG', 'L1', null, 8, 1.5, 6, 10],
+      // ROOM_SQUARE: small (1.0x1.0), fully inside the strip (100% overlap fraction — would have
+      // passed the OLD overlap-only guard) but near-square (aspect 1.0) — the exact real-world
+      // shape found on Clinic (e.g. "First Floor R10", 2.4x2.2m, aspect 1.09): a closet/small-room
+      // whose small size lets it hide entirely inside an oversized corridor rect, not a corridor.
+      ['S_SQUARE', 'L1', null, 5, 0.3, 1.0, 1.0]
     ]
   };
   function dbQuery(sql) {
@@ -101,6 +106,16 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  OK ' + n); } else { f
   const labels = HB.classifyCorridorRooms(dbQuery, { log: () => {} });
   chk('D1 ROOM_CORRIDOR (fully inside strip) classified as corridor', !!labels['S_CORR'], JSON.stringify(labels));
   chk('D2 ROOM_BIG (centroid-only drift, body mostly outside) REJECTED by overlap-fraction guard', !labels['S_BIG'], JSON.stringify(labels));
+  chk('D3 ROOM_SQUARE (100% overlap but near-square, aspect~1.0) REJECTED by shape guard', !labels['S_SQUARE'], JSON.stringify(labels));
+}
+
+// ── Test I: unionAspectRatio — the shape primitive, tested directly ──
+{
+  chk('I1 a long thin rect (12x1.5) measures a high aspect ratio', Math.abs(HB.unionAspectRatio([{ x0: 0, x1: 12, y0: 0, y1: 1.5 }]) - 8) < 0.01);
+  chk('I2 a near-square rect (2.4x2.2) measures aspect close to 1.0',
+    Math.abs(HB.unionAspectRatio([{ x0: 0, x1: 2.4, y0: 0, y1: 2.2 }]) - (2.4 / 2.2)) < 0.01);
+  chk('I3 a multi-rect (§MULTI-RECT) room unions across ALL its sub-rects, not just the first',
+    HB.unionAspectRatio([{ x0: 0, x1: 1, y0: 0, y1: 1 }, { x0: 1, x1: 10, y0: 0, y1: 1 }]) === 10);
 }
 
 // ── Test E: wallLiesFlatAgainst / distanceToEnclosure / isGrounded — unit-level, no DB needed ──
