@@ -1265,6 +1265,28 @@
     // colored by real material. ONE draw. NOT the whole building (full merge = 2.3GB; envelope ≈ ~150MB).
     // A persistent overlay (NOT in _shapeOverlays → never cleared on tap). Built deferred, after open.
     var _mergedGhost = null, _mergedGhostBld = null, _MG_VCAP = 60000000; // vert cap, bail above
+    // §DESKTOP-BBOX-THRESHOLD (2026-07-15i, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §13): extend the
+    // existing mobile-only bbox-shell default to desktop by real element count, so a large
+    // building gets the light shell without needing window._isMobile. Threshold grounded against
+    // actual elements_meta counts across the fleet (measured this session, /home/red1/bim-ootb/
+    // buildings/*_extracted.db): Clinic=16114, HHS=6880 (both "small enough" per §12 — never want
+    // the bbox default here) vs. Terminal=48428, Hospital=63415 (both real "large" buildings named
+    // in §13's own framing) — 25000 sits with comfortable margin below every large building and
+    // above every small one in the current fleet, not a guessed round number.
+    var _LARGE_BUILDING_ELEM_THRESHOLD = 25000;
+    var _elemCountCache = null, _elemCountCacheBld = null;
+    function _isLargeBuilding() {
+      if (!A.dbQuery) return false;
+      if (_elemCountCacheBld === A.activeBuilding && _elemCountCache != null) return _elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD;
+      try {
+        var rows = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+        _elemCountCache = (rows && rows[0]) ? rows[0][0] : 0;
+        _elemCountCacheBld = A.activeBuilding;
+        console.log('[RP-TA] §LARGE_BUILDING_CHECK elems=' + _elemCountCache + ' threshold=' + _LARGE_BUILDING_ELEM_THRESHOLD +
+          ' large=' + (_elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD));
+      } catch (e) { console.warn('[RP-TA] §LARGE_BUILDING_CHECK_ERR', e.message); return false; }
+      return _elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD;
+    }
     // Envelope = the outward-facing skin classes. Interior MEP/furniture/fittings excluded.
     function _isEnvelope(ifc) {
       if (!ifc) return false;
@@ -3032,10 +3054,13 @@
       var _shell = !!(_mergedGhost && _mergedGhost.visible);
       // §MOBILE-BBOX-DEFAULT: the translucent ghost shell (_dimXrayTo whole model) is too heavy on mobile.
       // Default mobile Find/drill to the cheap bbox-wireframe shell (Alt+X envelope) — i.e. bboxes during layering.
-      // Desktop keeps the rich x-ray path. Cached build → only the first drill pays for it.
-      if (!_shell && window._isMobile) {
+      // §DESKTOP-BBOX-THRESHOLD: same reasoning applies on desktop once the building itself is large
+      // (initial-load weight, not the per-tab-switch cost tracked separately) — extend the same default
+      // there by real element count instead of gating on window._isMobile alone. Cached build → only
+      // the first drill pays for it either way.
+      if (!_shell && (window._isMobile || _isLargeBuilding())) {
         var _mg = (_mergedGhost && _mergedGhostBld === A.activeBuilding) ? _mergedGhost : _buildMergedGhost();
-        if (_mg) { _mg.visible = true; _shell = true; _mgLensOwned = true; console.log('[MG] §MOBILE_BBOX_SHELL Find→bbox (no heavy x-ray) lensOwned=1'); }
+        if (_mg) { _mg.visible = true; _shell = true; _mgLensOwned = true; console.log('[MG] §BBOX_SHELL_DEFAULT Find→bbox (no heavy x-ray) mobile=' + !!window._isMobile + ' large=' + _isLargeBuilding() + ' lensOwned=1'); }
       }
       if (!_shell && !A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
 
