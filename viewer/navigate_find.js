@@ -2173,11 +2173,29 @@
 
     // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
     // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
+    // §CORRIDOR-ROOM-BACKPROP (2026-07-14): a `CORRIDOR_ROOM::*` guid has NO spatial_structure row
+    // — it's a synthetic room node injected by room_graph.js's buildGraph() for a real, door+wall-
+    // verified hallway bucket that room-compilation never turned into a room. _roomUnionBBox()
+    // would correctly return null for it (nothing to query), so build the SAME {name,storey,
+    // rectCount,cx,cy,cz,sx,sy,sz} shape directly from the room graph's own node instead — real
+    // measured position/span either way, just a different (in-memory, not DB) source. sz (height)
+    // has no measured value for a synthetic hallway node — 3.0m is a generic floor-to-ceiling
+    // placeholder, not a measured number; documented as such, not silently invented as if real.
+    function _corridorRoomBBox(guid) {
+      var graph = _roomGraphFor();
+      var n = graph && graph.nodesByGuid && graph.nodesByGuid[guid];
+      if (!n || n.kind !== 'room' || !n.rects || !n.rects.length) return null;
+      var rc = n.rects[0];
+      return { name: n.name, storey: n.storey, rectCount: 1,
+        cx: n.cx, cy: n.cy, cz: n.cz, sx: rc.x1 - rc.x0, sy: rc.y1 - rc.y0, sz: 3.0 };
+    }
+
     function _roomSelect(guid) {
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
-      try { _surfaceConstructionLink(guid, guid); } catch (e) {}
+      var isCorridorRoom = guid.indexOf('CORRIDOR_ROOM::') === 0;
+      if (!isCorridorRoom) { try { _surfaceConstructionLink(guid, guid); } catch (e) {} }
       try {
-        var rw = _roomUnionBBox(guid);
+        var rw = isCorridorRoom ? _corridorRoomBBox(guid) : _roomUnionBBox(guid);
         if (rw) { name = rw.name || guid; var storey = rw.storey;
           if (storey) { storeySet = new Set();
             A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [storey])
@@ -2339,7 +2357,27 @@
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
           byGroup[gk].push({ key: logicalGuid, label: r[1] || '(unnamed)' });
         });
+        // §CORRIDOR-ROOM-BACKPROP: `graph.nodes` (from _roomGraphFor(), same source the Path
+        // sub-mode already uses) includes `CORRIDOR_ROOM::*` synthetic nodes for real hallway
+        // buckets with NO spatial_structure row at all — the SQL query above can never see these,
+        // it only reads real rows. Add them here so "return more results" (user ask) actually
+        // reaches the Type/Storey tree too, not just the Path picker (which already lists them for
+        // free via graph.nodes). Real, measured position/span either way — see _corridorRoomBBox.
+        var corridorRoomCount = 0;
+        try {
+          var pathGraph = _roomGraphFor();
+          if (pathGraph) {
+            pathGraph.nodes.forEach(function (n) {
+              if (n.guid.indexOf('CORRIDOR_ROOM::') !== 0) return;
+              var gk2 = (_roomGroupBy === 'type') ? 'Hall / Corridor' : (n.storey || '(no storey)');
+              if (!byGroup[gk2]) { byGroup[gk2] = []; order.push(gk2); }
+              byGroup[gk2].push({ key: n.guid, label: n.name });
+              corridorRoomCount++;
+            });
+          }
+        } catch (eCr) { console.warn('[RP-T3] §CORRIDOR_ROOM_TREE_ERR', eCr.message); }
         if (dupRects) console.log('[RP-T3] §ROOM_TREE_DEDUP collapsed ' + dupRects + ' §MULTI-RECT sub-rect row(s) into their logical room entry');
+        if (corridorRoomCount) console.log('[RP-T3] §CORRIDOR_ROOM_TREE added ' + corridorRoomCount + ' backprop-injected corridor room(s)');
         order.forEach(function(gk) {
           var groupRooms = byGroup[gk];
           var kids = groupRooms.map(function(rm) {

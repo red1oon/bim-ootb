@@ -232,7 +232,7 @@
     if (HallwayBackbone) {
       try {
         backbone = HallwayBackbone.buildBackbone(dbQuery, { log: log });
-        var corridorRoomsInjected = 0, corridorRoomsSkippedOverlap = 0;
+        var corridorRoomsInjected = 0, corridorRoomsSkippedOverlap = 0, corridorRoomIndexByStorey = {};
         // §OVERLAP-GUARD (real bug found+fixed same session, before this ever shipped): a
         // centroid-only "is this space covered" test is NOT enough — a corridor bucket's grown
         // WIDTH can still substantially overlap a real compiled room's rect even when the bucket's
@@ -259,7 +259,8 @@
           });
           if (overlapsRealRoom) { corridorRoomsSkippedOverlap++; return; } // a real compiled room already occupies (part of) this space — don't shadow it
           var crg = 'CORRIDOR_ROOM::' + b.key;
-          nodes[crg] = { guid: crg, kind: 'room', name: '≈ ' + b.storey + ' Hall/Corridor', label: 'Hall / Corridor',
+          var crIdx = (corridorRoomIndexByStorey[b.storey] = (corridorRoomIndexByStorey[b.storey] || 0) + 1);
+          nodes[crg] = { guid: crg, kind: 'room', name: '≈ ' + b.storey + ' Hall/Corridor ' + crIdx, label: 'Hall / Corridor',
             storey: b.storey, rects: [rc], cx: bcx, cy: bcy, cz: storeyZ[b.storey] };
           order.push(crg); roomOrder.push(crg);
           b._corridorRoomGuid = crg;
