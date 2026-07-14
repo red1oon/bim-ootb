@@ -958,7 +958,14 @@
         // S4 — ungrey + refresh: invalidate the room-graph cache so PATH mode sees the new
         // rooms without a reload, then re-probe/re-render (the pill removes itself once
         // spaceCount > 0 — see _renderNeedle's own gate).
+        // §CORRIDOR-LABEL-CACHE-BUST (2026-07-14, real bug found via user report): needle-inject
+        // recompiles rooms (HHS: 14 -> 71 real rooms) but this invalidation only ever cleared
+        // _pathGraphCache — _corridorLabelsCache (added later, same per-building caching pattern)
+        // was never included here, so a Type-tree opened BEFORE needle-inject finished could stay
+        // stuck showing "no Hall/Corridor" for the rest of the session even after real corridor
+        // rooms existed. Same fix, same site, same reason.
         _pathGraphCache = null; _pathGraphBld = null;
+        _corridorLabelsCache = null; _corridorLabelsBld = null;
         _renderAxes();
         buildTree();
       } catch (e) {
