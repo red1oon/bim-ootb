@@ -1018,6 +1018,24 @@
       return g;
     }
 
+    // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask): Type-grouped room tree DISPLAY-only override —
+    // a room whose centroid sits on a real, door+wall-verified hallway backbone
+    // (common/hallway_backbone.js) shows as "Hall / Corridor" in the Type view instead of whatever
+    // generic predefined_type it was compiled with. Never rewrites spatial_structure — same
+    // per-building cache convention as _roomGraphFor() above.
+    var _corridorLabelsCache = null, _corridorLabelsBld = null;
+    function _corridorLabelsFor() {
+      var HB = (typeof window !== 'undefined') && window.HallwayBackbone;
+      if (!HB || !A.dbQuery) return {};
+      if (_corridorLabelsCache && _corridorLabelsBld === A.activeBuilding) return _corridorLabelsCache;
+      var labels = {};
+      try {
+        labels = HB.classifyCorridorRooms(A.dbQuery, { log: function(m) { console.log('[RP-CORRIDOR] ' + m); } });
+      } catch (eHb) { console.warn('[RP-CORRIDOR] §CORRIDOR_LABEL_ERR', eHb.message); }
+      _corridorLabelsCache = labels; _corridorLabelsBld = A.activeBuilding;
+      return labels;
+    }
+
     function _clearPathHighlight() {
       _pathExtraMeshes.forEach(function(m) {
         if (m.parent) m.parent.remove(m);
@@ -2155,11 +2173,29 @@
 
     // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
     // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
+    // §CORRIDOR-ROOM-BACKPROP (2026-07-14): a `CORRIDOR_ROOM::*` guid has NO spatial_structure row
+    // — it's a synthetic room node injected by room_graph.js's buildGraph() for a real, door+wall-
+    // verified hallway bucket that room-compilation never turned into a room. _roomUnionBBox()
+    // would correctly return null for it (nothing to query), so build the SAME {name,storey,
+    // rectCount,cx,cy,cz,sx,sy,sz} shape directly from the room graph's own node instead — real
+    // measured position/span either way, just a different (in-memory, not DB) source. sz (height)
+    // has no measured value for a synthetic hallway node — 3.0m is a generic floor-to-ceiling
+    // placeholder, not a measured number; documented as such, not silently invented as if real.
+    function _corridorRoomBBox(guid) {
+      var graph = _roomGraphFor();
+      var n = graph && graph.nodesByGuid && graph.nodesByGuid[guid];
+      if (!n || n.kind !== 'room' || !n.rects || !n.rects.length) return null;
+      var rc = n.rects[0];
+      return { name: n.name, storey: n.storey, rectCount: 1,
+        cx: n.cx, cy: n.cy, cz: n.cz, sx: rc.x1 - rc.x0, sy: rc.y1 - rc.y0, sz: 3.0 };
+    }
+
     function _roomSelect(guid) {
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
-      try { _surfaceConstructionLink(guid, guid); } catch (e) {}
+      var isCorridorRoom = guid.indexOf('CORRIDOR_ROOM::') === 0;
+      if (!isCorridorRoom) { try { _surfaceConstructionLink(guid, guid); } catch (e) {} }
       try {
-        var rw = _roomUnionBBox(guid);
+        var rw = isCorridorRoom ? _corridorRoomBBox(guid) : _roomUnionBBox(guid);
         if (rw) { name = rw.name || guid; var storey = rw.storey;
           if (storey) { storeySet = new Set();
             A.dbQuery("SELECT guid FROM elements_meta WHERE storey = ?", [storey])
@@ -2300,6 +2336,7 @@
             " FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid" +
             " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL ORDER BY p.name, s.name");
         } catch(e) { console.warn('[RP-TA] §ROOM_TREE_ERR', e.message); }
+        var corridorLabels = (_roomGroupBy === 'type') ? _corridorLabelsFor() : {};
         var byGroup = {}, order = [], typed = 0, seenLogical = {}, dupRects = 0;
         rooms.forEach(function(r) {
           // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
@@ -2307,16 +2344,40 @@
           // so fall through to predefined_type (r[4], e.g. INTERNAL_DOORPART/INTERNAL_SMALL/
           // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
           // 'Office') still group by object_type first, unchanged.
-          var typeKey = (r[3] && r[3] !== 'COMPILED') ? r[3] : r[4];
-          var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
           var logicalGuid = r[5] || r[0];   // room_guid, falling back to this row's own guid
+          // §CORRIDOR-TYPE-LABEL: a real hallway-backbone match OVERRIDES whatever generic
+          // predefined_type this room compiled with — takes priority over the fallthrough below,
+          // since it's a stronger, door+wall-verified signal, not a compile-time placeholder.
+          var corridorMatch = corridorLabels[logicalGuid];
+          var typeKey = corridorMatch ? 'Hall / Corridor' : ((r[3] && r[3] !== 'COMPILED') ? r[3] : r[4]);
+          var gk = (_roomGroupBy === 'type') ? (typeKey || '(untyped)') : (r[2] || '(no storey)');
           if (seenLogical[logicalGuid]) { dupRects++; return; }   // §MULTI-RECT: 1 entry per logical room
           seenLogical[logicalGuid] = true;
           if (_roomGroupBy === 'type' && typeKey) typed++;
           if (!byGroup[gk]) { byGroup[gk] = []; order.push(gk); }
           byGroup[gk].push({ key: logicalGuid, label: r[1] || '(unnamed)' });
         });
+        // §CORRIDOR-ROOM-BACKPROP: `graph.nodes` (from _roomGraphFor(), same source the Path
+        // sub-mode already uses) includes `CORRIDOR_ROOM::*` synthetic nodes for real hallway
+        // buckets with NO spatial_structure row at all — the SQL query above can never see these,
+        // it only reads real rows. Add them here so "return more results" (user ask) actually
+        // reaches the Type/Storey tree too, not just the Path picker (which already lists them for
+        // free via graph.nodes). Real, measured position/span either way — see _corridorRoomBBox.
+        var corridorRoomCount = 0;
+        try {
+          var pathGraph = _roomGraphFor();
+          if (pathGraph) {
+            pathGraph.nodes.forEach(function (n) {
+              if (n.guid.indexOf('CORRIDOR_ROOM::') !== 0) return;
+              var gk2 = (_roomGroupBy === 'type') ? 'Hall / Corridor' : (n.storey || '(no storey)');
+              if (!byGroup[gk2]) { byGroup[gk2] = []; order.push(gk2); }
+              byGroup[gk2].push({ key: n.guid, label: n.name });
+              corridorRoomCount++;
+            });
+          }
+        } catch (eCr) { console.warn('[RP-T3] §CORRIDOR_ROOM_TREE_ERR', eCr.message); }
         if (dupRects) console.log('[RP-T3] §ROOM_TREE_DEDUP collapsed ' + dupRects + ' §MULTI-RECT sub-rect row(s) into their logical room entry');
+        if (corridorRoomCount) console.log('[RP-T3] §CORRIDOR_ROOM_TREE added ' + corridorRoomCount + ' backprop-injected corridor room(s)');
         order.forEach(function(gk) {
           var groupRooms = byGroup[gk];
           var kids = groupRooms.map(function(rm) {

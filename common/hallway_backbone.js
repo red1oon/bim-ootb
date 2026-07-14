@@ -188,13 +188,22 @@
   // bucket's span. Returns { chains: [[bucket,...ordered...], ...] } — each chain is an ORDERED
   // path (not just a graph), per the user's explicit ask: the same structure feeds both path
   // routing (door-to-door must have a clear corridor-hugging route) and a flythrough camera path.
+  // §CROSSING-IDENTITY (2026-07-14, real bug found via user screenshot): crossings/chains
+  // reference the actual BUCKET OBJECTS, not positional array indices. buildBackbone() calls this
+  // function once PER STOREY (a fresh, separately-indexed `buckets` array each time) — an
+  // index-based crossing (`{a:i, b:j}`) would only be valid relative to THAT call's own local
+  // array, but was being looked up against the GLOBAL cross-storey `joined` array by the caller
+  // (room_graph.js), so a First-Floor local index could silently resolve to a completely different
+  // Second-Floor bucket. Confirmed live: a phantom `spine(First Floor)->spine(Second Floor)`
+  // edge with no real stair between them. Object references have no such ambiguity — safe to
+  // compare by `===` since these are the SAME objects returned in `joined`/`chains`.
   function walkBackbone(buckets) {
     var n = buckets.length;
     var parent = buckets.map(function (_, i) { return i; });
     function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
     function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
 
-    var crossings = []; // {a,b,x,y} — real crossing points, kept for ordering + rendering
+    var crossings = []; // {a,b,x,y} — a and b are real bucket OBJECTS (see §CROSSING-IDENTITY)
     for (var i = 0; i < n; i++) {
       for (var j = i + 1; j < n; j++) {
         var A = buckets[i], B = buckets[j];
@@ -207,7 +216,7 @@
         var bIn = bAlong >= B.span.lo - WALL_CROSS_SLACK && bAlong <= B.span.hi + WALL_CROSS_SLACK;
         if (aIn && bIn) {
           union(i, j);
-          crossings.push({ a: i, b: j, x: xB, y: yB });
+          crossings.push({ a: A, b: B, x: xB, y: yB });
         }
       }
     }
@@ -217,26 +226,26 @@
 
     var chains = Object.keys(groups).map(function (r) {
       var idxs = groups[r];
+      var idxBuckets = idxs.map(function (ix) { return buckets[ix]; });
       // Order the chain by a simple traversal: start at a bucket with only one crossing (a real
       // end), walk crossing-to-crossing. Falls back to insertion order if the chain has no clean
       // single-degree start (e.g. a loop) — never invents a position, just doesn't over-claim order.
-      var memberSet = {}; idxs.forEach(function (ix) { memberSet[ix] = true; });
-      var localCross = crossings.filter(function (c) { return memberSet[c.a] && memberSet[c.b]; });
-      var degree = {}; idxs.forEach(function (ix) { degree[ix] = 0; });
-      localCross.forEach(function (c) { degree[c.a]++; degree[c.b]++; });
-      var starts = idxs.filter(function (ix) { return degree[ix] <= 1; });
-      var startIdx = starts.length ? starts[0] : idxs[0];
-      var visited = {}, ordered = [], cur = startIdx;
-      while (cur !== undefined && !visited[cur]) {
-        visited[cur] = true; ordered.push(cur);
-        var next = localCross.find(function (c) { return (c.a === cur || c.b === cur) && !visited[c.a === cur ? c.b : c.a]; });
+      var localCross = crossings.filter(function (c) { return idxBuckets.indexOf(c.a) >= 0 && idxBuckets.indexOf(c.b) >= 0; });
+      var degree = new Map(); idxBuckets.forEach(function (b) { degree.set(b, 0); });
+      localCross.forEach(function (c) { degree.set(c.a, degree.get(c.a) + 1); degree.set(c.b, degree.get(c.b) + 1); });
+      var starts = idxBuckets.filter(function (b) { return degree.get(b) <= 1; });
+      var startB = starts.length ? starts[0] : idxBuckets[0];
+      var visited = new Set(), ordered = [], cur = startB;
+      while (cur !== undefined && !visited.has(cur)) {
+        visited.add(cur); ordered.push(cur);
+        var next = localCross.find(function (c) { return (c.a === cur || c.b === cur) && !visited.has(c.a === cur ? c.b : c.a); });
         cur = next ? (next.a === cur ? next.b : next.a) : undefined;
       }
-      idxs.forEach(function (ix) { if (!visited[ix]) ordered.push(ix); }); // stray members (loop remnants), appended not dropped
+      idxBuckets.forEach(function (b) { if (!visited.has(b)) ordered.push(b); }); // stray members (loop remnants), appended not dropped
       return {
-        buckets: ordered.map(function (ix) { return buckets[ix]; }),
+        buckets: ordered,
         crossings: localCross,
-        storey: buckets[idxs[0]].storey
+        storey: idxBuckets[0].storey
       };
     });
     return { chains: chains, crossings: crossings };
@@ -279,6 +288,10 @@
     var allChains = [], allCrossings = [];
     Object.keys(byStorey).forEach(function (st) {
       var r = walkBackbone(byStorey[st]);
+      r.chains.forEach(function (ch) {
+        var chainIndex = allChains.length + r.chains.indexOf(ch);
+        ch.buckets.forEach(function (b) { b._chainIndex = chainIndex; });
+      });
       allChains = allChains.concat(r.chains);
       allCrossings = allCrossings.concat(r.crossings);
     });
@@ -311,11 +324,72 @@
       : { x0: perpLo, x1: perpHi, y0: b.span.lo, y1: b.span.hi };
   }
 
+  // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask: "long corridors well named under Type.Hall/
+  // Corridor" — resume doc §OPEN #2's UX ask, superseded signal now the verified backbone instead
+  // of the old undercounting hallwayness() formula). DISPLAY-TIME classification only — does NOT
+  // rewrite spatial_structure/predefined_type (that's compile-time, Sacred-file/mined-pipeline
+  // territory, a bigger cross-repo change); a caller (e.g. the Find panel's Type-grouped room
+  // tree) asks "which already-compiled rooms sit on a real hallway spine" and overrides the
+  // DISPLAYED label only, non-destructively, for any already-compiled/patched building without a
+  // new extraction run. A room qualifies iff its own rect-set CENTROID falls inside a joined
+  // (>=3-door) bucket's real measured rect (bucketRect) on the same storey — real, measured
+  // evidence (the bucket only exists because of real doors + real walls), not a shape/area guess.
+  // Returns a map: { logicalRoomGuid: { chain: chainIndex|null } } for every matched room.
+  function classifyCorridorRooms(dbQuery, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var backbone = buildBackbone(dbQuery, opts);
+    if (!backbone.joined.length) return {};
+
+    var hasRoomGuid = false;
+    try {
+      var cols = dbQuery('PRAGMA table_info(spatial_structure)') || [];
+      hasRoomGuid = cols.some(function (c) { return c[1] === 'room_guid'; });
+    } catch (eCols) { /* stays false */ }
+
+    // storey name comes via the parent IfcBuildingStorey row's own name — same join-through-parent
+    // convention room_graph.js buildGraph() and navigate_find.js's room tree both already use.
+    var spaceRows = dbQuery("SELECT s.guid, p.name" + (hasRoomGuid ? ', s.room_guid' : ', NULL') +
+      ', s.center_x, s.center_y, s.size_x, s.size_y' +
+      ' FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid' +
+      " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL AND s.size_x IS NOT NULL") || [];
+
+    var rects = {}; // logicalGuid -> {storey, sumX, sumY, n}
+    spaceRows.forEach(function (r) {
+      var logicalGuid = r[2] || r[0];
+      var storey = r[1] || '';
+      if (!rects[logicalGuid]) rects[logicalGuid] = { storey: storey, sumX: 0, sumY: 0, n: 0 };
+      rects[logicalGuid].sumX += r[3]; rects[logicalGuid].sumY += r[4]; rects[logicalGuid].n++;
+    });
+
+    var bucketsByStorey = {};
+    backbone.joined.forEach(function (b, bi) {
+      (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b), chain: b._chainIndex != null ? b._chainIndex : null });
+    });
+
+    var result = {};
+    Object.keys(rects).forEach(function (lg) {
+      var r = rects[lg];
+      var cx = r.sumX / r.n, cy = r.sumY / r.n;
+      var candidates = bucketsByStorey[r.storey];
+      if (!candidates) return;
+      for (var i = 0; i < candidates.length; i++) {
+        var rc = candidates[i].rect;
+        if (cx >= rc.x0 && cx <= rc.x1 && cy >= rc.y0 && cy <= rc.y1) {
+          result[lg] = { chain: candidates[i].chain };
+          break;
+        }
+      }
+    });
+    log('§CORRIDOR_TYPE_LABEL classifiedRooms=' + Object.keys(result).length + ' / ' + Object.keys(rects).length);
+    return result;
+  }
+
   var API = {
     doorEdge: doorEdge, correlateDoorEdges: correlateDoorEdges, joinDoorways: joinDoorways,
     growToWall: growToWall, bucketWidth: bucketWidth, bucketRect: bucketRect,
     terminateAtStair: terminateAtStair, walkBackbone: walkBackbone,
-    buildBackbone: buildBackbone
+    buildBackbone: buildBackbone, classifyCorridorRooms: classifyCorridorRooms
   };
   ROOT.HallwayBackbone = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
