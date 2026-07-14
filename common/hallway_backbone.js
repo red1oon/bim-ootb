@@ -123,6 +123,28 @@
   // into that legality test (see room_graph.js wiring) lets a real, wall-bounded corridor register
   // as walkable even without a raster, instead of every corridor chord failing detour.
   var DEFAULT_HALF_WIDTH = 1.2; // m — only used when no flanking wall is found on that side (rare: an open-plan edge)
+  // §CORRIDOR-WIDTH-BOUNDS (2026-07-14, user-reported: false-positive rate + a mis-ID'd corridor
+  // shell on Clinic Second Floor, "taking the narrow wall next to it"). bucketWidth()'s wall scan
+  // had NO plausibility bounds on the flanking-wall distance — two failure modes confirmed on real
+  // live data (see §HOW-TO-TEST-LIVE dump this session):
+  //  - TOO CLOSE: the corridor's OWN door-hosting wall runs the SAME axis as the corridor (doors are
+  //    cut INTO it), so it always satisfies this loop's "runs alongside" test too, at ~0 offset from
+  //    rc — `Math.max(d, 0)` then clamped that self-match in as the "nearest" wall, collapsing the
+  //    whole side to 0. Confirmed live: Clinic Second Floor's runCoord=45 bucket (8 doors) came out
+  //    halfWidthLo=halfWidthHi=0.00 — a literal zero-thickness rect, not a walkable corridor.
+  //  - TOO FAR: with no real nearby flanking wall, the loop still accepted whatever same-axis wall
+  //    was nearest even if that was a coincidentally-aligned wall far across the building. Confirmed
+  //    live on HHS: halfWidthLo up to ~7.8m on one side, ballooning bucketRect() into an 8m-wide
+  //    strip that then swallowed large unrelated rooms (e.g. a 242m² room, 57% area overlap) as
+  //    false-positive "Hall / Corridor" matches.
+  // Both bounded the same way: a candidate wall must sit between MIN and MAX_SIDE_OFFSET from rc to
+  // count as a real flanking wall; outside that window it's "no wall found on this side" (same
+  // fallback as before — DEFAULT_HALF_WIDTH). MIN is bigger than 2x a real wall's thickness
+  // (0.15-0.3m, see RUN_COORD_TOL comment above) so a host-wall self-match never qualifies; MAX is
+  // generous even for a wide hospital double-loaded corridor (~3.6m total width) without accepting
+  // an implausible cross-building match.
+  var MIN_SIDE_OFFSET = 0.5;
+  var MAX_SIDE_OFFSET = 3.0;
   function bucketWidth(bucket, walls) {
     var rc = bucket.runCoord, lo = bucket.span.lo, hi = bucket.span.hi;
     var nearAbove = null, nearBelow = null;
@@ -135,8 +157,8 @@
       if (alongC + alongHalf < lo || alongC - alongHalf > hi) return; // must run alongside this corridor
       var perpC = (bucket.axis === 'x') ? w.cy : w.cx;
       var perpHalf = (bucket.axis === 'x') ? (w.by / 2) : (w.bx / 2);
-      if (perpC >= rc) { var d = (perpC - perpHalf) - rc; if (d >= -WALL_CROSS_SLACK && (nearAbove === null || d < nearAbove)) nearAbove = Math.max(d, 0); }
-      else { var d2 = rc - (perpC + perpHalf); if (d2 >= -WALL_CROSS_SLACK && (nearBelow === null || d2 < nearBelow)) nearBelow = Math.max(d2, 0); }
+      if (perpC >= rc) { var d = (perpC - perpHalf) - rc; if (d >= MIN_SIDE_OFFSET && d <= MAX_SIDE_OFFSET && (nearAbove === null || d < nearAbove)) nearAbove = d; }
+      else { var d2 = rc - (perpC + perpHalf); if (d2 >= MIN_SIDE_OFFSET && d2 <= MAX_SIDE_OFFSET && (nearBelow === null || d2 < nearBelow)) nearBelow = d2; }
     });
     bucket.halfWidthHi = (nearAbove !== null) ? nearAbove : DEFAULT_HALF_WIDTH;
     bucket.halfWidthLo = (nearBelow !== null) ? nearBelow : DEFAULT_HALF_WIDTH;
@@ -354,12 +376,19 @@
       ' FROM spatial_structure s LEFT JOIN spatial_structure p ON p.guid = s.parent_guid' +
       " WHERE s.type='IfcSpace' AND s.center_x IS NOT NULL AND s.size_x IS NOT NULL") || [];
 
-    var rects = {}; // logicalGuid -> {storey, sumX, sumY, n}
+    // rects: logicalGuid -> {storey, sumX, sumY, n, ownRects: [{x0,x1,y0,y1,area}]}. A logical room
+    // can be a §MULTI-RECT union of several spatial_structure rows (see navigate_find.js's own
+    // dedup comment) — ownRects keeps each row's own footprint so the overlap-fraction guard below
+    // can measure against the room's REAL total area, not just its averaged centroid.
+    var rects = {};
     spaceRows.forEach(function (r) {
       var logicalGuid = r[2] || r[0];
       var storey = r[1] || '';
-      if (!rects[logicalGuid]) rects[logicalGuid] = { storey: storey, sumX: 0, sumY: 0, n: 0 };
-      rects[logicalGuid].sumX += r[3]; rects[logicalGuid].sumY += r[4]; rects[logicalGuid].n++;
+      if (!rects[logicalGuid]) rects[logicalGuid] = { storey: storey, sumX: 0, sumY: 0, n: 0, ownRects: [] };
+      var g = rects[logicalGuid];
+      g.sumX += r[3]; g.sumY += r[4]; g.n++;
+      var sx = r[5], sy = r[6];
+      g.ownRects.push({ x0: r[3] - sx / 2, x1: r[3] + sx / 2, y0: r[4] - sy / 2, y1: r[4] + sy / 2, area: sx * sy });
     });
 
     var bucketsByStorey = {};
@@ -367,18 +396,39 @@
       (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b), chain: b._chainIndex != null ? b._chainIndex : null });
     });
 
+    function rectOverlapArea(a, c) {
+      var ox = Math.max(0, Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0));
+      var oy = Math.max(0, Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0));
+      return ox * oy;
+    }
+
+    // §CORRIDOR-OVERLAP-FRACTION (2026-07-14, user-reported false-positive rate — 31/32 "Hall /
+    // Corridor" matches on HHS were not real corridors). Centroid-inside-bucketRect ALONE is too
+    // permissive: a generously-sized bucket rect (even after §CORRIDOR-WIDTH-BOUNDS above) can still
+    // swallow a room many times its own size whose centroid merely happens to fall inside it. Require
+    // the room's OWN measured footprint to substantially OVERLAP the bucket rect too — same
+    // overlap-area discipline room_graph.js's §CORRIDOR-ROOM-BACKPROP already uses for the inverse
+    // check (there: skip injecting a synthetic corridor room where a real room already sits). Here:
+    // a room only counts as "on the corridor" if at least half its own area sits inside the bucket —
+    // a real hallway segment (itself compiled as one or more IfcSpace rows) satisfies this trivially
+    // (its own footprint effectively IS the corridor strip); an adjacent office/room whose centroid
+    // drifted into an oversized rect does not.
+    var MIN_OVERLAP_FRACTION = 0.5;
     var result = {};
     Object.keys(rects).forEach(function (lg) {
       var r = rects[lg];
       var cx = r.sumX / r.n, cy = r.sumY / r.n;
       var candidates = bucketsByStorey[r.storey];
       if (!candidates) return;
+      var totalArea = r.ownRects.reduce(function (s, rr) { return s + rr.area; }, 0);
       for (var i = 0; i < candidates.length; i++) {
         var rc = candidates[i].rect;
-        if (cx >= rc.x0 && cx <= rc.x1 && cy >= rc.y0 && cy <= rc.y1) {
-          result[lg] = { chain: candidates[i].chain };
-          break;
-        }
+        var inside = cx >= rc.x0 && cx <= rc.x1 && cy >= rc.y0 && cy <= rc.y1;
+        if (!inside) continue;
+        var overlapArea = r.ownRects.reduce(function (s, rr) { return s + rectOverlapArea(rr, rc); }, 0);
+        if (totalArea > 0 && (overlapArea / totalArea) < MIN_OVERLAP_FRACTION) continue; // centroid drifted in, but the room's own body mostly sits outside — not really on this corridor
+        result[lg] = { chain: candidates[i].chain };
+        break;
       }
     });
     log('§CORRIDOR_TYPE_LABEL classifiedRooms=' + Object.keys(result).length + ' / ' + Object.keys(rects).length);
