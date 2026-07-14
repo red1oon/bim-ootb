@@ -486,6 +486,100 @@
     rdr.readAsText(file);
   }
 
+  // ── Generate/Regenerate — the Editor's own entry point to the smart default (mirrors the ✎ Author
+  // wizard's "Generate first draft"/"Regenerate" button; §SE-5a's idempotent-rebuild transaction wrap
+  // already makes materializeDefault safe to re-run). Same captured-schedule guard as Author: never
+  // overwrite an imported P6/Bonsai/Revit programme with the rule-generated default.
+  function doGenerate() {
+    if (!db) { status('⚠ no model db open yet'); return; }
+    if (!SA()) { status('⚠ engine not loaded'); return; }
+    var act = SA().activeSchedule(db);
+    if (act && act.captured) {
+      status('This model already carries an imported schedule (' + act.name + ') — editing it in place, not regenerating.');
+      return;
+    }
+    status('Materializing default schedule — please wait…');
+    setTimeout(function () {
+      var res = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+      schedId = res.scheduleId;
+      collapsed = {}; critSet = {};
+      renderWbs(); renderDeps(); renderGantt(); fillAddForm();
+      persist();   // §SE-6 — a (re)generated default is itself an edit worth saving
+      status('Generated default schedule (' + res.phases.length + ' phases, ' + res.assignmentCount + ' elements assigned).');
+      console.log('§SE_GENERATE schedule=' + schedId + ' phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
+    }, 30);
+  }
+
+  // ── §X6: export the current schedule to MS Project XML (MSPDI) — the write-side counterpart to
+  // doImportP6's MSPDI read path (foreign_schedule.js parseMSPDI). Schema/units verified AGAINST that
+  // parser (not invented): OutlineLevel-encoded hierarchy (no parent-id field in MSPDI — hierarchy is
+  // walked pre-order from wbsTree and re-derived from nesting on read), Duration = 'PT{hours}H0M0S',
+  // LinkLag = integer TENTHS OF A MINUTE, PredecessorLink/Type = 0=FF/1=FS/2=SF/3=SS (MSP_TYPE reverse).
+  // 8h/day calendar (MinutesPerDay=480) — the same convention doImportP6's default hpd=8 fallback uses.
+  function exportMSProject() {
+    if (!db || !schedId || !SA() || !SA().wbsTree) { status('⚠ no schedule to export'); return; }
+    var tree = SA().wbsTree(db, schedId);
+    if (!tree.length) { status('⚠ no tasks to export'); return; }
+    var deps = SA().listDependencies ? SA().listDependencies(db, schedId) : [];
+    var predByTask = {};
+    deps.forEach(function (d) { (predByTask[d.succId] = predByTask[d.succId] || []).push(d); });
+
+    var HPD = 8, MPD = HPD * 60;
+    var TYPE_CODE = { FS: 1, SS: 3, FF: 0, SF: 2 };
+    function xmlEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function durTag(start, finish) {
+      if (!start || !finish) return 'PT0H0M0S';
+      var days = Math.max(1, daysBetween(start, finish));
+      return 'PT' + (days * HPD) + 'H0M0S';
+    }
+
+    var uid = {}, seq = 1, rows = [];
+    (function walk(nodes, level) {
+      nodes.forEach(function (n) {
+        uid[n.id] = seq++;
+        rows.push({ n: n, level: level });
+        if (n.children && n.children.length) walk(n.children, level + 1);
+      });
+    })(tree, 1);
+
+    var xml = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+      '<Project xmlns="http://schemas.microsoft.com/project">',
+      '<Name>' + xmlEsc((_dbUrl || 'schedule').split('/').pop()) + '</Name>',
+      '<MinutesPerDay>' + MPD + '</MinutesPerDay>',
+      '<Tasks>'];
+    rows.forEach(function (r) {
+      var n = r.n, u = uid[n.id];
+      var links = predByTask[n.id] || [];
+      xml.push('<Task>' +
+        '<UID>' + u + '</UID><ID>' + u + '</ID>' +
+        '<Name>' + xmlEsc(n.name) + '</Name>' +
+        '<OutlineLevel>' + r.level + '</OutlineLevel>' +
+        '<Summary>' + (n.isSummary ? 1 : 0) + '</Summary>' +
+        (n.start ? '<Start>' + n.start + 'T08:00:00</Start>' : '') +
+        (n.finish ? '<Finish>' + n.finish + 'T17:00:00</Finish>' : '') +
+        '<Duration>' + durTag(n.start, n.finish) + '</Duration>' +
+        (n.critical ? '<Critical>1</Critical>' : '') +
+        links.map(function (l) {
+          var lagTenths = Math.round((l.lag || 0) * HPD * 60 * 10);
+          return '<PredecessorLink><PredecessorUID>' + uid[l.predId] + '</PredecessorUID>' +
+            '<Type>' + (TYPE_CODE[l.type] != null ? TYPE_CODE[l.type] : 1) + '</Type>' +
+            '<LinkLag>' + lagTenths + '</LinkLag></PredecessorLink>';
+        }).join('') +
+        '</Task>');
+    });
+    xml.push('</Tasks></Project>');
+
+    var blob = new Blob([xml.join('')], { type: 'application/xml' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (_dbUrl || 'schedule').split('/').pop().replace(/\.[a-z0-9]+$/i, '') + '_schedule.xml';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    status('Exported ' + rows.length + ' tasks / ' + deps.length + ' links to MS Project XML (' + a.download + ').');
+    console.log('§SE_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + a.download);
+  }
+
   // ── boot ─────────────────────────────────────────────────────────────────────
   function init() {
     if (!SA() || !SA().wbsTree) { status('engine not loaded'); return; }
@@ -539,6 +633,8 @@
         renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
+        var genBtn = $('se-generate-btn'); if (genBtn) genBtn.onclick = doGenerate;
+        var expBtn = $('se-export-msp-btn'); if (expBtn) expBtn.onclick = exportMSProject;
         var impBtn = $('se-import-btn'), impFile = $('se-import-file');
         if (impBtn && impFile) {
           impBtn.onclick = function () { impFile.click(); };

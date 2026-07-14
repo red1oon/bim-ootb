@@ -134,10 +134,18 @@
 </header>
 <div class="se-ribbon">
   <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Generate</span>
+    <button id="se-generate-btn" title="Materialize (or regenerate) the rule-based default schedule from this model — phases + every element assigned. Safe to re-run; does nothing if this model already carries an imported programme.">⚙ Generate</button>
+  </div>
+  <div class="se-ribbon-group">
     <span class="se-ribbon-label">Import</span>
     <button id="se-import-btn" title="Import a Primavera P6 programme (.xer or .xml/PMXML) — adopt its WBS, logic and dates onto this model, then bind tasks to elements">⤓ P6</button>
     <input id="se-import-file" type="file" accept=".xer,.xml" style="display:none">
     <label id="se-autobind-wrap" title="If the activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="se-autobind-cb" type="checkbox" checked> auto-bind</label>
+  </div>
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Export</span>
+    <button id="se-export-msp-btn" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project, or re-imports here via ⤓ P6.">⤒ MS Project</button>
   </div>
   <div class="se-ribbon-group">
     <span class="se-ribbon-label">Compute</span>
@@ -180,6 +188,6 @@
 <script src="schedule_author.js?v=10" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="foreign_schedule.js?v=1" onerror="console.warn('§LOAD_FAIL foreign_schedule.js')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_editor_ui.js?v=8" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+<script src="schedule_editor_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>
 </html>
