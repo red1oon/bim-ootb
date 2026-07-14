@@ -212,6 +212,64 @@
     Object.keys(storeyZSum).forEach(function (s) { storeyZ[s] = storeyZSum[s] / storeyZN[s]; });
     var storeysSorted = Object.keys(storeyZ).sort(function (a, b) { return storeyZ[a] - storeyZ[b]; });
 
+    // §CORRIDOR-ROOM-BACKPROP (2026-07-14, user's own framing: "backward propagation"). The
+    // corridor backbone (hallway_backbone.js) is built from RAW doors+walls — independent of room
+    // compilation. When it finds a real, door+wall-verified hallway with NO compiled room there at
+    // all, that is evidence room-compilation MISSED a real space, not evidence to discard — the
+    // SAME standard this codebase already trusts for §DOOR-RESCUE (compile_rooms.py: "a door
+    // proves a pocket is a room"). Measured on HHS (sparse-wall federated, only 14 compiled rooms
+    // for the whole building): 12 of 15 real hallway buckets had NO room there at all. Injecting
+    // them as real 'room' nodes HERE (before the E1/E2 door loop below runs) means a door sitting
+    // in one of these corridors gets a REAL E1 two-room edge instead of a lone-door E2 rescue, AND
+    // these corridors become real, selectable Path endpoints — the Find panel's From/To picker
+    // enumerates `graph.nodes` directly (§API-COMPAT), so a room injected into `roomOrder` here is
+    // automatically visible there, same as any real compiled room. This also delivers this
+    // session's earlier "Type.Hall/Corridor" label directly — these nodes ARE that type by
+    // construction (see `label`), not a separate classification pass over already-compiled data.
+    // `backbone` is reused (not rebuilt) by the spine/E2 wiring further below.
+    var HallwayBackbone = (typeof module !== 'undefined' && module.exports) ? require('./hallway_backbone.js') : ROOT.HallwayBackbone;
+    var backbone = null;
+    if (HallwayBackbone) {
+      try {
+        backbone = HallwayBackbone.buildBackbone(dbQuery, { log: log });
+        var corridorRoomsInjected = 0, corridorRoomsSkippedOverlap = 0;
+        // §OVERLAP-GUARD (real bug found+fixed same session, before this ever shipped): a
+        // centroid-only "is this space covered" test is NOT enough — a corridor bucket's grown
+        // WIDTH can still substantially overlap a real compiled room's rect even when the bucket's
+        // own centroid sits outside that room. Confirmed on Clinic: a corridor rect nearly
+        // engulfed real room RM_First_Floor_10 (5.0m^2 of ~5.3m^2 overlap) while its centroid was
+        // outside R10 by more than the old 1m tolerance — R10 then LOST both of its own doors to
+        // the corridor room in the E1 distance tie-break, going from 1 real edge to ZERO (a room
+        // that used to be reachable became completely disconnected). Real rect-overlap-area test
+        // instead: skip injection if the candidate corridor rect overlaps ANY real room by more
+        // than a physically meaningful amount (0.5m^2 — bigger than wall-thickness/measurement
+        // slop, far smaller than a real room) — never let a synthetic room shadow a real one.
+        function rectOverlapArea(a, c) {
+          var ox = Math.max(0, Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0));
+          var oy = Math.max(0, Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0));
+          return ox * oy;
+        }
+        backbone.joined.forEach(function (b) {
+          var rc = HallwayBackbone.bucketRect(b);
+          var bcx = (rc.x0 + rc.x1) / 2, bcy = (rc.y0 + rc.y1) / 2;
+          var overlapsRealRoom = roomOrder.some(function (lg) {
+            var g = nodes[lg];
+            if (g.storey !== b.storey) return false;
+            return g.rects.some(function (r) { return rectOverlapArea(r, rc) > 0.5; });
+          });
+          if (overlapsRealRoom) { corridorRoomsSkippedOverlap++; return; } // a real compiled room already occupies (part of) this space — don't shadow it
+          var crg = 'CORRIDOR_ROOM::' + b.key;
+          nodes[crg] = { guid: crg, kind: 'room', name: '≈ ' + b.storey + ' Hall/Corridor', label: 'Hall / Corridor',
+            storey: b.storey, rects: [rc], cx: bcx, cy: bcy, cz: storeyZ[b.storey] };
+          order.push(crg); roomOrder.push(crg);
+          b._corridorRoomGuid = crg;
+          corridorRoomsInjected++;
+        });
+        if (corridorRoomsInjected || corridorRoomsSkippedOverlap) log('§CORRIDOR_ROOM_BACKPROP injected=' + corridorRoomsInjected +
+          ' skippedOverlap=' + corridorRoomsSkippedOverlap + ' / ' + backbone.joined.length + ' joined buckets');
+      } catch (eBb0) { log('§CORRIDOR_ROOM_BACKPROP_ERR ' + eBb0.message); backbone = null; }
+    }
+
     var doorRows = [];
     try {
       doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y' +
@@ -248,17 +306,15 @@
     // blob behavior per storey if the backbone build finds nothing there (short/doorless corridor,
     // or the module isn't available) — never worse than before, never invents a spine that isn't
     // grounded in real doors+walls.
-    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0;
-    var HallwayBackbone = (typeof module !== 'undefined' && module.exports) ? require('./hallway_backbone.js') : ROOT.HallwayBackbone;
+    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0;
     var spineByStorey = {}; // storey -> [{guid,cx,cy}]
     // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
     // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
     // treats genuine open corridor floor (no room modeled there) as illegal, so a legality detour
     // can never succeed through it no matter how many spine candidate points are added.
     var corridorRectsByStorey = {};
-    if (HallwayBackbone) {
+    if (backbone) {
       try {
-        var backbone = HallwayBackbone.buildBackbone(dbQuery, { log: log });
         backbone.joined.forEach(function (b, bi) {
           var mid = (b.span.lo + b.span.hi) / 2;
           var scx = (b.axis === 'x') ? mid : b.runCoord;
@@ -269,6 +325,15 @@
           b._spineGuid = sg;
           (spineByStorey[b.storey] = spineByStorey[b.storey] || []).push(nodes[sg]);
           (corridorRectsByStorey[b.storey] = corridorRectsByStorey[b.storey] || []).push(HallwayBackbone.bucketRect(b));
+          // §CORRIDOR-ROOM-BACKPROP bridge: a bucket that got a synthetic room node (above, before
+          // the door loop) needs a real edge to its OWN spine node too — without this it's only
+          // reachable via whichever of its own doors also happen to E1-touch another real room,
+          // cut off from the crossing/long-distance network same as the CIRC-SPINE-BRIDGE gap was.
+          if (b._corridorRoomGuid) {
+            var crRoom = nodes[b._corridorRoomGuid];
+            var crw = Math.hypot(crRoom.cx - scx, crRoom.cy - scy);
+            edges.push({ a: b._corridorRoomGuid, b: sg, doorGuid: null, doorName: 'Corridor junction', storey: b.storey, kind: 'E8', w: crw });
+          }
         });
         backbone.crossings.forEach(function (c) {
           // §CROSSING-IDENTITY: c.a/c.b are real bucket OBJECTS (see hallway_backbone.js
@@ -331,6 +396,22 @@
         edges.push({ a: cands[0].lg, b: cg, doorGuid: guid, doorName: name, storey: storey, kind: 'E2', wpA: null, wpB: guid, w: e2w });
       } else {
         orphan++;
+        // §ORPHAN-SPINE-RESCUE (2026-07-14): a door with ZERO room candidates used to get NO graph
+        // presence at all — dropped silently, even when it sits right on a real corridor. Common
+        // on sparse-wall federated buildings (HHS: 117/133 doors orphaned, only 14 rooms compiled
+        // for the whole building — most floor area was never compiled into a room, so most doors
+        // can't reach one). This does NOT invent a room connection (there is genuinely no compiled
+        // room here) — it only reconnects the door into the real spine network it's already
+        // measured to sit near, so isolated pockets of real corridor (reachable only via these
+        // orphan doors) stop being unreachable islands. Additive only, never touches E1/E2's own
+        // room-facing logic.
+        var orphanSpine = nearestSpine(storey, dx, dy);
+        if (orphanSpine) {
+          if (!nodes[guid]) nodes[guid] = { guid: guid, kind: 'doorwp', name: name, storey: storey, cx: dx, cy: dy, cz: dz };
+          var ow = Math.hypot(orphanSpine.cx - dx, orphanSpine.cy - dy);
+          edges.push({ a: guid, b: orphanSpine.guid, doorGuid: guid, doorName: name, storey: storey, kind: 'E7', w: ow });
+          orphanRescued++;
+        }
       }
     });
 
@@ -496,7 +577,7 @@
     var circCount = order.filter(function (lg) { return nodes[lg].kind === 'circ'; }).length;
     log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
       ' edges=' + edges.filter(function (e) { return e.kind === 'E1'; }).length +
-      ' deadend=' + deadend + ' orphan=' + orphan + ' ambiguous=' + ambiguous +
+      ' deadend=' + deadend + ' orphan=' + orphan + ' orphanRescued=' + orphanRescued + ' ambiguous=' + ambiguous +
       ' circ=' + circCount + ' stairs=' + e3 + ' (skipped=' + e3Skipped + ') exits=' + exits + ' e2=' + e2);
 
     // §G3-REVISED (PATH_LEGAL_SEGMENTS.md): read-only lookup of the offline-precomputed per-storey
@@ -525,7 +606,7 @@
       corridorRectsByStorey: corridorRectsByStorey, // §CORRIDOR-WIDTH: real backbone corridor rects, same fallback
       stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
-        deadend: deadend, orphan: orphan, ambiguous: ambiguous,
+        deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
         circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2 }
     };
   }
