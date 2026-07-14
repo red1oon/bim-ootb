@@ -109,5 +109,29 @@ if (demo) {
   console.log('§DEMO_PATH no >=4-hop same-storey room pair found to demo (non-fatal, small sample)');
 }
 
+// ── §STAIR-RUN-ENDS regression guard (2026-07-14, real user report + screenshot: a rendered
+// stair hop looked like a vertical "elevator shaft drop" instead of following the real stair
+// run). Root cause: getStairGroups()'s loWp/hiWp both used ONE averaged XY across every flight
+// row of the whole stair — collapsing a real horizontal run to a single point. Fixed by using
+// each end's own real position (the flight row nearest that end's z). This checks the fix
+// directly against Clinic's real stair data (measured earlier this session: flight rows spread
+// x=-18.0..-15.4, y=37.3..41.0 — real horizontal run, not a point). ──
+{
+  const sg = RoomGraph.getStairGroups(dbQuery, () => {});
+  let anyRealRun = false, anyCollapsed = false;
+  sg.order.forEach(key => {
+    const gr = sg.groups[key];
+    if (gr.loRowX == null || gr.hiRowX == null) return;
+    const d = Math.hypot(gr.hiRowX - gr.loRowX, gr.hiRowY - gr.loRowY);
+    if (d > 0.5) anyRealRun = true;
+    // "collapsed" = both ends land on the exact averaged center (the old bug's signature)
+    const gcx = gr.cx / gr.n, gcy = gr.cy / gr.n;
+    if (Math.abs(gr.loRowX - gcx) < 0.01 && Math.abs(gr.hiRowX - gcx) < 0.01 && d > 0.5) anyCollapsed = true;
+  });
+  chk('G6 at least one real Clinic stair has a measurable run offset between its two ends (not both collapsed to the same averaged point)',
+    anyRealRun, 'stairs=' + sg.order.length);
+  chk('G7 no stair with a real run offset renders as collapsed-to-center (the old bug signature)', !anyCollapsed);
+}
+
 console.log('\n§W-BACKBONE-ROUTING DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);
