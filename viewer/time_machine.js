@@ -1751,16 +1751,15 @@
       if (obj.userData && obj.userData.guid) {
         _savedVisibility.push({ obj: obj, vis: obj.visible });
       }
-      // Save InstancedMesh state (visibility + all matrices)
+      // §SE-7 (W-TM-DEDUPE-SAVE): Save InstancedMesh VISIBILITY only here — NOT matrices. The matrix
+      // snapshot used to be cloned a SECOND time right here (one `new THREE.Matrix4()` + `.clone()` per
+      // instance, ~29s of main-thread block on a 122K-element building — the "still hangs" report). It
+      // was pure duplicate work: `renderAtTime()` (called unconditionally right after this, in
+      // `_finishActivate`, and on every subsequent tick) already lazily builds `_savedInstanceMatrices`
+      // — the SAME per-instance original matrices — as a side effect of rendering it has to do anyway.
+      // `restoreVisibility()` now reads from that shared lazy cache instead of a redundant private copy.
       if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
-        var metas = app._instanceMeta[obj.id];
-        var matrices = {};
-        var tmpM = new THREE.Matrix4();
-        for (var i = 0; i < metas.length; i++) {
-          obj.getMatrixAt(i, tmpM);
-          matrices[i] = tmpM.clone();
-        }
-        _savedInstanceState[obj.id] = { vis: obj.visible, matrices: matrices, obj: obj };
+        _savedInstanceState[obj.id] = { vis: obj.visible, obj: obj };
       }
       // §S260b: Save BatchedMesh slot visibility
       if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
@@ -1777,14 +1776,22 @@
   function restoreVisibility() {
     clearHighlight();
     var app = A();
-    // Restore InstancedMesh matrices and visibility from saved state
+    // §SE-7: matrices come from `_savedInstanceMatrices` (renderAtTime's lazy per-tick cache), not a
+    // private clone saveVisibility() no longer makes. `activate()` always calls `renderAtTime()` at
+    // least once before any `deactivate()` can run (§S260c "initial render" call in `_finishActivate`),
+    // so every InstancedMesh this loop iterates (i.e. every one `saveVisibility()` saw) is guaranteed to
+    // already have an entry here. A mesh with no entry (should not happen per the above) is left as-is —
+    // correct either way, since renderAtTime never touched/mutated its matrix in that case.
     for (var meshId in _savedInstanceState) {
       var state = _savedInstanceState[meshId];
       var obj = state.obj;
-      for (var idx in state.matrices) {
-        obj.setMatrixAt(parseInt(idx), state.matrices[idx]);
+      var mats = _savedInstanceMatrices[meshId];
+      if (mats) {
+        for (var idx in mats) {
+          obj.setMatrixAt(parseInt(idx), mats[idx]);
+        }
+        obj.instanceMatrix.needsUpdate = true;
       }
-      obj.instanceMatrix.needsUpdate = true;
       obj.visible = state.vis;
     }
     _savedInstanceState = {};
