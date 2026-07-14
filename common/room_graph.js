@@ -61,8 +61,12 @@
  *   0 candidates → orphan door (log only, no edge — e.g. a door whose room's data is missing bbox)
  *   1 candidate  → the room's own door onto circulation (E2 rescue — see file header above)
  *   2 candidates → the normal case: one real edge, carrying the door's own guid
- *   3+ candidates → ambiguous (buffer overlap on tightly-packed rooms) — logged, edge drawn between
- *              the 2 CLOSEST-BY-DISTANCE candidates (a measured tie-break, not a guess)
+ *   3+ candidates → ambiguous (buffer overlap on tightly-packed rooms) — logged, primary E1 edge
+ *              still drawn between the 2 CLOSEST-BY-DISTANCE candidates (a measured tie-break, not
+ *              a guess); EVERY additional real candidate beyond the top-2 is ALSO wired (E9) to
+ *              the door's own real waypoint position instead of being dropped — see
+ *              §AMBIGUOUS-RESIDUAL-RESCUE below (a real 3-way doorway junction is not "one edge
+ *              and 1+ orphans", it's every genuine neighbour reaching the same real door)
  *
  * Caller contract: `dbQuery(sql, params)` returns an array of row-ARRAYS (positional, the same
  * `A.dbQuery` convention `common/room_habitability.js` already assumes) — this module is DB/file
@@ -336,7 +340,7 @@
     // blob behavior per storey if the backbone build finds nothing there (short/doorless corridor,
     // or the module isn't available) — never worse than before, never invents a spine that isn't
     // grounded in real doors+walls.
-    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0;
+    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0, ambiguousResidualRescued = 0;
     var spineByStorey = {}; // storey -> [{guid,cx,cy}]
     // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
     // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
@@ -350,7 +354,7 @@
           var scx = (b.axis === 'x') ? mid : b.runCoord;
           var scy = (b.axis === 'x') ? b.runCoord : mid;
           var sg = 'SPINE::' + b.key;
-          nodes[sg] = { guid: sg, kind: 'spine', name: 'Corridor — ' + b.storey, storey: b.storey, cx: scx, cy: scy, cz: storeyZ[b.storey] };
+          nodes[sg] = { guid: sg, kind: 'spine', name: 'Corridor — ' + b.storey, storey: b.storey, cx: scx, cy: scy, cz: storeyZ[b.storey], chainIndex: b._chainIndex };
           order.push(sg);
           b._spineGuid = sg;
           (spineByStorey[b.storey] = spineByStorey[b.storey] || []).push(nodes[sg]);
@@ -402,16 +406,33 @@
       if (cands.length >= 2) {
         edges.push({ a: cands[0].lg, b: cands[1].lg, doorGuid: guid, doorName: name, storey: storey,
           kind: 'E1', ambiguous: cands.length > 2, hitCount: cands.length });
-        if (cands.length > 2) {
-          ambiguous++;
-          log('§ROOM_GRAPH_AMBIGUOUS_DOOR "' + name + '" candidates=' + cands.length +
-            ' picked=' + cands[0].lg + ',' + cands[1].lg);
-        }
         // §G4-DETOUR-NODES (PATH_LEGAL_SEGMENTS.md): every room-facing door becomes a doorwp
         // waypoint too (not just E2's circulation-rescue case below) — shortestPath()'s
         // visibility-graph detour walks these as its candidate waypoints. Additive only:
         // graph.nodes (room-only, §API-COMPAT) is untouched, this only grows nodesByGuid's superset.
         if (!nodes[guid]) nodes[guid] = { guid: guid, kind: 'doorwp', name: name, storey: storey, cx: dx, cy: dy, cz: dz };
+        if (cands.length > 2) {
+          ambiguous++;
+          log('§ROOM_GRAPH_AMBIGUOUS_DOOR "' + name + '" candidates=' + cands.length +
+            ' picked=' + cands[0].lg + ',' + cands[1].lg);
+          // §AMBIGUOUS-RESIDUAL-RESCUE (2026-07-15, real island root cause — Clinic R31/R40/R42/
+          // R45/R58, all measured 2026-07-15): the OLD behavior drew exactly one E1 edge between
+          // the 2 CLOSEST candidates and silently DISCARDED every candidate beyond that, even when
+          // its own distance to the SAME door is well inside the buffer (e.g. R31 at 0.22m vs a
+          // 0.73m buffer — a genuinely real doorway, just narrowly edged out of the top-2 by two
+          // other equally-real neighbours at a 3-way junction). That is exactly what turned these
+          // 5 Clinic rooms into zero-edge islands in fullConnectivity(). Fix: wire every residual
+          // candidate (index>=2) to the door's OWN real waypoint position instead of dropping it —
+          // never invented, same real door, same measured distance already computed above. Also
+          // link the waypoint itself to the top candidate so the residual isn't its own island.
+          edges.push({ a: guid, b: cands[0].lg, doorGuid: guid, doorName: name, storey: storey, kind: 'E9', w: cands[0].dist });
+          for (var ci = 2; ci < cands.length; ci++) {
+            edges.push({ a: guid, b: cands[ci].lg, doorGuid: guid, doorName: name, storey: storey, kind: 'E9', w: cands[ci].dist });
+            ambiguousResidualRescued++;
+            log('§ISLAND_BRIDGE ambiguous-residual room=' + cands[ci].lg + ' via door="' + name +
+              '" dist=' + cands[ci].dist.toFixed(3) + 'm buffer=' + buf.toFixed(3) + 'm storey=' + storey);
+          }
+        }
       } else if (cands.length === 1) {
         deadend++; e2++;
         // §HALLWAY-BACKBONE: rescue onto the NEAREST real corridor spine point for this storey
@@ -575,15 +596,35 @@
     // point (real distance, same nearestSpine() helper E2 already uses) so the two subgraphs merge
     // into one connected network again. No-op (never created, nothing to bridge) on a storey with
     // no backbone — same graceful-degrade discipline as the rest of this feature.
+    // §CIRC-PER-CHAIN-BRIDGE (2026-07-15, real island root cause — HHS components 1/2/3, all
+    // measured 2026-07-15): the OLD version bridged CIRC to only the SINGLE globally-nearest spine
+    // point on that storey — but a real storey can have MULTIPLE distinct corridor chains
+    // (walkBackbone()'s own union-find grouping, `_chainIndex`) that don't cross each other at all
+    // (separate wings). Bridging to just one chain left every OTHER real chain on the same floor an
+    // island, even though the SAME stair genuinely gives floor-wide circulation access to all of
+    // them (measured on HHS: Level 1/2/3 each had a second/third chain — e.g. "Level 1 Hall/
+    // Corridor 3" — stranded despite a real stair reaching that exact floor). Fix: bridge one edge
+    // per DISTINCT chain present on the storey (real distance to that chain's own nearest bucket),
+    // not just one edge overall — same real stair, same real corridor data, just no longer
+    // arbitrarily picking a single winner among multiple real chains.
     var circBridges = 0;
     order.forEach(function (lg) {
       var g = nodes[lg];
       if (g.kind !== 'circ') return;
-      var sp = nearestSpine(g.storey, g.cx, g.cy);
-      if (!sp) return;
-      var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy);
-      edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Corridor junction', storey: g.storey, kind: 'E6', w: w });
-      circBridges++;
+      var pts = spineByStorey[g.storey];
+      if (!pts || !pts.length) return;
+      var nearestByChain = {};
+      pts.forEach(function (p) {
+        var ck = (p.chainIndex != null) ? p.chainIndex : ('nochain::' + p.guid);
+        var d = Math.hypot(p.cx - g.cx, p.cy - g.cy);
+        if (!nearestByChain[ck] || d < nearestByChain[ck].d) nearestByChain[ck] = { p: p, d: d };
+      });
+      Object.keys(nearestByChain).forEach(function (ck) {
+        var sp = nearestByChain[ck].p, w = nearestByChain[ck].d;
+        edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Corridor junction', storey: g.storey, kind: 'E6', w: w });
+        circBridges++;
+        log('§ISLAND_BRIDGE circ-per-chain storey=' + g.storey + ' chain=' + ck + ' spine=' + sp.guid + ' dist=' + w.toFixed(2) + 'm');
+      });
     });
     if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
@@ -615,6 +656,7 @@
     log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
       ' edges=' + edges.filter(function (e) { return e.kind === 'E1'; }).length +
       ' deadend=' + deadend + ' orphan=' + orphan + ' orphanRescued=' + orphanRescued + ' ambiguous=' + ambiguous +
+      ' ambiguousResidualRescued=' + ambiguousResidualRescued +
       ' circ=' + circCount + ' stairs=' + e3 + ' (skipped=' + e3Skipped + ') exits=' + exits + ' e2=' + e2);
 
     // §G3-REVISED (PATH_LEGAL_SEGMENTS.md): read-only lookup of the offline-precomputed per-storey
@@ -644,6 +686,7 @@
       stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
+        ambiguousResidualRescued: ambiguousResidualRescued,
         circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2 }
     };
   }
