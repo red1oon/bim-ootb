@@ -789,7 +789,12 @@
       // chord was then left AS-IS, undetoured, i.e. still crossing a wall. Adding spine nodes only
       // ADDS candidate points/edges to this visibility graph — it can only turn a FAIL into a real
       // route, never remove an already-legal one.
-      if ((n.kind === 'doorwp' || n.kind === 'spine') && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
+      // §CIRC-DETOUR-CANDIDATE (2026-07-14): a CIRC node — the stair-bridging hub E3/E6 hang off —
+      // was NOT a detour candidate either, same class of gap as spine's own fix above. A chord
+      // touching the CIRC<->SPINE bridge (E6) or a room's old CIRC fallback rescue could be illegal
+      // with zero rescue options even after adding spine, because the CIRC point itself was never
+      // offered as an intermediate stop. Additive only, same as spine.
+      if ((n.kind === 'doorwp' || n.kind === 'spine' || n.kind === 'circ') && n.storey === storey) pts.push({ id: g, x: n.cx, y: n.cy });
     });
     var n = pts.length, adj = [];
     for (var i = 0; i < n; i++) adj.push([]);
