@@ -117,14 +117,20 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   // §PHOTO_STAGING_PROPS (2026-07-15, POC — presentation only, explicitly authorized fabricated
   // staging, not extracted BIM data, not touching any real logic/geometry the compiler produces).
-  // Building-only ground uplights + roofline edge-lining + a distant skyline silhouette with
-  // sparkled window-lights — all anchored to THIS building's own real bbox/position (queried
-  // fresh, not invented numbers) even though the fixtures themselves are fabricated. Built once
-  // per building (cached, rebuilt only if the active building changes), then just shown/hidden
-  // each photoshoot — cheap: a handful of point lights + thin boxes + one Points sparkle field,
-  // no shadow-casting, no new texture/loader dependencies.
+  // Building-only ground uplights + roof-mounted downlights (both washing the wall — a common
+  // real facade night-lighting technique, per user) + a distant skyline silhouette with sparkled
+  // window-lights — all anchored to THIS building's own real bbox/position (queried fresh, not
+  // invented numbers) even though the fixtures themselves are fabricated. Built once per building
+  // (cached, rebuilt only if the active building changes), then just shown/hidden each photoshoot
+  // — cheap: a handful of point lights + one Points sparkle field, no shadow-casting, no new
+  // texture/loader dependencies.
+  // §PHOTO_EDGE_DROPPED (2026-07-15, user ask): the roofline edge-lining is REMOVED — even after
+  // fixing the "cached from a stale camera angle" bug, the bbox-rectangle approximation for this
+  // L-shaped building still didn't read as connected to the real geometry ("floating around").
+  // Not worth the complexity for a POC; ground+roof wall-wash lighting covers the same "evening
+  // facade" mood more simply and reliably.
   var _photoPropsBuilding = null;
-  var _photoUplights = [], _photoEdgeStrips = [], _photoSkyline = null, _photoSkylineLights = null;
+  var _photoUplights = [], _photoSkyline = null, _photoSkylineLights = null;
   function _buildingBBoxIfc() {
     if (!A.dbQuery) return null;
     var r = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
@@ -133,10 +139,9 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _disposePhotoProps() {
     _photoUplights.forEach(function(l) { A.scene.remove(l); });
-    _photoEdgeStrips.forEach(function(m) { A.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     if (_photoSkyline) { A.scene.remove(_photoSkyline); _photoSkyline.children.forEach(function(b) { b.geometry.dispose(); b.material.dispose(); }); }
     if (_photoSkylineLights) { A.scene.remove(_photoSkylineLights); _photoSkylineLights.geometry.dispose(); _photoSkylineLights.material.dispose(); }
-    _photoUplights = []; _photoEdgeStrips = []; _photoSkyline = null; _photoSkylineLights = null;
+    _photoUplights = []; _photoSkyline = null; _photoSkylineLights = null;
   }
   function _buildPhotoProps() {
     var bbox = _buildingBBoxIfc();
@@ -146,45 +151,26 @@ async function setupEffects(A, renderer, scene, camera) {
     var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin;
     var groundZ = bbox.zMin, roofZ = bbox.zMax;
 
-    // Ground uplights — 4 footprint corners, pulled in slightly from the corner so the light
-    // sits AGAINST the wall face rather than floating off the outside edge, warm, short-range,
-    // no shadow (cheap). Brighter + closer than the first pass — that one wasn't visibly
-    // reading as a wall-wash.
+    // Ground uplights + roof downlights — 4 footprint corners each, pulled in slightly from the
+    // corner so the light sits AGAINST the wall face rather than floating off the outside edge.
+    // This pairing (grazing light from both ends of the facade) is the common real building
+    // night-lighting technique the user asked for, not just a single uplight.
     var inset = Math.min(3, w * 0.1, d * 0.1);
-    [[bbox.xMin + inset, bbox.yMin + inset], [bbox.xMax - inset, bbox.yMin + inset],
-     [bbox.xMin + inset, bbox.yMax - inset], [bbox.xMax - inset, bbox.yMax - inset]].forEach(function(c) {
-      var p = A.ifc2three(c[0], c[1], groundZ);
-      var lt = new THREE.PointLight(0xffaa55, 9, 14, 2);
-      lt.position.set(p.x, p.y + 0.3, p.z);
-      A.scene.add(lt);
-      _photoUplights.push(lt);
-    });
+    var wallCorners = [[bbox.xMin + inset, bbox.yMin + inset], [bbox.xMax - inset, bbox.yMin + inset],
+      [bbox.xMin + inset, bbox.yMax - inset], [bbox.xMax - inset, bbox.yMax - inset]];
+    wallCorners.forEach(function(c) {
+      var pg = A.ifc2three(c[0], c[1], groundZ);
+      var up = new THREE.PointLight(0xffaa55, 9, 14, 2);
+      up.position.set(pg.x, pg.y + 0.3, pg.z);
+      A.scene.add(up);
+      _photoUplights.push(up);
 
-    // Roofline edge-lining — ONLY the edge(s) actually facing the camera (per user: "need not
-    // be around, just what is facing camera"). Also fixes the earlier bug where a far/notch-
-    // crossing edge (this building is L-shaped, bbox rectangle floats over the empty notch)
-    // read as a stray line cutting across open space at a grazing angle — skipping edges that
-    // don't face the camera avoids exactly that edge.
-    var edgeMat = new THREE.MeshBasicMaterial({ color: 0xffe0a8 });
-    var corners = [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMax, bbox.yMax], [bbox.xMin, bbox.yMax]];
-    var normalsIfc = [[0, -1], [1, 0], [0, 1], [-1, 0]];  // outward normal per edge, IFC XY
-    for (var ei = 0; ei < 4; ei++) {
-      var c1 = corners[ei], c2 = corners[(ei + 1) % 4];
-      var p1 = A.ifc2three(c1[0], c1[1], roofZ), p2 = A.ifc2three(c2[0], c2[1], roofZ);
-      var mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, z: (p1.z + p2.z) / 2 };
-      var n = normalsIfc[ei];
-      var nThree = { x: n[0], z: -n[1] };  // ifc2three: three.z = -(ifc.y - offset)
-      var toCam = { x: A.camera.position.x - mid.x, z: A.camera.position.z - mid.z };
-      var tcLen = Math.hypot(toCam.x, toCam.z) || 1;
-      var facing = (nThree.x * toCam.x + nThree.z * toCam.z) / tcLen;
-      if (facing <= 0.15) continue;  // not facing the camera — skip (fixes the stray-line bug too)
-      var len = Math.hypot(p2.x - p1.x, p2.z - p1.z);
-      var mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, 0.1), edgeMat);
-      mesh.position.set(mid.x, mid.y + 0.3, mid.z);
-      mesh.rotation.y = -Math.atan2(p2.z - p1.z, p2.x - p1.x);
-      A.scene.add(mesh);
-      _photoEdgeStrips.push(mesh);
-    }
+      var pr = A.ifc2three(c[0], c[1], roofZ);
+      var down = new THREE.PointLight(0xffcf9a, 7, 16, 2);
+      down.position.set(pr.x, pr.y - 0.3, pr.z);
+      A.scene.add(down);
+      _photoUplights.push(down);
+    });
 
     // Distant skyline silhouette (full ring — robust to any orbit angle, per user's own
     // "different angle later" expectation) + sparkled window-lights, dusk-city look
@@ -217,7 +203,7 @@ async function setupEffects(A, renderer, scene, camera) {
     winGeo.setAttribute('color', new THREE.Float32BufferAttribute(winCol, 3));
     _photoSkylineLights = new THREE.Points(winGeo, new THREE.PointsMaterial({ size: 1.2, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.9 }));
     A.scene.add(_photoSkylineLights);
-    console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' edges=' + _photoEdgeStrips.length + ' skylineBoxes=' + N + ' windowLights=' + (winPos.length / 3));
+    console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' skylineBoxes=' + N + ' windowLights=' + (winPos.length / 3));
   }
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
@@ -225,7 +211,6 @@ async function setupEffects(A, renderer, scene, camera) {
       _buildPhotoProps();
     }
     _photoUplights.forEach(function(l) { l.visible = show; });
-    _photoEdgeStrips.forEach(function(m) { m.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
   }
