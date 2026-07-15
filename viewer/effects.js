@@ -115,12 +115,57 @@ async function setupEffects(A, renderer, scene, camera) {
   function _setTriplanarActive(active) {
     return (A._triplanarMaterials || []).length;
   }
+  // §PHOTO_STAGING (2026-07-15, POC — presentation only, not extracted BIM data): bundles a
+  // sunset sky+shadow + amber building glow into the SAME still-refine trigger, all auto-
+  // reverting on teardown exactly like the texture toggle above. Building-only (no ground/
+  // corner decorative props — explicitly out of scope per user). Reuses A.toggleNightMode()'s
+  // existing fixture-glow mechanism (synthetic per-storey fallback already built for buildings
+  // with zero real IfcLightFixture data) rather than duplicating it, then immediately restores
+  // the non-glow (sun/ambient/hemi/exposure/fog) side effects toggleNightMode also applies —
+  // we want the amber glow, not night's moonlight override, since the sunset sky/shadow set up
+  // just above is the intended mood, not full night-black.
+  var _photoNightWasOn = false, _photoShadowWasOn = false, _photoSkyWasVisible = false;
+  var _photoShadowGroundKey = 'off';
+  function _applyPhotoStaging() {
+    _photoSkyWasVisible = !!(A._sky && A._sky.visible);
+    if (A._sky && A.updateSky) { A._sky.visible = true; A.updateSky(8, 200); }
+    // §PHOTO_STAGING_SHADOW_FIX: A.toggleShadow() is a 4-state CYCLE (off→grass→earth→paved→off),
+    // not a boolean toggle — calling it a second time to "undo" just advances to the next ground
+    // texture, still shadow-on. Save the exact cycle key and cycle back to it on teardown instead.
+    _photoShadowGroundKey = A._shadowGroundKey || 'off';
+    _photoShadowWasOn = !!A._shadowOn;
+    if (!_photoShadowWasOn && A.toggleShadow) A.toggleShadow();
+    _photoNightWasOn = !!A._nightMode;
+    if (!_photoNightWasOn && A.toggleNightMode) {
+      A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
+      if (A._nightSaved) {  // undo JUST the moonlight sun/ambient/hemi/fog side effect
+        A.sun.intensity = A._nightSaved.sunI;
+        A.sun.color.setHex(A._nightSaved.sunColor);
+        A.ambient.intensity = A._nightSaved.ambI;
+        A.ambient.color.setHex(A._nightSaved.ambColor);
+        A.hemi.intensity = A._nightSaved.hemiI;
+        A.hemi.color.setHex(A._nightSaved.hemiSky);
+        A.renderer.toneMappingExposure = A._nightSaved.exposure;
+      }
+    }
+    console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn + ' shadowWasOn=' + _photoShadowWasOn);
+  }
+  function _teardownPhotoStaging() {
+    if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
+    if (!_photoShadowWasOn && A.toggleShadow) {
+      var _guard = 0;  // cycle is length 4 — bounded, never actually loops forever
+      while (A._shadowGroundKey !== _photoShadowGroundKey && _guard < 4) { A.toggleShadow(); _guard++; }
+    }
+    if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
+    console.log('§PHOTO_STAGING off');
+  }
   function _teardownStillRefine(reason) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     A._composerEnabled = _stillRefinePrevComposerEnabled;
     var n = _setTriplanarActive(false);
+    _teardownPhotoStaging();
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms);
     if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
@@ -134,6 +179,7 @@ async function setupEffects(A, renderer, scene, camera) {
     A._taaPass.accumulateIndex = -1;
     _stillRefineStartMs = performance.now();
     var _triCount = _setTriplanarActive(true);
+    _applyPhotoStaging();
     console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
     function step() {
       if (!A._stillRefineActive) return;
