@@ -983,6 +983,7 @@
         // rooms existed. Same fix, same site, same reason.
         _pathGraphCache = null; _pathGraphBld = null;
         _corridorLabelsCache = null; _corridorLabelsBld = null;
+        _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: injected rooms invalidate it too
         _renderAxes();
         buildTree();
       } catch (e) {
@@ -1919,9 +1920,17 @@
     // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
+    // §SELECT-PULSE (2026-07-15o, user's own pick, "cheap doesn't bog or lag"): a brief settle-in
+    // pulse on selection — starts oversized/dim, eases down to resting scale/opacity over 300ms —
+    // draws the eye to what just got picked instead of an instant flat cut. Pure JS scale/opacity
+    // tween, same requestAnimationFrame + generation-counter pattern _lerpCam already uses (a
+    // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
+    // animations, never a leaked rAF loop after the mesh is gone).
+    var _pulseId = 0;
     function _drawRoomCuboid(center, size, category) {
       if (!A.scene || typeof THREE === 'undefined') return;
       _clearRoomCuboid();
+      var myPulse = ++_pulseId;
       var cc = _categoryColor(category); // §ROOM_LENS_TAXONOMY: selected room reads as a BRIGHTER
       // version of its own category color (purple/blue/dark), not a 4th unrelated fixed hue.
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
@@ -1944,6 +1953,22 @@
       A.scene.add(wire2); _roomBoxes.push({ guid: '_cuboidWireOuter', mesh: wire2 });
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
+
+      var restFillOp = 0.5, restWireScale = 1.0, restWire2Scale = 1.015, overshoot = 0.09;
+      var t = 0;
+      function pulseFrame() {
+        if (myPulse !== _pulseId) return; // superseded — a newer selection or a reset already took over
+        t += 0.06; if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3); // ease-out, matches _lerpCam's easing
+        var k = (1 - e); // 1 at start, 0 at rest
+        fill.material.opacity = restFillOp + k * 0.3;              // starts brighter (0.8), settles to 0.5
+        wire.scale.setScalar(restWireScale + k * overshoot);       // starts oversized, eases down to resting scale
+        wire2.scale.setScalar(restWire2Scale + k * overshoot);
+        if (A.markDirty) A.markDirty();
+        if (t < 1) requestAnimationFrame(pulseFrame);
+        else { fill.material.opacity = restFillOp; wire.scale.setScalar(restWireScale); wire2.scale.setScalar(restWire2Scale); if (A.markDirty) A.markDirty(); }
+      }
+      requestAnimationFrame(pulseFrame);
     }
 
     // §ROOM-SHELL (user): the room's REAL bounding surfaces — the walls/floor/ceiling most exposed to
@@ -2025,7 +2050,24 @@
     // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
     // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
     // identical across a room's sub-rect set per §8's own design), never per sub-rect.
+    // §ROOM-VOL-CACHE (2026-07-15n, user-reported "panel tabbing refresh" lag + user's own
+    // "queries perhaps need to pre stored lazily" diagnosis — correct instinct, same gap this
+    // session already closed for the Phase axis via _phaseCache): unlike _phaseCache/
+    // _probeCacheResult, _allRoomVolumes() had NO cache at all — the full SQL query + per-room
+    // habitability/utility classification (measured live on Terminal: 30-60ms) reran from
+    // scratch on EVERY single Room-axis entry, not just the first. The THREE.Mesh shells
+    // themselves still get disposed+recreated each entry (_clearRoomBoxes() in _roomLensOn(),
+    // unavoidable — meshes are scene-owned, not reusable across a dispose cycle) but that part
+    // alone measured only ~3-4ms; caching the query+classification result removes the other
+    // 30-60ms. Same invalidation convention as _phaseCache/_probeCacheResult: reset only on a
+    // fresh openFindPanel() (building may have changed) or a real data change (needle-inject),
+    // never on a plain axis re-entry within one open session.
+    var _roomVolCache = null, _roomVolCacheBld = null;
     function _allRoomVolumes() {
+      if (_roomVolCache && _roomVolCacheBld === A.activeBuilding) {
+        console.log('[RP-TA] §ROOM_VOL_CACHE_HIT boxes=' + _roomVolCache.length);
+        return _roomVolCache;
+      }
       var _t0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
@@ -2124,12 +2166,13 @@
         console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
           ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
         console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
+        _roomVolCache = out; _roomVolCacheBld = A.activeBuilding; // §ROOM-VOL-CACHE: only the clean success path is cached
         return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
         ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
       console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
-      return out;
+      return out; // exception path — never cached, so the next entry retries fresh rather than sticking with a partial result
     }
 
     // Remove boxes, restore opacity (turn X-Ray off if WE turned it on), drop outline.
@@ -3929,6 +3972,7 @@
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
       _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
+      _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: same reasoning
       _elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
       // Set search term and open
       panel.style.display = 'block';
