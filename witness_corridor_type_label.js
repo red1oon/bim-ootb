@@ -69,9 +69,46 @@ const MIN_OVERLAP_FRACTION = 0.5;
 // BOTH >=50% overlapping AND elongated enough (see common/hallway_backbone.js's
 // DEFAULT_PROFILE.minAspectRatio) to independently re-verify as "should be classified corridor".
 const MIN_ASPECT_RATIO = HallwayBackbone.DEFAULT_PROFILE.minAspectRatio;
-function meetsCorridorBar(g, rects) {
+
+// §CORRIDOR-DISTINCT-NEIGHBORS (2026-07-15): independently re-derive distinct-other-room door
+// adjacency from scratch (same door-to-2-nearest-rooms resolution room_graph.js's own E1 edges
+// use) — a room must ALSO connect to >=minDistinctNeighborRooms DIFFERENT rooms via a real door to
+// count, not just satisfy shape+overlap. Reused ground truth, not trusting classifyCorridorRooms'
+// own internal computation of the same thing.
+const RoomGraph = require('./common/room_graph.js');
+const MIN_NEIGHBORS = HallwayBackbone.DEFAULT_PROFILE.minDistinctNeighborRooms;
+const doorRows = dbQuery("SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.bbox_x, t.bbox_y" +
+  " FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid" +
+  " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL");
+const DOOR_BUF_SLACK = 0.20;
+function rd(rc, px, py) {
+  const dx = Math.max(rc.x0 - px, 0, px - rc.x1), dy = Math.max(rc.y0 - py, 0, py - rc.y1);
+  return Math.hypot(dx, dy);
+}
+const neighborsByGuid = {};
+doorRows.forEach(d => {
+  const dname = d[1] || '', dstorey = d[2] || '', dx = d[3], dy = d[4], bx = d[5] || 0, by = d[6] || 0;
+  if (!RoomGraph.isRoomDoor(dname)) return;
+  const buf = Math.max(bx, by) / 2 + DOOR_BUF_SLACK;
+  const cands = [];
+  Object.keys(roomByGuid).forEach(lg => {
+    const g = roomByGuid[lg];
+    if (g.storey !== dstorey) return;
+    let best = Infinity;
+    g.ownRects.forEach(rr => { best = Math.min(best, rd(rr, dx, dy)); });
+    if (best <= buf) cands.push({ lg, dist: best });
+  });
+  if (cands.length < 2) return;
+  cands.sort((p, q) => p.dist - q.dist);
+  const a = cands[0].lg, b = cands[1].lg;
+  (neighborsByGuid[a] = neighborsByGuid[a] || new Set()).add(b);
+  (neighborsByGuid[b] = neighborsByGuid[b] || new Set()).add(a);
+});
+function meetsCorridorBar(g, rects, lg) {
+  const neighborCount = neighborsByGuid[lg] ? neighborsByGuid[lg].size : 0;
   return bestOverlapFraction(g, rects) >= MIN_OVERLAP_FRACTION &&
-    HallwayBackbone.unionAspectRatio(g.ownRects) >= MIN_ASPECT_RATIO;
+    HallwayBackbone.unionAspectRatio(g.ownRects) >= MIN_ASPECT_RATIO &&
+    neighborCount >= MIN_NEIGHBORS;
 }
 
 let allVerified = true, checkedCount = 0;
@@ -79,12 +116,12 @@ guids.forEach(lg => {
   const g = roomByGuid[lg];
   if (!g) { allVerified = false; return; }
   const rects = bucketsByStorey[g.storey] || [];
-  if (!meetsCorridorBar(g, rects)) allVerified = false;
+  if (!meetsCorridorBar(g, rects, lg)) allVerified = false;
   checkedCount++;
 });
-chk('G2 every classified room independently re-verified to meet BOTH the overlap-fraction (>=' +
-  MIN_OVERLAP_FRACTION + ') and shape (aspect>=' + MIN_ASPECT_RATIO + ') bars, not just centroid',
-  allVerified, 'checked=' + checkedCount);
+chk('G2 every classified room independently re-verified to meet ALL THREE bars — overlap-fraction (>=' +
+  MIN_OVERLAP_FRACTION + '), shape (aspect>=' + MIN_ASPECT_RATIO + '), and distinct-neighbor-rooms (>=' +
+  MIN_NEIGHBORS + ') — not just centroid', allVerified, 'checked=' + checkedCount);
 
 // Rooms that were NOT classified as corridor must genuinely NOT meet BOTH bars either — confirms
 // the classifier isn't under- or over-matching against its own stated rule.
@@ -93,12 +130,28 @@ let overMatchFound = false;
 nonMatched.slice(0, 40).forEach(lg => {
   const g = roomByGuid[lg];
   const rects = bucketsByStorey[g.storey] || [];
-  if (meetsCorridorBar(g, rects)) overMatchFound = true;
+  if (meetsCorridorBar(g, rects, lg)) overMatchFound = true;
 });
-chk('G3 no false negatives in a 40-room sample (a room meeting BOTH bars was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
+chk('G3 no false negatives in a 40-room sample (a room meeting ALL THREE bars was not silently skipped)', !overMatchFound, 'sampled=' + Math.min(40, nonMatched.length));
 
 console.log('§SAMPLE classified=' + guids.length + ' total=' + Object.keys(roomByGuid).length +
   ' chains touched=' + new Set(guids.map(g => result[g].chain)).size);
+
+// §CORRIDOR-DISTINCT-NEIGHBORS regression guard (2026-07-15): before this fix, Clinic classified 9
+// rooms via shape+overlap alone — 6 of those had 0-1 distinct neighboring rooms (narrow slivers,
+// e.g. "First Floor R22" 1.4x5.4m connecting to nothing), confirmed false positives. This asserts
+// the fix's actual effect: strictly fewer classified than the shape+overlap-only count, and none of
+// the survivors are zero-neighbor dead ends.
+const shapeOverlapOnlyCount = Object.keys(roomByGuid).filter(lg => {
+  const g = roomByGuid[lg];
+  const rects = bucketsByStorey[g.storey] || [];
+  return bestOverlapFraction(g, rects) >= MIN_OVERLAP_FRACTION &&
+    HallwayBackbone.unionAspectRatio(g.ownRects) >= MIN_ASPECT_RATIO;
+}).length;
+chk('G4 distinct-neighbor gate actually prunes false positives (fewer classified than shape+overlap alone would give)',
+  guids.length < shapeOverlapOnlyCount, 'withGate=' + guids.length + ' shapeOverlapOnly=' + shapeOverlapOnlyCount);
+chk('G5 no classified room is a zero/one-neighbor dead end (the exact false-positive shape this gate targets)',
+  guids.every(lg => (neighborsByGuid[lg] ? neighborsByGuid[lg].size : 0) >= MIN_NEIGHBORS));
 
 console.log('\n§W-CORRIDOR-TYPE-LABEL DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

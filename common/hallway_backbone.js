@@ -8,7 +8,8 @@
  * spine per storey from the SAME building db common/room_graph.js already reads. Verb chain
  * (matches the spec doc's step numbering 1:1):
  *   1. doorEdge(door)        — wall-run-axis from the door's OWN bbox aspect ratio.
- *   2. correlateDoorEdges()  — bucket-matrix keyed by (storey, axis, roundedRunCoord).
+ *   2. correlateDoorEdges()  — per (storey, axis), single-linkage gap-clusters doors by runCoord
+ *                              (see §GAP-CLUSTER-BUCKETING below — not a fixed rounding grid).
  *   3. joinDoorways()        — buckets with >=3 aligned doors = hallway-candidate.
  *   4. growToWall()          — extend the bucket's span until a REAL perpendicular wall caps it.
  *   5. terminateAtStair()    — an open (uncapped) end near a stair is a connecting space, not a
@@ -107,7 +108,24 @@
     // that real cluster's low end (1.88), cleanly separating the 6 genuine ones from the 11 boxy
     // false positives (confirmed: applying this bound moved Clinic's classifiedRooms 17->6,
     // dropping exactly those 11, keeping exactly those 6 — see debug dump, not eyeballed).
-    minAspectRatio: 1.8
+    minAspectRatio: 1.8,
+    // §CORRIDOR-DISTINCT-NEIGHBORS (2026-07-15, user's own framing: a real corridor "is not room,
+    // is larger, has doors leading onto it from RESPECTIVE [plural] rooms"). minAspectRatio alone
+    // doesn't generalize past the building it was grounded on: measured live on LTU_AHouse
+    // (369 real rooms, much bigger/more irregular footprints than Clinic) — 36 rooms passed the
+    // aspect-ratio+overlap gate, but 20 of them connect to ZERO or ONE distinct other room via a
+    // real door (using the SAME door-to-2-nearest-rooms resolution room_graph.js's own E1 edges
+    // already trust — not a new heuristic, reused ground truth), i.e. narrow dead-end slivers, not
+    // a shared through-space. The 16 kept span neighbors=3..22 — plausible real junctions. Applying
+    // the SAME >=2 bound to Clinic (where minAspectRatio was originally grounded) drops exactly the
+    // 5 zero-neighbor slivers (size 1.2-1.8m x 3-5.4m, obviously not walkways) and one single-
+    // neighbor room, keeping the 3 highest-connectivity ones — including "Second Floor R7"
+    // (16.0x4.6m, neighbors=9), the ORIGINAL doc comment's own canonical true-positive example
+    // above, confirming this signal agrees with the aspect-ratio grounding rather than replacing
+    // it. AND-combined with minAspectRatio (not a replacement) — can only make the gate STRICTER,
+    // never reclassify something aspect-ratio already excluded, so it cannot regress a
+    // building whose classification already reads correct.
+    minDistinctNeighborRooms: 2
   };
 
   // §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real walkway/corridor (1) is not
@@ -185,19 +203,53 @@
   }
 
   // ── 2. correlateDoorEdges ────────────────────────────────────────────────────────────────────
+  // §GAP-CLUSTER-BUCKETING (2026-07-15, bim-compiler prompts/ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md
+  // §15/§16): was fixed-grid rounding (`Math.round(runCoord/tol)*tol`) — two doors genuinely
+  // `tol` or closer together in real space still landed in DIFFERENT buckets whenever their raw
+  // runCoords straddled a grid boundary (e.g. tol=0.6: 10.36 rounds to 10.2, 10.56 rounds to 10.8
+  // — 0.6 apart on the grid despite being only 0.20m apart in reality). This is a pure artifact of
+  // the absolute grid's fixed phase, not a real geometric signal, and it fragments real door
+  // clusters into many singletons. Measured live 2026-07-15 on Hospital_extracted.db: 251/336
+  // grid-buckets held exactly 1 door (avg 1.3 doors/bucket — Hospital's floorplan is large with
+  // doors legitimately spread across many distinct wall runs, but the grid boundary was ALSO
+  // splitting doors that belonged together). Replaced with single-linkage gap clustering: per
+  // (storey, axis) group, sort by runCoord, start a new bucket only when the gap to the PREVIOUS
+  // door exceeds `tol` — the geometrically correct question ("is this door within tol of its
+  // nearest neighbor on this wall run"), immune to absolute grid phase. `runCoord` is now the
+  // cluster's mean (a real measured value, not a rounded grid line) — downstream growToWall/
+  // bucketWidth/walkBackbone already compare against it with their own slack tolerances
+  // (wallCrossSlack/minSideOffset/maxSideOffset), so a non-grid-aligned value is not a new
+  // assumption. Measured effect at the SAME tol=0.6, before any threshold was touched: Hospital
+  // joined(>=3 doors) buckets 15->43 (336->241 total buckets); Clinic 38->41 (113->97 total);
+  // HHS unchanged at 15 (39->31 total) — an improvement or a hold on all three, not a trade-off.
   function correlateDoorEdges(edges, profile) {
     profile = profile || DEFAULT_PROFILE;
-    var buckets = {}, order = [];
+    var groups = {};
     edges.forEach(function (e) {
-      var rounded = Math.round(e.runCoord / profile.runCoordTol) * profile.runCoordTol;
-      var key = e.storey + '|' + e.axis + '|' + rounded.toFixed(2);
-      if (!buckets[key]) {
-        buckets[key] = { key: key, storey: e.storey, axis: e.axis, runCoord: rounded, doors: [] };
-        order.push(key);
-      }
-      buckets[key].doors.push(e);
+      var k = e.storey + '|' + e.axis;
+      (groups[k] = groups[k] || []).push(e);
     });
-    return order.map(function (k) { return buckets[k]; });
+    var buckets = [];
+    Object.keys(groups).forEach(function (k) {
+      var sorted = groups[k].slice().sort(function (a, b) { return a.runCoord - b.runCoord; });
+      var cluster = [];
+      function flush() {
+        if (!cluster.length) return;
+        var sum = 0;
+        cluster.forEach(function (d) { sum += d.runCoord; });
+        var rc = sum / cluster.length;
+        buckets.push({ key: k + '|' + rc.toFixed(2), storey: cluster[0].storey, axis: cluster[0].axis, runCoord: rc, doors: cluster.slice() });
+      }
+      sorted.forEach(function (e) {
+        if (cluster.length && (e.runCoord - cluster[cluster.length - 1].runCoord) > profile.runCoordTol) {
+          flush();
+          cluster = [];
+        }
+        cluster.push(e);
+      });
+      flush();
+    });
+    return buckets;
   }
 
   // ── 3. joinDoorways ──────────────────────────────────────────────────────────────────────────
@@ -581,6 +633,43 @@
       (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b, profile), chain: b._chainIndex != null ? b._chainIndex : null });
     });
 
+    // §CORRIDOR-DISTINCT-NEIGHBORS: distinct-other-room count per logical room, via the SAME
+    // door-to-2-nearest-rooms resolution room_graph.js's own E1 edges use (reused ground truth —
+    // `RoomGraph.isRoomDoor` name filter + the identical rect-distance/buffer discipline —
+    // not a new heuristic invented here). A room only counts a neighbor if a real door sits within
+    // its own rect(s) AND that same door's OTHER nearest room is a DIFFERENT logical room.
+    var neighborsByGuid = {};
+    if (RoomGraph) {
+      try {
+        var _doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.bbox_x, t.bbox_y' +
+          ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+          " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
+        var DOOR_BUF_SLACK = 0.20; // same constant room_graph.js's own E1 resolution uses
+        function _rd(rc, px, py) {
+          var dx = Math.max(rc.x0 - px, 0, px - rc.x1), dy = Math.max(rc.y0 - py, 0, py - rc.y1);
+          return Math.hypot(dx, dy);
+        }
+        _doorRows.forEach(function (d) {
+          var dname = d[1] || '', dstorey = d[2] || '', dx = d[3], dy = d[4], bx = d[5] || 0, by = d[6] || 0;
+          if (!RoomGraph.isRoomDoor(dname)) return;
+          var buf = Math.max(bx, by) / 2 + DOOR_BUF_SLACK;
+          var cands = [];
+          Object.keys(rects).forEach(function (lg) {
+            var g = rects[lg];
+            if (g.storey !== dstorey) return;
+            var best = Infinity;
+            for (var i = 0; i < g.ownRects.length; i++) best = Math.min(best, _rd(g.ownRects[i], dx, dy));
+            if (best <= buf) cands.push({ lg: lg, dist: best });
+          });
+          if (cands.length < 2) return;
+          cands.sort(function (p, q) { return p.dist - q.dist; });
+          var a = cands[0].lg, b = cands[1].lg;
+          (neighborsByGuid[a] = neighborsByGuid[a] || new Set()).add(b);
+          (neighborsByGuid[b] = neighborsByGuid[b] || new Set()).add(a);
+        });
+      } catch (eNb) { log('§CORRIDOR_NEIGHBORS_ERR ' + eNb.message); }
+    }
+
     function rectOverlapArea(a, c) {
       var ox = Math.max(0, Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0));
       var oy = Math.max(0, Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0));
@@ -602,6 +691,8 @@
     Object.keys(rects).forEach(function (lg) {
       var r = rects[lg];
       if (unionAspectRatio(r.ownRects) < profile.minAspectRatio) return; // not elongated enough to be a real corridor, regardless of overlap
+      var neighborCount = neighborsByGuid[lg] ? neighborsByGuid[lg].size : 0;
+      if (neighborCount < profile.minDistinctNeighborRooms) return; // §CORRIDOR-DISTINCT-NEIGHBORS: not a shared through-space — 0/1 real doors to a DIFFERENT room means a dead-end sliver, not a corridor, regardless of shape
       var cx = r.sumX / r.n, cy = r.sumY / r.n;
       var candidates = bucketsByStorey[r.storey];
       if (!candidates) return;

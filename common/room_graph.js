@@ -837,10 +837,34 @@
   // real-world point actually walked) — never exposed directly; substituted with the specific
   // door/stair waypoint the arriving EDGE carries, so the drawn line hugs the real walk instead of
   // bending toward an invented storey centroid (OCCUPANT_PATHFINDER.md SPEC).
-  function _publicHop(graph, arrivedGuid, edge, arriveSide) {
+  // §CIRC-DUAL-BRIDGE (2026-07-15, §18 item 5 — user-reported live: a rendered path visibly cuts
+  // straight through open space on an L-shaped HHS floor instead of hugging the walkway).
+  // `hasDeparture`: true when this CIRC node is a genuine MIDDLE hop — edges on BOTH sides (one
+  // bridging IN via `edge`, one already-processed bridging further OUT toward toGuid). The old
+  // unconditional substitution always used only the ARRIVAL edge's own wp (which, for a same-
+  // storey chain-to-chain bridge, is just the arriving spine's OWN point — a redundant duplicate
+  // of the node already adjacent to it) and silently discarded the departure edge's real distance
+  // entirely — measured live on HHS: a `SPINE::Level 1|y|-4.65 -> SPINE::Level 1|y|10.56` chord
+  // (18.3m, meant to be TWO real hops via the stair core, 3.8m + 15.5m) rendered as ONE straight
+  // line, 58/75 sampled points illegal (`§PATH_LEGAL_DETOUR_FAIL`). Neither edge's wp field can
+  // fix this — both sides only ever point back to "the far spine's own guid", there is no third
+  // coordinate recorded anywhere for the bridge itself. CIRC's own (cx,cy) — real, measured
+  // (stair-flight-derived), not invented — is the honest middle point in that case: keep it
+  // un-substituted rather than collapse it away.
+  // §SCOPE-GUARD (found via regression, not guessed): the suppression below is deliberately
+  // narrowed to BOTH edges being 'E6' (the same-storey chain-to-chain bridge this bug is specific
+  // to) — an EARLIER, broader "any departure edge" version silently broke the cross-floor stair
+  // case too (`CIRC::First Floor <-> CIRC::Second Floor`, kind 'E3'), which genuinely NEEDS its
+  // substitution (a real `stairwp` point) and was working correctly before — confirmed by
+  // witness_backbone_routing.js's G0c / witness_corridor_room_backprop.js's B3 both regressing
+  // when the guard was too broad, both green again once narrowed to E6-only. Every other
+  // combination (E2/E3 involved on either side) keeps the ORIGINAL unconditional substitution
+  // behavior, unchanged.
+  function _publicHop(graph, arrivedGuid, edge, arriveSide, departEdge) {
     var n = graph.nodesByGuid[arrivedGuid];
     if (!n || n.kind === 'room' || n.kind === 'exit') return arrivedGuid;
     if (n.kind === 'circ' && edge) {
+      if (departEdge && edge.kind === 'E6' && departEdge.kind === 'E6') return arrivedGuid;
       var wp = (arriveSide === 'a') ? edge.wpA : edge.wpB;
       if (wp && graph.nodesByGuid[wp]) return wp;
     }
@@ -881,10 +905,26 @@
           py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
       }
     }
+    // §CORRIDOR-RECT-SLACK (2026-07-15, §18 item 5 — user-reported live: a rendered path visibly
+    // cuts straight through open space on an L-shaped HHS floor instead of hugging the walkway).
+    // This branch had NO tolerance at all, unlike the room-rects branch just above (which forgives
+    // DOOR_BUFFER_SLACK on every edge) — a sampled point sitting a few cm outside a corridor
+    // bucket's rect (real wall thickness / measurement rounding, or the small gap where two
+    // adjacent corridor buckets meet at a T-junction/corner) registered as illegal with zero
+    // margin. Measured live on HHS (14 rooms, 91 real pairs): 173/253=68% of directed room pairs
+    // hit >=1 `§PATH_LEGAL_DETOUR_FAIL` chord before this fix — the detour visibility graph's own
+    // candidate-to-candidate edges suffer the identical zero-margin test, so a sparse-coverage
+    // building can end up with NO legal detour at all, and `_legalizePath`'s honest-degrade leaves
+    // the original illegal straight chord in the rendered path. Fixed with the SAME wall-thickness
+    // slack `hallway_backbone.js`'s own `wallCrossSlack` already uses for this exact class of
+    // problem ("real walls are rasterized transforms, not infinitely thin planes") — not a new
+    // magic number.
+    var CORRIDOR_RECT_SLACK = 0.3;
     if (corridors) {
       for (var j = 0; j < corridors.length; j++) {
         var cc = corridors[j];
-        if (px >= cc.x0 && px <= cc.x1 && py >= cc.y0 && py <= cc.y1) return true;
+        if (px >= cc.x0 - CORRIDOR_RECT_SLACK && px <= cc.x1 + CORRIDOR_RECT_SLACK &&
+          py >= cc.y0 - CORRIDOR_RECT_SLACK && py <= cc.y1 + CORRIDOR_RECT_SLACK) return true;
       }
     }
     return false;
@@ -1026,6 +1066,7 @@
     var core = _dijkstraCore(graph, adj, fromGuid, toGuid);
     if (!core) return null;
     var path = [toGuid], doors = [], cur = toGuid;
+    var departEdge = null; // §CIRC-DUAL-BRIDGE: the edge used to LEAVE `cur` toward toGuid, from the prior iteration
     while (cur !== fromGuid) {
       var p = core.prev[cur];
       if (!p) return null; // defensive — should not happen if dist[toGuid] finite
@@ -1033,9 +1074,10 @@
       // file's own invariant is "doors[] = real doors only" (see G1 witness), so they contribute
       // to `path` (a real, wall-grounded position either way) but not to the exposed doors list.
       if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
-      var publicCur = _publicHop(graph, cur, p.edge, p.arriveSide);
+      var publicCur = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
       path[0] = publicCur; // replace the just-pushed guid with its public form
       path.unshift(p.from);
+      departEdge = p.edge;
       cur = p.from;
     }
     path = _legalizePath(graph, path);
@@ -1070,6 +1112,7 @@
     });
     if (!bestExit) { log('§ESCAPE_ROUTE from=' + fromGuid + ' NO_EXIT_REACHABLE'); return null; }
     var path = [bestExit], doors = [], cur = bestExit;
+    var departEdge = null; // §CIRC-DUAL-BRIDGE: same tracking as shortestPath() — see _publicHop's own comment
     while (cur !== fromGuid) {
       var p = prev[cur];
       if (!p) { log('§ESCAPE_ROUTE from=' + fromGuid + ' RECONSTRUCT_FAIL'); return null; }
@@ -1077,8 +1120,9 @@
       // file's own invariant is "doors[] = real doors only" (see G1 witness), so they contribute
       // to `path` (a real, wall-grounded position either way) but not to the exposed doors list.
       if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
-      path[0] = _publicHop(graph, cur, p.edge, p.arriveSide);
+      path[0] = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
       path.unshift(p.from);
+      departEdge = p.edge;
       cur = p.from;
     }
     var result = { path: path, doors: doors, distance: dist[bestExit], exitGuid: bestExit };
