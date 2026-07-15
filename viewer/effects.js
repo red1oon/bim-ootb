@@ -115,15 +115,112 @@ async function setupEffects(A, renderer, scene, camera) {
   function _setTriplanarActive(active) {
     return (A._triplanarMaterials || []).length;
   }
-  // §PHOTO_STAGING (2026-07-15, POC — presentation only, not extracted BIM data): bundles a
-  // sunset sky+shadow + amber building glow into the SAME still-refine trigger, all auto-
-  // reverting on teardown exactly like the texture toggle above. Building-only (no ground/
-  // corner decorative props — explicitly out of scope per user). Reuses A.toggleNightMode()'s
-  // existing fixture-glow mechanism (synthetic per-storey fallback already built for buildings
-  // with zero real IfcLightFixture data) rather than duplicating it, then immediately restores
-  // the non-glow (sun/ambient/hemi/exposure/fog) side effects toggleNightMode also applies —
-  // we want the amber glow, not night's moonlight override, since the sunset sky/shadow set up
-  // just above is the intended mood, not full night-black.
+  // §PHOTO_STAGING_PROPS (2026-07-15, POC — presentation only, explicitly authorized fabricated
+  // staging, not extracted BIM data, not touching any real logic/geometry the compiler produces).
+  // Building-only ground uplights + roofline edge-lining + a distant skyline silhouette with
+  // sparkled window-lights — all anchored to THIS building's own real bbox/position (queried
+  // fresh, not invented numbers) even though the fixtures themselves are fabricated. Built once
+  // per building (cached, rebuilt only if the active building changes), then just shown/hidden
+  // each photoshoot — cheap: a handful of point lights + thin boxes + one Points sparkle field,
+  // no shadow-casting, no new texture/loader dependencies.
+  var _photoPropsBuilding = null;
+  var _photoUplights = [], _photoEdgeStrips = [], _photoSkyline = null, _photoSkylineLights = null;
+  function _buildingBBoxIfc() {
+    if (!A.dbQuery) return null;
+    var r = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
+    if (!r.length || r[0][0] == null) return null;
+    return { xMin: r[0][0], xMax: r[0][1], yMin: r[0][2], yMax: r[0][3], zMin: r[0][4], zMax: r[0][5] };
+  }
+  function _disposePhotoProps() {
+    _photoUplights.forEach(function(l) { A.scene.remove(l); });
+    _photoEdgeStrips.forEach(function(m) { A.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    if (_photoSkyline) { A.scene.remove(_photoSkyline); _photoSkyline.children.forEach(function(b) { b.geometry.dispose(); b.material.dispose(); }); }
+    if (_photoSkylineLights) { A.scene.remove(_photoSkylineLights); _photoSkylineLights.geometry.dispose(); _photoSkylineLights.material.dispose(); }
+    _photoUplights = []; _photoEdgeStrips = []; _photoSkyline = null; _photoSkylineLights = null;
+  }
+  function _buildPhotoProps() {
+    var bbox = _buildingBBoxIfc();
+    if (!bbox) return;
+    _photoPropsBuilding = A.activeBuilding;
+    var cx = (bbox.xMin + bbox.xMax) / 2, cy = (bbox.yMin + bbox.yMax) / 2;
+    var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin;
+    var groundZ = bbox.zMin, roofZ = bbox.zMax;
+
+    // Ground uplights — 4 footprint corners, warm, short-range, no shadow (cheap)
+    [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMin, bbox.yMax], [bbox.xMax, bbox.yMax]].forEach(function(c) {
+      var p = A.ifc2three(c[0], c[1], groundZ);
+      var lt = new THREE.PointLight(0xffaa55, 4, 18, 2);
+      lt.position.set(p.x, p.y + 0.5, p.z);
+      A.scene.add(lt);
+      _photoUplights.push(lt);
+    });
+
+    // Roofline edge-lining — bounding-box rectangle at roof height (approximation for an
+    // L-shaped footprint — POC-acceptable per user, real footprint polygon is a bigger lift)
+    var edgeMat = new THREE.MeshBasicMaterial({ color: 0xffe0a8 });
+    var corners = [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMax, bbox.yMax], [bbox.xMin, bbox.yMax]];
+    for (var ei = 0; ei < 4; ei++) {
+      var c1 = corners[ei], c2 = corners[(ei + 1) % 4];
+      var p1 = A.ifc2three(c1[0], c1[1], roofZ), p2 = A.ifc2three(c2[0], c2[1], roofZ);
+      var len = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      var mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.08), edgeMat);
+      mesh.position.set((p1.x + p2.x) / 2, (p1.y + p2.y) / 2 + 0.3, (p1.z + p2.z) / 2);
+      mesh.rotation.y = -Math.atan2(p2.z - p1.z, p2.x - p1.x);
+      A.scene.add(mesh);
+      _photoEdgeStrips.push(mesh);
+    }
+
+    // Distant skyline silhouette (full ring — robust to any orbit angle, per user's own
+    // "different angle later" expectation) + sparkled window-lights, dusk-city look
+    var envelope = Math.max(w, d, 50);
+    var radius = envelope * 4;
+    var group = new THREE.Group();
+    var winPos = [], winCol = [];
+    var N = 28;
+    for (var i = 0; i < N; i++) {
+      var ang = (i / N) * Math.PI * 2;
+      var bw = 15 + Math.random() * 25, bh = 15 + Math.random() * 45;
+      var bx = cx + Math.cos(ang) * radius, by = cy + Math.sin(ang) * radius;
+      var base = A.ifc2three(bx, by, groundZ);
+      var shade = 0.06 + Math.random() * 0.07;
+      var box = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bw),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(shade * 0.9, shade * 0.85, shade * 1.15) }));
+      box.position.set(base.x, base.y + bh / 2, base.z);
+      group.add(box);
+      var winCount = Math.floor((bw * bh) / 14);
+      for (var wi = 0; wi < winCount; wi++) {
+        winPos.push(base.x + (Math.random() - 0.5) * bw * 0.8, base.y + Math.random() * bh * 0.9 + 2, base.z + (Math.random() - 0.5) * bw * 0.8);
+        if (Math.random() > 0.25) winCol.push(1.0, 0.8 + Math.random() * 0.2, 0.5 + Math.random() * 0.3); // warm window
+        else winCol.push(0.6, 0.75, 1.0); // occasional cool/blue window
+      }
+    }
+    A.scene.add(group);
+    _photoSkyline = group;
+    var winGeo = new THREE.BufferGeometry();
+    winGeo.setAttribute('position', new THREE.Float32BufferAttribute(winPos, 3));
+    winGeo.setAttribute('color', new THREE.Float32BufferAttribute(winCol, 3));
+    _photoSkylineLights = new THREE.Points(winGeo, new THREE.PointsMaterial({ size: 1.2, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.9 }));
+    A.scene.add(_photoSkylineLights);
+    console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' edges=' + _photoEdgeStrips.length + ' skylineBoxes=' + N + ' windowLights=' + (winPos.length / 3));
+  }
+  function _showPhotoProps(show) {
+    if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
+      _disposePhotoProps();
+      _buildPhotoProps();
+    }
+    _photoUplights.forEach(function(l) { l.visible = show; });
+    _photoEdgeStrips.forEach(function(m) { m.visible = show; });
+    if (_photoSkyline) _photoSkyline.visible = show;
+    if (_photoSkylineLights) _photoSkylineLights.visible = show;
+  }
+  // §PHOTO_STAGING (2026-07-15, POC — presentation only, not extracted BIM data): bundles the
+  // sunset sky + amber building glow + the ground/edge/skyline props above into the SAME
+  // still-refine trigger, all auto-reverting on teardown exactly like the texture toggle.
+  // Reuses A.toggleNightMode()'s existing fixture-glow mechanism (synthetic per-storey fallback
+  // already built for buildings with zero real IfcLightFixture data) rather than duplicating it,
+  // then immediately restores the non-glow (sun/ambient/hemi/exposure/fog) side effects
+  // toggleNightMode also applies — we want the amber glow, not night's moonlight override, since
+  // the sunset sky set up above is the intended mood, not full night-black.
   // §PHOTO_STAGING_NO_SHADOW (2026-07-15, user ask): dropped toggleShadow() entirely — sky-only,
   // no ground/shadow-cycling. Simpler, and the sky alone already reads as the target evening mood.
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
@@ -143,11 +240,13 @@ async function setupEffects(A, renderer, scene, camera) {
         A.renderer.toneMappingExposure = A._nightSaved.exposure;
       }
     }
+    _showPhotoProps(true);
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
+    _showPhotoProps(false);
     console.log('§PHOTO_STAGING off');
   }
   // §STILL_REFINE_FREEZE (2026-07-15, user-observed): on a real GPU, 16 samples finish in
