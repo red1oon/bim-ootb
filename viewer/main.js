@@ -684,6 +684,11 @@ async function initViewer() {
   // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
   // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
   function _startLoop() {
+    // §STILL_REFINE: _startLoop is the universal choke point every interaction path funnels
+    // through (pointerdown/wheel/keydown/controls-change all call it directly, markDirty calls
+    // it too) — cancel a still-in-progress TAA refine here, not just via markDirty, so a plain
+    // click/drag that never sets _needsRender through markDirty still cancels it correctly.
+    if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine();
     if (_rafId) return;                       // already running — never double
     _loopStarts++;
     _needsRender = true;

@@ -1768,6 +1768,9 @@ async function setupScene(A) {
     // Alt+Z = 3-state cycle Off→X-Ray→Bbox→Off (Blender Alt+Z convention, extended). Alt+X
     // deleted — merged into this single cycle, see A.cycleXrayBboxMode (tools.js).
     if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); console.log('§KBD_ROUTE Alt+Z → xray-cycle'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray-cycle', { xray: true }); return; }
+    // Alt+S = still-refine — progressive TAA supersample of the current camera view (2026-07-15,
+    // user ask). Cancels itself on any interaction via the A.markDirty() wrap in effects.js.
+    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
     // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's
