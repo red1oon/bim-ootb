@@ -150,6 +150,19 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     console.log('§PHOTO_STAGING off');
   }
+  // §STILL_REFINE_FREEZE (2026-07-15, user-observed): on a real GPU, 16 samples finish in
+  // ~150ms — reverting composer/textures/sky the instant accumulation naturally completes made
+  // the whole effect flash past almost invisibly, nothing like how Night/Shadow mode normally
+  // stay on until you explicitly turn them off. Natural completion now only stops the RAF
+  // stepping loop and logs the timing — composer/triplanar/photo-staging all stay exactly as
+  // accumulated (the finished still stays frozen on screen) until a REAL interaction fires
+  // A.stopStillRefine() (main.js's pointerdown/wheel/controls-start hooks). Only that path does
+  // the full revert.
+  function _finishStillRefine(idx) {
+    if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
+    var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
+    console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
+  }
   function _teardownStillRefine(reason) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
@@ -176,7 +189,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!A._stillRefineActive) return;
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
-      if (idx >= 16) { _teardownStillRefine('done accumulateIndex=' + idx); return; }
+      if (idx >= 16) { _finishStillRefine(idx); return; }
       _stillRefineRAF = requestAnimationFrame(step);
     }
     _stillRefineRAF = requestAnimationFrame(step);
