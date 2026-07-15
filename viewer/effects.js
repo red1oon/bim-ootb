@@ -22,10 +22,11 @@ async function setupEffects(A, renderer, scene, camera) {
   }
 
   try {
-    // §S277c: Parallel import — all 5 addons load concurrently, not sequentially
-    var [_ecMod, _rpMod, _ssaoMod, _outMod, _opMod] = await Promise.all([
+    // §S277c: Parallel import — all 6 addons load concurrently, not sequentially
+    var [_ecMod, _rpMod, _taaMod, _ssaoMod, _outMod, _opMod] = await Promise.all([
       import('./lib/EffectComposer.js'),
       import('./lib/RenderPass.js'),
+      import('./lib/TAARenderPass.js'),
       import('./lib/SSAOPass.js'),
       import('./lib/OutlinePass.js'),
       import('./lib/OutputPass.js')
@@ -35,8 +36,12 @@ async function setupEffects(A, renderer, scene, camera) {
     _composer.setSize(window.innerWidth, window.innerHeight);
     _composer.setPixelRatio(renderer.getPixelRatio());
 
-    // Pass 1: Base scene render
-    var _renderPass = new _rpMod.RenderPass(scene, camera);
+    // §NIGHT-STILL-REFINE (2026-07-15, user ask): Pass 1 is a TAARenderPass instead of a plain
+    // RenderPass — with `.accumulate=false` (default) it behaves identically to RenderPass, zero
+    // added cost during normal navigation. `A.startStillRefine()` below flips accumulate=true and
+    // drives 16 jittered-camera accumulation samples across idle frames to build a crisp
+    // supersampled still; any interaction (markDirty, wrapped below) cancels it immediately.
+    var _renderPass = new _taaMod.TAARenderPass(scene, camera);
     _composer.addPass(_renderPass);
 
     // Pass 2: SSAO — contact shadows in room corners, pipe junctions
@@ -67,7 +72,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A._ssaoPass = _ssaoPass;
     A._outlinePass = _outlinePass;
     A._renderPass = _renderPass;
-    console.log('§EFFECTS_INIT loaded — RenderPass + SSAO + Outline + Output');
+    A._taaPass = _renderPass;
+    console.log('§EFFECTS_INIT loaded — TAARenderPass + SSAO + Outline + Output');
   } catch(e) {
     console.warn('§EFFECTS_INIT_FAIL ' + e.message + ' — falling back to direct render');
     A._composer = null;
@@ -89,4 +95,53 @@ async function setupEffects(A, renderer, scene, camera) {
     A._outlinePass.enabled = objects && objects.length > 0;
     A._composerEnabled = A._outlinePass.enabled || (A._ssaoPass && A._ssaoPass.enabled);
   };
+
+  // §NIGHT-STILL-REFINE (2026-07-15, user ask): progressive TAA still — accumulates 16 jittered
+  // samples across idle frames into a crisp supersampled image, cancels on any interaction.
+  A._stillRefineActive = false;
+  var _stillRefineRAF = null;
+  var _stillRefinePrevComposerEnabled = false;
+  // §STILL_REFINE_TEARDOWN (2026-07-15, real-user bug): natural completion used to skip this —
+  // A._taaPass.accumulate stayed true and A._composerEnabled stayed forced-on forever afterward,
+  // so every subsequent normal render kept re-painting the FROZEN accumulated image instead of a
+  // fresh live frame (accumulateIndex>=16 short-circuits TAARenderPass's sampling loop but still
+  // re-blends the stale _sampleRenderTarget). That's exactly the "blurred/multi-shot after moving
+  // the camera" the user hit live. Both the done-path and the cancel-path must reset the SAME
+  // state — only the log line differs.
+  function _teardownStillRefine(reason) {
+    A._stillRefineActive = false;
+    if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
+    if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
+    A._composerEnabled = _stillRefinePrevComposerEnabled;
+    console.log('§STILL_REFINE ' + reason);
+  }
+  A.startStillRefine = function() {
+    if (!A._composer || !A._taaPass || A._stillRefineActive) return;
+    A._stillRefineActive = true;
+    _stillRefinePrevComposerEnabled = A._composerEnabled;
+    A._composerEnabled = true;
+    A._taaPass.accumulate = true;
+    A._taaPass.accumulateIndex = -1;
+    console.log('§STILL_REFINE start samples=16');
+    function step() {
+      if (!A._stillRefineActive) return;
+      A._composer.render();
+      var idx = A._taaPass.accumulateIndex;
+      if (idx >= 16) { _teardownStillRefine('done accumulateIndex=' + idx); return; }
+      _stillRefineRAF = requestAnimationFrame(step);
+    }
+    _stillRefineRAF = requestAnimationFrame(step);
+  };
+  A.stopStillRefine = function() {
+    if (!A._stillRefineActive) return;
+    _teardownStillRefine('cancelled (interaction)');
+  };
+  A.toggleStillRefine = function() {
+    if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();
+  };
+  // §STILL_REFINE cancellation lives in main.js, on the actual pointerdown/wheel/controls-start
+  // signals — NOT here on markDirty. Confirmed live (2026-07-15, real user) that markDirty fires
+  // from far more than "user touched the canvas" (e.g. the history bar's own event-sniffer
+  // refreshing itself right after logging the very Alt+S keypress that started the refine),
+  // which self-cancelled the refine within the same keypress. Precise interaction signals only.
 }

@@ -662,6 +662,13 @@ async function initViewer() {
   var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
+    // §STILL_REFINE: a real drag/touch beginning is the "touching canvas" signal the still-refine
+    // spec asked for — cancel here, NOT from the generic _startLoop choke point (that also fires
+    // from keydown/markDirty on things unrelated to touching the canvas, e.g. the history bar's
+    // own event-sniffer refreshing itself right after logging the Alt+S keypress that started the
+    // refine — confirmed live, 2026-07-15: start->cancelled within the same event, nothing the
+    // user actually touched in between).
+    if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -704,8 +711,11 @@ async function initViewer() {
   // §IDLE-PARK: belt-and-suspenders — ANY user input revives a parked loop, regardless of
   // which feature it triggers (fly/walk/streaming started by a click after idle). _startLoop
   // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
-  window.addEventListener('pointerdown', _startLoop);
-  window.addEventListener('wheel', _startLoop, { passive: true });
+  // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
+  // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
+  function _cancelStillRefine() { if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  window.addEventListener('pointerdown', function() { _cancelStillRefine(); _startLoop(); });
+  window.addEventListener('wheel', function() { _cancelStillRefine(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
