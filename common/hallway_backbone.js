@@ -108,7 +108,24 @@
     // that real cluster's low end (1.88), cleanly separating the 6 genuine ones from the 11 boxy
     // false positives (confirmed: applying this bound moved Clinic's classifiedRooms 17->6,
     // dropping exactly those 11, keeping exactly those 6 — see debug dump, not eyeballed).
-    minAspectRatio: 1.8
+    minAspectRatio: 1.8,
+    // §CORRIDOR-DISTINCT-NEIGHBORS (2026-07-15, user's own framing: a real corridor "is not room,
+    // is larger, has doors leading onto it from RESPECTIVE [plural] rooms"). minAspectRatio alone
+    // doesn't generalize past the building it was grounded on: measured live on LTU_AHouse
+    // (369 real rooms, much bigger/more irregular footprints than Clinic) — 36 rooms passed the
+    // aspect-ratio+overlap gate, but 20 of them connect to ZERO or ONE distinct other room via a
+    // real door (using the SAME door-to-2-nearest-rooms resolution room_graph.js's own E1 edges
+    // already trust — not a new heuristic, reused ground truth), i.e. narrow dead-end slivers, not
+    // a shared through-space. The 16 kept span neighbors=3..22 — plausible real junctions. Applying
+    // the SAME >=2 bound to Clinic (where minAspectRatio was originally grounded) drops exactly the
+    // 5 zero-neighbor slivers (size 1.2-1.8m x 3-5.4m, obviously not walkways) and one single-
+    // neighbor room, keeping the 3 highest-connectivity ones — including "Second Floor R7"
+    // (16.0x4.6m, neighbors=9), the ORIGINAL doc comment's own canonical true-positive example
+    // above, confirming this signal agrees with the aspect-ratio grounding rather than replacing
+    // it. AND-combined with minAspectRatio (not a replacement) — can only make the gate STRICTER,
+    // never reclassify something aspect-ratio already excluded, so it cannot regress a
+    // building whose classification already reads correct.
+    minDistinctNeighborRooms: 2
   };
 
   // §COMMON-SENSE-FILTER (2026-07-14, user's own framing): a real walkway/corridor (1) is not
@@ -616,6 +633,43 @@
       (bucketsByStorey[b.storey] = bucketsByStorey[b.storey] || []).push({ rect: bucketRect(b, profile), chain: b._chainIndex != null ? b._chainIndex : null });
     });
 
+    // §CORRIDOR-DISTINCT-NEIGHBORS: distinct-other-room count per logical room, via the SAME
+    // door-to-2-nearest-rooms resolution room_graph.js's own E1 edges use (reused ground truth —
+    // `RoomGraph.isRoomDoor` name filter + the identical rect-distance/buffer discipline —
+    // not a new heuristic invented here). A room only counts a neighbor if a real door sits within
+    // its own rect(s) AND that same door's OTHER nearest room is a DIFFERENT logical room.
+    var neighborsByGuid = {};
+    if (RoomGraph) {
+      try {
+        var _doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.bbox_x, t.bbox_y' +
+          ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+          " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
+        var DOOR_BUF_SLACK = 0.20; // same constant room_graph.js's own E1 resolution uses
+        function _rd(rc, px, py) {
+          var dx = Math.max(rc.x0 - px, 0, px - rc.x1), dy = Math.max(rc.y0 - py, 0, py - rc.y1);
+          return Math.hypot(dx, dy);
+        }
+        _doorRows.forEach(function (d) {
+          var dname = d[1] || '', dstorey = d[2] || '', dx = d[3], dy = d[4], bx = d[5] || 0, by = d[6] || 0;
+          if (!RoomGraph.isRoomDoor(dname)) return;
+          var buf = Math.max(bx, by) / 2 + DOOR_BUF_SLACK;
+          var cands = [];
+          Object.keys(rects).forEach(function (lg) {
+            var g = rects[lg];
+            if (g.storey !== dstorey) return;
+            var best = Infinity;
+            for (var i = 0; i < g.ownRects.length; i++) best = Math.min(best, _rd(g.ownRects[i], dx, dy));
+            if (best <= buf) cands.push({ lg: lg, dist: best });
+          });
+          if (cands.length < 2) return;
+          cands.sort(function (p, q) { return p.dist - q.dist; });
+          var a = cands[0].lg, b = cands[1].lg;
+          (neighborsByGuid[a] = neighborsByGuid[a] || new Set()).add(b);
+          (neighborsByGuid[b] = neighborsByGuid[b] || new Set()).add(a);
+        });
+      } catch (eNb) { log('§CORRIDOR_NEIGHBORS_ERR ' + eNb.message); }
+    }
+
     function rectOverlapArea(a, c) {
       var ox = Math.max(0, Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0));
       var oy = Math.max(0, Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0));
@@ -637,6 +691,8 @@
     Object.keys(rects).forEach(function (lg) {
       var r = rects[lg];
       if (unionAspectRatio(r.ownRects) < profile.minAspectRatio) return; // not elongated enough to be a real corridor, regardless of overlap
+      var neighborCount = neighborsByGuid[lg] ? neighborsByGuid[lg].size : 0;
+      if (neighborCount < profile.minDistinctNeighborRooms) return; // §CORRIDOR-DISTINCT-NEIGHBORS: not a shared through-space — 0/1 real doors to a DIFFERENT room means a dead-end sliver, not a corridor, regardless of shape
       var cx = r.sumX / r.n, cy = r.sumY / r.n;
       var candidates = bucketsByStorey[r.storey];
       if (!candidates) return;
