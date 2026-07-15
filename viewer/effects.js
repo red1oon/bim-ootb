@@ -124,21 +124,16 @@ async function setupEffects(A, renderer, scene, camera) {
   // the non-glow (sun/ambient/hemi/exposure/fog) side effects toggleNightMode also applies —
   // we want the amber glow, not night's moonlight override, since the sunset sky/shadow set up
   // just above is the intended mood, not full night-black.
-  var _photoNightWasOn = false, _photoShadowWasOn = false, _photoSkyWasVisible = false;
-  var _photoShadowGroundKey = 'off';
+  // §PHOTO_STAGING_NO_SHADOW (2026-07-15, user ask): dropped toggleShadow() entirely — sky-only,
+  // no ground/shadow-cycling. Simpler, and the sky alone already reads as the target evening mood.
+  var _photoNightWasOn = false, _photoSkyWasVisible = false;
   function _applyPhotoStaging() {
     _photoSkyWasVisible = !!(A._sky && A._sky.visible);
     if (A._sky && A.updateSky) { A._sky.visible = true; A.updateSky(8, 200); }
-    // §PHOTO_STAGING_SHADOW_FIX: A.toggleShadow() is a 4-state CYCLE (off→grass→earth→paved→off),
-    // not a boolean toggle — calling it a second time to "undo" just advances to the next ground
-    // texture, still shadow-on. Save the exact cycle key and cycle back to it on teardown instead.
-    _photoShadowGroundKey = A._shadowGroundKey || 'off';
-    _photoShadowWasOn = !!A._shadowOn;
-    if (!_photoShadowWasOn && A.toggleShadow) A.toggleShadow();
     _photoNightWasOn = !!A._nightMode;
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
-      if (A._nightSaved) {  // undo JUST the moonlight sun/ambient/hemi/fog side effect
+      if (A._nightSaved) {  // undo JUST the moonlight sun/ambient/hemi/fog override — keep the sunset
         A.sun.intensity = A._nightSaved.sunI;
         A.sun.color.setHex(A._nightSaved.sunColor);
         A.ambient.intensity = A._nightSaved.ambI;
@@ -148,14 +143,10 @@ async function setupEffects(A, renderer, scene, camera) {
         A.renderer.toneMappingExposure = A._nightSaved.exposure;
       }
     }
-    console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn + ' shadowWasOn=' + _photoShadowWasOn);
+    console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
-    if (!_photoShadowWasOn && A.toggleShadow) {
-      var _guard = 0;  // cycle is length 4 — bounded, never actually loops forever
-      while (A._shadowGroundKey !== _photoShadowGroundKey && _guard < 4) { A.toggleShadow(); _guard++; }
-    }
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     console.log('§PHOTO_STAGING off');
   }
@@ -190,8 +181,15 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     _stillRefineRAF = requestAnimationFrame(step);
   };
+  // §STILL_REFINE_GRACE (2026-07-15, user-observed): pressing Alt+S can itself nudge the mouse
+  // a hair (reaching for the shortcut), and cancellation is wired to real pointerdown/wheel/
+  // controls-start signals — so the still-refine could self-cancel within the same gesture that
+  // triggered it, making the effect nearly impossible to actually see. Absorb that incidental
+  // nudge with a short grace window; a real subsequent interaction still cancels normally.
+  var STILL_REFINE_GRACE_MS = 500;
   A.stopStillRefine = function() {
     if (!A._stillRefineActive) return;
+    if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
     _teardownStillRefine('cancelled (interaction)');
   };
   A.toggleStillRefine = function() {
