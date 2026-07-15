@@ -4,6 +4,25 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.18.0](https://github.com/red1oon/bim-ootb/compare/v1.17.1...v1.18.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **viewer:** Room Lens taxonomy + category coloring + reveal toggle + orange path ([#795](https://github.com/red1oon/bim-ootb/issues/795)) ([f82333d](https://github.com/red1oon/bim-ootb/commit/f82333da33663591b473026d17fa5d49639f8009))
+
+
+### 🐛 Fixes
+
+* **4d:** Editor Generate+MSProject export, dedupe TM matrix-clone (partial SE-7 fix) ([#789](https://github.com/red1oon/bim-ootb/issues/789)) ([0e3f181](https://github.com/red1oon/bim-ootb/commit/0e3f181ece3dbb0afad3076aa06a1f36c03bc0ef))
+* **4d:** index kernel_ops.output_guid — the real Generate/Apply hang (O(n^2) full table scan) ([#791](https://github.com/red1oon/bim-ootb/issues/791)) ([3ca3724](https://github.com/red1oon/bim-ootb/commit/3ca37244497d6c6a6ab06f8beed84221529278d5))
+* **rooms:** close two real connectivity-graph island gaps found by fullConnectivity() ([#794](https://github.com/red1oon/bim-ootb/issues/794)) ([95e788a](https://github.com/red1oon/bim-ootb/commit/95e788a7bef8594be1fa55abc0ebbbdcf80c717d))
+* **rooms:** corridor plausibility framework — width bounds, common-sense filter, shape guard, full connectivity ([#792](https://github.com/red1oon/bim-ootb/issues/792)) ([8621e01](https://github.com/red1oon/bim-ootb/commit/8621e01a14e89717873d0a7081c7806a6f7839dc))
+* **rooms:** hallway_backbone.js was never actually loaded in the browser ([#788](https://github.com/red1oon/bim-ootb/issues/788)) ([3f7386d](https://github.com/red1oon/bim-ootb/commit/3f7386d9419f9c5769476ea494d0b07975bbb493))
+* **sfx:** guard non-finite camera position before feeding Web Audio setTargetAtTime ([#793](https://github.com/red1oon/bim-ootb/issues/793)) ([82fb998](https://github.com/red1oon/bim-ootb/commit/82fb998cf33edd621a6f7f71eb71186163b00e8b))
+* **viewer:** Room Lens path/perf/color fixes — E6 x-crossing, desktop bbox default, Room-axis cache ([#796](https://github.com/red1oon/bim-ootb/issues/796)) ([d5ea49f](https://github.com/red1oon/bim-ootb/commit/d5ea49f7c57fcf12494403cde0795752063b8fb2))
+* **viewer:** selected-room fill now shines through occluding geometry, like its border ([#797](https://github.com/red1oon/bim-ootb/issues/797)) ([3675ec3](https://github.com/red1oon/bim-ootb/commit/3675ec38f4c6983df89cb9b4947d4e40679b134b))
+
 ## [1.17.1](https://github.com/red1oon/bim-ootb/compare/v1.17.0...v1.17.1) (2026-07-13)
 
 
