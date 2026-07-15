@@ -318,6 +318,72 @@ function setupStreaming(A) {
       IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 },  // elevator
     };
 
+    // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
+    // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
+    // RUNTIME by uTriActive (flipped every frame by each material's own onBeforeRender, reading
+    // A._stillRefineActive — see §TRIPLANAR_RECOMPILE_FIX below), not at compile time — a uniform
+    // branch costs ~nothing when false, so normal navigation pays no per-fragment triplanar cost.
+    // Two maps only (diffuse + roughness). Concrete verified first per spec (real bug found+fixed
+    // — see PHOTOREAL_STILL_RENDER.md §SESSION RECORD); plaster+metal now wired on the same proven
+    // pattern. Class → texture-group assignment matches STD_MAT's own real-world-material comments
+    // above (e.g. IfcSlab "cast concrete", IfcCovering "plasterboard") — not invented groupings.
+    // §TRIPLANAR_CONTRAST (resume-brief item 2, user verbatim: "surface material of metal,
+    // concrete are all not evident enough"). normFactor above only re-centers the texture's
+    // AVERAGE luminance to ~1.0 (so the multiply-blend doesn't darken/brighten the base IFC
+    // color on average) — it does NOT change how much the texture varies AROUND that average,
+    // and diffuse photo textures tend to have fairly subtle local variance to begin with, which
+    // reads as a near-flat wash once multiplied against a mid-grey base color. contrastBoost
+    // expands each texture's deviation from the 1.0 average before the multiply (see the
+    // `(triDiffuse - 1.0) * uTriContrast + 1.0` shader line below) — same average brightness,
+    // more visible grain/streak. Metal gets the strongest boost (brushed-streak highlights are
+    // the most visually distinctive of the three); concrete/plaster more modest.
+    var _TRI_CONCRETE = {
+      diffuse: 'textures/materials/concrete_color_1k.jpg',
+      roughness: 'textures/materials/concrete_rough_1k.jpg',
+      tileMeters: 2.5,     // world units per texture repeat
+      normFactor: 1.384,   // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      contrastBoost: 1.6
+    };
+    var _TRI_PLASTER = {
+      diffuse: 'textures/materials/plaster_color_1k.jpg',
+      roughness: 'textures/materials/plaster_rough_1k.jpg',
+      tileMeters: 2.0,
+      normFactor: 1.348,   // 1 / 0.742
+      contrastBoost: 1.5
+    };
+    var _TRI_METAL = {
+      diffuse: 'textures/materials/metal_color_1k.jpg',
+      roughness: 'textures/materials/metal_rough_1k.jpg',
+      tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
+      normFactor: 1.870,   // 1 / 0.535
+      contrastBoost: 1.9
+    };
+    var TRIPLANAR_MAT = {
+      // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
+      IfcWall: _TRI_CONCRETE,
+      IfcSlab: _TRI_CONCRETE,
+      IfcColumn: _TRI_CONCRETE,
+      IfcFooting: _TRI_CONCRETE,
+      IfcPile: _TRI_CONCRETE,
+      IfcStair: _TRI_CONCRETE,
+      IfcRamp: _TRI_CONCRETE,
+      // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
+      IfcWallStandardCase: _TRI_PLASTER,
+      IfcCovering: _TRI_PLASTER,
+      // ── Metal (STD_MAT: metal > 0.3 — steel structure, railings, MEP) ──
+      IfcBeam: _TRI_METAL,
+      IfcMember: _TRI_METAL,
+      IfcPlate: _TRI_METAL,
+      IfcRailing: _TRI_METAL,
+      IfcPipe: _TRI_METAL,
+      IfcPipeFitting: _TRI_METAL,
+      IfcPipeSegment: _TRI_METAL,
+      IfcDuct: _TRI_METAL,
+      IfcDuctFitting: _TRI_METAL,
+      IfcDuctSegment: _TRI_METAL,
+      IfcCableCarrier: _TRI_METAL
+    };
+
     const key = rgbaStr || '_default';
     var cacheKey = key + '|' + (ifcClass || '');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
@@ -347,13 +413,20 @@ function setupStreaming(A) {
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
     if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.6; } // §refl: 0.3->0.6 — more realistic reflection emphasis
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
+    // the real photo texture takes over that job, stacking both would double-bump the normal
+    // with two uncorrelated patterns.
+    var triMat = (ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null;
+
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
-    else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
+    if (!triMat) {
+      if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
+      else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
+    }
     if (_perturbScale > 0) {
       var _ps = _perturbScale;
       mat.onBeforeCompile = function(shader) {
@@ -373,6 +446,123 @@ function setupStreaming(A) {
           ].join('\n')
         );
       };
+    }
+    // §TRIPLANAR: real PBR diffuse+roughness, still-render-only (see table + comment above).
+    if (triMat) {
+      A._triplanarTexCache = A._triplanarTexCache || {};
+      A._triplanarLoader = A._triplanarLoader || new THREE.TextureLoader();
+      function _triTex(path, isColor) {
+        if (A._triplanarTexCache[path]) return A._triplanarTexCache[path];
+        var tex = A._triplanarLoader.load(path, function() {
+          console.log('§TRIPLANAR_TEX_READY path=' + path);
+        }, undefined, function() {
+          console.warn('§TRIPLANAR_TEX_FAIL path=' + path);
+        });
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        if (isColor) {
+          if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+          else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+        }
+        A._triplanarTexCache[path] = tex;
+        return tex;
+      }
+      var _diffuseTex = _triTex(triMat.diffuse, true);
+      var _roughTex = _triTex(triMat.roughness, false);
+      var _triUvScale = 1.0 / triMat.tileMeters;
+      var _triNorm = triMat.normFactor;
+      var _triContrast = triMat.contrastBoost || 1.0;
+      mat.onBeforeCompile = function(shader) {
+        shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
+        shader.uniforms.uTriDiffuse = { value: _diffuseTex };
+        shader.uniforms.uTriRoughness = { value: _roughTex };
+        shader.uniforms.uTriScale = { value: _triUvScale };
+        shader.uniforms.uTriNorm = { value: _triNorm };
+        shader.uniforms.uTriContrast = { value: _triContrast };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'varying vec3 vTriWorldPos;',
+            'varying vec3 vTriWorldNormal;'
+          ].join('\n'))
+          .replace('#include <worldpos_vertex>', [
+            '#include <worldpos_vertex>',
+            '{',
+            '  vec4 triWp = vec4(transformed, 1.0);',
+            '  #ifdef USE_BATCHING',
+            '    triWp = batchingMatrix * triWp;',
+            '  #endif',
+            '  #ifdef USE_INSTANCING',
+            '    triWp = instanceMatrix * triWp;',
+            '  #endif',
+            '  vTriWorldPos = (modelMatrix * triWp).xyz;',
+            '}'
+          ].join('\n'))
+          .replace('#include <defaultnormal_vertex>', [
+            '#include <defaultnormal_vertex>',
+            '{',
+            '  vec3 triN = objectNormal;',
+            '  #ifdef USE_INSTANCING',
+            '    triN = mat3(instanceMatrix) * triN;',
+            '  #endif',
+            '  vTriWorldNormal = normalize(mat3(modelMatrix) * triN);',
+            '}'
+          ].join('\n'));
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'varying vec3 vTriWorldPos;',
+            'varying vec3 vTriWorldNormal;',
+            'uniform sampler2D uTriDiffuse;',
+            'uniform sampler2D uTriRoughness;',
+            'uniform float uTriActive;',
+            'uniform float uTriScale;',
+            'uniform float uTriNorm;',
+            'uniform float uTriContrast;'
+          ].join('\n'))
+          .replace('#include <roughnessmap_fragment>', [
+            '#include <roughnessmap_fragment>',
+            'if (uTriActive > 0.5) {',   // uniform branch — near-zero cost when off (normal nav)
+            '  vec3 triW = abs(normalize(vTriWorldNormal));',
+            '  triW = pow(triW, vec3(4.0));',
+            '  triW /= (triW.x + triW.y + triW.z + 1e-5);',
+            '  vec2 uvX = vTriWorldPos.zy * uTriScale;',
+            '  vec2 uvY = vTriWorldPos.xz * uTriScale;',
+            '  vec2 uvZ = vTriWorldPos.xy * uTriScale;',
+            '  vec3 dX = texture2D(uTriDiffuse, uvX).rgb;',
+            '  vec3 dY = texture2D(uTriDiffuse, uvY).rgb;',
+            '  vec3 dZ = texture2D(uTriDiffuse, uvZ).rgb;',
+            '  vec3 triDiffuse = dX * triW.x + dY * triW.y + dZ * triW.z;',
+            '  float rX = texture2D(uTriRoughness, uvX).r;',
+            '  float rY = texture2D(uTriRoughness, uvY).r;',
+            '  float rZ = texture2D(uTriRoughness, uvZ).r;',
+            '  float triRough = rX * triW.x + rY * triW.y + rZ * triW.z;',
+            // §TRIPLANAR_CONTRAST (resume-brief item 2): normFactor (uTriNorm) recenters the
+            // texture's AVERAGE to ~1.0 so the multiply doesn't shift overall brightness, but
+            // does nothing for how much it varies around that average — expand the deviation
+            // from 1.0 by uTriContrast BEFORE the multiply, same average, more visible grain.
+            '  vec3 triNormalized = triDiffuse * uTriNorm;',
+            '  vec3 triContrasted = clamp((triNormalized - 1.0) * uTriContrast + 1.0, 0.0, 2.5);',
+            '  diffuseColor.rgb *= triContrasted;',
+            '  roughnessFactor *= mix(0.6, 1.4, triRough);',
+            '}'
+          ].join('\n'));
+        mat.userData.triplanarShader = shader;
+        // §TRIPLANAR_RECOMPILE_FIX: three.js can silently recompile a material's program
+        // (fresh onBeforeCompile call, fresh default-valued uniforms) in response to renderer
+        // state changes — observed here on the very first still-refine frame, which reset
+        // uTriActive back to 0 and silently undid effects.js's one-time uniform push, leaving
+        // the texture dark for the whole accumulation. onBeforeRender runs every frame per
+        // object and re-asserts the CURRENT value from live state, so it self-heals across
+        // any recompile instead of relying on a single push at start time.
+        shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+      };
+      mat.onBeforeRender = function() {
+        var sh = mat.userData.triplanarShader;
+        if (sh) sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+      };
+      A._triplanarMaterials = A._triplanarMaterials || [];
+      A._triplanarMaterials.push(mat);
+      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
     }
     mat.userData.origOpacity = a;
     mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
