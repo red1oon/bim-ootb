@@ -580,6 +580,7 @@
     // data-gated axis row. Tears down any active lens, clears multi-select + all filters
     // (unify engine), then lists the new axis groups.
     function _setTreeMode(mode) {
+      var _stmT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       // §RP Task A: leaving the Room axis tears down room boxes + shape overlays + restores opacity.
       if (_treeMode === 'room') { _roomLensReset(); _highlightLensReset(); _clearPathHighlight(); }
       // §PHASE_LENS/§MAT_SELECT: leaving Phase/Material tears down element highlight.
@@ -599,6 +600,7 @@
       if (elTree) { elTree.style.display = ''; _treeRevealed = true; if (elTreeGrip) elTreeGrip.style.display = 'flex'; }
       buildTree();
       console.log('§FIND_MODE_TOGGLE mode=' + mode);
+      console.log('[RP-T3] §PERF_PROBE _setTreeMode(' + mode + ') total_ms=' + ((performance && performance.now) ? (performance.now() - _stmT0).toFixed(1) : '?')); // §13, the real per-tab-switch cost
       // §VIEWLOG: an axis change is a semantic view moment. Record it (skipped on replay/off).
       _pushView({ kind: 'axis', axis: mode, label: 'Axis: ' + mode, mode: 'axis' });
     }
@@ -709,7 +711,21 @@
       { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
       { type: 'PLANT_ROOM', label: 'Plant Room' }
     ];
+    // §PROBE-DEDUP (2026-07-15j, §13): a single axis-toggle tap calls _axes() TWICE — once in the
+    // toggle button's own pointerup handler (to compute the NEXT axis from the CURRENT list) and
+    // again inside _setTreeMode()'s _renderAxes() (to redraw the button showing the NEW state) —
+    // each running _probeLenses()'s ~4 real COUNT queries against A.db. The DB's data-presence
+    // (room/material/phase available) cannot legitimately change between these two calls in the
+    // same synchronous tap; a short TTL memo collapses the pair into ONE real probe per tap without
+    // risking staleness for genuine data changes (needle-inject etc. are always async, >>50ms away).
+    var _probeCacheResult = null, _probeCacheT = 0;
     function _probeLenses() {
+      var _plT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
+      var _now = _plT0 || (Date.now ? Date.now() : 0);
+      if (_probeCacheResult && (_now - _probeCacheT) < 50) {
+        console.log('[RP-T3] §LENS_PROBE_DEDUP_HIT age_ms=' + (_now - _probeCacheT).toFixed(1));
+        return _probeCacheResult;
+      }
       var bld = A.activeBuilding || '';
       var room = false, material = false, phase = false;
       _roomHasVol = false;
@@ -771,7 +787,10 @@
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
       console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
-      return { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
+      console.log('[RP-T3] §PERF_PROBE _probeLenses ms=' + ((performance && performance.now) ? (performance.now() - _plT0).toFixed(1) : '?')); // §13
+      _probeCacheResult = { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
+      _probeCacheT = _now;
+      return _probeCacheResult;
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -964,6 +983,7 @@
         // rooms existed. Same fix, same site, same reason.
         _pathGraphCache = null; _pathGraphBld = null;
         _corridorLabelsCache = null; _corridorLabelsBld = null;
+        _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: injected rooms invalidate it too
         _renderAxes();
         buildTree();
       } catch (e) {
@@ -1265,6 +1285,28 @@
     // colored by real material. ONE draw. NOT the whole building (full merge = 2.3GB; envelope ≈ ~150MB).
     // A persistent overlay (NOT in _shapeOverlays → never cleared on tap). Built deferred, after open.
     var _mergedGhost = null, _mergedGhostBld = null, _MG_VCAP = 60000000; // vert cap, bail above
+    // §DESKTOP-BBOX-THRESHOLD (2026-07-15i, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §13): extend the
+    // existing mobile-only bbox-shell default to desktop by real element count, so a large
+    // building gets the light shell without needing window._isMobile. Threshold grounded against
+    // actual elements_meta counts across the fleet (measured this session, /home/red1/bim-ootb/
+    // buildings/*_extracted.db): Clinic=16114, HHS=6880 (both "small enough" per §12 — never want
+    // the bbox default here) vs. Terminal=48428, Hospital=63415 (both real "large" buildings named
+    // in §13's own framing) — 25000 sits with comfortable margin below every large building and
+    // above every small one in the current fleet, not a guessed round number.
+    var _LARGE_BUILDING_ELEM_THRESHOLD = 25000;
+    var _elemCountCache = null, _elemCountCacheBld = null;
+    function _isLargeBuilding() {
+      if (!A.dbQuery) return false;
+      if (_elemCountCacheBld === A.activeBuilding && _elemCountCache != null) return _elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD;
+      try {
+        var rows = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+        _elemCountCache = (rows && rows[0]) ? rows[0][0] : 0;
+        _elemCountCacheBld = A.activeBuilding;
+        console.log('[RP-TA] §LARGE_BUILDING_CHECK elems=' + _elemCountCache + ' threshold=' + _LARGE_BUILDING_ELEM_THRESHOLD +
+          ' large=' + (_elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD));
+      } catch (e) { console.warn('[RP-TA] §LARGE_BUILDING_CHECK_ERR', e.message); return false; }
+      return _elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD;
+    }
     // Envelope = the outward-facing skin classes. Interior MEP/furniture/fittings excluded.
     function _isEnvelope(ifc) {
       if (!ifc) return false;
@@ -1821,10 +1863,21 @@
     // selection-only accent. 'corridor' keeps the pre-existing default blue (was every room's
     // fixed default before this change — now deliberate, corridor-only). 'utilities' is a muted
     // dark grey — reads as "present, low-priority" without an alarming/error connotation.
+    // §DEEP-PALETTE (2026-07-15l, user-reported live pre-deploy test on a large building, this
+    // session): the bulk room-shine-through shell (_drawRoomShell below) always draws at a fixed
+    // 10% opacity — tuned against the dark x-ray-dimmed backdrop, where a faint pastel tint reads
+    // fine. The desktop bbox-shell default (§DESKTOP-BBOX-THRESHOLD, this same session) puts large
+    // buildings on a much LIGHTER wireframe backdrop instead — the same 10% wash of a pastel hue
+    // (0x9c6ade etc.) blends toward near-white there ("bland whitish", user's own words). Fix:
+    // deepen the base hues themselves (user's own pick over a mode-aware-opacity/outline
+    // alternative) so even a thin 10% wash still carries visible color against a light background.
+    // `wire` (the SELECTED single room's bright cuboid border, §ROOM-CUBOID) is untouched — it
+    // already renders near-opaque, not the washed-out case this fixes, and a lighter wire against a
+    // now-deeper fill is if anything MORE legible than before.
     var ROOM_CATEGORY_COLORS = {
-      habitable: { fill: 0x9c6ade, wire: 0xd8b4fe },
-      corridor: { fill: 0x4fc3f7, wire: 0x7fd6fb },
-      utilities: { fill: 0x3a3a3a, wire: 0x5a5a5a }
+      habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
+      corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
+      utilities: { fill: 0x212121, wire: 0x5a5a5a }
     };
     function _categoryColor(category) {
       return ROOM_CATEGORY_COLORS[category] || ROOM_CATEGORY_COLORS.habitable;
@@ -1867,9 +1920,17 @@
     // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
+    // §SELECT-PULSE (2026-07-15o, user's own pick, "cheap doesn't bog or lag"): a brief settle-in
+    // pulse on selection — starts oversized/dim, eases down to resting scale/opacity over 300ms —
+    // draws the eye to what just got picked instead of an instant flat cut. Pure JS scale/opacity
+    // tween, same requestAnimationFrame + generation-counter pattern _lerpCam already uses (a
+    // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
+    // animations, never a leaked rAF loop after the mesh is gone).
+    var _pulseId = 0;
     function _drawRoomCuboid(center, size, category) {
       if (!A.scene || typeof THREE === 'undefined') return;
       _clearRoomCuboid();
+      var myPulse = ++_pulseId;
       var cc = _categoryColor(category); // §ROOM_LENS_TAXONOMY: selected room reads as a BRIGHTER
       // version of its own category color (purple/blue/dark), not a 4th unrelated fixed hue.
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
@@ -1892,6 +1953,22 @@
       A.scene.add(wire2); _roomBoxes.push({ guid: '_cuboidWireOuter', mesh: wire2 });
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
+
+      var restFillOp = 0.5, restWireScale = 1.0, restWire2Scale = 1.015, overshoot = 0.09;
+      var t = 0;
+      function pulseFrame() {
+        if (myPulse !== _pulseId) return; // superseded — a newer selection or a reset already took over
+        t += 0.06; if (t > 1) t = 1;
+        var e = 1 - Math.pow(1 - t, 3); // ease-out, matches _lerpCam's easing
+        var k = (1 - e); // 1 at start, 0 at rest
+        fill.material.opacity = restFillOp + k * 0.3;              // starts brighter (0.8), settles to 0.5
+        wire.scale.setScalar(restWireScale + k * overshoot);       // starts oversized, eases down to resting scale
+        wire2.scale.setScalar(restWire2Scale + k * overshoot);
+        if (A.markDirty) A.markDirty();
+        if (t < 1) requestAnimationFrame(pulseFrame);
+        else { fill.material.opacity = restFillOp; wire.scale.setScalar(restWireScale); wire2.scale.setScalar(restWire2Scale); if (A.markDirty) A.markDirty(); }
+      }
+      requestAnimationFrame(pulseFrame);
     }
 
     // §ROOM-SHELL (user): the room's REAL bounding surfaces — the walls/floor/ceiling most exposed to
@@ -1973,7 +2050,25 @@
     // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
     // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
     // identical across a room's sub-rect set per §8's own design), never per sub-rect.
+    // §ROOM-VOL-CACHE (2026-07-15n, user-reported "panel tabbing refresh" lag + user's own
+    // "queries perhaps need to pre stored lazily" diagnosis — correct instinct, same gap this
+    // session already closed for the Phase axis via _phaseCache): unlike _phaseCache/
+    // _probeCacheResult, _allRoomVolumes() had NO cache at all — the full SQL query + per-room
+    // habitability/utility classification (measured live on Terminal: 30-60ms) reran from
+    // scratch on EVERY single Room-axis entry, not just the first. The THREE.Mesh shells
+    // themselves still get disposed+recreated each entry (_clearRoomBoxes() in _roomLensOn(),
+    // unavoidable — meshes are scene-owned, not reusable across a dispose cycle) but that part
+    // alone measured only ~3-4ms; caching the query+classification result removes the other
+    // 30-60ms. Same invalidation convention as _phaseCache/_probeCacheResult: reset only on a
+    // fresh openFindPanel() (building may have changed) or a real data change (needle-inject),
+    // never on a plain axis re-entry within one open session.
+    var _roomVolCache = null, _roomVolCacheBld = null;
     function _allRoomVolumes() {
+      if (_roomVolCache && _roomVolCacheBld === A.activeBuilding) {
+        console.log('[RP-TA] §ROOM_VOL_CACHE_HIT boxes=' + _roomVolCache.length);
+        return _roomVolCache;
+      }
+      var _t0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       var out = [];
       if (!A.ifc2three || typeof THREE === 'undefined') return out;
       var RH = window.RoomHabitability;
@@ -2028,6 +2123,20 @@
         // Restroom) stays 'habitable' — Restrooms are real occupiable space, just a richer Type-tree
         // sub-category, not a separate shell hue.
         var corridorLabelsShell = _corridorLabelsFor();
+        // §UTILITY-CONTENT-BATCH (2026-07-15, real perf fix — see room_habitability.js's own
+        // comment for the Hospital hang this replaces): ONE batched classification call for every
+        // logical room, not one call per room — was 2 SQL queries PER ROOM (600+ on Hospital's 311
+        // rooms), now exactly 2 total regardless of building size.
+        var utilityShellGuids = {};
+        if (RH && RH.classifyUtilityRooms) {
+          try {
+            var shellRoomDescs = order.map(function(lg) {
+              var g = groups[lg];
+              return { guid: lg, cx: g.cx, cy: g.cy, sx: g.sx, sy: g.sy, storey: g.storey };
+            });
+            utilityShellGuids = RH.classifyUtilityRooms(shellRoomDescs, A.dbQuery);
+          } catch (eUcShell) { /* leave everything habitable — never invent */ }
+        }
         order.forEach(function(lg) {
           var g = groups[lg];
           if (RH) {
@@ -2040,12 +2149,7 @@
           }
           var category = 'habitable';
           if (corridorLabelsShell[lg]) category = 'corridor';
-          else if (RH && RH.utilityContentClass) {
-            try {
-              var ucShell = RH.utilityContentClass({ cx: g.cx, cy: g.cy, sx: g.sx, sy: g.sy, storey: g.storey }, A.dbQuery);
-              if (!ucShell.ok) category = 'utilities';
-            } catch (eUcShell) { /* leave habitable — never invent */ }
-          }
+          else if (utilityShellGuids[lg]) category = 'utilities';
           g.rects.forEach(function(rc) {
             var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
             out.push({ guid: g.guid, name: g.name, category: category,
@@ -2061,11 +2165,14 @@
         // where §8 multi-rect data exists.
         console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
           ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
+        console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
+        _roomVolCache = out; _roomVolCacheBld = A.activeBuilding; // §ROOM-VOL-CACHE: only the clean success path is cached
         return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
         ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
-      return out;
+      console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
+      return out; // exception path — never cached, so the next entry retries fresh rather than sticking with a partial result
     }
 
     // Remove boxes, restore opacity (turn X-Ray off if WE turned it on), drop outline.
@@ -2073,6 +2180,12 @@
       _clearRoomBoxes();
       if (A.setOutline) A.setOutline([]);
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
+      // §ROOM-LENS-BBOX-DEFAULT teardown: symmetric with the bbox-shell branch _roomLensOn() below
+      // takes on a large building — same lensOwned convention _highlightLensReset() already uses.
+      if (_mgLensOwned && _mergedGhost) {
+        _mergedGhost.visible = false; _mgLensOwned = false;
+        console.log('[MG] §ROOM_LENS_BBOX_RESET hidden (lens-owned)');
+      }
       if (A.xrayOn && _roomXrayWasOff && A.toggleXray) A.toggleXray(); // WE turned x-ray on → turn it off (restores _origOpacity=1)
       else if (A.xrayOn) _dimXrayTo(0.3); // §XRAY_UNDISTURB: user had Alt+Z on before Find → our _dimXrayTo(0.12) lingers; put the normal 0.3 back
       _roomXrayWasOff = false;
@@ -2083,10 +2196,36 @@
     // shine-through shell (IfcSpace volume) — the instant room map. Tapping a room brightens its
     // shell + dims its contents inside it (see _roomSelect). Shells live in _roomBoxes, disposed
     // on reset/axis-switch.
+    // §ROOM-LENS-BBOX-DEFAULT (2026-07-15m, user-reported live pre-deploy "large overhead low
+    // speed" on a real large building): this always used to force full x-ray + dim EVERY real
+    // element to 0.12 opacity — a genuine PER-FRAME GPU render cost (thousands of individually
+    // x-rayed meshes redrawn every orbit/pan frame), not something the earlier §PERF_PROBE JS
+    // timers could see (those measure one-shot synchronous JS work, not ongoing paint cost). The
+    // Room axis is this feature's own most-used view, yet it never picked up the desktop
+    // bbox-shell default (§DESKTOP-BBOX-THRESHOLD) — that only covered _drillSelect()'s group-tap
+    // path, a completely separate function. Fix: large buildings now get the SAME light bbox-
+    // wireframe ghost + hidden real geometry _drillSelect() already uses, instead of x-ray-dim —
+    // real geometry rendering drops from thousands of individually-shaded meshes to one instanced
+    // wireframe draw call per discipline (measured 115ms ONE-TIME build cost on Terminal's 34446
+    // envelope boxes, cached per building thereafter) plus zero ongoing x-ray shading cost.
     function _roomLensOn() {
+      var _rlT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       _clearRoomBoxes();
-      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
-      _dimXrayTo(0.12);
+      var _large = (typeof _isLargeBuilding === 'function') && _isLargeBuilding();
+      if (_large && A.filterByGuids) {
+        var _mg = (_mergedGhost && _mergedGhostBld === A.activeBuilding) ? _mergedGhost : _buildMergedGhost();
+        if (_mg) {
+          _mg.visible = true; _mgLensOwned = true;
+          A.filterByGuids(new Set()); // hide every real mesh — bbox ghost is the surrounding context
+          console.log('[MG] §ROOM_LENS_BBOX_DEFAULT large building → bbox ghost instead of x-ray-dim');
+        } else { // bbox build failed (deps missing) — fall back to the proven x-ray path, never worse
+          if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; }
+          _dimXrayTo(0.12);
+        }
+      } else {
+        if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
+        _dimXrayTo(0.12);
+      }
       var vols = _allRoomVolumes();
       // §MULTI-RECT: `vols` is FLAT (one entry per sub-rect box; `guid` is the LOGICAL room guid).
       // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
@@ -2105,6 +2244,7 @@
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
         ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
+      console.log('[RP-TA] §PERF_PROBE _roomLensOn total_ms=' + ((performance && performance.now) ? (performance.now() - _rlT0).toFixed(1) : '?')); // §13
     }
 
     // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
@@ -2362,8 +2502,27 @@
         if (!guidSet[e.a] && !guidSet[e.b]) return;
         seen[e.doorGuid] = true;
         var n = graph.nodesByGuid[e.doorGuid];
-        if (n) out.push({ x: n.cx, y: n.cy, z: n.cz || 0 });
+        if (n) out.push({ guid: e.doorGuid, x: n.cx, y: n.cy, z: n.cz || 0 });
       });
+      // §DOOR-REAL-BOX (2026-07-15k, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §5/§12 "real door mesh/box
+      // instead of a sphere marker"): one batched query for every door's REAL measured footprint
+      // (bbox_x/bbox_y, real leaf width) + yaw (rotation_z) — same discipline as classifyUtilityRooms
+      // just above (never one query per marker). Never invents a size: a door missing a row here
+      // just keeps its position with sizeX/sizeY/yaw undefined, and the caller falls back to the
+      // old sphere for that one marker only (never a fabricated box dimension).
+      if (out.length && A.dbQuery) {
+        try {
+          var ph = out.map(function() { return '?'; }).join(',');
+          var rows = A.dbQuery('SELECT guid, bbox_x, bbox_y, bbox_z, rotation_z FROM element_transforms WHERE guid IN (' + ph + ')',
+            out.map(function(o) { return o.guid; }));
+          var byGuid = {};
+          rows.forEach(function(r) { byGuid[r[0]] = { sizeX: r[1], sizeY: r[2], sizeZ: r[3], yaw: r[4] }; });
+          out.forEach(function(o) {
+            var d = byGuid[o.guid];
+            if (d) { o.sizeX = d.sizeX; o.sizeY = d.sizeY; o.sizeZ = d.sizeZ; o.yaw = d.yaw; }
+          });
+        } catch (e) { console.warn('[RP-TA] §DOOR_BOX_DIM_ERR', e.message); }
+      }
       return out;
     }
     function _revealCategoryGroup(gk, groupRooms) {
@@ -2381,16 +2540,34 @@
       });
       var doorPositions = _doorPositionsForRooms(Object.keys(guidSet));
       if (A.scene && A.ifc2three && typeof THREE !== 'undefined' && doorPositions.length) {
-        var doorGeo = new THREE.SphereGeometry(0.2, 10, 10);
+        // §DOOR-REAL-BOX: a box sized to the door's own real bbox_x/bbox_y/bbox_z + yawed by its
+        // real rotation_z reads as an actual door leaf, not an arbitrary sphere — real measured
+        // data, not invented. Every door SHARES one geometry+material per (sizeX,sizeY,sizeZ)
+        // combo would be ideal but doors legitimately vary in size building-to-building; a fresh
+        // BoxGeometry per marker is cheap (this reveal is capped at one room-category's doors,
+        // never the whole building) and disposed on toggle-off (see _clearCategoryReveal above).
+        var sphereGeo = null; // lazy singleton fallback, only built if a door is missing dims
         var doorMat = new THREE.MeshBasicMaterial({ color: 0x8d5524, transparent: true, opacity: 0.85, depthTest: false });
+        var boxCount = 0, sphereCount = 0;
         doorPositions.forEach(function(p) {
           var c = A.ifc2three(p.x, p.y, p.z);
-          var m = new THREE.Mesh(doorGeo, doorMat);
+          var m;
+          if (p.sizeX > 0 && p.sizeY > 0) {
+            var geo = new THREE.BoxGeometry(p.sizeX, (p.sizeZ > 0 ? p.sizeZ : 2.0), p.sizeY);
+            m = new THREE.Mesh(geo, doorMat);
+            m.rotation.y = -(p.yaw || 0); // ifc2three's Y-up convention: yaw sign flips vs. IFC's Z-up rotation_z
+            boxCount++;
+          } else {
+            if (!sphereGeo) sphereGeo = new THREE.SphereGeometry(0.2, 10, 10);
+            m = new THREE.Mesh(sphereGeo, doorMat);
+            sphereCount++;
+          }
           m.position.set(c.x, c.y + 0.05, c.z);
           m.renderOrder = 1002;
           A.scene.add(m);
           _revealDoorMeshes.push(m);
         });
+        console.log('[RP-TA] §DOOR_MARKER_SHAPE boxes=' + boxCount + ' spheres(no-real-dims-fallback)=' + sphereCount);
       }
       _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
@@ -2491,11 +2668,25 @@
             });
           } catch (eRr) { console.warn('[RP-TA] §RESTROOM_MATCH_ERR', eRr.message); }
         }
-        // §ROOM_LENS_TAXONOMY: Utilities — real element-composition signal (ACMV IfcFlowSegment /
-        // STR IfcFooting dominated, zero real door nearby), see common/room_habitability.js
-        // utilityContentClass(). Cached per logical room (computed once per §MULTI-RECT group,
-        // using its first-encountered sub-rect as the representative bbox — same room either way).
-        var utilityLogicalGuids = {}, _utilityChecked = {};
+        // §ROOM_LENS_TAXONOMY / §UTILITY-CONTENT-BATCH: Utilities — real element-composition
+        // signal (ACMV IfcFlowSegment / STR IfcFooting dominated, zero real door nearby), see
+        // common/room_habitability.js classifyUtilityRooms(). ONE batched call for every logical
+        // room here (2 SQL queries total) instead of a per-room call — a per-room version of this
+        // caused a real hang on Hospital (311 rooms, see that file's own comment for the measured
+        // detail) before this fix.
+        var utilityLogicalGuids = {};
+        if (_roomGroupBy === 'type' && window.RoomHabitability && window.RoomHabitability.classifyUtilityRooms) {
+          try {
+            var seenForUtil = {}, utilRoomDescs = [];
+            rooms.forEach(function(r) {
+              var lg2 = r[9] || r[0];
+              if (seenForUtil[lg2]) return;
+              seenForUtil[lg2] = true;
+              utilRoomDescs.push({ guid: lg2, cx: r[5], cy: r[6], sx: r[7], sy: r[8], storey: r[2] || '' });
+            });
+            utilityLogicalGuids = window.RoomHabitability.classifyUtilityRooms(utilRoomDescs, A.dbQuery);
+          } catch (eUc) { /* leave everything unclassified — never invent */ }
+        }
         var byGroup = {}, order = [], typed = 0, seenLogical = {}, dupRects = 0;
         rooms.forEach(function(r) {
           // §ROOM-TYPE-FALLTHROUGH (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 2): object_type
@@ -2504,14 +2695,6 @@
           // INTERNAL) instead of masking it. Real IfcSpace rows (object_type a real IFC type, e.g.
           // 'Office') still group by object_type first, unchanged.
           var logicalGuid = r[9] || r[0];   // room_guid, falling back to this row's own guid
-          if (_roomGroupBy === 'type' && !_utilityChecked[logicalGuid] && window.RoomHabitability && window.RoomHabitability.utilityContentClass) {
-            _utilityChecked[logicalGuid] = true;
-            try {
-              var uc = window.RoomHabitability.utilityContentClass(
-                { cx: r[5], cy: r[6], sx: r[7], sy: r[8], storey: r[2] || '' }, A.dbQuery);
-              if (!uc.ok) utilityLogicalGuids[logicalGuid] = uc.why;
-            } catch (eUc) { /* no element data — leave unclassified, never invent */ }
-          }
           // §CORRIDOR-TYPE-LABEL: a real hallway-backbone match OVERRIDES whatever generic
           // predefined_type this room compiled with — takes priority over the fallthrough below,
           // since it's a stronger, door+wall-verified signal, not a compile-time placeholder.
@@ -2758,13 +2941,31 @@
     // _buildRoomTree(), the sole caller now that the standalone Parts axis is retired) — plain
     // filterByGuids, no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail
     // (isoBar show) but takes the guid set directly since the caller already has the rows in hand.
+    // §RAW-ISOLATE-TOGGLE (2026-07-15, real user report on Hospital: "stairs does not untoggle" —
+    // tapping Stairs a 2nd time just re-ran the same isolate instead of clearing it, unlike the
+    // new category reveal (§ROOM_LENS_TAXONOMY §3) which DOES toggle off on repeat tap. User also
+    // confirmed switching BETWEEN raw groups already worked ("plants/stairs untoggle each other" —
+    // a new isolate naturally replaces the old one); only the SAME-label-twice case was missing.
+    // `label` is the tracking key for both header taps ("Stairs") and individual leaf taps (a
+    // specific stair's own name) — tapping the exact same one again clears back to normal.
+    var _rawIsolateOn = null;
     function _isolatePartsGroup(label, guids) {
       if (!A.db || !A.filterByGuids) return;
+      if (_rawIsolateOn === label) {
+        A.filterByGuids(null);
+        _rawIsolateOn = null;
+        if (elIsoBtn) elIsoBtn.style.display = '';
+        if (elShowAllBtn) elShowAllBtn.style.display = 'none';
+        if (A.markDirty) A.markDirty();
+        console.log('[RP-A1] §FILTER_ISOLATE_TOGGLE_OFF lens=parts group="' + label + '"');
+        return;
+      }
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       var set = new Set(guids);
       if (!set.size) { console.log('[RP-A1] §FILTER_ISOLATE_EMPTY lens=parts group="' + label + '"'); return; }
       _emitIsolate(set, 'parts="' + label + '"');
+      _rawIsolateOn = label;
       if (elIsoBar) {
         elIsoBar.style.display = 'flex';
         if (elIsoBtn) elIsoBtn.style.display = 'none';
@@ -3032,10 +3233,13 @@
       var _shell = !!(_mergedGhost && _mergedGhost.visible);
       // §MOBILE-BBOX-DEFAULT: the translucent ghost shell (_dimXrayTo whole model) is too heavy on mobile.
       // Default mobile Find/drill to the cheap bbox-wireframe shell (Alt+X envelope) — i.e. bboxes during layering.
-      // Desktop keeps the rich x-ray path. Cached build → only the first drill pays for it.
-      if (!_shell && window._isMobile) {
+      // §DESKTOP-BBOX-THRESHOLD: same reasoning applies on desktop once the building itself is large
+      // (initial-load weight, not the per-tab-switch cost tracked separately) — extend the same default
+      // there by real element count instead of gating on window._isMobile alone. Cached build → only
+      // the first drill pays for it either way.
+      if (!_shell && (window._isMobile || _isLargeBuilding())) {
         var _mg = (_mergedGhost && _mergedGhostBld === A.activeBuilding) ? _mergedGhost : _buildMergedGhost();
-        if (_mg) { _mg.visible = true; _shell = true; _mgLensOwned = true; console.log('[MG] §MOBILE_BBOX_SHELL Find→bbox (no heavy x-ray) lensOwned=1'); }
+        if (_mg) { _mg.visible = true; _shell = true; _mgLensOwned = true; console.log('[MG] §BBOX_SHELL_DEFAULT Find→bbox (no heavy x-ray) mobile=' + !!window._isMobile + ' large=' + _isLargeBuilding() + ' lensOwned=1'); }
       }
       if (!_shell && !A.xrayOn && A.toggleXray) { A.toggleXray(); _hlXrayWasOff = true; } // x-ray path: rest → transparent
 
@@ -3767,6 +3971,8 @@
       _highlightLensReset();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
+      _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
+      _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: same reasoning
       _elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
       // Set search term and open
       panel.style.display = 'block';
