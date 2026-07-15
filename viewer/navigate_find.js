@@ -1907,7 +1907,7 @@
     function _clearRoomCuboid() {
       var kept = [];
       _roomBoxes.forEach(function(rb) {
-        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire') {
+        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidFillGlow' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire') {
           if (rb.mesh) {
             if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
             if (rb.mesh.geometry) rb.mesh.geometry.dispose();
@@ -1920,6 +1920,19 @@
     // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
     // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
     // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
+    // §FILL-SHINE-THROUGH (2026-07-15p, user-reported live testing: "it highlights with the box
+    // shines thru, but the purplish interiors does not"): the wire border already sets
+    // `depthTest: false` (shines through occluding geometry, see lineMat below) but the fill's
+    // MeshBasicMaterial never set depthTest at all — defaults to true, so it's occluded by any
+    // real wall/floor in front of it, unlike its own border. Same §BORDER_STRONG "duplicate mesh
+    // underneath" trick this function already uses for the wire, applied to the fill: a dim
+    // depthTest:false glow layer draws first (always visible, ~90% of the crisp opacity — the
+    // user's own "-10%" ask), then the normal depth-tested fill draws on top at full opacity
+    // wherever genuinely unoccluded. Net: dim-but-visible through walls, brighter where actually
+    // in view — a real depth cue, "always shines thru" per the user's own framing. True per-layer
+    // graduated falloff (their stretch "-5% per additional layer") would need real depth-peeling
+    // (multi-pass, real GPU cost) for an effect a human eye won't reliably distinguish past one
+    // tier anyway — this two-tier version gets the same PERCEIVED result far more cheaply.
     // §SELECT-PULSE (2026-07-15o, user's own pick, "cheap doesn't bog or lag"): a brief settle-in
     // pulse on selection — starts oversized/dim, eases down to resting scale/opacity over 300ms —
     // draws the eye to what just got picked instead of an instant flat cut. Pure JS scale/opacity
@@ -1934,10 +1947,16 @@
       var cc = _categoryColor(category); // §ROOM_LENS_TAXONOMY: selected room reads as a BRIGHTER
       // version of its own category color (purple/blue/dark), not a 4th unrelated fixed hue.
       var boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
+      var FILL_GLOW_RATIO = 0.9; // §FILL-SHINE-THROUGH: dim layer = 90% of the crisp layer's opacity
+      var glowMat = new THREE.MeshBasicMaterial({ color: cc.fill, transparent: true, opacity: 0.5 * FILL_GLOW_RATIO,
+        depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+      var fillGlow = new THREE.Mesh(boxGeo, glowMat); fillGlow.position.copy(center);
+      fillGlow.renderOrder = 997; fillGlow.userData._roomShell = true; // draws first — always visible through walls
+      A.scene.add(fillGlow); _roomBoxes.push({ guid: '_cuboidFillGlow', mesh: fillGlow });
       var fillMat = new THREE.MeshBasicMaterial({ color: cc.fill, transparent: true, opacity: 0.5,
         depthWrite: false, side: THREE.DoubleSide });
       var fill = new THREE.Mesh(boxGeo, fillMat); fill.position.copy(center);
-      fill.renderOrder = 998; fill.userData._roomShell = true;
+      fill.renderOrder = 998; fill.userData._roomShell = true; // draws after — depth-tested, full opacity only where genuinely unoccluded
       A.scene.add(fill); _roomBoxes.push({ guid: '_cuboidFill', mesh: fill });
       var edges = new THREE.EdgesGeometry(boxGeo);
       var lineMat = new THREE.LineBasicMaterial({ color: cc.wire, transparent: true, opacity: 1.0, depthTest: false });
@@ -1962,11 +1981,12 @@
         var e = 1 - Math.pow(1 - t, 3); // ease-out, matches _lerpCam's easing
         var k = (1 - e); // 1 at start, 0 at rest
         fill.material.opacity = restFillOp + k * 0.3;              // starts brighter (0.8), settles to 0.5
+        fillGlow.material.opacity = (restFillOp + k * 0.3) * FILL_GLOW_RATIO; // stays proportional to the crisp layer
         wire.scale.setScalar(restWireScale + k * overshoot);       // starts oversized, eases down to resting scale
         wire2.scale.setScalar(restWire2Scale + k * overshoot);
         if (A.markDirty) A.markDirty();
         if (t < 1) requestAnimationFrame(pulseFrame);
-        else { fill.material.opacity = restFillOp; wire.scale.setScalar(restWireScale); wire2.scale.setScalar(restWire2Scale); if (A.markDirty) A.markDirty(); }
+        else { fill.material.opacity = restFillOp; fillGlow.material.opacity = restFillOp * FILL_GLOW_RATIO; wire.scale.setScalar(restWireScale); wire2.scale.setScalar(restWire2Scale); if (A.markDirty) A.markDirty(); }
       }
       requestAnimationFrame(pulseFrame);
     }
