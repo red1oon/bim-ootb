@@ -86,7 +86,16 @@ function buildStoreyRaster(dbQuery, geomIdx, graph, storey, log) {
   const roomRects = [];
   roomsHere.forEach(n => n.rects.forEach(rc => roomRects.push(rc)));
   const { triangles, fallbackRects } = slabTrianglesForStorey(dbQuery, geomIdx, storey, storeyZ, log);
-  const allRects = roomRects.concat(fallbackRects);
+  // §RASTER-CORRIDOR-PARITY (2026-07-15, real regression found+fixed): a raster used to be built
+  // from slab triangles + room rects ONLY — but room_graph.js's own _pointWalkable() fallback (the
+  // behavior this raster REPLACES once shipped) also trusts corridorRectsByStorey (real,
+  // wall+door-verified hallway_backbone.js buckets). Omitting them here meant a storey with real
+  // corridor evidence but little/no resolved IfcSlab geometry (measured on Hospital: 5 of 7
+  // storeys had ZERO slabs) got a raster that was STRICTLY WORSE than the fallback it replaced —
+  // Hospital's DETOUR_FAIL rate regressed 39.6%->44.1% before this fix. A raster must never drop
+  // evidence the fallback already had.
+  const corridorRects = (graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey]) || [];
+  const allRects = roomRects.concat(fallbackRects).concat(corridorRects);
 
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   allRects.forEach(rc => { x0 = Math.min(x0, rc.x0); x1 = Math.max(x1, rc.x1); y0 = Math.min(y0, rc.y0); y1 = Math.max(y1, rc.y1); });
