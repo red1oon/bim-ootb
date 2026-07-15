@@ -134,12 +134,9 @@ async function setupEffects(A, renderer, scene, camera) {
   A.toggleStillRefine = function() {
     if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();
   };
-  // Any real interaction already routes through A.markDirty() (main.js) — chain onto it so
-  // a still-in-progress refine cancels the instant the user touches the canvas, same guarantee
-  // the user asked for ("touching canvas will disable/disappear").
-  var _origMarkDirty = A.markDirty;
-  A.markDirty = function() {
-    if (A._stillRefineActive) A.stopStillRefine();
-    if (_origMarkDirty) _origMarkDirty();
-  };
+  // §STILL_REFINE cancellation lives in main.js, on the actual pointerdown/wheel/controls-start
+  // signals — NOT here on markDirty. Confirmed live (2026-07-15, real user) that markDirty fires
+  // from far more than "user touched the canvas" (e.g. the history bar's own event-sniffer
+  // refreshing itself right after logging the very Alt+S keypress that started the refine),
+  // which self-cancelled the refine within the same keypress. Precise interaction signals only.
 }
