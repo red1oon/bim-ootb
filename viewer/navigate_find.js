@@ -1862,10 +1862,21 @@
     // selection-only accent. 'corridor' keeps the pre-existing default blue (was every room's
     // fixed default before this change — now deliberate, corridor-only). 'utilities' is a muted
     // dark grey — reads as "present, low-priority" without an alarming/error connotation.
+    // §DEEP-PALETTE (2026-07-15l, user-reported live pre-deploy test on a large building, this
+    // session): the bulk room-shine-through shell (_drawRoomShell below) always draws at a fixed
+    // 10% opacity — tuned against the dark x-ray-dimmed backdrop, where a faint pastel tint reads
+    // fine. The desktop bbox-shell default (§DESKTOP-BBOX-THRESHOLD, this same session) puts large
+    // buildings on a much LIGHTER wireframe backdrop instead — the same 10% wash of a pastel hue
+    // (0x9c6ade etc.) blends toward near-white there ("bland whitish", user's own words). Fix:
+    // deepen the base hues themselves (user's own pick over a mode-aware-opacity/outline
+    // alternative) so even a thin 10% wash still carries visible color against a light background.
+    // `wire` (the SELECTED single room's bright cuboid border, §ROOM-CUBOID) is untouched — it
+    // already renders near-opaque, not the washed-out case this fixes, and a lighter wire against a
+    // now-deeper fill is if anything MORE legible than before.
     var ROOM_CATEGORY_COLORS = {
-      habitable: { fill: 0x9c6ade, wire: 0xd8b4fe },
-      corridor: { fill: 0x4fc3f7, wire: 0x7fd6fb },
-      utilities: { fill: 0x3a3a3a, wire: 0x5a5a5a }
+      habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
+      corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
+      utilities: { fill: 0x212121, wire: 0x5a5a5a }
     };
     function _categoryColor(category) {
       return ROOM_CATEGORY_COLORS[category] || ROOM_CATEGORY_COLORS.habitable;
@@ -2126,6 +2137,12 @@
       _clearRoomBoxes();
       if (A.setOutline) A.setOutline([]);
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
+      // §ROOM-LENS-BBOX-DEFAULT teardown: symmetric with the bbox-shell branch _roomLensOn() below
+      // takes on a large building — same lensOwned convention _highlightLensReset() already uses.
+      if (_mgLensOwned && _mergedGhost) {
+        _mergedGhost.visible = false; _mgLensOwned = false;
+        console.log('[MG] §ROOM_LENS_BBOX_RESET hidden (lens-owned)');
+      }
       if (A.xrayOn && _roomXrayWasOff && A.toggleXray) A.toggleXray(); // WE turned x-ray on → turn it off (restores _origOpacity=1)
       else if (A.xrayOn) _dimXrayTo(0.3); // §XRAY_UNDISTURB: user had Alt+Z on before Find → our _dimXrayTo(0.12) lingers; put the normal 0.3 back
       _roomXrayWasOff = false;
@@ -2136,11 +2153,36 @@
     // shine-through shell (IfcSpace volume) — the instant room map. Tapping a room brightens its
     // shell + dims its contents inside it (see _roomSelect). Shells live in _roomBoxes, disposed
     // on reset/axis-switch.
+    // §ROOM-LENS-BBOX-DEFAULT (2026-07-15m, user-reported live pre-deploy "large overhead low
+    // speed" on a real large building): this always used to force full x-ray + dim EVERY real
+    // element to 0.12 opacity — a genuine PER-FRAME GPU render cost (thousands of individually
+    // x-rayed meshes redrawn every orbit/pan frame), not something the earlier §PERF_PROBE JS
+    // timers could see (those measure one-shot synchronous JS work, not ongoing paint cost). The
+    // Room axis is this feature's own most-used view, yet it never picked up the desktop
+    // bbox-shell default (§DESKTOP-BBOX-THRESHOLD) — that only covered _drillSelect()'s group-tap
+    // path, a completely separate function. Fix: large buildings now get the SAME light bbox-
+    // wireframe ghost + hidden real geometry _drillSelect() already uses, instead of x-ray-dim —
+    // real geometry rendering drops from thousands of individually-shaded meshes to one instanced
+    // wireframe draw call per discipline (measured 115ms ONE-TIME build cost on Terminal's 34446
+    // envelope boxes, cached per building thereafter) plus zero ongoing x-ray shading cost.
     function _roomLensOn() {
       var _rlT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       _clearRoomBoxes();
-      if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
-      _dimXrayTo(0.12);
+      var _large = (typeof _isLargeBuilding === 'function') && _isLargeBuilding();
+      if (_large && A.filterByGuids) {
+        var _mg = (_mergedGhost && _mergedGhostBld === A.activeBuilding) ? _mergedGhost : _buildMergedGhost();
+        if (_mg) {
+          _mg.visible = true; _mgLensOwned = true;
+          A.filterByGuids(new Set()); // hide every real mesh — bbox ghost is the surrounding context
+          console.log('[MG] §ROOM_LENS_BBOX_DEFAULT large building → bbox ghost instead of x-ray-dim');
+        } else { // bbox build failed (deps missing) — fall back to the proven x-ray path, never worse
+          if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; }
+          _dimXrayTo(0.12);
+        }
+      } else {
+        if (!A.xrayOn && A.toggleXray) { A.toggleXray(); _roomXrayWasOff = true; } // ghost the rest
+        _dimXrayTo(0.12);
+      }
       var vols = _allRoomVolumes();
       // §MULTI-RECT: `vols` is FLAT (one entry per sub-rect box; `guid` is the LOGICAL room guid).
       // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
