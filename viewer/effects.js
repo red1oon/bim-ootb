@@ -108,12 +108,22 @@ async function setupEffects(A, renderer, scene, camera) {
   // re-blends the stale _sampleRenderTarget). That's exactly the "blurred/multi-shot after moving
   // the camera" the user hit live. Both the done-path and the cancel-path must reset the SAME
   // state — only the log line differs.
+  // §TRIPLANAR: the actual uTriActive toggle now lives in each material's own onBeforeRender
+  // (streaming.js §TRIPLANAR_RECOMPILE_FIX — self-heals across shader recompiles, which a
+  // one-time push from here cannot). This just counts registered materials for the perf log.
+  var _stillRefineStartMs = 0;
+  function _setTriplanarActive(active) {
+    return (A._triplanarMaterials || []).length;
+  }
   function _teardownStillRefine(reason) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     A._composerEnabled = _stillRefinePrevComposerEnabled;
-    console.log('§STILL_REFINE ' + reason);
+    var n = _setTriplanarActive(false);
+    var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
+    console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms);
+    if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
   }
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
@@ -122,7 +132,9 @@ async function setupEffects(A, renderer, scene, camera) {
     A._composerEnabled = true;
     A._taaPass.accumulate = true;
     A._taaPass.accumulateIndex = -1;
-    console.log('§STILL_REFINE start samples=16');
+    _stillRefineStartMs = performance.now();
+    var _triCount = _setTriplanarActive(true);
+    console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
     function step() {
       if (!A._stillRefineActive) return;
       A._composer.render();
