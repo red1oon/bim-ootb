@@ -8,7 +8,8 @@
  * spine per storey from the SAME building db common/room_graph.js already reads. Verb chain
  * (matches the spec doc's step numbering 1:1):
  *   1. doorEdge(door)        — wall-run-axis from the door's OWN bbox aspect ratio.
- *   2. correlateDoorEdges()  — bucket-matrix keyed by (storey, axis, roundedRunCoord).
+ *   2. correlateDoorEdges()  — per (storey, axis), single-linkage gap-clusters doors by runCoord
+ *                              (see §GAP-CLUSTER-BUCKETING below — not a fixed rounding grid).
  *   3. joinDoorways()        — buckets with >=3 aligned doors = hallway-candidate.
  *   4. growToWall()          — extend the bucket's span until a REAL perpendicular wall caps it.
  *   5. terminateAtStair()    — an open (uncapped) end near a stair is a connecting space, not a
@@ -185,19 +186,53 @@
   }
 
   // ── 2. correlateDoorEdges ────────────────────────────────────────────────────────────────────
+  // §GAP-CLUSTER-BUCKETING (2026-07-15, bim-compiler prompts/ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md
+  // §15/§16): was fixed-grid rounding (`Math.round(runCoord/tol)*tol`) — two doors genuinely
+  // `tol` or closer together in real space still landed in DIFFERENT buckets whenever their raw
+  // runCoords straddled a grid boundary (e.g. tol=0.6: 10.36 rounds to 10.2, 10.56 rounds to 10.8
+  // — 0.6 apart on the grid despite being only 0.20m apart in reality). This is a pure artifact of
+  // the absolute grid's fixed phase, not a real geometric signal, and it fragments real door
+  // clusters into many singletons. Measured live 2026-07-15 on Hospital_extracted.db: 251/336
+  // grid-buckets held exactly 1 door (avg 1.3 doors/bucket — Hospital's floorplan is large with
+  // doors legitimately spread across many distinct wall runs, but the grid boundary was ALSO
+  // splitting doors that belonged together). Replaced with single-linkage gap clustering: per
+  // (storey, axis) group, sort by runCoord, start a new bucket only when the gap to the PREVIOUS
+  // door exceeds `tol` — the geometrically correct question ("is this door within tol of its
+  // nearest neighbor on this wall run"), immune to absolute grid phase. `runCoord` is now the
+  // cluster's mean (a real measured value, not a rounded grid line) — downstream growToWall/
+  // bucketWidth/walkBackbone already compare against it with their own slack tolerances
+  // (wallCrossSlack/minSideOffset/maxSideOffset), so a non-grid-aligned value is not a new
+  // assumption. Measured effect at the SAME tol=0.6, before any threshold was touched: Hospital
+  // joined(>=3 doors) buckets 15->43 (336->241 total buckets); Clinic 38->41 (113->97 total);
+  // HHS unchanged at 15 (39->31 total) — an improvement or a hold on all three, not a trade-off.
   function correlateDoorEdges(edges, profile) {
     profile = profile || DEFAULT_PROFILE;
-    var buckets = {}, order = [];
+    var groups = {};
     edges.forEach(function (e) {
-      var rounded = Math.round(e.runCoord / profile.runCoordTol) * profile.runCoordTol;
-      var key = e.storey + '|' + e.axis + '|' + rounded.toFixed(2);
-      if (!buckets[key]) {
-        buckets[key] = { key: key, storey: e.storey, axis: e.axis, runCoord: rounded, doors: [] };
-        order.push(key);
-      }
-      buckets[key].doors.push(e);
+      var k = e.storey + '|' + e.axis;
+      (groups[k] = groups[k] || []).push(e);
     });
-    return order.map(function (k) { return buckets[k]; });
+    var buckets = [];
+    Object.keys(groups).forEach(function (k) {
+      var sorted = groups[k].slice().sort(function (a, b) { return a.runCoord - b.runCoord; });
+      var cluster = [];
+      function flush() {
+        if (!cluster.length) return;
+        var sum = 0;
+        cluster.forEach(function (d) { sum += d.runCoord; });
+        var rc = sum / cluster.length;
+        buckets.push({ key: k + '|' + rc.toFixed(2), storey: cluster[0].storey, axis: cluster[0].axis, runCoord: rc, doors: cluster.slice() });
+      }
+      sorted.forEach(function (e) {
+        if (cluster.length && (e.runCoord - cluster[cluster.length - 1].runCoord) > profile.runCoordTol) {
+          flush();
+          cluster = [];
+        }
+        cluster.push(e);
+      });
+      flush();
+    });
+    return buckets;
   }
 
   // ── 3. joinDoorways ──────────────────────────────────────────────────────────────────────────

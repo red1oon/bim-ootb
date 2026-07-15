@@ -2,15 +2,18 @@
 /**
  * # ⚠ DO NOT REMOVE — W-HOSPITAL-CORRIDOR-BASELINE scope (READ THE LOG after every run)
  * SCOPE: bim-compiler prompts/ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §15 found Hospital's real wall
- * geometry only joins 15/336 (4.5%) of candidate corridor-wall buckets into a walkBackbone() chain
- * — far below Clinic (33.6%) and HHS (38.5%) — which starves room-to-room routing of a real
+ * geometry only joined 15/336 (4.5%) of candidate corridor-wall buckets into a walkBackbone()
+ * chain — far below Clinic (33.6%) and HHS (38.5%) — which starved room-to-room routing of a real
  * corridor to hug on most inter-wing paths (user-reported: "Hospital corridors not accurate and
- * hampers room to room paths"). This witness is a BASELINE CAPTURE, not a fix: it exists so the
- * NEXT session can loosen walkBackbone()'s join thresholds and prove the change on TWO axes at
- * once from ONE run — (a) Hospital's join ratio must MEASURABLY IMPROVE past this file's recorded
- * floor, not just "still pass", and (b) Clinic/HHS's join ratios must not regress below their
- * CURRENT measured values, which this file also pins. Do not raise the Hospital floor without a
- * real re-measurement — that would silently launder the still-open bug.
+ * hampers room to room paths"). §16 (2026-07-15) traced this to `correlateDoorEdges()`'s
+ * fixed-rounding-grid bucketing splitting doors that were geometrically close together whenever
+ * their raw runCoords straddled a grid boundary — a pure artifact of the grid's fixed phase, not a
+ * real signal — and replaced it with single-linkage gap clustering (see that function's own
+ * §GAP-CLUSTER-BUCKETING comment in common/hallway_backbone.js). This witness now GUARDS that fix:
+ * Hospital's join ratio must stay at least at its new measured floor (not regress back toward
+ * 4.5%), and Clinic/HHS must not regress below THEIR new floors either — a further threshold
+ * change that helps one building by over-joining unrelated segments elsewhere would show up as an
+ * implausible ratio jump past what real corridor geometry supports.
  * RUN: node witness_hospital_corridor_baseline.js   (from the worktree root)
  */
 'use strict';
@@ -36,23 +39,25 @@ const hospital = measure('Hospital', '/home/red1/bim-ootb/buildings/Hospital_ext
 const clinic = measure('Clinic', '/home/red1/bim-ootb/buildings/Clinic_extracted.db');
 const hhs = measure('HHS', '/home/red1/bim-ootb/buildings/HHS_Office_Federated_extracted.db');
 
-// ── Hospital: document the CURRENT broken state as a floor, not a target. Measured 2026-07-15:
-// buckets=336 joined=15 (4.5%). Any threshold tuning must push this ratio UP — if a future run
-// still lands at or below this floor, the fix did not actually help Hospital's real geometry. ──
-chk('G1 Hospital corridor join ratio matches the §15 measured baseline (buckets=336 joined=15, ~4.5%) — NOT a target, the documented starting point for the next threshold-tuning session',
-  hospital.stats.buckets === 336 && hospital.stats.joined === 15,
+// ── Hospital: §16's gap-cluster-bucketing fix (common/hallway_backbone.js correlateDoorEdges())
+// measured 2026-07-15: buckets=241 joined=43 (17.8%), up from the pre-fix 336/15 (4.5%) — a real
+// ~4x improvement, not a threshold loosening. This is now a FLOOR: a future change must not push
+// Hospital's ratio back down toward the old 4.5%, and should only raise this floor alongside a
+// fresh, real re-measurement (never bump the number without rerunning this file first). ──
+chk('G1 Hospital corridor join ratio at least matches the §16 post-fix baseline (buckets=241 joined=43, ~17.8%) — a floor, not a ceiling',
+  hospital.stats.joined >= 43 && hospital.ratio >= 17.8 - 0.5,
   'buckets=' + hospital.stats.buckets + ' joined=' + hospital.stats.joined + ' ratio=' + hospital.ratio.toFixed(1) + '%');
-chk('G2 Hospital chain count matches the §15 baseline (11 chains formed from those 15 joined buckets)',
-  hospital.stats.chains === 11, 'chains=' + hospital.stats.chains);
+chk('G2 Hospital chain count at least matches the §16 post-fix baseline (16 chains)',
+  hospital.stats.chains >= 16, 'chains=' + hospital.stats.chains);
 
-// ── Regression guard: Clinic/HHS's CURRENT join ratios must hold. A join-threshold change that
-// helps Hospital by accidentally over-joining unrelated wall segments elsewhere would show up here
-// as a ratio INCREASE past what real corridor geometry supports — flag any drop below today's
-// measured floor as a regression on buildings whose witnesses already pass. ──
-chk('G3 Clinic join ratio has not regressed below its §15-measured baseline (33.6%)',
-  clinic.ratio >= 33.6 - 0.5, 'ratio=' + clinic.ratio.toFixed(1) + '%');
-chk('G4 HHS join ratio has not regressed below its §15-measured baseline (38.5%)',
-  hhs.ratio >= 38.5 - 0.5, 'ratio=' + hhs.ratio.toFixed(1) + '%');
+// ── Regression guard: Clinic/HHS's §16 post-fix join ratios must hold too — the SAME fix improved
+// both (33.6%->42.3%, 38.5%->48.4%), so these are their new floors. A further threshold change
+// that helps one building by over-joining unrelated wall segments elsewhere would show up here as
+// an implausible ratio jump, not just a drop — flag either direction as worth a second look. ──
+chk('G3 Clinic join ratio has not regressed below its §16 post-fix baseline (42.3%)',
+  clinic.ratio >= 42.3 - 0.5, 'ratio=' + clinic.ratio.toFixed(1) + '%');
+chk('G4 HHS join ratio has not regressed below its §16 post-fix baseline (48.4%)',
+  hhs.ratio >= 48.4 - 0.5, 'ratio=' + hhs.ratio.toFixed(1) + '%');
 
 // ── The actual finding this witness exists to prove: Hospital's ratio is dramatically worse than
 // either building whose routing already works, i.e. this is a real geometry-recognition gap, not
