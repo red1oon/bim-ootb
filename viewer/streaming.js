@@ -320,17 +320,55 @@ function setupStreaming(A) {
 
     // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
     // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
-    // RUNTIME by uTriActive (flipped by A.startStillRefine()/_teardownStillRefine() in effects.js),
-    // not at compile time — a uniform branch costs ~nothing when false, so normal navigation
-    // (where uTriActive stays 0) pays no per-fragment triplanar cost. Two maps only (diffuse +
-    // roughness), first pass — concrete (IfcWall) wired first per spec, others added once verified.
+    // RUNTIME by uTriActive (flipped every frame by each material's own onBeforeRender, reading
+    // A._stillRefineActive — see §TRIPLANAR_RECOMPILE_FIX below), not at compile time — a uniform
+    // branch costs ~nothing when false, so normal navigation pays no per-fragment triplanar cost.
+    // Two maps only (diffuse + roughness). Concrete verified first per spec (real bug found+fixed
+    // — see PHOTOREAL_STILL_RENDER.md §SESSION RECORD); plaster+metal now wired on the same proven
+    // pattern. Class → texture-group assignment matches STD_MAT's own real-world-material comments
+    // above (e.g. IfcSlab "cast concrete", IfcCovering "plasterboard") — not invented groupings.
+    var _TRI_CONCRETE = {
+      diffuse: 'textures/materials/concrete_color_1k.jpg',
+      roughness: 'textures/materials/concrete_rough_1k.jpg',
+      tileMeters: 2.5,     // world units per texture repeat
+      normFactor: 1.384    // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+    };
+    var _TRI_PLASTER = {
+      diffuse: 'textures/materials/plaster_color_1k.jpg',
+      roughness: 'textures/materials/plaster_rough_1k.jpg',
+      tileMeters: 2.0,
+      normFactor: 1.348    // 1 / 0.742
+    };
+    var _TRI_METAL = {
+      diffuse: 'textures/materials/metal_color_1k.jpg',
+      roughness: 'textures/materials/metal_rough_1k.jpg',
+      tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
+      normFactor: 1.870    // 1 / 0.535
+    };
     var TRIPLANAR_MAT = {
-      IfcWall: {
-        diffuse: 'textures/materials/concrete_color_1k.jpg',
-        roughness: 'textures/materials/concrete_rough_1k.jpg',
-        tileMeters: 2.5,     // world units per texture repeat
-        normFactor: 1.384    // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
-      }
+      // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
+      IfcWall: _TRI_CONCRETE,
+      IfcSlab: _TRI_CONCRETE,
+      IfcColumn: _TRI_CONCRETE,
+      IfcFooting: _TRI_CONCRETE,
+      IfcPile: _TRI_CONCRETE,
+      IfcStair: _TRI_CONCRETE,
+      IfcRamp: _TRI_CONCRETE,
+      // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
+      IfcWallStandardCase: _TRI_PLASTER,
+      IfcCovering: _TRI_PLASTER,
+      // ── Metal (STD_MAT: metal > 0.3 — steel structure, railings, MEP) ──
+      IfcBeam: _TRI_METAL,
+      IfcMember: _TRI_METAL,
+      IfcPlate: _TRI_METAL,
+      IfcRailing: _TRI_METAL,
+      IfcPipe: _TRI_METAL,
+      IfcPipeFitting: _TRI_METAL,
+      IfcPipeSegment: _TRI_METAL,
+      IfcDuct: _TRI_METAL,
+      IfcDuctFitting: _TRI_METAL,
+      IfcDuctSegment: _TRI_METAL,
+      IfcCableCarrier: _TRI_METAL
     };
 
     const key = rgbaStr || '_default';
