@@ -327,23 +327,36 @@ function setupStreaming(A) {
     // — see PHOTOREAL_STILL_RENDER.md §SESSION RECORD); plaster+metal now wired on the same proven
     // pattern. Class → texture-group assignment matches STD_MAT's own real-world-material comments
     // above (e.g. IfcSlab "cast concrete", IfcCovering "plasterboard") — not invented groupings.
+    // §TRIPLANAR_CONTRAST (resume-brief item 2, user verbatim: "surface material of metal,
+    // concrete are all not evident enough"). normFactor above only re-centers the texture's
+    // AVERAGE luminance to ~1.0 (so the multiply-blend doesn't darken/brighten the base IFC
+    // color on average) — it does NOT change how much the texture varies AROUND that average,
+    // and diffuse photo textures tend to have fairly subtle local variance to begin with, which
+    // reads as a near-flat wash once multiplied against a mid-grey base color. contrastBoost
+    // expands each texture's deviation from the 1.0 average before the multiply (see the
+    // `(triDiffuse - 1.0) * uTriContrast + 1.0` shader line below) — same average brightness,
+    // more visible grain/streak. Metal gets the strongest boost (brushed-streak highlights are
+    // the most visually distinctive of the three); concrete/plaster more modest.
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
       tileMeters: 2.5,     // world units per texture repeat
-      normFactor: 1.384    // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      normFactor: 1.384,   // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      contrastBoost: 1.6
     };
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
       tileMeters: 2.0,
-      normFactor: 1.348    // 1 / 0.742
+      normFactor: 1.348,   // 1 / 0.742
+      contrastBoost: 1.5
     };
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
-      normFactor: 1.870    // 1 / 0.535
+      normFactor: 1.870,   // 1 / 0.535
+      contrastBoost: 1.9
     };
     var TRIPLANAR_MAT = {
       // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
@@ -457,12 +470,14 @@ function setupStreaming(A) {
       var _roughTex = _triTex(triMat.roughness, false);
       var _triUvScale = 1.0 / triMat.tileMeters;
       var _triNorm = triMat.normFactor;
+      var _triContrast = triMat.contrastBoost || 1.0;
       mat.onBeforeCompile = function(shader) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
         shader.uniforms.uTriRoughness = { value: _roughTex };
         shader.uniforms.uTriScale = { value: _triUvScale };
         shader.uniforms.uTriNorm = { value: _triNorm };
+        shader.uniforms.uTriContrast = { value: _triContrast };
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', [
             '#include <common>',
@@ -501,7 +516,8 @@ function setupStreaming(A) {
             'uniform sampler2D uTriRoughness;',
             'uniform float uTriActive;',
             'uniform float uTriScale;',
-            'uniform float uTriNorm;'
+            'uniform float uTriNorm;',
+            'uniform float uTriContrast;'
           ].join('\n'))
           .replace('#include <roughnessmap_fragment>', [
             '#include <roughnessmap_fragment>',
@@ -520,7 +536,13 @@ function setupStreaming(A) {
             '  float rY = texture2D(uTriRoughness, uvY).r;',
             '  float rZ = texture2D(uTriRoughness, uvZ).r;',
             '  float triRough = rX * triW.x + rY * triW.y + rZ * triW.z;',
-            '  diffuseColor.rgb *= triDiffuse * uTriNorm;',
+            // §TRIPLANAR_CONTRAST (resume-brief item 2): normFactor (uTriNorm) recenters the
+            // texture's AVERAGE to ~1.0 so the multiply doesn't shift overall brightness, but
+            // does nothing for how much it varies around that average — expand the deviation
+            // from 1.0 by uTriContrast BEFORE the multiply, same average, more visible grain.
+            '  vec3 triNormalized = triDiffuse * uTriNorm;',
+            '  vec3 triContrasted = clamp((triNormalized - 1.0) * uTriContrast + 1.0, 0.0, 2.5);',
+            '  diffuseColor.rgb *= triContrasted;',
             '  roughnessFactor *= mix(0.6, 1.4, triRough);',
             '}'
           ].join('\n'));

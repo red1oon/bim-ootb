@@ -129,8 +129,22 @@ async function setupEffects(A, renderer, scene, camera) {
   // L-shaped building still didn't read as connected to the real geometry ("floating around").
   // Not worth the complexity for a POC; ground+roof wall-wash lighting covers the same "evening
   // facade" mood more simply and reliably.
+  // §PHOTO_FACING (2026-07-15, resume-brief item 1): the 4 uniform corner pairs above spread
+  // the wall-wash evenly around the whole footprint, which is NOT what the user's stated goal
+  // ("artificial lights are placed to light up the facade facing camera") asks for. Switched to
+  // one uplight+downlight pair per FOOTPRINT EDGE (not corner) — each pair sits at its edge's own
+  // midpoint, so it washes exactly one facade — and each pair's intensity is recomputed FRESH
+  // every photoshoot trigger (never cached across triggers, only the fixture geometry/position is
+  // cached per-building) from the CURRENT camera position, reusing the exact dot-product-of-
+  // outward-normal-vs-camera-direction math already proven correct for the now-removed edge-
+  // lining (see git history commit cd8df02 — that MATH was right, only the line-mesh rendering
+  // of it was dropped for looking disconnected on an L-shaped bbox). A point light has no such
+  // "floating line" failure mode, so the same facing math is safe to reuse here.
   var _photoPropsBuilding = null;
   var _photoUplights = [], _photoSkyline = null, _photoSkylineLights = null;
+  var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
+  var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
+  var PHOTO_FACADE_DIM_FRACTION = 0.3;  // non-facing facades still lit, just weaker — not pitch dark
   function _buildingBBoxIfc() {
     if (!A.dbQuery) return null;
     var r = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
@@ -141,7 +155,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoUplights.forEach(function(l) { A.scene.remove(l); });
     if (_photoSkyline) { A.scene.remove(_photoSkyline); _photoSkyline.children.forEach(function(b) { b.geometry.dispose(); b.material.dispose(); }); }
     if (_photoSkylineLights) { A.scene.remove(_photoSkylineLights); _photoSkylineLights.geometry.dispose(); _photoSkylineLights.material.dispose(); }
-    _photoUplights = []; _photoSkyline = null; _photoSkylineLights = null;
+    _photoUplights = []; _photoFacadeLights = []; _photoSkyline = null; _photoSkylineLights = null;
   }
   function _buildPhotoProps() {
     var bbox = _buildingBBoxIfc();
@@ -151,26 +165,38 @@ async function setupEffects(A, renderer, scene, camera) {
     var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin;
     var groundZ = bbox.zMin, roofZ = bbox.zMax;
 
-    // Ground uplights + roof downlights — 4 footprint corners each, pulled in slightly from the
-    // corner so the light sits AGAINST the wall face rather than floating off the outside edge.
-    // This pairing (grazing light from both ends of the facade) is the common real building
-    // night-lighting technique the user asked for, not just a single uplight.
+    // Ground uplight + roof downlight per FOOTPRINT EDGE (4 edges of the bbox rectangle — same
+    // approximation the removed edge-lining used, general to any building/any angle since it's
+    // derived fresh from this building's own real bbox, not hardcoded). Pair sits at the edge
+    // midpoint, inset inward so it reads as washing that specific wall face, not floating past it.
     var inset = Math.min(3, w * 0.1, d * 0.1);
-    var wallCorners = [[bbox.xMin + inset, bbox.yMin + inset], [bbox.xMax - inset, bbox.yMin + inset],
-      [bbox.xMin + inset, bbox.yMax - inset], [bbox.xMax - inset, bbox.yMax - inset]];
-    wallCorners.forEach(function(c) {
-      var pg = A.ifc2three(c[0], c[1], groundZ);
-      var up = new THREE.PointLight(0xffaa55, 9, 14, 2);
+    var corners = [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMax, bbox.yMax], [bbox.xMin, bbox.yMax]];
+    var normalsIfc = [[0, -1], [1, 0], [0, 1], [-1, 0]];  // outward normal per edge, IFC XY
+    for (var ei = 0; ei < 4; ei++) {
+      var c1 = corners[ei], c2 = corners[(ei + 1) % 4];
+      var midIfcX = (c1[0] + c2[0]) / 2, midIfcY = (c1[1] + c2[1]) / 2;
+      var n = normalsIfc[ei];
+      // Pull the fixture position inward along the inward normal so it sits against the wall.
+      var fx = midIfcX - n[0] * inset, fy = midIfcY - n[1] * inset;
+      var pg = A.ifc2three(fx, fy, groundZ);
+      var up = new THREE.PointLight(0xffaa55, PHOTO_FACADE_UP_BASE, 14, 2);
       up.position.set(pg.x, pg.y + 0.3, pg.z);
       A.scene.add(up);
       _photoUplights.push(up);
 
-      var pr = A.ifc2three(c[0], c[1], roofZ);
-      var down = new THREE.PointLight(0xffcf9a, 7, 16, 2);
+      var pr = A.ifc2three(fx, fy, roofZ);
+      var down = new THREE.PointLight(0xffcf9a, PHOTO_FACADE_DOWN_BASE, 16, 2);
       down.position.set(pr.x, pr.y - 0.3, pr.z);
       A.scene.add(down);
       _photoUplights.push(down);
-    });
+
+      var midThree = A.ifc2three(midIfcX, midIfcY, groundZ);
+      _photoFacadeLights.push({
+        mid: { x: midThree.x, z: midThree.z },
+        normalThree: { x: n[0], z: -n[1] },  // ifc2three: three.z = -(ifc.y - offset)
+        up: up, down: down
+      });
+    }
 
     // Distant skyline silhouette (full ring — robust to any orbit angle, per user's own
     // "different angle later" expectation) + sparkled window-lights, dusk-city look
@@ -205,11 +231,30 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.add(_photoSkylineLights);
     console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' skylineBoxes=' + N + ' windowLights=' + (winPos.length / 3));
   }
+  // §PHOTO_FACING: recomputed FRESH every call from A.camera's CURRENT position/orientation —
+  // deliberately NOT cached alongside the building-level fixture cache above. This is the exact
+  // bug already found+fixed once this session for the removed edge-lining (a second Alt+S from a
+  // different angle silently reused the first angle's facing) — don't reintroduce it here by
+  // caching this result anywhere.
+  function _updateFacadeFacingLights() {
+    _photoFacadeLights.forEach(function(f) {
+      var toCam = { x: A.camera.position.x - f.mid.x, z: A.camera.position.z - f.mid.z };
+      var tcLen = Math.hypot(toCam.x, toCam.z) || 1;
+      var facing = (f.normalThree.x * toCam.x + f.normalThree.z * toCam.z) / tcLen;  // [-1, 1]
+      var facingFrac = Math.max(0, Math.min(1, facing));  // 0 (away/edge-on) .. 1 (directly facing)
+      var strength = PHOTO_FACADE_DIM_FRACTION + (1 - PHOTO_FACADE_DIM_FRACTION) * facingFrac;
+      f.up.intensity = PHOTO_FACADE_UP_BASE * strength;
+      f.down.intensity = PHOTO_FACADE_DOWN_BASE * strength;
+    });
+    console.log('§PHOTO_FACING facades=' + _photoFacadeLights.length + ' strengths=' +
+      _photoFacadeLights.map(function(f) { return (f.up.intensity / PHOTO_FACADE_UP_BASE).toFixed(2); }).join(','));
+  }
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
       _buildPhotoProps();
     }
+    if (show) _updateFacadeFacingLights();
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
@@ -229,6 +274,18 @@ async function setupEffects(A, renderer, scene, camera) {
   // using the existing earth texture + a warm dusk tint, without engaging the shadow-cycle
   // machinery. User confirmed this is meant to be an elaborate, deliberately-expensive prep —
   // don't hold back on this just because it's more code than a flat color.
+  // §PHOTO_WARM_SUN (resume-brief item 3): the building's own walls used to get the ORIGINAL
+  // daytime-neutral sun/ambient/hemi colors restored here — right call to avoid moonlight-blue,
+  // but it meant the walls themselves never got a deliberate evening treatment, only the
+  // separate light props around them changed. These are global, building-INDEPENDENT constants
+  // (no per-building numbers) — a genuine golden-hour warm tint, distinct from both neutral
+  // daylight and toggleNightMode's moonlight-blue, applied as a scale/hex-override on top of
+  // this building's own saved daytime baseline (A._nightSaved), not a replacement of it.
+  var PHOTO_SUN_COLOR = 0xffa55c;       // warm golden-hour sun, not neutral white
+  var PHOTO_AMBIENT_COLOR = 0x8a6a55;   // warm dim ambient — shadow side reads dusk-toned, not grey
+  var PHOTO_HEMI_SKY_COLOR = 0x6a5a7a;  // dusky violet-warm sky half of the hemi light
+  var PHOTO_SUN_INTENSITY_SCALE = 0.7;  // dimmer than full daylight — evening, not noon
+  var PHOTO_EXPOSURE_SCALE = 0.85;      // slightly underexposed overall — "materials in little light"
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
   var _photoGroundWasVisible = false, _photoGroundPrevKey = null, _photoGroundPrevColor = null;
   function _applyPhotoStaging() {
@@ -246,14 +303,15 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoNightWasOn = !!A._nightMode;
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
-      if (A._nightSaved) {  // undo JUST the moonlight sun/ambient/hemi/fog override — keep the sunset
-        A.sun.intensity = A._nightSaved.sunI;
-        A.sun.color.setHex(A._nightSaved.sunColor);
+      if (A._nightSaved) {  // undo the moonlight override, but land on a deliberate warm evening
+                             // tint (§PHOTO_WARM_SUN) instead of plain neutral-daytime restore
+        A.sun.intensity = A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE;
+        A.sun.color.setHex(PHOTO_SUN_COLOR);
         A.ambient.intensity = A._nightSaved.ambI;
-        A.ambient.color.setHex(A._nightSaved.ambColor);
+        A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI;
-        A.hemi.color.setHex(A._nightSaved.hemiSky);
-        A.renderer.toneMappingExposure = A._nightSaved.exposure;
+        A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
+        A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE;
       }
     }
     _showPhotoProps(true);
