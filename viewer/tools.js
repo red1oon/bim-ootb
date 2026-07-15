@@ -907,24 +907,45 @@ function setupTools(A) {
         _glowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
         source += '+fallback';
       }
+      // §NIGHT-WINDOW-GLOW (2026-07-15, user ask): facade glazing reads as "lit up from inside"
+      // when viewed from outside at night — whitish emissive, distinct from the warm fixture
+      // glow above. Class-based (IfcWindow/IfcCurtainWall), NOT a per-GUID exterior filter — same
+      // zero-added-geometry _matCache mechanism as the fixture glow. Known imprecision: a building
+      // with genuine INTERIOR glazed partitions tagged IfcCurtainWall would glow those too
+      // (materials are shared by class+color, not by placement) — acceptable per user call.
+      // §GLAZING-INFILL (verified live, HHS_Office_Federated): some curtain-wall systems author
+      // the glass panels as IfcPlate (mullion+plate pattern), not IfcWindow/IfcCurtainWall — HHS
+      // has ZERO materials of either class; its actual glass is `...,0.250|IfcPlate` (25% alpha).
+      // IfcPlate alone is too ambiguous to glow unconditionally (also used for opaque steel
+      // elsewhere) — gate it on the material's OWN real alpha (straight from the IFC rgba, "trust
+      // IFC data" per §S265c above): only a genuinely transparent IfcPlate reads as glass.
+      var _windowGlowClasses = ['IfcWindow', 'IfcCurtainWall'];
+      var _windowGlowCount = 0;
       // Apply emissive to ALL matCache entries matching glow classes
       var mc = A._matCache || {};
       for (var mk in mc) {
+        var m = mc[mk];
+        if (!m || !m.emissive) continue;
         var isLight = false;
         for (var gi = 0; gi < _glowClasses.length; gi++) {
           if (mk.indexOf(_glowClasses[gi]) >= 0) { isLight = true; break; }
         }
-        if (!isLight) continue;
-        var m = mc[mk];
-        if (m && m.emissive) {
-          A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+        var isWindow = !isLight && _windowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
+        if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
+        if (!isLight && !isWindow) continue;
+        A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+        if (isLight) {
           m.emissive.setHex(0xffe4b5);
           m.emissiveIntensity = 0.8;
-          m.needsUpdate = true;
           _glowCount++;
+        } else {
+          m.emissive.setHex(0xfff8ec);
+          m.emissiveIntensity = 0.55;
+          _windowGlowCount++;
         }
+        m.needsUpdate = true;
       }
-      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount);
+      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount + ' windowGlowMats=' + _windowGlowCount);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
       if (A.controls && !A._nightControlsListener) {
