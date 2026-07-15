@@ -146,25 +146,41 @@ async function setupEffects(A, renderer, scene, camera) {
     var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin;
     var groundZ = bbox.zMin, roofZ = bbox.zMax;
 
-    // Ground uplights — 4 footprint corners, warm, short-range, no shadow (cheap)
-    [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMin, bbox.yMax], [bbox.xMax, bbox.yMax]].forEach(function(c) {
+    // Ground uplights — 4 footprint corners, pulled in slightly from the corner so the light
+    // sits AGAINST the wall face rather than floating off the outside edge, warm, short-range,
+    // no shadow (cheap). Brighter + closer than the first pass — that one wasn't visibly
+    // reading as a wall-wash.
+    var inset = Math.min(3, w * 0.1, d * 0.1);
+    [[bbox.xMin + inset, bbox.yMin + inset], [bbox.xMax - inset, bbox.yMin + inset],
+     [bbox.xMin + inset, bbox.yMax - inset], [bbox.xMax - inset, bbox.yMax - inset]].forEach(function(c) {
       var p = A.ifc2three(c[0], c[1], groundZ);
-      var lt = new THREE.PointLight(0xffaa55, 4, 18, 2);
-      lt.position.set(p.x, p.y + 0.5, p.z);
+      var lt = new THREE.PointLight(0xffaa55, 9, 14, 2);
+      lt.position.set(p.x, p.y + 0.3, p.z);
       A.scene.add(lt);
       _photoUplights.push(lt);
     });
 
-    // Roofline edge-lining — bounding-box rectangle at roof height (approximation for an
-    // L-shaped footprint — POC-acceptable per user, real footprint polygon is a bigger lift)
+    // Roofline edge-lining — ONLY the edge(s) actually facing the camera (per user: "need not
+    // be around, just what is facing camera"). Also fixes the earlier bug where a far/notch-
+    // crossing edge (this building is L-shaped, bbox rectangle floats over the empty notch)
+    // read as a stray line cutting across open space at a grazing angle — skipping edges that
+    // don't face the camera avoids exactly that edge.
     var edgeMat = new THREE.MeshBasicMaterial({ color: 0xffe0a8 });
     var corners = [[bbox.xMin, bbox.yMin], [bbox.xMax, bbox.yMin], [bbox.xMax, bbox.yMax], [bbox.xMin, bbox.yMax]];
+    var normalsIfc = [[0, -1], [1, 0], [0, 1], [-1, 0]];  // outward normal per edge, IFC XY
     for (var ei = 0; ei < 4; ei++) {
       var c1 = corners[ei], c2 = corners[(ei + 1) % 4];
       var p1 = A.ifc2three(c1[0], c1[1], roofZ), p2 = A.ifc2three(c2[0], c2[1], roofZ);
+      var mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2, z: (p1.z + p2.z) / 2 };
+      var n = normalsIfc[ei];
+      var nThree = { x: n[0], z: -n[1] };  // ifc2three: three.z = -(ifc.y - offset)
+      var toCam = { x: A.camera.position.x - mid.x, z: A.camera.position.z - mid.z };
+      var tcLen = Math.hypot(toCam.x, toCam.z) || 1;
+      var facing = (nThree.x * toCam.x + nThree.z * toCam.z) / tcLen;
+      if (facing <= 0.15) continue;  // not facing the camera — skip (fixes the stray-line bug too)
       var len = Math.hypot(p2.x - p1.x, p2.z - p1.z);
-      var mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.08), edgeMat);
-      mesh.position.set((p1.x + p2.x) / 2, (p1.y + p2.y) / 2 + 0.3, (p1.z + p2.z) / 2);
+      var mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, 0.1), edgeMat);
+      mesh.position.set(mid.x, mid.y + 0.3, mid.z);
       mesh.rotation.y = -Math.atan2(p2.z - p1.z, p2.x - p1.x);
       A.scene.add(mesh);
       _photoEdgeStrips.push(mesh);
@@ -223,8 +239,23 @@ async function setupEffects(A, renderer, scene, camera) {
   // the sunset sky set up above is the intended mood, not full night-black.
   // §PHOTO_STAGING_NO_SHADOW (2026-07-15, user ask): dropped toggleShadow() entirely — sky-only,
   // no ground/shadow-cycling. Simpler, and the sky alone already reads as the target evening mood.
+  // §PHOTO_STAGING_GROUND (2026-07-15, user ask): dropping toggleShadow() also hid A.ground
+  // entirely (pure black void, user-observed live) — restore a real ground plane directly,
+  // using the existing earth texture + a warm dusk tint, without engaging the shadow-cycle
+  // machinery. User confirmed this is meant to be an elaborate, deliberately-expensive prep —
+  // don't hold back on this just because it's more code than a flat color.
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
+  var _photoGroundWasVisible = false, _photoGroundPrevKey = null, _photoGroundPrevColor = null;
   function _applyPhotoStaging() {
+    _photoGroundWasVisible = !!(A.ground && A.ground.visible);
+    _photoGroundPrevKey = A._groundTexKey || null;
+    _photoGroundPrevColor = A._groundSolidColor;
+    if (A.ground && A._applyGroundTexture && A._calcGroundY) {
+      A.ground.visible = true;
+      A._calcGroundY();
+      A._applyGroundTexture('earth');
+      if (A._setGroundColor) A._setGroundColor(0x6a5238);  // warm dusk tint over the earth map
+    }
     _photoSkyWasVisible = !!(A._sky && A._sky.visible);
     if (A._sky && A.updateSky) { A._sky.visible = true; A.updateSky(8, 200); }
     _photoNightWasOn = !!A._nightMode;
@@ -246,6 +277,11 @@ async function setupEffects(A, renderer, scene, camera) {
   function _teardownPhotoStaging() {
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
+    if (A.ground && A._applyGroundTexture) {
+      A._applyGroundTexture(_photoGroundPrevKey);  // null → clears map, restores flat color
+      if (_photoGroundPrevColor != null && A._setGroundColor) A._setGroundColor(_photoGroundPrevColor);
+      A.ground.visible = _photoGroundWasVisible;
+    }
     _showPhotoProps(false);
     console.log('§PHOTO_STAGING off');
   }
