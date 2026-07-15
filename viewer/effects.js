@@ -101,6 +101,20 @@ async function setupEffects(A, renderer, scene, camera) {
   A._stillRefineActive = false;
   var _stillRefineRAF = null;
   var _stillRefinePrevComposerEnabled = false;
+  // §STILL_REFINE_TEARDOWN (2026-07-15, real-user bug): natural completion used to skip this —
+  // A._taaPass.accumulate stayed true and A._composerEnabled stayed forced-on forever afterward,
+  // so every subsequent normal render kept re-painting the FROZEN accumulated image instead of a
+  // fresh live frame (accumulateIndex>=16 short-circuits TAARenderPass's sampling loop but still
+  // re-blends the stale _sampleRenderTarget). That's exactly the "blurred/multi-shot after moving
+  // the camera" the user hit live. Both the done-path and the cancel-path must reset the SAME
+  // state — only the log line differs.
+  function _teardownStillRefine(reason) {
+    A._stillRefineActive = false;
+    if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
+    if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
+    A._composerEnabled = _stillRefinePrevComposerEnabled;
+    console.log('§STILL_REFINE ' + reason);
+  }
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     A._stillRefineActive = true;
@@ -113,23 +127,14 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!A._stillRefineActive) return;
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
-      if (idx >= 16) {
-        A._stillRefineActive = false;
-        _stillRefineRAF = null;
-        console.log('§STILL_REFINE done accumulateIndex=' + idx);
-        return;
-      }
+      if (idx >= 16) { _teardownStillRefine('done accumulateIndex=' + idx); return; }
       _stillRefineRAF = requestAnimationFrame(step);
     }
     _stillRefineRAF = requestAnimationFrame(step);
   };
   A.stopStillRefine = function() {
     if (!A._stillRefineActive) return;
-    A._stillRefineActive = false;
-    if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
-    if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
-    A._composerEnabled = _stillRefinePrevComposerEnabled;
-    console.log('§STILL_REFINE cancelled (interaction)');
+    _teardownStillRefine('cancelled (interaction)');
   };
   A.toggleStillRefine = function() {
     if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();
