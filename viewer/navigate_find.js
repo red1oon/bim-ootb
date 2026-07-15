@@ -2465,19 +2465,37 @@
       if (isCorridorRoom) selCategory = 'corridor';
       else { var rbMatch = _roomBoxes.filter(function(rb) { return rb.guid === guid; })[0];
         if (rbMatch && rbMatch.category) selCategory = rbMatch.category; }
+      // §CUBOID-PAINT-ORDER (2026-07-15, user-reported live testing: "purple does not shine thru
+      // in solid or x-ray mode, only bbox mode"): _drawRoomCuboid()'s shine-through trick
+      // (depthTest:false + a high renderOrder, both the §BORDER_STRONG wire and #797's
+      // §FILL-SHINE-THROUGH glow) only controls PAINT ORDER when the renderer actually sorts by
+      // renderOrder. Selecting a room in the Find panel ALWAYS auto-enables X-Ray if it wasn't
+      // already on (see the `!A.xrayOn && A.toggleXray` calls a few lines below, inside
+      // _drillSelect's caller chain) — and A.toggleXray() sets `A.renderer.sortObjects =
+      // !A.xrayOn` (viewer/tools.js, a real perf optimization for X-Ray's many-material update).
+      // With sortObjects FALSE, three.js ignores renderOrder entirely and paints in raw
+      // scene-graph traversal order instead — so whichever mesh was ADDED to the scene LAST wins
+      // the pixel, regardless of renderOrder. _drawRoomCuboid() used to run BEFORE _drillSelect()
+      // below, so the cuboid was added FIRST and _drillSelect's own context/ghost overlay meshes
+      // (added after) painted OVER it — hiding the "shines through" glow specifically in the
+      // sortObjects=false state this feature normally runs in. "Bbox" mode only looked unaffected
+      // because it replaces most real geometry with thin wireframes, leaving little solid pixel
+      // coverage to reveal the same underlying bug. Fix: call _drillSelect FIRST so the cuboid is
+      // always the LAST thing added to the scene each selection — correct on top regardless of
+      // sortObjects state, no change to the X-Ray perf optimization itself.
       if (bound.size && zoomBox) {
-        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
         var _clip = _boxClipPlanes(zoomBox.center, zoomBox.size, 0.7);   // confine the ancestor shell to the cuboid (+0.7m)
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=cuboid guid=' + guid + ' bound=' + bound.size +
           ' box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) + 'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, clipPlanes: _clip, zoomMult: 1.8, suppressHighlight: true });
+        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
       } else if (bound.size) {
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=bounding-elements guid=' + guid + ' (no zoomBox available)');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, zoomMult: 1.8 });
       } else {
-        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=' + (zoomBox ? 'cuboid' : 'cuboid-fallback') + ' guid=' + guid + ' (no bounding mesh found)');
         _drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
+        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
       }
     }
 
