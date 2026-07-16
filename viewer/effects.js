@@ -922,6 +922,18 @@ async function setupEffects(A, renderer, scene, camera) {
       shader.uniforms.uPuddleRadii.value[i] = _puddleRadii[i];
     }
   }
+  // §GROUND_WETNESS_OVERRIDE (2026-07-17, user: "can we change the J 'metal' dial to control its
+  // reflectiveness" — wiring the tune HUD's metal-strength slider to this SAME puddle mechanism,
+  // full-surface instead of small circles. 0 = off, 1 = the whole ground at puddle-strength
+  // wetness (roughness 0.08, darkened) uniformly, independent of the small random puddle patches
+  // (both can coexist — max() below, whichever reads wetter at a given pixel wins).
+  A._groundWetnessOverride = 0;
+  A._setGroundWetness = function(v) {
+    _wireGroundPuddleShader();  // safe no-op if already wired (Alt+S may have wired it first)
+    A._groundWetnessOverride = Math.max(0, Math.min(1, v));
+    console.log('§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride);
+    if (A.markDirty) A.markDirty();
+  };
   function _wireGroundPuddleShader() {
     if (_groundPuddleShaderWired || !A.ground) return;
     _groundPuddleShaderWired = true;
@@ -931,6 +943,7 @@ async function setupEffects(A, renderer, scene, camera) {
       shader.uniforms.uPuddleCount = { value: 0 };
       shader.uniforms.uPuddleCenters = { value: (new Array(8)).fill(null).map(function() { return new THREE.Vector2(); }) };
       shader.uniforms.uPuddleRadii = { value: new Float32Array(8) };
+      shader.uniforms.uWetnessOverride = { value: 0.0 };
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorldPos;')
         .replace('#include <worldpos_vertex>', [
@@ -944,12 +957,13 @@ async function setupEffects(A, renderer, scene, camera) {
           'uniform float uPuddleActive;',
           'uniform int uPuddleCount;',
           'uniform vec2 uPuddleCenters[8];',
-          'uniform float uPuddleRadii[8];'
+          'uniform float uPuddleRadii[8];',
+          'uniform float uWetnessOverride;'
         ].join('\n'))
         .replace('#include <roughnessmap_fragment>', [
           '#include <roughnessmap_fragment>',
           'if (uPuddleActive > 0.5) {',   // uniform branch — near-zero cost when off (normal nav)
-          '  float wetness = 0.0;',
+          '  float wetness = uWetnessOverride;',  // full-surface base, small puddles can only add to it
           '  for (int pi = 0; pi < 8; pi++) {',
           '    if (pi >= uPuddleCount) break;',
           '    float d = distance(vGroundWorldPos.xz, uPuddleCenters[pi]);',
@@ -963,7 +977,8 @@ async function setupEffects(A, renderer, scene, camera) {
       // §TRIPLANAR_CLONE_BOMB (see streaming.js): plain property, never userData — userData is
       // JSON-round-tripped by Material.copy() on every clone.
       mat._puddleShader = shader;
-      shader.uniforms.uPuddleActive.value = A._stillRefineActive ? 1.0 : 0.0;
+      shader.uniforms.uPuddleActive.value = (A._stillRefineActive || A._groundWetnessOverride > 0) ? 1.0 : 0.0;
+      shader.uniforms.uWetnessOverride.value = A._groundWetnessOverride;
       _applyPuddleUniforms(shader);
     };
     // §PHOTO_PUDDLE self-heal: same recompile-resets-uniforms landmine already found+fixed once
@@ -971,7 +986,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // instead of relying on a single push at compile time.
     mat.onBeforeRender = function() {
       var sh = mat._puddleShader;
-      if (sh) { sh.uniforms.uPuddleActive.value = A._stillRefineActive ? 1.0 : 0.0; _applyPuddleUniforms(sh); }
+      if (sh) {
+        sh.uniforms.uPuddleActive.value = (A._stillRefineActive || A._groundWetnessOverride > 0) ? 1.0 : 0.0;
+        sh.uniforms.uWetnessOverride.value = A._groundWetnessOverride;
+        _applyPuddleUniforms(sh);
+      }
     };
     mat.needsUpdate = true;
   }
