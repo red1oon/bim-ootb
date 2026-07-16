@@ -57,6 +57,17 @@ function setupTour(A) {
   // §S1 — the awaited pre-step. Never throws; §FLY_INJECT logs what happened.
   A._prepareGraphTour = async function() {
     try {
+      // §STREAM-FIRST (user 2026-07-16: tour "switching to Alt-X bbxes"): those are streaming
+      // placeholder bboxes — elements not yet promoted to real geometry. Flying mid-stream tours
+      // a box model and starves the promote pipeline. Wait for streaming to drain first (the
+      // status bar keeps showing live progress; toggling fly off aborts the wait).
+      let _streamWaited = 0;
+      while (A.streaming && A.flyActive) {
+        await new Promise(function(r) { setTimeout(r, 500); });
+        _streamWaited += 500;
+      }
+      if (_streamWaited) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _streamWaited);
+      if (!A.flyActive) return;
       if (A.loadNavigate) await A.loadNavigate();
       if (A.ensureRooms) {
         const res = await A.ensureRooms();
@@ -201,25 +212,17 @@ function setupTour(A) {
       if (n.kind === 'exit' && (entrance === null || n.cz < entrance.cz)) entrance = n;
     }
 
-    // Itinerary: per storey, corridor cruise stop + top-K rooms by area, euclid-NN ordered
-    // (the actual route between stops is graph-shortest, so NN here only picks visit ORDER).
+    // Itinerary: per storey, LARGEST spaces first (user 2026-07-16: "go for the great
+    // opportunities from large hallways or entrance to large areas first") — the corridor cruise
+    // leads, then rooms in descending measured area. Drama over travel economy: the legs between
+    // stops are still graph-shortest, so the route stays wall-legal either way.
     const stops = [];
-    let ref = entrance;
     for (const st of storeys) {
       const b = byStorey[st];
       b.corridors.sort((a, c) => c.area - a.area);
       b.rooms.sort((a, c) => c.area - a.area);
-      const pool = (b.corridors.length ? [b.corridors[0]] : []).concat(b.rooms.slice(0, K));
-      while (pool.length) {
-        let bi = 0, bd = Infinity;
-        for (let i = 0; i < pool.length; i++) {
-          const d = ref ? Math.hypot(pool[i].node.cx - ref.cx, pool[i].node.cy - ref.cy) : 0;
-          if (d < bd) { bd = d; bi = i; }
-        }
-        stops.push(pool[bi]);
-        ref = pool[bi].node;
-        pool.splice(bi, 1);
-      }
+      if (b.corridors.length) stops.push(b.corridors[0]);
+      for (const r of b.rooms.slice(0, K)) stops.push(r);
     }
     if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
 
