@@ -478,6 +478,13 @@ function setupStreaming(A) {
         shader.uniforms.uTriScale = { value: _triUvScale };
         shader.uniforms.uTriNorm = { value: _triNorm };
         shader.uniforms.uTriContrast = { value: _triContrast };
+        // §PHOTO_PAINT (2026-07-16, user ask, realreflect.jpg: "uneven colored... easy to run a
+        // sort of random paint treat, so each time it is done first time it returns a diff"):
+        // A._photoPaintSeed (effects.js §PHOTO_VARIATION — re-rolled per Alt+S trigger, locked by
+        // Cinema Orbit) drives a coarse, low-frequency blotch/weathering tint on top of the real
+        // photographic texture below — a genuinely different-looking "paint job" each roll, not
+        // just a UV-tile shift (which would look near-identical on a seamlessly-tiled texture).
+        shader.uniforms.uPaintSeed = { value: A._photoPaintSeed || 0 };
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', [
             '#include <common>',
@@ -517,7 +524,8 @@ function setupStreaming(A) {
             'uniform float uTriActive;',
             'uniform float uTriScale;',
             'uniform float uTriNorm;',
-            'uniform float uTriContrast;'
+            'uniform float uTriContrast;',
+            'uniform float uPaintSeed;'
           ].join('\n'))
           .replace('#include <roughnessmap_fragment>', [
             '#include <roughnessmap_fragment>',
@@ -542,6 +550,14 @@ function setupStreaming(A) {
             // from 1.0 by uTriContrast BEFORE the multiply, same average, more visible grain.
             '  vec3 triNormalized = triDiffuse * uTriNorm;',
             '  vec3 triContrasted = clamp((triNormalized - 1.0) * uTriContrast + 1.0, 0.0, 2.5);',
+            // §PHOTO_PAINT: coarse blotch noise, seeded per-session — two octaves (a broad blotch
+            // + a finer freckle) so it reads as uneven weathering, not a single flat tint shift.
+            '  vec2 paintCoord = vTriWorldPos.xz * 0.12 + vec2(uPaintSeed * 71.317, uPaintSeed * 113.729);',
+            '  float paintA = fract(sin(dot(floor(paintCoord * 1.5), vec2(12.9898, 78.233))) * 43758.5453);',
+            '  float paintB = fract(sin(dot(paintCoord * 4.0, vec2(39.201, 61.789))) * 24634.6345);',
+            '  float paintBlotch = mix(paintA, paintB, 0.35);',
+            '  vec3 paintTint = mix(vec3(0.72, 0.71, 0.69), vec3(1.22, 1.16, 1.04), paintBlotch);',
+            '  triContrasted *= paintTint;',
             '  diffuseColor.rgb *= triContrasted;',
             '  roughnessFactor *= mix(0.6, 1.4, triRough);',
             '}'
@@ -555,10 +571,14 @@ function setupStreaming(A) {
         // object and re-asserts the CURRENT value from live state, so it self-heals across
         // any recompile instead of relying on a single push at start time.
         shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
       };
       mat.onBeforeRender = function() {
         var sh = mat.userData.triplanarShader;
-        if (sh) sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        if (sh) {
+          sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+          sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+        }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
       A._triplanarMaterials.push(mat);
