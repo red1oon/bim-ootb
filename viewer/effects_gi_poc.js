@@ -393,6 +393,16 @@ async function setupGIPoc(A, renderer, scene, camera) {
       'position:fixed; bottom:60px; left:12px; width:260px; ' +
       'background:rgba(30,30,30,0.92); color:#eee; font:11px/1.4 monospace; ' +
       'padding:10px; border-radius:6px; pointer-events:auto; z-index:800;';
+    // §PANEL_S_LEAK_FIX (2026-07-17, user: "closing of J it seems close the S effect, which should
+    // not... S effect should be closed by Alt-S toggle again or a move on canvas"): main.js has a
+    // global window pointerdown listener that treats ANY click outside the 3D canvas — Find panel,
+    // toolbar, ANY UI chrome — as a real action and fully tears down Alt+S's still-refine
+    // (deliberate, pre-existing behavior: "when i select an item it breaks to old nature"). This
+    // whole panel is UI chrome, so EVERY slider drag (not just the close button) would leak out and
+    // kill a live Alt+S still mid-adjustment — exactly what live-tuning during a still needs to
+    // NOT do. Stop pointerdown at the panel container so nothing inside it (sliders, close button)
+    // ever bubbles to window; Alt+S still only ever ends via Alt+S itself or real canvas movement.
+    hud.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
     // §HUD_CLOSE_BTN (2026-07-17, user: "can the J panel have a close button without turning off
     // its effect? When user wants effect off its just Alt+J again"): _ssgiHideTuneHUD only ever
     // removes the DOM panel — it never touches A._ssgiActive/the effect itself (same style as
