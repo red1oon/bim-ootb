@@ -312,7 +312,11 @@ async function setupScene(A) {
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(50000, 50000),
-    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 0.95, metalness: 0.0, envMapIntensity: 0.15, side: THREE.DoubleSide })  // §S276b: earth brown, subtle sky reflection (0.15)
+    // §GROUND_METALLIC (2026-07-17, user directive: "I want the whole ground metallic. Not when
+    // J. That can control the reflection" — a permanent base state, not tied to Alt+J's on/off;
+    // the tune HUD's sliders adjust this metallic base live, they don't toggle it into existence).
+    // Was roughness:0.95/metalness:0.0 (matte earth, §S276b) — now permanently reflective.
+    new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 0.15, metalness: 0.85, envMapIntensity: 1.5, side: THREE.DoubleSide })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
