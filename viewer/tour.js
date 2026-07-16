@@ -216,14 +216,25 @@ function setupTour(A) {
     // opportunities from large hallways or entrance to large areas first") — the corridor cruise
     // leads, then rooms in descending measured area. Drama over travel economy: the legs between
     // stops are still graph-shortest, so the route stays wall-legal either way.
+    // §CONNECTED-STOPS (LTU live-report 2026-07-16: "same route, nothing major change" — LTU has
+    // 0 exit nodes, and its largest corridor node carries no edges, so the route anchored on an
+    // isolated node, every leg failed, pts=1 → permanent legacy fallback): a stop must appear in
+    // the edge set to be routable AT ALL; isolated nodes are dropped up front.
+    const edgeGuids = {};
+    for (const e of g.edges) { edgeGuids[e.a] = true; edgeGuids[e.b] = true; }
+    let isolatedDropped = 0;
     const stops = [];
     for (const st of storeys) {
       const b = byStorey[st];
       b.corridors.sort((a, c) => c.area - a.area);
       b.rooms.sort((a, c) => c.area - a.area);
-      if (b.corridors.length) stops.push(b.corridors[0]);
-      for (const r of b.rooms.slice(0, K)) stops.push(r);
+      const picks = (b.corridors.length ? [b.corridors[0]] : []).concat(b.rooms.slice(0, K));
+      for (const r of picks) {
+        if (edgeGuids[r.guid]) stops.push(r);
+        else isolatedDropped++;
+      }
     }
+    if (isolatedDropped) console.log('[TOUR] §FLY_ROUTE_ISOLATED dropped=' + isolatedDropped);
     if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
 
     // §S3 — the largest confirmed room per storey gets the pause + look-around beat.
