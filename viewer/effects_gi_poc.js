@@ -331,6 +331,41 @@ async function setupGIPoc(A, renderer, scene, camera) {
     { key: 'blend', min: 0, max: 1, step: 0.01 },
     { key: 'directLightMultiplier', min: 0, max: 2, step: 0.1 }
   ];
+  // §GROUND_TUNE (2026-07-17, user ask, "ground too dark... can it be reflective/glassy... put
+  // under J"): A.ground.material is a plain THREE.MeshStandardMaterial (scene.js) — roughness/
+  // envMapIntensity are live-safe uniforms, no shader recompile, so these are cheap to drag same
+  // as the SSGI uniform knobs. Lower roughness + higher envMapIntensity makes the ground pick up
+  // the scene's existing sky HDRI (belfast_sunset_puresky_1k) as a glossy reflection — real,
+  // immediate, low-risk. NOT the same as literally mirroring the skyline silhouette's individual
+  // window lights (that needs a planar reflection/SSR — separate, bigger feature, not this).
+  var GROUND_TUNE_KNOBS = [
+    { key: 'roughness', min: 0.05, max: 1, step: 0.01, target: 'ground' },
+    { key: 'envMapIntensity', min: 0, max: 2, step: 0.05, target: 'ground' }
+  ];
+  function _tuneRowFor(k, getVal, setVal) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; gap:6px; margin:4px 0;';
+    var label = document.createElement('span');
+    label.textContent = k.key;
+    label.style.cssText = 'width:130px; flex-shrink:0;';
+    var input = document.createElement('input');
+    input.type = 'range';
+    input.min = k.min; input.max = k.max; input.step = k.step;
+    input.value = getVal();
+    input.style.cssText = 'flex:1;';
+    var val = document.createElement('span');
+    val.textContent = input.value;
+    val.style.cssText = 'width:36px; text-align:right; flex-shrink:0; color:#8cf;';
+    input.addEventListener(k.liveEvent || 'input', function() {
+      var v = parseFloat(input.value);
+      val.textContent = v;
+      setVal(v);
+      console.log('§SSGI_TUNE_LIVE key=' + (k.target || 'ssgi') + '.' + k.key + ' value=' + v);
+      if (A.markDirty) A.markDirty();
+    });
+    row.appendChild(label); row.appendChild(input); row.appendChild(val);
+    return row;
+  }
   function _ssgiShowTuneHUD() {
     if (_tuneHud || !A._ssgiEffect) return;
     var hud = document.createElement('div');
@@ -344,29 +379,23 @@ async function setupGIPoc(A, renderer, scene, camera) {
     title.style.cssText = 'font-weight:bold; margin-bottom:6px; color:#8cf;';
     hud.appendChild(title);
     SSGI_TUNE_KNOBS.forEach(function(k) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex; align-items:center; gap:6px; margin:4px 0;';
-      var label = document.createElement('span');
-      label.textContent = k.key;
-      label.style.cssText = 'width:130px; flex-shrink:0;';
-      var input = document.createElement('input');
-      input.type = 'range';
-      input.min = k.min; input.max = k.max; input.step = k.step;
-      input.value = (A._ssgiEffect[k.key] !== undefined) ? A._ssgiEffect[k.key] : k.min;
-      input.style.cssText = 'flex:1;';
-      var val = document.createElement('span');
-      val.textContent = input.value;
-      val.style.cssText = 'width:36px; text-align:right; flex-shrink:0; color:#8cf;';
-      input.addEventListener(k.liveEvent || 'input', function() {
-        var v = parseFloat(input.value);
-        val.textContent = v;
-        if (A._ssgiEffect) A._ssgiEffect[k.key] = v;  // reactive setter (makeOptionsReactive)
-        console.log('§SSGI_TUNE_LIVE key=' + k.key + ' value=' + v);
-        if (A.markDirty) A.markDirty();
-      });
-      row.appendChild(label); row.appendChild(input); row.appendChild(val);
-      hud.appendChild(row);
+      hud.appendChild(_tuneRowFor(k,
+        function() { return (A._ssgiEffect[k.key] !== undefined) ? A._ssgiEffect[k.key] : k.min; },
+        function(v) { if (A._ssgiEffect) A._ssgiEffect[k.key] = v; }  // reactive setter (makeOptionsReactive)
+      ));
     });
+    if (A.ground && A.ground.material) {
+      var gTitle = document.createElement('div');
+      gTitle.textContent = 'Ground (reflectivity)';
+      gTitle.style.cssText = 'font-weight:bold; margin:8px 0 4px; color:#8cf;';
+      hud.appendChild(gTitle);
+      GROUND_TUNE_KNOBS.forEach(function(k) {
+        hud.appendChild(_tuneRowFor(k,
+          function() { var v = A.ground.material[k.key]; return (v !== undefined) ? v : k.min; },
+          function(v) { A.ground.material[k.key] = v; A.ground.material.needsUpdate = true; }
+        ));
+      });
+    }
     document.body.appendChild(hud);
     _tuneHud = hud;
   }
