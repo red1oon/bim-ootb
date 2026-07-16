@@ -386,41 +386,13 @@ async function setupGIPoc(A, renderer, scene, camera) {
     row.appendChild(label); row.appendChild(input); row.appendChild(val);
     return row;
   }
-  // §GROUND_TEST_PRESET (2026-07-17, user: "make the whole ground metal type so that turning it
-  // up can see whole impact. The puddles are too small... I can turn it down if unwanted"): the
-  // ground's own base material (scene.js) defaults to roughness:0.95/metalness:0.0 — matte earth,
-  // barely reflective at any envMapIntensity (real dielectric physics, not a bug — see #822).
-  // The separate patch-based puddle shader (effects.js, Alt+S-only) only wets small circles, not
-  // the whole plane, which is the "puddles too small" complaint. Rather than touching that
-  // separate already-shipped feature, apply a dramatic WHOLE-GROUND preset when the tune HUD
-  // opens — low roughness, high metalness, boosted envMapIntensity — so the reflectivity impact
-  // is obvious immediately, and restore the original values when the HUD closes (Alt+J off) so
-  // normal day-to-day ground appearance is untouched outside this testing session. The sliders
-  // remain live on top of the preset, exactly the "turn it down if unwanted" ask.
-  var _groundOrig = null;
-  function _applyGroundTestPreset() {
-    if (!A.ground || !A.ground.material || _groundOrig) return;
-    var m = A.ground.material;
-    _groundOrig = { roughness: m.roughness, metalness: m.metalness, envMapIntensity: m.envMapIntensity };
-    m.roughness = 0.15; m.metalness = 0.85; m.envMapIntensity = 1.5;
-    m.needsUpdate = true;
-    console.log('§GROUND_TEST_PRESET applied roughness=0.15 metalness=0.85 envMapIntensity=1.5 (was ' +
-      JSON.stringify(_groundOrig) + ')');
-  }
-  function _restoreGroundPreset() {
-    if (!_groundOrig) return;
-    if (A.ground && A.ground.material) {
-      var m = A.ground.material;
-      m.roughness = _groundOrig.roughness; m.metalness = _groundOrig.metalness;
-      m.envMapIntensity = _groundOrig.envMapIntensity;
-      m.needsUpdate = true;
-      console.log('§GROUND_TEST_PRESET restored ' + JSON.stringify(_groundOrig));
-    }
-    _groundOrig = null;
-  }
+  // §GROUND_METALLIC (2026-07-17, user directive: "I want the whole ground metallic. Not when J.
+  // That can control the reflection" — corrects the previous round's toggle-tied preset, which
+  // the user explicitly rejected. The metallic look is now the PERMANENT base material (scene.js
+  // §GROUND_METALLIC), not something applied/restored around Alt+J's on/off. This panel's Ground
+  // sliders just adjust that permanent base live — they don't create or remove the effect.
   function _ssgiShowTuneHUD() {
     if (_tuneHud || !A._ssgiEffect) return;
-    _applyGroundTestPreset();
     var hud = document.createElement('div');
     hud.id = 'ssgiTuneHud';
     hud.style.cssText =
@@ -464,7 +436,7 @@ async function setupGIPoc(A, renderer, scene, camera) {
   }
   function _ssgiHideTuneHUD() {
     if (_tuneHud) { _tuneHud.remove(); _tuneHud = null; }
-    _restoreGroundPreset();
+    // no ground restore — the metallic look is a permanent base, not toggle-tied (§GROUND_METALLIC)
   }
 
   A._ssgiActive = false;
