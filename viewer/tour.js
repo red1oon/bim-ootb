@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v9 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v10 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -189,7 +189,6 @@ function setupTour(A) {
     const g = A.getRoomGraph();
     if (!g || !g.nodes || g.nodes.length < 2) return null;
 
-    const K = 4;
     // Bucket rooms by storey. Corridors (backprop 'Hall / Corridor' nodes + compiled
     // SUSPECT_ELONGATED — a real corridor is usually one of these, see spec §R4) become cruise
     // stops; other SUSPECT_* rooms are never destinations (§ROOM-FORM: review candidates).
@@ -206,6 +205,9 @@ function setupTour(A) {
       stN[n.storey] = (stN[n.storey] || 0) + 1;
     }
     const storeys = Object.keys(byStorey).sort((a, b) => stZSum[a] / stN[a] - stZSum[b] / stN[b]);
+    // §R6-BUDGET (Hospital live-report: "lingers too long on first floor"): rooms per storey
+    // scale DOWN as storey count grows — tall buildings get a tighter, corridor-dominant tour.
+    const K = storeys.length >= 4 ? 2 : storeys.length === 3 ? 3 : 4;
 
     // Entrance: the lowest exit node (E4 — a real non-room door), when the building has one.
     let entrance = null;
@@ -224,25 +226,53 @@ function setupTour(A) {
     // the edge set to be routable AT ALL; isolated nodes are dropped up front.
     const edgeGuids = {};
     for (const e of g.edges) { edgeGuids[e.a] = true; edgeGuids[e.b] = true; }
-    let isolatedDropped = 0;
+    // §R6-TYPE-DEDUPE (user: "not go to same type of rooms"): real IfcSpace names carry the
+    // room's function (Ward, WC, Office…) — visit the FIRST of each name-type only, tour-wide.
+    // Compiled rooms (object_type COMPILED, names like "R28") carry no semantic type → exempt.
+    const seenType = {};
+    function typeToken(n) {
+      if (String(n.label || '').indexOf('COMPILED') >= 0) return null;
+      const t = String(n.name || '').toLowerCase().replace(/[0-9]+/g, ' ')
+        .replace(/[^a-zÀ-￿ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return t.length >= 2 ? t : null;
+    }
+    let isolatedDropped = 0, typeDeduped = 0;
     const stops = [];
     for (const st of storeys) {
       const b = byStorey[st];
       b.corridors.sort((a, c) => c.area - a.area);
       b.rooms.sort((a, c) => c.area - a.area);
-      const picks = (b.corridors.length ? [b.corridors[0]] : []).concat(b.rooms.slice(0, K));
+      // §R6-CORRIDOR-SPINE (user: "stick more to long corridors and hallways"): corridors are
+      // the tour's spine — up to 3 cruise stops per storey (was 1), rooms are brief detours.
+      const picks = b.corridors.slice(0, 3);
+      let roomsTaken = 0;
+      for (const r of b.rooms) {
+        if (roomsTaken >= K) break;
+        const tok = typeToken(r.node);
+        if (tok && seenType[tok]) { typeDeduped++; continue; }
+        if (tok) seenType[tok] = true;
+        picks.push(r);
+        roomsTaken++;
+      }
       for (const r of picks) {
         if (edgeGuids[r.guid]) stops.push(r);
         else isolatedDropped++;
       }
     }
-    if (isolatedDropped) console.log('[TOUR] §FLY_ROUTE_ISOLATED dropped=' + isolatedDropped);
+    if (isolatedDropped || typeDeduped) console.log('[TOUR] §FLY_ROUTE_ISOLATED dropped=' +
+      isolatedDropped + ' typeDeduped=' + typeDeduped);
     if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
 
-    // §S3 — the largest confirmed room per storey gets the pause + look-around beat.
+    // §S3 — the largest room actually PICKED per storey gets the pause + look-around beat
+    // (§R6: dedupe/budget may drop the storey's largest room; corridors keep moving, no beat).
     const pauseGuids = {};
-    for (const st of storeys) {
-      if (byStorey[st].rooms.length) pauseGuids[byStorey[st].rooms[0].guid] = true;
+    const pausedStorey = {};
+    for (const s of stops) {
+      const st = s.node.storey;
+      if (pausedStorey[st]) continue;
+      if (byStorey[st].corridors.indexOf(s) >= 0) continue;
+      pauseGuids[s.guid] = true;
+      pausedStorey[st] = true;
     }
 
     // Chain the stops through the graph (Dijkstra, legalized — see room_graph.js).
@@ -294,11 +324,23 @@ function setupTour(A) {
     const pts = [];
     const ifcTrail = [];
     let circWps = 0;
+    let prevPg = null, prevN = null;
     for (const pg of pathGuids) {
       const n = g.nodesByGuid[pg];
       if (!n || n.cx === undefined) continue;
       const fz = (n.kind === 'stairwp') ? n.cz : (storeyZ[n.storey] !== undefined ? storeyZ[n.storey] : n.cz);
       const tp = A.ifc2three(n.cx, n.cy, fz);
+      // §R6-STAIR-FLIGHT (user: "really go up stairs"): a lo↔hi hop on the SAME stair gets a
+      // mid-flight point (halfway along the flight's own measured run), so the camera tracks
+      // base → landing → top instead of one smoothed diagonal. Both endpoints are real stairwp
+      // node positions; the midpoint is their measured interpolation, nothing invented.
+      if (n.kind === 'stairwp' && prevN && prevN.kind === 'stairwp' &&
+          String(pg).replace(/::(lo|hi)$/, '') === String(prevPg).replace(/::(lo|hi)$/, '')) {
+        const mtp = A.ifc2three((prevN.cx + n.cx) / 2, (prevN.cy + n.cy) / 2, (prevN.cz + n.cz) / 2);
+        pts.push({ x: mtp.x, y: mtp.y + A.WALK_EYE_HEIGHT, z: mtp.z, name: '', pause: null });
+        ifcTrail.push({ storey: n.storey, cx: (prevN.cx + n.cx) / 2, cy: (prevN.cy + n.cy) / 2, vertical: true });
+      }
+      prevPg = pg; prevN = n;
       if (n.kind === 'doorwp' || n.kind === 'circ' || n.kind === 'spine') circWps++;
       // §HEADS-UP (user 2026-07-16: "moving across storeys, having heads up where are the open
       // spaces"): arriving on a NEW storey up a stair gets a 'storey' look-around beat before
@@ -562,6 +604,9 @@ function setupTour(A) {
       // ═══ Big building: full interior flyPath + finale ═══
       // §S3 — split the spline at each storey's largest room for a pause + look-around beat;
       // no pause marks (legacy route) ⇒ one flyPath exactly as before.
+      // §R6-PACE: flat 3.5 m/s makes a long hospital path a multi-minute crawl — beyond 300m of
+      // interior path, pace up to 4.5 m/s (still walking-film speed, ~22% shorter).
+      const flySpd = pathLen > 300 ? 4.5 : 3.5;
       const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
         arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
       const segments = [];
@@ -575,7 +620,7 @@ function setupTour(A) {
         for (let i = 1; i < pts.length; i++)
           segLen += Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y, pts[i].z-pts[i-1].z);
         actions.push({type:'flyPath', points: pts, names: flyNames.slice(segments[sI].from, segments[sI].to + 1),
-                      duration: Math.max(segLen / 3.5, segments.length === 1 ? 8 : 3)});
+                      duration: Math.max(segLen / flySpd, segments.length === 1 ? 8 : 3)});
         if (sI < segments.length - 1 && segments[sI].beat) {
           // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces.
           actions.push({type:'pause', seconds: 0.4});
