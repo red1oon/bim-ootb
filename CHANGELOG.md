@@ -4,6 +4,22 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.19.0](https://github.com/red1oon/bim-ootb/compare/v1.18.0...v1.19.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **viewer:** Alt+S still-refine — progressive TAA supersample on idle ([#801](https://github.com/red1oon/bim-ootb/issues/801)) ([0539621](https://github.com/red1oon/bim-ootb/commit/0539621fdac14dfb496b4f93be2f77bf63b5f840))
+* **viewer:** night mode — facade glazing glows whitish, lit-from-inside look ([#798](https://github.com/red1oon/bim-ootb/issues/798)) ([8d37a27](https://github.com/red1oon/bim-ootb/commit/8d37a27ba4bdea37071e6f40c572ef90239aea66))
+
+
+### 🐛 Fixes
+
+* **rooms:** Hospital corridor join-ratio (4.5%→17.8%) + baseline witness + 2 room-lens fixes ([#800](https://github.com/red1oon/bim-ootb/issues/800)) ([7c548fa](https://github.com/red1oon/bim-ootb/commit/7c548facde9711094efabddb81fcb34cf220f4bd))
+* **rooms:** JKR walkable raster + fix build script's missing corridor-rect union ([#803](https://github.com/red1oon/bim-ootb/issues/803)) ([e64fe3f](https://github.com/red1oon/bim-ootb/commit/e64fe3f0b5edaece6be846b73e5d04bc094d1536))
+* **rooms:** Terminal's stale room-coordinate patch + raster slack-parity fix ([#804](https://github.com/red1oon/bim-ootb/issues/804)) ([7fd0bd0](https://github.com/red1oon/bim-ootb/commit/7fd0bd0ae9b6ddaa0b65bbb95b67ed848662ab62))
+* **viewer:** sync HHS walkable raster to the file the live Viewer fetches + rebuild it correctly ([#802](https://github.com/red1oon/bim-ootb/issues/802)) ([0898f4c](https://github.com/red1oon/bim-ootb/commit/0898f4c76d730e38c69ce0c3c2f63ebd5d8c5762))
+
 ## [1.18.0](https://github.com/red1oon/bim-ootb/compare/v1.17.1...v1.18.0) (2026-07-15)
 
 
