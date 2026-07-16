@@ -668,7 +668,12 @@ async function initViewer() {
     // own event-sniffer refreshing itself right after logging the Alt+S keypress that started the
     // refine — confirmed live, 2026-07-15: start->cancelled within the same event, nothing the
     // user actually touched in between).
-    if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine();
+    // §STAGE1 (sandbox spike): OrbitControls 'start' is unambiguously pure camera movement, never
+    // a selection — soft-cancel only (keeps staging), not the full teardown.
+    // §STAGE2_MIDDRAG_FIX (review finding 6): also fire during soft-park (_photoAutoStageOn) so
+    // every new drag re-arms/reset the Stage-2 idle timer — gating on _stillRefineActive alone
+    // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
+    if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -713,9 +718,44 @@ async function initViewer() {
   // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
   // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
   // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
-  function _cancelStillRefine() { if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
-  window.addEventListener('pointerdown', function() { _cancelStillRefine(); _startLoop(); });
-  window.addEventListener('wheel', function() { _cancelStillRefine(); _startLoop(); }, { passive: true });
+  // §STAGE2_MIDDRAG_FIX (review finding 6): both cancel paths must also fire during soft-park
+  // (photo staging kept alive, Stage-2 idle timer armed, _stillRefineActive=false) — gating on
+  // _stillRefineActive alone made every soft-park interaction a no-op, so the idle timer counted
+  // from the FIRST move only and Stage 2 re-fired mid-gesture (the "ghosting has returned" report).
+  // §AUTO_STAGE2_DISABLED (2026-07-16, user directive): with the Stage-2 idle auto-refire off,
+  // soft-park is signalled by the kept-alive staging alone (APP._photoStagingOn, mirrored by
+  // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
+  // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
+  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
+  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
+  // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
+  // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
+  // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
+  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  var _photoCanvasDown = null;
+  window.addEventListener('pointerdown', function(e) {
+    if (APP.renderer && e.target === APP.renderer.domElement) {
+      _photoCanvasDown = { x: e.clientX, y: e.clientY };
+      _cancelStillRefineSoft();
+    } else {
+      _photoCanvasDown = null;
+      _cancelStillRefine();
+    }
+    _startLoop();
+  });
+  // §STAGE1_TAP_SELECT (review finding 1): canvas click-to-select IS a live core feature —
+  // picking.js selects on pointerup when the pointer moved ≤5px (tap), so pointerdown on the
+  // canvas is ambiguous between drag-start and tap-select. Classify at pointerup with picking.js's
+  // own tap-vs-drag test and escalate a tap to the FULL teardown ("when i select an item it
+  // breaks to old nature"); a real drag stays soft (staging kept), unchanged.
+  window.addEventListener('pointerup', function(e) {
+    if (!_photoCanvasDown) return;
+    var dx = e.clientX - _photoCanvasDown.x, dy = e.clientY - _photoCanvasDown.y;
+    _photoCanvasDown = null;
+    if (Math.sqrt(dx * dx + dy * dy) <= 5) _cancelStillRefine();
+  });
+  window.addEventListener('wheel', function() { _cancelStillRefineSoft(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
@@ -783,7 +823,8 @@ async function initViewer() {
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
       }
@@ -795,7 +836,8 @@ async function initViewer() {
       // timer → renderAtTime() (markDirty + direct render), so the loop is redundant even
       // for TM. Every other camera path already calls markDirty.
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
         if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
