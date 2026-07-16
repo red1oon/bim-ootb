@@ -4846,12 +4846,18 @@
       // §PERF-50K-SINGLE-PICK (2026-07-17, user: a single 3D click reads as "whole building
       // disappears" on a >50k building like Hospital (63,182 elements) — the cheap filter hides
       // EVERYTHING except the one selected element, instead of the expected translucent ghost.
-      // The perf cost genuinely scales with building size either way (dimming every OTHER
-      // material, not the selection count) — but a single deliberate click is a much rarer,
-      // lower-frequency action than a Find-panel bulk result, so it's worth the cost. Cheap
-      // filter now only kicks in for genuine multi-item selections (set.size>1, i.e. Find-panel
-      // results) — a single pick always gets proper x-ray-dim regardless of building size.
-      var _bigBuilding = (A.activeBuildingTotal || 0) > 50000 && set.size > 1;
+      // First attempt gated this on set.size>1 (single vs multi-item) — WRONG signal, corrected
+      // same day per user: "Find Panel yes u need [cheap filter] because it is zooming to item.
+      // In pure select touch by user an item has no zooming action." The real distinguishing
+      // factor is whether this call ZOOMS (opts.frame !== false, checked again further down at
+      // the actual _zoomToGuids/_zoomToGroup call) — a camera transition is the situation the
+      // original #672 perf concern was really about, not selection count. Confirmed against every
+      // caller: picking.js's direct-click handler is the ONLY one passing frame:false; Find-panel
+      // results, Zoom-Across, and history-restore (universal_history.js) all leave frame unset and
+      // zoom. So: a plain click never zooms and always gets proper x-ray-dim regardless of
+      // building size; every zooming caller can still fall back to the cheap filter on large
+      // buildings, matching #672's original intent exactly.
+      var _bigBuilding = (A.activeBuildingTotal || 0) > 50000 && (opts.frame !== false);
       if (_bigBuilding) {
         if (A.filterByGuids) A.filterByGuids(set);   // hide everything except the selection
       } else {
