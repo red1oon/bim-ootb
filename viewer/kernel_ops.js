@@ -61,6 +61,11 @@
    * @param {string} [outputGuid] created/modified entity ID
    * @returns {number} op id
    */
+  // MOBILE_PERF.md §OPEN LEVERS 2 fix (a): conservative deny-list — ONLY ops proven
+  // non-mutating skip the full-DB persist. Every edit op (GRID_*, DISC_SWITCH, ENACT_MOVE,
+  // SECTION_CUT, VIEW_FILTER, history replays) persists exactly as before.
+  var READONLY_OPS = { ELEMENT_PICK: 1, BUILDING_OPEN: 1 };
+
   function commitOp(db, opType, params, inputGuids, outputGuid, opUuid, ts) {
     ensureTable(db);
     // G-IDENTITY (§0.21 D1/D4): identity is an edge-minted INPUT, recorded — never recomputed on
@@ -87,8 +92,18 @@
     var opId = r[0].values[0][0];
     console.log('§KERNEL_OP committed id=' + opId + ' uuid=' + (uuid ? uuid.slice(0, 8) : 'null') +
                 ' type=' + opType + ' params=' + JSON.stringify(params));
-    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives
-    _persistToIdb(db);
+    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives.
+    // Implementing MOBILE_PERF.md §OPEN LEVERS 2 fix (a) — Witness: §KRN_PERSIST_DEFER.
+    // Observational ops (a pick highlights, an open is a marker — neither mutates the model)
+    // don't justify db.export()ing the WHOLE building DB synchronously on the main thread
+    // (42MB on LTU_AHouse = a visible stall 2s after every click). Their rows still reach IDB
+    // inside the next mutating op's export. Gate HERE, not in _persistToIdb — its clearTimeout
+    // would let a read-only op reset a pending mutating persist's debounce.
+    if (READONLY_OPS[opType]) {
+      console.log('§KRN_PERSIST_DEFER type=' + opType + ' (observational — rides the next mutating persist)');
+    } else {
+      _persistToIdb(db);
+    }
     return opId;
   }
 
