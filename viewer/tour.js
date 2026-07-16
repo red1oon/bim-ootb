@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
+  // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
+  console.log('[TOUR] §TOUR_VERSION v9 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
