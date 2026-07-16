@@ -343,24 +343,18 @@ async function setupGIPoc(A, renderer, scene, camera) {
     { key: 'denoiseIterations', min: 1, max: 5, step: 1 },
     { key: 'denoiseKernel', min: 1, max: 6, step: 1 }
   ];
-  // §GROUND_TUNE (2026-07-17, user ask, "ground too dark... can it be reflective/glassy... put
-  // under J"): A.ground.material is a plain THREE.MeshStandardMaterial (scene.js) — roughness/
-  // envMapIntensity/metalness are live-safe uniforms, no shader recompile, so these are cheap to
-  // drag same as the SSGI uniform knobs. NOT the same as literally mirroring the skyline
-  // silhouette's individual window lights (that needs a planar reflection/SSR — separate, bigger
-  // feature, not this).
-  // §METALNESS_ADD (2026-07-17, user: "reflection has no clear impact... turn the whole ground to
-  // puddle completely just to see the impact"): roughness/envMapIntensity alone stayed subtle
-  // because a non-metal surface (metalness=0, the ground's base value) only reflects ~4% of light
-  // at most viewing angles regardless of roughness — real dielectric physics, not a bug. metalness
-  // is the lever that actually makes a full-strength reflection obvious, for the diagnostic ask.
-  // Deliberately NOT reusing the existing patch-based puddle shader (effects.js, Alt+S-only,
-  // private closure) — that's a separate, already-shipped feature; wiring into it from this file
-  // risks breaking it for a quick test that doesn't need it.
+  // §GROUND_TUNE (2026-07-17, user ask, "ground too dark... reflective... put under J"):
+  // roughness/envMapIntensity are plain THREE.MeshStandardMaterial uniforms (scene.js), cheap to
+  // drag live, no shader recompile.
+  // §REFLECT_DIAL (2026-07-17, renamed per user: "change from metal name and function" — this dial
+  // no longer touches material.metalness at all. It drives A._groundWetnessOverride (effects.js
+  // §GROUND_WETNESS_OVERRIDE), the full-surface puddle-wetness mechanism auto-engaged at a mid
+  // value when Alt+S stages, contained to S+J per the user's own scoping — NOT a permanent base
+  // material change (that approach was tried and reverted, scene.js §GROUND_METALLIC_REVERT).
   var GROUND_TUNE_KNOBS = [
     { key: 'roughness', min: 0.05, max: 1, step: 0.01, target: 'ground' },
     { key: 'envMapIntensity', min: 0, max: 2, step: 0.05, target: 'ground' },
-    { key: 'metalness', label: 'metal strength (reflectiveness)', min: 0, max: 1, step: 0.01, target: 'ground' }
+    { key: 'reflect', label: 'reflect', min: 0, max: 1, step: 0.01, target: 'ground' }
   ];
   function _tuneRowFor(k, getVal, setVal) {
     var row = document.createElement('div');
@@ -438,13 +432,14 @@ async function setupGIPoc(A, renderer, scene, camera) {
       GROUND_TUNE_KNOBS.forEach(function(k) {
         hud.appendChild(_tuneRowFor(k,
           function() {
-            // metal-strength drives the puddle shader's full-surface wetness override (user ask);
-            // other ground knobs (roughness/envMapIntensity) still read/write the base material.
-            if (k.key === 'metalness') return A._groundWetnessOverride || 0;
+            // 'reflect' drives the puddle shader's full-surface wetness override (user-set, so it
+            // marks persistent — see A._setGroundWetness); other ground knobs still read/write the
+            // base material directly.
+            if (k.key === 'reflect') return A._groundWetnessOverride || 0;
             var v = A.ground.material[k.key]; return (v !== undefined) ? v : k.min;
           },
           function(v) {
-            if (k.key === 'metalness' && A._setGroundWetness) { A._setGroundWetness(v); return; }
+            if (k.key === 'reflect' && A._setGroundWetness) { A._setGroundWetness(v); return; }
             A.ground.material[k.key] = v; A.ground.material.needsUpdate = true;
           }
         ));

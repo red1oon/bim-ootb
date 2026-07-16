@@ -922,16 +922,24 @@ async function setupEffects(A, renderer, scene, camera) {
       shader.uniforms.uPuddleRadii.value[i] = _puddleRadii[i];
     }
   }
-  // §GROUND_WETNESS_OVERRIDE (2026-07-17, user: "can we change the J 'metal' dial to control its
-  // reflectiveness" — wiring the tune HUD's metal-strength slider to this SAME puddle mechanism,
-  // full-surface instead of small circles. 0 = off, 1 = the whole ground at puddle-strength
+  // §GROUND_WETNESS_OVERRIDE (2026-07-17, user: "we have to contain what we want only within S
+  // and J. When S is ON, it is all reflective ground... The J reflect dial will control its effect.
+  // When J is off, it persists for the session"): 0 = off, 1 = the whole ground at puddle-strength
   // wetness (roughness 0.08, darkened) uniformly, independent of the small random puddle patches
-  // (both can coexist — max() below, whichever reads wetter at a given pixel wins).
+  // (both can coexist — max() below, whichever reads wetter at a given pixel wins). Contained to
+  // Alt+S: staging auto-applies a mid-value default (GROUND_WETNESS_STAGE_DEFAULT below) the FIRST
+  // time this session, tunable live via Alt+J's "reflect" dial from there — once the user touches
+  // it, their value persists for the rest of the session (across S/J toggling, until page reload),
+  // never auto-reset back to the default.
+  var GROUND_WETNESS_STAGE_DEFAULT = 0.5;
+  var _groundWetnessUserSet = false;
   A._groundWetnessOverride = 0;
-  A._setGroundWetness = function(v) {
+  A._setGroundWetness = function(v, _isUserAction) {
     _wireGroundPuddleShader();  // safe no-op if already wired (Alt+S may have wired it first)
     A._groundWetnessOverride = Math.max(0, Math.min(1, v));
-    console.log('§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride);
+    if (_isUserAction !== false) _groundWetnessUserSet = true;  // default true — only the internal
+    // staging auto-default call below passes false, so it never overrides a user's own choice
+    console.log('§GROUND_WETNESS_OVERRIDE value=' + A._groundWetnessOverride + ' userSet=' + _groundWetnessUserSet);
     if (A.markDirty) A.markDirty();
   };
   function _wireGroundPuddleShader() {
@@ -1046,6 +1054,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
+    // §GROUND_WETNESS_OVERRIDE: "when S is ON, it is all reflective ground" by default — only the
+    // FIRST time this session and only if the user hasn't already dialed their own value via Alt+J
+    // (that choice persists across S/J toggling, per the user's own spec — never stomped here).
+    if (!_groundWetnessUserSet) A._setGroundWetness(GROUND_WETNESS_STAGE_DEFAULT, false);
     var _pbbox = _buildingBBoxIfc();
     if (_pbbox) _buildGroundPuddles((_pbbox.xMin + _pbbox.xMax) / 2, (_pbbox.yMin + _pbbox.yMax) / 2);
     console.log('§PHOTO_PAINT_SEED seed=' + A._photoPaintSeed.toFixed(4) + ' locked=' + _photoVariationLocked +
