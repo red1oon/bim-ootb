@@ -5013,6 +5013,11 @@
       var ready = A.meshCache && Object.keys(A.meshCache).length > 20;
       if (!ready) { if (_mgTries > 200) clearInterval(_mgPoll); return; }
       if (typeof window._mergeGhost !== 'function') { if (A.loadNavigate) A.loadNavigate(); return; }
+      // §FLY-NO-AUTO-GHOST (2026-07-16, live report "bboxes turning on after some secs"): the Fly
+      // tour lazy-loads this module (ensureRooms pre-step), which armed this ghost=1 auto-trigger
+      // MID-FLIGHT — the shell built under the running tour. Never build while a tour is active;
+      // keep polling and build once the tour ends. Non-tour behavior unchanged.
+      if (A.walkMode || A.flyActive || A._flyPreparing) return;
       clearInterval(_mgPoll);
       console.log('[MG] §SHELL_GHOST_AUTO meshCacheKeys=' + Object.keys(A.meshCache).length + ' (deferred build)');
       // build AFTER the panel is interactive — never block open
