@@ -380,11 +380,12 @@ async function setupGIPoc(A, renderer, scene, camera) {
     row.appendChild(label); row.appendChild(input); row.appendChild(val);
     return row;
   }
-  // §GROUND_METALLIC (2026-07-17, user directive: "I want the whole ground metallic. Not when J.
-  // That can control the reflection" — corrects the previous round's toggle-tied preset, which
-  // the user explicitly rejected. The metallic look is now the PERMANENT base material (scene.js
-  // §GROUND_METALLIC), not something applied/restored around Alt+J's on/off. This panel's Ground
-  // sliders just adjust that permanent base live — they don't create or remove the effect.
+  // §STALE_COMMENT_FIX (2026-07-17, session wrap-up review): this used to describe a "permanent
+  // metallic base material" design — that approach was tried (scene.js, briefly) and explicitly
+  // REVERTED per later user direction ("contain what we want only within S and J"). Current design:
+  // ground stays its original matte default always; reflectivity is the wetness-override mechanism
+  // (effects.js §GROUND_WETNESS_OVERRIDE), auto-applied at a mid value when Alt+S stages, tunable
+  // live via this panel's "reflect" dial (§REFLECT_DIAL above) — contained to S+J, not permanent.
   function _ssgiShowTuneHUD() {
     if (_tuneHud || !A._ssgiEffect) return;
     var hud = document.createElement('div');
