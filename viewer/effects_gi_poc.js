@@ -170,18 +170,50 @@ async function setupGIPoc(A, renderer, scene, camera) {
   // loop park again (zero steady-state cost — same discipline as still-refine's own RAF).
   var SSGI_CONVERGE_FRAMES = 90;   // ~1.5s at 60fps — matches the "settles in 1-2s" acceptance tell
   var _ssgiConvergeLeft = 0, _ssgiConvergeRAF = null, _ssgiOrigMarkDirty = null, _ssgiConvergeDone = null;
+  var _ssgiConvergeFrames = SSGI_CONVERGE_FRAMES, _ssgiConvergeSig = null, _ssgiConvergeRestartLogged = false;
+  // §SSGI_CONVERGE_CAMGUARD (2026-07-17, user-observed ghosting/see-through-floors on real hardware):
+  // this loop used to drive frames blindly with no camera-pose check. effects.js's TAA still-refine
+  // loop has an equivalent guard for the exact same reason (§STILL_REFINE_RESTART comment there) —
+  // OrbitControls inertial damping can still be gliding (no pointer events fire during the glide),
+  // and this app's on-demand render loop only resumes calling controls.update() once something
+  // starts driving frames again, which this converge loop itself does. Blending SSGI's temporal
+  // buffer across a moving viewpoint is exactly what produced the ghosted/doubled geometry and
+  // see-through floors in the reported screenshot — this library's BatchedMesh velocity/reprojection
+  // support is unverified (see §SSGI_PORT comment above), so don't trust reprojection to compensate;
+  // restart the frame budget from scratch on any pose change, same discipline as TAA.
+  function _ssgiCamSig() {
+    if (!camera) return '';
+    var p = camera.position, q = camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
   function _ssgiKickConverge(frames, onDone) {
-    _ssgiConvergeLeft = frames || SSGI_CONVERGE_FRAMES;
+    _ssgiConvergeFrames = frames || SSGI_CONVERGE_FRAMES;
+    _ssgiConvergeLeft = _ssgiConvergeFrames;
     if (onDone) _ssgiConvergeDone = onDone;  // latch even if a kick loop is already running —
     // the toggle's own markDirty starts a plain kick first, and the fold's onDone must survive it
     if (_ssgiConvergeRAF) return;
     var _driven = 0;
+    _ssgiConvergeSig = _ssgiCamSig();
+    _ssgiConvergeRestartLogged = false;
     (function step() {
       _ssgiConvergeRAF = null;
       if (!A._ssgiActive || _ssgiConvergeLeft <= 0) {
         var cb = _ssgiConvergeDone; _ssgiConvergeDone = null;
         if (cb) { console.log('§SSGI_CONVERGE done framesDriven=' + _driven + ' active=' + A._ssgiActive); cb(); }
         return;
+      }
+      var sigNow = _ssgiCamSig();
+      if (sigNow !== _ssgiConvergeSig) {
+        _ssgiConvergeSig = sigNow;
+        _ssgiConvergeLeft = _ssgiConvergeFrames;
+        _driven = 0;
+        if (!_ssgiConvergeRestartLogged) {
+          console.log('§SSGI_CONVERGE_RESTART cam-moved — accumulation restarted');
+          _ssgiConvergeRestartLogged = true;
+        }
+      } else {
+        _ssgiConvergeRestartLogged = false;
       }
       _ssgiConvergeLeft--; _driven++;
       if (_ssgiOrigMarkDirty) _ssgiOrigMarkDirty.call(A);  // original — the wrap would re-arm the counter
