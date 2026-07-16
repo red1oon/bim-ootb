@@ -170,18 +170,61 @@ async function setupGIPoc(A, renderer, scene, camera) {
   // loop park again (zero steady-state cost — same discipline as still-refine's own RAF).
   var SSGI_CONVERGE_FRAMES = 90;   // ~1.5s at 60fps — matches the "settles in 1-2s" acceptance tell
   var _ssgiConvergeLeft = 0, _ssgiConvergeRAF = null, _ssgiOrigMarkDirty = null, _ssgiConvergeDone = null;
+  var _ssgiConvergeFrames = SSGI_CONVERGE_FRAMES, _ssgiConvergeSig = null, _ssgiConvergeRestartLogged = false;
+  // §SSGI_CONVERGE_CAMGUARD (2026-07-17, user-observed ghosting/see-through-floors on real hardware,
+  // reviewed+refined by a second session — see commit body): this loop used to drive frames blindly
+  // with no camera-pose check. effects.js's TAA still-refine loop has an equivalent guard for the
+  // same underlying reason (§STILL_REFINE_RESTART comment there) — OrbitControls inertial damping can
+  // still be gliding (no pointer events fire during the glide). Correction on the first pass of this
+  // fix: SSGI IS velocity-reprojected, not blind to motion like raw TAA — the actual hole is that a
+  // slow damping glide stays under the per-pixel velocity threshold (didMove≈0), so full-accumulate
+  // keeps blending across a genuinely (if slowly) drifting pose, which the reprojection can't catch
+  // by design. A pose-signature restart catches exactly what the velocity test can't. Resetting the
+  // JS-side frame counter alone isn't enough though — it doesn't clear the SVGF temporal buffer that
+  // already blended the polluted frames, so a ghost that already blended in would only fade rather
+  // than drop. Verified in the vendored bundle source: the library's own reactive knob setters
+  // (spp/thickness/distance/etc, makeOptionsReactive) call `this.svgf.svgfTemporalReprojectPass.
+  // reset()` on change — a cheap, safe, idempotent uniform flip (`reset(){this.fullscreenMaterial.
+  // uniforms.reset.value=!0}`). Call that same public path directly on pose-change detection.
+  function _ssgiCamSig() {
+    if (!camera) return '';
+    var p = camera.position, q = camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
+  function _ssgiResetAccumulation() {
+    if (A._ssgiEffect && A._ssgiEffect.svgf && A._ssgiEffect.svgf.svgfTemporalReprojectPass) {
+      A._ssgiEffect.svgf.svgfTemporalReprojectPass.reset();
+    }
+  }
   function _ssgiKickConverge(frames, onDone) {
-    _ssgiConvergeLeft = frames || SSGI_CONVERGE_FRAMES;
+    _ssgiConvergeFrames = frames || SSGI_CONVERGE_FRAMES;
+    _ssgiConvergeLeft = _ssgiConvergeFrames;
     if (onDone) _ssgiConvergeDone = onDone;  // latch even if a kick loop is already running —
     // the toggle's own markDirty starts a plain kick first, and the fold's onDone must survive it
     if (_ssgiConvergeRAF) return;
     var _driven = 0;
+    _ssgiConvergeSig = _ssgiCamSig();
+    _ssgiConvergeRestartLogged = false;
     (function step() {
       _ssgiConvergeRAF = null;
       if (!A._ssgiActive || _ssgiConvergeLeft <= 0) {
         var cb = _ssgiConvergeDone; _ssgiConvergeDone = null;
         if (cb) { console.log('§SSGI_CONVERGE done framesDriven=' + _driven + ' active=' + A._ssgiActive); cb(); }
         return;
+      }
+      var sigNow = _ssgiCamSig();
+      if (sigNow !== _ssgiConvergeSig) {
+        _ssgiConvergeSig = sigNow;
+        _ssgiConvergeLeft = _ssgiConvergeFrames;
+        _ssgiResetAccumulation();  // hard-clear the polluted SVGF buffer, not just the frame counter
+        _driven = 0;
+        if (!_ssgiConvergeRestartLogged) {
+          console.log('§SSGI_CONVERGE_RESTART cam-moved — accumulation restarted');
+          _ssgiConvergeRestartLogged = true;
+        }
+      } else {
+        _ssgiConvergeRestartLogged = false;
       }
       _ssgiConvergeLeft--; _driven++;
       if (_ssgiOrigMarkDirty) _ssgiOrigMarkDirty.call(A);  // original — the wrap would re-arm the counter
