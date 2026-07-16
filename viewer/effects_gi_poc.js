@@ -124,6 +124,7 @@ async function setupGIPoc(A, renderer, scene, camera) {
         // clear path must not leak still-quality settings into a later plain Alt+J either.
         if (_stillKnobsApplied) { _ssgiApplyKnobs(SSGI_NAV); _stillKnobsApplied = false; }
         _stillSSGIEngaged = false;
+        _ssgiHideTuneHUD();
         console.log('§SSGI toggle=false (via GI off)');
       }
       // §GI_HANDOFF_GHOST_FIX (2026-07-16, user: "it happens after Alt-G"): do NOT blind-restore a
@@ -312,6 +313,67 @@ async function setupGIPoc(A, renderer, scene, camera) {
     }
   }
 
+  // §SSGI_TUNE_HUD (2026-07-17, user ask: "pop up a control knob dials for me to adjust and
+  // see... I am the human judge right away can tell u and log tracks my setting"): live-tuning
+  // panel for Alt+J's standalone SSGI preview, replacing blind guess→deploy→report cycles with
+  // direct manipulation — the user adjusts, sees the result immediately, and every change is
+  // §-logged so there's a durable record of which values were actually tried. Same panel style as
+  // cost_panel.js (position:fixed, dark translucent, monospace). Alt+J only — Alt+S's still-fold
+  // already reverted to the known-good AO-only default and is untouched by this.
+  var _tuneHud = null;
+  var SSGI_TUNE_KNOBS = [
+    { key: 'thickness', min: 1, max: 30, step: 1 },
+    { key: 'distance', min: 5, max: 80, step: 1 },
+    { key: 'denoiseIterations', min: 1, max: 5, step: 1 },
+    { key: 'spp', min: 1, max: 4, step: 1, liveEvent: 'change' },  // baked define — recompiles on
+    // change; use 'change' (fires on release) not 'input' (fires per-pixel-of-drag) to avoid
+    // recompiling the fullscreen shader dozens of times per drag gesture.
+    { key: 'blend', min: 0, max: 1, step: 0.01 },
+    { key: 'directLightMultiplier', min: 0, max: 2, step: 0.1 }
+  ];
+  function _ssgiShowTuneHUD() {
+    if (_tuneHud || !A._ssgiEffect) return;
+    var hud = document.createElement('div');
+    hud.id = 'ssgiTuneHud';
+    hud.style.cssText =
+      'position:fixed; bottom:60px; left:12px; width:260px; ' +
+      'background:rgba(30,30,30,0.92); color:#eee; font:11px/1.4 monospace; ' +
+      'padding:10px; border-radius:6px; pointer-events:auto; z-index:800;';
+    var title = document.createElement('div');
+    title.textContent = 'SSGI tune (Alt+J live)';
+    title.style.cssText = 'font-weight:bold; margin-bottom:6px; color:#8cf;';
+    hud.appendChild(title);
+    SSGI_TUNE_KNOBS.forEach(function(k) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:6px; margin:4px 0;';
+      var label = document.createElement('span');
+      label.textContent = k.key;
+      label.style.cssText = 'width:130px; flex-shrink:0;';
+      var input = document.createElement('input');
+      input.type = 'range';
+      input.min = k.min; input.max = k.max; input.step = k.step;
+      input.value = (A._ssgiEffect[k.key] !== undefined) ? A._ssgiEffect[k.key] : k.min;
+      input.style.cssText = 'flex:1;';
+      var val = document.createElement('span');
+      val.textContent = input.value;
+      val.style.cssText = 'width:36px; text-align:right; flex-shrink:0; color:#8cf;';
+      input.addEventListener(k.liveEvent || 'input', function() {
+        var v = parseFloat(input.value);
+        val.textContent = v;
+        if (A._ssgiEffect) A._ssgiEffect[k.key] = v;  // reactive setter (makeOptionsReactive)
+        console.log('§SSGI_TUNE_LIVE key=' + k.key + ' value=' + v);
+        if (A.markDirty) A.markDirty();
+      });
+      row.appendChild(label); row.appendChild(input); row.appendChild(val);
+      hud.appendChild(row);
+    });
+    document.body.appendChild(hud);
+    _tuneHud = hud;
+  }
+  function _ssgiHideTuneHUD() {
+    if (_tuneHud) { _tuneHud.remove(); _tuneHud = null; }
+  }
+
   A._ssgiActive = false;
   A.toggleSSGIPreview = async function(on) {
     var wantOn = (on === undefined) ? !A._ssgiActive : !!on;
@@ -325,6 +387,8 @@ async function setupGIPoc(A, renderer, scene, camera) {
       A._giComposer = _ssgiComposer;       // reuse main.js's existing _giComposer render branch
       A._giComposerActive = true;
       if (A._composerEnabled) A._composerEnabled = false;
+      // tune HUD only for a plain standalone Alt+J press, not the (now default-off) still-fold
+      if (!A._stillRefineActive) _ssgiShowTuneHUD();
     } else {
       A._ssgiActive = false;
       A._giComposerActive = false;
@@ -337,6 +401,7 @@ async function setupGIPoc(A, renderer, scene, camera) {
       // same recompute as §GI_HANDOFF_GHOST_FIX above — never blind-restore
       A._composerEnabled = !!(A._stillRefineActive ||
         (A._outlinePass && A._outlinePass.enabled) || (A._ssaoPass && A._ssaoPass.enabled));
+      _ssgiHideTuneHUD();
     }
     console.log('§SSGI toggle=' + A._ssgiActive);
     if (A.markDirty) A.markDirty();
