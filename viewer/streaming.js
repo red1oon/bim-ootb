@@ -562,7 +562,12 @@ function setupStreaming(A) {
             '  roughnessFactor *= mix(0.6, 1.4, triRough);',
             '}'
           ].join('\n'));
-        mat.userData.triplanarShader = shader;
+        // §TRIPLANAR_CLONE_BOMB: plain property, NEVER mat.userData — Material.copy() deep-copies
+        // userData via JSON.parse(JSON.stringify(...)), so a shader stored there made every
+        // material.clone() (_buildShapeMeshes on any Find-panel select) serialize the full GLSL
+        // source + every uniform INCLUDING textures/envMap — a multi-second main-thread stall per
+        // tap on a large building (live LTU hang, 2026-07-16). A clone recompiles fresh anyway.
+        mat._triplanarShader = shader;
         // §TRIPLANAR_RECOMPILE_FIX: three.js can silently recompile a material's program
         // (fresh onBeforeCompile call, fresh default-valued uniforms) in response to renderer
         // state changes — observed here on the very first still-refine frame, which reset
@@ -574,7 +579,7 @@ function setupStreaming(A) {
         shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
       };
       mat.onBeforeRender = function() {
-        var sh = mat.userData.triplanarShader;
+        var sh = mat._triplanarShader;
         if (sh) {
           sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
