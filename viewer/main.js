@@ -670,7 +670,10 @@ async function initViewer() {
     // user actually touched in between).
     // §STAGE1 (sandbox spike): OrbitControls 'start' is unambiguously pure camera movement, never
     // a selection — soft-cancel only (keeps staging), not the full teardown.
-    if (APP._stillRefineActive && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
+    // §STAGE2_MIDDRAG_FIX (review finding 6): also fire during soft-park (_photoAutoStageOn) so
+    // every new drag re-arms/reset the Stage-2 idle timer — gating on _stillRefineActive alone
+    // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
+    if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -715,20 +718,38 @@ async function initViewer() {
   // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
   // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
   // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
-  function _cancelStillRefine() { if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STAGE2_MIDDRAG_FIX (review finding 6): both cancel paths must also fire during soft-park
+  // (photo staging kept alive, Stage-2 idle timer armed, _stillRefineActive=false) — gating on
+  // _stillRefineActive alone made every soft-park interaction a no-op, so the idle timer counted
+  // from the FIRST move only and Stage 2 re-fired mid-gesture (the "ghosting has returned" report).
+  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn); }
+  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
   // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
   // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
   // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
   // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
-  // Known limitation, not solved here: a DIRECT 3D-canvas click used AS a pick/select (if this app
-  // has one, distinct from the Find-panel-tree-driven selection seen in every example so far) would
-  // be mis-classified as soft. Not addressed — no evidence that path is in active use; flag if it
-  // turns out to matter.
-  function _cancelStillRefineSoft() { if (APP._stillRefineActive && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  var _photoCanvasDown = null;
   window.addEventListener('pointerdown', function(e) {
-    if (APP.renderer && e.target === APP.renderer.domElement) _cancelStillRefineSoft();
-    else _cancelStillRefine();
+    if (APP.renderer && e.target === APP.renderer.domElement) {
+      _photoCanvasDown = { x: e.clientX, y: e.clientY };
+      _cancelStillRefineSoft();
+    } else {
+      _photoCanvasDown = null;
+      _cancelStillRefine();
+    }
     _startLoop();
+  });
+  // §STAGE1_TAP_SELECT (review finding 1): canvas click-to-select IS a live core feature —
+  // picking.js selects on pointerup when the pointer moved ≤5px (tap), so pointerdown on the
+  // canvas is ambiguous between drag-start and tap-select. Classify at pointerup with picking.js's
+  // own tap-vs-drag test and escalate a tap to the FULL teardown ("when i select an item it
+  // breaks to old nature"); a real drag stays soft (staging kept), unchanged.
+  window.addEventListener('pointerup', function(e) {
+    if (!_photoCanvasDown) return;
+    var dx = e.clientX - _photoCanvasDown.x, dy = e.clientY - _photoCanvasDown.y;
+    _photoCanvasDown = null;
+    if (Math.sqrt(dx * dx + dy * dy) <= 5) _cancelStillRefine();
   });
   window.addEventListener('wheel', function() { _cancelStillRefineSoft(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);

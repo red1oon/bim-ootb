@@ -90,16 +90,34 @@ async function setupGIPoc(A, renderer, scene, camera) {
     } catch (e) {
       console.warn('§GI_POC_INIT_FAIL ' + e.message);
       console.warn(e.stack);
+      _built = false;  // §GI_BUILD_RETRY (review finding 5): don't latch a transient load failure
+      _pp = null;      // into a permanent silent no-op — let the next Alt+G try again.
       return false;
     }
   }
 
+  var _prevComposerEnabled = false;
   A.toggleGIPreview = async function(on) {
     var wantOn = (on === undefined) ? !A._giComposerActive : !!on;
+    if (wantOn === A._giComposerActive) return A._giComposerActive;  // no-op — keep save/restore paired
     if (wantOn && !(await _ensureBuilt())) { console.warn('§GI_POC toggle failed — build error'); return false; }
-    A._giComposerActive = wantOn;
-    // mutually exclusive with the native composer — only one composer renders per frame
-    if (A._giComposerActive && A._composerEnabled) A._composerEnabled = false;
+    if (wantOn) {
+      // §GI_EXCLUSION (review finding 5): Alt+S's own accumulation RAF renders A._composer while
+      // the main loop prefers _giComposer — both running fight over every frame. Pause the
+      // accumulation + disarm the Stage-2 auto-restage, but KEEP photo mode itself (frozen still
+      // state, dusk staging, triplanar textures) — GI preview over the staged scene is the POC's
+      // whole point. A camera move during GI preview re-enters the normal Stage-1/2 cycle.
+      if (typeof A.pauseStillRefineForGI === 'function') A.pauseStillRefineForGI();
+      // mutually exclusive with the native composer — only one composer renders per frame.
+      // SAVE the previous state and RESTORE it on toggle-off (review finding 5: this used to be a
+      // one-way force-off, silently killing Shadow-mode SSAO/Outline and the frozen TAA still).
+      _prevComposerEnabled = A._composerEnabled;
+      A._giComposerActive = true;
+      if (A._composerEnabled) A._composerEnabled = false;
+    } else {
+      A._giComposerActive = false;
+      A._composerEnabled = _prevComposerEnabled;
+    }
     console.log('§GI_POC toggle=' + A._giComposerActive);
     if (A.markDirty) A.markDirty();
     return A._giComposerActive;

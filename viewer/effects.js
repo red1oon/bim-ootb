@@ -866,6 +866,7 @@ async function setupEffects(A, renderer, scene, camera) {
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
+  var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
   var _photoGroundWasVisible = false, _photoGroundPrevKey = null, _photoGroundPrevColor = null;
   var _photoFogColorSaved = null, _photoFogDensitySaved = null;
   var _photoSkyUniSaved = null;
@@ -1008,6 +1009,14 @@ async function setupEffects(A, renderer, scene, camera) {
     });
   }
   function _applyPhotoStaging() {
+    // §PHOTO_DOUBLE_APPLY_GUARD (2026-07-16, found live during the ghosting-fix verification):
+    // a Stage-2 auto-refire calls startStillRefine → here while the soft-park KEPT staging alive —
+    // the re-apply then saved the ALREADY-STAGED values (dusk fog/sun/night-glow) as the "original"
+    // baseline (log fingerprint: `§PHOTO_STAGING on nightWasOn=true`), so the eventual full
+    // teardown "restored" the scene to dusk instead of daytime — staging leaked permanently after
+    // exit. Staging is applied once per photo-mode CYCLE; a refire only restarts the TAA polish.
+    if (_photoStagingOn) { console.log('§PHOTO_STAGING already on — skip re-apply (Stage-2 refire)'); return; }
+    _photoStagingOn = true;
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
@@ -1132,6 +1141,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
+    if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
+    _photoStagingOn = false;
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
@@ -1225,6 +1236,10 @@ async function setupEffects(A, renderer, scene, camera) {
                                                         // it once still-refine freezes.
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
+    // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
+    // the canvas — Alt+S's own RAF renders A._composer while the main loop prefers _giComposer,
+    // so both active at once fight over every frame. One at a time.
+    if (A._giComposerActive && typeof A.toggleGIPreview === 'function') A.toggleGIPreview(false);
     A._stillRefineActive = true;
     _stillRefinePrevComposerEnabled = A._composerEnabled;
     A._composerEnabled = true;
@@ -1276,9 +1291,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // triggered it, making the effect nearly impossible to actually see. Absorb that incidental
   // nudge with a short grace window; a real subsequent interaction still cancels normally.
   var STILL_REFINE_GRACE_MS = 500;
-  A.stopStillRefine = function() {
-    if (!A._stillRefineActive) return;
-    if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+  A.stopStillRefine = function(force) {
+    if (!A._stillRefineActive) {
+      // §STAGE2_DISARM (review finding 6): during soft-park (Stage 1 done, idle timer armed) a
+      // real selection/UI interaction must kill the whole auto-cycle AND revert the kept-alive
+      // staging — otherwise the photoshoot silently auto-refires 3s after a panel click.
+      if (_autoStageOn) { _autoStageArm(false); _teardownStillRefine('cancelled (interaction during soft-park)'); }
+      return;
+    }
+    if (!force && _stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
     _autoStageArm(false);  // explicit/selection-driven stop cancels the auto re-arm too
     _teardownStillRefine('cancelled (interaction)');
   };
@@ -1290,15 +1311,74 @@ async function setupEffects(A, renderer, scene, camera) {
   // orbiting, #2 when static after 3 sec" spec exactly, without needing a repeated Alt+S press.
   var AUTO_STAGE_IDLE_MS = 3000;
   var _autoStageTimer = null, _autoStageOn = false;
+  // §STAGE2_MIDDRAG_FIX (2026-07-16, review finding 6 + live user report "ghosting has returned
+  // when Alt-S"): the idle timer used to count 3s from the FIRST camera move only — its re-arm
+  // path was dead code (callers gated on _stillRefineActive, false during soft-park), so a held
+  // drag / zoom sequence longer than 3s got Stage 2 re-fired MID-MOTION: TAA accumulated 16
+  // samples over a moving camera (the 500ms grace window swallowing any cancel) and froze on a
+  // fully smeared image. Fix: track real camera motion via OrbitControls 'change' and only fire
+  // once the camera has been genuinely still for the full idle window; if not idle yet, re-check
+  // for the remainder instead of firing.
+  var _lastCamMoveMs = 0, _camMoveHooked = false, _lastCamSig = '';
+  function _hookCamMove() {
+    if (_camMoveHooked || !A.controls) return;
+    _camMoveHooked = true;
+    A.controls.addEventListener('change', function() { _lastCamMoveMs = performance.now(); });
+  }
+  // Hard guarantee independent of any event plumbing: the camera's actual pose. Stage 2 may only
+  // fire when this signature is IDENTICAL across a full idle window — even if the 'change'
+  // listener were ever detached/rebound (controls swap), a moving camera can never pass this gate.
+  function _camSig() {
+    if (!A.camera) return '';
+    var p = A.camera.position, q = A.camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
+  // read-only diagnostic, same pattern as A._getPhotoSparkles — closure state is otherwise invisible
+  A._getAutoStageState = function() {
+    return { hooked: _camMoveHooked, armed: _autoStageOn, timer: !!_autoStageTimer,
+             idleForMs: Math.round(performance.now() - _lastCamMoveMs) };
+  };
   function _autoStageArm(on) {
     _autoStageOn = on;
+    A._photoAutoStageOn = on;  // read by main.js's interaction handlers (soft-park re-arm/disarm)
     if (_autoStageTimer) { clearTimeout(_autoStageTimer); _autoStageTimer = null; }
     if (!on) return;
-    _autoStageTimer = setTimeout(function() {
+    _hookCamMove();
+    _lastCamMoveMs = performance.now();  // arming IS an interaction — restart the idle window
+    _lastCamSig = _camSig();
+    _autoStageTimer = setTimeout(function _fire() {
       _autoStageTimer = null;
-      if (_autoStageOn && !A._stillRefineActive) { A.startStillRefine(); console.log('§AUTO_STAGE2 idle-triggered'); }
+      if (!_autoStageOn || A._stillRefineActive) return;
+      var sig = _camSig();
+      if (sig !== _lastCamSig) {  // camera pose changed since last check — wait a full fresh window
+        _lastCamSig = sig;
+        _autoStageTimer = setTimeout(_fire, AUTO_STAGE_IDLE_MS);
+        return;
+      }
+      var idleFor = performance.now() - _lastCamMoveMs;
+      if (idleFor < AUTO_STAGE_IDLE_MS) { _autoStageTimer = setTimeout(_fire, AUTO_STAGE_IDLE_MS - idleFor); return; }
+      A.startStillRefine();
+      // Auto-fire has no physical keypress nudge to absorb — backdate past the grace window so a
+      // real interaction can cancel INSTANTLY (the grace exists only for the manual Alt+S reach).
+      _stillRefineStartMs = performance.now() - STILL_REFINE_GRACE_MS;
+      console.log('§AUTO_STAGE2 idle-triggered');
     }, AUTO_STAGE_IDLE_MS);
   }
+  // §GI_EXCLUSION (review finding 5): the GI preview composer and the TAA composer must not both
+  // drive the canvas. Called by effects_gi_poc.js on GI-on: stop an in-flight accumulation RAF
+  // and disarm the Stage-2 auto-restage (its refire would yank GI off again via startStillRefine's
+  // own guard) — but KEEP photo mode itself (frozen-still state, dusk staging, triplanar textures,
+  // all keyed to A._stillRefineActive): GI preview over the staged scene is the POC's whole point.
+  // A camera move during GI preview re-enters the normal Stage-1/2 cycle, which turns GI off at
+  // the next Stage-2 fire — deliberate, deterministic, escapable.
+  A.pauseStillRefineForGI = function() {
+    _autoStageArm(false);
+    if (_stillRefineRAF) {
+      cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null;
+      console.log('§STILL_REFINE accumulation paused (GI preview)');
+    }
+  };
   // §STAGE1: camera-move-only cancel — drops TAA polish, KEEPS staging, arms the Stage-2 idle timer.
   A.softStopStillRefine = function() {
     if (!A._stillRefineActive) { _autoStageArm(true); return; }  // already soft-parked — just re-arm
