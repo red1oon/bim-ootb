@@ -722,7 +722,11 @@ async function initViewer() {
   // (photo staging kept alive, Stage-2 idle timer armed, _stillRefineActive=false) — gating on
   // _stillRefineActive alone made every soft-park interaction a no-op, so the idle timer counted
   // from the FIRST move only and Stage 2 re-fired mid-gesture (the "ghosting has returned" report).
-  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn); }
+  // §AUTO_STAGE2_DISABLED (2026-07-16, user directive): with the Stage-2 idle auto-refire off,
+  // soft-park is signalled by the kept-alive staging alone (APP._photoStagingOn, mirrored by
+  // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
+  // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
+  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
   function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
   // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
   // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE

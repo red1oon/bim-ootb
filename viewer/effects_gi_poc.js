@@ -96,10 +96,9 @@ async function setupGIPoc(A, renderer, scene, camera) {
     }
   }
 
-  var _prevComposerEnabled = false;
   A.toggleGIPreview = async function(on) {
     var wantOn = (on === undefined) ? !A._giComposerActive : !!on;
-    if (wantOn === A._giComposerActive) return A._giComposerActive;  // no-op — keep save/restore paired
+    if (wantOn === A._giComposerActive) return A._giComposerActive;  // no-op
     if (wantOn && !(await _ensureBuilt())) { console.warn('§GI_POC toggle failed — build error'); return false; }
     if (wantOn) {
       // §GI_EXCLUSION (review finding 5): Alt+S's own accumulation RAF renders A._composer while
@@ -109,14 +108,19 @@ async function setupGIPoc(A, renderer, scene, camera) {
       // whole point. A camera move during GI preview re-enters the normal Stage-1/2 cycle.
       if (typeof A.pauseStillRefineForGI === 'function') A.pauseStillRefineForGI();
       // mutually exclusive with the native composer — only one composer renders per frame.
-      // SAVE the previous state and RESTORE it on toggle-off (review finding 5: this used to be a
-      // one-way force-off, silently killing Shadow-mode SSAO/Outline and the frozen TAA still).
-      _prevComposerEnabled = A._composerEnabled;
       A._giComposerActive = true;
       if (A._composerEnabled) A._composerEnabled = false;
     } else {
       A._giComposerActive = false;
-      A._composerEnabled = _prevComposerEnabled;
+      // §GI_HANDOFF_GHOST_FIX (2026-07-16, user: "it happens after Alt-G"): do NOT blind-restore a
+      // value saved at toggle-on — still-refine ALSO saved/restored _composerEnabled and the two
+      // save/restore pairs interleave (Alt+S → Alt+G on → camera move soft-cancels the still →
+      // Alt+G off restored the PRE-GI value, which no longer reflected reality), stranding the
+      // composer force-on at baseline. RECOMPUTE what the composer state should be right now,
+      // with the same formula effects.js's toggleSSAO/setOutline sites already use, plus the
+      // still-refine flag (a photoshoot in progress needs its composer back).
+      A._composerEnabled = !!(A._stillRefineActive ||
+        (A._outlinePass && A._outlinePass.enabled) || (A._ssaoPass && A._ssaoPass.enabled));
     }
     console.log('§GI_POC toggle=' + A._giComposerActive);
     if (A.markDirty) A.markDirty();
