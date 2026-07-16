@@ -735,10 +735,31 @@ async function initViewer() {
   // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
   // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
   function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
+  // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
+  // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
+  // which never consulted window._panels (scene.js's own registry, populated via InputReg.register
+  // from every pill-built panel, Sunglass/Cinema included). Touching any registered UI panel (tune
+  // HUD, Sunglass, future panels) doesn't need to fully exit photo mode/cinema recording any more
+  // than a camera-drag does — soft-cancel (keep staging, only restart the TAA polish) is the right
+  // default for panel interaction in general. Find-panel's own "selecting a result exits photo
+  // mode" behavior is untouched — that comes from focusElement's own separate teardown path when a
+  // real result is clicked, not from this generic listener, so this stays general/abstract instead
+  // of a one-off allowlist of panel ids.
+  function _insideRegisteredPanel(target) {
+    var panels = window._panels || [];
+    for (var i = 0; i < panels.length; i++) {
+      if (panels[i].el && panels[i].el.contains(target)) return true;
+    }
+    return false;
+  }
   var _photoCanvasDown = null;
   window.addEventListener('pointerdown', function(e) {
     if (APP.renderer && e.target === APP.renderer.domElement) {
       _photoCanvasDown = { x: e.clientX, y: e.clientY };
+      _cancelStillRefineSoft();
+    } else if (_insideRegisteredPanel(e.target)) {
+      _photoCanvasDown = null;
       _cancelStillRefineSoft();
     } else {
       _photoCanvasDown = null;
