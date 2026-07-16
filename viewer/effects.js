@@ -1055,6 +1055,15 @@ async function setupEffects(A, renderer, scene, camera) {
     });
   }
   function _applyPhotoStaging() {
+    // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
+    // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
+    // this MUST run on every Alt+S press, including a refire — unlike the fog/sun/night-glow
+    // staging below, it's cheap, idempotent, and building-independent-safe. It used to sit AFTER
+    // the _photoStagingOn early-return, which only fires once per true staging cycle; once staging
+    // gets kept alive across a soft-park/building-switch (the guard below's own "Stage-2 refire"
+    // case), EVERY later Alt+S — on ANY building — hit that early return and this line never ran
+    // again for the rest of the session. Moved above the guard so it's independent of refire state.
+    if (!_groundWetnessUserSet) A._setGroundWetness(GROUND_WETNESS_STAGE_DEFAULT, false);
     // §PHOTO_DOUBLE_APPLY_GUARD (2026-07-16, found live during the ghosting-fix verification):
     // a Stage-2 auto-refire calls startStillRefine → here while the soft-park KEPT staging alive —
     // the re-apply then saved the ALREADY-STAGED values (dusk fog/sun/night-glow) as the "original"
@@ -1067,10 +1076,6 @@ async function setupEffects(A, renderer, scene, camera) {
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
-    // §GROUND_WETNESS_OVERRIDE: "when S is ON, it is all reflective ground" by default — only the
-    // FIRST time this session and only if the user hasn't already dialed their own value via Alt+J
-    // (that choice persists across S/J toggling, per the user's own spec — never stomped here).
-    if (!_groundWetnessUserSet) A._setGroundWetness(GROUND_WETNESS_STAGE_DEFAULT, false);
     var _pbbox = _buildingBBoxIfc();
     if (_pbbox) _buildGroundPuddles((_pbbox.xMin + _pbbox.xMax) / 2, (_pbbox.yMin + _pbbox.yMax) / 2);
     console.log('§PHOTO_PAINT_SEED seed=' + A._photoPaintSeed.toFixed(4) + ' locked=' + _photoVariationLocked +
