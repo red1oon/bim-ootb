@@ -284,9 +284,15 @@ function setupTour(A) {
       const fz = (n.kind === 'stairwp') ? n.cz : (storeyZ[n.storey] !== undefined ? storeyZ[n.storey] : n.cz);
       const tp = A.ifc2three(n.cx, n.cy, fz);
       if (n.kind === 'doorwp' || n.kind === 'circ' || n.kind === 'spine') circWps++;
-      pts.push({ x: tp.x, y: tp.y + A.WALK_EYE_HEIGHT, z: tp.z,
+      // §HEADS-UP (user 2026-07-16: "moving across storeys, having heads up where are the open
+      // spaces"): arriving on a NEW storey up a stair gets a 'storey' look-around beat before
+      // flying it. Ascent only — descent stays continuous.
+      const py = tp.y + A.WALK_EYE_HEIGHT;
+      const prevPt = pts[pts.length - 1];
+      const storeyArrival = n.kind === 'stairwp' && prevPt && (py - prevPt.y) > 1;
+      pts.push({ x: tp.x, y: py, z: tp.z,
                  name: (n.kind === 'room' || n.kind === 'exit' || n.kind === 'stairwp') ? n.name : '',
-                 pause: !!pauseGuids[pg] });
+                 pause: pauseGuids[pg] ? 'room' : (storeyArrival ? 'storey' : null) });
       ifcTrail.push({ storey: n.storey, cx: n.cx, cy: n.cy, vertical: n.kind === 'stairwp' });
     }
     if (pts.length < 3) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=thin-path pts=' + pts.length + ' → legacy tour'); return null; }
@@ -439,10 +445,12 @@ function setupTour(A) {
     }
 
     // ═══ PART 1: ORBIT — scaled to building ═══
+    // User 2026-07-16: "Initial should fly around at least near full circle from outside" —
+    // fullCircle at the same angular speed (duration ×2 vs the old half-circle).
     const orbitR = Math.max(15, envelope * 0.6);
-    const orbitDur = envelope > 30 ? 6 : 4;  // shorter for small buildings
+    const orbitDur = (envelope > 30 ? 6 : 4) * 2;
     actions.push({type:'orbit', cx:bldgCtr.x, cy:bldgCtr.y, cz:bldgCtr.z,
-                  radius:orbitR, tiltDeg:35, duration:orbitDur});
+                  radius:orbitR, tiltDeg:35, duration:orbitDur, fullCircle:true});
 
     // ═══ PART 2: APPROACH — fly to entrance (separate action) ═══
     actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance'});
@@ -461,17 +469,17 @@ function setupTour(A) {
 
     // §S2 — occupant-graph waypoints (corridors/doors/stairwells), already wall-legal;
     // pauseIdx marks the look-around beats (§S3). Legacy loop below runs only without a route.
-    const pauseIdx = [];
+    const pauseIdx = [];  // {i, kind:'room'|'storey'} — look-around beats (§S3 + §HEADS-UP)
     if (graphRoute) {
       for (const p of graphRoute.pts) {
         const last = flyPts[flyPts.length - 1];
         if (Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) < 0.3) {
-          if (p.pause) pauseIdx.push(flyPts.length - 1);
+          if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
           continue;
         }
         flyPts.push({x: p.x, y: p.y, z: p.z});
         flyNames.push(p.name || '');
-        if (p.pause) pauseIdx.push(flyPts.length - 1);
+        if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
       }
     }
 
@@ -538,11 +546,12 @@ function setupTour(A) {
       // ═══ Big building: full interior flyPath + finale ═══
       // §S3 — split the spline at each storey's largest room for a pause + look-around beat;
       // no pause marks (legacy route) ⇒ one flyPath exactly as before.
-      const splits = pauseIdx.filter((v, i, arr) => v > 1 && v < flyPts.length - 2 && arr.indexOf(v) === i).sort((a, b) => a - b);
+      const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
+        arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
       const segments = [];
       let segFrom = 0;
-      for (const sv of splits) { if (sv > segFrom) { segments.push({from: segFrom, to: sv}); segFrom = sv; } }
-      segments.push({from: segFrom, to: flyPts.length - 1});
+      for (const sv of splits) { if (sv.i > segFrom) { segments.push({from: segFrom, to: sv.i, beat: sv.kind}); segFrom = sv.i; } }
+      segments.push({from: segFrom, to: flyPts.length - 1, beat: null});
       for (let sI = 0; sI < segments.length; sI++) {
         const pts = flyPts.slice(segments[sI].from, segments[sI].to + 1);
         if (pts.length < 2) continue;
@@ -551,9 +560,10 @@ function setupTour(A) {
           segLen += Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y, pts[i].z-pts[i-1].z);
         actions.push({type:'flyPath', points: pts, names: flyNames.slice(segments[sI].from, segments[sI].to + 1),
                       duration: Math.max(segLen / 3.5, segments.length === 1 ? 8 : 3)});
-        if (sI < segments.length - 1) {
+        if (sI < segments.length - 1 && segments[sI].beat) {
+          // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces.
           actions.push({type:'pause', seconds: 0.4});
-          actions.push({type:'lookAround', degrees: 270});
+          actions.push({type:'lookAround', degrees: segments[sI].beat === 'storey' ? 180 : 270});
         }
       }
       A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${segments.length} seg(s)`);
@@ -574,7 +584,13 @@ function setupTour(A) {
     const endX = cx + (endDx / endLen) * orbitR;
     const endZ = cz + (endDz / endLen) * orbitR;
     actions.push({type:'moveTo', x:endX, y:ep.y, z:endZ, name:'Final'});
-    actions.push({type:'lookAround', degrees:1, lookAtX:cx, lookAtZ:cz});
+    // User 2026-07-16: "Ending should be outside looking at it from ground level" — camera at
+    // ground (entrance height), slow 90° pan centred on the facade, gaze tilted UP to 40% of the
+    // building's measured top (storeyZ max), so the tour closes on the building, not the horizon.
+    const _endTopZ = Object.values(storeyZ).length ? Math.max(...Object.values(storeyZ)) : 0;
+    const _endTopY = A.ifc2three(0, 0, _endTopZ).y;
+    actions.push({type:'lookAround', degrees:90, lookAtX:cx, lookAtZ:cz,
+                  lookAtY: ep.y + Math.max(3, (_endTopY - ep.y) * 0.4)});
     actions.push({type:'pause', seconds:1});
 
     // §TOUR_PATH — dump full path as JSON for inspection
@@ -705,7 +721,8 @@ function setupTour(A) {
       const lookDist = 3.0;
       A.controls.target.x = A.camera.position.x + lookDist * Math.sin(rad);
       A.controls.target.z = A.camera.position.z + lookDist * Math.cos(rad);
-      A.controls.target.y = A.camera.position.y;
+      // §ENDING: an explicit lookAtY tilts the gaze (ground-level facade shot); default stays level.
+      A.controls.target.y = (act.lookAtY !== undefined) ? act.lookAtY : A.camera.position.y;
       A.controls.update();
       A.status.textContent = `Looking around ${(A.walkPanAngle).toFixed(0)}° [${spd}x]`;
       if (A.walkPanAngle >= totalDeg) {
@@ -851,10 +868,13 @@ function setupTour(A) {
       const t = Math.min(A.walkActionT / duration, 1.0);
       const pos = act._curve.getPointAt(t);
       A.camera.position.copy(pos);
-      const lookT = Math.min(t + 0.03, 0.999);
+      // §SOFTEN (user 2026-07-16: "soften the sudden switch to new track"): look further ahead
+      // (0.05 vs 0.03) and pan the gaze more gently (lerp 0.08 vs 0.15) — spur-room reversals
+      // (walk in, walk out) sweep instead of whip.
+      const lookT = Math.min(t + 0.05, 0.999);
       const lookPt = act._curve.getPointAt(lookT);
       if (!act._prevLook) act._prevLook = lookPt.clone();
-      act._prevLook.lerp(lookPt, 0.15);
+      act._prevLook.lerp(lookPt, 0.08);
       A.controls.target.copy(act._prevLook);
       A.controls.update();
       // Find nearest named point for status
