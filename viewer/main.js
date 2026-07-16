@@ -668,7 +668,9 @@ async function initViewer() {
     // own event-sniffer refreshing itself right after logging the Alt+S keypress that started the
     // refine — confirmed live, 2026-07-15: start->cancelled within the same event, nothing the
     // user actually touched in between).
-    if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine();
+    // §STAGE1 (sandbox spike): OrbitControls 'start' is unambiguously pure camera movement, never
+    // a selection — soft-cancel only (keeps staging), not the full teardown.
+    if (APP._stillRefineActive && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -714,8 +716,21 @@ async function initViewer() {
   // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
   // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
   function _cancelStillRefine() { if (APP._stillRefineActive && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
-  window.addEventListener('pointerdown', function() { _cancelStillRefine(); _startLoop(); });
-  window.addEventListener('wheel', function() { _cancelStillRefine(); _startLoop(); }, { passive: true });
+  // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
+  // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
+  // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
+  // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
+  // Known limitation, not solved here: a DIRECT 3D-canvas click used AS a pick/select (if this app
+  // has one, distinct from the Find-panel-tree-driven selection seen in every example so far) would
+  // be mis-classified as soft. Not addressed — no evidence that path is in active use; flag if it
+  // turns out to matter.
+  function _cancelStillRefineSoft() { if (APP._stillRefineActive && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  window.addEventListener('pointerdown', function(e) {
+    if (APP.renderer && e.target === APP.renderer.domElement) _cancelStillRefineSoft();
+    else _cancelStillRefine();
+    _startLoop();
+  });
+  window.addEventListener('wheel', function() { _cancelStillRefineSoft(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
@@ -783,7 +798,8 @@ async function initViewer() {
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
       }
@@ -795,7 +811,8 @@ async function initViewer() {
       // timer → renderAtTime() (markDirty + direct render), so the loop is redundant even
       // for TM. Every other camera path already calls markDirty.
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
         if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }

@@ -1151,15 +1151,23 @@ async function setupEffects(A, renderer, scene, camera) {
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
   }
-  function _teardownStillRefine(reason) {
+  function _teardownStillRefine(reason, keepStaging) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     A._composerEnabled = _stillRefinePrevComposerEnabled;
     var n = _setTriplanarActive(false);
-    _teardownPhotoStaging();
+    // §STAGE1_ORBIT_PERSIST (2026-07-16, user spec — "auto stage: #1 when orbiting, #2 when
+    // static"): a pure camera-move cancel (orbit-drag-start, wheel-zoom) should drop the crisp
+    // TAA-supersample polish (that part is a structural requirement of TAA — see the conversation
+    // this session on why it can't survive continuous motion) WITHOUT reverting the mood staging
+    // (dusk sky/ground/shadows) — the user explicitly wants staging to persist through navigation,
+    // only breaking on an actual selection. `keepStaging` lets the camera-move callers opt out of
+    // `_teardownPhotoStaging()` while selection/explicit-Alt+S-off callers still get the full
+    // revert unchanged.
+    if (!keepStaging) _teardownPhotoStaging();
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
-    console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms);
+    console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms + (keepStaging ? ' (staging kept)' : ''));
     if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
   }
   A._getPhotoSparkles = function() { return _photoSparkles; };  // diagnostic accessors — closures
@@ -1224,7 +1232,32 @@ async function setupEffects(A, renderer, scene, camera) {
   A.stopStillRefine = function() {
     if (!A._stillRefineActive) return;
     if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+    _autoStageArm(false);  // explicit/selection-driven stop cancels the auto re-arm too
     _teardownStillRefine('cancelled (interaction)');
+  };
+  // §STAGE1_STAGE2 (2026-07-16, sandbox spike — feat/ssgi-composer-poc — NOT the shipped Alt+S
+  // path, an experimental auto-staging layer on top of it): "Stage 1" = mood persists through
+  // camera movement, only the TAA-crisp polish drops (structural requirement, see conversation).
+  // "Stage 2" = after AUTO_STAGE_IDLE_MS of no interaction while staging is still kept-alive,
+  // automatically re-trigger the full still-refine polish — matching the user's "#1 when
+  // orbiting, #2 when static after 3 sec" spec exactly, without needing a repeated Alt+S press.
+  var AUTO_STAGE_IDLE_MS = 3000;
+  var _autoStageTimer = null, _autoStageOn = false;
+  function _autoStageArm(on) {
+    _autoStageOn = on;
+    if (_autoStageTimer) { clearTimeout(_autoStageTimer); _autoStageTimer = null; }
+    if (!on) return;
+    _autoStageTimer = setTimeout(function() {
+      _autoStageTimer = null;
+      if (_autoStageOn && !A._stillRefineActive) { A.startStillRefine(); console.log('§AUTO_STAGE2 idle-triggered'); }
+    }, AUTO_STAGE_IDLE_MS);
+  }
+  // §STAGE1: camera-move-only cancel — drops TAA polish, KEEPS staging, arms the Stage-2 idle timer.
+  A.softStopStillRefine = function() {
+    if (!A._stillRefineActive) { _autoStageArm(true); return; }  // already soft-parked — just re-arm
+    if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+    _teardownStillRefine('soft-cancel (camera move)', true);
+    _autoStageArm(true);
   };
   A.toggleStillRefine = function() {
     if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();

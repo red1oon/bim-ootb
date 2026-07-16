@@ -799,8 +799,17 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 </div>
 
 <!-- §S276: Import map for Three.js r184 WebGPU — includes WebGPURenderer + TSL + compat mode -->
+<!-- §GI_POC (2026-07-16, sandbox spike): repointed "three" -> three.module.min.js, the SAME build
+     scene.js actually loads for the real WebGLRenderer (window.THREE). This bare specifier was
+     previously unused anywhere in the app (grepped — zero `from 'three'` imports in viewer/*.js),
+     so this is safe: it now lets the vendored postprocessing-n8ao.bundle.js's internal `from
+     'three'` imports resolve to the SAME THREE instance as the rest of the app, avoiding a second
+     incompatible THREE.js copy. Revert to three.webgpu.min.js if TSL/WebGPU work resumes. -->
 <script type="importmap">
-{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+{ "imports": {
+  "three": "./lib/three.module.min.js",
+  "three/examples/jsm/postprocessing/Pass.js": "./lib/Pass.js"
+} }
 </script>
 <script src="loader.js?v=12"></script>
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
@@ -808,6 +817,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=1" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
 <script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="input_registry.js?v=1" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
 <script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
