@@ -528,9 +528,26 @@ async function setupEffects(A, renderer, scene, camera) {
         ) }));
       box.position.set(base.x, base.y + bh / 2, base.z);
       group.add(box);
+      // §PHOTO_SKYLINE_WINDOW_OCCLUSION (2026-07-16, real bug — "lights not visible on the
+      // silhouette buildings"): window-light points used to be scattered randomly through the
+      // box's HORIZONTAL FOOTPRINT (both X and Z randomized within bw), which places most of them
+      // INSIDE the box's own solid volume — depth-occluded by the box's own nearest opaque wall
+      // from any outside viewing angle. Confirmed via screenshot: the Points object existed,
+      // visible=true, 4308 points, yet zero were actually visible on any skyline box. Fix: place
+      // each point on one of the box's 4 vertical FACE planes (a small outward epsilon so it
+      // isn't z-fighting the box's own surface), like a real building's window grid — not
+      // scattered through the interior.
       var winCount = Math.floor((bw * bh) / 14);
       for (var wi = 0; wi < winCount; wi++) {
-        winPos.push(base.x + (Math.random() - 0.5) * bw * 0.8, base.y + Math.random() * bh * 0.9 + 2, base.z + (Math.random() - 0.5) * bw * 0.8);
+        var face = Math.floor(Math.random() * 4);
+        var along = (Math.random() - 0.5) * bw * 0.9;
+        var wy = base.y + Math.random() * bh * 0.9 + 2;
+        var wx, wz, eps = 0.15;
+        if (face === 0) { wx = base.x + bw / 2 + eps; wz = base.z + along; }
+        else if (face === 1) { wx = base.x - bw / 2 - eps; wz = base.z + along; }
+        else if (face === 2) { wx = base.x + along; wz = base.z + bw / 2 + eps; }
+        else { wx = base.x + along; wz = base.z - bw / 2 - eps; }
+        winPos.push(wx, wy, wz);
         if (Math.random() > 0.25) winCol.push(1.0, 0.8 + Math.random() * 0.2, 0.5 + Math.random() * 0.3); // warm window
         else winCol.push(0.6, 0.75, 1.0); // occasional cool/blue window
       }
