@@ -159,19 +159,40 @@ async function setupGIPoc(A, renderer, scene, camera) {
       composer.addPass(new _pp.RenderPass(scene, camera));
       var vdnp = new _pp.VelocityDepthNormalPass(scene, camera);
       composer.addPass(vdnp);
-      // Defaults first — tune only if it renders at all (spike discipline). distance/thickness
-      // are world-scale-sensitive; buildings here are 50-150m envelopes, so start distance high.
+      // §SSGI_PORT (2026-07-16, lighting port — supersedes §SSGI_SPIKE_INCOMPLETE): the spike's
+      // "black building" had THREE stacked root causes, found by probing every buffer of the
+      // live chain (gbuffer diffuse/depth were FINE — the original material-clone suspicion was
+      // disproven by measurement):
+      //   1. useDirectLight never engaged: the lib only sets that define inside
+      //      updateUsingRenderPass() on an isUsingRenderPass TRANSITION — but it constructs as
+      //      true and its "set false next frame" rAF is cancelled by every update() in a
+      //      continuously-rendering composer, so the transition never fires and the define never
+      //      lands. Without it (and with no scene.environment in this app) the effect's ONLY
+      //      light inputs are emissive (zero here) + accumulated GI (starts black) → black,
+      //      forever. Fixed by calling ssgi.updateUsingRenderPass() once after construction
+      //      (public method; isUsingRenderPass is true, so it adds the defines — honest
+      //      semantics, we really do use a RenderPass).
+      //   2. r185 REVERSED packDepthToRGBA's byte order (.r is now the MSB ≈ depth value; the
+      //      lib was written against the old LSB-in-r layout). Its denoiser's hand-rolled
+      //      far-plane check `depthTexel.r>0.9999` therefore discarded ~every building fragment
+      //      at establishing distance, and with this app's renderer.autoClear=false the denoise
+      //      targets kept their initial zeros → hard black output. Patched IN THE BUNDLE
+      //      (patch #5: unpackRGBAToDepth-based check — layout-agnostic).
+      //   3. importanceSampling defaults ON and, with no scene.environment, sampled the default
+      //      1x1 env-info textures (+ read uninitialized GLSL bools — bundle patch #6 inits
+      //      them) → NaNs in the raw GI that poisoned temporal accumulation. Disabled below —
+      //      black env = screen-space-only bounce + direct light, the port milestone's scope.
+      // distance/thickness are world-scale-sensitive (50-150m envelopes here); steps/refineSteps
+      // re-tuned live on HHS after the port (see PHOTOREAL_STILL_RENDER.md session record).
       var ssgi = new _pp.SSGIEffect(scene, camera, vdnp, {
         distance: 30, thickness: 5, denoiseIterations: 1, radius: 5,
-        steps: 12, refineSteps: 4, spp: 1, resolutionScale: 1
+        steps: 12, refineSteps: 4, spp: 1, resolutionScale: 1,
+        importanceSampling: false
       });
-      // §SSGI_SPIKE VERDICT (2026-07-16): machinery runs clean (13.6ms/frame, zero errors, real
-      // BatchedMesh) after 4 mechanical r185 patches baked into the bundle — but the effect's
-      // lighting RECONSTRUCTION renders this app's materials black (its gbuffer MRTMaterial
-      // doesn't carry our customized/batched material colors, and its scene.environment sampling
-      // path has further dead-API holes). Porting that is a real project, not a spike —
-      // see PHOTOREAL_STILL_RENDER.md §SSGI SPIKE for the full findings before continuing.
-      console.warn('§SSGI_SPIKE_INCOMPLETE renders geometry black — feasibility scaffold only, not a usable preview yet');
+      ssgi.updateUsingRenderPass();  // root cause 1 — engage direct-light injection NOW
+      console.log('§SSGI_PORT_WIRED useDirectLight=' +
+        ('useDirectLight' in ssgi.ssgiPass.fullscreenMaterial.defines) +
+        ' importanceSampling=' + ('importanceSampling' in ssgi.ssgiPass.fullscreenMaterial.defines));
       composer.addPass(new _pp.EffectPass(camera, ssgi));
       composer.setSize(window.innerWidth, window.innerHeight);
       _ssgiComposer = composer;
