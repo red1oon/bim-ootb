@@ -960,7 +960,9 @@ async function setupEffects(A, renderer, scene, camera) {
           '  diffuseColor.rgb *= mix(1.0, 0.72, wetness);',  // wet patches read darker/more saturated
           '}'
         ].join('\n'));
-      mat.userData.puddleShader = shader;
+      // §TRIPLANAR_CLONE_BOMB (see streaming.js): plain property, never userData — userData is
+      // JSON-round-tripped by Material.copy() on every clone.
+      mat._puddleShader = shader;
       shader.uniforms.uPuddleActive.value = A._stillRefineActive ? 1.0 : 0.0;
       _applyPuddleUniforms(shader);
     };
@@ -968,7 +970,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // this session for the triplanar shader (§TRIPLANAR_RECOMPILE_FIX) — re-assert every frame
     // instead of relying on a single push at compile time.
     mat.onBeforeRender = function() {
-      var sh = mat.userData.puddleShader;
+      var sh = mat._puddleShader;
       if (sh) { sh.uniforms.uPuddleActive.value = A._stillRefineActive ? 1.0 : 0.0; _applyPuddleUniforms(sh); }
     };
     mat.needsUpdate = true;
