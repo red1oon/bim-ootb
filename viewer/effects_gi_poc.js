@@ -387,8 +387,13 @@ async function setupGIPoc(A, renderer, scene, camera) {
       A._giComposer = _ssgiComposer;       // reuse main.js's existing _giComposer render branch
       A._giComposerActive = true;
       if (A._composerEnabled) A._composerEnabled = false;
-      // tune HUD only for a plain standalone Alt+J press, not the (now default-off) still-fold
-      if (!A._stillRefineActive) _ssgiShowTuneHUD();
+      // §TUNE_HUD_FIX (2026-07-17, user report: "still do not see any J panel"): the
+      // A._stillRefineActive guard was meant to skip the HUD during the auto still-fold, but the
+      // still-fold defaults OFF now (#817) — so toggleSSGIPreview(true) is ALWAYS a direct/manual
+      // call at this point, and the guard just blocked the panel in the most common real workflow
+      // (Alt+S freezes a still, which stays "active" until interaction, then Alt+J pressed after
+      // it — exactly when A._stillRefineActive is true). Always show it.
+      _ssgiShowTuneHUD();
     } else {
       A._ssgiActive = false;
       A._giComposerActive = false;
