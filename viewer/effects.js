@@ -968,6 +968,45 @@ async function setupEffects(A, renderer, scene, camera) {
     };
     mat.needsUpdate = true;
   }
+  // §LAYER2_HDRI (2026-07-16, PHOTOREAL_STILL_RENDER.md §LAYER 2 — "best effort:benefit ratio of
+  // everything in this spec", finally implemented): swaps the procedural Preetham-sky-derived
+  // envMap for a REAL photographed HDRI (Poly Haven, CC0 — "Belfast Sunset, Pure Sky", clear dusk
+  // sky matching this staging's own dusk mood, no on-ground foreground objects to leak weird
+  // reflections) during the photoshoot only. Improves glass/metal reflection quality directly —
+  // the flat-gray-glazing gap already flagged. Lazy-loaded once (real HTTP fetch + PMREM cost,
+  // ~1.2MB at 1k res — plenty for a reflection source, never displayed at full resolution
+  // directly), cached for every subsequent Alt+S. Reuses the EXISTING _reassertPhotoEnvMap() loop
+  // (already runs every accumulation frame, decoupled from when A._envMap last changed) to push
+  // this onto materials — no new per-frame code needed, just swap the source texture it reads.
+  var _hdriEnvMap = null, _hdriLoading = false, _hdriPmrem = null;
+  var _photoEnvMapSaved = null;
+  function _ensureHdriEnvMap() {
+    if (_hdriEnvMap || _hdriLoading) return;
+    _hdriLoading = true;
+    Promise.all([import('./lib/HDRLoader.js')]).then(function(mods) {
+      var _hdrMod = mods[0];
+      if (!_hdrMod.HDRLoader) throw new Error('HDRLoader not exported');
+      if (!_hdriPmrem) { _hdriPmrem = new THREE.PMREMGenerator(A.renderer); _hdriPmrem.compileEquirectangularShader(); }
+      new _hdrMod.HDRLoader().load('textures/hdri/belfast_sunset_puresky_1k.hdr', function(tex) {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        var envRT = _hdriPmrem.fromEquirectangular(tex);
+        _hdriEnvMap = envRT.texture;
+        tex.dispose();
+        _hdriLoading = false;
+        console.log('§LAYER2_HDRI_READY belfast_sunset_puresky_1k — real photographed envMap ready');
+        // If still mid-photoshoot when the load finally resolves, apply immediately rather than
+        // waiting for the next Alt+S — same "don't miss a slow-arriving asset" discipline as the
+        // streaming-race fixes elsewhere in this file.
+        if (A._stillRefineActive || _autoStageOn) A._envMap = _hdriEnvMap;
+      }, undefined, function(err) {
+        _hdriLoading = false;
+        console.warn('§LAYER2_HDRI_FAIL ' + (err && err.message ? err.message : err));
+      });
+    }).catch(function(e) {
+      _hdriLoading = false;
+      console.warn('§LAYER2_HDRI_FAIL ' + e.message);
+    });
+  }
   function _applyPhotoStaging() {
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
@@ -1007,6 +1046,11 @@ async function setupEffects(A, renderer, scene, camera) {
       _photoFogColorSaved = A.scene.fog.color.getHex();
       _photoFogDensitySaved = A.scene.fog.density;
     }
+    // §LAYER2_HDRI: save whatever envMap was active (the procedural sky-derived one), swap to the
+    // real HDRI if already loaded, or kick off the (one-time, cached) load if not yet ready —
+    // _ensureHdriEnvMap applies it itself once resolved, per the mid-photoshoot check inside it.
+    _photoEnvMapSaved = A._envMap;
+    if (_hdriEnvMap) A._envMap = _hdriEnvMap; else _ensureHdriEnvMap();
     _photoSkyWasVisible = !!(A._sky && A._sky.visible);
     if (A.sun) {
       _photoSunPosSaved = A.sun.position.clone();
@@ -1088,6 +1132,9 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
+    // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
+    // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
+    if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
