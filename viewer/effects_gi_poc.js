@@ -360,14 +360,14 @@ async function setupGIPoc(A, renderer, scene, camera) {
   var GROUND_TUNE_KNOBS = [
     { key: 'roughness', min: 0.05, max: 1, step: 0.01, target: 'ground' },
     { key: 'envMapIntensity', min: 0, max: 2, step: 0.05, target: 'ground' },
-    { key: 'metalness', min: 0, max: 1, step: 0.01, target: 'ground' }
+    { key: 'metalness', label: 'metal strength (reflectiveness)', min: 0, max: 1, step: 0.01, target: 'ground' }
   ];
   function _tuneRowFor(k, getVal, setVal) {
     var row = document.createElement('div');
     row.style.cssText = 'display:flex; align-items:center; gap:6px; margin:4px 0;';
     var label = document.createElement('span');
-    label.textContent = k.key;
-    label.style.cssText = 'width:130px; flex-shrink:0;';
+    label.textContent = k.label || k.key;
+    label.style.cssText = 'width:170px; flex-shrink:0; font-size:10px;';
     var input = document.createElement('input');
     input.type = 'range';
     input.min = k.min; input.max = k.max; input.step = k.step;
@@ -399,6 +399,17 @@ async function setupGIPoc(A, renderer, scene, camera) {
       'position:fixed; bottom:60px; left:12px; width:260px; ' +
       'background:rgba(30,30,30,0.92); color:#eee; font:11px/1.4 monospace; ' +
       'padding:10px; border-radius:6px; pointer-events:auto; z-index:800;';
+    // §HUD_CLOSE_BTN (2026-07-17, user: "can the J panel have a close button without turning off
+    // its effect? When user wants effect off its just Alt+J again"): _ssgiHideTuneHUD only ever
+    // removes the DOM panel — it never touches A._ssgiActive/the effect itself (same style as
+    // cost_panel.js's own close button) — so reusing it here is exactly "hide the UI, keep
+    // rendering." Alt+J still works normally afterward to actually turn SSGI off.
+    var closeBtn = document.createElement('span');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'position:absolute; top:6px; right:8px; cursor:pointer; font-size:13px; color:#888;';
+    closeBtn.title = 'Hide panel (SSGI stays on — Alt+J to turn it off)';
+    closeBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); _ssgiHideTuneHUD(); });
+    hud.appendChild(closeBtn);
     var title = document.createElement('div');
     title.textContent = 'SSGI tune (Alt+J live)';
     title.style.cssText = 'font-weight:bold; margin-bottom:6px; color:#8cf;';
@@ -426,8 +437,16 @@ async function setupGIPoc(A, renderer, scene, camera) {
       hud.appendChild(gTitle);
       GROUND_TUNE_KNOBS.forEach(function(k) {
         hud.appendChild(_tuneRowFor(k,
-          function() { var v = A.ground.material[k.key]; return (v !== undefined) ? v : k.min; },
-          function(v) { A.ground.material[k.key] = v; A.ground.material.needsUpdate = true; }
+          function() {
+            // metal-strength drives the puddle shader's full-surface wetness override (user ask);
+            // other ground knobs (roughness/envMapIntensity) still read/write the base material.
+            if (k.key === 'metalness') return A._groundWetnessOverride || 0;
+            var v = A.ground.material[k.key]; return (v !== undefined) ? v : k.min;
+          },
+          function(v) {
+            if (k.key === 'metalness' && A._setGroundWetness) { A._setGroundWetness(v); return; }
+            A.ground.material[k.key] = v; A.ground.material.needsUpdate = true;
+          }
         ));
       });
     }
