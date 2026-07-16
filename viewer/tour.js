@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
+  // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
+  console.log('[TOUR] §TOUR_VERSION v9 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -20,6 +22,7 @@ function setupTour(A) {
       A.walkMode = true;
       A.flyActive = true;
       A.walkLastTime = 0;
+      if (A.markDirty) A.markDirty(); // §IDLE-PARK: revive the rAF chain on programmatic resume
       if (btn) btn.classList.add('active');
       var _speedBtn = document.getElementById('walk-speed-btn');
       if (_speedBtn) _speedBtn.style.display = '';
@@ -30,8 +33,58 @@ function setupTour(A) {
 
     A.flyActive = !A.flyActive;
     if (btn) btn.classList.toggle('active', A.flyActive);
+    if (A.flyActive && A.markDirty) A.markDirty(); // §IDLE-PARK: revive the rAF chain (a parked
+    // loop only wakes on input events — a programmatic toggle would otherwise never tick)
 
     if (A.flyActive) {
+      // FLY_TOUR_CORRIDOR_GRAPH.md §S1 — async prepare BEFORE building the tour: lazy-load the
+      // navigate stack (RoomGraph + HallwayBackbone + navigate_find's ensureRooms/getRoomGraph)
+      // and auto-inject compiled rooms when the building has none. Falls through to the legacy
+      // centroid tour on any failure — never blocks the fly button.
+      if (A._flyPreparing) return;
+      A._flyPreparing = true;
+      A.status.textContent = 'Preparing tour…';
+      A._prepareGraphTour().then(function() {
+        A._flyPreparing = false;
+        if (!A.flyActive) return; // user toggled off while preparing
+        A._startFlyTour(btn);
+      });
+      return;
+    } else {
+      A.status.textContent = 'Fly stopped.';
+      document.getElementById('walk-speed-btn').style.display = 'none';
+    }
+  };
+
+  // §S1 — the awaited pre-step. Never throws; §FLY_INJECT logs what happened.
+  A._prepareGraphTour = async function() {
+    try {
+      // §STREAM-FIRST (user 2026-07-16: tour "switching to Alt-X bbxes"): those are streaming
+      // placeholder bboxes — elements not yet promoted to real geometry. Flying mid-stream tours
+      // a box model and starves the promote pipeline. Wait for streaming to drain first (the
+      // status bar keeps showing live progress; toggling fly off aborts the wait).
+      let _streamWaited = 0;
+      while (A.streaming && A.flyActive) {
+        await new Promise(function(r) { setTimeout(r, 500); });
+        _streamWaited += 500;
+      }
+      if (_streamWaited) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _streamWaited);
+      if (!A.flyActive) return;
+      if (A.loadNavigate) await A.loadNavigate();
+      if (A.ensureRooms) {
+        const res = await A.ensureRooms();
+        console.log('[TOUR] §FLY_INJECT bld=' + (A.activeBuilding || '') +
+          ' status=' + (res && res.status) + ' source=' + ((res && res.source) || 'none') +
+          ' rooms=' + (res && res.rooms != null ? res.rooms : '-'));
+      }
+    } catch (e) {
+      console.warn('[TOUR] §FLY_PREP_ERR ' + (e && e.message));
+    }
+  };
+
+  // The original fly-start body (tour build + orbit fallback), unchanged except for extraction.
+  A._startFlyTour = function(btn) {
+    {
       const tour = A.buildTour();
       if (tour && tour.length >= 1) {
         if (A.buildingsRendered.size > 1) {
@@ -78,9 +131,6 @@ function setupTour(A) {
       A.flyAngle = 0;
       A.flyTransitioning = false;
       A.status.textContent = `Flying around ${A.flyTargets[0].name}...`;
-    } else {
-      A.status.textContent = 'Fly stopped.';
-      document.getElementById('walk-speed-btn').style.display = 'none';
     }
   };
 
@@ -125,6 +175,173 @@ function setupTour(A) {
         A.status.textContent = `Flying to ${A.flyTargets[A.flyTargetIdx].name}...`;
       }
     }
+  };
+
+  // ═══ FLY_TOUR_CORRIDOR_GRAPH.md §S2 — occupant-graph itinerary ═══
+  // Route = entrance exit-node → per storey (lowest→highest): corridor cruise stop + top-K rooms
+  // NN-chained through RoomGraph.shortestPath (wall-legal, rides doors/corridor junctions) →
+  // stairwell climbs via real stairwp nodes → descent back to the exit, preferring a stair the
+  // ascent did not use (edge-filtered graph view — RoomGraph API untouched). EXTRACT ONLY:
+  // every waypoint is a measured node position from the graph; nothing invented.
+  A._buildGraphRoute = function(storeyZ) {
+    const RG = window.RoomGraph;
+    if (!RG || !A.getRoomGraph) return null;
+    const g = A.getRoomGraph();
+    if (!g || !g.nodes || g.nodes.length < 2) return null;
+
+    const K = 4;
+    // Bucket rooms by storey. Corridors (backprop 'Hall / Corridor' nodes + compiled
+    // SUSPECT_ELONGATED — a real corridor is usually one of these, see spec §R4) become cruise
+    // stops; other SUSPECT_* rooms are never destinations (§ROOM-FORM: review candidates).
+    const byStorey = {}, stZSum = {}, stN = {};
+    for (const n of g.nodes) {
+      const lbl = String(n.label || '');
+      let area = 0;
+      for (const rc of (n.rects || [])) area += Math.max(0, rc.x1 - rc.x0) * Math.max(0, rc.y1 - rc.y0);
+      if (!byStorey[n.storey]) byStorey[n.storey] = { corridors: [], rooms: [] };
+      const rec = { guid: n.guid, node: n, area };
+      if (lbl.indexOf('Hall / Corridor') >= 0 || lbl.indexOf('SUSPECT_ELONGATED') >= 0) byStorey[n.storey].corridors.push(rec);
+      else if (lbl.indexOf('SUSPECT_') < 0) byStorey[n.storey].rooms.push(rec);
+      stZSum[n.storey] = (stZSum[n.storey] || 0) + n.cz;
+      stN[n.storey] = (stN[n.storey] || 0) + 1;
+    }
+    const storeys = Object.keys(byStorey).sort((a, b) => stZSum[a] / stN[a] - stZSum[b] / stN[b]);
+
+    // Entrance: the lowest exit node (E4 — a real non-room door), when the building has one.
+    let entrance = null;
+    for (const k in g.nodesByGuid) {
+      const n = g.nodesByGuid[k];
+      if (n.kind === 'exit' && (entrance === null || n.cz < entrance.cz)) entrance = n;
+    }
+
+    // Itinerary: per storey, LARGEST spaces first (user 2026-07-16: "go for the great
+    // opportunities from large hallways or entrance to large areas first") — the corridor cruise
+    // leads, then rooms in descending measured area. Drama over travel economy: the legs between
+    // stops are still graph-shortest, so the route stays wall-legal either way.
+    // §CONNECTED-STOPS (LTU live-report 2026-07-16: "same route, nothing major change" — LTU has
+    // 0 exit nodes, and its largest corridor node carries no edges, so the route anchored on an
+    // isolated node, every leg failed, pts=1 → permanent legacy fallback): a stop must appear in
+    // the edge set to be routable AT ALL; isolated nodes are dropped up front.
+    const edgeGuids = {};
+    for (const e of g.edges) { edgeGuids[e.a] = true; edgeGuids[e.b] = true; }
+    let isolatedDropped = 0;
+    const stops = [];
+    for (const st of storeys) {
+      const b = byStorey[st];
+      b.corridors.sort((a, c) => c.area - a.area);
+      b.rooms.sort((a, c) => c.area - a.area);
+      const picks = (b.corridors.length ? [b.corridors[0]] : []).concat(b.rooms.slice(0, K));
+      for (const r of picks) {
+        if (edgeGuids[r.guid]) stops.push(r);
+        else isolatedDropped++;
+      }
+    }
+    if (isolatedDropped) console.log('[TOUR] §FLY_ROUTE_ISOLATED dropped=' + isolatedDropped);
+    if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
+
+    // §S3 — the largest confirmed room per storey gets the pause + look-around beat.
+    const pauseGuids = {};
+    for (const st of storeys) {
+      if (byStorey[st].rooms.length) pauseGuids[byStorey[st].rooms[0].guid] = true;
+    }
+
+    // Chain the stops through the graph (Dijkstra, legalized — see room_graph.js).
+    // A stop the graph cannot reach (room island — real on sparse federated models, measured
+    // HHS) is SKIPPED, never straight-hopped: an occupant can't walk there, and this route
+    // invents nothing. EXTRACT ONLY.
+    const pathGuids = [];
+    let skipped = 0, visitedStops = 0;
+    let curGuid = entrance ? entrance.guid : stops[0].guid;
+    pathGuids.push(curGuid);
+    for (const s of stops) {
+      if (s.guid === curGuid) { visitedStops++; continue; }
+      const sp = RG.shortestPath(g, curGuid, s.guid);
+      if (sp && sp.path && sp.path.length > 1) {
+        for (let i = 1; i < sp.path.length; i++) pathGuids.push(sp.path[i]);
+        visitedStops++;
+        curGuid = s.guid;
+      } else { skipped++; }
+    }
+
+    const usedStairs = {};
+    for (const pg of pathGuids) {
+      const n = g.nodesByGuid[pg];
+      if (n && n.kind === 'stairwp') usedStairs[pg] = true;
+    }
+    const stairUp = Object.keys(usedStairs)[0] || null;
+
+    // §S2.5 — descent finale back to the entrance, preferring a stair the ascent did NOT use:
+    // same graph minus the used stairwps' edges (plain filtered view), full graph as fallback.
+    let stairDown = null;
+    if (entrance && curGuid !== entrance.guid) {
+      let spBack = null;
+      if (Object.keys(usedStairs).length) {
+        const filtered = Object.assign({}, g, { edges: g.edges.filter(e => !usedStairs[e.a] && !usedStairs[e.b]) });
+        spBack = RG.shortestPath(filtered, curGuid, entrance.guid);
+      }
+      if (!spBack || !spBack.path || spBack.path.length < 2) spBack = RG.shortestPath(g, curGuid, entrance.guid);
+      if (spBack && spBack.path && spBack.path.length > 1) {
+        for (let i = 1; i < spBack.path.length; i++) {
+          pathGuids.push(spBack.path[i]);
+          const n = g.nodesByGuid[spBack.path[i]];
+          if (!stairDown && n && n.kind === 'stairwp') stairDown = spBack.path[i];
+        }
+      }
+    }
+
+    // Guids → real points. Rooms/exits ride each storey's door-derived floor z (same convention
+    // as the legacy tour); stairwps keep their OWN measured z ends — that IS the climb/descent.
+    const pts = [];
+    const ifcTrail = [];
+    let circWps = 0;
+    for (const pg of pathGuids) {
+      const n = g.nodesByGuid[pg];
+      if (!n || n.cx === undefined) continue;
+      const fz = (n.kind === 'stairwp') ? n.cz : (storeyZ[n.storey] !== undefined ? storeyZ[n.storey] : n.cz);
+      const tp = A.ifc2three(n.cx, n.cy, fz);
+      if (n.kind === 'doorwp' || n.kind === 'circ' || n.kind === 'spine') circWps++;
+      // §HEADS-UP (user 2026-07-16: "moving across storeys, having heads up where are the open
+      // spaces"): arriving on a NEW storey up a stair gets a 'storey' look-around beat before
+      // flying it. Ascent only — descent stays continuous.
+      const py = tp.y + A.WALK_EYE_HEIGHT;
+      const prevPt = pts[pts.length - 1];
+      const storeyArrival = n.kind === 'stairwp' && prevPt && (py - prevPt.y) > 1;
+      pts.push({ x: tp.x, y: py, z: tp.z,
+                 name: (n.kind === 'room' || n.kind === 'exit' || n.kind === 'stairwp') ? n.name : '',
+                 pause: pauseGuids[pg] ? 'room' : (storeyArrival ? 'storey' : null) });
+      ifcTrail.push({ storey: n.storey, cx: n.cx, cy: n.cy, vertical: n.kind === 'stairwp' });
+    }
+    if (pts.length < 3) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=thin-path pts=' + pts.length + ' → legacy tour'); return null; }
+
+    // §S4 witness — every same-storey chord must be walk-legal (0 chords with illegal samples).
+    let illegalChords = 0, checkedChords = 0;
+    if (typeof RG.chordIllegalCount === 'function') {
+      for (let i = 1; i < ifcTrail.length; i++) {
+        const a = ifcTrail[i - 1], b = ifcTrail[i];
+        if (a.storey !== b.storey || a.vertical || b.vertical) continue;
+        checkedChords++;
+        if (RG.chordIllegalCount(g, a.storey, a.cx, a.cy, b.cx, b.cy) > 0) illegalChords++;
+      }
+    }
+    const corridorStops = stops.filter(s => byStorey[s.node.storey].corridors.indexOf(s) >= 0).length;
+    console.log('[TOUR] §FLY_ROUTE storeys=' + storeys.length + ' stops=' + visitedStops + '/' + stops.length +
+      ' skipped=' + skipped + ' corridorStops=' + corridorStops + ' circWps=' + circWps +
+      ' stairUp=' + (stairUp || '-') + ' stairDown=' + (stairDown || '-') +
+      ' pts=' + pts.length + ' illegalChords=' + illegalChords + '/' + checkedChords);
+    // §S5 QUALITY GATE — every flown leg is graph-connected by construction (unreachable stops
+    // are skipped above, never hopped). Chords inside a shortestPath result are the engine's OWN
+    // legalized best-effort (_legalizePath keeps a chord when no detour exists — identical to
+    // what PATH mode draws for users), so `illegalChords` is reported, not gated (measured:
+    // Terminal 10/89 residual, HHS 0/50). What IS gated: a route that barely exists — a thin
+    // graph (this local Duplex snapshot: 5 approx nodes, 3 edges, most stops unreachable) must
+    // fall back to the legacy tour, not ship a worse flight.
+    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5) {
+      console.log('[TOUR] §FLY_ROUTE_REJECT edges=' + g.edges.length + ' visited=' + visitedStops +
+        '/' + stops.length + ' illegalChords=' + illegalChords + ' → legacy tour');
+      return null;
+    }
+    A.wlog(`GraphRoute: ${stops.length} stops, ${pts.length} pts, stairs ${stairUp ? '↑' : '-'}${stairDown ? '↓' : ''}`);
+    return { pts, entrance, stats: { illegalChords, checkedChords, circWps, corridorStops } };
   };
 
   // S206: Cinematic building tour — nearest-neighbor choreography
@@ -233,11 +450,23 @@ function setupTour(A) {
     if (!bldgCtr) bldgCtr = {x: ep.x, y: ep.y, z: ep.z};
     const cx = bldgCtr.x, cz = bldgCtr.z;
 
+    // FLY_TOUR_CORRIDOR_GRAPH.md §S2 — try the occupant-graph route first (computed before
+    // PART 2 so the approach + finale aim at the graph's real entrance door). Null ⇒ S5 fallback
+    // to the legacy centroid collection below, unchanged.
+    let graphRoute = null;
+    try { graphRoute = A._buildGraphRoute(storeyZ); } catch (e) { console.warn('[TOUR] §FLY_ROUTE_ERR ' + (e && e.message)); }
+    if (graphRoute && graphRoute.entrance && ep !== bldgCtr) {
+      const etp = A.ifc2three(graphRoute.entrance.cx, graphRoute.entrance.cy, graphRoute.entrance.cz);
+      ep.x = etp.x; ep.y = etp.y; ep.z = etp.z;
+    }
+
     // ═══ PART 1: ORBIT — scaled to building ═══
+    // User 2026-07-16: "Initial should fly around at least near full circle from outside" —
+    // fullCircle at the same angular speed (duration ×2 vs the old half-circle).
     const orbitR = Math.max(15, envelope * 0.6);
-    const orbitDur = envelope > 30 ? 6 : 4;  // shorter for small buildings
+    const orbitDur = (envelope > 30 ? 6 : 4) * 2;
     actions.push({type:'orbit', cx:bldgCtr.x, cy:bldgCtr.y, cz:bldgCtr.z,
-                  radius:orbitR, tiltDeg:35, duration:orbitDur});
+                  radius:orbitR, tiltDeg:35, duration:orbitDur, fullCircle:true});
 
     // ═══ PART 2: APPROACH — fly to entrance (separate action) ═══
     actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance'});
@@ -254,7 +483,23 @@ function setupTour(A) {
     flyPts.push({x: ep.x, y: ep.y + A.WALK_EYE_HEIGHT, z: ep.z});
     flyNames.push('Entrance');
 
-    for (let si = 0; si < storeys.length; si++) {
+    // §S2 — occupant-graph waypoints (corridors/doors/stairwells), already wall-legal;
+    // pauseIdx marks the look-around beats (§S3). Legacy loop below runs only without a route.
+    const pauseIdx = [];  // {i, kind:'room'|'storey'} — look-around beats (§S3 + §HEADS-UP)
+    if (graphRoute) {
+      for (const p of graphRoute.pts) {
+        const last = flyPts[flyPts.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) < 0.3) {
+          if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
+          continue;
+        }
+        flyPts.push({x: p.x, y: p.y, z: p.z});
+        flyNames.push(p.name || '');
+        if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
+      }
+    }
+
+    if (!graphRoute) for (let si = 0; si < storeys.length; si++) {
       const storey = storeys[si];
       const floorY = A.ifc2three(0, 0, storeyZ[storey] || 0).y + A.WALK_EYE_HEIGHT;
 
@@ -315,9 +560,29 @@ function setupTour(A) {
 
     if (pathLen > 30) {
       // ═══ Big building: full interior flyPath + finale ═══
-      const duration = Math.max(pathLen / 3.5, 8);
-      actions.push({type:'flyPath', points: flyPts, names: flyNames, duration});
-      A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${duration.toFixed(0)}s`);
+      // §S3 — split the spline at each storey's largest room for a pause + look-around beat;
+      // no pause marks (legacy route) ⇒ one flyPath exactly as before.
+      const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
+        arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
+      const segments = [];
+      let segFrom = 0;
+      for (const sv of splits) { if (sv.i > segFrom) { segments.push({from: segFrom, to: sv.i, beat: sv.kind}); segFrom = sv.i; } }
+      segments.push({from: segFrom, to: flyPts.length - 1, beat: null});
+      for (let sI = 0; sI < segments.length; sI++) {
+        const pts = flyPts.slice(segments[sI].from, segments[sI].to + 1);
+        if (pts.length < 2) continue;
+        let segLen = 0;
+        for (let i = 1; i < pts.length; i++)
+          segLen += Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y, pts[i].z-pts[i-1].z);
+        actions.push({type:'flyPath', points: pts, names: flyNames.slice(segments[sI].from, segments[sI].to + 1),
+                      duration: Math.max(segLen / 3.5, segments.length === 1 ? 8 : 3)});
+        if (sI < segments.length - 1 && segments[sI].beat) {
+          // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces.
+          actions.push({type:'pause', seconds: 0.4});
+          actions.push({type:'lookAround', degrees: segments[sI].beat === 'storey' ? 180 : 270});
+        }
+      }
+      A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${segments.length} seg(s)`);
       // Finale: fly outside+above, pause, land
       const topZ = Math.max(...Object.values(storeyZ), 0);
       const topY = A.ifc2three(0, 0, topZ).y;
@@ -335,7 +600,13 @@ function setupTour(A) {
     const endX = cx + (endDx / endLen) * orbitR;
     const endZ = cz + (endDz / endLen) * orbitR;
     actions.push({type:'moveTo', x:endX, y:ep.y, z:endZ, name:'Final'});
-    actions.push({type:'lookAround', degrees:1, lookAtX:cx, lookAtZ:cz});
+    // User 2026-07-16: "Ending should be outside looking at it from ground level" — camera at
+    // ground (entrance height), slow 90° pan centred on the facade, gaze tilted UP to 40% of the
+    // building's measured top (storeyZ max), so the tour closes on the building, not the horizon.
+    const _endTopZ = Object.values(storeyZ).length ? Math.max(...Object.values(storeyZ)) : 0;
+    const _endTopY = A.ifc2three(0, 0, _endTopZ).y;
+    actions.push({type:'lookAround', degrees:90, lookAtX:cx, lookAtZ:cz,
+                  lookAtY: ep.y + Math.max(3, (_endTopY - ep.y) * 0.4)});
     actions.push({type:'pause', seconds:1});
 
     // §TOUR_PATH — dump full path as JSON for inspection
@@ -345,7 +616,7 @@ function setupTour(A) {
       envelope, MIN_SEP, storeys: storeys.length
     }, null, 0));
     A.wlog(`Tour: ${actions.length} actions, ${storeys.length} storeys, ${flyPts.length} interior pts`);
-    window._walkStrategy = `CINE(${actions.length}acts,${flyPts.length}pts)`;
+    window._walkStrategy = `${graphRoute ? 'CINE-GRAPH' : 'CINE'}(${actions.length}acts,${flyPts.length}pts)`;
     return actions;
   };
 
@@ -466,7 +737,8 @@ function setupTour(A) {
       const lookDist = 3.0;
       A.controls.target.x = A.camera.position.x + lookDist * Math.sin(rad);
       A.controls.target.z = A.camera.position.z + lookDist * Math.cos(rad);
-      A.controls.target.y = A.camera.position.y;
+      // §ENDING: an explicit lookAtY tilts the gaze (ground-level facade shot); default stays level.
+      A.controls.target.y = (act.lookAtY !== undefined) ? act.lookAtY : A.camera.position.y;
       A.controls.update();
       A.status.textContent = `Looking around ${(A.walkPanAngle).toFixed(0)}° [${spd}x]`;
       if (A.walkPanAngle >= totalDeg) {
@@ -612,10 +884,13 @@ function setupTour(A) {
       const t = Math.min(A.walkActionT / duration, 1.0);
       const pos = act._curve.getPointAt(t);
       A.camera.position.copy(pos);
-      const lookT = Math.min(t + 0.03, 0.999);
+      // §SOFTEN (user 2026-07-16: "soften the sudden switch to new track"): look further ahead
+      // (0.05 vs 0.03) and pan the gaze more gently (lerp 0.08 vs 0.15) — spur-room reversals
+      // (walk in, walk out) sweep instead of whip.
+      const lookT = Math.min(t + 0.05, 0.999);
       const lookPt = act._curve.getPointAt(lookT);
       if (!act._prevLook) act._prevLook = lookPt.clone();
-      act._prevLook.lerp(lookPt, 0.15);
+      act._prevLook.lerp(lookPt, 0.08);
       A.controls.target.copy(act._prevLook);
       A.controls.update();
       // Find nearest named point for status
