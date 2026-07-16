@@ -352,7 +352,14 @@ async function setupGIPoc(A, renderer, scene, camera) {
   // Alt+J itself stays a fully standalone navigable preview, untouched.
   var _stillSSGIEngaged = false, _stillSSGIWasOn = false, _stillKnobsApplied = false;
   var STILL_SSGI_FRAMES = 90;
-  A._stillSSGIEnabled = true;  // runtime-flippable (tests exercise the AO fallback path with this)
+  // §SSGI_OPTOUT_DEFAULT (2026-07-17, user directive after live testing): SSGI's still-fold
+  // replaced the AO-only fold outright (mutually exclusive composer slot, not additive — see
+  // toggleSSGIPreview) and traded a known-good, crisp N8AO contact-shadow look for a softer,
+  // less-defined result the user described as "not accurate or crisp," plus real practical
+  // fragility (the 90-frame converge is exposed to any incidental motion for up to a minute per
+  // attempt, even after the ghosting fix). Alt+S defaults back to the AO-only fold; Alt+J remains
+  // a fully manual, standalone opt-in for anyone who wants to try SSGI on its own terms.
+  A._stillSSGIEnabled = false;  // runtime-flippable (tests exercise the AO fallback path with this)
   A.startStillSSGIPhase = async function() {
     if (!A._stillSSGIEnabled) return false;
     var t0 = performance.now();
