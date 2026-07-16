@@ -321,26 +321,46 @@ async function setupGIPoc(A, renderer, scene, camera) {
   // cost_panel.js (position:fixed, dark translucent, monospace). Alt+J only — Alt+S's still-fold
   // already reverted to the known-good AO-only default and is untouched by this.
   var _tuneHud = null;
-  var SSGI_TUNE_KNOBS = [
+  // §NOISE_ISOLATE (2026-07-17, user: "too much noise... this is the big clue... I not sure which
+  // dial, so that it is more finer interplay but it is getting involved with all sorts of effects
+  // it seems"): split into LIGHT (transparency/brightness/balance — thickness/distance/blend/
+  // directLightMultiplier) vs NOISE (spp/denoiseIterations/denoiseKernel) groups so noise has its
+  // own isolated controls instead of being mixed in with everything else. denoiseKernel is a new
+  // knob — the SVGF spatial-denoise filter's blur radius, confirmed reactive (uniform-only, no
+  // recompile) in the vendored bundle's makeOptionsReactive switch — pure noise-vs-detail trade,
+  // doesn't touch thickness/brightness/anything else.
+  var SSGI_LIGHT_KNOBS = [
     { key: 'thickness', min: 1, max: 30, step: 1 },
     { key: 'distance', min: 5, max: 80, step: 1 },
-    { key: 'denoiseIterations', min: 1, max: 5, step: 1 },
-    { key: 'spp', min: 1, max: 4, step: 1, liveEvent: 'change' },  // baked define — recompiles on
-    // change; use 'change' (fires on release) not 'input' (fires per-pixel-of-drag) to avoid
-    // recompiling the fullscreen shader dozens of times per drag gesture.
     { key: 'blend', min: 0, max: 1, step: 0.01 },
     { key: 'directLightMultiplier', min: 0, max: 2, step: 0.1 }
   ];
+  var SSGI_NOISE_KNOBS = [
+    { key: 'spp', min: 1, max: 4, step: 1, liveEvent: 'change' },  // baked define — recompiles on
+    // change; use 'change' (fires on release) not 'input' (fires per-pixel-of-drag) to avoid
+    // recompiling the fullscreen shader dozens of times per drag gesture. THE real noise lever —
+    // more actual light samples = mathematically less raw noise, not just blurred-over noise.
+    { key: 'denoiseIterations', min: 1, max: 5, step: 1 },
+    { key: 'denoiseKernel', min: 1, max: 6, step: 1 }
+  ];
   // §GROUND_TUNE (2026-07-17, user ask, "ground too dark... can it be reflective/glassy... put
   // under J"): A.ground.material is a plain THREE.MeshStandardMaterial (scene.js) — roughness/
-  // envMapIntensity are live-safe uniforms, no shader recompile, so these are cheap to drag same
-  // as the SSGI uniform knobs. Lower roughness + higher envMapIntensity makes the ground pick up
-  // the scene's existing sky HDRI (belfast_sunset_puresky_1k) as a glossy reflection — real,
-  // immediate, low-risk. NOT the same as literally mirroring the skyline silhouette's individual
-  // window lights (that needs a planar reflection/SSR — separate, bigger feature, not this).
+  // envMapIntensity/metalness are live-safe uniforms, no shader recompile, so these are cheap to
+  // drag same as the SSGI uniform knobs. NOT the same as literally mirroring the skyline
+  // silhouette's individual window lights (that needs a planar reflection/SSR — separate, bigger
+  // feature, not this).
+  // §METALNESS_ADD (2026-07-17, user: "reflection has no clear impact... turn the whole ground to
+  // puddle completely just to see the impact"): roughness/envMapIntensity alone stayed subtle
+  // because a non-metal surface (metalness=0, the ground's base value) only reflects ~4% of light
+  // at most viewing angles regardless of roughness — real dielectric physics, not a bug. metalness
+  // is the lever that actually makes a full-strength reflection obvious, for the diagnostic ask.
+  // Deliberately NOT reusing the existing patch-based puddle shader (effects.js, Alt+S-only,
+  // private closure) — that's a separate, already-shipped feature; wiring into it from this file
+  // risks breaking it for a quick test that doesn't need it.
   var GROUND_TUNE_KNOBS = [
     { key: 'roughness', min: 0.05, max: 1, step: 0.01, target: 'ground' },
-    { key: 'envMapIntensity', min: 0, max: 2, step: 0.05, target: 'ground' }
+    { key: 'envMapIntensity', min: 0, max: 2, step: 0.05, target: 'ground' },
+    { key: 'metalness', min: 0, max: 1, step: 0.01, target: 'ground' }
   ];
   function _tuneRowFor(k, getVal, setVal) {
     var row = document.createElement('div');
@@ -378,12 +398,22 @@ async function setupGIPoc(A, renderer, scene, camera) {
     title.textContent = 'SSGI tune (Alt+J live)';
     title.style.cssText = 'font-weight:bold; margin-bottom:6px; color:#8cf;';
     hud.appendChild(title);
-    SSGI_TUNE_KNOBS.forEach(function(k) {
-      hud.appendChild(_tuneRowFor(k,
+    function _ssgiRow(k) {
+      return _tuneRowFor(k,
         function() { return (A._ssgiEffect[k.key] !== undefined) ? A._ssgiEffect[k.key] : k.min; },
         function(v) { if (A._ssgiEffect) A._ssgiEffect[k.key] = v; }  // reactive setter (makeOptionsReactive)
-      ));
-    });
+      );
+    }
+    var lightTitle = document.createElement('div');
+    lightTitle.textContent = 'Light';
+    lightTitle.style.cssText = 'font-weight:bold; margin:4px 0; color:#8cf;';
+    hud.appendChild(lightTitle);
+    SSGI_LIGHT_KNOBS.forEach(function(k) { hud.appendChild(_ssgiRow(k)); });
+    var noiseTitle = document.createElement('div');
+    noiseTitle.textContent = 'Noise';
+    noiseTitle.style.cssText = 'font-weight:bold; margin:8px 0 4px; color:#8cf;';
+    hud.appendChild(noiseTitle);
+    SSGI_NOISE_KNOBS.forEach(function(k) { hud.appendChild(_ssgiRow(k)); });
     if (A.ground && A.ground.material) {
       var gTitle = document.createElement('div');
       gTitle.textContent = 'Ground (reflectivity)';
