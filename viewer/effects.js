@@ -100,7 +100,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // samples across idle frames into a crisp supersampled image, cancels on any interaction.
   A._stillRefineActive = false;
   var _stillRefineRAF = null;
-  var _stillRefinePrevComposerEnabled = false;
+  var _stillSig = '', _stillRestartLogged = false;  // §STILL_REFINE_RESTART pose guard state
   // §STILL_REFINE_TEARDOWN (2026-07-15, real-user bug): natural completion used to skip this —
   // A._taaPass.accumulate stayed true and A._composerEnabled stayed forced-on forever afterward,
   // so every subsequent normal render kept re-painting the FROZEN accumulated image instead of a
@@ -866,6 +866,11 @@ async function setupEffects(A, renderer, scene, camera) {
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
+  var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
+  A._photoStagingOn = false;    // public mirror — with Stage-2 auto-arm disabled (§AUTO_STAGE2_DISABLED)
+                                // soft-park is signalled by kept-alive staging alone, and main.js's
+                                // interaction gates (_photoCycleEngaged) need to see it to route a
+                                // tap/UI-click to the full teardown.
   var _photoGroundWasVisible = false, _photoGroundPrevKey = null, _photoGroundPrevColor = null;
   var _photoFogColorSaved = null, _photoFogDensitySaved = null;
   var _photoSkyUniSaved = null;
@@ -968,7 +973,55 @@ async function setupEffects(A, renderer, scene, camera) {
     };
     mat.needsUpdate = true;
   }
+  // §LAYER2_HDRI (2026-07-16, PHOTOREAL_STILL_RENDER.md §LAYER 2 — "best effort:benefit ratio of
+  // everything in this spec", finally implemented): swaps the procedural Preetham-sky-derived
+  // envMap for a REAL photographed HDRI (Poly Haven, CC0 — "Belfast Sunset, Pure Sky", clear dusk
+  // sky matching this staging's own dusk mood, no on-ground foreground objects to leak weird
+  // reflections) during the photoshoot only. Improves glass/metal reflection quality directly —
+  // the flat-gray-glazing gap already flagged. Lazy-loaded once (real HTTP fetch + PMREM cost,
+  // ~1.2MB at 1k res — plenty for a reflection source, never displayed at full resolution
+  // directly), cached for every subsequent Alt+S. Reuses the EXISTING _reassertPhotoEnvMap() loop
+  // (already runs every accumulation frame, decoupled from when A._envMap last changed) to push
+  // this onto materials — no new per-frame code needed, just swap the source texture it reads.
+  var _hdriEnvMap = null, _hdriLoading = false, _hdriPmrem = null;
+  var _photoEnvMapSaved = null;
+  function _ensureHdriEnvMap() {
+    if (_hdriEnvMap || _hdriLoading) return;
+    _hdriLoading = true;
+    Promise.all([import('./lib/HDRLoader.js')]).then(function(mods) {
+      var _hdrMod = mods[0];
+      if (!_hdrMod.HDRLoader) throw new Error('HDRLoader not exported');
+      if (!_hdriPmrem) { _hdriPmrem = new THREE.PMREMGenerator(A.renderer); _hdriPmrem.compileEquirectangularShader(); }
+      new _hdrMod.HDRLoader().load('textures/hdri/belfast_sunset_puresky_1k.hdr', function(tex) {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        var envRT = _hdriPmrem.fromEquirectangular(tex);
+        _hdriEnvMap = envRT.texture;
+        tex.dispose();
+        _hdriLoading = false;
+        console.log('§LAYER2_HDRI_READY belfast_sunset_puresky_1k — real photographed envMap ready');
+        // If still mid-photoshoot when the load finally resolves, apply immediately rather than
+        // waiting for the next Alt+S — same "don't miss a slow-arriving asset" discipline as the
+        // streaming-race fixes elsewhere in this file.
+        if (A._stillRefineActive || _autoStageOn) A._envMap = _hdriEnvMap;
+      }, undefined, function(err) {
+        _hdriLoading = false;
+        console.warn('§LAYER2_HDRI_FAIL ' + (err && err.message ? err.message : err));
+      });
+    }).catch(function(e) {
+      _hdriLoading = false;
+      console.warn('§LAYER2_HDRI_FAIL ' + e.message);
+    });
+  }
   function _applyPhotoStaging() {
+    // §PHOTO_DOUBLE_APPLY_GUARD (2026-07-16, found live during the ghosting-fix verification):
+    // a Stage-2 auto-refire calls startStillRefine → here while the soft-park KEPT staging alive —
+    // the re-apply then saved the ALREADY-STAGED values (dusk fog/sun/night-glow) as the "original"
+    // baseline (log fingerprint: `§PHOTO_STAGING on nightWasOn=true`), so the eventual full
+    // teardown "restored" the scene to dusk instead of daytime — staging leaked permanently after
+    // exit. Staging is applied once per photo-mode CYCLE; a refire only restarts the TAA polish.
+    if (_photoStagingOn) { console.log('§PHOTO_STAGING already on — skip re-apply (Stage-2 refire)'); return; }
+    _photoStagingOn = true;
+    A._photoStagingOn = true;
     // §PHOTO_VARIATION: roll (or keep locked) the shared seed before anything below reads it.
     if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
@@ -1007,6 +1060,11 @@ async function setupEffects(A, renderer, scene, camera) {
       _photoFogColorSaved = A.scene.fog.color.getHex();
       _photoFogDensitySaved = A.scene.fog.density;
     }
+    // §LAYER2_HDRI: save whatever envMap was active (the procedural sky-derived one), swap to the
+    // real HDRI if already loaded, or kick off the (one-time, cached) load if not yet ready —
+    // _ensureHdriEnvMap applies it itself once resolved, per the mid-photoshoot check inside it.
+    _photoEnvMapSaved = A._envMap;
+    if (_hdriEnvMap) A._envMap = _hdriEnvMap; else _ensureHdriEnvMap();
     _photoSkyWasVisible = !!(A._sky && A._sky.visible);
     if (A.sun) {
       _photoSunPosSaved = A.sun.position.clone();
@@ -1088,6 +1146,12 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
+    if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
+    _photoStagingOn = false;
+    A._photoStagingOn = false;
+    // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
+    // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
+    if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
@@ -1150,16 +1214,194 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
+    _startStillAOPhase();  // §PHOTO_AO: fold N8AO contact-shadow into the finished still (no-op if unavailable)
   }
-  function _teardownStillRefine(reason) {
+
+  // §PHOTO_AO (2026-07-16, Task 1 — one keypress: the Alt+S still now INCLUDES N8AO ambient
+  // occlusion, no separate Alt+G needed. Alt+G stays a fully standalone preview, untouched):
+  // n8ao ships TWO variants — N8AOPostPass (pmndrs composer, used by effects_gi_poc.js) and
+  // N8AOPass (three.js NATIVE EffectComposer) — the vendored bundle was rebuilt (same esbuild
+  // command, --external:three) to also export N8AOPass, and it extends the SAME lib/Pass.js the
+  // importmap already maps, so it slots straight into A._composer's pass array.
+  //
+  // WHY AN ADAPTER, AND WHY ONLY AFTER THE FREEZE (the double-scene-render problem): both
+  // TAARenderPass and N8AOPass are scene-RENDERING passes, not screen-space filters — chained
+  // naively, N8AO's own beauty render (single-sample, un-jittered) would REPLACE the 16-sample
+  // TAA image it sits after, throwing away the supersampling. Instead:
+  //   1. The adapter pass below sits between TAA and OutputPass, disabled during normal
+  //      navigation and during the 16-sample accumulation itself (zero cost, zero interplay).
+  //   2. When the TAA still FREEZES (16 clean samples — §STILL_REFINE_RESTART guarantees a
+  //      still camera), the adapter turns on: it primes N8AO's beautyRenderTarget DEPTH with one
+  //      real scene render, then per frame copies the frozen TAA image (readBuffer) into the
+  //      beauty COLOR (depth-untouched fullscreen copy) and runs N8AO with autoRenderBeauty=false
+  //      — so the AO is computed from real scene depth but composited over the crisp TAA image.
+  //   3. Because the camera is frozen, N8AO's accumulate mode refines the AO over
+  //      STILL_AO_FRAMES frames with NO further scene renders at all (depth is primed once) —
+  //      each frame costs only the AO/denoise/composite quads, then the still freezes WITH AO.
+  // OutputPass still runs last, so AO composites in linear light (gammaCorrection=false).
+  var STILL_AO_ENABLED = true;
+  var STILL_AO_FRAMES = 24;       // n8ao accumulates 1 AO sample-set per still frame; 24 ≈ converged
+  // §PHOTO_AO_TUNE (2026-07-16, real-GPU A/B at STILL quality — PHOTO_AO_TUNE_r{8_i6,5_i4,3_i4,
+  // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6
+  // KEPT. The review's earlier "broad mottle / reads busy" verdict was measured over LIVE
+  // navigation, where every frame resets the AO accumulation (markDirty→firstFrame) and shows raw
+  // single-frame noise — at still quality the accumulation fully converges (24+ frames, frozen
+  // camera) and the same radius reads as clean depth: courtyard corners, roof openings, skyline
+  // masses, base contact. Smaller radii (3/1.5) are near-invisible at whole-building establishing
+  // distance — consistent with §GI_POC_RADIUS_TEST's original sub-pixel finding. Perf at still:
+  // r8 ≈ 30ms/frame, r3 ≈ 6.5ms/frame (RTX 4060, 1280x800) — both trivial for a one-shot still.
+  var STILL_AO_RADIUS = 8;
+  var STILL_AO_INTENSITY = 6;
+  var _stillAOPromise = null, _stillAORAF = null, _stillAODepthDirty = true;
+  function _buildStillAO() {
+    return Promise.all([
+      import('./lib/postprocessing-n8ao.bundle.js'),
+      import('./lib/Pass.js'),
+      import('./lib/CopyShader.js')
+    ]).then(function(mods) {
+      var bundle = mods[0], passMod = mods[1], copyMod = mods[2];
+      if (!bundle.N8AOPass) { console.warn('§PHOTO_AO_INIT_FAIL bundle has no N8AOPass export'); return null; }
+      var rt = A._composer.renderTarget1;  // composer buffer size INCLUDES pixelRatio — match it exactly
+      var n8 = new bundle.N8AOPass(scene, camera, rt.width, rt.height);
+      n8.configuration.autoRenderBeauty = false;  // beauty = the frozen TAA image, injected by the adapter
+      n8.autoDetectTransparency = false;          // transparency machinery only works with autoRenderBeauty;
+                                                  // left on it would feed EMPTY transparency targets to the
+                                                  // compositer the first frame a transparent material streams in
+      n8.configuration.gammaCorrection = false;   // OutputPass tone-maps after this pass — stay linear
+      n8.configuration.accumulate = true;         // camera is frozen during the AO phase — refine, don't flicker
+      n8.configuration.aoRadius = STILL_AO_RADIUS;
+      n8.configuration.intensity = STILL_AO_INTENSITY;
+      n8.configuration.aoSamples = 8;
+      n8.configuration.denoiseSamples = 4;
+      n8.configuration.denoiseRadius = 6;
+      n8.configuration.halfRes = false;           // still-frame quality
+      n8.renderToScreen = false;
+      var copyMat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(copyMod.CopyShader.uniforms),
+        vertexShader: copyMod.CopyShader.vertexShader,
+        fragmentShader: copyMod.CopyShader.fragmentShader,
+        depthTest: false, depthWrite: false, blending: THREE.NoBlending
+      });
+      var copyQuad = new passMod.FullScreenQuad(copyMat);
+      var adapter = {
+        enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
+                               // zero-cost-when-off discipline everything else in this file follows
+        needsSwap: true, clear: false, renderToScreen: false,
+        setSize: function(w, h) { n8.setSize(w, h); _stillAODepthDirty = true; },
+        render: function(renderer2, writeBuffer, readBuffer) {
+          if (_stillAODepthDirty) {
+            // Depth prime: ONE real scene render into n8ao's beauty target — we need its DEPTH
+            // texture for the AO; the color it writes is overwritten by the TAA copy right below.
+            // Re-primed on resize and whenever markDirty fires while active (§PHOTO_AO_STREAM
+            // re-assert — geometry streaming in later must reach the depth buffer too).
+            renderer2.setRenderTarget(n8.beautyRenderTarget);
+            renderer2.clear(true, true, true);
+            renderer2.render(scene, camera);
+            n8.firstFrame();
+            _stillAODepthDirty = false;
+          }
+          // Inject the TAA output as the AO composite's beauty color. autoClear must be off —
+          // a clear here would wipe the depth we just primed (the copy quad itself writes no depth).
+          var oldAutoClear = renderer2.autoClear;
+          renderer2.autoClear = false;
+          copyMat.uniforms.tDiffuse.value = readBuffer.texture;
+          renderer2.setRenderTarget(n8.beautyRenderTarget);
+          copyQuad.render(renderer2);
+          renderer2.autoClear = oldAutoClear;
+          n8.renderToScreen = false;
+          n8.render(renderer2, writeBuffer, readBuffer);
+        }
+      };
+      A._composer.insertPass(adapter, 1);  // directly after the TAA pass, before (disabled) SSAO/Outline + OutputPass
+      A._stillAOPass = n8;                 // diagnostics/tests — closure state is otherwise invisible
+      A._stillAOAdapter = adapter;
+      // §PHOTO_AO_STREAM re-assert (same landmine as §GI_POC_STALE_FIX): anything that changes the
+      // scene while the still is frozen-with-AO (streaming, xray, selection) goes through
+      // A.markDirty — chain onto it (effects_gi_poc.js wraps it the same way; the wraps compose)
+      // so the depth buffer is re-primed and the AO accumulation reset instead of blending stale.
+      if (A.markDirty) {
+        var _origMD = A.markDirty;
+        A.markDirty = function() {
+          if (adapter.enabled) { _stillAODepthDirty = true; n8.firstFrame(); }
+          return _origMD.apply(A, arguments);
+        };
+      }
+      console.log('§PHOTO_AO_INIT_OK N8AOPass in native composer chain (lazy) size=' + rt.width + 'x' + rt.height);
+      return { pass: n8, adapter: adapter };
+    }).catch(function(e) {
+      console.warn('§PHOTO_AO_INIT_FAIL ' + e.message);
+      _stillAOPromise = null;  // don't latch a transient load failure (same lesson as §GI_BUILD_RETRY)
+      return null;
+    });
+  }
+  function _ensureStillAO() {
+    if (!_stillAOPromise) _stillAOPromise = _buildStillAO();
+    return _stillAOPromise;
+  }
+  function _stopStillAOPhase(reason) {
+    if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
+    if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
+      A._stillAOAdapter.enabled = false;
+      console.log('§PHOTO_AO off (' + reason + ') — pass disabled, zero cost during normal nav');
+    }
+  }
+  function _startStillAOPhase() {
+    if (!STILL_AO_ENABLED || !A._composer) return;
+    var t0 = performance.now();
+    _ensureStillAO().then(function(ao) {
+      if (!ao) return;
+      // the world may have moved on during the async import — only fold AO into a still that is
+      // still frozen, and never fight the GI composer or the cinema loop for the canvas
+      if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) return;
+      _stillAODepthDirty = true;
+      ao.pass.firstFrame();
+      ao.adapter.enabled = true;
+      var sig = _camSig(), f = 0, renderMs = 0;
+      console.log('§PHOTO_AO start frames=' + STILL_AO_FRAMES + ' radius=' + STILL_AO_RADIUS +
+        ' intensity=' + STILL_AO_INTENSITY + ' (still-only fold — Alt+G untouched)');
+      (function stepAO() {
+        _stillAORAF = null;
+        if (!A._stillRefineActive || !ao.adapter.enabled) return;  // torn down mid-phase
+        var s = _camSig();
+        if (s !== sig) { sig = s; _stillAODepthDirty = true; }  // late damping/programmatic nudge:
+        // re-prime depth; n8ao itself resets its AO accumulation on the view-matrix change
+        var r0 = performance.now();
+        A._composer.render();
+        renderMs += performance.now() - r0;
+        f++;
+        if (f >= STILL_AO_FRAMES) {
+          console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
+            ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
+          return;
+        }
+        _stillAORAF = requestAnimationFrame(stepAO);
+      })();
+    });
+  }
+  function _teardownStillRefine(reason, keepStaging) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
-    A._composerEnabled = _stillRefinePrevComposerEnabled;
+    _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
+    // §GI_HANDOFF_GHOST_FIX (2026-07-16): RECOMPUTE the composer state instead of blind-restoring
+    // a value saved at start — still-refine and toggleGIPreview each saved/restored
+    // _composerEnabled, and the pairs interleave (Alt+S → Alt+G on → camera move soft-cancels the
+    // still → Alt+G off restores a pre-GI value that no longer reflects reality), stranding
+    // _composerEnabled. The truth is derivable at any moment with the same formula toggleSSAO/
+    // setOutline already use: enabled iff SSAO or Outline actually need the composer.
+    A._composerEnabled = !!((A._outlinePass && A._outlinePass.enabled) || (A._ssaoPass && A._ssaoPass.enabled));
     var n = _setTriplanarActive(false);
-    _teardownPhotoStaging();
+    // §STAGE1_ORBIT_PERSIST (2026-07-16, user spec — "auto stage: #1 when orbiting, #2 when
+    // static"): a pure camera-move cancel (orbit-drag-start, wheel-zoom) should drop the crisp
+    // TAA-supersample polish (that part is a structural requirement of TAA — see the conversation
+    // this session on why it can't survive continuous motion) WITHOUT reverting the mood staging
+    // (dusk sky/ground/shadows) — the user explicitly wants staging to persist through navigation,
+    // only breaking on an actual selection. `keepStaging` lets the camera-move callers opt out of
+    // `_teardownPhotoStaging()` while selection/explicit-Alt+S-off callers still get the full
+    // revert unchanged.
+    if (!keepStaging) _teardownPhotoStaging();
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
-    console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms);
+    console.log('§STILL_REFINE ' + reason + ' elapsedMs=' + ms + (keepStaging ? ' (staging kept)' : ''));
     if (n > 0) console.log('§TRIPLANAR_PERF ms=' + ms + ' materials=' + n);
   }
   A._getPhotoSparkles = function() { return _photoSparkles; };  // diagnostic accessors — closures
@@ -1170,12 +1412,23 @@ async function setupEffects(A, renderer, scene, camera) {
                                                         // it once still-refine freezes.
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
+    // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
+    // the canvas — Alt+S's own RAF renders A._composer while the main loop prefers _giComposer,
+    // so both active at once fight over every frame. One at a time.
+    if (A._giComposerActive && typeof A.toggleGIPreview === 'function') A.toggleGIPreview(false);
     A._stillRefineActive = true;
-    _stillRefinePrevComposerEnabled = A._composerEnabled;
-    A._composerEnabled = true;
+    A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
     A._taaPass.accumulateIndex = -1;
     _stillRefineStartMs = performance.now();
+    // §STILL_REFINE_RESTART (2026-07-16, Task 3 — light-ghosting root causes (a) damping glide,
+    // (b) grace-window-swallowed cancel, (c) Fly-mode programmatic motion): capture the pose
+    // signature the accumulation starts from; step() below restarts the accumulation whenever the
+    // pose changes mid-run. Event-driven cancels stay as the fast path — this is the mechanism-
+    // level safety net beneath them: a frozen still can only ever be produced by a camera that
+    // was genuinely still for the whole 16-sample run.
+    _stillSig = _camSig();
+    _stillRestartLogged = false;
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
     console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
@@ -1208,6 +1461,26 @@ async function setupEffects(A, renderer, scene, camera) {
       _reassertPhotoEnvMap();
       _reassertPhotoSparkles();
       _reassertPhotoGlow();
+      // §STILL_REFINE_RESTART (Task 3): pose-signature guard INSIDE the accumulation loop — the
+      // event-driven cancels miss (a) OrbitControls inertial damping still gliding when Alt+S is
+      // pressed (no events fire during the glide), (b) a drag/wheel begun inside the 500ms grace
+      // window (its cancel is swallowed, and no FURTHER 'start' events fire while it continues),
+      // and (c) Fly-mode/programmatic camera motion (no pointer events at all — the user flies
+      // with Alt+G and this loop can be running underneath). Any pose change mid-run restarts the
+      // accumulation from the current pose instead of blending across the motion — TAA samples
+      // can never straddle two poses, so a smeared freeze is structurally impossible. The grace
+      // window itself stays (it still absorbs the keypress nudge); this makes it harmless.
+      var _sigNow = _camSig();
+      if (_sigNow !== _stillSig) {
+        A._taaPass.accumulateIndex = -1;
+        _stillSig = _sigNow;
+        if (!_stillRestartLogged) {  // once per motion burst, not per frame
+          console.log('§STILL_REFINE_RESTART cam-moved — accumulation restarted');
+          _stillRestartLogged = true;
+        }
+      } else {
+        _stillRestartLogged = false;
+      }
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
       if (idx >= 16) { _finishStillRefine(idx); return; }
@@ -1221,13 +1494,141 @@ async function setupEffects(A, renderer, scene, camera) {
   // triggered it, making the effect nearly impossible to actually see. Absorb that incidental
   // nudge with a short grace window; a real subsequent interaction still cancels normally.
   var STILL_REFINE_GRACE_MS = 500;
-  A.stopStillRefine = function() {
-    if (!A._stillRefineActive) return;
-    if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+  A.stopStillRefine = function(force) {
+    if (!A._stillRefineActive) {
+      // §STAGE2_DISARM (review finding 6): during soft-park a real selection/UI interaction must
+      // kill the whole cycle AND revert the kept-alive staging — otherwise the dusk mood silently
+      // outlives the photoshoot. §AUTO_STAGE2_DISABLED: with the idle timer permanently disarmed,
+      // _autoStageOn is never true anymore — soft-park is now signalled by the kept-alive staging
+      // itself (_photoStagingOn), so key the branch off that (the timer check kept for the day
+      // the flag is re-enabled).
+      if (_autoStageOn || _photoStagingOn) { _autoStageArm(false); _teardownStillRefine('cancelled (interaction during soft-park)'); }
+      return;
+    }
+    if (!force && _stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+    _autoStageArm(false);  // explicit/selection-driven stop cancels the auto re-arm too
     _teardownStillRefine('cancelled (interaction)');
   };
+  // §STAGE1_STAGE2 (2026-07-16, sandbox spike — feat/ssgi-composer-poc — NOT the shipped Alt+S
+  // path, an experimental auto-staging layer on top of it): "Stage 1" = mood persists through
+  // camera movement, only the TAA-crisp polish drops (structural requirement, see conversation).
+  // "Stage 2" = after AUTO_STAGE_IDLE_MS of no interaction while staging is still kept-alive,
+  // automatically re-trigger the full still-refine polish — matching the user's "#1 when
+  // orbiting, #2 when static after 3 sec" spec exactly, without needing a repeated Alt+S press.
+  var AUTO_STAGE_IDLE_MS = 3000;
+  // §AUTO_STAGE2_DISABLED (2026-07-16, user directive: "if the auto Alt-S is the issue then
+  // disable it — let user Alt-S manually."): the Stage-2 idle auto-refire is OFF. Stage 1 keeps
+  // its behavior (camera movement drops the TAA polish but KEEPS the dusk staging); the re-polish
+  // is now a manual Alt+S press when the user settles (staging re-apply is a no-op skip via
+  // §PHOTO_DOUBLE_APPLY_GUARD, so the repress only restarts the TAA accumulation). The arming/
+  // fire machinery below is kept intact behind this flag in case it returns later — with the
+  // flag false, §AUTO_STAGE2 can never fire (_autoStageArm coerces every arm to a disarm).
+  var AUTO_STAGE2_ENABLED = false;
+  var _autoStageTimer = null, _autoStageOn = false;
+  // §STAGE2_MIDDRAG_FIX (2026-07-16, review finding 6 + live user report "ghosting has returned
+  // when Alt-S"): the idle timer used to count 3s from the FIRST camera move only — its re-arm
+  // path was dead code (callers gated on _stillRefineActive, false during soft-park), so a held
+  // drag / zoom sequence longer than 3s got Stage 2 re-fired MID-MOTION: TAA accumulated 16
+  // samples over a moving camera (the 500ms grace window swallowing any cancel) and froze on a
+  // fully smeared image. Fix: track real camera motion via OrbitControls 'change' and only fire
+  // once the camera has been genuinely still for the full idle window; if not idle yet, re-check
+  // for the remainder instead of firing.
+  var _lastCamMoveMs = 0, _camMoveHooked = false, _lastCamSig = '';
+  function _hookCamMove() {
+    if (_camMoveHooked || !A.controls) return;
+    _camMoveHooked = true;
+    A.controls.addEventListener('change', function() { _lastCamMoveMs = performance.now(); });
+  }
+  // Hard guarantee independent of any event plumbing: the camera's actual pose. Stage 2 may only
+  // fire when this signature is IDENTICAL across a full idle window — even if the 'change'
+  // listener were ever detached/rebound (controls swap), a moving camera can never pass this gate.
+  function _camSig() {
+    if (!A.camera) return '';
+    var p = A.camera.position, q = A.camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
+  // read-only diagnostic, same pattern as A._getPhotoSparkles — closure state is otherwise invisible
+  A._getAutoStageState = function() {
+    return { hooked: _camMoveHooked, armed: _autoStageOn, timer: !!_autoStageTimer,
+             idleForMs: Math.round(performance.now() - _lastCamMoveMs) };
+  };
+  function _autoStageArm(on) {
+    if (on && !AUTO_STAGE2_ENABLED) on = false;  // §AUTO_STAGE2_DISABLED — every arm becomes a disarm
+    _autoStageOn = on;
+    A._photoAutoStageOn = on;  // read by main.js's interaction handlers (soft-park re-arm/disarm)
+    if (_autoStageTimer) { clearTimeout(_autoStageTimer); _autoStageTimer = null; }
+    if (!on) return;
+    _hookCamMove();
+    _lastCamMoveMs = performance.now();  // arming IS an interaction — restart the idle window
+    _lastCamSig = _camSig();
+    _autoStageTimer = setTimeout(function _fire() {
+      _autoStageTimer = null;
+      if (!_autoStageOn || A._stillRefineActive) return;
+      var sig = _camSig();
+      if (sig !== _lastCamSig) {  // camera pose changed since last check — wait a full fresh window
+        _lastCamSig = sig;
+        _autoStageTimer = setTimeout(_fire, AUTO_STAGE_IDLE_MS);
+        return;
+      }
+      var idleFor = performance.now() - _lastCamMoveMs;
+      if (idleFor < AUTO_STAGE_IDLE_MS) { _autoStageTimer = setTimeout(_fire, AUTO_STAGE_IDLE_MS - idleFor); return; }
+      A.startStillRefine();
+      // Auto-fire has no physical keypress nudge to absorb — backdate past the grace window so a
+      // real interaction can cancel INSTANTLY (the grace exists only for the manual Alt+S reach).
+      _stillRefineStartMs = performance.now() - STILL_REFINE_GRACE_MS;
+      console.log('§AUTO_STAGE2 idle-triggered');
+    }, AUTO_STAGE_IDLE_MS);
+  }
+  // §GI_EXCLUSION (review finding 5): the GI preview composer and the TAA composer must not both
+  // drive the canvas. Called by effects_gi_poc.js on GI-on: stop an in-flight accumulation RAF
+  // and disarm the Stage-2 auto-restage (its refire would yank GI off again via startStillRefine's
+  // own guard) — but KEEP photo mode itself (frozen-still state, dusk staging, triplanar textures,
+  // all keyed to A._stillRefineActive): GI preview over the staged scene is the POC's whole point.
+  // A camera move during GI preview re-enters the normal Stage-1/2 cycle, which turns GI off at
+  // the next Stage-2 fire — deliberate, deterministic, escapable.
+  A.pauseStillRefineForGI = function() {
+    _autoStageArm(false);
+    if (_stillRefineRAF) {
+      cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null;
+      console.log('§STILL_REFINE accumulation paused (GI preview)');
+    }
+    // §GI_HANDOFF_GHOST_FIX (2026-07-16, user narrowed the light-ghosting live: "it happens after
+    // Alt-G"): this used to cancel only the RAF and leave A._taaPass.accumulate=true with a stale
+    // accumulateIndex. When Alt+G was later toggled OFF, _composerEnabled came back and the MAIN
+    // loop rendered the TAA pass every frame with accumulate still true — TAARenderPass kept
+    // re-presenting/blending its stale accumulation buffer across a moving camera: exactly a
+    // light ghost, appearing only after an Alt+G round-trip. The GI render replaces the still
+    // anyway (and Stage-2 auto-refire is disabled — the user re-presses Alt+S manually for a
+    // fresh polish), so fully drop the accumulation state here, not just the stepping loop.
+    if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
+    // §PHOTO_AO: the still-AO pass composites over the (now dropped) frozen TAA image — a GI
+    // handoff must disable it too, or the native composer would come back compositing stale AO.
+    _stopStillAOPhase('GI preview');
+  };
+  // §STAGE1: camera-move-only cancel — drops TAA polish, KEEPS staging, arms the Stage-2 idle timer.
+  A.softStopStillRefine = function() {
+    if (!A._stillRefineActive) { _autoStageArm(true); return; }  // already soft-parked — just re-arm
+    if (_stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
+    _teardownStillRefine('soft-cancel (camera move)', true);
+    _autoStageArm(true);
+  };
+  // §STAGE1_STUCK_FIX (2026-07-16, real-user report — "could not shake out of shadow mode, had
+  // to hard reset"): root cause — _teardownStillRefine unconditionally sets A._stillRefineActive
+  // = false even on the SOFT path (Stage 1: TAA paused, staging kept, idle-timer armed for
+  // Stage 2). toggleStillRefine only ever checked _stillRefineActive, so pressing Alt+S while in
+  // that in-between state saw "false" and called startStillRefine() again instead of truly
+  // turning off — Alt+S could START the cycle but could never STOP it once Stage 1/2 began
+  // auto-cycling; only a non-canvas click (full teardown) or a hard reload could escape. Fix:
+  // toggle off whenever EITHER actively refining OR the auto-stage loop is armed, not just the
+  // former — Alt+S is now a reliable off-switch in every state of this feature.
   A.toggleStillRefine = function() {
-    if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();
+    if (A._stillRefineActive || _autoStageOn) {
+      _autoStageArm(false);
+      _teardownStillRefine('cancelled (Alt+S toggle off)');
+    } else {
+      A.startStillRefine();
+    }
   };
 
   // §CINEMA_ORBIT (2026-07-16, user spec): the "Cinema pill" 360 fly-around, wired to a real
@@ -1329,8 +1730,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // its own TAA-accumulate rAF loop — this function drives its own render loop for the moving
     // camera (accumulating supersamples across motion would just blur/ghost, not help).
     A._stillRefineActive = true;
-    _stillRefinePrevComposerEnabled = A._composerEnabled;
-    A._composerEnabled = true;
+    A._composerEnabled = true;   // teardown recomputes from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX)
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stillRefineStartMs = performance.now();
     var _triCount = _setTriplanarActive(true);
@@ -1339,6 +1739,30 @@ async function setupEffects(A, renderer, scene, camera) {
       ' fillDistance=' + fillDistance.toFixed(1) + ' pushInRadius=' + pushInRadius.toFixed(1) +
       ' radiusBand=[' + radiusMin.toFixed(1) + ',' + radiusMax.toFixed(1) + '] triplanarMaterials=' + _triCount);
 
+    // §GI_CINEMA_PRESET (2026-07-16, Task 2): N8AO at full-res costs ~317ms/frame on a RTX 4060
+    // (measured) — a recording with GI active would be a ~3fps slideshow. While the recording
+    // runs WITH GI on, drop N8AO to halfRes + reduced samples/denoise (the recording is motion —
+    // per-frame AO fidelity reads far less than in a still), restore the exact prior values when
+    // the recording stops. No GI active = nothing saved, nothing touched.
+    var _giCinemaSaved = null;
+    function _giCinemaPresetRestore() {
+      if (!_giCinemaSaved || !A._giN8aoPass) return;
+      var cfg = A._giN8aoPass.configuration;
+      cfg.halfRes = _giCinemaSaved.halfRes; cfg.aoSamples = _giCinemaSaved.aoSamples;
+      cfg.denoiseSamples = _giCinemaSaved.denoiseSamples; cfg.denoiseRadius = _giCinemaSaved.denoiseRadius;
+      _giCinemaSaved = null;
+      if (typeof A._giN8aoPass.firstFrame === 'function') A._giN8aoPass.firstFrame();
+      console.log('§GI_CINEMA_PRESET off (restored halfRes=' + cfg.halfRes + ' aoSamples=' + cfg.aoSamples +
+        ' denoiseSamples=' + cfg.denoiseSamples + ' denoiseRadius=' + cfg.denoiseRadius + ')');
+    }
+    if (A._giComposerActive && A._giN8aoPass) {
+      var _giCfg = A._giN8aoPass.configuration;
+      _giCinemaSaved = { halfRes: _giCfg.halfRes, aoSamples: _giCfg.aoSamples,
+                         denoiseSamples: _giCfg.denoiseSamples, denoiseRadius: _giCfg.denoiseRadius };
+      _giCfg.halfRes = true; _giCfg.aoSamples = 4; _giCfg.denoiseSamples = 2; _giCfg.denoiseRadius = 3;
+      if (typeof A._giN8aoPass.firstFrame === 'function') A._giN8aoPass.firstFrame();
+      console.log('§GI_CINEMA_PRESET on halfRes=true aoSamples=4 denoiseSamples=2 denoiseRadius=3');
+    }
     var stream = A.renderer.domElement.captureStream(CINEMA_FPS);
     var chunks = [];
     var mimeType = (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
@@ -1355,6 +1779,7 @@ async function setupEffects(A, renderer, scene, camera) {
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
       console.log('§CINEMA_ORBIT saved size=' + blob.size + ' type=' + mimeType);
+      _giCinemaPresetRestore();  // §GI_CINEMA_PRESET: recording over — full-quality GI settings back
       _teardownStillRefine('cinema-orbit-done');
       _cinemaActive = false;
     };
@@ -1362,8 +1787,9 @@ async function setupEffects(A, renderer, scene, camera) {
 
     var startMs = performance.now();
     var durationMs = (CINEMA_N_FRAMES / CINEMA_FPS) * 1000;
+    var _cinePerfN = 0, _cinePerfMs = 0, _cinePrevFrameMs = 0;  // §CINEMA_PERF frame-time telemetry
     function step() {
-      if (!_cinemaActive) return;
+      if (!_cinemaActive) { _giCinemaPresetRestore(); return; }  // early abort (stopCinemaOrbit) — restore GI too
       var tNorm = Math.min(1, (performance.now() - startMs) / durationMs);
       var azimuth = base.startAzimuth + tNorm * Math.PI * 2;
       // §CINEMA_PUSHIN phases: push in to fill-frame (radius only, tilt held at the user's own
@@ -1408,7 +1834,22 @@ async function setupEffects(A, renderer, scene, camera) {
       _reassertPhotoEnvMap();
       _reassertPhotoSparkles();
       _reassertPhotoGlow();
-      if (A._composer) A._composer.render();
+      // §GI_CINEMA_PRESET: when GI is active, the GI composer is what the user is seeing (main
+      // loop prefers it) — render THAT for the recording; rendering A._composer here as well
+      // would have the two composers alternating on the canvas mid-recording (flicker).
+      if (A._giComposerActive && A._giComposer) A._giComposer.render();
+      else if (A._composer) A._composer.render();
+      // §CINEMA_PERF: real frame-time telemetry, logged every 75 frames — the whole point of the
+      // preset is recording smoothness, so measure it where it happens, not in a synthetic bench.
+      var _nowMs = performance.now();
+      if (_cinePrevFrameMs) {
+        _cinePerfN++; _cinePerfMs += _nowMs - _cinePrevFrameMs;
+        if (_cinePerfN % 75 === 0) {
+          console.log('§CINEMA_PERF frames=' + _cinePerfN + ' avgFrameMs=' + (_cinePerfMs / _cinePerfN).toFixed(1) +
+            ' gi=' + !!A._giComposerActive + ' preset=' + !!_giCinemaSaved);
+        }
+      }
+      _cinePrevFrameMs = _nowMs;
       if (tNorm >= 1) { recorder.stop(); return; }
       requestAnimationFrame(step);
     }

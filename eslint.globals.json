@@ -154,5 +154,6 @@
   "WORK_PACKAGES": "readonly",
   "XLSX": "readonly",
   "HistoryTap": "readonly",
-  "ICONS": "readonly"
+  "ICONS": "readonly",
+  "setupGIPoc": "readonly"
 }
