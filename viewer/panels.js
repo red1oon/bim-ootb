@@ -31,6 +31,7 @@ var ICONS = {
   maximize:  { svg: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', trl: 'ui_tt_fullscreen', key: null, desc: 'Fullscreen' },
   box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+X', desc: 'Bounding Boxes' },
   camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
+  video:     { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>', trl: 'ui_tt_cinema', key: null, desc: 'Cinema Orbit' },
   // PILL_DRAWER_REORGANIZATION.md §NEW ICONS — Lucide, pulled verbatim 2026-07-05 (unpkg.com/lucide-static)
   bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
   hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
@@ -381,6 +382,38 @@ function setupPanels(A) {
     // picker (None/Grass/Earth/Paved) is REMOVED here — replaced by the single Shadow+Ground
     // cycle swatch appended by _extendVisualFxPanel()/_buildShadowGroundRow() further down
     // (runs after _actions exists, reusing the 'shadow' action's real fn/isActive).
+
+    // Separator
+    var sepCinema = document.createElement('hr');
+    sepCinema.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
+    existing.appendChild(sepCinema);
+
+    // §CINEMA_ORBIT row: camcorder icon — click to record the 360 orbit clip (effects.js
+    // A.startCinemaOrbit). Label swaps to "Recording..." for the ~24s duration, disabled meanwhile.
+    var cinemaRow = document.createElement('div');
+    cinemaRow.className = 'bim-slider-row';
+    cinemaRow.style.cssText = 'cursor:pointer;gap:8px;align-items:center';
+    var cinemaBtn = A.icon('video', { size: 18 });
+    cinemaRow.appendChild(cinemaBtn);
+    var cinemaLabel = document.createElement('span');
+    cinemaLabel.textContent = 'Cinema Orbit (24s)';
+    cinemaLabel.style.cssText = 'font-size:12px;opacity:0.85';
+    cinemaRow.appendChild(cinemaLabel);
+    cinemaRow.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      if (typeof A.startCinemaOrbit !== 'function') return;
+      if (A._stillRefineActive) { console.log('§CINEMA_ORBIT skip — still-refine/cinema already active'); return; }
+      cinemaLabel.textContent = 'Recording…';
+      cinemaRow.style.opacity = '0.6'; cinemaRow.style.pointerEvents = 'none';
+      A.startCinemaOrbit();
+      var _checkDone = setInterval(function() {
+        if (A._stillRefineActive) return;
+        clearInterval(_checkDone);
+        cinemaLabel.textContent = 'Cinema Orbit (24s)';
+        cinemaRow.style.opacity = ''; cinemaRow.style.pointerEvents = '';
+      }, 500);
+    });
+    existing.appendChild(cinemaRow);
 
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);
