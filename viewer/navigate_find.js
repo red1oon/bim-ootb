@@ -4836,14 +4836,22 @@
       _clearShapeOverlays();
       _clearHlOverlay();
       if (A.setOutline) A.setOutline([]);
-      // §PERF-50K (user, 2026-07-06): full per-material X-Ray (A.toggleXray iterates every
+      // §PERF-50K (user, 2026-07-06, #672): full per-material X-Ray (A.toggleXray iterates every
       // material, flips transparent/opacity/side, forces a pipeline recompile) was ALWAYS
       // auto-engaged here on every selection — fine at small scale, but "too heavy" once a
       // building crosses ~50k elements (the same threshold time_machine.js already uses for
       // its own perf cliff, LARGE_BUILDING). Above that, obscure the rest via the cheap
       // VISIBILITY-only A.filterByGuids (the same primitive Alt+X's ghost/bbox mode already
       // uses) instead of touching material state at all. Below threshold: unchanged.
-      var _bigBuilding = (A.activeBuildingTotal || 0) > 50000;
+      // §PERF-50K-SINGLE-PICK (2026-07-17, user: a single 3D click reads as "whole building
+      // disappears" on a >50k building like Hospital (63,182 elements) — the cheap filter hides
+      // EVERYTHING except the one selected element, instead of the expected translucent ghost.
+      // The perf cost genuinely scales with building size either way (dimming every OTHER
+      // material, not the selection count) — but a single deliberate click is a much rarer,
+      // lower-frequency action than a Find-panel bulk result, so it's worth the cost. Cheap
+      // filter now only kicks in for genuine multi-item selections (set.size>1, i.e. Find-panel
+      // results) — a single pick always gets proper x-ray-dim regardless of building size.
+      var _bigBuilding = (A.activeBuildingTotal || 0) > 50000 && set.size > 1;
       if (_bigBuilding) {
         if (A.filterByGuids) A.filterByGuids(set);   // hide everything except the selection
       } else {
