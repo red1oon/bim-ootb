@@ -2650,12 +2650,24 @@ varying vec2 vHighPrecisionZW;
 // Get the current vertex position
 transformed = vec3( position );
 ${de.skinning_vertex}
+#ifdef USE_BATCHING
+transformed = ( batchingMatrix * vec4( transformed, 1.0 ) ).xyz;
+#endif
+#ifdef USE_INSTANCING
+transformed = ( instanceMatrix * vec4( transformed, 1.0 ) ).xyz;
+#endif
 newPosition = velocityMatrix * vec4( transformed, 1.0 );
 
 // Get the previous vertex position
 transformed = vec3( position );
 ${de.skinbase_vertex.replace(/mat4 /g,"").replace(/getBoneMatrix/g,"getPrevBoneMatrix")}
 ${de.skinning_vertex.replace(/vec4 /g,"")}
+#ifdef USE_BATCHING
+transformed = ( batchingMatrix * vec4( transformed, 1.0 ) ).xyz;
+#endif
+#ifdef USE_INSTANCING
+transformed = ( instanceMatrix * vec4( transformed, 1.0 ) ).xyz;
+#endif
 prevPosition = prevVelocityMatrix * vec4( transformed, 1.0 );
 
 gl_Position = newPosition;

@@ -120,6 +120,10 @@ async function setupGIPoc(A, renderer, scene, camera) {
       if (A._ssgiActive) {
         A._ssgiActive = false;
         if (_n8aoComposerRef) A._giComposer = _n8aoComposerRef;
+        // §PHOTO_SSGI: same knob restore as toggleSSGIPreview's own off-branch — this defensive
+        // clear path must not leak still-quality settings into a later plain Alt+J either.
+        if (_stillKnobsApplied) { _ssgiApplyKnobs(SSGI_NAV); _stillKnobsApplied = false; }
+        _stillSSGIEngaged = false;
         console.log('§SSGI toggle=false (via GI off)');
       }
       // §GI_HANDOFF_GHOST_FIX (2026-07-16, user: "it happens after Alt-G"): do NOT blind-restore a
@@ -148,6 +152,48 @@ async function setupGIPoc(A, renderer, scene, camera) {
   // geometry is exactly what this spike answers. One preview at a time: Alt+J and Alt+G are
   // mutually exclusive (both reuse main.js's single _giComposer render branch).
   var _ssgiComposer = null, _n8aoComposerRef = null;
+  // §SSGI_TUNE (2026-07-16, user feedback "noise + slight transparent"): two named knob sets.
+  // NAV = the navigable Alt+J preview (cost-sensitive, renders during interaction).
+  // STILL = the Alt+S freeze-time fold (§PHOTO_SSGI below) — one-shot converge on a frozen
+  // camera, so it can afford more rays/denoise than nav. thickness is the transparency knob
+  // (rays passing THROUGH walls light what's behind them = translucent read); raised from the
+  // port's guess of 5 per the tuning spec. spp/steps are baked shader defines (changing them
+  // recompiles the fullscreen material — fine for a one-shot still, avoid per-frame churn).
+  var SSGI_NAV   = { thickness: 12, denoiseIterations: 2, spp: 1 };
+  var SSGI_STILL = { thickness: 12, denoiseIterations: 3, spp: 2 };
+  var SSGI_KNOB_KEYS = ['thickness', 'denoiseIterations', 'spp'];
+  // §SSGI_CONVERGE (2026-07-16): the desktop render loop is ON-DEMAND (§S286 parks at 0 frames
+  // when idle) but SSGI's temporal accumulation only advances while frames actually render — a
+  // parked camera froze the preview mid-converge, so the reported noise could NEVER settle no
+  // matter what the denoise knobs said. After any dirty event while SSGI is active, keep
+  // rendering a bounded run of extra frames so accumulation genuinely converges, then let the
+  // loop park again (zero steady-state cost — same discipline as still-refine's own RAF).
+  var SSGI_CONVERGE_FRAMES = 90;   // ~1.5s at 60fps — matches the "settles in 1-2s" acceptance tell
+  var _ssgiConvergeLeft = 0, _ssgiConvergeRAF = null, _ssgiOrigMarkDirty = null, _ssgiConvergeDone = null;
+  function _ssgiKickConverge(frames, onDone) {
+    _ssgiConvergeLeft = frames || SSGI_CONVERGE_FRAMES;
+    if (onDone) _ssgiConvergeDone = onDone;  // latch even if a kick loop is already running —
+    // the toggle's own markDirty starts a plain kick first, and the fold's onDone must survive it
+    if (_ssgiConvergeRAF) return;
+    var _driven = 0;
+    (function step() {
+      _ssgiConvergeRAF = null;
+      if (!A._ssgiActive || _ssgiConvergeLeft <= 0) {
+        var cb = _ssgiConvergeDone; _ssgiConvergeDone = null;
+        if (cb) { console.log('§SSGI_CONVERGE done framesDriven=' + _driven + ' active=' + A._ssgiActive); cb(); }
+        return;
+      }
+      _ssgiConvergeLeft--; _driven++;
+      if (_ssgiOrigMarkDirty) _ssgiOrigMarkDirty.call(A);  // original — the wrap would re-arm the counter
+      _ssgiConvergeRAF = requestAnimationFrame(step);
+    })();
+  }
+  function _ssgiApplyKnobs(knobs) {
+    if (!A._ssgiEffect) return;
+    SSGI_KNOB_KEYS.forEach(function(k) {
+      if (A._ssgiEffect[k] !== knobs[k]) A._ssgiEffect[k] = knobs[k];  // reactive setters (makeOptionsReactive)
+    });
+  }
   async function _ensureSSGIBuilt() {
     if (_ssgiComposer) return true;
     try {
@@ -185,8 +231,8 @@ async function setupGIPoc(A, renderer, scene, camera) {
       // distance/thickness are world-scale-sensitive (50-150m envelopes here); steps/refineSteps
       // re-tuned live on HHS after the port (see PHOTOREAL_STILL_RENDER.md session record).
       var ssgi = new _pp.SSGIEffect(scene, camera, vdnp, {
-        distance: 30, thickness: 5, denoiseIterations: 1, radius: 5,
-        steps: 12, refineSteps: 4, spp: 1, resolutionScale: 1,
+        distance: 30, thickness: SSGI_NAV.thickness, denoiseIterations: SSGI_NAV.denoiseIterations,
+        radius: 5, steps: 12, refineSteps: 4, spp: SSGI_NAV.spp, resolutionScale: 1,
         importanceSampling: false
       });
       ssgi.updateUsingRenderPass();  // root cause 1 — engage direct-light injection NOW
@@ -194,10 +240,27 @@ async function setupGIPoc(A, renderer, scene, camera) {
         ('useDirectLight' in ssgi.ssgiPass.fullscreenMaterial.defines) +
         ' importanceSampling=' + ('importanceSampling' in ssgi.ssgiPass.fullscreenMaterial.defines));
       composer.addPass(new _pp.EffectPass(camera, ssgi));
+      // §PHOTO_SSGI_TRAA — TRIED AND DROPPED (2026-07-17, do not re-try blind): adding
+      // EffectPass(camera, new TRAAEffect(scene, camera, vdnp)) after the SSGI pass to recover
+      // still-quality edge AA rendered the ENTIRE composed frame black except tone-unmapped
+      // sprites (verified live, tell_b_staged_ssgi black-frame screenshot, 2026-07-17) — TRAA's
+      // own TemporalReprojectPass has its own r185 gaps beyond the ones patched for SSGI. The
+      // fold ships single-sample edges; if edge AA is ever wanted here, port TRAA's reprojection
+      // the same buffer-probing way patch #7 was derived, as its own bounded task.
       composer.setSize(window.innerWidth, window.innerHeight);
       _ssgiComposer = composer;
       A._ssgiEffect = ssgi;
-      console.log('§SSGI_INIT_OK realism-effects SSGI wired (lazy, Alt+J)');
+      // §SSGI_CONVERGE wrap: any "something changed, render again" signal (selection, xray,
+      // streaming ticks, controls change) also kicks the bounded converge run while SSGI is
+      // active — the wraps on markDirty compose (same chaining as §GI_POC_STALE_FIX above).
+      if (A.markDirty && !_ssgiOrigMarkDirty) {
+        _ssgiOrigMarkDirty = A.markDirty;
+        A.markDirty = function() {
+          if (A._ssgiActive) _ssgiKickConverge();
+          return _ssgiOrigMarkDirty.apply(A, arguments);
+        };
+      }
+      console.log('§SSGI_INIT_OK realism-effects SSGI wired (lazy, Alt+J) nav=' + JSON.stringify(SSGI_NAV));
       return true;
     } catch (e) {
       console.warn('§SSGI_INIT_FAIL ' + e.message);
@@ -223,6 +286,11 @@ async function setupGIPoc(A, renderer, scene, camera) {
       A._ssgiActive = false;
       A._giComposerActive = false;
       if (_n8aoComposerRef) A._giComposer = _n8aoComposerRef;  // hand the slot back to N8AO
+      // §PHOTO_SSGI: any off-path drops the still-quality knobs back to nav values, so a later
+      // plain Alt+J never inherits the expensive still settings (spp is a baked define — the
+      // restore recompile happens here, off-screen, not mid-preview).
+      if (_stillKnobsApplied) { _ssgiApplyKnobs(SSGI_NAV); _stillKnobsApplied = false; }
+      _stillSSGIEngaged = false;
       // same recompute as §GI_HANDOFF_GHOST_FIX above — never blind-restore
       A._composerEnabled = !!(A._stillRefineActive ||
         (A._outlinePass && A._outlinePass.enabled) || (A._ssaoPass && A._ssaoPass.enabled));
@@ -230,5 +298,49 @@ async function setupGIPoc(A, renderer, scene, camera) {
     console.log('§SSGI toggle=' + A._ssgiActive);
     if (A.markDirty) A.markDirty();
     return A._ssgiActive;
+  };
+
+  // ── §PHOTO_SSGI (2026-07-16, NEXT SESSION MANDATE step 4 — fold SSGI into the Alt+S still at
+  // freeze-time, same discipline as effects.js's §PHOTO_AO fold): when the 16-sample TAA still
+  // freezes, engage the SSGI composer over the staged scene (the already-proven "Alt+J after
+  // Alt+S" combination, now automatic) at STILL-quality knobs, drive a bounded converge run, and
+  // freeze on the converged GI image. Zero nav cost: nothing here runs unless a still froze.
+  // Falls back to the classic §PHOTO_AO fold if the bundle/effect fails (caller handles it).
+  // Alt+J itself stays a fully standalone navigable preview, untouched.
+  var _stillSSGIEngaged = false, _stillSSGIWasOn = false, _stillKnobsApplied = false;
+  var STILL_SSGI_FRAMES = 90;
+  A._stillSSGIEnabled = true;  // runtime-flippable (tests exercise the AO fallback path with this)
+  A.startStillSSGIPhase = async function() {
+    if (!A._stillSSGIEnabled) return false;
+    var t0 = performance.now();
+    if (!(await _ensureSSGIBuilt())) return false;
+    // the world may have moved on during the async import — only fold into a still that is
+    // still frozen (same guard as _startStillAOPhase)
+    if (!A._stillRefineActive) return false;
+    _stillSSGIWasOn = A._ssgiActive;
+    if (!A._ssgiActive) { if (!(await A.toggleSSGIPreview(true))) return false; }
+    _stillSSGIEngaged = true;
+    _ssgiApplyKnobs(SSGI_STILL);
+    _stillKnobsApplied = true;
+    console.log('§PHOTO_SSGI start frames=' + STILL_SSGI_FRAMES + ' knobs=' + JSON.stringify(SSGI_STILL) +
+      ' (still-only fold — Alt+J untouched)');
+    _ssgiKickConverge(STILL_SSGI_FRAMES, function() {
+      if (_stillSSGIEngaged) console.log('§PHOTO_SSGI done totalMs=' + Math.round(performance.now() - t0) +
+        ' (frozen with GI — stays until interaction)');
+    });
+    return true;
+  };
+  A.stopStillSSGIPhase = function(reason) {
+    if (!_stillSSGIEngaged) return;
+    _stillSSGIEngaged = false;
+    // toggleSSGIPreview(false) restores nav knobs (see off-branch above) and recomputes composer
+    // state. If Alt+J was already on BEFORE the still froze, keep the user's preview running —
+    // just drop the still-quality knobs back to nav.
+    if (_stillSSGIWasOn) {
+      if (_stillKnobsApplied) { _ssgiApplyKnobs(SSGI_NAV); _stillKnobsApplied = false; }
+    } else if (A._ssgiActive) {
+      A.toggleSSGIPreview(false);
+    }
+    console.log('§PHOTO_SSGI off (' + reason + ')');
   };
 }
