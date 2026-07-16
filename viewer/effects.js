@@ -1259,8 +1259,22 @@ async function setupEffects(A, renderer, scene, camera) {
     _teardownStillRefine('soft-cancel (camera move)', true);
     _autoStageArm(true);
   };
+  // §STAGE1_STUCK_FIX (2026-07-16, real-user report — "could not shake out of shadow mode, had
+  // to hard reset"): root cause — _teardownStillRefine unconditionally sets A._stillRefineActive
+  // = false even on the SOFT path (Stage 1: TAA paused, staging kept, idle-timer armed for
+  // Stage 2). toggleStillRefine only ever checked _stillRefineActive, so pressing Alt+S while in
+  // that in-between state saw "false" and called startStillRefine() again instead of truly
+  // turning off — Alt+S could START the cycle but could never STOP it once Stage 1/2 began
+  // auto-cycling; only a non-canvas click (full teardown) or a hard reload could escape. Fix:
+  // toggle off whenever EITHER actively refining OR the auto-stage loop is armed, not just the
+  // former — Alt+S is now a reliable off-switch in every state of this feature.
   A.toggleStillRefine = function() {
-    if (A._stillRefineActive) A.stopStillRefine(); else A.startStillRefine();
+    if (A._stillRefineActive || _autoStageOn) {
+      _autoStageArm(false);
+      _teardownStillRefine('cancelled (Alt+S toggle off)');
+    } else {
+      A.startStillRefine();
+    }
   };
 
   // §CINEMA_ORBIT (2026-07-16, user spec): the "Cinema pill" 360 fly-around, wired to a real
