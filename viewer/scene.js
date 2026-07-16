@@ -1174,6 +1174,10 @@ async function setupScene(A) {
       // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
       all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
       all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
+      // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
+      // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
+      // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
+      all.push({ seq: 'ALT+C', name: 'Cinema Orbit', icon: '', action: function() { if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
@@ -1780,6 +1784,11 @@ async function setupScene(A) {
     // §GI_POC (sandbox spike, feat/ssgi-composer-poc, isolated branch — not a shipped feature)
     if (e.altKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); console.log('§KBD_ROUTE Alt+G → GI preview (N8AO POC)'); return; }
     if (e.altKey && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); if (typeof A.toggleSSGIPreview === 'function') A.toggleSSGIPreview(); console.log('§KBD_ROUTE Alt+J → SSGI preview (realism-effects spike)'); return; }
+    // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema... no shortcut... What do u suggest?" — confirmed
+    // Alt+C, distinct namespace from plain 'c' (Clash), no conflict). Previously only reachable via
+    // the Sunglass panel's Cinema row (panels.js) — user separately confirmed Cinema Orbit works
+    // fine without ever pressing Alt+S first, just adjust the starting camera view and go.
+    if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); console.log('§KBD_ROUTE Alt+C → cinema orbit'); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
     // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's
