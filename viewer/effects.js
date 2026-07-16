@@ -970,6 +970,9 @@ async function setupEffects(A, renderer, scene, camera) {
         ].join('\n'))
         .replace('#include <roughnessmap_fragment>', [
           '#include <roughnessmap_fragment>',
+          'float uGroundWetness = 0.0;',  // declared OUTSIDE the if (top-level in main()) so the
+          // later metalnessmap_fragment injection below — which runs after this chunk in three.js's
+          // standard MeshStandardMaterial ordering — can read the same value.
           'if (uPuddleActive > 0.5) {',   // uniform branch — near-zero cost when off (normal nav)
           '  float wetness = uWetnessOverride;',  // full-surface base, small puddles can only add to it
           '  for (int pi = 0; pi < 8; pi++) {',
@@ -978,9 +981,19 @@ async function setupEffects(A, renderer, scene, camera) {
           '    float w = 1.0 - smoothstep(uPuddleRadii[pi] * 0.55, uPuddleRadii[pi], d);',
           '    wetness = max(wetness, w);',
           '  }',
+          '  uGroundWetness = wetness;',
           '  roughnessFactor = mix(roughnessFactor, 0.08, wetness);',
           '  diffuseColor.rgb *= mix(1.0, 0.72, wetness);',  // wet patches read darker/more saturated
           '}'
+        ].join('\n'))
+        // §WETNESS_METALNESS (2026-07-17, user: "still not auto reflect"): roughness alone stays
+        // subtle on a zero-metalness dielectric (real physics — see #822/#824 investigation). Wet
+        // areas now also push metalness up, which is what actually makes a puddle read as
+        // reflective rather than just "less matte." metalnessmap_fragment runs after
+        // roughnessmap_fragment in three.js's standard chunk order, so uGroundWetness is available.
+        .replace('#include <metalnessmap_fragment>', [
+          '#include <metalnessmap_fragment>',
+          'if (uPuddleActive > 0.5) { metalnessFactor = mix(metalnessFactor, 0.85, uGroundWetness); }'
         ].join('\n'));
       // §TRIPLANAR_CLONE_BOMB (see streaming.js): plain property, never userData — userData is
       // JSON-round-tripped by Material.copy() on every clone.
