@@ -1133,7 +1133,10 @@
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
     shortestPath: shortestPath, escapeRoute: escapeRoute, isRoomDoor: isRoomDoor,
-    stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups
+    stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
+    // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal
+    // sample points on a same-storey chord (the same test _legalizePath uses internally).
+    chordIllegalCount: _chordIllegalCount
   };
   ROOT.RoomGraph = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

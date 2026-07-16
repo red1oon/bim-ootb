@@ -880,10 +880,36 @@
       elAxisBar.appendChild(btn);
     }
 
-    // S2 (two sources, in order) + S3 (IDB persist) + S4 (ungrey/refresh).
-    async function _needleInject(btn) {
-      if (_needleBusy || !A.db) return;
-      _needleBusy = true; btn.disabled = true; btn.textContent = '…';
+    // ══ FLY_TOUR_CORRIDOR_GRAPH.md §S1 — A.ensureRooms: the ONE shared injection core ══
+    // Extracted verbatim from _needleInject (ROOM_INJECTOR_NEEDLE.md S2+S3+S4's cache half) so the
+    // Fly tour can run the SAME patch→walker→IDB sequence without forking it. Semantics:
+    //   - real (non-RM_) IfcSpace rows present → 'present', NEVER touched (needle 'none' state),
+    //     force or not — never overwrite real extraction.
+    //   - compiled rooms present, no force → 'present' (no auto-recompute; standing needle policy).
+    //   - zero rooms, or compiled+{force:true} (the needle's recompute press) → inject.
+    // Returns {status:'present'|'injected'|'error', source, rooms, rects}. Never throws.
+    // Single-flight: concurrent callers (Fly prep + a needle press) share one run.
+    A.ensureRooms = function(opts) {
+      if (A._ensureRoomsInflight) return A._ensureRoomsInflight;
+      A._ensureRoomsInflight = _ensureRoomsCore(opts);
+      A._ensureRoomsInflight.finally(function() { A._ensureRoomsInflight = null; });
+      return A._ensureRoomsInflight;
+    };
+    async function _ensureRoomsCore(opts) {
+      opts = opts || {};
+      if (!A.db) return { status: 'error', message: 'no db' };
+      var state = 'zero';
+      try {
+        var scQ = A.db.exec("SELECT COUNT(*), COUNT(CASE WHEN guid LIKE 'RM\\_%' ESCAPE '\\' THEN 1 END)" +
+          " FROM spatial_structure WHERE type='IfcSpace'");
+        var total = scQ.length ? scQ[0].values[0][0] : 0;
+        var compiled = scQ.length ? scQ[0].values[0][1] : 0;
+        if (total === 0) state = 'zero';
+        else if (total === compiled) state = 'recompute';
+        else state = 'none'; // real extraction present
+      } catch (e) { state = 'zero'; /* table missing */ }
+      if (state === 'none') return { status: 'present', real: true };
+      if (state === 'recompute' && !opts.force) return { status: 'present', real: false };
       var bld = A.activeBuilding || '';
       var url = A.DB_URL || '';
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
@@ -972,9 +998,8 @@
           }
         } catch (e) { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail ' + (e && e.message)); }
 
-        // S4 — ungrey + refresh: invalidate the room-graph cache so PATH mode sees the new
-        // rooms without a reload, then re-probe/re-render (the pill removes itself once
-        // spaceCount > 0 — see _renderNeedle's own gate).
+        // S4 (cache half) — invalidate the room-graph cache so PATH mode (and the Fly tour's
+        // A.getRoomGraph) sees the new rooms without a reload.
         // §CORRIDOR-LABEL-CACHE-BUST (2026-07-14, real bug found via user report): needle-inject
         // recompiles rooms (HHS: 14 -> 71 real rooms) but this invalidation only ever cleared
         // _pathGraphCache — _corridorLabelsCache (added later, same per-building caching pattern)
@@ -984,11 +1009,28 @@
         _pathGraphCache = null; _pathGraphBld = null;
         _corridorLabelsCache = null; _corridorLabelsBld = null;
         _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: injected rooms invalidate it too
-        _renderAxes();
-        buildTree();
+        return { status: 'injected', source: source, rooms: roomsN, rects: rectsN };
       } catch (e) {
         console.warn('[NEEDLE] §NEEDLE_INJECT_ERR ' + (e && e.message));
-        btn.disabled = false; btn.textContent = '💉';
+        return { status: 'error', message: (e && e.message) };
+      }
+    }
+
+    // S2 (two sources, in order) + S3 (IDB persist) + S4 (ungrey/refresh) — UI shell over
+    // A.ensureRooms (the extracted core above); behavior identical to the pre-refactor needle.
+    async function _needleInject(btn) {
+      if (_needleBusy || !A.db) return;
+      _needleBusy = true; btn.disabled = true; btn.textContent = '…';
+      try {
+        var res = await A.ensureRooms({ force: true });
+        if (res && res.status === 'injected') {
+          // S4 (UI half) — ungrey + refresh: re-probe/re-render (the pill removes itself once
+          // spaceCount > 0 — see _renderNeedle's own gate).
+          _renderAxes();
+          buildTree();
+        } else {
+          btn.disabled = false; btn.textContent = '💉';
+        }
       } finally {
         _needleBusy = false;
       }
@@ -1042,6 +1084,9 @@
       _pathGraphCache = g; _pathGraphBld = A.activeBuilding;
       return g;
     }
+    // FLY_TOUR_CORRIDOR_GRAPH.md §S2 — the Fly tour shares THIS cache (one graph per building,
+    // never two). Read-only alias; invalidation stays in ensureRooms/needle above.
+    A.getRoomGraph = _roomGraphFor;
 
     // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask): Type-grouped room tree DISPLAY-only override —
     // a room whose centroid sits on a real, door+wall-verified hallway backbone
