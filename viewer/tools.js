@@ -811,6 +811,35 @@ function setupTools(A) {
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
+  // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
+  // while night mode / photo-staging is active — see the comment at its call site below for why.
+  // No-op (cheap) once every current matCache key has already been processed.
+  A._applyNightGlowToMatCache = function() {
+    if (!A._nightMode || !A._matCache || !A._nightGlowMatKeys) return;
+    var mc = A._matCache;
+    var _glowCount = 0, _windowGlowCount = 0;
+    for (var mk in mc) {
+      if (A._nightGlowMatKeys[mk]) continue;
+      A._nightGlowMatKeys[mk] = true;
+      var m = mc[mk];
+      if (!m || !m.emissive) continue;
+      var isLight = false;
+      for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
+        if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
+      }
+      var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
+      if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
+      if (!isLight && !isWindow) continue;
+      A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
+      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.8; _glowCount++; }
+      else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
+      m.needsUpdate = true;
+    }
+    if (_glowCount || _windowGlowCount) {
+      console.log('§NIGHT_GLOW_REASSERT +glowMeshes=' + _glowCount + ' +windowGlowMats=' + _windowGlowCount +
+        ' totalGlowMats=' + A._nightGlowMats.length);
+    }
+  };
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
     var btn = document.getElementById('night-btn');
@@ -891,10 +920,10 @@ function setupTools(A) {
       }
       // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
-      var _glowCount = 0;
       A._nightGlowMats = [];
+      A._nightGlowMatKeys = {};  // §NIGHT_GLOW_REASSERT below — tracks which matCache keys are done
       // Determine which IFC classes to glow
-      var _glowClasses = ['IfcLightFixture'];
+      A._nightGlowClasses = ['IfcLightFixture'];
       // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
       var _hasNamedLights = false;
       if (A.db) {
@@ -904,7 +933,7 @@ function setupTools(A) {
         } catch(e) {}
       }
       if (!_hasNamedLights) {
-        _glowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
+        A._nightGlowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
         source += '+fallback';
       }
       // §NIGHT-WINDOW-GLOW (2026-07-15, user ask): facade glazing reads as "lit up from inside"
@@ -919,33 +948,22 @@ function setupTools(A) {
       // IfcPlate alone is too ambiguous to glow unconditionally (also used for opaque steel
       // elsewhere) — gate it on the material's OWN real alpha (straight from the IFC rgba, "trust
       // IFC data" per §S265c above): only a genuinely transparent IfcPlate reads as glass.
-      var _windowGlowClasses = ['IfcWindow', 'IfcCurtainWall'];
-      var _windowGlowCount = 0;
-      // Apply emissive to ALL matCache entries matching glow classes
-      var mc = A._matCache || {};
-      for (var mk in mc) {
-        var m = mc[mk];
-        if (!m || !m.emissive) continue;
-        var isLight = false;
-        for (var gi = 0; gi < _glowClasses.length; gi++) {
-          if (mk.indexOf(_glowClasses[gi]) >= 0) { isLight = true; break; }
-        }
-        var isWindow = !isLight && _windowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
-        if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
-        if (!isLight && !isWindow) continue;
-        A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
-        if (isLight) {
-          m.emissive.setHex(0xffe4b5);
-          m.emissiveIntensity = 0.8;
-          _glowCount++;
-        } else {
-          m.emissive.setHex(0xfff8ec);
-          m.emissiveIntensity = 0.55;
-          _windowGlowCount++;
-        }
-        m.needsUpdate = true;
-      }
-      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source + ' glowMeshes=' + _glowCount + ' windowGlowMats=' + _windowGlowCount);
+      A._nightWindowGlowClasses = ['IfcWindow', 'IfcCurtainWall'];
+      // §NIGHT_GLOW_REASSERT (2026-07-16, real bug found live — "cannot see the building lights
+      // yet"): this used to be a ONE-TIME loop over A._matCache at the instant toggleNightMode()
+      // fires. A._matCache is populated PROGRESSIVELY as streaming.js decodes real geometry — on
+      // a still-loading building, toggleNightMode() firing early (the normal case: it's called
+      // from _applyPhotoStaging() right after Alt+S, streaming can easily take 20s+) only ever
+      // saw a handful of materials, most of the building's real glass/light materials hadn't been
+      // created yet and were silently never glowed — confirmed live: 1 window-glow material at
+      // trigger time on a building whose real curtain-wall/window count is far higher. Same bug
+      // class already found+fixed twice this session for other systems (triplanar shader uniform
+      // recompile, shadow/envMap streaming race) — extracted into A._applyNightGlowToMatCache()
+      // so effects.js can re-call it every accumulation/orbit frame (see _reassertPhotoGlow),
+      // same discipline. Cheap re-scan: skips any matCache key already processed.
+      A._applyNightGlowToMatCache();
+      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
+        ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
       if (A.controls && !A._nightControlsListener) {
@@ -970,6 +988,7 @@ function setupTools(A) {
           g.mat.needsUpdate = true;
         });
         A._nightGlowMats = null;
+        A._nightGlowMatKeys = null;
       }
       // Restore day
       if (A._nightSaved) {

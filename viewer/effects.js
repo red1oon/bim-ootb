@@ -315,6 +315,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // "the correct angle of attack" (user), the same standard specular-highlight condition a shader
   // computes per-pixel, applied here to one representative point per facade instead. Horizontal-
   // only (x/z), same simplification _updateFacadeFacingLights already uses for facade normals.
+  // §NIGHT_GLOW_REASSERT (2026-07-16, real bug — "cannot see the building lights yet"): the
+  // window/fixture emissive glow (tools.js A.toggleNightMode) used to be a ONE-TIME pass over
+  // A._matCache at the instant it fires — on a still-streaming building (the normal case, Alt+S
+  // usually fires long before a large building finishes loading) it only ever caught whichever
+  // handful of materials existed at that exact moment, confirmed live as 1 window-glow material
+  // on a building with far more real glass. Same streaming-race bug class already fixed twice
+  // this session for other systems (triplanar shader uniforms, shadow/envMap) — re-call the
+  // (cheap, already-processed-keys-skipped) tools.js function every accumulation/orbit frame.
+  function _reassertPhotoGlow() {
+    if (A._applyNightGlowToMatCache) A._applyNightGlowToMatCache();
+  }
   function _reassertPhotoSparkles() {
     if (!A.sun || !A.camera || !_photoSparkles.length) return;
     _photoSparkles.forEach(function(s) {
@@ -1156,6 +1167,21 @@ async function setupEffects(A, renderer, scene, camera) {
     // via step() below) before that 2s elapses — one extra guaranteed pass past the throttle
     // window, independent of whether the accumulate loop is still running.
     setTimeout(function() { if (A._stillRefineActive) _reassertPhotoEnvMap(); }, 2200);
+    // §NIGHT_GLOW_REASSERT safety net: the per-frame reassert in step() below only runs while the
+    // 16-sample accumulation RAF loop is active — that loop stops (by design, "freezes" the still)
+    // long before a large building finishes streaming (confirmed this session: 20-30s+ under load,
+    // far past the ~150ms-2s accumulation itself). A one-off extra pass (like envMap's above)
+    // isn't enough on a slow-loading building — this repeats independently every 3s for up to a
+    // minute, for as long as photo mode stays active (A._stillRefineActive, which per the
+    // still-refine-freeze behavior stays true until a REAL interaction tears it down).
+    (function() {
+      var _tries = 0;
+      var _glowInterval = setInterval(function() {
+        _tries++;
+        if (!A._stillRefineActive || _tries > 20) { clearInterval(_glowInterval); return; }
+        _reassertPhotoGlow();
+      }, 3000);
+    })();
     function step() {
       if (!A._stillRefineActive) return;
       // §PHOTO_STREAMING_RACE: re-catch any mesh/material that streamed in AFTER the initial
@@ -1164,6 +1190,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _reassertPhotoMatBoost();
       _reassertPhotoEnvMap();
       _reassertPhotoSparkles();
+      _reassertPhotoGlow();
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
       if (idx >= 16) { _finishStillRefine(idx); return; }
@@ -1363,6 +1390,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _reassertPhotoMatBoost();
       _reassertPhotoEnvMap();
       _reassertPhotoSparkles();
+      _reassertPhotoGlow();
       if (A._composer) A._composer.render();
       if (tNorm >= 1) { recorder.stop(); return; }
       requestAnimationFrame(step);
