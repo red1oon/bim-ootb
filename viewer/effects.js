@@ -1216,7 +1216,16 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
-    _startStillAOPhase();  // §PHOTO_AO: fold N8AO contact-shadow into the finished still (no-op if unavailable)
+    // §PHOTO_SSGI (2026-07-17): the frozen still now folds in real bounce-light GI (effects_gi_poc.js
+    // §PHOTO_SSGI, still-quality knobs) — the AO-only fold stays as the fallback whenever the SSGI
+    // bundle/effect is unavailable or disabled (A._stillSSGIEnabled=false), so Alt+S never regresses
+    // below its previous behavior.
+    if (typeof A.startStillSSGIPhase === 'function') {
+      A.startStillSSGIPhase().then(function(engaged) { if (!engaged) _startStillAOPhase(); })
+        .catch(function(e) { console.warn('§PHOTO_SSGI_FAIL ' + e.message + ' — falling back to AO fold'); _startStillAOPhase(); });
+    } else {
+      _startStillAOPhase();  // §PHOTO_AO: fold N8AO contact-shadow into the finished still (no-op if unavailable)
+    }
   }
 
   // §PHOTO_AO (2026-07-16, Task 1 — one keypress: the Alt+S still now INCLUDES N8AO ambient
@@ -1385,6 +1394,9 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
+    // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
+    // Alt+J preview survives, only dropped back to nav-quality knobs; see effects_gi_poc.js).
+    if (typeof A.stopStillSSGIPhase === 'function') A.stopStillSSGIPhase(reason);
     // §GI_HANDOFF_GHOST_FIX (2026-07-16): RECOMPUTE the composer state instead of blind-restoring
     // a value saved at start — still-refine and toggleGIPreview each saved/restored
     // _composerEnabled, and the pairs interleave (Alt+S → Alt+G on → camera move soft-cancels the
