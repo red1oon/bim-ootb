@@ -151,7 +151,8 @@ async function initViewer() {
         // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
         // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
         // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
-        '../common/room_graph.js?v=4',
+        // v5 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): expose chordIllegalCount witness helper.
+        '../common/room_graph.js?v=5',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
@@ -162,7 +163,8 @@ async function initViewer() {
         // but hallway_backbone.js itself reads window.RoomGraph at its OWN top-level IIFE execution
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
-        'navigate_find.js?v=48',
+        // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
+        'navigate_find.js?v=50',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
