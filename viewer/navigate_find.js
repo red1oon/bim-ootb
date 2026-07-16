@@ -3287,7 +3287,23 @@
         // §SLIDING-WINDOW: ghost shell = far context. Keep ONLY the immediate parent SOLID (peers of an
         // item / the floor of a layer); the selection draws solid+highlighted on top. Grandparent+ drop
         // into the shell. Hide the base (shell covers it), NO x-ray. Drill deeper → window slides down.
-        if (parentSet) layers.push({ set: parentSet, op: 1.0 });   // immediate parent SOLID
+        // §PERF-FREEZE-FIX (2026-07-16): a whole-storey parentSet drawn SOLID means _buildShapeMeshes
+        // clones a real (often shader-perturbed via onBeforeCompile — see streaming.js _getMaterial)
+        // material per unique hash/class group for EVERY element in it, fresh on every tap (never
+        // cached) — cheap for a handful of peers, but on a large building's storey (thousands of
+        // elements, many disciplines) this clone storm is what froze the tab (live user report:
+        // "Script terminated by timeout" stack landing inside _buildShapeMeshes's clone loop, fired
+        // from this exact RAF1 ancestor-layer build on a Find-panel room/corridor tap on Terminal).
+        // _shell mode now auto-triggers for large buildings (`_isLargeBuilding()` above), so this
+        // path — previously reached mostly via manual Alt+X or mobile on SMALL buildings, where a
+        // storey-sized parentSet is small too — now fires on EVERY Find-panel tap on Terminal/
+        // Hospital, where a storey can be thousands of elements. The ghost shell already IS "the far
+        // context" per this block's own comment above, so skip the redundant expensive solid draw
+        // once parentSet is too big to be cheap — reusing the SAME 1500-element fast-path cutoff
+        // `_buildShapeMeshes` itself already uses for its row-query threshold (line ~1667) rather
+        // than inventing a new number. Small parentSets (mobile-bbox-shell on a normal-size building)
+        // keep the existing solid-parent behavior unchanged — this only skips the large case that froze.
+        if (parentSet && parentSet.size <= 1500) layers.push({ set: parentSet, op: 1.0 });   // immediate parent SOLID (small only)
         if (A.filterByGuids) A.filterByGuids(new Set());           // hide base — shell is the surroundings
         baseOp = 'shell';
       } else {
