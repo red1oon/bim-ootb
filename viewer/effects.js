@@ -839,7 +839,12 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
     _photoStaffage.userData.counts = { people: placedP, trees: placedT };
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+    // §-witness the feet-on-ground invariant IN the log (readable from any real session's console,
+    // no browser needed): every sprite's feet Y minus the rendered ground Y — must be 0,0.
+    var _fMin = Infinity, _fMax = -Infinity;
+    _photoStaffage.children.forEach(function(s) { var dy = s.position.y - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
+    if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' feetDy=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
