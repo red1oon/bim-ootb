@@ -3,9 +3,10 @@
 
 ```
 # ⚠ DO NOT REMOVE
-STATUS: NOT YET INVESTIGATED — found as a side-effect of XRAY_FIXTURE_CLASSIFICATION_FIX.md's witness work,
-explicitly NOT part of that spec's scope. This file exists so the finding isn't lost, not to prescribe a fix.
-Confirmed PRE-EXISTING on unmodified origin/main (not caused by the X-ray fix). Read the log after any run.
+STATUS: RESOLVED 2026-07-17/18 — all three findings below (G1-G3 double-render, G5 cat[0] wrong-size
+fallback, the alpha-accumulation follow-up) are FIXED AND MERGED to bim-ootb main. See "# DONE 2026-07-18"
+at the bottom for the closing account — read that FIRST if resuming anything here; the sections above are
+now historical record of the investigation, not open work.
 ```
 
 ## §GIVEN — measured, do not re-derive
@@ -85,3 +86,57 @@ in-scene assertion (assumed every non-`dwRoot` top-level mesh was pure ARC struc
 102 "extra" meshes, which turned out to be legitimate individual fold-copies of DW fixtures, not misclassified
 structure. That witness's final assertion was adjusted to account for G1-G3 rather than treat this as a
 regression — see that spec's `# DONE` section for the resolution on the X-ray side specifically.
+
+## # DONE 2026-07-18 — all three findings resolved, read this first
+
+Chased end-to-end while trying to get one clean guide-manual close-up screenshot (`docs/ModellerGuide.md`,
+bim-compiler) — the original reason this whole investigation started (2026-07-13's guide-shot revert).
+
+1. **G5 (cat[0] wrong-size fallback) — FIXED, bim-ootb PR #844.** An unmatched-class placement no longer
+   borrows `cat[0]`'s mesh; it renders an honest measured/default box instead (same convention the
+   §LIVEWIRE `geometry_hash` branch already used). Verified before/after on SampleCastle's ELEC walk:
+   pre-fix, all 325 fixtures literally shared ONE hash (`cat[0]`, regardless of class); post-fix, 0/325
+   borrow a hash, real sizes 0.03-0.14m. New witness `witness_dw_honest_fallback.js`.
+2. **X-ray classification + alpha-accumulation — FIXED, bim-ootb PR #846.** Turned out to be a BIGGER,
+   more basic bug than "SampleCastle looks muddy": `_fixtureColorMap()`'s "has a colour = is a fixture"
+   test broke completely once `arc_editable.js` started stamping a cosmetic palette colour on every ARC
+   element too (an unrelated material-parity change) — on unmodified main, X-ray classified 100% of
+   meshes as "glow", 0% as "glass", for EVERY building. Fixed by keying off the op's own `_dw`/`_rw`
+   fixture tag instead (this specific fix — `_fixtureColorMap`/`xrayReveal`'s `dwRoot` handling — already
+   existed, unmerged, on `fix/xray-fixture-classification`; pulled in rather than duplicated). Layered a
+   genuinely NEW fix on top for the alpha-accumulation question this file raised (line ~74-79 above):
+   `_xrayMeasureStackDepth()` casts a real 6×6 grid of top-down rays through the actual structure mesh set,
+   measures the true stacking depth, and solves for the glass opacity that keeps cumulative composited
+   opacity at a fixed 35% target — measured, not guessed, and clamped to never exceed the original 6% (a
+   shallow single-layer case is unaffected). Duplex (depth 22) went 0.06→0.019, SampleCastle (depth 48)
+   went 0.06→0.015. Witnesses: `witness_xray_poc.js`, `witness_xray_sc_duplex.js` both PASS.
+3. **G1-G3 (double-render, this file's own primary subject) — FIXED, bim-ootb PR #851.** Confirmed
+   visually (not just scene-graph state, closing this file's own "what's not yet known" question): a
+   ceiling light next to a cleanly-rendered fan z-fought into a garbled, dark-triangled oval. Root cause
+   exactly as G1-G3 describe. Fix: the individual fold-copy's material goes `opacity:0`/`transparent`
+   (invisible to RENDERING) while staying `visible:true` (still raycastable — pick/identify,
+   `window.Bonsai._selSet`, reads off this exact mesh; a first attempt that set `.visible = false` fixed
+   the z-fight but broke click-to-identify, caught by re-running `witness_e2e_instpick.js` before
+   finalizing). Also had to wire `_redrawAllDiscWalks()` into `xrayReveal(false)`'s restore path — its
+   `scrubTo` re-fold rebuilds every individual mesh from scratch with default material, silently undoing
+   the dedup on the very next redraw; caught by re-running `witness_xray_sc_duplex.js` before finalizing.
+   New witness `witness_dw_dedup_render.js`: 0/102 (Duplex) and 0/270 (SampleCastle) fixtures left
+   double-rendering, including after a full X-ray on/off cycle.
+4. **`docs/ModellerGuide.md` updated (bim-compiler, commit `5e4c1ec89`)** with the actual payoff: a real
+   Duplex ceiling-fan close-up (rule-mined LOD400 device mesh — motor housing, blades, mount stem, not a
+   box) and a SampleCastle honest-box-fallback close-up, replacing a stale claim that every walked fixture
+   is "still a box stand-in." The SampleCastle whole-building X-ray shot (`walk-fixtures.png`) was also
+   finally swapped in cleanly (see `DISC_WALKER_BRANCH_CLOSEOUT.md` for that thread's own closing note).
+
+**Genuinely still open, not touched here, named so it isn't lost:**
+- `witness_e2e_instpick.js` P2/P2b/P3 (click-to-identify) are broken **independent of everything above** —
+  confirmed via `git stash` back to pristine `origin/main` before touching anything, identical failure.
+  Real, pre-existing, unrelated bug. Nobody's chased it yet.
+- Ambient occlusion for the Modeller's own viewport (came up discussing why guide screenshots look flat
+  compared to the Viewer's Alt+G N8AO pass) — deliberately NOT built. It's standard in the industry as a
+  **gated, opt-in toggle** (Revit's Ambient Shadows, ArchiCAD's CineRender AO, Blender/Bonsai's EEVEE AO,
+  every archviz tool) — never always-on during interactive edit, which is the only way it'd be safe here
+  too (this project's own `feedback_whitebox_no_handwave_geometry` doctrine already prefers a MEASURED
+  contact check over a visual cue for "is this fixture really flush against its host," which AO would
+  only approximate). If picked up: mirror the Viewer's own `Alt+G`/`toggleGIPreview()` pattern exactly —
+  gated, POC-labeled, off by default, never touching the interactive grid-drag/walk path.
