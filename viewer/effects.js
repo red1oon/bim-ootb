@@ -142,6 +142,38 @@ async function setupEffects(A, renderer, scene, camera) {
   // "floating line" failure mode, so the same facing math is safe to reuse here.
   var _photoPropsBuilding = null;
   var _photoUplights = [], _photoSkyline = null, _photoSkylineLights = null;
+  // §PHOTO_STAFFAGE (PHOTOREAL_STILL_RENDER.md §SPEC 2026-07-17 Part A — the sourced-sprite half of
+  // the two-path design): buildings that HAVE real RPC entourage get the material pass in
+  // streaming.js (§ENTOURAGE); every OTHER building (the 9 census buildings + every user-uploaded
+  // IFC with no entourage) gets these CC0/free billboard cutouts instead. Camera-facing THREE.Sprite
+  // imposters — the industry-normal staffage technique (Enscape/Twinmotion). Presentation RESULT
+  // stage, added on Alt+S only, auto-reverting on teardown, same standing as the dusk props above.
+  // Placement is derived at runtime from this building's own real bbox + real IfcDoor positions —
+  // nothing hardcoded, general to any building (the hard constraint repeated throughout this spec).
+  var _photoStaffage = null;          // THREE.Group of all staffage sprites
+  var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
+  var _staffageGroundY = null;        // three-space y of the RENDERED ground plane — feet anchor here
+  var _staffageTexCache = {};
+  var _STAFFAGE_BASE = 'textures/staffage/';
+  // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
+  // place: 'out' = stands in front of the door (natural outdoors); 'in' = inside on the floor.
+  // Per user: only the 2 STANDING figures belong outside; walking + sitting go inside the house.
+  var _STAFFAGE_PEOPLE = [
+    { file: 'people/person_standing_casual_male.png',    h: 1.75, place: 'out' },
+    { file: 'people/person_standing_gesture_female.png', h: 1.70, place: 'out' },
+    { file: 'people/person_walking_shopping_female.png', h: 1.70, place: 'in' },
+    { file: 'people/person_walking_gym_female.png',      h: 1.70, place: 'in' },
+    { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in' },
+    { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in' }
+  ];
+  var _STAFFAGE_TREES = [
+    { file: 'trees/tree_oak_big.png',        h: 9.5 },
+    { file: 'trees/tree_linden_big_old.png', h: 10.0 },
+    { file: 'trees/tree_poplar.png',         h: 11.0 },
+    { file: 'trees/tree_oak_young.png',      h: 6.0 },
+    { file: 'trees/tree_beech.png',          h: 7.0 },
+    { file: 'trees/tree_linden_city.png',    h: 8.0 }
+  ];
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
   var PHOTO_FACADE_DIM_FRACTION = 0.3;  // non-facing facades still lit, just weaker — not pitch dark
@@ -635,6 +667,284 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_FACING facades=' + _photoFacadeLights.length + ' strengths=' +
       _photoFacadeLights.map(function(f) { return (f.up.intensity / PHOTO_FACADE_UP_BASE).toFixed(2); }).join(','));
   }
+  // §PHOTO_STAFFAGE: load a cutout texture (cached, sRGB), size the sprite from the real image
+  // aspect once the pixels are known (no hardcoded widths), anchor its bottom to the ground.
+  function _staffageTex(path) {
+    if (_staffageTexCache[path]) return _staffageTexCache[path];
+    var tex = new THREE.TextureLoader().load(_STAFFAGE_BASE + path,
+      function() { console.log('§STAFFAGE_TEX_READY ' + path); },
+      undefined,
+      function() { console.warn('§STAFFAGE_TEX_FAIL ' + path); });
+    if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+    _staffageTexCache[path] = tex;
+    return tex;
+  }
+  function _addStaffageSprite(entry, threePos, isPerson) {
+    var tex = _staffageTex(entry.file);
+    var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5, depthWrite: true }));
+    spr.center.set(0.5, 0);                 // anchor bottom-centre → the figure stands on the ground
+    spr.position.copy(threePos);
+    // §PHOTO_STAFFAGE_GROUNDY (user: "everybody is ~1 foot underground"): feet Z derived from
+    // bbox.zMin / furniture-bottom doesn't match the RENDERED ground plane (which sits at
+    // _calcGroundY's ground-floor-slab level, ~0.3m higher). Snap every figure's feet to the actual
+    // ground plane the user sees, so nobody sinks. Ground-floor placement, so this is the right floor.
+    if (_staffageGroundY != null) spr.position.y = _staffageGroundY;
+    function _size() {
+      var img = tex.image;
+      var aspect = (img && img.width && img.height) ? (img.width / img.height) : 0.5;
+      spr.scale.set(entry.h * aspect, entry.h, 1);
+    }
+    var im = tex.image;
+    if (im && im.complete && im.naturalWidth) _size();
+    else if (im) im.addEventListener('load', _size, { once: true });
+    else spr.scale.set(entry.h * 0.5, entry.h, 1);   // provisional until the image arrives
+    _photoStaffage.add(spr);
+    if (isPerson) _photoStaffagePeople.push(spr);
+  }
+  // §PHOTO_STAFFAGE: place cutouts derived from THIS building's real bbox + IfcDoor rows, but ONLY
+  // for a category the building has NO real entourage for (real RPC people/trees are handled by the
+  // streaming.js material pass — placing sprites on top would double them up). General to any
+  // building; nothing hardcoded.
+  // §PHOTO_STAFFAGE: greedily pick up to n rows [x,y,z,bbox_z] that are at least minDist apart in
+  // plan — spreads figures across real furniture instead of clustering them at one crowded spot.
+  function _spreadPick(rows, n, minDist) {
+    var picked = [];
+    for (var i = 0; i < rows.length && picked.length < n; i++) {
+      var r = rows[i], ok = true;
+      for (var j = 0; j < picked.length; j++) {
+        if (Math.hypot(r[0] - picked[j][0], r[1] - picked[j][1]) < minDist) { ok = false; break; }
+      }
+      if (ok) picked.push(r);
+    }
+    return picked;
+  }
+  function _buildStaffage() {
+    if (!A.dbQuery || !THREE.Sprite) return;
+    var _bt0 = performance.now();
+    var bbox = _buildingBBoxIfc();
+    if (!bbox) return;
+    var cx = (bbox.xMin + bbox.xMax) / 2, cy = (bbox.yMin + bbox.yMax) / 2;
+    var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin, groundZ = bbox.zMin;
+    var hx = (w / 2) || 1, hy = (d / 2) || 1, envelope = Math.max(w, d, 30);
+    // Anchor feet to the RENDERED ground plane (same level _calcGroundY gives A.ground), not the raw
+    // bbox.zMin — otherwise everyone sinks ~1ft below the visible floor (user-reported).
+    if (A._calcGroundY) A._calcGroundY();
+    _staffageGroundY = (A.ground && typeof A.ground.position.y === 'number') ? A.ground.position.y : A.ifc2three(0, 0, groundZ).y;
+    if (!_photoStaffage) _photoStaffage = new THREE.Group();
+    function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
+    var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
+    var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
+    var placedP = 0, placedT = 0, pSrc = 'none';
+
+    // §PHOTO_STAFFAGE_SILHOUETTE (user: "the building has walls you can easily measure instead of
+    // throwing" — trees on a bbox ellipse cut through an L-shaped/concave solid and landed inside).
+    // MEASURE the real footprint: bin every element by its angle from centre, record the FARTHEST
+    // one per direction. silR(angle) then gives the actual building reach that way, so props sit
+    // just BEYOND the real walls in whatever direction — concave shapes included. Real geometry,
+    // deterministic; clamped so a stray far element can't fling a prop to the horizon.
+    var NB = 96, binMax = new Array(NB).fill(0);
+    var allPts = A.dbQuery("SELECT center_x, center_y FROM element_transforms WHERE center_x IS NOT NULL") || [];
+    for (var pi = 0; pi < allPts.length; pi++) {
+      var ex = allPts[pi][0] - cx, ey = allPts[pi][1] - cy, rr = Math.hypot(ex, ey);
+      if (!rr) continue;
+      var bpi = (((Math.floor((Math.atan2(ey, ex) / (2 * Math.PI)) * NB)) % NB) + NB) % NB;
+      if (rr > binMax[bpi]) binMax[bpi] = rr;
+    }
+    var _silCap = Math.hypot(hx, hy) + 8;
+    function silR(a) {
+      var bi = (((Math.floor((a / (2 * Math.PI)) * NB)) % NB) + NB) % NB, m = 0;
+      for (var k = -1; k <= 1; k++) { var b = (((bi + k) % NB) + NB) % NB; if (binMax[b] > m) m = binMax[b]; }
+      return Math.min(m || Math.max(hx, hy), _silCap);
+    }
+
+    if (realPeople === 0) {
+      var insidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // walking + sitting
+      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'out'; });  // the 2 standing
+      // §PHOTO_STAFFAGE_SCALE (user: "for a big place multiply the pax at different wings, ends... with
+      // so many rooms at least ends and middle"). Counts scale with building size; placement spreads
+      // across the footprint (minDist scaled to size) so a multi-wing plan gets people at its ends and
+      // middle, not clustered. A small house stays modest. Poses cycle (6 sprites cover any count).
+      var span = w + d, maxExt = Math.max(w, d);
+      var nInside = Math.max(2, Math.min(12, Math.round(span / 14)));
+      var nStanding = Math.max(2, Math.min(6, Math.round(span / 30)));
+
+      // INSIDE figures — real furniture, spread across the plan (minDist scales with size → ends+middle).
+      var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 600") || [];
+      var insideMinD = Math.max(3.5, Math.min(22, maxExt / Math.max(2, nInside * 0.7)));
+      var spots = _spreadPick(furn, nInside, insideMinD);
+      if (spots.length) {
+        pSrc = 'furniture';
+        for (var i = 0; i < spots.length; i++) {
+          var s = spots[i];
+          _addStaffageSprite(insidePoses[i % insidePoses.length], A.ifc2three(s[0], s[1], s[2] - (s[3] ? s[3] / 2 : 0.4)), true);
+          placedP++;
+        }
+      } else {
+        // No furniture (HHS/Esplanades) → the would-be-inside figures go OUTSIDE too, so they're
+        // visible on the ground rather than lost/occluded inside.
+        pSrc = 'exterior-ground';
+        outsidePoses = _STAFFAGE_PEOPLE;
+        nStanding = Math.max(nStanding, nInside);
+      }
+
+      // OUTSIDE figures — at real ENTRANCES. An exterior door sits ON the measured perimeter: its
+      // distance from centre ≈ the silhouette in its direction (interior doors sit well inside).
+      // Take GROUND-FLOOR exterior doors, then _spreadPick them so figures land at DIFFERENT wings/
+      // ends, not all at one entrance. Step each just out of its door, feet on the floor. (IfcSpace/
+      // corridor data is not extracted here, so exterior doors are the reliable entrance signal.)
+      var no = nStanding;
+      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
+      var ext = [];
+      for (var di = 0; di < doors.length; di++) {
+        var dd = doors[di], dex = dd[0] - cx, dey = dd[1] - cy, dr = Math.hypot(dex, dey);
+        if (dr >= silR(Math.atan2(dey, dex)) - 3.0) ext.push([dd[0], dd[1], dd[2], dd[3], dd[4] || 0.9]);
+      }
+      ext.sort(function(a, b) { return (a[2] - b[2]) || (b[4] - a[4]); });   // ground floor, then widest
+      if (ext.length) {
+        var gfz = ext[0][2];
+        var gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
+        var entMinD = Math.max(6, maxExt / Math.max(2, no));
+        var picked = _spreadPick(gfExt, no, entMinD);          // spread across wings/ends
+        if (!picked.length) picked = gfExt.slice(0, no);
+        for (var k = 0; k < no; k++) {
+          var e = picked[k % picked.length], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
+          var lat = Math.floor(k / picked.length) * 1.4;       // extras at the same door step sideways
+          var px = e[0] + ((e[0] - cx) / ol) * 1.6 + (-(e[1] - cy) / ol) * lat;
+          var py = e[1] + ((e[1] - cy) / ol) * 1.6 + ((e[0] - cx) / ol) * lat;
+          _addStaffageSprite(outsidePoses[k % outsidePoses.length], A.ifc2three(px, py, e[2] - (e[3] ? e[3] / 2 : 1.0)), true);
+          placedP++;
+        }
+        pSrc += '+entrance';
+      } else {
+        for (var k2 = 0; k2 < no; k2++) {
+          var pa = (k2 / no) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
+          _addStaffageSprite(outsidePoses[k2 % outsidePoses.length], A.ifc2three(cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ), true);
+          placedP++;
+        }
+        pSrc += '+silhouette';
+      }
+    }
+
+    // Trees ringed just BEYOND the measured silhouette (never through the walls), count scales with
+    // building size (HHS gets ~18, a house ~8).
+    if (realTrees === 0) {
+      var ntrees = Math.max(8, Math.min(24, Math.round((2 * (w + d)) / 14)));
+      for (var t = 0; t < ntrees; t++) {
+        var ta = (t / ntrees) * Math.PI * 2 + 0.4;
+        var trad = silR(ta) + 5;
+        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(ta) * trad, cy + Math.sin(ta) * trad, groundZ), false);
+        placedT++;
+      }
+    }
+    if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
+    _photoStaffage.userData.counts = { people: placedP, trees: placedT };
+    // §-witness the feet-on-ground invariant IN the log (readable from any real session's console,
+    // no browser needed): every sprite's feet Y minus the rendered ground Y — must be 0,0.
+    var _fMin = Infinity, _fMax = -Infinity;
+    _photoStaffage.children.forEach(function(s) { var dy = s.position.y - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
+    if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' feetDy=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+  }
+  // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
+  // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
+  // status bar with a live count — "⏳ Populating… N/M" as textures decode, "✓ Scene populated —
+  // P people, T trees" when done. Cached on later toggles → jumps straight to done. No polling:
+  // hooks each unique texture's image 'load' event; the sprite also pops in the frame as it loads.
+  function _trackStaffageLoading() {
+    if (!A.status || !_photoStaffage) return;
+    var c = _photoStaffage.userData.counts || { people: 0, trees: 0 };
+    var doneMsg = '✓ Scene populated — ' + c.people + ' people, ' + c.trees + ' trees';
+    var seen = [], texs = [];
+    _photoStaffage.children.forEach(function(s) {
+      if (s.material && s.material.map && seen.indexOf(s.material.map) < 0) { seen.push(s.material.map); texs.push(s.material.map); }
+    });
+    var total = texs.length;
+    function loaded() { var n = 0; for (var i = 0; i < texs.length; i++) { var im = texs[i].image; if (im && im.complete && im.naturalWidth) n++; } return n; }
+    function paint() {
+      var n = loaded();
+      if (n >= total) { A.status.textContent = doneMsg; if (A.markDirty) A.markDirty(); }
+      else A.status.textContent = '⏳ Populating scene… ' + n + '/' + total;
+    }
+    if (!total) { A.status.textContent = doneMsg; return; }
+    paint();
+    texs.forEach(function(t) {
+      var im = t.image;
+      if (im && !(im.complete && im.naturalWidth)) im.addEventListener('load', paint, { once: true });
+    });
+  }
+  function _disposeStaffage() {
+    if (_photoStaffage) {
+      A.scene.remove(_photoStaffage);
+      _photoStaffage.children.forEach(function(s) { if (s.material) s.material.dispose(); });
+    }
+    _photoStaffage = null; _photoStaffagePeople = []; _lastPeopleVis = null;
+  }
+  // §PHOTO_STAFFAGE: people are spherical billboards — from a steep top-down angle they read as
+  // upright figures floating detached from the ground (the aerial-angle failure the spec names).
+  // Hide people (only) when the camera looks steeper than ~37deg down; trees tolerate it. Now that
+  // Populate is a persistent Alt+P toggle (not frozen to one Alt+S camera), this re-runs on every
+  // controls 'change' — so it logs only when the decision FLIPS, not every frame.
+  var _lastPeopleVis = null;
+  function _updatePeoplePitchGate() {
+    if (!_photoStaffagePeople.length || !A.camera) return;
+    var fwd = new THREE.Vector3();
+    A.camera.getWorldDirection(fwd);
+    var down = -fwd.y;                       // 0 = horizontal, 1 = straight down
+    var showP = down < 0.72;                 // ~46deg — show at normal establishing angles, hide only
+                                             // near top-down where cutout people foreshorten/float
+    if (showP === _lastPeopleVis) return;
+    _photoStaffagePeople.forEach(function(s) { s.visible = showP; });
+    _lastPeopleVis = showP;
+    if (A.markDirty) A.markDirty();
+    console.log('§PHOTO_STAFFAGE_PITCH down=' + down.toFixed(2) + ' peopleVisible=' + showP);
+  }
+  // §PHOTO_POPULATE (2026-07-17, user: separate Alt+P step, "more silent ops, user remembers it
+  // once"): staffage is its OWN persistent toggle, decoupled from Alt+S. Alt+S stays a clean
+  // still on real geometry only; Alt+P adds/removes the fabricated people+trees layer, stacking
+  // with Alt+S or standalone. Toggle (not one-shot), like Night/Shadow/Cinema.
+  var _populateOn = false, _populateBuilding = null;
+  A.togglePopulate = function() {
+    _populateOn = !_populateOn;
+    if (_populateOn) {
+      if (A.status) A.status.textContent = '⏳ Populating scene…';
+      if (!_photoStaffage || _populateBuilding !== A.activeBuilding) {
+        _disposeStaffage();
+        _buildStaffage();
+        _populateBuilding = A.activeBuilding;
+      }
+      if (_photoStaffage) _photoStaffage.visible = true;
+      _lastPeopleVis = null;              // force a fresh pitch decision (+ log) on show
+      _updatePeoplePitchGate();
+      _trackStaffageLoading();            // live "⏳ N/M → ✓ populated" status while cutouts decode
+      if (!A._populatePitchHooked && A.controls && A.controls.addEventListener) {
+        A.controls.addEventListener('change', function() {
+          if (_populateOn && _photoStaffage && _photoStaffage.visible) _updatePeoplePitchGate();
+        });
+        A._populatePitchHooked = true;     // live pitch gate: recompute as the camera orbits
+      }
+    } else if (_photoStaffage) {
+      _photoStaffage.visible = false;
+      if (A.status) A.status.textContent = 'Populate off';
+    }
+    if (A.markDirty) A.markDirty();
+    console.log('§PHOTO_POPULATE on=' + _populateOn + ' bld=' + A.activeBuilding);
+  };
+  // §PHOTO_STAFFAGE_PRELOAD: measured — placement is 5-29ms; the whole first-time wait is decoding
+  // the cutout PNGs (~2-6s). Textures are already cached after first use (and sprite objects reused
+  // per building), so the SECOND Alt+P is instant — the only thing left is the FIRST. Warm the cache
+  // in the background once the page is idle so even the first Alt+P is instant. The 12 cutouts are
+  // small (downscaled + palette-quantized), building-independent, loaded once per session.
+  (function _schedulePreload() {
+    var run = function() {
+      try {
+        _STAFFAGE_PEOPLE.concat(_STAFFAGE_TREES).forEach(function(e) { _staffageTex(e.file); });
+        console.log('§PHOTO_STAFFAGE_PRELOAD warming ' + (_STAFFAGE_PEOPLE.length + _STAFFAGE_TREES.length) + ' cutouts');
+      } catch (e) { /* THREE not ready / offline — first Alt+P will load them then */ }
+    };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
+    else setTimeout(run, 4000);
+  })();
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
