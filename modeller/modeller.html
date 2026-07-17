@@ -522,10 +522,45 @@ bClear.onclick = () => { const g = window.Bonsai.group && window.Bonsai.group();
 // carrying parameters.color, from step C) glows in its discipline colour THROUGH the shell. Reversible with ZERO
 // snapshot bookkeeping: toggle OFF just re-folds the signed log (scrubTo) → true materials rebuilt deterministically.
 let _xrayOn = false;
+// §XRAY-FIXTURE-FIX (XRAY_FIXTURE_CLASSIFICATION_FIX.md): eligibility is the op's own _dw/_rw fixture tag
+// (DiscWalker modeller.html:3945/3958, autoRouteMEP :3010) — NOT bare colour-presence. arc_editable.js
+// stamps a cosmetic PALETTE colour on EVERY authored ARC element (walls included), so "has a colour" alone
+// can't tell a wall from a fixture; "was committed by a fixture-placing path" can, and that tag is already
+// in the signed op-log for every real fixture population (DiscWalker walk + catalog-drop autoRouteMEP).
 function _fixtureColorMap() {
   const m = {}, O = window.Bonsai.oplog;
-  if (O) O._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.color != null) m[o.id] = o.parameters.color; });
+  if (O) O._geomOps().forEach(o => {
+    if (o.op_type !== 'GEOM_INSERT' || !o.parameters || o.parameters.color == null) return;
+    const isFixture = o.parameters._dw != null || (o.parameters._rw && o.parameters._rw.fixture === true);
+    if (isFixture) m[o.id] = o.parameters.color;
+  });
   return m;
+}
+// §XRAY-DEPTH-ADAPTIVE (DW_FIXTURE_DOUBLE_RENDER_FINDING.md "alpha-accumulation" finding, 2026-07-13):
+// a flat 6% structure opacity looks right on a shallow building (Duplex, 2 floors) but N stacked semi-
+// transparent surfaces compound to 1-(1-a)^N — on a tall/complex building (SampleCastle, 7 storeys) real
+// view rays cross enough floors+partitions that even correctly-classified, correctly-sized glass reads as
+// visually dense. MEASURED, not guessed: cast a small grid of top-down rays through the actual structure
+// mesh set and take the max intersection count as the real stacking depth, then solve for the opacity that
+// keeps cumulative composited opacity at a fixed target — never ABOVE the original 0.06 (shallow buildings
+// keep today's proven-good look byte-for-byte; only deep ones get an adaptive reduction).
+function _xrayMeasureStackDepth(structureMeshes) {
+  if (!structureMeshes.length) return 1;
+  const box = new THREE.Box3(); structureMeshes.forEach(m => { m.geometry.computeBoundingBox(); box.expandByObject(m); });
+  if (box.isEmpty()) return 1;
+  const rc = new THREE.Raycaster();
+  const N = 6, size = box.getSize(new THREE.Vector3()), min = box.min, top = box.max.z + 1;
+  let maxHits = 1;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      const x = min.x + size.x * ((i + 0.5) / N), y = min.y + size.y * ((j + 0.5) / N);
+      rc.set(new THREE.Vector3(x, y, top), new THREE.Vector3(0, 0, -1));
+      rc.far = size.z + 2;
+      const hits = rc.intersectObjects(structureMeshes, false).length;
+      if (hits > maxHits) maxHits = hits;
+    }
+  }
+  return maxHits;
 }
 async function xrayReveal(on) {
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -538,9 +573,24 @@ async function xrayReveal(on) {
     return { on: false, glass: 0, glow: 0 };
   }
   const fx = _fixtureColorMap();
+  const DEFAULT_OPACITY = 0.06, TARGET_CUMULATIVE = 0.35;
+  const structureMeshes = g.children.filter(mesh => {
+    if (!mesh.isMesh || !mesh.material) return false;
+    const fid = mesh.userData && mesh.userData.featureId;
+    return !(fid != null && fx[fid] != null);
+  });
+  const stackDepth = _xrayMeasureStackDepth(structureMeshes);
+  // 1-(1-a)^d = target -> a = 1-(1-target)^(1/d); clamp to [0.015, DEFAULT_OPACITY] — never MORE opaque
+  // than today's shipped look, only ever less, and never so low structure becomes invisible.
+  let glassOpacity = stackDepth > 1 ? (1 - Math.pow(1 - TARGET_CUMULATIVE, 1 / stackDepth)) : DEFAULT_OPACITY;
+  glassOpacity = Math.max(0.015, Math.min(DEFAULT_OPACITY, glassOpacity));
   let glass = 0, glow = 0;
+  // walked-discipline fixtures batch into InstancedMesh buckets nested one level under a dwRoot marker
+  // (DiscWalker perf batching, modeller.html:3684-3697) — NOT direct children of g, so they need their own
+  // pass; every bucket is homogeneously one discipline's real committed fixtures (dwDisc set at render time).
+  const dwRoot = g.children.find(o => o.userData && o.userData.dwRoot);
   g.children.forEach(mesh => {
-    if (!mesh.isMesh || !mesh.material) return;
+    if (mesh === dwRoot || !mesh.isMesh || !mesh.material) return;
     if (!mesh._xrayOwn) { mesh.material = mesh.material.clone(); mesh._xrayOwn = true; }   // own material → no shared contamination
     const mat = mesh.material, fid = mesh.userData && mesh.userData.featureId;
     const col = (fid != null && fx[fid] != null) ? fx[fid] : null;
@@ -549,17 +599,26 @@ async function xrayReveal(on) {
       if (mat.emissive) { mat.emissive.setHex(col); mat.emissiveIntensity = 0.85; }
       mat.depthTest = false; mat.depthWrite = false; mat.needsUpdate = true; mesh.renderOrder = 999;
       glow++;
-    } else {                                              // structure → near-transparent glass
-      mat.transparent = true; mat.opacity = 0.06; mat.color.setHex(0xaabbcc);
+    } else {                                              // structure → near-transparent glass, depth-adaptive
+      mat.transparent = true; mat.opacity = glassOpacity; mat.color.setHex(0xaabbcc);
       if (mat.emissive) { mat.emissive.setHex(0x000000); mat.emissiveIntensity = 0; }
       mat.depthWrite = false; mat.depthTest = true; mat.needsUpdate = true; mesh.renderOrder = 0;
       glass++;
     }
   });
+  if (dwRoot) dwRoot.children.forEach(mesh => {
+    if (!mesh.isMesh || !mesh.material || mesh.userData.dwDisc == null) return;   // only real walked-discipline buckets
+    if (!mesh._xrayOwn) { mesh.material = mesh.material.clone(); mesh._xrayOwn = true; }
+    const mat = mesh.material, col = mat.color.getHex();   // bucket's own discipline colour (all instances share one material)
+    mat.transparent = true; mat.opacity = 0.97;
+    if (mat.emissive) { mat.emissive.setHex(col); mat.emissiveIntensity = 0.85; }
+    mat.depthTest = false; mat.depthWrite = false; mat.needsUpdate = true; mesh.renderOrder = 999;
+    glow++;
+  });
   _xrayOn = true;
   if (window.A && A.requestRender) A.requestRender();
-  console.log('§MODELLER xray on glass=' + glass + ' glow=' + glow);
-  return { on: true, glass: glass, glow: glow };
+  console.log('§MODELLER xray on glass=' + glass + ' glow=' + glow + ' stackDepth=' + stackDepth + ' glassOpacity=' + glassOpacity.toFixed(4));
+  return { on: true, glass: glass, glow: glow, stackDepth: stackDepth, glassOpacity: glassOpacity };
 }
 window.__xrayReveal = xrayReveal;
 const bXray = document.getElementById('b-xray');
