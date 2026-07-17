@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v11 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v12 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -405,7 +405,12 @@ function setupTour(A) {
     // Terminal 10/89 residual, HHS 0/50). What IS gated: a route that barely exists — a thin
     // graph (this local Duplex snapshot: 5 approx nodes, 3 edges, most stops unreachable) must
     // fall back to the legacy tour, not ship a worse flight.
-    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5) {
+    // §MAJORITY-LEGAL (2026-07-17, Duplex regression witness): a route whose chords are MOSTLY
+    // wall-illegal is junk data passing the coverage gate (Duplex: 2/2 = 100% illegal on a
+    // 3-pt route after v2 walker connected its 2 approx rooms). Engine residual stays welcome
+    // (Terminal 10/89≈11%, HHS 0/50); majority-illegal rejects.
+    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5 ||
+        (checkedChords > 0 && illegalChords * 2 > checkedChords)) {
       console.log('[TOUR] §FLY_ROUTE_REJECT edges=' + g.edges.length + ' visited=' + visitedStops +
         '/' + stops.length + ' illegalChords=' + illegalChords + ' → legacy tour');
       return null;
