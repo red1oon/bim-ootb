@@ -568,6 +568,12 @@ async function xrayReveal(on) {
   if (!on) {
     _xrayOn = false;
     await window.Bonsai.oplog.scrubTo(window.Bonsai.oplog.length);   // re-fold the signed log = authoritative restore
+    // §DW-DEDUP-RENDER: scrubTo's re-fold rebuilds every individual mesh FRESH from the op-log (default
+    // material, not deduped) — without this, a disc-walked fixture's individual fold-copy would come back
+    // fully opaque/visible post-restore, un-doing the dedup and reintroducing the z-fight next redraw.
+    // _redrawAllDiscWalks re-applies it (and rebuilds the InstancedMesh buckets) the same way every other
+    // refold path (undo/redo, commit) already does.
+    _redrawAllDiscWalks();
     if (window.A && A.requestRender) A.requestRender();
     console.log('§MODELLER xray off');
     return { on: false, glass: 0, glow: 0 };
@@ -3786,6 +3792,31 @@ function _renderDiscWalk(disc, placements) {
     ' (lod400=rule-mined REAL mesh from shared mesh.db [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
+  // §DW-DEDUP-RENDER (DW_FIXTURE_DOUBLE_RENDER_FINDING.md G1-G3, visual z-fighting confirmed 2026-07-17
+  // chasing a guide screenshot): the standard commit path ALSO folds every disc-walked placement as an
+  // individual op-log mesh (same mechanism every ARC element uses, for signed provenance/undo) — that mesh
+  // and this function's InstancedMesh bucket both stayed visible forever, at two independently-computed
+  // (near but not bit-identical) positions, z-fighting. That individual mesh is NOT dead weight, though —
+  // W-E2E-INSTPICK's own P2 relies on it being the click-to-identify target (window.Bonsai._selSet resolves
+  // via ITS featureId → the signed _dw op, full identity). A first attempt that set `.visible = false`
+  // fixed the z-fighting but broke picking (the ray no longer hits it at all, falling through to whatever
+  // ARC mesh sits behind). Fix instead by making it invisible to RENDERING only — transparent, opacity 0,
+  // no depth write — while leaving `.visible = true` so raycasting/pick keeps working exactly as before.
+  try {
+    var _dwOps = window.Bonsai.oplog._geomOps();
+    var _dwFids = {};
+    _dwOps.forEach(function (o) { if (o.parameters && o.parameters._dw && o.parameters._dw.disc === disc) _dwFids[o.id] = 1; });
+    var _dwHidden = 0;
+    window.Bonsai.group().children.forEach(function (o) {
+      if (o.isMesh && o.material && o.userData && _dwFids[o.userData.featureId] && !o.userData.__dwDedupDone) {
+        if (!o.userData.__dwDedupOwnMat) { o.material = o.material.clone(); o.userData.__dwDedupOwnMat = true; }
+        o.material.transparent = true; o.material.opacity = 0; o.material.depthWrite = false; o.material.needsUpdate = true;
+        o.userData.__dwDedupDone = true;
+        _dwHidden++;
+      }
+    });
+    if (_dwHidden) console.log('§DW-DEDUP-RENDER disc=' + disc + ' hid=' + _dwHidden + ' individual fold-copies (instanced twin is the visible one, twin stays pickable)');
+  } catch (e) { console.warn('§DW-DEDUP-RENDER failed ' + (e && e.message)); }
 }
 window.__renderDiscWalk = _renderDiscWalk;   // §8E-2b test hook: deterministic disc-walk render for W-DW-DENSITY-TE
 // §DISCWALK-ALL-FLASH: "each element flashes ORANGE as it resolves, then settles to its real colour" — a
