@@ -214,6 +214,15 @@ async function setupEffects(A, renderer, scene, camera) {
       geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
       geo.computeVertexNormals();
+      // §STAFFAGE_CAR_MESH_CULL_FIX (2026-07-18, user: "still no cars" — confirmed live via
+      // scene-graph inspection: the mesh existed, visible=true, correct material/position, but
+      // never actually rendered on ANY building). Root cause: BufferGeometry never gets a
+      // boundingSphere unless computeBoundingSphere() is called explicitly — three.js's frustum
+      // culling treats a null boundingSphere as "never intersects," so the renderer silently
+      // dropped this mesh from every frame regardless of camera position. `visible` and
+      // `frustumCulled` were never the problem; the missing bounding volume was.
+      geo.computeBoundingSphere();
+      geo.computeBoundingBox();
       _carGeometry = geo;
       console.log('§STAFFAGE_CAR_MESH loaded verts=' + vCount + ' tris=' + (iCount / 3));
       return geo;
@@ -1011,7 +1020,12 @@ async function setupEffects(A, renderer, scene, camera) {
       (function(cx2, cy2, cz2, angle) {
         _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
-          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15 });
+          // §STAFFAGE_CAR_MESH_CULL_FIX: DoubleSide — this mesh's winding order comes from an
+          // external IFC extraction pipeline, not authored for three.js directly; FrontSide (the
+          // default) silently back-face-culls the ENTIRE mesh if the winding is reversed, which is
+          // exactly what was happening (confirmed live: mesh existed, visible=true, correct
+          // material/position/boundingSphere, but never rendered on ANY building, ANY angle).
+          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
           var mesh = new THREE.Mesh(geo, mat);
           var pos = A.ifc2three(cx2, cy2, cz2);
           pos.y = _floorThreeY(cx2, cy2, cz2);
@@ -1022,7 +1036,21 @@ async function setupEffects(A, renderer, scene, camera) {
           placedC++;
           _photoStaffage.userData.counts = { people: placedP, trees: placedT, cars: placedC };
           console.log('§STAFFAGE_CAR_MESH placed at ifc=(' + cx2.toFixed(1) + ',' + cy2.toFixed(1) + ',' + cz2.toFixed(1) + ') angle=' + angle.toFixed(2));
-          if (A.markDirty) A.markDirty();
+          // §STAFFAGE_CAR_MESH_RENDER_RACE (2026-07-18, user: "still no cars" — confirmed live:
+          // the mesh existed, visible=true, correct geometry/material, but the canvas never
+          // repainted to include it; a direct A.renderer.render() call showed it instantly). This
+          // mesh lands asynchronously (after the geometry fetch resolves), well after the
+          // synchronous Alt+P population already ran its own markDirty()/render pass and the
+          // on-demand loop (main.js §S286) may have already parked. A single markDirty() call here
+          // can race the loop's own park check and get lost — same class of bug as this codebase's
+          // documented §PHOTO_STREAMING_RACE precedent ("re-assert every changed frame, don't trust
+          // a one-shot signal"). Re-assert on two more animation frames to guarantee the loop wakes
+          // and actually repaints with the mesh included, however that race lands.
+          if (A.markDirty) {
+            A.markDirty();
+            requestAnimationFrame(function() { if (A.markDirty) A.markDirty(); });
+            requestAnimationFrame(function() { requestAnimationFrame(function() { if (A.markDirty) A.markDirty(); }); });
+          }
         });
       })(carX, carY, carZ, carAngle);
       pSrc += '+car';
