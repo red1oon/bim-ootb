@@ -1975,6 +1975,9 @@
     var ROOM_CATEGORY_COLORS = {
       habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
       corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
+      restroom: { fill: 0x6d4c41, wire: 0xbcaaa4 },   // §RESTROOM-CLASS: wet sanitary room = brown (Material brown 600/200)
+      kitchen: { fill: 0xff8f00, wire: 0xffe082 },    // §KITCHEN-CLASS: food-service room = amber (Material amber 800/200)
+      bedroom: { fill: 0x00796b, wire: 0x80cbc4 },    // §BEDROOM-CLASS: sleeping room = teal (Material teal 700/200)
       utilities: { fill: 0x212121, wire: 0x5a5a5a }
     };
     function _categoryColor(category) {
@@ -2236,10 +2239,11 @@
         // room, for the room-shell FILL COLOR (not the Type-tree list — that's computed
         // independently in _buildRoomTree(), same underlying signals, deliberately not unified
         // into one shared cache yet — a follow-up cleanup, not a correctness issue, since both call
-        // the SAME deterministic classifiers on the SAME data and can never disagree). Only
-        // 'corridor'/'utilities' get a distinct shell color; every other real room (including a
-        // Restroom) stays 'habitable' — Restrooms are real occupiable space, just a richer Type-tree
-        // sub-category, not a separate shell hue.
+        // the SAME deterministic classifiers on the SAME data and can never disagree).
+        // 'corridor'/'restroom'/'utilities' each get a distinct shell color; every other real room
+        // stays 'habitable'. §RESTROOM-CLASS (2026-07-17): a wet sanitary room (toilet/WC/bathroom)
+        // is now its OWN brown hue — it reads as a different KIND of space from a living room at a
+        // glance, matching the richer Type-tree sub-category it always carried.
         var corridorLabelsShell = _corridorLabelsFor();
         // §UTILITY-CONTENT-BATCH (2026-07-15, real perf fix — see room_habitability.js's own
         // comment for the Hospital hang this replaces): ONE batched classification call for every
@@ -2266,7 +2270,13 @@
             }
           }
           var category = 'habitable';
+          // Most-specific wins: corridor (spatial) first — a corridor is never a named room; then
+          // the labelled room types (restroom/kitchen/bedroom, mutually exclusive by name); then
+          // the generic utility/void spatial signal last. Everything else stays 'habitable'.
           if (corridorLabelsShell[lg]) category = 'corridor';
+          else if (RH && RH.classifyRestroom && RH.classifyRestroom(g.label)) category = 'restroom';
+          else if (RH && RH.classifyKitchen && RH.classifyKitchen(g.label)) category = 'kitchen';
+          else if (RH && RH.classifyBedroom && RH.classifyBedroom(g.label)) category = 'bedroom';
           else if (utilityShellGuids[lg]) category = 'utilities';
           g.rects.forEach(function(rc) {
             var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
@@ -2349,16 +2359,23 @@
       // Draw one shell per sub-rect (their union IS the room's real footprint) but count ROOMS by
       // distinct guid — same "N rects = ONE logical room" convention W-ROOM-FILL/W-HBA-MULTIRECT
       // already proved for hba_lens.js's outline drawing.
-      var rooms = {}, catCounts = {};
+      var rooms = {}, catCounts = {}, synCount = 0;
       vols.forEach(function(v) {
         var fillColor = _categoryColor(v.category).fill;
-        var mesh = _drawRoomShell(v.center, v.size, 0.10, fillColor);
-        if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size, category: v.category });
+        // §SYNTHETIC-HONESTY (WalkerDoctrine §14: a computed/approximate room must never be
+        // presented as real): a compiled room (guid 'RM_…' or an '≈'-prefixed name) is drawn
+        // FAINTER than a real extracted IfcSpace, so the wash itself signals data provenance.
+        var syn = /^RM_/.test(v.guid || '') || /^\s*≈/.test(v.name || '');
+        if (syn) synCount++;
+        var mesh = _drawRoomShell(v.center, v.size, syn ? 0.06 : 0.12, fillColor);
+        if (mesh) _roomBoxes.push({ guid: v.guid, name: v.name, mesh: mesh, center: v.center, size: v.size, category: v.category, synthetic: syn });
         rooms[v.guid] = true;
         catCounts[v.category] = (catCounts[v.category] || 0) + 1;
       });
       console.log('[RP-TA] §ROOM_LENS_CATEGORY habitable=' + (catCounts.habitable || 0) +
-        ' corridor=' + (catCounts.corridor || 0) + ' utilities=' + (catCounts.utilities || 0));
+        ' corridor=' + (catCounts.corridor || 0) + ' restroom=' + (catCounts.restroom || 0) +
+        ' kitchen=' + (catCounts.kitchen || 0) + ' bedroom=' + (catCounts.bedroom || 0) +
+        ' utilities=' + (catCounts.utilities || 0) + ' | synthetic=' + synCount + ' real=' + (vols.length - synCount));
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
         ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');

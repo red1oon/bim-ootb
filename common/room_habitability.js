@@ -182,9 +182,30 @@
     return out;
   }
 
+  // §RESTROOM-CLASS (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md — restroom shell hue, 2026-07-17): a wet
+  // sanitary room (toilet/WC/bathroom/washroom) gets its own shell color, no longer collapsed into
+  // 'habitable'. Deterministic, non-invent: token match on the room's ALREADY-REAL type/name fields
+  // (the caller passes g.label = object_type+predefined_type+name joined — same widened-field signal
+  // spaceHabitable/utility use; never a fabricated label). Keyword set is drawn from real IFC space
+  // naming (Duplex object_type='Bathroom 1/2'; public buildings use Toilet/WC/Restroom/Lavatory).
+  // Word-boundary anchored so 'wc'/'bath' don't match inside unrelated words.
+  var RESTROOM_RE = /(^|[^a-z])(toilet|rest\s*room|restroom|water\s*closet|wc|lavatory|washroom|bathroom|bath|powder\s*room|en-?suite|ensuite)([^a-z]|$)/i;
+  function classifyRestroom(label) {
+    if (!label) return false;
+    return RESTROOM_RE.test(String(label));
+  }
+  // §KITCHEN-CLASS / §BEDROOM-CLASS (2026-07-17): two more name-driven room-shell hues, same
+  // deterministic widened-field token match as classifyRestroom (label = object_type+predefined_
+  // type+name). NOTE 'bedroom' is anchored so the generic 'Room' object_type never matches it.
+  var KITCHEN_RE = /(^|[^a-z])(kitchen(ette)?)([^a-z]|$)/i;
+  var BEDROOM_RE = /(^|[^a-z])(bed\s*room)([^a-z]|$)/i;
+  function classifyKitchen(label) { return label ? KITCHEN_RE.test(String(label)) : false; }
+  function classifyBedroom(label) { return label ? BEDROOM_RE.test(String(label)) : false; }
+
   var API = { spaceHabitable: spaceHabitable, NONHAB_TYPES: NONHAB_TYPES,
     envelopeFromTransforms: envelopeFromTransforms, utilityContentClass: utilityContentClass,
-    classifyUtilityRooms: classifyUtilityRooms };
+    classifyUtilityRooms: classifyUtilityRooms, classifyRestroom: classifyRestroom,
+    classifyKitchen: classifyKitchen, classifyBedroom: classifyBedroom };
   ROOT.RoomHabitability = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();
