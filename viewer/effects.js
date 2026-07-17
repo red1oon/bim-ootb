@@ -1061,7 +1061,13 @@ async function setupEffects(A, renderer, scene, camera) {
       return best !== null ? A.ifc2three(x, y, best).y : _staffageGroundY;
     }
     var sitPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'sit'; });
-    var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk'; });
+    // §STAFFAGE_FACING indoors: the interior circulation pool is normally all 'away'-facing (walks
+    // toward whatever's beyond her — reads fine anywhere). Widen it with the one 'toward'-facing
+    // pose (the standing casual male — "guy facing cam") so an interior shot can ALSO show someone
+    // facing the viewer, same facing-metric already used for the exterior threshold. He lands on
+    // whichever occupancy-grid-clear spot the round-robin picks — "where opportunity" — same
+    // walk-clear verification as every other candidate, nothing indoors gets less safe.
+    var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk' || (p.role === 'stand' && p.facing === 'toward'); });
     var floorYval = picked.length ? floorY(picked[0][0], picked[0][1], picked[0][2]) : _staffageGroundY;
     var placedSit = 0, placedWalk = 0;
     // SITTING → on the in-view furniture (seated on real chairs)
