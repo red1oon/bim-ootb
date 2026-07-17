@@ -21,6 +21,9 @@
 
   var _active = false;
   var _tmEnabledGI = false;   // §TM_GI_AUTO: did TM itself switch Alt+G on? (→ TM switches it off on close)
+  var _giHoldTimer = 0;       // §TM_GI_HOLD: 300ms "you stopped moving" timer → polish the held frame
+  var _giConvergeRaf = 0;     // §TM_GI_HOLD: RAF driving N8AO accumulation to convergence on a held frame
+  var _giConverging = false;  // §TM_GI_HOLD: true while the converge RAF is running
   var _panel = null;
   var _mode = 'DAY';
   var _ops = [];          // all ops sorted by start_ts
@@ -573,6 +576,40 @@
       s.points.material.dispose();
     }
     _sparkSystems = [];
+  }
+
+  // §TM_GI_HOLD (2026-07-17): "re-accumulate after ~300ms of stillness" — polish a held TM frame.
+  // renderAtTime forces N8AO single-pass (accumulate off) so a MOVING scene (scrub / playback tick)
+  // is clean-but-slightly-grainy and never ghosts. When motion STOPS (no renderAtTime call for 300ms
+  // AND not auto-playing), switch N8AO to accumulate mode and drive a short RAF loop to converge —
+  // sharpening the still frame to the full Alt+G quality. Any new renderAtTime (scrub/tick) or a
+  // playback start cancels it and drops straight back to single-pass. Never fires mid-playback: ticks
+  // arrive <300ms apart AND we gate on !_playing.
+  function _giCancelConverge() {
+    if (_giHoldTimer) { clearTimeout(_giHoldTimer); _giHoldTimer = 0; }
+    if (_giConvergeRaf) { cancelAnimationFrame(_giConvergeRaf); _giConvergeRaf = 0; }
+    _giConverging = false;
+  }
+
+  function _giScheduleHoldConverge(app) {
+    if (_giHoldTimer) { clearTimeout(_giHoldTimer); _giHoldTimer = 0; }
+    _giHoldTimer = setTimeout(function () {
+      _giHoldTimer = 0;
+      // Bail if state changed while waiting: TM closed, GI off, mid-playback, or pass missing.
+      if (!_active || _playing || !app._giComposerActive || !app._giComposer || !app._giN8aoPass) return;
+      if (!app._giN8aoPass.configuration) return;
+      app._giN8aoPass.configuration.accumulate = true;         // temporal accumulation ON for the hold
+      if (app._giN8aoPass.firstFrame) app._giN8aoPass.firstFrame();  // clean reset before accumulating
+      _giConverging = true;
+      var frames = 0, MAX = 24;   // ~24 frames is enough for N8AO (aoSamples=8) to visibly converge
+      console.log('§TM_GI_HOLD converge start (held 300ms, still)');
+      (function _step() {
+        if (!_giConverging || !_active || _playing || !app._giComposerActive || !app._giComposer) { _giConvergeRaf = 0; _giConverging = false; return; }
+        app._giComposer.render();
+        if (++frames >= MAX) { _giConvergeRaf = 0; _giConverging = false; console.log('§TM_GI_HOLD converged frames=' + frames); return; }
+        _giConvergeRaf = requestAnimationFrame(_step);
+      })();
+    }, 300);
   }
 
   function renderAtTime(cursorMs) {
@@ -1223,9 +1260,11 @@
     // the main loop. No-op unless Alt+G is already engaged. accumulate is restored to true in
     // deactivate() so a normal (non-TM) Alt+G keeps its converged-still quality.
     if (app._giComposer && app._giComposerActive) {
+      _giCancelConverge();   // §TM_GI_HOLD: this call IS motion (scrub/tick) — abandon any hold-polish
       if (app._giN8aoPass && app._giN8aoPass.configuration) app._giN8aoPass.configuration.accumulate = false;
       if (!renderAtTime._giLogged) { console.log('§TM_GI_RENDER Time Machine → Alt+G N8AO composer, single-pass (accumulate off)'); renderAtTime._giLogged = true; }
       app._giComposer.render();
+      if (!_playing) _giScheduleHoldConverge(app);   // §TM_GI_HOLD: arm the 300ms "settled → polish" timer
     } else if (app.renderer && app.scene && app.camera) {
       app.renderer.render(app.scene, app.camera);
     }
@@ -3790,6 +3829,7 @@
     var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
     var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
+    _giCancelConverge();   // §TM_GI_HOLD: stop any in-flight hold-polish RAF/timer before restoring state
     // §TM_GI_RENDER restore: renderAtTime forced N8AO single-pass (accumulate off) for TM's
     // one-frame-then-park render gate. Hand it back to converged-still mode so a plain Alt+G outside
     // Time Machine regains its multi-frame accumulation quality. Reset the once-per-session log latch too.
