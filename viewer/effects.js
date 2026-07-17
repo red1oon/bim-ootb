@@ -726,57 +726,103 @@ async function setupEffects(A, renderer, scene, camera) {
     var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
     var placedP = 0, placedT = 0, pSrc = 'none';
 
+    // §PHOTO_STAFFAGE_SILHOUETTE (user: "the building has walls you can easily measure instead of
+    // throwing" — trees on a bbox ellipse cut through an L-shaped/concave solid and landed inside).
+    // MEASURE the real footprint: bin every element by its angle from centre, record the FARTHEST
+    // one per direction. silR(angle) then gives the actual building reach that way, so props sit
+    // just BEYOND the real walls in whatever direction — concave shapes included. Real geometry,
+    // deterministic; clamped so a stray far element can't fling a prop to the horizon.
+    var NB = 96, binMax = new Array(NB).fill(0);
+    var allPts = A.dbQuery("SELECT center_x, center_y FROM element_transforms WHERE center_x IS NOT NULL") || [];
+    for (var pi = 0; pi < allPts.length; pi++) {
+      var ex = allPts[pi][0] - cx, ey = allPts[pi][1] - cy, rr = Math.hypot(ex, ey);
+      if (!rr) continue;
+      var bpi = (((Math.floor((Math.atan2(ey, ex) / (2 * Math.PI)) * NB)) % NB) + NB) % NB;
+      if (rr > binMax[bpi]) binMax[bpi] = rr;
+    }
+    var _silCap = Math.hypot(hx, hy) + 8;
+    function silR(a) {
+      var bi = (((Math.floor((a / (2 * Math.PI)) * NB)) % NB) + NB) % NB, m = 0;
+      for (var k = -1; k <= 1; k++) { var b = (((bi + k) % NB) + NB) % NB; if (binMax[b] > m) m = binMax[b]; }
+      return Math.min(m || Math.max(hx, hy), _silCap);
+    }
+
     if (realPeople === 0) {
       var insidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // walking + sitting
       var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'out'; });  // the 2 standing
+      // §PHOTO_STAFFAGE_SCALE (user: "for a big place multiply the pax at different wings, ends... with
+      // so many rooms at least ends and middle"). Counts scale with building size; placement spreads
+      // across the footprint (minDist scaled to size) so a multi-wing plan gets people at its ends and
+      // middle, not clustered. A small house stays modest. Poses cycle (6 sprites cover any count).
+      var span = w + d, maxExt = Math.max(w, d);
+      var nInside = Math.max(2, Math.min(12, Math.round(span / 14)));
+      var nStanding = Math.max(2, Math.min(6, Math.round(span / 30)));
 
-      // INSIDE figures — anchor to REAL furniture (a chair/sofa is a guaranteed indoor, on-floor
-      // spot — EXTRACTED, not a centroid guess, which the door-direction heuristic could get wrong
-      // on concave/L-shaped footprints). Spread so they don't cluster. Fall back to interior doors
-      // where a building has no furniture (e.g. HHS/Esplanades — 0 furniture rows).
-      var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 80") || [];
-      var spots = _spreadPick(furn, insidePoses.length, 3.5);
-      pSrc = 'furniture';
-      if (!spots.length) {
-        var idoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
-        spots = idoors.slice(0, insidePoses.length).map(function(r) {
-          var ox = r[0] - cx, oy = r[1] - cy, ol = Math.hypot(ox, oy) || 1;
-          return [r[0] - (ox / ol) * 2.4, r[1] - (oy / ol) * 2.4, r[2], r[3]];   // nudge into the room
-        });
-        pSrc = spots.length ? 'interior-door' : 'none';
-      }
-      for (var i = 0; i < spots.length; i++) {
-        var s = spots[i];
-        var floorZ = s[2] - (s[3] ? s[3] / 2 : 0.4);   // furniture/door bottom ≈ floor → feet on floor
-        _addStaffageSprite(insidePoses[i % insidePoses.length], A.ifc2three(s[0], s[1], floorZ), true);
-        placedP++;
+      // INSIDE figures — real furniture, spread across the plan (minDist scales with size → ends+middle).
+      var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 600") || [];
+      var insideMinD = Math.max(3.5, Math.min(22, maxExt / Math.max(2, nInside * 0.7)));
+      var spots = _spreadPick(furn, nInside, insideMinD);
+      if (spots.length) {
+        pSrc = 'furniture';
+        for (var i = 0; i < spots.length; i++) {
+          var s = spots[i];
+          _addStaffageSprite(insidePoses[i % insidePoses.length], A.ifc2three(s[0], s[1], s[2] - (s[3] ? s[3] / 2 : 0.4)), true);
+          placedP++;
+        }
+      } else {
+        // No furniture (HHS/Esplanades) → the would-be-inside figures go OUTSIDE too, so they're
+        // visible on the ground rather than lost/occluded inside.
+        pSrc = 'exterior-ground';
+        outsidePoses = _STAFFAGE_PEOPLE;
+        nStanding = Math.max(nStanding, nInside);
       }
 
-      // OUTSIDE figures — the 2 standing, ONLY at PERIMETER doors (near the footprint edge → likely
-      // real exterior entrances). If none qualify, skip rather than misplace a person outside a
-      // random interior door — the honest "we can't confidently resolve outside here" fallback.
-      var pdoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 200") || [];
-      var perim = pdoors.filter(function(r) { return Math.max(Math.abs(r[0] - cx) / hx, Math.abs(r[1] - cy) / hy) >= 0.7; });
-      for (var k = 0; k < Math.min(perim.length, outsidePoses.length); k++) {
-        var pr = perim[k];
-        var ox2 = pr[0] - cx, oy2 = pr[1] - cy, ol2 = Math.hypot(ox2, oy2) || 1;
-        var floorZ2 = pr[2] - (pr[3] ? pr[3] / 2 : 1.0);
-        _addStaffageSprite(outsidePoses[k % outsidePoses.length], A.ifc2three(pr[0] + (ox2 / ol2) * 1.8, pr[1] + (oy2 / ol2) * 1.8, floorZ2), true);
-        placedP++;
+      // OUTSIDE figures — at real ENTRANCES. An exterior door sits ON the measured perimeter: its
+      // distance from centre ≈ the silhouette in its direction (interior doors sit well inside).
+      // Take GROUND-FLOOR exterior doors, then _spreadPick them so figures land at DIFFERENT wings/
+      // ends, not all at one entrance. Step each just out of its door, feet on the floor. (IfcSpace/
+      // corridor data is not extracted here, so exterior doors are the reliable entrance signal.)
+      var no = nStanding;
+      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
+      var ext = [];
+      for (var di = 0; di < doors.length; di++) {
+        var dd = doors[di], dex = dd[0] - cx, dey = dd[1] - cy, dr = Math.hypot(dex, dey);
+        if (dr >= silR(Math.atan2(dey, dex)) - 3.0) ext.push([dd[0], dd[1], dd[2], dd[3], dd[4] || 0.9]);
+      }
+      ext.sort(function(a, b) { return (a[2] - b[2]) || (b[4] - a[4]); });   // ground floor, then widest
+      if (ext.length) {
+        var gfz = ext[0][2];
+        var gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
+        var entMinD = Math.max(6, maxExt / Math.max(2, no));
+        var picked = _spreadPick(gfExt, no, entMinD);          // spread across wings/ends
+        if (!picked.length) picked = gfExt.slice(0, no);
+        for (var k = 0; k < no; k++) {
+          var e = picked[k % picked.length], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
+          var lat = Math.floor(k / picked.length) * 1.4;       // extras at the same door step sideways
+          var px = e[0] + ((e[0] - cx) / ol) * 1.6 + (-(e[1] - cy) / ol) * lat;
+          var py = e[1] + ((e[1] - cy) / ol) * 1.6 + ((e[0] - cx) / ol) * lat;
+          _addStaffageSprite(outsidePoses[k % outsidePoses.length], A.ifc2three(px, py, e[2] - (e[3] ? e[3] / 2 : 1.0)), true);
+          placedP++;
+        }
+        pSrc += '+entrance';
+      } else {
+        for (var k2 = 0; k2 < no; k2++) {
+          var pa = (k2 / no) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
+          _addStaffageSprite(outsidePoses[k2 % outsidePoses.length], A.ifc2three(cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ), true);
+          placedP++;
+        }
+        pSrc += '+silhouette';
       }
     }
 
-    // Decorative trees on an ELLIPSE just outside the footprint — hugs the building (follows the
-    // bbox proportions) instead of a big circle that leaves them far off on a large/elongated plan,
-    // and the COUNT scales with perimeter so a big building (HHS: 68x55m) gets a full ring (~18)
-    // rather than the 8 that looked sparse there, while a small house (Duplex) still gets ~8.
+    // Trees ringed just BEYOND the measured silhouette (never through the walls), count scales with
+    // building size (HHS gets ~18, a house ~8).
     if (realTrees === 0) {
-      var margin = 4;
-      var rx = hx + margin, ry = hy + margin;
       var ntrees = Math.max(8, Math.min(24, Math.round((2 * (w + d)) / 14)));
       for (var t = 0; t < ntrees; t++) {
-        var a = (t / ntrees) * Math.PI * 2 + 0.4;
-        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, groundZ), false);
+        var ta = (t / ntrees) * Math.PI * 2 + 0.4;
+        var trad = silR(ta) + 5;
+        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(ta) * trad, cy + Math.sin(ta) * trad, groundZ), false);
         placedT++;
       }
     }
