@@ -154,6 +154,8 @@ async function setupEffects(A, renderer, scene, camera) {
   var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
   var _photoStaffageInFrame = [];     // interior in-view figures — re-placed to the current camera view
   var _staffageGroundY = null;        // three-space y of the RENDERED ground plane — feet anchor here
+  var _realPeopleExist = false;       // set by _buildStaffage — building already has real RPC entourage,
+                                       // so _updateInFrameInterior must not double-populate it indoors
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
@@ -817,9 +819,16 @@ async function setupEffects(A, renderer, scene, camera) {
       return _addStaffageSprite(entry, pos, isPerson, true);
     }
     function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
-    var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
+    // §RPC_M_PREFIX (2026-07-17, found via BimWhale_Advanced): some exports name RPC entourage
+    // "M_RPC Male/Female" (metric-template prefix) instead of the bare "RPC Male/Female" seen in
+    // Ifc4_Revit — same real content, different export convention (see streaming.js §ENTOURAGE for
+    // the matching fix on the material side). Missing this made effects.js think BimWhale had NO
+    // real people, so it staffed synthetic sprite-people on top of the real RPC entourage already
+    // there — double population.
+    var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%' OR element_name LIKE 'M_RPC Male%' OR element_name LIKE 'M_RPC Female%')");
     var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
     var placedP = 0, placedT = 0, pSrc = 'none';
+    _realPeopleExist = realPeople > 0;
 
     // §PHOTO_STAFFAGE_SILHOUETTE (user: "the building has walls you can easily measure instead of
     // throwing" — trees on a bbox ellipse cut through an L-shaped/concave solid and landed inside).
@@ -1004,6 +1013,9 @@ async function setupEffects(A, renderer, scene, camera) {
   function _updateInFrameInterior() {
     _disposeInFrame();
     if (!A.dbQuery || !A.camera || !THREE.Sprite || !_photoStaffage) return;
+    // §RPC_M_PREFIX / no double-population: building already has real RPC people (set by
+    // _buildStaffage) — adding synthetic sitting/walking on top indoors would duplicate them.
+    if (_realPeopleExist) { console.log('§PHOTO_STAFFAGE_INTERIOR skip=realPeopleExist'); return; }
     var bbox = _buildingBBoxIfc(); if (!bbox) return;
     var c0 = A.ifc2three(bbox.xMin, bbox.yMin, bbox.zMin), c1 = A.ifc2three(bbox.xMax, bbox.yMax, bbox.zMax);
     var minX = Math.min(c0.x, c1.x), maxX = Math.max(c0.x, c1.x), minZ = Math.min(c0.z, c1.z), maxZ = Math.max(c0.z, c1.z), roofY = Math.max(c0.y, c1.y);
