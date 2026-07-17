@@ -152,6 +152,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // nothing hardcoded, general to any building (the hard constraint repeated throughout this spec).
   var _photoStaffage = null;          // THREE.Group of all staffage sprites
   var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
+  var _photoStaffageInFrame = [];     // interior in-view figures — re-placed to the current camera view
   var _staffageGroundY = null;        // three-space y of the RENDERED ground plane — feet anchor here
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
@@ -918,7 +919,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A.scene.remove(_photoStaffage);
       _photoStaffage.children.forEach(function(s) { if (s.material) s.material.dispose(); });
     }
-    _photoStaffage = null; _photoStaffagePeople = []; _lastPeopleVis = null;
+    _photoStaffage = null; _photoStaffagePeople = []; _photoStaffageInFrame = []; _lastPeopleVis = null;
   }
   // §PHOTO_STAFFAGE: people are spherical billboards — from a steep top-down angle they read as
   // upright figures floating detached from the ground (the aerial-angle failure the spec names).
@@ -943,6 +944,57 @@ async function setupEffects(A, renderer, scene, camera) {
   // once"): staffage is its OWN persistent toggle, decoupled from Alt+S. Alt+S stays a clean
   // still on real geometry only; Alt+P adds/removes the fabricated people+trees layer, stacking
   // with Alt+S or standalone. Toggle (not one-shot), like Night/Shadow/Cinema.
+  // §PHOTO_STAFFAGE_INTERIOR (user: "when capturing inside a building also place more people, those
+  // sitting, to be in the frame"). When the camera is INSIDE the footprint, drop sitting/walking
+  // figures onto real furniture that's currently in view, seated on that furniture's own floor slab
+  // (not the ground plane — could be an upper storey). Re-placed to the live camera each time
+  // Populate is (re)toggled, so re-pressing Alt+P after moving inside refreshes the framing.
+  function _disposeInFrame() {
+    _photoStaffageInFrame.forEach(function(s) {
+      if (_photoStaffage) _photoStaffage.remove(s);
+      var i = _photoStaffagePeople.indexOf(s); if (i >= 0) _photoStaffagePeople.splice(i, 1);
+      if (s.material) s.material.dispose();
+    });
+    _photoStaffageInFrame = [];
+  }
+  function _updateInFrameInterior() {
+    _disposeInFrame();
+    if (!A.dbQuery || !A.camera || !THREE.Sprite || !_photoStaffage) return;
+    var bbox = _buildingBBoxIfc(); if (!bbox) return;
+    var c0 = A.ifc2three(bbox.xMin, bbox.yMin, bbox.zMin), c1 = A.ifc2three(bbox.xMax, bbox.yMax, bbox.zMax);
+    var minX = Math.min(c0.x, c1.x), maxX = Math.max(c0.x, c1.x), minZ = Math.min(c0.z, c1.z), maxZ = Math.max(c0.z, c1.z), roofY = Math.max(c0.y, c1.y);
+    var cam = A.camera.position;
+    var inside = cam.x > minX && cam.x < maxX && cam.z > minZ && cam.z < maxZ && cam.y < roofY + 2;
+    if (!inside) { console.log('§PHOTO_STAFFAGE_INTERIOR inside=0'); return; }
+    // furniture currently in the view frustum, near the camera
+    var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.center_x IS NOT NULL") || [];
+    var _v = new THREE.Vector3(), cand = [];
+    for (var i = 0; i < furn.length; i++) {
+      var f = furn[i], p = A.ifc2three(f[0], f[1], f[2]);
+      _v.copy(p).project(A.camera);
+      if (Math.abs(_v.x) < 0.9 && Math.abs(_v.y) < 0.95 && _v.z > -1 && _v.z < 1) {
+        var dist = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
+        if (dist < 16) cand.push([f[0], f[1], f[2], f[3], dist]);
+      }
+    }
+    cand.sort(function(a, b) { return a[4] - b[4]; });
+    var picked = _spreadPick(cand, 5, 2.0);
+    // floor slab under each spot (raised/upper storey respected — same logic as _buildStaffage)
+    var slabs = A.dbQuery("SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND bbox_z IS NOT NULL AND bbox_z < 1.5 AND center_x IS NOT NULL") || [];
+    function floorY(x, y, refZ) {
+      var best = null;
+      for (var s = 0; s < slabs.length; s++) { var sl = slabs[s], top = sl[2] + (sl[5] || 0) / 2; if (top <= refZ + 1.5 && Math.abs(x - sl[0]) <= (sl[3] || 3) / 2 + 0.5 && Math.abs(y - sl[1]) <= (sl[4] || 3) / 2 + 0.5) { if (best === null || top > best) best = top; } }
+      return best !== null ? A.ifc2three(x, y, best).y : _staffageGroundY;
+    }
+    var poses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // sitting + walking
+    for (var k = 0; k < picked.length; k++) {
+      var s = picked[k], pos = A.ifc2three(s[0], s[1], s[2]); pos.y = floorY(s[0], s[1], s[2]);
+      var spr = _addStaffageSprite(poses[k % poses.length], pos, true, true);
+      spr.userData.interior = true;
+      _photoStaffageInFrame.push(spr);
+    }
+    console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' placed=' + picked.length);
+  }
   var _populateOn = false, _populateBuilding = null;
   A.togglePopulate = function() {
     _populateOn = !_populateOn;
@@ -954,6 +1006,7 @@ async function setupEffects(A, renderer, scene, camera) {
         _populateBuilding = A.activeBuilding;
       }
       if (_photoStaffage) _photoStaffage.visible = true;
+      _updateInFrameInterior();           // interior shot → drop sitting figures onto in-view furniture
       _lastPeopleVis = null;              // force a fresh pitch decision (+ log) on show
       _updatePeoplePitchGate();
       _trackStaffageLoading();            // live "⏳ N/M → ✓ populated" status while cutouts decode
