@@ -372,6 +372,44 @@
     return initial;
   }
 
+  // Shared cache-hit-or-compute-fresh path for `_cineStoryboard` — factored out of the Drone Pilot
+  // (tm-eye) toggle handler so movie export (§TM_EXPORT) can ensure a storyboard exists without
+  // duplicating the cache/reconstruct/compute logic. Resolves once `_cineStoryboard` is populated
+  // (possibly []). Callers needing the FULL (not first-chunk) storyboard on a large building should
+  // also check `_bgBuildRaf` — export waits for it explicitly (see tmStartMovieExport).
+  function _ensureStoryboard() {
+    return cacheGet('movie').then(function(cachedScript) {
+      // §S260d: Invalidate old cache — check for _arcV marker (S260d storyboard format)
+      var cacheValid = cachedScript && cachedScript.length > 0 && cachedScript[0]._arcV === 4;
+      if (cacheValid) {
+        // Reconstruct Vector3 objects from plain {x,y,z}
+        for (var si = 0; si < cachedScript.length; si++) {
+          var s = cachedScript[si];
+          s.center = new THREE.Vector3(s.center.x, s.center.y, s.center.z);
+          if (s.chain) {
+            for (var ci = 0; ci < s.chain.length; ci++) {
+              s.chain[ci] = new THREE.Vector3(s.chain[ci].x, s.chain[ci].y, s.chain[ci].z);
+            }
+          }
+        }
+        _cineStoryboard = cachedScript;
+        console.log('§MOVIE_CACHE_HIT scenes=' + _cineStoryboard.length);
+      } else {
+        var posMap = buildGuidPosMap();
+        _cineStoryboard = computeStoryboard(_ops, posMap);
+        // §S260d: Don't cache here — background builder caches full storyboard when done
+        if (_cineStoryboard.length && !_bgBuildRaf) {
+          cachePut('movie', _cineStoryboard);
+          console.log('§MOVIE_CACHE_SAVE scenes=' + _cineStoryboard.length);
+        }
+      }
+    }).catch(function(e) {
+      console.warn('§MOVIE_CACHE_ERR ' + (e && e.message));
+      var posMap = buildGuidPosMap();
+      _cineStoryboard = computeStoryboard(_ops, posMap);
+    });
+  }
+
   // ── Occlusion-aware angle selection ──
   // Tries 8 angles around the target at the given distance + 3/4 above elevation.
   // Raycasts from each candidate camera position to the target center.
@@ -1916,6 +1954,217 @@
     if (app && app.markDirty) app.markDirty();
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // §TM_EXPORT — High-quality movie export.
+  // Spec: prompts/PHOTOREAL_STILL_RENDER.md §IMPLEMENTATION SPEC (2026-07-17).
+  // One Alt+S-quality still per _cineStoryboard beat (direct camera jump-cut, NOT the tick-based
+  // Director state machine — that machinery is for smoothing CONTINUOUS real-time motion, which a
+  // discrete stop-motion still has none of), captured into a dedicated IDB store, then stitched into
+  // a video via a proxy canvas + MediaRecorder (Cinema Orbit's own proven capture pattern, effects.js
+  // A.startCinemaOrbit, ~line 1829).
+  // ══════════════════════════════════════════════════════════════════
+  var TM_EXPORT_FPS = 2;          // proxy-canvas recording rate — stitch phase only, not capture phase
+  var TM_EXPORT_HOLD_SEC = 2;     // seconds each beat's still is held in the output video
+  var _tmExportCancelled = false;
+  var _tmExportBeatIdx = 0, _tmExportBeatCount = 0;
+
+  // Reuses the exact steady-state distance formula the live Director's own scene-transition code
+  // computes (see the `nDist = ... ? _PANORAMIC_DIST : ...` lines used when advancing _cineSceneIdx)
+  // — not a new number, the same one the Drone Pilot camera settles on for this scene type.
+  function _tmExportCameraPose(scene) {
+    var nDist = scene.type === 'panoramic' ? _PANORAMIC_DIST : scene.type === 'hero' ? _HERO_DIST : _FLYTHROUGH_DIST;
+    var angle = scene.angle || 0;
+    return {
+      pos: new THREE.Vector3(
+        scene.center.x + Math.cos(angle) * nDist,
+        scene.center.y + nDist * 0.5,
+        scene.center.z + Math.sin(angle) * nDist
+      ),
+      target: scene.center
+    };
+  }
+
+  // Places the camera, sets construction-reveal state, runs the full Alt+S fold (TAA + AO/SSGI),
+  // captures the canvas, then tears down before returning — each beat starts from a clean slate.
+  // Resolves the captured Blob, or null if cancelled mid-capture.
+  function _tmExportCaptureBeat(app, scene, idx) {
+    var pose = _tmExportCameraPose(scene);
+    app.camera.position.copy(pose.pos);
+    app.controls.target.copy(pose.target);
+    app.controls.update();
+    renderAtTime(scene.endTs || scene.firstTs || scene.startTs || _projectEnd);
+    var t0 = performance.now();
+    return new Promise(function(resolve) {
+      app.startStillRefine(function() {
+        if (_tmExportCancelled) {
+          // A cancel mid-fold still leaves the fold ITSELF complete (onComplete only fires after
+          // the AO/SSGI phase genuinely finishes — there's no early-abort hook into the fold), but
+          // never leaving A._stillRefineActive/staging stuck applied until some later unrelated
+          // interaction happens to touch the canvas — same discipline as the success path below.
+          app.stopStillRefine(true);
+          resolve(null);
+          return;
+        }
+        app.renderer.domElement.toBlob(function(blob) {
+          var ms = Math.round(performance.now() - t0);
+          console.log('§TM_EXPORT frame idx=' + idx + '/' + _tmExportBeatCount + ' elapsedMs=' + ms +
+            ' bytes=' + (blob ? blob.size : 0));
+          // force=true: bypass the 500ms interaction-nudge grace window (§STILL_REFINE_GRACE) —
+          // that's for absorbing an accidental mouse-jog on a human Alt+S keypress, not relevant
+          // to this programmatic stop, and a fast fold (<500ms) would otherwise silently no-op the
+          // teardown, leaving _stillRefineActive stuck true and freezing the NEXT beat's capture.
+          app.stopStillRefine(true);
+          resolve(blob);
+        }, 'image/png');
+      });
+    });
+  }
+
+  // Draws each captured Blob onto an offscreen proxy canvas, holding it for TM_EXPORT_HOLD_SEC,
+  // recording the proxy via the exact captureStream()+MediaRecorder pattern Cinema Orbit already
+  // ships (effects.js A.startCinemaOrbit) — captureStream(fps) emits frames on that timer regardless
+  // of redraws, so "holding" a still is just leaving the proxy undrawn between beats.
+  function _tmStitchExportVideo() {
+    return tmExportGetAllFrames().then(function(blobs) {
+      if (!blobs.length) { console.warn('§TM_EXPORT_STITCH_FAIL no frames captured'); return; }
+      if (typeof MediaRecorder === 'undefined') {
+        console.warn('§TM_EXPORT_STITCH_FAIL MediaRecorder unsupported in this browser');
+        return;
+      }
+      return new Promise(function(resolve) {
+        var img = new Image();
+        var firstUrl = URL.createObjectURL(blobs[0]);
+        img.onload = function() {
+          var proxy = document.createElement('canvas');
+          proxy.width = img.naturalWidth; proxy.height = img.naturalHeight;
+          var ctx = proxy.getContext('2d');
+          URL.revokeObjectURL(firstUrl);  // only sizing the canvas here — drawNext() below draws frame 0
+
+          var stream = proxy.captureStream(TM_EXPORT_FPS);
+          var chunks = [];
+          var mimeType = (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9'))
+            ? 'video/webm;codecs=vp9' : 'video/webm';
+          var recorder;
+          try { recorder = new MediaRecorder(stream, { mimeType: mimeType }); }
+          catch (e) { console.warn('§TM_EXPORT_STITCH_FAIL MediaRecorder ctor: ' + e.message); resolve(); return; }
+          recorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+          recorder.onstop = function() {
+            var blob = new Blob(chunks, { type: mimeType });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            var app = A();
+            a.download = 'BIM_TimeMachine_' + ((app && app.activeBuilding) || 'building') + '_' + Date.now() + '.webm';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+            console.log('§TM_EXPORT done frames=' + blobs.length + ' videoBytes=' + blob.size + ' type=' + mimeType);
+            tmExportClear().then(resolve);
+          };
+          recorder.start();
+
+          var i = 0;
+          function drawNext() {
+            if (i >= blobs.length) { recorder.stop(); return; }
+            var url = URL.createObjectURL(blobs[i]);
+            var frame = new Image();
+            frame.onload = function() {
+              ctx.drawImage(frame, 0, 0, proxy.width, proxy.height);
+              URL.revokeObjectURL(url);
+              i++;
+              setTimeout(drawNext, TM_EXPORT_HOLD_SEC * 1000);
+            };
+            frame.src = url;
+          }
+          drawNext();
+        };
+        img.src = firstUrl;
+      });
+    });
+  }
+
+  // Entry point — wired to the "Export Movie" button (see buildPanel below).
+  async function tmStartMovieExport() {
+    console.log('§TM_EXPORT click');  // §LOG_MANDATE: every entry, even a bail, must leave a console trace —
+                                       // viewerStatus() is DOM-only (see its own definition), never console.log's
+    var app = A();
+    if (!app || !app.camera || !app.controls || !app.renderer || typeof app.startStillRefine !== 'function') {
+      console.log('§TM_EXPORT_ABORT reason=pipeline-unavailable app=' + !!app + ' camera=' + !!(app && app.camera) +
+        ' controls=' + !!(app && app.controls) + ' renderer=' + !!(app && app.renderer) +
+        ' startStillRefine=' + !!(app && typeof app.startStillRefine === 'function'));
+      viewerStatus('Export unavailable — still-refine pipeline not loaded');
+      return;
+    }
+    if (app._tmExportActive) { console.log('§TM_EXPORT_ABORT reason=already-active'); return; }
+    await _ensureStoryboard();
+    // §S260d progressive build: computeStoryboard() returns only the first ~500-op chunk
+    // immediately and finishes the rest via background rAF chunks (_bgBuildRaf) — export needs the
+    // FULL storyboard, not a partial one, so wait for the background builder to finish.
+    while (_bgBuildRaf) { await new Promise(function(r) { setTimeout(r, 200); }); }
+    if (!_cineStoryboard.length) {
+      console.log('§TM_EXPORT_ABORT reason=no-scenes ops=' + _ops.length);
+      viewerStatus('Export: no scenes — load a building first');
+      return;
+    }
+
+    await tmExportClear();
+    _tmExportCancelled = false;
+    _tmExportBeatIdx = 0;
+    _tmExportBeatCount = _cineStoryboard.length;
+    app._tmExportActive = true;
+    console.log('§TM_EXPORT start beats=' + _tmExportBeatCount);
+    if (typeof _tmUpdateExportUI === 'function') _tmUpdateExportUI();
+
+    for (var i = 0; i < _cineStoryboard.length; i++) {
+      if (_tmExportCancelled) { console.log('§TM_EXPORT_CANCEL idx=' + i); break; }
+      _tmExportBeatIdx = i;
+      if (typeof _tmUpdateExportUI === 'function') _tmUpdateExportUI();
+      var blob = await _tmExportCaptureBeat(app, _cineStoryboard[i], i);
+      if (!blob || _tmExportCancelled) { console.log('§TM_EXPORT_CANCEL idx=' + i); break; }
+      await tmExportPutFrame(i, blob);
+    }
+
+    // §TM_EXPORT: _tmExportActive stays true through the stitch phase too — it's what gates
+    // main.js's incidental-touch cancel guard AND the "already running" re-entrancy check above,
+    // so dropping it early (before stitching finished) let a stray click re-open the button as
+    // "Export Movie" and start a SECOND overlapping run while the first was still stitching.
+    if (_tmExportCancelled) {
+      app._tmExportActive = false;
+      await tmExportClear();
+      viewerStatus('Movie export cancelled');
+      if (typeof _tmUpdateExportUI === 'function') _tmUpdateExportUI();
+      return;
+    }
+    viewerStatus('🎬 Stitching movie...');
+    await _tmStitchExportVideo();
+    app._tmExportActive = false;
+    viewerStatus('🎬 Movie exported');
+    if (typeof _tmUpdateExportUI === 'function') _tmUpdateExportUI();
+  }
+
+  function tmCancelMovieExport() {
+    var app = A();
+    if (!app || !app._tmExportActive) return;
+    _tmExportCancelled = true;
+    console.log('§TM_EXPORT_CANCEL requested');
+  }
+
+  // Reflects export progress into the "Export Movie" button + the existing #tm-status line —
+  // no new panel chrome for v1 (spec's own scope call), reuses the general-purpose status element.
+  function _tmUpdateExportUI() {
+    var app = A();
+    var btn = document.getElementById('tm-export');
+    var status = document.getElementById('tm-status');
+    var active = !!(app && app._tmExportActive);
+    if (btn) {
+      btn.classList.toggle('tm-active', active);
+      btn.innerHTML = active ? '&#x23F9; Cancel Export' : '&#x1F3AC; Export Movie';
+      btn.title = active ? 'Cancel the movie export in progress' :
+        'Export a high-quality movie — Alt+S-quality still per storyboard beat, may take a while';
+    }
+    if (active && status) {
+      status.textContent = 'Exporting frame ' + (_tmExportBeatIdx + 1) + '/' + _tmExportBeatCount + '...';
+    }
+  }
+
   // ── UI ──
   function buildPanel() {
     _panel = document.createElement('div');
@@ -1930,7 +2179,7 @@
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
-        '<button id="tm-share" style="font-size:9px;padding:2px 6px" title="Copy shareable link">&#x1F517; Share</button>' +
+        '<button id="tm-export" style="font-size:9px;padding:2px 6px" title="Export a high-quality movie — Alt+S-quality still per storyboard beat, may take a while">&#x1F3AC; Export Movie</button>' +
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
@@ -2078,17 +2327,11 @@
     document.getElementById('tm-new').addEventListener('pointerup', function(e) {
       e.stopPropagation(); copyGuids(true);
     });
-    document.getElementById('tm-share').addEventListener('pointerup', function(e) {
+    document.getElementById('tm-export').addEventListener('pointerup', function(e) {
       e.stopPropagation();
-      var url = new URL(location.href);
-      url.searchParams.set('tm', 'play');
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(url.toString());
-        var sb = document.getElementById('tm-share');
-        if (sb) { sb.textContent = 'Copied!'; setTimeout(function(){ sb.innerHTML = '&#x1F517; Share'; }, 1500); }
-      }
-      viewerStatus('4D playback link copied to clipboard');
-      console.log('§TIME_MACHINE share URL: ' + url.toString());
+      var app = A();
+      if (app && app._tmExportActive) tmCancelMovieExport();
+      else tmStartMovieExport();
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -2135,32 +2378,7 @@
         _cineSeenZones = {};
 
         // §S260c: Check IDB for cached Movie Script, else compute fresh
-        cacheGet('movie').then(function(cachedScript) {
-          // §S260d: Invalidate old cache — check for _arcV marker (S260d storyboard format)
-          var cacheValid = cachedScript && cachedScript.length > 0 && cachedScript[0]._arcV === 4;
-          if (cacheValid) {
-            // Reconstruct Vector3 objects from plain {x,y,z}
-            for (var si = 0; si < cachedScript.length; si++) {
-              var s = cachedScript[si];
-              s.center = new THREE.Vector3(s.center.x, s.center.y, s.center.z);
-              if (s.chain) {
-                for (var ci = 0; ci < s.chain.length; ci++) {
-                  s.chain[ci] = new THREE.Vector3(s.chain[ci].x, s.chain[ci].y, s.chain[ci].z);
-                }
-              }
-            }
-            _cineStoryboard = cachedScript;
-            console.log('§MOVIE_CACHE_HIT scenes=' + _cineStoryboard.length);
-          } else {
-            var posMap = buildGuidPosMap();
-            _cineStoryboard = computeStoryboard(_ops, posMap);
-            // §S260d: Don't cache here — background builder caches full storyboard when done
-            if (_cineStoryboard.length && !_bgBuildRaf) {
-              cachePut('movie', _cineStoryboard);
-              console.log('§MOVIE_CACHE_SAVE scenes=' + _cineStoryboard.length);
-            }
-          }
-
+        _ensureStoryboard().then(function() {
           if (_cineStoryboard.length) {
             _cineNextTarget = _cineStoryboard[0].center;
             _camTarget = _cineStoryboard[0].center.clone();
@@ -2169,15 +2387,6 @@
             console.log('§CINE_READY scenes=' + _cineStoryboard.length + ' — awaiting user Play');
           } else {
             viewerStatus('🚁 No scenes found — load a building first');
-          }
-        }).catch(function(e) {
-          console.warn('§MOVIE_CACHE_ERR ' + (e && e.message));
-          var posMap = buildGuidPosMap();
-          _cineStoryboard = computeStoryboard(_ops, posMap);
-          if (_cineStoryboard.length) {
-            _cineNextTarget = _cineStoryboard[0].center;
-            _camTarget = _cineStoryboard[0].center.clone();
-            viewerStatus('🚁 ' + _cineStoryboard.length + ' scenes ready — press ▶ to play');
           }
         });
       } else {
@@ -3648,6 +3857,68 @@
       tx.objectStore(app.CACHE_STORE).delete(key);
       console.log('§CACHE_DEL key=' + key);
     }).catch(function(e) { console.warn('§CACHE_DEL_ERR ' + e.message); });
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // §TM_EXPORT — dedicated IDB store for movie-export frame Blobs.
+  // NOT cachePut/cacheGet above: that store is JSON-only, sized for 100-500KB payloads
+  // (see its own comment). A full-building export can be hundreds of PNG stills, each
+  // several hundred KB — own small database, same convention as import.js IMPORT_DB_NAME /
+  // bom_extract.js BOM_IDB_STORE / doc_canvas.js DESIGN_IDB_NAME. Transient: cleared once
+  // the video is stitched and downloaded, never kept across sessions.
+  // ══════════════════════════════════════════════════════════════════
+  var TM_EXPORT_DB_NAME = 'bim_ootb_tm_export';
+  var TM_EXPORT_STORE = 'frames';
+
+  function _openTmExportDB() {
+    return new Promise(function(resolve) {
+      var req = indexedDB.open(TM_EXPORT_DB_NAME, 1);
+      req.onupgradeneeded = function() {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(TM_EXPORT_STORE)) db.createObjectStore(TM_EXPORT_STORE);
+      };
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { resolve(null); };
+    });
+  }
+
+  function tmExportPutFrame(beatIndex, blob) {
+    return _openTmExportDB().then(function(db) {
+      if (!db) return;
+      return new Promise(function(resolve) {
+        var tx = db.transaction(TM_EXPORT_STORE, 'readwrite');
+        tx.objectStore(TM_EXPORT_STORE).put(blob, beatIndex);
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { resolve(); };
+      });
+    });
+  }
+
+  // Returns Blobs ordered by beatIndex — IDBObjectStore.getAll() returns records in ascending
+  // key order by spec, and beatIndex keys are stored as integers, so no separate sort is needed.
+  function tmExportGetAllFrames() {
+    return _openTmExportDB().then(function(db) {
+      if (!db) return [];
+      return new Promise(function(resolve) {
+        var tx = db.transaction(TM_EXPORT_STORE, 'readonly');
+        var req = tx.objectStore(TM_EXPORT_STORE).getAll();
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror = function() { resolve([]); };
+      });
+    });
+  }
+
+  function tmExportClear() {
+    return _openTmExportDB().then(function(db) {
+      if (!db) return;
+      return new Promise(function(resolve) {
+        var tx = db.transaction(TM_EXPORT_STORE, 'readwrite');
+        tx.objectStore(TM_EXPORT_STORE).clear();
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { resolve(); };
+        console.log('§TM_EXPORT_CLEAR frames store cleared');
+      });
+    });
   }
 
   // §TM-REFOLD core: drop the cached schedule so the NEXT activate() re-reads the (possibly just-edited)
