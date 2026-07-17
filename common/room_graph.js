@@ -90,6 +90,30 @@
     return true;
   }
 
+  // §DOOR-PREFERENCE-METRIC (OCCUPANT_PATHFINDER.md OPEN LANE C, prompts/Modeller/DISC_Walker/
+  // path_strategy.json is the spec source of truth — values mirrored here, not required in, since
+  // this file stays dual-mode Node/browser with no bundler). Values marked _calibrate in that JSON
+  // are initial POC-tuned numbers, not hand-picked finals — see the JSON's own note.
+  // shortestPath()'s DEFAULT weighting (no opts, or opts.metric !== 'doors') is UNTOUCHED — every
+  // number/formula below only ever runs when a caller explicitly asks for opts.metric='doors'.
+  var DOOR_PRIORITY = {
+    hostCurtainWallMult: 0.5, // glass storefront door = corridor continuation, cheap to open
+    hostNormalMult: 1.0,
+    privacyPublicMult: 0.5,   // corridor/lobby/circulation/foyer — cheap to transit through
+    privacySemiMult: 1.0,     // habitable/kitchen/utilities — default
+    privacyPrivateMult: 3.0   // bedroom/restroom/office — expensive, don't cut through to transit
+  };
+  function _isCurtainWallDoor(doorName) { return /curtain\s*wall/i.test(doorName || ''); }
+  // §PRIVACY-SIGNAL: keyword match on the room's own label/name — same technique isRoomDoor() above
+  // and the corridor-room injection elsewhere in this file already use for real-IFC-text classification,
+  // not a new invented heuristic.
+  function _roomPrivacyMult(node) {
+    var label = ((node && node.label) || '') + ' ' + ((node && node.name) || '');
+    if (/corridor|lobby|circulation|foyer|hall/i.test(label)) return DOOR_PRIORITY.privacyPublicMult;
+    if (/bedroom|restroom|toilet|office|\bwc\b|bath/i.test(label)) return DOOR_PRIORITY.privacyPrivateMult;
+    return DOOR_PRIORITY.privacySemiMult;
+  }
+
   // §STAIR-GROUP: collapse a multi-flight stair's individual Run rows (Run 1/Run 2/... or a
   // trailing ":N" index — both real naming conventions measured across Terminal/JKR/Duplex source
   // data, see OCCUPANT_PATHFINDER.md POC log) to ONE base key per PHYSICAL stair. Order matters:
@@ -784,26 +808,65 @@
       largestComponent: largestComponent, fullyConnected: totalNodes > 0 && cid === 1 };
   }
 
+  function _realEdgeDist(graph, e) {
+    if (e.kind === 'E1' || e.kind == null) {
+      var ga = graph.nodesByGuid[e.a], gb = graph.nodesByGuid[e.b];
+      return Math.hypot(ga.cx - gb.cx, ga.cy - gb.cy);
+    }
+    return (typeof e.w === 'number') ? e.w :
+      Math.hypot(graph.nodesByGuid[e.a].cx - graph.nodesByGuid[e.b].cx, graph.nodesByGuid[e.a].cy - graph.nodesByGuid[e.b].cy);
+  }
+
+  // §DOOR-COUNT-METRIC, CORRIDOR-GATED (OPEN LANE C, POC-verified 2026-07-18 — see
+  // OCCUPANT_PATHFINDER.md's dated DONE section for the numbers). Only used when opts.metric==='doors'.
+  // CORRIDOR-GATE (user decision — the reason this isn't a blanket door-count everywhere): a first,
+  // uniform "every real door costs 1" pass fixed the Clinic corridor case (12->5 doors) but ALSO
+  // changed 17/35 Duplex room-pairs that have nothing to do with a corridor (plain ambiguous 3-way
+  // door junctions where one real route is 1 door but geometrically longer, another is 2 doors but
+  // shorter) — door-count and distance-approximation genuinely disagree there too, which is not what
+  // this lane is for. Gating the penalty to edges that TOUCH a real spine/circ node (a genuine
+  // corridor alternative exists for this leg) matches the lane doc's own PRINCIPLE wording ("penalise
+  // room<->room transitions WHERE A CORRIDOR EDGE IS AVAILABLE") and leaves every plain room<->room
+  // edge (E1, and E9's door<->room residual rescue — neither ever touches spine/circ) at EXACTLY
+  // today's real-distance weight — POC-verified Duplex regression_pairs=35 mismatches=0 with this gate.
+  var CORRIDOR_INTERNAL_KINDS = { E3: 1, E5: 1, E6: 1, E8: 1 }; // always 0 doors — circulation-internal
+  var DOOR_CARRYING_KINDS = { E1: 1, E2: 1, E7: 1, E9: 1 };     // real-door-carrying kinds
+  function _touchesCorridor(graph, e) {
+    var na = graph.nodesByGuid[e.a], nb = graph.nodesByGuid[e.b];
+    return (na && (na.kind === 'spine' || na.kind === 'circ')) || (nb && (nb.kind === 'spine' || nb.kind === 'circ'));
+  }
+  function _doorEdgeCost(graph, e) {
+    if (CORRIDOR_INTERNAL_KINDS[e.kind]) return 0;
+    if (!DOOR_CARRYING_KINDS[e.kind]) return 0; // defensive — unknown kind, never invented as a door
+    if (!_touchesCorridor(graph, e)) return _realEdgeDist(graph, e); // §CORRIDOR-GATE — see above
+    var hm = _isCurtainWallDoor(e.doorName) ? DOOR_PRIORITY.hostCurtainWallMult : DOOR_PRIORITY.hostNormalMult;
+    var na = graph.nodesByGuid[e.a], nb = graph.nodesByGuid[e.b];
+    var mults = [];
+    if (na && na.kind === 'room') mults.push(_roomPrivacyMult(na));
+    if (nb && nb.kind === 'room') mults.push(_roomPrivacyMult(nb));
+    // worst case wins (the more-private side) — discourages punching through a private room to
+    // transit even when its OTHER neighbour is public; no room endpoint (e.g. E7 orphan-door<->spine,
+    // both circulation-side) defaults to the public multiplier.
+    var pm = mults.length ? Math.max.apply(null, mults) : DOOR_PRIORITY.privacyPublicMult;
+    return 1 * hm * pm;
+  }
+
   // §OCCUPANT-DIJKSTRA: walks the FULL graph — rooms + circ + exit nodes, E1-E4 edges — weighted by
   // real 3D distance (E1: room-center to room-center, unchanged formula so Duplex's existing
   // door-connected paths are byte-identical, see OCCUPANT_PATHFINDER.md W-PATH-DUPLEX-REGRESSION;
   // E2/E3/E4: the edge's own measured `w`, computed at buildGraph time from real door/flight/exit
   // positions). Internal only — shortestPath() below builds the adjacency and reconstructs the
-  // EXPOSED path from this.
-  function _buildAdjacency(graph) {
+  // EXPOSED path from this. `opts.metric==='doors'` switches every edge's weight to the corridor-
+  // gated door-count cost above; omitted/anything else keeps this function's ORIGINAL distance-only
+  // behavior, byte-identical to before this option existed.
+  function _buildAdjacency(graph, opts) {
+    var doorMetric = !!(opts && opts.metric === 'doors');
     var adj = {};
     graph.nodesByGuid && Object.keys(graph.nodesByGuid).forEach(function (g) { adj[g] = []; });
     graph.edges.forEach(function (e) {
       var a = e.a, b = e.b;
       if (!(a in adj) || !(b in adj)) return;
-      var w;
-      if (e.kind === 'E1' || e.kind == null) {
-        var ga = graph.nodesByGuid[a], gb = graph.nodesByGuid[b];
-        w = Math.hypot(ga.cx - gb.cx, ga.cy - gb.cy);
-      } else {
-        w = (typeof e.w === 'number') ? e.w : Math.hypot(
-          graph.nodesByGuid[a].cx - graph.nodesByGuid[b].cx, graph.nodesByGuid[a].cy - graph.nodesByGuid[b].cy);
-      }
+      var w = doorMetric ? _doorEdgeCost(graph, e) : _realEdgeDist(graph, e);
       adj[a].push({ to: b, w: w, e: e, arriveSide: 'b' });
       adj[b].push({ to: a, w: w, e: e, arriveSide: 'a' });
     });
@@ -1060,9 +1123,13 @@
   // before ({path, doors, distance}) — every existing consumer (viewer/navigate_find.js) needs
   // zero edits: `path` entries still resolve via `graph.nodesByGuid[g]` to a real {cx,cy,cz,name}
   // (rooms as before; circ hops now surface as a real door/stair waypoint instead, see _publicHop).
-  function shortestPath(graph, fromGuid, toGuid) {
+  // `opts` is a NEW, OPTIONAL 4th argument (OPEN LANE C, 2026-07-18) — every existing 3-arg call
+  // keeps today's exact distance-weighted behavior. `opts.metric='doors'` switches to the
+  // corridor-gated door-count weighting (see _doorEdgeCost) — `distance` in the returned shape then
+  // holds that metric's own cost units (doors, not meters) for THAT call only.
+  function shortestPath(graph, fromGuid, toGuid, opts) {
     if (fromGuid === toGuid) return { path: [fromGuid], doors: [], distance: 0 };
-    var adj = _buildAdjacency(graph);
+    var adj = _buildAdjacency(graph, opts);
     var core = _dijkstraCore(graph, adj, fromGuid, toGuid);
     if (!core) return null;
     var path = [toGuid], doors = [], cur = toGuid;
@@ -1089,7 +1156,7 @@
   function escapeRoute(graph, fromGuid, opts) {
     opts = opts || {};
     var log = opts.log || function () {};
-    var adj = _buildAdjacency(graph);
+    var adj = _buildAdjacency(graph, opts); // opts.metric='doors' works here too, free of charge
     if (!adj[fromGuid]) { log('§ESCAPE_ROUTE from=' + fromGuid + ' NO_GRAPH_NODE'); return null; }
     // Dijkstra from fromGuid across the whole graph (no fixed target), then pick the closest EXIT.
     var dist = {}, prev = {}, visited = {};

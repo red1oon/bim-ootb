@@ -1,0 +1,88 @@
+{
+  "$schema_note": "Occupant path strategy — declarative, deterministic door-priority + confidence model for common/room_graph.js shortestPath(). Numbers marked _calibrate are INITIAL values to be tuned by POC on real buildings (Clinic case + Duplex control), NOT invented finals; the STRUCTURE (curtain-wall=transit, private-room=expensive, floor-fallback) is semantic and fixed. Spec: OCCUPANT_PATHFINDER.md OPEN LANE C. Copyright (c) 2025-2026 Redhuan D. Oon — MIT.",
+  "version": 1,
+  "updated": "2026-07-17",
+
+  "metric": {
+    "base": "door_count",
+    "note": "Primary cost = number of doors/room-transitions crossed, NOT euclidean distance. A human enters each destination room by ONE door and does not punch through private rooms to transit.",
+    "corridor_traversal_cost": 0.0,
+    "note_corridor": "Travel ALONG circulation (CIRC<->CIRC, spine chaining) costs zero doors — only door/room-transition edges are counted."
+  },
+
+  "candidate_selection": {
+    "note": "Point-to-point: enumerate a few full candidate routes (k-shortest by base metric), score each whole route by confidence, pick the best. 'Fast array maths' — a handful of candidates, not a single greedy path.",
+    "k_candidates": 5,
+    "_calibrate_k": true,
+    "select": "min_confidence_cost",
+    "validity_required": true,
+    "validity_note": "A candidate is valid only if every leg actually connects AND is legal (chord stays inside walkable space — ties to OPEN LANE B chord-legality). Invalid candidates are discarded before scoring."
+  },
+
+  "door_acquisition": {
+    "note": "A 'door' (graph node / yellow dot) is any TRAVERSABLE OPENING between walkable spaces, NOT only a physical IfcDoor. Open-plan transitions (corridor<->foyer, room<->corridor with no door leaf, an open passage between corridor segments) are ACQUIRED doors — otherwise the graph is blind to open-plan circulation.",
+    "sources": {
+      "physical": {
+        "signal": "IfcDoor element (with transform)",
+        "note": "explicit door leaf — the current door set"
+      },
+      "acquired": {
+        "signal": "wall_free_boundary_between_two_walkable_regions",
+        "detail": "A boundary segment shared by two distinct walkable regions (room/corridor/foyer) that is NOT backed by a raw wall = an open passage. INVERSE of the room-walker's §ROOM-FORM open-perimeter measure (metres of region boundary not backed by wall) — reuses existing machinery, deterministic, invents nothing. Place an acquired-door node (yellow dot) at the gap midpoint; it becomes an ordinary graph node.",
+        "min_passage_width_m": 0.8,
+        "_calibrate": true,
+        "exclude": [
+          "window openings (IfcWindow / opening not at floor level)",
+          "rasterization slivers below the walker NOISE_FLOOR (grid artefact, not a passage)"
+        ],
+        "note_c4": "When a building models NO walls (degradation tier floor_slab), acquired doors (openings in the floor-slab boundary) become the PRIMARY connectors — this is what makes the incomplete-model tiers route at all."
+      }
+    }
+  },
+
+  "door_priority": {
+    "note": "Per-door cost multiplier on the base door-count. Grounded in REAL IFC signals, never hand-labelled. Factors multiply. Applies to BOTH physical and acquired doors — an acquired open threshold onto a corridor/foyer is naturally PUBLIC/transit and scores cheap via by_adjacent_room_privacy, exactly like a curtain-wall transit door.",
+
+    "by_host_class": {
+      "note": "The door's HOST element class (from IfcRelVoidsElement / containment). Curtain-wall-hosted doors are transit connectors between corridor segments.",
+      "IfcCurtainWall": { "role": "transit", "cost_mult": 0.5, "_calibrate": true, "note": "glass storefront door = corridor continuation, PREFER it" },
+      "IfcWall": { "role": "normal", "cost_mult": 1.0 },
+      "default": { "cost_mult": 1.0 }
+    },
+
+    "by_adjacent_room_privacy": {
+      "note": "Read the privacy of the room a door OPENS INTO, from the SHIPPED room-type classifier (room_habitability.js classifyRestroom/Kitchen/Bedroom + corridor labels — feat/room-restroom-colour, now live). Reuses deployed signal, no new invention.",
+      "public":  { "cost_mult": 0.5, "_calibrate": true, "room_categories": ["corridor", "lobby", "circulation", "foyer"], "note": "cheap to transit through" },
+      "semi":    { "cost_mult": 1.0, "room_categories": ["habitable", "kitchen", "utilities"] },
+      "private": { "cost_mult": 3.0, "_calibrate": true, "room_categories": ["bedroom", "restroom", "office"], "note": "expensive — do NOT cut through a private room to reach elsewhere" }
+    }
+  },
+
+  "tiebreak": {
+    "note": "Applied ONLY to break ties between similarly-scored candidates. Never a primary driver — collinearity fails on L/curved corridors.",
+    "collinearity": {
+      "enabled": true,
+      "weight": 0.1,
+      "_calibrate": true,
+      "note": "Prefer the door that continues the approach direction in a straight line (corridor continuation). Measured as the angle between the incoming segment and the outgoing door's opening direction."
+    }
+  },
+
+  "storey_rescue": {
+    "note": "C1 enabler — bind doors that carry storey='Unknown' (curtain-wall glass doors inherit no storey because their IfcCurtainWall parent has a null transform) to a real storey BEFORE graph binding.",
+    "enabled": true,
+    "signal": "center_z_nearest_wall_anchor",
+    "detail": "Assign an Unknown-storey door to the storey whose mean wall center_z is nearest the door's center_z (the room-walker's own §STOREY-Z / _assignByZ convention). POC-verified: Clinic's 3 glass doors -> First Floor, binding straight to the corridor spine (2x room<->spine E2, 1x doorwp<->spine E7)."
+  },
+
+  "degradation_tiers": {
+    "note": "OPEN LANE C4 — 'strategy selector at onset'. Assess what the building actually models, then route on the HIGHEST tier the data supports, so an incomplete IFC (no walls / undetailed ARCH) still routes. Each tier is its own POC-gated build; separate lane from C1-C3.",
+    "select": "highest_supported",
+    "tiers": [
+      { "tier": 1, "name": "walls_doors_spine", "requires": ["IfcWall", "IfcDoor"], "walkable": "corridor_spine", "note": "best — full occupant graph as today" },
+      { "tier": 2, "name": "doors_only",        "requires": ["IfcDoor"],            "walkable": "door_adjacency" },
+      { "tier": 3, "name": "floor_slab",         "requires": ["IfcSlab"],            "walkable": "finished_floor", "note": "no walls modelled yet -> walk the finished floor surface" },
+      { "tier": 4, "name": "raw_geometry",       "requires": [],                     "walkable": "element_adjacency", "note": "worst-case fallback" }
+    ]
+  }
+}
