@@ -1922,7 +1922,6 @@
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
-        '<button id="tm-share" style="font-size:9px;padding:2px 6px" title="Copy shareable link">&#x1F517; Share</button>' +
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
@@ -2069,18 +2068,6 @@
     });
     document.getElementById('tm-new').addEventListener('pointerup', function(e) {
       e.stopPropagation(); copyGuids(true);
-    });
-    document.getElementById('tm-share').addEventListener('pointerup', function(e) {
-      e.stopPropagation();
-      var url = new URL(location.href);
-      url.searchParams.set('tm', 'play');
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(url.toString());
-        var sb = document.getElementById('tm-share');
-        if (sb) { sb.textContent = 'Copied!'; setTimeout(function(){ sb.innerHTML = '&#x1F517; Share'; }, 1500); }
-      }
-      viewerStatus('4D playback link copied to clipboard');
-      console.log('§TIME_MACHINE share URL: ' + url.toString());
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
