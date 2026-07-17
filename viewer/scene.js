@@ -1178,6 +1178,9 @@ async function setupScene(A) {
       // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
       // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
       all.push({ seq: 'ALT+C', name: 'Cinema Orbit', icon: '', action: function() { if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
+      // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
+      all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
@@ -1789,6 +1792,9 @@ async function setupScene(A) {
     // the Sunglass panel's Cinema row (panels.js) — user separately confirmed Cinema Orbit works
     // fine without ever pressing Alt+S first, just adjust the starting camera view and go.
     if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); console.log('§KBD_ROUTE Alt+C → cinema orbit'); return; }
+    // §PHOTO_POPULATE (2026-07-17): Alt+P toggles the fabricated staffage layer (people + trees),
+    // separate from Alt+S. Distinct namespace from plain 'p' — no conflict.
+    if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); if (typeof A.togglePopulate === 'function') A.togglePopulate(); console.log('§KBD_ROUTE Alt+P → populate (staffage)'); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
     // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's

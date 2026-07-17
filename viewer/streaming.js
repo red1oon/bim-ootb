@@ -71,7 +71,7 @@ function setupStreaming(A) {
             SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                    t.center_x, t.center_y, t.center_z,
                    t.rotation_x, t.rotation_y, t.rotation_z,
-                   m.storey, m.ifc_class${bboxCols}
+                   m.storey, m.ifc_class, m.element_name${bboxCols}
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN element_transforms t ON t.guid = m.guid
@@ -93,9 +93,9 @@ function setupStreaming(A) {
           var _insertInst = A.db.prepare('INSERT OR IGNORE INTO element_instances VALUES (?,?)');
           for (var ri = 0; ri < rows.length; ri++) {
             var r = rows[ri];
-            // r: [guid, hash, rgba, disc, cx, cy, cz, rx, ry, rz, storey, ifcClass, bx?, by?, bz?]
+            // r: [guid, hash, rgba, disc, cx, cy, cz, rx, ry, rz, storey, ifcClass, elementName, bx?, by?, bz?]
             _insertMeta.run([r[0], nearest, r[10], r[3], r[11]]);
-            _insertTx.run([r[0], r[4], r[5], r[6], A._hasBbox ? r[12] : null, A._hasBbox ? r[13] : null, A._hasBbox ? r[14] : null]);
+            _insertTx.run([r[0], r[4], r[5], r[6], A._hasBbox ? r[13] : null, A._hasBbox ? r[14] : null, A._hasBbox ? r[15] : null]);
             _insertInst.run([r[0], r[1]]);
           }
           _insertMeta.free(); _insertTx.free(); _insertInst.free();
@@ -129,7 +129,7 @@ function setupStreaming(A) {
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
-               m.storey, m.ifc_class${bboxCols}
+               m.storey, m.ifc_class, m.element_name${bboxCols}
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
@@ -190,7 +190,7 @@ function setupStreaming(A) {
     var MAX_PLACEHOLDERS = A._isMobile ? 20000 : 200000;
     // Sample evenly if building has more elements than cap
     const step = rows.length > MAX_PLACEHOLDERS ? Math.ceil(rows.length / MAX_PLACEHOLDERS) : 1;
-    // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, bbox_x, bbox_y, bbox_z]
+    // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, element_name, bbox_x, bbox_y, bbox_z]
     const byDisc = {};
     for (let i = 0; i < rows.length; i += step) {
       const disc = rows[i][3] || '_';
@@ -225,7 +225,7 @@ function setupStreaming(A) {
         for (var j = ri; j < end; j++) {
           var r = drows[j];
           var p = A.ifc2three(r[4], r[5], r[6]);
-          var bx = r[12] || 0.3, by = r[13] || 0.3, bz = r[14] || 0.3;
+          var bx = r[13] || 0.3, by = r[14] || 0.3, bz = r[15] || 0.3;
           _pos.set(p.x, p.y, p.z);
           _scl.set(bx, bz, by);
           _m4.compose(_pos, _quat, _scl);
@@ -261,7 +261,23 @@ function setupStreaming(A) {
   };
 
 
-  A._getMaterial = function(rgbaStr, ifcClass) {
+  // §ENTOURAGE (PHOTOREAL_STILL_RENDER.md, 2026-07-17 "SuperLook / advance-realism" spec, real-data
+  // -first item): the Revit RPC entourage exported into some IFCs (people, deciduous trees, facade
+  // logo text) all land as class IfcBuildingElementProxy with a generic cream placeholder color
+  // (0.920,0.900,0.850) — the RPC exporter's default, NOT a deliberate design color, so it reads as
+  // pale ghosts. This maps the real element_name → a presentation material variant. Anchored-prefix
+  // match on the observed real names (RPC Male/Female/Tree, Model Text:Logo) — deterministic,
+  // extracted from actual DB rows (see spec's DB census), no invented classes. Returns '' for
+  // everything else so non-entourage geometry is completely untouched.
+  A._entourageVariant = function(ifcClass, name) {
+    if (ifcClass !== 'IfcBuildingElementProxy' || !name) return '';
+    if (name.indexOf('RPC Male') === 0 || name.indexOf('RPC Female') === 0) return 'person';
+    if (name.indexOf('RPC Tree') === 0) return 'tree';
+    if (name.indexOf('Model Text:Logo') === 0) return 'logo';
+    return '';
+  };
+
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -385,7 +401,7 @@ function setupStreaming(A) {
     };
 
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '');
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -588,6 +604,52 @@ function setupStreaming(A) {
       A._triplanarMaterials = A._triplanarMaterials || [];
       A._triplanarMaterials.push(mat);
       console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
+    }
+    // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
+    // still-refine pass — gated at RUNTIME by uEntActive (re-asserted every frame from
+    // A._stillRefineActive via onBeforeRender, exactly like §TRIPLANAR_RECOMPILE_FIX self-heals),
+    // NOT at compile time. During normal navigation the real IFC cream color is shown untouched
+    // (§S265c "trust IFC data" — the cream IS an assigned rgba, so it is never overridden always-on;
+    // this treatment is a presentation RESULT-stage effect, same standing as the dusk-staging props).
+    var ENTOURAGE_MAT = {
+      person: { color: [0.55, 0.48, 0.42], mix: 0.80, emissive: [0, 0, 0] },   // clothing/skin mid-tone
+      tree:   { color: [0.26, 0.40, 0.20], mix: 0.90, emissive: [0, 0, 0] },   // deciduous foliage green
+      logo:   { color: [0.12, 0.12, 0.14], mix: 0.90, emissive: [0.48, 0.40, 0.22] } // warm lit/printed sign
+    };
+    var entMat = (matVariant && ENTOURAGE_MAT[matVariant]) ? ENTOURAGE_MAT[matVariant] : null;
+    if (entMat && !triMat && _perturbScale === 0) {
+      var _entColor = new THREE.Vector3(entMat.color[0], entMat.color[1], entMat.color[2]);
+      var _entMix = entMat.mix;
+      var _entEmissive = new THREE.Vector3(entMat.emissive[0], entMat.emissive[1], entMat.emissive[2]);
+      mat.onBeforeCompile = function(shader) {
+        shader.uniforms.uEntActive = { value: A._stillRefineActive ? 1.0 : 0.0 };
+        shader.uniforms.uEntColor = { value: _entColor };
+        shader.uniforms.uEntMix = { value: _entMix };
+        shader.uniforms.uEntEmissive = { value: _entEmissive };
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'uniform float uEntActive;',
+            'uniform vec3 uEntColor;',
+            'uniform float uEntMix;',
+            'uniform vec3 uEntEmissive;'
+          ].join('\n'))
+          .replace('#include <color_fragment>', [
+            '#include <color_fragment>',
+            'if (uEntActive > 0.5) { diffuseColor.rgb = mix(diffuseColor.rgb, uEntColor, uEntMix); }'
+          ].join('\n'))
+          .replace('#include <emissivemap_fragment>', [
+            '#include <emissivemap_fragment>',
+            'if (uEntActive > 0.5) { totalEmissiveRadiance += uEntEmissive; }'
+          ].join('\n'));
+        // Plain property, never mat.userData — see §TRIPLANAR_CLONE_BOMB rationale above.
+        mat._entShader = shader;
+      };
+      mat.onBeforeRender = function() {
+        var sh = mat._entShader;
+        if (sh) sh.uniforms.uEntActive.value = A._stillRefineActive ? 1.0 : 0.0;
+      };
+      console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
     mat.userData.origOpacity = a;
     mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
@@ -845,13 +907,14 @@ function setupStreaming(A) {
 
     for (let i = 0; i < batch; i++) {
       const row = A.streamQueue[A.streamIdx + i];
-      const [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifcClass] = row;
+      const [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifcClass, elementName] = row;
       if (!hash || !A.meshCache[hash]) continue;
       if (!A._pendingInstances[hash]) A._pendingInstances[hash] = [];
       A._pendingInstances[hash].push({ guid, hash, rgba, disc, cx, cy, cz,
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
-        bx: row[12] || 0.3, by: row[13] || 0.3, bz: row[14] || 0.3 });
+        matVariant: A._entourageVariant(ifcClass, elementName),
+        bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
 
@@ -946,12 +1009,15 @@ function setupStreaming(A) {
       if (elements.length === 1) {
         // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
         const el = elements[0];
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
+        // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
+        // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
+        // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
+        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
         if (!batchBuckets[key]) batchBuckets[key] = [];
         batchBuckets[key].push({ el, geo });
       } else {
         // 2+ instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -1004,7 +1070,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '');
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1077,7 +1143,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant);
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -1290,7 +1356,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant);
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -1312,7 +1378,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant);
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -1455,15 +1521,16 @@ function setupStreaming(A) {
       var cx = row[4], cy = row[5], cz = row[6];
       var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
       var storey = row[10] || '', ifcClass = row[11] || '';
+      var matVariant = A._entourageVariant(ifcClass, row[12]);
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default');
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '');
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant });
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -1485,7 +1552,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant);
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
