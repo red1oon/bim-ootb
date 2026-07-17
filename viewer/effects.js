@@ -766,12 +766,17 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     }
 
-    // Decorative trees on a ring OUTSIDE the footprint bbox (clear of the building), evenly spread.
+    // Decorative trees on an ELLIPSE just outside the footprint — hugs the building (follows the
+    // bbox proportions) instead of a big circle that leaves them far off on a large/elongated plan,
+    // and the COUNT scales with perimeter so a big building (HHS: 68x55m) gets a full ring (~18)
+    // rather than the 8 that looked sparse there, while a small house (Duplex) still gets ~8.
     if (realTrees === 0) {
-      var ntrees = 8, ringR = envelope * 0.72;
+      var margin = 4;
+      var rx = hx + margin, ry = hy + margin;
+      var ntrees = Math.max(8, Math.min(24, Math.round((2 * (w + d)) / 14)));
       for (var t = 0; t < ntrees; t++) {
         var a = (t / ntrees) * Math.PI * 2 + 0.4;
-        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(a) * ringR, cy + Math.sin(a) * ringR, groundZ), false);
+        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, groundZ), false);
         placedT++;
       }
     }
@@ -796,7 +801,8 @@ async function setupEffects(A, renderer, scene, camera) {
     var fwd = new THREE.Vector3();
     A.camera.getWorldDirection(fwd);
     var down = -fwd.y;                       // 0 = horizontal, 1 = straight down
-    var showP = down < 0.6;                  // ~37deg — beyond that, cutout people look wrong
+    var showP = down < 0.72;                 // ~46deg — show at normal establishing angles, hide only
+                                             // near top-down where cutout people foreshorten/float
     if (showP === _lastPeopleVis) return;
     _photoStaffagePeople.forEach(function(s) { s.visible = showP; });
     _lastPeopleVis = showP;
