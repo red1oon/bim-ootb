@@ -591,6 +591,26 @@
     _giConverging = false;
   }
 
+  // §TM_GI_HOLD_CAMGUARD (2026-07-17, found by re-reading this repo's own already-fixed ghost
+  // family, not by live report): TAA still-refine (effects.js §STILL_REFINE_RESTART) and the SSGI
+  // still-fold (effects_gi_poc.js §SSGI_CONVERGE_CAMGUARD, PR #816 — "ghosted/doubled geometry and
+  // see-through floors") both hit the SAME root cause once each: a multi-frame accumulation loop
+  // with no camera-pose check blends frames across a camera that's still moving — OrbitControls
+  // inertial damping can keep gliding (no pointer events fire during the glide), and this app's
+  // on-demand render loop only resumes applying that damping once something starts driving frames
+  // again, which the converge loop itself does. This hold-converge loop (#837) shipped without
+  // that guard — the exact same unguarded shape PR #816 fixed for SSGI, just never live-verified
+  // before it hit a real user ("live-eyeball of the sharpen pending" in the original commit record).
+  // A raw camera orbit-drag does NOT cancel this loop today (only TM close/playback-start/GI-off
+  // do) — so a drag starting while the 24-frame accumulate is in flight blends N8AO across the
+  // moving view, exactly the reported "ghosting when moving the scene." Fix: same pose-signature
+  // restart discipline, ported directly — position+quaternion string, checked every frame.
+  function _giHoldCamSig(app) {
+    if (!app || !app.camera) return '';
+    var p = app.camera.position, q = app.camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
   function _giScheduleHoldConverge(app) {
     if (_giHoldTimer) { clearTimeout(_giHoldTimer); _giHoldTimer = 0; }
     _giHoldTimer = setTimeout(function () {
@@ -602,9 +622,22 @@
       if (app._giN8aoPass.firstFrame) app._giN8aoPass.firstFrame();  // clean reset before accumulating
       _giConverging = true;
       var frames = 0, MAX = 24;   // ~24 frames is enough for N8AO (aoSamples=8) to visibly converge
+      var sig = _giHoldCamSig(app);
       console.log('§TM_GI_HOLD converge start (held 300ms, still)');
       (function _step() {
         if (!_giConverging || !_active || _playing || !app._giComposerActive || !app._giComposer) { _giConvergeRaf = 0; _giConverging = false; return; }
+        var sigNow = _giHoldCamSig(app);
+        if (sigNow !== sig) {
+          // §TM_GI_HOLD_CAMGUARD: camera moved mid-converge (damping glide, or a real drag the
+          // existing bail checks above can't see) — drop straight back to clean single-pass rather
+          // than blending accumulated frames across a moving view. Re-arms naturally on the next
+          // genuine 300ms of stillness via the normal renderAtTime -> _giScheduleHoldConverge path.
+          console.log('§TM_GI_HOLD_RESTART cam-moved mid-converge frames=' + frames + ' — dropping to single-pass');
+          _giConvergeRaf = 0; _giConverging = false;
+          app._giN8aoPass.configuration.accumulate = false;
+          if (app._giN8aoPass.firstFrame) app._giN8aoPass.firstFrame();
+          return;
+        }
         app._giComposer.render();
         if (++frames >= MAX) { _giConvergeRaf = 0; _giConverging = false; console.log('§TM_GI_HOLD converged frames=' + frames); return; }
         _giConvergeRaf = requestAnimationFrame(_step);
