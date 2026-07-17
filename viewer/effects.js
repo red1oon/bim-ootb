@@ -142,6 +142,35 @@ async function setupEffects(A, renderer, scene, camera) {
   // "floating line" failure mode, so the same facing math is safe to reuse here.
   var _photoPropsBuilding = null;
   var _photoUplights = [], _photoSkyline = null, _photoSkylineLights = null;
+  // §PHOTO_STAFFAGE (PHOTOREAL_STILL_RENDER.md §SPEC 2026-07-17 Part A — the sourced-sprite half of
+  // the two-path design): buildings that HAVE real RPC entourage get the material pass in
+  // streaming.js (§ENTOURAGE); every OTHER building (the 9 census buildings + every user-uploaded
+  // IFC with no entourage) gets these CC0/free billboard cutouts instead. Camera-facing THREE.Sprite
+  // imposters — the industry-normal staffage technique (Enscape/Twinmotion). Presentation RESULT
+  // stage, added on Alt+S only, auto-reverting on teardown, same standing as the dusk props above.
+  // Placement is derived at runtime from this building's own real bbox + real IfcDoor positions —
+  // nothing hardcoded, general to any building (the hard constraint repeated throughout this spec).
+  var _photoStaffage = null;          // THREE.Group of all staffage sprites
+  var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
+  var _staffageTexCache = {};
+  var _STAFFAGE_BASE = 'textures/staffage/';
+  // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
+  var _STAFFAGE_PEOPLE = [
+    { file: 'people/person_standing_casual_male.png',    h: 1.75 },
+    { file: 'people/person_standing_gesture_female.png', h: 1.70 },
+    { file: 'people/person_walking_shopping_female.png', h: 1.70 },
+    { file: 'people/person_walking_gym_female.png',      h: 1.70 },
+    { file: 'people/person_sitting_formal_male.png',     h: 1.20 },
+    { file: 'people/person_sitting_casual_female.png',   h: 1.15 }
+  ];
+  var _STAFFAGE_TREES = [
+    { file: 'trees/tree_oak_big.png',        h: 9.5 },
+    { file: 'trees/tree_linden_big_old.png', h: 10.0 },
+    { file: 'trees/tree_poplar.png',         h: 11.0 },
+    { file: 'trees/tree_oak_young.png',      h: 6.0 },
+    { file: 'trees/tree_beech.png',          h: 7.0 },
+    { file: 'trees/tree_linden_city.png',    h: 8.0 }
+  ];
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
   var PHOTO_FACADE_DIM_FRACTION = 0.3;  // non-facing facades still lit, just weaker — not pitch dark
@@ -381,6 +410,9 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoSkyline) { A.scene.remove(_photoSkyline); _photoSkyline.children.forEach(function(b) { b.geometry.dispose(); b.material.dispose(); }); }
     if (_photoSkylineLights) { A.scene.remove(_photoSkylineLights); _photoSkylineLights.geometry.dispose(); _photoSkylineLights.material.dispose(); }
     _photoSparkles.forEach(function(s) { A.scene.remove(s.sprite); s.sprite.material.dispose(); });
+    // §PHOTO_STAFFAGE: remove sprites + their materials; keep the shared textures cached for reuse.
+    if (_photoStaffage) { A.scene.remove(_photoStaffage); _photoStaffage.children.forEach(function(s) { if (s.material) s.material.dispose(); }); }
+    _photoStaffage = null; _photoStaffagePeople = [];
     _photoUplights = []; _photoFacadeLights = []; _photoSkyline = null; _photoSkylineLights = null;
     _photoRoofCorners = []; _photoRoofSpotA = null; _photoRoofSpotB = null; _photoSparkles = [];
   }
@@ -564,6 +596,9 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.add(_photoSkylineLights);
     console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' skylineBoxes=' + group.children.length + ' windowLights=' + (winPos.length / 3));
 
+    // §PHOTO_STAFFAGE: sourced-sprite people/trees for buildings without real RPC entourage.
+    _buildStaffage(cx, cy, w, d, groundZ);
+
     // §PHOTO_SPARKLE (user ask: "some sparkle where it hits right angle from Sun to surface" —
     // reference `relfectsunlight.jpg`: a soft warm glow, not a hard geometric shape). One sprite
     // per facade-wash edge (reuses the SAME mid/normal already computed above, no new geometry
@@ -635,6 +670,85 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_FACING facades=' + _photoFacadeLights.length + ' strengths=' +
       _photoFacadeLights.map(function(f) { return (f.up.intensity / PHOTO_FACADE_UP_BASE).toFixed(2); }).join(','));
   }
+  // §PHOTO_STAFFAGE: load a cutout texture (cached, sRGB), size the sprite from the real image
+  // aspect once the pixels are known (no hardcoded widths), anchor its bottom to the ground.
+  function _staffageTex(path) {
+    if (_staffageTexCache[path]) return _staffageTexCache[path];
+    var tex = new THREE.TextureLoader().load(_STAFFAGE_BASE + path,
+      function() { console.log('§STAFFAGE_TEX_READY ' + path); },
+      undefined,
+      function() { console.warn('§STAFFAGE_TEX_FAIL ' + path); });
+    if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+    _staffageTexCache[path] = tex;
+    return tex;
+  }
+  function _addStaffageSprite(entry, threePos, isPerson) {
+    var tex = _staffageTex(entry.file);
+    var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5, depthWrite: true }));
+    spr.center.set(0.5, 0);                 // anchor bottom-centre → the figure stands on the ground
+    spr.position.copy(threePos);
+    function _size() {
+      var img = tex.image;
+      var aspect = (img && img.width && img.height) ? (img.width / img.height) : 0.5;
+      spr.scale.set(entry.h * aspect, entry.h, 1);
+    }
+    var im = tex.image;
+    if (im && im.complete && im.naturalWidth) _size();
+    else if (im) im.addEventListener('load', _size, { once: true });
+    else spr.scale.set(entry.h * 0.5, entry.h, 1);   // provisional until the image arrives
+    _photoStaffage.add(spr);
+    if (isPerson) _photoStaffagePeople.push(spr);
+  }
+  // §PHOTO_STAFFAGE: place cutouts derived from THIS building's real bbox + IfcDoor rows, but ONLY
+  // for a category the building has NO real entourage for (real RPC people/trees are handled by the
+  // streaming.js material pass — placing sprites on top would double them up). General to any
+  // building; nothing hardcoded.
+  function _buildStaffage(cx, cy, w, d, groundZ) {
+    if (!A.dbQuery || !THREE.Sprite) return;
+    if (!_photoStaffage) _photoStaffage = new THREE.Group();
+    function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
+    var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
+    var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
+    var placedP = 0, placedT = 0;
+    var envelope = Math.max(w, d, 30);
+    // People near real entry doors, stepped OUT of the doorway into open space, lowest storeys first.
+    if (realPeople === 0) {
+      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
+      for (var i = 0; i < doors.length; i++) {
+        var dx = doors[i][0], dy = doors[i][1], dz = doors[i][2];
+        var ox = dx - cx, oy = dy - cy, ol = Math.hypot(ox, oy) || 1;
+        var pos = A.ifc2three(dx + (ox / ol) * 1.6, dy + (oy / ol) * 1.6, dz);
+        _addStaffageSprite(_STAFFAGE_PEOPLE[i % _STAFFAGE_PEOPLE.length], pos, true);
+        placedP++;
+      }
+    }
+    // Decorative trees on a ring OUTSIDE the footprint bbox (clear of the building), evenly spread.
+    if (realTrees === 0) {
+      var ntrees = 8, ringR = envelope * 0.72;
+      for (var t = 0; t < ntrees; t++) {
+        var a = (t / ntrees) * Math.PI * 2 + 0.4;
+        var pos = A.ifc2three(cx + Math.cos(a) * ringR, cy + Math.sin(a) * ringR, groundZ);
+        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], pos, false);
+        placedT++;
+      }
+    }
+    if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+  }
+  // §PHOTO_STAFFAGE: people are spherical billboards — from a steep top-down angle they read as
+  // upright figures floating detached from the ground (the aerial-angle failure the spec names).
+  // Hide people (only) when the camera looks steeper than ~37deg down; trees tolerate it. Reuses
+  // the same camera-direction-vs-up dot the facade-facing lights use. Recomputed each Alt+S show.
+  function _updatePeoplePitchGate() {
+    if (!_photoStaffagePeople.length || !A.camera) return;
+    var fwd = new THREE.Vector3();
+    A.camera.getWorldDirection(fwd);
+    var down = -fwd.y;                       // 0 = horizontal, 1 = straight down
+    var showP = down < 0.6;                  // ~37deg — beyond that, cutout people look wrong
+    _photoStaffagePeople.forEach(function(s) { s.visible = showP; });
+    console.log('§PHOTO_STAFFAGE_PITCH down=' + down.toFixed(2) + ' peopleVisible=' + showP);
+  }
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
@@ -644,6 +758,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
+    if (_photoStaffage) { _photoStaffage.visible = show; if (show) _updatePeoplePitchGate(); }
   }
   // §PHOTO_STAGING (2026-07-15, POC — presentation only, not extracted BIM data): bundles the
   // sunset sky + amber building glow + the ground/edge/skyline props above into the SAME
