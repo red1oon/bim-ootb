@@ -3568,15 +3568,26 @@
 
   // ══════════════════════════════════════════════════════════════════
   // §S260c: JSON CACHE — persist Gantt schedule + Movie Script in IDB
-  // Keys: "gantt:{building}" and "movie:{building}"
+  // Keys: "gantt:v{N}:{building}" and "movie:{building}"
   // Same IDB store as DB file cache. Tiny (100-500KB) vs DB files (10-170MB).
   // Clear Cache on landing deletes entire IDB → next session recomputes.
-  // ══════════════════════════════════════════════════════════════════
+  //
+  // §GANTT_CACHE_VERSION: bump this whenever schedule-GENERATION logic changes in a way that
+  // would make an already-cached schedule wrong (rate/productivity tables, sequence rules,
+  // schedule_gate.js gating logic). A cached 'gantt' entry survives indefinitely otherwise —
+  // §GANTT_CACHE_HIT trusts it forever, so a logic fix alone does NOT reach a browser that
+  // already generated+cached a schedule under the old (buggy) logic; only a version bump does,
+  // since it changes the cache KEY and makes the old entry an orphaned miss. Do NOT rely on
+  // manual cacheDel/tmRefoldSchedule for this class of fix — that requires the user to know to
+  // do it. v2 (2026-07-18): locale_loader.js productivity-map deep-merge fix — see
+  // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2.
+  var _GANTT_CACHE_VERSION = 2;
 
   function _cacheKey(prefix) {
     var app = A();
     var bld = (app && app.activeBuilding) || 'unknown';
-    return prefix + ':' + bld;
+    var v = (prefix === 'gantt') ? ('v' + _GANTT_CACHE_VERSION + ':') : '';
+    return prefix + ':' + v + bld;
   }
 
   // Read JSON from IDB cache. Returns parsed object or null.
