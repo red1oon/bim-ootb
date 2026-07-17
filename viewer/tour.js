@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v10 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v12 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -77,6 +77,34 @@ function setupTour(A) {
           ' status=' + (res && res.status) + ' source=' + ((res && res.source) || 'none') +
           ' rooms=' + (res && res.rooms != null ? res.rooms : '-'));
       }
+      // §THIN-GRAPH-RECURE (2026-07-17, third independent live report): rooms can be present,
+      // in-frame AND compiler-owned yet still route-thin — a stale weak compile persisted in
+      // IDB that neither the presence check nor §PATCH-FRAME-GUARD can fault. Probe the route
+      // once; if it rejects and EVERY room is compiler-owned (RM_ prefix — real IfcSpace
+      // extractions are never touched), re-cure with the current walker (skipPatch: the patch
+      // is what produced these rooms) and let buildTour rebuild on the fresh set. One attempt,
+      // no loop — the inject mechanism exists to cure poor data (user doctrine).
+      try {
+        if (A.flyActive && A.ensureRooms && A.getRoomGraph && window.RoomGraph) {
+          let probe = null;
+          try { probe = A._buildGraphRoute({}); } catch (ep) { probe = null; }
+          if (!probe) {
+            let compiledOnly = false;
+            try {
+              const r = A.db.exec("SELECT COUNT(*), COUNT(CASE WHEN guid LIKE 'RM\\_%' ESCAPE '\\' THEN 1 END)" +
+                " FROM spatial_structure WHERE type='IfcSpace'");
+              const t = r.length ? r[0].values[0][0] : 0, c = r.length ? r[0].values[0][1] : 0;
+              compiledOnly = t > 0 && t === c;
+            } catch (ec) { /* compiledOnly stays false */ }
+            if (compiledOnly) {
+              const rc = await A.ensureRooms({ force: true, skipPatch: true });
+              console.log('[TOUR] §FLY_RECURE status=' + (rc && rc.status) +
+                ' source=' + ((rc && rc.source) || '-') +
+                ' rooms=' + (rc && rc.rooms != null ? rc.rooms : '-'));
+            }
+          }
+        }
+      } catch (er) { console.warn('[TOUR] §FLY_RECURE_ERR ' + (er && er.message)); }
     } catch (e) {
       console.warn('[TOUR] §FLY_PREP_ERR ' + (e && e.message));
     }
@@ -377,7 +405,12 @@ function setupTour(A) {
     // Terminal 10/89 residual, HHS 0/50). What IS gated: a route that barely exists — a thin
     // graph (this local Duplex snapshot: 5 approx nodes, 3 edges, most stops unreachable) must
     // fall back to the legacy tour, not ship a worse flight.
-    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5) {
+    // §MAJORITY-LEGAL (2026-07-17, Duplex regression witness): a route whose chords are MOSTLY
+    // wall-illegal is junk data passing the coverage gate (Duplex: 2/2 = 100% illegal on a
+    // 3-pt route after v2 walker connected its 2 approx rooms). Engine residual stays welcome
+    // (Terminal 10/89≈11%, HHS 0/50); majority-illegal rejects.
+    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5 ||
+        (checkedChords > 0 && illegalChords * 2 > checkedChords)) {
       console.log('[TOUR] §FLY_ROUTE_REJECT edges=' + g.edges.length + ' visited=' + visitedStops +
         '/' + stops.length + ' illegalChords=' + illegalChords + ' → legacy tour');
       return null;

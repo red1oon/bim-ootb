@@ -909,7 +909,27 @@
         else state = 'none'; // real extraction present
       } catch (e) { state = 'zero'; /* table missing */ }
       if (state === 'none') return { status: 'present', real: true };
-      if (state === 'recompute' && !opts.force) return { status: 'present', real: false };
+      if (state === 'recompute' && !opts.force) {
+        // §PATCH-FRAME-GUARD (boot half, 2026-07-17): the loader's self-heal applies
+        // patches/<dbFile>.sql on EVERY load — a wrong-building patch (see the needle-side guard
+        // below for the observed case) poisons the db before any press, and "rooms present"
+        // would trust it forever. Compiler-owned rooms sitting OUTSIDE the building's own element
+        // extent are objective corruption, not user data: fall through and recompile. Rooms
+        // without coordinates to compare keep the existing trust-present behavior.
+        var inFrame = true;
+        try {
+          var _e0 = A.dbQuery("SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y)" +
+            " FROM element_transforms WHERE center_x IS NOT NULL")[0];
+          var _r0 = A.dbQuery("SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y)" +
+            " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL")[0];
+          if (_e0 && _r0 && _r0[0] !== null && _e0[0] !== null) {
+            inFrame = _r0[1] >= _e0[0] && _r0[0] <= _e0[1] &&
+                      _r0[3] >= _e0[2] && _r0[2] <= _e0[3];
+          }
+        } catch (eIf) { /* inFrame stays true */ }
+        if (inFrame) return { status: 'present', real: false };
+        console.warn('[NEEDLE] §NEEDLE_FRAME_STALE compiled rooms outside building extent — recompiling');
+      }
       var bld = A.activeBuilding || '';
       var url = A.DB_URL || '';
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
@@ -921,6 +941,10 @@
         // (G1), applied directly to the LIVE db rather than a pre-load buffer.
         var applied = false;
         try {
+          // §THIN-GRAPH-RECURE: a re-cure pass skips the patch source — the patch is exactly
+          // what produced the rooms being re-cured (or was frame-dropped already); straight to
+          // the walker.
+          if (opts.skipPatch) throw new Error('skipPatch');
           var r = await fetch(patchUrl);
           if (r.ok) {
             var sqlText = await r.text();
@@ -947,7 +971,36 @@
           hasCompiledRooms = ssColsCheck.some(function(c) { return c[1] === 'room_guid'; });
         } catch (eCols) { /* hasCompiledRooms stays false */ }
 
+        // §PATCH-FRAME-GUARD (2026-07-17, found live via user console log): a patch fetched by
+        // dbFile name can belong to a DIFFERENT building/frame than the db's actual content —
+        // observed: Terminal_extracted.db.sql (OCI, extracted frame x≈630..695) applied onto
+        // imported TerminalMerged content (x≈88..150). The rooms landed ~550m off the walls,
+        // every door orphaned, and the walker never ran because room_guid existed
+        // (§NEEDLE-COMPILED-CHECK trusted mere presence). Trust a patch only when its compiled
+        // rooms actually sit ON this building: the room-center extent must INTERSECT the
+        // element extent — pure measured comparison, no thresholds.
+        var frameOk = false;
         if (applied && hasCompiledRooms) {
+          try {
+            var _ext = A.dbQuery("SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y)" +
+              " FROM element_transforms WHERE center_x IS NOT NULL")[0];
+            var _rext = A.dbQuery("SELECT MIN(center_x),MAX(center_x),MIN(center_y),MAX(center_y)" +
+              " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL")[0];
+            if (_ext && _rext && _rext[0] !== null && _ext[0] !== null) {
+              frameOk = _rext[1] >= _ext[0] && _rext[0] <= _ext[1] &&
+                        _rext[3] >= _ext[2] && _rext[2] <= _ext[3];
+            }
+          } catch (eFg) { /* frameOk stays false */ }
+          if (!frameOk) {
+            console.warn('[NEEDLE] §NEEDLE_PATCH_MISMATCH patch rooms outside building extent — dropping patch rooms, walker takes over');
+            try {
+              A.db.run("DELETE FROM spatial_structure WHERE guid LIKE 'RM\\_%' ESCAPE '\\' OR guid LIKE 'STC\\_%' ESCAPE '\\';" +
+                       "DELETE FROM rel_contained_in_space WHERE space_guid LIKE 'RM\\_%' ESCAPE '\\';");
+            } catch (eDel) { console.warn('[NEEDLE] §NEEDLE_PATCH_MISMATCH cleanup err ' + (eDel && eDel.message)); }
+          }
+        }
+
+        if (applied && hasCompiledRooms && frameOk) {
           source = 'patch';
         } else {
           // S2.2 — walker source (any building): lazy-load the room_walker JS port, compile
@@ -956,7 +1009,7 @@
           if (!window.RoomWalker) {
             await new Promise(function(resolve, reject) {
               var s = document.createElement('script');
-              s.src = 'lib/room_walker.js?v=1';
+              s.src = 'lib/room_walker.js?v=2'; // v2: §LOCAL-FRAME translation invariance (ROOM_WALKER_PHASE_INVARIANCE.md)
               s.onload = function() { resolve(); };
               s.onerror = function() { reject(new Error('room_walker.js load failed')); };
               document.head.appendChild(s);
