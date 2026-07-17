@@ -187,9 +187,33 @@
     if (localeData.rates_default && typeof RATES_DEFAULT !== 'undefined') {
       RATES_DEFAULT = localeData.rates_default;
     }
+    // §LOCALE-PRODUCTIVITY-MERGE: locale files intentionally ship PARTIAL productivity tables
+    // (a locale author only needs to override the trades/classes their region's rates actually
+    // differ on — real construction productivity DOES vary by country, this is legitimate, not
+    // a bug). A whole-object replace here would silently DROP every IFC class the locale file
+    // doesn't happen to list, collapsing them to injectGantt()'s generic 120s/element fallback
+    // (confirmed: en_US.js lists only IfcBeam/IfcColumn for STEEL_ERECTOR, so IfcPlate/IfcMember
+    // fell back to 120s vs their real ~2400-2880s — a 20-24x schedule-duration corruption, root
+    // cause of prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2). Merge instead:
+    // scalar trade fields (rate_per_day/crew_size/trade name) replace wholesale — a locale's
+    // day-rate IS a complete override — but productivity merges class-by-class so classes the
+    // locale doesn't mention keep their canonical (rates.js / sequence_rules.json) value.
     if (localeData.labor_rates && typeof LABOR_RATES !== 'undefined') {
       for (var key in localeData.labor_rates) {
-        if (localeData.labor_rates.hasOwnProperty(key)) LABOR_RATES[key] = localeData.labor_rates[key];
+        if (!localeData.labor_rates.hasOwnProperty(key)) continue;
+        var locTrade = localeData.labor_rates[key];
+        if (!LABOR_RATES[key]) { LABOR_RATES[key] = locTrade; continue; }
+        for (var field in locTrade) {
+          if (!locTrade.hasOwnProperty(field)) continue;
+          if (field === 'productivity') {
+            LABOR_RATES[key].productivity = LABOR_RATES[key].productivity || {};
+            for (var cls in locTrade.productivity) {
+              if (locTrade.productivity.hasOwnProperty(cls)) LABOR_RATES[key].productivity[cls] = locTrade.productivity[cls];
+            }
+          } else {
+            LABOR_RATES[key][field] = locTrade[field];
+          }
+        }
       }
     }
     if (localeData.equipment_rates && typeof EQUIPMENT_RATES !== 'undefined') {
