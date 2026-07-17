@@ -166,13 +166,17 @@ async function setupEffects(A, renderer, scene, camera) {
     { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in' },
     { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in' }
   ];
+  // pad = fraction of the PNG that is transparent BELOW the visible trunk base (measured from the
+  // actual cutouts). The sprite is bottom-anchored, so without this the trunk floats pad*h above
+  // ground (poplar's 20% = ~2.2m float). Seat each tree by lowering it pad*h so the trunk meets
+  // the ground; the empty image bottom then falls below the ground plane (clipped, invisible).
   var _STAFFAGE_TREES = [
-    { file: 'trees/tree_oak_big.png',        h: 9.5 },
-    { file: 'trees/tree_linden_big_old.png', h: 10.0 },
-    { file: 'trees/tree_poplar.png',         h: 11.0 },
-    { file: 'trees/tree_oak_young.png',      h: 6.0 },
-    { file: 'trees/tree_beech.png',          h: 7.0 },
-    { file: 'trees/tree_linden_city.png',    h: 8.0 }
+    { file: 'trees/tree_oak_big.png',        h: 9.5,  pad: 0.022 },
+    { file: 'trees/tree_linden_big_old.png', h: 10.0, pad: 0.065 },
+    { file: 'trees/tree_poplar.png',         h: 11.0, pad: 0.200 },
+    { file: 'trees/tree_oak_young.png',      h: 6.0,  pad: 0.062 },
+    { file: 'trees/tree_beech.png',          h: 7.0,  pad: 0.043 },
+    { file: 'trees/tree_linden_city.png',    h: 8.0,  pad: 0.038 }
   ];
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
@@ -689,7 +693,13 @@ async function setupEffects(A, renderer, scene, camera) {
     // bbox.zMin / furniture-bottom doesn't match the RENDERED ground plane (which sits at
     // _calcGroundY's ground-floor-slab level, ~0.3m higher). Snap every figure's feet to the actual
     // ground plane the user sees, so nobody sinks. Ground-floor placement, so this is the right floor.
-    if (_staffageGroundY != null) spr.position.y = _staffageGroundY;
+    // §PHOTO_STAFFAGE_PAD (user: "some trees floating a bit"): the cutout has transparent padding
+    // below its visible base (measured per asset — trees 2-20%, people 0%), so lower it by pad*h so
+    // the VISIBLE base sits on the ground. baseOffset lets the witness read the visible base, not the
+    // image-bottom anchor.
+    var _padY = entry.h * (entry.pad || 0);
+    spr.userData.baseOffset = _padY;
+    if (_staffageGroundY != null) spr.position.y = _staffageGroundY - _padY;
     function _size() {
       var img = tex.image;
       var aspect = (img && img.width && img.height) ? (img.width / img.height) : 0.5;
@@ -842,7 +852,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // §-witness the feet-on-ground invariant IN the log (readable from any real session's console,
     // no browser needed): every sprite's feet Y minus the rendered ground Y — must be 0,0.
     var _fMin = Infinity, _fMax = -Infinity;
-    _photoStaffage.children.forEach(function(s) { var dy = s.position.y - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
+    _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
     console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' feetDy=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
   }
