@@ -157,15 +157,16 @@ async function setupEffects(A, renderer, scene, camera) {
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
-  // place: 'out' = stands in front of the door (natural outdoors); 'in' = inside on the floor.
-  // Per user: only the 2 STANDING figures belong outside; walking + sitting go inside the house.
+  // role: 'stand' = outside at entrances; 'sit' = on real furniture (chairs); 'walk' = in
+  // circulation (aisles / open floor CLEAR of furniture — a walker standing among chairs reads
+  // wrong, user: "walking in chairs"). place: 'out'/'in' kept for the outside/inside split.
   var _STAFFAGE_PEOPLE = [
-    { file: 'people/person_standing_casual_male.png',    h: 1.75, place: 'out' },
-    { file: 'people/person_standing_gesture_female.png', h: 1.70, place: 'out' },
-    { file: 'people/person_walking_shopping_female.png', h: 1.70, place: 'in' },
-    { file: 'people/person_walking_gym_female.png',      h: 1.70, place: 'in' },
-    { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in' },
-    { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in' }
+    { file: 'people/person_standing_casual_male.png',    h: 1.75, place: 'out', role: 'stand' },
+    { file: 'people/person_standing_gesture_female.png', h: 1.70, place: 'out', role: 'stand' },
+    { file: 'people/person_walking_shopping_female.png', h: 1.70, place: 'in',  role: 'walk' },
+    { file: 'people/person_walking_gym_female.png',      h: 1.70, place: 'in',  role: 'walk' },
+    { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in',  role: 'sit' },
+    { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in',  role: 'sit' }
   ];
   // pad = fraction of the PNG that is transparent BELOW the visible trunk base (measured from the
   // actual cutouts). The sprite is bottom-anchored, so without this the trunk floats pad*h above
@@ -800,33 +801,40 @@ async function setupEffects(A, renderer, scene, camera) {
     }
 
     if (realPeople === 0) {
-      var insidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // walking + sitting
+      var sitPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'sit'; });
+      var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk'; });
       var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'out'; });  // the 2 standing
       // §PHOTO_STAFFAGE_SCALE (user: "for a big place multiply the pax at different wings, ends... with
       // so many rooms at least ends and middle"). Counts scale with building size; placement spreads
-      // across the footprint (minDist scaled to size) so a multi-wing plan gets people at its ends and
-      // middle, not clustered. A small house stays modest. Poses cycle (6 sprites cover any count).
+      // across the footprint so a multi-wing plan gets people at its ends and middle, not clustered.
       var span = w + d, maxExt = Math.max(w, d);
-      var nInside = Math.max(2, Math.min(12, Math.round(span / 14)));
+      var nSit = Math.max(2, Math.min(10, Math.round(span / 16)));
+      var nWalk = Math.max(1, Math.min(6, Math.round(span / 28)));
       var nStanding = Math.max(2, Math.min(6, Math.round(span / 30)));
 
-      // INSIDE figures — real furniture, spread across the plan (minDist scales with size → ends+middle).
+      // SITTING → real furniture (chairs), spread across the plan (minDist scales with size).
       var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 600") || [];
-      var insideMinD = Math.max(3.5, Math.min(22, maxExt / Math.max(2, nInside * 0.7)));
-      var spots = _spreadPick(furn, nInside, insideMinD);
+      var insideMinD = Math.max(3.5, Math.min(22, maxExt / Math.max(2, nSit * 0.7)));
+      var spots = _spreadPick(furn, nSit, insideMinD);
       if (spots.length) {
+        // Furnished building → sitting on chairs + walking in INTERIOR doorways (circulation),
+        // never on furniture (user: "walking in chairs... they can just go to corridors"). An
+        // interior door sits INSIDE the measured perimeter (radius < silR). No IfcSpace/corridor
+        // metadata is extracted, so interior doors are the circulation proxy; a compiled room/
+        // corridor spine could refine this later if the user injects rooms.
         pSrc = 'furniture';
-        for (var i = 0; i < spots.length; i++) {
-          var s = spots[i];
-          _placeAt(insidePoses[i % insidePoses.length], s[0], s[1], s[2], true);   // floor under the furniture
-          placedP++;
-        }
+        for (var i = 0; i < spots.length; i++) { var s = spots[i]; _placeAt(sitPoses[i % sitPoses.length], s[0], s[1], s[2], true); placedP++; }
+        var idoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 400") || [];
+        var interiorDoors = idoors.filter(function(r) { return Math.hypot(r[0] - cx, r[1] - cy) < silR(Math.atan2(r[1] - cy, r[0] - cx)) - 3.0; });
+        var walkSpots = _spreadPick(interiorDoors, nWalk, Math.max(4, maxExt / Math.max(2, nWalk)));
+        for (var wq = 0; wq < walkSpots.length; wq++) { var wd = walkSpots[wq]; _placeAt(walkPoses[wq % walkPoses.length], wd[0], wd[1], wd[2], true); placedP++; }
+        if (walkSpots.length) pSrc = 'furniture+walk-door';
       } else {
-        // No furniture (HHS/Esplanades) → the would-be-inside figures go OUTSIDE too, so they're
-        // visible on the ground rather than lost/occluded inside.
+        // No furniture (HHS/Esplanades) → sitting/walking have no interior anchor; send them OUTSIDE
+        // with the standing figures so they're visible on the ground rather than lost inside.
         pSrc = 'exterior-ground';
         outsidePoses = _STAFFAGE_PEOPLE;
-        nStanding = Math.max(nStanding, nInside);
+        nStanding = Math.max(nStanding, nSit + nWalk);
       }
 
       // OUTSIDE figures — at real ENTRANCES. An exterior door sits ON the measured perimeter: its
@@ -986,14 +994,45 @@ async function setupEffects(A, renderer, scene, camera) {
       for (var s = 0; s < slabs.length; s++) { var sl = slabs[s], top = sl[2] + (sl[5] || 0) / 2; if (top <= refZ + 1.5 && Math.abs(x - sl[0]) <= (sl[3] || 3) / 2 + 0.5 && Math.abs(y - sl[1]) <= (sl[4] || 3) / 2 + 0.5) { if (best === null || top > best) best = top; } }
       return best !== null ? A.ifc2three(x, y, best).y : _staffageGroundY;
     }
-    var poses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // sitting + walking
+    var sitPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'sit'; });
+    var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk'; });
+    var floorYval = picked.length ? floorY(picked[0][0], picked[0][1], picked[0][2]) : _staffageGroundY;
+    var placedSit = 0, placedWalk = 0;
+    // SITTING → on the in-view furniture (seated on real chairs)
     for (var k = 0; k < picked.length; k++) {
       var s = picked[k], pos = A.ifc2three(s[0], s[1], s[2]); pos.y = floorY(s[0], s[1], s[2]);
-      var spr = _addStaffageSprite(poses[k % poses.length], pos, true, true);
-      spr.userData.interior = true;
-      _photoStaffageInFrame.push(spr);
+      var spr = _addStaffageSprite(sitPoses[k % sitPoses.length], pos, true, true);
+      spr.userData.interior = true; _photoStaffageInFrame.push(spr); placedSit++;
     }
-    console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' placed=' + picked.length);
+    // WALKING → in the AISLE: floor points ahead of the camera, in view, CLEAR of furniture (>1.8m)
+    // — so walkers never stand among the chairs (user: "walking in chairs"). Also naturally
+    // populates a corridor view (no furniture → the whole floor is clear).
+    var furnThree = cand.map(function(c) { return A.ifc2three(c[0], c[1], c[2]); });
+    var fwd = new THREE.Vector3(); A.camera.getWorldDirection(fwd); fwd.y = 0;
+    if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
+    var rightV = new THREE.Vector3(fwd.z, 0, -fwd.x);
+    var walkCand = [], _np = new THREE.Vector3();
+    for (var dd = 4; dd <= 13; dd += 3) {
+      for (var lat = -4.5; lat <= 4.5; lat += 3) {
+        var wx = cam.x + fwd.x * dd + rightV.x * lat, wz = cam.z + fwd.z * dd + rightV.z * lat;
+        _np.set(wx, floorYval + 1.0, wz).project(A.camera);
+        if (Math.abs(_np.x) > 0.85 || Math.abs(_np.y) > 0.9 || _np.z < -1 || _np.z > 1) continue;
+        var clear = true;
+        for (var fi = 0; fi < furnThree.length; fi++) { if (Math.hypot(wx - furnThree[fi].x, wz - furnThree[fi].z) < 1.8) { clear = false; break; } }
+        if (clear) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z)]);
+      }
+    }
+    walkCand.sort(function(a, b) { return a[2] - b[2]; });
+    var wpick = [];
+    for (var wi = 0; wi < walkCand.length && wpick.length < 2; wi++) {
+      var ok = true; for (var wj = 0; wj < wpick.length; wj++) { if (Math.hypot(walkCand[wi][0] - wpick[wj][0], walkCand[wi][1] - wpick[wj][1]) < 3) { ok = false; break; } }
+      if (ok) wpick.push(walkCand[wi]);
+    }
+    for (var m = 0; m < wpick.length; m++) {
+      var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], floorYval, wpick[m][1]), true, true);
+      spr2.userData.interior = true; _photoStaffageInFrame.push(spr2); placedWalk++;
+    }
+    console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' sit=' + placedSit + ' walk=' + placedWalk);
   }
   var _populateOn = false, _populateBuilding = null;
   A.togglePopulate = function() {
