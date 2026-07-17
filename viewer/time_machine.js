@@ -473,8 +473,6 @@
 
   var _zeroMatrix = null; // lazy init
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
-  var _tmEdgeGeo = null;  // §S260f: shared 3m EdgesGeometry for frontier boxes
-  var _tmEdgeYellow = null; // §S280: shared bright yellow material for frontier cubes
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
@@ -591,6 +589,26 @@
     _giConverging = false;
   }
 
+  // §TM_GI_HOLD_CAMGUARD (2026-07-17, found by re-reading this repo's own already-fixed ghost
+  // family, not by live report): TAA still-refine (effects.js §STILL_REFINE_RESTART) and the SSGI
+  // still-fold (effects_gi_poc.js §SSGI_CONVERGE_CAMGUARD, PR #816 — "ghosted/doubled geometry and
+  // see-through floors") both hit the SAME root cause once each: a multi-frame accumulation loop
+  // with no camera-pose check blends frames across a camera that's still moving — OrbitControls
+  // inertial damping can keep gliding (no pointer events fire during the glide), and this app's
+  // on-demand render loop only resumes applying that damping once something starts driving frames
+  // again, which the converge loop itself does. This hold-converge loop (#837) shipped without
+  // that guard — the exact same unguarded shape PR #816 fixed for SSGI, just never live-verified
+  // before it hit a real user ("live-eyeball of the sharpen pending" in the original commit record).
+  // A raw camera orbit-drag does NOT cancel this loop today (only TM close/playback-start/GI-off
+  // do) — so a drag starting while the 24-frame accumulate is in flight blends N8AO across the
+  // moving view, exactly the reported "ghosting when moving the scene." Fix: same pose-signature
+  // restart discipline, ported directly — position+quaternion string, checked every frame.
+  function _giHoldCamSig(app) {
+    if (!app || !app.camera) return '';
+    var p = app.camera.position, q = app.camera.quaternion;
+    return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
+           q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
+  }
   function _giScheduleHoldConverge(app) {
     if (_giHoldTimer) { clearTimeout(_giHoldTimer); _giHoldTimer = 0; }
     _giHoldTimer = setTimeout(function () {
@@ -602,9 +620,22 @@
       if (app._giN8aoPass.firstFrame) app._giN8aoPass.firstFrame();  // clean reset before accumulating
       _giConverging = true;
       var frames = 0, MAX = 24;   // ~24 frames is enough for N8AO (aoSamples=8) to visibly converge
+      var sig = _giHoldCamSig(app);
       console.log('§TM_GI_HOLD converge start (held 300ms, still)');
       (function _step() {
         if (!_giConverging || !_active || _playing || !app._giComposerActive || !app._giComposer) { _giConvergeRaf = 0; _giConverging = false; return; }
+        var sigNow = _giHoldCamSig(app);
+        if (sigNow !== sig) {
+          // §TM_GI_HOLD_CAMGUARD: camera moved mid-converge (damping glide, or a real drag the
+          // existing bail checks above can't see) — drop straight back to clean single-pass rather
+          // than blending accumulated frames across a moving view. Re-arms naturally on the next
+          // genuine 300ms of stillness via the normal renderAtTime -> _giScheduleHoldConverge path.
+          console.log('§TM_GI_HOLD_RESTART cam-moved mid-converge frames=' + frames + ' — dropping to single-pass');
+          _giConvergeRaf = 0; _giConverging = false;
+          app._giN8aoPass.configuration.accumulate = false;
+          if (app._giN8aoPass.firstFrame) app._giN8aoPass.firstFrame();
+          return;
+        }
         app._giComposer.render();
         if (++frames >= MAX) { _giConvergeRaf = 0; _giConverging = false; console.log('§TM_GI_HOLD converged frames=' + frames); return; }
         _giConvergeRaf = requestAnimationFrame(_step);
@@ -791,17 +822,11 @@
                 _frontierPositions.push(_bmPos.clone());
                 _guidPosMap[bg] = _bmPos.clone();
               }
-              // §S260f: Edge box at frontier position — 3m, cyan/orange, depthTest:false
-              // §S260f: Shared geometry + shared materials — no allocation per tick
-              // §S280: Frontier cubes on ALL platforms (mobile + desktop) — bright yellow
-              if (!_tmEdgeGeo) _tmEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(3, 3, 3));
-              if (!_tmEdgeYellow) _tmEdgeYellow = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
-              var _el = new THREE.LineSegments(_tmEdgeGeo, _tmEdgeYellow);
-              _el.position.copy(_bmPos);
-              _el.renderOrder = 10;
-              _el.userData._isTmFrontier = true;
-              app.scene.add(_el);
-              _outlineMeshes.push(_el);
+              // §YELLOW_BOX_RETIRED (2026-07-18, user: "bleed badly for Hospital") — the
+              // depthTest:false edge box shone through walls/floors it should have been hidden
+              // behind, reading as a bug not a feature on real buildings. Position tracking above
+              // (camFollow/_frontierPositions/_guidPosMap) is unrelated and stays; only the
+              // visible marker itself is removed.
             } else if (_camFollow && _previewGuids && _previewGuids[bg]) {
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
@@ -1897,7 +1922,6 @@
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
-        '<button id="tm-share" style="font-size:9px;padding:2px 6px" title="Copy shareable link">&#x1F517; Share</button>' +
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
@@ -2044,18 +2068,6 @@
     });
     document.getElementById('tm-new').addEventListener('pointerup', function(e) {
       e.stopPropagation(); copyGuids(true);
-    });
-    document.getElementById('tm-share').addEventListener('pointerup', function(e) {
-      e.stopPropagation();
-      var url = new URL(location.href);
-      url.searchParams.set('tm', 'play');
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(url.toString());
-        var sb = document.getElementById('tm-share');
-        if (sb) { sb.textContent = 'Copied!'; setTimeout(function(){ sb.innerHTML = '&#x1F517; Share'; }, 1500); }
-      }
-      viewerStatus('4D playback link copied to clipboard');
-      console.log('§TIME_MACHINE share URL: ' + url.toString());
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -3556,15 +3568,26 @@
 
   // ══════════════════════════════════════════════════════════════════
   // §S260c: JSON CACHE — persist Gantt schedule + Movie Script in IDB
-  // Keys: "gantt:{building}" and "movie:{building}"
+  // Keys: "gantt:v{N}:{building}" and "movie:{building}"
   // Same IDB store as DB file cache. Tiny (100-500KB) vs DB files (10-170MB).
   // Clear Cache on landing deletes entire IDB → next session recomputes.
-  // ══════════════════════════════════════════════════════════════════
+  //
+  // §GANTT_CACHE_VERSION: bump this whenever schedule-GENERATION logic changes in a way that
+  // would make an already-cached schedule wrong (rate/productivity tables, sequence rules,
+  // schedule_gate.js gating logic). A cached 'gantt' entry survives indefinitely otherwise —
+  // §GANTT_CACHE_HIT trusts it forever, so a logic fix alone does NOT reach a browser that
+  // already generated+cached a schedule under the old (buggy) logic; only a version bump does,
+  // since it changes the cache KEY and makes the old entry an orphaned miss. Do NOT rely on
+  // manual cacheDel/tmRefoldSchedule for this class of fix — that requires the user to know to
+  // do it. v2 (2026-07-18): locale_loader.js productivity-map deep-merge fix — see
+  // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2.
+  var _GANTT_CACHE_VERSION = 2;
 
   function _cacheKey(prefix) {
     var app = A();
     var bld = (app && app.activeBuilding) || 'unknown';
-    return prefix + ':' + bld;
+    var v = (prefix === 'gantt') ? ('v' + _GANTT_CACHE_VERSION + ':') : '';
+    return prefix + ':' + v + bld;
   }
 
   // Read JSON from IDB cache. Returns parsed object or null.
@@ -3752,18 +3775,15 @@
   function _finishActivate(app) {
     _active = true;
     app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
-    // §TM_GI_AUTO (2026-07-17): auto-engage the Alt+G N8AO ambient-occlusion composer so every
-    // Time Machine playback gets contact-shadow grounding without a manual Alt+G press. renderAtTime
-    // runs it single-pass (see §TM_GI_RENDER) to fit TM's one-frame-then-park render gate. Only flip
-    // it if it wasn't ALREADY on — if the user engaged Alt+G themselves, leave it on when TM closes;
-    // deactivate() only auto-offs the instances TM itself switched on. No-op on mobile
-    // (toggleGIPreview is a no-op there) and harmless if the GI POC failed to load.
+    // §TM_GI_AUTO RETIRED (2026-07-18, user: "its up to user to turn Shadow, G and audio"):
+    // was auto-engaging Alt+G N8AO on every TM open with no opt-out — the one auto-forced effect
+    // among Shadow/GI/Audio (the other two were already correctly user-choice-only, see
+    // §TM_SUN_INHERIT/§TM_SHADOW_INHERIT below — "Don't force sun cycle — respect user's
+    // shadow/sky choice"). Alt+G is now consistent with that: purely a manual keypress, same as
+    // before #836 ever existed. _tmEnabledGI/the matching deactivate() auto-off stay defined
+    // (now permanently false/no-op) rather than ripped out — a manual Alt+G press during TM still
+    // needs deactivate() to leave it alone exactly like it already does for shadow/sky.
     _tmEnabledGI = false;
-    if (!app._giComposerActive && typeof app.toggleGIPreview === 'function') {
-      _tmEnabledGI = true;
-      try { Promise.resolve(app.toggleGIPreview(true)).then(function (ok) { console.log('§TM_GI_AUTO enabled=' + !!ok); }); }
-      catch (e) { console.warn('§TM_GI_AUTO fail ' + e.message); _tmEnabledGI = false; }
-    }
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
