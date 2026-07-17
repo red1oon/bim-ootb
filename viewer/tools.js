@@ -18,17 +18,30 @@ function setupTools(A) {
     if (!A.db || !A.ground) return;
     var _gLvl = 0, _gSrc = '?';
     try {
-      // Step 1: Try storey name matching for ground floor slabs
+      // Step 1: Try storey name matching for ground floor slabs.
+      // §GROUND_Y_LOWEST_GF (2026-07-17): among the largest few GF-named slabs, take the LOWEST,
+      // not simply the largest-area one. A "ground floor" name can appear at multiple elevations
+      // in federated / mixed-datum models — BimWhale_Advanced's "Level 1" slabs sit at z=27.85,
+      // two-thirds up a building spanning -8..46, so the old largest-area pick placed the ground
+      // plane mid-building and the model rendered half-buried (user-reported). Ground = the LOWEST
+      // floor plate bearing a ground-floor name. Mirrors Step 2's lowest-of-top5 selection, just
+      // scoped to the storey-name filter; identical result for normal buildings (their GF plate is
+      // both largest AND lowest), only differs — correctly — in the mixed-datum case.
       var gfNames = "('Ground Floor','Ground','First Floor','1st Floor','Level 0','Level 00','Level 1','GF','L0','L00','L1','00','0','1F','EG','Erdgeschoss','Storey 1','Plan 1','VÅN 1','VÅNING 1','1. OG','Rez-de-chaussée','RC','Planta Baja','PB','Piso 0','Begane grond','BG','GROUND FLOOR LEVEL','Ground Lev','Aras Tanah','u.etg')";
       var zr = A.db.exec(
-        "SELECT t.center_z - t.bbox_z/2 AS bottom, t.bbox_x * t.bbox_y AS area, m.storey " +
+        "SELECT t.center_z - t.bbox_z/2 AS bottom, t.bbox_x * t.bbox_y AS area, t.center_z, m.storey " +
         "FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
         "WHERE m.ifc_class='IfcSlab' AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.0 " +
         "AND t.bbox_x IS NOT NULL AND t.bbox_y IS NOT NULL " +
-        "AND m.storey IN " + gfNames + " ORDER BY area DESC LIMIT 3"
+        "AND m.storey IN " + gfNames + " ORDER BY area DESC LIMIT 5"
       );
       if (zr.length && zr[0].values.length > 0) {
-        _gLvl = zr[0].values[0][0]; _gSrc = 'gf-storey-slab(' + zr[0].values[0][2] + ')';
+        var gfBottom = null, gfCz = Infinity, gfStorey = '';
+        for (var gi = 0; gi < zr[0].values.length; gi++) {
+          var gfr = zr[0].values[gi];
+          if (gfr[2] < gfCz) { gfCz = gfr[2]; gfBottom = gfr[0]; gfStorey = gfr[3]; }
+        }
+        if (gfBottom !== null) { _gLvl = gfBottom; _gSrc = 'gf-storey-slab(' + gfStorey + ')'; }
       }
 
       // Step 2: If no storey match, find ground-level slab.
