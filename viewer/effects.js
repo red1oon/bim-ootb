@@ -412,9 +412,6 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_photoSkyline) { A.scene.remove(_photoSkyline); _photoSkyline.children.forEach(function(b) { b.geometry.dispose(); b.material.dispose(); }); }
     if (_photoSkylineLights) { A.scene.remove(_photoSkylineLights); _photoSkylineLights.geometry.dispose(); _photoSkylineLights.material.dispose(); }
     _photoSparkles.forEach(function(s) { A.scene.remove(s.sprite); s.sprite.material.dispose(); });
-    // §PHOTO_STAFFAGE: remove sprites + their materials; keep the shared textures cached for reuse.
-    if (_photoStaffage) { A.scene.remove(_photoStaffage); _photoStaffage.children.forEach(function(s) { if (s.material) s.material.dispose(); }); }
-    _photoStaffage = null; _photoStaffagePeople = [];
     _photoUplights = []; _photoFacadeLights = []; _photoSkyline = null; _photoSkylineLights = null;
     _photoRoofCorners = []; _photoRoofSpotA = null; _photoRoofSpotB = null; _photoSparkles = [];
   }
@@ -598,9 +595,6 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.add(_photoSkylineLights);
     console.log('§PHOTO_PROPS built uplights=' + _photoUplights.length + ' skylineBoxes=' + group.children.length + ' windowLights=' + (winPos.length / 3));
 
-    // §PHOTO_STAFFAGE: sourced-sprite people/trees for buildings without real RPC entourage.
-    _buildStaffage(cx, cy, w, d, groundZ);
-
     // §PHOTO_SPARKLE (user ask: "some sparkle where it hits right angle from Sun to surface" —
     // reference `relfectsunlight.jpg`: a soft warm glow, not a hard geometric shape). One sprite
     // per facade-wash edge (reuses the SAME mid/normal already computed above, no new geometry
@@ -706,61 +700,137 @@ async function setupEffects(A, renderer, scene, camera) {
   // for a category the building has NO real entourage for (real RPC people/trees are handled by the
   // streaming.js material pass — placing sprites on top would double them up). General to any
   // building; nothing hardcoded.
-  function _buildStaffage(cx, cy, w, d, groundZ) {
+  // §PHOTO_STAFFAGE: greedily pick up to n rows [x,y,z,bbox_z] that are at least minDist apart in
+  // plan — spreads figures across real furniture instead of clustering them at one crowded spot.
+  function _spreadPick(rows, n, minDist) {
+    var picked = [];
+    for (var i = 0; i < rows.length && picked.length < n; i++) {
+      var r = rows[i], ok = true;
+      for (var j = 0; j < picked.length; j++) {
+        if (Math.hypot(r[0] - picked[j][0], r[1] - picked[j][1]) < minDist) { ok = false; break; }
+      }
+      if (ok) picked.push(r);
+    }
+    return picked;
+  }
+  function _buildStaffage() {
     if (!A.dbQuery || !THREE.Sprite) return;
+    var bbox = _buildingBBoxIfc();
+    if (!bbox) return;
+    var cx = (bbox.xMin + bbox.xMax) / 2, cy = (bbox.yMin + bbox.yMax) / 2;
+    var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin, groundZ = bbox.zMin;
+    var hx = (w / 2) || 1, hy = (d / 2) || 1, envelope = Math.max(w, d, 30);
     if (!_photoStaffage) _photoStaffage = new THREE.Group();
     function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
     var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
     var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
-    var placedP = 0, placedT = 0;
-    var envelope = Math.max(w, d, 30);
-    // People near real entry doors, stepped OUT of the doorway into open space, lowest storeys first.
+    var placedP = 0, placedT = 0, pSrc = 'none';
+
     if (realPeople === 0) {
-      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
-      for (var i = 0; i < doors.length; i++) {
-        var dx = doors[i][0], dy = doors[i][1], dz = doors[i][2];
-        // §PHOTO_STAFFAGE_FLOOR (user: "hanging in the air... better they be in the house and floor
-        // level"): a door's center_z is ~mid-height (~1m up), so anchoring feet there floated them.
-        // The door's BOTTOM (center_z - bbox_z/2) is the floor of the storey it opens onto — put the
-        // figure's feet there. And nudge INWARD toward the building interior (was outward), so the
-        // figures — the sitting ones especially — stand/sit INSIDE the room, not outside the facade.
-        var floorZ = dz - (doors[i][3] ? doors[i][3] / 2 : 1.0);
-        var ox = dx - cx, oy = dy - cy, ol = Math.hypot(ox, oy) || 1;
-        var entry = _STAFFAGE_PEOPLE[i % _STAFFAGE_PEOPLE.length];
-        // 'out' → step OUT in front of the door; 'in' → step deeper INTO the room. Feet on the floor.
-        var sign = (entry.place === 'out') ? 1 : -1;
-        var step = (entry.place === 'out') ? 1.8 : 2.4;
-        var pos = A.ifc2three(dx + sign * (ox / ol) * step, dy + sign * (oy / ol) * step, floorZ);
-        _addStaffageSprite(entry, pos, true);
+      var insidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'in'; });   // walking + sitting
+      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'out'; });  // the 2 standing
+
+      // INSIDE figures — anchor to REAL furniture (a chair/sofa is a guaranteed indoor, on-floor
+      // spot — EXTRACTED, not a centroid guess, which the door-direction heuristic could get wrong
+      // on concave/L-shaped footprints). Spread so they don't cluster. Fall back to interior doors
+      // where a building has no furniture (e.g. HHS/Esplanades — 0 furniture rows).
+      var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 80") || [];
+      var spots = _spreadPick(furn, insidePoses.length, 3.5);
+      pSrc = 'furniture';
+      if (!spots.length) {
+        var idoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
+        spots = idoors.slice(0, insidePoses.length).map(function(r) {
+          var ox = r[0] - cx, oy = r[1] - cy, ol = Math.hypot(ox, oy) || 1;
+          return [r[0] - (ox / ol) * 2.4, r[1] - (oy / ol) * 2.4, r[2], r[3]];   // nudge into the room
+        });
+        pSrc = spots.length ? 'interior-door' : 'none';
+      }
+      for (var i = 0; i < spots.length; i++) {
+        var s = spots[i];
+        var floorZ = s[2] - (s[3] ? s[3] / 2 : 0.4);   // furniture/door bottom ≈ floor → feet on floor
+        _addStaffageSprite(insidePoses[i % insidePoses.length], A.ifc2three(s[0], s[1], floorZ), true);
+        placedP++;
+      }
+
+      // OUTSIDE figures — the 2 standing, ONLY at PERIMETER doors (near the footprint edge → likely
+      // real exterior entrances). If none qualify, skip rather than misplace a person outside a
+      // random interior door — the honest "we can't confidently resolve outside here" fallback.
+      var pdoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 200") || [];
+      var perim = pdoors.filter(function(r) { return Math.max(Math.abs(r[0] - cx) / hx, Math.abs(r[1] - cy) / hy) >= 0.7; });
+      for (var k = 0; k < Math.min(perim.length, outsidePoses.length); k++) {
+        var pr = perim[k];
+        var ox2 = pr[0] - cx, oy2 = pr[1] - cy, ol2 = Math.hypot(ox2, oy2) || 1;
+        var floorZ2 = pr[2] - (pr[3] ? pr[3] / 2 : 1.0);
+        _addStaffageSprite(outsidePoses[k % outsidePoses.length], A.ifc2three(pr[0] + (ox2 / ol2) * 1.8, pr[1] + (oy2 / ol2) * 1.8, floorZ2), true);
         placedP++;
       }
     }
+
     // Decorative trees on a ring OUTSIDE the footprint bbox (clear of the building), evenly spread.
     if (realTrees === 0) {
       var ntrees = 8, ringR = envelope * 0.72;
       for (var t = 0; t < ntrees; t++) {
         var a = (t / ntrees) * Math.PI * 2 + 0.4;
-        var pos = A.ifc2three(cx + Math.cos(a) * ringR, cy + Math.sin(a) * ringR, groundZ);
-        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], pos, false);
+        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(a) * ringR, cy + Math.sin(a) * ringR, groundZ), false);
         placedT++;
       }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+  }
+  function _disposeStaffage() {
+    if (_photoStaffage) {
+      A.scene.remove(_photoStaffage);
+      _photoStaffage.children.forEach(function(s) { if (s.material) s.material.dispose(); });
+    }
+    _photoStaffage = null; _photoStaffagePeople = []; _lastPeopleVis = null;
   }
   // §PHOTO_STAFFAGE: people are spherical billboards — from a steep top-down angle they read as
   // upright figures floating detached from the ground (the aerial-angle failure the spec names).
-  // Hide people (only) when the camera looks steeper than ~37deg down; trees tolerate it. Reuses
-  // the same camera-direction-vs-up dot the facade-facing lights use. Recomputed each Alt+S show.
+  // Hide people (only) when the camera looks steeper than ~37deg down; trees tolerate it. Now that
+  // Populate is a persistent Alt+P toggle (not frozen to one Alt+S camera), this re-runs on every
+  // controls 'change' — so it logs only when the decision FLIPS, not every frame.
+  var _lastPeopleVis = null;
   function _updatePeoplePitchGate() {
     if (!_photoStaffagePeople.length || !A.camera) return;
     var fwd = new THREE.Vector3();
     A.camera.getWorldDirection(fwd);
     var down = -fwd.y;                       // 0 = horizontal, 1 = straight down
     var showP = down < 0.6;                  // ~37deg — beyond that, cutout people look wrong
+    if (showP === _lastPeopleVis) return;
     _photoStaffagePeople.forEach(function(s) { s.visible = showP; });
+    _lastPeopleVis = showP;
+    if (A.markDirty) A.markDirty();
     console.log('§PHOTO_STAFFAGE_PITCH down=' + down.toFixed(2) + ' peopleVisible=' + showP);
   }
+  // §PHOTO_POPULATE (2026-07-17, user: separate Alt+P step, "more silent ops, user remembers it
+  // once"): staffage is its OWN persistent toggle, decoupled from Alt+S. Alt+S stays a clean
+  // still on real geometry only; Alt+P adds/removes the fabricated people+trees layer, stacking
+  // with Alt+S or standalone. Toggle (not one-shot), like Night/Shadow/Cinema.
+  var _populateOn = false, _populateBuilding = null;
+  A.togglePopulate = function() {
+    _populateOn = !_populateOn;
+    if (_populateOn) {
+      if (!_photoStaffage || _populateBuilding !== A.activeBuilding) {
+        _disposeStaffage();
+        _buildStaffage();
+        _populateBuilding = A.activeBuilding;
+      }
+      if (_photoStaffage) _photoStaffage.visible = true;
+      _lastPeopleVis = null;              // force a fresh pitch decision (+ log) on show
+      _updatePeoplePitchGate();
+      if (!A._populatePitchHooked && A.controls && A.controls.addEventListener) {
+        A.controls.addEventListener('change', function() {
+          if (_populateOn && _photoStaffage && _photoStaffage.visible) _updatePeoplePitchGate();
+        });
+        A._populatePitchHooked = true;     // live pitch gate: recompute as the camera orbits
+      }
+    } else if (_photoStaffage) {
+      _photoStaffage.visible = false;
+    }
+    if (A.markDirty) A.markDirty();
+    console.log('§PHOTO_POPULATE on=' + _populateOn + ' bld=' + A.activeBuilding);
+  };
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
@@ -770,7 +840,6 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
-    if (_photoStaffage) { _photoStaffage.visible = show; if (show) _updatePeoplePitchGate(); }
   }
   // §PHOTO_STAGING (2026-07-15, POC — presentation only, not extracted BIM data): bundles the
   // sunset sky + amber building glow + the ground/edge/skyline props above into the SAME
