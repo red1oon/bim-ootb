@@ -155,13 +155,15 @@ async function setupEffects(A, renderer, scene, camera) {
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
+  // place: 'out' = stands in front of the door (natural outdoors); 'in' = inside on the floor.
+  // Per user: only the 2 STANDING figures belong outside; walking + sitting go inside the house.
   var _STAFFAGE_PEOPLE = [
-    { file: 'people/person_standing_casual_male.png',    h: 1.75 },
-    { file: 'people/person_standing_gesture_female.png', h: 1.70 },
-    { file: 'people/person_walking_shopping_female.png', h: 1.70 },
-    { file: 'people/person_walking_gym_female.png',      h: 1.70 },
-    { file: 'people/person_sitting_formal_male.png',     h: 1.20 },
-    { file: 'people/person_sitting_casual_female.png',   h: 1.15 }
+    { file: 'people/person_standing_casual_male.png',    h: 1.75, place: 'out' },
+    { file: 'people/person_standing_gesture_female.png', h: 1.70, place: 'out' },
+    { file: 'people/person_walking_shopping_female.png', h: 1.70, place: 'in' },
+    { file: 'people/person_walking_gym_female.png',      h: 1.70, place: 'in' },
+    { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in' },
+    { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in' }
   ];
   var _STAFFAGE_TREES = [
     { file: 'trees/tree_oak_big.png',        h: 9.5 },
@@ -714,12 +716,22 @@ async function setupEffects(A, renderer, scene, camera) {
     var envelope = Math.max(w, d, 30);
     // People near real entry doors, stepped OUT of the doorway into open space, lowest storeys first.
     if (realPeople === 0) {
-      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
+      var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' ORDER BY et.center_z ASC LIMIT 6") || [];
       for (var i = 0; i < doors.length; i++) {
         var dx = doors[i][0], dy = doors[i][1], dz = doors[i][2];
+        // §PHOTO_STAFFAGE_FLOOR (user: "hanging in the air... better they be in the house and floor
+        // level"): a door's center_z is ~mid-height (~1m up), so anchoring feet there floated them.
+        // The door's BOTTOM (center_z - bbox_z/2) is the floor of the storey it opens onto — put the
+        // figure's feet there. And nudge INWARD toward the building interior (was outward), so the
+        // figures — the sitting ones especially — stand/sit INSIDE the room, not outside the facade.
+        var floorZ = dz - (doors[i][3] ? doors[i][3] / 2 : 1.0);
         var ox = dx - cx, oy = dy - cy, ol = Math.hypot(ox, oy) || 1;
-        var pos = A.ifc2three(dx + (ox / ol) * 1.6, dy + (oy / ol) * 1.6, dz);
-        _addStaffageSprite(_STAFFAGE_PEOPLE[i % _STAFFAGE_PEOPLE.length], pos, true);
+        var entry = _STAFFAGE_PEOPLE[i % _STAFFAGE_PEOPLE.length];
+        // 'out' → step OUT in front of the door; 'in' → step deeper INTO the room. Feet on the floor.
+        var sign = (entry.place === 'out') ? 1 : -1;
+        var step = (entry.place === 'out') ? 1.8 : 2.4;
+        var pos = A.ifc2three(dx + sign * (ox / ol) * step, dy + sign * (oy / ol) * step, floorZ);
+        _addStaffageSprite(entry, pos, true);
         placedP++;
       }
     }
