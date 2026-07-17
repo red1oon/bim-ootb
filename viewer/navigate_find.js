@@ -941,6 +941,10 @@
         // (G1), applied directly to the LIVE db rather than a pre-load buffer.
         var applied = false;
         try {
+          // §THIN-GRAPH-RECURE: a re-cure pass skips the patch source — the patch is exactly
+          // what produced the rooms being re-cured (or was frame-dropped already); straight to
+          // the walker.
+          if (opts.skipPatch) throw new Error('skipPatch');
           var r = await fetch(patchUrl);
           if (r.ok) {
             var sqlText = await r.text();
