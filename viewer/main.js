@@ -675,7 +675,7 @@ async function initViewer() {
     // §STAGE2_MIDDRAG_FIX (review finding 6): also fire during soft-park (_photoAutoStageOn) so
     // every new drag re-arms/reset the Stage-2 idle timer — gating on _stillRefineActive alone
     // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
-    if (!APP._tmExportActive && (APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
+    if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -729,16 +729,12 @@ async function initViewer() {
   // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
   // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
   function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
-  // §TM_EXPORT (2026-07-17): the movie-export batch loop drives startStillRefine() programmatically,
-  // unattended, for up to an hour — a stray pointerdown/wheel while the user checks progress must NOT
-  // tear down the frame mid-capture the way a human's real Alt+S interaction should. Export owns its
-  // own explicit Cancel Export control instead of this ambient touch-to-cancel path.
-  function _cancelStillRefine() { if (!APP._tmExportActive && _photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
   // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
   // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
   // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
   // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
-  function _cancelStillRefineSoft() { if (!APP._tmExportActive && _photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
   // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
   // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
   // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
