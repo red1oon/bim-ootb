@@ -1293,6 +1293,9 @@ function setupStreaming(A) {
       console.log('§CONTRACT_CHECK batch=' + _ca_batch + ' instanced=' + _ca_inst +
         ' guidMap=' + _ca_guid + ' streamed=' + A.streamedCount + ' orphans=' + _ca_orphan);
     }
+    // §TM_STREAM_RESWEEP: newly-flushed geometry defaults to visible — if Time Machine is
+    // active, sweep it against the current cursor (no-op when TM isn't active).
+    if (window.tmResweep) window.tmResweep();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1461,6 +1464,8 @@ function setupStreaming(A) {
       ' draw_calls=' + drawCalls + ' skip=' + skipCount +
       ' start=real reserved_mb=' + reservedMB);
     document.getElementById('s-meshes').textContent = drawCalls.toLocaleString() + ' draw calls (DLOD)';
+    // §TM_STREAM_RESWEEP: see _flushInstanced — same reasoning, DLOD bbox flush path.
+    if (window.tmResweep) window.tmResweep();
   };
 
   // §S260c: Consolidate fragmented BatchedMesh from progressive flushes into one set.
@@ -1610,6 +1615,9 @@ function setupStreaming(A) {
       ' elements=' + totalElements + ' ms=' + ms);
     document.getElementById('s-meshes').textContent = newDrawCalls.toLocaleString() + ' draw calls';
     if (A.markDirty) A.markDirty();
+    // §TM_STREAM_RESWEEP: see _flushInstanced — consolidation rebuilds BatchedMesh objects
+    // (new object identities), so this needs its own sweep even though nothing NEW streamed in.
+    if (window.tmResweep) window.tmResweep();
   };
 
   // DB init
