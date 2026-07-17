@@ -746,6 +746,32 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._calcGroundY) A._calcGroundY();
     _staffageGroundY = (A.ground && typeof A.ground.position.y === 'number') ? A.ground.position.y : A.ifc2three(0, 0, groundZ).y;
     if (!_photoStaffage) _photoStaffage = new THREE.Group();
+    // §PHOTO_STAFFAGE_FLOOR (user: "person standing a bit in the raised floor — why not check the
+    // floor Z value?"): the single global ground plane is too blunt where a room has a RAISED floor.
+    // Look up the actual floor slab under each figure's (x,y) and seat feet on its TOP surface; fall
+    // back to the ground plane only where no slab covers that point (outside the building → trees /
+    // outside people on the terrain). One slab list, in-memory point-in-footprint test — not a
+    // per-figure DB query.
+    var _slabs = A.dbQuery("SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.5 AND t.center_x IS NOT NULL") || [];
+    var _floorSlab = 0, _floorGround = 0;
+    function _floorThreeY(x, y, refZ) {
+      var best = null;
+      for (var si = 0; si < _slabs.length; si++) {
+        var s = _slabs[si], top = s[2] + (s[5] || 0) / 2;
+        if (top <= refZ + 1.5 && Math.abs(x - s[0]) <= (s[3] || 3) / 2 + 0.5 && Math.abs(y - s[1]) <= (s[4] || 3) / 2 + 0.5) {
+          if (best === null || top > best) best = top;
+        }
+      }
+      if (best !== null) { _floorSlab++; return A.ifc2three(x, y, best).y; }
+      _floorGround++; return _staffageGroundY;
+    }
+    // Place a figure at IFC (x,y), feet on the actual floor slab under it (raised floors respected),
+    // pad-corrected. keepY=true tells _addStaffageSprite to trust this Y (no global ground snap).
+    function _placeAt(entry, ifcX, ifcY, refZ, isPerson) {
+      var pos = A.ifc2three(ifcX, ifcY, refZ);
+      pos.y = _floorThreeY(ifcX, ifcY, refZ);
+      return _addStaffageSprite(entry, pos, isPerson, true);
+    }
     function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
     var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
     var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
@@ -791,7 +817,7 @@ async function setupEffects(A, renderer, scene, camera) {
         pSrc = 'furniture';
         for (var i = 0; i < spots.length; i++) {
           var s = spots[i];
-          _addStaffageSprite(insidePoses[i % insidePoses.length], A.ifc2three(s[0], s[1], s[2] - (s[3] ? s[3] / 2 : 0.4)), true);
+          _placeAt(insidePoses[i % insidePoses.length], s[0], s[1], s[2], true);   // floor under the furniture
           placedP++;
         }
       } else {
@@ -826,14 +852,14 @@ async function setupEffects(A, renderer, scene, camera) {
           var lat = Math.floor(k / picked.length) * 1.4;       // extras at the same door step sideways
           var px = e[0] + ((e[0] - cx) / ol) * 1.6 + (-(e[1] - cy) / ol) * lat;
           var py = e[1] + ((e[1] - cy) / ol) * 1.6 + ((e[0] - cx) / ol) * lat;
-          _addStaffageSprite(outsidePoses[k % outsidePoses.length], A.ifc2three(px, py, e[2] - (e[3] ? e[3] / 2 : 1.0)), true);
+          _placeAt(outsidePoses[k % outsidePoses.length], px, py, e[2], true);   // floor at the entrance
           placedP++;
         }
         pSrc += '+entrance';
       } else {
         for (var k2 = 0; k2 < no; k2++) {
           var pa = (k2 / no) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
-          _addStaffageSprite(outsidePoses[k2 % outsidePoses.length], A.ifc2three(cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ), true);
+          _placeAt(outsidePoses[k2 % outsidePoses.length], cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ, true);
           placedP++;
         }
         pSrc += '+silhouette';
@@ -847,7 +873,7 @@ async function setupEffects(A, renderer, scene, camera) {
       for (var t = 0; t < ntrees; t++) {
         var ta = (t / ntrees) * Math.PI * 2 + 0.4;
         var trad = silR(ta) + 5;
-        _addStaffageSprite(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], A.ifc2three(cx + Math.cos(ta) * trad, cy + Math.sin(ta) * trad, groundZ), false);
+        _placeAt(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], cx + Math.cos(ta) * trad, cy + Math.sin(ta) * trad, groundZ, false);
         placedT++;
       }
     }
@@ -858,7 +884,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _fMin = Infinity, _fMax = -Infinity;
     _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' feetDy=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
