@@ -684,7 +684,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _staffageTexCache[path] = tex;
     return tex;
   }
-  function _addStaffageSprite(entry, threePos, isPerson) {
+  function _addStaffageSprite(entry, threePos, isPerson, keepY) {
     var tex = _staffageTex(entry.file);
     var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5, depthWrite: true }));
     spr.center.set(0.5, 0);                 // anchor bottom-centre → the figure stands on the ground
@@ -699,7 +699,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // image-bottom anchor.
     var _padY = entry.h * (entry.pad || 0);
     spr.userData.baseOffset = _padY;
-    if (_staffageGroundY != null) spr.position.y = _staffageGroundY - _padY;
+    // keepY = interior in-frame figure on an upper storey: keep the given floor Z, don't snap to the
+    // building's ground plane (which would drop it to the ground floor). Still apply the pad offset.
+    if (keepY) spr.position.y = threePos.y - _padY;
+    else if (_staffageGroundY != null) spr.position.y = _staffageGroundY - _padY;
     function _size() {
       var img = tex.image;
       var aspect = (img && img.width && img.height) ? (img.width / img.height) : 0.5;
@@ -711,6 +714,7 @@ async function setupEffects(A, renderer, scene, camera) {
     else spr.scale.set(entry.h * 0.5, entry.h, 1);   // provisional until the image arrives
     _photoStaffage.add(spr);
     if (isPerson) _photoStaffagePeople.push(spr);
+    return spr;
   }
   // §PHOTO_STAFFAGE: place cutouts derived from THIS building's real bbox + IfcDoor rows, but ONLY
   // for a category the building has NO real entourage for (real RPC people/trees are handled by the
