@@ -269,11 +269,18 @@ function setupStreaming(A) {
   // match on the observed real names (RPC Male/Female/Tree, Model Text:Logo) — deterministic,
   // extracted from actual DB rows (see spec's DB census), no invented classes. Returns '' for
   // everything else so non-entourage geometry is completely untouched.
+  // §RPC_M_PREFIX (2026-07-17, found via BimWhale_Advanced): some Revit exports use the metric-
+  // template family prefix "M_" (M_RPC Male/Female/Beetle) instead of the bare "RPC ..." name seen
+  // in Ifc4_Revit — same RPC content, different export convention. Strip a leading "M_" before the
+  // anchored match so both conventions land the same variant; without this BimWhale's real RPC
+  // entourage never gets the flat-exporter-grey fix.
   A._entourageVariant = function(ifcClass, name) {
     if (ifcClass !== 'IfcBuildingElementProxy' || !name) return '';
-    if (name.indexOf('RPC Male') === 0 || name.indexOf('RPC Female') === 0) return 'person';
-    if (name.indexOf('RPC Tree') === 0) return 'tree';
-    if (name.indexOf('Model Text:Logo') === 0) return 'logo';
+    var n = name.indexOf('M_') === 0 ? name.slice(2) : name;
+    if (n.indexOf('RPC Male') === 0 || n.indexOf('RPC Female') === 0) return 'person';
+    if (n.indexOf('RPC Tree') === 0) return 'tree';
+    if (n.indexOf('RPC Beetle') === 0) return 'vehicle';
+    if (n.indexOf('Model Text:Logo') === 0) return 'logo';
     return '';
   };
 
@@ -612,9 +619,10 @@ function setupStreaming(A) {
     // (§S265c "trust IFC data" — the cream IS an assigned rgba, so it is never overridden always-on;
     // this treatment is a presentation RESULT-stage effect, same standing as the dusk-staging props).
     var ENTOURAGE_MAT = {
-      person: { color: [0.55, 0.48, 0.42], mix: 0.80, emissive: [0, 0, 0] },   // clothing/skin mid-tone
-      tree:   { color: [0.26, 0.40, 0.20], mix: 0.90, emissive: [0, 0, 0] },   // deciduous foliage green
-      logo:   { color: [0.12, 0.12, 0.14], mix: 0.90, emissive: [0.48, 0.40, 0.22] } // warm lit/printed sign
+      person:  { color: [0.55, 0.48, 0.42], mix: 0.80, emissive: [0, 0, 0] },   // clothing/skin mid-tone
+      tree:    { color: [0.26, 0.40, 0.20], mix: 0.90, emissive: [0, 0, 0] },   // deciduous foliage green
+      vehicle: { color: [0.74, 0.76, 0.79], mix: 0.75, emissive: [0, 0, 0] },   // neutral car-body grey
+      logo:    { color: [0.12, 0.12, 0.14], mix: 0.90, emissive: [0.48, 0.40, 0.22] } // warm lit/printed sign
     };
     var entMat = (matVariant && ENTOURAGE_MAT[matVariant]) ? ENTOURAGE_MAT[matVariant] : null;
     if (entMat && !triMat && _perturbScale === 0) {
