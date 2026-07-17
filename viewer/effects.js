@@ -777,21 +777,6 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     };
   }
-  // §STAFFAGE_OCCUPANCY: a door/candidate point sits INSIDE or AT a solid (a door is set into a wall)
-  // — search outward in rings for the nearest free point instead of rejecting outright, so a walker
-  // lands beside the doorway/obstacle rather than never being placed. Returns [x,y] or null if nothing
-  // free within the search radius.
-  function _nudgeFree(grid, x, y, clear) {
-    if (grid.free(x, y, clear)) return [x, y];
-    for (var rad = 0.4; rad <= 1.6; rad += 0.4) {
-      for (var a = 0; a < 8; a++) {
-        var ang = a * Math.PI / 4;
-        var nx = x + Math.cos(ang) * rad, ny = y + Math.sin(ang) * rad;
-        if (grid.free(nx, ny, clear)) return [nx, ny];
-      }
-    }
-    return null;
-  }
   function _buildStaffage() {
     if (!A.dbQuery || !THREE.Sprite) return;
     var _bt0 = performance.now();
@@ -858,63 +843,35 @@ async function setupEffects(A, renderer, scene, camera) {
     }
 
     if (realPeople === 0) {
-      var sitPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'sit'; });
-      var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk'; });
-      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.place === 'out'; });  // the 2 standing
-      // §PHOTO_STAFFAGE_SCALE (user: "for a big place multiply the pax at different wings, ends... with
-      // so many rooms at least ends and middle"). Counts scale with building size; placement spreads
-      // across the footprint so a multi-wing plan gets people at its ends and middle, not clustered.
+      var outsidePoses = _STAFFAGE_PEOPLE;   // mix of stand/walk/sit poses reads fine as "people near an entrance"
+      // §PHOTO_STAFFAGE_OUTSIDE_ONLY (2026-07-17, user: "human sprites gets floating on the air...
+      // outside the wall in midair" — root cause CONFIRMED via LTU_AHouse: a multi-storey building
+      // can have WILDLY different footprints per floor (measured: ground floor ~169m wide, upper
+      // floor ~357m wide — more than double), but silR() is ONE silhouette combined across EVERY
+      // floor. A ground-floor sitting/walking spot classified "interior" against that inflated
+      // combined silhouette could land at an XY position that's only real on the upper floor —
+      // nothing solid exists there at ground height, so the figure floats past the real ground wall.
+      // Fix (also the user's own call — "need not place anyone inside when viewing from outside,
+      // only when zooming in... need not put anything that is not seen"): this unconditional
+      // exterior-establishing pass (camera state outside/unknown) places NO indoor sitting/walking
+      // figures at all — they'd be hidden behind walls from outside anyway, wasted work AND the
+      // source of the float bug. Only real ground-floor-anchored ENTRANCE figures + trees, which is
+      // everything an outside view can actually see. This also removes the interior-door walker
+      // placement entirely — the "figures half-cut right at the door" reports were that exact
+      // mechanic (radial-from-centroid stepping has no idea which way an INTERIOR door actually
+      // faces). Indoor sitting/walking is placed ONLY by _updateInFrameInterior, anchored to the
+      // camera's own confirmed-inside position + its real floor slab — inherently floor-correct,
+      // no combined-silhouette guess involved.
       var span = w + d, maxExt = Math.max(w, d);
-      var nSit = Math.max(2, Math.min(10, Math.round(span / 16)));
-      var nWalk = Math.max(1, Math.min(6, Math.round(span / 28)));
       var nStanding = Math.max(2, Math.min(6, Math.round(span / 30)));
-
-      // SITTING → real furniture (chairs), spread across the plan (minDist scales with size).
-      var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 600") || [];
-      var insideMinD = Math.max(3.5, Math.min(22, maxExt / Math.max(2, nSit * 0.7)));
-      var spots = _spreadPick(furn, nSit, insideMinD);
-      if (spots.length) {
-        // Furnished building → sitting on chairs + walking in INTERIOR doorways (circulation),
-        // never on furniture (user: "walking in chairs... they can just go to corridors"). An
-        // interior door sits INSIDE the measured perimeter (radius < silR). No IfcSpace/corridor
-        // metadata is extracted, so interior doors are the circulation proxy; a compiled room/
-        // corridor spine could refine this later if the user injects rooms.
-        pSrc = 'furniture';
-        for (var i = 0; i < spots.length; i++) { var s = spots[i]; _placeAt(sitPoses[i % sitPoses.length], s[0], s[1], s[2], true); placedP++; }
-        var idoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 400") || [];
-        var interiorDoors = idoors.filter(function(r) { return Math.hypot(r[0] - cx, r[1] - cy) < silR(Math.atan2(r[1] - cy, r[0] - cx)) - 3.0; });
-        // §STAFFAGE_OCCUPANCY: a door sits INSIDE a wall — nudge each candidate to the nearest FREE
-        // point (occupancy grid banded to that door's own floor) before accepting it, instead of the
-        // old "place flat at the door centre" (clips the wall/leaf). One grid built per distinct
-        // floor Z among the candidate doors, reused across all doors on that floor.
-        var doorWalkTried = interiorDoors.length, doorWalkPlaced = 0, doorRejectedInObject = 0;
-        var freeDoorSpots = [], _doorFloorGrids = {};
-        for (var di2 = 0; di2 < interiorDoors.length; di2++) {
-          var idr = interiorDoors[di2], doorFloorZ = idr[2] - (idr[3] || 2.1) / 2, fkey = Math.round(doorFloorZ);
-          if (!_doorFloorGrids[fkey]) _doorFloorGrids[fkey] = _buildOccupancyGrid(doorFloorZ - 0.3, doorFloorZ + 2.0);
-          var nudged = _nudgeFree(_doorFloorGrids[fkey], idr[0], idr[1], 0.5);
-          if (nudged) freeDoorSpots.push([nudged[0], nudged[1], idr[2], idr[3]]);
-          else doorRejectedInObject++;
-        }
-        var walkSpots = _spreadPick(freeDoorSpots, nWalk, Math.max(4, maxExt / Math.max(2, nWalk)));
-        for (var wq = 0; wq < walkSpots.length; wq++) { var wd = walkSpots[wq]; _placeAt(walkPoses[wq % walkPoses.length], wd[0], wd[1], wd[2], true); placedP++; doorWalkPlaced++; }
-        if (walkSpots.length) pSrc = 'furniture+walk-door';
-        // §STAFFAGE_WALK_CLEAR: independently re-verify every PLACED door-walker against its floor's
-        // grid — proves the placement itself is clean, not just the search that produced it.
-        var doorWcOk = 0;
-        for (var wv = 0; wv < walkSpots.length; wv++) {
-          var wvp = walkSpots[wv], wfz = Math.round(wvp[2] - (wvp[3] || 2.1) / 2);
-          if (_doorFloorGrids[wfz] && _doorFloorGrids[wfz].free(wvp[0], wvp[1], 0.5)) doorWcOk++;
-        }
-        console.log('§PHOTO_STAFFAGE_WALKCLEAR src=doors walkTried=' + doorWalkTried + ' walkPlaced=' + doorWalkPlaced + ' rejectedInObject=' + doorRejectedInObject);
-        console.log('§STAFFAGE_WALK_CLEAR src=doors ok=' + doorWcOk + '/' + walkSpots.length);
-      } else {
-        // No furniture (HHS/Esplanades) → sitting/walking have no interior anchor; send them OUTSIDE
-        // with the standing figures so they're visible on the ground rather than lost inside.
-        pSrc = 'exterior-ground';
-        outsidePoses = _STAFFAGE_PEOPLE;
+      var furnCount = _cnt("SELECT COUNT(*) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL");
+      if (furnCount) {
+        // Building has furniture (would have been sit/walk anchors) — fold that headcount into the
+        // entrance-figure count instead of discarding it: same total presence, all of it real/visible.
+        var nSit = Math.max(2, Math.min(10, Math.round(span / 16))), nWalk = Math.max(1, Math.min(6, Math.round(span / 28)));
         nStanding = Math.max(nStanding, nSit + nWalk);
       }
+      pSrc = 'exterior-only';
 
       // OUTSIDE figures — at real ENTRANCES. An exterior door sits ON the measured perimeter: its
       // distance from centre ≈ the silhouette in its direction (interior doors sit well inside).
