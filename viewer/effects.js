@@ -735,6 +735,63 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     return picked;
   }
+  // §STAFFAGE_OCCUPANCY (prompts/STAFFAGE_WALKABLE_PLACEMENT.md §A — root-cause fix for "walking in
+  // objects"): the old walker-clearance test only checked distance from FURNITURE, so a "clear" aisle
+  // point could still sit inside a column, against a wall, or inside MEP/equipment. This rasterizes
+  // EVERY solid element (all classes except doors/windows/openings/spaces/slabs/roofs/coverings/
+  // footings — the non-solid or separately-handled ones) that overlaps a person-height Z band into a
+  // coarse 2D grid in IFC plan space, respecting rotation_z for oriented bboxes. A point is free only
+  // if it and a clearance ring around it hit no marked cell.
+  var _OCC_EXCLUDE_CLASSES = "'IfcDoor','IfcWindow','IfcOpeningElement','IfcSpace','IfcSlab','IfcSlabStandardCase','IfcRoof','IfcCovering','IfcFooting'";
+  function _buildOccupancyGrid(zLoIfc, zHiIfc, cell) {
+    cell = cell || 0.5;
+    var rows = A.dbQuery(
+      "SELECT et.center_x, et.center_y, et.bbox_x, et.bbox_y, et.rotation_z " +
+      "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
+      "WHERE em.ifc_class NOT IN (" + _OCC_EXCLUDE_CLASSES + ") AND et.center_x IS NOT NULL AND et.bbox_x IS NOT NULL " +
+      "AND et.center_z + COALESCE(et.bbox_z,0)/2 > " + zLoIfc + " AND et.center_z - COALESCE(et.bbox_z,0)/2 < " + zHiIfc
+    ) || [];
+    var cells = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], ex = r[0], ey = r[1], hx = (r[2] || 0.3) / 2, hy = (r[3] || 0.3) / 2, rz = r[4] || 0;
+      var cs = Math.cos(rz), sn = Math.sin(rz);
+      for (var lx = -hx; lx <= hx + 1e-6; lx += cell) {
+        for (var ly = -hy; ly <= hy + 1e-6; ly += cell) {
+          var wx = ex + lx * cs - ly * sn, wy = ey + lx * sn + ly * cs;
+          cells[Math.round(wx / cell) + ',' + Math.round(wy / cell)] = true;
+        }
+      }
+    }
+    return {
+      elemCount: rows.length,
+      free: function(x, y, clear) {
+        clear = clear == null ? 0.5 : clear;
+        var n = Math.ceil(clear / cell), ix0 = Math.round(x / cell), iy0 = Math.round(y / cell);
+        for (var dx = -n; dx <= n; dx++) {
+          for (var dy = -n; dy <= n; dy++) {
+            if (Math.hypot(dx * cell, dy * cell) > clear) continue;
+            if (cells[(ix0 + dx) + ',' + (iy0 + dy)]) return false;
+          }
+        }
+        return true;
+      }
+    };
+  }
+  // §STAFFAGE_OCCUPANCY: a door/candidate point sits INSIDE or AT a solid (a door is set into a wall)
+  // — search outward in rings for the nearest free point instead of rejecting outright, so a walker
+  // lands beside the doorway/obstacle rather than never being placed. Returns [x,y] or null if nothing
+  // free within the search radius.
+  function _nudgeFree(grid, x, y, clear) {
+    if (grid.free(x, y, clear)) return [x, y];
+    for (var rad = 0.4; rad <= 1.6; rad += 0.4) {
+      for (var a = 0; a < 8; a++) {
+        var ang = a * Math.PI / 4;
+        var nx = x + Math.cos(ang) * rad, ny = y + Math.sin(ang) * rad;
+        if (grid.free(nx, ny, clear)) return [nx, ny];
+      }
+    }
+    return null;
+  }
   function _buildStaffage() {
     if (!A.dbQuery || !THREE.Sprite) return;
     var _bt0 = performance.now();
@@ -826,9 +883,31 @@ async function setupEffects(A, renderer, scene, camera) {
         for (var i = 0; i < spots.length; i++) { var s = spots[i]; _placeAt(sitPoses[i % sitPoses.length], s[0], s[1], s[2], true); placedP++; }
         var idoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL ORDER BY et.center_z ASC LIMIT 400") || [];
         var interiorDoors = idoors.filter(function(r) { return Math.hypot(r[0] - cx, r[1] - cy) < silR(Math.atan2(r[1] - cy, r[0] - cx)) - 3.0; });
-        var walkSpots = _spreadPick(interiorDoors, nWalk, Math.max(4, maxExt / Math.max(2, nWalk)));
-        for (var wq = 0; wq < walkSpots.length; wq++) { var wd = walkSpots[wq]; _placeAt(walkPoses[wq % walkPoses.length], wd[0], wd[1], wd[2], true); placedP++; }
+        // §STAFFAGE_OCCUPANCY: a door sits INSIDE a wall — nudge each candidate to the nearest FREE
+        // point (occupancy grid banded to that door's own floor) before accepting it, instead of the
+        // old "place flat at the door centre" (clips the wall/leaf). One grid built per distinct
+        // floor Z among the candidate doors, reused across all doors on that floor.
+        var doorWalkTried = interiorDoors.length, doorWalkPlaced = 0, doorRejectedInObject = 0;
+        var freeDoorSpots = [], _doorFloorGrids = {};
+        for (var di2 = 0; di2 < interiorDoors.length; di2++) {
+          var idr = interiorDoors[di2], doorFloorZ = idr[2] - (idr[3] || 2.1) / 2, fkey = Math.round(doorFloorZ);
+          if (!_doorFloorGrids[fkey]) _doorFloorGrids[fkey] = _buildOccupancyGrid(doorFloorZ - 0.3, doorFloorZ + 2.0);
+          var nudged = _nudgeFree(_doorFloorGrids[fkey], idr[0], idr[1], 0.5);
+          if (nudged) freeDoorSpots.push([nudged[0], nudged[1], idr[2], idr[3]]);
+          else doorRejectedInObject++;
+        }
+        var walkSpots = _spreadPick(freeDoorSpots, nWalk, Math.max(4, maxExt / Math.max(2, nWalk)));
+        for (var wq = 0; wq < walkSpots.length; wq++) { var wd = walkSpots[wq]; _placeAt(walkPoses[wq % walkPoses.length], wd[0], wd[1], wd[2], true); placedP++; doorWalkPlaced++; }
         if (walkSpots.length) pSrc = 'furniture+walk-door';
+        // §STAFFAGE_WALK_CLEAR: independently re-verify every PLACED door-walker against its floor's
+        // grid — proves the placement itself is clean, not just the search that produced it.
+        var doorWcOk = 0;
+        for (var wv = 0; wv < walkSpots.length; wv++) {
+          var wvp = walkSpots[wv], wfz = Math.round(wvp[2] - (wvp[3] || 2.1) / 2);
+          if (_doorFloorGrids[wfz] && _doorFloorGrids[wfz].free(wvp[0], wvp[1], 0.5)) doorWcOk++;
+        }
+        console.log('§PHOTO_STAFFAGE_WALKCLEAR src=doors walkTried=' + doorWalkTried + ' walkPlaced=' + doorWalkPlaced + ' rejectedInObject=' + doorRejectedInObject);
+        console.log('§STAFFAGE_WALK_CLEAR src=doors ok=' + doorWcOk + '/' + walkSpots.length);
       } else {
         // No furniture (HHS/Esplanades) → sitting/walking have no interior anchor; send them OUTSIDE
         // with the standing figures so they're visible on the ground rather than lost inside.
@@ -1004,22 +1083,26 @@ async function setupEffects(A, renderer, scene, camera) {
       var spr = _addStaffageSprite(sitPoses[k % sitPoses.length], pos, true, true);
       spr.userData.interior = true; _photoStaffageInFrame.push(spr); placedSit++;
     }
-    // WALKING → in the AISLE: floor points ahead of the camera, in view, CLEAR of furniture (>1.8m)
-    // — so walkers never stand among the chairs (user: "walking in chairs"). Also naturally
-    // populates a corridor view (no furniture → the whole floor is clear).
-    var furnThree = cand.map(function(c) { return A.ifc2three(c[0], c[1], c[2]); });
+    // WALKING → in the AISLE: floor points ahead of the camera, in view, and clear of EVERY solid
+    // (occupancy grid — walls/columns/furniture/equipment/MEP, not just furniture-distance) — so
+    // walkers never stand among the chairs (user: "walking in chairs") OR inside a column/wall
+    // (§STAFFAGE_OCCUPANCY, prompts/STAFFAGE_WALKABLE_PLACEMENT.md §A). Also naturally populates a
+    // corridor view (no solids → the whole floor is clear).
     var fwd = new THREE.Vector3(); A.camera.getWorldDirection(fwd); fwd.y = 0;
     if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
     var rightV = new THREE.Vector3(fwd.z, 0, -fwd.x);
-    var walkCand = [], _np = new THREE.Vector3();
+    var ifcFloorZ = floorYval + A.modelOffset.z;
+    var aisleGrid = _buildOccupancyGrid(ifcFloorZ - 0.3, ifcFloorZ + 2.0);
+    var walkCand = [], _np = new THREE.Vector3(), aisleWalkTried = 0, aisleRejectedInObject = 0;
     for (var dd = 4; dd <= 13; dd += 3) {
       for (var lat = -4.5; lat <= 4.5; lat += 3) {
         var wx = cam.x + fwd.x * dd + rightV.x * lat, wz = cam.z + fwd.z * dd + rightV.z * lat;
         _np.set(wx, floorYval + 1.0, wz).project(A.camera);
         if (Math.abs(_np.x) > 0.85 || Math.abs(_np.y) > 0.9 || _np.z < -1 || _np.z > 1) continue;
-        var clear = true;
-        for (var fi = 0; fi < furnThree.length; fi++) { if (Math.hypot(wx - furnThree[fi].x, wz - furnThree[fi].z) < 1.8) { clear = false; break; } }
-        if (clear) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z)]);
+        aisleWalkTried++;
+        var ifcX = wx + A.modelOffset.x, ifcY = -wz + A.modelOffset.y;
+        if (aisleGrid.free(ifcX, ifcY, 0.5)) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z)]);
+        else aisleRejectedInObject++;
       }
     }
     walkCand.sort(function(a, b) { return a[2] - b[2]; });
@@ -1032,7 +1115,14 @@ async function setupEffects(A, renderer, scene, camera) {
       var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], floorYval, wpick[m][1]), true, true);
       spr2.userData.interior = true; _photoStaffageInFrame.push(spr2); placedWalk++;
     }
-    console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' sit=' + placedSit + ' walk=' + placedWalk);
+    // §STAFFAGE_WALK_CLEAR: independently re-verify every PLACED aisle-walker against the same grid.
+    var aisleWcOk = 0;
+    for (var wv = 0; wv < wpick.length; wv++) {
+      var vx = wpick[wv][0] + A.modelOffset.x, vy = -wpick[wv][1] + A.modelOffset.y;
+      if (aisleGrid.free(vx, vy, 0.5)) aisleWcOk++;
+    }
+    console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' sit=' + placedSit + ' walk=' + placedWalk + ' walkTried=' + aisleWalkTried + ' rejectedInObject=' + aisleRejectedInObject);
+    console.log('§STAFFAGE_WALK_CLEAR src=aisle ok=' + aisleWcOk + '/' + wpick.length);
   }
   var _populateOn = false, _populateBuilding = null;
   A.togglePopulate = function() {
