@@ -469,13 +469,8 @@
     // end-to-end (was the missing half — restore was untraceable). db=null here ⇒ a bare-url landing.
     try {
       var _sp = new URLSearchParams(location.search);
-      // origin= added 2026-07-17: db= alone doesn't say whether the PAGE itself is localhost, a
-      // worktree dev server, or production GH Pages (a local session can legitimately point db= at
-      // production OCI data — see feedback_localhost_full_building_url_testing memory) — a bug
-      // report pasting only mid-session console scrollback (missing this line, which fires once,
-      // early) cost real back-and-forth time confirming which deployment was actually being tested.
-      console.log('§WHOLE-LANDED page=viewer origin=' + location.origin + ' db=' + (_openDbUrl() || 'null') +
-        ' ghost=' + (_sp.get('ghost') || '0') + ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
+      console.log('§WHOLE-LANDED page=viewer db=' + (_openDbUrl() || 'null') + ' ghost=' + (_sp.get('ghost') || '0') +
+        ' sess=' + (_sp.get('sess') || 'none') + ' reHome=' + _isReHome());
     } catch (e) {}
     window.WholeHistory.consumeRestore('viewer', function (ref) {
       try { var A = _A(); if (ref && ref.building && A && A.cityLoadBuilding) A.cityLoadBuilding(ref.building); } catch (e) {}

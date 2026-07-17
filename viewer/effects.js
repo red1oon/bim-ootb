@@ -112,10 +112,6 @@ async function setupEffects(A, renderer, scene, camera) {
   // (streaming.js §TRIPLANAR_RECOMPILE_FIX — self-heals across shader recompiles, which a
   // one-time push from here cannot). This just counts registered materials for the perf log.
   var _stillRefineStartMs = 0;
-  // §TM_EXPORT: optional caller-supplied callback for "the whole fold (TAA + AO/SSGI) is truly
-  // done" — batch/programmatic callers (movie export) need this instead of watching console logs.
-  // Undefined for the normal Alt+S keypress call site — zero behavior change when omitted.
-  var _stillRefineOnComplete = null;
   function _setTriplanarActive(active) {
     return (A._triplanarMaterials || []).length;
   }
@@ -1716,18 +1712,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // bundle/effect is unavailable or disabled (A._stillSSGIEnabled=false), so Alt+S never regresses
     // below its previous behavior.
     if (typeof A.startStillSSGIPhase === 'function') {
-      A.startStillSSGIPhase().then(function(engaged) { if (!engaged) _startStillAOPhase(); else _fireStillRefineComplete(); })
+      A.startStillSSGIPhase().then(function(engaged) { if (!engaged) _startStillAOPhase(); })
         .catch(function(e) { console.warn('§PHOTO_SSGI_FAIL ' + e.message + ' — falling back to AO fold'); _startStillAOPhase(); });
     } else {
       _startStillAOPhase();  // §PHOTO_AO: fold N8AO contact-shadow into the finished still (no-op if unavailable)
     }
-  }
-  // §TM_EXPORT: fired once the AO (or SSGI) fold genuinely finishes, or immediately if neither is
-  // available/enabled — the one signal a batch caller can await instead of polling console output.
-  function _fireStillRefineComplete() {
-    var cb = _stillRefineOnComplete;
-    _stillRefineOnComplete = null;
-    if (cb) cb();
   }
 
   // §PHOTO_AO (2026-07-16, Task 1 — one keypress: the Alt+S still now INCLUDES N8AO ambient
@@ -1859,13 +1848,13 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   function _startStillAOPhase() {
-    if (!STILL_AO_ENABLED || !A._composer) { _fireStillRefineComplete(); return; }
+    if (!STILL_AO_ENABLED || !A._composer) return;
     var t0 = performance.now();
     _ensureStillAO().then(function(ao) {
-      if (!ao) { _fireStillRefineComplete(); return; }
+      if (!ao) return;
       // the world may have moved on during the async import — only fold AO into a still that is
       // still frozen, and never fight the GI composer or the cinema loop for the canvas
-      if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) { _fireStillRefineComplete(); return; }
+      if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) return;
       _stillAODepthDirty = true;
       ao.pass.firstFrame();
       ao.adapter.enabled = true;
@@ -1874,7 +1863,7 @@ async function setupEffects(A, renderer, scene, camera) {
         ' intensity=' + STILL_AO_INTENSITY + ' (still-only fold — Alt+G untouched)');
       (function stepAO() {
         _stillAORAF = null;
-        if (!A._stillRefineActive || !ao.adapter.enabled) { _fireStillRefineComplete(); return; }  // torn down mid-phase
+        if (!A._stillRefineActive || !ao.adapter.enabled) return;  // torn down mid-phase
         var s = _camSig();
         if (s !== sig) { sig = s; _stillAODepthDirty = true; }  // late damping/programmatic nudge:
         // re-prime depth; n8ao itself resets its AO accumulation on the view-matrix change
@@ -1885,7 +1874,6 @@ async function setupEffects(A, renderer, scene, camera) {
         if (f >= STILL_AO_FRAMES) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
-          _fireStillRefineComplete();
           return;
         }
         _stillAORAF = requestAnimationFrame(stepAO);
@@ -1896,7 +1884,6 @@ async function setupEffects(A, renderer, scene, camera) {
     A._stillRefineActive = false;
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
-    _stillRefineOnComplete = null;  // §TM_EXPORT: a real cancel is not a completion — never fire stale
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
     // Alt+J preview survives, only dropped back to nav-quality knobs; see effects_gi_poc.js).
@@ -1928,9 +1915,8 @@ async function setupEffects(A, renderer, scene, camera) {
                                                         // sparkle visibility is camera-position-dependent
                                                         // and the natural step() loop stops re-evaluating
                                                         // it once still-refine freezes.
-  A.startStillRefine = function(onComplete) {
-    if (!A._composer || !A._taaPass || A._stillRefineActive) { if (onComplete) onComplete(); return; }
-    _stillRefineOnComplete = onComplete || null;
+  A.startStillRefine = function() {
+    if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
     // the canvas — Alt+S's own RAF renders A._composer while the main loop prefers _giComposer,
     // so both active at once fight over every frame. One at a time.
