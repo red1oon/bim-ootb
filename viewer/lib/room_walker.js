@@ -30,6 +30,14 @@
   var MAX_AREA_ABS = 150.0;  // m^2 — SUSPECT_LARGE flag threshold, no longer a drop threshold
   var MAX_AREA_FRAC = 0.92;  // still a hard drop — self-scaling (% of THIS building's own storey plan)
   var SEAL = 2;             // dilate walls this many cells (×RES) to close hairline corner/door gaps
+  // §RASTER-EPS (compile_rooms.py port — ROOM_WALKER_PHASE_INVARIANCE.md S1/S2, 2026-07-17):
+  // wall edges routinely sit EXACTLY on a RES cell boundary relative to the data-derived grid
+  // origin, so Math.floor((x-xs0)/RES) is a knife edge — translating the SAME geometry by a
+  // constant Δ perturbs (x-xs0) by ~1 ulp and flips those cells (measured: 8/14 translations
+  // changed Terminal's compile, rooms 50-54 vs baseline 51). Fix: floor(t + RASTER_EPS) for cell
+  // indices, ceil(t - RASTER_EPS) for grid extents. 1e-6 cell-fractions = 0.2 µm of geometry:
+  // >100x the worst FP error (~5e-9 cells at |x|=1e5 m), 5 orders below real coordinates.
+  var RASTER_EPS = 1e-6;    // cell fractions — boundary snap band for raster quantization
   var WALL_LIKE = ["IfcWall%", "IfcDoor%", "IfcCurtainWall%", "IfcColumn%", "IfcWindow%"];
   // §STAIR-EXCLUDE: a stairwell is a wall-enclosed pocket, so the flood-fill flags it as a "room".
   // It is circulation, NOT a room. Reject any compiled pocket that a stair footprint substantially
@@ -240,15 +248,17 @@
     });
     var pad = RES * 2;
     xs0 -= pad; ys0 -= pad; xs1 += pad; ys1 += pad;
-    var nx = Math.max(4, Math.ceil((xs1 - xs0) / RES));
-    var ny = Math.max(4, Math.ceil((ys1 - ys0) / RES));
+    // §RASTER-EPS: ceil(t - eps) — an exact-multiple span gets the same cell count in any frame
+    var nx = Math.max(4, Math.ceil((xs1 - xs0) / RES - RASTER_EPS));
+    var ny = Math.max(4, Math.ceil((ys1 - ys0) / RES - RASTER_EPS));
     return { xs0: xs0, ys0: ys0, xs1: xs1, ys1: ys1, nx: nx, ny: ny };
   }
 
   function _rasterizeWalls(walls, ext) {
     var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
-    var ix = function (x) { return Math.min(nx - 1, Math.max(0, Math.floor((x - xs0) / RES))); };
-    var iy = function (y) { return Math.min(ny - 1, Math.max(0, Math.floor((y - ys0) / RES))); };
+    // §RASTER-EPS: floor(t + eps) — boundary-exact edges quantize identically in any frame
+    var ix = function (x) { return Math.min(nx - 1, Math.max(0, Math.floor((x - xs0) / RES + RASTER_EPS))); };
+    var iy = function (y) { return Math.min(ny - 1, Math.max(0, Math.floor((y - ys0) / RES + RASTER_EPS))); };
     var blocked = new Uint8Array(nx * ny);
     walls.forEach(function (w) {
       var cx = w[0], cy = w[1], bx = w[3], byv = w[4];
@@ -593,7 +603,11 @@
         var doorRescued = false;
         var hasDoor = doorAdjacent(wx0, wy0, wx1, wy1, doors);
         if (area < MIN_AREA) {
-          var dimsOk = (wx1 - wx0) >= NOISE_FLOOR_DIM && (wy1 - wy0) >= NOISE_FLOOR_DIM;
+          // §RASTER-EPS: the noise-floor test is a CELL-COUNT rule (3 cells) — test it in integer
+          // cells, not in metres reconstructed from xs0+i*RES (whose FP dirt made a 3-cell pocket
+          // flip at exact equality with NOISE_FLOOR_DIM; same convention _decomposeRegion uses).
+          var minCellsNF = Math.round(NOISE_FLOOR_DIM / RES);
+          var dimsOk = (mxi - mni + 1) >= minCellsNF && (mxj - mnj + 1) >= minCellsNF;
           if (!(dimsOk && hasDoor)) continue;
           doorRescued = true;
         }
@@ -689,8 +703,9 @@
     for (var m = 0; m < nx * ny; m++) free[m] = (freeRaw[m] && !extMask[m]) ? 1 : 0;
     var cz = walls.reduce(function (s, w) { return s + w[2]; }, 0) / walls.length;
     var bz = walls.reduce(function (s, w) { return s + w[5]; }, 0) / walls.length;
-    var ix = function (x) { return Math.min(nx - 1, Math.max(0, Math.floor((x - xs0) / RES))); };
-    var iy = function (y) { return Math.min(ny - 1, Math.max(0, Math.floor((y - ys0) / RES))); };
+    // §RASTER-EPS: same boundary-snap quantization as _rasterizeWalls (translation invariance)
+    var ix = function (x) { return Math.min(nx - 1, Math.max(0, Math.floor((x - xs0) / RES + RASTER_EPS))); };
+    var iy = function (y) { return Math.min(ny - 1, Math.max(0, Math.floor((y - ys0) / RES + RASTER_EPS))); };
 
     var owner = new Int32Array(nx * ny).fill(-1);
     var queue = [], head = 0;
@@ -746,7 +761,9 @@
       var area = cells.length * cellArea;
       var wx0 = xs0 + mni * RES, wx1 = xs0 + (mxi + 1) * RES;
       var wy0 = ys0 + mnj * RES, wy1 = ys0 + (mxj + 1) * RES;
-      if ((wx1 - wx0) < NOISE_FLOOR_DIM || (wy1 - wy0) < NOISE_FLOOR_DIM) return;
+      // §RASTER-EPS: integer-cell noise-floor test (see floodRooms) — no FP knife edge
+      var minCellsNF = Math.round(NOISE_FLOOR_DIM / RES);
+      if ((mxi - mni + 1) < minCellsNF || (mxj - mnj + 1) < minCellsNF) return;
       if (area > planArea * MAX_AREA_FRAC) return;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
       if (stairOverlapFrac(wx0, wy0, wx1, wy1, stairs) >= STAIR_OVERLAP_REJECT) return;
       // §ROOM-FORM + §RECT-HONESTY + §MULTI-RECT (ROOM_INJECTION_HYBRID.md §7/§8). No dilation on
@@ -1082,6 +1099,34 @@
     var allWallsRawList = allWallsRaw(db);
     var allDoorsRawList = allDoorsRaw(db);
     var allStairsZList = allStairsZ(db);   // §STAIRWELL-STACK
+    // §LOCAL-FRAME (compile_rooms.py port — ROOM_WALKER_PHASE_INVARIANCE.md S2, 2026-07-17):
+    // rebase every x/y the compile touches to a building-local origin (the raster wall set's own
+    // min corner) and quantize to QUANT=1e-6 m, so after any constant frame translation every
+    // number entering flood/partition/merge/reject is BIT-IDENTICAL (FP jitter of rebased coords
+    // measured ≤ ~1e-10 m at |Δ|=1e6). Before: 8/14 translations changed Terminal's compile
+    // (rooms 50-54 vs 51) via knife-edge comparisons on absolute coords. After: 14/14 EQUAL.
+    // Output rooms are un-rebased on emit (writeRooms containment tests absolute element coords).
+    // Same floor(v/QUANT + 0.5) rounding as the Python (Math.round/py-round differ on .5 ties).
+    var QUANT = 1e-6;
+    var _q = function (v) { return Math.floor(v / QUANT + 0.5) * QUANT; };
+    var _rwAll = [];
+    Object.keys(wallsBy).forEach(function (st) { _rwAll = _rwAll.concat(wallsBy[st]); });
+    var orgX = 0.0, orgY = 0.0;
+    if (_rwAll.length) {
+      orgX = Infinity; orgY = Infinity;
+      _rwAll.forEach(function (w) {
+        orgX = Math.min(orgX, w[0] - w[3] / 2);
+        orgY = Math.min(orgY, w[1] - w[4] / 2);
+      });
+    }
+    var _rb6 = function (t) { return [_q(t[0] - orgX), _q(t[1] - orgY), t[2], _q(t[3]), _q(t[4]), t[5]]; };
+    var _rb4 = function (t) { return [_q(t[0] - orgX), _q(t[1] - orgY), _q(t[2]), _q(t[3])]; };
+    Object.keys(wallsBy).forEach(function (st) { wallsBy[st] = wallsBy[st].map(_rb6); });
+    allStairs = allStairs.map(_rb4);
+    Object.keys(doorsBy).forEach(function (st) { doorsBy[st] = doorsBy[st].map(_rb4); });
+    allWallsRawList = allWallsRawList.map(_rb6);
+    allDoorsRawList = allDoorsRawList.map(function (t) { return [_q(t[0] - orgX), _q(t[1] - orgY), t[2]]; });
+    allStairsZList = allStairsZList.map(function (t) { return [_q(t[0] - orgX), _q(t[1] - orgY), t[2], _q(t[3]), _q(t[4])]; });
     var mergedTotal = 0, rejectedTotal = 0;
 
     var allrooms = [], report = [], stZ = {};
@@ -1111,6 +1156,12 @@
       rooms = rejectRooms(rooms, allWallsRawList);
       rooms = rejectStairwell(rooms, allStairsZList);   // §STAIRWELL-STACK, after R-REJECT
       var rejectedN = preRejectN - rooms.length;
+      // §LOCAL-FRAME: un-rebase on emit — everything after this point (report, no-overlap guard,
+      // writeRooms containment against absolute DB coords) sees the DB's own frame again.
+      rooms.forEach(function (r) {
+        r.cx += orgX; r.cy += orgY;
+        (r.rects || []).forEach(function (rc) { rc.cx += orgX; rc.cy += orgY; });
+      });
       mergedTotal += mergedN; rejectedTotal += rejectedN;
       var rescued = rooms.filter(function (r) { return r.door_rescued; }).length;
       var partitioned = rooms.filter(function (r) { return r.door_partitioned; }).length;
