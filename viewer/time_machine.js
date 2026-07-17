@@ -1210,8 +1210,24 @@
     if (_varVisible) drawVariance();   // §S1 — variance drawer tracks the scrub (hairline + phase-under-cursor)
 
     if (app.markDirty) app.markDirty();
-    // Force immediate render — mobile browsers defer rAF until touch
-    if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
+    // Force immediate render — mobile browsers defer rAF until touch.
+    // §TM_GI_RENDER (2026-07-17): honor the Alt+G N8AO composer here directly, in SINGLE-PASS mode.
+    // Two facts force this exact shape: (1) TM's desktop render gate wakes, draws ONE frame, then
+    // self-parks the rAF chain (main.js §S286 "§IDLE_GATE park — 0 frames"), so N8AO's temporal
+    // accumulation (accumulate:true) can NEVER converge on a static-camera scrub — it's frozen at a
+    // partial buffer, and whether firstFrame()'s clear won the race with the main loop's own composer
+    // render decided clean-vs-ghost => the intermittent ghost the user saw. Single-pass AO
+    // (accumulate=false) produces a COMPLETE frame in the one render the gate allows. (2) rendering
+    // through the composer here (not raw) makes the AO frame deterministic in this call, not racing
+    // the main loop. No-op unless Alt+G is already engaged. accumulate is restored to true in
+    // deactivate() so a normal (non-TM) Alt+G keeps its converged-still quality.
+    if (app._giComposer && app._giComposerActive) {
+      if (app._giN8aoPass && app._giN8aoPass.configuration) app._giN8aoPass.configuration.accumulate = false;
+      if (!renderAtTime._giLogged) { console.log('§TM_GI_RENDER Time Machine → Alt+G N8AO composer, single-pass (accumulate off)'); renderAtTime._giLogged = true; }
+      app._giComposer.render();
+    } else if (app.renderer && app.scene && app.camera) {
+      app.renderer.render(app.scene, app.camera);
+    }
     updateStatus();
     _broadcastTimeline();   // §S3 — realtime cross-tab scrub + pinpoint the item the data is addressing
   }
@@ -3761,6 +3777,11 @@
     var varBtn = document.getElementById('tm-var'); if (varBtn) varBtn.classList.remove('tm-active');
     var varBox = document.getElementById('tm-var-box'); if (varBox) varBox.classList.remove('open');
     toggleDashDOM(false);
+    // §TM_GI_RENDER restore: renderAtTime forced N8AO single-pass (accumulate off) for TM's
+    // one-frame-then-park render gate. Hand it back to converged-still mode so a plain Alt+G outside
+    // Time Machine regains its multi-frame accumulation quality. Reset the once-per-session log latch too.
+    if (app && app._giN8aoPass && app._giN8aoPass.configuration) app._giN8aoPass.configuration.accumulate = true;
+    renderAtTime._giLogged = false;
     _active = false;
     if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
