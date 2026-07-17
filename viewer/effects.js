@@ -715,6 +715,7 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _buildStaffage() {
     if (!A.dbQuery || !THREE.Sprite) return;
+    var _bt0 = performance.now();
     var bbox = _buildingBBoxIfc();
     if (!bbox) return;
     var cx = (bbox.xMin + bbox.xMax) / 2, cy = (bbox.yMin + bbox.yMax) / 2;
@@ -827,7 +828,35 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+    _photoStaffage.userData.counts = { people: placedP, trees: placedT };
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' pts=' + allPts.length + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+  }
+  // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
+  // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
+  // status bar with a live count — "⏳ Populating… N/M" as textures decode, "✓ Scene populated —
+  // P people, T trees" when done. Cached on later toggles → jumps straight to done. No polling:
+  // hooks each unique texture's image 'load' event; the sprite also pops in the frame as it loads.
+  function _trackStaffageLoading() {
+    if (!A.status || !_photoStaffage) return;
+    var c = _photoStaffage.userData.counts || { people: 0, trees: 0 };
+    var doneMsg = '✓ Scene populated — ' + c.people + ' people, ' + c.trees + ' trees';
+    var seen = [], texs = [];
+    _photoStaffage.children.forEach(function(s) {
+      if (s.material && s.material.map && seen.indexOf(s.material.map) < 0) { seen.push(s.material.map); texs.push(s.material.map); }
+    });
+    var total = texs.length;
+    function loaded() { var n = 0; for (var i = 0; i < texs.length; i++) { var im = texs[i].image; if (im && im.complete && im.naturalWidth) n++; } return n; }
+    function paint() {
+      var n = loaded();
+      if (n >= total) { A.status.textContent = doneMsg; if (A.markDirty) A.markDirty(); }
+      else A.status.textContent = '⏳ Populating scene… ' + n + '/' + total;
+    }
+    if (!total) { A.status.textContent = doneMsg; return; }
+    paint();
+    texs.forEach(function(t) {
+      var im = t.image;
+      if (im && !(im.complete && im.naturalWidth)) im.addEventListener('load', paint, { once: true });
+    });
   }
   function _disposeStaffage() {
     if (_photoStaffage) {
@@ -863,6 +892,7 @@ async function setupEffects(A, renderer, scene, camera) {
   A.togglePopulate = function() {
     _populateOn = !_populateOn;
     if (_populateOn) {
+      if (A.status) A.status.textContent = '⏳ Populating scene…';
       if (!_photoStaffage || _populateBuilding !== A.activeBuilding) {
         _disposeStaffage();
         _buildStaffage();
@@ -871,6 +901,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (_photoStaffage) _photoStaffage.visible = true;
       _lastPeopleVis = null;              // force a fresh pitch decision (+ log) on show
       _updatePeoplePitchGate();
+      _trackStaffageLoading();            // live "⏳ N/M → ✓ populated" status while cutouts decode
       if (!A._populatePitchHooked && A.controls && A.controls.addEventListener) {
         A.controls.addEventListener('change', function() {
           if (_populateOn && _photoStaffage && _photoStaffage.visible) _updatePeoplePitchGate();
@@ -879,10 +910,26 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     } else if (_photoStaffage) {
       _photoStaffage.visible = false;
+      if (A.status) A.status.textContent = 'Populate off';
     }
     if (A.markDirty) A.markDirty();
     console.log('§PHOTO_POPULATE on=' + _populateOn + ' bld=' + A.activeBuilding);
   };
+  // §PHOTO_STAFFAGE_PRELOAD: measured — placement is 5-29ms; the whole first-time wait is decoding
+  // the cutout PNGs (~2-6s). Textures are already cached after first use (and sprite objects reused
+  // per building), so the SECOND Alt+P is instant — the only thing left is the FIRST. Warm the cache
+  // in the background once the page is idle so even the first Alt+P is instant. The 12 cutouts are
+  // small (downscaled + palette-quantized), building-independent, loaded once per session.
+  (function _schedulePreload() {
+    var run = function() {
+      try {
+        _STAFFAGE_PEOPLE.concat(_STAFFAGE_TREES).forEach(function(e) { _staffageTex(e.file); });
+        console.log('§PHOTO_STAFFAGE_PRELOAD warming ' + (_STAFFAGE_PEOPLE.length + _STAFFAGE_TREES.length) + ' cutouts');
+      } catch (e) { /* THREE not ready / offline — first Alt+P will load them then */ }
+    };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
+    else setTimeout(run, 4000);
+  })();
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
