@@ -276,7 +276,30 @@
   // type name) actually exists in this disc's rule_space_type, so this NEVER returns a type the
   // schedule tables don't recognize. Zero regression: this branch is unreachable whenever the label
   // match above already succeeded, and unreachable entirely until dwSetRoomTypeConfig is called.
-  function _spaceTypeFor(disc, sp) {
+  // §FIXTURE-SIGNAL wiring (COMPILE_ROOMS_TYPE_INFERENCE.md §FIXTURE-SIGNAL / §1 update 2026-07-13):
+  // fixture-family element classes whose NAMED instances sit INSIDE a room are direct EXTRACTED
+  // evidence of its function — the same class list build/poc_fixture_ensemble_sc.js measured as
+  // present across all 8 buildings. Lazily cached per building (keyed on the bdb handle) so the list
+  // is queried once per placeSchedule walk, not once per space. On any building with no such elements
+  // (or no elements_meta/element_transforms at all) the list is empty and classifyRoomWithFixtures
+  // degrades to the exact area+aspect classifyRoom() answer — zero regression off the fixture path.
+  var _FIXTURE_CLASSES = "('IfcFurnishingElement','IfcFurniture','IfcBuildingElementProxy','IfcSanitaryTerminal')";
+  var _fxCache = { db: null, list: null };
+  function _buildingFixtures(bdb) {
+    if (!bdb) return [];
+    if (_fxCache.db === bdb) return _fxCache.list;
+    var list = [];
+    if (_rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='elements_meta'").length &&
+        _rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='element_transforms'").length) {
+      list = _rows(bdb, "SELECT m.element_name name, t.center_x center_x, t.center_y center_y " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class IN " +
+        _FIXTURE_CLASSES + " AND t.center_x IS NOT NULL");
+    }
+    _fxCache = { db: bdb, list: list };
+    return list;
+  }
+
+  function _spaceTypeFor(disc, sp, bdb) {
     var label = (sp && typeof sp === 'object') ? sp.label : sp;   // back-compat: a bare string still works
     var db = _dbFor(disc);
     if (label) {
@@ -290,21 +313,33 @@
     // ── geometry fallback ──
     if (!_roomTypeConfig || !RoomTypeClassifier || !ROOM_TYPE_MEASURED_DISCS[disc]) return null;
     if (!sp || typeof sp !== 'object' || sp.x0 == null || sp.x1 == null || sp.y0 == null || sp.y1 == null) return null;
-    var feats = RoomTypeClassifier.featuresFromRects([{
-      size_x: sp.x1 - sp.x0, size_y: sp.y1 - sp.y0, center_x: (sp.x0 + sp.x1) / 2, center_y: (sp.y0 + sp.y1) / 2
-    }]);
+    var rect = { size_x: sp.x1 - sp.x0, size_y: sp.y1 - sp.y0, center_x: (sp.x0 + sp.x1) / 2, center_y: (sp.y0 + sp.y1) / 2 };
+    var feats = RoomTypeClassifier.featuresFromRects([rect]);
     if (!feats) return null;
-    var result = RoomTypeClassifier.classifyRoom(feats, _roomTypeConfig);
+    // §FIXTURE-SIGNAL: named fixtures INSIDE this room are extracted evidence that outranks the
+    // Gaussian area/aspect guess when the two AGREE (symbiotic gate lives inside
+    // classifyRoomWithFixtures — a fixture keyword only wins if that type's own z is still plausible
+    // for the measured size, else the size-based answer stands). fixtureNames empty (no fixture data,
+    // or none inside the room) → identical result to the plain classifyRoom, so every building
+    // without fixture-family elements is byte-unchanged.
+    var fixtureNames = RoomTypeClassifier.fixturesInRoom
+      ? RoomTypeClassifier.fixturesInRoom([rect], _buildingFixtures(bdb)) : [];
+    var result = RoomTypeClassifier.classifyRoomWithFixtures
+      ? RoomTypeClassifier.classifyRoomWithFixtures(feats, fixtureNames, _roomTypeConfig)
+      : RoomTypeClassifier.classifyRoom(feats, _roomTypeConfig);
     if (result.unclassified || !result.type) return null;
     var tmpl = _roomTypeConfig.templates && _roomTypeConfig.templates[result.type];
     var candidates = [];
     if (tmpl && tmpl.canonical_type) candidates.push(String(tmpl.canonical_type).toUpperCase());
     candidates.push(result.type);
+    var byFixture = result.source && result.source.indexOf('fixture') === 0;
     for (var i = 0; i < candidates.length; i++) {
       if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(candidates[i]) + "'").length) {
         console.log(TAG + ' §DW-ROOMTYPE ' + disc + ' space "' + (label || sp.guid || '?') + '" — no label match, ' +
-          'geometry classifier -> ' + result.type + ' (conf=' + (result.confidence * 100).toFixed(1) +
-          '%, area=' + feats.area.toFixed(2) + 'm2 aspect=' + feats.aspect.toFixed(2) + ') -> space_type=' +
+          (byFixture ? 'FIXTURE signal (' + fixtureNames.length + ' inside room) -> ' : 'geometry classifier -> ') +
+          result.type + ' (conf=' + (result.confidence * 100).toFixed(1) +
+          '%, area=' + feats.area.toFixed(2) + 'm2 aspect=' + feats.aspect.toFixed(2) +
+          ', src=' + (result.source || 'gaussian') + ') -> space_type=' +
           candidates[i] + ' [measured signal: build/measure_disc_room_type_density.js]');
         return candidates[i];
       }
@@ -451,7 +486,7 @@
     var avoidAll = opts.avoid || [];
     var out = [], refused = {}, skipped = [], used = 0;
     all.forEach(function (sp) {
-      var stype = _spaceTypeFor(disc, sp);
+      var stype = _spaceTypeFor(disc, sp, bdb);
       if (!stype) { skipped.push(sp.label); return; }
       var sched = _rows(_dbFor(disc), "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
         "' AND space_type_id='" + _esc(stype) + "'");

@@ -167,6 +167,100 @@
     return { type: best.type, confidence: best.posterior, unclassified: false, z: best.z, scores: scores };
   }
 
+  // §FIXTURE-SIGNAL (2026-07-13, RosettaStone discipline — extract real evidence before
+  // inferring from statistics): a named IfcFurnishingElement/IfcBuildingElementProxy INSIDE a
+  // room's own rect-set is direct extracted proof of that room's function, not a guess from
+  // size/aspect. Reverse-engineered from the Stones (ground truth), forward-replayed against the
+  // same Stone before use: checked every real sink/vanity fixture's XY position against Duplex's
+  // own human-labeled ground-truth rooms — 7/7 landed in the CORRECT real room (2/2 "Counter Top
+  // w Sink Hole" -> Kitchen, 5/5 "Vanity Cabinet...Sink Unit" -> Bathroom), 0 misses, 0 invented.
+  // "toilet"/"urinal"/"bidet" added from Terminal's own real extraction (4x "Asian_Toilet" proxy
+  // elements) — not asserted, a second building's real element-naming convention.
+  // This signal WINS over the Gaussian area/aspect template when both fire: extracted evidence
+  // outranks statistical inference from a 2-5 sample residential fit, same PRIME RULE priority
+  // as every other decision in this codebase (extract/compile over invent).
+  var FIXTURE_KEYWORDS = {
+    BATHROOM: ['vanity', 'toilet', 'urinal', 'bidet'],
+    KITCHEN: ['sink hole', 'hob', 'cooktop', 'stove top']
+  };
+  function fixtureRoomType(fixtureNames) {
+    if (!fixtureNames || !fixtureNames.length) return null;
+    var types = Object.keys(FIXTURE_KEYWORDS);
+    for (var i = 0; i < fixtureNames.length; i++) {
+      var n = String(fixtureNames[i] || '').toLowerCase();
+      for (var t = 0; t < types.length; t++) {
+        var kws = FIXTURE_KEYWORDS[types[t]];
+        for (var k = 0; k < kws.length; k++) {
+          if (n.indexOf(kws[k]) >= 0) return types[t];
+        }
+      }
+    }
+    return null;
+  }
+
+  // fixturesInRoom(rects, fixtures) — fixtures: [{name, center_x, center_y}]. Point-in-rect
+  // containment, no buffer (furniture is placed INSIDE a room, unlike a door which sits ON the
+  // boundary and needs compile_rooms.py's DOOR_BUFFER_SLACK). Returns the matched names found.
+  function fixturesInRoom(rects, fixtures) {
+    var hits = [];
+    if (!rects || !rects.length || !fixtures || !fixtures.length) return hits;
+    for (var i = 0; i < fixtures.length; i++) {
+      var f = fixtures[i];
+      if (f.center_x == null || f.center_y == null) continue;
+      for (var j = 0; j < rects.length; j++) {
+        var r = rects[j];
+        if (r.center_x == null || r.size_x == null) continue;
+        var rx0 = r.center_x - r.size_x / 2, rx1 = r.center_x + r.size_x / 2;
+        var ry0 = r.center_y - r.size_y / 2, ry1 = r.center_y + r.size_y / 2;
+        if (f.center_x >= rx0 && f.center_x <= rx1 && f.center_y >= ry0 && f.center_y <= ry1) {
+          hits.push(f.name); break;
+        }
+      }
+    }
+    return hits;
+  }
+
+  // classifyRoomWithFixtures(features, fixtureNames, config) — SYMBIOTIC combination, not a
+  // one-sided override (2026-07-13, corrected after a real forward-replay miss on Duplex ground
+  // truth: 2 real UTILITY rooms both contain a "Counter Top w Sink Hole" fixture, which naively
+  // matched the KITCHEN keyword — a laundry/utility sink is real, "sink hole" alone isn't
+  // kitchen-exclusive). Extracted fixture evidence and the Gaussian area/aspect score must AGREE:
+  // a fixture only confirms its suggested type if that type's OWN z-score is still plausible for
+  // the room's actual measured size (checked against config.unclassified_z_threshold, the same
+  // gate classifyRoom uses) — both mismatched Utility rooms are ~1.4m^2, UTILITY's own template
+  // is a near-exact match (mean 1.408 std 0.012) while KITCHEN's z is enormous (mean 12.95) at
+  // that size, so the symbiotic gate correctly defers to the Gaussian's UTILITY answer instead of
+  // trusting the ambiguous keyword alone. When they DO agree, the extracted fixture is still the
+  // stronger claim (real evidence, not inference), so confidence is reported high but the
+  // underlying z is always shown, never hidden.
+  function classifyRoomWithFixtures(features, fixtureNames, config) {
+    var fType = fixtureRoomType(fixtureNames);
+    var gaussian = features ? classifyRoom(features, config) : null;
+    var threshold = config.unclassified_z_threshold != null ? config.unclassified_z_threshold : 2.0;
+    if (fType && gaussian && gaussian.scores && gaussian.scores.length) {
+      var fScore = null;
+      for (var i = 0; i < gaussian.scores.length; i++) {
+        if (gaussian.scores[i].type === fType) { fScore = gaussian.scores[i]; break; }
+      }
+      if (fScore && fScore.z <= threshold) {
+        var why = 'fixture:' + fType + ' confirmed by size (z=' + fScore.z.toFixed(2) + '<=' + threshold + ')';
+        if (gaussian.type && gaussian.type !== fType) why += ' (gaussian alone preferred ' + gaussian.type + ')';
+        return { type: fType, confidence: 0.95, unclassified: false, why: why, z: fScore.z, source: 'fixture+size' };
+      }
+      gaussian.why = (gaussian.why || '') + ' | fixture ' + fType + ' rejected: z=' +
+        (fScore ? fScore.z.toFixed(2) : '?') + '>' + threshold + ' (keyword ambiguous for this room size)';
+      gaussian.source = 'gaussian (fixture keyword overruled by size)';
+      return gaussian;
+    }
+    if (fType && !gaussian) {
+      // no geometry available to cross-check against — fixture evidence alone, lower confidence
+      return { type: fType, confidence: 0.7, unclassified: false, why: 'fixture:' + fType + ' (no geometry to cross-check)', source: 'fixture-only' };
+    }
+    var g = gaussian || classifyRoom(features, config);
+    g.source = 'gaussian';
+    return g;
+  }
+
   // loadTemplateConfig(parsedYaml) — thin validation/normalization pass over a js-yaml-parsed
   // config/room_templates.yaml object. Does NOT parse YAML itself (kept dependency-free/dual-mode
   // — caller supplies the already-parsed object, e.g. via js-yaml in Node or a browser YAML lib).
@@ -184,6 +278,10 @@
     scoreTemplate: scoreTemplate,
     classifyRoom: classifyRoom,
     loadTemplateConfig: loadTemplateConfig,
+    FIXTURE_KEYWORDS: FIXTURE_KEYWORDS,
+    fixtureRoomType: fixtureRoomType,
+    fixturesInRoom: fixturesInRoom,
+    classifyRoomWithFixtures: classifyRoomWithFixtures,
   };
   ROOT.RoomTypeClassifier = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
