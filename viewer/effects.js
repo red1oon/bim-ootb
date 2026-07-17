@@ -159,16 +159,26 @@ async function setupEffects(A, renderer, scene, camera) {
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
-  // role: 'stand' = outside at entrances; 'sit' = on real furniture (chairs); 'walk' = in
-  // circulation (aisles / open floor CLEAR of furniture — a walker standing among chairs reads
-  // wrong, user: "walking in chairs"). place: 'out'/'in' kept for the outside/inside split.
+  // role: 'stand' = at entrances; 'sit' = on real furniture (chairs); 'walk' = in circulation
+  // (aisles / open floor CLEAR of furniture — a walker standing among chairs reads wrong, user:
+  // "walking in chairs").
+  // §STAFFAGE_FACING (2026-07-17, user: "the lady with bags... facing to the building. The guy
+  // facing to us can be inside"): a THREE.Sprite billboard always rotates flat-on to the camera —
+  // the PHOTO CONTENT itself never changes with viewing angle, so whether a cutout "reads" as
+  // approaching or facing the viewer is fixed the moment the asset is chosen, not something the
+  // engine can rotate per-shot. Determined by actually looking at each PNG (not guessed): 'away' =
+  // shot from behind (walking/gesture poses — reads as moving away from the camera, i.e. toward
+  // whatever is beyond her in the shot); 'toward' = shot face-on (the casual male — reads as
+  // looking straight at the camera); 'side' = profile/3-4 view (sitting poses). Placement uses this
+  // to route each pose to where its fixed orientation actually makes sense (see _buildStaffage's
+  // entrance loop and _updateInFrameInterior).
   var _STAFFAGE_PEOPLE = [
-    { file: 'people/person_standing_casual_male.png',    h: 1.75, place: 'out', role: 'stand' },
-    { file: 'people/person_standing_gesture_female.png', h: 1.70, place: 'out', role: 'stand' },
-    { file: 'people/person_walking_shopping_female.png', h: 1.70, place: 'in',  role: 'walk' },
-    { file: 'people/person_walking_gym_female.png',      h: 1.70, place: 'in',  role: 'walk' },
-    { file: 'people/person_sitting_formal_male.png',     h: 1.20, place: 'in',  role: 'sit' },
-    { file: 'people/person_sitting_casual_female.png',   h: 1.15, place: 'in',  role: 'sit' }
+    { file: 'people/person_standing_casual_male.png',    h: 1.75, role: 'stand', facing: 'toward' },
+    { file: 'people/person_standing_gesture_female.png', h: 1.70, role: 'stand', facing: 'away' },
+    { file: 'people/person_walking_shopping_female.png', h: 1.70, role: 'walk',  facing: 'away' },
+    { file: 'people/person_walking_gym_female.png',      h: 1.70, role: 'walk',  facing: 'away' },
+    { file: 'people/person_sitting_formal_male.png',     h: 1.20, role: 'sit',   facing: 'side' },
+    { file: 'people/person_sitting_casual_female.png',   h: 1.15, role: 'sit',   facing: 'side' }
   ];
   // pad = fraction of the PNG that is transparent BELOW the visible trunk base (measured from the
   // actual cutouts). The sprite is bottom-anchored, so without this the trunk floats pad*h above
@@ -904,16 +914,24 @@ async function setupEffects(A, renderer, scene, camera) {
         for (var k = 0; k < no; k++) {
           var e = picked[k % picked.length], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
           var lat = Math.floor(k / picked.length) * 1.4;       // extras at the same door step sideways
-          var px = e[0] + ((e[0] - cx) / ol) * 1.6 + (-(e[1] - cy) / ol) * lat;
-          var py = e[1] + ((e[1] - cy) / ol) * 1.6 + ((e[0] - cx) / ol) * lat;
-          _placeAt(outsidePoses[k % outsidePoses.length], px, py, e[2], true);   // floor at the entrance
+          var pose = outsidePoses[k % outsidePoses.length];
+          // §STAFFAGE_FACING: an 'away'-facing pose (shot from behind) reads as approaching/
+          // entering when stepped OUT from the door — she's walking away from the camera, toward
+          // the building. A 'toward'-facing pose (shot face-on) reads backwards if stepped out the
+          // same way (facing the camera = facing away from the door), so it stays right AT the
+          // threshold instead — reads as standing in the doorway, facing out.
+          var stepOut = pose.facing === 'toward' ? 0.3 : 1.6;
+          var px = e[0] + ((e[0] - cx) / ol) * stepOut + (-(e[1] - cy) / ol) * lat;
+          var py = e[1] + ((e[1] - cy) / ol) * stepOut + ((e[0] - cx) / ol) * lat;
+          _placeAt(pose, px, py, e[2], true);   // floor at the entrance
           placedP++;
         }
         pSrc += '+entrance';
       } else {
         for (var k2 = 0; k2 < no; k2++) {
-          var pa = (k2 / no) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
-          _placeAt(outsidePoses[k2 % outsidePoses.length], cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ, true);
+          var pa = (k2 / no) * Math.PI * 2 + 0.9, pose2 = outsidePoses[k2 % outsidePoses.length];
+          var prad = silR(pa) + (pose2.facing === 'toward' ? 0.6 : 2.5);   // same §STAFFAGE_FACING logic, no door to anchor to
+          _placeAt(pose2, cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ, true);
           placedP++;
         }
         pSrc += '+silhouette';
