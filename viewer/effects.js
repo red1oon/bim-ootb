@@ -152,6 +152,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // nothing hardcoded, general to any building (the hard constraint repeated throughout this spec).
   var _photoStaffage = null;          // THREE.Group of all staffage sprites
   var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
+  var _staffageGroundY = null;        // three-space y of the RENDERED ground plane — feet anchor here
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
@@ -684,6 +685,11 @@ async function setupEffects(A, renderer, scene, camera) {
     var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5, depthWrite: true }));
     spr.center.set(0.5, 0);                 // anchor bottom-centre → the figure stands on the ground
     spr.position.copy(threePos);
+    // §PHOTO_STAFFAGE_GROUNDY (user: "everybody is ~1 foot underground"): feet Z derived from
+    // bbox.zMin / furniture-bottom doesn't match the RENDERED ground plane (which sits at
+    // _calcGroundY's ground-floor-slab level, ~0.3m higher). Snap every figure's feet to the actual
+    // ground plane the user sees, so nobody sinks. Ground-floor placement, so this is the right floor.
+    if (_staffageGroundY != null) spr.position.y = _staffageGroundY;
     function _size() {
       var img = tex.image;
       var aspect = (img && img.width && img.height) ? (img.width / img.height) : 0.5;
@@ -721,6 +727,10 @@ async function setupEffects(A, renderer, scene, camera) {
     var cx = (bbox.xMin + bbox.xMax) / 2, cy = (bbox.yMin + bbox.yMax) / 2;
     var w = bbox.xMax - bbox.xMin, d = bbox.yMax - bbox.yMin, groundZ = bbox.zMin;
     var hx = (w / 2) || 1, hy = (d / 2) || 1, envelope = Math.max(w, d, 30);
+    // Anchor feet to the RENDERED ground plane (same level _calcGroundY gives A.ground), not the raw
+    // bbox.zMin — otherwise everyone sinks ~1ft below the visible floor (user-reported).
+    if (A._calcGroundY) A._calcGroundY();
+    _staffageGroundY = (A.ground && typeof A.ground.position.y === 'number') ? A.ground.position.y : A.ifc2three(0, 0, groundZ).y;
     if (!_photoStaffage) _photoStaffage = new THREE.Group();
     function _cnt(sql) { try { var r = A.dbQuery(sql); return (r && r.length) ? (r[0][0] || 0) : 0; } catch (e) { return 0; } }
     var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%')");
