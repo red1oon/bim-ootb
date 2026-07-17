@@ -4,6 +4,43 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.20.0](https://github.com/red1oon/bim-ootb/compare/v1.19.0...v1.20.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **time-machine:** re-accumulate Alt+G N8AO after ~300ms hold (polish held frame) ([#837](https://github.com/red1oon/bim-ootb/issues/837)) ([ac96aad](https://github.com/red1oon/bim-ootb/commit/ac96aad114b23e4b24b5714c11d9621f99ecbf55))
+* **viewer:** §THIN-GRAPH-RECURE — one ✈ press self-cures stale compiled rooms ([#834](https://github.com/red1oon/bim-ootb/issues/834)) ([d7f5939](https://github.com/red1oon/bim-ootb/commit/d7f59392a1df578d70e1d0f25ae246f575d7c0ab))
+* **viewer:** Alt+C for Cinema Orbit, add to Help palette, panel clicks soft-cancel not full-cancel ([#831](https://github.com/red1oon/bim-ootb/issues/831)) ([5c5f79a](https://github.com/red1oon/bim-ootb/commit/5c5f79a6b891d282efef4dbdc89b59dcd61e40a8))
+* **viewer:** dramatic whole-ground reflectivity preset on tune HUD open ([#824](https://github.com/red1oon/bim-ootb/issues/824)) ([d8d64a8](https://github.com/red1oon/bim-ootb/commit/d8d64a81b0cbdb9af6311f39613e572c180d7f2c))
+* **viewer:** Fly tour round 6 — corridor-spine itinerary, type dedupe, per-storey budget, real stair-flight climbs ([#815](https://github.com/red1oon/bim-ootb/issues/815)) ([531c1f1](https://github.com/red1oon/bim-ootb/commit/531c1f10669a23c83fb49508337c33db208b2b83))
+* **viewer:** ground reflectivity sliders on the SSGI tune HUD ([#821](https://github.com/red1oon/bim-ootb/issues/821)) ([7eaef4d](https://github.com/red1oon/bim-ootb/commit/7eaef4de06c703966f4d615d7256255566c6843d))
+* **viewer:** live SSGI tuning HUD for Alt+J, replaces blind guess/deploy cycles ([#818](https://github.com/red1oon/bim-ootb/issues/818)) ([a2c8dcc](https://github.com/red1oon/bim-ootb/commit/a2c8dcc91e0648a2b9285a4870a7befce4fa6b90))
+* **viewer:** metal-strength dial drives full-surface puddle wetness, HUD close button ([#826](https://github.com/red1oon/bim-ootb/issues/826)) ([41b30c9](https://github.com/red1oon/bim-ootb/commit/41b30c9232e9110099b53b41772fd4bc817faac7))
+* **viewer:** split tune HUD into Light/Noise groups, add denoiseKernel + ground metalness ([#822](https://github.com/red1oon/bim-ootb/issues/822)) ([b9b38a7](https://github.com/red1oon/bim-ootb/commit/b9b38a7f9b3442671c9ba5465e02b30df4eeaef4))
+
+
+### 🐛 Fixes
+
+* **viewer:** §MAJORITY-LEGAL tour gate — reject routes whose chords are mostly wall-illegal ([#835](https://github.com/red1oon/bim-ootb/issues/835)) ([2d57051](https://github.com/red1oon/bim-ootb/commit/2d57051a9bc7e2adf4496920f51d33e6a2a2fefd))
+* **viewer:** §PATCH-FRAME-GUARD — never trust room patches from another building/frame ([#833](https://github.com/red1oon/bim-ootb/issues/833)) ([f409f8a](https://github.com/red1oon/bim-ootb/commit/f409f8a8fefa6016bd9e95405b1deee56264835a))
+* **viewer:** contain ground reflectivity to S+J only, mid-value default, rename dial to 'reflect' ([#827](https://github.com/red1oon/bim-ootb/issues/827)) ([1e10405](https://github.com/red1oon/bim-ootb/commit/1e104058fc08a0739da3c097ea7d5bc3ac35ea61))
+* **viewer:** default Alt+S back to AO-only fold, SSGI stays opt-in via Alt+J ([#817](https://github.com/red1oon/bim-ootb/issues/817)) ([ed9b693](https://github.com/red1oon/bim-ootb/commit/ed9b693bd630577fd4af34f1c7313d5d034b698f))
+* **viewer:** Find-panel select hang on large buildings — shader in material.userData made every clone JSON-serialize GLSL+textures ([#811](https://github.com/red1oon/bim-ootb/issues/811)) ([e94944e](https://github.com/red1oon/bim-ootb/commit/e94944e747cfa35238a51bf2bba3bfd6704537da))
+* **viewer:** ground metallic is a permanent base, not tied to Alt+J on/off ([#825](https://github.com/red1oon/bim-ootb/issues/825)) ([ce629cb](https://github.com/red1oon/bim-ootb/commit/ce629cb42604e4cd8b929394a26dee1b9079779f))
+* **viewer:** ground-wetness default was gated behind the staging refire-skip guard ([#830](https://github.com/red1oon/bim-ootb/issues/830)) ([a9f05d2](https://github.com/red1oon/bim-ootb/commit/a9f05d2c22801424a7b025b81039b4ff86c0c843))
+* **viewer:** single-item pick always gets x-ray-dim, cheap filter only for multi-select ([#819](https://github.com/red1oon/bim-ootb/issues/819)) ([ca65ddd](https://github.com/red1oon/bim-ootb/commit/ca65dddf386c4470255b31bc6d6b0151551d7c32))
+* **viewer:** SSGI still-fold ghosting — camera-pose guard + SVGF hard-reset ([#816](https://github.com/red1oon/bim-ootb/issues/816)) ([7c2ba07](https://github.com/red1oon/bim-ootb/commit/7c2ba07c3a5d2339b3162a5c6a8d4bf887174271))
+* **viewer:** stop full-DB IDB export on observational kernel ops (ELEMENT_PICK/BUILDING_OPEN) ([#808](https://github.com/red1oon/bim-ootb/issues/808)) ([4c0f4a0](https://github.com/red1oon/bim-ootb/commit/4c0f4a06fd3adb65ce71a7484152faad774a86c6))
+* **viewer:** tune HUD wasn't showing — stale guard from the disabled auto still-fold ([#820](https://github.com/red1oon/bim-ootb/issues/820)) ([f09ec7a](https://github.com/red1oon/bim-ootb/commit/f09ec7af6d3af0cd344af06dd73b62f9528c7826))
+* **viewer:** wetness now boosts metalness too, tune panel no longer leaks into Alt+S teardown ([#828](https://github.com/red1oon/bim-ootb/issues/828)) ([c04ece3](https://github.com/red1oon/bim-ootb/commit/c04ece30a6a5669248016401aa691d1ea538da07))
+* **viewer:** x-ray-dim gate keys on zoom (opts.frame), not selection count ([#823](https://github.com/red1oon/bim-ootb/issues/823)) ([3ef24c5](https://github.com/red1oon/bim-ootb/commit/3ef24c569e6482060dfcc9fa2ae26b988570ddeb))
+
+
+### 📝 Documentation
+
+* **viewer:** fix stale comment describing a reverted permanent-metallic-ground design ([#829](https://github.com/red1oon/bim-ootb/issues/829)) ([afe91a1](https://github.com/red1oon/bim-ootb/commit/afe91a1438baccf8de73bf555b77e18aaf3e56ad))
+
 ## [1.19.0](https://github.com/red1oon/bim-ootb/compare/v1.18.0...v1.19.0) (2026-07-16)
 
 
