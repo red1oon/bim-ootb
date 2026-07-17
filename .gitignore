@@ -19,6 +19,11 @@
 !modeller/mep_rw.db
 !modeller/Ifc4_Revit_extracted.db
 *.bin
+# Exception: small, permanent, hand-vendored staffage prop asset (32KB, real geometry extracted
+# from BimWhale_Advanced — see viewer/textures/staffage/props/NOTICE.txt) — NOT a regenerated
+# per-building positions/geometry cache like the rest of *.bin, same tracked-asset standing as the
+# PNG cutouts it sits next to.
+!viewer/textures/staffage/props/*.bin
 node_modules/
 test-results/
 *.log

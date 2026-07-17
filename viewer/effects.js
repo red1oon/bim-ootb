@@ -192,6 +192,34 @@ async function setupEffects(A, renderer, scene, camera) {
     { file: 'trees/tree_beech.png',          h: 7.0,  pad: 0.043 },
     { file: 'trees/tree_linden_city.png',    h: 8.0,  pad: 0.038 }
   ];
+  // §STAFFAGE_CAR_MESH (2026-07-18, user: "we wana use the car IFCs already in our project"): a
+  // real vehicle mesh — NOT a sourced cutout photo — extracted once from BimWhale_Advanced's own
+  // real IFC geometry (component_geometries, geometry_hash 8c0e2517038456a4, a real "M_RPC Beetle"
+  // instance) and vendored as a small binary (props/car_beetle.bin). See that file's NOTICE.txt for
+  // full provenance. Local/object-space geometry (confirmed: two different guids in the source
+  // building share this exact hash with different center_x/y/z — proves the mesh is placement-
+  // independent, the same shared-geometry+per-instance-transform pattern streaming.js already uses,
+  // just reused ACROSS buildings here instead of within one). Real bbox ~2.42 x 3.93 x 1.51m.
+  var _CAR_BIN_URL = _STAFFAGE_BASE + 'props/car_beetle.bin';
+  var _carGeometry = null, _carGeometryPromise = null;
+  function _loadCarGeometry() {
+    if (_carGeometry) return Promise.resolve(_carGeometry);
+    if (_carGeometryPromise) return _carGeometryPromise;
+    _carGeometryPromise = fetch(_CAR_BIN_URL).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+      var dv = new DataView(buf);
+      var vCount = dv.getUint32(0, true), iCount = dv.getUint32(4, true);
+      var verts = new Float32Array(buf, 8, vCount * 3);
+      var idx = new Uint32Array(buf, 8 + vCount * 3 * 4, iCount);
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      geo.computeVertexNormals();
+      _carGeometry = geo;
+      console.log('§STAFFAGE_CAR_MESH loaded verts=' + vCount + ' tris=' + (iCount / 3));
+      return geo;
+    }).catch(function(e) { console.warn('§STAFFAGE_CAR_MESH_FAIL ' + e.message); return null; });
+    return _carGeometryPromise;
+  }
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
   var PHOTO_FACADE_DIM_FRACTION = 0.3;  // non-facing facades still lit, just weaker — not pitch dark
@@ -837,7 +865,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // there — double population.
     var realPeople = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Male%' OR element_name LIKE 'RPC Female%' OR element_name LIKE 'M_RPC Male%' OR element_name LIKE 'M_RPC Female%')");
     var realTrees = _cnt("SELECT COUNT(*) FROM elements_meta WHERE lower(element_name) LIKE '%tree%'");
-    var placedP = 0, placedT = 0, pSrc = 'none';
+    var realCars = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Beetle%' OR element_name LIKE 'M_RPC Beetle%')");
+    var placedP = 0, placedT = 0, placedC = 0, pSrc = 'none';
     _realPeopleExist = realPeople > 0;
 
     // §PHOTO_STAFFAGE_SILHOUETTE (user: "the building has walls you can easily measure instead of
@@ -949,14 +978,63 @@ async function setupEffects(A, renderer, scene, camera) {
         placedT++;
       }
     }
+    // §STAFFAGE_CAR_MESH: place ONE real car mesh near a ground-floor exterior door when this
+    // building has no real vehicle of its own — same real-data-first discipline as people/trees
+    // above, just reusing the project's OWN real extracted geometry instead of a photo cutout. A
+    // genuine THREE.Mesh (not a billboard), so it casts/receives real shadows like any other solid.
+    if (realCars === 0) {
+      var carDoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
+      var carExt = [];
+      for (var cdi = 0; cdi < carDoors.length; cdi++) {
+        var cd = carDoors[cdi], cdx = cd[0] - cx, cdy = cd[1] - cy, cdr = Math.hypot(cdx, cdy);
+        if (cdr >= silR(Math.atan2(cdy, cdx)) - 3.0) carExt.push(cd);
+      }
+      var carX, carY, carZ, carAngle;
+      if (carExt.length) {
+        carExt.sort(function(a, b) { return a[2] - b[2]; });   // ground floor first
+        var carSpot = carExt[0];
+        var col = Math.hypot(carSpot[0] - cx, carSpot[1] - cy) || 1;
+        var nrmX = (carSpot[0] - cx) / col, nrmY = (carSpot[1] - cy) / col;
+        // Stepped out further than entrance figures (a car needs more clearance) AND offset
+        // sideways so it reads as parked near, not blocking, the doorway.
+        carX = carSpot[0] + nrmX * 5.5 + (-nrmY) * 3.0;
+        carY = carSpot[1] + nrmY * 5.5 + (nrmX) * 3.0;
+        carZ = carSpot[2];
+        carAngle = Math.atan2(nrmX, nrmY);   // tangent to the radial-out direction — parked
+                                              // alongside the building, not nose-first into the wall
+      } else {
+        carAngle = 0.6;
+        carX = cx + Math.cos(carAngle) * (silR(carAngle) + 5.5);
+        carY = cy + Math.sin(carAngle) * (silR(carAngle) + 5.5);
+        carZ = groundZ;
+      }
+      (function(cx2, cy2, cz2, angle) {
+        _loadCarGeometry().then(function(geo) {
+          if (!geo || !_photoStaffage) return;
+          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15 });
+          var mesh = new THREE.Mesh(geo, mat);
+          var pos = A.ifc2three(cx2, cy2, cz2);
+          pos.y = _floorThreeY(cx2, cy2, cz2);
+          mesh.position.copy(pos);
+          mesh.rotation.y = angle;
+          mesh.castShadow = true; mesh.receiveShadow = true;
+          _photoStaffage.add(mesh);
+          placedC++;
+          _photoStaffage.userData.counts = { people: placedP, trees: placedT, cars: placedC };
+          console.log('§STAFFAGE_CAR_MESH placed at ifc=(' + cx2.toFixed(1) + ',' + cy2.toFixed(1) + ',' + cz2.toFixed(1) + ') angle=' + angle.toFixed(2));
+          if (A.markDirty) A.markDirty();
+        });
+      })(carX, carY, carZ, carAngle);
+      pSrc += '+car';
+    }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
-    _photoStaffage.userData.counts = { people: placedP, trees: placedT };
+    _photoStaffage.userData.counts = { people: placedP, trees: placedT, cars: placedC };
     // §-witness the feet-on-ground invariant IN the log (readable from any real session's console,
     // no browser needed): every sprite's feet Y minus the rendered ground Y — must be 0,0.
     var _fMin = Infinity, _fMax = -Infinity;
     _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ')');
+    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ' carPending=' + (realCars === 0 ? 1 : 0) + ')');
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
@@ -1154,7 +1232,8 @@ async function setupEffects(A, renderer, scene, camera) {
     var run = function() {
       try {
         _STAFFAGE_PEOPLE.concat(_STAFFAGE_TREES).forEach(function(e) { _staffageTex(e.file); });
-        console.log('§PHOTO_STAFFAGE_PRELOAD warming ' + (_STAFFAGE_PEOPLE.length + _STAFFAGE_TREES.length) + ' cutouts');
+        _loadCarGeometry();
+        console.log('§PHOTO_STAFFAGE_PRELOAD warming ' + (_STAFFAGE_PEOPLE.length + _STAFFAGE_TREES.length) + ' cutouts + car mesh');
       } catch (e) { /* THREE not ready / offline — first Alt+P will load them then */ }
     };
     if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
