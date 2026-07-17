@@ -182,9 +182,22 @@
     return out;
   }
 
+  // §RESTROOM-CLASS (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md — restroom shell hue, 2026-07-17): a wet
+  // sanitary room (toilet/WC/bathroom/washroom) gets its own shell color, no longer collapsed into
+  // 'habitable'. Deterministic, non-invent: token match on the room's ALREADY-REAL type/name fields
+  // (the caller passes g.label = object_type+predefined_type+name joined — same widened-field signal
+  // spaceHabitable/utility use; never a fabricated label). Keyword set is drawn from real IFC space
+  // naming (Duplex object_type='Bathroom 1/2'; public buildings use Toilet/WC/Restroom/Lavatory).
+  // Word-boundary anchored so 'wc'/'bath' don't match inside unrelated words.
+  var RESTROOM_RE = /(^|[^a-z])(toilet|rest\s*room|restroom|water\s*closet|wc|lavatory|washroom|bathroom|bath|powder\s*room|en-?suite|ensuite)([^a-z]|$)/i;
+  function classifyRestroom(label) {
+    if (!label) return false;
+    return RESTROOM_RE.test(String(label));
+  }
+
   var API = { spaceHabitable: spaceHabitable, NONHAB_TYPES: NONHAB_TYPES,
     envelopeFromTransforms: envelopeFromTransforms, utilityContentClass: utilityContentClass,
-    classifyUtilityRooms: classifyUtilityRooms };
+    classifyUtilityRooms: classifyUtilityRooms, classifyRestroom: classifyRestroom };
   ROOT.RoomHabitability = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

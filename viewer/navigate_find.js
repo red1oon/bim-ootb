@@ -1975,6 +1975,7 @@
     var ROOM_CATEGORY_COLORS = {
       habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
       corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
+      restroom: { fill: 0x6d4c41, wire: 0xbcaaa4 },   // §RESTROOM-CLASS: wet sanitary room = brown (Material brown 600/200)
       utilities: { fill: 0x212121, wire: 0x5a5a5a }
     };
     function _categoryColor(category) {
@@ -2236,10 +2237,11 @@
         // room, for the room-shell FILL COLOR (not the Type-tree list — that's computed
         // independently in _buildRoomTree(), same underlying signals, deliberately not unified
         // into one shared cache yet — a follow-up cleanup, not a correctness issue, since both call
-        // the SAME deterministic classifiers on the SAME data and can never disagree). Only
-        // 'corridor'/'utilities' get a distinct shell color; every other real room (including a
-        // Restroom) stays 'habitable' — Restrooms are real occupiable space, just a richer Type-tree
-        // sub-category, not a separate shell hue.
+        // the SAME deterministic classifiers on the SAME data and can never disagree).
+        // 'corridor'/'restroom'/'utilities' each get a distinct shell color; every other real room
+        // stays 'habitable'. §RESTROOM-CLASS (2026-07-17): a wet sanitary room (toilet/WC/bathroom)
+        // is now its OWN brown hue — it reads as a different KIND of space from a living room at a
+        // glance, matching the richer Type-tree sub-category it always carried.
         var corridorLabelsShell = _corridorLabelsFor();
         // §UTILITY-CONTENT-BATCH (2026-07-15, real perf fix — see room_habitability.js's own
         // comment for the Hospital hang this replaces): ONE batched classification call for every
@@ -2266,7 +2268,10 @@
             }
           }
           var category = 'habitable';
+          // §RESTROOM-CLASS: corridor first (a corridor is never a restroom), then restroom (a
+          // specific labelled wet room), then the generic utility/void signal — most-specific wins.
           if (corridorLabelsShell[lg]) category = 'corridor';
+          else if (RH && RH.classifyRestroom && RH.classifyRestroom(g.label)) category = 'restroom';
           else if (utilityShellGuids[lg]) category = 'utilities';
           g.rects.forEach(function(rc) {
             var c = A.ifc2three(rc.cx, rc.cy, rc.cz);
@@ -2358,7 +2363,8 @@
         catCounts[v.category] = (catCounts[v.category] || 0) + 1;
       });
       console.log('[RP-TA] §ROOM_LENS_CATEGORY habitable=' + (catCounts.habitable || 0) +
-        ' corridor=' + (catCounts.corridor || 0) + ' utilities=' + (catCounts.utilities || 0));
+        ' corridor=' + (catCounts.corridor || 0) + ' restroom=' + (catCounts.restroom || 0) +
+        ' utilities=' + (catCounts.utilities || 0));
       if (A.markDirty) A.markDirty();
       console.log('[RP-TA] §ROOM_LENS mode=shell rooms=' + Object.keys(rooms).length +
         ' shells=' + _roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
