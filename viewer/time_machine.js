@@ -2083,18 +2083,27 @@
 
   // Entry point — wired to the "Export Movie" button (see buildPanel below).
   async function tmStartMovieExport() {
+    console.log('§TM_EXPORT click');  // §LOG_MANDATE: every entry, even a bail, must leave a console trace —
+                                       // viewerStatus() is DOM-only (see its own definition), never console.log's
     var app = A();
     if (!app || !app.camera || !app.controls || !app.renderer || typeof app.startStillRefine !== 'function') {
+      console.log('§TM_EXPORT_ABORT reason=pipeline-unavailable app=' + !!app + ' camera=' + !!(app && app.camera) +
+        ' controls=' + !!(app && app.controls) + ' renderer=' + !!(app && app.renderer) +
+        ' startStillRefine=' + !!(app && typeof app.startStillRefine === 'function'));
       viewerStatus('Export unavailable — still-refine pipeline not loaded');
       return;
     }
-    if (app._tmExportActive) return;  // already running
+    if (app._tmExportActive) { console.log('§TM_EXPORT_ABORT reason=already-active'); return; }
     await _ensureStoryboard();
     // §S260d progressive build: computeStoryboard() returns only the first ~500-op chunk
     // immediately and finishes the rest via background rAF chunks (_bgBuildRaf) — export needs the
     // FULL storyboard, not a partial one, so wait for the background builder to finish.
     while (_bgBuildRaf) { await new Promise(function(r) { setTimeout(r, 200); }); }
-    if (!_cineStoryboard.length) { viewerStatus('Export: no scenes — load a building first'); return; }
+    if (!_cineStoryboard.length) {
+      console.log('§TM_EXPORT_ABORT reason=no-scenes ops=' + _ops.length);
+      viewerStatus('Export: no scenes — load a building first');
+      return;
+    }
 
     await tmExportClear();
     _tmExportCancelled = false;
