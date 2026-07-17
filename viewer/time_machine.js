@@ -4105,4 +4105,15 @@
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. Returns its boolean (count>0 / false); callers cache.
   window.tmGenerateTimeline = function() { return injectGantt(); };
+
+  // §TM_STREAM_RESWEEP: streaming.js has no awareness of Time Machine — new BatchedMesh/
+  // InstancedMesh geometry that finishes streaming in AFTER the current cursor's renderAtTime()
+  // pass defaults to its normal (fully-visible) state and is never swept to match the active
+  // cursor until the NEXT cursor change. On a large building (Hospital: 63K elements) streaming
+  // can take 10s+ seconds, so a user sitting at 0Hr (cursor never moves) sees the scene fill back
+  // up with fully-visible late-arriving geometry that should still be hidden. Confirmed present
+  // on baseline `a13bb0d` too (pre-dates this session — not a regression, a longstanding gap).
+  // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
+  // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
+  window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
 })();
