@@ -20,6 +20,7 @@
   function A() { return window.APP || window.A; }
 
   var _active = false;
+  var _tmEnabledGI = false;   // §TM_GI_AUTO: did TM itself switch Alt+G on? (→ TM switches it off on close)
   var _panel = null;
   var _mode = 'DAY';
   var _ops = [];          // all ops sorted by start_ts
@@ -3712,6 +3713,18 @@
   function _finishActivate(app) {
     _active = true;
     app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
+    // §TM_GI_AUTO (2026-07-17): auto-engage the Alt+G N8AO ambient-occlusion composer so every
+    // Time Machine playback gets contact-shadow grounding without a manual Alt+G press. renderAtTime
+    // runs it single-pass (see §TM_GI_RENDER) to fit TM's one-frame-then-park render gate. Only flip
+    // it if it wasn't ALREADY on — if the user engaged Alt+G themselves, leave it on when TM closes;
+    // deactivate() only auto-offs the instances TM itself switched on. No-op on mobile
+    // (toggleGIPreview is a no-op there) and harmless if the GI POC failed to load.
+    _tmEnabledGI = false;
+    if (!app._giComposerActive && typeof app.toggleGIPreview === 'function') {
+      _tmEnabledGI = true;
+      try { Promise.resolve(app.toggleGIPreview(true)).then(function (ok) { console.log('§TM_GI_AUTO enabled=' + !!ok); }); }
+      catch (e) { console.warn('§TM_GI_AUTO fail ' + e.message); _tmEnabledGI = false; }
+    }
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
@@ -3782,6 +3795,13 @@
     // Time Machine regains its multi-frame accumulation quality. Reset the once-per-session log latch too.
     if (app && app._giN8aoPass && app._giN8aoPass.configuration) app._giN8aoPass.configuration.accumulate = true;
     renderAtTime._giLogged = false;
+    // §TM_GI_AUTO off: only switch Alt+G off if TM itself turned it on — a user who engaged Alt+G
+    // manually before/independently of TM keeps it on. Order matters: restore accumulate=true FIRST
+    // (above) so the composer is already back in converged mode if it stays on for the manual case.
+    if (_tmEnabledGI && app && app._giComposerActive && typeof app.toggleGIPreview === 'function') {
+      try { app.toggleGIPreview(false); console.log('§TM_GI_AUTO off (TM-owned)'); } catch (e) {}
+    }
+    _tmEnabledGI = false;
     _active = false;
     if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
