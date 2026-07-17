@@ -473,8 +473,6 @@
 
   var _zeroMatrix = null; // lazy init
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
-  var _tmEdgeGeo = null;  // §S260f: shared 3m EdgesGeometry for frontier boxes
-  var _tmEdgeYellow = null; // §S280: shared bright yellow material for frontier cubes
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
@@ -824,17 +822,11 @@
                 _frontierPositions.push(_bmPos.clone());
                 _guidPosMap[bg] = _bmPos.clone();
               }
-              // §S260f: Edge box at frontier position — 3m, cyan/orange, depthTest:false
-              // §S260f: Shared geometry + shared materials — no allocation per tick
-              // §S280: Frontier cubes on ALL platforms (mobile + desktop) — bright yellow
-              if (!_tmEdgeGeo) _tmEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(3, 3, 3));
-              if (!_tmEdgeYellow) _tmEdgeYellow = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
-              var _el = new THREE.LineSegments(_tmEdgeGeo, _tmEdgeYellow);
-              _el.position.copy(_bmPos);
-              _el.renderOrder = 10;
-              _el.userData._isTmFrontier = true;
-              app.scene.add(_el);
-              _outlineMeshes.push(_el);
+              // §YELLOW_BOX_RETIRED (2026-07-18, user: "bleed badly for Hospital") — the
+              // depthTest:false edge box shone through walls/floors it should have been hidden
+              // behind, reading as a bug not a feature on real buildings. Position tracking above
+              // (camFollow/_frontierPositions/_guidPosMap) is unrelated and stays; only the
+              // visible marker itself is removed.
             } else if (_camFollow && _previewGuids && _previewGuids[bg]) {
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
@@ -3785,18 +3777,15 @@
   function _finishActivate(app) {
     _active = true;
     app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
-    // §TM_GI_AUTO (2026-07-17): auto-engage the Alt+G N8AO ambient-occlusion composer so every
-    // Time Machine playback gets contact-shadow grounding without a manual Alt+G press. renderAtTime
-    // runs it single-pass (see §TM_GI_RENDER) to fit TM's one-frame-then-park render gate. Only flip
-    // it if it wasn't ALREADY on — if the user engaged Alt+G themselves, leave it on when TM closes;
-    // deactivate() only auto-offs the instances TM itself switched on. No-op on mobile
-    // (toggleGIPreview is a no-op there) and harmless if the GI POC failed to load.
+    // §TM_GI_AUTO RETIRED (2026-07-18, user: "its up to user to turn Shadow, G and audio"):
+    // was auto-engaging Alt+G N8AO on every TM open with no opt-out — the one auto-forced effect
+    // among Shadow/GI/Audio (the other two were already correctly user-choice-only, see
+    // §TM_SUN_INHERIT/§TM_SHADOW_INHERIT below — "Don't force sun cycle — respect user's
+    // shadow/sky choice"). Alt+G is now consistent with that: purely a manual keypress, same as
+    // before #836 ever existed. _tmEnabledGI/the matching deactivate() auto-off stay defined
+    // (now permanently false/no-op) rather than ripped out — a manual Alt+G press during TM still
+    // needs deactivate() to leave it alone exactly like it already does for shadow/sky.
     _tmEnabledGI = false;
-    if (!app._giComposerActive && typeof app.toggleGIPreview === 'function') {
-      _tmEnabledGI = true;
-      try { Promise.resolve(app.toggleGIPreview(true)).then(function (ok) { console.log('§TM_GI_AUTO enabled=' + !!ok); }); }
-      catch (e) { console.warn('§TM_GI_AUTO fail ' + e.message); _tmEnabledGI = false; }
-    }
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
