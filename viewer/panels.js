@@ -32,6 +32,9 @@ var ICONS = {
   box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+X', desc: 'Bounding Boxes' },
   camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
   video:     { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>', trl: 'ui_tt_cinema', key: null, desc: 'Cinema Orbit' },
+  // §CINEMA_ROW_ICONS (2026-07-18, user ask): Lucide, pulled verbatim (unpkg.com/lucide-static@1.25.0)
+  aperture:  { svg: '<circle cx="12" cy="12" r="10" /><path d="m14.31 8 5.74 9.94" /><path d="M9.69 8h11.48" /><path d="m7.38 12 5.74-9.94" /><path d="M9.69 16 3.95 6.06" /><path d="M14.31 16H2.83" /><path d="m16.62 12-5.74 9.94" />', trl: null, key: 'Alt+S', desc: 'Still Refine' },
+  footprints:{ svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /><path d="M16 17h4" /><path d="M4 13h4" />', trl: null, key: 'Alt+P', desc: 'Populate' },
   // PILL_DRAWER_REORGANIZATION.md §NEW ICONS — Lucide, pulled verbatim 2026-07-05 (unpkg.com/lucide-static)
   bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
   hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
@@ -388,32 +391,50 @@ function setupPanels(A) {
     sepCinema.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
     existing.appendChild(sepCinema);
 
-    // §CINEMA_ORBIT row: camcorder icon — click to record the 360 orbit clip (effects.js
-    // A.startCinemaOrbit). Label swaps to "Recording..." for the ~24s duration, disabled meanwhile.
+    // §CINEMA_ROW_ICONS (2026-07-18, user ask): Still Refine (Alt+S) / Populate (Alt+P) / Cinema
+    // Orbit (Alt+C) — one icon-only row, no label text (dropped "Cinema Orbit (24s)" so all 3 fit
+    // on a single line). Was 1 button + text; now 3 buttons, active-state highlighted via the
+    // existing .bim-slider-row button.active CSS rule (viewer.html).
     var cinemaRow = document.createElement('div');
     cinemaRow.className = 'bim-slider-row';
-    cinemaRow.style.cssText = 'cursor:pointer;gap:8px;align-items:center';
-    var cinemaBtn = A.icon('video', { size: 18 });
-    cinemaRow.appendChild(cinemaBtn);
-    var cinemaLabel = document.createElement('span');
-    cinemaLabel.textContent = 'Cinema Orbit (24s)';
-    cinemaLabel.style.cssText = 'font-size:12px;opacity:0.85';
-    cinemaRow.appendChild(cinemaLabel);
-    cinemaRow.addEventListener('pointerup', function(e) {
-      e.stopPropagation();
+    cinemaRow.style.cssText = 'gap:8px;align-items:center;justify-content:center';
+
+    function _refreshCinemaRowIcons() {
+      stillBtn.classList.toggle('active', !!A._stillRefineActive);
+      populateBtn.classList.toggle('active', !!(A.populateActive && A.populateActive()));
+    }
+
+    var stillBtn = A.icon('aperture', { size: 18, title: 'Still Refine (Alt+S)', onClick: function() {
+      if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(stillBtn);
+
+    var populateBtn = A.icon('footprints', { size: 18, title: 'Populate (Alt+P)', onClick: function() {
+      if (typeof A.togglePopulate === 'function') A.togglePopulate();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(populateBtn);
+
+    var cinemaBtn = A.icon('video', { size: 18, title: 'Cinema Orbit (Alt+C)', onClick: function() {
       if (typeof A.startCinemaOrbit !== 'function') return;
       if (A._stillRefineActive) { console.log('§CINEMA_ORBIT skip — still-refine/cinema already active'); return; }
-      cinemaLabel.textContent = 'Recording…';
-      cinemaRow.style.opacity = '0.6'; cinemaRow.style.pointerEvents = 'none';
+      cinemaBtn.classList.add('active'); cinemaBtn.style.pointerEvents = 'none';
       A.startCinemaOrbit();
       var _checkDone = setInterval(function() {
         if (A._stillRefineActive) return;
         clearInterval(_checkDone);
-        cinemaLabel.textContent = 'Cinema Orbit (24s)';
-        cinemaRow.style.opacity = ''; cinemaRow.style.pointerEvents = '';
+        cinemaBtn.classList.remove('active'); cinemaBtn.style.pointerEvents = '';
+        _refreshCinemaRowIcons();
       }, 500);
-    });
+    }});
+    cinemaRow.appendChild(cinemaBtn);
     existing.appendChild(cinemaRow);
+
+    // Keep icon highlight honest against the Alt+S/Alt+P keyboard shortcuts too, not just this
+    // row's own clicks — cheap poll (same 500ms cadence as the cinema-done check above), only
+    // while the panel is actually visible.
+    setInterval(function() { if (existing.style.display !== 'none') _refreshCinemaRowIcons(); }, 500);
 
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);
@@ -1631,8 +1652,11 @@ function setupPanels(A) {
       };
     }
 
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report', 'fly']);
+    // §FLY_TO_NAVIGATE (2026-07-18, user ask): Fly Tour is camera navigation, not inspection — moved
+    // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
+    // this only changes which drawer lists it.
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at

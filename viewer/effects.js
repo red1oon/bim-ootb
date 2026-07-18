@@ -1431,6 +1431,9 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A.markDirty) A.markDirty();
     console.log('§PHOTO_POPULATE press bld=' + A.activeBuilding + ' firstEver=' + firstEver);
   };
+  // §CINEMA_ROW_ICONS: exposes _populateOn for the Palette panel's Alt+P icon button active-state
+  // (mirrors A._stillRefineActive, already public — _populateOn wasn't, needed a getter).
+  A.populateActive = function() { return _populateOn; };
   // §PHOTO_STAFFAGE_PRELOAD: measured — placement is 5-29ms; the whole first-time wait is decoding
   // the cutout PNGs (~2-6s). Textures are already cached after first use (and sprite objects reused
   // per building), so the SECOND Alt+P is instant — the only thing left is the FIRST. Warm the cache
