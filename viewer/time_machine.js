@@ -475,6 +475,103 @@
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
+  // §FRONTIER-HALO (2026-07-18): user — "the halo bigger than mesh is a more wow effect... a
+  // shining object is seen, why can't it be?" Not a mesh-conforming outline (that's the retired
+  // §YELLOW_BOX_RETIRED marker — a hard-edged depthTest:false box that "bled badly" through walls
+  // on Hospital). A SOFT radial glow sprite instead: billboarded (always faces camera), sized
+  // larger than the element, additive-blended, depthTest:false so it's deliberately visible
+  // through occluding geometry — reads as an intentional VFX beacon, not a wireframe artifact.
+  // Every frontier element (single mesh, BatchedMesh slot, InstancedMesh instance) passes through
+  // the SAME applyFrontierHalo(pos, color) sub-function each render tick; a small pool of reused
+  // sprites avoids per-tick allocation (renderAtTime runs every playback tick).
+  var _haloTexture = null;   // lazy — shared radial-gradient CanvasTexture
+  var _haloPool = [];        // reused THREE.Sprite objects
+  var _haloActive = 0;       // how many pool entries are visible this tick
+  var _HALO_WORLD_SIZE = 2.2; // m — bigger than a typical element (columns/beams are sub-meter to ~1m)
+  var _haloFrustum = null;   // lazy THREE.Frustum, refreshed once per tick
+  var _haloFrustumMat = null; // lazy THREE.Matrix4 scratch
+
+  // §FRONTIER-HALO color: user — "yellow burn glow turning to reddish brown cool." Maps to the
+  // SAME frontier progress (0=just started, 1=about to finish) already computed per element —
+  // hot metal cooling as it's installed: bright yellow -> orange -> a duller reddish-brown, not a
+  // flat single color. Two-segment lerp (yellow->orange->rust) via THREE.Color (already loaded).
+  var _haloColorHot = null, _haloColorMid = null, _haloColorCool = null, _haloColorScratch = null;
+  function _haloColorFor(t) {
+    if (!_haloColorHot) {
+      _haloColorHot = new THREE.Color(0xffdd44);   // bright yellow — just started
+      _haloColorMid = new THREE.Color(0xff8c00);   // orange — mid-install
+      _haloColorCool = new THREE.Color(0x8b3a1a);  // reddish-brown — about to finish
+      _haloColorScratch = new THREE.Color();
+    }
+    if (t < 0.5) _haloColorScratch.copy(_haloColorHot).lerp(_haloColorMid, t / 0.5);
+    else _haloColorScratch.copy(_haloColorMid).lerp(_haloColorCool, (t - 0.5) / 0.5);
+    return _haloColorScratch.getHex();
+  }
+
+  // §FRONTIER-HALO frustum: user — "those not in frame need not be highlighted." Refresh once per
+  // renderAtTime() tick (cheap — one matrix multiply), test each candidate position before
+  // spawning a sprite for it. Skips culling entirely if no camera is available yet.
+  function _haloRefreshFrustum() {
+    var app = A();
+    if (!app || !app.camera) { _haloFrustum = null; return; }
+    if (!_haloFrustum) { _haloFrustum = new THREE.Frustum(); _haloFrustumMat = new THREE.Matrix4(); }
+    _haloFrustumMat.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+    _haloFrustum.setFromProjectionMatrix(_haloFrustumMat);
+  }
+  function _haloInFrame(pos) { return !_haloFrustum || _haloFrustum.containsPoint(pos); }
+
+  function _haloTex() {
+    if (_haloTexture) return _haloTexture;
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    var ctx = c.getContext('2d');
+    var g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    _haloTexture = new THREE.CanvasTexture(c);
+    return _haloTexture;
+  }
+
+  function _haloSpriteFromPool(idx) {
+    if (_haloPool[idx]) return _haloPool[idx];
+    var mat = new THREE.SpriteMaterial({
+      map: _haloTex(), color: 0xff8c00, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false
+    });
+    var spr = new THREE.Sprite(mat);
+    spr.renderOrder = 11; // above applyHighlight's renderOrder=10
+    spr.scale.setScalar(_HALO_WORLD_SIZE);
+    _haloPool[idx] = spr;
+    return spr;
+  }
+
+  // pos: THREE.Vector3 (world space). t: 0-1 install progress (drives the hot->cool color).
+  // Skips elements outside the current camera frustum — "those not in frame need not be
+  // highlighted." Every frontier element (single mesh / BatchedMesh slot / InstancedMesh
+  // instance) passes through this SAME sub-function each render tick.
+  function applyFrontierHalo(pos, t) {
+    var app = A();
+    if (!app || !app.scene) return;
+    if (!_haloInFrame(pos)) return;
+    var spr = _haloSpriteFromPool(_haloActive);
+    spr.material.color.setHex(_haloColorFor(t));
+    spr.position.copy(pos);
+    if (!spr.parent) app.scene.add(spr);
+    spr.visible = true;
+    _haloActive++;
+  }
+
+  // Call once per renderAtTime() tick: BEFORE the traverse (resets the counter + refreshes the
+  // frustum), then again AFTER all applyFrontierHalo() calls (hides pool sprites left over from a
+  // PREVIOUS tick that had more frontier/in-frame elements than this one).
+  function _haloTickStart() { _haloActive = 0; _haloRefreshFrustum(); }
+  function _haloSweepUnused() {
+    for (var i = _haloActive; i < _haloPool.length; i++) {
+      if (_haloPool[i]) _haloPool[i].visible = false;
+    }
+  }
+
   // §S260d: Audio removed — can't hear on most browsers anyway
 
   // ── Metal sparks + construction smoke (desktop only) ──
@@ -654,6 +751,7 @@
 
     // Restore previously highlighted meshes to solid
     clearHighlight();
+    _haloTickStart();
 
     // Determine which elements to show and their state
     var placed = {};    // guid → true (fully built: end_ts <= cursor)
@@ -776,6 +874,7 @@
             _frontierCentroids.push(swp);
             _frontierPositions.push(swp);
             if (_camFollow) _guidPosMap[g] = swp;
+            applyFrontierHalo(swp, frontier[g].t);
             // §S260d: Sparks removed (white square artifacts)
           } else if (isPlaced || isRecent) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
@@ -818,6 +917,7 @@
               _bmHasFrontier = true;
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
+              applyFrontierHalo(_bmPos, frontier[bg].t);
               if (_camFollow) {
                 _frontierPositions.push(_bmPos.clone());
                 _guidPosMap[bg] = _bmPos.clone();
@@ -861,6 +961,10 @@
           }
         }
 
+        // Instance matrices already encode absolute position (matches BatchedMesh's own
+        // getMatrixAt() convention above — no obj.matrixWorld combine, these meshes sit at
+        // scene origin with matrixAutoUpdate=false per streaming.js).
+        var _imPos = _tmV3;
         for (var mi = 0; mi < metas.length; mi++) {
           var ig = metas[mi].guid;
           if (placed[ig] || frontier[ig] || recent[ig] !== undefined) {
@@ -868,7 +972,13 @@
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
             anyVisible = true;
-            if (frontier[ig]) anyFrontier = true;
+            if (frontier[ig]) {
+              anyFrontier = true;
+              if (_savedInstanceMatrices[meshId][mi]) {
+                _imPos.setFromMatrixPosition(_savedInstanceMatrices[meshId][mi]);
+                applyFrontierHalo(_imPos, frontier[ig].t);
+              }
+            }
           } else {
             obj.setMatrixAt(mi, _zeroMatrix);
           }
@@ -885,6 +995,7 @@
         }
       }
     });
+    _haloSweepUnused();
 
     // ── Shadow promotion pass: nearby placed meshes → castShadow (cap 500) ──
     // §S260b: Only when Sunglass shadow is ON
@@ -3826,6 +3937,7 @@
     stopPlayback();
     clearSparks();
     restoreSky();
+    _haloActive = 0; _haloSweepUnused();  // §FRONTIER-HALO: hide all pooled sprites, TM is off
     _sunCycle = false;
     _camFollow = false;
     _camAngle = 0;
