@@ -41,6 +41,8 @@ const DEFERRED_LIBS = [
 // ever being added here, so they fell through to the default cacheFirst() path: cache miss + a
 // failed real fetch (offline) synthesizes a 503 (see cacheFirst()'s catch below), breaking Alt+P
 // offline even after "Make available offline". Feature-gated like DEFERRED_LIBS, not auto-installed.
+// SOURCE OF TRUTH is effects.js's _STAFFAGE_PEOPLE/_STAFFAGE_TREES — this list must mirror it
+// exactly (see the matching comment there). Add/remove a staffage png in BOTH places, same PR.
 const STAFFAGE_ASSETS = [
   'textures/staffage/people/person_sitting_casual_female.png',
   'textures/staffage/people/person_sitting_formal_male.png',

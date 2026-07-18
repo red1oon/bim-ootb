@@ -158,6 +158,14 @@ async function setupEffects(A, renderer, scene, camera) {
                                        // so _updateInFrameInterior must not double-populate it indoors
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
+  // §STAFFAGE_OFFLINE (2026-07-18): adding/removing a `file:` entry below or in _STAFFAGE_TREES?
+  // Mirror it in viewer/sw.js's STAFFAGE_ASSETS list too. These pngs load via _STAFFAGE_BASE, not
+  // one of sw.js's normal precached paths, so a file only listed here silently falls through to
+  // cacheFirst()'s catch-all — works fine online, synthesizes a 503 when actually offline (the
+  // fetch fails and there's nothing cached to fall back to). This bit the original 12-file ship
+  // (PR #845): the textures existed and worked live, but were never added to sw.js, so offline mode
+  // (and the "Make available offline" button) silently shipped without them. Fixed in
+  // fix/staffage-offline-precache — keep both lists in sync from here on.
   // {file, h(real-world metres)}; width derived from the loaded image's aspect ratio, not hardcoded.
   // role: 'stand' = at entrances; 'sit' = on real furniture (chairs); 'walk' = in circulation
   // (aisles / open floor CLEAR of furniture — a walker standing among chairs reads wrong, user:
