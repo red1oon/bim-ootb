@@ -2796,24 +2796,51 @@
     // The generative pass above already laid every element on the real-start epoch (baseMs).
     // Now patch the covered subset to their exact captured task window + real name, and flag
     // them _captured=1. Uncovered elements keep their generated timing (honest estimate).
+    //
+    // §PLAYBACK-STAGGER (2026-07-19, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md
+    // Item 8): assigning the task's window VERBATIM to every covered element made EVERY floor's
+    // bar for a phase byte-identical — confirmed live (Hospital, all 8 Levels' Superstructure
+    // showed 2026-01-31..2026-03-02) — "the gantt chart bars are the SAME", and during actual
+    // playback the WHOLE phase pops into existence at once instead of an orderly, gradual reveal.
+    // Real per-element Z data already exists (elements[], built above, same array the generative
+    // pass sorts bottom-up) — bucket covered guids by task, sort each bucket bottom-up by cz (same
+    // discipline as the generative pass), and linearly distribute them across the task's OWN
+    // [w.s, w.e] window instead of collapsing them onto it. The phase's overall date range
+    // (editable in the Schedule Author wizard, `tasks.schedule_start/finish`) is UNCHANGED — only
+    // the per-element position WITHIN that window is now real-Z-ordered, not identical.
     _capActive = false; _coveredCount = 0; _coveragePct = 0;
     if (_cap) {
       var _covered = 0;
-      db.run('BEGIN');
-      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
-        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+      var _elByGuid = {};
+      elements.forEach(function(el) { _elByGuid[el.guid] = el; });
+      var _byTask = {};
       var _allOps = db.exec("SELECT output_guid, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
           var g = row[0], tid = _cap.guidTask[g];
           if (!tid) return;                         // uncovered → keep generative timing
-          var w = _cap.win[tid];
-          var p; try { p = JSON.parse(row[1]); } catch(e) { p = {}; }
+          if (!_byTask[tid]) _byTask[tid] = [];
+          _byTask[tid].push({ guid: g, params: row[1], cz: _elByGuid[g] ? _elByGuid[g].cz : 0 });
+        });
+      }
+      db.run('BEGIN');
+      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+      for (var _tid in _byTask) {
+        var w = _cap.win[_tid];
+        var _bucket = _byTask[_tid];
+        _bucket.sort(function(a, b) { return a.cz - b.cz; });   // bottom-up, same discipline as generative pass
+        var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
+        _bucket.forEach(function(item, i) {
+          var s_i = w.s + Math.floor((i / _n) * _span);
+          var e_i = (i + 1 < _n) ? (w.s + Math.floor(((i + 1) / _n) * _span)) : w.e;
+          if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
+          var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
           p.phase = w.name;                         // real task name → shows in mini-Gantt
-          p._end_ts = w.e;                          // real task finish
+          p._end_ts = e_i;
           p._captured = 1;                          // visual distinction + coverage flag
-          p._task = tid;
-          _upd.run([w.s, JSON.stringify(p), g]);    // real task start
+          p._task = _tid;
+          _upd.run([s_i, JSON.stringify(p), item.guid]);
           _covered++;
         });
       }
