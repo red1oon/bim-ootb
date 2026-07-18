@@ -2701,8 +2701,13 @@
     // schedule_gate.js (unit-tested: tests/test_schedule_gate.js → 0/1970 floating on real Hospital
     // geometry vs 1127/1970 before). Captured IFC 4D still OVERWRITES the covered subset VERBATIM in
     // the overlay pass below — this governs only the GENERATED fallback timing. No CPM/deps (planner's).
+    // §CREW-CAP (2026-07-18): real-world crew count per trade — see schedule_gate.js header.
+    // LABOR_RATES[resource].max_crews (rates.js / rates/sequence_rules.json), falls back to
+    // schedule_gate.js's own MAX_CREWS_DEFAULT for any resource without an explicit value.
+    var _maxCrews = {};
+    for (var _mcRes in LR) if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
-      ? ScheduleGate.computeSchedule(elements, baseMs, scaleFactor) : null;
+      ? ScheduleGate.computeSchedule(elements, baseMs, scaleFactor, _maxCrews) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
 
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
@@ -3579,9 +3584,10 @@
   // already generated+cached a schedule under the old (buggy) logic; only a version bump does,
   // since it changes the cache KEY and makes the old entry an orphaned miss. Do NOT rely on
   // manual cacheDel/tmRefoldSchedule for this class of fix — that requires the user to know to
-  // do it. v2 (2026-07-18): locale_loader.js productivity-map deep-merge fix — see
+  // do it. v2 (2026-07-18): locale_loader.js productivity-map deep-merge fix. v3 (2026-07-18):
+  // schedule_gate.js §CREW-CAP fix (uncapped per-Z-band crews → capped project-wide pool) — see
   // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2.
-  var _GANTT_CACHE_VERSION = 2;
+  var _GANTT_CACHE_VERSION = 3;
 
   function _cacheKey(prefix) {
     var app = A();
