@@ -968,16 +968,21 @@ async function setupEffects(A, renderer, scene, camera) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible &&
         o.userData.staffageKind === undefined && !(o.parent && o.parent === _photoStaffage);
     });
+    // §STAFFAGE_REJECT_WITNESS (diagnosing "Terminal has bad results — 0 pax placed"): split WHY a
+    // candidate was rejected — out of frustum vs occluded by real geometry — so a "0 placed" report
+    // can be read from the log instead of guessed at. Reset per category by the caller.
+    var _rejFrustum = 0, _rejOcclude = 0;
     function _inFrame(threePos) {
       _v2.copy(threePos).project(A.camera);
-      if (!(Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1)) return false;
+      if (!(Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1)) { _rejFrustum++; return false; }
       var camPos = A.camera.position, dist = camPos.distanceTo(threePos);
       if (dist < 0.5 || !_occMeshes.length) return true;   // too close to self-occlude meaningfully
       var dir = new THREE.Vector3().subVectors(threePos, camPos).normalize();
       _occRay.set(camPos, dir);
       _occRay.far = dist - 0.3;   // small epsilon so the candidate's own point doesn't self-reject
       var hits = _occRay.intersectObjects(_occMeshes, false);
-      return hits.length === 0;
+      if (hits.length) { _rejOcclude++; return false; }
+      return true;
     }
     function _nearExisting(threePos, minDist) {
       for (var ci = 0; ci < _photoStaffage.children.length; ci++) {
@@ -1014,9 +1019,21 @@ async function setupEffects(A, renderer, scene, camera) {
       // so there's real spatial variety to randomly draw from instead of always the same tight spot.
       var STEP_OUTS = [2.2, 4, 6.5, 9.5];
       var candSpots = [];   // [ifcX, ifcY, refZ]
+      // §STAFFAGE_ABSTRACT_GENERALIZE (user: "its not able to be abstract... Terminal has bad
+      // results" — root-caused via the new §STAFFAGE_PAX_REJECT witness: Terminal has 135 real
+      // doors but only 2 pass the "beyond the measured silhouette" exterior test — silR()'s 96-bin
+      // smoothed envelope doesn't track a highly irregular/non-convex footprint (many wings/gates)
+      // closely enough, so real exterior doors in local recesses get misclassified as interior,
+      // leaving too few candidates (8 total spots) for the occlusion/frustum/clash gates to work
+      // with — easy to land on zero. Fix: ALWAYS also generate silhouette-ring candidates (the same
+      // mechanism trees already use successfully, robust regardless of footprint complexity)
+      // alongside door-anchored ones, instead of only falling back to the ring when zero doors
+      // exist at all. Doors are still tried first/preferred (real entrances read better) but the
+      // ring pool means a complex building is never starved down to a handful of spots.
+      var gfExt = [];
       if (ext.length) {
         var gfz = ext[0][2];
-        var gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
+        gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
         for (var ei = 0; ei < gfExt.length; ei++) {
           var e = gfExt[ei], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
           for (var so = 0; so < STEP_OUTS.length; so++) {
@@ -1024,25 +1041,27 @@ async function setupEffects(A, renderer, scene, camera) {
             candSpots.push([e[0] + ((e[0] - cx) / ol) * stepOut, e[1] + ((e[1] - cy) / ol) * stepOut, e[2]]);
           }
         }
-        pSrc = 'entrance';
-      } else {
-        for (var k2 = 0; k2 < 12; k2++) {
-          var pa = (k2 / 12) * Math.PI * 2 + 0.9;
-          for (var so2 = 0; so2 < STEP_OUTS.length; so2++) {
-            var prad = silR(pa) + 2.5 + STEP_OUTS[so2] - 2.2;
-            candSpots.push([cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ]);
-          }
-        }
-        pSrc = 'silhouette';
       }
+      for (var k2 = 0; k2 < 12; k2++) {
+        var pa = (k2 / 12) * Math.PI * 2 + 0.9;
+        for (var so2 = 0; so2 < STEP_OUTS.length; so2++) {
+          var prad = silR(pa) + 2.5 + STEP_OUTS[so2] - 2.2;
+          candSpots.push([cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ]);
+        }
+      }
+      pSrc = gfExt.length ? 'entrance+silhouette' : 'silhouette';
       _shuffle(candSpots);
+      var _paxTried = candSpots.length, _rejFBefore = _rejFrustum, _rejOBefore = _rejOcclude, _rejDedup = 0;
       for (var si2 = 0; si2 < candSpots.length && thisPressPax < PAX_CAP; si2++) {
         var sp = candSpots[si2], pos3 = A.ifc2three(sp[0], sp[1], sp[2]); pos3.y = _floorThreeY(sp[0], sp[1], sp[2]);
-        if (!_inFrame(pos3) || _nearExisting(pos3, 3)) continue;
+        var inF = _inFrame(pos3);
+        if (!inF) continue;
+        if (_nearExisting(pos3, 3)) { _rejDedup++; continue; }
         var pose = outsidePoses[placedP % outsidePoses.length];
         _placeAt(pose, sp[0], sp[1], sp[2], true);
         placedP++; thisPressPax++;
       }
+      console.log('§STAFFAGE_PAX_REJECT tried=' + _paxTried + ' placed=' + thisPressPax + ' rejFrustum=' + (_rejFrustum - _rejFBefore) + ' rejOcclude=' + (_rejOcclude - _rejOBefore) + ' rejDedup=' + _rejDedup);
       if (!thisPressPax) pSrc = 'none-in-frame';
     }
 
@@ -1453,8 +1472,16 @@ async function setupEffects(A, renderer, scene, camera) {
       // A._exportBuildingDb() at Save time). First Alt+P press on such a building rehydrates the
       // EXACT saved set instead of a fresh frame-driven placement. No table (never saved, or saved
       // before this feature existed) → falls through to normal placement, unchanged.
+      // §STAFFAGE_QUIET_TABLE_CHECK (user log showed "§HELPERS_QUERY_ERR no such table:
+      // staffage_instances" on every building — A.dbQuery's own try/catch swallows the SQL error
+      // but still WARNS every time, so a plain try/catch around the SELECT here never helped; the
+      // warning fired regardless). Check sqlite_master first — a query that never fails — and only
+      // run the SELECT when the table genuinely exists, so the normal "never saved" case is silent.
       var savedRows = null;
-      try { savedRows = A.dbQuery("SELECT kind,file,ifc_x,ifc_y,ifc_z,rot_y FROM staffage_instances"); } catch (e) { /* no such table — normal case */ }
+      var _hasTable = A.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='staffage_instances'");
+      if (_hasTable && _hasTable.length) {
+        savedRows = A.dbQuery("SELECT kind,file,ifc_x,ifc_y,ifc_z,rot_y FROM staffage_instances");
+      }
       if (savedRows && savedRows.length) {
         A._restoreStaffageInstances(savedRows);
         _lastPeopleVis = null; _updatePeoplePitchGate(); _trackStaffageLoading();
