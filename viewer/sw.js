@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v792';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v793';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -29,6 +29,20 @@ const SHELL_LIBS = [
   'lib/sql-wasm.wasm',
   'lib/chart.umd.min.js',
   'lib/FileSaver.min.js',
+  // §EFFECTS_COMPOSER_OFFLINE: setupEffects() (effects.js) dynamic-imports these 6 unconditionally
+  // on every desktop (non-mobile) load, before streaming.js starts — not gated behind a keypress
+  // like Alt+P/Alt+S. ~56KB total, trivial next to the libs above. Were never precached; on a
+  // genuine offline+uncached load each import() rejects (sw.js's cacheFirst() synthesizes a 503 on
+  // a failed fetch), caught by setupEffects()'s own try/catch (§EFFECTS_INIT_FAIL, degrades to
+  // direct render) — not a crash, but silently drops SSAO shadows, the pick/clash/Find outline
+  // highlight, and Alt+S Still-Refine. SHELL not DEFERRED: unlike web-ifc/xlsx these aren't behind
+  // an optional feature, so they should be as guaranteed-present as the libs above.
+  'lib/EffectComposer.js',
+  'lib/RenderPass.js',
+  'lib/TAARenderPass.js',
+  'lib/SSAOPass.js',
+  'lib/OutlinePass.js',
+  'lib/OutputPass.js',
 ];
 // DEFERRED — heavy, feature-gated; cache-on-first-use OR via the offline-download button.
 const DEFERRED_LIBS = [
