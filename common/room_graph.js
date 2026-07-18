@@ -245,6 +245,62 @@
     Object.keys(storeyZSum).forEach(function (s) { storeyZ[s] = storeyZSum[s] / storeyZN[s]; });
     var storeysSorted = Object.keys(storeyZ).sort(function (a, b) { return storeyZ[a] - storeyZ[b]; });
 
+    // §C1-STOREY-RESCUE (OCCUPANT_PATHFINDER.md OPEN LANE C, 2026-07-18): a door whose `storey`
+    // comes back 'Unknown'/blank never binds to anything below (E1/E2/E7 all match on `g.storey ===
+    // storey` / `nearestSpine(storey, ...)`) — measured cause: curtain-wall-hosted doors (glass
+    // storefronts, chain-link gates) inherit no storey because their IfcCurtainWall PARENT has a
+    // null transform, so extraction never stamps one on the door itself. Reassign such a door to
+    // the storey whose real ROOM z-anchor (storeyZ above) is nearest the door's own center_z —
+    // same convention the room-walker's own §STOREY-Z / _assignByZ already uses elsewhere. A door
+    // that already carries a real storey is untouched; this is additive-only.
+    // §THIN-STOREY-GUARD (real landmine found building this): a storey backed by only 1-2 real
+    // rooms is not a trustworthy z-anchor to rescue onto — Clinic carries a "TOF Footing" storey
+    // with exactly ONE IfcSpace whose lone room's z happened to sit closer to some doors than the
+    // real, 67-room First Floor anchor, winning "nearest" by statistical fluke, not by architecture.
+    // MIN_STOREY_SAMPLE excludes any storey backed by fewer real rooms than this from being a
+    // rescue target — a measured signal (real room count), not a hand-picked z threshold.
+    var MIN_STOREY_SAMPLE = 3;
+    var _rescuedDoorStorey = {}; // doorGuid -> rescued storey name, applied via the wrapped dbQuery below
+    try {
+      var _rescueDoorRows = dbQuery('SELECT m.guid, m.storey, t.center_z' +
+        ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+        " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
+      var _rescueCount = 0;
+      _rescueDoorRows.forEach(function (r) {
+        var guid = r[0], storey = r[1], cz = r[2];
+        if (storey && storey !== 'Unknown' && storey !== '') return;
+        if (cz == null) return;
+        var best = null, bestD = Infinity;
+        Object.keys(storeyZ).forEach(function (s) {
+          if (storeyZN[s] < MIN_STOREY_SAMPLE) return; // §THIN-STOREY-GUARD
+          var d = Math.abs(storeyZ[s] - cz);
+          if (d < bestD) { bestD = d; best = s; }
+        });
+        if (!best) return;
+        _rescuedDoorStorey[guid] = best;
+        _rescueCount++;
+      });
+      if (_rescueCount) {
+        log('§C1_STOREY_RESCUE rescued=' + _rescueCount);
+        // §RESCUE-QUERY-SHAPE-GUARD (real bug found building this): hallway_backbone.js issues its
+        // OWN door queries matching the same "ifc_class LIKE 'IfcDoor%'" substring but with a
+        // DIFFERENT column layout (no t.center_z there at all). Rewriting by raw column INDEX would
+        // silently corrupt those calls. `guid` (index 0) and `storey` (index 2) ARE consistent
+        // across every door-query variant in this codebase (verified by reading all of them) — only
+        // those two positions are ever touched, regardless of what the other columns mean.
+        var _rawDbQuery = dbQuery;
+        dbQuery = function (sql, params) {
+          var rows = _rawDbQuery(sql, params);
+          if (!rows || sql.indexOf("ifc_class LIKE 'IfcDoor%'") === -1) return rows;
+          return rows.map(function (r) {
+            var rescued = _rescuedDoorStorey[r[0]];
+            if (!rescued) return r;
+            var r2 = r.slice(); r2[2] = rescued; return r2;
+          });
+        };
+      }
+    } catch (eRescue) { log('§C1_STOREY_RESCUE_ERR ' + eRescue.message); }
+
     // §CORRIDOR-ROOM-BACKPROP (2026-07-14, user's own framing: "backward propagation"). The
     // corridor backbone (hallway_backbone.js) is built from RAW doors+walls — independent of room
     // compilation. When it finds a real, door+wall-verified hallway with NO compiled room there at
