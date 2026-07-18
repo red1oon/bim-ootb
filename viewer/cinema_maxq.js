@@ -180,13 +180,21 @@
         if (i % 15 === 0 || i === nFrames - 1) {
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(performance.now() - t0));
           _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' +
-            Math.round((performance.now() - t0) / 1000) + 's (Alt+M cancels)');
+            Math.round((performance.now() - t0) / 1000) + 's (Alt+C / cinema icon cancels + saves partial)');
         }
       }
       if (A._stillRefineActive) A.stopStillRefine(true);
       _restoreRandom();
-      if (!_cancel && framesDone > 0) await _stitch(db, framesDone, fps, w, h);
-      else if (_cancel) _status('🎬 MaxQ cancelled at frame ' + framesDone);
+      // §MAXQ_PARTIAL: cancel SAVES what's cooked so far (user Q 2026-07-19 — losing minutes of
+      // cook must never be the default). Threshold: at least 1s of footage (fps frames) on a
+      // cancelled run — below that there's nothing worth stitching.
+      if (framesDone >= (_cancel ? fps : 1)) {
+        if (_cancel) console.log('§MAXQ_CANCEL_PARTIAL stitching ' + framesDone + ' frames (' +
+          (framesDone / fps).toFixed(1) + 's of footage)');
+        await _stitch(db, framesDone, fps, w, h);
+      } else if (_cancel) {
+        _status('🎬 MaxQ cancelled at frame ' + framesDone + ' — under 1s of footage, nothing saved');
+      }
     } catch (e) {
       console.warn('§MAXQ_FAIL ' + e.message);
       _status('🎬 MaxQ failed: ' + e.message);
