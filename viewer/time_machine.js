@@ -2593,9 +2593,10 @@
     // Min Z is unreliable — a column extending down from an upper storey gives it a low minZ,
     // causing upper elements to appear before lower storeys finish.
     // Median Z represents the typical floor level of that storey.
-    var storeyZvals = {};  // storey name → [cz, cz, ...]
+    var storeyZvals = {};  // REAL (non-Unknown) storey name → [cz, cz, ...] — the §STOREY-Z anchor basis
     r[0].values.forEach(function(row) {
       var storey = row[3] || '_UNKNOWN';
+      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
       var cz = row[5] || 0;
       if (!storeyZvals[storey]) storeyZvals[storey] = [];
       storeyZvals[storey].push(cz);
@@ -2617,11 +2618,36 @@
     console.log('§GANTT storey-bands: ' + storeyNames.length + ' bands from storey names (median Z): ' +
       storeyNames.map(function(s, i) { return i + '="' + s + '" medZ=' + storeyMedianZ[s].toFixed(1); }).join(', '));
 
+    // §STOREY-Z (2026-07-18 — mirrors build/room_walker.js's proven storeyZAnchors/_assignByZ
+    // pattern, "HHS: all 716 vertical curtain children carry storey 'Unknown'; their z clusters
+    // match Level 1/2/3 exactly"): elements with no real storey containment — a literal "Unknown"
+    // IFC storey label, confirmed general across every building checked (Hospital 14.9%, HHS
+    // 30.8%, Terminal 69.9%, Duplex 87%) — all shared ONE storey key, so the mini-Gantt drawer's
+    // storey|phase grouping merged them into ONE bar spanning nearly the whole project, masking
+    // the genuinely-cascading per-Level bars next to it ("still all at once" per prompts/
+    // HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6). Reassign to the nearest REAL storey
+    // by median Z — deterministic, uses only already-extracted Z data, nothing invented — so the
+    // Gantt grouping, the storey-band ranking above, and the roof-slab override below all see the
+    // corrected storey with zero further code changes downstream.
+    var unknownReassigned = 0;
+    function assignStoreyByZ(storey, cz) {
+      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+      if (!storeyNames.length) return storey;
+      var best = storeyNames[0], bd = Infinity;
+      for (var ai = 0; ai < storeyNames.length; ai++) {
+        var d = Math.abs(cz - storeyMedianZ[storeyNames[ai]]);
+        if (d < bd) { bd = d; best = storeyNames[ai]; }
+      }
+      unknownReassigned++;
+      return best;
+    }
+
     // ── Build elements with storey-aware overrides ──
     var roofOverrides = 0;
     var elements = r[0].values.map(function(row) {
-      var cls = row[1], storey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
+      var cls = row[1], rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
+      var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
       var rule = matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
 
@@ -2641,6 +2667,7 @@
         installSecs: getInstallSecs(cls)
       };
     });
+    if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
     if (roofOverrides) console.log('§GANTT_OVERRIDE ' + roofOverrides + ' roof slabs overridden to seq=8');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
