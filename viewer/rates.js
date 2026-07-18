@@ -86,45 +86,51 @@ function getSMMSection(ifcClass) {
 // ============================================================================
 // LABOR RATES — hardcoded fallback (from boq_export.py)
 // ============================================================================
+// max_crews: §CREW-CAP (2026-07-18) — how many independent crews of this trade work the site
+// SIMULTANEOUSLY project-wide (not per-floor/per-band — schedule_gate.js caps against this total,
+// shared across every level). Matches the same class of estimating assumption as rate_per_day/
+// crew_size already here (CIDB 2024-derived, not extracted from IFC) — editable via the Settings
+// JSON editor / rates/sequence_rules.json the same way. Modest defaults for a large commercial
+// project; bump for a genuinely huge/fast-tracked site, lower for a small one.
 var LABOR_RATES = {
   HVAC_TECH: {
-    rate_per_day: 185, crew_size: 2, trade: 'HVAC Technician (Skilled)',
+    rate_per_day: 185, crew_size: 2, max_crews: 2, trade: 'HVAC Technician (Skilled)',
     productivity: {IfcDuct:18,IfcDuctSegment:18,IfcDuctFitting:12,IfcFlowMovingDevice:4,IfcEnergyConversionDevice:3,IfcFlowTerminal:12,IfcAirTerminal:20}
   },
   PLUMBER: {
-    rate_per_day: 165, crew_size: 2, trade: 'Pipefitter (Skilled)',
+    rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Pipefitter (Skilled)',
     productivity: {IfcPipe:25,IfcPipeSegment:25,IfcPipeFitting:15,IfcFlowSegment:20,IfcFlowFitting:15,IfcFlowStorageDevice:4,IfcFlowTreatmentDevice:4,IfcDistributionElement:8,IfcValve:20,IfcFireSuppressionTerminal:25}
   },
   ELECTRICIAN: {
-    rate_per_day: 175, crew_size: 2, trade: 'Electrician (Skilled)',
+    rate_per_day: 175, crew_size: 2, max_crews: 2, trade: 'Electrician (Skilled)',
     productivity: {IfcCableCarrier:30,IfcCableCarrierSegment:30,IfcLightFixture:20,IfcOutlet:25,IfcElectricAppliance:15,IfcFlowController:10,IfcAlarm:25,IfcController:10}
   },
   STEEL_ERECTOR: {
-    rate_per_day: 195, crew_size: 4, trade: 'Steel Erector (Skilled)',
+    rate_per_day: 195, crew_size: 4, max_crews: 3, trade: 'Steel Erector (Skilled)',
     productivity: {IfcBeam:8,IfcColumn:6,IfcPlate:12,IfcMember:10}
   },
   CONCRETE_GANG: {
-    rate_per_day: 145, crew_size: 6, trade: 'Concrete Gang (Mixed)',
+    rate_per_day: 145, crew_size: 6, max_crews: 3, trade: 'Concrete Gang (Mixed)',
     productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3}
   },
   MASON: {
-    rate_per_day: 155, crew_size: 3, trade: 'Mason (Skilled) + Laborers',
+    rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
     productivity: {IfcWall:12,IfcWallStandardCase:12,IfcOpeningElement:20,IfcBuildingElementPart:15}
   },
   CARPENTER: {
-    rate_per_day: 165, crew_size: 2, trade: 'Carpenter (Skilled)',
+    rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Carpenter (Skilled)',
     productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8}
   },
   ROOFER: {
-    rate_per_day: 175, crew_size: 3, trade: 'Roofer (Skilled)',
+    rate_per_day: 175, crew_size: 3, max_crews: 1, trade: 'Roofer (Skilled)',
     productivity: {IfcRoof:25}
   },
   FINISHER: {
-    rate_per_day: 135, crew_size: 2, trade: 'Finisher (Skilled)',
+    rate_per_day: 135, crew_size: 2, max_crews: 2, trade: 'Finisher (Skilled)',
     productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8}
   },
   LABORER: {
-    rate_per_day: 95, crew_size: 1, trade: 'General Laborer',
+    rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
     productivity: {}
   },
 };
