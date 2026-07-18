@@ -112,6 +112,7 @@ const PRECACHE_ASSETS = [
   'helpers.js',
   'loader.js',
   'effects.js',
+  'cinema_maxq.js',
   'input_registry.js',
   'scene.js',
   'streaming.js',
