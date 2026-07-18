@@ -941,12 +941,18 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return false;
     }
-    var PAX_CAP = 3, TREE_CAP = 3, thisPressPax = 0, thisPressTrees = 0;
+    // §STAFFAGE_FACADE_MINIMAL (user: "first Alt-P is only facade 1 set of standing, 1 car, few
+    // trees. Alt-P again adds to it in available spaces"): the facade/entrance pax pool is capped
+    // to ONE new standing figure per press (not 3) — "1 set" builds up over repeated presses rather
+    // than several appearing at once. Car is already capped to 1 total via the carPlaced latch below.
+    var PAX_CAP = 1, TREE_CAP = 3, thisPressPax = 0, thisPressTrees = 0;
 
     if (realPeople === 0) {
       // §STAFFAGE_SIT_OUTDOOR_GATE (user: "sitting pax cannot be outside building, only when there
-      // are seats") — the exterior/entrance pool NEVER includes role='sit'; only walk/stand poses.
-      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role !== 'sit'; });
+      // are seats") — the exterior/entrance pool is STANDING ONLY: no role='sit' (never outdoors)
+      // and no role='walk' either (user: "facade 1 set of standing" — walking figures belong to the
+      // interior aisle path, not the entrance/facade).
+      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'stand'; });
       var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var ext = [];
       for (var di = 0; di < doors.length; di++) {
