@@ -1183,22 +1183,37 @@ async function setupEffects(A, renderer, scene, camera) {
         var ta = (t / 24) * Math.PI * 2 + Math.random() * 0.2;
         for (var tr = 0; tr < TREE_RADII.length; tr++) treeCand.push([ta, TREE_RADII[tr]]);
       }
+      // §STAFFAGE_TREE_CEILING (user 2026-07-19: "when we alt-P sometimes a tree appears too
+      // [inside]"): a tree spot with a slab OVERHEAD (bottom 2-9m above ground) is indoors —
+      // reject it. Open courtyards/terraces (sky above) keep their trees.
+      function _ceilingOver(ifcX, ifcY) {
+        for (var ci2 = 0; ci2 < _slabs.length; ci2++) {
+          var sC = _slabs[ci2], botC = sC[2] - (sC[5] || 0) / 2;
+          if (botC > groundZ + 2 && botC < groundZ + 9 &&
+              Math.abs(ifcX - sC[0]) <= (sC[3] || 3) / 2 && Math.abs(ifcY - sC[1]) <= (sC[4] || 3) / 2) return true;
+        }
+        return false;
+      }
+      var _treeCeilRejected = 0;
       _shuffle(treeCand);
       for (var ti = 0; ti < treeCand.length && thisPressTrees < TREE_CAP; ti++) {
         var ang = treeCand[ti][0], trad = silR(ang) + treeCand[ti][1];
         var tx = cx + Math.cos(ang) * trad, ty = cy + Math.sin(ang) * trad;
         var tpos = A.ifc2three(tx, ty, groundZ); tpos.y = _floorThreeY(tx, ty, groundZ);
         if (!_inFrame(tpos) || _nearExisting(tpos, 4) || _nearRealEntourage(tpos)) continue;
+        if (_ceilingOver(tx, ty)) { _treeCeilRejected++; continue; }
         _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], tx, ty, groundZ, false);
         placedT++; thisPressTrees++;
       }
       if (!thisPressTrees) {
         // §STAFFAGE_ZERO_RESCUE spec S2 — the press must not end with 0 trees.
         _zeroRescue('tree', 4, function(ix, iy) {
+          if (_ceilingOver(ix, iy)) { _treeCeilRejected++; return; }
           _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], ix, iy, groundZ, false);
           placedT++; thisPressTrees++;
         });
       }
+      if (_treeCeilRejected) console.log('§STAFFAGE_TREE_CEILING rejected=' + _treeCeilRejected + ' (indoor spots)');
     }
     // §STAFFAGE_CAR_MESH: place real car mesh(es) near ground-floor exterior doors when this
     // building has no real vehicle of its own — same real-data-first discipline as people/trees
@@ -1592,15 +1607,43 @@ async function setupEffects(A, renderer, scene, camera) {
       var ok = true; for (var wj = 0; wj < wpick.length; wj++) { if (Math.hypot(walkCand[wi][0] - wpick[wj][0], walkCand[wi][1] - wpick[wj][1]) < 3) { ok = false; break; } }
       if (ok) wpick.push(walkCand[wi]);
     }
-    var _walkYLog = [];
+    // §STAFFAGE_GROUNDSNAP (user 2026-07-19: "standing pax in midair because it was trying to
+    // align to a corridor that has empty middle space" — an atrium opening is a HOLE cut inside a
+    // big slab's bbox, so the bbox floor lookup reports floor where there is only air). Verify each
+    // walker spot with a REAL downward raycast against rendered triangles (BVH-accelerated) and
+    // land on the first actual surface below — "look for nearest ground or at least be placed to
+    // first open ground to land on". No surface at all → reject the spot.
+    var _snapRay = new THREE.Raycaster(); _snapRay.camera = A.camera;
+    _snapRay.firstHitOnly = true;
+    function _groundSnapY(tx3, fromY, tz3) {
+      _snapRay.set(new THREE.Vector3(tx3, fromY, tz3), new THREE.Vector3(0, -1, 0));
+      _snapRay.far = 80;
+      var hits;
+      try { hits = _snapRay.intersectObjects(A.scene.children, true); } catch (e) { return null; }
+      for (var hi = 0; hi < hits.length; hi++) {
+        var o = hits[hi].object;
+        if (o.isSprite) continue;                                    // staffage/sparkle billboards
+        if (_photoStaffage && (o === _photoStaffage || o.parent === _photoStaffage)) continue;
+        if (A.sky && o === A.sky) continue;
+        return hits[hi].point.y;
+      }
+      return null;
+    }
+    var _walkYLog = [], _snapLanded = 0, _snapRejected = 0;
     for (var m = 0; m < wpick.length; m++) {
       // §STAFFAGE_WALK_FLOOR_FIX cont.: per-candidate floor lookup, same as sitting figures already
       // get above (line ~1227) — NOT the shared floorYval, that was the knee-high bug.
       var wy = floorY(wpick[m][3], wpick[m][4], ifcFloorZ);
+      var snapped = _groundSnapY(wpick[m][0], Math.max(wy, floorYval) + 1.8, wpick[m][1]);
+      if (snapped === null) { _snapRejected++; continue; }           // nothing below at all — void
+      if (snapped < wy - 0.4) _snapLanded++;                        // bbox said floor, rays say void — land below
+      wy = snapped;
       _walkYLog.push(wy.toFixed(2) + '(camY-1.6=' + (cam.y - 1.6).toFixed(2) + ')');
       var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], wy, wpick[m][1]), true, true);
       spr2.userData.interior = true; _photoStaffageInFrame.push(spr2); placedWalk++;
     }
+    console.log('§STAFFAGE_GROUNDSNAP checked=' + wpick.length + ' landedLower=' + _snapLanded +
+      ' rejectedNoGround=' + _snapRejected);
     // §STAFFAGE_WALK_CLEAR: independently re-verify every PLACED aisle-walker against the same grid.
     var aisleWcOk = 0;
     for (var wv = 0; wv < wpick.length; wv++) {
