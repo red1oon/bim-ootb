@@ -209,6 +209,21 @@ async function setupEffects(A, renderer, scene, camera) {
   // independent, the same shared-geometry+per-instance-transform pattern streaming.js already uses,
   // just reused ACROSS buildings here instead of within one). Real bbox ~2.42 x 3.93 x 1.51m.
   var _CAR_BIN_URL = _STAFFAGE_BASE + 'props/car_beetle.bin';
+  // §STAFFAGE_CAR_COLOR (user: "cars should have different metalic colour assigned") — a small real
+  // paint-shade palette, metalness bumped up from the old flat grey (0.15->0.55, genuinely metallic
+  // paint reads glossier under envMap) picked DETERMINISTICALLY per building (hash of A.activeBuilding)
+  // so the same building always gets the same colour across presses/reloads, but different buildings
+  // vary — not random-per-call, which would make Save/Restore round-trip a different colour than saved.
+  var _CAR_COLORS = [
+    [0.74, 0.76, 0.79], [0.65, 0.10, 0.10], [0.08, 0.16, 0.42], [0.10, 0.10, 0.10],
+    [0.95, 0.95, 0.93], [0.15, 0.35, 0.18], [0.55, 0.30, 0.05]
+  ];
+  function _carColorFor(buildingName) {
+    var s = String(buildingName || 'default'), h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var c = _CAR_COLORS[h % _CAR_COLORS.length];
+    return new THREE.Color(c[0], c[1], c[2]);
+  }
   var _carGeometry = null, _carGeometryPromise = null;
   function _loadCarGeometry() {
     if (_carGeometry) return Promise.resolve(_carGeometry);
@@ -931,9 +946,28 @@ async function setupEffects(A, renderer, scene, camera) {
     // function is now ADDITIVE — never clears) — AND capped small per press, so a first press reads
     // as "a few", not "everyone at once"; a later press just tops up whatever's still free/visible.
     var _v2 = new THREE.Vector3();
+    // §STAFFAGE_FRAME_OCCLUSION (user: "trees say 3 all appear in scene not behind or obscured by
+    // building"): frustum membership alone isn't "actually visible" — a candidate on the far side of
+    // the building can still project into the camera's view cone while a wall sits between it and
+    // the camera. Cast a ray from the camera to each candidate and reject it if any real building
+    // mesh blocks the line of sight first. Collected ONCE per _buildStaffage() call (not per
+    // candidate) — real-geometry meshes only, staffage itself excluded (nothing already placed
+    // should block a new candidate).
+    var _occRay = new THREE.Raycaster();
+    var _occMeshes = A.collectMeshes(function(o) {
+      return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible &&
+        o.userData.staffageKind === undefined && !(o.parent && o.parent === _photoStaffage);
+    });
     function _inFrame(threePos) {
       _v2.copy(threePos).project(A.camera);
-      return Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1;
+      if (!(Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1)) return false;
+      var camPos = A.camera.position, dist = camPos.distanceTo(threePos);
+      if (dist < 0.5 || !_occMeshes.length) return true;   // too close to self-occlude meaningfully
+      var dir = new THREE.Vector3().subVectors(threePos, camPos).normalize();
+      _occRay.set(camPos, dir);
+      _occRay.far = dist - 0.3;   // small epsilon so the candidate's own point doesn't self-reject
+      var hits = _occRay.intersectObjects(_occMeshes, false);
+      return hits.length === 0;
     }
     function _nearExisting(threePos, minDist) {
       for (var ci = 0; ci < _photoStaffage.children.length; ci++) {
@@ -952,7 +986,10 @@ async function setupEffects(A, renderer, scene, camera) {
       // are seats") — the exterior/entrance pool is STANDING ONLY: no role='sit' (never outdoors)
       // and no role='walk' either (user: "facade 1 set of standing" — walking figures belong to the
       // interior aisle path, not the entrance/facade).
-      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'stand'; });
+      // §STAFFAGE_FACADE_FACING (user: "they should be camera facing - facade") — also restrict to
+      // facing==='toward' (the face-on shot, reads as looking at the viewer) — the 'away'-facing
+      // standing pose is shot from behind and would read as looking away from a facade-facing camera.
+      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'stand' && p.facing === 'toward'; });
       var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var ext = [];
       for (var di = 0; di < doors.length; di++) {
@@ -1021,15 +1058,16 @@ async function setupEffects(A, renderer, scene, camera) {
         var nrmX = (carSpot[0] - cx) / col, nrmY = (carSpot[1] - cy) / col;
         // Stepped out further than entrance figures (a car needs more clearance) AND offset
         // sideways so it reads as parked near, not blocking, the doorway.
-        carX = carSpot[0] + nrmX * 5.5 + (-nrmY) * 3.0;
-        carY = carSpot[1] + nrmY * 5.5 + (nrmX) * 3.0;
+        // §STAFFAGE_CAR_CLEARANCE (user: "should be another 2 meters away from wall") 5.5m->7.5m.
+        carX = carSpot[0] + nrmX * 7.5 + (-nrmY) * 3.0;
+        carY = carSpot[1] + nrmY * 7.5 + (nrmX) * 3.0;
         carZ = carSpot[2];
         carAngle = Math.atan2(nrmX, nrmY);   // tangent to the radial-out direction — parked
                                               // alongside the building, not nose-first into the wall
       } else {
         carAngle = 0.6;
-        carX = cx + Math.cos(carAngle) * (silR(carAngle) + 5.5);
-        carY = cy + Math.sin(carAngle) * (silR(carAngle) + 5.5);
+        carX = cx + Math.cos(carAngle) * (silR(carAngle) + 7.5);
+        carY = cy + Math.sin(carAngle) * (silR(carAngle) + 7.5);
         carZ = groundZ;
       }
       var carPos3 = A.ifc2three(carX, carY, carZ);
@@ -1053,7 +1091,7 @@ async function setupEffects(A, renderer, scene, camera) {
           // PHOTO_GLOSSY_ROUGHNESS_MAX=0.5). Match the normal convention at creation time AND
           // register in A._matCache so every later Alt-S reassert (dusk sun move, re-toggle)
           // keeps reaching it automatically, exactly like every other material in the scene.
-          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
+          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
           if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
           if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
           var mesh = new THREE.Mesh(geo, mat);
@@ -1180,7 +1218,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (kind === 'car') {
         _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
-          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
+          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
           if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
           if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
           var mesh = new THREE.Mesh(geo, mat);
