@@ -154,8 +154,22 @@ async function setupEffects(A, renderer, scene, camera) {
   var _photoStaffagePeople = [];      // people sprites only — pitch-gated (foreshorten from above)
   var _photoStaffageInFrame = [];     // interior in-view figures — re-placed to the current camera view
   var _staffageGroundY = null;        // three-space y of the RENDERED ground plane — feet anchor here
-  var _realPeopleExist = false;       // set by _buildStaffage — building already has real RPC entourage,
-                                       // so _updateInFrameInterior must not double-populate it indoors
+  var _realPeopleExist = false;       // set by _buildStaffage — building already has real RPC entourage
+  // §STAFFAGE_REAL_DEDUP (2026-07-19, STAFFAGE_WALKABLE_PLACEMENT.md spec S1 — user: "always room to
+  // plant"): real RPC entourage no longer SUPPRESSES a whole synthetic kind (that guaranteed permanent
+  // zeros — BimWhale forever 0/0, Hospital forever 0 trees while its 20 real ones sit on the Level-3
+  // terrace, never street-visible). The anti-duplication intent is now SPATIAL: real entourage
+  // positions collected here per _buildStaffage() call; no synthetic candidate may land within its
+  // kind's clash radius of a real one. 3D distance on purpose — a street-level tree 14m BELOW a real
+  // terrace tree at the same XY is not a duplicate.
+  var _realDedup = [];                // [[THREE.Vector3, radius], ...] — real entourage positions
+  var _rejReal = 0;                   // per-build counter: candidates rejected for real-entourage overlap
+  function _nearRealEntourage(threePos) {
+    for (var ri = 0; ri < _realDedup.length; ri++) {
+      if (_realDedup[ri][0].distanceTo(threePos) < _realDedup[ri][1]) { _rejReal++; return true; }
+    }
+    return false;
+  }
   var _staffageTexCache = {};
   var _STAFFAGE_BASE = 'textures/staffage/';
   // §STAFFAGE_OFFLINE (2026-07-18): adding/removing a `file:` entry below or in _STAFFAGE_TREES?
@@ -209,19 +223,23 @@ async function setupEffects(A, renderer, scene, camera) {
   // independent, the same shared-geometry+per-instance-transform pattern streaming.js already uses,
   // just reused ACROSS buildings here instead of within one). Real bbox ~2.42 x 3.93 x 1.51m.
   var _CAR_BIN_URL = _STAFFAGE_BASE + 'props/car_beetle.bin';
-  // §STAFFAGE_CAR_COLOR (user: "cars should have different metalic colour assigned") — a small real
-  // paint-shade palette, metalness bumped up from the old flat grey (0.15->0.55, genuinely metallic
-  // paint reads glossier under envMap) picked DETERMINISTICALLY per building (hash of A.activeBuilding)
-  // so the same building always gets the same colour across presses/reloads, but different buildings
-  // vary — not random-per-call, which would make Save/Restore round-trip a different colour than saved.
+  // §STAFFAGE_CAR_COLOR (user: "cars should have different metalic colour assigned", and 2026-07-19:
+  // "cars supposed to be different colours each time one is added... It was so, but it breaks back")
+  // — a small real paint-shade palette, metalness bumped up from the old flat grey (0.15->0.55,
+  // genuinely metallic paint reads glossier under envMap). Colour is DETERMINISTIC per
+  // (building, carOrdinal): the building hash picks the starting palette slot, each added car steps
+  // to the next slot — consecutive cars ALWAYS differ, and Save/Restore reproduces the same colours
+  // because staffage_instances rows preserve order (the car's ordinal IS recoverable at restore;
+  // no colour column needed). Hashing only the building (the previous state) made every car in one
+  // building identical — the regression this fixes (STAFFAGE_WALKABLE_PLACEMENT.md spec S3).
   var _CAR_COLORS = [
     [0.74, 0.76, 0.79], [0.65, 0.10, 0.10], [0.08, 0.16, 0.42], [0.10, 0.10, 0.10],
     [0.95, 0.95, 0.93], [0.15, 0.35, 0.18], [0.55, 0.30, 0.05]
   ];
-  function _carColorFor(buildingName) {
+  function _carColorFor(buildingName, carIdx) {
     var s = String(buildingName || 'default'), h = 0;
     for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    var c = _CAR_COLORS[h % _CAR_COLORS.length];
+    var c = _CAR_COLORS[(h + (carIdx || 0)) % _CAR_COLORS.length];
     return new THREE.Color(c[0], c[1], c[2]);
   }
   var _carGeometry = null, _carGeometryPromise = null;
@@ -926,6 +944,20 @@ async function setupEffects(A, renderer, scene, camera) {
     var realCars = _cnt("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcBuildingElementProxy' AND (element_name LIKE 'RPC Beetle%' OR element_name LIKE 'M_RPC Beetle%')");
     var placedP = 0, placedT = 0, placedC = 0, pSrc = 'none';
     _realPeopleExist = realPeople > 0;
+    // §STAFFAGE_REAL_DEDUP spec S1: collect real entourage POSITIONS (same name patterns as the
+    // counts above, joined to transforms) — the spatial replacement for the removed realX===0 gates.
+    _realDedup = []; _rejReal = 0;
+    function _collectReal(where, radius) {
+      var rows = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE et.center_x IS NOT NULL AND " + where) || [];
+      for (var ri = 0; ri < rows.length; ri++) {
+        // ifc2three returns a plain {x,y,z} — wrap in a real Vector3 so distanceTo works.
+        var rp = A.ifc2three(rows[ri][0], rows[ri][1], rows[ri][2]);
+        _realDedup.push([new THREE.Vector3(rp.x, rp.y, rp.z), radius]);
+      }
+    }
+    if (realPeople) _collectReal("em.ifc_class='IfcBuildingElementProxy' AND (em.element_name LIKE 'RPC Male%' OR em.element_name LIKE 'RPC Female%' OR em.element_name LIKE 'M_RPC Male%' OR em.element_name LIKE 'M_RPC Female%')", 3);
+    if (realTrees) _collectReal("lower(em.element_name) LIKE '%tree%'", 4);
+    if (realCars) _collectReal("em.ifc_class='IfcBuildingElementProxy' AND (em.element_name LIKE 'RPC Beetle%' OR em.element_name LIKE 'M_RPC Beetle%')", 6);
 
     // §PHOTO_STAFFAGE_SILHOUETTE (user: "the building has walls you can easily measure instead of
     // throwing" — trees on a bbox ellipse cut through an L-shaped/concave solid and landed inside).
@@ -990,6 +1022,40 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return false;
     }
+    // §STAFFAGE_ZERO_RESCUE (2026-07-19, STAFFAGE_WALKABLE_PLACEMENT.md spec S2 — user: "always
+    // room to plant a tree or person or car"): if a kind is still 0 after the normal + wide-fallback
+    // passes, walk the camera's ground-forward ray (near→far, small lateral jitter) and place
+    // exactly 1 there. Prefer a spot passing the full frame+occlusion check; on total failure use
+    // the farthest clash-free spot anyway — a press ending with any kind at 0 is the one forbidden
+    // outcome this exists to kill.
+    function _zeroRescue(kind, clashR, placeFn) {
+      if (!A.camera || !A.modelOffset) return false;
+      var fwd = new THREE.Vector3(); A.camera.getWorldDirection(fwd);
+      fwd.y = 0; if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1); fwd.normalize();
+      var side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+      var dists = [8, 12, 18, 25], lats = [0, -4, 4, -8, 8];
+      var fallback = null;
+      for (var di = 0; di < dists.length; di++) {
+        for (var li = 0; li < lats.length; li++) {
+          var p = new THREE.Vector3().copy(A.camera.position).addScaledVector(fwd, dists[di]).addScaledVector(side, lats[li]);
+          var ifcX = p.x + A.modelOffset.x, ifcY = A.modelOffset.y - p.z;   // inverse of ifc2three's XY mapping
+          var pos3 = A.ifc2three(ifcX, ifcY, groundZ); pos3.y = _floorThreeY(ifcX, ifcY, groundZ);
+          if (_nearExisting(pos3, clashR) || _nearRealEntourage(pos3)) continue;
+          fallback = [ifcX, ifcY];   // ends as the FARTHEST clash-free spot (near→far loop)
+          if (!_inFrame(pos3)) continue;
+          placeFn(ifcX, ifcY);
+          console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' spot=(' + ifcX.toFixed(1) + ',' + ifcY.toFixed(1) + ')');
+          return true;
+        }
+      }
+      if (fallback) {
+        placeFn(fallback[0], fallback[1]);
+        console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' spot=(' + fallback[0].toFixed(1) + ',' + fallback[1].toFixed(1) + ') forced=1');
+        return true;
+      }
+      console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' FAILED — every forward spot clashes');
+      return false;
+    }
     // §STAFFAGE_FORMULA (user, verbatim: "4 trees, 1 car, 3 standing pax at each Alt-P... cap to
     // avoid clashing... may use up more open space between building and camera view as long in
     // frame... paint own scene... repeatedly adds on without clashing"). These are TARGETS, not
@@ -998,7 +1064,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // removed below) — it now follows the exact same additive/capped/random pattern as trees/pax.
     var PAX_CAP = 3, TREE_CAP = 4, CAR_CAP = 1, thisPressPax = 0, thisPressTrees = 0, thisPressCars = 0;
 
-    if (realPeople === 0) {
+    // §STAFFAGE_REAL_DEDUP spec S1: was `if (realPeople === 0)` — wholesale suppression removed
+    // (user: "always room to plant a tree or person or car"); real-overlap now rejected per-candidate.
+    {
       // §STAFFAGE_SIT_OUTDOOR_GATE (user: "sitting pax cannot be outside building, only when there
       // are seats") — the exterior/entrance pool is STANDING ONLY: no role='sit' (never outdoors)
       // and no role='walk' either (user: "facade 1 set of standing" — walking figures belong to the
@@ -1057,6 +1125,7 @@ async function setupEffects(A, renderer, scene, camera) {
         var inF = _inFrame(pos3);
         if (!inF) continue;
         if (_nearExisting(pos3, 3)) { _rejDedup++; continue; }
+        if (_nearRealEntourage(pos3)) continue;
         var pose = outsidePoses[placedP % outsidePoses.length];
         _placeAt(pose, sp[0], sp[1], sp[2], true);
         placedP++; thisPressPax++;
@@ -1083,18 +1152,29 @@ async function setupEffects(A, renderer, scene, camera) {
         _shuffle(wideCand);
         for (var wi = 0; wi < wideCand.length && thisPressPax < PAX_CAP; wi++) {
           var wsp = wideCand[wi], wpos3 = A.ifc2three(wsp[0], wsp[1], wsp[2]); wpos3.y = _floorThreeY(wsp[0], wsp[1], wsp[2]);
-          if (!_inFrame(wpos3) || _nearExisting(wpos3, 3)) continue;
+          if (!_inFrame(wpos3) || _nearExisting(wpos3, 3) || _nearRealEntourage(wpos3)) continue;
           var wpose = outsidePoses[placedP % outsidePoses.length];
           _placeAt(wpose, wsp[0], wsp[1], wsp[2], true);
           placedP++; thisPressPax++;
         }
         pSrc = thisPressPax ? 'wide-fallback' : 'none-in-frame';
       }
+      if (!thisPressPax) {
+        // §STAFFAGE_ZERO_RESCUE spec S2 — the press must not end with 0 pax.
+        _zeroRescue('pax', 3, function(ix, iy) {
+          var rpose = outsidePoses[placedP % outsidePoses.length];
+          _placeAt(rpose, ix, iy, groundZ, true);
+          placedP++; thisPressPax++;
+        });
+        if (thisPressPax) pSrc = 'zero-rescue';
+      }
     }
 
     // Trees: same measured-silhouette ring as before, but only the ones actually IN the current
     // frame get placed, capped small — repeat presses (or looking a different direction) reveal more.
-    if (realTrees === 0) {
+    // §STAFFAGE_REAL_DEDUP spec S1: was `if (realTrees === 0)` — removed (Hospital's 20 real trees
+    // are on the Level-3 terrace; suppressing street trees for them left the kind at zero forever).
+    {
       // §STAFFAGE_OPEN_SPACE cont.: more angle slots + a spread of radii beyond the silhouette (not
       // just one fixed ring), shuffled — gives real spatial variety to draw from each press.
       var TREE_RADII = [5, 9, 14, 20];
@@ -1108,9 +1188,16 @@ async function setupEffects(A, renderer, scene, camera) {
         var ang = treeCand[ti][0], trad = silR(ang) + treeCand[ti][1];
         var tx = cx + Math.cos(ang) * trad, ty = cy + Math.sin(ang) * trad;
         var tpos = A.ifc2three(tx, ty, groundZ); tpos.y = _floorThreeY(tx, ty, groundZ);
-        if (!_inFrame(tpos) || _nearExisting(tpos, 4)) continue;
+        if (!_inFrame(tpos) || _nearExisting(tpos, 4) || _nearRealEntourage(tpos)) continue;
         _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], tx, ty, groundZ, false);
         placedT++; thisPressTrees++;
+      }
+      if (!thisPressTrees) {
+        // §STAFFAGE_ZERO_RESCUE spec S2 — the press must not end with 0 trees.
+        _zeroRescue('tree', 4, function(ix, iy) {
+          _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], ix, iy, groundZ, false);
+          placedT++; thisPressTrees++;
+        });
       }
     }
     // §STAFFAGE_CAR_MESH: place real car mesh(es) near ground-floor exterior doors when this
@@ -1119,7 +1206,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // genuine THREE.Mesh (not a billboard), so it casts/receives real shadows like any other solid.
     // §STAFFAGE_FORMULA cont.: no longer a one-time-only placement — additive/capped/random exactly
     // like trees and pax (user: "1 car... at each Alt-P... repeatedly adds on without clashing").
-    if (realCars === 0) {
+    // §STAFFAGE_REAL_DEDUP spec S1: was `if (realCars === 0)` — removed, same reasoning as above.
+    {
       var carDoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var carExt = [];
       for (var cdi = 0; cdi < carDoors.length; cdi++) {
@@ -1173,9 +1261,14 @@ async function setupEffects(A, renderer, scene, camera) {
           // PHOTO_GLOSSY_ROUGHNESS_MAX=0.5). Match the normal convention at creation time AND
           // register in A._matCache so every later Alt-S reassert (dusk sun move, re-toggle)
           // keeps reaching it automatically, exactly like every other material in the scene.
-          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
+          // §STAFFAGE_CAR_COLOR: ordinal = cumulative cars already placed (pre-increment) — each
+          // added car steps to the next palette slot. Per-car material + per-ordinal cache key so
+          // Alt-S reasserts reach EVERY car, not just the last one placed.
+          var carIdx = (_photoStaffage.userData.counts && _photoStaffage.userData.counts.cars) || 0;
+          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding, carIdx), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
           if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
-          if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
+          if (A._matCache) A._matCache['staffage-car-beetle-' + carIdx] = mat;
+          console.log('§STAFFAGE_CAR_COLOR idx=' + carIdx + ' rgb=#' + mat.color.getHexString());
           var mesh = new THREE.Mesh(geo, mat);
           var pos = A.ifc2three(cx2, cy2, cz2);
           // §STAFFAGE_CAR_MESH_GROUND_FIX (2026-07-18, same report, "half buried"): the mesh's
@@ -1226,7 +1319,7 @@ async function setupEffects(A, renderer, scene, camera) {
       for (var cci = 0; cci < carCand.length && thisPressCars < CAR_CAP; cci++) {
         var ccand = carCand[cci];
         var carPos3 = A.ifc2three(ccand[0], ccand[1], ccand[2]);
-        if (!_inFrame(carPos3) || _nearExisting(carPos3, 6)) continue;
+        if (!_inFrame(carPos3) || _nearExisting(carPos3, 6) || _nearRealEntourage(carPos3)) continue;
         thisPressCars++;
         pSrc += '+car';
         _placeCarAt(ccand);
@@ -1248,11 +1341,19 @@ async function setupEffects(A, renderer, scene, camera) {
         for (var wci = 0; wci < wideCarCand.length && thisPressCars < CAR_CAP; wci++) {
           var wccand = wideCarCand[wci];
           var wCarPos3 = A.ifc2three(wccand[0], wccand[1], wccand[2]);
-          if (!_inFrame(wCarPos3) || _nearExisting(wCarPos3, 6)) continue;
+          if (!_inFrame(wCarPos3) || _nearExisting(wCarPos3, 6) || _nearRealEntourage(wCarPos3)) continue;
           thisPressCars++;
           pSrc += '+car-wide';
           _placeCarAt(wccand);
         }
+      }
+      if (!thisPressCars) {
+        // §STAFFAGE_ZERO_RESCUE spec S2 — the press must not end with 0 cars.
+        _zeroRescue('car', 6, function(ix, iy) {
+          thisPressCars++;
+          pSrc += '+car-rescue';
+          _placeCarAt([ix, iy, groundZ, Math.random() * Math.PI * 2]);
+        });
       }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
@@ -1266,6 +1367,9 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
     console.log('§PHOTO_STAFFAGE thisPress(people=' + placedP + ' trees=' + placedT + ') cumulative(people=' + _photoStaffage.userData.counts.people + ' trees=' + _photoStaffage.userData.counts.trees + ' cars=' + _photoStaffage.userData.counts.cars + ') pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ')');
+    // §STAFFAGE_REAL_DEDUP witness (spec S1): how many real entourage positions guarded, how many
+    // synthetic candidates they rejected this press.
+    console.log('§STAFFAGE_REAL_DEDUP n=' + _realDedup.length + ' rejReal=' + _rejReal);
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
@@ -1324,15 +1428,21 @@ async function setupEffects(A, renderer, scene, camera) {
   A._restoreStaffageInstances = function(rows) {
     if (!rows || !rows.length || !THREE.Sprite) return;
     _photoStaffage = new THREE.Group();
+    // §STAFFAGE_CAR_COLOR: car ordinal claimed SYNCHRONOUSLY in row order (the async geometry load
+    // below resolves in any order, but the ordinal is captured before it starts) — save row order is
+    // preserved, so car #n gets the same palette slot it had when saved. Deterministic round-trip.
+    var _restCarIdx = 0;
     rows.forEach(function(r) {
       var kind = r[0], file = r[1], ifcX = r[2], ifcY = r[3], ifcZ = r[4], rotY = r[5];
       var pos = A.ifc2three(ifcX, ifcY, ifcZ);
       if (kind === 'car') {
+        var carIdx = _restCarIdx++;
         _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
-          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
+          var mat = new THREE.MeshStandardMaterial({ color: _carColorFor(A.activeBuilding, carIdx), roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide });
           if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
-          if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
+          if (A._matCache) A._matCache['staffage-car-beetle-' + carIdx] = mat;
+          console.log('§STAFFAGE_CAR_COLOR idx=' + carIdx + ' rgb=#' + mat.color.getHexString() + ' src=restore');
           var mesh = new THREE.Mesh(geo, mat);
           mesh.position.copy(pos); mesh.rotation.y = rotY;
           mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1386,9 +1496,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // Populate is (re)toggled, so re-pressing Alt+P after moving inside refreshes the framing.
   function _updateInFrameInterior() {
     if (!A.dbQuery || !A.camera || !THREE.Sprite || !_photoStaffage) return;
-    // §RPC_M_PREFIX / no double-population: building already has real RPC people (set by
-    // _buildStaffage) — adding synthetic sitting/walking on top indoors would duplicate them.
-    if (_realPeopleExist) { console.log('§PHOTO_STAFFAGE_INTERIOR skip=realPeopleExist'); return; }
+    // §STAFFAGE_REAL_DEDUP spec S1: was a wholesale `if (_realPeopleExist) return;` skip — removed
+    // (user: "always room"); real-people overlap is now rejected per-candidate below, same as the
+    // exterior pass. §RPC_M_PREFIX's no-double-population intent survives spatially.
+    if (_realPeopleExist) console.log('§PHOTO_STAFFAGE_INTERIOR realPeopleExist=1 (spatial dedup, no wholesale skip)');
     var bbox = _buildingBBoxIfc(); if (!bbox) return;
     var c0 = A.ifc2three(bbox.xMin, bbox.yMin, bbox.zMin), c1 = A.ifc2three(bbox.xMax, bbox.yMax, bbox.zMax);
     var minX = Math.min(c0.x, c1.x), maxX = Math.max(c0.x, c1.x), minZ = Math.min(c0.z, c1.z), maxZ = Math.max(c0.z, c1.z), roofY = Math.max(c0.y, c1.y);
@@ -1413,7 +1524,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _v.copy(p).project(A.camera);
       if (Math.abs(_v.x) < 0.9 && Math.abs(_v.y) < 0.95 && _v.z > -1 && _v.z < 1) {
         var dist = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
-        if (dist < 16 && !_nearExistingIF(p, 1.5)) cand.push([f[0], f[1], f[2], f[3], dist]);
+        if (dist < 16 && !_nearExistingIF(p, 1.5) && !_nearRealEntourage(p)) cand.push([f[0], f[1], f[2], f[3], dist]);
       }
     }
     // §STAFFAGE_SHUFFLE: random draw among all in-view/in-range candidates, not always nearest-first
