@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v4 (cinema-path + cancel-saves-partial + eta)';
+  var MAXQ_V = 'v5 (cinema-path + cancel-saves-partial + eta + 10s path preview)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -152,6 +152,41 @@
     var w = A.renderer.domElement.width, h = A.renderer.domElement.height;
     console.log('§MAXQ_START frames=' + nFrames + ' fps=' + fps + ' path=' + (plan ? 'cinema' : 'circle') +
       ' radius=' + radius.toFixed(1) + ' height=' + height.toFixed(1) + ' size=' + w + 'x' + h);
+    // §MAXQ_PREVIEW (user spec 2026-07-19): 10s real-time mock of the EXACT path before baking —
+    // "the user sees what its next 10 mins of rendering will be up to". Plain nav look, no Alt+S
+    // staging/folds (path rehearsal, not a quality preview — per user, "the fast preview the
+    // scene wont be in Alt-S mode"). Alt+C during the preview cancels the whole run for free.
+    if (opts.preview !== false) {
+      console.log('§MAXQ_PREVIEW start 10s real-time mock of the exact path (plain look, no Alt+S)');
+      _status('🎬 Path preview (10s, plain look) — the bake follows; Alt+C cancels');
+      var camSave = { px: A.camera.position.x, py: A.camera.position.y, pz: A.camera.position.z,
+                      qx: A.controls.target.x, qy: A.controls.target.y, qz: A.controls.target.z };
+      var pv0 = performance.now(), PREV_MS = 10000;
+      await new Promise(function(res) {
+        (function pvStep() {
+          if (_cancel) return res();
+          var tn = Math.min(1, (performance.now() - pv0) / PREV_MS);
+          var pp = poseAt(tn);
+          A.camera.position.set(pp.x, pp.y, pp.z);
+          A.controls.target.set(pp.tx, pp.ty, pp.tz);
+          A.controls.update();
+          if (A.markDirty) A.markDirty();
+          if (tn >= 1) return res();
+          requestAnimationFrame(pvStep);
+        })();
+      });
+      A.camera.position.set(camSave.px, camSave.py, camSave.pz);
+      A.controls.target.set(camSave.qx, camSave.qy, camSave.qz);
+      A.controls.update();
+      if (A.markDirty) A.markDirty();
+      if (_cancel) {
+        console.log('§MAXQ_CANCEL during preview — nothing baked, nothing saved');
+        _status('🎬 MaxQ cancelled during preview');
+        _active = false; _cancel = false; A._maxqActive = false;
+        return;
+      }
+      console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
+    }
     var db = await _idbOpen();
     var framesDone = 0;
     // Warm-up fold (discarded): staging's async assets (sunset HDRI envMap, AO bundle, textures)
