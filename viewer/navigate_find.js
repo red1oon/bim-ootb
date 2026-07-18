@@ -3015,8 +3015,6 @@
         });
         return sel;
       }
-      var row1 = document.createElement('div');
-      row1.style.cssText = 'display:flex;gap:6px;align-items:center';
       var selFrom = mkSelect('find-path-from', _t('ui_room_path_from', 'From room…'));
       var selTo = mkSelect('find-path-to', _t('ui_room_path_to', 'To room…'));
       selFrom.value = _pathFromGuid; selTo.value = _pathToGuid;
@@ -3024,11 +3022,32 @@
       selTo.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
       selFrom.addEventListener('change', function(e) { e.stopPropagation(); _pathFromGuid = selFrom.value; });
       selTo.addEventListener('change', function(e) { e.stopPropagation(); _pathToGuid = selTo.value; });
-      row1.appendChild(selFrom);
-      var arrow = document.createElement('span'); arrow.textContent = '→'; arrow.style.cssText = 'color:#666;flex-shrink:0';
-      row1.appendChild(arrow);
-      row1.appendChild(selTo);
-      wrap.appendChild(row1);
+      // §MOBILE-PATH-PANEL (2026-07-18, user report): on desktop the From/To selects sit side by side
+      // in one row (unchanged, `window._isMobile` gate — same flag every other mobile branch in this
+      // file already uses, viewer/config.js's own touch+screen.width<1024 test, not a new detector).
+      // On mobile that halves each select's width, truncating the long "name · label (storey)" option
+      // text and the room name itself. Each control gets its own full-width row instead — From, then
+      // To, then the Find-Path button (already its own row below, unchanged either way) — `wrap` is
+      // already `flex-direction:column` with default `align-items:stretch`, so a child appended
+      // directly (no wrapping row) is automatically full-width, no extra sizing needed.
+      if (window._isMobile) {
+        selFrom.style.width = '100%';
+        selTo.style.width = '100%';
+        wrap.appendChild(selFrom);
+        var downArrow = document.createElement('div');
+        downArrow.textContent = '↓';
+        downArrow.style.cssText = 'color:#666;text-align:center;font-size:12px;line-height:1';
+        wrap.appendChild(downArrow);
+        wrap.appendChild(selTo);
+      } else {
+        var row1 = document.createElement('div');
+        row1.style.cssText = 'display:flex;gap:6px;align-items:center';
+        row1.appendChild(selFrom);
+        var arrow = document.createElement('span'); arrow.textContent = '→'; arrow.style.cssText = 'color:#666;flex-shrink:0';
+        row1.appendChild(arrow);
+        row1.appendChild(selTo);
+        wrap.appendChild(row1);
+      }
 
       var btn = document.createElement('button');
       btn.textContent = _t('ui_room_path_find', 'Find Path');
