@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v5 (cinema-path + cancel-saves-partial + eta + 10s path preview)';
+  var MAXQ_V = 'v6 (path preview + rolling ETA)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -198,6 +198,11 @@
     A.stopStillRefine(true);
     await _raf2(); await _sleep(3000);
     var t0 = performance.now();
+    // §MAXQ_ETA_ROLLING (user 2026-07-19: "74 mins... suddenly 38... now 33.. it is not accurate"):
+    // lifetime-average ETA is poisoned by the expensive early frames (indoor prelude close-ups cost
+    // far more than wide exterior frames). Use the mean of the LAST 15 frames instead — tracks the
+    // current phase's real rate.
+    var _etaPrev = t0, _etaRecent = [];
     try {
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
@@ -217,11 +222,15 @@
         var blob = await _captureFrame(w, h);
         await _idbPut(db, i, blob);
         framesDone = i + 1;
+        var _etaNow = performance.now();
+        _etaRecent.push(_etaNow - _etaPrev); _etaPrev = _etaNow;
+        if (_etaRecent.length > 15) _etaRecent.shift();
         if (i % 15 === 0 || i === nFrames - 1) {
-          var _el = performance.now() - t0;
-          var _eta = i > 0 ? Math.round((_el / (i + 1)) * (nFrames - i - 1) / 1000) : -1;
+          var _el = _etaNow - t0;
+          var _per = _etaRecent.reduce(function(a, b) { return a + b; }, 0) / _etaRecent.length;
+          var _eta = i > 0 ? Math.round(_per * (nFrames - i - 1) / 1000) : -1;
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
-            ' perFrameMs=' + (i > 0 ? Math.round(_el / (i + 1)) : 0) + ' etaSec=' + _eta);
+            ' perFrameMs=' + Math.round(_per) + ' etaSec=' + _eta + ' (rolling-15)');
           _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
             (_eta >= 0 ? Math.ceil(_eta / 60) + ' min left' : 'estimating') +
             ' (Alt+C / cinema icon cancels + saves partial)');
