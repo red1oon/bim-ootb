@@ -2809,30 +2809,12 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_SWOOP_HALF_SEC = 2.0, CINEMA_SWOOP_TILT_DEG = 4;
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
-  A.startCinemaOrbit = async function() {
-    if (_cinemaActive || A._stillRefineActive || !A.camera || !A.controls || !A.renderer) return;
-    if (!A.renderer.domElement.captureStream || typeof MediaRecorder === 'undefined') {
-      console.warn('§CINEMA_FAIL captureStream/MediaRecorder unsupported in this browser');
-      return;
-    }
-    _cinemaActive = true;  // claim BEFORE the await below — a second Alt+C during the import tick must not double-start
-    // §CINEMA_SSAA lazy-load: the module is already in the browser's module map on any load where
-    // A._composer exists (TAARenderPass.js imports it), so this resolves from cache in a microtask
-    // — no network fetch, works offline.
-    if (!_cinemaSsaaPass && !_cinemaSsaaImportFailed && A._composer) {
-      try {
-        var _ssaaMod = await import('./lib/SSAARenderPass.js');
-        _cinemaSsaaPass = new _ssaaMod.SSAARenderPass(A.scene, A.camera);
-        _cinemaSsaaPass.sampleLevel = CINEMA_SSAA_LEVEL;
-      } catch (e) {
-        _cinemaSsaaImportFailed = true;
-        console.warn('§CINEMA_SSAA_FAIL import: ' + e.message + ' — recording continues without SSAA');
-      }
-    }
-    // §PHOTO_VARIATION: lock whichever random paint/puddle variation is currently on screen —
-    // "once user agrees, press cinema icon, it takes that persisted cache" — so the capture
-    // doesn't re-roll mid-recording, and stays locked for the rest of the session.
-    _photoVariationLocked = true;
+  // §CINEMA_PATH: the one shared orbit-path formula — push-in to fill-frame → hold → ease out to
+  // the radius/tilt band → band through the main body, plus the sun-glint swoop, elliptical
+  // radius modulation, and the wide pull-back flourish. Extracted from startCinemaOrbit so the
+  // live-capture orbit AND the MaxQ exporter (cinema_maxq.js) fly the IDENTICAL path. Derives
+  // everything from the CURRENT camera/target/sun at call time — nothing hardcoded per building.
+  function _cinemaPathPlan(durationSec) {
     var arcBboxRaw = _buildingBBoxArc();
     var arcBbox = arcBboxRaw || _buildingBBoxIfc();
     var envelope = arcBbox ? Math.max(arcBbox.xMax - arcBbox.xMin, arcBbox.yMax - arcBbox.yMin, 50) : 100;
@@ -2866,7 +2848,6 @@ async function setupEffects(A, renderer, scene, camera) {
     var fillDistance = (boundingRadius / Math.max(looseTan, 1e-3)) * CINEMA_FILL_MARGIN;
     var pushInRadius = Math.min(base.startRadius, fillDistance);  // only ever draws NEARER, never out
 
-    var durationSec = CINEMA_N_FRAMES / CINEMA_FPS;
     var pushInEndT = Math.min(0.4, CINEMA_PUSHIN_SEC / durationSec);
     var holdEndT = Math.min(0.55, CINEMA_HOLD_SEC / durationSec);
     var bandEaseEndT = Math.min(0.7, holdEndT + CINEMA_BAND_EASE_SEC / durationSec);
@@ -2877,6 +2858,78 @@ async function setupEffects(A, renderer, scene, camera) {
     var swoopHalfT = CINEMA_SWOOP_HALF_SEC / durationSec;
     var swoopTiltRad = THREE.MathUtils.degToRad(CINEMA_SWOOP_TILT_DEG);
     console.log('§CINEMA_SWOOP tNorm=' + swoopTNorm.toFixed(3) + ' (~' + (swoopTNorm * durationSec).toFixed(1) + 's)');
+
+    function poseAt(tNorm) {
+      var azimuth = base.startAzimuth + tNorm * Math.PI * 2;
+      // §CINEMA_PUSHIN phases: push in to fill-frame (radius only, tilt held at the user's own
+      // starting line of attack) → brief hold → ease back out to the normal orbit band (radius +
+      // tilt together) → hold in band through the main body → existing wide pull-back flourish.
+      var radius, tilt;
+      if (tNorm <= pushInEndT) {
+        var eIn = _cinemaSmoothstep(pushInEndT > 0 ? tNorm / pushInEndT : 1);
+        radius = base.startRadius + (pushInRadius - base.startRadius) * eIn;
+        tilt = base.startTilt;
+      } else if (tNorm <= holdEndT) {
+        radius = pushInRadius;
+        tilt = base.startTilt;
+      } else if (tNorm <= bandEaseEndT) {
+        var span = bandEaseEndT - holdEndT;
+        var eOut = _cinemaSmoothstep(span > 0 ? (tNorm - holdEndT) / span : 1);
+        radius = pushInRadius + (targetRadius - pushInRadius) * eOut;
+        tilt = base.startTilt + (targetTilt - base.startTilt) * eOut;
+      } else {
+        radius = targetRadius;
+        tilt = targetTilt;
+      }
+      // §CINEMA_SWOOP: dip toward building-level tilt in a smooth window around the one
+      // guaranteed sun-behind-camera crossing, layered on top of whichever phase is active above.
+      var swoopDelta = Math.abs(tNorm - swoopTNorm);
+      swoopDelta = Math.min(swoopDelta, 1 - swoopDelta);  // wrap-around near tNorm=0/1
+      if (swoopHalfT > 0 && swoopDelta < swoopHalfT) {
+        var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfT);  // 1 at crossing, 0 at window edge
+        tilt = tilt + (swoopTiltRad - tilt) * swoopW;
+      }
+      radius *= 1 + CINEMA_ELLIPTICITY * Math.cos(2 * (azimuth - base.startAzimuth));
+      if (tNorm > CINEMA_PULLBACK_START) {
+        var p = (tNorm - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START);
+        radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * p;
+      }
+      var horizR = radius * Math.cos(tilt), dy = radius * Math.sin(tilt);
+      return {
+        x: base.tx + horizR * Math.cos(azimuth), y: base.ty + dy, z: base.tz + horizR * Math.sin(azimuth),
+        tx: base.tx, ty: base.ty, tz: base.tz
+      };
+    }
+    return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
+             pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax, poseAt: poseAt };
+  }
+  A.cinemaPathPlan = _cinemaPathPlan;   // shared with cinema_maxq.js — see §CINEMA_PATH above
+  A.startCinemaOrbit = async function() {
+    if (_cinemaActive || A._stillRefineActive || !A.camera || !A.controls || !A.renderer) return;
+    if (!A.renderer.domElement.captureStream || typeof MediaRecorder === 'undefined') {
+      console.warn('§CINEMA_FAIL captureStream/MediaRecorder unsupported in this browser');
+      return;
+    }
+    _cinemaActive = true;  // claim BEFORE the await below — a second Alt+C during the import tick must not double-start
+    // §CINEMA_SSAA lazy-load: the module is already in the browser's module map on any load where
+    // A._composer exists (TAARenderPass.js imports it), so this resolves from cache in a microtask
+    // — no network fetch, works offline.
+    if (!_cinemaSsaaPass && !_cinemaSsaaImportFailed && A._composer) {
+      try {
+        var _ssaaMod = await import('./lib/SSAARenderPass.js');
+        _cinemaSsaaPass = new _ssaaMod.SSAARenderPass(A.scene, A.camera);
+        _cinemaSsaaPass.sampleLevel = CINEMA_SSAA_LEVEL;
+      } catch (e) {
+        _cinemaSsaaImportFailed = true;
+        console.warn('§CINEMA_SSAA_FAIL import: ' + e.message + ' — recording continues without SSAA');
+      }
+    }
+    // §PHOTO_VARIATION: lock whichever random paint/puddle variation is currently on screen —
+    // "once user agrees, press cinema icon, it takes that persisted cache" — so the capture
+    // doesn't re-roll mid-recording, and stays locked for the rest of the session.
+    _photoVariationLocked = true;
+    var plan = _cinemaPathPlan(CINEMA_N_FRAMES / CINEMA_FPS);
+    var base = plan.base, envelope = plan.envelope;
 
     // Reuse the exact still-refine staging setup (ground/shadow/sky/sun/fog/addons/sparkle), minus
     // its own TAA-accumulate rAF loop — this function drives its own render loop for the moving
@@ -2916,9 +2969,9 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillRefineStartMs = performance.now();
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
-    console.log('§CINEMA_ORBIT start envelope=' + envelope.toFixed(1) + ' arcOnly=' + !!arcBboxRaw +
-      ' fillDistance=' + fillDistance.toFixed(1) + ' pushInRadius=' + pushInRadius.toFixed(1) +
-      ' radiusBand=[' + radiusMin.toFixed(1) + ',' + radiusMax.toFixed(1) + '] triplanarMaterials=' + _triCount);
+    console.log('§CINEMA_ORBIT start envelope=' + envelope.toFixed(1) + ' arcOnly=' + plan.arcOnly +
+      ' fillDistance=' + plan.fillDistance.toFixed(1) + ' pushInRadius=' + plan.pushInRadius.toFixed(1) +
+      ' radiusBand=[' + plan.radiusMin.toFixed(1) + ',' + plan.radiusMax.toFixed(1) + '] triplanarMaterials=' + _triCount);
 
     // §GI_CINEMA_PRESET (2026-07-16, Task 2): N8AO at full-res costs ~317ms/frame on a RTX 4060
     // (measured) — a recording with GI active would be a ~3fps slideshow. While the recording
@@ -2973,43 +3026,11 @@ async function setupEffects(A, renderer, scene, camera) {
     function step() {
       if (!_cinemaActive) { _giCinemaPresetRestore(); _cinemaSsaaDetach(); return; }  // early abort (stopCinemaOrbit) — restore GI + head pass too
       var tNorm = Math.min(1, (performance.now() - startMs) / durationMs);
-      var azimuth = base.startAzimuth + tNorm * Math.PI * 2;
-      // §CINEMA_PUSHIN phases: push in to fill-frame (radius only, tilt held at the user's own
-      // starting line of attack) → brief hold → ease back out to the normal orbit band (radius +
-      // tilt together) → hold in band through the main body → existing wide pull-back flourish.
-      var radius, tilt;
-      if (tNorm <= pushInEndT) {
-        var eIn = _cinemaSmoothstep(pushInEndT > 0 ? tNorm / pushInEndT : 1);
-        radius = base.startRadius + (pushInRadius - base.startRadius) * eIn;
-        tilt = base.startTilt;
-      } else if (tNorm <= holdEndT) {
-        radius = pushInRadius;
-        tilt = base.startTilt;
-      } else if (tNorm <= bandEaseEndT) {
-        var span = bandEaseEndT - holdEndT;
-        var eOut = _cinemaSmoothstep(span > 0 ? (tNorm - holdEndT) / span : 1);
-        radius = pushInRadius + (targetRadius - pushInRadius) * eOut;
-        tilt = base.startTilt + (targetTilt - base.startTilt) * eOut;
-      } else {
-        radius = targetRadius;
-        tilt = targetTilt;
-      }
-      // §CINEMA_SWOOP: dip toward building-level tilt in a smooth window around the one
-      // guaranteed sun-behind-camera crossing, layered on top of whichever phase is active above.
-      var swoopDelta = Math.abs(tNorm - swoopTNorm);
-      swoopDelta = Math.min(swoopDelta, 1 - swoopDelta);  // wrap-around near tNorm=0/1
-      if (swoopHalfT > 0 && swoopDelta < swoopHalfT) {
-        var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfT);  // 1 at crossing, 0 at window edge
-        tilt = tilt + (swoopTiltRad - tilt) * swoopW;
-      }
-      radius *= 1 + CINEMA_ELLIPTICITY * Math.cos(2 * (azimuth - base.startAzimuth));
-      if (tNorm > CINEMA_PULLBACK_START) {
-        var p = (tNorm - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START);
-        radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * p;
-      }
-      var horizR = radius * Math.cos(tilt), dy = radius * Math.sin(tilt);
-      A.camera.position.set(base.tx + horizR * Math.cos(azimuth), base.ty + dy, base.tz + horizR * Math.sin(azimuth));
-      A.controls.target.set(base.tx, base.ty, base.tz);
+      // §CINEMA_PATH: pose from the shared plan (push-in → hold → band-ease → band, sun-swoop,
+      // ellipticity, pull-back) — the SAME formula the MaxQ exporter flies, extracted below.
+      var pose = plan.poseAt(tNorm);
+      A.camera.position.set(pose.x, pose.y, pose.z);
+      A.controls.target.set(pose.tx, pose.ty, pose.tz);
       A.controls.update();
       _reassertPhotoShadowCoverage();
       _reassertPhotoMatBoost();

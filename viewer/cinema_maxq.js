@@ -127,12 +127,26 @@
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
+    // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
+    // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
+    // unavailable (old effects.js in cache).
+    var plan = null;
+    if (typeof A.cinemaPathPlan === 'function') {
+      try { plan = A.cinemaPathPlan(nFrames / fps); } catch (e) { console.warn('§MAXQ_PATH plan failed: ' + e.message); }
+    }
     var tgt = A.controls.target.clone();
     var dx = A.camera.position.x - tgt.x, dy = A.camera.position.y - tgt.y, dz = A.camera.position.z - tgt.z;
     var radius = Math.hypot(dx, dz), height = dy, az0 = Math.atan2(dz, dx);
+    function poseAt(tNorm) {
+      if (plan) return plan.poseAt(tNorm);
+      var az = az0 + tNorm * Math.PI * 2;
+      return { x: tgt.x + radius * Math.cos(az), y: tgt.y + height, z: tgt.z + radius * Math.sin(az),
+               tx: tgt.x, ty: tgt.y, tz: tgt.z };
+    }
     var w = A.renderer.domElement.width, h = A.renderer.domElement.height;
-    console.log('§MAXQ_START frames=' + nFrames + ' fps=' + fps + ' radius=' + radius.toFixed(1) +
-      ' height=' + height.toFixed(1) + ' size=' + w + 'x' + h);
+    console.log('§MAXQ_START frames=' + nFrames + ' fps=' + fps + ' path=' + (plan ? 'cinema' : 'circle') +
+      ' radius=' + radius.toFixed(1) + ' height=' + height.toFixed(1) + ' size=' + w + 'x' + h);
     var db = await _idbOpen();
     var framesDone = 0;
     // Warm-up fold (discarded): staging's async assets (sunset HDRI envMap, AO bundle, textures)
@@ -151,9 +165,9 @@
         await _raf2();
         await _sleep(SETTLE_MS);
         _freezeRandom();
-        var az = az0 + (i / nFrames) * Math.PI * 2;
-        A.camera.position.set(tgt.x + radius * Math.cos(az), tgt.y + height, tgt.z + radius * Math.sin(az));
-        A.controls.target.copy(tgt);
+        var pose = poseAt(nFrames > 1 ? i / (nFrames - 1) : 0);  // tNorm hits 1.0 on the last frame so the pull-back completes
+        A.camera.position.set(pose.x, pose.y, pose.z);
+        A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
         A.startStillRefine();
         var ok = await _waitFoldDone(30000);
