@@ -191,12 +191,17 @@ function setupStreaming(A) {
     // Sample evenly if building has more elements than cap
     const step = rows.length > MAX_PLACEHOLDERS ? Math.ceil(rows.length / MAX_PLACEHOLDERS) : 1;
     // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, element_name, bbox_x, bbox_y, bbox_z]
+    // §BBOX_ROW_SHIFT guard: bbox MUST sit at 13-15 (16-slot row). A 15-slot producer (pre-#839
+    // layout) silently reads bbox_y/bbox_z/undefined here → squashed 0.3m-tall bars (ghost_bbxes.png).
     const byDisc = {};
+    let _shortRows = 0;
     for (let i = 0; i < rows.length; i += step) {
+      if (rows[i].length < 16) _shortRows++;
       const disc = rows[i][3] || '_';
       if (!byDisc[disc]) byDisc[disc] = [];
       byDisc[disc].push(rows[i]);
     }
+    if (_shortRows) console.warn(`[BBOX] §BBOX_ROW_SHIFT short_rows=${_shortRows} — 15-slot rows reaching 16-slot reader, bbox misread`);
     const geo = new THREE.BoxGeometry(1, 1, 1);
     const _m4 = new THREE.Matrix4();
     const _pos = new THREE.Vector3();
@@ -208,7 +213,7 @@ function setupStreaming(A) {
     function _buildNextDisc() {
       if (di >= discEntries.length) {
         var shown = Object.values(byDisc).reduce((s, a) => s + a.length, 0);
-        console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${discEntries.length} mobile=${A._isMobile}`);
+        console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${discEntries.length} mobile=${A._isMobile} short_rows=${_shortRows}`);
         return;
       }
       var disc = discEntries[di][0], drows = discEntries[di][1];
@@ -1705,8 +1710,8 @@ function setupStreaming(A) {
             posView.getFloat32(off, true),      // center_x
             posView.getFloat32(off + 4, true),  // center_y
             posView.getFloat32(off + 8, true),  // center_z
-            null, null, null, null, null,        // rotation, storey, class
-            posView.getFloat32(off + 12, true), // bbox_x
+            null, null, null, null, null, null,  // rotation, storey, class, element_name
+            posView.getFloat32(off + 12, true), // bbox_x (idx 13 — _drawBboxPlaceholders 16-slot layout)
             posView.getFloat32(off + 16, true), // bbox_y
             posView.getFloat32(off + 20, true)  // bbox_z
           ]);
@@ -1787,7 +1792,7 @@ function setupStreaming(A) {
           if (_posLoaded && A._drawBboxPlaceholders) {
             var _colorRows = A.dbQuery(`SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
               t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z,
-              m.storey, m.ifc_class, t.bbox_x, t.bbox_y, t.bbox_z
+              m.storey, m.ifc_class, m.element_name, t.bbox_x, t.bbox_y, t.bbox_z
               FROM elements_meta m JOIN element_instances i ON m.guid=i.guid
               JOIN element_transforms t ON t.guid=m.guid
               WHERE m.building=? AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`, [A.activeBuilding]);
@@ -1872,7 +1877,7 @@ function setupStreaming(A) {
           _posRows.push([
             null, null, null, null,
             _posView.getFloat32(_soff, true), _posView.getFloat32(_soff + 4, true), _posView.getFloat32(_soff + 8, true),
-            null, null, null, null, null,
+            null, null, null, null, null, null,  // rotation, storey, class, element_name (16-slot layout — bbox at 13-15)
             _posView.getFloat32(_soff + 12, true), _posView.getFloat32(_soff + 16, true), _posView.getFloat32(_soff + 20, true)
           ]);
         }
