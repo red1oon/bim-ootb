@@ -973,14 +973,16 @@ async function setupEffects(A, renderer, scene, camera) {
         if (!picked.length) picked = gfExt.slice(0, no);
         for (var k = 0; k < no; k++) {
           var e = picked[k % picked.length], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
-          var lat = Math.floor(k / picked.length) * 1.4;       // extras at the same door step sideways
+          var lat = Math.floor(k / picked.length) * 1.8;       // extras at the same door step sideways
           var pose = outsidePoses[k % outsidePoses.length];
-          // §STAFFAGE_FACING: an 'away'-facing pose (shot from behind) reads as approaching/
-          // entering when stepped OUT from the door — she's walking away from the camera, toward
-          // the building. A 'toward'-facing pose (shot face-on) reads backwards if stepped out the
-          // same way (facing the camera = facing away from the door), so it stays right AT the
-          // threshold instead — reads as standing in the doorway, facing out.
-          var stepOut = pose.facing === 'toward' ? 0.3 : 1.6;
+          // §STAFFAGE_CLEARANCE (2026-07-18, user tested Hospital: "1 pax is in the door cut off
+          // and another too close to it... at least 2 meters"): the 'toward'-facing 0.3m
+          // near-threshold placement (see §STAFFAGE_FACING history) clipped visibly against the
+          // door frame in practice — the "read as standing in the doorway" idea didn't survive
+          // contact with a real building. Dropped in favour of a uniform >=2m clearance for every
+          // entrance pose regardless of facing — 'toward'-facing still turns to face the camera,
+          // just standing clear of the building instead of jammed in the frame.
+          var stepOut = 2.2;
           var px = e[0] + ((e[0] - cx) / ol) * stepOut + (-(e[1] - cy) / ol) * lat;
           var py = e[1] + ((e[1] - cy) / ol) * stepOut + ((e[0] - cx) / ol) * lat;
           _placeAt(pose, px, py, e[2], true);   // floor at the entrance
@@ -990,7 +992,7 @@ async function setupEffects(A, renderer, scene, camera) {
       } else {
         for (var k2 = 0; k2 < no; k2++) {
           var pa = (k2 / no) * Math.PI * 2 + 0.9, pose2 = outsidePoses[k2 % outsidePoses.length];
-          var prad = silR(pa) + (pose2.facing === 'toward' ? 0.6 : 2.5);   // same §STAFFAGE_FACING logic, no door to anchor to
+          var prad = silR(pa) + 2.5;   // §STAFFAGE_CLEARANCE — uniform >=2m clearance, no door to anchor to
           _placeAt(pose2, cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ, true);
           placedP++;
         }
@@ -1047,7 +1049,19 @@ async function setupEffects(A, renderer, scene, camera) {
           // default) silently back-face-culls the ENTIRE mesh if the winding is reversed, which is
           // exactly what was happening (confirmed live: mesh existed, visible=true, correct
           // material/position/boundingSphere, but never rendered on ANY building, ANY angle).
+          // §STAFFAGE_CAR_MESH_ALTS_FIX (2026-07-18, user: "car shows up but has no Alt-S
+          // effect"): this material was built standalone — never given an envMap (streaming.js's
+          // own _getMaterial always sets envMap:A._envMap, envMapIntensity:0.6 on every normal
+          // material, viewer/streaming.js:437) and never registered in A._matCache, so it was
+          // invisible to BOTH _reassertPhotoEnvMap (refreshes .envMap from the CURRENT dusk env
+          // map every reassert tick) and _reassertPhotoMatBoost (the ×3 envMapIntensity/tighter-
+          // roughness glossy boost Alt-S applies — this material's roughness=0.4 qualifies,
+          // PHOTO_GLOSSY_ROUGHNESS_MAX=0.5). Match the normal convention at creation time AND
+          // register in A._matCache so every later Alt-S reassert (dusk sun move, re-toggle)
+          // keeps reaching it automatically, exactly like every other material in the scene.
           var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
+          if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
+          if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
           var mesh = new THREE.Mesh(geo, mat);
           var pos = A.ifc2three(cx2, cy2, cz2);
           // §STAFFAGE_CAR_MESH_GROUND_FIX (2026-07-18, same report, "half buried"): the mesh's
