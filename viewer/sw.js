@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v800';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v801';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -43,6 +43,20 @@ const SHELL_LIBS = [
   'lib/SSAOPass.js',
   'lib/OutlinePass.js',
   'lib/OutputPass.js',
+  // §CINEMA_SSAA (2026-07-18) + transitive-import completion: the 6 modules above `import` these
+  // 8 (Pass/CopyShader ← everything; ShaderPass/MaskPass ← EffectComposer; SSAARenderPass ←
+  // TAARenderPass; SimplexNoise/SSAOShader ← SSAOPass; OutputShader ← OutputPass) — precaching
+  // only the 6 top-level files still 503'd the module graph's inner nodes on a genuine
+  // offline+uncached load, same failure class §EFFECTS_COMPOSER_OFFLINE describes. In addition,
+  // SSAARenderPass.js is now DIRECTLY imported by Cinema Orbit (Alt+C, effects.js §CINEMA_SSAA).
+  'lib/Pass.js',
+  'lib/CopyShader.js',
+  'lib/ShaderPass.js',
+  'lib/MaskPass.js',
+  'lib/SSAARenderPass.js',
+  'lib/SimplexNoise.js',
+  'lib/SSAOShader.js',
+  'lib/OutputShader.js',
 ];
 // DEFERRED — heavy, feature-gated; cache-on-first-use OR via the offline-download button.
 const DEFERRED_LIBS = [

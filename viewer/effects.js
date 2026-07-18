@@ -2590,7 +2590,14 @@ async function setupEffects(A, renderer, scene, camera) {
   //     non-ARC exterior MEP piping was inflating the envelope and keeping the camera parked too
   //     far to ever genuinely fill the frame. General to any building (falls back to the whole
   //     bbox if a building has zero ARC-tagged rows), nothing hardcoded to LTU specifically.
-  var CINEMA_N_FRAMES = 360, CINEMA_FPS = 15;      // 24s
+  // §CINEMA_SSAA (2026-07-18): 15→24fps (film cadence), MEASURED not guessed — §CINEMA_PERF with
+  // SSAA level 2 attached converged to avgFrameMs=18.0 (~55fps loop) on this project's RTX 4060
+  // Laptop GPU (headless Chromium, ANGLE, Duplex @1280x800) — ~2.3x headroom over the 41.7ms/24fps
+  // budget. Heavier buildings/viewports will differ: §CINEMA_PERF telemetry below is the ongoing
+  // witness. N_FRAMES scaled 360→576 so total duration stays ~24s (576/24).
+  var CINEMA_N_FRAMES = 576, CINEMA_FPS = 24;      // 24s (576/24)
+  var CINEMA_SSAA_LEVEL = 2;  // 2^2 = 4 jittered sub-pixel scene renders per frame (SSAARenderPass caps at 5)
+  var _cinemaSsaaPass = null, _cinemaSsaaImportFailed = false;  // lazy singleton, reused across recordings
   var CINEMA_PULLBACK_START = 0.80, CINEMA_PULLBACK_SCALE = 1.4;
   var CINEMA_ELLIPTICITY = 0.15;
   var CINEMA_TILT_MIN_DEG = 8, CINEMA_TILT_MAX_DEG = 45;
@@ -2609,11 +2616,25 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_SWOOP_HALF_SEC = 2.0, CINEMA_SWOOP_TILT_DEG = 4;
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
-  A.startCinemaOrbit = function() {
+  A.startCinemaOrbit = async function() {
     if (_cinemaActive || A._stillRefineActive || !A.camera || !A.controls || !A.renderer) return;
     if (!A.renderer.domElement.captureStream || typeof MediaRecorder === 'undefined') {
       console.warn('§CINEMA_FAIL captureStream/MediaRecorder unsupported in this browser');
       return;
+    }
+    _cinemaActive = true;  // claim BEFORE the await below — a second Alt+C during the import tick must not double-start
+    // §CINEMA_SSAA lazy-load: the module is already in the browser's module map on any load where
+    // A._composer exists (TAARenderPass.js imports it), so this resolves from cache in a microtask
+    // — no network fetch, works offline.
+    if (!_cinemaSsaaPass && !_cinemaSsaaImportFailed && A._composer) {
+      try {
+        var _ssaaMod = await import('./lib/SSAARenderPass.js');
+        _cinemaSsaaPass = new _ssaaMod.SSAARenderPass(A.scene, A.camera);
+        _cinemaSsaaPass.sampleLevel = CINEMA_SSAA_LEVEL;
+      } catch (e) {
+        _cinemaSsaaImportFailed = true;
+        console.warn('§CINEMA_SSAA_FAIL import: ' + e.message + ' — recording continues without SSAA');
+      }
     }
     // §PHOTO_VARIATION: lock whichever random paint/puddle variation is currently on screen —
     // "once user agrees, press cinema icon, it takes that persisted cache" — so the capture
@@ -2664,13 +2685,41 @@ async function setupEffects(A, renderer, scene, camera) {
     var swoopTiltRad = THREE.MathUtils.degToRad(CINEMA_SWOOP_TILT_DEG);
     console.log('§CINEMA_SWOOP tNorm=' + swoopTNorm.toFixed(3) + ' (~' + (swoopTNorm * durationSec).toFixed(1) + 's)');
 
-    _cinemaActive = true;
     // Reuse the exact still-refine staging setup (ground/shadow/sky/sun/fog/addons/sparkle), minus
     // its own TAA-accumulate rAF loop — this function drives its own render loop for the moving
     // camera (accumulating supersamples across motion would just blur/ghost, not help).
     A._stillRefineActive = true;
     A._composerEnabled = true;   // teardown recomputes from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX)
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
+    // §CINEMA_SSAA attach: swap the composer's HEAD pass to spatial supersampling for the length
+    // of the recording. SSAA jitters the camera sub-pixel N times WITHIN each frame and averages —
+    // the correct quality lever for a continuously moving camera. (Alt+S's TAA accumulates ACROSS
+    // frames — under motion that ghosts, which is why accumulate stays hard-off above; settled
+    // design, do not re-litigate — bim-compiler prompts/PHOTOREAL_STILL_RENDER.md 2026-07-18.)
+    // GI path excluded: N8AO already needs a reduced preset just to be recordable
+    // (§GI_CINEMA_PRESET below) — a 4x scene-render multiplier on top would be a slideshow.
+    var _cinemaSsaaAttached = false;
+    function _cinemaSsaaDetach() {
+      if (!_cinemaSsaaAttached) return;
+      _cinemaSsaaAttached = false;
+      A._composer.removePass(_cinemaSsaaPass);
+      if (A._taaPass) A._taaPass.enabled = true;
+      console.log('§CINEMA_SSAA off (TAA-as-plain-RenderPass head restored)');
+    }
+    if (_cinemaSsaaPass && A._composer && !A._giComposerActive) {
+      _cinemaSsaaPass.scene = A.scene; _cinemaSsaaPass.camera = A.camera;  // track any rebuild between runs
+      var _rt1 = A._composer.renderTarget1;
+      if (_rt1) _cinemaSsaaPass.setSize(_rt1.width, _rt1.height);  // window may have resized since last run
+      A._composer.insertPass(_cinemaSsaaPass, 0);
+      if (A._taaPass) A._taaPass.enabled = false;  // SSAA replaces the head — never render the scene twice
+      _cinemaSsaaAttached = true;
+      console.log('§CINEMA_SSAA on level=' + CINEMA_SSAA_LEVEL + ' (' + Math.pow(2, CINEMA_SSAA_LEVEL) +
+        ' spatial samples/frame, composer head swapped for recording)');
+    } else if (A._giComposerActive) {
+      console.log('§CINEMA_SSAA skipped — GI composer is the recorded path, §GI_CINEMA_PRESET governs its quality');
+    } else {
+      console.log('§CINEMA_SSAA unavailable composer=' + !!A._composer + ' importFailed=' + _cinemaSsaaImportFailed);
+    }
     _stillRefineStartMs = performance.now();
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
@@ -2708,7 +2757,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ? 'video/webm;codecs=vp9' : 'video/webm';
     var recorder;
     try { recorder = new MediaRecorder(stream, { mimeType: mimeType }); }
-    catch (e) { console.warn('§CINEMA_FAIL MediaRecorder ctor: ' + e.message); _teardownStillRefine('cinema-fail'); _cinemaActive = false; return; }
+    catch (e) { console.warn('§CINEMA_FAIL MediaRecorder ctor: ' + e.message); _cinemaSsaaDetach(); _teardownStillRefine('cinema-fail'); _cinemaActive = false; return; }
     recorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = function() {
       var blob = new Blob(chunks, { type: mimeType });
@@ -2718,6 +2767,7 @@ async function setupEffects(A, renderer, scene, camera) {
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
       console.log('§CINEMA_ORBIT saved size=' + blob.size + ' type=' + mimeType);
+      _cinemaSsaaDetach();       // §CINEMA_SSAA: recording over — plain head pass back
       _giCinemaPresetRestore();  // §GI_CINEMA_PRESET: recording over — full-quality GI settings back
       _teardownStillRefine('cinema-orbit-done');
       _cinemaActive = false;
@@ -2728,7 +2778,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var durationMs = (CINEMA_N_FRAMES / CINEMA_FPS) * 1000;
     var _cinePerfN = 0, _cinePerfMs = 0, _cinePrevFrameMs = 0;  // §CINEMA_PERF frame-time telemetry
     function step() {
-      if (!_cinemaActive) { _giCinemaPresetRestore(); return; }  // early abort (stopCinemaOrbit) — restore GI too
+      if (!_cinemaActive) { _giCinemaPresetRestore(); _cinemaSsaaDetach(); return; }  // early abort (stopCinemaOrbit) — restore GI + head pass too
       var tNorm = Math.min(1, (performance.now() - startMs) / durationMs);
       var azimuth = base.startAzimuth + tNorm * Math.PI * 2;
       // §CINEMA_PUSHIN phases: push in to fill-frame (radius only, tilt held at the user's own
@@ -2785,7 +2835,8 @@ async function setupEffects(A, renderer, scene, camera) {
         _cinePerfN++; _cinePerfMs += _nowMs - _cinePrevFrameMs;
         if (_cinePerfN % 75 === 0) {
           console.log('§CINEMA_PERF frames=' + _cinePerfN + ' avgFrameMs=' + (_cinePerfMs / _cinePerfN).toFixed(1) +
-            ' gi=' + !!A._giComposerActive + ' preset=' + !!_giCinemaSaved);
+            ' gi=' + !!A._giComposerActive + ' preset=' + !!_giCinemaSaved +
+            ' ssaa=' + (_cinemaSsaaAttached ? CINEMA_SSAA_LEVEL : 0));
         }
       }
       _cinePrevFrameMs = _nowMs;
