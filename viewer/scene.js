@@ -399,6 +399,36 @@ async function setupScene(A) {
     }).catch(function() {});
   }
 
+  // §IDB_VERSION_FALLBACK (2026-07-18): a browser profile whose bim_ootb_cache is ALREADY at a
+  // version higher than 2 (another tab/build that bumped it further, dev/test residue — IndexedDB
+  // versions only ever increase, never reopen at a LOWER version) makes the explicit
+  // indexedDB.open(name, 2) below throw VersionError on EVERY call, forever, for that profile —
+  // silently breaking ALL caching routed through this opener (buildings, schedules, ad_seed.db —
+  // confirmed live: user report "reopening the 4D schedule panel still shows initial stage" +
+  // repeated §CACHE_SKIP reason=IDB_unavailable for every DB, not just schedules). kernel_ops.js
+  // already proved the fix for this exact class of drift in its own fallback opener (unversioned
+  // open — whatever version is actually stored, never throws VersionError); this applies the same
+  // fallback to the app's SINGLE opener so every caller (buildings, kernel_ops, schedule_author)
+  // benefits without touching their own code.
+  function _openCacheDbUnversioned(resolve) {
+    try {
+      var req2 = indexedDB.open(A.CACHE_DB_NAME);   // no version → whatever's actually stored
+      req2.onupgradeneeded = function() {
+        var db = req2.result;
+        if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
+        if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+      };
+      req2.onsuccess = function() {
+        console.log('[S203] §IDB_VERSION_FALLBACK_OK opened at stored version (unversioned)');
+        resolve(req2.result);
+      };
+      req2.onerror = function() {
+        console.warn('[S203] §IDB_OPEN_ERR (unversioned) err=' + (req2.error || 'unknown'));
+        resolve(null);
+      };
+      req2.onblocked = function() { resolve(null); };
+    } catch (e) { resolve(null); }
+  }
   A.openCacheDB = function() {
     return new Promise((resolve, reject) => {
       try {
@@ -411,6 +441,11 @@ async function setupScene(A) {
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = function() {
+          if (req.error && req.error.name === 'VersionError') {
+            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 2 — falling back to unversioned open');
+            _openCacheDbUnversioned(resolve);
+            return;
+          }
           console.warn('[S203] §IDB_OPEN_ERR name=' + A.CACHE_DB_NAME + ' err=' + (req.error || 'unknown'));
           resolve(null);
         };
