@@ -1230,7 +1230,7 @@ async function setupScene(A) {
       // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
       // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
       // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
-      all.push({ seq: 'ALT+C', name: 'Cinema Orbit', icon: '', action: function() { if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      all.push({ seq: 'ALT+C', name: 'MaxQ Movie', icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
       all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
@@ -1844,7 +1844,7 @@ async function setupScene(A) {
     // Alt+C, distinct namespace from plain 'c' (Clash), no conflict). Previously only reachable via
     // the Sunglass panel's Cinema row (panels.js) — user separately confirmed Cinema Orbit works
     // fine without ever pressing Alt+S first, just adjust the starting camera view and go.
-    if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); console.log('§KBD_ROUTE Alt+C → cinema orbit'); return; }
+    if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); console.log('§KBD_ROUTE Alt+C → MaxQ movie (toggle=cancel)'); return; }
     // §PHOTO_POPULATE (2026-07-17): Alt+P toggles the fabricated staffage layer (people + trees),
     // separate from Alt+S. Distinct namespace from plain 'p' — no conflict.
     if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); if (typeof A.togglePopulate === 'function') A.togglePopulate(); console.log('§KBD_ROUTE Alt+P → populate (staffage)'); return; }

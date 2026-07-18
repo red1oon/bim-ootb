@@ -126,6 +126,7 @@
     if (A._stillRefineActive || A._stillRefineBusy) A.stopStillRefine(true);
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
     _active = true; _cancel = false;
+    A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     var tgt = A.controls.target.clone();
     var dx = A.camera.position.x - tgt.x, dy = A.camera.position.y - tgt.y, dz = A.camera.position.z - tgt.z;
     var radius = Math.hypot(dx, dz), height = dy, az0 = Math.atan2(dz, dx);
@@ -179,15 +180,13 @@
       _restoreRandom();
       _idbDestroy(db);
       _active = false; _cancel = false;
+      A._maxqActive = false;
     }
   }
 
-  // capture-phase so no bubbling handler can swallow it; witnessed (headless) that synthetic
-  // keydown delivery can lag behind a running cook — the explicit cancel API below is the
-  // guaranteed path either way.
-  document.addEventListener('keydown', function(e) {
-    if (e.altKey && (e.key === 'm' || e.key === 'M')) { e.preventDefault(); start(); }
-  }, true);
+  // No own key binding: Alt+C (scene.js §KBD_ROUTE) and the Palette cinema icon (panels.js)
+  // are the triggers — this feature REPLACES the live-capture orbit at that icon per user spec.
+  // start() while running = cancel (toggle), same as pressing the icon again.
   function cancel() {
     console.log('§MAXQ_CANCEL requested active=' + _active);
     if (_active) _cancel = true;

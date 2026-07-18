@@ -422,15 +422,21 @@ function setupPanels(A) {
     }});
     cinemaRow.appendChild(populateBtn);
 
-    var cinemaBtn = A.icon('video', { size: 18, title: 'Cinema Orbit (Alt+C)', onClick: function() {
-      if (typeof A.startCinemaOrbit !== 'function') return;
-      if (A._stillRefineActive) { console.log('§CINEMA_ORBIT skip — still-refine/cinema already active'); return; }
-      cinemaBtn.classList.add('active'); cinemaBtn.style.pointerEvents = 'none';
-      A.startCinemaOrbit();
+    // §MAXQ: this icon now runs the Max-Quality Orbiter export (each frame a full Alt+S fold,
+    // ~8 min for the 24s clip). Click while running = cancel (start() toggles), so the icon
+    // stays CLICKABLE during the cook — no pointerEvents lock like the old live-capture orbit.
+    // Old A.startCinemaOrbit stays console-callable as the quick live-capture fallback.
+    var cinemaBtn = A.icon('video', { size: 18, title: 'MaxQ Movie (Alt+C — press again to cancel)', onClick: function() {
+      if (typeof A.startMaxQualityOrbit !== 'function') {
+        if (typeof A.startCinemaOrbit === 'function' && !A._stillRefineActive) A.startCinemaOrbit();
+        return;
+      }
+      A.startMaxQualityOrbit();
+      cinemaBtn.classList.add('active');
       var _checkDone = setInterval(function() {
-        if (A._stillRefineActive) return;
+        if (A._maxqActive || A._stillRefineActive) return;
         clearInterval(_checkDone);
-        cinemaBtn.classList.remove('active'); cinemaBtn.style.pointerEvents = '';
+        cinemaBtn.classList.remove('active');
         _refreshCinemaRowIcons();
       }, 500);
     }});
