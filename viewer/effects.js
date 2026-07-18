@@ -1062,7 +1062,34 @@ async function setupEffects(A, renderer, scene, camera) {
         placedP++; thisPressPax++;
       }
       console.log('§STAFFAGE_PAX_REJECT tried=' + _paxTried + ' placed=' + thisPressPax + ' rejFrustum=' + (_rejFrustum - _rejFBefore) + ' rejOcclude=' + (_rejOcclude - _rejOBefore) + ' rejDedup=' + _rejDedup);
-      if (!thisPressPax) pSrc = 'none-in-frame';
+      if (!thisPressPax) {
+        // §STAFFAGE_WIDE_FALLBACK (2026-07-18, user: "the 4/1/2 formula should apply any building"
+        // — a real per-building asymmetry found on Terminal-class large/complex buildings: trees'
+        // ring (radii 5-20m beyond the silhouette) can clear occlusion/frame where this block's
+        // much tighter entrance/silhouette candidates (max ~12m) all fail, silently zeroing people
+        // while trees still succeed. One more attempt at trees' same wider spread before accepting
+        // zero for this press — not a data-quality fix (doesn't touch door queries or coordinates),
+        // just gives every building the same fighting chance trees already have. Live-verified: a
+        // moderate-pullback Terminal camera that zeroed people pre-fix now gets pSrc=wide-fallback.
+        var wideRadii = [5, 9, 14, 20];
+        var wideCand = [];
+        for (var wk = 0; wk < 16; wk++) {
+          var wpa = (wk / 16) * Math.PI * 2 + 0.4;
+          for (var wr = 0; wr < wideRadii.length; wr++) {
+            var wrad = silR(wpa) + wideRadii[wr];
+            wideCand.push([cx + Math.cos(wpa) * wrad, cy + Math.sin(wpa) * wrad, groundZ]);
+          }
+        }
+        _shuffle(wideCand);
+        for (var wi = 0; wi < wideCand.length && thisPressPax < PAX_CAP; wi++) {
+          var wsp = wideCand[wi], wpos3 = A.ifc2three(wsp[0], wsp[1], wsp[2]); wpos3.y = _floorThreeY(wsp[0], wsp[1], wsp[2]);
+          if (!_inFrame(wpos3) || _nearExisting(wpos3, 3)) continue;
+          var wpose = outsidePoses[placedP % outsidePoses.length];
+          _placeAt(wpose, wsp[0], wsp[1], wsp[2], true);
+          placedP++; thisPressPax++;
+        }
+        pSrc = thisPressPax ? 'wide-fallback' : 'none-in-frame';
+      }
     }
 
     // Trees: same measured-silhouette ring as before, but only the ones actually IN the current
@@ -1124,15 +1151,12 @@ async function setupEffects(A, renderer, scene, camera) {
           }
         }
       }
-      _shuffle(carCand);
-      for (var cci = 0; cci < carCand.length && thisPressCars < CAR_CAP; cci++) {
-        var ccand = carCand[cci];
-        var carPos3 = A.ifc2three(ccand[0], ccand[1], ccand[2]);
-        if (!_inFrame(carPos3) || _nearExisting(carPos3, 6)) continue;
-        thisPressCars++;
-        pSrc += '+car';
-        (function(cx2, cy2, cz2, angle) {
-          _loadCarGeometry().then(function(geo) {
+      // §STAFFAGE_WIDE_FALLBACK (2026-07-18, extracted the placement body into a real function so
+      // both the normal-radius attempt and the wide-radius fallback below can share it, instead of
+      // duplicating this whole async block): cand = [ifcX, ifcY, refZ, angle].
+      function _placeCarAt(cand) {
+        var cx2 = cand[0], cy2 = cand[1], cz2 = cand[2], angle = cand[3];
+        _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
           // §STAFFAGE_CAR_MESH_CULL_FIX: DoubleSide — this mesh's winding order comes from an
           // external IFC extraction pipeline, not authored for three.js directly; FrontSide (the
@@ -1197,7 +1221,38 @@ async function setupEffects(A, renderer, scene, camera) {
           // the done message's car count isn't stuck at 0 from before the mesh existed.
           _trackStaffageLoading();
         });
-      })(ccand[0], ccand[1], ccand[2], ccand[3]);
+      }
+      _shuffle(carCand);
+      for (var cci = 0; cci < carCand.length && thisPressCars < CAR_CAP; cci++) {
+        var ccand = carCand[cci];
+        var carPos3 = A.ifc2three(ccand[0], ccand[1], ccand[2]);
+        if (!_inFrame(carPos3) || _nearExisting(carPos3, 6)) continue;
+        thisPressCars++;
+        pSrc += '+car';
+        _placeCarAt(ccand);
+      }
+      if (!thisPressCars) {
+        // §STAFFAGE_WIDE_FALLBACK (user: "the 4/1/2 formula should apply any building" — same
+        // reasoning as the people block above): trees' wider ring (5-20m beyond silhouette) can
+        // clear where cars' tighter CAR_STEP_OUTS (7.5-13m) all fail occlusion/frame.
+        var wideCarRadii = [14, 20, 26];
+        var wideCarCand = [];
+        for (var wck = 0; wck < 12; wck++) {
+          var wcpa = (wck / 12) * Math.PI * 2 + 0.7;
+          for (var wcr = 0; wcr < wideCarRadii.length; wcr++) {
+            var wcrad = silR(wcpa) + wideCarRadii[wcr];
+            wideCarCand.push([cx + Math.cos(wcpa) * wcrad, cy + Math.sin(wcpa) * wcrad, groundZ, wcpa]);
+          }
+        }
+        _shuffle(wideCarCand);
+        for (var wci = 0; wci < wideCarCand.length && thisPressCars < CAR_CAP; wci++) {
+          var wccand = wideCarCand[wci];
+          var wCarPos3 = A.ifc2three(wccand[0], wccand[1], wccand[2]);
+          if (!_inFrame(wCarPos3) || _nearExisting(wCarPos3, 6)) continue;
+          thisPressCars++;
+          pSrc += '+car-wide';
+          _placeCarAt(wccand);
+        }
       }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
