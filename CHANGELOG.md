@@ -4,6 +4,41 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.21.0](https://github.com/red1oon/bim-ootb/compare/v1.20.0...v1.21.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **room-lens:** differentiate room-shell colours — restroom/kitchen/bedroom + synthetic-honesty ([#847](https://github.com/red1oon/bim-ootb/issues/847)) ([3cfedd7](https://github.com/red1oon/bim-ootb/commit/3cfedd77075ad0d1a0e67726d5d20510a398e944))
+* **time-machine:** high-quality Movie Export — Alt+S-quality per storyboard beat ([#849](https://github.com/red1oon/bim-ootb/issues/849)) ([a25418e](https://github.com/red1oon/bim-ootb/commit/a25418e0fd7fa5b59751d38e3a3a79a0e3ee50a9))
+
+
+### 🐛 Fixes
+
+* **guide-shots:** Task-2 diagnosis + fix — camera/styling bug, not a rendering defect ([#838](https://github.com/red1oon/bim-ootb/issues/838)) ([01bc0b6](https://github.com/red1oon/bim-ootb/commit/01bc0b6681ecd44e68a5988d8ef7c38c3d7f7dd0))
+* **modeller:** DiscWalker fixtures never borrow cat[0]'s mesh for an unmatched class ([#844](https://github.com/red1oon/bim-ootb/issues/844)) ([71950ed](https://github.com/red1oon/bim-ootb/commit/71950edd8191444c6284a243a4ee82a4078590cd))
+* **modeller:** DiscWalker fixtures no longer z-fight against their own instanced twin ([#851](https://github.com/red1oon/bim-ootb/issues/851)) ([58334dd](https://github.com/red1oon/bim-ootb/commit/58334dd68a5b04b9fa1aa207c42b70fb39edbc51))
+* **modeller:** X-ray reveal — correct glass/glow classification + depth-adaptive opacity ([#846](https://github.com/red1oon/bim-ootb/issues/846)) ([0885b74](https://github.com/red1oon/bim-ootb/commit/0885b74253b80637e2d6aaa9948ae62954bd1f75))
+* **offline:** precache Alt+P staffage textures ([#860](https://github.com/red1oon/bim-ootb/issues/860)) ([b756228](https://github.com/red1oon/bim-ootb/commit/b7562289006794983fbf7d4085d827065b78b6f0))
+* **offline:** precache EffectComposer/SSAO/Outline/TAA/RenderPass/OutputPass ([#861](https://github.com/red1oon/bim-ootb/issues/861)) ([e2da25f](https://github.com/red1oon/bim-ootb/commit/e2da25f23b4265dccda00ea7d50a8d3dae5e2445))
+* **rates:** locale productivity deep-merge + gantt cache version bump ([#853](https://github.com/red1oon/bim-ootb/issues/853)) ([782e244](https://github.com/red1oon/bim-ootb/commit/782e2447831f3f13c5a4009bb77761d9c6503fa4))
+* real car mesh never rendered (missing boundingSphere + render-loop race) ([#857](https://github.com/red1oon/bim-ootb/issues/857)) ([eb614be](https://github.com/red1oon/bim-ootb/commit/eb614bec666300eb78f5655cc27e6d3b61f65cb2))
+* **sw:** bump CACHE_VERSION v792 -&gt; v793 (missed across [#852](https://github.com/red1oon/bim-ootb/issues/852)/[#853](https://github.com/red1oon/bim-ootb/issues/853)/[#859](https://github.com/red1oon/bim-ootb/issues/859)) ([#862](https://github.com/red1oon/bim-ootb/issues/862)) ([8e14c6f](https://github.com/red1oon/bim-ootb/commit/8e14c6f20d260343cecf6cb7e9717a2cabd468c4))
+* **time-machine:** §TM_GI_HOLD_CAMGUARD — pose guard on the N8AO 300ms hold-converge loop ([#848](https://github.com/red1oon/bim-ootb/issues/848)) ([a13bb0d](https://github.com/red1oon/bim-ootb/commit/a13bb0dbb4cf30ce8adde7b4e70398107293cdfc))
+* **time-machine:** drop #tm-share button, don't restore it ([#852](https://github.com/red1oon/bim-ootb/issues/852)) ([a5f0415](https://github.com/red1oon/bim-ootb/commit/a5f0415099f2787c4fd24eb84d373b834a8149ee))
+* **time-machine:** streaming re-sweeps TM visibility on new geometry arrival ([#859](https://github.com/red1oon/bim-ootb/issues/859)) ([8354c30](https://github.com/red1oon/bim-ootb/commit/8354c308081f99d8680382e601b17c184d0ac0bd))
+* **viewer:** car mesh axis remap + ground offset; status bar shows car count (W-STAFFAGE-ZERO cont.) ([#858](https://github.com/red1oon/bim-ootb/issues/858)) ([3416b0b](https://github.com/red1oon/bim-ootb/commit/3416b0b90b29ee40c5bac18d5d6a81e7a263fc48))
+
+
+### 📝 Documentation
+
+* **disc-walker:** close out the double-render finding — fixed as PR [#851](https://github.com/red1oon/bim-ootb/issues/851) ([#855](https://github.com/red1oon/bim-ootb/issues/855)) ([7dadc88](https://github.com/red1oon/bim-ootb/commit/7dadc88a77764eebc1a77412cdd0928277d215c1))
+
+
+### ⏪ Reverts
+
+* retire Movie Export, Alt+G auto-engage, yellow frontier box ([#850](https://github.com/red1oon/bim-ootb/issues/850)) ([a3fc220](https://github.com/red1oon/bim-ootb/commit/a3fc220d01b8182919f048de9754e029f6e35a13))
+
 ## [1.20.0](https://github.com/red1oon/bim-ootb/compare/v1.19.0...v1.20.0) (2026-07-17)
 
 
