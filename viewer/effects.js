@@ -1199,7 +1199,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // P people, T trees" when done. Cached on later toggles → jumps straight to done. No polling:
   // hooks each unique texture's image 'load' event; the sprite also pops in the frame as it loads.
   function _trackStaffageLoading() {
-    if (!A.status || !_photoStaffage) return;
+    if (!A.status || !_photoStaffage) { A._populateBusy = false; return; }
     var c = _photoStaffage.userData.counts || { people: 0, trees: 0, cars: 0 };
     var doneMsg = '✓ Scene populated — ' + c.people + ' people, ' + c.trees + ' trees, ' + (c.cars || 0) + ' cars';
     var seen = [], texs = [];
@@ -1210,10 +1210,10 @@ async function setupEffects(A, renderer, scene, camera) {
     function loaded() { var n = 0; for (var i = 0; i < texs.length; i++) { var im = texs[i].image; if (im && im.complete && im.naturalWidth) n++; } return n; }
     function paint() {
       var n = loaded();
-      if (n >= total) { A.status.textContent = doneMsg; if (A.markDirty) A.markDirty(); }
+      if (n >= total) { A.status.textContent = doneMsg; A._populateBusy = false; if (A.markDirty) A.markDirty(); }
       else A.status.textContent = '⏳ Populating scene… ' + n + '/' + total;
     }
-    if (!total) { A.status.textContent = doneMsg; return; }
+    if (!total) { A.status.textContent = doneMsg; A._populateBusy = false; return; }
     paint();
     texs.forEach(function(t) {
       var im = t.image;
@@ -1437,6 +1437,12 @@ async function setupEffects(A, renderer, scene, camera) {
   A.togglePopulate = function() {
     var firstEver = !_populateOn;
     _populateOn = true;
+    // §CINEMA_ROW_BUSY (2026-07-18, user ask: "processing..." feedback on the icon itself, not
+    // just the status bar — slower machines' first cutout-decode can take a few secs). Cleared by
+    // _trackStaffageLoading below (every real exit, not a guessed timeout — see that function) once
+    // every texture is loaded, the SAME signal that already drives the "⏳ Populating…"→
+    // "✓ Scene populated" status-bar text.
+    A._populateBusy = true;
     if (A.status) A.status.textContent = '⏳ Populating scene…';
     var freshBuilding = !_photoStaffage || _populateBuilding !== A.activeBuilding;
     if (freshBuilding) {
@@ -2262,13 +2268,17 @@ async function setupEffects(A, renderer, scene, camera) {
     }
   }
   function _startStillAOPhase() {
-    if (!STILL_AO_ENABLED || !A._composer) return;
+    // §CINEMA_ROW_BUSY: every early-return below is a real "nothing more will converge" exit for
+    // THIS still — clear busy here rather than guess a timeout (a fixed timer either fires too
+    // early on a genuinely slow machine — the exact case this flag exists for — or leaves busy
+    // stuck true too long on a fast one; explicit exit coverage has neither failure mode).
+    if (!STILL_AO_ENABLED || !A._composer) { A._stillRefineBusy = false; return; }
     var t0 = performance.now();
     _ensureStillAO().then(function(ao) {
-      if (!ao) return;
+      if (!ao) { A._stillRefineBusy = false; return; }
       // the world may have moved on during the async import — only fold AO into a still that is
       // still frozen, and never fight the GI composer or the cinema loop for the canvas
-      if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) return;
+      if (!A._stillRefineActive || _stillRefineRAF || A._giComposerActive || _cinemaActive) { A._stillRefineBusy = false; return; }
       _stillAODepthDirty = true;
       ao.pass.firstFrame();
       ao.adapter.enabled = true;
@@ -2288,6 +2298,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (f >= STILL_AO_FRAMES) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
+          A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
           return;
         }
         _stillAORAF = requestAnimationFrame(stepAO);
@@ -2296,6 +2307,7 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _teardownStillRefine(reason, keepStaging) {
     A._stillRefineActive = false;
+    A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY safety net — any exit path clears "processing"
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
@@ -2336,6 +2348,14 @@ async function setupEffects(A, renderer, scene, camera) {
     // so both active at once fight over every frame. One at a time.
     if (A._giComposerActive && typeof A.toggleGIPreview === 'function') A.toggleGIPreview(false);
     A._stillRefineActive = true;
+    // §CINEMA_ROW_BUSY (2026-07-18, user ask: "processing..." feedback, slower machines take a
+    // few secs): distinct from _stillRefineActive, which stays true for the WHOLE frozen-still
+    // lifetime (converging AND showing the finished result) — this is true only while the 16-sample
+    // TAA + AO/SSGI fold is still actually converging. Cleared at every real completion point
+    // (_startStillAOPhase's f>=STILL_AO_FRAMES branch, the SSGI done callback) and as a safety net
+    // in _teardownStillRefine (every cancel/interaction/cinema-handoff exit), so it can never get
+    // stuck true.
+    A._stillRefineBusy = true;
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
     A._taaPass.accumulateIndex = -1;
