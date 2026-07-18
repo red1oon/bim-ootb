@@ -3613,8 +3613,10 @@
   // manual cacheDel/tmRefoldSchedule for this class of fix — that requires the user to know to
   // do it. v2 (2026-07-18): locale_loader.js productivity-map deep-merge fix. v3 (2026-07-18):
   // schedule_gate.js §CREW-CAP fix (uncapped per-Z-band crews → capped project-wide pool) — see
-  // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2.
-  var _GANTT_CACHE_VERSION = 3;
+  // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2. v4 (2026-07-18): §STOREY-Z
+  // no-storey-element reassignment (PR #869) — Item 6. Missed on first landing (user hit exactly
+  // this "hard reset didn't fix it" symptom); this bump is that fix's second half.
+  var _GANTT_CACHE_VERSION = 4;
 
   function _cacheKey(prefix) {
     var app = A();
