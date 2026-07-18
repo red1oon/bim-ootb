@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v791';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v792';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -37,8 +37,26 @@ const DEFERRED_LIBS = [
   'lib/xlsx.full.min.js',      // ~0.9MB — only on boq_charts.html / spreadsheet export
   'lib/exceljs.min.js',        // ~0.9MB — only on Excel export
 ];
+// §STAFFAGE_OFFLINE: Alt+P populate-staffage sprite cutouts (~4.2MB, PR #845) — shipped without
+// ever being added here, so they fell through to the default cacheFirst() path: cache miss + a
+// failed real fetch (offline) synthesizes a 503 (see cacheFirst()'s catch below), breaking Alt+P
+// offline even after "Make available offline". Feature-gated like DEFERRED_LIBS, not auto-installed.
+const STAFFAGE_ASSETS = [
+  'textures/staffage/people/person_sitting_casual_female.png',
+  'textures/staffage/people/person_sitting_formal_male.png',
+  'textures/staffage/people/person_standing_casual_male.png',
+  'textures/staffage/people/person_standing_gesture_female.png',
+  'textures/staffage/people/person_walking_gym_female.png',
+  'textures/staffage/people/person_walking_shopping_female.png',
+  'textures/staffage/trees/tree_beech.png',
+  'textures/staffage/trees/tree_linden_big_old.png',
+  'textures/staffage/trees/tree_linden_city.png',
+  'textures/staffage/trees/tree_oak_big.png',
+  'textures/staffage/trees/tree_oak_young.png',
+  'textures/staffage/trees/tree_poplar.png',
+];
 // FULL set (back-compat): GET_PRECACHE returns this so the offline button = full offline.
-const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
+const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS, ...STAFFAGE_ASSETS];
 
 // CDN fallback URLs — cached opportunistically if loader falls back to them
 const CDN_ASSETS = [
