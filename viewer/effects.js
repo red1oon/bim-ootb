@@ -1220,7 +1220,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // whichever occupancy-grid-clear spot the round-robin picks — "where opportunity" — same
     // walk-clear verification as every other candidate, nothing indoors gets less safe.
     var walkPoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'walk' || (p.role === 'stand' && p.facing === 'toward'); });
-    var floorYval = picked.length ? floorY(picked[0][0], picked[0][1], picked[0][2]) : _staffageGroundY;
+    // §STAFFAGE_WALK_FLOOR_FIX (user: "ppl appeared but knee high inside floor"): this value is now
+    // ONLY a coarse reference for the occupancy-grid Z-band + the screen-space visibility probe below —
+    // it is NOT the final walker Y anymore (that was the bug: every walker in the frame shared ONE
+    // furniture-derived floor height, which is wrong the moment a walker's own spot is on a different
+    // level than the nearest furniture, or there's no nearby furniture at all and this fell back to
+    // `_staffageGroundY` — the building's ABSOLUTE ground floor, sinking anyone on an upper storey).
+    // Fall back to the CAMERA's own height instead of the building's ground floor when no furniture is
+    // in view — the camera is always on the correct local floor, furniture may not be nearby.
+    var floorYval = picked.length ? floorY(picked[0][0], picked[0][1], picked[0][2]) : (cam.y - 1.6);
     var placedSit = 0, placedWalk = 0;
     // SITTING → on the in-view furniture (seated on real chairs)
     for (var k = 0; k < picked.length; k++) {
@@ -1246,7 +1254,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (Math.abs(_np.x) > 0.85 || Math.abs(_np.y) > 0.9 || _np.z < -1 || _np.z > 1) continue;
         aisleWalkTried++;
         var ifcX = wx + A.modelOffset.x, ifcY = -wz + A.modelOffset.y;
-        if (aisleGrid.free(ifcX, ifcY, 0.5)) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z)]);
+        if (aisleGrid.free(ifcX, ifcY, 0.5)) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z), ifcX, ifcY]);
         else aisleRejectedInObject++;
       }
     }
@@ -1256,8 +1264,13 @@ async function setupEffects(A, renderer, scene, camera) {
       var ok = true; for (var wj = 0; wj < wpick.length; wj++) { if (Math.hypot(walkCand[wi][0] - wpick[wj][0], walkCand[wi][1] - wpick[wj][1]) < 3) { ok = false; break; } }
       if (ok) wpick.push(walkCand[wi]);
     }
+    var _walkYLog = [];
     for (var m = 0; m < wpick.length; m++) {
-      var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], floorYval, wpick[m][1]), true, true);
+      // §STAFFAGE_WALK_FLOOR_FIX cont.: per-candidate floor lookup, same as sitting figures already
+      // get above (line ~1227) — NOT the shared floorYval, that was the knee-high bug.
+      var wy = floorY(wpick[m][3], wpick[m][4], ifcFloorZ);
+      _walkYLog.push(wy.toFixed(2) + '(camY-1.6=' + (cam.y - 1.6).toFixed(2) + ')');
+      var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], wy, wpick[m][1]), true, true);
       spr2.userData.interior = true; _photoStaffageInFrame.push(spr2); placedWalk++;
     }
     // §STAFFAGE_WALK_CLEAR: independently re-verify every PLACED aisle-walker against the same grid.
@@ -1268,6 +1281,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' sit=' + placedSit + ' walk=' + placedWalk + ' walkTried=' + aisleWalkTried + ' rejectedInObject=' + aisleRejectedInObject);
     console.log('§STAFFAGE_WALK_CLEAR src=aisle ok=' + aisleWcOk + '/' + wpick.length);
+    console.log('§STAFFAGE_WALK_FLOOR_Y ' + (_walkYLog.length ? _walkYLog.join(' ') : 'none'));
   }
   var _populateOn = false, _populateBuilding = null;
   A.togglePopulate = function() {
