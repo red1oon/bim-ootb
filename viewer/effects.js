@@ -823,6 +823,16 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     return picked;
   }
+  // §STAFFAGE_SHUFFLE (user: "Alt-p uses somewhat random placing so user can experiment repeatedly"
+  // — a fresh reload/press should be free to land differently, clash-avoidance is the only real
+  // guardrail, not a fixed deterministic order). Fisher-Yates, in place. Shared by exterior
+  // (_buildStaffage) and interior (_updateInFrameInterior) candidate selection.
+  function _shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1)), t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
   // §STAFFAGE_OCCUPANCY (prompts/STAFFAGE_WALKABLE_PLACEMENT.md §A — root-cause fix for "walking in
   // objects"): the old walker-clearance test only checked distance from FURNITURE, so a "clear" aisle
   // point could still sit inside a column, against a wall, or inside MEP/equipment. This rasterizes
@@ -975,11 +985,13 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return false;
     }
-    // §STAFFAGE_FACADE_MINIMAL (user: "first Alt-P is only facade 1 set of standing, 1 car, few
-    // trees. Alt-P again adds to it in available spaces"): the facade/entrance pax pool is capped
-    // to ONE new standing figure per press (not 3) — "1 set" builds up over repeated presses rather
-    // than several appearing at once. Car is already capped to 1 total via the carPlaced latch below.
-    var PAX_CAP = 1, TREE_CAP = 3, thisPressPax = 0, thisPressTrees = 0;
+    // §STAFFAGE_FORMULA (user, verbatim: "4 trees, 1 car, 3 standing pax at each Alt-P... cap to
+    // avoid clashing... may use up more open space between building and camera view as long in
+    // frame... paint own scene... repeatedly adds on without clashing"). These are TARGETS, not
+    // guarantees — clash/occlusion/frame checks are the only real limiter ("if can only squeeze in
+    // a pax comfortably, then only 1 pax"). Car is no longer a one-time-only placement (latch
+    // removed below) — it now follows the exact same additive/capped/random pattern as trees/pax.
+    var PAX_CAP = 3, TREE_CAP = 4, CAR_CAP = 1, thisPressPax = 0, thisPressTrees = 0, thisPressCars = 0;
 
     if (realPeople === 0) {
       // §STAFFAGE_SIT_OUTDOOR_GATE (user: "sitting pax cannot be outside building, only when there
@@ -997,23 +1009,33 @@ async function setupEffects(A, renderer, scene, camera) {
         if (dr >= silR(Math.atan2(dey, dex)) - 3.0) ext.push([dd[0], dd[1], dd[2], dd[3], dd[4] || 0.9]);
       }
       ext.sort(function(a, b) { return (a[2] - b[2]) || (b[4] - a[4]); });   // ground floor, then widest
+      // §STAFFAGE_OPEN_SPACE (user: "may use up more open space between building and camera view as
+      // long in frame") — multiple step-out distances per door/angle, not just one fixed 2.2m ring,
+      // so there's real spatial variety to randomly draw from instead of always the same tight spot.
+      var STEP_OUTS = [2.2, 4, 6.5, 9.5];
       var candSpots = [];   // [ifcX, ifcY, refZ]
       if (ext.length) {
         var gfz = ext[0][2];
         var gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
         for (var ei = 0; ei < gfExt.length; ei++) {
-          // §STAFFAGE_CLEARANCE: uniform >=2m clearance out from the door, never jammed in the frame.
-          var e = gfExt[ei], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1, stepOut = 2.2;
-          candSpots.push([e[0] + ((e[0] - cx) / ol) * stepOut, e[1] + ((e[1] - cy) / ol) * stepOut, e[2]]);
+          var e = gfExt[ei], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
+          for (var so = 0; so < STEP_OUTS.length; so++) {
+            var stepOut = STEP_OUTS[so];
+            candSpots.push([e[0] + ((e[0] - cx) / ol) * stepOut, e[1] + ((e[1] - cy) / ol) * stepOut, e[2]]);
+          }
         }
         pSrc = 'entrance';
       } else {
         for (var k2 = 0; k2 < 12; k2++) {
-          var pa = (k2 / 12) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
-          candSpots.push([cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ]);
+          var pa = (k2 / 12) * Math.PI * 2 + 0.9;
+          for (var so2 = 0; so2 < STEP_OUTS.length; so2++) {
+            var prad = silR(pa) + 2.5 + STEP_OUTS[so2] - 2.2;
+            candSpots.push([cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ]);
+          }
         }
         pSrc = 'silhouette';
       }
+      _shuffle(candSpots);
       for (var si2 = 0; si2 < candSpots.length && thisPressPax < PAX_CAP; si2++) {
         var sp = candSpots[si2], pos3 = A.ifc2three(sp[0], sp[1], sp[2]); pos3.y = _floorThreeY(sp[0], sp[1], sp[2]);
         if (!_inFrame(pos3) || _nearExisting(pos3, 3)) continue;
@@ -1027,52 +1049,69 @@ async function setupEffects(A, renderer, scene, camera) {
     // Trees: same measured-silhouette ring as before, but only the ones actually IN the current
     // frame get placed, capped small — repeat presses (or looking a different direction) reveal more.
     if (realTrees === 0) {
-      var ntrees = 16;
-      for (var t = 0; t < ntrees && thisPressTrees < TREE_CAP; t++) {
-        var ta = (t / ntrees) * Math.PI * 2 + 0.4, trad = silR(ta) + 5;
-        var tx = cx + Math.cos(ta) * trad, ty = cy + Math.sin(ta) * trad;
+      // §STAFFAGE_OPEN_SPACE cont.: more angle slots + a spread of radii beyond the silhouette (not
+      // just one fixed ring), shuffled — gives real spatial variety to draw from each press.
+      var TREE_RADII = [5, 9, 14, 20];
+      var treeCand = [];
+      for (var t = 0; t < 24; t++) {
+        var ta = (t / 24) * Math.PI * 2 + Math.random() * 0.2;
+        for (var tr = 0; tr < TREE_RADII.length; tr++) treeCand.push([ta, TREE_RADII[tr]]);
+      }
+      _shuffle(treeCand);
+      for (var ti = 0; ti < treeCand.length && thisPressTrees < TREE_CAP; ti++) {
+        var ang = treeCand[ti][0], trad = silR(ang) + treeCand[ti][1];
+        var tx = cx + Math.cos(ang) * trad, ty = cy + Math.sin(ang) * trad;
         var tpos = A.ifc2three(tx, ty, groundZ); tpos.y = _floorThreeY(tx, ty, groundZ);
         if (!_inFrame(tpos) || _nearExisting(tpos, 4)) continue;
-        _placeAt(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], tx, ty, groundZ, false);
+        _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], tx, ty, groundZ, false);
         placedT++; thisPressTrees++;
       }
     }
-    // §STAFFAGE_CAR_MESH: place ONE real car mesh near a ground-floor exterior door when this
+    // §STAFFAGE_CAR_MESH: place real car mesh(es) near ground-floor exterior doors when this
     // building has no real vehicle of its own — same real-data-first discipline as people/trees
     // above, just reusing the project's OWN real extracted geometry instead of a photo cutout. A
     // genuine THREE.Mesh (not a billboard), so it casts/receives real shadows like any other solid.
-    // Only placed once it's actually IN the current frame (frame-focused, same as pax/trees above);
-    // `carPlaced` latches so a later press doesn't retry mid-async-load or duplicate it once real.
-    if (realCars === 0 && !_photoStaffage.userData.carPlaced) {
+    // §STAFFAGE_FORMULA cont.: no longer a one-time-only placement — additive/capped/random exactly
+    // like trees and pax (user: "1 car... at each Alt-P... repeatedly adds on without clashing").
+    if (realCars === 0) {
       var carDoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var carExt = [];
       for (var cdi = 0; cdi < carDoors.length; cdi++) {
         var cd = carDoors[cdi], cdx = cd[0] - cx, cdy = cd[1] - cy, cdr = Math.hypot(cdx, cdy);
         if (cdr >= silR(Math.atan2(cdy, cdx)) - 3.0) carExt.push(cd);
       }
-      var carX, carY, carZ, carAngle;
+      // §STAFFAGE_CAR_CLEARANCE (user: "should be another 2 meters away from wall") 5.5m->7.5m base,
+      // plus the same open-space step-out spread used for pax/trees, shuffled for variety.
+      var CAR_STEP_OUTS = [7.5, 10, 13];
+      var carCand = [];   // [ifcX, ifcY, refZ, angle]
       if (carExt.length) {
-        carExt.sort(function(a, b) { return a[2] - b[2]; });   // ground floor first
-        var carSpot = carExt[0];
-        var col = Math.hypot(carSpot[0] - cx, carSpot[1] - cy) || 1;
-        var nrmX = (carSpot[0] - cx) / col, nrmY = (carSpot[1] - cy) / col;
-        // Stepped out further than entrance figures (a car needs more clearance) AND offset
-        // sideways so it reads as parked near, not blocking, the doorway.
-        // §STAFFAGE_CAR_CLEARANCE (user: "should be another 2 meters away from wall") 5.5m->7.5m.
-        carX = carSpot[0] + nrmX * 7.5 + (-nrmY) * 3.0;
-        carY = carSpot[1] + nrmY * 7.5 + (nrmX) * 3.0;
-        carZ = carSpot[2];
-        carAngle = Math.atan2(nrmX, nrmY);   // tangent to the radial-out direction — parked
-                                              // alongside the building, not nose-first into the wall
+        for (var cei = 0; cei < carExt.length; cei++) {
+          var cSpot = carExt[cei], col = Math.hypot(cSpot[0] - cx, cSpot[1] - cy) || 1;
+          var nrmX = (cSpot[0] - cx) / col, nrmY = (cSpot[1] - cy) / col;
+          for (var cso = 0; cso < CAR_STEP_OUTS.length; cso++) {
+            var so3 = CAR_STEP_OUTS[cso];
+            // Stepped out further than entrance figures (a car needs more clearance) AND offset
+            // sideways so it reads as parked near, not blocking, the doorway.
+            carCand.push([cSpot[0] + nrmX * so3 + (-nrmY) * 3.0, cSpot[1] + nrmY * so3 + (nrmX) * 3.0, cSpot[2],
+              Math.atan2(nrmX, nrmY)]);   // tangent to the radial-out direction — parked alongside, not nose-first
+          }
+        }
       } else {
-        carAngle = 0.6;
-        carX = cx + Math.cos(carAngle) * (silR(carAngle) + 7.5);
-        carY = cy + Math.sin(carAngle) * (silR(carAngle) + 7.5);
-        carZ = groundZ;
+        for (var cka = 0; cka < 8; cka++) {
+          var pa2 = (cka / 8) * Math.PI * 2 + 0.6;
+          for (var cso2 = 0; cso2 < CAR_STEP_OUTS.length; cso2++) {
+            var prad2 = silR(pa2) + CAR_STEP_OUTS[cso2];
+            carCand.push([cx + Math.cos(pa2) * prad2, cy + Math.sin(pa2) * prad2, groundZ, pa2]);
+          }
+        }
       }
-      var carPos3 = A.ifc2three(carX, carY, carZ);
-      if (_inFrame(carPos3)) {
-        _photoStaffage.userData.carPlaced = true;   // claim now — async load below, don't retry mid-flight
+      _shuffle(carCand);
+      for (var cci = 0; cci < carCand.length && thisPressCars < CAR_CAP; cci++) {
+        var ccand = carCand[cci];
+        var carPos3 = A.ifc2three(ccand[0], ccand[1], ccand[2]);
+        if (!_inFrame(carPos3) || _nearExisting(carPos3, 6)) continue;
+        thisPressCars++;
+        pSrc += '+car';
         (function(cx2, cy2, cz2, angle) {
           _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
@@ -1139,8 +1178,7 @@ async function setupEffects(A, renderer, scene, camera) {
           // the done message's car count isn't stuck at 0 from before the mesh existed.
           _trackStaffageLoading();
         });
-      })(carX, carY, carZ, carAngle);
-      pSrc += '+car';
+      })(ccand[0], ccand[1], ccand[2], ccand[3]);
       }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
@@ -1304,7 +1342,10 @@ async function setupEffects(A, renderer, scene, camera) {
         if (dist < 16 && !_nearExistingIF(p, 1.5)) cand.push([f[0], f[1], f[2], f[3], dist]);
       }
     }
-    cand.sort(function(a, b) { return a[4] - b[4]; });
+    // §STAFFAGE_SHUFFLE: random draw among all in-view/in-range candidates, not always nearest-first
+    // — "repeatedly adds on... in random placings" applies indoors too, clash (_spreadPick's minDist)
+    // is still the guardrail.
+    _shuffle(cand);
     var picked = _spreadPick(cand, SIT_CAP, 2.0);
     // floor slab under each spot (raised/upper storey respected — same logic as _buildStaffage)
     var slabs = A.dbQuery("SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND bbox_z IS NOT NULL AND bbox_z < 1.5 AND center_x IS NOT NULL") || [];
@@ -1360,7 +1401,7 @@ async function setupEffects(A, renderer, scene, camera) {
         } else aisleRejectedInObject++;
       }
     }
-    walkCand.sort(function(a, b) { return a[2] - b[2]; });
+    _shuffle(walkCand);   // §STAFFAGE_SHUFFLE — random draw, not always nearest-first
     var wpick = [];
     for (var wi = 0; wi < walkCand.length && wpick.length < WALK_CAP; wi++) {
       var ok = true; for (var wj = 0; wj < wpick.length; wj++) { if (Math.hypot(walkCand[wi][0] - wpick[wj][0], walkCand[wi][1] - wpick[wj][1]) < 3) { ok = false; break; } }
