@@ -2859,49 +2859,205 @@ async function setupEffects(A, renderer, scene, camera) {
     var swoopTiltRad = THREE.MathUtils.degToRad(CINEMA_SWOOP_TILT_DEG);
     console.log('§CINEMA_SWOOP tNorm=' + swoopTNorm.toFixed(3) + ' (~' + (swoopTNorm * durationSec).toFixed(1) + 's)');
 
-    function poseAt(tNorm) {
-      var azimuth = base.startAzimuth + tNorm * Math.PI * 2;
-      // §CINEMA_PUSHIN phases: push in to fill-frame (radius only, tilt held at the user's own
-      // starting line of attack) → brief hold → ease back out to the normal orbit band (radius +
-      // tilt together) → hold in band through the main body → existing wide pull-back flourish.
-      var radius, tilt;
-      if (tNorm <= pushInEndT) {
-        var eIn = _cinemaSmoothstep(pushInEndT > 0 ? tNorm / pushInEndT : 1);
-        radius = base.startRadius + (pushInRadius - base.startRadius) * eIn;
-        tilt = base.startTilt;
-      } else if (tNorm <= holdEndT) {
-        radius = pushInRadius;
-        tilt = base.startTilt;
-      } else if (tNorm <= bandEaseEndT) {
-        var span = bandEaseEndT - holdEndT;
-        var eOut = _cinemaSmoothstep(span > 0 ? (tNorm - holdEndT) / span : 1);
-        radius = pushInRadius + (targetRadius - pushInRadius) * eOut;
-        tilt = base.startTilt + (targetTilt - base.startTilt) * eOut;
-      } else {
-        radius = targetRadius;
-        tilt = targetTilt;
+    // Orbit pose factory — same phase math as always (§CINEMA_PUSHIN push-in → hold → band-ease →
+    // band, §CINEMA_SWOOP, ellipticity, pull-back), parameterized by base so the indoor prelude
+    // below can re-enter the orbit from the entrance side without duplicating the formula.
+    function _mkOrbitPose(b, pushR, tgtRad, tgtTilt, swoopTN) {
+      return function(tNorm) {
+        var azimuth = b.startAzimuth + tNorm * Math.PI * 2;
+        var radius, tilt;
+        if (tNorm <= pushInEndT) {
+          var eIn = _cinemaSmoothstep(pushInEndT > 0 ? tNorm / pushInEndT : 1);
+          radius = b.startRadius + (pushR - b.startRadius) * eIn;
+          tilt = b.startTilt;
+        } else if (tNorm <= holdEndT) {
+          radius = pushR;
+          tilt = b.startTilt;
+        } else if (tNorm <= bandEaseEndT) {
+          var span = bandEaseEndT - holdEndT;
+          var eOut = _cinemaSmoothstep(span > 0 ? (tNorm - holdEndT) / span : 1);
+          radius = pushR + (tgtRad - pushR) * eOut;
+          tilt = b.startTilt + (tgtTilt - b.startTilt) * eOut;
+        } else {
+          radius = tgtRad;
+          tilt = tgtTilt;
+        }
+        var swoopDelta = Math.abs(tNorm - swoopTN);
+        swoopDelta = Math.min(swoopDelta, 1 - swoopDelta);  // wrap-around near tNorm=0/1
+        if (swoopHalfT > 0 && swoopDelta < swoopHalfT) {
+          var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfT);  // 1 at crossing, 0 at window edge
+          tilt = tilt + (swoopTiltRad - tilt) * swoopW;
+        }
+        radius *= 1 + CINEMA_ELLIPTICITY * Math.cos(2 * (azimuth - b.startAzimuth));
+        if (tNorm > CINEMA_PULLBACK_START) {
+          var p = (tNorm - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START);
+          radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * p;
+        }
+        var horizR = radius * Math.cos(tilt), dy = radius * Math.sin(tilt);
+        return {
+          x: b.tx + horizR * Math.cos(azimuth), y: b.ty + dy, z: b.tz + horizR * Math.sin(azimuth),
+          tx: b.tx, ty: b.ty, tz: b.tz
+        };
+      };
+    }
+    var poseAt = _mkOrbitPose(base, pushInRadius, targetRadius, targetTilt, swoopTNorm);
+
+    // §CINEMA_INDOOR (2026-07-19, user spec): camera INSIDE the building → dramatic exit prelude.
+    // 0–5/24 turn in place ≥180° acquiring the "north star" (main entrance); 5–10/24 travel out
+    // through it — via the building's OWN injected room/corridor graph when present (wall-legal,
+    // the same RoomGraph the Fly tour rides); straight line when the building has no graph (then
+    // a wall clip is the model's data gap, not the orbit's — user doctrine); 10–12/24 swing to
+    // face the building while rising onto the orbit band; 12/24→end the original orbit from the
+    // entrance side. Camera OUTSIDE → the original plan above, untouched.
+    var camPos = { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z };
+    var inside = false, bb3 = null;
+    if (arcBbox && A.ifc2three) {
+      var c1 = A.ifc2three(arcBbox.xMin, arcBbox.yMin, arcBbox.zMin);
+      var c2 = A.ifc2three(arcBbox.xMax, arcBbox.yMax, arcBbox.zMax);
+      bb3 = { xMin: Math.min(c1.x, c2.x), xMax: Math.max(c1.x, c2.x),
+              yMin: Math.min(c1.y, c2.y), yMax: Math.max(c1.y, c2.y),
+              zMin: Math.min(c1.z, c2.z), zMax: Math.max(c1.z, c2.z) };
+      inside = camPos.x > bb3.xMin && camPos.x < bb3.xMax &&
+               camPos.y > bb3.yMin && camPos.y < bb3.yMax &&
+               camPos.z > bb3.zMin && camPos.z < bb3.zMax;
+    }
+    if (inside) {
+      var EYE = 1.7;
+      var wp = [], entName = 'none', route = 'line', ent3 = null;
+      try {
+        var g = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
+        var RG2 = window.RoomGraph;
+        if (g && g.nodesByGuid && RG2 && RG2.shortestPath) {
+          var entrance = null, nearest = null, nearestD = 1e18;
+          for (var k in g.nodesByGuid) {
+            var n = g.nodesByGuid[k];
+            if (n.kind === 'exit' && (entrance === null || n.cz < entrance.cz)) entrance = n;
+            var p3 = A.ifc2three(n.cx, n.cy, n.cz);
+            var d = Math.hypot(p3.x - camPos.x, p3.z - camPos.z) + Math.abs(p3.y + EYE - camPos.y) * 2;
+            if (d < nearestD) { nearestD = d; nearest = n; }
+          }
+          if (entrance && nearest) {
+            var sp = RG2.shortestPath(g, nearest.guid, entrance.guid);
+            if (sp && sp.path && sp.path.length >= 1) {
+              for (var si = 0; si < sp.path.length; si++) {
+                var nn = g.nodesByGuid[sp.path[si]];
+                if (!nn) continue;
+                var q = A.ifc2three(nn.cx, nn.cy, nn.cz);
+                wp.push({ x: q.x, y: q.y + EYE, z: q.z });
+              }
+              if (wp.length) {
+                ent3 = wp[wp.length - 1];
+                entName = entrance.name || entrance.guid;
+                route = 'graph';
+              }
+            }
+          }
+        }
+      } catch (eg) { console.warn('§CINEMA_INDOOR graph route failed: ' + eg.message); }
+      if (!ent3 && A.dbQuery) {
+        // fallback north star: the widest of the lowest-storey doors (main entrances are wide)
+        try {
+          var dr = A.dbQuery(
+            "SELECT et.center_x, et.center_y, et.center_z, et.bbox_x, et.bbox_y " +
+            "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid " +
+            "WHERE em.ifc_class = 'IfcDoor' AND et.center_x IS NOT NULL " +
+            "ORDER BY et.center_z ASC LIMIT 12");
+          var best = null, bestW = 0;
+          for (var di = 0; di < dr.length; di++) {
+            var wD = Math.max(dr[di][3] || 0, dr[di][4] || 0);
+            if (wD > bestW) { bestW = wD; best = dr[di]; }
+          }
+          if (best) {
+            var dq = A.ifc2three(best[0], best[1], best[2]);
+            ent3 = { x: dq.x, y: dq.y + EYE * 0.5, z: dq.z };
+            entName = 'widest-ground-door';
+          }
+        } catch (ed) { /* fall through */ }
       }
-      // §CINEMA_SWOOP: dip toward building-level tilt in a smooth window around the one
-      // guaranteed sun-behind-camera crossing, layered on top of whichever phase is active above.
-      var swoopDelta = Math.abs(tNorm - swoopTNorm);
-      swoopDelta = Math.min(swoopDelta, 1 - swoopDelta);  // wrap-around near tNorm=0/1
-      if (swoopHalfT > 0 && swoopDelta < swoopHalfT) {
-        var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfT);  // 1 at crossing, 0 at window edge
-        tilt = tilt + (swoopTiltRad - tilt) * swoopW;
+      if (!ent3 && bb3) {
+        // last resort: exit through the nearest facade at camera height
+        var exitX = (camPos.x - bb3.xMin < bb3.xMax - camPos.x) ? bb3.xMin : bb3.xMax;
+        var exitZ = (camPos.z - bb3.zMin < bb3.zMax - camPos.z) ? bb3.zMin : bb3.zMax;
+        ent3 = (Math.min(camPos.x - bb3.xMin, bb3.xMax - camPos.x) <
+                Math.min(camPos.z - bb3.zMin, bb3.zMax - camPos.z))
+          ? { x: exitX, y: camPos.y, z: camPos.z }
+          : { x: camPos.x, y: camPos.y, z: exitZ };
+        entName = 'nearest-facade';
       }
-      radius *= 1 + CINEMA_ELLIPTICITY * Math.cos(2 * (azimuth - base.startAzimuth));
-      if (tNorm > CINEMA_PULLBACK_START) {
-        var p = (tNorm - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START);
-        radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * p;
+      if (!wp.length) wp = [ent3];
+      wp.unshift({ x: camPos.x, y: camPos.y, z: camPos.z });
+      // exit point: past the entrance, outward from the building center
+      var odx = ent3.x - base.tx, odz = ent3.z - base.tz;
+      var odL = Math.hypot(odx, odz) || 1; odx /= odL; odz /= odL;
+      var exitP = { x: ent3.x + odx * Math.max(6, envelope * 0.12), y: ent3.y + 1.0,
+                    z: ent3.z + odz * Math.max(6, envelope * 0.12) };
+      wp.push(exitP);
+      var segLen = [0];
+      for (var wi = 1; wi < wp.length; wi++)
+        segLen.push(segLen[wi - 1] + Math.hypot(wp[wi].x - wp[wi - 1].x, wp[wi].y - wp[wi - 1].y, wp[wi].z - wp[wi - 1].z));
+      var totalLen = segLen[segLen.length - 1] || 1;
+      function pathPos(f) {
+        var target = f * totalLen;
+        for (var i2 = 1; i2 < wp.length; i2++) {
+          if (target <= segLen[i2] || i2 === wp.length - 1) {
+            var seg = segLen[i2] - segLen[i2 - 1] || 1;
+            var lf = Math.max(0, Math.min(1, (target - segLen[i2 - 1]) / seg));
+            return { x: wp[i2 - 1].x + (wp[i2].x - wp[i2 - 1].x) * lf,
+                     y: wp[i2 - 1].y + (wp[i2].y - wp[i2 - 1].y) * lf,
+                     z: wp[i2 - 1].z + (wp[i2].z - wp[i2 - 1].z) * lf };
+          }
+        }
+        return wp[wp.length - 1];
       }
-      var horizR = radius * Math.cos(tilt), dy = radius * Math.sin(tilt);
-      return {
-        x: base.tx + horizR * Math.cos(azimuth), y: base.ty + dy, z: base.tz + horizR * Math.sin(azimuth),
-        tx: base.tx, ty: base.ty, tz: base.tz
+      // orbit re-entry: entrance-side azimuth on the band (the story continues where we came out)
+      var entAz = Math.atan2(exitP.z - base.tz, exitP.x - base.tx);
+      var tilt2 = Math.max(tiltMin, Math.min(tiltMax, 20 * Math.PI / 180));
+      var base2 = { tx: base.tx, ty: base.ty, tz: base.tz,
+                    startRadius: targetRadius, startTilt: tilt2, startAzimuth: entAz };
+      var swoopTN2 = (((sunAzimuth - entAz) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI);
+      var orbitPose2 = _mkOrbitPose(base2, Math.min(targetRadius, fillDistance), targetRadius, targetTilt, swoopTN2);
+      var orbitStart = orbitPose2(0);
+      var P1 = 5 / 24, P2 = 10 / 24, P3 = 12 / 24;   // user spec on the 24s story
+      // ≥180° "turn around" to the north star — forced the long way round for the reveal
+      var lookDir0 = Math.atan2(base.tz - camPos.z, base.tx - camPos.x);
+      var wpn = wp.length > 1 ? wp[1] : ent3;
+      var lookDir1 = Math.atan2(wpn.z - camPos.z, wpn.x - camPos.x);
+      var dYaw = lookDir1 - lookDir0;
+      while (dYaw > Math.PI) dYaw -= 2 * Math.PI;
+      while (dYaw < -Math.PI) dYaw += 2 * Math.PI;
+      if (Math.abs(dYaw) < Math.PI) dYaw = dYaw - (dYaw >= 0 ? 1 : -1) * 2 * Math.PI;
+      console.log('§CINEMA_INDOOR inside=true route=' + route + ' waypoints=' + wp.length +
+        ' entrance=' + entName + ' turnDeg=' + Math.round(Math.abs(dYaw) * 180 / Math.PI) +
+        ' pathLen=' + totalLen.toFixed(1));
+      poseAt = function(tNorm) {
+        if (tNorm <= P1) {
+          var e1 = _cinemaSmoothstep(P1 > 0 ? tNorm / P1 : 1);
+          var yaw = lookDir0 + dYaw * e1;
+          return { x: camPos.x, y: camPos.y, z: camPos.z,
+                   tx: camPos.x + Math.cos(yaw) * 20, ty: camPos.y, tz: camPos.z + Math.sin(yaw) * 20 };
+        } else if (tNorm <= P2) {
+          var e2 = _cinemaSmoothstep((tNorm - P1) / (P2 - P1));
+          var pos = pathPos(e2);
+          var ahead = pathPos(Math.min(1, e2 + 0.06));
+          if (Math.hypot(ahead.x - pos.x, ahead.z - pos.z) < 0.5)
+            ahead = { x: pos.x + odx * 10, y: pos.y, z: pos.z + odz * 10 };
+          return { x: pos.x, y: pos.y, z: pos.z, tx: ahead.x, ty: ahead.y, tz: ahead.z };
+        } else if (tNorm <= P3) {
+          var e3 = _cinemaSmoothstep((tNorm - P2) / (P3 - P2));
+          var lax = exitP.x + odx * 10, laz = exitP.z + odz * 10;
+          return { x: exitP.x + (orbitStart.x - exitP.x) * e3,
+                   y: exitP.y + (orbitStart.y - exitP.y) * e3,
+                   z: exitP.z + (orbitStart.z - exitP.z) * e3,
+                   tx: lax + (base.tx - lax) * e3,
+                   ty: exitP.y + (base.ty - exitP.y) * e3,
+                   tz: laz + (base.tz - laz) * e3 };
+        }
+        return orbitPose2((tNorm - P3) / (1 - P3));
       };
     }
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
-             pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax, poseAt: poseAt };
+             pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
+             indoor: inside, poseAt: poseAt };
   }
   A.cinemaPathPlan = _cinemaPathPlan;   // shared with cinema_maxq.js — see §CINEMA_PATH above
   A.startCinemaOrbit = async function() {
