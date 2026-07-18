@@ -208,8 +208,22 @@ async function setupEffects(A, renderer, scene, camera) {
     _carGeometryPromise = fetch(_CAR_BIN_URL).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
       var dv = new DataView(buf);
       var vCount = dv.getUint32(0, true), iCount = dv.getUint32(4, true);
-      var verts = new Float32Array(buf, 8, vCount * 3);
+      var rawVerts = new Float32Array(buf, 8, vCount * 3);
       var idx = new Uint32Array(buf, 8 + vCount * 3 * 4, iCount);
+      // §STAFFAGE_CAR_MESH_AXIS_FIX (2026-07-18, user: "upright and half buried"): the raw BLOB
+      // stores vertices in IFC-native axes (X-east, Y-north, Z-up — the SAME convention every
+      // other extracted element uses), but this app's THREE.js scene is Y-up, and A.ifc2three
+      // remaps every OTHER position (x, z, -y) to account for that. Feeding these raw vertices
+      // straight into a BufferGeometry skipped that remap — the car's real LENGTH axis (IFC Y,
+      // 3.93m) rendered as vertical and its real HEIGHT (IFC Z, 1.51m) rendered as horizontal
+      // depth, i.e. the car appeared standing on its trunk. Apply the identical remap used
+      // everywhere else in this codebase, per-vertex, once, at load time.
+      var verts = new Float32Array(vCount * 3);
+      for (var vi = 0; vi < vCount; vi++) {
+        verts[vi * 3] = rawVerts[vi * 3];
+        verts[vi * 3 + 1] = rawVerts[vi * 3 + 2];
+        verts[vi * 3 + 2] = -rawVerts[vi * 3 + 1];
+      }
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
@@ -1028,7 +1042,14 @@ async function setupEffects(A, renderer, scene, camera) {
           var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
           var mesh = new THREE.Mesh(geo, mat);
           var pos = A.ifc2three(cx2, cy2, cz2);
-          pos.y = _floorThreeY(cx2, cy2, cz2);
+          // §STAFFAGE_CAR_MESH_GROUND_FIX (2026-07-18, same report, "half buried"): the mesh's
+          // local origin sits near its vertical CENTRE (boundingBox.min.y ~ -0.71), not at its
+          // wheel-bottom — placing the origin straight at floor level buries roughly half the car.
+          // Lift by the (negative) local min so the actual lowest point — not the arbitrary
+          // origin — is what touches the floor. Same fix class as the sprite pad-offset already
+          // used for tree cutouts, just via boundingBox instead of a hand-measured pad fraction.
+          var carLift = geo.boundingBox ? -geo.boundingBox.min.y : 0;
+          pos.y = _floorThreeY(cx2, cy2, cz2) + carLift;
           mesh.position.copy(pos);
           mesh.rotation.y = angle;
           mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1051,6 +1072,9 @@ async function setupEffects(A, renderer, scene, camera) {
             requestAnimationFrame(function() { if (A.markDirty) A.markDirty(); });
             requestAnimationFrame(function() { requestAnimationFrame(function() { if (A.markDirty) A.markDirty(); }); });
           }
+          // Car lands after the initial status paint (async geometry fetch) — refresh it now so
+          // the done message's car count isn't stuck at 0 from before the mesh existed.
+          _trackStaffageLoading();
         });
       })(carX, carY, carZ, carAngle);
       pSrc += '+car';
@@ -1071,8 +1095,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // hooks each unique texture's image 'load' event; the sprite also pops in the frame as it loads.
   function _trackStaffageLoading() {
     if (!A.status || !_photoStaffage) return;
-    var c = _photoStaffage.userData.counts || { people: 0, trees: 0 };
-    var doneMsg = '✓ Scene populated — ' + c.people + ' people, ' + c.trees + ' trees';
+    var c = _photoStaffage.userData.counts || { people: 0, trees: 0, cars: 0 };
+    var doneMsg = '✓ Scene populated — ' + c.people + ' people, ' + c.trees + ' trees, ' + (c.cars || 0) + ' cars';
     var seen = [], texs = [];
     _photoStaffage.children.forEach(function(s) {
       if (s.material && s.material.map && seen.indexOf(s.material.map) < 0) { seen.push(s.material.map); texs.push(s.material.map); }
