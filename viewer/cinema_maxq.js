@@ -7,6 +7,11 @@
 // retired TM exporter). Single tab = serial: ~1.3s/frame → 360 frames ≈ 8 min cook + 24s stitch.
 (function() {
   'use strict';
+  // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
+  // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
+  // on every behavior change to this module.
+  var MAXQ_V = 'v4 (cinema-path + cancel-saves-partial + eta)';
+  console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
                          // staging captures mid-restore sun-tint/exposure values as "original"
@@ -178,9 +183,13 @@
         await _idbPut(db, i, blob);
         framesDone = i + 1;
         if (i % 15 === 0 || i === nFrames - 1) {
-          console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(performance.now() - t0));
-          _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' +
-            Math.round((performance.now() - t0) / 1000) + 's (Alt+C / cinema icon cancels + saves partial)');
+          var _el = performance.now() - t0;
+          var _eta = i > 0 ? Math.round((_el / (i + 1)) * (nFrames - i - 1) / 1000) : -1;
+          console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
+            ' perFrameMs=' + (i > 0 ? Math.round(_el / (i + 1)) : 0) + ' etaSec=' + _eta);
+          _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
+            (_eta >= 0 ? Math.ceil(_eta / 60) + ' min left' : 'estimating') +
+            ' (Alt+C / cinema icon cancels + saves partial)');
         }
       }
       if (A._stillRefineActive) A.stopStillRefine(true);
