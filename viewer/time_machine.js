@@ -643,10 +643,221 @@
     }, 300);
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // §GROUP_SPARK — frontier spark eye candy (2026-07-19)
+  // ══════════════════════════════════════════════════════════════════
+  // Spec: bim-compiler prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md §GROUP_SPARK
+  // User: "if it is a group of pieces, then they randomize among themselves repeatedly until
+  // their duration is reached. If the group is small say only single or 2 pieces then it is
+  // those only. This is irrespective the piece ar big or small." / "sparkling is just an
+  // animation eye candy."
+  //
+  // Reads NOTHING from the schedule — pure decoration over whatever is mid-install. Groups are
+  // therefore spatial cells (pieces near each other = worked together), NOT real task data.
+  //
+  // ⚠ THIS REPLACES THE REVERTED #866 HALO. Two root causes killed that one (both reproduced in
+  // an isolated rig, both designed out here — do NOT reintroduce either):
+  //   1. UNCAPPED ADDITIVE STACKING — one sprite per batched slot / per instance, no pool cap.
+  //      Additive blending is unbounded; 414 frontier elements summed into a solid yellow wash.
+  //      Here: only `frac` of each group is lit, so count scales with ACTIVE GROUPS, not with
+  //      frontier size. _GSP_CAP is a safety net, not the mechanism.
+  //   2. SPRITES OUTLIVING THE RENDER LOOP — the viewer is render-on-demand with idle-park
+  //      (main.js §IDLE-PARK). Sprites left visible when rendering parks freeze on screen
+  //      forever. THIS was the "it just lingers" nobody could pin down.
+  //      Here: sparks exist ONLY during playback; stop decays to zero; scrub draws none.
+  //      The only state that can persist is zero.
+  var _gspTexture = null, _gspPool = [], _gspActive = 0;
+  var _gspRoll = 0;            // re-roll index — advances once per playback tick
+  var _gspDecay = 1;           // 1 while playing; ramps to 0 on stop
+  var _gspDecayTimer = null;
+  var _gspCand = [];           // flat [x,y,z,...] collected during the traverse
+  var _GSP_CAP = 140;          // safety net only
+  var _GSP_FRAC = 0.16;        // fraction of a group sparking at once
+  var _GSP_SIZE = 2.6;         // world-metres; constant by design — "irrespective the piece
+                               // ar big or small", additive+depthTest:false keeps it visible
+  var _GSP_CELL = 6;           // spatial-cell size (m) that defines a "group"
+  var _GSP_DECAY_STEPS = 15;   // steps the stop die-out is stretched over
+  var _gspLogged = false;
+  var _gspFrontierN = 0, _gspRecentN = 0;   // §-log breakdown: why the candidate count is what it is
+
+  // Per-FLASH lifecycle (NOT per-element install progress): born white-hot, cools out inside one
+  // re-roll interval. Multi-stop, adjacent-lerp only — a two-point lerp desaturates through the
+  // midpoint and loses the orange band.
+  var _GSP_RAMP = [
+    { t: 0.00, c: 0xfff8f0, i: 1.00 },
+    { t: 0.12, c: 0xffd27a, i: 0.78 },
+    { t: 0.34, c: 0xff932c, i: 0.45 },
+    { t: 0.58, c: 0xff3800, i: 0.20 },
+    { t: 0.80, c: 0x8c1400, i: 0.06 },
+    { t: 1.00, c: 0x3d0a00, i: 0.00 }
+  ];
+  var _gspCA = null, _gspCB = null, _gspCO = null;
+  function _gspRampAt(t) {
+    if (!_gspCA) { _gspCA = new THREE.Color(); _gspCB = new THREE.Color(); _gspCO = new THREE.Color(); }
+    t = Math.max(0, Math.min(1, t));
+    var k = 0;
+    while (k < _GSP_RAMP.length - 2 && t > _GSP_RAMP[k + 1].t) k++;
+    var s0 = _GSP_RAMP[k], s1 = _GSP_RAMP[k + 1];
+    var f = (t - s0.t) / (s1.t - s0.t);
+    _gspCA.setHex(s0.c); _gspCB.setHex(s1.c);
+    _gspCO.copy(_gspCA).lerp(_gspCB, f);
+    return { color: _gspCO.getHex(), intensity: s0.i + (s1.i - s0.i) * f };
+  }
+
+  // Seeded hash, never Math.random() — frames must be reproducible so captures are comparable.
+  function _gspHash(a, b, c) {
+    var h = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + Math.imul(c, 2246822519)) >>> 0;
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 1274126177) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function _gspTex() {
+    if (_gspTexture) return _gspTexture;
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    var ctx = c.getContext('2d');
+    var g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.18, 'rgba(255,255,255,0.75)');
+    g.addColorStop(0.45, 'rgba(255,255,255,0.22)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    _gspTexture = new THREE.CanvasTexture(c);
+    return _gspTexture;
+  }
+
+  function _gspSprite(idx) {
+    if (_gspPool[idx]) return _gspPool[idx];
+    var mat = new THREE.SpriteMaterial({
+      map: _gspTex(), color: 0xffffff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false
+    });
+    var s = new THREE.Sprite(mat);
+    s.renderOrder = 11;
+    s.visible = false;
+    _gspPool[idx] = s;
+    var app = A();
+    if (app && app.scene) app.scene.add(s);
+    return s;
+  }
+
+  function _gspSweep() {
+    for (var i = _gspActive; i < _gspPool.length; i++) {
+      if (_gspPool[i]) _gspPool[i].visible = false;
+    }
+  }
+
+  // Called from inside the traverse for every frontier element (all three mesh paths).
+  function _gspCollect(x, y, z) {
+    if (_gspCand.length < 12000) _gspCand.push(x, y, z);   // flat — no per-tick object alloc
+  }
+
+  function _gspEmitOne(ci, phase) {
+    if (_gspActive >= _GSP_CAP) return;
+    var r = _gspRampAt(phase);
+    if (r.intensity <= 0.02) return;
+    var s = _gspSprite(_gspActive);
+    s.material.color.setHex(r.color);
+    s.material.opacity = 0.95 * Math.pow(r.intensity, 0.7) * _gspDecay;
+    s.scale.setScalar(_GSP_SIZE * (0.7 + 0.5 * r.intensity));
+    s.position.set(_gspCand[ci], _gspCand[ci + 1], _gspCand[ci + 2]);
+    s.visible = true;
+    _gspActive++;
+  }
+
+  // Called ONCE after the traverse. Buckets candidates into spatial cells (= "groups"), then
+  // lights a random subset of each. Groups of 1-2 light entirely — nothing to randomize among.
+  function _gspEmit(isPlaying) {
+    var app = A();
+    _gspActive = 0;
+    // Unconditional tick log — MUST fire even on the early-return paths, otherwise a zero-spark
+    // result is indistinguishable from "the code never ran" (that ambiguity is exactly what let
+    // #866 ship believing it was verified).
+    if (_gspRoll % 10 === 0) {
+      console.log('§GROUP_SPARK_TICK playing=' + !!isPlaying + ' cand=' + (_gspCand.length / 3) +
+                  ' (frontier=' + _gspFrontierN + ' recent=' + _gspRecentN + ')' +
+                  ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2));
+    }
+    // Scrub / paused / not playing → NO sparks at all. Scrubbing is a state-diff read; flashing
+    // VFX competes with it (user: "the appreciation is in the quick diff in states").
+    if (!app || !app.scene || !isPlaying || _gspDecay <= 0 || !_gspCand.length) { _gspSweep(); return; }
+
+    var cells = {}, i;
+    for (i = 0; i < _gspCand.length; i += 3) {
+      var key = Math.floor(_gspCand[i] / _GSP_CELL) + ',' +
+                Math.floor(_gspCand[i + 1] / _GSP_CELL) + ',' +
+                Math.floor(_gspCand[i + 2] / _GSP_CELL);
+      (cells[key] || (cells[key] = [])).push(i);
+    }
+
+    var gid = 0, groups = 0, singles = 0;
+    for (var key2 in cells) {
+      if (!Object.prototype.hasOwnProperty.call(cells, key2)) continue;
+      if (_gspActive >= _GSP_CAP) break;
+      var idxs = cells[key2], n = idxs.length;
+      gid++; groups++;
+      if (n <= 2) {
+        // "If the group is small say only single or 2 pieces then it is those only."
+        singles++;
+        for (var s2 = 0; s2 < n; s2++) _gspEmitOne(idxs[s2], _gspHash(gid, _gspRoll, s2));
+        continue;
+      }
+      // "they randomize among themselves repeatedly until their duration is reached"
+      var k = Math.max(1, Math.round(n * _GSP_FRAC));
+      for (var j = 0; j < k; j++) {
+        var pick = idxs[Math.floor(_gspHash(gid, _gspRoll, j) * n) % n];
+        // Stagger each spark's phase so a group doesn't pulse in lockstep
+        _gspEmitOne(pick, _gspHash(gid, _gspRoll, j + 977));
+      }
+    }
+    _gspSweep();
+
+    if (!_gspLogged || (_gspRoll % 20 === 0)) {
+      console.log('§GROUP_SPARK groups=' + groups + ' singles=' + singles +
+                  ' cand=' + (_gspCand.length / 3) + ' sprites=' + _gspActive +
+                  '/cap ' + _GSP_CAP + ' roll=' + _gspRoll + ' decay=' + _gspDecay.toFixed(2));
+      _gspLogged = true;
+    }
+  }
+
+  // Stop → freeze the re-roll and let in-flight flashes cool out, then park at ZERO.
+  // Bounded burst (~0.5s), NOT a permanent rAF loop — idle-park is preserved.
+  function _gspStopDecay() {
+    if (_gspDecayTimer) { clearInterval(_gspDecayTimer); _gspDecayTimer = null; }
+    if (!_gspActive) { _gspDecay = 1; return; }
+    var step = 0;
+    _gspDecayTimer = setInterval(function () {
+      step++;
+      _gspDecay = Math.max(0, 1 - step / _GSP_DECAY_STEPS);
+      for (var i = 0; i < _gspActive; i++) {
+        var sp = _gspPool[i];
+        if (sp && sp.visible) sp.material.opacity *= 0.82;
+      }
+      var app = A();
+      if (app && app.markDirty) app.markDirty();
+      if (_gspDecay <= 0) {
+        clearInterval(_gspDecayTimer); _gspDecayTimer = null;
+        _gspActive = 0; _gspSweep(); _gspDecay = 1;
+        console.log('§GROUP_SPARK_DECAY parked at zero sprites after ' + step + ' steps');
+        if (app && app.markDirty) app.markDirty();
+      }
+    }, 33);
+  }
+
+  // Hard clear — TM deactivate. Nothing may survive TM being switched off.
+  function _gspClear() {
+    if (_gspDecayTimer) { clearInterval(_gspDecayTimer); _gspDecayTimer = null; }
+    _gspActive = 0; _gspDecay = 1; _gspCand.length = 0;
+    for (var i = 0; i < _gspPool.length; i++) if (_gspPool[i]) _gspPool[i].visible = false;
+    console.log('§GROUP_SPARK_CLEAR all sprites hidden (TM deactivate)');
+  }
+
   function renderAtTime(cursorMs) {
     var app = A();
     if (!app || !app.scene) return;
     _tmEnsure();
+    _gspCand.length = 0;   // §GROUP_SPARK: reset candidates each tick, before the traverse
+    _gspFrontierN = 0; _gspRecentN = 0;
     if (!_zeroMatrix) _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
     if (!_whiteColor) _whiteColor = new THREE.Color(1, 1, 1);
     _prevCursor = _cursor;
@@ -776,6 +987,7 @@
             _frontierCentroids.push(swp);
             _frontierPositions.push(swp);
             if (_camFollow) _guidPosMap[g] = swp;
+            _gspCollect(swp.x, swp.y, swp.z);   // §GROUP_SPARK: single-mesh frontier
             // §S260d: Sparks removed (white square artifacts)
           } else if (isPlaced || isRecent) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
@@ -818,6 +1030,8 @@
               _bmHasFrontier = true;
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
+              _gspCollect(_bmPos.x, _bmPos.y, _bmPos.z);   // §GROUP_SPARK: BatchedMesh slot
+              _gspFrontierN++;
               if (_camFollow) {
                 _frontierPositions.push(_bmPos.clone());
                 _guidPosMap[bg] = _bmPos.clone();
@@ -827,7 +1041,17 @@
               // behind, reading as a bug not a feature on real buildings. Position tracking above
               // (camFollow/_frontierPositions/_guidPosMap) is unrelated and stays; only the
               // visible marker itself is removed.
-            } else if (_camFollow && _previewGuids && _previewGuids[bg]) {
+            } else if (recent[bg] !== undefined) {
+              // §GROUP_SPARK: recently-finished pieces are still cooling — include them as spark
+              // candidates. Real frontier on Hospital is only ~7 elements at a time (crew-cap),
+              // far too sparse to read; `recent` is the pool that makes the effect visible.
+              // Still pure decoration: it only widens WHAT gets decorated, nothing is inferred.
+              obj.getMatrixAt(sid, _bmM4);
+              _bmPos.setFromMatrixPosition(_bmM4);
+              _gspCollect(_bmPos.x, _bmPos.y, _bmPos.z);
+              _gspRecentN++;
+            }
+            if (_camFollow && _previewGuids && _previewGuids[bg]) {
               obj.getMatrixAt(sid, _bmM4);
               _bmPos.setFromMatrixPosition(_bmM4);
               _guidPosMap[bg] = _bmPos.clone();
@@ -868,7 +1092,14 @@
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
             anyVisible = true;
-            if (frontier[ig]) anyFrontier = true;
+            if (frontier[ig]) {
+              anyFrontier = true;
+              // §GROUP_SPARK: InstancedMesh instance — position from the saved matrix
+              if (_savedInstanceMatrices[meshId][mi]) {
+                _tmV2.setFromMatrixPosition(_savedInstanceMatrices[meshId][mi]);
+                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z);
+              }
+            }
           } else {
             obj.setMatrixAt(mi, _zeroMatrix);
           }
@@ -885,6 +1116,11 @@
         }
       }
     });
+
+    // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
+    // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
+    // `_playing` gates it: sparks during playback only, never on scrub.
+    _gspEmit(_playing);
 
     // ── Shadow promotion pass: nearby placed meshes → castShadow (cap 500) ──
     // §S260b: Only when Sunglass shadow is ON
@@ -2456,6 +2692,7 @@
   function stopPlayback() {
     _playing = false;
     if (_playTimer) { clearTimeout(_playTimer); _playTimer = null; }
+    _gspStopDecay();   // §GROUP_SPARK: in-flight flashes cool out, then park at ZERO sprites
     var rb = document.getElementById('tm-rev-btn');
     var fb = document.getElementById('tm-fwd-btn');
     if (rb) { rb.textContent = '\u25C0'; rb.classList.remove('tm-active'); }
@@ -2467,6 +2704,8 @@
   function playTick() {
     if (!_playing) return;
 
+    _gspRoll++;   // §GROUP_SPARK: one re-roll per playback tick ("randomize among themselves
+                  // repeatedly until their duration is reached")
     _cursor += _playDir * tickMs();
     _cursor = Math.max(_projectStart, Math.min(_cursor, _projectEnd));
 
@@ -3913,6 +4152,7 @@
     if (!_active) return;
     stopPlayback();
     clearSparks();
+    _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
     restoreSky();
     _sunCycle = false;
     _camFollow = false;
