@@ -3131,17 +3131,49 @@
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
       var key = storey + '|' + phase;
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, startTs: op.start_ts, endTs: op.end_ts, count: 0, cap: 0 };
+      if (!groups[key]) groups[key] = { storey: storey, phase: phase, starts: [], ends: [], count: 0, cap: 0 };
       var g = groups[key];
-      if (op.start_ts < g.startTs) g.startTs = op.start_ts;
-      if (op.end_ts > g.endTs) g.endTs = op.end_ts;
+      g.starts.push(op.start_ts);
+      g.ends.push(op.end_ts);
       g.count++;
       if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
     }
 
-    // Convert to array and sort by start time
+    // §GANTT_MINI_TRIM (2026-07-18, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6
+    // postscript 2): the bar's displayed span used to be the true min/max of every element in the
+    // group. A small number of elements per floor (confirmed live on Hospital: ~0.5-1% of a given
+    // storey's MEP Rough-in group) carry a real, present storey TAG that disagrees sharply with
+    // their own extracted Z position (e.g. an IfcPipeFitting tagged "Level 5" but physically near
+    // Z~164m, well below even Level 1's median 168.9 — most likely a riser/connector whose IFC
+    // "Level" property reflects which floor's system it serves, not where it physically sits).
+    // schedule_gate.js correctly gates these by their REAL geometric position, so they schedule
+    // (correctly) to start almost immediately — but true min/max let that handful of outliers drag
+    // the WHOLE floor's displayed bar down to "starts at day 0", making every floor's MEP bar look
+    // like it starts at the same point even though the bulk of the work (Hospital Level 5: 99%+ of
+    // 7,627 elements, median start day 258) is genuinely gradual and correctly staggered by floor.
+    // Trim to the 2nd–98th percentile of REAL per-element start/end times for the bar's drawn span
+    // — still real extracted data, just excluding the extreme 2% each side so a few mistagged
+    // elements can't single-handedly define what the whole floor's bar looks like. Tiny groups
+    // (n<=20) keep true min/max — percentile trimming is meaningless at that sample size.
     _ganttTasks = [];
-    for (var k in groups) _ganttTasks.push(groups[k]);
+    for (var k in groups) {
+      var g = groups[k];
+      g.starts.sort(function(a, b) { return a - b; });
+      g.ends.sort(function(a, b) { return a - b; });
+      var n = g.starts.length;
+      if (n > 20) {
+        var loI = Math.floor(n * 0.02), hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+        g.startTs = g.starts[loI];
+        g.endTs = g.ends[hiI];
+      } else {
+        g.startTs = g.starts[0];
+        g.endTs = g.ends[n - 1];
+      }
+      delete g.starts; delete g.ends;
+      _ganttTasks.push(g);
+    }
+
+    // Sort by start time
     _ganttTasks.sort(function(a, b) { return a.startTs - b.startTs; });
 
     if (!_ganttTasksComputed) {
