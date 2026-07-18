@@ -478,10 +478,27 @@ async function setupScene(A) {
   // Monolith (A.libDb === A.db): A.db already holds meta+geometry → export directly.
   // Split (A.db=meta, A.libDb=geometry): fold the geometry tables into a meta clone so the saved
   // single file re-opens WITH geometry (no-cubes gate — never save a geometry-less stub).
+  // §STAFFAGE_PERSIST (2026-07-18, user: "only when save that last scene is stored in DB. If not,
+  // discarded"): staffage (effects.js) lives only in the THREE.js scene graph — write it into
+  // whichever sql.js DB is about to be exported so a reopen can rehydrate the exact placed set.
+  // Decoupled via A._getStaffageInstances so this module doesn't need to know effects.js internals.
+  function _writeStaffageTable(db) {
+    var rows = (A._getStaffageInstances && A._getStaffageInstances()) || [];
+    if (!rows.length) return;
+    try {
+      db.run("DROP TABLE IF EXISTS staffage_instances");
+      db.run("CREATE TABLE staffage_instances (kind TEXT, file TEXT, ifc_x REAL, ifc_y REAL, ifc_z REAL, rot_y REAL)");
+      var stmt = db.prepare("INSERT INTO staffage_instances VALUES (?,?,?,?,?,?)");
+      rows.forEach(function(r) { stmt.run(r); });
+      stmt.free();
+      console.log('§STAFFAGE_SAVE rows=' + rows.length);
+    } catch (e) { console.warn('§STAFFAGE_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      _writeStaffageTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -506,6 +523,7 @@ async function setupScene(A) {
       copied++;
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    _writeStaffageTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
