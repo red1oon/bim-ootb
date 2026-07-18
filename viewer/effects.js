@@ -772,6 +772,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // image-bottom anchor.
     var _padY = entry.h * (entry.pad || 0);
     spr.userData.baseOffset = _padY;
+    spr.userData.staffageFile = entry.file;      // §STAFFAGE_PERSIST: identifies the pose/asset on save
+    spr.userData.staffageKind = isPerson ? 'people' : 'tree';
     // keepY = interior in-frame figure on an upper storey: keep the given floor Z, don't snap to the
     // building's ground plane (which would drop it to the ground floor). Still apply the pad offset.
     if (keepY) spr.position.y = threePos.y - _padY;
@@ -921,43 +923,30 @@ async function setupEffects(A, renderer, scene, camera) {
       return Math.min(m || Math.max(hx, hy), _silCap);
     }
 
-    if (realPeople === 0) {
-      var outsidePoses = _STAFFAGE_PEOPLE;   // mix of stand/walk/sit poses reads fine as "people near an entrance"
-      // §PHOTO_STAFFAGE_OUTSIDE_ONLY (2026-07-17, user: "human sprites gets floating on the air...
-      // outside the wall in midair" — root cause CONFIRMED via LTU_AHouse: a multi-storey building
-      // can have WILDLY different footprints per floor (measured: ground floor ~169m wide, upper
-      // floor ~357m wide — more than double), but silR() is ONE silhouette combined across EVERY
-      // floor. A ground-floor sitting/walking spot classified "interior" against that inflated
-      // combined silhouette could land at an XY position that's only real on the upper floor —
-      // nothing solid exists there at ground height, so the figure floats past the real ground wall.
-      // Fix (also the user's own call — "need not place anyone inside when viewing from outside,
-      // only when zooming in... need not put anything that is not seen"): this unconditional
-      // exterior-establishing pass (camera state outside/unknown) places NO indoor sitting/walking
-      // figures at all — they'd be hidden behind walls from outside anyway, wasted work AND the
-      // source of the float bug. Only real ground-floor-anchored ENTRANCE figures + trees, which is
-      // everything an outside view can actually see. This also removes the interior-door walker
-      // placement entirely — the "figures half-cut right at the door" reports were that exact
-      // mechanic (radial-from-centroid stepping has no idea which way an INTERIOR door actually
-      // faces). Indoor sitting/walking is placed ONLY by _updateInFrameInterior, anchored to the
-      // camera's own confirmed-inside position + its real floor slab — inherently floor-correct,
-      // no combined-silhouette guess involved.
-      var span = w + d, maxExt = Math.max(w, d);
-      var nStanding = Math.max(2, Math.min(6, Math.round(span / 30)));
-      var furnCount = _cnt("SELECT COUNT(*) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.bbox_x IS NOT NULL");
-      if (furnCount) {
-        // Building has furniture (would have been sit/walk anchors) — fold that headcount into the
-        // entrance-figure count instead of discarding it: same total presence, all of it real/visible.
-        var nSit = Math.max(2, Math.min(10, Math.round(span / 16))), nWalk = Math.max(1, Math.min(6, Math.round(span / 28)));
-        nStanding = Math.max(nStanding, nSit + nWalk);
+    // §STAFFAGE_FRAME_FOCUSED (2026-07-18 redesign, user: "not populate outside building but focus on
+    // where the frame is" + "first Alt-P need only one set... Alt-P again look for free space to do
+    // so. Otherwise reducing pop"): every category below is gated on (a) a real candidate spot — same
+    // geometry as before, real doors / the measured silhouette ring — AND (b) that spot being VISIBLE
+    // in the CURRENT camera frame AND (c) not already covered by something already placed (this
+    // function is now ADDITIVE — never clears) — AND capped small per press, so a first press reads
+    // as "a few", not "everyone at once"; a later press just tops up whatever's still free/visible.
+    var _v2 = new THREE.Vector3();
+    function _inFrame(threePos) {
+      _v2.copy(threePos).project(A.camera);
+      return Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1;
+    }
+    function _nearExisting(threePos, minDist) {
+      for (var ci = 0; ci < _photoStaffage.children.length; ci++) {
+        if (_photoStaffage.children[ci].position.distanceTo(threePos) < minDist) return true;
       }
-      pSrc = 'exterior-only';
+      return false;
+    }
+    var PAX_CAP = 3, TREE_CAP = 3, thisPressPax = 0, thisPressTrees = 0;
 
-      // OUTSIDE figures — at real ENTRANCES. An exterior door sits ON the measured perimeter: its
-      // distance from centre ≈ the silhouette in its direction (interior doors sit well inside).
-      // Take GROUND-FLOOR exterior doors, then _spreadPick them so figures land at DIFFERENT wings/
-      // ends, not all at one entrance. Step each just out of its door, feet on the floor. (IfcSpace/
-      // corridor data is not extracted here, so exterior doors are the reliable entrance signal.)
-      var no = nStanding;
+    if (realPeople === 0) {
+      // §STAFFAGE_SIT_OUTDOOR_GATE (user: "sitting pax cannot be outside building, only when there
+      // are seats") — the exterior/entrance pool NEVER includes role='sit'; only walk/stand poses.
+      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role !== 'sit'; });
       var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var ext = [];
       for (var di = 0; di < doors.length; di++) {
@@ -965,57 +954,53 @@ async function setupEffects(A, renderer, scene, camera) {
         if (dr >= silR(Math.atan2(dey, dex)) - 3.0) ext.push([dd[0], dd[1], dd[2], dd[3], dd[4] || 0.9]);
       }
       ext.sort(function(a, b) { return (a[2] - b[2]) || (b[4] - a[4]); });   // ground floor, then widest
+      var candSpots = [];   // [ifcX, ifcY, refZ]
       if (ext.length) {
         var gfz = ext[0][2];
         var gfExt = ext.filter(function(e) { return e[2] <= gfz + 4; });   // ground-floor exterior doors
-        var entMinD = Math.max(6, maxExt / Math.max(2, no));
-        var picked = _spreadPick(gfExt, no, entMinD);          // spread across wings/ends
-        if (!picked.length) picked = gfExt.slice(0, no);
-        for (var k = 0; k < no; k++) {
-          var e = picked[k % picked.length], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1;
-          var lat = Math.floor(k / picked.length) * 1.8;       // extras at the same door step sideways
-          var pose = outsidePoses[k % outsidePoses.length];
-          // §STAFFAGE_CLEARANCE (2026-07-18, user tested Hospital: "1 pax is in the door cut off
-          // and another too close to it... at least 2 meters"): the 'toward'-facing 0.3m
-          // near-threshold placement (see §STAFFAGE_FACING history) clipped visibly against the
-          // door frame in practice — the "read as standing in the doorway" idea didn't survive
-          // contact with a real building. Dropped in favour of a uniform >=2m clearance for every
-          // entrance pose regardless of facing — 'toward'-facing still turns to face the camera,
-          // just standing clear of the building instead of jammed in the frame.
-          var stepOut = 2.2;
-          var px = e[0] + ((e[0] - cx) / ol) * stepOut + (-(e[1] - cy) / ol) * lat;
-          var py = e[1] + ((e[1] - cy) / ol) * stepOut + ((e[0] - cx) / ol) * lat;
-          _placeAt(pose, px, py, e[2], true);   // floor at the entrance
-          placedP++;
+        for (var ei = 0; ei < gfExt.length; ei++) {
+          // §STAFFAGE_CLEARANCE: uniform >=2m clearance out from the door, never jammed in the frame.
+          var e = gfExt[ei], ol = Math.hypot(e[0] - cx, e[1] - cy) || 1, stepOut = 2.2;
+          candSpots.push([e[0] + ((e[0] - cx) / ol) * stepOut, e[1] + ((e[1] - cy) / ol) * stepOut, e[2]]);
         }
-        pSrc += '+entrance';
+        pSrc = 'entrance';
       } else {
-        for (var k2 = 0; k2 < no; k2++) {
-          var pa = (k2 / no) * Math.PI * 2 + 0.9, pose2 = outsidePoses[k2 % outsidePoses.length];
-          var prad = silR(pa) + 2.5;   // §STAFFAGE_CLEARANCE — uniform >=2m clearance, no door to anchor to
-          _placeAt(pose2, cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ, true);
-          placedP++;
+        for (var k2 = 0; k2 < 12; k2++) {
+          var pa = (k2 / 12) * Math.PI * 2 + 0.9, prad = silR(pa) + 2.5;
+          candSpots.push([cx + Math.cos(pa) * prad, cy + Math.sin(pa) * prad, groundZ]);
         }
-        pSrc += '+silhouette';
+        pSrc = 'silhouette';
       }
+      for (var si2 = 0; si2 < candSpots.length && thisPressPax < PAX_CAP; si2++) {
+        var sp = candSpots[si2], pos3 = A.ifc2three(sp[0], sp[1], sp[2]); pos3.y = _floorThreeY(sp[0], sp[1], sp[2]);
+        if (!_inFrame(pos3) || _nearExisting(pos3, 3)) continue;
+        var pose = outsidePoses[placedP % outsidePoses.length];
+        _placeAt(pose, sp[0], sp[1], sp[2], true);
+        placedP++; thisPressPax++;
+      }
+      if (!thisPressPax) pSrc = 'none-in-frame';
     }
 
-    // Trees ringed just BEYOND the measured silhouette (never through the walls), count scales with
-    // building size (HHS gets ~18, a house ~8).
+    // Trees: same measured-silhouette ring as before, but only the ones actually IN the current
+    // frame get placed, capped small — repeat presses (or looking a different direction) reveal more.
     if (realTrees === 0) {
-      var ntrees = Math.max(8, Math.min(24, Math.round((2 * (w + d)) / 14)));
-      for (var t = 0; t < ntrees; t++) {
-        var ta = (t / ntrees) * Math.PI * 2 + 0.4;
-        var trad = silR(ta) + 5;
-        _placeAt(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], cx + Math.cos(ta) * trad, cy + Math.sin(ta) * trad, groundZ, false);
-        placedT++;
+      var ntrees = 16;
+      for (var t = 0; t < ntrees && thisPressTrees < TREE_CAP; t++) {
+        var ta = (t / ntrees) * Math.PI * 2 + 0.4, trad = silR(ta) + 5;
+        var tx = cx + Math.cos(ta) * trad, ty = cy + Math.sin(ta) * trad;
+        var tpos = A.ifc2three(tx, ty, groundZ); tpos.y = _floorThreeY(tx, ty, groundZ);
+        if (!_inFrame(tpos) || _nearExisting(tpos, 4)) continue;
+        _placeAt(_STAFFAGE_TREES[t % _STAFFAGE_TREES.length], tx, ty, groundZ, false);
+        placedT++; thisPressTrees++;
       }
     }
     // §STAFFAGE_CAR_MESH: place ONE real car mesh near a ground-floor exterior door when this
     // building has no real vehicle of its own — same real-data-first discipline as people/trees
     // above, just reusing the project's OWN real extracted geometry instead of a photo cutout. A
     // genuine THREE.Mesh (not a billboard), so it casts/receives real shadows like any other solid.
-    if (realCars === 0) {
+    // Only placed once it's actually IN the current frame (frame-focused, same as pax/trees above);
+    // `carPlaced` latches so a later press doesn't retry mid-async-load or duplicate it once real.
+    if (realCars === 0 && !_photoStaffage.userData.carPlaced) {
       var carDoors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var carExt = [];
       for (var cdi = 0; cdi < carDoors.length; cdi++) {
@@ -1041,8 +1026,11 @@ async function setupEffects(A, renderer, scene, camera) {
         carY = cy + Math.sin(carAngle) * (silR(carAngle) + 5.5);
         carZ = groundZ;
       }
-      (function(cx2, cy2, cz2, angle) {
-        _loadCarGeometry().then(function(geo) {
+      var carPos3 = A.ifc2three(carX, carY, carZ);
+      if (_inFrame(carPos3)) {
+        _photoStaffage.userData.carPlaced = true;   // claim now — async load below, don't retry mid-flight
+        (function(cx2, cy2, cz2, angle) {
+          _loadCarGeometry().then(function(geo) {
           if (!geo || !_photoStaffage) return;
           // §STAFFAGE_CAR_MESH_CULL_FIX: DoubleSide — this mesh's winding order comes from an
           // external IFC extraction pipeline, not authored for three.js directly; FrontSide (the
@@ -1071,14 +1059,23 @@ async function setupEffects(A, renderer, scene, camera) {
           // origin — is what touches the floor. Same fix class as the sprite pad-offset already
           // used for tree cutouts, just via boundingBox instead of a hand-measured pad fraction.
           var carLift = geo.boundingBox ? -geo.boundingBox.min.y : 0;
-          pos.y = _floorThreeY(cx2, cy2, cz2) + carLift;
+          var _carSlabY = _floorThreeY(cx2, cy2, cz2);
+          pos.y = _carSlabY + carLift;
           mesh.position.copy(pos);
           mesh.rotation.y = angle;
           mesh.castShadow = true; mesh.receiveShadow = true;
+          mesh.userData.staffageKind = 'car';   // §STAFFAGE_PERSIST: identifies this on save
           _photoStaffage.add(mesh);
           placedC++;
-          _photoStaffage.userData.counts = { people: placedP, trees: placedT, cars: placedC };
+          var _cCounts = _photoStaffage.userData.counts || { people: 0, trees: 0, cars: 0 };
+          _photoStaffage.userData.counts = { people: _cCounts.people, trees: _cCounts.trees, cars: _cCounts.cars + 1 };
           console.log('§STAFFAGE_CAR_MESH placed at ifc=(' + cx2.toFixed(1) + ',' + cy2.toFixed(1) + ',' + cz2.toFixed(1) + ') angle=' + angle.toFixed(2));
+          // §STAFFAGE_CAR_MESH_GROUND witness (user: "car still a bit afloat") — read these numbers
+          // before touching the grounding math: if slabY equals groundY the fallback (no slab found
+          // under the car) is what's driving it; if bboxMinY isn't the true lowest local vertex the
+          // lift math itself is wrong; if both check out, the "float" is a rendering/shadow-contact
+          // read, not a position bug.
+          console.log('§STAFFAGE_CAR_MESH_GROUND slabY=' + _carSlabY.toFixed(3) + ' groundY=' + _staffageGroundY.toFixed(3) + ' carLift=' + carLift.toFixed(3) + ' bboxMinY=' + (geo.boundingBox ? geo.boundingBox.min.y.toFixed(3) : 'n/a') + ' bboxMaxY=' + (geo.boundingBox ? geo.boundingBox.max.y.toFixed(3) : 'n/a') + ' finalPosY=' + pos.y.toFixed(3));
           // §STAFFAGE_CAR_MESH_RENDER_RACE (2026-07-18, user: "still no cars" — confirmed live:
           // the mesh existed, visible=true, correct geometry/material, but the canvas never
           // repainted to include it; a direct A.renderer.render() call showed it instantly). This
@@ -1100,15 +1097,19 @@ async function setupEffects(A, renderer, scene, camera) {
         });
       })(carX, carY, carZ, carAngle);
       pSrc += '+car';
+      }
     }
     if (_photoStaffage.parent !== A.scene) A.scene.add(_photoStaffage);
-    _photoStaffage.userData.counts = { people: placedP, trees: placedT, cars: placedC };
+    // Additive across presses: this call's placedP/placedT are THIS-PRESS-ONLY (see PAX_CAP/TREE_CAP
+    // above) — merge onto whatever cumulative total is already on the group from earlier presses.
+    var _prevC = _photoStaffage.userData.counts || { people: 0, trees: 0, cars: 0 };
+    _photoStaffage.userData.counts = { people: _prevC.people + placedP, trees: _prevC.trees + placedT, cars: _prevC.cars };
     // §-witness the feet-on-ground invariant IN the log (readable from any real session's console,
     // no browser needed): every sprite's feet Y minus the rendered ground Y — must be 0,0.
     var _fMin = Infinity, _fMax = -Infinity;
     _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
-    console.log('§PHOTO_STAFFAGE people=' + placedP + ' trees=' + placedT + ' pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ' carPending=' + (realCars === 0 ? 1 : 0) + ')');
+    console.log('§PHOTO_STAFFAGE thisPress(people=' + placedP + ' trees=' + placedT + ') cumulative(people=' + _photoStaffage.userData.counts.people + ' trees=' + _photoStaffage.userData.counts.trees + ' cars=' + _photoStaffage.userData.counts.cars + ') pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ')');
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
@@ -1144,6 +1145,61 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     _photoStaffage = null; _photoStaffagePeople = []; _photoStaffageInFrame = []; _lastPeopleVis = null;
   }
+  // §STAFFAGE_PERSIST (2026-07-18, user: "only when save that last scene is stored in DB. If not,
+  // discarded"): staffage lives purely in the THREE.js scene graph — nothing auto-persists. Save
+  // (scene.js A._exportBuildingDb) calls this right before export to capture whatever's currently
+  // placed as plain rows (no THREE/DOM objects crossing the module boundary).
+  A._getStaffageInstances = function() {
+    if (!_photoStaffage) return [];
+    var rows = [];
+    _photoStaffage.children.forEach(function(c) {
+      var k = c.userData && c.userData.staffageKind; if (!k) return;
+      var padY = (k !== 'car' && c.userData.baseOffset) || 0;   // sprites store feet Y minus pad; undo for round-trip
+      var ifcX = c.position.x + A.modelOffset.x;
+      var ifcZ = (c.position.y + padY) + A.modelOffset.z;
+      var ifcY = A.modelOffset.y - c.position.z;
+      rows.push([k, c.userData.staffageFile || '', ifcX, ifcY, ifcZ, c.rotation.y || 0]);
+    });
+    return rows;
+  };
+  // Rehydrates an EXACT saved set — bypasses all placement/frame math, pixel-perfect restore of
+  // whatever was on screen at Save time. Triggered by the first Alt+P press on a building whose DB
+  // carries a staffage_instances table (togglePopulate, below).
+  A._restoreStaffageInstances = function(rows) {
+    if (!rows || !rows.length || !THREE.Sprite) return;
+    _photoStaffage = new THREE.Group();
+    rows.forEach(function(r) {
+      var kind = r[0], file = r[1], ifcX = r[2], ifcY = r[3], ifcZ = r[4], rotY = r[5];
+      var pos = A.ifc2three(ifcX, ifcY, ifcZ);
+      if (kind === 'car') {
+        _loadCarGeometry().then(function(geo) {
+          if (!geo || !_photoStaffage) return;
+          var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.74, 0.76, 0.79), roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
+          if (A._envMap) { mat.envMap = A._envMap; mat.envMapIntensity = 0.6; }
+          if (A._matCache) A._matCache['staffage-car-beetle'] = mat;
+          var mesh = new THREE.Mesh(geo, mat);
+          mesh.position.copy(pos); mesh.rotation.y = rotY;
+          mesh.castShadow = true; mesh.receiveShadow = true;
+          mesh.userData.staffageKind = 'car';
+          _photoStaffage.add(mesh);
+          if (A.markDirty) A.markDirty();
+        });
+        return;
+      }
+      var pool = kind === 'tree' ? _STAFFAGE_TREES : _STAFFAGE_PEOPLE, entry = null;
+      for (var i = 0; i < pool.length; i++) { if (pool[i].file === file) { entry = pool[i]; break; } }
+      if (!entry) return;
+      _addStaffageSprite(entry, pos, kind === 'people', true);
+    });
+    _photoStaffage.userData.counts = {
+      people: rows.filter(function(r) { return r[0] === 'people'; }).length,
+      trees: rows.filter(function(r) { return r[0] === 'tree'; }).length,
+      cars: rows.filter(function(r) { return r[0] === 'car'; }).length
+    };
+    A.scene.add(_photoStaffage);
+    _photoStaffage.visible = true;
+    console.log('§STAFFAGE_RESTORE rows=' + rows.length);
+  };
   // §PHOTO_STAFFAGE: people are spherical billboards — from a steep top-down angle they read as
   // upright figures floating detached from the ground (the aerial-angle failure the spec names).
   // Hide people (only) when the camera looks steeper than ~37deg down; trees tolerate it. Now that
@@ -1172,16 +1228,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // figures onto real furniture that's currently in view, seated on that furniture's own floor slab
   // (not the ground plane — could be an upper storey). Re-placed to the live camera each time
   // Populate is (re)toggled, so re-pressing Alt+P after moving inside refreshes the framing.
-  function _disposeInFrame() {
-    _photoStaffageInFrame.forEach(function(s) {
-      if (_photoStaffage) _photoStaffage.remove(s);
-      var i = _photoStaffagePeople.indexOf(s); if (i >= 0) _photoStaffagePeople.splice(i, 1);
-      if (s.material) s.material.dispose();
-    });
-    _photoStaffageInFrame = [];
-  }
   function _updateInFrameInterior() {
-    _disposeInFrame();
     if (!A.dbQuery || !A.camera || !THREE.Sprite || !_photoStaffage) return;
     // §RPC_M_PREFIX / no double-population: building already has real RPC people (set by
     // _buildStaffage) — adding synthetic sitting/walking on top indoors would duplicate them.
@@ -1192,6 +1239,16 @@ async function setupEffects(A, renderer, scene, camera) {
     var cam = A.camera.position;
     var inside = cam.x > minX && cam.x < maxX && cam.z > minZ && cam.z < maxZ && cam.y < roofY + 2;
     if (!inside) { console.log('§PHOTO_STAFFAGE_INTERIOR inside=0'); return; }
+    // §STAFFAGE_FRAME_FOCUSED: purely ADDITIVE now (no _disposeInFrame() at top) — de-dup new
+    // candidates against whatever's already placed from an earlier press, capped small per press
+    // (SIT_CAP/WALK_CAP below), same discipline as _buildStaffage's exterior pass.
+    function _nearExistingIF(threePos, minDist) {
+      for (var ci = 0; ci < _photoStaffage.children.length; ci++) {
+        if (_photoStaffage.children[ci].position.distanceTo(threePos) < minDist) return true;
+      }
+      return false;
+    }
+    var SIT_CAP = 2, WALK_CAP = 2;
     // furniture currently in the view frustum, near the camera
     var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.center_x IS NOT NULL") || [];
     var _v = new THREE.Vector3(), cand = [];
@@ -1200,11 +1257,11 @@ async function setupEffects(A, renderer, scene, camera) {
       _v.copy(p).project(A.camera);
       if (Math.abs(_v.x) < 0.9 && Math.abs(_v.y) < 0.95 && _v.z > -1 && _v.z < 1) {
         var dist = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
-        if (dist < 16) cand.push([f[0], f[1], f[2], f[3], dist]);
+        if (dist < 16 && !_nearExistingIF(p, 1.5)) cand.push([f[0], f[1], f[2], f[3], dist]);
       }
     }
     cand.sort(function(a, b) { return a[4] - b[4]; });
-    var picked = _spreadPick(cand, 5, 2.0);
+    var picked = _spreadPick(cand, SIT_CAP, 2.0);
     // floor slab under each spot (raised/upper storey respected — same logic as _buildStaffage)
     var slabs = A.dbQuery("SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND bbox_z IS NOT NULL AND bbox_z < 1.5 AND center_x IS NOT NULL") || [];
     function floorY(x, y, refZ) {
@@ -1254,13 +1311,14 @@ async function setupEffects(A, renderer, scene, camera) {
         if (Math.abs(_np.x) > 0.85 || Math.abs(_np.y) > 0.9 || _np.z < -1 || _np.z > 1) continue;
         aisleWalkTried++;
         var ifcX = wx + A.modelOffset.x, ifcY = -wz + A.modelOffset.y;
-        if (aisleGrid.free(ifcX, ifcY, 0.5)) walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z), ifcX, ifcY]);
-        else aisleRejectedInObject++;
+        if (aisleGrid.free(ifcX, ifcY, 0.5) && !_nearExistingIF(new THREE.Vector3(wx, floorYval, wz), 2.0)) {
+          walkCand.push([wx, wz, Math.hypot(wx - cam.x, wz - cam.z), ifcX, ifcY]);
+        } else aisleRejectedInObject++;
       }
     }
     walkCand.sort(function(a, b) { return a[2] - b[2]; });
     var wpick = [];
-    for (var wi = 0; wi < walkCand.length && wpick.length < 2; wi++) {
+    for (var wi = 0; wi < walkCand.length && wpick.length < WALK_CAP; wi++) {
       var ok = true; for (var wj = 0; wj < wpick.length; wj++) { if (Math.hypot(walkCand[wi][0] - wpick[wj][0], walkCand[wi][1] - wpick[wj][1]) < 3) { ok = false; break; } }
       if (ok) wpick.push(walkCand[wi]);
     }
@@ -1284,32 +1342,50 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§STAFFAGE_WALK_FLOOR_Y ' + (_walkYLog.length ? _walkYLog.join(' ') : 'none'));
   }
   var _populateOn = false, _populateBuilding = null;
+  // §STAFFAGE_FRAME_FOCUSED (2026-07-18 redesign, user: "Alt-P basically never off, just repopulate
+  // what is in new frame" / "if in frame already has props, it can add"): Alt+P is no longer a strict
+  // on/off visibility toggle. EVERY press populates/densifies whatever's currently in the camera
+  // frame, additively (never clears) — a first press naturally reads as "a few" because both
+  // _buildStaffage and _updateInFrameInterior cap new additions small per call; a later press (same
+  // frame or a new one after moving) tops up whatever free/visible space is left. Switching buildings
+  // still does a full clear+rebuild (via _populateBuilding !== A.activeBuilding below).
   A.togglePopulate = function() {
-    _populateOn = !_populateOn;
-    if (_populateOn) {
-      if (A.status) A.status.textContent = '⏳ Populating scene…';
-      if (!_photoStaffage || _populateBuilding !== A.activeBuilding) {
-        _disposeStaffage();
-        _buildStaffage();
-        _populateBuilding = A.activeBuilding;
+    var firstEver = !_populateOn;
+    _populateOn = true;
+    if (A.status) A.status.textContent = '⏳ Populating scene…';
+    var freshBuilding = !_photoStaffage || _populateBuilding !== A.activeBuilding;
+    if (freshBuilding) {
+      _disposeStaffage();
+      _populateBuilding = A.activeBuilding;
+      // §STAFFAGE_PERSIST restore (user: "only when save that last scene is stored in DB... if not,
+      // discarded"): a building saved WITH staffage carries a staffage_instances table (written by
+      // A._exportBuildingDb() at Save time). First Alt+P press on such a building rehydrates the
+      // EXACT saved set instead of a fresh frame-driven placement. No table (never saved, or saved
+      // before this feature existed) → falls through to normal placement, unchanged.
+      var savedRows = null;
+      try { savedRows = A.dbQuery("SELECT kind,file,ifc_x,ifc_y,ifc_z,rot_y FROM staffage_instances"); } catch (e) { /* no such table — normal case */ }
+      if (savedRows && savedRows.length) {
+        A._restoreStaffageInstances(savedRows);
+        _lastPeopleVis = null; _updatePeoplePitchGate(); _trackStaffageLoading();
+        if (A.markDirty) A.markDirty();
+        console.log('§PHOTO_POPULATE press bld=' + A.activeBuilding + ' firstEver=' + firstEver + ' restored=' + savedRows.length);
+        return;
       }
-      if (_photoStaffage) _photoStaffage.visible = true;
-      _updateInFrameInterior();           // interior shot → drop sitting figures onto in-view furniture
-      _lastPeopleVis = null;              // force a fresh pitch decision (+ log) on show
-      _updatePeoplePitchGate();
-      _trackStaffageLoading();            // live "⏳ N/M → ✓ populated" status while cutouts decode
-      if (!A._populatePitchHooked && A.controls && A.controls.addEventListener) {
-        A.controls.addEventListener('change', function() {
-          if (_populateOn && _photoStaffage && _photoStaffage.visible) _updatePeoplePitchGate();
-        });
-        A._populatePitchHooked = true;     // live pitch gate: recompute as the camera orbits
-      }
-    } else if (_photoStaffage) {
-      _photoStaffage.visible = false;
-      if (A.status) A.status.textContent = 'Populate off';
+    }
+    _buildStaffage();                     // additive — trees/pax/car visible in the current frame
+    if (_photoStaffage) _photoStaffage.visible = true;
+    _updateInFrameInterior();             // additive — sit/walk figures visible in the current frame
+    _lastPeopleVis = null;                // force a fresh pitch decision (+ log) on show
+    _updatePeoplePitchGate();
+    _trackStaffageLoading();              // live "⏳ N/M → ✓ populated" status while cutouts decode
+    if (!A._populatePitchHooked && A.controls && A.controls.addEventListener) {
+      A.controls.addEventListener('change', function() {
+        if (_populateOn && _photoStaffage && _photoStaffage.visible) _updatePeoplePitchGate();
+      });
+      A._populatePitchHooked = true;       // live pitch gate: recompute as the camera orbits
     }
     if (A.markDirty) A.markDirty();
-    console.log('§PHOTO_POPULATE on=' + _populateOn + ' bld=' + A.activeBuilding);
+    console.log('§PHOTO_POPULATE press bld=' + A.activeBuilding + ' firstEver=' + firstEver);
   };
   // §PHOTO_STAFFAGE_PRELOAD: measured — placement is 5-29ms; the whole first-time wait is decoding
   // the cutout PNGs (~2-6s). Textures are already cached after first use (and sprite objects reused
