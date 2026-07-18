@@ -537,6 +537,7 @@ async function setupGIPoc(A, renderer, scene, camera) {
     _ssgiKickConverge(STILL_SSGI_FRAMES, function() {
       if (_stillSSGIEngaged) console.log('§PHOTO_SSGI done totalMs=' + Math.round(performance.now() - t0) +
         ' (frozen with GI — stays until interaction)');
+      A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion on the opt-in SSGI path too
     });
     return true;
   };

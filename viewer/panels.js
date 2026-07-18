@@ -400,8 +400,14 @@ function setupPanels(A) {
     cinemaRow.style.cssText = 'gap:8px;align-items:center;justify-content:center';
 
     function _refreshCinemaRowIcons() {
-      stillBtn.classList.toggle('active', !!A._stillRefineActive);
-      populateBtn.classList.toggle('active', !!(A.populateActive && A.populateActive()));
+      // §CINEMA_ROW_BUSY: busy (pulsing) takes priority over active (steady) — both flags can be
+      // true at once (e.g. _stillRefineActive is true for the whole frozen-still lifetime, busy
+      // only while it's still converging) so busy must be checked first to show the right state.
+      stillBtn.classList.toggle('busy', !!A._stillRefineBusy);
+      stillBtn.classList.toggle('active', !A._stillRefineBusy && !!A._stillRefineActive);
+      var populateOn = !!(A.populateActive && A.populateActive());
+      populateBtn.classList.toggle('busy', !!A._populateBusy);
+      populateBtn.classList.toggle('active', !A._populateBusy && populateOn);
     }
 
     var stillBtn = A.icon('aperture', { size: 18, title: 'Still Refine (Alt+S)', onClick: function() {

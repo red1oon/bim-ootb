@@ -93,6 +93,11 @@
   }
   .bim-panel .bim-slider-row button:hover { background: rgba(255,255,255,0.1); }
   .bim-panel .bim-slider-row button.active { color: #4fc3f7; }
+  /* §CINEMA_ROW_BUSY (2026-07-18): distinct "processing..." pulse — steady active=done/showing,
+     pulsing busy=still working (16-sample TAA/AO fold, cutout texture decode) so a slow machine
+     doesn't read as "did nothing happen" during the few-seconds gap. */
+  .bim-panel .bim-slider-row button.busy { color: #4fc3f7; animation: bimBusyPulse 0.9s ease-in-out infinite; }
+  @keyframes bimBusyPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   .bim-panel .bim-slider-row button svg { width: 18px; height: 18px; pointer-events: none; }
   .bim-panel .bim-slider-row input[type=range] {
     flex: 1; accent-color: #4fc3f7; cursor: pointer; min-width: 0;
