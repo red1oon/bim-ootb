@@ -3184,7 +3184,14 @@ async function setupEffects(A, renderer, scene, camera) {
           tilt = tilt + (swoopTiltRad - tilt) * Math.min(1, swoopW);
         }
         // §CINEMA_ANCHOR: the element you parked against modulates the path's wobble.
-        radius *= 1 + CINEMA_ELLIPTICITY * character.ellip * Math.cos(2 * (azimuth - b.startAzimuth));
+        // §CINEMA_POV_CONTINUITY (user 2026-07-19: "Start of preview it does not continue from POV
+        // as was OK before"): the ellipse peaks at cos(0)=1, i.e. at tNorm=0 — so the very first
+        // frame sat ~15% FURTHER OUT than the pose the user actually authored (measured 6.73m on a
+        // 44.9m start). The film has to BEGIN exactly where the camera is, or the opening reads as
+        // a snap. Ramp the modulation in across Act I so it is identically zero at t=0 and full by
+        // the time the push-in beat ends. Character/ellipticity are unchanged thereafter.
+        var ellipW = _cinemaSmoothstep(pushInEndT > 0 ? Math.min(1, tNorm / pushInEndT) : 1);
+        radius *= 1 + CINEMA_ELLIPTICITY * character.ellip * ellipW * Math.cos(2 * (azimuth - b.startAzimuth));
         // ══ Act III — the reciprocal (§CINEMA_PAPER_BOAT P4) ══
         // WAS: a fixed ×1.4 pull-back. NOW: eases to the pose DERIVED FROM THE OPENING — the same
         // angle of attack, pulled away by however intimate the start was, hovering as far over the
