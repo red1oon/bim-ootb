@@ -2983,6 +2983,23 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_ANCHOR_NEUTRAL = { name: 'open', ellip: 1.0, turn: 0.0, swoop: 1.0, spin: 0 };
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+  // §CINEMA_THEME envelope — 0 through the whole opening (classic ease-back, never broken), rises
+  // gently once the band-ease has settled, holds through the body, then returns to 0 before the
+  // reciprocal act so the ending "settles back orderly" (user). Everything pose-derived — the
+  // turnaround, the anchor's wobble/roll — is multiplied by this, so no character can ever
+  // disturb the first few seconds or the final settle.
+  // §EFFECTS_LOADED — effects.js had NO version fingerprint, so a pasted console could not answer
+  // "is the cinema fix live?" (user asked exactly that, 2026-07-19; MAXQ_V only covers
+  // cinema_maxq.js). Same convention as §MAXQ_LOADED: bump on every behaviour change here.
+  var EFFECTS_V = 'v2 (theme-after-easeback; POV continuity)';
+  console.log('§EFFECTS_LOADED ' + EFFECTS_V);
+  var CINEMA_THEME_IN = 0.34, CINEMA_THEME_RISE = 0.12, CINEMA_THEME_OUT = 0.78;
+  function _cinemaThemeWeight(tNorm) {
+    if (tNorm <= CINEMA_THEME_IN) return 0;
+    var rise = _cinemaSmoothstep((tNorm - CINEMA_THEME_IN) / CINEMA_THEME_RISE);
+    var fall = 1 - _cinemaSmoothstep((tNorm - CINEMA_THEME_OUT) / Math.max(1e-3, 1 - CINEMA_THEME_OUT));
+    return Math.min(rise, Math.max(0, fall));
+  }
 
   // §CINEMA_CONTEXT helpers — "the surrounding makeup also influences the orbit plan ie as input
   // matrix of some sort" (user). film = F(pose ⊗ κ): the pose is a QUERY POINT, the building
@@ -3154,10 +3171,25 @@ async function setupEffects(A, renderer, scene, camera) {
     // below can re-enter the orbit from the entrance side without duplicating the formula.
     function _mkOrbitPose(b, pushR, tgtRad, tgtTilt, swoopTN) {
       return function(tNorm) {
-        // §CINEMA_RECIPROCAL: ι + the anchor's character add rotation ON TOP of the base 360°.
-        // Act I spends it (the turnaround); after Act I it is a constant offset, so the orbit
-        // still closes on the start azimuth and the swoop crossing stays exactly once per loop.
-        var turnPhase = turnExtra * _cinemaSmoothstep(pushInEndT > 0 ? Math.min(1, tNorm / pushInEndT) : 1);
+        // §CINEMA_THEME (user 2026-07-19, correcting the first cut of this feature): "Actually
+        // first time we set it was that simple — no matter where u are it eases back. Just that
+        // there is no more combination thereafter. I like to introduce this concept but GENTLY,
+        // not breaking the first few secs." The original ease-back opening was RIGHT; the mistake
+        // was expressing the pose's character during it. So: the opening is untouched classic
+        // ease-back, and the theme arrives only AFTER the band-ease has settled, then eases out
+        // again before the reciprocal act so the film "settles back orderly".
+        //   "there has to be a theme to the path to make it cinematic and elegant" — erratic on a
+        //   railing, rolling from a lamp: still elegant, because they arrive on a settled path
+        //   rather than fighting the opening.
+        var themeW = _cinemaThemeWeight(tNorm);
+        // ROTATION MUST NEVER UNWIND. Riding turnExtra on themeW (which rises AND falls) made the
+        // camera spin up 360deg and then spin BACK as the envelope decayed — measured as a 30.5m
+        // single-frame jump, i.e. the user's "sudden cut". Turn gets its own MONOTONIC envelope,
+        // spread across the whole theme body (~10s for a full extra revolution) so an anchor's
+        // spin reads as a gentle extra turn rather than a whip. Only the wobble/ellipse uses the
+        // rise-and-fall envelope, because amplitude may safely return to zero — angle may not.
+        var turnPhase = turnExtra * _cinemaSmoothstep(
+          (tNorm - CINEMA_THEME_IN) / Math.max(1e-3, CINEMA_THEME_OUT - CINEMA_THEME_IN));
         var azimuth = b.startAzimuth + tNorm * Math.PI * 2 + turnPhase;
         var radius, tilt;
         if (tNorm <= pushInEndT) {
@@ -3190,8 +3222,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // 44.9m start). The film has to BEGIN exactly where the camera is, or the opening reads as
         // a snap. Ramp the modulation in across Act I so it is identically zero at t=0 and full by
         // the time the push-in beat ends. Character/ellipticity are unchanged thereafter.
-        var ellipW = _cinemaSmoothstep(pushInEndT > 0 ? Math.min(1, tNorm / pushInEndT) : 1);
-        radius *= 1 + CINEMA_ELLIPTICITY * character.ellip * ellipW * Math.cos(2 * (azimuth - b.startAzimuth));
+        radius *= 1 + CINEMA_ELLIPTICITY * character.ellip * themeW * Math.cos(2 * (azimuth - b.startAzimuth));
         // ══ Act III — the reciprocal (§CINEMA_PAPER_BOAT P4) ══
         // WAS: a fixed ×1.4 pull-back. NOW: eases to the pose DERIVED FROM THE OPENING — the same
         // angle of attack, pulled away by however intimate the start was, hovering as far over the
