@@ -2850,8 +2850,163 @@ async function setupEffects(A, renderer, scene, camera) {
   // around that one crossing, layered on top of whatever the push-in/band/pull-back phase above
   // already computed, so the orbit is guaranteed to pass low and facing the glint at least once.
   var CINEMA_SWOOP_HALF_SEC = 2.0, CINEMA_SWOOP_TILT_DEG = 4;
+  // §CINEMA_RECIPROCAL / §CINEMA_CONTEXT (2026-07-19, user doctrine — see bim-compiler
+  // prompts/PHOTOREAL_STILL_RENDER.md §CINEMA_AUTHORED_POSE / §CINEMA_RECIPROCAL / §CINEMA_ANCHOR /
+  // §CINEMA_PAPER_BOAT). The start pose is the AUTHORING INTERFACE, not an error to correct:
+  // "they put a paper boat and let go — it does a different path from how they let it go, spot and
+  // drop." The old code READ the pose then threw it away by CLAMPING tilt/radius into a fixed band,
+  // which is what collapsed every pose onto the same film. These constants drive the MAPPINGS that
+  // replace those clamps. UNVERIFIED first-principles starting points — tune against the 10s preview.
+  var CINEMA_PULLAWAY_GAIN = 1.5;    // Λ: intimacy → how much wider the film ends than it filled
+  var CINEMA_GAMMA_CARRY = 2.0;      // γ_carry: storeys above your floor at which attack is FULLY carried
+  var CINEMA_TURN_MAX_RAD = Math.PI; // Δφ_turn: extra in-place rotation at ι=1 (lobby start)
+  // §B4 (user: "Slow it down say 10 frames then even though half more second for any sudden twist
+  // which breaks too fast a perception"). SECONDS, not frames, deliberately: MaxQ runs 15fps and
+  // Cinema Orbit 24fps, so a literal frame count would feel different in the two paths for the same
+  // authored film. 0.45s ≈ 10 frames at the 24fps cinema cadence.
+  var CINEMA_TWIST_EASE_SEC = 0.45;
+  // §CINEMA_ANCHOR — the reverse-engineering vocabulary (user 2026-07-19): the ELEMENT you park
+  // against is itself a control. "say i want a wobbly path, i can put the cam on railing. I want
+  // more straight mundane path, cam back to a wall. More turnaround - back to a beam." / "Even
+  // putting close to a device ie lamp will make it spin tunnelling thru at least a round thru the
+  // hall." The CLASS is read from the building's REAL elements_meta.ifc_class — never invented; the
+  // class→character mapping is a presentation choice, same standing as STD_MAT's colour table.
+  // Users learn this table by playing — that is the "many tricks up the sleeve" the feature is for.
+  var CINEMA_ANCHOR_RADIUS_M = 4.0;  // how near you must park for an element to claim the film
+  // TABLE SHAPE (user 2026-07-19: "a matrix style adjustable list is good design pattern where we
+  // can later introduce more verbs to it of many dimensions ie height, proximity - ranges etc"):
+  // each class maps to an ORDERED RULE LIST; the first rule whose `when` matches wins. `when` is
+  // the extension point for further DIMENSIONS — today `distLt` (proximity band, metres) and
+  // `gammaGt`/`gammaLt` (height band, in storey heights); a rule with no `when` always matches and
+  // acts as that class's default. New verbs go in as new fields alongside ellip/turn/swoop/spin
+  // WITHOUT restructuring: add the field here, read it where the pose factory applies character.
+  // A bare object (not an array) is still accepted — it means "one rule, always matches".
+  var CINEMA_ANCHOR_CHARACTER = {
+    // Railing: lean right on it and it wobbles; a bit further off it only sways.
+    IfcRailing: [
+      { when: { distLt: 1.5 },        name: 'wobbly',     ellip: 2.2,  turn: 0.0,           swoop: 1.3, spin: 0 },
+      {                               name: 'sway',       ellip: 1.5,  turn: 0.0,           swoop: 1.1, spin: 0 }
+    ],
+    // Wall: backed right against it = the deliberately mundane straight path.
+    IfcWall: [
+      { when: { distLt: 2.0 },        name: 'mundane',    ellip: 0.15, turn: 0.0,           swoop: 0.5, spin: 0 },
+      {                               name: 'steady',     ellip: 0.6,  turn: 0.0,           swoop: 0.8, spin: 0 }
+    ],
+    IfcBeam:         [{               name: 'turnaround', ellip: 1.0,  turn: Math.PI,       swoop: 1.0, spin: 0 }],
+    IfcColumn:       [{               name: 'turnaround', ellip: 1.0,  turn: Math.PI,       swoop: 1.0, spin: 0 }],
+    IfcMember:       [{               name: 'turnaround', ellip: 1.0,  turn: Math.PI * 0.6, swoop: 1.0, spin: 0 }],
+    // Device/lamp: "close to a device ie lamp will make it spin tunnelling thru at least a round
+    // thru the hall" — the full spin is the CLOSE band; further out it just lingers.
+    IfcLightFixture: [
+      { when: { distLt: 2.5 },        name: 'spin',       ellip: 1.4,  turn: Math.PI * 2,   swoop: 1.2, spin: 1 },
+      {                               name: 'linger',     ellip: 1.2,  turn: Math.PI * 0.5, swoop: 1.1, spin: 0 }
+    ],
+    IfcFlowTerminal: [
+      { when: { distLt: 2.5 },        name: 'spin',       ellip: 1.4,  turn: Math.PI * 2,   swoop: 1.2, spin: 1 },
+      {                               name: 'linger',     ellip: 1.2,  turn: Math.PI * 0.5, swoop: 1.1, spin: 0 }
+    ],
+    IfcStair:        [{               name: 'rising',     ellip: 1.0,  turn: 0.0,           swoop: 0.8, spin: 0 }],
+    IfcRamp:         [{               name: 'rising',     ellip: 1.0,  turn: 0.0,           swoop: 0.8, spin: 0 }],
+    // Glass: the glint verb is worth more when you are up high looking across the facade.
+    IfcCurtainWall: [
+      { when: { gammaGt: 1.5 },       name: 'glint-high', ellip: 1.0,  turn: 0.0,           swoop: 2.0, spin: 0 },
+      {                               name: 'glint',      ellip: 1.0,  turn: 0.0,           swoop: 1.6, spin: 0 }
+    ],
+    IfcWindow:       [{               name: 'glint',      ellip: 1.0,  turn: 0.0,           swoop: 1.6, spin: 0 }]
+  };
+  // First matching rule wins; `dims` carries the dimensions a `when` can test.
+  function _cinemaPickCharacter(rules, dims) {
+    if (!rules) return null;
+    if (!Array.isArray(rules)) return rules;           // bare object = single always-match rule
+    for (var i = 0; i < rules.length; i++) {
+      var w = rules[i].when;
+      if (!w) return rules[i];
+      if (w.distLt !== undefined && !(dims.dist < w.distLt)) continue;
+      if (w.gammaGt !== undefined && !(dims.gamma > w.gammaGt)) continue;
+      if (w.gammaLt !== undefined && !(dims.gamma < w.gammaLt)) continue;
+      return rules[i];
+    }
+    return null;
+  }
+  var CINEMA_ANCHOR_NEUTRAL = { name: 'open', ellip: 1.0, turn: 0.0, swoop: 1.0, spin: 0 };
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+
+  // §CINEMA_CONTEXT helpers — "the surrounding makeup also influences the orbit plan ie as input
+  // matrix of some sort" (user). film = F(pose ⊗ κ): the pose is a QUERY POINT, the building
+  // ANSWERS, and the path is a function of both. Two users at the same radius/angle/height, one in
+  // a stairwell and one in an atrium, must NOT get the same film. All derived from real DB rows.
+
+  // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
+  function _cinemaThree2Ifc(x, y, z) {
+    var o = A.modelOffset || { x: 0, y: 0, z: 0 };
+    return { ix: x + o.x, iy: o.y - z, iz: y + o.z };
+  }
+
+  // κ₇ ANCHOR: the nearest character-bearing element to the authored pose. This is the user's
+  // reverse-engineering handle — park on a railing for wobble, back to a wall for mundane, near a
+  // lamp to make it spin. Returns the NEAREST match within CINEMA_ANCHOR_RADIUS_M, or null.
+  function _cinemaAnchor(camPos, gamma) {
+    if (!A.dbQuery) return null;
+    var p = _cinemaThree2Ifc(camPos.x, camPos.y, camPos.z);
+    var R = CINEMA_ANCHOR_RADIUS_M;
+    try {
+      // Bounded box query first (indexable), exact radius test in JS — same shape as the other
+      // proximity queries in this file. center_* is the element's own centroid in IFC coords.
+      var rows = A.dbQuery(
+        'SELECT m.ifc_class, t.center_x, t.center_y, t.center_z FROM element_transforms t ' +
+        'JOIN elements_meta m ON t.guid=m.guid WHERE t.center_x BETWEEN ' + (p.ix - R) + ' AND ' + (p.ix + R) +
+        ' AND t.center_y BETWEEN ' + (p.iy - R) + ' AND ' + (p.iy + R) +
+        ' AND t.center_z BETWEEN ' + (p.iz - R) + ' AND ' + (p.iz + R)) || [];
+      var best = null, bestD = R;
+      for (var i = 0; i < rows.length; i++) {
+        var cls = rows[i][0] || '';
+        var rules = CINEMA_ANCHOR_CHARACTER[cls];
+        // IfcWallStandardCase etc. — fall back to the base-class prefix so real-world variants count.
+        if (!rules) { for (var k in CINEMA_ANCHOR_CHARACTER) { if (cls.indexOf(k) === 0) { rules = CINEMA_ANCHOR_CHARACTER[k]; break; } } }
+        if (!rules) continue;
+        var d = Math.hypot(rows[i][1] - p.ix, rows[i][2] - p.iy, rows[i][3] - p.iz);
+        if (d >= bestD) continue;
+        // The rule is chosen against the LIVE dimensions (proximity, height band) — this is the
+        // matrix's extension seam: more dimensions go into `dims`, more `when` keys read them.
+        var ch = _cinemaPickCharacter(rules, { dist: d, gamma: gamma });
+        if (!ch) continue;
+        bestD = d; best = { cls: cls, dist: d, ch: ch };
+      }
+      return best;
+    } catch (e) { return null; }
+  }
+
+  // γ LIFT: how far above the floor BENEATH you the pose sits, in storey heights ("how far or off
+  // from a floor" — user). Also yields the storey height the reciprocal ending re-references to the
+  // ROOF. Reuses the slab-bottom convention proven by tools.js §GROUND_Y rather than a new one.
+  function _cinemaFloorContext(camPos) {
+    var out = { floorY: null, storeyH: 3.2, gamma: 0.5, src: 'default' };
+    if (!A.dbQuery) return out;
+    try {
+      var p = _cinemaThree2Ifc(camPos.x, camPos.y, camPos.z);
+      // Distinct slab elevations = the storey stack. Thin slabs only (bbox_z<1) = floor plates.
+      var rows = A.dbQuery(
+        'SELECT DISTINCT ROUND(center_z - bbox_z/2.0, 2) AS bottom FROM element_transforms t ' +
+        'JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class LIKE "IfcSlab%" AND bbox_z IS NOT NULL ' +
+        'AND bbox_z < 1.0 ORDER BY bottom') || [];
+      var levels = [];
+      for (var i = 0; i < rows.length; i++) if (rows[i][0] !== null) levels.push(rows[i][0]);
+      if (!levels.length) return out;
+      // storey height = median gap between consecutive distinct levels (robust to odd mezzanines)
+      var gaps = [];
+      for (var g = 1; g < levels.length; g++) { var gap = levels[g] - levels[g - 1]; if (gap > 1.5 && gap < 8) gaps.push(gap); }
+      if (gaps.length) { gaps.sort(function(a, b) { return a - b; }); out.storeyH = gaps[gaps.length >> 1]; }
+      // nearest floor at or below the camera (IFC z is up)
+      var below = null;
+      for (var j = 0; j < levels.length; j++) if (levels[j] <= p.iz + 0.05) below = levels[j];
+      if (below === null) below = levels[0];
+      out.floorY = A.ifc2three(0, 0, below).y;
+      out.gamma = Math.max(0, (camPos.y - out.floorY) / out.storeyH);
+      out.src = 'slab-stack(' + levels.length + ')';
+    } catch (e) {}
+    return out;
+  }
   // §CINEMA_PATH: the one shared orbit-path formula — push-in to fill-frame → hold → ease out to
   // the radius/tilt band → band through the main body, plus the sun-glint swoop, elliptical
   // radius modulation, and the wide pull-back flourish. Extracted from startCinemaOrbit so the
@@ -2875,21 +3030,61 @@ async function setupEffects(A, renderer, scene, camera) {
       startTilt: Math.atan2(dy0, horizR0),
       startAzimuth: Math.atan2(dz0, dx0)
     };
-    var targetTilt = Math.max(tiltMin, Math.min(tiltMax, base.startTilt));
-    var targetRadius = Math.max(radiusMin, Math.min(radiusMax, base.startRadius));
-
     // Fill-frame distance: real perspective-camera trigonometry, not a guessed constant. Per user
     // spec ("ensure it fills almost full screen... some edges may even momentarily be out of
     // frame"), bias to the LOOSER of the vertical/horizontal half-FOV (the wider-angle axis) —
     // this pulls the camera closer than "fit both axes fully," deliberately letting the tighter
     // axis's edges brush past frame at the closest point, in exchange for a genuinely full-screen
     // subject rather than a comfortably-contained one.
+    // (Moved ABOVE the pose mapping — §CINEMA_RECIPROCAL's intimacy scalar is normalized by it.)
     var vFovRad = THREE.MathUtils.degToRad(A.camera.fov || 50);
     var aspect = A.camera.aspect || (window.innerWidth / Math.max(1, window.innerHeight));
     var hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * aspect);
     var looseTan = Math.max(Math.tan(vFovRad / 2), Math.tan(hFovRad / 2));
     var fillDistance = (boundingRadius / Math.max(looseTan, 1e-3)) * CINEMA_FILL_MARGIN;
     var pushInRadius = Math.min(base.startRadius, fillDistance);  // only ever draws NEARER, never out
+
+    // ══ §CINEMA_RECIPROCAL — the first-act formula ══════════════════════════════════════════
+    // WAS: targetTilt/targetRadius = clamp(start…) — which READ the authored pose and then threw
+    // it away, collapsing every start onto the same film. Now the pose MAPS instead of clamping.
+    var camPos0 = { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z };
+    var floorCtx = _cinemaFloorContext(camPos0);
+    var anchor = _cinemaAnchor(camPos0, floorCtx.gamma);
+    var character = anchor ? anchor.ch : CINEMA_ANCHOR_NEUTRAL;
+    // The three dimensionless authoring scalars. Dimensionless is the point: it is what makes ONE
+    // pose sufficient to condition a whole film (see §CINEMA_PRIOR_ART — this normalization is the
+    // part the camera-control literature does not appear to have).
+    var iota = Math.max(0, Math.min(1, 1 - base.startRadius / Math.max(fillDistance, 1e-3)));  // intimacy
+    var alpha = base.startTilt;                                                                 // attack (RAW, never clamped)
+    var gamma = floorCtx.gamma;                                                                 // lift, in storey heights
+    // γ decides carry-vs-ease for the attack angle: stood on a floor → ease to the normal band;
+    // deliberately flew up high to look down → your steep attack is CARRIED, not clamped.
+    var bandTilt = Math.max(tiltMin, Math.min(tiltMax, alpha));
+    var carry = Math.min(1, gamma / CINEMA_GAMMA_CARRY);
+    var targetTilt = bandTilt + (alpha - bandTilt) * carry;
+    var targetRadius = Math.max(radiusMin, Math.min(radiusMax, base.startRadius));
+    // ι morphs Act I continuously — no branch, one knob. ι=0 (started wide) → today's pure push-in.
+    // ι→1 (lobby/foyer) → an in-place TURNAROUND, radius untouched: "turning around is meaningful
+    // as the intent of the user is that". §CINEMA_ANCHOR adds the element's own extra rotation.
+    var turnExtra = iota * CINEMA_TURN_MAX_RAD + character.turn;
+    // §CINEMA_PAPER_BOAT P4 — the ending IS the beginning, restated from outside.
+    // Roof in three-space: arcBbox is IFC (z up), so the roof plane is ifc2three(_,_,zMax).y.
+    var roofY = arcBbox ? A.ifc2three(0, 0, arcBbox.zMax).y : (base.ty + envelope * 0.5);
+    var reciprocal = {
+      tilt: alpha,                                                    // the same angle of attack returns
+      radius: fillDistance * (1 + CINEMA_PULLAWAY_GAIN * iota),       // intimacy converts to distance
+      y: roofY + gamma * floorCtx.storeyH                             // as high over the ROOF as you began over your FLOOR
+    };
+    console.log('§CINEMA_POSE_AUTHORED iota=' + iota.toFixed(3) + ' alpha=' + (alpha * 180 / Math.PI).toFixed(1) +
+      '° gamma=' + gamma.toFixed(2) + ' (floor=' + (floorCtx.floorY === null ? 'n/a' : floorCtx.floorY.toFixed(1)) +
+      ' storeyH=' + floorCtx.storeyH.toFixed(2) + ' src=' + floorCtx.src + ') r0=' + base.startRadius.toFixed(1) +
+      ' fill=' + fillDistance.toFixed(1) + ' carry=' + carry.toFixed(2) + ' targetTilt=' + (targetTilt * 180 / Math.PI).toFixed(1) + '°');
+    console.log('§CINEMA_ANCHOR ' + (anchor ? 'class=' + anchor.cls + ' dist=' + anchor.dist.toFixed(2) + 'm' : 'none (open)') +
+      ' character=' + character.name + ' ellip=' + character.ellip + ' turn=' + (character.turn * 180 / Math.PI).toFixed(0) +
+      '° swoop=' + character.swoop + ' spin=' + character.spin);
+    console.log('§CINEMA_RECIPROCAL endTilt=' + (reciprocal.tilt * 180 / Math.PI).toFixed(1) + '° endRadius=' +
+      reciprocal.radius.toFixed(1) + ' endY=' + reciprocal.y.toFixed(1) + ' (roof=' + roofY.toFixed(1) +
+      ' + ' + gamma.toFixed(2) + ' storeys) turnExtra=' + (turnExtra * 180 / Math.PI).toFixed(0) + '°');
 
     var pushInEndT = Math.min(0.4, CINEMA_PUSHIN_SEC / durationSec);
     var holdEndT = Math.min(0.55, CINEMA_HOLD_SEC / durationSec);
@@ -2907,7 +3102,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // below can re-enter the orbit from the entrance side without duplicating the formula.
     function _mkOrbitPose(b, pushR, tgtRad, tgtTilt, swoopTN) {
       return function(tNorm) {
-        var azimuth = b.startAzimuth + tNorm * Math.PI * 2;
+        // §CINEMA_RECIPROCAL: ι + the anchor's character add rotation ON TOP of the base 360°.
+        // Act I spends it (the turnaround); after Act I it is a constant offset, so the orbit
+        // still closes on the start azimuth and the swoop crossing stays exactly once per loop.
+        var turnPhase = turnExtra * _cinemaSmoothstep(pushInEndT > 0 ? Math.min(1, tNorm / pushInEndT) : 1);
+        var azimuth = b.startAzimuth + tNorm * Math.PI * 2 + turnPhase;
         var radius, tilt;
         if (tNorm <= pushInEndT) {
           var eIn = _cinemaSmoothstep(pushInEndT > 0 ? tNorm / pushInEndT : 1);
@@ -2928,13 +3127,31 @@ async function setupEffects(A, renderer, scene, camera) {
         var swoopDelta = Math.abs(tNorm - swoopTN);
         swoopDelta = Math.min(swoopDelta, 1 - swoopDelta);  // wrap-around near tNorm=0/1
         if (swoopHalfT > 0 && swoopDelta < swoopHalfT) {
-          var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfT);  // 1 at crossing, 0 at window edge
-          tilt = tilt + (swoopTiltRad - tilt) * swoopW;
+          // §CINEMA_ANCHOR scales the dip: back to a wall damps it (mundane), glass deepens it.
+          var swoopW = (1 - _cinemaSmoothstep(swoopDelta / swoopHalfT)) * character.swoop;
+          tilt = tilt + (swoopTiltRad - tilt) * Math.min(1, swoopW);
         }
-        radius *= 1 + CINEMA_ELLIPTICITY * Math.cos(2 * (azimuth - b.startAzimuth));
-        if (tNorm > CINEMA_PULLBACK_START) {
-          var p = (tNorm - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START);
-          radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * p;
+        // §CINEMA_ANCHOR: the element you parked against modulates the path's wobble.
+        radius *= 1 + CINEMA_ELLIPTICITY * character.ellip * Math.cos(2 * (azimuth - b.startAzimuth));
+        // ══ Act III — the reciprocal (§CINEMA_PAPER_BOAT P4) ══
+        // WAS: a fixed ×1.4 pull-back. NOW: eases to the pose DERIVED FROM THE OPENING — the same
+        // angle of attack, pulled away by however intimate the start was, hovering as far over the
+        // roof as the user began over their floor. The climb starts at the swoop, so the film's
+        // final rise IS its return to the opening angle (user: "should hobble to a higher angle
+        // after passing... where the Sun reflects"). B4's ease keeps the twist from breaking
+        // perception: the ramp is smoothstepped, never a snap.
+        var actIIIStart = Math.max(CINEMA_PULLBACK_START, Math.min(0.95, swoopTN + swoopHalfT));
+        if (tNorm > actIIIStart) {
+          var p = _cinemaSmoothstep((tNorm - actIIIStart) / Math.max(1e-3, 1 - actIIIStart));
+          radius = radius + (reciprocal.radius - radius) * p;
+          tilt = tilt + (reciprocal.tilt - tilt) * p;
+          var horizR3 = radius * Math.cos(tilt);
+          // y eases toward the roof-referenced height rather than the tilt-implied one
+          var yOrbit = b.ty + radius * Math.sin(tilt);
+          return {
+            x: b.tx + horizR3 * Math.cos(azimuth), y: yOrbit + (reciprocal.y - yOrbit) * p,
+            z: b.tz + horizR3 * Math.sin(azimuth), tx: b.tx, ty: b.ty, tz: b.tz
+          };
         }
         var horizR = radius * Math.cos(tilt), dy = radius * Math.sin(tilt);
         return {
