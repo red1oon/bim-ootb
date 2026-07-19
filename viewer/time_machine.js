@@ -749,6 +749,10 @@
 
   // Called from inside the traverse for every frontier element (all three mesh paths).
   function _gspCollect(x, y, z) {
+    // §PERF: sparks are playback-only, so collection is too. Without this the traverse pushed
+    // thousands of candidates on EVERY scrub frame for _gspEmit to discard — pure waste on the
+    // exact interaction (scrubbing a large building) where frames are most expensive.
+    if (!_playing) return;
     if (_gspCand.length < 12000) _gspCand.push(x, y, z);   // flat — no per-tick object alloc
   }
 
@@ -782,19 +786,23 @@
     // VFX competes with it (user: "the appreciation is in the quick diff in states").
     if (!app || !app.scene || !isPlaying || _gspDecay <= 0 || !_gspCand.length) { _gspSweep(); return; }
 
-    var cells = {}, i;
+    // §PERF: numeric spatial hash into a Map — the old "cx,cy,cz" string key allocated one
+    // string per candidate per tick (GC churn scaling with building size). A hash collision just
+    // merges two groups, which is harmless for decoration.
+    var cells = new Map(), i;
     for (i = 0; i < _gspCand.length; i += 3) {
-      var key = Math.floor(_gspCand[i] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 1] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 2] / _GSP_CELL);
-      (cells[key] || (cells[key] = [])).push(i);
+      var key = (Math.imul(Math.floor(_gspCand[i] / _GSP_CELL), 73856093) ^
+                 Math.imul(Math.floor(_gspCand[i + 1] / _GSP_CELL), 19349663) ^
+                 Math.imul(Math.floor(_gspCand[i + 2] / _GSP_CELL), 83492791)) | 0;
+      var bucket = cells.get(key);
+      if (bucket) bucket.push(i); else cells.set(key, [i]);
     }
 
     var gid = 0, groups = 0, singles = 0;
-    for (var key2 in cells) {
-      if (!Object.prototype.hasOwnProperty.call(cells, key2)) continue;
+    var _it = cells.values(), _e;
+    while (!(_e = _it.next()).done) {
       if (_gspActive >= _GSP_CAP) break;
-      var idxs = cells[key2], n = idxs.length;
+      var idxs = _e.value, n = idxs.length;
       gid++; groups++;
       if (n <= 2) {
         // "If the group is small say only single or 2 pieces then it is those only."
@@ -946,7 +954,9 @@
 
     // §S260d: All particle effects removed
 
+    var _perfT0 = performance.now(), _perfObjs = 0;
     app.scene.traverse(function(obj) {
+      _perfObjs++;
       if (!obj.userData) return;
 
       // ── Single mesh (has userData.guid) ──
@@ -987,7 +997,7 @@
             _frontierCentroids.push(swp);
             _frontierPositions.push(swp);
             if (_camFollow) _guidPosMap[g] = swp;
-            _gspCollect(swp.x, swp.y, swp.z);   // §GROUP_SPARK: single-mesh frontier
+            _gspCollect(swp.x, swp.y, swp.z); _gspFrontierN++;   // §GROUP_SPARK: single-mesh frontier
             // §S260d: Sparks removed (white square artifacts)
           } else if (isPlaced || isRecent) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
@@ -1097,7 +1107,7 @@
               // §GROUP_SPARK: InstancedMesh instance — position from the saved matrix
               if (_savedInstanceMatrices[meshId][mi]) {
                 _tmV2.setFromMatrixPosition(_savedInstanceMatrices[meshId][mi]);
-                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z);
+                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z); _gspFrontierN++;
               }
             }
           } else {
@@ -1117,6 +1127,7 @@
       }
     });
 
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) + ' objs=' + _perfObjs + ' cand=' + (_gspCand.length/3));
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
     // `_playing` gates it: sparks during playback only, never on scrub.
@@ -3121,12 +3132,16 @@
   var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
   var _twin = null;          // { building, projectId, planned, committed, phases:[{name,seqno,start,end,planned,committed}] }
   var _twinLoading = false;
+  // §PERF_NEG_CACHE: building names whose ERP load returned no rows. Without these, the per-tick
+  // dashboard/variance guards re-fetch ad_seed.db (25.8MB) from IDB forever on a non-folded building.
+  var _twinMiss = null, _shopfloorMiss = null;
   // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
   // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
   function _loadTwin() {
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
+    if (_twinMiss === building) return Promise.resolve(null);   // §PERF_NEG_CACHE — see _loadShopfloor
     if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
@@ -3134,7 +3149,7 @@
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; _twinMiss = building; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project (miss cached, no refetch)'); return null; }
       var pid = pr[0].values[0][0], planned = Number(pr[0].values[0][1] || 0), committed = Number(pr[0].values[0][2] || 0);
       var ph = db.exec("SELECT Name,SeqNo,StartDate,EndDate,PlannedAmt,CommittedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + Number(pid) + " AND Name<>'Unsequenced' ORDER BY SeqNo");
       var phases = (ph.length ? ph[0].values : []).map(function (row) {
@@ -3155,14 +3170,20 @@
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
+    // §PERF_NEG_CACHE: remember a MISS too. drawDash() calls this every tick behind
+    // `if (!_shopfloor && !_shopfloorLoading)`, and every failure path below cleared the
+    // in-flight flag WITHOUT setting _shopfloor — so a building with no PP_Order rows re-fetched
+    // ad_seed.db (25.8MB) from IndexedDB on EVERY playback tick. A cache that only remembers
+    // successes is not a cache.
+    if (_shopfloorMiss === building) return Promise.resolve(null);
     if (_shopfloorLoading) return Promise.resolve(null);
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
-    if (!SQL) return Promise.resolve(null);
+    if (!SQL) return Promise.resolve(null);   // NOT a miss — sql.js may arrive later, retry is correct
     _shopfloorLoading = true;
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; _shopfloorMiss = building; console.log('§PERF_NEG_CACHE shopfloor miss cached building="' + building + '" — no further ad_seed.db refetch'); return null; }
       var pid = pr[0].values[0][0];
       var res = db.exec(
         'SELECT o.PP_Order_ID, o.DateStartSchedule, o.DateFinishSchedule,' +
