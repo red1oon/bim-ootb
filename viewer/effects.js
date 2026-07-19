@@ -1531,17 +1531,63 @@ async function setupEffects(A, renderer, scene, camera) {
       return false;
     }
     var SIT_CAP = 2, WALK_CAP = 2;
+    // §STAFFAGE_SEAT_CLASS (2026-07-20, user: "sitting figures placed INSIDE tables") — ROOT CAUSE of
+    // that defect: this query used to select EVERY IfcFurniture/IfcFurnishingElement row and drop a
+    // seated sprite at the chosen element's own center_x/center_y. A table, desk, counter or nurse
+    // station is furniture too, so a sit pick could land a figure at the geometric centre of a table
+    // — i.e. inside it. Measured on the real shipped DBs (read-only queries, nothing mutated):
+    //   Hospital  201 furniture = 160 M_Chair* + 37 M_Table* + 4 nurse stations/info desks
+    //             (chairs bbox 0.47-0.68m plan, tables 1.52-2.4m, stations 12.7-25.5m)
+    //   Clinic    118 furniture, ZERO seats — all cabinets/countertops
+    //   Terminal  176 furniture, canteen tables + desks + one real 'Chair - Desk (2)' family
+    // There is NO predefined_type column in elements_meta (schema: guid, ifc_class, element_name,
+    // storey, discipline, material_name, material_rgba, building) — so seat-ness must come from the
+    // element_name family + the real bbox. Both are extracted, neither is invented.
+    //
+    // TWO NAMING LANDMINES, both confirmed in real data — do not "simplify" this classifier:
+    //  1. `M_Table-Dining Round w Chairs:1525mm Diameter` — 21 Hospital rows are TABLES whose name
+    //     contains "Chairs". A naive LIKE '%chair%' calls them chairs and re-creates this exact bug.
+    //  2. `Chair - Desk (2)` (Terminal) — a genuine chair whose name contains "Desk". Excluding on
+    //     any non-seat token anywhere in the name would wrongly drop it.
+    // Resolved by TOKEN POSITION within the Revit family name (the text before the first ':', which
+    // is where the family name lives in every DB checked): classification goes to whichever token
+    // appears FIRST. "M_Table-..." -> table; "Chair - Desk..." -> chair. Plus a size guard: a single
+    // seat is <=1.2m in plan, which drops combined units such as Terminal's
+    // `Waiting_Room_Seat_-_4St_1Tbl_3750` (4 seats + 1 table in one 3.75m element — seating, but its
+    // centre is the TABLE, so seating a figure there reproduces the bug).
+    // NOTE a chair legitimately overlapping a table bbox is NOT this defect: Hospital's dining chairs
+    // ring a `M_Table-Dining Round w Chairs` whose bbox spans the whole setting, so 159/160 chair
+    // centres fall inside a table bbox by construction. A person seated at a table is supposed to
+    // overlap it. The defect is the ANCHOR being a table, which is what this classifier removes.
+    // ZERO-CASE IS CORRECT HERE: a building whose furniture carries no seat information (LTU_AHouse's
+    // names are bare codes — "-", "WC", "KÖK3"; Clinic is all casework) places NO seated figures.
+    // Per this file's own doctrine that is the right outcome — never fabricate a seat position.
+    var _SEAT_RE = /chair|seat|stool|sofa|bench|couch|settee|\bstol/i;
+    var _NONSEAT_RE = /table|desk|counter|station|cabinet|shelv|shelf|\bbed\b|bord|sk[aå]p|bokhyll|worktop|\btbl\b|entertainment|\btop\b/i;
+    function _isSeat(name, bboxX, bboxY) {
+      var fam = String(name || '').split(':')[0];
+      var s = _SEAT_RE.exec(fam); if (!s) return false;
+      var n = _NONSEAT_RE.exec(fam); if (n && n.index < s.index) return false;
+      // a real single seat is <=1.2m in plan — guards against combined seat+table units and any
+      // oversized assembly that happens to carry a seat token.
+      return (bboxX == null || bboxX <= 1.2) && (bboxY == null || bboxY <= 1.2);
+    }
+    A._staffageIsSeat = _isSeat;   // exposed for the §STAFFAGE_SEAT_CLASS witness harness
     // furniture currently in the view frustum, near the camera
-    var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.center_x IS NOT NULL") || [];
-    var _v = new THREE.Vector3(), cand = [];
+    var furn = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, em.element_name, et.bbox_x, et.bbox_y FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND et.center_x IS NOT NULL") || [];
+    var _v = new THREE.Vector3(), cand = [], seatTotal = 0, rejNonSeat = 0;
     for (var i = 0; i < furn.length; i++) {
       var f = furn[i], p = A.ifc2three(f[0], f[1], f[2]);
+      // §STAFFAGE_SEAT_CLASS: only a real seat may receive a seated figure.
+      if (!_isSeat(f[4], f[5], f[6])) { rejNonSeat++; continue; }
+      seatTotal++;
       _v.copy(p).project(A.camera);
       if (Math.abs(_v.x) < 0.9 && Math.abs(_v.y) < 0.95 && _v.z > -1 && _v.z < 1) {
         var dist = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
         if (dist < 16 && !_nearExistingIF(p, 1.5) && !_nearRealEntourage(p)) cand.push([f[0], f[1], f[2], f[3], dist]);
       }
     }
+    console.log('§STAFFAGE_SEAT_CLASS furn=' + furn.length + ' seats=' + seatTotal + ' rejNonSeat=' + rejNonSeat + ' inViewSeats=' + cand.length);
     // §STAFFAGE_SHUFFLE: random draw among all in-view/in-range candidates, not always nearest-first
     // — "repeatedly adds on... in random placings" applies indoors too, clash (_spreadPick's minDist)
     // is still the guardrail.
@@ -1572,11 +1618,17 @@ async function setupEffects(A, renderer, scene, camera) {
     // in view — the camera is always on the correct local floor, furniture may not be nearby.
     var floorYval = picked.length ? floorY(picked[0][0], picked[0][1], picked[0][2]) : (cam.y - 1.6);
     var placedSit = 0, placedWalk = 0;
-    // SITTING → on the in-view furniture (seated on real chairs)
+    // SITTING → on the in-view SEAT furniture (real chairs only — see §STAFFAGE_SEAT_CLASS above)
     for (var k = 0; k < picked.length; k++) {
       var s = picked[k], pos = A.ifc2three(s[0], s[1], s[2]); pos.y = floorY(s[0], s[1], s[2]);
       var spr = _addStaffageSprite(sitPoses[k % sitPoses.length], pos, true, true);
-      spr.userData.interior = true; _photoStaffageInFrame.push(spr); placedSit++;
+      spr.userData.interior = true;
+      // §STAFFAGE_SIT_ANCHOR: record the IFC-space seat this figure was placed on, so the witness can
+      // re-test every placed sitting figure against the real furniture bboxes independently of the
+      // placement search (non-tautological — same discipline as §STAFFAGE_WALK_CLEAR).
+      spr.userData.sitAnchorIfc = { x: s[0], y: s[1], z: s[2] };
+      _photoStaffageInFrame.push(spr); placedSit++;
+      console.log('§STAFFAGE_SIT_ANCHOR ifc=(' + s[0].toFixed(2) + ',' + s[1].toFixed(2) + ') seat=1');
     }
     // WALKING → in the AISLE: floor points ahead of the camera, in view, and clear of EVERY solid
     // (occupancy grid — walls/columns/furniture/equipment/MEP, not just furniture-distance) — so
