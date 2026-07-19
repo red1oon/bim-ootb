@@ -641,6 +641,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _viewMode = 'grid';    // 'grid' | 'form'
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
+  var _lastFoldCreated = []; // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+                              // most recent _overlayListTip() fold's `created` synthetic-pk list (ascending
+                              // opId order — see CORE.listTip in crud_overlay.js). CRUD_CREATE ops never carry
+                              // a real pk on their op record (buildOp() only sets base.id for update/delete/
+                              // process) so overlay:committed's `id` is always null for a create — the ONLY
+                              // place the new row's synthetic pk (-opId) becomes known is this fold's `created`
+                              // array. The CRUD_CREATE handler reads the LAST entry (the just-committed row)
+                              // to thread the correct pk into _selByLevel instead of leaving it stale.
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
@@ -2045,6 +2053,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         created = created.filter(function (p) { return kept[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
+      _lastFoldCreated = created;   // W-SO-CHILD-BIND — ascending-opId synthetic pks; last entry = most recent create
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
@@ -2969,6 +2978,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
+        // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+        // A CRUD_CREATE folds the new row into _records but previously left _recIdx/_selByLevel pointing at
+        // whatever record was current at window open — so a child tab drilled after New+Save filtered by the
+        // STALE parent pk (master-detail reads _selByLevel[level-1], see renderActiveTab ~line 1723), not the
+        // record just created. NOTE (verified against the real code, differs from the original bug report):
+        // d.id is NOT usable here — buildOp() in crud_overlay.js only sets base.id for update/delete/process,
+        // never for create, so overlay:committed's `id` field is always null on a CRUD_CREATE. The new row's
+        // real synthetic pk (-opId) only becomes known inside _overlayListTip's listTip() fold — captured just
+        // above into _lastFoldCreated (ascending opId order; last entry = the row this very commit just made).
+        if (d.op_type === 'CRUD_CREATE') {
+          try {
+            var newPk = _lastFoldCreated.length ? _lastFoldCreated[_lastFoldCreated.length - 1] : null;
+            var newKeyCol = _keyCol(ct), foundIdx = -1;
+            if (newPk != null) {
+              for (var ri = 0; ri < _records.length; ri++) {
+                if (String(recVal(_records[ri], newKeyCol)) === String(newPk)) { foundIdx = ri; break; }
+              }
+            }
+            if (foundIdx >= 0) { _recIdx = foundIdx; _setSel(ct); }
+            console.log('§CRUD-CREATE-SEL table=' + t + ' id=' + newPk + ' recIdx=' + foundIdx + ' selLevel=' + (ct.tabLevel || 0) + ' sel=' + _selByLevel[ct.tabLevel || 0]);
+          } catch (er4) { console.log('§CRUD-CREATE-SEL-ERROR table=' + t + ' id=' + d.id + ' err=' + er4); }
+        }
         // P2/P3 — repaint the CURRENT view post-commit: form view re-mounts the inline editor from the now-committed
         //   tip (baseline resets, dirty clears); grid view repaints so a created row APPEARS / a deleted row vanishes.
         if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} } else { try { renderBody(); } catch (er3) {} }
