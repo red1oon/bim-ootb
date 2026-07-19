@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v8 (idb open-deadlock guard: timeout + onblocked + pre-purge)';
+  var MAXQ_V = 'v9 (mp4/H.264 via WebCodecs + hand-rolled mux; webm fallback intact)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -151,6 +151,120 @@
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(A.renderer.domElement, 0, 0, w, h);
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
+  }
+
+  // §MAXQ_MP4 — mp4/H.264 stitch (preferred path). Spec: PHOTOREAL_STILL_RENDER.md §MAXQ_MP4 SPEC.
+  // WHY: the webm/VP9 the MediaRecorder path produces does not play on iPhone or in WhatsApp, which
+  // is the entire distribution channel this movie exists for. mp4/H.264 plays everywhere.
+  // Returns true if an mp4 was produced and downloaded; false = caller must run the webm fallback.
+  // Every failure mode is a clean `return false` with a §MAXQ_MP4_FALLBACK reason — never a throw,
+  // because losing a finished bake to a muxing bug would be far worse than shipping webm.
+  var MP4_CODECS = [
+    'avc1.640034',  // High 5.2 — headroom for large canvases
+    'avc1.4d0034',  // Main 5.2
+    'avc1.42003c',  // Baseline 6.0 (widest device compatibility, if the encoder takes the level)
+    'avc1.640028',  // High 4.0
+    'avc1.42001f'   // Baseline 3.1 — the universally-supported floor
+  ];
+  async function _stitchMp4(db, framesDone, fps, w, h) {
+    var A = window.APP;
+    if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+      console.log('§MAXQ_MP4_FALLBACK reason=no-webcodecs (VideoEncoder/VideoFrame unavailable)');
+      return false;
+    }
+    if (!window.MP4Mux || typeof window.MP4Mux.mux !== 'function') {
+      console.log('§MAXQ_MP4_FALLBACK reason=no-muxer (lib/mp4_mux.js not loaded — stale precache?)');
+      return false;
+    }
+    // H.264 requires even dimensions; the renderer really does hand us odd sizes (1854x963 seen live).
+    var ew = w & ~1, eh = h & ~1;
+    // Photoreal architectural footage — generous bitrate, this is a deliverable not a stream.
+    var bitrate = Math.min(50e6, Math.max(2e6, Math.round(ew * eh * fps * 0.2)));
+    var enc = null, chosen = null, avcC = null, chunks = [], encErr = null;
+    var t0 = performance.now();
+    try {
+      for (var ci = 0; ci < MP4_CODECS.length; ci++) {
+        var codec = MP4_CODECS[ci];
+        var cfg = { codec: codec, width: ew, height: eh, bitrate: bitrate, framerate: fps,
+                    avc: { format: 'avc' }, latencyMode: 'quality' };
+        var sup = false;
+        try { sup = (await VideoEncoder.isConfigSupported(cfg)).supported; } catch (e) { sup = false; }
+        console.log('§MAXQ_MP4 probe codec=' + codec + ' supported=' + sup);
+        if (!sup) continue;
+        // Mozilla bug 1918769: isConfigSupported can answer true and configure() then throws.
+        // Only a real configure() proves the codec — never trust the capability query alone.
+        try {
+          enc = new VideoEncoder({
+            output: function(chunk, md) {
+              if (md && md.decoderConfig && md.decoderConfig.description && !avcC) {
+                var d = md.decoderConfig.description;
+                avcC = new Uint8Array(d.buffer ? d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) : d);
+              }
+              var buf = new Uint8Array(chunk.byteLength);
+              chunk.copyTo(buf);
+              // cts = presentation timestamp; chunks arrive in DECODE order, so the muxer needs
+              // this to emit a ctts box when the encoder reorders (Firefox uses B-frames).
+              chunks.push({ data: buf, key: chunk.type === 'key', cts: chunk.timestamp });
+            },
+            error: function(e) { encErr = e.message || String(e); }
+          });
+          enc.configure(cfg);
+          chosen = codec;
+          break;
+        } catch (e2) {
+          console.log('§MAXQ_MP4 probe codec=' + codec + ' configure-threw=' + e2.name + ':' + e2.message);
+          try { if (enc) enc.close(); } catch (e3) {}
+          enc = null;
+        }
+      }
+      if (!enc) { console.log('§MAXQ_MP4_FALLBACK reason=no-usable-h264-codec'); return false; }
+      console.log('§MAXQ_MP4 configured codec=' + chosen + ' size=' + ew + 'x' + eh +
+        ' bitrate=' + bitrate + ' fps=' + fps + ' frames=' + framesDone);
+      _status('🎬 MaxQ encoding mp4/H.264 (' + framesDone + ' frames)…');
+
+      var cv = document.createElement('canvas');
+      cv.width = ew; cv.height = eh;
+      var cx = cv.getContext('2d');
+      var usPerFrame = 1e6 / fps, gop = Math.max(1, Math.round(fps * 2));
+      for (var i = 0; i < framesDone; i++) {
+        var bmp = await createImageBitmap(await _idbGet(db, i));
+        cx.drawImage(bmp, 0, 0);
+        bmp.close();
+        var vf = new VideoFrame(cv, { timestamp: Math.round(i * usPerFrame), duration: Math.round(usPerFrame) });
+        enc.encode(vf, { keyFrame: (i % gop) === 0 });
+        vf.close();
+        // Backpressure — the encoder is the slow end here, not IDB.
+        while (enc.encodeQueueSize > 8) await _sleep(5);
+        if (encErr) throw new Error('encoder-error: ' + encErr);
+      }
+      await enc.flush();
+      try { enc.close(); } catch (e4) {}
+      enc = null;
+      if (encErr) throw new Error('encoder-error: ' + encErr);
+      if (!chunks.length) { console.log('§MAXQ_MP4_FALLBACK reason=zero-chunks'); return false; }
+      if (!avcC) { console.log('§MAXQ_MP4_FALLBACK reason=no-avcC-description'); return false; }
+      var encMs = Math.round(performance.now() - t0);
+      var totalBytes = 0;
+      for (var k = 0; k < chunks.length; k++) totalBytes += chunks[k].data.length;
+      console.log('§MAXQ_MP4 encoded chunks=' + chunks.length + ' bytes=' + totalBytes +
+        ' avcCBytes=' + avcC.length + ' ms=' + encMs +
+        ' (no real-time replay — ' + (framesDone / fps).toFixed(1) + 's of footage)');
+
+      var mp4 = window.MP4Mux.mux({ width: ew, height: eh, fps: fps, avcC: avcC, samples: chunks });
+      var blob = new Blob([mp4], { type: 'video/mp4' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.mp4';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+      console.log('§MAXQ_DONE frames=' + framesDone + ' bytes=' + blob.size + ' type=video/mp4 codec=' + chosen);
+      _status('🎬 MaxQ mp4 saved (' + (blob.size / 1e6).toFixed(1) + ' MB) — plays on iPhone/WhatsApp');
+      return true;
+    } catch (e) {
+      console.log('§MAXQ_MP4_FALLBACK reason=' + (e && e.message ? e.message : String(e)));
+      try { if (enc && enc.state !== 'closed') enc.close(); } catch (e5) {}
+      return false;
+    }
   }
 
   async function _stitch(db, framesDone, fps, w, h) {
@@ -326,7 +440,12 @@
       if (framesDone >= (_cancel ? fps : 1)) {
         if (_cancel) console.log('§MAXQ_CANCEL_PARTIAL stitching ' + framesDone + ' frames (' +
           (framesDone / fps).toFixed(1) + 's of footage)');
-        await _stitch(db, framesDone, fps, w, h);
+        // §MAXQ_MP4: mp4/H.264 first (plays on iPhone/WhatsApp), webm MediaRecorder as fallback.
+        // opts.forceWebm=true skips mp4 entirely — that is how the fallback path stays witnessed.
+        var mp4ok = false;
+        if (opts.forceWebm) console.log('§MAXQ_MP4_FALLBACK reason=forced-webm (opts.forceWebm)');
+        else mp4ok = await _stitchMp4(db, framesDone, fps, w, h);
+        if (!mp4ok) await _stitch(db, framesDone, fps, w, h);
       } else if (_cancel) {
         _status('🎬 MaxQ cancelled at frame ' + framesDone + ' — under 1s of footage, nothing saved');
       }
