@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v7 (rolling ETA + screen wake-lock)';
+  var MAXQ_V = 'v8 (idb open-deadlock guard: timeout + onblocked + pre-purge)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -50,12 +50,53 @@
   function _sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
   function _status(t) { var A = window.APP; if (A && A.status) A.status.textContent = t; }
 
+  // §MAXQ_IDB — open must NEVER hang silently. An earlier run that exited abnormally (or a second
+  // app tab still holding a connection) leaves _idbDestroy's deleteDatabase() pending-blocked, and
+  // every later open() then queues behind it FOREVER with no event, no error, no log — the exact
+  // "stuck right after §MAXQ_PREVIEW done, zero further lines" report (LTU, v810/MAXQ v7).
+  // Three guards: track+close our own connection, purge any pending delete BEFORE opening, and
+  // race the whole thing against a timeout so a block surfaces as a clean §MAXQ_FAIL abort.
+  var IDB_OPEN_TIMEOUT_MS = 5000;
+  var _db = null;
+  function _idbDelete() {
+    return new Promise(function(res) {
+      var rq;
+      try { rq = indexedDB.deleteDatabase(IDB_NAME); } catch (e) { return res(false); }
+      rq.onsuccess = function() { res(true); };
+      rq.onerror = function() { res(false); };
+      rq.onblocked = function() {
+        console.warn('§MAXQ_IDB_BLOCKED delete blocked — another tab holds ' + IDB_NAME + ' open');
+        res(false);
+      };
+      setTimeout(function() { res(false); }, IDB_OPEN_TIMEOUT_MS);
+    });
+  }
   function _idbOpen() {
     return new Promise(function(res, rej) {
-      var rq = indexedDB.open(IDB_NAME, 1);
+      var settled = false;
+      var timer = setTimeout(function() {
+        if (settled) return;
+        settled = true;
+        rej(new Error('idb-open-timeout'));
+      }, IDB_OPEN_TIMEOUT_MS);
+      var done = function(fn, arg) {
+        if (settled) { try { if (arg && arg.close) arg.close(); } catch (e) {} return; }
+        settled = true; clearTimeout(timer); fn(arg);
+      };
+      var rq;
+      try { rq = indexedDB.open(IDB_NAME, 1); } catch (e) { return done(rej, e); }
       rq.onupgradeneeded = function() { rq.result.createObjectStore(IDB_STORE); };
-      rq.onsuccess = function() { res(rq.result); };
-      rq.onerror = function() { rej(rq.error); };
+      rq.onsuccess = function() {
+        var db = rq.result;
+        // A later version-change request (another tab, or our own next-run delete) must not find
+        // this connection still open — close on demand instead of becoming the zombie blocker.
+        db.onversionchange = function() { try { db.close(); } catch (e) {} if (_db === db) _db = null; };
+        done(res, db);
+      };
+      rq.onerror = function() { done(rej, rq.error || new Error('idb-open-error')); };
+      rq.onblocked = function() {
+        console.warn('§MAXQ_IDB_BLOCKED open blocked behind a pending delete of ' + IDB_NAME);
+      };
     });
   }
   function _idbPut(db, k, v) {
@@ -72,7 +113,11 @@
       rq.onerror = function() { rej(rq.error); };
     });
   }
-  function _idbDestroy(db) { try { db.close(); indexedDB.deleteDatabase(IDB_NAME); } catch (e) {} }
+  function _idbDestroy(db) {
+    try { if (db) db.close(); } catch (e) {}
+    if (_db === db) _db = null;
+    return _idbDelete();
+  }
 
   // Deterministic staging randomness for the duration of each trigger — identical PRNG sequence
   // every frame → zero paint/puddle/skyline-sparkle flicker (staffage is NOT re-placed here; the
@@ -216,16 +261,8 @@
       }
       console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
     }
-    var db = await _idbOpen();
+    var db = null;
     var framesDone = 0;
-    // Warm-up fold (discarded): staging's async assets (sunset HDRI envMap, AO bundle, textures)
-    // must be resident BEFORE frame 0, or early frames bake a different global lighting baseline
-    // than later ones (whole-building tint shift — measured 21.6dB vs 24.3dB PSNR in the PoC).
-    _status('🎬 MaxQ warming up…');
-    A.startStillRefine();
-    await _waitFoldDone(30000);
-    A.stopStillRefine(true);
-    await _raf2(); await _sleep(3000);
     var t0 = performance.now();
     // §MAXQ_ETA_ROLLING (user 2026-07-19: "74 mins... suddenly 38... now 33.. it is not accurate"):
     // lifetime-average ETA is poisoned by the expensive early frames (indoor prelude close-ups cost
@@ -233,6 +270,22 @@
     // current phase's real rate.
     var _etaPrev = t0, _etaRecent = [];
     try {
+      // IDB first, INSIDE the guard: this open used to sit bare between the preview and the warm-up,
+      // so a blocked open froze the run with zero log lines, _active stuck true (swallowing the next
+      // Alt+C as a cancel-toggle) and the wake lock held. Failing fast here also avoids paying the
+      // warm-up fold before discovering the store is unusable.
+      await _idbDelete();
+      db = _db = await _idbOpen();
+      console.log('§MAXQ_IDB_READY store opened');
+      // Warm-up fold (discarded): staging's async assets (sunset HDRI envMap, AO bundle, textures)
+      // must be resident BEFORE frame 0, or early frames bake a different global lighting baseline
+      // than later ones (whole-building tint shift — measured 21.6dB vs 24.3dB PSNR in the PoC).
+      _status('🎬 MaxQ warming up…');
+      A.startStillRefine();
+      await _waitFoldDone(30000);
+      A.stopStillRefine(true);
+      await _raf2(); await _sleep(3000);
+      t0 = _etaPrev = performance.now();
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         if (A._stillRefineActive) A.stopStillRefine(true);
@@ -279,13 +332,20 @@
       }
     } catch (e) {
       console.warn('§MAXQ_FAIL ' + e.message);
-      _status('🎬 MaxQ failed: ' + e.message);
+      _status('🎬 MaxQ failed: ' + e.message +
+        (e.message === 'idb-open-timeout' ? ' — close other tabs of this app and retry' : ''));
     } finally {
       _restoreRandom();
-      _idbDestroy(db);
+      // A throw mid-fold (e.g. the idb-open abort) skips the in-try stop — staging would otherwise
+      // stay frozen on screen with the composer accumulating.
+      try { if (A._stillRefineActive) A.stopStillRefine(true); } catch (e2) {}
+      // Recoverability FIRST: clearing the store can itself block for seconds behind the very
+      // zombie connection that failed this run, and until these flags reset the next Alt+C is
+      // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
       _active = false; _cancel = false;
       A._maxqActive = false;
       _wakeRelease();
+      await _idbDestroy(db);
     }
   }
 
