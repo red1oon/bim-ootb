@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v9 (mp4/H.264 via WebCodecs + hand-rolled mux; webm fallback intact)';
+  var MAXQ_V = 'v10 (§CINEMA_SIMPLE path; room-graph warmed before planning)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -323,6 +323,18 @@
     // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
     // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
     // unavailable (old effects.js in cache).
+    // §CINEMA_ROOMS — the plan is SYNCHRONOUS but its two best data sources (A.getRoomGraph for
+    // the largest interior space, and the 'exit' door nodes §CINEMA_EXIT chooses from) live in the
+    // LAZY navigate bundle, which a session that never opened Find has not loaded. Warm it here,
+    // where we are already async, so the film gets real rooms + real doors instead of silently
+    // falling back to the bbox centre and the facade. Failure is non-fatal — the plan's fallbacks
+    // (DB IfcDoor query, then nearest facade) still produce a film.
+    if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) {
+      try { await A.loadNavigate(); } catch (eN) { console.warn('§CINEMA_ROOMS loadNavigate failed: ' + eN.message); }
+    }
+    if (typeof A.ensureRooms === 'function') {
+      try { await A.ensureRooms({}); } catch (eR) { console.warn('§CINEMA_ROOMS ensureRooms failed: ' + eR.message); }
+    }
     var plan = null;
     if (typeof A.cinemaPathPlan === 'function') {
       try { plan = A.cinemaPathPlan(nFrames / fps); } catch (e) { console.warn('§MAXQ_PATH plan failed: ' + e.message); }
