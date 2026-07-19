@@ -749,6 +749,10 @@
 
   // Called from inside the traverse for every frontier element (all three mesh paths).
   function _gspCollect(x, y, z) {
+    // §PERF: sparks are playback-only, so collection is too. Without this the traverse pushed
+    // thousands of candidates on EVERY scrub frame for _gspEmit to discard — pure waste on the
+    // exact interaction (scrubbing a large building) where frames are most expensive.
+    if (!_playing) return;
     if (_gspCand.length < 12000) _gspCand.push(x, y, z);   // flat — no per-tick object alloc
   }
 
@@ -782,19 +786,23 @@
     // VFX competes with it (user: "the appreciation is in the quick diff in states").
     if (!app || !app.scene || !isPlaying || _gspDecay <= 0 || !_gspCand.length) { _gspSweep(); return; }
 
-    var cells = {}, i;
+    // §PERF: numeric spatial hash into a Map — the old "cx,cy,cz" string key allocated one
+    // string per candidate per tick (GC churn scaling with building size). A hash collision just
+    // merges two groups, which is harmless for decoration.
+    var cells = new Map(), i;
     for (i = 0; i < _gspCand.length; i += 3) {
-      var key = Math.floor(_gspCand[i] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 1] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 2] / _GSP_CELL);
-      (cells[key] || (cells[key] = [])).push(i);
+      var key = (Math.imul(Math.floor(_gspCand[i] / _GSP_CELL), 73856093) ^
+                 Math.imul(Math.floor(_gspCand[i + 1] / _GSP_CELL), 19349663) ^
+                 Math.imul(Math.floor(_gspCand[i + 2] / _GSP_CELL), 83492791)) | 0;
+      var bucket = cells.get(key);
+      if (bucket) bucket.push(i); else cells.set(key, [i]);
     }
 
     var gid = 0, groups = 0, singles = 0;
-    for (var key2 in cells) {
-      if (!Object.prototype.hasOwnProperty.call(cells, key2)) continue;
+    var _it = cells.values(), _e;
+    while (!(_e = _it.next()).done) {
       if (_gspActive >= _GSP_CAP) break;
-      var idxs = cells[key2], n = idxs.length;
+      var idxs = _e.value, n = idxs.length;
       gid++; groups++;
       if (n <= 2) {
         // "If the group is small say only single or 2 pieces then it is those only."
@@ -852,6 +860,101 @@
     console.log('§GROUP_SPARK_CLEAR all sprites hidden (TM deactivate)');
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // §PERF_INCR — skip meshes with no state transition in the cursor delta
+  // ══════════════════════════════════════════════════════════════════
+  // Spec: bim-compiler prompts/TM_INCREMENTAL_RENDER_PERF.md
+  //
+  // renderAtTime() walked all 10,841 scene objects and ~63k batched slots EVERY tick to service
+  // single-digit actual changes (§PERF_TRAVERSE ms=15.6-22.4 of a ~31ms tick).
+  //
+  // DESIGN NOTE — why this is a mesh-level skip and NOT a guid->{mesh,slot} index:
+  // that index was the original spec's plan (§4.3) and it is UNSOUND here. Slot assignments are
+  // not stable for the lifetime of a TM session: streaming.js §CONSOLIDATE rebuilds BatchedMeshes
+  // into NEW meshes with new slotIds (streaming.js ~1619), and city.js evicts + disposes meshes
+  // (city.js ~163). A cached index would silently write to the WRONG element — corruption, not an
+  // exception. This design holds no guid->slot references at all, so there is nothing to go stale.
+  //
+  // What it does instead: precompute, per mesh, the sorted timestamps at which ANY of its elements
+  // changes state (start_ts -> frontier, end_ts -> recent, end_ts+linger -> placed). Moving the
+  // cursor A->B, a mesh whose event list has nothing in (A,B] cannot have changed, so its whole
+  // slot loop is skipped and its slots keep the visibility they already have — which is correct
+  // precisely because nothing happened to them.
+  var _evMesh = null;        // meshId -> sorted Float64Array of transition timestamps
+  var _evSig = '';           // scene signature the above was built for (staleness detector)
+  var _posCache = {};        // guid -> {x,y,z}. Element geometry never moves, so this is valid
+                             // for the whole session once filled — it lets the frontier/camera
+                             // aggregates be served without traversing skipped meshes.
+  var _incrStats = { delta: 0, full: 0, skipped: 0, walked: 0 };
+  // Delta mode is only sound once a FULL pass has set every mesh's slot state at least once for
+  // the current index. Until then a skip would preserve state that was never established.
+  var _incrPrimed = false;
+  // Above this cursor jump, skipping stops paying (too many meshes have events anyway) and the
+  // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
+  var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
+
+  // Cheap staleness signature: mesh COUNT alone misses a consolidation that merges 3 meshes into
+  // 3 different ones, so fold the ids in too. O(#meshes) (~tens), not O(#elements).
+  // O(1). The first version walked all ~10,823 _batchMeta keys EVERY tick with a string->number
+  // conversion per key; that cost ~9ms and made SCRUB (which falls back to the full path and gets
+  // no benefit from the index) 25% SLOWER than before the optimisation -- measured, 36.75ms ->
+  // 45.81ms mean. Streaming/city now bump A._metaGen at the four sites that mutate the meta
+  // tables, so staleness detection is a counter compare instead of a scan.
+  function _tmSceneSig(app) {
+    return (app._metaGen | 0) + ':' + (app.scene ? app.scene.children.length : 0);
+  }
+
+  // Build meshId -> sorted transition timestamps. One pass over _ops + the meta tables.
+  function _tmBuildEventIndex(app, lingerMs) {
+    var t0 = performance.now();
+    var guidT = Object.create(null);   // guid -> [t,...]
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid;
+      if (!g && op.input_guids && op.input_guids.length) g = op.input_guids[0];
+      if (!g) continue;
+      (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
+    }
+    var byMesh = Object.create(null), k, metas, j, arr, ts;
+    function addAll(meshId, guid) {
+      ts = guidT[guid];
+      if (!ts) return;
+      arr = byMesh[meshId] || (byMesh[meshId] = []);
+      for (var q = 0; q < ts.length; q++) arr.push(ts[q]);
+    }
+    if (app._batchMeta) for (k in app._batchMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._batchMeta, k)) continue;
+      metas = app._batchMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    if (app._instanceMeta) for (k in app._instanceMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._instanceMeta, k)) continue;
+      metas = app._instanceMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    _evMesh = Object.create(null);
+    var meshes = 0, events = 0;
+    for (k in byMesh) {
+      if (!Object.prototype.hasOwnProperty.call(byMesh, k)) continue;
+      var a = Float64Array.from(byMesh[k]);
+      a.sort();
+      _evMesh[k] = a; meshes++; events += a.length;
+    }
+    _evSig = _tmSceneSig(app);
+    _incrPrimed = false;   // index changed -> require a fresh full pass before skipping again
+    console.log('§PERF_INCR_INDEX built meshes=' + meshes + ' events=' + events +
+                ' ms=' + (performance.now() - t0).toFixed(1));
+  }
+
+  // Any transition strictly inside (lo, hi]? Binary search the sorted array.
+  function _tmHasEventIn(arr, lo, hi) {
+    if (!arr || !arr.length) return false;
+    if (hi < arr[0] || lo >= arr[arr.length - 1]) return false;
+    var a = 0, b = arr.length - 1, mid;
+    while (a < b) { mid = (a + b) >> 1; if (arr[mid] <= lo) a = mid + 1; else b = mid; }
+    return arr[a] > lo && arr[a] <= hi;
+  }
+
   function renderAtTime(cursorMs) {
     var app = A();
     if (!app || !app.scene) return;
@@ -904,6 +1007,11 @@
 
     // §S260d: Whitebox material state logger — module-level counter persists across ticks
     function _wbMat(tag, obj) {
+      // §PERF: whitebox material logger — a DIAGNOSTIC, not for production playback. It fired once
+      // per mesh every tick (~20+ console.logs/tick on a large model, each with heavy string
+      // building), which is real per-tick cost and, with devtools open in Firefox, a major stall.
+      // Default OFF; set window.__TM_WBDEBUG=true in the console to re-enable when diagnosing colors.
+      if (!window.__TM_WBDEBUG) return;
       _wbLogCount++;
       if (_wbLogCount > 10 && _wbLogCount % 500 !== 0) return;
       var m = obj.material;
@@ -946,7 +1054,24 @@
 
     // §S260d: All particle effects removed
 
+    // §PERF_INCR: decide delta vs full for THIS tick.
+    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, the
+    // shadow pass needs the complete _placedMeshes list, or the jump is large enough that skipping
+    // saves nothing. A long scrub legitimately changes tens of thousands of elements -- forcing
+    // delta there would be SLOWER than the full path, which is the failure this guard prevents.
+    var _sig = _tmSceneSig(app);
+    if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
+    var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
+    var _incrOK = !!_evMesh && _prevCursor != null && !app._shadowOn &&
+                  (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
+    // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
+    // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
+    if (window.__forceFull) { _incrOK = false; window.__forceFull = false; }
+    if (_incrOK) _incrStats.delta++; else _incrStats.full++;
+
+    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
     app.scene.traverse(function(obj) {
+      _perfObjs++;
       if (!obj.userData) return;
 
       // ── Single mesh (has userData.guid) ──
@@ -987,7 +1112,7 @@
             _frontierCentroids.push(swp);
             _frontierPositions.push(swp);
             if (_camFollow) _guidPosMap[g] = swp;
-            _gspCollect(swp.x, swp.y, swp.z);   // §GROUP_SPARK: single-mesh frontier
+            _gspCollect(swp.x, swp.y, swp.z); _gspFrontierN++;   // §GROUP_SPARK: single-mesh frontier
             // §S260d: Sparks removed (white square artifacts)
           } else if (isPlaced || isRecent) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
@@ -1071,6 +1196,7 @@
 
       // ── InstancedMesh (per-instance GUIDs in _instanceMeta) ──
       if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var metas = app._instanceMeta[obj.id];
         var meshId = obj.id;
         var anyVisible = false;
@@ -1097,7 +1223,7 @@
               // §GROUP_SPARK: InstancedMesh instance — position from the saved matrix
               if (_savedInstanceMatrices[meshId][mi]) {
                 _tmV2.setFromMatrixPosition(_savedInstanceMatrices[meshId][mi]);
-                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z);
+                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z); _gspFrontierN++;
               }
             }
           } else {
@@ -1117,6 +1243,10 @@
       }
     });
 
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) +
+      ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
+      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+    _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
     // `_playing` gates it: sparks during playback only, never on scrub.
@@ -3121,12 +3251,16 @@
   var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
   var _twin = null;          // { building, projectId, planned, committed, phases:[{name,seqno,start,end,planned,committed}] }
   var _twinLoading = false;
+  // §PERF_NEG_CACHE: building names whose ERP load returned no rows. Without these, the per-tick
+  // dashboard/variance guards re-fetch ad_seed.db (25.8MB) from IDB forever on a non-folded building.
+  var _twinMiss = null, _shopfloorMiss = null;
   // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
   // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
   function _loadTwin() {
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
+    if (_twinMiss === building) return Promise.resolve(null);   // §PERF_NEG_CACHE — see _loadShopfloor
     if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
@@ -3134,7 +3268,7 @@
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; _twinMiss = building; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project (miss cached, no refetch)'); return null; }
       var pid = pr[0].values[0][0], planned = Number(pr[0].values[0][1] || 0), committed = Number(pr[0].values[0][2] || 0);
       var ph = db.exec("SELECT Name,SeqNo,StartDate,EndDate,PlannedAmt,CommittedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + Number(pid) + " AND Name<>'Unsequenced' ORDER BY SeqNo");
       var phases = (ph.length ? ph[0].values : []).map(function (row) {
@@ -3155,14 +3289,20 @@
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
+    // §PERF_NEG_CACHE: remember a MISS too. drawDash() calls this every tick behind
+    // `if (!_shopfloor && !_shopfloorLoading)`, and every failure path below cleared the
+    // in-flight flag WITHOUT setting _shopfloor — so a building with no PP_Order rows re-fetched
+    // ad_seed.db (25.8MB) from IndexedDB on EVERY playback tick. A cache that only remembers
+    // successes is not a cache.
+    if (_shopfloorMiss === building) return Promise.resolve(null);
     if (_shopfloorLoading) return Promise.resolve(null);
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
-    if (!SQL) return Promise.resolve(null);
+    if (!SQL) return Promise.resolve(null);   // NOT a miss — sql.js may arrive later, retry is correct
     _shopfloorLoading = true;
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; _shopfloorMiss = building; console.log('§PERF_NEG_CACHE shopfloor miss cached building="' + building + '" — no further ad_seed.db refetch'); return null; }
       var pid = pr[0].values[0][0];
       var res = db.exec(
         'SELECT o.PP_Order_ID, o.DateStartSchedule, o.DateFinishSchedule,' +
@@ -4153,6 +4293,7 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
     restoreSky();
     _sunCycle = false;
     _camFollow = false;

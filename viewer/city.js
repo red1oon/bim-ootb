@@ -160,7 +160,8 @@ function setupCity(A) {
         if (isOrphan) orphans++;
         evictIds.add(String(o.id));
         if (A._instanceMeta) delete A._instanceMeta[o.id];
-        if (A._batchMeta) delete A._batchMeta[o.id];                  // else stale → §CONTRACT_FAIL phantom orphans + leak
+        if (A._batchMeta) delete A._batchMeta[o.id];
+        A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: eviction invalidates TM's event index                  // else stale → §CONTRACT_FAIL phantom orphans + leak
         if (o.isBatchedMesh) { if (o.dispose) o.dispose(); }         // frees owned buffers + its BVH
         else if (o.isInstancedMesh) { if (o.dispose) o.dispose(); }   // frees instanceMatrix; geometry SHARED — keep
         else if (o.geometry) { o.geometry.dispose(); }               // fallback/merged Mesh owns geometry

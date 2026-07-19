@@ -1144,6 +1144,8 @@ function setupStreaming(A) {
         }
 
         A._batchMeta[bm.id] = meta;
+      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: invalidates TM's event index
+        A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: invalidates TM's event index
         bm.matrixAutoUpdate = false;  // §S260b: static scene — skip per-frame matrix recalc
         bm.updateMatrix();
         A.scene.add(bm);
@@ -1617,6 +1619,7 @@ function setupStreaming(A) {
       }
 
       A._batchMeta[newBM.id] = newMeta;
+      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: §CONSOLIDATE rebuilds meshes -> new slotIds
       newBM.updateMatrix();
       A.scene.add(newBM);
       newDrawCalls++;
