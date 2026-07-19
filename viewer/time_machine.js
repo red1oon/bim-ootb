@@ -860,6 +860,101 @@
     console.log('§GROUP_SPARK_CLEAR all sprites hidden (TM deactivate)');
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // §PERF_INCR — skip meshes with no state transition in the cursor delta
+  // ══════════════════════════════════════════════════════════════════
+  // Spec: bim-compiler prompts/TM_INCREMENTAL_RENDER_PERF.md
+  //
+  // renderAtTime() walked all 10,841 scene objects and ~63k batched slots EVERY tick to service
+  // single-digit actual changes (§PERF_TRAVERSE ms=15.6-22.4 of a ~31ms tick).
+  //
+  // DESIGN NOTE — why this is a mesh-level skip and NOT a guid->{mesh,slot} index:
+  // that index was the original spec's plan (§4.3) and it is UNSOUND here. Slot assignments are
+  // not stable for the lifetime of a TM session: streaming.js §CONSOLIDATE rebuilds BatchedMeshes
+  // into NEW meshes with new slotIds (streaming.js ~1619), and city.js evicts + disposes meshes
+  // (city.js ~163). A cached index would silently write to the WRONG element — corruption, not an
+  // exception. This design holds no guid->slot references at all, so there is nothing to go stale.
+  //
+  // What it does instead: precompute, per mesh, the sorted timestamps at which ANY of its elements
+  // changes state (start_ts -> frontier, end_ts -> recent, end_ts+linger -> placed). Moving the
+  // cursor A->B, a mesh whose event list has nothing in (A,B] cannot have changed, so its whole
+  // slot loop is skipped and its slots keep the visibility they already have — which is correct
+  // precisely because nothing happened to them.
+  var _evMesh = null;        // meshId -> sorted Float64Array of transition timestamps
+  var _evSig = '';           // scene signature the above was built for (staleness detector)
+  var _posCache = {};        // guid -> {x,y,z}. Element geometry never moves, so this is valid
+                             // for the whole session once filled — it lets the frontier/camera
+                             // aggregates be served without traversing skipped meshes.
+  var _incrStats = { delta: 0, full: 0, skipped: 0, walked: 0 };
+  // Delta mode is only sound once a FULL pass has set every mesh's slot state at least once for
+  // the current index. Until then a skip would preserve state that was never established.
+  var _incrPrimed = false;
+  // Above this cursor jump, skipping stops paying (too many meshes have events anyway) and the
+  // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
+  var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
+
+  // Cheap staleness signature: mesh COUNT alone misses a consolidation that merges 3 meshes into
+  // 3 different ones, so fold the ids in too. O(#meshes) (~tens), not O(#elements).
+  // O(1). The first version walked all ~10,823 _batchMeta keys EVERY tick with a string->number
+  // conversion per key; that cost ~9ms and made SCRUB (which falls back to the full path and gets
+  // no benefit from the index) 25% SLOWER than before the optimisation -- measured, 36.75ms ->
+  // 45.81ms mean. Streaming/city now bump A._metaGen at the four sites that mutate the meta
+  // tables, so staleness detection is a counter compare instead of a scan.
+  function _tmSceneSig(app) {
+    return (app._metaGen | 0) + ':' + (app.scene ? app.scene.children.length : 0);
+  }
+
+  // Build meshId -> sorted transition timestamps. One pass over _ops + the meta tables.
+  function _tmBuildEventIndex(app, lingerMs) {
+    var t0 = performance.now();
+    var guidT = Object.create(null);   // guid -> [t,...]
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid;
+      if (!g && op.input_guids && op.input_guids.length) g = op.input_guids[0];
+      if (!g) continue;
+      (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
+    }
+    var byMesh = Object.create(null), k, metas, j, arr, ts;
+    function addAll(meshId, guid) {
+      ts = guidT[guid];
+      if (!ts) return;
+      arr = byMesh[meshId] || (byMesh[meshId] = []);
+      for (var q = 0; q < ts.length; q++) arr.push(ts[q]);
+    }
+    if (app._batchMeta) for (k in app._batchMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._batchMeta, k)) continue;
+      metas = app._batchMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    if (app._instanceMeta) for (k in app._instanceMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._instanceMeta, k)) continue;
+      metas = app._instanceMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    _evMesh = Object.create(null);
+    var meshes = 0, events = 0;
+    for (k in byMesh) {
+      if (!Object.prototype.hasOwnProperty.call(byMesh, k)) continue;
+      var a = Float64Array.from(byMesh[k]);
+      a.sort();
+      _evMesh[k] = a; meshes++; events += a.length;
+    }
+    _evSig = _tmSceneSig(app);
+    _incrPrimed = false;   // index changed -> require a fresh full pass before skipping again
+    console.log('§PERF_INCR_INDEX built meshes=' + meshes + ' events=' + events +
+                ' ms=' + (performance.now() - t0).toFixed(1));
+  }
+
+  // Any transition strictly inside (lo, hi]? Binary search the sorted array.
+  function _tmHasEventIn(arr, lo, hi) {
+    if (!arr || !arr.length) return false;
+    if (hi < arr[0] || lo >= arr[arr.length - 1]) return false;
+    var a = 0, b = arr.length - 1, mid;
+    while (a < b) { mid = (a + b) >> 1; if (arr[mid] <= lo) a = mid + 1; else b = mid; }
+    return arr[a] > lo && arr[a] <= hi;
+  }
+
   function renderAtTime(cursorMs) {
     var app = A();
     if (!app || !app.scene) return;
@@ -954,7 +1049,22 @@
 
     // §S260d: All particle effects removed
 
-    var _perfT0 = performance.now(), _perfObjs = 0;
+    // §PERF_INCR: decide delta vs full for THIS tick.
+    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, the
+    // shadow pass needs the complete _placedMeshes list, or the jump is large enough that skipping
+    // saves nothing. A long scrub legitimately changes tens of thousands of elements -- forcing
+    // delta there would be SLOWER than the full path, which is the failure this guard prevents.
+    var _sig = _tmSceneSig(app);
+    if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
+    var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
+    var _incrOK = !!_evMesh && _prevCursor != null && !app._shadowOn &&
+                  (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
+    // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
+    // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
+    if (window.__forceFull) { _incrOK = false; window.__forceFull = false; }
+    if (_incrOK) _incrStats.delta++; else _incrStats.full++;
+
+    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
       if (!obj.userData) return;
@@ -1081,6 +1191,7 @@
 
       // ── InstancedMesh (per-instance GUIDs in _instanceMeta) ──
       if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var metas = app._instanceMeta[obj.id];
         var meshId = obj.id;
         var anyVisible = false;
@@ -1127,7 +1238,10 @@
       }
     });
 
-    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) + ' objs=' + _perfObjs + ' cand=' + (_gspCand.length/3));
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) +
+      ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
+      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+    _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
     // `_playing` gates it: sparks during playback only, never on scrub.
@@ -4174,6 +4288,7 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
     restoreSky();
     _sunCycle = false;
     _camFollow = false;
