@@ -1007,6 +1007,11 @@
 
     // §S260d: Whitebox material state logger — module-level counter persists across ticks
     function _wbMat(tag, obj) {
+      // §PERF: whitebox material logger — a DIAGNOSTIC, not for production playback. It fired once
+      // per mesh every tick (~20+ console.logs/tick on a large model, each with heavy string
+      // building), which is real per-tick cost and, with devtools open in Firefox, a major stall.
+      // Default OFF; set window.__TM_WBDEBUG=true in the console to re-enable when diagnosing colors.
+      if (!window.__TM_WBDEBUG) return;
       _wbLogCount++;
       if (_wbLogCount > 10 && _wbLogCount % 500 !== 0) return;
       var m = obj.material;
