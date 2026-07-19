@@ -893,6 +893,131 @@ async function setupEffects(A, renderer, scene, camera) {
       }
     };
   }
+  // §STAFFAGE_CLEARANCE (2026-07-20, user: "car and trees cannot appear in Terminal hall when not
+  // sufficient open space of a big potting space to contain it" + "indoors should only be pax stand
+  // and sit - not clashing with any prop ie not inside a mesh").
+  //
+  // ROOT CAUSE this replaces: nothing in the placement path ever measured the REAL space around a
+  // candidate. Trees had one bbox-window test (`_ceilingOver`: a slab whose bottom sits 2-9m above
+  // ground) — Terminal's concourse roof is far higher than 9m, so it sailed through and trees landed
+  // in the hall. Cars had NO indoor test whatsoever. People had none either: the exterior pax loop
+  // gated only on frustum/occlusion/dedup, so a silhouette-ring point that lands inside a concave
+  // wing, or any §STAFFAGE_ZERO_RESCUE spot down the camera-forward ray while the camera is INSIDE
+  // the building, put a figure straight through a wall/column. The occupancy grid (walk path only)
+  // is bbox-derived and this file already records that bboxes lie (§STAFFAGE_GROUNDSNAP).
+  //
+  // These probes measure real RENDERED TRIANGLES via the BVH-accelerated raycaster (§BVH_INIT,
+  // loader.js) — the same ground truth §STAFFAGE_GROUNDSNAP already trusts over bboxes. NOT the
+  // `storey_walkable_raster` table: it ships as a patch for only 3 of 11 buildings and live logs
+  // show `§HELPERS_QUERY_ERR no such table: storey_walkable_raster`, so it cannot carry a rule that
+  // must hold on every building.
+  var _clrRay = new THREE.Raycaster();
+  // Real-geometry meshes only — staffage's own sprites/car meshes must never count as an obstruction
+  // (and must never read as a "ceiling"). Collected once per press by the caller, not per candidate.
+  function _solidMeshes() {
+    if (!A.collectMeshes) return [];
+    return A.collectMeshes(function(o) {
+      return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible &&
+        o.userData.staffageKind === undefined &&
+        !(o.parent && _photoStaffage && o.parent === _photoStaffage) &&
+        !(A.sky && o === A.sky) && !(A.ground && o === A.ground);
+    });
+  }
+  function _rayHitDist(meshes, origin, dir, far) {
+    if (!meshes.length) return Infinity;
+    _clrRay.set(origin, dir);
+    _clrRay.far = far;
+    var hits;
+    try { hits = _clrRay.intersectObjects(meshes, false); } catch (e) { return Infinity; }
+    for (var h = 0; h < hits.length; h++) { if (!hits[h].object.isSprite) return hits[h].distance; }
+    return Infinity;
+  }
+  // Height of real geometry directly above a feet position. Infinity = open sky (outdoors, or a
+  // genuine open courtyard/atrium void — those legitimately keep their trees). A finite value is the
+  // real roof/slab height, at ANY height — this is what the old 2-9m bbox window could not see.
+  var _CEIL_PROBE = 120;
+  function _ceilingAbove(meshes, feetPos) {
+    var o = new THREE.Vector3(feetPos.x, feetPos.y + 0.30, feetPos.z);
+    var d = _rayHitDist(meshes, o, new THREE.Vector3(0, 1, 0), _CEIL_PROBE);
+    return d === Infinity ? Infinity : d + 0.30;
+  }
+  // Smallest horizontal distance to real geometry around a feet position, probed at two heights so
+  // both low obstructions (desks, ducts, planters) and full-height ones (walls, columns) are caught.
+  // Returns `need` when nothing is within `need` (i.e. "at least this clear"), so callers compare
+  // against their own required radius without paying for a longer probe than they need.
+  // PERF: returns on the FIRST ray that violates `need` — a rejected candidate costs a few rays, not
+  // all 32. Measured on Terminal (63k elements, 1377 meshes in scene): §PHOTO_STAFFAGE build_ms 3800
+  // -> see the run log; the full fan is only ever paid by candidates that actually get placed (<=4
+  // per press). The returned value is then "a" violating distance rather than the global minimum,
+  // which is all any caller (and the §STAFFAGE_REJECT log) needs.
+  var _CLR_DIRS = 16;
+  function _clearRadius(meshes, feetPos, need, heights) {
+    var hs = heights || [0.25, 1.20];
+    var min = need;
+    for (var hi = 0; hi < hs.length; hi++) {
+      var o = new THREE.Vector3(feetPos.x, feetPos.y + hs[hi], feetPos.z);
+      for (var a = 0; a < _CLR_DIRS; a++) {
+        var th = (a / _CLR_DIRS) * Math.PI * 2;
+        var d = _rayHitDist(meshes, o, new THREE.Vector3(Math.cos(th), 0, Math.sin(th)), need);
+        if (d < min) return d;
+      }
+    }
+    return min;
+  }
+  // §STAFFAGE_CLEARANCE thresholds — every one of these is a measured requirement of the thing being
+  // placed, not a taste call:
+  //   PERSON  0.45m — a standing adult's shoulder half-width. Geometry closer than this at ankle or
+  //           torso height means the sprite is literally inside a mesh. This is defect (2)'s bar.
+  //   TREE    needs OPEN SKY. A tree is an outdoor object; the only indoor case the user allowed is
+  //           "a big potting space", and a real planting court is open to the sky — which this probe
+  //           reports as Infinity, so courtyards/terraces keep their trees while the Terminal
+  //           concourse (finite roof, however high) never gets one. Plus 2.5m canopy clearance.
+  //   CAR     indoors ONLY under a LOW deck (<=4.5m): a car park, loading bay or porte-cochère is a
+  //           plausible place for a parked car; a concourse/hall/atrium is not. Ceiling height is the
+  //           one real-geometry quantity that separates them — a clearance-only rule cannot, because
+  //           a big hall has MORE clearance than a car park, not less. Plus 2.5m radial clearance.
+  var _CLR_PERSON = 0.45, _CLR_TREE = 2.5, _CLR_CAR = 2.5, _CAR_INDOOR_MAX_CEIL = 4.5;
+  var _clrRej = {};
+  function _clrReject(kind, reason, got, need) {
+    _clrRej[kind + ':' + reason] = (_clrRej[kind + ':' + reason] || 0) + 1;
+    if (_clrRej[kind + ':' + reason] <= 3) {
+      console.log('§STAFFAGE_REJECT kind=' + kind + ' reason=' + reason +
+        ' clearance=' + (got === Infinity ? 'sky' : got.toFixed(2) + 'm') + ' needed=' + need);
+    }
+  }
+  // The one gate every placement site calls. `feetPos` is the FINAL world position the sprite/mesh
+  // will occupy (feet-anchored — `spr.center.set(0.5,0)`, PR #898), so this tests what actually gets
+  // rendered, never an approximation of it.
+  function _spaceOK(meshes, kind, feetPos) {
+    if (!meshes.length) return true;   // geometry not streamed yet — nothing to prove a clash against
+    if (kind === 'pax') {
+      var pc = _clearRadius(meshes, feetPos, _CLR_PERSON);
+      if (pc < _CLR_PERSON) { _clrReject('pax', 'inside-mesh', pc, _CLR_PERSON + 'm'); return false; }
+      return true;
+    }
+    var ceil = _ceilingAbove(meshes, feetPos);
+    if (kind === 'tree') {
+      if (ceil !== Infinity) { _clrReject('tree', 'indoor-no-sky', ceil, 'open sky'); return false; }
+      var tc = _clearRadius(meshes, feetPos, _CLR_TREE);
+      if (tc < _CLR_TREE) { _clrReject('tree', 'canopy-clearance', tc, _CLR_TREE + 'm'); return false; }
+      return true;
+    }
+    if (kind === 'car') {
+      if (ceil !== Infinity && ceil > _CAR_INDOOR_MAX_CEIL) {
+        _clrReject('car', 'indoor-hall', ceil, '<=' + _CAR_INDOOR_MAX_CEIL + 'm ceiling or open sky'); return false;
+      }
+      var cc = _clearRadius(meshes, feetPos, _CLR_CAR);
+      if (cc < _CLR_CAR) { _clrReject('car', 'body-clearance', cc, _CLR_CAR + 'm'); return false; }
+      return true;
+    }
+    return true;
+  }
+  function _clrSummary(tag) {
+    var parts = [];
+    for (var k in _clrRej) parts.push(k + '=' + _clrRej[k]);
+    console.log('§STAFFAGE_CLEAR_SUMMARY ' + tag + ' ' + (parts.length ? parts.join(' ') : 'none'));
+    _clrRej = {};
+  }
   function _buildStaffage() {
     if (!A.dbQuery || !THREE.Sprite) return;
     var _bt0 = performance.now();
@@ -906,6 +1031,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._calcGroundY) A._calcGroundY();
     _staffageGroundY = (A.ground && typeof A.ground.position.y === 'number') ? A.ground.position.y : A.ifc2three(0, 0, groundZ).y;
     if (!_photoStaffage) _photoStaffage = new THREE.Group();
+    A._photoStaffageGroup = _photoStaffage;   // §STAFFAGE_CLEARANCE witness hook (read-only handle)
     // §PHOTO_STAFFAGE_FLOOR (user: "person standing a bit in the raised floor — why not check the
     // floor Z value?"): the single global ground plane is too blunt where a room has a RAISED floor.
     // Look up the actual floor slab under each figure's (x,y) and seat feet on its TOP surface; fall
@@ -1004,6 +1130,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // candidate was rejected — out of frustum vs occluded by real geometry — so a "0 placed" report
     // can be read from the log instead of guessed at. Reset per category by the caller.
     var _rejFrustum = 0, _rejOcclude = 0;
+    // §STAFFAGE_CLEARANCE: real-geometry probe set for this press. Deliberately NOT _occMeshes —
+    // that list keeps A.sky and A.ground, and an upward ceiling ray would hit the sky dome from
+    // every outdoor spot, reporting "indoors" everywhere and rejecting every tree.
+    var _solids = _solidMeshes();
     function _inFrame(threePos) {
       _v2.copy(threePos).project(A.camera);
       if (!(Math.abs(_v2.x) < 0.9 && Math.abs(_v2.y) < 0.95 && _v2.z > -1 && _v2.z < 1)) { _rejFrustum++; return false; }
@@ -1028,6 +1158,14 @@ async function setupEffects(A, renderer, scene, camera) {
     // exactly 1 there. Prefer a spot passing the full frame+occlusion check; on total failure use
     // the farthest clash-free spot anyway — a press ending with any kind at 0 is the one forbidden
     // outcome this exists to kill.
+    // §STAFFAGE_CLEARANCE amendment to spec S2 (2026-07-20): the rescue now carries the SAME space
+    // gate as the normal pass, and its last-resort "place at the farthest clash-free spot anyway"
+    // branch only ever considers spots that PASSED that gate. This deliberately supersedes S2's
+    // "zero is the only forbidden outcome" for indoor framings — that rule was written for outdoor
+    // presses, and it is exactly what put a tree and a car in the Terminal concourse: with the camera
+    // inside, every ring candidate is occluded by the building's own wall, so the rescue walked the
+    // camera-forward ray straight down the hall and force-placed there. Outdoors nothing changes:
+    // the forward ray's spots pass the gate and the guarantee still holds.
     function _zeroRescue(kind, clashR, placeFn) {
       if (!A.camera || !A.modelOffset) return false;
       var fwd = new THREE.Vector3(); A.camera.getWorldDirection(fwd);
@@ -1041,6 +1179,7 @@ async function setupEffects(A, renderer, scene, camera) {
           var ifcX = p.x + A.modelOffset.x, ifcY = A.modelOffset.y - p.z;   // inverse of ifc2three's XY mapping
           var pos3 = A.ifc2three(ifcX, ifcY, groundZ); pos3.y = _floorThreeY(ifcX, ifcY, groundZ);
           if (_nearExisting(pos3, clashR) || _nearRealEntourage(pos3)) continue;
+          if (!_spaceOK(_solids, kind, pos3)) continue;   // §STAFFAGE_CLEARANCE — never rescue into a mesh/hall
           fallback = [ifcX, ifcY];   // ends as the FARTHEST clash-free spot (near→far loop)
           if (!_inFrame(pos3)) continue;
           placeFn(ifcX, ifcY);
@@ -1053,7 +1192,7 @@ async function setupEffects(A, renderer, scene, camera) {
         console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' spot=(' + fallback[0].toFixed(1) + ',' + fallback[1].toFixed(1) + ') forced=1');
         return true;
       }
-      console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' FAILED — every forward spot clashes');
+      console.log('§STAFFAGE_ZERO_RESCUE kind=' + kind + ' SKIPPED — no forward spot has the real space for it (see §STAFFAGE_REJECT)');
       return false;
     }
     // §STAFFAGE_FORMULA (user, verbatim: "4 trees, 1 car, 3 standing pax at each Alt-P... cap to
@@ -1126,6 +1265,9 @@ async function setupEffects(A, renderer, scene, camera) {
         if (!inF) continue;
         if (_nearExisting(pos3, 3)) { _rejDedup++; continue; }
         if (_nearRealEntourage(pos3)) continue;
+        // §STAFFAGE_CLEARANCE defect (2): a silhouette-ring spot on a concave footprint (Terminal's
+        // wings) sits INSIDE another part of the building — frustum+occlusion never noticed.
+        if (!_spaceOK(_solids, 'pax', pos3)) continue;
         var pose = outsidePoses[placedP % outsidePoses.length];
         _placeAt(pose, sp[0], sp[1], sp[2], true);
         placedP++; thisPressPax++;
@@ -1153,6 +1295,7 @@ async function setupEffects(A, renderer, scene, camera) {
         for (var wi = 0; wi < wideCand.length && thisPressPax < PAX_CAP; wi++) {
           var wsp = wideCand[wi], wpos3 = A.ifc2three(wsp[0], wsp[1], wsp[2]); wpos3.y = _floorThreeY(wsp[0], wsp[1], wsp[2]);
           if (!_inFrame(wpos3) || _nearExisting(wpos3, 3) || _nearRealEntourage(wpos3)) continue;
+          if (!_spaceOK(_solids, 'pax', wpos3)) continue;   // §STAFFAGE_CLEARANCE
           var wpose = outsidePoses[placedP % outsidePoses.length];
           _placeAt(wpose, wsp[0], wsp[1], wsp[2], true);
           placedP++; thisPressPax++;
@@ -1184,16 +1327,13 @@ async function setupEffects(A, renderer, scene, camera) {
         for (var tr = 0; tr < TREE_RADII.length; tr++) treeCand.push([ta, TREE_RADII[tr]]);
       }
       // §STAFFAGE_TREE_CEILING (user 2026-07-19: "when we alt-P sometimes a tree appears too
-      // [inside]"): a tree spot with a slab OVERHEAD (bottom 2-9m above ground) is indoors —
-      // reject it. Open courtyards/terraces (sky above) keep their trees.
-      function _ceilingOver(ifcX, ifcY) {
-        for (var ci2 = 0; ci2 < _slabs.length; ci2++) {
-          var sC = _slabs[ci2], botC = sC[2] - (sC[5] || 0) / 2;
-          if (botC > groundZ + 2 && botC < groundZ + 9 &&
-              Math.abs(ifcX - sC[0]) <= (sC[3] || 3) / 2 && Math.abs(ifcY - sC[1]) <= (sC[4] || 3) / 2) return true;
-        }
-        return false;
-      }
+      // [inside]") — SUPERSEDED 2026-07-20 by §STAFFAGE_CLEARANCE's `_spaceOK(...,'tree',...)`.
+      // The old test asked whether a SLAB BBOX with its bottom 2-9m above ground covered the spot.
+      // That is exactly why trees still appeared in the Terminal hall (user: "car and trees cannot
+      // appear in Terminal hall"): the concourse roof is far above 9m, so the window never matched,
+      // and a bbox is blind to atrium holes anyway (this file's own §STAFFAGE_GROUNDSNAP lesson).
+      // The replacement casts a real ray at the sky at any height, so "open courtyards/terraces keep
+      // their trees" still holds — an open court returns Infinity — while any roofed space does not.
       var _treeCeilRejected = 0;
       _shuffle(treeCand);
       for (var ti = 0; ti < treeCand.length && thisPressTrees < TREE_CAP; ti++) {
@@ -1201,14 +1341,13 @@ async function setupEffects(A, renderer, scene, camera) {
         var tx = cx + Math.cos(ang) * trad, ty = cy + Math.sin(ang) * trad;
         var tpos = A.ifc2three(tx, ty, groundZ); tpos.y = _floorThreeY(tx, ty, groundZ);
         if (!_inFrame(tpos) || _nearExisting(tpos, 4) || _nearRealEntourage(tpos)) continue;
-        if (_ceilingOver(tx, ty)) { _treeCeilRejected++; continue; }
+        if (!_spaceOK(_solids, 'tree', tpos)) { _treeCeilRejected++; continue; }
         _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], tx, ty, groundZ, false);
         placedT++; thisPressTrees++;
       }
       if (!thisPressTrees) {
         // §STAFFAGE_ZERO_RESCUE spec S2 — the press must not end with 0 trees.
         _zeroRescue('tree', 4, function(ix, iy) {
-          if (_ceilingOver(ix, iy)) { _treeCeilRejected++; return; }
           _placeAt(_STAFFAGE_TREES[Math.floor(Math.random() * _STAFFAGE_TREES.length)], ix, iy, groundZ, false);
           placedT++; thisPressTrees++;
         });
@@ -1335,6 +1474,9 @@ async function setupEffects(A, renderer, scene, camera) {
         var ccand = carCand[cci];
         var carPos3 = A.ifc2three(ccand[0], ccand[1], ccand[2]);
         if (!_inFrame(carPos3) || _nearExisting(carPos3, 6) || _nearRealEntourage(carPos3)) continue;
+        // §STAFFAGE_CLEARANCE: probe from where the car's wheels will actually sit.
+        var carFeet = new THREE.Vector3(carPos3.x, _floorThreeY(ccand[0], ccand[1], ccand[2]), carPos3.z);
+        if (!_spaceOK(_solids, 'car', carFeet)) continue;
         thisPressCars++;
         pSrc += '+car';
         _placeCarAt(ccand);
@@ -1357,6 +1499,8 @@ async function setupEffects(A, renderer, scene, camera) {
           var wccand = wideCarCand[wci];
           var wCarPos3 = A.ifc2three(wccand[0], wccand[1], wccand[2]);
           if (!_inFrame(wCarPos3) || _nearExisting(wCarPos3, 6) || _nearRealEntourage(wCarPos3)) continue;
+          var wCarFeet = new THREE.Vector3(wCarPos3.x, _floorThreeY(wccand[0], wccand[1], wccand[2]), wCarPos3.z);
+          if (!_spaceOK(_solids, 'car', wCarFeet)) continue;   // §STAFFAGE_CLEARANCE
           thisPressCars++;
           pSrc += '+car-wide';
           _placeCarAt(wccand);
@@ -1385,6 +1529,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // §STAFFAGE_REAL_DEDUP witness (spec S1): how many real entourage positions guarded, how many
     // synthetic candidates they rejected this press.
     console.log('§STAFFAGE_REAL_DEDUP n=' + _realDedup.length + ' rejReal=' + _rejReal);
+    _clrSummary('src=exterior solids=' + _solids.length);   // §STAFFAGE_CLEARANCE
   }
   // §PHOTO_STAFFAGE_STATUS (user: "why don't you give a wait-loading status?"): the cutout PNGs
   // load async (~seconds first time), so Alt+P looked like nothing happened. Drive the bottom
@@ -1681,6 +1826,13 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return null;
     }
+    // §STAFFAGE_CLEARANCE (user: "indoors should only be pax stand and sit - not clashing with any
+    // prop ie not inside a mesh"). The occupancy grid above is bbox-derived; a bbox is both too
+    // generous (an L-shaped or hollow element blocks cells it does not actually occupy) and too
+    // blind (it misses anything the DB's bbox columns misreport, and this file already records that
+    // bboxes lie about floors). Re-test every walker's FINAL world position against real triangles.
+    var _iSolids = _solidMeshes();
+    var _walkClrRej = 0;
     var _walkYLog = [], _snapLanded = 0, _snapRejected = 0;
     for (var m = 0; m < wpick.length; m++) {
       // §STAFFAGE_WALK_FLOOR_FIX cont.: per-candidate floor lookup, same as sitting figures already
@@ -1690,6 +1842,8 @@ async function setupEffects(A, renderer, scene, camera) {
       if (snapped === null) { _snapRejected++; continue; }           // nothing below at all — void
       if (snapped < wy - 0.4) _snapLanded++;                        // bbox said floor, rays say void — land below
       wy = snapped;
+      // §STAFFAGE_CLEARANCE — final gate on the exact rendered position (feet-anchored sprite).
+      if (!_spaceOK(_iSolids, 'pax', new THREE.Vector3(wpick[m][0], wy, wpick[m][1]))) { _walkClrRej++; continue; }
       _walkYLog.push(wy.toFixed(2) + '(camY-1.6=' + (cam.y - 1.6).toFixed(2) + ')');
       var spr2 = _addStaffageSprite(walkPoses[m % walkPoses.length], new THREE.Vector3(wpick[m][0], wy, wpick[m][1]), true, true);
       spr2.userData.interior = true; _photoStaffageInFrame.push(spr2); placedWalk++;
@@ -1705,6 +1859,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§PHOTO_STAFFAGE_INTERIOR inside=1 inView=' + cand.length + ' sit=' + placedSit + ' walk=' + placedWalk + ' walkTried=' + aisleWalkTried + ' rejectedInObject=' + aisleRejectedInObject);
     console.log('§STAFFAGE_WALK_CLEAR src=aisle ok=' + aisleWcOk + '/' + wpick.length);
     console.log('§STAFFAGE_WALK_FLOOR_Y ' + (_walkYLog.length ? _walkYLog.join(' ') : 'none'));
+    console.log('§STAFFAGE_WALK_CLEARANCE rejInMesh=' + _walkClrRej + ' placed=' + placedWalk);
+    _clrSummary('src=interior solids=' + _iSolids.length);   // §STAFFAGE_CLEARANCE
   }
   var _populateOn = false, _populateBuilding = null;
   // §STAFFAGE_FRAME_FOCUSED (2026-07-18 redesign, user: "Alt-P basically never off, just repopulate
@@ -2940,7 +3096,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v3 (§CINEMA_SIMPLE: one routine — pivot fix, 4s dive, timed exit, spin, 45° look-down)';
+  var EFFECTS_V = 'v4 (§CINEMA_SIMPLE + §STAFFAGE_CLEARANCE BVH indoor/space gate)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
