@@ -4,6 +4,48 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.22.0](https://github.com/red1oon/bim-ootb/compare/v1.21.0...v1.22.0) (2026-07-19)
+
+
+### ✨ Features
+
+* **cinema:** SSAA supersampling for Cinema Orbit + measured 15-&gt;24fps + composer module-graph precache ([#880](https://github.com/red1oon/bim-ootb/issues/880)) ([0acfcf8](https://github.com/red1oon/bim-ootb/commit/0acfcf89e44ec6c4358ad61ce107c81fcdfe271a))
+* **staffage:** wide-radius fallback for people/cars on large buildings ([#881](https://github.com/red1oon/bim-ootb/issues/881)) ([b5bb932](https://github.com/red1oon/bim-ootb/commit/b5bb93217939384819320335b33e5c464a39fa3a))
+* **time-machine:** §GROUP_SPARK frontier sparks — replaces the reverted [#866](https://github.com/red1oon/bim-ootb/issues/866) halo ([#891](https://github.com/red1oon/bim-ootb/issues/891)) ([b6edf76](https://github.com/red1oon/bim-ootb/commit/b6edf76c546341e22938ca91515efd8e000ea7e3))
+* **time-machine:** frontier halo glow, shines through occluders, hot-to-cool by progress ([#866](https://github.com/red1oon/bim-ootb/issues/866)) ([28e4b9c](https://github.com/red1oon/bim-ootb/commit/28e4b9cc3b0824a78d997fcc06db2109c81df030))
+* **ui:** "processing..." pulse on the Alt+S/Alt+P Palette icons ([#876](https://github.com/red1oon/bim-ootb/issues/876)) ([cdcfdcd](https://github.com/red1oon/bim-ootb/commit/cdcfdcd0b3110857a43ae19e80023e315390656e))
+* **ui:** Alt+S/Alt+P icon row in Palette panel; move Fly to Navigate ([#874](https://github.com/red1oon/bim-ootb/issues/874)) ([c1de0e4](https://github.com/red1oon/bim-ootb/commit/c1de0e436afaa44957598505f99ef1077f565a59))
+* **viewer:** §CINEMA_INDOOR — indoor start gets a dramatic exit prelude on the shared orbit path ([#889](https://github.com/red1oon/bim-ootb/issues/889)) ([05b7be1](https://github.com/red1oon/bim-ootb/commit/05b7be18b010627572731f1bcefb06e304d9e06f))
+* **viewer:** §MAXQ_LOADED version fingerprint + per-frame ETA in §MAXQ_FRAME/status ([#888](https://github.com/red1oon/bim-ootb/issues/888)) ([84a2979](https://github.com/red1oon/bim-ootb/commit/84a297919621dd9480d9d85893ed08f11a51c0b7))
+* **viewer:** §MAXQ_PREVIEW — 10s real-time path rehearsal before the bake ([#890](https://github.com/red1oon/bim-ootb/issues/890)) ([6a4bb70](https://github.com/red1oon/bim-ootb/commit/6a4bb70b50f7c46807a3e236b6468be9f7517c05))
+* **viewer:** §MAXQ_WAKELOCK — screen wake lock holds the bake alive on unattended machines ([#893](https://github.com/red1oon/bim-ootb/issues/893)) ([7335bb5](https://github.com/red1oon/bim-ootb/commit/7335bb5b77a081f759585ee723d6cb24b65d7ef1))
+* **viewer:** Alt+M Max-Quality Orbiter export — full Alt+S fold per frame, IDB frames, replay-record stitch ([#884](https://github.com/red1oon/bim-ootb/issues/884)) ([280f066](https://github.com/red1oon/bim-ootb/commit/280f066d095e06daf56c697a70430120bdd7d6ca))
+* **viewer:** MaxQ cancel saves the partial movie (§MAXQ_PARTIAL) ([#887](https://github.com/red1oon/bim-ootb/issues/887)) ([62d7a0f](https://github.com/red1oon/bim-ootb/commit/62d7a0f23b598cbec7409673250c6330341f7ddb))
+* **viewer:** MaxQ movie replaces live-capture orbit at the cinema icon / Alt+C ([#885](https://github.com/red1oon/bim-ootb/issues/885)) ([8e1aac4](https://github.com/red1oon/bim-ootb/commit/8e1aac4b2ec58c2f42f1e9a996cc033350c0a1df))
+* **viewer:** staffage formula (4 trees/1 car/3 pax per press) + randomized clash-only capping ([#875](https://github.com/red1oon/bim-ootb/issues/875)) ([ae5b298](https://github.com/red1oon/bim-ootb/commit/ae5b29822873844e29f95e0c9a32ca2b7ba83737))
+* **viewer:** staffage redesign — frame-focused, additive, save-persisted ([#868](https://github.com/red1oon/bim-ootb/issues/868)) ([d53a477](https://github.com/red1oon/bim-ootb/commit/d53a477064bdaa623ba8f88a6be1d3d1ec2837ea))
+
+
+### 🐛 Fixes
+
+* **cache:** fall back to unversioned IDB open when bim_ootb_cache is already past v2 ([#878](https://github.com/red1oon/bim-ootb/issues/878)) ([b5ff937](https://github.com/red1oon/bim-ootb/commit/b5ff9375295f6b7109511fa1fb77680c82eb3921))
+* **schedule:** cap concurrent crews per trade project-wide, cascading floor-by-floor ([#864](https://github.com/red1oon/bim-ootb/issues/864)) ([8af5bcc](https://github.com/red1oon/bim-ootb/commit/8af5bcc4cf2700b4f3c0a153648c004e563766e8))
+* **staffage:** Alt+P never yields zero of a kind + per-car paint colors ([#883](https://github.com/red1oon/bim-ootb/issues/883)) ([32962f9](https://github.com/red1oon/bim-ootb/commit/32962f986c8353fba03d7f44e76c283e834b227c))
+* **time-machine:** bump _GANTT_CACHE_VERSION 3→4 (§STOREY-Z fix missed the cache-bust step) ([#871](https://github.com/red1oon/bim-ootb/issues/871)) ([9cf6abc](https://github.com/red1oon/bim-ootb/commit/9cf6abc1cb732f908ae79c97a3b3a22ad41f48be))
+* **time-machine:** reassign no-storey elements to nearest real storey by Z (mini-Gantt "all at once") ([#869](https://github.com/red1oon/bim-ootb/issues/869)) ([926bd20](https://github.com/red1oon/bim-ootb/commit/926bd204c4d0b7bbf17a738e992301fa84c72517))
+* **time-machine:** stagger per-element reveal within a captured phase's date window ([#882](https://github.com/red1oon/bim-ootb/issues/882)) ([6c786a8](https://github.com/red1oon/bim-ootb/commit/6c786a8ca0f4c380542e6b0c5d89bd34b5d8269d))
+* **time-machine:** trim mini-Gantt bar span to p2-p98 (excludes mistagged-element outliers) ([#873](https://github.com/red1oon/bim-ootb/issues/873)) ([aa57fc3](https://github.com/red1oon/bim-ootb/commit/aa57fc367e659db0b24c291a7886a1eacb9f41bc))
+* **viewer:** facade pax minimal — 1 standing figure per press, not 3, no walking at entrance ([#870](https://github.com/red1oon/bim-ootb/issues/870)) ([f1cb4c9](https://github.com/red1oon/bim-ootb/commit/f1cb4c9c06c0a1fab27c4544bede240cda191b31))
+* **viewer:** ghost bbox grating on load — 3 placeholder row producers missed the [#839](https://github.com/red1oon/bim-ootb/issues/839) column shift ([#877](https://github.com/red1oon/bim-ootb/issues/877)) ([6774257](https://github.com/red1oon/bim-ootb/commit/6774257beb9b031cfda996f6406ffe255c6fc9cd))
+* **viewer:** pax placement generalizes to complex footprints (Terminal was landing 0 pax) ([#879](https://github.com/red1oon/bim-ootb/issues/879)) ([ee20bbe](https://github.com/red1oon/bim-ootb/commit/ee20bbe1c31bc04be57e5b7053e57215317fe8f7))
+* **viewer:** staffage ground-snap over atrium voids + no indoor trees + rolling MaxQ ETA ([#892](https://github.com/red1oon/bim-ootb/issues/892)) ([80967f8](https://github.com/red1oon/bim-ootb/commit/80967f872e47a9256b1859dbe2cbe09b7f04c22f))
+* **viewer:** staffage occlusion, camera-facing facade pose, car clearance + colour ([#872](https://github.com/red1oon/bim-ootb/issues/872)) ([f295ac1](https://github.com/red1oon/bim-ootb/commit/f295ac1977c7b7e73bb621d6c22a8e54694845d6))
+
+
+### ♻️ Refactors
+
+* **viewer:** extract §CINEMA_PATH shared orbit plan; MaxQ flies the identical cinematic path ([#886](https://github.com/red1oon/bim-ootb/issues/886)) ([bae786e](https://github.com/red1oon/bim-ootb/commit/bae786e08c28bc507dcfa5d6f137b83a49d3f9e6))
+
 ## [1.21.0](https://github.com/red1oon/bim-ootb/compare/v1.20.0...v1.21.0) (2026-07-18)
 
 
