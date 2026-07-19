@@ -972,11 +972,11 @@ async function setupEffects(A, renderer, scene, camera) {
   //           "a big potting space", and a real planting court is open to the sky — which this probe
   //           reports as Infinity, so courtyards/terraces keep their trees while the Terminal
   //           concourse (finite roof, however high) never gets one. Plus 2.5m canopy clearance.
-  //   CAR     indoors ONLY under a LOW deck (<=4.5m): a car park, loading bay or porte-cochère is a
-  //           plausible place for a parked car; a concourse/hall/atrium is not. Ceiling height is the
-  //           one real-geometry quantity that separates them — a clearance-only rule cannot, because
-  //           a big hall has MORE clearance than a car park, not less. Plus 2.5m radial clearance.
-  var _CLR_PERSON = 0.45, _CLR_TREE = 2.5, _CLR_CAR = 2.5, _CAR_INDOOR_MAX_CEIL = 4.5;
+  //   CAR     needs OPEN SKY — a car is NEVER inside a building (user ruling 2026-07-20: "Cars can
+  //           never be in building"). The earlier ≤4.5m-ceiling car-park allowance is RETIRED: it was
+  //           only ever proven on its rejection side (no test building had a real covered car park),
+  //           and the user's rule is absolute. Same open-sky test as a tree, plus 2.5m body clearance.
+  var _CLR_PERSON = 0.45, _CLR_TREE = 2.5, _CLR_CAR = 2.5;
   var _clrRej = {};
   function _clrReject(kind, reason, got, need) {
     _clrRej[kind + ':' + reason] = (_clrRej[kind + ':' + reason] || 0) + 1;
@@ -1003,9 +1003,7 @@ async function setupEffects(A, renderer, scene, camera) {
       return true;
     }
     if (kind === 'car') {
-      if (ceil !== Infinity && ceil > _CAR_INDOOR_MAX_CEIL) {
-        _clrReject('car', 'indoor-hall', ceil, '<=' + _CAR_INDOOR_MAX_CEIL + 'm ceiling or open sky'); return false;
-      }
+      if (ceil !== Infinity) { _clrReject('car', 'indoor', ceil, 'open sky'); return false; }
       var cc = _clearRadius(meshes, feetPos, _CLR_CAR);
       if (cc < _CLR_CAR) { _clrReject('car', 'body-clearance', cc, _CLR_CAR + 'm'); return false; }
       return true;
@@ -3096,7 +3094,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v4 (§CINEMA_SIMPLE + §STAFFAGE_CLEARANCE BVH indoor/space gate)';
+  var EFFECTS_V = 'v5 (§STAFFAGE cars never indoors + §CINEMA_SIMPLE)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).

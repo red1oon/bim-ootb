@@ -106,9 +106,9 @@ function auditInPage() {
     } else if (kind === 'car') {
       out.cars++;
       const ce = ceilingAbove(p);
-      // A car under a LOW deck (car park / loading bay / porte-cochere) is legitimate; a car under a
-      // high concourse roof is the reported defect.
-      if (ce !== Infinity && ce > 4.5) { out.badIndoor++; out.detail.push(`car indoor-hall ceiling=${ce.toFixed(1)}m`); }
+      // User ruling 2026-07-20: "Cars can never be in building." ANY car under a real roof is a defect
+      // now — the ≤4.5m car-park allowance is retired. Same open-sky bar as a tree.
+      if (ce !== Infinity) { out.badIndoor++; out.detail.push(`car indoor ceiling=${ce.toFixed(1)}m`); }
     }
   }
   return out;
