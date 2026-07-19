@@ -893,15 +893,17 @@
   // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
   var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
 
-  // Cheap staleness signature: mesh COUNT alone misses a consolidation that merges 3 meshes into
-  // 3 different ones, so fold the ids in too. O(#meshes) (~tens), not O(#elements).
-  // O(1). The first version walked all ~10,823 _batchMeta keys EVERY tick with a string->number
-  // conversion per key; that cost ~9ms and made SCRUB (which falls back to the full path and gets
-  // no benefit from the index) 25% SLOWER than before the optimisation -- measured, 36.75ms ->
-  // 45.81ms mean. Streaming/city now bump A._metaGen at the four sites that mutate the meta
-  // tables, so staleness detection is a counter compare instead of a scan.
+  // Staleness signature — keyed ONLY on the element-mesh set, via A._metaGen (bumped by
+  // streaming/city at the four sites that mutate _batchMeta/_instanceMeta). O(1).
+  // ⚠ DO NOT fold in scene.children.length. It changes EVERY playback tick for reasons unrelated
+  // to the mesh set — group-spark sprites add/remove, SFX, stars, bloom — which made the signature
+  // flip every tick, rebuilt the 108ms event index every tick on LTU (16k meshes / 367k events),
+  // AND reset _incrPrimed so the skip never engaged (mode=full skipped=0 forever). Net: ~158ms/tick
+  // of self-inflicted JS on LTU, slower than no optimisation. The index depends only on which guids
+  // live in which meshes; that changes only via streaming/eviction, which bump _metaGen. Nothing
+  // else may invalidate it.
   function _tmSceneSig(app) {
-    return (app._metaGen | 0) + ':' + (app.scene ? app.scene.children.length : 0);
+    return '' + (app._metaGen | 0);
   }
 
   // Build meshId -> sorted transition timestamps. One pass over _ops + the meta tables.
@@ -1243,9 +1245,14 @@
       }
     });
 
-    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) +
+    var _travMs = performance.now() - _perfT0;
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
       ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
       ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+    // Diagnostic hook (harmless, cheap): last-traverse stats for perf verification without relying
+    // on the throttled log. Read via window.__tmTrav in a probe.
+    window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
+                        mode: _incrOK ? 'delta' : 'full' };
     _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
@@ -4591,4 +4598,8 @@
   // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
   // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
   window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
+  // Test hook: simulate a playback tick (small cursor advance + roll bump) so a probe can exercise
+  // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
+  window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;
+    renderAtTime(Math.min(_projectEnd, _cursor + (dms || 3600000))); return window.__tmTrav; };
 })();
