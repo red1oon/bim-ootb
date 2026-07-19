@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v6 (path preview + rolling ETA)';
+  var MAXQ_V = 'v7 (rolling ETA + screen wake-lock)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -18,6 +18,33 @@
                          // and the whole building oscillates color frame-to-frame.
   var IDB_NAME = 'bim_ootb_cinema_maxq', IDB_STORE = 'frames';
   var _active = false, _cancel = false;
+  // §MAXQ_WAKELOCK (user 2026-07-19: left the machine, bake paused until they came back — the
+  // screen slept and rAF throttled with it). Hold a screen wake lock for the duration of the
+  // bake+stitch so an unattended machine keeps rendering; re-acquire on visibilitychange (the
+  // browser auto-releases the lock when the tab hides). Best-effort — browsers without the API
+  // just log unavailable, and the standing rule stays: keep the tab VISIBLE (rAF throttles in
+  // hidden tabs regardless of any lock; frames are never lost, the bake just waits).
+  var _wakeLock = null, _wakeWired = false;
+  async function _wakeAcquire() {
+    try {
+      if (navigator.wakeLock && navigator.wakeLock.request) {
+        _wakeLock = await navigator.wakeLock.request('screen');
+        console.log('§MAXQ_WAKELOCK acquired (screen stays awake for the bake)');
+        if (!_wakeWired) {
+          _wakeWired = true;
+          document.addEventListener('visibilitychange', function() {
+            if (_active && document.visibilityState === 'visible' && (!_wakeLock || _wakeLock.released)) _wakeAcquire();
+          });
+        }
+      } else {
+        console.log('§MAXQ_WAKELOCK unavailable — keep the tab visible and screen awake manually');
+      }
+    } catch (e) { console.log('§MAXQ_WAKELOCK denied: ' + e.message); }
+  }
+  function _wakeRelease() {
+    try { if (_wakeLock && !_wakeLock.released) _wakeLock.release(); } catch (e) {}
+    _wakeLock = null;
+  }
 
   function _raf2() { return new Promise(function(res) { requestAnimationFrame(function() { requestAnimationFrame(res); }); }); }
   function _sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
@@ -132,6 +159,7 @@
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    _wakeAcquire();
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
     // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
     // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
@@ -183,6 +211,7 @@
         console.log('§MAXQ_CANCEL during preview — nothing baked, nothing saved');
         _status('🎬 MaxQ cancelled during preview');
         _active = false; _cancel = false; A._maxqActive = false;
+        _wakeRelease();
         return;
       }
       console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
@@ -256,6 +285,7 @@
       _idbDestroy(db);
       _active = false; _cancel = false;
       A._maxqActive = false;
+      _wakeRelease();
     }
   }
 
