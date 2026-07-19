@@ -1615,35 +1615,140 @@
   // The signed kernel is the production W-CHAIN one (kernel_ops.js → window.KernelOps), loaded as a peer
   // <script>. If it (or sql.js) is absent we fall back to the E2 dry-run — never a silent failure.
   // ════════════════════════════════════════════════════════════════════════
-  var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [];
+  var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [], _SQL = null, _IDB = null, _warnedNoLock = false;
   var SIDE_DBNAME = 'glassbowl_kernel_ops', SIDE_STORE = 'log', SIDE_KEY = 'kernel_ops.db';
+  // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1/F3 — Witness: W-OPLOG-APPEND / W-COMMIT-LOCK.
+  // OPS_STORE — the NEW per-op append-only object store (F1), a sibling of the legacy `log` store in the
+  // SAME IndexedDB database (bumping SIDE_DBVERSION adds it without touching the legacy store/key — F10
+  // keeps the old blob untouched). SIDE_LOCK_NAME — the cross-tab commit mutex (F3).
+  var OPS_STORE = 'ops', SIDE_DBVERSION = 2, MIGRATE_MARKER_KEY = 'migrated-from-blob';
+  var SIDE_LOCK_NAME = 'erp-sidecar-commit';
   function kernel() { return (typeof global.KernelOps !== 'undefined') ? global.KernelOps : null; }
   function _flushSideCbs(arg) { var cbs = SIDE_CBS; SIDE_CBS = []; SIDE_PENDING = false; cbs.forEach(function (f) { try { f(arg); } catch (e) {} }); }
 
-  // _sideIdb — open the DEDICATED sidecar object store (NEVER glassbowl_data.db's cache key).
+  // _sideIdb — open the DEDICATED sidecar database (NEVER glassbowl_data.db's cache key). v1→v2 (F1):
+  // adds the new `ops` append-only store alongside the legacy `log` store — existing `log`/kernel_ops.db
+  // data is untouched by the upgrade (F10: the old blob is read by migration, never deleted here).
   function _sideIdb(cb) {
     try {
-      var req = global.indexedDB.open(SIDE_DBNAME, 1);
-      req.onupgradeneeded = function () { req.result.createObjectStore(SIDE_STORE); };
+      var req = global.indexedDB.open(SIDE_DBNAME, SIDE_DBVERSION);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(SIDE_STORE)) db.createObjectStore(SIDE_STORE);
+        if (!db.objectStoreNames.contains(OPS_STORE)) db.createObjectStore(OPS_STORE, { autoIncrement: true });
+      };
       req.onsuccess = function () { cb(req.result); };
       req.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
-  function _sidePersist() {
-    if (!SIDE) return;
+  // _sidePersist — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1 — Witness: W-OPLOG-APPEND.
+  // Appends the given kernel_ops row ids from `db` as INDIVIDUAL new records in the `ops` IndexedDB store
+  // (add(), never put()) — replaces the old whole-DB export()+put() single-blob overwrite entirely. Two
+  // tabs' concurrent commits now physically add() DIFFERENT, non-colliding records; neither can overwrite
+  // the other's bytes (this alone makes S3's disjoint-field total-op-loss structurally impossible).
+  // Returns a Promise so callers can await the append BEFORE releasing the cross-tab lock (F3) — a second
+  // tab's refresh must never observe "committed but not yet appended".
+  function _sidePersist(K, db, ids) {
+    if (!db || !_IDB || !K || !ids || !ids.length) return Promise.resolve();
     try {
-      var buf = SIDE.export().buffer;   // the sidecar is TINY (the log only) — whole-export is cheap + 1GB-safe
-      _sideIdb(function (db) {
-        if (!db) return;
-        try {
-          db.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(buf, SIDE_KEY);
-          console.log('§CRUD sidecar persisted size=' + (buf.byteLength / 1024).toFixed(1) + 'KB key=' + SIDE_KEY);
-        } catch (e) {}
+      var rows = K.rowsByIds(db, ids);
+      return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
+        rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
+      }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
+    } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
+  }
+  // _hydrateSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE.
+  // Builds a FRESH sql.js Database from the append-only `ops` IndexedDB store: read every record in key
+  // order (cheap IDB cursor scan), replay each row back into a fresh kernel_ops table in that SAME order
+  // (F2 — the rows already carry their sealed prev_hash/op_hash/sig; replay restores them verbatim, it
+  // does not re-seal). On the FIRST hydrate of a pre-fix sidecar — no migration marker yet, AND the legacy
+  // whole-blob still holds data under the old `log`/kernel_ops.db key — the legacy blob's rows are
+  // exploded into individual `ops` records ONCE first (F10), so a pre-fix user's history carries forward
+  // rather than starting empty. The legacy blob key is NEVER put()/deleted by this — read-only, always
+  // (§Migration: "the old blob is never deleted by this migration"). Idempotent + best-effort: any
+  // failure along the migration path falls back straight to the (possibly-still-empty) read-all hydrate —
+  // it never blocks opening the sidecar.
+  function _hydrateSide(idbDb, SQL, K, cb) {
+    function readAllAndBuild() {
+      K.readAllOpsRecords(idbDb, OPS_STORE).then(function (rows) {
+        var db = new SQL.Database();
+        K.ensureTable(db);
+        K.replayRowsInto(db, rows);
+        Promise.resolve(K.verifyChain(db)).then(function (v) {
+          console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') +
+                      ' source=readAll' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : ''));
+          cb(db);
+        }).catch(function () { cb(db); });
+      }).catch(function (e) {
+        console.warn('§OPLOG-HYDRATE readAll error', e && e.message);
+        var db = new SQL.Database(); K.ensureTable(db); cb(db);
       });
-    } catch (e) {}
+    }
+    var mtx;
+    try { mtx = idbDb.transaction(SIDE_STORE, 'readonly'); } catch (e) { readAllAndBuild(); return; }
+    var mreq = mtx.objectStore(SIDE_STORE).get(MIGRATE_MARKER_KEY);
+    mreq.onsuccess = function () {
+      if (mreq.result) { readAllAndBuild(); return; }   // already migrated → straight to read-all (F2)
+      var greq;
+      try { greq = idbDb.transaction(SIDE_STORE, 'readonly').objectStore(SIDE_STORE).get(SIDE_KEY); }
+      catch (e) { readAllAndBuild(); return; }
+      greq.onsuccess = function () {
+        var legacyBuf = greq.result;
+        if (!legacyBuf) {   // brand-new user, no legacy blob at all — mark migrated (nothing to migrate)
+          try { idbDb.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(true, MIGRATE_MARKER_KEY); } catch (e) {}
+          readAllAndBuild(); return;
+        }
+        var legacyDb;
+        try { legacyDb = new SQL.Database(new Uint8Array(legacyBuf)); }
+        catch (e) { console.warn('§OPLOG-MIGRATE legacy blob unreadable, skipping (blob preserved, never deleted)', e && e.message); readAllAndBuild(); return; }
+        var legacyRows = K.allRowsPlain(legacyDb);
+        K.appendOpsRecords(idbDb, OPS_STORE, legacyRows).then(function (keys) {
+          try { idbDb.transaction(SIDE_STORE, 'readwrite').objectStore(SIDE_STORE).put(true, MIGRATE_MARKER_KEY); } catch (e) {}
+          var n = keys ? keys.length : 0;   // appendOpsRecords resolves with the assigned autoKeys array, not a count
+          Promise.resolve(K.verifyChain(legacyDb)).then(function (v) {
+            console.log('§OPLOG-MIGRATE legacyOps=' + legacyRows.length + ' migratedOps=' + n + ' chainValid=' + !!(v && v.ok));
+            console.log('§OPLOG-BLOB-PRESERVED unchanged=true');   // F10: old key was only READ, never put()/deleted
+            readAllAndBuild();
+          }).catch(function () {
+            console.log('§OPLOG-MIGRATE legacyOps=' + legacyRows.length + ' migratedOps=' + n + ' chainValid=false');
+            readAllAndBuild();
+          });
+        }).catch(function (e) {
+          console.warn('§OPLOG-MIGRATE append error', e && e.message, '(legacy blob preserved, will retry next open)');
+          readAllAndBuild();   // fail-open — never blocks opening
+        });
+      };
+      greq.onerror = function () { readAllAndBuild(); };
+    };
+    mreq.onerror = function () { readAllAndBuild(); };
+  }
+  // _withFreshSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK.
+  // Re-hydrates SIDE from the ops store's CURRENT contents (a full read-all + replay via _hydrateSide —
+  // correctness over micro-perf for this CORE pass; §Cross-tab coordination: "either is correct, the
+  // former is cheaper") and hands the FRESH db to `task`, while holding the navigator.locks cross-tab
+  // mutex — so a second tab's commit can only begin gating/sealing AFTER the first tab's just-appended
+  // rows are visible to it. This is what closes the S4 gap that per-op storage (F1) alone does not: two
+  // tabs can no longer both seal against the SAME stale tip. `task(freshDb, done)` MUST call done() when
+  // the whole critical section (gate→seal→append) has finished, so the lock isn't released early.
+  // No navigator.locks support (older browser) → falls back to running unlocked (best-effort, same
+  // residual cross-tab risk as pre-fix; logged ONCE so the degradation is visible, never silent).
+  function _withFreshSide(K, task) {
+    function run(done) {
+      if (!_IDB || !_SQL) { task(SIDE, done); return; }
+      _hydrateSide(_IDB, _SQL, K, function (freshDb) { SIDE = freshDb; task(SIDE, done); });
+    }
+    if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
+      return navigator.locks.request(SIDE_LOCK_NAME, function () {
+        return new Promise(function (resolve) { run(resolve); });
+      });
+    }
+    if (!_warnedNoLock) { _warnedNoLock = true; console.warn('§COMMIT-LOCK unavailable (no navigator.locks) — cross-tab serialization NOT active this session'); }
+    return new Promise(function (resolve) { run(resolve); });
   }
   // withSidecar — lazily build/hydrate the sidecar log DB (a separate sql.js Database), ensure the kernel
   // table, then run cb(SIDE). cb(null) if sql.js/kernel unavailable (caller falls back to dry-run).
+  // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE: hydration
+  // is now read-all-and-replay from the `ops` store (via _hydrateSide), not a single fixed blob key.
   function withSidecar(cb) {
     if (SIDE) { cb(SIDE); return; }
     SIDE_CBS.push(cb);
@@ -1652,19 +1757,13 @@
     if (typeof global.initSqlJs !== 'function' || !K) { _flushSideCbs(null); return; }
     SIDE_PENDING = true;
     global.initSqlJs({ locateFile: function (f) { return 'sqljs/' + f; } }).then(function (SQL) {
-      _sideIdb(function (db) {
-        function build(buf) {
-          try { SIDE = buf ? new SQL.Database(new Uint8Array(buf)) : new SQL.Database(); }
-          catch (e) { SIDE = new SQL.Database(); }
-          K.ensureTable(SIDE);
-          _flushSideCbs(SIDE);
+      _sideIdb(function (idbDb) {
+        if (!idbDb) {
+          try { SIDE = new SQL.Database(); K.ensureTable(SIDE); } catch (e) { SIDE = null; }
+          _flushSideCbs(SIDE); return;
         }
-        if (!db) { build(null); return; }
-        try {
-          var g = db.transaction(SIDE_STORE, 'readonly').objectStore(SIDE_STORE).get(SIDE_KEY);
-          g.onsuccess = function () { build(g.result || null); };
-          g.onerror = function () { build(null); };
-        } catch (e) { build(null); }
+        _SQL = SQL; _IDB = idbDb;   // remembered for the cross-tab refresh (F3) and future persists
+        _hydrateSide(idbDb, SQL, K, function (db) { SIDE = db; _flushSideCbs(SIDE); });
       });
     }).catch(function () { _flushSideCbs(null); });
   }
@@ -1738,41 +1837,46 @@
     var K = kernel();
     withSidecar(function (db) {
       if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD process key=' + op.key + ' kernel/sql.js/commitGroup absent → DRY fallback'); dryProcess(op); return; }
+      // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK (see commitCrud /
+      // _withFreshSide's own header for the full rationale — same cross-tab mutex, same DocAction path).
+      _withFreshSide(K, function (freshDb, done) {
       // T4 (GAP 4): a DocAction (Complete/Close/Void) is an ownerGated mutation of an owned document —
       // gate owner+CAS BEFORE the seal; a non-owner / stale-CAS process is REJECTED (toast, no dot, no
       // fan-out), never silently sealed. Non-gated doctypes pass through unchanged.
-      _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, db, function (gate) {
-        if (!gate.ok) { _gateReject(op, gate); return; }
+      _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, freshDb, function (gate) {
+        if (!gate.ok) { _gateReject(op, gate); done(); return; }
       completeFanout(op, function (fanout) {
-      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe)
+      _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe, same-tab)
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
-        return Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
+        return Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
           // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
-          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(db)).then(function (v) {
-            _sidePersist();
-            var lastId = res.ids[res.ids.length - 1];
-            var row = db.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
-            var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
-            // T1 Part B: stamp the group onto the op BEFORE docDot — recordDocMoment stores the op
-            // verbatim (v.docOp), so the ONE history dot carries the whole consequence group.
-            op.gid = res.gid; op.groupN = res.ids.length;
-            if (fanout && fanout.ops) {
-              var nShip = 0, nInv = 0;
-              fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
-              console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
-            }
-            console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
-            setDocStatus(op.key, op.to, op.outcome, op.unmet);
-            docDot(CORE.docLabel(op, fname(op.key)), op);
-            toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
-            // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
-            // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
-            try { global.dispatchEvent(new CustomEvent('overlay:committed',
-              { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
+            return _sidePersist(K, freshDb, res.ids).then(function () {
+              var lastId = res.ids[res.ids.length - 1];
+              var row = freshDb.exec('SELECT op_uuid FROM kernel_ops WHERE id=' + lastId);
+              var uuid = (row.length && row[0].values.length) ? row[0].values[0][0] : null;
+              // T1 Part B: stamp the group onto the op BEFORE docDot — recordDocMoment stores the op
+              // verbatim (v.docOp), so the ONE history dot carries the whole consequence group.
+              op.gid = res.gid; op.groupN = res.ids.length;
+              if (fanout && fanout.ops) {
+                var nShip = 0, nInv = 0;
+                fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
+                console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
+              }
+              console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              setDocStatus(op.key, op.to, op.outcome, op.unmet);
+              docDot(CORE.docLabel(op, fname(op.key)), op);
+              toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
+              // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
+              // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
+              try { global.dispatchEvent(new CustomEvent('overlay:committed',
+                { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
+            });
           });
         }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
-      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); });
+      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }).then(function () { done(); }, function () { done(); });
+      });
       });
       });
     });
@@ -1795,7 +1899,12 @@
     withSidecar(function (db) {
       if (db && K && typeof K.undoOp === 'function') {
         var g = CORE.foldBackGroup(db, K);
-        _sidePersist();
+        // F1 note: undo mutates existing row(s) (`undone` flag), it does not insert new ones — so the
+        // append here re-appends a FRESH snapshot of each touched row id; replay's INSERT-OR-REPLACE
+        // (kernel_ops.js replayRowsInto) makes the LATEST snapshot per id win on next hydration. This
+        // path is outside F3's cross-tab lock scope (undo/redo isn't part of this CORE fix's commit
+        // path) — same-tab correctness only, a known, named gap for a later session, not half-built.
+        _sidePersist(K, db, g.undone.map(function (u) { return u.id; }));
         if (g.gid && g.undone.length > 1)
           console.log('§FOLD-BACK key=' + key + ' group=' + g.gid + ' reversed=' + g.labels.join(',') + ' ops=' + g.undone.length + ' status=' + (toStatus || '?') + '→' + fromStatus);
         else
@@ -1813,7 +1922,7 @@
     withSidecar(function (db) {
       if (db && K && typeof K.redoOp === 'function') {
         var g = CORE.foldForwardGroup(db, K);
-        _sidePersist();
+        _sidePersist(K, db, g.redone.map(function (u) { return u.id; }));   // see foldBackDocOp note above
         if (g.gid && g.redone.length > 1)
           console.log('§FOLD-FORWARD key=' + key + ' group=' + g.gid + ' reapplied=' + g.labels.join(',') + ' ops=' + g.redone.length + ' status=→' + toStatus);
         else
@@ -2184,17 +2293,24 @@
         var dn = _allocDocNo(op.table, op.fields);
         if (dn != null) { op.fields = op.fields || {}; op.fields.DocumentNo = dn; }
       }
-      // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
-      // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
-      // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
-      var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
-      _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, db, function (gate) {
-        if (!gate.ok) { _gateReject(op, gate); return; }   // REJECT — no dry fallback, no dot
-        _commitCrudSealed(op, K, db);
+      // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK. The whole
+      // refresh-tip→gate→seal→append critical section now runs under the cross-tab commit lock, against
+      // a FRESHLY re-hydrated SIDE (never the possibly-stale in-memory carryover) — this is what makes
+      // the owner/CAS gate compare against the truly-current tip and stops two tabs sealing onto the
+      // same stale prev_hash (the S3/S4 fork/loss shape _withFreshSide's header explains in full).
+      _withFreshSide(K, function (freshDb, done) {
+        // T4 (GAP 4): an ownerGated mutation of an EXISTING owned row (UPDATE/DELETE) is gated owner+CAS
+        // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
+        // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
+        var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
+        _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, freshDb, function (gate) {
+          if (!gate.ok) { _gateReject(op, gate); done(); return; }   // REJECT — no dry fallback, no dot
+          _commitCrudSealed(op, K, freshDb, done);
+        });
       });
     });
   }
-  function _commitCrudSealed(op, K, db) {
+  function _commitCrudSealed(op, K, db, done) {
     {
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
@@ -2203,21 +2319,23 @@
         else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
         Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
-          if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); return; }
+          if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); done(); return; }
           // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
           return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(db)).then(function (v) {
-            _sidePersist();
-            var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
-            console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
-            docDot(CORE.docLabel(op, fname(op.key)), op);
-            toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
-            // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
-            // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
-            try { global.dispatchEvent(new CustomEvent('overlay:committed',
-              { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
+            return _sidePersist(K, db, res.ids).then(function () {
+              var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
+              console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              docDot(CORE.docLabel(op, fname(op.key)), op);
+              toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
+              // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
+              // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
+              try { global.dispatchEvent(new CustomEvent('overlay:committed',
+                { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
+              done();
+            });
           });
-        }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); });
-      } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); }
+        }).catch(function (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); done(); });
+      } catch (er) { console.warn('§CRUD ' + op.op_type + ' commit error', er && er.message); dryCrud(op); done(); }
     }
   }
 
