@@ -580,6 +580,38 @@
     console.log('§SE_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + a.download);
   }
 
+  // ── §X7: export the current schedule to Primavera P6 PMXML / XER (prompts/XER_PMXML_WRITER_LANE.md)
+  // — the write-side counterpart to doImportP6's PMXML/XER read path (foreign_schedule.js parsePMXML/
+  // parseXER). SAME (tree, deps) input exportMSProject already reads — ForeignSchedule.toPMXML/toXER
+  // are pure serializers, no new data plumbing. W-XER-ROUNDTRIP/W-PMXML-ROUNDTRIP (erp/tests/
+  // xer_pmxml_writer_witness.js) prove mismatch=0 re-parsing the writer's own output with our reader.
+  function _exportP6(kind, writeFn, ext, mime, label) {
+    if (!db || !schedId || !SA() || !SA().wbsTree) { status('⚠ no schedule to export'); return; }
+    var FSx = global.ForeignSchedule;
+    if (!FSx || !FSx[writeFn]) { status('⚠ foreign_schedule.js not loaded'); return; }
+    var tree = SA().wbsTree(db, schedId);
+    if (!tree.length) { status('⚠ no tasks to export'); return; }
+    var deps = SA().listDependencies ? SA().listDependencies(db, schedId) : [];
+    var name = (_dbUrl || 'schedule').split('/').pop().replace(/\.[a-z0-9]+$/i, '');
+    var out = FSx[writeFn](tree, deps, { hpd: 8, projectId: schedId, projectName: name });
+
+    var blob = new Blob([out], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name + '_schedule.' + ext;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+
+    var leafCount = 0; (function walk(ns) { (ns || []).forEach(function (n) { if (!n.isSummary) leafCount++; walk(n.children); }); })(tree);
+    status('Exported ' + leafCount + ' tasks / ' + deps.length + ' links to ' + label + ' (' + a.download +
+      '). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, ' +
+      'baselines) are not carried — P6 itself drops most of these on cross-DB import.');
+    console.log('§SE_EXPORT_' + kind + ' tasks=' + leafCount + ' links=' + deps.length + ' file=' + a.download);
+  }
+  function exportPMXML() { _exportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
+  function exportXER() { _exportP6('XER', 'toXER', 'xer', 'text/plain', 'Primavera XER'); }
+
   // ── boot ─────────────────────────────────────────────────────────────────────
   function init() {
     if (!SA() || !SA().wbsTree) { status('engine not loaded'); return; }
@@ -635,6 +667,8 @@
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
         var genBtn = $('se-generate-btn'); if (genBtn) genBtn.onclick = doGenerate;
         var expBtn = $('se-export-msp-btn'); if (expBtn) expBtn.onclick = exportMSProject;
+        var expPmxmlBtn = $('se-export-pmxml-btn'); if (expPmxmlBtn) expPmxmlBtn.onclick = exportPMXML;
+        var expXerBtn = $('se-export-xer-btn'); if (expXerBtn) expXerBtn.onclick = exportXER;
         var impBtn = $('se-import-btn'), impFile = $('se-import-file');
         if (impBtn && impFile) {
           impBtn.onclick = function () { impFile.click(); };
@@ -656,7 +690,7 @@
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, setZoom: setZoom };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, setZoom: setZoom, exportMSProject: exportMSProject, exportPMXML: exportPMXML, exportXER: exportXER };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);

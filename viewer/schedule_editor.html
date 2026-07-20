@@ -146,6 +146,8 @@
   <div class="se-ribbon-group">
     <span class="se-ribbon-label">Export</span>
     <button id="se-export-msp-btn" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project, or re-imports here via ⤓ P6.">⤒ MS Project</button>
+    <button id="se-export-pmxml-btn" title="Export the current schedule as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here via ⤓ P6. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">⤒ P6 XML</button>
+    <button id="se-export-xer-btn" title="Export the current schedule as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as ⤒ P6 XML.">⤒ P6 XER</button>
   </div>
   <div class="se-ribbon-group">
     <span class="se-ribbon-label">Compute</span>
