@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.23.0](https://github.com/red1oon/bim-ootb/compare/v1.22.0...v1.23.0) (2026-07-19)
+
+
+### ✨ Features
+
+* **cinema:** §CINEMA_RECIPROCAL — the start pose authors the whole film, ending included ([#897](https://github.com/red1oon/bim-ootb/issues/897)) ([1b27126](https://github.com/red1oon/bim-ootb/commit/1b27126016f5247f876557822c1e91b654457b53))
+* **cinema:** §CINEMA_SIMPLE — one routine, pivot fixed, exit chosen by facing ([#902](https://github.com/red1oon/bim-ootb/issues/902)) ([d647891](https://github.com/red1oon/bim-ootb/commit/d6478912c44ce6ee27815b8bfb2f424d33f41e6e))
+* **viewer:** §MAXQ_MP4 — MaxQ exports mp4/H.264, so the movie plays on iPhone/WhatsApp ([#895](https://github.com/red1oon/bim-ootb/issues/895)) ([f913b67](https://github.com/red1oon/bim-ootb/commit/f913b67b7a0af340ca06a2539e224d65f2359c88))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_POV_CONTINUITY — the film must BEGIN at the authored pose ([#900](https://github.com/red1oon/bim-ootb/issues/900)) ([d5748d6](https://github.com/red1oon/bim-ootb/commit/d5748d6a240eed5299453b61b8c1a59d35ce9d65))
+* **cinema:** §CINEMA_THEME — theme arrives AFTER the ease-back; rotation never unwinds ([#901](https://github.com/red1oon/bim-ootb/issues/901)) ([5c11be1](https://github.com/red1oon/bim-ootb/commit/5c11be1d6748681bb20e8bb7d741b8dc536a5e69))
+* **sw:** bump CACHE_VERSION v813 -&gt; v814 — two merged PRs both claimed v813 ([#899](https://github.com/red1oon/bim-ootb/issues/899)) ([dc17fd0](https://github.com/red1oon/bim-ootb/commit/dc17fd0a0ba508f74835bbc8b7057b097de99d02))
+* **time-machine:** §PERF_INCR event index thrashed every tick on LTU — was a net regression ([#906](https://github.com/red1oon/bim-ootb/issues/906)) ([eab9248](https://github.com/red1oon/bim-ootb/commit/eab92488c4da7488dbb3c4c5c54a02d9e9e944d2))
+* **viewer:** §MAXQ_IDB — MaxQ bake no longer deadlocks silently on IndexedDB open ([#894](https://github.com/red1oon/bim-ootb/issues/894)) ([eebf9e7](https://github.com/red1oon/bim-ootb/commit/eebf9e73a13312bd38c6f4a138320faf8844947e))
+* **viewer:** §STAFFAGE — cars can NEVER be indoors (user ruling); retire the car-park ceiling allowance ([#904](https://github.com/red1oon/bim-ootb/issues/904)) ([2b67445](https://github.com/red1oon/bim-ootb/commit/2b6744531a6b8b259f6c199767afdd717a5a9d20))
+* **viewer:** §STAFFAGE_CLEARANCE — no trees/cars in the Terminal hall, no figure inside a mesh ([#903](https://github.com/red1oon/bim-ootb/issues/903)) ([6d00ecb](https://github.com/red1oon/bim-ootb/commit/6d00ecb52b3981d8e451bd737a89fa662f4db914))
+* **viewer:** §STAFFAGE_SEAT_CLASS — seated staffage no longer placed inside tables ([#898](https://github.com/red1oon/bim-ootb/issues/898)) ([9d17619](https://github.com/red1oon/bim-ootb/commit/9d1761976d4a0534155bc3b1b39d6990313579ae))
+
+
+### ⚡ Performance
+
+* **viewer:** TM incremental render + silence per-tick playback logging (re-applies orphaned [#891](https://github.com/red1oon/bim-ootb/issues/891) tail) ([#905](https://github.com/red1oon/bim-ootb/issues/905)) ([fa7b4ef](https://github.com/red1oon/bim-ootb/commit/fa7b4ef34e004f9979df8fe30e44d4b3fb5b2ded))
+
 ## [1.22.0](https://github.com/red1oon/bim-ootb/compare/v1.21.0...v1.22.0) (2026-07-19)
 
 
