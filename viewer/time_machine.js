@@ -892,16 +892,23 @@
   // Above this cursor jump, skipping stops paying (too many meshes have events anyway) and the
   // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
   var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
+  // §PERF_INCR Phase 2: last tick's app._shadowOn, to detect the OFF<->ON edge. Batched/Instanced
+  // castShadow/receiveShadow flags are only (re)computed on ticks that aren't skipped, so a mesh
+  // skipped across a shadow toggle would keep a stale flag. Force one full pass on the edge tick
+  // only -- not for the whole time shadows stay on, which is what the old blanket gate did.
+  var _lastShadowOn = null;
 
-  // Cheap staleness signature: mesh COUNT alone misses a consolidation that merges 3 meshes into
-  // 3 different ones, so fold the ids in too. O(#meshes) (~tens), not O(#elements).
-  // O(1). The first version walked all ~10,823 _batchMeta keys EVERY tick with a string->number
-  // conversion per key; that cost ~9ms and made SCRUB (which falls back to the full path and gets
-  // no benefit from the index) 25% SLOWER than before the optimisation -- measured, 36.75ms ->
-  // 45.81ms mean. Streaming/city now bump A._metaGen at the four sites that mutate the meta
-  // tables, so staleness detection is a counter compare instead of a scan.
+  // Staleness signature — keyed ONLY on the element-mesh set, via A._metaGen (bumped by
+  // streaming/city at the four sites that mutate _batchMeta/_instanceMeta). O(1).
+  // ⚠ DO NOT fold in scene.children.length. It changes EVERY playback tick for reasons unrelated
+  // to the mesh set — group-spark sprites add/remove, SFX, stars, bloom — which made the signature
+  // flip every tick, rebuilt the 108ms event index every tick on LTU (16k meshes / 367k events),
+  // AND reset _incrPrimed so the skip never engaged (mode=full skipped=0 forever). Net: ~158ms/tick
+  // of self-inflicted JS on LTU, slower than no optimisation. The index depends only on which guids
+  // live in which meshes; that changes only via streaming/eviction, which bump _metaGen. Nothing
+  // else may invalidate it.
   function _tmSceneSig(app) {
-    return (app._metaGen | 0) + ':' + (app.scene ? app.scene.children.length : 0);
+    return '' + (app._metaGen | 0);
   }
 
   // Build meshId -> sorted transition timestamps. One pass over _ops + the meta tables.
@@ -1055,19 +1062,26 @@
     // §S260d: All particle effects removed
 
     // §PERF_INCR: decide delta vs full for THIS tick.
-    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, the
-    // shadow pass needs the complete _placedMeshes list, or the jump is large enough that skipping
-    // saves nothing. A long scrub legitimately changes tens of thousands of elements -- forcing
-    // delta there would be SLOWER than the full path, which is the failure this guard prevents.
+    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, shadows
+    // just toggled (see _lastShadowOn above), or the jump is large enough that skipping saves
+    // nothing. A long scrub legitimately changes tens of thousands of elements -- forcing delta
+    // there would be SLOWER than the full path, which is the failure this guard prevents.
+    // §PERF_INCR Phase 2: shadows staying ON/OFF steady-state does NOT need a blanket full-mode
+    // gate -- _placedMeshes/_frontierCentroids/_shadowCasters are built in the single-mesh branch
+    // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
+    // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
     var _sig = _tmSceneSig(app);
     if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
     var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
-    var _incrOK = !!_evMesh && _prevCursor != null && !app._shadowOn &&
+    var _shadowNow = !!app._shadowOn;
+    var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
+    var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
     if (window.__forceFull) { _incrOK = false; window.__forceFull = false; }
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
+    _lastShadowOn = _shadowNow;
 
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
     app.scene.traverse(function(obj) {
@@ -1140,6 +1154,10 @@
 
       // ── BatchedMesh (per-slot GUIDs in _batchMeta) — S260 ──
       if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        // §PERF_INCR Phase 2: same event index already indexes _batchMeta guids (see
+        // _tmBuildEventIndex) but this branch never consulted it -- LTU's BatchedMesh-consolidated
+        // geometry (8 draw calls) got ZERO benefit from Phase 1, only InstancedMesh did.
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var bmetas = app._batchMeta[obj.id];
         var anyVis = false;
         var _bmHasFrontier = false;
@@ -1243,9 +1261,14 @@
       }
     });
 
-    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + (performance.now() - _perfT0).toFixed(1) +
+    var _travMs = performance.now() - _perfT0;
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
       ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
       ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+    // Diagnostic hook (harmless, cheap): last-traverse stats for perf verification without relying
+    // on the throttled log. Read via window.__tmTrav in a probe.
+    window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
+                        mode: _incrOK ? 'delta' : 'full' };
     _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
@@ -1714,7 +1737,7 @@
     var c = (typeof t.cursor === 'number') ? t.cursor : (typeof t.frac === 'number' ? _projectStart + t.frac * span : null);
     if (c == null) return;
     _applyingRemoteScrub = true;
-    try { _cursor = Math.max(_projectStart, Math.min(_projectEnd, c)); renderAtTime(_cursor); try { anchorFromCursor(); configSlider(); } catch (e) {} }
+    try { renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, c))); try { anchorFromCursor(); configSlider(); } catch (e) {} }
     finally { _applyingRemoteScrub = false; }
     console.log('§TM_TL_IN cursor=' + Math.round(_cursor) + ' from=' + (t.surface || '?'));
   }
@@ -2414,10 +2437,10 @@
 
     // Transport buttons
     document.getElementById('tm-start-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectStart; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectStart); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-end-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectEnd; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectEnd); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-rev-btn').addEventListener('pointerup', function(e) {
       e.stopPropagation(); startPlayback(-1);
@@ -2597,8 +2620,7 @@
       var ti = Math.floor((e.clientY - rect.top - 4) / rowH);
       if (ti < 0 || ti >= V.phases.length) return;
       var p = V.phases[ti];
-      _cursor = p.winStart;
-      renderAtTime(_cursor);
+      renderAtTime(p.winStart);
       anchorFromCursor();
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
@@ -2611,8 +2633,7 @@
       var pct = Math.min(1, Math.max(0, x));
       var ts = _projectStart + pct * (_projectEnd - _projectStart);
       var bar = findBarAtClick(e);
-      _cursor = ts;
-      renderAtTime(_cursor);
+      renderAtTime(ts);
       anchorFromCursor();
       configSlider();
       if (bar) console.log('§GANTT_MINI_SEEK ts=' + Math.round(ts) + ' bar="' + bar.storey + '|' + bar.phase + '"');
@@ -2836,10 +2857,16 @@
 
     _gspRoll++;   // §GROUP_SPARK: one re-roll per playback tick ("randomize among themselves
                   // repeatedly until their duration is reached")
-    _cursor += _playDir * tickMs();
-    _cursor = Math.max(_projectStart, Math.min(_cursor, _projectEnd));
+    // §PERF_INCR_FIX: compute the target into a LOCAL var, not the global _cursor, before calling
+    // renderAtTime — renderAtTime reads _cursor itself to derive _prevCursor (the delta-skip
+    // window's lower bound). Pre-assigning _cursor here made _prevCursor==cursorMs on EVERY tick
+    // (zero-width window), so _tmHasEventIn found "no event" for every mesh and the delta path
+    // skipped the whole scene every tick once shadows stopped forcing full mode (Phase 2). Confirmed
+    // live: real playback log showed span=0h on every tick. renderAtTime sets the global _cursor
+    // itself once it has captured the true previous value — do not set it here first.
+    var _nextCursor = Math.max(_projectStart, Math.min(_cursor + _playDir * tickMs(), _projectEnd));
 
-    renderAtTime(_cursor);
+    renderAtTime(_nextCursor);
 
     // Update slider position during playback
     anchorFromCursor();
@@ -4268,12 +4295,11 @@
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
     console.log('§MOBILE_TM_TOGGLE method=setVisibleAt|setMatrixAt mobile=' + !!app._isMobile + ' dlod=' + !!app._useDlodPath);
-    _cursor = _projectEnd;
     _anchorDay = _days.length ? _days[_days.length - 1] : null;
     _anchorHr = 15;
     _panel.style.display = 'flex';
     switchMode('DAY');
-    renderAtTime(_cursor); // §S260c: initial render so Gantt + status populate immediately
+    renderAtTime(_projectEnd); // §S260c: initial render so Gantt + status populate immediately
     updateStatus();
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
@@ -4391,8 +4417,7 @@
             catch (e) { console.log('§TM_ORDER_JUMP deeplink-err ' + e); }
           } else if (tmParam === 'play') {
             // Jump to start then play forward
-            _cursor = _projectStart;
-            renderAtTime(_cursor);
+            renderAtTime(_projectStart);
             startPlayback(+1);
           }
         }
@@ -4440,8 +4465,7 @@
         if (ph === phaseName) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
       if (!isFinite(s)) { console.log('§TM_JUNCTURE miss phase="' + phaseName + '" (no ops in that phase)'); return false; }
-      _cursor = s;
-      renderAtTime(_cursor);
+      renderAtTime(s);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       // surface the cost story: open the ⚖ variance drawer (reads the twin) if it isn't already open — ONLY when
@@ -4476,8 +4500,7 @@
         if (og === guid) { op = _ops[i]; break; }
       }
       if (!op) { console.log('§TM_PINPOINT_JUMP miss guid="' + guid + '" (no op builds it)'); return false; }
-      _cursor = op.end_ts;                       // the instant it lands → present in the scene, the lead frontier
-      renderAtTime(_cursor);
+      renderAtTime(op.end_ts);                   // the instant it lands → present in the scene, the lead frontier
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                // couple the 5D cost story to the frozen frame (same as phase jump)
@@ -4535,16 +4558,16 @@
         var ph = (_ops[i].parameters || {}).phase || 'Architecture';
         if (ph === phase) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
-      var mode;
-      if (isFinite(s)) { _cursor = s; mode = 'phase'; }
+      var mode, _jumpTarget;
+      if (isFinite(s)) { _jumpTarget = s; mode = 'phase'; }
       else {                                                             // mode=projected: order finish → axis position
         var frac = 0.5;
         if (isFinite(info.spanMin) && isFinite(info.spanMax) && info.spanMax > info.spanMin && isFinite(info.end))
           frac = Math.max(0, Math.min(1, (info.end - info.spanMin) / (info.spanMax - info.spanMin)));
-        _cursor = _projectStart + frac * (_projectEnd - _projectStart);
+        _jumpTarget = _projectStart + frac * (_projectEnd - _projectStart);
         mode = 'projected';
       }
-      renderAtTime(_cursor);
+      renderAtTime(_jumpTarget);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                                       // couple the 5D cost story (⚖ drawer)
@@ -4573,7 +4596,7 @@
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
-    return { active: _active, cursor: _cursor };
+    return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
@@ -4591,4 +4614,46 @@
   // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
   // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
   window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
+  // Test hook: simulate a playback tick (small cursor advance + roll bump) so a probe can exercise
+  // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
+  window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;
+    renderAtTime(Math.min(_projectEnd, _cursor + (dms || 3600000))); return window.__tmTrav; };
+  // W-INCR-EQUIV test hook: jump to an ABSOLUTE cursor (clamped to project bounds), for the
+  // forward/backward/random-scrub/jump-to-start-end sweep TM_INCREMENTAL_RENDER_PERF.md §5 requires.
+  // Diagnostic only, mirrors __tmStep's no-op-if-inactive contract.
+  window.__tmSetCursor = function (absMs) {
+    if (!_active) return null;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, absMs)));
+    return window.__tmTrav;
+  };
+  // W-INCR-EQUIV test hook: snapshot every visible guid + its slot visibility, for diffing the
+  // delta path against the window.__forceFull full-path re-render at the same cursor.
+  window.__tmSnapshotVisible = function () {
+    if (!_active) return null;
+    var app = A();
+    var out = { mesh: [], batched: {}, instanced: {} };
+    app.scene.traverse(function (obj) {
+      if (!obj.userData) return;
+      if (obj.userData.guid) { if (obj.visible) out.mesh.push(obj.userData.guid); return; }
+      if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        var bmetas = app._batchMeta[obj.id], vis = {};
+        for (var bi = 0; bi < bmetas.length; bi++) {
+          vis[bmetas[bi].guid] = !!(obj.getVisibleAt ? obj.getVisibleAt(bmetas[bi].slotId) : obj.visible);
+        }
+        out.batched[obj.id] = vis;
+        return;
+      }
+      if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        var metas = app._instanceMeta[obj.id], ivis = {};
+        var _snapM4 = window.__tmSnapshotVisible._m4 || (window.__tmSnapshotVisible._m4 = new THREE.Matrix4());
+        for (var mi = 0; mi < metas.length; mi++) {
+          obj.getMatrixAt(mi, _snapM4);
+          ivis[metas[mi].guid] = !(_snapM4.elements[0] === 0 && _snapM4.elements[5] === 0 && _snapM4.elements[10] === 0);
+        }
+        out.instanced[obj.id] = ivis;
+      }
+    });
+    out.mesh.sort();
+    return out;
+  };
 })();
