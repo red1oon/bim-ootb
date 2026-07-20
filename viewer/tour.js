@@ -161,6 +161,47 @@ function setupTour(A) {
       }
     } catch (e) {}
   };
+  // §TOUR_CACHE_EVICT (TOUR_ROUTE_CACHE.md §4, 2026-07-20): nothing else ever removed a
+  // tmTourCache key — old TOUR_CACHE_VER generations, other buildings, other DB-recompile counts
+  // all coexist forever and can fill the origin's real localStorage quota, after which EVERY
+  // future store silently fails (never a crash, but the 41×-faster cache never engages again).
+  // Two-part self-heal: (1) drop stale-version keys unconditionally, cheap, no error needed to
+  // trigger it; (2) on an actual quota error, drop every OTHER tmTourCache key and retry once —
+  // makes the very next Fly press benefit, not just a hand-cleared profile.
+  function _tourCachePruneStale() {
+    var removed = 0;
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:') === 0 && k.indexOf(':' + TOUR_CACHE_VER + ':') === -1) {
+          localStorage.removeItem(k); removed++;
+        }
+      }
+    } catch (e) {}
+    if (removed) console.log('[TOUR] §TOUR_CACHE_PRUNE stale-version removed=' + removed);
+  }
+  _tourCachePruneStale(); // once per module setup (page load) — cheap, unconditional
+  function _tourCacheEvictAndRetry(key, json) {
+    var removed = 0, bytesFreed = 0;
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:') === 0 && k !== key) {
+          var v = localStorage.getItem(k);
+          bytesFreed += (v ? v.length : 0);
+          localStorage.removeItem(k); removed++;
+        }
+      }
+    } catch (e) { return false; }
+    console.log('[TOUR] §TOUR_CACHE_EVICT removed=' + removed + ' bytes_freed=' + bytesFreed);
+    try {
+      localStorage.setItem(key, json);
+      return true;
+    } catch (e2) {
+      console.log('[TOUR] §TOUR_CACHE store-skip (post-evict) ' + (e2 && e2.message));
+      return false;
+    }
+  }
 
   // The original fly-start body (tour build + orbit fallback), unchanged except for extraction.
   A._startFlyTour = function(btn) {
@@ -197,13 +238,16 @@ function setupTour(A) {
           }
         }
         if (!_fromCache && _ck) {
-          try {
-            var _json = JSON.stringify(tour);
-            if (_json.length < 1500000) { // localStorage budget guard — skip absurd routes, keep the rest of the app's keys safe
-              localStorage.setItem(_ck, _json);
-              console.log('[TOUR] §TOUR_CACHE store actions=' + tour.length + ' bytes=' + _json.length + ' key=' + _ck);
+          var _json = JSON.stringify(tour);
+          if (_json.length < 1500000) { // localStorage budget guard — skip absurd routes, keep the rest of the app's keys safe
+            var _stored = false;
+            try { localStorage.setItem(_ck, _json); _stored = true; }
+            catch (e) {
+              console.log('[TOUR] §TOUR_CACHE store-skip ' + (e && e.message));
+              _stored = _tourCacheEvictAndRetry(_ck, _json); // §TOUR_CACHE_EVICT — see fn above
             }
-          } catch (e) { console.log('[TOUR] §TOUR_CACHE store-skip ' + (e && e.message)); }
+            if (_stored) console.log('[TOUR] §TOUR_CACHE store actions=' + tour.length + ' bytes=' + _json.length + ' key=' + _ck);
+          }
         }
         A.walkMode = true;
         A.walkActions = tour;
