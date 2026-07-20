@@ -3118,15 +3118,20 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_EYE_M = 1.7;       // standing eye height above the floor actually under that point
   var CINEMA_LOOKDOWN_DEG = 45; // the exterior act's look-down angle
   var CINEMA_SUN_GUARD_DEG = 35;// Sun within this of the emergence heading → hold the look-down
-  // §CINEMA_SWOOP (R3 fix, 2026-07-20 — reinstated, deleted by the §CINEMA_SIMPLE cleanup #902; user:
-  // "It no longer levels off to hit the Sun reflect... I deleted §CINEMA_SWOOP" / "the user wants it
-  // BACK — it is part of the normal script, not gimmickry"). Same constants as the pre-#902 build —
-  // only the host mechanism changed (the final orbit act, not the old push-in/band-ease loop). The
-  // reflection reads best with the sun roughly BEHIND the camera, i.e. when the orbiting camera's own
-  // azimuth matches the Sun's azimuth — a full 360° orbit crosses that exactly once, guaranteed,
-  // general to any building/sun angle. Dip the tilt toward building/eye level in a smooth window
-  // around that crossing so the film passes low and facing the glint at least once.
-  var CINEMA_SWOOP_HALF_SEC = 2.0, CINEMA_SWOOP_TILT_DEG = 4;
+  // §CINEMA_SWOOP → §CINEMA_FLAT_ENDING (R3 fix, 2026-07-20, reinstated then REDESIGNED same day per
+  // live-trial feedback: "the last part of orbit... should go last 5 secs at least to be flat eye
+  // level without the wobble. Catch the Sun is luck but from above then level then back above is not
+  // cinematic smooth."). The first cut (a brief mid-loop dip that climbed BACK UP to the 45° look-
+  // down afterward) was exactly the "wobble" the user is describing — reinstating the OLD pre-#902
+  // dip-and-recover shape was the wrong target. The film must instead settle to level ONCE and stay
+  // there: the Sun-catch and the final level-off are the SAME event, not two. Where in the loop the
+  // camera's own azimuth crosses the Sun's (`swoopU`, computed below) is an emergent consequence of
+  // the chosen exit — which the user's OWN start position/facing already drives (§CINEMA_EXIT) — so
+  // that stays the "aim" lever; what changes here is that the OUTCOME is always a single monotonic
+  // glide down to flat, never a re-climb, regardless of where that crossing lands in the loop.
+  var CINEMA_FLAT_HOLD_SEC = 5;    // the mandated minimum: dead flat for at least this long, always
+  var CINEMA_DESCENT_MIN_SEC = 3;  // the glide itself is never instant, even when it has to start late
+  var CINEMA_FLAT_TILT_DEG = 0;    // the ending's target — literally flat, per the user's own words
   var CINEMA_FAN_RAYS = 32;     // BVH horizontal fan: "am I facing a wall / where is open"
   var CINEMA_FAN_FAR = 60;      // metres; no hit inside this = open in that bearing
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
@@ -3151,7 +3156,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v6 (§CINEMA_SPACE floor-level+already-inside R2, §CINEMA_SWOOP reinstated R3, §STAFFAGE_SIT_OPEN_FLOOR R1)';
+  var EFFECTS_V = 'v7 (§CINEMA_FLAT_ENDING — single monotonic glide to level, no dip-and-recover)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3619,14 +3624,31 @@ async function setupEffects(A, renderer, scene, camera) {
       ' waypoints=' + outWp.length + ' pathLen=' + totalLen.toFixed(1) +
       ' spinDeg=' + Math.round(dYaw * 180 / Math.PI));
 
-    // ══ §CINEMA_SWOOP reinstated (R3 fix) — where in the final orbit's u-domain (0..1 over the
-    // WHOLE 360° ending act) the camera's azimuth crosses the Sun's. swoopHalfU converts the fixed
-    // SECONDS half-width into that domain using the ending act's real duration, (1-tR)*durationSec.
+    // ══ §CINEMA_FLAT_ENDING (R3 redesign, 2026-07-20 — replaces the dip-and-recover swoop; user:
+    // "the last part of orbit... should go last 5 secs at least to be flat eye level without the
+    // wobble... from above then level then back above is not cinematic smooth"). swoopU is still
+    // where the orbit's azimuth crosses the Sun's (unchanged formula — an emergent consequence of
+    // the chosen exit, itself driven by where the user started/faced, per §CINEMA_EXIT); what's new
+    // is that it now marks where a SINGLE monotonic glide to flat BEGINS, never where a dip recovers
+    // from. loopSec/flatHoldU/descentMinU convert the fixed SECONDS constants into this act's own
+    // u-domain, same pattern as the old swoopHalfU conversion.
+    var loopSec = Math.max(1e-3, (1 - tR) * durationSec);
     var swoopU = (((sunAz - exitAz) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI);
-    var swoopHalfU = CINEMA_SWOOP_HALF_SEC / Math.max(1e-3, (1 - tR) * durationSec);
-    var swoopTiltRad = THREE.MathUtils.degToRad(CINEMA_SWOOP_TILT_DEG);
-    console.log('§CINEMA_SWOOP swoopU=' + swoopU.toFixed(3) + ' (~' + (swoopU * (1 - tR) * durationSec).toFixed(1) +
-      's into the final orbit) halfU=' + swoopHalfU.toFixed(3) + ' tiltDeg=' + CINEMA_SWOOP_TILT_DEG);
+    var flatHoldU = Math.min(0.45, CINEMA_FLAT_HOLD_SEC / loopSec);
+    var descentMinU = Math.min(0.30, CINEMA_DESCENT_MIN_SEC / loopSec);
+    var flatTiltRad = THREE.MathUtils.degToRad(CINEMA_FLAT_TILT_DEG);
+    var holdStartU = 1 - flatHoldU;
+    // The descent starts AT the Sun-crossing when there's room for both the minimum glide and the
+    // mandated hold afterward ("catch the Sun" folded into the start of the glide down); otherwise it
+    // starts as late as that room allows — still monotonic, still ends flat with the full hold, just
+    // without the Sun necessarily lining up ("Catch the Sun is luck", per the user's own framing).
+    var latestDescentStartU = Math.max(holdU, holdStartU - descentMinU);
+    var descentStartU = Math.max(holdU, Math.min(swoopU, latestDescentStartU));
+    var caughtSun = Math.abs(swoopU - descentStartU) < 1e-6;
+    console.log('§CINEMA_FLAT_ENDING swoopU=' + swoopU.toFixed(3) + ' (~' + (swoopU * loopSec).toFixed(1) +
+      's) descentStartU=' + descentStartU.toFixed(3) + ' (~' + (descentStartU * loopSec).toFixed(1) +
+      's) holdStartU=' + holdStartU.toFixed(3) + ' (~' + (holdStartU * loopSec).toFixed(1) +
+      's) loopSec=' + loopSec.toFixed(1) + ' caughtSun=' + caughtSun + ' flatTiltDeg=' + CINEMA_FLAT_TILT_DEG);
 
     // ══ The standard ending: one plain orbit off the side we emerged on, with the classic wide
     // pull-back flourish. Same close for EVERY film (§CINEMA_SIMPLE decision 2 — the reciprocal
@@ -3635,18 +3657,18 @@ async function setupEffects(A, renderer, scene, camera) {
       u = Math.max(0, Math.min(1, u));
       var az = exitAz + u * Math.PI * 2;
       var tilt = entryTilt + (lookdownTilt - entryTilt) * (holdU > 0 ? _cinemaSmoothstep(u / holdU) : 1);
-      // §CINEMA_SWOOP: once per loop, as the orbit's azimuth crosses the Sun's, dip the tilt toward
-      // building/eye level so the film passes low and facing the glint at least once (R3 fix — this
-      // is the SAME sun-awareness as the hold above, just acting DURING the orbit rather than at its
-      // start; verify both together per the spec).
-      var swoopDelta = Math.abs(u - swoopU);
-      swoopDelta = Math.min(swoopDelta, 1 - swoopDelta); // wrap-around near u=0/1
-      if (swoopHalfU > 0 && swoopDelta < swoopHalfU) {
-        var swoopW = 1 - _cinemaSmoothstep(swoopDelta / swoopHalfU);
-        tilt = tilt + (swoopTiltRad - tilt) * swoopW;
+      // §CINEMA_FLAT_ENDING: past descentStartU, ease MONOTONICALLY toward flat and hold — never a
+      // separate dip-and-recover. u<descentStartU is untouched (still cruising at lookdownTilt,
+      // modulo the initial climb above); u>=holdStartU is exactly flatTiltRad.
+      var ellOut = 1;
+      if (u > descentStartU) {
+        var descentW = _cinemaSmoothstep(Math.min(1, (u - descentStartU) / Math.max(1e-6, holdStartU - descentStartU)));
+        tilt = tilt + (flatTiltRad - tilt) * descentW;
+        ellOut = 1 - descentW;   // the radius wobble ramps OUT across the same glide, dead calm by the hold
       }
-      // Ellipse ramps in from exactly 0 at u=0 so the orbit begins precisely where the rise ended.
-      var ell = 1 + CINEMA_ELLIPTICITY * _cinemaSmoothstep(u / 0.15) * Math.cos(2 * (az - exitAz));
+      // Ellipse ramps in from exactly 0 at u=0 so the orbit begins precisely where the rise ended,
+      // and ramps back OUT (ellOut) across the final descent so the held ending isn't still wobbling.
+      var ell = 1 + CINEMA_ELLIPTICITY * _cinemaSmoothstep(u / 0.15) * ellOut * Math.cos(2 * (az - exitAz));
       var radius = orbitRadius * ell;
       if (u > CINEMA_PULLBACK_START) {
         var pb = _cinemaSmoothstep((u - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START));
