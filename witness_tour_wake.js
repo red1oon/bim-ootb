@@ -104,8 +104,12 @@ const BLD = process.env.BLD || 'LTU_AHouse';
     }
     console.log('camera samples: ' + JSON.stringify(samples));
 
-    const moved = samples.some((s, i) => i > 0 &&
-      (Math.abs(s.x - samples[0].x) > 0.001 || Math.abs(s.y - samples[0].y) > 0.001 || Math.abs(s.z - samples[0].z) > 0.001));
+    // STRICT criterion: the camera must still be moving between the LAST two samples, not merely
+    // differ from baseline. The control run (unfixed tour.js, 2026-07-20) twitched 0.2 units once
+    // during route-planning then froze — identical samples 2..4 — yet passed a baseline-only check.
+    // A frozen tour with one pre-freeze twitch must FAIL.
+    const a = samples[samples.length - 2], b = samples[samples.length - 1];
+    const moved = Math.abs(b.x - a.x) > 0.001 || Math.abs(b.y - a.y) > 0.001 || Math.abs(b.z - a.z) > 0.001;
 
     pass = started && moved;
     console.log(pass ? 'PASS — camera moved after Fly Tour toggle from an idle state'
