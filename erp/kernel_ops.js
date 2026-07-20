@@ -179,10 +179,16 @@
   // is NOT part of the hash, so the chain stays byte-identical across devices while sigs vary.
   var GENESIS = '0'.repeat(64);
   var _signer = null;   // optional { sign: async(hashHex)->sigHex, verify: async(hashHex,sigHex)->bool }
+  var _signerKid = null;   // optional: this device's own roster identity (its pubKeyHex) — see setSigner
 
   // Set an edge signer to turn on W-SIGN. Key custody lives at the edge (the device/merchant),
   // never in this module. Leave unset for W-CHAIN-only (tamper-evidence without signatures).
-  function setSigner(signer) { _signer = signer; }
+  // kid (optional) — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S8
+  // — Witness: W-MULTI-DEVICE-VERIFY. This device's own roster identity (its pubKeyHex, from
+  // erp_signer.js installSigner()), stamped into every NEW v2 op's params as `signed_by` (see
+  // _stampSigv below) so a roster-gated verifier elsewhere can attribute the op to the device that
+  // actually signed it. Omit for W-SIGN-only (signing on, no cross-device attribution stamped).
+  function setSigner(signer, kid) { _signer = signer; _signerKid = kid || null; }
 
   // T2 (prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION, bim-compiler) — Witness: W-CONTENT-SIGN.
   // CONTENT-ADDRESSED SIGNING, additive-version (no flag-day, history never re-signed):
@@ -241,6 +247,11 @@
     if (_sigCanonical !== 2 || !params || typeof params !== 'object') return params;
     var out = {}; for (var k in params) if (Object.prototype.hasOwnProperty.call(params, k)) out[k] = params[k];
     out._sigv = 2;
+    // S8 (W-MULTI-DEVICE-VERIFY): stamp the signing device's own roster kid alongside _sigv:2 — a
+    // SIGNED fact (inside the v2-content-hashed payload), same additive pattern as _sigv itself. Only
+    // meaningful for v2 rows (a v1 sig can't survive a rebase/renumber regardless — attribution would
+    // be moot), so bundled into this same gate rather than a separate flag.
+    if (_signerKid) out.signed_by = _signerKid;
     return out;
   }
 
