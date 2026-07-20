@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v765';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v766';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -97,6 +97,9 @@ const PRECACHE_ASSETS = [
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
+  'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
+  'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it
+  'erp_sync_relay.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — wires relay+rebase into crud_overlay.js sidecar (window.__crud.syncNow); idempiere.html loads it
   'blue_future.js',    // FRONTEND_LANE_MASTER §OUTSTANDING item 0 — Blue Future UNOFFICIAL speculative-branch skin (W-BLUE-FUTURE-LIVE)
   'crud_ops.json',     // SO_FULL_CRUD_GAP.md — keyed CRUD verb/field/docAction store the overlay fetches on enable (incl. T1 docPolicy fan-out table)
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
