@@ -47,9 +47,15 @@
     if (!_url || !rows || !rows.length || typeof global.ErpRelayClient === 'undefined') return Promise.resolve(null);
     try {
       var client = global.ErpRelayClient.createRelayClient(_url);
+      // Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S7 —
+      // Witness: W-REBASE-ATTRIB. This whitelist independently dropped gid/branch_id/sig at the PUSH
+      // boundary — a THIRD divergent copy of the same 6-column mapping erp_sync_fsm.js's rebase() had
+      // (that fix alone was not sufficient: rebase() only preserves what the relay's canonical snapshot
+      // already contains, and this function is what puts ops INTO the relay in the first place).
       var ops = rows.map(function (r) {
         return { op_uuid: r.op_uuid, timestamp: r.timestamp, op_type: r.op_type,
-                 parameters: r.parameters, input_guids: r.input_guids, output_guid: r.output_guid };
+                 parameters: r.parameters, input_guids: r.input_guids, output_guid: r.output_guid,
+                 gid: r.gid || null, branch_id: r.branch_id || null, sig: r.sig || null };
       });
       return client.push(ops).then(function (res) {
         console.log('§SYNC_RELAY push accepted=' + res.accepted + ' skipped=' + res.skipped + ' head=' + res.head);
