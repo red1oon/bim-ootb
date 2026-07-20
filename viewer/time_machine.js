@@ -554,6 +554,9 @@
       var im = new THREE.InstancedMesh(geo, mat, drows.length);
       im.frustumCulled = false;
       im.userData.isBboxPlaceholder = true; // §S260d proven pick-exclusion (picking.js:257) — same flag as load-time boxes
+      im.userData.isDlodTmProxy = true; // distinct marker — _drawBboxPlaceholders' load-time boxes share
+      // isBboxPlaceholder + the same BoxGeometry/wireframe material, so this is the only reliable way
+      // to tell "DLOD Phase 3 box" apart from an ordinary streaming placeholder when debugging.
       for (var j = 0; j < drows.length; j++) {
         var r = drows[j], p = app.ifc2three(r[1], r[2], r[3]);
         var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
