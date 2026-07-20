@@ -3177,7 +3177,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v8 (§CINEMA_SPACE simplified to largest-only, §CINEMA_SUN_ORDER sunFirst/sunLast, §CINEMA_END_DECEL, §CINEMA_BEAT_OVERLAP)';
+  var EFFECTS_V = 'v10 (§CINEMA_GHOST_RESET — Alt+C resets a lens-owned ghost bbox shell before orbiting)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3809,6 +3809,11 @@ async function setupEffects(A, renderer, scene, camera) {
       return;
     }
     _cinemaActive = true;  // claim BEFORE the await below — a second Alt+C during the import tick must not double-start
+    // §CINEMA_GHOST_RESET (2026-07-21): same fix as cinema_maxq.js's live Alt+C path — see
+    // navigate_find.js §CINEMA_GHOST_RESET. This function is currently dead code (scene.js's
+    // §KBD_ROUTE always finds A.startMaxQualityOrbit defined and never falls through here), kept in
+    // sync for consistency in case that routing ever changes.
+    if (typeof A.resetCinemaGhostLens === 'function') A.resetCinemaGhostLens();
     // §CINEMA_SSAA lazy-load: the module is already in the browser's module map on any load where
     // A._composer exists (TAARenderPass.js imports it), so this resolves from cache in a microtask
     // — no network fetch, works offline.

@@ -315,6 +315,18 @@
       return;
     }
     if (A._stillRefineActive || A._stillRefineBusy) A.stopStillRefine(true);
+    // §CINEMA_GHOST_RESET (2026-07-21, broadened): the ghost bbox shell can be on either because a
+    // Find-panel lens auto-engaged it OR because the user manually cycled Alt+Z to Bbox mode
+    // (tools.js `cycleXrayBboxMode`) — neither case was ever cleared before starting the orbit, so
+    // a cinematic film could show the wireframe shell for its whole duration. See navigate_find.js
+    // §CINEMA_GHOST_RESET (keys off visibility, not just auto-ownership).
+    if (typeof A.resetCinemaGhostLens === 'function') A.resetCinemaGhostLens();
+    // Same problem, same fix, for X-Ray: the SAME Alt+Z cycle can leave X-Ray engaged (transparent
+    // geometry) instead of Bbox — equally wrong for a "photoreal" cinematic film, however it got on.
+    if (A.xrayOn && typeof A.toggleXray === 'function') {
+      A.toggleXray();
+      console.log('§CINEMA_XRAY_RESET x-ray was on, turned off before orbit');
+    }
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
