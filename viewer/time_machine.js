@@ -475,22 +475,40 @@
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
-  // ── TM_DLOD_SCALE.md Phase 3: representation-by-activity ──────────────────
-  // Swap axis = construction-time activity (frontier/recent/lookahead vs placed-but-idle),
-  // NOT camera distance — that lineage (S261 setGeometryAt) stays retracted, untouched here.
-  // No geometry swap: real meshes stay resident, box InstancedMeshes are SEPARATE objects,
-  // both toggled via the same setVisibleAt/zero-scale visibility mechanism TM already uses.
+  // ── TM_DLOD_SCALE.md Phase 3 (redesigned 2026-07-20 per live LTU testing + user ask):
+  // representation-by-VIEW, not by construction-time activity. Frontier (building now) and
+  // recent (just finished, amber linger) always stay real — unchanged. Everything else that's
+  // `placed` (built) is real ONLY if in-view (distance ≤50m AND in camera frustum, the exact S261
+  // LOD0/LOD2 tier boundary — done/S261_DLOD_MILLION.md line 24), else a wireframe box. A pure
+  // time-window swap (frontier∪recent∪lookahead vs placed) boxed the WHOLE building the instant it
+  // engaged this late in construction (106K/122K placed) — including whatever the camera was
+  // pointed at, since time-since-built has nothing to do with what's on screen. This still does
+  // NOT touch `setGeometryAt` — real meshes stay resident, box InstancedMeshes are SEPARATE
+  // objects, both toggled via the same setVisibleAt/zero-scale visibility mechanism TM already uses.
   var DLOD_TM_MIN_ELEMENTS = LARGE_BUILDING; // reuse §S259's existing 50000 gate, not a new number
-  var LOOKAHEAD_TICKS = 6;
+  var DLOD_VIEW_DIST = 50; // metres — same threshold S261's retracted LOD0/LOD2 tiers used
+  var DLOD_VIEW_DIST_SQ = DLOD_VIEW_DIST * DLOD_VIEW_DIST;
   var _dlodProxyOn = false;      // user toggle (pill), default OFF — bit-identical to today when OFF
-  var _dlodBoxIndex = null;      // guid → { mesh, idx, matrix (real Matrix4), visible }
+  var _dlodBoxIndex = null;      // guid → { mesh, idx, matrix (real Matrix4), pos, radius, visible }
   var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
   var _dlodBoxBld = null;        // building the index was built for
   var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+  var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
+  var _dlodCamPos = null;
 
   function _dlodEngaged(app) {
     // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
+  }
+
+  // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
+  // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
+  function _dlodInView(g) {
+    var b = _dlodBoxIndex && _dlodBoxIndex[g];
+    if (!b || !_dlodCamPos) return true;
+    if (_dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ) return false;
+    _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+    return _dlodFrustum.intersectsSphere(_dlodSphere);
   }
 
   function _dlodDisposeBoxes() {
@@ -538,11 +556,15 @@
       im.userData.isBboxPlaceholder = true; // §S260d proven pick-exclusion (picking.js:257) — same flag as load-time boxes
       for (var j = 0; j < drows.length; j++) {
         var r = drows[j], p = app.ifc2three(r[1], r[2], r[3]);
+        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
         _pos.set(p.x, p.y, p.z);
-        _scl.set(r[4] || 0.3, r[6] || 0.3, r[5] || 0.3); // bbox (x, z, y) — axis swap matches _buildMergedGhost
+        _scl.set(bx, bz, by); // bbox (x, z, y) — axis swap matches _buildMergedGhost
         m4.compose(_pos, _q, _scl);
         im.setMatrixAt(j, _zeroMatrix); // hidden until _dlodUpdateBoxes decides otherwise
-        index[r[0]] = { mesh: im, idx: j, matrix: m4.clone(), visible: false };
+        // §DLOD_VIEW: pos/radius cached once here — the SAME position both the box-visibility sync
+        // and the real-mesh hide decision read every tick, no per-tick decompose/getWorldPosition.
+        index[r[0]] = { mesh: im, idx: j, matrix: m4.clone(), pos: _pos.clone(),
+          radius: Math.sqrt(bx * bx + by * by + bz * bz) * 0.5, visible: false };
         total++;
       }
       im.instanceMatrix.needsUpdate = true;
@@ -556,7 +578,7 @@
     console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
   }
 
-  function _dlodUpdateBoxes(app, engaged, placed, frontier, recent, lookahead) {
+  function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {
     if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
     if (!_dlodBoxIndex) {
       if (!engaged) return;
@@ -568,8 +590,17 @@
     var touched = null, boxed = 0;
     for (var guid in _dlodBoxIndex) {
       var b = _dlodBoxIndex[guid];
-      var wantVisible = engaged && !!placed[guid] &&
-        !(frontier[guid] || recent[guid] !== undefined || (lookahead && lookahead[guid]));
+      var wantVisible = false;
+      if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
+        // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
+        // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
+        var outOfView = _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
+        if (!outOfView) {
+          _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+          outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere);
+        }
+        wantVisible = outOfView;
+      }
       if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
       b.visible = wantVisible;
       b.mesh.setMatrixAt(b.idx, wantVisible ? b.matrix : _zeroMatrix);
@@ -1168,19 +1199,20 @@
 
     // §S260d: All particle effects removed
 
-    // ── TM_DLOD_SCALE.md §3: active window = frontier ∪ recent ∪ lookahead ──
-    // Only scanned when the user toggle is on — zero cost when the feature is off (W-DLOD-EQUIV).
+    // ── TM_DLOD_SCALE.md §3 (redesigned): real = frontier ∪ recent ∪ in-view; box = placed, not
+    // in either. Box index must exist BEFORE the traverse below reads _dlodInView, so build it here
+    // (not lazily inside _dlodUpdateBoxes) — else the first engaged tick would see an empty index
+    // and fail every element open to "real", one tick behind. Zero cost when the toggle is off.
     var _dlodOn = _dlodEngaged(app);
-    var _dlodLookahead = null;
-    if (_dlodProxyOn) {
-      _dlodLookahead = {};
-      var _laMs = LOOKAHEAD_TICKS * tickMs();
-      for (var _li = 0; _li < _ops.length; _li++) {
-        if (_ops[_li].start_ts > _cursor + _laMs) break;
-        if (_ops[_li].start_ts <= _cursor) continue;
-        var _lg = _ops[_li].output_guid;
-        if (!_lg && _ops[_li].input_guids && _ops[_li].input_guids.length) _lg = _ops[_li].input_guids[0];
-        if (_lg) _dlodLookahead[_lg] = true;
+    if (_dlodOn) {
+      _dlodBuildBoxes(app);
+      if (_dlodBoxIndex && app.camera) {
+        if (!_dlodFrustum) { _dlodFrustum = new THREE.Frustum(); _dlodPSM = new THREE.Matrix4(); _dlodSphere = new THREE.Sphere(); }
+        _dlodCamPos = app.camera.position;
+        _dlodPSM.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+        _dlodFrustum.setFromProjectionMatrix(_dlodPSM);
+      } else {
+        _dlodOn = false; // box build failed (deps/query) — fall back to legacy behavior this tick
       }
     }
 
@@ -1219,8 +1251,7 @@
         var isRecent = recent[g] !== undefined;
         // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
         // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
-        var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent &&
-          !(_dlodLookahead && _dlodLookahead[g]);
+        var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !_dlodInView(g);
         var showReal = (isRecent || isPlaced) && !hideForProxy;
 
         // Visibility + highlighting
@@ -1294,8 +1325,7 @@
         for (var bi = 0; bi < bmetas.length; bi++) {
           var bg = bmetas[bi].guid;
           var sid = bmetas[bi].slotId;
-          var bHideForProxy = _dlodOn && !!placed[bg] && !frontier[bg] && recent[bg] === undefined &&
-            !(_dlodLookahead && _dlodLookahead[bg]);
+          var bHideForProxy = _dlodOn && !!placed[bg] && !frontier[bg] && recent[bg] === undefined && !_dlodInView(bg);
           if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
@@ -1361,8 +1391,7 @@
 
         for (var mi = 0; mi < metas.length; mi++) {
           var ig = metas[mi].guid;
-          var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined &&
-            !(_dlodLookahead && _dlodLookahead[ig]);
+          var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !_dlodInView(ig);
           if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
@@ -1409,7 +1438,7 @@
 
     // TM_DLOD_SCALE.md §2/§5.1: box-proxy sync — separate objects, never registered in
     // _batchMeta/_instanceMeta above, so this never touches _metaGen (W-DLOD-NO-REBUILD).
-    _dlodUpdateBoxes(app, _dlodOn, placed, frontier, recent, _dlodLookahead);
+    _dlodUpdateBoxes(app, _dlodOn, placed, frontier, recent);
 
     // ── Shadow promotion pass: nearby placed meshes → castShadow (cap 500) ──
     // §S260b: Only when Sunglass shadow is ON
@@ -2455,7 +2484,7 @@
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
-        '<button id="tm-lod" style="font-size:11px;padding:2px 6px;display:none" title="Draw-cost proxy: box the already-built, off-window elements (large buildings only). OFF = today\'s rendering, unchanged.">&#x25E7; LOD</button>' +
+        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
