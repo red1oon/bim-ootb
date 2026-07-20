@@ -2799,14 +2799,20 @@
     stopPlayback();
     _playing = true;
     _playDir = dir;
-    if (dir < 0 && _cursor <= _projectStart) _cursor = _projectEnd;
+    // §PERF_INCR_FIX (part 2, live LTU report post-#912): these wrap-around warps mutated _cursor
+    // SILENTLY — no render. The next playTick's renderAtTime then derived _prevCursor from the
+    // already-warped value, so the delta window was (start, start+1tick]: only hour-0/1 events got
+    // applied and the fully-built end-state scene stayed on canvas ("first second of play at Hour 0
+    // does not clear"). Same calling-convention bug family as #912 — warp via renderAtTime (full
+    // span → mode=full → every mesh updated), never by assigning _cursor directly.
+    if (dir < 0 && _cursor <= _projectStart) renderAtTime(_projectEnd);
     // §S260e: Opening = construction starts from empty, camera orbits for context
     var _willOpen = _camFollow && dir > 0 && _cineStoryboard.length &&
       (_cursor >= _projectEnd || _cursor <= _projectStart + 1);
-    if (dir > 0 && _cursor >= _projectEnd) _cursor = _projectStart;
+    if (dir > 0 && _cursor >= _projectEnd) renderAtTime(_projectStart);
 
     if (_willOpen) {
-      _cursor = _projectStart; // start empty — construction builds while camera orbits
+      if (_cursor > _projectStart) renderAtTime(_projectStart); // start empty — construction builds while camera orbits
       var app = A();
       if (app && app.camera && app.controls) {
         // §S260e: Opening — 10s orbit, camera starts below grade for foundation visibility
