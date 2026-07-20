@@ -495,6 +495,10 @@
   var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
   var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
   var _dlodCamPos = null;
+  // §DLOD_TM_CAMGUARD (2026-07-20): last camera pose-signature seen on a DLOD-engaged tick — see
+  // §10's root cause. Reuses _giHoldCamSig's exact string-diff shape (TM_GI_HOLD_CAMGUARD,
+  // ported PR #816), not a new threshold: cheap position+quaternion string, compared every tick.
+  var _dlodLastCamSig = null;
 
   function _dlodEngaged(app) {
     // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
@@ -1233,7 +1237,22 @@
     var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
     var _shadowNow = !!app._shadowOn;
     var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
-    var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled &&
+    // §DLOD_TM_CAMGUARD (TM_DLOD_SCALE.md §10, direction b): _dlodInView is a pure function of
+    // camera pose, but it's only ever read inside the BatchedMesh/InstancedMesh branches below,
+    // which the incremental-delta skip can bypass entirely when nothing was built/finished this
+    // tick (span=0, pure orbit). Force a full pass whenever the camera pose actually changed on a
+    // DLOD-engaged tick, so the real-mesh restore (box→real) is re-evaluated same as the box path
+    // already is (_dlodUpdateBoxes has no such skip). Off the DLOD path this is always false — zero
+    // behavioural change (W-DLOD-EQUIV).
+    var _dlodCamMoved = false;
+    if (_dlodOn) {
+      var _dlodCamSigNow = _giHoldCamSig(app);
+      _dlodCamMoved = (_dlodLastCamSig !== null && _dlodLastCamSig !== _dlodCamSigNow);
+      _dlodLastCamSig = _dlodCamSigNow;
+    } else {
+      _dlodLastCamSig = null; // reset: engaging DLOD later must not compare against a stale pose
+    }
+    var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled && !_dlodCamMoved &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
@@ -4518,7 +4537,7 @@
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
-    _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; // §DLOD_TM: nothing may survive TM being switched off
+    _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
     var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
     restoreSky();
     _sunCycle = false;
