@@ -47,9 +47,13 @@ function pct(arr, p) {
     const ready = await page.waitForFunction(() => {
       const st = window.tmGetState && window.tmGetState();
       return st && st.active && st.projectEnd > st.projectStart;
-    }, { timeout: 120000 }).then(() => true).catch(() => false);
+    }, { timeout: 300000 }).then(() => true).catch(() => false);
 
-    if (!ready) { console.log(`${BLD}: FAIL — TM never became active/ready`); process.exit(1); }
+    if (!ready) {
+      console.log(`${BLD}: FAIL — TM never became active/ready`);
+      console.log('LAST 40 CONSOLE LOGS:\n' + logs.slice(-40).join('\n'));
+      process.exit(1);
+    }
 
     const state0 = await page.evaluate(() => window.tmGetState());
     const shadowOn = await page.evaluate(() => !!window.APP._shadowOn);

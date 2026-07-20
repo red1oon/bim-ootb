@@ -1737,7 +1737,7 @@
     var c = (typeof t.cursor === 'number') ? t.cursor : (typeof t.frac === 'number' ? _projectStart + t.frac * span : null);
     if (c == null) return;
     _applyingRemoteScrub = true;
-    try { _cursor = Math.max(_projectStart, Math.min(_projectEnd, c)); renderAtTime(_cursor); try { anchorFromCursor(); configSlider(); } catch (e) {} }
+    try { renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, c))); try { anchorFromCursor(); configSlider(); } catch (e) {} }
     finally { _applyingRemoteScrub = false; }
     console.log('§TM_TL_IN cursor=' + Math.round(_cursor) + ' from=' + (t.surface || '?'));
   }
@@ -2437,10 +2437,10 @@
 
     // Transport buttons
     document.getElementById('tm-start-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectStart; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectStart); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-end-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectEnd; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectEnd); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-rev-btn').addEventListener('pointerup', function(e) {
       e.stopPropagation(); startPlayback(-1);
@@ -2620,8 +2620,7 @@
       var ti = Math.floor((e.clientY - rect.top - 4) / rowH);
       if (ti < 0 || ti >= V.phases.length) return;
       var p = V.phases[ti];
-      _cursor = p.winStart;
-      renderAtTime(_cursor);
+      renderAtTime(p.winStart);
       anchorFromCursor();
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
@@ -2634,8 +2633,7 @@
       var pct = Math.min(1, Math.max(0, x));
       var ts = _projectStart + pct * (_projectEnd - _projectStart);
       var bar = findBarAtClick(e);
-      _cursor = ts;
-      renderAtTime(_cursor);
+      renderAtTime(ts);
       anchorFromCursor();
       configSlider();
       if (bar) console.log('§GANTT_MINI_SEEK ts=' + Math.round(ts) + ' bar="' + bar.storey + '|' + bar.phase + '"');
@@ -2859,10 +2857,16 @@
 
     _gspRoll++;   // §GROUP_SPARK: one re-roll per playback tick ("randomize among themselves
                   // repeatedly until their duration is reached")
-    _cursor += _playDir * tickMs();
-    _cursor = Math.max(_projectStart, Math.min(_cursor, _projectEnd));
+    // §PERF_INCR_FIX: compute the target into a LOCAL var, not the global _cursor, before calling
+    // renderAtTime — renderAtTime reads _cursor itself to derive _prevCursor (the delta-skip
+    // window's lower bound). Pre-assigning _cursor here made _prevCursor==cursorMs on EVERY tick
+    // (zero-width window), so _tmHasEventIn found "no event" for every mesh and the delta path
+    // skipped the whole scene every tick once shadows stopped forcing full mode (Phase 2). Confirmed
+    // live: real playback log showed span=0h on every tick. renderAtTime sets the global _cursor
+    // itself once it has captured the true previous value — do not set it here first.
+    var _nextCursor = Math.max(_projectStart, Math.min(_cursor + _playDir * tickMs(), _projectEnd));
 
-    renderAtTime(_cursor);
+    renderAtTime(_nextCursor);
 
     // Update slider position during playback
     anchorFromCursor();
@@ -4291,12 +4295,11 @@
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
     console.log('§MOBILE_TM_TOGGLE method=setVisibleAt|setMatrixAt mobile=' + !!app._isMobile + ' dlod=' + !!app._useDlodPath);
-    _cursor = _projectEnd;
     _anchorDay = _days.length ? _days[_days.length - 1] : null;
     _anchorHr = 15;
     _panel.style.display = 'flex';
     switchMode('DAY');
-    renderAtTime(_cursor); // §S260c: initial render so Gantt + status populate immediately
+    renderAtTime(_projectEnd); // §S260c: initial render so Gantt + status populate immediately
     updateStatus();
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
@@ -4414,8 +4417,7 @@
             catch (e) { console.log('§TM_ORDER_JUMP deeplink-err ' + e); }
           } else if (tmParam === 'play') {
             // Jump to start then play forward
-            _cursor = _projectStart;
-            renderAtTime(_cursor);
+            renderAtTime(_projectStart);
             startPlayback(+1);
           }
         }
@@ -4463,8 +4465,7 @@
         if (ph === phaseName) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
       if (!isFinite(s)) { console.log('§TM_JUNCTURE miss phase="' + phaseName + '" (no ops in that phase)'); return false; }
-      _cursor = s;
-      renderAtTime(_cursor);
+      renderAtTime(s);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       // surface the cost story: open the ⚖ variance drawer (reads the twin) if it isn't already open — ONLY when
@@ -4499,8 +4500,7 @@
         if (og === guid) { op = _ops[i]; break; }
       }
       if (!op) { console.log('§TM_PINPOINT_JUMP miss guid="' + guid + '" (no op builds it)'); return false; }
-      _cursor = op.end_ts;                       // the instant it lands → present in the scene, the lead frontier
-      renderAtTime(_cursor);
+      renderAtTime(op.end_ts);                   // the instant it lands → present in the scene, the lead frontier
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                // couple the 5D cost story to the frozen frame (same as phase jump)
@@ -4558,16 +4558,16 @@
         var ph = (_ops[i].parameters || {}).phase || 'Architecture';
         if (ph === phase) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
-      var mode;
-      if (isFinite(s)) { _cursor = s; mode = 'phase'; }
+      var mode, _jumpTarget;
+      if (isFinite(s)) { _jumpTarget = s; mode = 'phase'; }
       else {                                                             // mode=projected: order finish → axis position
         var frac = 0.5;
         if (isFinite(info.spanMin) && isFinite(info.spanMax) && info.spanMax > info.spanMin && isFinite(info.end))
           frac = Math.max(0, Math.min(1, (info.end - info.spanMin) / (info.spanMax - info.spanMin)));
-        _cursor = _projectStart + frac * (_projectEnd - _projectStart);
+        _jumpTarget = _projectStart + frac * (_projectEnd - _projectStart);
         mode = 'projected';
       }
-      renderAtTime(_cursor);
+      renderAtTime(_jumpTarget);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                                       // couple the 5D cost story (⚖ drawer)
