@@ -3129,6 +3129,10 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_SPIN_SEC = 2;      // the spin IS the search for the way out, not decoration
   var CINEMA_OUT_SEC  = 4;      // travel out through the chosen exit
   var CINEMA_RISE_SEC = 2;      // rise onto the orbit band / the 45° look-down
+  // §CINEMA_BEAT_OVERLAP: the turn-to-face-the-building starts blending in during the LAST
+  // CINEMA_TURN_OVERLAP fraction of the walk-out (Beat 3), reaching CINEMA_TURN_OVERLAP_MAX by the
+  // time the walk ends, so Beat 4 continues the turn rather than starting a fresh spin from zero.
+  var CINEMA_TURN_OVERLAP = 0.4, CINEMA_TURN_OVERLAP_MAX = 0.5;
   var CINEMA_EYE_M = 1.7;       // standing eye height above the floor actually under that point
   var CINEMA_LOOKDOWN_DEG = 45; // the exterior act's look-down angle
   var CINEMA_SUN_GUARD_DEG = 35;// Sun within this of the emergence heading → hold the look-down
@@ -3146,31 +3150,34 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_FLAT_HOLD_SEC = 5;    // the mandated minimum: dead flat for at least this long, always
   var CINEMA_DESCENT_MIN_SEC = 3;  // the glide itself is never instant, even when it has to start late
   var CINEMA_FLAT_TILT_DEG = 0;    // the ending's target — literally flat, per the user's own words
+  // §CINEMA_SUN_ORDER (2026-07-20 Phase 3 spec): the sun-first branch's mirror of CLIMB vs the
+  // sun-last branch's DESCENT — the climb after catching the reflection is never instant either.
+  var CINEMA_CLIMB_MIN_SEC = 3;
+  // §CINEMA_END_DECEL (overall "no abruptness" rule): the whole camera motion — not just tilt —
+  // eases to a stop in the final stretch instead of cutting while still actively orbiting.
+  var CINEMA_END_DECEL_SEC = 2;
   var CINEMA_FAN_RAYS = 32;     // BVH horizontal fan: "am I facing a wall / where is open"
   var CINEMA_FAN_FAR = 60;      // metres; no hit inside this = open in that bearing
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
   var CINEMA_ENCLOSED_THRESHOLD = 0.6; // BVH fan fraction that counts as "genuinely enclosed"
-  var CINEMA_INSIDE_FLOOR_GAP_MAX = 10; // metres: camera must be within this of the floor directly
-                                         // beneath it to count as "standing in a space" — otherwise
-                                         // the downward raycast tunnelled through a roof gap/skylight
-                                         // to a distant unrelated slab (measured live: a roof-top start
-                                         // over an opening snapped clean through to the ground slab,
-                                         // ~35m below, which is NOT "already inside", it's on the roof)
   // Exit cost = dist × (1 − FACE_GAIN·facingDot) × perimFactor. facingDot=+1 (door dead ahead) →
-  // 0.2×dist; facingDot=−1 (door behind you) → 1.8×dist — a 9× swing, so a door behind you must be
-  // nearly an order of magnitude nearer to win. This asymmetry is the entire "myriad of paths"
-  // mechanism: two poses at the SAME spot facing different ways must pick DIFFERENT doors.
-  // MEASURED, not guessed: at 0.3 the swing was only ±30% and proximity drowned it completely —
-  // Hospital picked the SAME door from all 6 test poses, Terminal only 2 distinct across 6, i.e.
-  // the feature was not working. 0.8 is what makes heading actually steer the film while proximity
-  // still breaks ties among doors that are similarly in front of you. If this is ever lowered
-  // again, re-run the exit-divergence probe — a low gain silently collapses the whole feature.
-  var CINEMA_EXIT_FACE_GAIN = 0.8;
+  // (1-GAIN)×dist; facingDot=−1 (door behind you) → (1+GAIN)×dist. This asymmetry is the entire
+  // "myriad of paths" mechanism: two poses at the SAME spot facing different ways can pick DIFFERENT
+  // doors. MEASURED, not guessed: at 0.3 the swing was only ±30% and proximity drowned it completely
+  // — Hospital picked the SAME door from all 6 test poses, Terminal only 2 distinct across 6.
+  // §CINEMA_TRAVEL_CLASS split (2026-07-20, Phase 2 spec): GRACEFUL keeps the measured 0.8 (heading
+  // genuinely steers — do not lower this one without re-running the exit-divergence probe, a low
+  // gain silently collapses the whole feature). RUSHED is deliberately proximity-dominant — "for
+  // those just rushing to it... short of time" — the nearest door wins outright regardless of
+  // facing; this is an intentional, separate mode for the travelled-to-target case, not a
+  // regression of the graceful one.
+  var CINEMA_EXIT_FACE_GAIN_GRACEFUL = 0.8;
+  var CINEMA_EXIT_FACE_GAIN_RUSHED = 0.1;
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v7 (§CINEMA_FLAT_ENDING — single monotonic glide to level, no dip-and-recover)';
+  var EFFECTS_V = 'v8 (§CINEMA_SPACE simplified to largest-only, §CINEMA_SUN_ORDER sunFirst/sunLast, §CINEMA_END_DECEL, §CINEMA_BEAT_OVERLAP)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3246,20 +3253,6 @@ async function setupEffects(A, renderer, scene, camera) {
     try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return null; }
     return (hits && hits.length) ? hits[0].point.y : null;
   }
-  // §CINEMA_SPACE floor-level preference (R2 fix, 2026-07-20): "largest enclosed" alone picks the
-  // roof attic/plant volume on Terminal and Hospital — an enclosed space is not necessarily the
-  // hero space. z is the space's own zLevelFrac = (centreZ - buildingZmin)/(buildingZmax-buildingZmin),
-  // NEVER the storey stack (slab-stack(46) mezzanine bug makes storey index useless). Peaks across
-  // the low-to-mid band where a ground/main-level concourse sits; falls off steeply toward the roof
-  // (the repeatedly-reported bug) and gently toward the very bottom (a legitimate slab-level ground
-  // floor still centres around z≈0.05-0.1, so the bottom taper must not crush it too).
-  function _cinemaFloorLevelWeight(z) {
-    z = Math.max(0, Math.min(1, z));
-    var top = (z <= 0.55) ? 1 : Math.max(0.03, 1 - (z - 0.55) / 0.35);
-    var bot = (z >= 0.06) ? 1 : Math.max(0.25, z / 0.06);
-    return top * bot;
-  }
-
   // §CINEMA_PATH: the ONE shared path plan — flown identically by the live Alt+C capture and by
   // the MaxQ exporter (cinema_maxq.js). Everything derives from the CURRENT camera/sun/building at
   // call time; nothing is hardcoded per building.
@@ -3335,114 +3328,78 @@ async function setupEffects(A, renderer, scene, camera) {
     var yaw0 = Math.atan2(_dir0.z, _dir0.x);
     var pitch0 = Math.asin(Math.max(-1, Math.min(1, _dir0.y)));
 
-    // ══ §CINEMA_SPACE — already-inside short-circuit (R2 fix, 2026-07-20 user ruling) ═══════════
-    // "The orbit does look for nearest largest area which hits the roof attic area when it is
-    // looking into the hall. Thus if u are there, then dont look for the next. Only when outside...
-    // simply avoid [attic/basement]." If the camera's OWN position is already inside a genuinely
-    // enclosed space, settle there — the largest-space search below is only for an outside/on-top
-    // start with no containing space.
-    var camIfc0 = _cinemaThree2Ifc(camPos0.x, camPos0.y, camPos0.z);
-    var zSpan0 = arcBbox ? Math.max(1e-3, arcBbox.zMax - arcBbox.zMin) : 1;
-    var zLevelFrac0 = (camIfc0 && arcBbox) ? Math.max(0, Math.min(1, (camIfc0.iz - arcBbox.zMin) / zSpan0)) : 0.5;
-    var fy0 = _cinemaFloorY(camPos0.x, camPos0.z, camPos0.y + 2.5);
-    if (fy0 === null) fy0 = _cinemaFloorY(camPos0.x, camPos0.z, camPos0.y + 25);
-    // A near-floor gap does NOT mean "already inside" — measured live on Terminal: a roof-top start
-    // placed over a skylight/gap tunnelled clean through to the GROUND slab ~35m below, which read as
-    // 100% enclosed down there but the camera was never near it. "Already inside" requires the floor
-    // actually be under the camera, not just any floor the ray eventually hit.
-    var floorGap0 = (fy0 === null) ? Infinity : Math.abs(camPos0.y - fy0);
-    var st0 = { x: camPos0.x, y: (fy0 === null ? camPos0.y : fy0) + CINEMA_EYE_M, z: camPos0.z };
-    var fan0 = _cinemaFan(st0, CINEMA_FAN_RAYS);
-    var hit0 = 0;
-    for (var fi0 = 0; fi0 < fan0.free.length; fi0++) if (fan0.free[fi0] < CINEMA_FAN_FAR - 0.01) hit0++;
-    var frac0 = hit0 / fan0.free.length;
-    var alreadyInside = frac0 >= CINEMA_ENCLOSED_THRESHOLD && floorGap0 < CINEMA_INSIDE_FLOOR_GAP_MAX;
+    // ══ §CINEMA_SPACE — largest interior space, ALWAYS searched (2026-07-20 user ruling: "abandon
+    // the 'next largest room' idea... It is disastrous for sure. Just back to original 'go to
+    // largest space within 4 sec'. Let user play with it"). No floor-level weighting, no multi-
+    // candidate iteration — rank ALL real rooms once by the ORIGINAL area/centrality formula
+    // ("largest space NEAREST TO the centre" beats the strict geometric centre — the centroid can
+    // land in a service core on a big building), take the single top-ranked room, one enclosure
+    // sanity check (never dive into literal open sky, e.g. a roof terrace), fall straight to
+    // bbox-centre if that fails — no search through alternates. If the camera happens to already be
+    // standing in the chosen room, the ease-in below is naturally a near-no-op: no special
+    // "already inside" branch is needed, it falls out of the general case for free (this is also
+    // WHY "already inside" and "go to the largest space" are not in tension, despite reading that
+    // way at first — settling in place is just what "go to the largest space" does when you're
+    // already there).
+    var roomGraph = null;
+    try { roomGraph = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null; } catch (eG) { roomGraph = null; }
+    var spaceCands = [];
+    if (roomGraph && roomGraph.nodesByGuid && arcBbox) {
+      var ctrIx = (arcBbox.xMin + arcBbox.xMax) / 2, ctrIy = (arcBbox.yMin + arcBbox.yMax) / 2;
+      for (var rk in roomGraph.nodesByGuid) {
+        var rn = roomGraph.nodesByGuid[rk];
+        if (!rn || rn.kind !== 'room' || !rn.rects || !rn.rects.length) continue;
+        var ar = 0;
+        for (var ri = 0; ri < rn.rects.length; ri++)
+          ar += Math.abs(rn.rects[ri].x1 - rn.rects[ri].x0) * Math.abs(rn.rects[ri].y1 - rn.rects[ri].y0);
+        if (!(ar > 0)) continue;
+        var dCtr = Math.hypot(rn.cx - ctrIx, rn.cy - ctrIy);
+        spaceCands.push({ guid: rn.guid, name: rn.name || rn.guid, area: ar, dCtr: dCtr,
+                          ifc: { ix: rn.cx, iy: rn.cy, iz: rn.cz },
+                          score: ar / (1 + dCtr / Math.max(1, envelope * 0.5)) });
+      }
+      spaceCands.sort(function(a, b) { return b.score - a.score; });
+    }
+    var bboxCentre = arcBbox ? { guid: 'bbox-centre', name: 'bbox-centre', area: 0, dCtr: 0, score: -1,
+      ifc: { ix: (arcBbox.xMin + arcBbox.xMax) / 2, iy: (arcBbox.yMin + arcBbox.yMax) / 2,
+             iz: arcBbox.zMin + (arcBbox.zMax - arcBbox.zMin) * 0.15 } } : null;
+    var topCand = spaceCands.length ? spaceCands[0] : bboxCentre;
 
     var diveIfc = null, diveName = 'centre', diveArea = 0, diveSrc = 'bbox-centre';
-    var dive3 = null, floorY = null, settle = null, fan = null, nudgeL = 0;
-    var enclosedFrac = 0, triedSpaces = 0, rejectedOpen = [];
+    var dive3 = null, floorY = null, settle = null, fan = null, nudgeL = 0, enclosedFrac = 0;
 
-    if (alreadyInside) {
-      diveIfc = camIfc0; diveName = 'already-inside'; diveArea = 0; diveSrc = 'already-inside';
-      dive3 = { x: camPos0.x, y: camPos0.y, z: camPos0.z };
-      floorY = fy0; settle = { x: st0.x, y: st0.y, z: st0.z }; fan = fan0; enclosedFrac = frac0;
-      console.log('§CINEMA_SPACE cand=already-inside area=n/a zLevelFrac=' + zLevelFrac0.toFixed(3) +
-        ' enclosed=' + (frac0 * 100).toFixed(0) + '% floorGap=' + floorGap0.toFixed(1) +
-        'm chosen=true (settled — no search, per already-inside rule)');
-    } else {
-      // ══ The dive target: the LARGEST INTERIOR SPACE NEAREST THE CENTRE, AT FLOOR LEVEL ═══════
-      // "Largest space NEAREST TO the centre" beats the strict geometric centre — on a big building
-      // the centroid can land in a service core, and the beat has to land somewhere that reads as a
-      // space. Rank the building's REAL rooms (IfcSpace rects from the room graph — extracted, never
-      // invented) by area discounted by distance from the centre AND by floor-level-ness
-      // (_cinemaFloorLevelWeight, R2 fix — zLevelFrac from the space's OWN Z, never the storey
-      // stack). No minimum-size gate and no skip path: every film dives, on every building, per
-      // §CINEMA_SIMPLE decision 3 — floor-level only re-ranks which space, it never skips the dive.
-      var roomGraph = null;
-      try { roomGraph = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null; } catch (eG) { roomGraph = null; }
-      var spaceCands = [];
-      if (roomGraph && roomGraph.nodesByGuid && arcBbox) {
-        var ctrIx = (arcBbox.xMin + arcBbox.xMax) / 2, ctrIy = (arcBbox.yMin + arcBbox.yMax) / 2;
-        for (var rk in roomGraph.nodesByGuid) {
-          var rn = roomGraph.nodesByGuid[rk];
-          if (!rn || rn.kind !== 'room' || !rn.rects || !rn.rects.length) continue;
-          var ar = 0;
-          for (var ri = 0; ri < rn.rects.length; ri++)
-            ar += Math.abs(rn.rects[ri].x1 - rn.rects[ri].x0) * Math.abs(rn.rects[ri].y1 - rn.rects[ri].y0);
-          if (!(ar > 0)) continue;
-          var dCtr = Math.hypot(rn.cx - ctrIx, rn.cy - ctrIy);
-          var zLevelFrac = Math.max(0, Math.min(1, (rn.cz - arcBbox.zMin) / zSpan0));
-          var flw = _cinemaFloorLevelWeight(zLevelFrac);
-          spaceCands.push({ guid: rn.guid, name: rn.name || rn.guid, area: ar, dCtr: dCtr, zLevelFrac: zLevelFrac,
-                            ifc: { ix: rn.cx, iy: rn.cy, iz: rn.cz },
-                            score: (ar / (1 + dCtr / Math.max(1, envelope * 0.5))) * flw });
-        }
-        spaceCands.sort(function(a, b) { return b.score - a.score; });
-      }
-      if (arcBbox) spaceCands.push({ guid: 'bbox-centre', name: 'bbox-centre', area: 0, dCtr: 0, score: -1, zLevelFrac: 0.15,
-        ifc: { ix: (arcBbox.xMin + arcBbox.xMax) / 2, iy: (arcBbox.yMin + arcBbox.yMax) / 2,
-               iz: arcBbox.zMin + (arcBbox.zMax - arcBbox.zMin) * 0.15 } });
-      // ENCLOSURE TEST — the BVH fan is what makes "largest INTERIOR space" mean something. Measured
-      // on Duplex: the top-scoring IfcSpace by area×centrality was a 135m² ROOF TERRACE whose fan
-      // reported 32/32 bearings clear to the 60m horizon — outdoors, not a room. Measured on Terminal
-      // and Hospital (R2): enclosed alone still picked a roof attic/plant volume — the floor-level
-      // weight above is what keeps that candidate off the top of the shortlist in the first place.
-      // Evaluate the top few candidates with a real fan and take the best-scoring one that is
-      // actually ENCLOSED (majority of bearings hit geometry). If none is — a building with no
-      // interior at all — the top scorer is still used: no minimum-size gate, no skip path.
-      var spaceCandLog = [];
-      for (var ci2 = 0; ci2 < Math.min(spaceCands.length, 6); ci2++) {
-        var cand = spaceCands[ci2];
-        triedSpaces++;
-        var c3 = A.ifc2three(cand.ifc.ix, cand.ifc.iy, cand.ifc.iz);
-        // Eye level = the REAL floor under that point + 1.7m, from a downward raycast against
-        // rendered triangles. Cast from just above the space's own elevation so a multi-storey
-        // building resolves THIS storey's slab rather than the roof.
-        var fy = _cinemaFloorY(c3.x, c3.z, c3.y + 2.5);
-        if (fy === null) fy = _cinemaFloorY(c3.x, c3.z, c3.y + 25);
-        if (fy === null && arcBbox) fy = A.ifc2three(0, 0, arcBbox.zMin).y;
-        var st = { x: c3.x, y: (fy === null ? c3.y : fy) + CINEMA_EYE_M, z: c3.z };
-        var f = _cinemaFan(st, CINEMA_FAN_RAYS);
-        var hit = 0;
-        for (var fi = 0; fi < f.free.length; fi++) if (f.free[fi] < CINEMA_FAN_FAR - 0.01) hit++;
-        var frac = hit / f.free.length;
-        spaceCandLog.push({ guid: cand.guid, name: cand.name, area: cand.area, zLevelFrac: cand.zLevelFrac, enclosedFrac: frac });
-        if (!settle || frac > enclosedFrac) {   // remember the most-enclosed one seen so far
-          diveIfc = cand.ifc; diveName = cand.name; diveArea = cand.area;
-          diveSrc = (cand.score < 0) ? 'bbox-centre' : 'room-graph';
-          dive3 = c3; floorY = fy; settle = { x: st.x, y: st.y, z: st.z }; fan = f; enclosedFrac = frac;
-        }
-        if (frac >= CINEMA_ENCLOSED_THRESHOLD) break; // genuinely enclosed — take it, best-scoring such
-        rejectedOpen.push(cand.name + '@' + (frac * 100).toFixed(0) + '%');
-      }
-      if (!settle) { settle = { x: pivot.x, y: pivot.y, z: pivot.z }; fan = _cinemaFan(settle, CINEMA_FAN_RAYS); }
-      for (var sl = 0; sl < spaceCandLog.length; sl++) {
-        var sc = spaceCandLog[sl];
-        console.log('§CINEMA_SPACE cand=' + sc.guid + ' area=' + sc.area.toFixed(1) +
-          ' zLevelFrac=' + sc.zLevelFrac.toFixed(3) + ' enclosed=' + (sc.enclosedFrac * 100).toFixed(0) + '%' +
-          ' chosen=' + (sc.name === diveName));
+    function _cinemaEvalCand(cand) {
+      var c3 = A.ifc2three(cand.ifc.ix, cand.ifc.iy, cand.ifc.iz);
+      var fy = _cinemaFloorY(c3.x, c3.z, c3.y + 2.5);
+      if (fy === null) fy = _cinemaFloorY(c3.x, c3.z, c3.y + 25);
+      if (fy === null && arcBbox) fy = A.ifc2three(0, 0, arcBbox.zMin).y;
+      var st = { x: c3.x, y: (fy === null ? c3.y : fy) + CINEMA_EYE_M, z: c3.z };
+      var f = _cinemaFan(st, CINEMA_FAN_RAYS);
+      var hit = 0;
+      for (var fi = 0; fi < f.free.length; fi++) if (f.free[fi] < CINEMA_FAN_FAR - 0.01) hit++;
+      return { c3: c3, fy: fy, st: st, f: f, frac: hit / f.free.length };
+    }
+
+    if (topCand) {
+      var ev = _cinemaEvalCand(topCand);
+      console.log('§CINEMA_SPACE cand=' + topCand.guid + ' area=' + topCand.area.toFixed(1) +
+        ' enclosed=' + (ev.frac * 100).toFixed(0) + '% chosen=' + (ev.frac >= CINEMA_ENCLOSED_THRESHOLD || topCand === bboxCentre));
+      if (ev.frac >= CINEMA_ENCLOSED_THRESHOLD || topCand === bboxCentre) {
+        diveIfc = topCand.ifc; diveName = topCand.name; diveArea = topCand.area;
+        diveSrc = (topCand === bboxCentre) ? 'bbox-centre' : 'room-graph';
+        dive3 = ev.c3; floorY = ev.fy; settle = { x: ev.st.x, y: ev.st.y, z: ev.st.z }; fan = ev.f; enclosedFrac = ev.frac;
+      } else if (bboxCentre) {
+        // Top candidate failed the sanity check (open sky, e.g. a roof terrace) — straight to
+        // bbox-centre, no search through alternates (that search IS the "disastrous" behaviour
+        // being abandoned here).
+        var evB = _cinemaEvalCand(bboxCentre);
+        diveIfc = bboxCentre.ifc; diveName = 'bbox-centre'; diveArea = 0;
+        diveSrc = 'bbox-centre (top candidate "' + topCand.name + '" not enclosed)';
+        dive3 = evB.c3; floorY = evB.fy; settle = { x: evB.st.x, y: evB.st.y, z: evB.st.z }; fan = evB.f; enclosedFrac = evB.frac;
+        console.log('§CINEMA_SPACE cand=bbox-centre area=0.0 enclosed=' + (evB.frac * 100).toFixed(0) + '% chosen=true (fallback)');
       }
     }
+    if (!settle) { settle = { x: pivot.x, y: pivot.y, z: pivot.z }; fan = _cinemaFan(settle, CINEMA_FAN_RAYS); }
     // BVH fan nudge: slide toward the open side so we land in the MIDDLE of the space rather than
     // against a wall. Bounded, so it can never wander out of the room. When the pose is nose-to-a-
     // wall this IS the "backing away" the spec asks for.
@@ -3454,16 +3411,23 @@ async function setupEffects(A, renderer, scene, camera) {
     // "Facing a wall" is not a branch — it is just a short free-distance along yaw0, reported so a
     // pasted console shows WHY the opening backed away. The nudge above IS the backing-away.
     var wallIdx = Math.round(((yaw0 % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI) * fan.rays) % fan.rays;
+    // §CINEMA_TRAVEL_CLASS (2026-07-20 user spec, Phase 2): whether a real dive happened (settle far
+    // from where the camera started) governs the exit-choice mood downstream — "for those just
+    // rushing to it... short of time" (nearest, quick) vs "already there... you have time" (graceful,
+    // prefer the facing-matched exit). A near-zero diveDist means "already there" for free — no
+    // special-case detection needed, see the §CINEMA_SPACE comment above.
+    var diveDist = Math.hypot(settle.x - camPos0.x, settle.y - camPos0.y, settle.z - camPos0.z);
+    var CINEMA_TRAVEL_THRESHOLD_M = 3;
+    var hadToTravel = diveDist > CINEMA_TRAVEL_THRESHOLD_M;
     console.log('§CINEMA_DIVE src=' + diveSrc + ' space="' + diveName + '" areaM2=' + diveArea.toFixed(1) +
       ' settle=(' + settle.x.toFixed(1) + ',' + settle.y.toFixed(1) + ',' + settle.z.toFixed(1) + ')' +
       ' floorY=' + (floorY === null ? 'n/a' : floorY.toFixed(2)) + ' eye=' + CINEMA_EYE_M +
       ' fanMin=' + fan.min.toFixed(1) + ' fanMax=' + fan.max.toFixed(1) + ' fanMean=' + fan.mean.toFixed(1) +
       ' openBearing=' + (fan.maxBearing * 180 / Math.PI).toFixed(0) + '°' +
       ' facingFree=' + fan.free[wallIdx].toFixed(1) + ' nudge=' + Math.min(nudgeL, CINEMA_FAN_NUDGE_MAX).toFixed(2) + 'm' +
-      ' enclosed=' + (enclosedFrac * 100).toFixed(0) + '% tried=' + triedSpaces +
-      ' rejectedOpen=[' + rejectedOpen.join(',') + ']' +
+      ' enclosed=' + (enclosedFrac * 100).toFixed(0) + '%' +
       ' yaw0=' + (yaw0 * 180 / Math.PI).toFixed(1) + '° pitch0=' + (pitch0 * 180 / Math.PI).toFixed(1) + '°' +
-      ' diveDist=' + Math.hypot(settle.x - camPos0.x, settle.y - camPos0.y, settle.z - camPos0.z).toFixed(1) + 'm');
+      ' diveDist=' + diveDist.toFixed(1) + 'm');
 
     // ══ §CINEMA_EXIT — chosen at the 4-second mark by POSITION **and** FACING ══════════════════
     // WAS: one global `entrance = widest-ground-door` for the whole building — every film on a
@@ -3514,7 +3478,8 @@ async function setupEffects(A, renderer, scene, camera) {
         var half = Math.max(1, Math.min(arcBbox.xMax - arcBbox.xMin, arcBbox.yMax - arcBbox.yMin) / 2);
         perim = 1 + Math.max(0, Math.min(1, edge / half));   // on the edge → 1.0, dead centre → 2.0
       }
-      var cost = xd * (1 - CINEMA_EXIT_FACE_GAIN * facingDot) * perim;
+      var faceGain = hadToTravel ? CINEMA_EXIT_FACE_GAIN_RUSHED : CINEMA_EXIT_FACE_GAIN_GRACEFUL;
+      var cost = xd * (1 - faceGain * facingDot) * perim;
       var rec = { guid: exitCands[xi].guid, name: exitCands[xi].name, p: xp, dist: xd,
                   bearing: xb, facingDot: facingDot, perim: perim, cost: cost };
       exitScored.push(rec);
@@ -3536,7 +3501,8 @@ async function setupEffects(A, renderer, scene, camera) {
       chosenExit.dist.toFixed(1) + ' facingDot=' + chosenExit.facingDot.toFixed(3) +
       ' perimFactor=' + (chosenExit.perim || 1).toFixed(2) + ' cost=' +
       chosenExit.cost.toFixed(1) + ' src=' + exitSrc + ' candidates=' + exitScored.length +
-      ' runnerUp=' + (exitScored[1] ? exitScored[1].guid + '@' + exitScored[1].cost.toFixed(1) : 'none'));
+      ' runnerUp=' + (exitScored[1] ? exitScored[1].guid + '@' + exitScored[1].cost.toFixed(1) : 'none') +
+      ' hadToTravel=' + hadToTravel + ' diveDist=' + diveDist.toFixed(1) + 'm mood=' + (hadToTravel ? 'rushed' : 'graceful'));
 
     // Route out: ride the building's OWN room/corridor graph when it has one (wall-legal, the same
     // RoomGraph the Fly tour uses); straight line otherwise — then a wall clip is the model's data
@@ -3601,36 +3567,46 @@ async function setupEffects(A, renderer, scene, camera) {
     var dYaw = spinTo - yaw0;
     while (dYaw > Math.PI) dYaw -= 2 * Math.PI;
     while (dYaw < -Math.PI) dYaw += 2 * Math.PI;
-    // "manage to make a SPIN to find back exit" — the spin is the SEARCH. If the exit happens to be
-    // nearly straight ahead there is no search to show, so sweep the full room once in the same
-    // direction and arrive on the same bearing. Never unwinds; monotonic by construction.
-    if (Math.abs(dYaw) < Math.PI * 2 / 3) dYaw += (dYaw >= 0 ? 1 : -1) * 2 * Math.PI;
+    // §CINEMA_SPIN_MOTIVATED (2026-07-20 Phase 2 spec — replaces the old "always extend small
+    // angles into a full lap" rule): a turn must be MOTIVATED, never forced. User: "if it is facing
+    // the nearest exit, [skip the spin, glide straight there]... if the nearest is behind then turn
+    // around to it, helps shows around the place." Three cases, by how far off yaw0 already is from
+    // the exit's own approach bearing:
+    //   - already facing it (within CINEMA_FACING_SKIP_DEG) → no turn at all, dYaw=0. Beat 2 still
+    //     plays for its time budget but with no rotation — a graceful settle, not a forced spin.
+    //   - roughly BEHIND (beyond CINEMA_BEHIND_DEG) → turn the LONG way around (the old "extend to a
+    //     full lap" behaviour survives here specifically, since a longer sweep IS what "helps shows
+    //     around the place" for this case).
+    //   - anywhere in between → turn directly, no artificial extension.
+    var CINEMA_FACING_SKIP_DEG = 20, CINEMA_BEHIND_DEG = 120;
+    var dYawAbsDeg = Math.abs(dYaw) * 180 / Math.PI;
+    if (dYawAbsDeg < CINEMA_FACING_SKIP_DEG) {
+      dYaw = 0;
+    } else if (dYawAbsDeg > CINEMA_BEHIND_DEG) {
+      dYaw += (dYaw >= 0 ? 1 : -1) * 2 * Math.PI;
+    }
+    console.log('§CINEMA_SPIN dYawRawDeg=' + dYawAbsDeg.toFixed(1) + ' class=' +
+      (dYawAbsDeg < CINEMA_FACING_SKIP_DEG ? 'already-facing(no-spin)' : dYawAbsDeg > CINEMA_BEHIND_DEG ? 'behind(full-lap)' : 'direct-turn') +
+      ' finalSpinDeg=' + (dYaw * 180 / Math.PI).toFixed(1));
 
-    // ══ The exterior act: 45° look-down, HELD if the Sun sits on that heading ══════════════════
+    // ══ The exterior act — SHAPE depends on whether the Sun-crossing falls in the first or second
+    // half of the loop (2026-07-20 Phase 3 spec, user): "a different angle outside will determine
+    // if the Sun reflect is happening first or last. If first stay eye level to catch the reflect.
+    // Then raise cam to see from above the closing sec rotation of the building. If last, then rise
+    // gracefully but catch the reflecting Sun to end, which last 2 sec should slow down not abrupt
+    // stop." exitAz (hence swoopU) is an emergent consequence of the chosen exit, itself driven by
+    // where the user started/faced — this IS the "angle of start correlates dynamically" lever. ══
     var exitAz = Math.atan2(exitOuter.z - pivot.z, exitOuter.x - pivot.x);
     var sunAz = A.sun ? Math.atan2(A.sun.position.z - pivot.z, A.sun.position.x - pivot.x) : exitAz + Math.PI;
-    var sunDelta = exitAz - sunAz;
-    while (sunDelta > Math.PI) sunDelta -= 2 * Math.PI;
-    while (sunDelta < -Math.PI) sunDelta += 2 * Math.PI;
-    var sunGuardRad = CINEMA_SUN_GUARD_DEG * Math.PI / 180;
-    var sunHold = Math.abs(sunDelta) < sunGuardRad;
     var lookdownTilt = Math.max(tiltMin, Math.min(tiltMax, CINEMA_LOOKDOWN_DEG * Math.PI / 180));
-    // Hold = do not climb into the look-down while the Sun is in that heading; take it "right
-    // after", i.e. once the orbit has carried us the guard angle past the Sun.
-    var holdU = sunHold ? Math.min(0.35, (sunGuardRad - Math.abs(sunDelta) + sunGuardRad) / (2 * Math.PI)) : 0;
+    var flatTiltRad = THREE.MathUtils.degToRad(CINEMA_FLAT_TILT_DEG);
     var orbitRadius = Math.max(radiusMin, Math.min(radiusMax, fillDistance));
-    var entryTilt = sunHold ? Math.max(tiltMin, lookdownTilt * 0.35) : lookdownTilt;
-    console.log('§CINEMA_SUN exitAz=' + (exitAz * 180 / Math.PI).toFixed(1) + '° sunAz=' +
-      (sunAz * 180 / Math.PI).toFixed(1) + '° delta=' + (sunDelta * 180 / Math.PI).toFixed(1) +
-      '° guard=' + CINEMA_SUN_GUARD_DEG + '° hold=' + sunHold + ' holdU=' + holdU.toFixed(3) +
-      ' lookdown=' + (lookdownTilt * 180 / Math.PI).toFixed(1) + '° entryTilt=' +
-      (entryTilt * 180 / Math.PI).toFixed(1) + '° orbitRadius=' + orbitRadius.toFixed(1));
 
     // ══ Beat boundaries, in normalized time. Fixed SECONDS, so a longer film gets a longer orbit,
     // never a longer dive (§CINEMA_SIMPLE: the dive is time-boxed at 4s and must not be clamped).
-    // Computed BEFORE _orbitPose (moved up from after it, R3 fix) because the swoop window below
-    // needs tR + durationSec to convert its SECONDS half-width into the orbit's own u-domain, and
-    // _orbitPose(0) is called immediately below to seed the Beat 4 handoff target. ══════════════
+    // Computed BEFORE _orbitPose because loopSec (needed to convert the swoop/hold/descent SECONDS
+    // constants into this act's own u-domain) depends on tR, and _orbitPose(0) is called immediately
+    // after to seed the Beat 4 handoff target. ═══════════════════════════════════════════════════
     var tD = Math.min(0.30, CINEMA_DIVE_SEC / durationSec);
     var tS = Math.min(0.42, tD + CINEMA_SPIN_SEC / durationSec);
     var tO = Math.min(0.62, tS + CINEMA_OUT_SEC / durationSec);
@@ -3640,51 +3616,104 @@ async function setupEffects(A, renderer, scene, camera) {
       ' waypoints=' + outWp.length + ' pathLen=' + totalLen.toFixed(1) +
       ' spinDeg=' + Math.round(dYaw * 180 / Math.PI));
 
-    // ══ §CINEMA_FLAT_ENDING (R3 redesign, 2026-07-20 — replaces the dip-and-recover swoop; user:
-    // "the last part of orbit... should go last 5 secs at least to be flat eye level without the
-    // wobble... from above then level then back above is not cinematic smooth"). swoopU is still
-    // where the orbit's azimuth crosses the Sun's (unchanged formula — an emergent consequence of
-    // the chosen exit, itself driven by where the user started/faced, per §CINEMA_EXIT); what's new
-    // is that it now marks where a SINGLE monotonic glide to flat BEGINS, never where a dip recovers
-    // from. loopSec/flatHoldU/descentMinU convert the fixed SECONDS constants into this act's own
-    // u-domain, same pattern as the old swoopHalfU conversion.
     var loopSec = Math.max(1e-3, (1 - tR) * durationSec);
     var swoopU = (((sunAz - exitAz) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI);
+    var sunFirst = swoopU < 0.5;
     var flatHoldU = Math.min(0.45, CINEMA_FLAT_HOLD_SEC / loopSec);
     var descentMinU = Math.min(0.30, CINEMA_DESCENT_MIN_SEC / loopSec);
-    var flatTiltRad = THREE.MathUtils.degToRad(CINEMA_FLAT_TILT_DEG);
-    var holdStartU = 1 - flatHoldU;
-    // The descent starts AT the Sun-crossing when there's room for both the minimum glide and the
-    // mandated hold afterward ("catch the Sun" folded into the start of the glide down); otherwise it
-    // starts as late as that room allows — still monotonic, still ends flat with the full hold, just
-    // without the Sun necessarily lining up ("Catch the Sun is luck", per the user's own framing).
-    var latestDescentStartU = Math.max(holdU, holdStartU - descentMinU);
-    var descentStartU = Math.max(holdU, Math.min(swoopU, latestDescentStartU));
-    var caughtSun = Math.abs(swoopU - descentStartU) < 1e-6;
-    console.log('§CINEMA_FLAT_ENDING swoopU=' + swoopU.toFixed(3) + ' (~' + (swoopU * loopSec).toFixed(1) +
-      's) descentStartU=' + descentStartU.toFixed(3) + ' (~' + (descentStartU * loopSec).toFixed(1) +
-      's) holdStartU=' + holdStartU.toFixed(3) + ' (~' + (holdStartU * loopSec).toFixed(1) +
-      's) loopSec=' + loopSec.toFixed(1) + ' caughtSun=' + caughtSun + ' flatTiltDeg=' + CINEMA_FLAT_TILT_DEG);
+    var climbMinU = Math.min(0.30, CINEMA_CLIMB_MIN_SEC / loopSec);
+    var entryTilt, holdU = 0, descentStartU = 1, holdStartU = 1, climbStartU = 0, climbEndU = 0, caughtSun;
+
+    if (sunFirst) {
+      // Start FLAT (catch the reflection right away — the camera is flat from u=0 straight through
+      // the crossing, not just an instant), THEN climb once to the look-down for the remainder,
+      // ending ELEVATED. No flat-ending descent in this branch; the "flat" beat already happened
+      // at the OPENING instead of the close.
+      entryTilt = flatTiltRad;
+      climbStartU = swoopU;
+      climbEndU = Math.min(0.95, climbStartU + climbMinU);
+      caughtSun = true;
+    } else {
+      // Rise gracefully early (the original sun-hold logic: don't climb into the look-down while
+      // the Sun sits near the EXIT heading, take it right after), cruise at look-down, then glide
+      // back DOWN to flat at the Sun-crossing as the finale (§CINEMA_FLAT_ENDING, R3 redesign —
+      // replaces the old dip-and-recover swoop; a SINGLE monotonic glide, never a dip that climbs
+      // back up). The descent starts AT the crossing when there's room for both the minimum glide
+      // and the mandated hold afterward; otherwise as late as that room allows — still monotonic,
+      // still ends flat with the full hold, just without the Sun necessarily lining up ("Catch the
+      // Sun is luck", per the user's own framing).
+      var sunDelta = exitAz - sunAz;
+      while (sunDelta > Math.PI) sunDelta -= 2 * Math.PI;
+      while (sunDelta < -Math.PI) sunDelta += 2 * Math.PI;
+      var sunGuardRad = CINEMA_SUN_GUARD_DEG * Math.PI / 180;
+      var sunHold = Math.abs(sunDelta) < sunGuardRad;
+      holdU = sunHold ? Math.min(0.35, (sunGuardRad - Math.abs(sunDelta) + sunGuardRad) / (2 * Math.PI)) : 0;
+      entryTilt = sunHold ? Math.max(tiltMin, lookdownTilt * 0.35) : lookdownTilt;
+      holdStartU = 1 - flatHoldU;
+      var latestDescentStartU = Math.max(holdU, holdStartU - descentMinU);
+      descentStartU = Math.max(holdU, Math.min(swoopU, latestDescentStartU));
+      caughtSun = Math.abs(swoopU - descentStartU) < 1e-6;
+    }
+    console.log('§CINEMA_SUN_ORDER exitAzDeg=' + (exitAz * 180 / Math.PI).toFixed(1) + ' sunAzDeg=' +
+      (sunAz * 180 / Math.PI).toFixed(1) + ' swoopU=' + swoopU.toFixed(3) + ' (~' + (swoopU * loopSec).toFixed(1) +
+      's) sunFirst=' + sunFirst + ' loopSec=' + loopSec.toFixed(1) + ' caughtSun=' + caughtSun +
+      ' entryTiltDeg=' + (entryTilt * 180 / Math.PI).toFixed(1) + ' lookdownDeg=' + (lookdownTilt * 180 / Math.PI).toFixed(1));
+    if (sunFirst) {
+      console.log('§CINEMA_RISE_ENDING climbStartU=' + climbStartU.toFixed(3) + ' (~' + (climbStartU * loopSec).toFixed(1) +
+        's) climbEndU=' + climbEndU.toFixed(3) + ' (~' + (climbEndU * loopSec).toFixed(1) + 's)');
+    } else {
+      console.log('§CINEMA_FLAT_ENDING descentStartU=' + descentStartU.toFixed(3) + ' (~' + (descentStartU * loopSec).toFixed(1) +
+        's) holdStartU=' + holdStartU.toFixed(3) + ' (~' + (holdStartU * loopSec).toFixed(1) +
+        's) flatTiltDeg=' + CINEMA_FLAT_TILT_DEG);
+    }
+
+    // §CINEMA_END_DECEL (2026-07-20, overall "no abruptness" rule): the film just CUTS at u=1 while
+    // the camera is still actively orbiting at a constant angular rate — that reads as the recording
+    // being cut off mid-move, not a deliberate close. Ease the azimuthal rate to zero over the final
+    // CINEMA_END_DECEL_SEC instead, so the whole camera motion (not just tilt) settles before the
+    // cut. f(t)=t+t^2-t^3 is the unique cubic with f(0)=0, f(1)=1, f'(0)=1, f'(1)=0 — it matches the
+    // constant rate=1 coming in from the linear portion and eases exactly to rate=0 by the end, so
+    // there is no kink at the window boundary, only at the (now motionless) very end.
+    var endDecelU = Math.min(0.25, CINEMA_END_DECEL_SEC / loopSec);
+    function _cinemaAzU(u) {
+      var u0 = 1 - endDecelU;
+      if (endDecelU <= 0 || u <= u0) return u;
+      var t = (u - u0) / endDecelU;
+      return u0 + endDecelU * (t + t * t - t * t * t);
+    }
 
     // ══ The standard ending: one plain orbit off the side we emerged on, with the classic wide
     // pull-back flourish. Same close for EVERY film (§CINEMA_SIMPLE decision 2 — the reciprocal
     // ending is retired). No handoff branch, hence no ~10.8m step. ═══════════════════════════════
     function _orbitPose(u) {
       u = Math.max(0, Math.min(1, u));
-      var az = exitAz + u * Math.PI * 2;
-      var tilt = entryTilt + (lookdownTilt - entryTilt) * (holdU > 0 ? _cinemaSmoothstep(u / holdU) : 1);
-      // §CINEMA_FLAT_ENDING: past descentStartU, ease MONOTONICALLY toward flat and hold — never a
-      // separate dip-and-recover. u<descentStartU is untouched (still cruising at lookdownTilt,
-      // modulo the initial climb above); u>=holdStartU is exactly flatTiltRad.
-      var ellOut = 1;
-      if (u > descentStartU) {
-        var descentW = _cinemaSmoothstep(Math.min(1, (u - descentStartU) / Math.max(1e-6, holdStartU - descentStartU)));
-        tilt = tilt + (flatTiltRad - tilt) * descentW;
-        ellOut = 1 - descentW;   // the radius wobble ramps OUT across the same glide, dead calm by the hold
+      var az = exitAz + _cinemaAzU(u) * Math.PI * 2;
+      var tilt, ellOut = 1;
+      if (sunFirst) {
+        if (u <= climbStartU) {
+          tilt = entryTilt;
+        } else if (u <= climbEndU) {
+          var climbW = _cinemaSmoothstep((u - climbStartU) / Math.max(1e-6, climbEndU - climbStartU));
+          tilt = entryTilt + (lookdownTilt - entryTilt) * climbW;
+        } else {
+          tilt = lookdownTilt;
+        }
+      } else {
+        tilt = entryTilt + (lookdownTilt - entryTilt) * (holdU > 0 ? _cinemaSmoothstep(u / holdU) : 1);
+        // §CINEMA_FLAT_ENDING: past descentStartU, ease MONOTONICALLY toward flat and hold — never a
+        // separate dip-and-recover. u<descentStartU is untouched; u>=holdStartU is exactly flatTiltRad.
+        if (u > descentStartU) {
+          var descentW = _cinemaSmoothstep(Math.min(1, (u - descentStartU) / Math.max(1e-6, holdStartU - descentStartU)));
+          tilt = tilt + (flatTiltRad - tilt) * descentW;
+          ellOut = 1 - descentW;   // the radius wobble ramps OUT across the same glide, dead calm by the hold
+        }
       }
       // Ellipse ramps in from exactly 0 at u=0 so the orbit begins precisely where the rise ended,
-      // and ramps back OUT (ellOut) across the final descent so the held ending isn't still wobbling.
-      var ell = 1 + CINEMA_ELLIPTICITY * _cinemaSmoothstep(u / 0.15) * ellOut * Math.cos(2 * (az - exitAz));
+      // ramps back OUT (ellOut) across the flat-ending glide (sunLast only — sunFirst has no
+      // equivalent damping need, its ending is elevated and the end-decel window below already
+      // calms the sweep), and is further damped by the universal end-deceleration window.
+      var endW = (u > 1 - endDecelU) ? Math.max(0, 1 - (u - (1 - endDecelU)) / endDecelU) : 1;
+      var ell = 1 + CINEMA_ELLIPTICITY * _cinemaSmoothstep(u / 0.15) * ellOut * endW * Math.cos(2 * (az - exitAz));
       var radius = orbitRadius * ell;
       if (u > CINEMA_PULLBACK_START) {
         var pb = _cinemaSmoothstep((u - CINEMA_PULLBACK_START) / (1 - CINEMA_PULLBACK_START));
@@ -3727,22 +3756,35 @@ async function setupEffects(A, renderer, scene, camera) {
         var ah = _outPos(Math.min(1, e3 + 0.06));
         if (Math.hypot(ah.x - p3.x, ah.z - p3.z) < 0.5) ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
         var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
+        var aheadTx = p3.x + (ah.x - p3.x) / ad * 20, aheadTy = p3.y + (ah.y - p3.y) / ad * 20, aheadTz = p3.z + (ah.z - p3.z) / ad * 20;
+        // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
+        // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
+        // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
+        // Beat 4's turn is a CONTINUATION picked up mid-blend, not a fresh spin starting from zero.
+        // Both this ramp-in and Beat 4's ramp-out use smoothstep, so the blend weight is continuous
+        // AND has matching (zero) slope at the tO boundary — no kink in the gaze direction.
+        var turnW3 = (e3 > 1 - CINEMA_TURN_OVERLAP)
+          ? _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP) * CINEMA_TURN_OVERLAP_MAX
+          : 0;
         return { x: p3.x, y: p3.y, z: p3.z,
-                 tx: p3.x + (ah.x - p3.x) / ad * 20, ty: p3.y + (ah.y - p3.y) / ad * 20,
-                 tz: p3.z + (ah.z - p3.z) / ad * 20 };
+                 tx: aheadTx + (pivot.x - aheadTx) * turnW3,
+                 ty: aheadTy + (pivot.y - aheadTy) * turnW3,
+                 tz: aheadTz + (pivot.z - aheadTz) * turnW3 };
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
         // on _orbitPose(0), which is what keeps the handoff continuous (the old Act III handoff
-        // did not, and measured a ~10.8m single-frame step at t≈0.80).
+        // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
+        // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
         var e4 = _cinemaSmoothstep((tNorm - tO) / Math.max(1e-6, tR - tO));
         var la = { x: exitOuter.x + odx * 20, y: exitOuter.y, z: exitOuter.z + odz * 20 };
+        var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
         return { x: exitOuter.x + (orbitStart.x - exitOuter.x) * e4,
                  y: exitOuter.y + (orbitStart.y - exitOuter.y) * e4,
                  z: exitOuter.z + (orbitStart.z - exitOuter.z) * e4,
-                 tx: la.x + (pivot.x - la.x) * e4,
-                 ty: la.y + (pivot.y - la.y) * e4,
-                 tz: la.z + (pivot.z - la.z) * e4 };
+                 tx: la.x + (pivot.x - la.x) * turnW4,
+                 ty: la.y + (pivot.y - la.y) * turnW4,
+                 tz: la.z + (pivot.z - la.z) * turnW4 };
       }
       // ── Beat 5: the standard ending.
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
@@ -3752,7 +3794,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // ANGLE/SwiftShader rig: Duplex ~20-70ms, Terminal/Hospital ~500-750ms — a one-off cost at the
     // moment Alt+C is pressed, before a 24s recording. Logged so a regression is visible, not guessed.
     console.log('§CINEMA_PLAN_MS ' + (((typeof performance !== 'undefined') ? performance.now() : 0) - _planT0).toFixed(1) +
-      ' (fanRays=' + CINEMA_FAN_RAYS + ' spacesTried=' + triedSpaces + ' exitCands=' + exitScored.length + ')');
+      ' (fanRays=' + CINEMA_FAN_RAYS + ' spaceCands=' + spaceCands.length + ' exitCands=' + exitScored.length + ')');
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
              pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
