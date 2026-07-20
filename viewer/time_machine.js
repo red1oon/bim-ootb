@@ -528,10 +528,11 @@
     for (var di = 0; di < discs.length; di++) {
       var disc = discs[di], drows = byDisc[disc];
       var color = app.DISC_COLORS[disc] || app.DEFAULT_COLOR;
-      // §4: solid, discipline-colored, slightly emissive — deliberately NOT the wireframe ghost
-      // look (_buildMergedGhost) so it reads as "not yet detailed" per feedback_no_fake_lod_unbreakable.md,
-      // matching the load-time placeholder's established visual language (streaming.js _drawBboxPlaceholders).
-      var mat = new THREE.MeshLambertMaterial({ color: color, emissive: color, emissiveIntensity: 0.15 });
+      // 2026-07-20 user testing on LTU (day159, 106K/122K placed): solid boxes read as a wholesale
+      // LOD400 loss the instant the toggle engages, not a graceful proxy — switched to wireframe
+      // (user ask) matching _drawBboxPlaceholders' actual established look (streaming.js:221),
+      // same as the load-time placeholder language feedback_no_fake_lod_unbreakable.md points at.
+      var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.4 });
       var im = new THREE.InstancedMesh(geo, mat, drows.length);
       im.frustumCulled = false;
       im.userData.isBboxPlaceholder = true; // §S260d proven pick-exclusion (picking.js:257) — same flag as load-time boxes
