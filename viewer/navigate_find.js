@@ -4220,6 +4220,24 @@
       console.log('[S233] §FIND_CLOSE restored=none kept=[' + _kept.join(',') + ']');
     }
     A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
+    // §CINEMA_GHOST_RESET (2026-07-21, broadened after user correction — the ghost shell can be
+    // visible for TWO independent reasons that don't track each other: auto-engaged by a Find-panel
+    // lens (_mgLensOwned=true, torn down by closeFindPanel/_setTreeMode/etc.) OR manually toggled via
+    // the Alt+Z 3-state cycle (tools.js `cycleXrayBboxMode` → `toggleMergedGhost`, which flips
+    // `_mergedGhost.visible` alone and NEVER touches `_mgLensOwned` — confirmed reading it directly).
+    // The original version of this fix only checked `_mgLensOwned`, so a manually-toggled-on ghost
+    // (e.g. cycled to Bbox mode via Alt+Z, or via the old Alt+X before it was merged into that cycle)
+    // survived into Alt+C untouched — likely the actual scenario hit live, since no Find-panel drill
+    // was involved. Fixed to key off VISIBILITY, not ownership — a cinematic film should never show
+    // the ghost shell regardless of how it got turned on.
+    A.resetCinemaGhostLens = function() {
+      if (_mergedGhost && _mergedGhost.visible) {
+        _mergedGhost.visible = false;
+        if (A.filterByGuids) A.filterByGuids(null); // restore solids — mirrors toggleMergedGhost's own off-path
+        var _wasAuto = _mgLensOwned; _mgLensOwned = false;
+        console.log('[MG] §CINEMA_GHOST_RESET hidden (' + (_wasAuto ? 'lens-owned' : 'manually toggled') + ', cinema orbit starting)');
+      }
+    };
     elClose.onclick = closeFindPanel;
     // §S275 (user): tap OUTSIDE the Find panel must NOT close it — only Esc or the × button do.
     // The outside-tap-to-close handler was removed; the panel stays put while you click the model.
