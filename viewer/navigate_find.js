@@ -588,6 +588,17 @@
       // Parts axis uses plain filterByGuids isolate (Room's FALLBACK contents-isolate path, not
       // the box/highlight lens) — no overlay to tear down; the unconditional filterByGuids(null)
       // a few lines below already resets it on every axis change.
+      // §BBOX_GHOST_STUCK fix (2026-07-20, user: "when it accidentally turned to bbxes mode... does
+      // not check back to solid"): _drillSelect()'s §BBOX_SHELL_DEFAULT auto-enables the merged-ghost
+      // bbox shell on a Storey/Discipline drill for large buildings — but only room/phase/material
+      // leaving reset it (via _roomLensReset/_highlightLensReset above). Storey/disc was never
+      // checked, so switching axes away from a storey/disc drill left the ghost shell visible
+      // forever. Made unconditional (not mode-gated) — resetting an already-false _mgLensOwned is a
+      // safe no-op, and this way no future axis needs its own copy of this reset.
+      if (_mgLensOwned && _mergedGhost) {
+        _mergedGhost.visible = false; _mgLensOwned = false;
+        console.log('[MG] §BBOX_GHOST_STUCK_RESET hidden on axis change (was lens-owned)');
+      }
       _treeMode = mode;
       // §NAV_FIND_002: axis change clears multi-select + restores full scene (unify engine)
       _selStoreys.clear(); _selDiscs.clear(); _anchor = null;
@@ -1474,6 +1485,17 @@
     window._mergeGhost = toggleMergedGhost;
     window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
     window.ghostXrayOn = function() { return !!(_mergedGhost && _mergedGhost.visible && _mergedGhostBld === A.activeBuilding); }; // §GHOST_STATE — for pill/Help isActive
+    // §BBOX_GHOST_STUCK_RESET witness hooks — exposed ONLY so the fix can be verified without
+    // reverse-engineering the Find panel's DOM (same convention as A._showClassCost above). Forces
+    // the exact precondition `_drillSelect()`'s §BBOX_SHELL_DEFAULT creates (lens-owned ghost, solids
+    // hidden) without needing a real large-building drill click.
+    A._debugForceGhostLensOwned = function() {
+      var g = _buildMergedGhost();
+      if (g) { g.visible = true; _mgLensOwned = true; if (A.filterByGuids) A.filterByGuids(new Set()); }
+      return { built: !!g, mgLensOwned: _mgLensOwned, ghostVisible: !!(g && g.visible) };
+    };
+    A._debugGhostLensOwned = function() { return { mgLensOwned: _mgLensOwned, ghostVisible: !!(_mergedGhost && _mergedGhost.visible) }; };
+    A._setTreeMode = _setTreeMode;
 
     // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
     // material (the highlighted item); color==null → opaque CLONE of each element's real

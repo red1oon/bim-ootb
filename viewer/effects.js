@@ -920,9 +920,23 @@ async function setupEffects(A, renderer, scene, camera) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible &&
         o.userData.staffageKind === undefined &&
         !(o.parent && _photoStaffage && o.parent === _photoStaffage) &&
-        !(A.sky && o === A.sky) && !(A.ground && o === A.ground);
+        !(A.sky && o === A.sky) && !(A.ground && o === A.ground) &&
+        !_isGhostGeometry(o);
     });
   }
+  // §BBOX_GHOST_RAYCAST_FILTER (2026-07-20, user: "when it accidentally turned to bbxes mode... it
+  // does not check back to solid" — the merged-ghost/streaming-placeholder wireframe boxes could be
+  // raycast against by clearance/cinema probes as if they were real walls). Every OTHER raycast
+  // consumer already excludes `userData.isBboxPlaceholder` (picking.js, city.js, measure.js) — this
+  // file never adopted that convention. The merged-ghost shell tags only its GROUP
+  // (`group.userData._mergedGhost`, navigate_find.js `_buildMergedGhost`), not each per-discipline
+  // InstancedMesh child, so check the immediate parent too (one level of nesting, verified against
+  // the group-building code).
+  function _isGhostGeometry(o) {
+    return !!(o.userData && o.userData.isBboxPlaceholder) ||
+      !!(o.parent && o.parent.userData && o.parent.userData._mergedGhost);
+  }
+  A._solidMeshes = _solidMeshes;   // exposed for the §BBOX_GHOST_RAYCAST_FILTER witness harness
   function _rayHitDist(meshes, origin, dir, far) {
     if (!meshes.length) return Infinity;
     _clrRay.set(origin, dir);
@@ -3172,11 +3186,13 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_cineFanMeshes && _cineFanBld === A.activeBuilding) return _cineFanMeshes;
     _cineFanMeshes = (typeof A.collectMeshes === 'function') ? A.collectMeshes(function(o) {
       return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible &&
-             !o.isSprite && o.userData.staffageKind === undefined && !(A.sky && o === A.sky);
+             !o.isSprite && o.userData.staffageKind === undefined && !(A.sky && o === A.sky) &&
+             !_isGhostGeometry(o);
     }) : [];
     _cineFanBld = A.activeBuilding;
     return _cineFanMeshes;
   }
+  A._cinemaFanMeshesDebug = _cinemaFanMeshes;   // exposed for the §BBOX_GHOST_RAYCAST_FILTER witness harness
   // Returns { free:[N], bearings:[N], min, max, maxBearing, mean, openDir:{x,z} } — free[i] is the
   // metres of clear air along bearing i (CINEMA_FAN_FAR when nothing was hit).
   function _cinemaFan(pos, nRays) {
