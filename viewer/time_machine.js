@@ -475,6 +475,112 @@
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
+  // ── TM_DLOD_SCALE.md Phase 3: representation-by-activity ──────────────────
+  // Swap axis = construction-time activity (frontier/recent/lookahead vs placed-but-idle),
+  // NOT camera distance — that lineage (S261 setGeometryAt) stays retracted, untouched here.
+  // No geometry swap: real meshes stay resident, box InstancedMeshes are SEPARATE objects,
+  // both toggled via the same setVisibleAt/zero-scale visibility mechanism TM already uses.
+  var DLOD_TM_MIN_ELEMENTS = LARGE_BUILDING; // reuse §S259's existing 50000 gate, not a new number
+  var LOOKAHEAD_TICKS = 6;
+  var _dlodProxyOn = false;      // user toggle (pill), default OFF — bit-identical to today when OFF
+  var _dlodBoxIndex = null;      // guid → { mesh, idx, matrix (real Matrix4), visible }
+  var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
+  var _dlodBoxBld = null;        // building the index was built for
+  var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+
+  function _dlodEngaged(app) {
+    // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
+    return _dlodProxyOn && _isLargeBuilding && !app.streaming;
+  }
+
+  function _dlodDisposeBoxes() {
+    if (!_dlodBoxMeshes) return;
+    for (var oi = 0; oi < _dlodBoxMeshes.length; oi++) {
+      var om = _dlodBoxMeshes[oi];
+      if (om.parent) om.parent.remove(om);
+      om.geometry.dispose(); om.material.dispose();
+    }
+    _dlodBoxMeshes = null; _dlodBoxIndex = null; _dlodBoxBld = null;
+  }
+
+  function _dlodBuildBoxes(app) {
+    if (_dlodBoxIndex && _dlodBoxBld === app.activeBuilding) return; // cached per building
+    if (!app.scene || typeof THREE === 'undefined' || !app.dbQuery || !app.ifc2three) {
+      console.log('§DLOD_TM_BUILD_SKIP deps'); return;
+    }
+    var t0 = (performance && performance.now) ? performance.now() : 0;
+    var rows;
+    try {
+      rows = app.dbQuery("SELECT t.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.discipline" +
+        " FROM element_transforms t JOIN elements_meta m ON m.guid = t.guid WHERE t.center_x IS NOT NULL") || [];
+    } catch (e) { console.log('§DLOD_TM_BUILD_SKIP query ' + e.message); return; }
+    var byDisc = {};
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i][7] || '_'; (byDisc[d] = byDisc[d] || []).push(rows[i]);
+    }
+    var discs = Object.keys(byDisc);
+    if (!discs.length) { console.log('§DLOD_TM_BUILD_EMPTY rows=' + rows.length); return; }
+    if (!_zeroMatrix) _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    _dlodDisposeBoxes(); // drop any prior building's boxes before building the new set
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    var index = Object.create(null), meshes = [], total = 0;
+    var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
+    for (var di = 0; di < discs.length; di++) {
+      var disc = discs[di], drows = byDisc[disc];
+      var color = app.DISC_COLORS[disc] || app.DEFAULT_COLOR;
+      // §4: solid, discipline-colored, slightly emissive — deliberately NOT the wireframe ghost
+      // look (_buildMergedGhost) so it reads as "not yet detailed" per feedback_no_fake_lod_unbreakable.md,
+      // matching the load-time placeholder's established visual language (streaming.js _drawBboxPlaceholders).
+      var mat = new THREE.MeshLambertMaterial({ color: color, emissive: color, emissiveIntensity: 0.15 });
+      var im = new THREE.InstancedMesh(geo, mat, drows.length);
+      im.frustumCulled = false;
+      im.userData.isBboxPlaceholder = true; // §S260d proven pick-exclusion (picking.js:257) — same flag as load-time boxes
+      for (var j = 0; j < drows.length; j++) {
+        var r = drows[j], p = app.ifc2three(r[1], r[2], r[3]);
+        _pos.set(p.x, p.y, p.z);
+        _scl.set(r[4] || 0.3, r[6] || 0.3, r[5] || 0.3); // bbox (x, z, y) — axis swap matches _buildMergedGhost
+        m4.compose(_pos, _q, _scl);
+        im.setMatrixAt(j, _zeroMatrix); // hidden until _dlodUpdateBoxes decides otherwise
+        index[r[0]] = { mesh: im, idx: j, matrix: m4.clone(), visible: false };
+        total++;
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.visible = true; // per-instance zero-scale hides; group itself stays visible
+      app.scene.add(im);
+      meshes.push(im);
+    }
+    _dlodBoxIndex = index; _dlodBoxMeshes = meshes; _dlodBoxBld = app.activeBuilding;
+    _lastProxyEngaged = null; // force a full sync pass on the next tick after a (re)build
+    var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
+    console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
+  }
+
+  function _dlodUpdateBoxes(app, engaged, placed, frontier, recent, lookahead) {
+    if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
+    if (!_dlodBoxIndex) {
+      if (!engaged) return;
+      _dlodBuildBoxes(app);
+      if (!_dlodBoxIndex) return;
+    }
+    var forceFull = (_lastProxyEngaged !== engaged);
+    _lastProxyEngaged = engaged;
+    var touched = null, boxed = 0;
+    for (var guid in _dlodBoxIndex) {
+      var b = _dlodBoxIndex[guid];
+      var wantVisible = engaged && !!placed[guid] &&
+        !(frontier[guid] || recent[guid] !== undefined || (lookahead && lookahead[guid]));
+      if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
+      b.visible = wantVisible;
+      b.mesh.setMatrixAt(b.idx, wantVisible ? b.matrix : _zeroMatrix);
+      if (!touched) touched = [];
+      if (touched.indexOf(b.mesh) === -1) touched.push(b.mesh);
+      if (wantVisible) boxed++;
+    }
+    if (touched) for (var ti = 0; ti < touched.length; ti++) touched[ti].instanceMatrix.needsUpdate = true;
+    if (forceFull) console.log('§DLOD_TM active=' + Object.keys(frontier).length + ' boxed=' + boxed +
+      ' mode=' + (engaged ? 'on' : 'off'));
+  }
+
   // §S260d: Audio removed — can't hear on most browsers anyway
 
   // ── Metal sparks + construction smoke (desktop only) ──
@@ -1061,6 +1167,22 @@
 
     // §S260d: All particle effects removed
 
+    // ── TM_DLOD_SCALE.md §3: active window = frontier ∪ recent ∪ lookahead ──
+    // Only scanned when the user toggle is on — zero cost when the feature is off (W-DLOD-EQUIV).
+    var _dlodOn = _dlodEngaged(app);
+    var _dlodLookahead = null;
+    if (_dlodProxyOn) {
+      _dlodLookahead = {};
+      var _laMs = LOOKAHEAD_TICKS * tickMs();
+      for (var _li = 0; _li < _ops.length; _li++) {
+        if (_ops[_li].start_ts > _cursor + _laMs) break;
+        if (_ops[_li].start_ts <= _cursor) continue;
+        var _lg = _ops[_li].output_guid;
+        if (!_lg && _ops[_li].input_guids && _ops[_li].input_guids.length) _lg = _ops[_li].input_guids[0];
+        if (_lg) _dlodLookahead[_lg] = true;
+      }
+    }
+
     // §PERF_INCR: decide delta vs full for THIS tick.
     // Full is required (not merely allowed) when: index missing/stale, no previous cursor, shadows
     // just toggled (see _lastShadowOn above), or the jump is large enough that skipping saves
@@ -1094,6 +1216,11 @@
         var isFrontier = !!frontier[g];
         var isPlaced = !!placed[g];
         var isRecent = recent[g] !== undefined;
+        // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
+        // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
+        var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent &&
+          !(_dlodLookahead && _dlodLookahead[g]);
+        var showReal = (isRecent || isPlaced) && !hideForProxy;
 
         // Visibility + highlighting
         if (isFrontier) {
@@ -1106,7 +1233,7 @@
             var fColor = ft < 0.15 ? 0x44ffff : 0xff8c00;
             applyHighlight(obj, fColor, 0.85, 0.4);
           }
-        } else if (isRecent || isPlaced) {
+        } else if (showReal) {
           obj.visible = true;
           if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
         } else {
@@ -1128,7 +1255,7 @@
             if (_camFollow) _guidPosMap[g] = swp;
             _gspCollect(swp.x, swp.y, swp.z); _gspFrontierN++;   // §GROUP_SPARK: single-mesh frontier
             // §S260d: Sparks removed (white square artifacts)
-          } else if (isPlaced || isRecent) {
+          } else if (showReal) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
             obj.castShadow = false;
             _placedMeshes.push(obj);
@@ -1166,7 +1293,9 @@
         for (var bi = 0; bi < bmetas.length; bi++) {
           var bg = bmetas[bi].guid;
           var sid = bmetas[bi].slotId;
-          if (placed[bg] || frontier[bg] || recent[bg] !== undefined) {
+          var bHideForProxy = _dlodOn && !!placed[bg] && !frontier[bg] && recent[bg] === undefined &&
+            !(_dlodLookahead && _dlodLookahead[bg]);
+          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
             if (frontier[bg]) {
@@ -1231,7 +1360,9 @@
 
         for (var mi = 0; mi < metas.length; mi++) {
           var ig = metas[mi].guid;
-          if (placed[ig] || frontier[ig] || recent[ig] !== undefined) {
+          var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined &&
+            !(_dlodLookahead && _dlodLookahead[ig]);
+          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
@@ -1274,6 +1405,10 @@
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
     // `_playing` gates it: sparks during playback only, never on scrub.
     _gspEmit(_playing);
+
+    // TM_DLOD_SCALE.md §2/§5.1: box-proxy sync — separate objects, never registered in
+    // _batchMeta/_instanceMeta above, so this never touches _metaGen (W-DLOD-NO-REBUILD).
+    _dlodUpdateBoxes(app, _dlodOn, placed, frontier, recent, _dlodLookahead);
 
     // ── Shadow promotion pass: nearby placed meshes → castShadow (cap 500) ──
     // §S260b: Only when Sunglass shadow is ON
@@ -2319,6 +2454,7 @@
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
+        '<button id="tm-lod" style="font-size:11px;padding:2px 6px;display:none" title="Draw-cost proxy: box the already-built, off-window elements (large buildings only). OFF = today\'s rendering, unchanged.">&#x25E7; LOD</button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
@@ -2485,6 +2621,18 @@
         _savedClearColor = null;
       }
       if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
+    });
+    var _lodBtn = document.getElementById('tm-lod');
+    if (_lodBtn) _lodBtn.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      _dlodProxyOn = !_dlodProxyOn;
+      _lodBtn.classList.toggle('tm-active', _dlodProxyOn);
+      console.log('§DLOD_TM_TOGGLE on=' + _dlodProxyOn + ' large=' + _isLargeBuilding + ' streaming=' + !!A().streaming);
+      // §4: user-paced edge — force the FULL traverse path (not §PERF_INCR delta, which would skip
+      // nearly every mesh at a zero-span re-render and leave the toggle visually unapplied).
+      window.__forceFull = true;
+      renderAtTime(_cursor);
+      if (A().renderer && A().scene && A().camera) A().renderer.render(A().scene, A().camera);
     });
     document.getElementById('tm-eye').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -4293,6 +4441,17 @@
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
+    // TM_DLOD_SCALE.md §3: engage gate is size-based — pill only offers itself on large buildings.
+    // A building switch below threshold also resets the toggle (never silently carries proxy state
+    // into a small building where DLOD_TM_MIN_ELEMENTS wouldn't gate it anyway).
+    if (!_isLargeBuilding) _dlodProxyOn = false;
+    var _lodBtnGate = document.getElementById('tm-lod');
+    if (_lodBtnGate) {
+      _lodBtnGate.style.display = _isLargeBuilding ? '' : 'none';
+      _lodBtnGate.classList.toggle('tm-active', _dlodProxyOn);
+    }
+    console.log('§DLOD_TM_GATE bld="' + (app.activeBuilding || '?') + '" elements=' + _activeBuildingCount +
+      ' threshold=' + DLOD_TM_MIN_ELEMENTS + ' large=' + _isLargeBuilding);
     // §S280: Don't force sun cycle — respect user's shadow/sky choice
     // User can toggle shadow (H) independently. TM just plays construction.
     console.log('§TM_SUN_INHERIT shadowOn=' + !!app._shadowOn + ' sky=' + !!app._sky + ' sunCycle=user-choice');
@@ -4326,6 +4485,8 @@
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
+    _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; // §DLOD_TM: nothing may survive TM being switched off
+    var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
     restoreSky();
     _sunCycle = false;
     _camFollow = false;
