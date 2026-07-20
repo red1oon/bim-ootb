@@ -641,7 +641,13 @@ async function setupScene(A) {
           req.onerror = () => resolve(null);
         });
         if (cached) {
-          console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
+          // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
+          A._cacheHitLogged = A._cacheHitLogged || {};
+          if (!A._cacheHitLogged[url]) {
+            A._cacheHitLogged[url] = 1;
+            console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          }
           // Update LRU timestamp on hit
           try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), url); } catch(e2) {}
           return cached;

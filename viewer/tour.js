@@ -44,6 +44,28 @@ function setupTour(A) {
       if (A._flyPreparing) return;
       A._flyPreparing = true;
       A.status.textContent = 'Preparing tour…';
+      // §TOUR_CACHE fast path (TOUR_ROUTE_CACHE.md): a cached route makes the whole prepare —
+      // loadNavigate + ensureRooms + the §THIN-GRAPH-RECURE probe (which runs the FULL route
+      // builder every activation, the actual repeat-click cost on LTU) — unnecessary: the
+      // finished action array is already stored. Only §STREAM-FIRST still applies (touring
+      // mid-stream tours placeholder bboxes and starves the promote pipeline — user doctrine
+      // 2026-07-16). Cache-key mismatch or parse failure falls through to the full prepare.
+      var _ckPeek = null;
+      try { _ckPeek = _tourCacheKey(); } catch (e) {}
+      var _hasCached = false;
+      try { _hasCached = !!(_ckPeek && localStorage.getItem(_ckPeek)); } catch (e) {}
+      if (_hasCached) {
+        (async function() {
+          let _sw = 0;
+          while (A.streaming && A.flyActive) { await new Promise(function(r) { setTimeout(r, 500); }); _sw += 500; }
+          if (_sw) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _sw);
+          A._flyPreparing = false;
+          if (!A.flyActive) return; // user toggled off while waiting
+          console.log('[TOUR] §TOUR_CACHE fast-path (prepare skipped)');
+          A._startFlyTour(btn);
+        })();
+        return;
+      }
       A._prepareGraphTour().then(function() {
         A._flyPreparing = false;
         if (!A.flyActive) return; // user toggled off while preparing
@@ -101,6 +123,7 @@ function setupTour(A) {
               console.log('[TOUR] §FLY_RECURE status=' + (rc && rc.status) +
                 ' source=' + ((rc && rc.source) || '-') +
                 ' rooms=' + (rc && rc.rooms != null ? rc.rooms : '-'));
+              if (A._tourCacheBust) A._tourCacheBust(); // §TOUR_CACHE: recompiled rooms invalidate any cached route
             }
           }
         }
@@ -110,12 +133,97 @@ function setupTour(A) {
     }
   };
 
+  // §TOUR_CACHE (prompts/TOUR_ROUTE_CACHE.md): the graph route + door-legality pass is the slow
+  // part of Fly Tour on big buildings (minutes on LTU 122k). The finished action array is plain
+  // JSON (coords + durations, no live object refs), so cache it per building. Key carries:
+  // §TOUR_VERSION (route algorithm changes bust it), element/door/room counts from the DB (a new
+  // extraction or a room recompile busts it), and the rendered-building-set size (city tours append
+  // extra orbit actions — a different set must not replay a single-building route).
+  var TOUR_CACHE_VER = 'v12'; // keep in lockstep with the §TOUR_VERSION banner above
+  function _tourCacheKey() {
+    try {
+      var r = A.db.exec(
+        "SELECT (SELECT COUNT(*) FROM elements_meta)," +
+        " (SELECT COUNT(*) FROM elements_meta WHERE ifc_class IN ('IfcDoor','IfcDoorStandardCase'))," +
+        " (SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace')");
+      var v = r.length ? r[0].values[0] : [];
+      // max(1,…): the rendered-set populates async during load — sizes 0 and 1 are both
+      // "single building" semantics and must produce the SAME key (witnessed miss, 2026-07-20).
+      return 'tmTourCache:' + (A.activeBuilding || '') + ':' + TOUR_CACHE_VER + ':' +
+        v.join('-') + ':' + Math.max(1, A.buildingsRendered.size);
+    } catch (e) { return null; }
+  }
+  A._tourCacheBust = function() { // §FLY_RECURE recompiles rooms — a cached route may now be illegal
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:' + (A.activeBuilding || '') + ':') === 0) localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  };
+  // §TOUR_CACHE_EVICT (TOUR_ROUTE_CACHE.md §4, 2026-07-20): nothing else ever removed a
+  // tmTourCache key — old TOUR_CACHE_VER generations, other buildings, other DB-recompile counts
+  // all coexist forever and can fill the origin's real localStorage quota, after which EVERY
+  // future store silently fails (never a crash, but the 41×-faster cache never engages again).
+  // Two-part self-heal: (1) drop stale-version keys unconditionally, cheap, no error needed to
+  // trigger it; (2) on an actual quota error, drop every OTHER tmTourCache key and retry once —
+  // makes the very next Fly press benefit, not just a hand-cleared profile.
+  function _tourCachePruneStale() {
+    var removed = 0;
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:') === 0 && k.indexOf(':' + TOUR_CACHE_VER + ':') === -1) {
+          localStorage.removeItem(k); removed++;
+        }
+      }
+    } catch (e) {}
+    if (removed) console.log('[TOUR] §TOUR_CACHE_PRUNE stale-version removed=' + removed);
+  }
+  _tourCachePruneStale(); // once per module setup (page load) — cheap, unconditional
+  function _tourCacheEvictAndRetry(key, json) {
+    var removed = 0, bytesFreed = 0;
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:') === 0 && k !== key) {
+          var v = localStorage.getItem(k);
+          bytesFreed += (v ? v.length : 0);
+          localStorage.removeItem(k); removed++;
+        }
+      }
+    } catch (e) { return false; }
+    console.log('[TOUR] §TOUR_CACHE_EVICT removed=' + removed + ' bytes_freed=' + bytesFreed);
+    try {
+      localStorage.setItem(key, json);
+      return true;
+    } catch (e2) {
+      console.log('[TOUR] §TOUR_CACHE store-skip (post-evict) ' + (e2 && e2.message));
+      return false;
+    }
+  }
+
   // The original fly-start body (tour build + orbit fallback), unchanged except for extraction.
   A._startFlyTour = function(btn) {
     {
-      const tour = A.buildTour();
+      var _ck = _tourCacheKey(), tour = null, _fromCache = false;
+      if (_ck) {
+        try {
+          var _hit = localStorage.getItem(_ck);
+          if (_hit) {
+            tour = JSON.parse(_hit);
+            _fromCache = Array.isArray(tour) && tour.length >= 1;
+            if (!_fromCache) tour = null;
+          }
+        } catch (e) { tour = null; }
+      }
+      if (_fromCache) {
+        console.log('[TOUR] §TOUR_CACHE hit actions=' + tour.length + ' key=' + _ck);
+      } else {
+        tour = A.buildTour();
+      }
       if (tour && tour.length >= 1) {
-        if (A.buildingsRendered.size > 1) {
+        if (!_fromCache && A.buildingsRendered.size > 1) {
           const primaryName = Object.keys(A.buildingCentres)[0];
           for (const name of A.buildingsRendered) {
             if (name === primaryName) continue;
@@ -127,6 +235,18 @@ function setupTour(A) {
             tour.push({type:'riseAndTilt', targetY:ctr.y + 20, tiltDeg:80, name:`${name} bird's eye`});
             tour.push({type:'pause', seconds:3});
             A.wlog(`City: added ${name}`);
+          }
+        }
+        if (!_fromCache && _ck) {
+          var _json = JSON.stringify(tour);
+          if (_json.length < 1500000) { // localStorage budget guard — skip absurd routes, keep the rest of the app's keys safe
+            var _stored = false;
+            try { localStorage.setItem(_ck, _json); _stored = true; }
+            catch (e) {
+              console.log('[TOUR] §TOUR_CACHE store-skip ' + (e && e.message));
+              _stored = _tourCacheEvictAndRetry(_ck, _json); // §TOUR_CACHE_EVICT — see fn above
+            }
+            if (_stored) console.log('[TOUR] §TOUR_CACHE store actions=' + tour.length + ' bytes=' + _json.length + ' key=' + _ck);
           }
         }
         A.walkMode = true;
@@ -141,6 +261,14 @@ function setupTour(A) {
         document.getElementById('walk-speed-btn').textContent = '1x';
         A.wlog(`START cinematic tour: ${tour.length} actions`);
         A.status.textContent = `Cinematic tour: ${tour.length} actions`;
+        // §IDLE-PARK: _startFlyTour runs after an async route-planning gap (buildTour/room-graph),
+        // during which an idle loop can self-park again — the caller's markDirty() (toggleFlyAround)
+        // fired BEFORE that gap and is stale by the time walkMode actually goes true here. Without
+        // this, a chain that re-parked during planning never restarts: walkMode sits true, unread,
+        // and walkTick() (which drives the camera) never runs a single frame. Confirmed live on
+        // LTU_AHouse (TOUR_WALKMODE_IDLE_PARK_STUCK.md) — log showed "START cinematic tour" then
+        // §IDLE_GATE park, then silence, camera never moving despite a fully-built 25-action tour.
+        if (A.markDirty) A.markDirty();
         return;
       }
 
@@ -159,6 +287,7 @@ function setupTour(A) {
       A.flyAngle = 0;
       A.flyTransitioning = false;
       A.status.textContent = `Flying around ${A.flyTargets[0].name}...`;
+      if (A.markDirty) A.markDirty(); // same async-gap risk as the walkMode path above
     }
   };
 

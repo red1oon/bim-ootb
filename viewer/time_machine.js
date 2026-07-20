@@ -475,6 +475,151 @@
   var _whiteColor = null; // §S260f: reusable white for BatchedMesh slot reset
   var _savedInstanceMatrices = {}; // meshId → { idx → Matrix4 }
 
+  // ── TM_DLOD_SCALE.md Phase 3 (redesigned 2026-07-20 per live LTU testing + user ask):
+  // representation-by-VIEW, not by construction-time activity. Frontier (building now) and
+  // recent (just finished, amber linger) always stay real — unchanged. Everything else that's
+  // `placed` (built) is real ONLY if in-view (distance ≤50m AND in camera frustum, the exact S261
+  // LOD0/LOD2 tier boundary — done/S261_DLOD_MILLION.md line 24), else a wireframe box. A pure
+  // time-window swap (frontier∪recent∪lookahead vs placed) boxed the WHOLE building the instant it
+  // engaged this late in construction (106K/122K placed) — including whatever the camera was
+  // pointed at, since time-since-built has nothing to do with what's on screen. This still does
+  // NOT touch `setGeometryAt` — real meshes stay resident, box InstancedMeshes are SEPARATE
+  // objects, both toggled via the same setVisibleAt/zero-scale visibility mechanism TM already uses.
+  var DLOD_TM_MIN_ELEMENTS = LARGE_BUILDING; // reuse §S259's existing 50000 gate, not a new number
+  var DLOD_VIEW_DIST = 50; // metres — same threshold S261's retracted LOD0/LOD2 tiers used
+  var DLOD_VIEW_DIST_SQ = DLOD_VIEW_DIST * DLOD_VIEW_DIST;
+  var _dlodProxyOn = false;      // user toggle (pill), default OFF — bit-identical to today when OFF
+  var _dlodBoxIndex = null;      // guid → { mesh, idx, matrix (real Matrix4), pos, radius, visible }
+  var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
+  var _dlodBoxBld = null;        // building the index was built for
+  var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+  var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
+  var _dlodCamPos = null;
+  // §DLOD_TM_CAMGUARD (2026-07-20): last camera pose-signature seen on a DLOD-engaged tick — see
+  // §10's root cause. Reuses _giHoldCamSig's exact string-diff shape (TM_GI_HOLD_CAMGUARD,
+  // ported PR #816), not a new threshold: cheap position+quaternion string, compared every tick.
+  var _dlodLastCamSig = null;
+
+  function _dlodEngaged(app) {
+    // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
+    return _dlodProxyOn && _isLargeBuilding && !app.streaming;
+  }
+
+  // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
+  // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
+  function _dlodInView(g) {
+    var b = _dlodBoxIndex && _dlodBoxIndex[g];
+    if (!b || !_dlodCamPos) return true;
+    if (_dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ) return false;
+    _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+    return _dlodFrustum.intersectsSphere(_dlodSphere);
+  }
+
+  function _dlodDisposeBoxes() {
+    if (!_dlodBoxMeshes) return;
+    for (var oi = 0; oi < _dlodBoxMeshes.length; oi++) {
+      var om = _dlodBoxMeshes[oi];
+      if (om.parent) om.parent.remove(om);
+      om.geometry.dispose(); om.material.dispose();
+    }
+    _dlodBoxMeshes = null; _dlodBoxIndex = null; _dlodBoxBld = null;
+  }
+
+  function _dlodBuildBoxes(app) {
+    if (_dlodBoxIndex && _dlodBoxBld === app.activeBuilding) return; // cached per building
+    if (!app.scene || typeof THREE === 'undefined' || !app.dbQuery || !app.ifc2three) {
+      console.log('§DLOD_TM_BUILD_SKIP deps'); return;
+    }
+    var t0 = (performance && performance.now) ? performance.now() : 0;
+    var rows;
+    try {
+      rows = app.dbQuery("SELECT t.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.discipline" +
+        " FROM element_transforms t JOIN elements_meta m ON m.guid = t.guid WHERE t.center_x IS NOT NULL") || [];
+    } catch (e) { console.log('§DLOD_TM_BUILD_SKIP query ' + e.message); return; }
+    var byDisc = {};
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i][7] || '_'; (byDisc[d] = byDisc[d] || []).push(rows[i]);
+    }
+    var discs = Object.keys(byDisc);
+    if (!discs.length) { console.log('§DLOD_TM_BUILD_EMPTY rows=' + rows.length); return; }
+    if (!_zeroMatrix) _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    _dlodDisposeBoxes(); // drop any prior building's boxes before building the new set
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    var index = Object.create(null), meshes = [], total = 0;
+    var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
+    for (var di = 0; di < discs.length; di++) {
+      var disc = discs[di], drows = byDisc[disc];
+      var color = app.DISC_COLORS[disc] || app.DEFAULT_COLOR;
+      // 2026-07-20 user testing on LTU (day159, 106K/122K placed): solid boxes read as a wholesale
+      // LOD400 loss the instant the toggle engages, not a graceful proxy — switched to wireframe
+      // (user ask) matching _drawBboxPlaceholders' actual established look (streaming.js:221),
+      // same as the load-time placeholder language feedback_no_fake_lod_unbreakable.md points at.
+      var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.4 });
+      var im = new THREE.InstancedMesh(geo, mat, drows.length);
+      im.frustumCulled = false;
+      im.userData.isBboxPlaceholder = true; // §S260d proven pick-exclusion (picking.js:257) — same flag as load-time boxes
+      im.userData.isDlodTmProxy = true; // distinct marker — _drawBboxPlaceholders' load-time boxes share
+      // isBboxPlaceholder + the same BoxGeometry/wireframe material, so this is the only reliable way
+      // to tell "DLOD Phase 3 box" apart from an ordinary streaming placeholder when debugging.
+      for (var j = 0; j < drows.length; j++) {
+        var r = drows[j], p = app.ifc2three(r[1], r[2], r[3]);
+        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
+        _pos.set(p.x, p.y, p.z);
+        _scl.set(bx, bz, by); // bbox (x, z, y) — axis swap matches _buildMergedGhost
+        m4.compose(_pos, _q, _scl);
+        im.setMatrixAt(j, _zeroMatrix); // hidden until _dlodUpdateBoxes decides otherwise
+        // §DLOD_VIEW: pos/radius cached once here — the SAME position both the box-visibility sync
+        // and the real-mesh hide decision read every tick, no per-tick decompose/getWorldPosition.
+        index[r[0]] = { mesh: im, idx: j, matrix: m4.clone(), pos: _pos.clone(),
+          radius: Math.sqrt(bx * bx + by * by + bz * bz) * 0.5, visible: false };
+        total++;
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.visible = true; // per-instance zero-scale hides; group itself stays visible
+      app.scene.add(im);
+      meshes.push(im);
+    }
+    _dlodBoxIndex = index; _dlodBoxMeshes = meshes; _dlodBoxBld = app.activeBuilding;
+    _lastProxyEngaged = null; // force a full sync pass on the next tick after a (re)build
+    var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
+    console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
+  }
+
+  function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {
+    if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
+    if (!_dlodBoxIndex) {
+      if (!engaged) return;
+      _dlodBuildBoxes(app);
+      if (!_dlodBoxIndex) return;
+    }
+    var forceFull = (_lastProxyEngaged !== engaged);
+    _lastProxyEngaged = engaged;
+    var touched = null, boxed = 0;
+    for (var guid in _dlodBoxIndex) {
+      var b = _dlodBoxIndex[guid];
+      var wantVisible = false;
+      if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
+        // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
+        // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
+        var outOfView = _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
+        if (!outOfView) {
+          _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+          outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere);
+        }
+        wantVisible = outOfView;
+      }
+      if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
+      b.visible = wantVisible;
+      b.mesh.setMatrixAt(b.idx, wantVisible ? b.matrix : _zeroMatrix);
+      if (!touched) touched = [];
+      if (touched.indexOf(b.mesh) === -1) touched.push(b.mesh);
+      if (wantVisible) boxed++;
+    }
+    if (touched) for (var ti = 0; ti < touched.length; ti++) touched[ti].instanceMatrix.needsUpdate = true;
+    if (forceFull) console.log('§DLOD_TM active=' + Object.keys(frontier).length + ' boxed=' + boxed +
+      ' mode=' + (engaged ? 'on' : 'off'));
+  }
+
   // §S260d: Audio removed — can't hear on most browsers anyway
 
   // ── Metal sparks + construction smoke (desktop only) ──
@@ -749,6 +894,10 @@
 
   // Called from inside the traverse for every frontier element (all three mesh paths).
   function _gspCollect(x, y, z) {
+    // §PERF: sparks are playback-only, so collection is too. Without this the traverse pushed
+    // thousands of candidates on EVERY scrub frame for _gspEmit to discard — pure waste on the
+    // exact interaction (scrubbing a large building) where frames are most expensive.
+    if (!_playing) return;
     if (_gspCand.length < 12000) _gspCand.push(x, y, z);   // flat — no per-tick object alloc
   }
 
@@ -782,19 +931,23 @@
     // VFX competes with it (user: "the appreciation is in the quick diff in states").
     if (!app || !app.scene || !isPlaying || _gspDecay <= 0 || !_gspCand.length) { _gspSweep(); return; }
 
-    var cells = {}, i;
+    // §PERF: numeric spatial hash into a Map — the old "cx,cy,cz" string key allocated one
+    // string per candidate per tick (GC churn scaling with building size). A hash collision just
+    // merges two groups, which is harmless for decoration.
+    var cells = new Map(), i;
     for (i = 0; i < _gspCand.length; i += 3) {
-      var key = Math.floor(_gspCand[i] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 1] / _GSP_CELL) + ',' +
-                Math.floor(_gspCand[i + 2] / _GSP_CELL);
-      (cells[key] || (cells[key] = [])).push(i);
+      var key = (Math.imul(Math.floor(_gspCand[i] / _GSP_CELL), 73856093) ^
+                 Math.imul(Math.floor(_gspCand[i + 1] / _GSP_CELL), 19349663) ^
+                 Math.imul(Math.floor(_gspCand[i + 2] / _GSP_CELL), 83492791)) | 0;
+      var bucket = cells.get(key);
+      if (bucket) bucket.push(i); else cells.set(key, [i]);
     }
 
     var gid = 0, groups = 0, singles = 0;
-    for (var key2 in cells) {
-      if (!Object.prototype.hasOwnProperty.call(cells, key2)) continue;
+    var _it = cells.values(), _e;
+    while (!(_e = _it.next()).done) {
       if (_gspActive >= _GSP_CAP) break;
-      var idxs = cells[key2], n = idxs.length;
+      var idxs = _e.value, n = idxs.length;
       gid++; groups++;
       if (n <= 2) {
         // "If the group is small say only single or 2 pieces then it is those only."
@@ -852,6 +1005,108 @@
     console.log('§GROUP_SPARK_CLEAR all sprites hidden (TM deactivate)');
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // §PERF_INCR — skip meshes with no state transition in the cursor delta
+  // ══════════════════════════════════════════════════════════════════
+  // Spec: bim-compiler prompts/TM_INCREMENTAL_RENDER_PERF.md
+  //
+  // renderAtTime() walked all 10,841 scene objects and ~63k batched slots EVERY tick to service
+  // single-digit actual changes (§PERF_TRAVERSE ms=15.6-22.4 of a ~31ms tick).
+  //
+  // DESIGN NOTE — why this is a mesh-level skip and NOT a guid->{mesh,slot} index:
+  // that index was the original spec's plan (§4.3) and it is UNSOUND here. Slot assignments are
+  // not stable for the lifetime of a TM session: streaming.js §CONSOLIDATE rebuilds BatchedMeshes
+  // into NEW meshes with new slotIds (streaming.js ~1619), and city.js evicts + disposes meshes
+  // (city.js ~163). A cached index would silently write to the WRONG element — corruption, not an
+  // exception. This design holds no guid->slot references at all, so there is nothing to go stale.
+  //
+  // What it does instead: precompute, per mesh, the sorted timestamps at which ANY of its elements
+  // changes state (start_ts -> frontier, end_ts -> recent, end_ts+linger -> placed). Moving the
+  // cursor A->B, a mesh whose event list has nothing in (A,B] cannot have changed, so its whole
+  // slot loop is skipped and its slots keep the visibility they already have — which is correct
+  // precisely because nothing happened to them.
+  var _evMesh = null;        // meshId -> sorted Float64Array of transition timestamps
+  var _evSig = '';           // scene signature the above was built for (staleness detector)
+  var _posCache = {};        // guid -> {x,y,z}. Element geometry never moves, so this is valid
+                             // for the whole session once filled — it lets the frontier/camera
+                             // aggregates be served without traversing skipped meshes.
+  var _incrStats = { delta: 0, full: 0, skipped: 0, walked: 0 };
+  // Delta mode is only sound once a FULL pass has set every mesh's slot state at least once for
+  // the current index. Until then a skip would preserve state that was never established.
+  var _incrPrimed = false;
+  // Above this cursor jump, skipping stops paying (too many meshes have events anyway) and the
+  // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
+  var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
+  // §PERF_INCR Phase 2: last tick's app._shadowOn, to detect the OFF<->ON edge. Batched/Instanced
+  // castShadow/receiveShadow flags are only (re)computed on ticks that aren't skipped, so a mesh
+  // skipped across a shadow toggle would keep a stale flag. Force one full pass on the edge tick
+  // only -- not for the whole time shadows stay on, which is what the old blanket gate did.
+  var _lastShadowOn = null;
+
+  // Staleness signature — keyed ONLY on the element-mesh set, via A._metaGen (bumped by
+  // streaming/city at the four sites that mutate _batchMeta/_instanceMeta). O(1).
+  // ⚠ DO NOT fold in scene.children.length. It changes EVERY playback tick for reasons unrelated
+  // to the mesh set — group-spark sprites add/remove, SFX, stars, bloom — which made the signature
+  // flip every tick, rebuilt the 108ms event index every tick on LTU (16k meshes / 367k events),
+  // AND reset _incrPrimed so the skip never engaged (mode=full skipped=0 forever). Net: ~158ms/tick
+  // of self-inflicted JS on LTU, slower than no optimisation. The index depends only on which guids
+  // live in which meshes; that changes only via streaming/eviction, which bump _metaGen. Nothing
+  // else may invalidate it.
+  function _tmSceneSig(app) {
+    return '' + (app._metaGen | 0);
+  }
+
+  // Build meshId -> sorted transition timestamps. One pass over _ops + the meta tables.
+  function _tmBuildEventIndex(app, lingerMs) {
+    var t0 = performance.now();
+    var guidT = Object.create(null);   // guid -> [t,...]
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid;
+      if (!g && op.input_guids && op.input_guids.length) g = op.input_guids[0];
+      if (!g) continue;
+      (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
+    }
+    var byMesh = Object.create(null), k, metas, j, arr, ts;
+    function addAll(meshId, guid) {
+      ts = guidT[guid];
+      if (!ts) return;
+      arr = byMesh[meshId] || (byMesh[meshId] = []);
+      for (var q = 0; q < ts.length; q++) arr.push(ts[q]);
+    }
+    if (app._batchMeta) for (k in app._batchMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._batchMeta, k)) continue;
+      metas = app._batchMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    if (app._instanceMeta) for (k in app._instanceMeta) {
+      if (!Object.prototype.hasOwnProperty.call(app._instanceMeta, k)) continue;
+      metas = app._instanceMeta[k];
+      for (j = 0; j < metas.length; j++) addAll(k, metas[j].guid);
+    }
+    _evMesh = Object.create(null);
+    var meshes = 0, events = 0;
+    for (k in byMesh) {
+      if (!Object.prototype.hasOwnProperty.call(byMesh, k)) continue;
+      var a = Float64Array.from(byMesh[k]);
+      a.sort();
+      _evMesh[k] = a; meshes++; events += a.length;
+    }
+    _evSig = _tmSceneSig(app);
+    _incrPrimed = false;   // index changed -> require a fresh full pass before skipping again
+    console.log('§PERF_INCR_INDEX built meshes=' + meshes + ' events=' + events +
+                ' ms=' + (performance.now() - t0).toFixed(1));
+  }
+
+  // Any transition strictly inside (lo, hi]? Binary search the sorted array.
+  function _tmHasEventIn(arr, lo, hi) {
+    if (!arr || !arr.length) return false;
+    if (hi < arr[0] || lo >= arr[arr.length - 1]) return false;
+    var a = 0, b = arr.length - 1, mid;
+    while (a < b) { mid = (a + b) >> 1; if (arr[mid] <= lo) a = mid + 1; else b = mid; }
+    return arr[a] > lo && arr[a] <= hi;
+  }
+
   function renderAtTime(cursorMs) {
     var app = A();
     if (!app || !app.scene) return;
@@ -904,6 +1159,11 @@
 
     // §S260d: Whitebox material state logger — module-level counter persists across ticks
     function _wbMat(tag, obj) {
+      // §PERF: whitebox material logger — a DIAGNOSTIC, not for production playback. It fired once
+      // per mesh every tick (~20+ console.logs/tick on a large model, each with heavy string
+      // building), which is real per-tick cost and, with devtools open in Firefox, a major stall.
+      // Default OFF; set window.__TM_WBDEBUG=true in the console to re-enable when diagnosing colors.
+      if (!window.__TM_WBDEBUG) return;
       _wbLogCount++;
       if (_wbLogCount > 10 && _wbLogCount % 500 !== 0) return;
       var m = obj.material;
@@ -946,7 +1206,63 @@
 
     // §S260d: All particle effects removed
 
+    // ── TM_DLOD_SCALE.md §3 (redesigned): real = frontier ∪ recent ∪ in-view; box = placed, not
+    // in either. Box index must exist BEFORE the traverse below reads _dlodInView, so build it here
+    // (not lazily inside _dlodUpdateBoxes) — else the first engaged tick would see an empty index
+    // and fail every element open to "real", one tick behind. Zero cost when the toggle is off.
+    var _dlodOn = _dlodEngaged(app);
+    if (_dlodOn) {
+      _dlodBuildBoxes(app);
+      if (_dlodBoxIndex && app.camera) {
+        if (!_dlodFrustum) { _dlodFrustum = new THREE.Frustum(); _dlodPSM = new THREE.Matrix4(); _dlodSphere = new THREE.Sphere(); }
+        _dlodCamPos = app.camera.position;
+        _dlodPSM.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+        _dlodFrustum.setFromProjectionMatrix(_dlodPSM);
+      } else {
+        _dlodOn = false; // box build failed (deps/query) — fall back to legacy behavior this tick
+      }
+    }
+
+    // §PERF_INCR: decide delta vs full for THIS tick.
+    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, shadows
+    // just toggled (see _lastShadowOn above), or the jump is large enough that skipping saves
+    // nothing. A long scrub legitimately changes tens of thousands of elements -- forcing delta
+    // there would be SLOWER than the full path, which is the failure this guard prevents.
+    // §PERF_INCR Phase 2: shadows staying ON/OFF steady-state does NOT need a blanket full-mode
+    // gate -- _placedMeshes/_frontierCentroids/_shadowCasters are built in the single-mesh branch
+    // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
+    // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
+    var _sig = _tmSceneSig(app);
+    if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
+    var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
+    var _shadowNow = !!app._shadowOn;
+    var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
+    // §DLOD_TM_CAMGUARD (TM_DLOD_SCALE.md §10, direction b): _dlodInView is a pure function of
+    // camera pose, but it's only ever read inside the BatchedMesh/InstancedMesh branches below,
+    // which the incremental-delta skip can bypass entirely when nothing was built/finished this
+    // tick (span=0, pure orbit). Force a full pass whenever the camera pose actually changed on a
+    // DLOD-engaged tick, so the real-mesh restore (box→real) is re-evaluated same as the box path
+    // already is (_dlodUpdateBoxes has no such skip). Off the DLOD path this is always false — zero
+    // behavioural change (W-DLOD-EQUIV).
+    var _dlodCamMoved = false;
+    if (_dlodOn) {
+      var _dlodCamSigNow = _giHoldCamSig(app);
+      _dlodCamMoved = (_dlodLastCamSig !== null && _dlodLastCamSig !== _dlodCamSigNow);
+      _dlodLastCamSig = _dlodCamSigNow;
+    } else {
+      _dlodLastCamSig = null; // reset: engaging DLOD later must not compare against a stale pose
+    }
+    var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled && !_dlodCamMoved &&
+                  (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
+    // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
+    // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
+    if (window.__forceFull) { _incrOK = false; window.__forceFull = false; }
+    if (_incrOK) _incrStats.delta++; else _incrStats.full++;
+    _lastShadowOn = _shadowNow;
+
+    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
     app.scene.traverse(function(obj) {
+      _perfObjs++;
       if (!obj.userData) return;
 
       // ── Single mesh (has userData.guid) ──
@@ -955,6 +1271,10 @@
         var isFrontier = !!frontier[g];
         var isPlaced = !!placed[g];
         var isRecent = recent[g] !== undefined;
+        // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
+        // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
+        var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !_dlodInView(g);
+        var showReal = (isRecent || isPlaced) && !hideForProxy;
 
         // Visibility + highlighting
         if (isFrontier) {
@@ -967,7 +1287,7 @@
             var fColor = ft < 0.15 ? 0x44ffff : 0xff8c00;
             applyHighlight(obj, fColor, 0.85, 0.4);
           }
-        } else if (isRecent || isPlaced) {
+        } else if (showReal) {
           obj.visible = true;
           if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
         } else {
@@ -987,9 +1307,9 @@
             _frontierCentroids.push(swp);
             _frontierPositions.push(swp);
             if (_camFollow) _guidPosMap[g] = swp;
-            _gspCollect(swp.x, swp.y, swp.z);   // §GROUP_SPARK: single-mesh frontier
+            _gspCollect(swp.x, swp.y, swp.z); _gspFrontierN++;   // §GROUP_SPARK: single-mesh frontier
             // §S260d: Sparks removed (white square artifacts)
-          } else if (isPlaced || isRecent) {
+          } else if (showReal) {
             obj.receiveShadow = false;  // §S259: shadows globally disabled
             obj.castShadow = false;
             _placedMeshes.push(obj);
@@ -1015,6 +1335,10 @@
 
       // ── BatchedMesh (per-slot GUIDs in _batchMeta) — S260 ──
       if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        // §PERF_INCR Phase 2: same event index already indexes _batchMeta guids (see
+        // _tmBuildEventIndex) but this branch never consulted it -- LTU's BatchedMesh-consolidated
+        // geometry (8 draw calls) got ZERO benefit from Phase 1, only InstancedMesh did.
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var bmetas = app._batchMeta[obj.id];
         var anyVis = false;
         var _bmHasFrontier = false;
@@ -1023,7 +1347,8 @@
         for (var bi = 0; bi < bmetas.length; bi++) {
           var bg = bmetas[bi].guid;
           var sid = bmetas[bi].slotId;
-          if (placed[bg] || frontier[bg] || recent[bg] !== undefined) {
+          var bHideForProxy = _dlodOn && !!placed[bg] && !frontier[bg] && recent[bg] === undefined && !_dlodInView(bg);
+          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
             if (frontier[bg]) {
@@ -1071,6 +1396,7 @@
 
       // ── InstancedMesh (per-instance GUIDs in _instanceMeta) ──
       if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var metas = app._instanceMeta[obj.id];
         var meshId = obj.id;
         var anyVisible = false;
@@ -1087,7 +1413,8 @@
 
         for (var mi = 0; mi < metas.length; mi++) {
           var ig = metas[mi].guid;
-          if (placed[ig] || frontier[ig] || recent[ig] !== undefined) {
+          var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !_dlodInView(ig);
+          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
@@ -1097,7 +1424,7 @@
               // §GROUP_SPARK: InstancedMesh instance — position from the saved matrix
               if (_savedInstanceMatrices[meshId][mi]) {
                 _tmV2.setFromMatrixPosition(_savedInstanceMatrices[meshId][mi]);
-                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z);
+                _gspCollect(_tmV2.x, _tmV2.y, _tmV2.z); _gspFrontierN++;
               }
             }
           } else {
@@ -1117,10 +1444,23 @@
       }
     });
 
+    var _travMs = performance.now() - _perfT0;
+    if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
+      ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
+      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+    // Diagnostic hook (harmless, cheap): last-traverse stats for perf verification without relying
+    // on the throttled log. Read via window.__tmTrav in a probe.
+    window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
+                        mode: _incrOK ? 'delta' : 'full' };
+    _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
     // `_playing` gates it: sparks during playback only, never on scrub.
     _gspEmit(_playing);
+
+    // TM_DLOD_SCALE.md §2/§5.1: box-proxy sync — separate objects, never registered in
+    // _batchMeta/_instanceMeta above, so this never touches _metaGen (W-DLOD-NO-REBUILD).
+    _dlodUpdateBoxes(app, _dlodOn, placed, frontier, recent);
 
     // ── Shadow promotion pass: nearby placed meshes → castShadow (cap 500) ──
     // §S260b: Only when Sunglass shadow is ON
@@ -1584,7 +1924,7 @@
     var c = (typeof t.cursor === 'number') ? t.cursor : (typeof t.frac === 'number' ? _projectStart + t.frac * span : null);
     if (c == null) return;
     _applyingRemoteScrub = true;
-    try { _cursor = Math.max(_projectStart, Math.min(_projectEnd, c)); renderAtTime(_cursor); try { anchorFromCursor(); configSlider(); } catch (e) {} }
+    try { renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, c))); try { anchorFromCursor(); configSlider(); } catch (e) {} }
     finally { _applyingRemoteScrub = false; }
     console.log('§TM_TL_IN cursor=' + Math.round(_cursor) + ' from=' + (t.surface || '?'));
   }
@@ -2166,6 +2506,7 @@
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
+        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
         '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
         '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
       '</div>' +
@@ -2284,10 +2625,10 @@
 
     // Transport buttons
     document.getElementById('tm-start-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectStart; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectStart); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-end-btn').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); stopPlayback(); _cursor = _projectEnd; renderAtTime(_cursor); anchorFromCursor(); configSlider();
+      e.stopPropagation(); stopPlayback(); renderAtTime(_projectEnd); anchorFromCursor(); configSlider();
     });
     document.getElementById('tm-rev-btn').addEventListener('pointerup', function(e) {
       e.stopPropagation(); startPlayback(-1);
@@ -2332,6 +2673,18 @@
         _savedClearColor = null;
       }
       if (app.renderer && app.scene && app.camera) app.renderer.render(app.scene, app.camera);
+    });
+    var _lodBtn = document.getElementById('tm-lod');
+    if (_lodBtn) _lodBtn.addEventListener('pointerup', function(e) {
+      e.stopPropagation();
+      _dlodProxyOn = !_dlodProxyOn;
+      _lodBtn.classList.toggle('tm-active', _dlodProxyOn);
+      console.log('§DLOD_TM_TOGGLE on=' + _dlodProxyOn + ' large=' + _isLargeBuilding + ' streaming=' + !!A().streaming);
+      // §4: user-paced edge — force the FULL traverse path (not §PERF_INCR delta, which would skip
+      // nearly every mesh at a zero-span re-render and leave the toggle visually unapplied).
+      window.__forceFull = true;
+      renderAtTime(_cursor);
+      if (A().renderer && A().scene && A().camera) A().renderer.render(A().scene, A().camera);
     });
     document.getElementById('tm-eye').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -2467,8 +2820,7 @@
       var ti = Math.floor((e.clientY - rect.top - 4) / rowH);
       if (ti < 0 || ti >= V.phases.length) return;
       var p = V.phases[ti];
-      _cursor = p.winStart;
-      renderAtTime(_cursor);
+      renderAtTime(p.winStart);
       anchorFromCursor();
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
@@ -2481,8 +2833,7 @@
       var pct = Math.min(1, Math.max(0, x));
       var ts = _projectStart + pct * (_projectEnd - _projectStart);
       var bar = findBarAtClick(e);
-      _cursor = ts;
-      renderAtTime(_cursor);
+      renderAtTime(ts);
       anchorFromCursor();
       configSlider();
       if (bar) console.log('§GANTT_MINI_SEEK ts=' + Math.round(ts) + ' bar="' + bar.storey + '|' + bar.phase + '"');
@@ -2648,14 +2999,20 @@
     stopPlayback();
     _playing = true;
     _playDir = dir;
-    if (dir < 0 && _cursor <= _projectStart) _cursor = _projectEnd;
+    // §PERF_INCR_FIX (part 2, live LTU report post-#912): these wrap-around warps mutated _cursor
+    // SILENTLY — no render. The next playTick's renderAtTime then derived _prevCursor from the
+    // already-warped value, so the delta window was (start, start+1tick]: only hour-0/1 events got
+    // applied and the fully-built end-state scene stayed on canvas ("first second of play at Hour 0
+    // does not clear"). Same calling-convention bug family as #912 — warp via renderAtTime (full
+    // span → mode=full → every mesh updated), never by assigning _cursor directly.
+    if (dir < 0 && _cursor <= _projectStart) renderAtTime(_projectEnd);
     // §S260e: Opening = construction starts from empty, camera orbits for context
     var _willOpen = _camFollow && dir > 0 && _cineStoryboard.length &&
       (_cursor >= _projectEnd || _cursor <= _projectStart + 1);
-    if (dir > 0 && _cursor >= _projectEnd) _cursor = _projectStart;
+    if (dir > 0 && _cursor >= _projectEnd) renderAtTime(_projectStart);
 
     if (_willOpen) {
-      _cursor = _projectStart; // start empty — construction builds while camera orbits
+      if (_cursor > _projectStart) renderAtTime(_projectStart); // start empty — construction builds while camera orbits
       var app = A();
       if (app && app.camera && app.controls) {
         // §S260e: Opening — 10s orbit, camera starts below grade for foundation visibility
@@ -2706,10 +3063,16 @@
 
     _gspRoll++;   // §GROUP_SPARK: one re-roll per playback tick ("randomize among themselves
                   // repeatedly until their duration is reached")
-    _cursor += _playDir * tickMs();
-    _cursor = Math.max(_projectStart, Math.min(_cursor, _projectEnd));
+    // §PERF_INCR_FIX: compute the target into a LOCAL var, not the global _cursor, before calling
+    // renderAtTime — renderAtTime reads _cursor itself to derive _prevCursor (the delta-skip
+    // window's lower bound). Pre-assigning _cursor here made _prevCursor==cursorMs on EVERY tick
+    // (zero-width window), so _tmHasEventIn found "no event" for every mesh and the delta path
+    // skipped the whole scene every tick once shadows stopped forcing full mode (Phase 2). Confirmed
+    // live: real playback log showed span=0h on every tick. renderAtTime sets the global _cursor
+    // itself once it has captured the true previous value — do not set it here first.
+    var _nextCursor = Math.max(_projectStart, Math.min(_cursor + _playDir * tickMs(), _projectEnd));
 
-    renderAtTime(_cursor);
+    renderAtTime(_nextCursor);
 
     // Update slider position during playback
     anchorFromCursor();
@@ -3121,12 +3484,16 @@
   var _VAR_ORDER = ['Substructure', 'Superstructure', 'MEP Rough-in', 'Architecture', 'MEP Final', 'Finishes'];
   var _twin = null;          // { building, projectId, planned, committed, phases:[{name,seqno,start,end,planned,committed}] }
   var _twinLoading = false;
+  // §PERF_NEG_CACHE: building names whose ERP load returned no rows. Without these, the per-tick
+  // dashboard/variance guards re-fetch ad_seed.db (25.8MB) from IDB forever on a non-folded building.
+  var _twinMiss = null, _shopfloorMiss = null;
   // Load the folded ERP twin once: fetch the seed db → sql.js → read the C_Project cost pair + its phases.
   // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
   function _loadTwin() {
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
+    if (_twinMiss === building) return Promise.resolve(null);   // §PERF_NEG_CACHE — see _loadShopfloor
     if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
     if (!SQL) { console.log('§TM_TWIN_DEFER no sql.js factory'); return Promise.resolve(null); }
@@ -3134,7 +3501,7 @@
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec("SELECT C_Project_ID,PlannedAmt,CommittedAmt FROM C_Project WHERE Value=?", [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project'); return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _twinLoading = false; _twinMiss = building; console.log('§TM_TWIN_MISS building="' + building + '" — not a folded project (miss cached, no refetch)'); return null; }
       var pid = pr[0].values[0][0], planned = Number(pr[0].values[0][1] || 0), committed = Number(pr[0].values[0][2] || 0);
       var ph = db.exec("SELECT Name,SeqNo,StartDate,EndDate,PlannedAmt,CommittedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + Number(pid) + " AND Name<>'Unsequenced' ORDER BY SeqNo");
       var phases = (ph.length ? ph[0].values : []).map(function (row) {
@@ -3155,14 +3522,20 @@
     var app = A();
     var building = (app && app.activeBuilding) || 'Hospital';
     if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
+    // §PERF_NEG_CACHE: remember a MISS too. drawDash() calls this every tick behind
+    // `if (!_shopfloor && !_shopfloorLoading)`, and every failure path below cleared the
+    // in-flight flag WITHOUT setting _shopfloor — so a building with no PP_Order rows re-fetched
+    // ad_seed.db (25.8MB) from IndexedDB on EVERY playback tick. A cache that only remembers
+    // successes is not a cache.
+    if (_shopfloorMiss === building) return Promise.resolve(null);
     if (_shopfloorLoading) return Promise.resolve(null);
     var SQL = (app && app._SQL) || window.SQL || window._SQL_CACHED;
-    if (!SQL) return Promise.resolve(null);
+    if (!SQL) return Promise.resolve(null);   // NOT a miss — sql.js may arrive later, retry is correct
     _shopfloorLoading = true;
     return APP.cachedFetch('../erp/ad_seed.db').then(function (buf) {
       var db = new SQL.Database(new Uint8Array(buf));
       var pr = db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [building]);
-      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; return null; }
+      if (!pr.length || !pr[0].values.length) { db.close(); _shopfloorLoading = false; _shopfloorMiss = building; console.log('§PERF_NEG_CACHE shopfloor miss cached building="' + building + '" — no further ad_seed.db refetch'); return null; }
       var pid = pr[0].values[0][0];
       var res = db.exec(
         'SELECT o.PP_Order_ID, o.DateStartSchedule, o.DateFinishSchedule,' +
@@ -4120,6 +4493,17 @@
     _activeBuildingCount = app.activeBuildingTotal || 0;
     _isLargeBuilding = _activeBuildingCount > LARGE_BUILDING;
     if (_isLargeBuilding) console.log('§S259_TM_LITE elements=' + app.activeBuildingTotal + ' — sparks disabled (>50K)');
+    // TM_DLOD_SCALE.md §3: engage gate is size-based — pill only offers itself on large buildings.
+    // A building switch below threshold also resets the toggle (never silently carries proxy state
+    // into a small building where DLOD_TM_MIN_ELEMENTS wouldn't gate it anyway).
+    if (!_isLargeBuilding) _dlodProxyOn = false;
+    var _lodBtnGate = document.getElementById('tm-lod');
+    if (_lodBtnGate) {
+      _lodBtnGate.style.display = _isLargeBuilding ? '' : 'none';
+      _lodBtnGate.classList.toggle('tm-active', _dlodProxyOn);
+    }
+    console.log('§DLOD_TM_GATE bld="' + (app.activeBuilding || '?') + '" elements=' + _activeBuildingCount +
+      ' threshold=' + DLOD_TM_MIN_ELEMENTS + ' large=' + _isLargeBuilding);
     // §S280: Don't force sun cycle — respect user's shadow/sky choice
     // User can toggle shadow (H) independently. TM just plays construction.
     console.log('§TM_SUN_INHERIT shadowOn=' + !!app._shadowOn + ' sky=' + !!app._sky + ' sunCycle=user-choice');
@@ -4128,12 +4512,11 @@
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
     console.log('§MOBILE_TM_TOGGLE method=setVisibleAt|setMatrixAt mobile=' + !!app._isMobile + ' dlod=' + !!app._useDlodPath);
-    _cursor = _projectEnd;
     _anchorDay = _days.length ? _days[_days.length - 1] : null;
     _anchorHr = 15;
     _panel.style.display = 'flex';
     switchMode('DAY');
-    renderAtTime(_cursor); // §S260c: initial render so Gantt + status populate immediately
+    renderAtTime(_projectEnd); // §S260c: initial render so Gantt + status populate immediately
     updateStatus();
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
@@ -4153,6 +4536,9 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
+    _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
+    var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
     restoreSky();
     _sunCycle = false;
     _camFollow = false;
@@ -4250,8 +4636,7 @@
             catch (e) { console.log('§TM_ORDER_JUMP deeplink-err ' + e); }
           } else if (tmParam === 'play') {
             // Jump to start then play forward
-            _cursor = _projectStart;
-            renderAtTime(_cursor);
+            renderAtTime(_projectStart);
             startPlayback(+1);
           }
         }
@@ -4299,8 +4684,7 @@
         if (ph === phaseName) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
       if (!isFinite(s)) { console.log('§TM_JUNCTURE miss phase="' + phaseName + '" (no ops in that phase)'); return false; }
-      _cursor = s;
-      renderAtTime(_cursor);
+      renderAtTime(s);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       // surface the cost story: open the ⚖ variance drawer (reads the twin) if it isn't already open — ONLY when
@@ -4335,8 +4719,7 @@
         if (og === guid) { op = _ops[i]; break; }
       }
       if (!op) { console.log('§TM_PINPOINT_JUMP miss guid="' + guid + '" (no op builds it)'); return false; }
-      _cursor = op.end_ts;                       // the instant it lands → present in the scene, the lead frontier
-      renderAtTime(_cursor);
+      renderAtTime(op.end_ts);                   // the instant it lands → present in the scene, the lead frontier
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                // couple the 5D cost story to the frozen frame (same as phase jump)
@@ -4394,16 +4777,16 @@
         var ph = (_ops[i].parameters || {}).phase || 'Architecture';
         if (ph === phase) { if (_ops[i].start_ts < s) s = _ops[i].start_ts; if (_ops[i].end_ts > e) e = _ops[i].end_ts; }
       }
-      var mode;
-      if (isFinite(s)) { _cursor = s; mode = 'phase'; }
+      var mode, _jumpTarget;
+      if (isFinite(s)) { _jumpTarget = s; mode = 'phase'; }
       else {                                                             // mode=projected: order finish → axis position
         var frac = 0.5;
         if (isFinite(info.spanMin) && isFinite(info.spanMax) && info.spanMax > info.spanMin && isFinite(info.end))
           frac = Math.max(0, Math.min(1, (info.end - info.spanMin) / (info.spanMax - info.spanMin)));
-        _cursor = _projectStart + frac * (_projectEnd - _projectStart);
+        _jumpTarget = _projectStart + frac * (_projectEnd - _projectStart);
         mode = 'projected';
       }
-      renderAtTime(_cursor);
+      renderAtTime(_jumpTarget);
       try { anchorFromCursor(); } catch (x) {}
       try { configSlider(); } catch (x) {}
       if (_twin && !_varVisible) {                                       // couple the 5D cost story (⚖ drawer)
@@ -4432,7 +4815,7 @@
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
-    return { active: _active, cursor: _cursor };
+    return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
@@ -4450,4 +4833,46 @@
   // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
   // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
   window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
+  // Test hook: simulate a playback tick (small cursor advance + roll bump) so a probe can exercise
+  // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
+  window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;
+    renderAtTime(Math.min(_projectEnd, _cursor + (dms || 3600000))); return window.__tmTrav; };
+  // W-INCR-EQUIV test hook: jump to an ABSOLUTE cursor (clamped to project bounds), for the
+  // forward/backward/random-scrub/jump-to-start-end sweep TM_INCREMENTAL_RENDER_PERF.md §5 requires.
+  // Diagnostic only, mirrors __tmStep's no-op-if-inactive contract.
+  window.__tmSetCursor = function (absMs) {
+    if (!_active) return null;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, absMs)));
+    return window.__tmTrav;
+  };
+  // W-INCR-EQUIV test hook: snapshot every visible guid + its slot visibility, for diffing the
+  // delta path against the window.__forceFull full-path re-render at the same cursor.
+  window.__tmSnapshotVisible = function () {
+    if (!_active) return null;
+    var app = A();
+    var out = { mesh: [], batched: {}, instanced: {} };
+    app.scene.traverse(function (obj) {
+      if (!obj.userData) return;
+      if (obj.userData.guid) { if (obj.visible) out.mesh.push(obj.userData.guid); return; }
+      if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        var bmetas = app._batchMeta[obj.id], vis = {};
+        for (var bi = 0; bi < bmetas.length; bi++) {
+          vis[bmetas[bi].guid] = !!(obj.getVisibleAt ? obj.getVisibleAt(bmetas[bi].slotId) : obj.visible);
+        }
+        out.batched[obj.id] = vis;
+        return;
+      }
+      if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        var metas = app._instanceMeta[obj.id], ivis = {};
+        var _snapM4 = window.__tmSnapshotVisible._m4 || (window.__tmSnapshotVisible._m4 = new THREE.Matrix4());
+        for (var mi = 0; mi < metas.length; mi++) {
+          obj.getMatrixAt(mi, _snapM4);
+          ivis[metas[mi].guid] = !(_snapM4.elements[0] === 0 && _snapM4.elements[5] === 0 && _snapM4.elements[10] === 0);
+        }
+        out.instanced[obj.id] = ivis;
+      }
+    });
+    out.mesh.sort();
+    return out;
+  };
 })();

@@ -353,6 +353,93 @@
     } catch (e) { console.warn(TAG + ' replay failed', e && e.message); }
   }
 
+  // ── GEOMETRY_TRUTH_CHAIN.md §S2 — `§DB_IDENTITY`, link 1's witness ──────────────────────────────
+  // ONE line per building open declaring WHICH copy actually resolved and whether it matches the
+  // generated manifest (§S1). Additive and non-blocking by contract: it only ever logs — a mismatch
+  // warns loudly, it NEVER refuses a load.
+  //
+  // WHY THE JOIN, NOT A ROW COUNT (S0(a), 2026-07-20): an ARC resident's own `component_geometries`
+  // is legitimately ABSENT — its meshes live in the shared mesh.db, linked by
+  // `element_instances(guid, geometry_hash)`. Reporting a bare per-file `geo=0` reads a 100%-healthy
+  // pair as broken; that exact misread burned a session on Hospital_ARC.db. So `geo=` here is the
+  // COVERED count across the resolved PAIR, and the pair is named in the line.
+  //
+  // WHAT THIS CATCHES THAT NOTHING ELSE DID (S0(c)): whole-substrate loss. When the geo db 404s, the
+  // seed silently falls back to meta-only and renders 12-tri boxes for EVERY element while
+  // `§GEOM-HARDFAIL total=0` reports all-clean (it only detects per-element breaks INSIDE a
+  // substrate that loaded). `geo=0/215 substrate=ABSENT` is that state, stated out loud.
+  var _manifest = null, _manifestTried = false;
+  function _loadManifest() {
+    if (_manifestTried) return Promise.resolve(_manifest);
+    _manifestTried = true;
+    return fetch(_modellerBase() + 'buildings_manifest.json')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { _manifest = j; return j; })
+      .catch(function () { return null; });   // absent manifest is ALLOWED (logged as manifest=absent)
+  }
+
+  function _count(db, sql) {
+    try { var r = db.exec(sql); return (r.length && r[0].values.length) ? r[0].values[0][0] : 0; }
+    catch (e) { return null; }               // null = table absent (distinct from a real 0)
+  }
+
+  function _dbIdentity(key, bdb, gdb, geoBuf) {
+    try {
+      var res = null;
+      for (var i = 0; i < RESIDENTS.length; i++) if (RESIDENTS[i].key === key) res = RESIDENTS[i];
+      var meta = _count(bdb, 'SELECT COUNT(*) FROM elements_meta;');
+      var inst = _count(bdb, 'SELECT COUNT(*) FROM element_instances;');
+      // The geometry substrate that ACTUALLY resolved: the separate geo db if it loaded, else the
+      // meta db itself (the documented fallback) — never an assumption about which was intended.
+      var sub = gdb || bdb, subName = gdb ? (res && res.geoDb) : (res && res.db);
+      var subRows = _count(sub, 'SELECT COUNT(*) FROM component_geometries;');
+      var covered = null;
+      if (subRows) {
+        // Coverage across the pair. Same-db case is a plain join; split-db needs the hash set
+        // pulled over, since sql.js cannot ATTACH across two Database instances.
+        if (gdb) {
+          var have = {}, hr = null;
+          try { hr = sub.exec('SELECT geometry_hash FROM component_geometries;'); } catch (e) { hr = null; }
+          if (hr && hr.length) for (var h = 0; h < hr[0].values.length; h++) have[hr[0].values[h][0]] = 1;
+          var ir = null;
+          try { ir = bdb.exec('SELECT geometry_hash FROM element_instances;'); } catch (e) { ir = null; }
+          covered = 0;
+          if (ir && ir.length) for (var j = 0; j < ir[0].values.length; j++) if (have[ir[0].values[j][0]]) covered++;
+        } else {
+          covered = _count(bdb, 'SELECT COUNT(*) FROM element_instances i WHERE EXISTS' +
+            '(SELECT 1 FROM component_geometries g WHERE g.geometry_hash = i.geometry_hash);');
+        }
+      } else {
+        covered = 0;                          // no substrate rows reachable → nothing can resolve
+      }
+
+      _loadManifest().then(function (mf) {
+        var verdict = 'absent', exp = null;
+        if (mf && mf.buildings) {
+          for (var k = 0; k < mf.buildings.length; k++) if (mf.buildings[k].key === key) exp = mf.buildings[k];
+          if (exp) verdict = (exp.meta === meta && exp.instances === inst && exp.geoCovered === covered)
+            ? 'match' : 'MISMATCH';
+        }
+        var substrateState = (res && res.geoDb && !gdb) ? 'ABSENT(' + res.geoDb + ' failed to load)'
+          : (subName || 'self');
+        var line = TAG + ' §DB_IDENTITY name=' + key + ' path=' + (res ? res.db : '?') +
+          ' meta=' + meta + ' inst=' + inst + ' geo=' + covered + '/' + inst +
+          ' substrate=' + substrateState + ' substrateRows=' + subRows +
+          ' manifest=' + verdict;
+        if (verdict === 'MISMATCH') {
+          console.warn(line + ' — EXPECTED meta=' + exp.meta + ' inst=' + exp.instances +
+            ' geo=' + exp.geoCovered + ' (this build is NOT the manifested copy; render may be stale/partial)');
+        } else if (inst > 0 && covered === 0) {
+          // Manifest-clean but zero resolvable geometry = the silent-box state. Always loud.
+          console.warn(line + ' — ZERO geometry resolves for ' + inst + ' instances: every element will' +
+            ' render as a 12-tri box proxy (GEOMETRY_TRUTH_CHAIN.md §S0(c))');
+        } else {
+          console.log(line);
+        }
+      });
+    } catch (e) { console.warn(TAG + ' §DB_IDENTITY failed for ' + key + ' — ' + (e && e.message)); }
+  }
+
   // §GEO-SPLIT: lazily fetch+cache a resident's SEPARATE geometry-mesh db (Terminal_geo.db), reusing the
   // exact same IndexedDB cache pattern (_idbGetDb/_idbPutDb, its own URL key so it caches independently of
   // the meta db) — cache-first, else fetch+persist. Residents with no `geoDb` field resolve null IMMEDIATELY,
@@ -416,6 +503,7 @@
         try { gdb = new window.SQL.Database(new Uint8Array(geoBuf)); }
         catch (e) { console.error(TAG + ' §GEOM-HARDFAIL geoDb open failed for ' + key + ' — falling back to meta-only (no real geometry)', e && e.message); gdb = null; }
       }
+      _dbIdentity(key, bdb, gdb, geoBuf);   // §S2 — declare the resolved pair BEFORE seeding (log-only, never blocks)
       window.ArcEditable.seedArc(bdb, {
         // §LOD400-STALL: skip commitSeedGroup's default full verifyChain() for the ARC seed — it always seeds
         // into a FRESH mo_<building> instance (nothing pre-existing to lose coverage on), so the redundant

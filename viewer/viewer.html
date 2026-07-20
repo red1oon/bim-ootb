@@ -829,7 +829,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
-<script src="../common/history_tap.js?v=6" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
+<script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
 <script src="scene.js?v=51" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
@@ -923,7 +923,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
-<script src="time_machine.js?v=60" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=63" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="schedule_author.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_author_ui.js?v=7" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
@@ -1014,7 +1014,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=527')
+  navigator.serviceWorker.register('sw.js?v=532')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
 }
