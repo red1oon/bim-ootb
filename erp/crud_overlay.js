@@ -1654,9 +1654,64 @@
       var rows = K.rowsByIds(db, ids);
       return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
         rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
+        return _relayPush(rows);
       }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
     } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
   }
+  // _relayPush — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 1 — Witness: W-N-CONVERGE.
+  // Best-effort, fire-and-forget: register the just-appended row(s) with the relay (erp_sync_relay.js's
+  // pushRows, dedup by op_uuid at the relay — W-RELAY). No-op (Promise.resolve) if erp_sync_relay.js isn't
+  // loaded or no ?relay= was given — the whole append-only fix behaves exactly as before with no relay.
+  // NEVER throws into the commit path: a relay-down/unreachable failure is logged, not fatal to the save.
+  function _relayPush(rows) {
+    var S = (typeof global.ErpSyncRelay !== 'undefined') ? global.ErpSyncRelay : null;
+    if (!S || !S.isEnabled || !S.isEnabled()) return Promise.resolve();
+    return S.pushRows(rows).catch(function (e) { console.warn('§SYNC_RELAY push error', e && e.message); });
+  }
+  // syncNow — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 2 — Witness: W-N-CONVERGE.
+  // The manual Sync trigger's ACTUAL orchestration (crud_overlay.js is the caller, per the spec's
+  // separation of concern — erp_sync_relay.js is transport-only). Reuses, verbatim, the SAME cross-tab
+  // commit lock (_withFreshSide) + fresh-hydrate a commit already uses, so a sync can never interleave
+  // with a same-tab-group commit mid-flight; and reuses, verbatim, window.ErpSyncFSM.rebase() — the
+  // PROVEN rewind→apply-canonical→replay-pending→re-seal loop (scripts/test_kernel_relay.js W-RELAY,
+  // scripts/test_kernel_rebase.js W-REBASE) — no new merge/seal logic is written here. After rebase
+  // rewrites+reseals the in-memory SIDE table, the merged canonical state is snapshotted
+  // (K.allRowsPlain, the SAME primitive F10's legacy-blob migration already uses) and appended as NEW
+  // records into the append-only `ops` IDB store (K.appendOpsRecords, add()-only — never a put()/blob
+  // overwrite) so a reload or a sibling tab's next hydrate replays to the SAME merged tip too.
+  function syncNow(cb) {
+    var K = kernel();
+    var S = (typeof global.ErpSyncRelay !== 'undefined') ? global.ErpSyncRelay : null;
+    var FSM = (typeof global.ErpSyncFSM !== 'undefined') ? global.ErpSyncFSM : null;
+    var RC = (typeof global.ErpRelayClient !== 'undefined') ? global.ErpRelayClient : null;
+    var relayUrl = S && S.relayUrl();
+    if (!relayUrl || !K || !FSM || !RC) {
+      console.log('§SYNC_RELAY syncNow SKIP relay=' + !!relayUrl + ' kernel=' + !!K + ' fsm=' + !!FSM + ' client=' + !!RC);
+      if (cb) cb({ ok: false, reason: 'relay not configured/loaded' });
+      return;
+    }
+    withSidecar(function (db) {
+      if (!db) { console.log('§SYNC_RELAY syncNow SKIP sidecar-absent'); if (cb) cb({ ok: false, reason: 'sidecar absent' }); return; }
+      _withFreshSide(K, function (freshDb, done) {
+        var relayClient = RC.createRelayClient(relayUrl);
+        Promise.resolve(FSM.rebase(freshDb, K, relayClient)).then(function (r) {
+          var allRows = K.allRowsPlain(freshDb);
+          return K.appendOpsRecords(_IDB, OPS_STORE, allRows).then(function () {
+            return Promise.resolve(K.verifyChain(freshDb)).then(function (v) {
+              console.log('§SYNC_RELAY syncNow applied=' + r.applied + ' tip=' + (v && v.tip) + ' len=' + (v && v.len) + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              done();
+              if (cb) cb({ ok: true, applied: r.applied, tip: v && v.tip, len: v && v.len, verify: v });
+            });
+          });
+        }).catch(function (e) {
+          console.warn('§SYNC_RELAY syncNow error', e && e.message);
+          done();
+          if (cb) cb({ ok: false, error: e && e.message });
+        });
+      });
+    });
+  }
+  global.crudSyncNow = syncNow;   // witness/host seam — a real button click (or a host affordance) calls this
   // _hydrateSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE.
   // Builds a FRESH sql.js Database from the append-only `ops` IndexedDB store: read every record in key
   // order (cheap IDB cursor scan), replay each row back into a fresh kernel_ops table in that SAME order
@@ -2606,6 +2661,7 @@
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
-                    toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); } };
+                    toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); },
+                    syncNow: syncNow };   // §Relay Wiring (W-N-CONVERGE): manual push+pull+rebase against a configured relay
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);

@@ -601,6 +601,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <script src="crud_overlay.js?v=20"></script>
+<!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
+     (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
+     test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
+     page is opened with ?relay=<url> — no relay param, zero behavior change from today. Must load AFTER
+     crud_overlay.js (erp_sync_relay.js reaches window.__crud.syncNow at DOMContentLoaded). -->
+<script src="erp_relay_client.js?v=1"></script>
+<script src="erp_sync_fsm.js?v=1"></script>
+<script src="erp_sync_relay.js?v=1"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
