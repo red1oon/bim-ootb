@@ -892,6 +892,11 @@
   // Above this cursor jump, skipping stops paying (too many meshes have events anyway) and the
   // full path is cheaper. 7 days: a playback tick is minutes, a drag-scrub is months.
   var _INCR_MAX_SPAN_MS = 7 * 24 * 3600 * 1000;
+  // §PERF_INCR Phase 2: last tick's app._shadowOn, to detect the OFF<->ON edge. Batched/Instanced
+  // castShadow/receiveShadow flags are only (re)computed on ticks that aren't skipped, so a mesh
+  // skipped across a shadow toggle would keep a stale flag. Force one full pass on the edge tick
+  // only -- not for the whole time shadows stay on, which is what the old blanket gate did.
+  var _lastShadowOn = null;
 
   // Staleness signature — keyed ONLY on the element-mesh set, via A._metaGen (bumped by
   // streaming/city at the four sites that mutate _batchMeta/_instanceMeta). O(1).
@@ -1057,19 +1062,26 @@
     // §S260d: All particle effects removed
 
     // §PERF_INCR: decide delta vs full for THIS tick.
-    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, the
-    // shadow pass needs the complete _placedMeshes list, or the jump is large enough that skipping
-    // saves nothing. A long scrub legitimately changes tens of thousands of elements -- forcing
-    // delta there would be SLOWER than the full path, which is the failure this guard prevents.
+    // Full is required (not merely allowed) when: index missing/stale, no previous cursor, shadows
+    // just toggled (see _lastShadowOn above), or the jump is large enough that skipping saves
+    // nothing. A long scrub legitimately changes tens of thousands of elements -- forcing delta
+    // there would be SLOWER than the full path, which is the failure this guard prevents.
+    // §PERF_INCR Phase 2: shadows staying ON/OFF steady-state does NOT need a blanket full-mode
+    // gate -- _placedMeshes/_frontierCentroids/_shadowCasters are built in the single-mesh branch
+    // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
+    // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
     var _sig = _tmSceneSig(app);
     if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
     var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
-    var _incrOK = !!_evMesh && _prevCursor != null && !app._shadowOn &&
+    var _shadowNow = !!app._shadowOn;
+    var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
+    var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
     if (window.__forceFull) { _incrOK = false; window.__forceFull = false; }
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
+    _lastShadowOn = _shadowNow;
 
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
     app.scene.traverse(function(obj) {
@@ -1142,6 +1154,10 @@
 
       // ── BatchedMesh (per-slot GUIDs in _batchMeta) — S260 ──
       if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        // §PERF_INCR Phase 2: same event index already indexes _batchMeta guids (see
+        // _tmBuildEventIndex) but this branch never consulted it -- LTU's BatchedMesh-consolidated
+        // geometry (8 draw calls) got ZERO benefit from Phase 1, only InstancedMesh did.
+        if (_incrOK && !_tmHasEventIn(_evMesh[obj.id], _dLo, _dHi)) { _perfSkipped++; return; }
         var bmetas = app._batchMeta[obj.id];
         var anyVis = false;
         var _bmHasFrontier = false;
@@ -4580,7 +4596,7 @@
 
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
-    return { active: _active, cursor: _cursor };
+    return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
@@ -4602,4 +4618,42 @@
   // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
   window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;
     renderAtTime(Math.min(_projectEnd, _cursor + (dms || 3600000))); return window.__tmTrav; };
+  // W-INCR-EQUIV test hook: jump to an ABSOLUTE cursor (clamped to project bounds), for the
+  // forward/backward/random-scrub/jump-to-start-end sweep TM_INCREMENTAL_RENDER_PERF.md §5 requires.
+  // Diagnostic only, mirrors __tmStep's no-op-if-inactive contract.
+  window.__tmSetCursor = function (absMs) {
+    if (!_active) return null;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, absMs)));
+    return window.__tmTrav;
+  };
+  // W-INCR-EQUIV test hook: snapshot every visible guid + its slot visibility, for diffing the
+  // delta path against the window.__forceFull full-path re-render at the same cursor.
+  window.__tmSnapshotVisible = function () {
+    if (!_active) return null;
+    var app = A();
+    var out = { mesh: [], batched: {}, instanced: {} };
+    app.scene.traverse(function (obj) {
+      if (!obj.userData) return;
+      if (obj.userData.guid) { if (obj.visible) out.mesh.push(obj.userData.guid); return; }
+      if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        var bmetas = app._batchMeta[obj.id], vis = {};
+        for (var bi = 0; bi < bmetas.length; bi++) {
+          vis[bmetas[bi].guid] = !!(obj.getVisibleAt ? obj.getVisibleAt(bmetas[bi].slotId) : obj.visible);
+        }
+        out.batched[obj.id] = vis;
+        return;
+      }
+      if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        var metas = app._instanceMeta[obj.id], ivis = {};
+        var _snapM4 = window.__tmSnapshotVisible._m4 || (window.__tmSnapshotVisible._m4 = new THREE.Matrix4());
+        for (var mi = 0; mi < metas.length; mi++) {
+          obj.getMatrixAt(mi, _snapM4);
+          ivis[metas[mi].guid] = !(_snapM4.elements[0] === 0 && _snapM4.elements[5] === 0 && _snapM4.elements[10] === 0);
+        }
+        out.instanced[obj.id] = ivis;
+      }
+    });
+    out.mesh.sort();
+    return out;
+  };
 })();
