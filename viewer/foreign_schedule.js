@@ -163,6 +163,157 @@
     };
   }
 
+  // ── PMXML writer (prompts/XER_PMXML_WRITER_LANE.md §3.1) — the write-side counterpart to parsePMXML.
+  // toPMXML(tree, deps, opts): SAME input contract exportMSProject already reads —
+  //   tree = ScheduleAuthor.wbsTree(db, scheduleId) forest (isSummary WBS nodes + leaf Activity nodes,
+  //          each carrying id/parent/name/start/finish/critical/totalFloat/freeFloat/durDays/status)
+  //   deps = ScheduleAuthor.listDependencies(db, scheduleId) [{predId,succId,type,lag}]
+  // The READER is the schema authority: every tag emitted here is one _tag()/parsePMXML above reads back
+  // (Id/Name/WBSObjectId/PlannedStartDate/PlannedFinishDate/PlannedDuration/TotalFloat/FreeFloat/Status,
+  // WBS ObjectId/Code/Name/ParentObjectId, Relationship PredecessorActivityId/SuccessorActivityId/Type/Lag).
+  // Ids pass through UNCHANGED (already namespaced 'W:'/'A:' by toScheduleData) — a fixed point of our
+  // own reader, not a new numbering scheme. NON-INVENT: fields the tree doesn't carry (WBS code, EPS-level
+  // activity codes, resource assignments, global calendars, baselines) are left OUT, never fabricated —
+  // see the §PMXML_WRITE_LOSSY log below.
+  var _PMXML_TYPE_NAME = { FS: 'Finish to Start', SS: 'Start to Start', FF: 'Finish to Finish', SF: 'Start to Finish' };
+  function _xmlEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function toPMXML(tree, deps, opts) {
+    opts = opts || {};
+    var hpd = opts.hpd || 8;
+    var projectId = opts.projectId || 'EXPORT';
+    var projectName = opts.projectName || 'Exported Schedule';
+    var calendarName = opts.calendarName || 'Standard';
+
+    var wbsRows = [], actRows = [];
+    (function walk(nodes) {
+      (nodes || []).forEach(function (n) {
+        if (n.isSummary) wbsRows.push(n); else actRows.push(n);
+        if (n.children && n.children.length) walk(n.children);
+      });
+    })(tree);
+
+    var x = [];
+    x.push('<?xml version="1.0" encoding="UTF-8"?>');
+    x.push('<APIBusinessObjects xmlns="http://xmlns.oracle.com/Primavera/P6/V8.2/API/BusinessObjects">');
+    x.push('  <Project>');
+    x.push('    <Id>' + _xmlEsc(projectId) + '</Id>');
+    x.push('    <Name>' + _xmlEsc(projectName) + '</Name>');
+    x.push('    <Calendar>');
+    x.push('      <ObjectId>CAL1</ObjectId>');
+    x.push('      <Name>' + _xmlEsc(calendarName) + '</Name>');
+    x.push('      <HoursPerDay>' + hpd + '</HoursPerDay>');
+    x.push('    </Calendar>');
+    wbsRows.forEach(function (n) {
+      x.push('    <WBS>');
+      x.push('      <ObjectId>' + _xmlEsc(n.id) + '</ObjectId>');
+      x.push('      <Code>' + _xmlEsc(n.id) + '</Code>');
+      x.push('      <Name>' + _xmlEsc(n.name) + '</Name>');
+      x.push('      <ParentObjectId>' + (n.parent ? _xmlEsc(n.parent) : '') + '</ParentObjectId>');
+      x.push('    </WBS>');
+    });
+    actRows.forEach(function (n) {
+      var durHrs = (n.durDays != null ? n.durDays * hpd : '');
+      var tfHrs = (n.totalFloat != null ? parseFloat(n.totalFloat) * hpd : '');
+      var ffHrs = (n.freeFloat != null ? parseFloat(n.freeFloat) * hpd : '');
+      x.push('    <Activity>');
+      x.push('      <Id>' + _xmlEsc(n.id) + '</Id>');
+      x.push('      <Name>' + _xmlEsc(n.name) + '</Name>');
+      x.push('      <WBSObjectId>' + (n.parent ? _xmlEsc(n.parent) : '') + '</WBSObjectId>');
+      x.push('      <PlannedDuration>' + durHrs + '</PlannedDuration>');
+      x.push('      <PlannedStartDate>' + (n.start ? n.start + 'T08:00:00' : '') + '</PlannedStartDate>');
+      x.push('      <PlannedFinishDate>' + (n.finish ? n.finish + 'T17:00:00' : '') + '</PlannedFinishDate>');
+      x.push('      <TotalFloat>' + tfHrs + '</TotalFloat>');
+      if (n.freeFloat != null) x.push('      <FreeFloat>' + ffHrs + '</FreeFloat>');
+      if (n.status) x.push('      <Status>' + _xmlEsc(n.status) + '</Status>');
+      x.push('    </Activity>');
+    });
+    deps.forEach(function (d) {
+      x.push('    <Relationship>');
+      x.push('      <PredecessorActivityId>' + _xmlEsc(d.predId) + '</PredecessorActivityId>');
+      x.push('      <SuccessorActivityId>' + _xmlEsc(d.succId) + '</SuccessorActivityId>');
+      x.push('      <Type>' + (_PMXML_TYPE_NAME[d.type] || 'Finish to Start') + '</Type>');
+      x.push('      <Lag>' + ((d.lag || 0) * hpd) + '</Lag>');
+      x.push('    </Relationship>');
+    });
+    x.push('  </Project>');
+    x.push('</APIBusinessObjects>');
+
+    console.log('§PMXML_WRITE_LOSSY fields=WBS.code(synthetic=id, original code dropped upstream by ' +
+      'toScheduleData), Activity.EPS-level-activity-codes(never carried past P6 itself), ' +
+      'resource-assignments(no resource model in this schedule shape), global-calendars(single project ' +
+      'calendar only), baselines(no baseline round-trip — separate P6 import procedure) — see ' +
+      'XER_PMXML_WRITER_LANE.md §5');
+    return x.join('\n') + '\n';
+  }
+
+  // ── XER writer (prompts/XER_PMXML_WRITER_LANE.md §3.2) — the write-side counterpart to parseXER.
+  // toXER(tree, deps, opts): SAME (tree, deps) input as toPMXML above. Tab-delimited %T/%F/%R, ERMHDR
+  // first line (the reader sniffs /^\s*(ERMHDR|%T)/). Emits PROJECT/CALENDAR/PROJWBS/TASK/TASKPRED —
+  // exactly the tables parseXER's rows() reads. Relationship types via the INVERSE of REL_FROM_XER;
+  // lag via the inverse of hoursToDays (days*hpd → lag_hr_cnt), same convention as PMXML above.
+  var _XER_TYPE = {}; Object.keys(REL_FROM_XER).forEach(function (k) { _XER_TYPE[REL_FROM_XER[k]] = k; });
+  function toXER(tree, deps, opts) {
+    opts = opts || {};
+    var hpd = opts.hpd || 8;
+    var projectId = opts.projectId || 'EXPORT';
+    var projectName = opts.projectName || 'Exported Schedule';
+    var calendarName = opts.calendarName || 'Standard';
+    var TAB = '\t', L = [];
+    function row(tag, cells) { L.push([tag].concat(cells).join(TAB)); }
+
+    var wbsRows = [], actRows = [];
+    (function walk(nodes) {
+      (nodes || []).forEach(function (n) {
+        if (n.isSummary) wbsRows.push(n); else actRows.push(n);
+        if (n.children && n.children.length) walk(n.children);
+      });
+    })(tree);
+
+    L.push(['ERMHDR', '19.12', new Date().toISOString().slice(0, 10), 'Project', 'admin', 'admin', '', 'USD', projectId].join(TAB));
+
+    row('%T', ['PROJECT']);
+    row('%F', ['proj_id', 'proj_short_name', 'clndr_id']);
+    row('%R', [1, projectId, 1]);
+
+    row('%T', ['CALENDAR']);
+    row('%F', ['clndr_id', 'clndr_name', 'day_hr_cnt']);
+    row('%R', [1, calendarName, hpd]);
+
+    row('%T', ['PROJWBS']);
+    row('%F', ['wbs_id', 'proj_id', 'parent_wbs_id', 'wbs_short_name', 'wbs_name', 'proj_node_flag']);
+    wbsRows.forEach(function (n) {
+      row('%R', [n.id, 1, n.parent || '', n.id, n.name, n.parent ? 'N' : 'Y']);
+    });
+
+    row('%T', ['TASK']);
+    row('%F', ['task_id', 'proj_id', 'wbs_id', 'task_code', 'task_name', 'task_type',
+      'target_drtn_hr_cnt', 'target_start_date', 'target_end_date',
+      'total_float_hr_cnt', 'free_float_hr_cnt', 'driving_path_flag', 'status_code']);
+    actRows.forEach(function (n) {
+      row('%R', [n.id, 1, n.parent || '', n.id, n.name, 'TT_Task',
+        (n.durDays != null ? n.durDays * hpd : ''),
+        (n.start ? n.start + ' 08:00' : ''), (n.finish ? n.finish + ' 17:00' : ''),
+        (n.totalFloat != null ? parseFloat(n.totalFloat) * hpd : ''),
+        (n.freeFloat != null ? parseFloat(n.freeFloat) * hpd : ''),
+        (n.critical ? 'Y' : 'N'), (n.status || '')]);
+    });
+
+    row('%T', ['TASKPRED']);
+    row('%F', ['task_pred_id', 'task_id', 'pred_task_id', 'pred_type', 'lag_hr_cnt']);
+    deps.forEach(function (d, i) {
+      row('%R', [i + 1, d.succId, d.predId, (_XER_TYPE[d.type] || 'PR_FS'), (d.lag || 0) * hpd]);
+    });
+
+    L.push('%E');
+
+    console.log('§XER_WRITE_LOSSY fields=PROJWBS.wbs_short_name(synthetic=id, original code dropped ' +
+      'upstream by toScheduleData), TASK.rsrc/activity-codes(no resource/EPS-code model in this schedule ' +
+      'shape — P6 itself drops EPS-level codes on cross-DB import), CALENDAR(single project calendar ' +
+      'only, no global-calendar set), baselines(no BASELINE table — separate P6 import procedure) — see ' +
+      'XER_PMXML_WRITER_LANE.md §5');
+    return L.join('\n') + '\n';
+  }
+
   // ── MSPDI reader: MS Project XML (schemas.microsoft.com/project) ─────────────────────────────────
   // Differs from P6: no separate WBS objects — summary tasks ARE the WBS, hierarchy from OutlineLevel;
   // durations are ISO PT#H#M#S; TotalSlack/LinkLag are integers in TENTHS OF A MINUTE; relationship
@@ -389,7 +540,8 @@
   }
 
   var API = { parseXER: parseXER, parsePMXML: parsePMXML, parseMSPDI: parseMSPDI, parseForeign: parseForeign,
-    toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb, parseBindToken: parseBindToken, autoBind: autoBind };
+    toScheduleData: toScheduleData, adoptIntoDb: adoptIntoDb, parseBindToken: parseBindToken, autoBind: autoBind,
+    toPMXML: toPMXML, toXER: toXER };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else (global || globalThis).ForeignSchedule = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

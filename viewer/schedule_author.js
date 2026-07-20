@@ -318,15 +318,22 @@
     var r;
     try {
       r = db.exec('SELECT task_id, wbs_parent, name, is_summary, schedule_start, schedule_finish, ' +
-        'is_critical, total_float FROM tasks WHERE schedule_id=? ', [scheduleId]);
+        'is_critical, total_float, free_float, schedule_duration, status FROM tasks WHERE schedule_id=? ', [scheduleId]);
     } catch (e) { return []; }
     if (!r.length || !r[0].values.length) return [];
     var nodes = {}, ids = {};
+    // §XER/PMXML writer (prompts/XER_PMXML_WRITER_LANE.md §3.3): freeFloat/durDays/status are ADDITIVE
+    // fields — already stored in the wide `tasks` table by adoptIntoDb, just not read here before this.
+    // No schema change, no new columns; existing callers never destructured these and are unaffected.
     r[0].values.forEach(function (row) {
       ids[row[0]] = true;
+      var durM = /^P(-?\d+(?:\.\d+)?)D$/.exec(row[9] || '');
       nodes[row[0]] = { id: row[0], parent: row[1], name: row[2] || row[0],
         isSummary: !!row[3], start: row[4] || null, finish: row[5] || null,
         critical: row[6] === 1, totalFloat: (row[7] != null ? row[7] : null),
+        freeFloat: (row[8] != null ? row[8] : null),
+        durDays: (durM ? parseFloat(durM[1]) : null),
+        status: row[10] || null,
         guidCount: 0, children: [] };
     });
     // Element counts per task (the "N elements" badge on a leaf).
