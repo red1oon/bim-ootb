@@ -141,6 +141,14 @@ function setupTour(A) {
         document.getElementById('walk-speed-btn').textContent = '1x';
         A.wlog(`START cinematic tour: ${tour.length} actions`);
         A.status.textContent = `Cinematic tour: ${tour.length} actions`;
+        // §IDLE-PARK: _startFlyTour runs after an async route-planning gap (buildTour/room-graph),
+        // during which an idle loop can self-park again — the caller's markDirty() (toggleFlyAround)
+        // fired BEFORE that gap and is stale by the time walkMode actually goes true here. Without
+        // this, a chain that re-parked during planning never restarts: walkMode sits true, unread,
+        // and walkTick() (which drives the camera) never runs a single frame. Confirmed live on
+        // LTU_AHouse (TOUR_WALKMODE_IDLE_PARK_STUCK.md) — log showed "START cinematic tour" then
+        // §IDLE_GATE park, then silence, camera never moving despite a fully-built 25-action tour.
+        if (A.markDirty) A.markDirty();
         return;
       }
 
@@ -159,6 +167,7 @@ function setupTour(A) {
       A.flyAngle = 0;
       A.flyTransitioning = false;
       A.status.textContent = `Flying around ${A.flyTargets[0].name}...`;
+      if (A.markDirty) A.markDirty(); // same async-gap risk as the walkMode path above
     }
   };
 
