@@ -152,7 +152,10 @@ async function initViewer() {
         // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
         // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
         // v5 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): expose chordIllegalCount witness helper.
-        '../common/room_graph.js?v=5',
+        // v6 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): §UTILITY-ROUTING-PENALTY — buildGraph()
+        // tags utility rooms via RoomHabitability.classifyUtilityRooms; _buildAdjacency() penalises
+        // (x8, never removes) any edge touching one so room→room routing prefers corridors.
+        '../common/room_graph.js?v=6',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never

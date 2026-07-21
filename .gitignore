@@ -58,3 +58,6 @@ erp/tests/*.png
 erp/tests/*.log
 modeller/tests/*.png
 tests/*.png
+
+# W-UTIL-PENALTY witness regenerates this from a pinned SHA — never commit it
+common/_room_graph_before.js

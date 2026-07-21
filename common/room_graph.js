@@ -79,9 +79,30 @@
   // §G3-REVISED (PATH_LEGAL_SEGMENTS.md) — pack/unpack + lookup for the offline-precomputed
   // per-storey walkable raster (scripts/build_storey_walkable_raster.js). Dual-mode like this file.
   var StoreyRaster = (typeof module !== 'undefined' && module.exports) ? require('./storey_raster.js') : ROOT.StoreyRaster;
+  // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22) — the utility-room
+  // classifier, dual-mode loaded exactly like HallwayBackbone/StoreyRaster above. Reused (not
+  // reinvented) from common/room_habitability.js `classifyUtilityRooms()` — the SAME real element-
+  // composition signal (ACMV IfcFlowSegment duct-dominance or pure IfcFooting) already used by the
+  // Type-lens display (viewer/navigate_find.js), batched for perf (proven safe on Hospital's 311
+  // rooms). buildGraph() below uses it to TAG utility room nodes; _buildAdjacency() applies a
+  // routing-cost penalty (NOT removal) to any edge touching one — see UTILITY_EDGE_PENALTY.
+  var RoomHabitability = (typeof module !== 'undefined' && module.exports) ? require('./room_habitability.js') : ROOT.RoomHabitability;
 
   // Ported verbatim from scripts/compile_rooms.py — see file header. Not a new number.
   var DOOR_BUFFER_SLACK = 0.20;
+  // §UTILITY-ROUTING-PENALTY: cost multiplier applied in _buildAdjacency() to any weighted edge
+  // that touches a utility-classified room node (node.isUtility). This is the "penalise, prefer
+  // circulation" design target VIEWER_FIND_PANEL_ROOM_ACCURACY.md §9/§10 named — a cabling/service
+  // room stays REACHABLE (a maintenance-access "find path to the closet" query still resolves, just
+  // costs more), but ordinary room→room routing never treats it as an equal-weight circulation hop.
+  // Value chosen (not tuned to a fixture): real room-center-to-room-center edges in these buildings
+  // run ~3–12m and a corridor alternative "a few hops longer" adds ~10–40m; ×8 makes even a single
+  // ~5m utility hop cost ~40m, and a THROUGH-route (two touching edges, entry+exit, both penalised)
+  // cost ~80m — reliably losing to any realistic corridor detour a few hops longer — while staying
+  // finite (a multiplier, never Infinity/edge-removal, so reachability is preserved per §10's own
+  // "do NOT hard-exclude" requirement). A path whose destination IS the utility room pays the
+  // penalty on only its single arrival edge, which is fine/expected.
+  var UTILITY_EDGE_PENALTY = 8;
   // §DOOR-NOT-ROOM ported verbatim from scripts/compile_rooms.py NON_ROOM_DOOR_NAMES.
   var NON_ROOM_DOOR_NAMES = ['liftdeur', 'lift', 'elevator', 'aufzug', 'fahrstuhl', 'hoist'];
   function isRoomDoor(name) {
@@ -302,6 +323,40 @@
         if (corridorRoomsInjected || corridorRoomsSkippedOverlap) log('§CORRIDOR_ROOM_BACKPROP injected=' + corridorRoomsInjected +
           ' skippedOverlap=' + corridorRoomsSkippedOverlap + ' / ' + backbone.joined.length + ' joined buckets');
       } catch (eBb0) { log('§CORRIDOR_ROOM_BACKPROP_ERR ' + eBb0.message); backbone = null; }
+    }
+
+    // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classify every
+    // real room node by real element COMPOSITION (RoomHabitability.classifyUtilityRooms — see the
+    // require's own comment) and TAG utility rooms with node.isUtility. _buildAdjacency() then
+    // penalises (never removes) any edge touching a tagged node, so ordinary room→room routing
+    // prefers a corridor over cutting through a cabling/service room while keeping it reachable.
+    // Descriptor shape ({guid,cx,cy,sx,sy,storey}) mirrors navigate_find.js's two existing call
+    // sites; sx/sy are derived here from each logical room's UNION rect bbox (§MULTI-RECT aware —
+    // an L-shaped room's several sub-rects collapse to one covering box, same as a single-rect
+    // room degenerates to its own rect), with the box center used for cx/cy so the descriptor is
+    // self-consistent for the classifier's element range-scan. Batched call — 2 SQL queries total
+    // regardless of room count (the Hospital-311 perf fix baked into classifyUtilityRooms).
+    // Defensive: module absent / query error → no tags, penalty never fires, graph unchanged.
+    var utilityRoomCount = 0;
+    if (RoomHabitability && RoomHabitability.classifyUtilityRooms) {
+      try {
+        var utilDescs = roomOrder.map(function (lg) {
+          var g = nodes[lg];
+          var minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+          g.rects.forEach(function (rc) {
+            if (rc.x0 < minx) minx = rc.x0; if (rc.x1 > maxx) maxx = rc.x1;
+            if (rc.y0 < miny) miny = rc.y0; if (rc.y1 > maxy) maxy = rc.y1;
+          });
+          return { guid: lg, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2,
+            sx: maxx - minx, sy: maxy - miny, storey: g.storey };
+        });
+        var utilMap = RoomHabitability.classifyUtilityRooms(utilDescs, dbQuery) || {};
+        Object.keys(utilMap).forEach(function (guid) {
+          if (nodes[guid]) { nodes[guid].isUtility = true; nodes[guid].utilityWhy = utilMap[guid]; utilityRoomCount++; }
+        });
+        if (utilityRoomCount) log('§ROOM_GRAPH_UTILITY utilityRooms=' + utilityRoomCount +
+          ' (routing penalty x' + UTILITY_EDGE_PENALTY + ' on touching edges, not removed)');
+      } catch (eUtil) { log('§ROOM_GRAPH_UTILITY_ERR ' + eUtil.message); }
     }
 
     var doorRows = [];
@@ -804,6 +859,15 @@
         w = (typeof e.w === 'number') ? e.w : Math.hypot(
           graph.nodesByGuid[a].cx - graph.nodesByGuid[b].cx, graph.nodesByGuid[a].cy - graph.nodesByGuid[b].cy);
       }
+      // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10): an edge with a utility-
+      // classified room at EITHER end (tagged in buildGraph, see UTILITY_EDGE_PENALTY's comment)
+      // costs UTILITY_EDGE_PENALTY× its real distance — so Dijkstra prefers a corridor route a few
+      // hops longer over cutting through a cabling/service room, yet the room stays reachable (a
+      // finite multiplier, never removed). Both shortestPath() and escapeRoute() consume this
+      // adjacency, so both inherit the preference (an emergency exit route also shouldn't thread a
+      // service room when a corridor exists). No-op on every graph with no utility-tagged node.
+      var na = graph.nodesByGuid[a], nb = graph.nodesByGuid[b];
+      if ((na && na.isUtility) || (nb && nb.isUtility)) w *= UTILITY_EDGE_PENALTY;
       adj[a].push({ to: b, w: w, e: e, arriveSide: 'b' });
       adj[b].push({ to: a, w: w, e: e, arriveSide: 'a' });
     });
