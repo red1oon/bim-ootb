@@ -31,15 +31,45 @@ function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
 function pointInRect(px, py, rc) { return px >= rc.x0 && px <= rc.x1 && py >= rc.y0 && py <= rc.y1; }
 function inflateRect(rc, slack) { return { x0: rc.x0 - slack, x1: rc.x1 + slack, y0: rc.y0 - slack, y1: rc.y1 + slack }; }
 
+function _hasTable(db, name) {
+  try {
+    const r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name]);
+    return r.length > 0 && r[0].values.length > 0;
+  } catch (e) { return false; }
+}
+
+// §SPLIT-DB (2026-07-22, VIEWER_FIND_PANEL_ROOM_ACCURACY.md §12): a split-DB building (e.g. Terminal)
+// keeps `component_geometries` in a SEPARATE sibling `_geo.db`, NOT in the primary `_meta.db`/
+// `_extracted.db` the room graph is read from — exactly the 3-file layout the live viewer's own
+// §S260b split-DB detection loads (meta.db for panels/spatial, geo.db for meshes). If the primary db
+// carries no geometry table, resolve the sibling `_geo.db` and hand it to buildGeometryIndex as its
+// second (geoDb) arg — element_instances stays keyed off the PRIMARY db, meshes decode from the geo
+// db, exactly as real_geometry.js's two-arg contract already supports. Without this, every slab is
+// unresolved (0/705 on Terminal) and the raster silently degrades to crude full-slab-bbox fallback
+// rects — the "0/174 slabs resolved" gap §24 flagged as unexplored. This is a plumbing fix, not a
+// data one: Terminal's slab mesh is fully present (705/705 resolve once geo.db is loaded).
+function _resolveGeoDb(SQL, dbPath, primaryDb, log) {
+  if (_hasTable(primaryDb, 'component_geometries') || _hasTable(primaryDb, 'base_geometries')) return null;
+  const geoPath = dbPath.replace(/_(meta|extracted|rooms)\.db$/, '_geo.db');
+  if (geoPath === dbPath || !fs.existsSync(geoPath)) {
+    if (log) log('§RASTER_SPLITDB primary has no geometry table and no sibling _geo.db found (' + geoPath + ')');
+    return null;
+  }
+  const geoDb = new SQL.Database(new Uint8Array(fs.readFileSync(geoPath)));
+  if (log) log('§RASTER_SPLITDB loaded sibling geo db ' + path.basename(geoPath));
+  return geoDb;
+}
+
 async function loadDb(SQL, dbPath, patchPath) {
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
   if (patchPath && fs.existsSync(patchPath)) db.exec(fs.readFileSync(patchPath, 'utf8'));
+  const geoDb = _resolveGeoDb(SQL, dbPath, db, console.log);
   function dbQuery(q, params) {
     const r = params ? db.exec(q, params) : db.exec(q);
     if (!r.length) return [];
     return r[0].values;
   }
-  return { db, dbQuery };
+  return { db, geoDb, dbQuery };
 }
 
 // World-XY triangles for every slab guid on `storey` (z window [storeyZ+Z_LO, storeyZ+Z_HI]).
@@ -155,8 +185,8 @@ async function main() {
   if (!dbPath) { console.error('usage: build_storey_walkable_raster.js <dbPath> [patchPath] [outSqlPath]'); process.exit(1); }
   const log = console.log;
   const initSql = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const { db, dbQuery } = await loadDb(initSql, dbPath, patchPath);
-  const geomIdx = RealGeometry.buildGeometryIndex(db);
+  const { db, geoDb, dbQuery } = await loadDb(initSql, dbPath, patchPath);
+  const geomIdx = RealGeometry.buildGeometryIndex(db, geoDb || db);
   log('§RASTER_GEOM_INDEX table=' + geomIdx.table + ' guids=' + Object.keys(geomIdx.byGuid).length +
     ' resolvedHashes=' + Object.keys(geomIdx.resolved).length);
   const graph = RoomGraph.buildGraph(dbQuery, { log });
