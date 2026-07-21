@@ -1553,6 +1553,12 @@
       if ((!wh || wh.m_warehouse_id == null) && org) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(org);
       if ((!wh || wh.m_warehouse_id == null) && cli) wh = b.prepare("SELECT m_warehouse_id FROM m_warehouse WHERE ad_client_id=? AND isactive='Y' ORDER BY m_warehouse_id LIMIT 1").get(cli);
       if (wh && wh.m_warehouse_id != null) ctx.m_warehouse_id = Number(wh.m_warehouse_id);
+      // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21) — window.APP._createIsSOTrx is set
+      // by idempiere.html's buildForm() right before a CREATE, from the active AD_Tab's own WhereClause
+      // (the real per-window Sales/Purchase signal). MOrder.docTypeTargetDefault reads ctx.issotrx to pick
+      // the right-side default doctype instead of always the client's Standard Sales doctype. Only ever read
+      // for the derivation-if-unset case (existing docTypeTarget on an UPDATE is left alone regardless).
+      if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') ctx.issotrx = app._createIsSOTrx;
     } catch (e) {}
     return ctx;
   }

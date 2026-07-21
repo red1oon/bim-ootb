@@ -2801,6 +2801,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var copyFrom = _newMode.copyFrom;
       _withFoldedEntry(tn, 'create', function () {
         var opts = _inlineOptsFor(tn, nf);
+        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "IsSOTrx/DocType gap") — the AD_Tab's
+        // own WhereClause is the REAL per-window signal iDempiere already uses to split Sales vs Purchase Order
+        // windows (e.g. "C_Order.IsSOTrx='Y'" vs "...='N'", confirmed live: window 143 vs 181), already loaded
+        // into tab.whereClause for grid filtering but never consulted at CREATE time — beforeSave's
+        // docTypeTargetDefault always fell back to the client's Standard SALES doctype regardless of which
+        // window authored the record. Stash it as a create-scoped hint on window.APP (the SAME session-context
+        // channel _docCtx() already reads orgId/clientId from), read+applied only for this one create, cleared
+        // right after so it never leaks into an unrelated later save.
+        window.APP = window.APP || {};
+        var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
+        window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
         else window.__crud.createInline(tn, nmount, opts);
       });
