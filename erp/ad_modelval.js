@@ -151,6 +151,22 @@
         }
         return null;
       }],
+      ['MOrder.deliveryInvoiceRuleDefault', function (ctx, info) {
+        // §DR-IR-LAST-MILE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "DeliveryRule/InvoiceRule undeclared") —
+        // NOT a beforeSave line in real MOrder.java: DeliveryRule/InvoiceRule are AD_Column DefaultValue
+        // fields, applied at NEW-record time by the window layer, not by the model's beforeSave. This engine
+        // has no such "apply AD_Column default at NEW" seam yet, and c_order's crud_ops.json entry (like
+        // M_Warehouse_ID/IsSOTrx above) declares no visible field for either — genShipmentLines/
+        // genInvoiceLines (ad_process.js) silently treat an undefined rule as "named-deferred", so every
+        // freshly-created order produced zero shippable/invoiceable lines regardless of DocStatus/IsSOTrx/
+        // Warehouse all being correct. Values are the REAL AD_Column.DefaultValue rows for C_Order in the
+        // seed (queried live: DeliveryRule='F' Force, InvoiceRule='I' Immediate — confirmed, not assumed;
+        // Availability was the initial guess and would have been WRONG).
+        var r = info.record;
+        if (!r.deliveryrule) d(info).deliveryrule = 'F';
+        if (!r.invoicerule) d(info).invoicerule = 'I';
+        return null;
+      }],
       ['MOrder.paymentTermDefault', function (ctx, info) {   // :1315-1327  IsDefault='Y' payment term
         var r = info.record;
         if (!Number(r.c_paymentterm_id)) {
