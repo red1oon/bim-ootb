@@ -973,12 +973,17 @@
             versionStale = storedV !== window.RoomWalker.ROOM_WALKER_V;
           } catch (eV) { versionStale = true; /* no rooms_meta table = compiled before this shipped */ }
           if (versionStale) {
-            console.warn('[NEEDLE] §NEEDLE_VERSION_STALE bld=' + (_dbFileNow || A.activeBuilding) + ' stored=' + storedV +
+            // §LOG-CLARITY (2026-07-21, live confusion found via user testing): this line was
+            // console.warn — invisible whenever DevTools' console filter has "Warnings" unchecked,
+            // which made a real, correctly-firing recompile look like it never ran. Every other
+            // step of this same pipeline (§NEEDLE_INJECT/§NEEDLE_STAMP/§NEEDLE_PERSIST below) is
+            // console.log; matching that here removes the filter-dependent blind spot.
+            console.log('[NEEDLE] §NEEDLE_VERSION_STALE bld=' + (_dbFileNow || A.activeBuilding) + ' stored=' + storedV +
               ' current=' + (window.RoomWalker && window.RoomWalker.ROOM_WALKER_V) + ' — recompiling');
           }
         }
         if (inFrame && !versionStale) return { status: 'present', real: false };
-        if (!inFrame) console.warn('[NEEDLE] §NEEDLE_FRAME_STALE compiled rooms outside building extent — recompiling');
+        if (!inFrame) console.log('[NEEDLE] §NEEDLE_FRAME_STALE compiled rooms outside building extent — recompiling');
       }
       var bld = A.activeBuilding || '';
       var url = A.DB_URL || '';
