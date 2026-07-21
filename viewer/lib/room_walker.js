@@ -19,6 +19,13 @@
   var TAG = '§ROOM-WALKER';
   var ROOT = (typeof window !== 'undefined') ? window : {};
 
+  // §ROOM_WALKER_VERSION_STAMP (ROOM_INJECTOR_NEEDLE.md) — algorithm version, EFFECTS_V convention:
+  // bump on every ALGORITHM change, never on cosmetic edits. Kept in LOCKSTEP with the same-named
+  // constant in scripts/compile_rooms.py (py/js parity discipline). 'v2' continues the existing
+  // lib/room_walker.js?v=2 loader lineage rather than restarting at an arbitrary v1.
+  // Stage 2 writes it to rooms_meta after each compile; nothing reads it yet (stage 3).
+  var ROOM_WALKER_V = 'v2 (§LOCAL-FRAME + §RASTER-EPS, post-§SUSPECT-LARGE)';
+
   var RES = 0.20;          // grid cell size (m)
   var MIN_AREA = 4.0;      // m^2 — drop slivers / wall cavities
   // §SUSPECT-LARGE (compile_rooms.py port, 2026-07-14): MAX_AREA_ABS used to be a hard drop
@@ -1309,6 +1316,14 @@
       }
     });
     relStmt.free();
+    // §ROOM_WALKER_VERSION_STAMP stage 2 (write side only): record WHICH algorithm version compiled
+    // these rooms, so stage 3 can later trust-until-version-moves-on instead of trust-forever.
+    // Missing row = compiled before this shipped (counts as maximally stale once stage 3 reads it).
+    db.run("CREATE TABLE IF NOT EXISTS rooms_meta (id INTEGER PRIMARY KEY CHECK(id=1), " +
+      "version TEXT, built_at TEXT, room_count INTEGER)");
+    db.run("INSERT OR REPLACE INTO rooms_meta (id, version, built_at, room_count) VALUES (1,?,?,?)",
+      [ROOM_WALKER_V, new Date().toISOString(), allrooms.length]);
+    console.log(TAG + ' §ROOMS_META stamped version=' + ROOM_WALKER_V + ' room_count=' + allrooms.length);
     return { roomsWritten: allrooms.length, rectRowsWritten: rectRows, relWritten: rel };
   }
 
@@ -1339,9 +1354,10 @@
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,
     MERGE_WALL_COVER_MAX: MERGE_WALL_COVER_MAX, MERGE_DOOR_TOL: MERGE_DOOR_TOL, WALL_TOL: WALL_TOL,
     REJECT_ENCLOSURE: REJECT_ENCLOSURE, SUSPECT_OPEN_ENCLOSURE: SUSPECT_OPEN_ENCLOSURE,
-    SUSPECT_ELONGATED_ASPECT_MIN: SUSPECT_ELONGATED_ASPECT_MIN
+    SUSPECT_ELONGATED_ASPECT_MIN: SUSPECT_ELONGATED_ASPECT_MIN,
+    ROOM_WALKER_V: ROOM_WALKER_V
   };
   ROOT.RoomWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
-  if (typeof console !== 'undefined') console.log(TAG + ' module loaded');
+  if (typeof console !== 'undefined') console.log(TAG + ' module loaded, version=' + ROOM_WALKER_V);
 })();
