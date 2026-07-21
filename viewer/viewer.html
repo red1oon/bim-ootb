@@ -1018,6 +1018,17 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js?v=532')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
+  // §BUILD_VERSION_STAMP: log the ACTIVE (controlling) service worker's CACHE_VERSION at page
+  // onset — a one-line answer to "is this tab running the latest deploy" without hunting for a
+  // later feature-specific log line. No controller yet = this load isn't SW-controlled (first
+  // visit, or the SW just updated and hasn't taken over) — reload once to get a controller.
+  if(navigator.serviceWorker.controller){
+    var _bvCh=new MessageChannel();
+    _bvCh.port1.onmessage=function(ev){console.log('§BUILD_VERSION '+(ev.data&&ev.data.version||'?')+' (sw-controlled)')};
+    navigator.serviceWorker.controller.postMessage({type:'GET_PRECACHE'},[_bvCh.port2]);
+  } else {
+    console.log('§BUILD_VERSION (no active controller yet — reload once to confirm)');
+  }
 }
 // §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
 window._installPrompt = null;
