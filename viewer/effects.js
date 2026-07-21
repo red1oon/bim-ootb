@@ -1798,8 +1798,22 @@ async function setupEffects(A, renderer, scene, camera) {
     var ifcFloorZ = floorYval + A.modelOffset.z;
     var aisleGrid = _buildOccupancyGrid(ifcFloorZ - 0.3, ifcFloorZ + 2.0);
     var walkCand = [], _np = new THREE.Vector3(), aisleWalkTried = 0, aisleRejectedInObject = 0;
-    for (var dd = 4; dd <= 13; dd += 3) {
-      for (var lat = -4.5; lat <= 4.5; lat += 3) {
+    // §STAFFAGE_CAMROOM (2026-07-22): floor was 4m, which in a small/typical room lands past the far
+    // wall or inside _CLR_PERSON clearance of it, emptying the candidate pool and reading as "avoids
+    // the camera's own room" (prompts/PHOTOREAL_STILL_RENDER.md §SPEC ONLY — Issue 1). Lowered the
+    // floor to 1.5m and widened the step so the SAME 5-band spread still reaches all the way to 13m
+    // (was 4 bands, 4/7/10/13 — a bare `dd=1.5` with the old step-3 would have DROPPED the 13m band
+    // instead of adding a near one, net-losing far-room reach). _spaceOK()'s existing clearance check
+    // still rejects anything actually too close to camera/geometry — no new camera-avoidance rule.
+    for (var dd = 1.5; dd <= 13; dd += 2.875) {
+      // §STAFFAGE_CAMROOM_FAN: lat's old fixed ±4.5m span was tuned for the far band (dd=13, a
+      // ~19° half-angle off dead-ahead) — reused verbatim at dd=1.5 it demands a 72° swing, which
+      // fails the frustum test on EVERY sample (confirmed live: walkTried/rejectedInObject came out
+      // byte-identical before/after the dd-floor-only fix — the new near band contributed zero
+      // candidates). Scale the lateral fan with dd so every band keeps roughly the SAME angular
+      // cone as the proven far band, instead of a fixed metric width that only works far out.
+      var _latMax = dd * (4.5 / 13);
+      for (var lat = -_latMax; lat <= _latMax; lat += Math.max(_latMax * 0.66, 0.1)) {
         var wx = cam.x + fwd.x * dd + rightV.x * lat, wz = cam.z + fwd.z * dd + rightV.z * lat;
         _np.set(wx, floorYval + 1.0, wz).project(A.camera);
         if (Math.abs(_np.x) > 0.85 || Math.abs(_np.y) > 0.9 || _np.z < -1 || _np.z > 1) continue;
