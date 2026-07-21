@@ -896,6 +896,7 @@ async function setupScene(A) {
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
     'w':  function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }, // §WHIST: open/close the cross-page World-history overlay (HISTORY_KNOB_DIAL.md)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
+    'o':  function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); }, // FLY_TOUR_DLOD_SCALE.md §9: nav LOD boxes (bOx; plain o — Ctrl+O stays open-model)
     'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
     'n':  function() { if (typeof window.toggleNightMode === 'function') window.toggleNightMode(); },
