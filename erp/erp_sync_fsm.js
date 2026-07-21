@@ -162,23 +162,35 @@
    *   4. re-seal the chain over the new order (sealChain full-recomputes → valid chain, §kernel)
    * Determinism ⇒ every device that rebases against the same sequencer head materialises the SAME
    * ordered log ⇒ the SAME chain tip ⇒ the SAME projection. That convergence is the whole point.
+   *
+   * Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S7 — Witness:
+   * W-REBASE-ATTRIB. `gid`/`branch_id`/`sig` now ride through the rewind+reapply (previously dropped,
+   * NULLing every op's group + attestation on every sync). `gid` survival keeps a DocAction fan-out
+   * (commitGroup) foldable/undoable as ONE group after a sync, not N orphaned singletons. `sig`
+   * survival matters only for v2 content-signed rows (kernel_ops.js _sigBase attests the id-independent
+   * content hash for those — a v1 row's sig attests the position-dependent chain hash and could never
+   * survive a reorder regardless of what this function does); sealChain's own `if (_signer && !sig)`
+   * guard already skips re-signing a row that arrives with a sig intact, so no kernel change was needed
+   * to make preservation "stick" — the bug was purely that rebase() blanked the column before sealChain
+   * ever got a chance to see it.
    * @returns {Promise<{applied:number, head:number}>}
    */
   async function rebase(db, kernel, sequencer) {
-    var r = db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid FROM kernel_ops ORDER BY id');
+    var r = db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig FROM kernel_ops ORDER BY id');
     var local = (r.length ? r[0].values : []).map(function (row) {
-      return { op_uuid: row[0], timestamp: row[1], op_type: row[2],
-               parameters: row[3], input_guids: row[4], output_guid: row[5] };
+      return { op_uuid: row[0], timestamp: row[1], op_type: row[2], parameters: row[3],
+               input_guids: row[4], output_guid: row[5], gid: row[6], branch_id: row[7], sig: row[8] };
     });
     var pushRes = await sequencer.push(local); // idempotent ingest → canonical order (await: sync stub OR async HTTP relay)
     var canon = await sequencer.snapshot();    // the authoritative ordered log
     db.run('DELETE FROM kernel_ops');      // rewind: drop local order (ids restart at 1 — no AUTOINCREMENT)
     for (var i = 0; i < canon.length; i++) {
       var op = canon[i];
-      db.run('INSERT INTO kernel_ops (op_uuid,timestamp,op_type,parameters,input_guids,output_guid) VALUES (?,?,?,?,?,?)',
-        [op.op_uuid, op.timestamp, op.op_type, op.parameters, op.input_guids || null, op.output_guid || null]);
+      db.run('INSERT INTO kernel_ops (op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig) VALUES (?,?,?,?,?,?,?,?,?)',
+        [op.op_uuid, op.timestamp, op.op_type, op.parameters, op.input_guids || null, op.output_guid || null,
+         op.gid || null, op.branch_id || null, op.sig || null]);
     }
-    await kernel.sealChain(db);             // re-seal over the canonical order
+    await kernel.sealChain(db);             // re-seal over the canonical order (skips already-signed rows)
     console.log('§SYNC_FSM rebase applied=' + canon.length + ' head=' + (pushRes && pushRes.head != null ? pushRes.head : canon.length));
     return { applied: canon.length, head: sequencer.head() };
   }
