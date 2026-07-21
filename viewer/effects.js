@@ -3177,7 +3177,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v8 (§CINEMA_SPACE simplified to largest-only, §CINEMA_SUN_ORDER sunFirst/sunLast, §CINEMA_END_DECEL, §CINEMA_BEAT_OVERLAP)';
+  var EFFECTS_V = 'v9 (§CINEMA_SPACE_ENCLOSED_SKIP — skip disqualified top candidates before bbox-centre)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3380,24 +3380,40 @@ async function setupEffects(A, renderer, scene, camera) {
       return { c3: c3, fy: fy, st: st, f: f, frac: hit / f.free.length };
     }
 
-    if (topCand) {
-      var ev = _cinemaEvalCand(topCand);
-      console.log('§CINEMA_SPACE cand=' + topCand.guid + ' area=' + topCand.area.toFixed(1) +
-        ' enclosed=' + (ev.frac * 100).toFixed(0) + '% chosen=' + (ev.frac >= CINEMA_ENCLOSED_THRESHOLD || topCand === bboxCentre));
-      if (ev.frac >= CINEMA_ENCLOSED_THRESHOLD || topCand === bboxCentre) {
-        diveIfc = topCand.ifc; diveName = topCand.name; diveArea = topCand.area;
-        diveSrc = (topCand === bboxCentre) ? 'bbox-centre' : 'room-graph';
-        dive3 = ev.c3; floorY = ev.fy; settle = { x: ev.st.x, y: ev.st.y, z: ev.st.z }; fan = ev.f; enclosedFrac = ev.frac;
-      } else if (bboxCentre) {
-        // Top candidate failed the sanity check (open sky, e.g. a roof terrace) — straight to
-        // bbox-centre, no search through alternates (that search IS the "disastrous" behaviour
-        // being abandoned here).
-        var evB = _cinemaEvalCand(bboxCentre);
-        diveIfc = bboxCentre.ifc; diveName = 'bbox-centre'; diveArea = 0;
-        diveSrc = 'bbox-centre (top candidate "' + topCand.name + '" not enclosed)';
-        dive3 = evB.c3; floorY = evB.fy; settle = { x: evB.st.x, y: evB.st.y, z: evB.st.z }; fan = evB.f; enclosedFrac = evB.frac;
-        console.log('§CINEMA_SPACE cand=bbox-centre area=0.0 enclosed=' + (evB.frac * 100).toFixed(0) + '% chosen=true (fallback)');
-      }
+    // §CINEMA_SPACE_ENCLOSED_SKIP (2026-07-21, user ruling: keep the #925 any-floor "largest space"
+    // ranking EXACTLY as-is — no floor weighting, no re-ranking — but stop letting a single
+    // disqualified top candidate fall straight to bbox-centre. Real bug, DB-confirmed live on
+    // Terminal/Hospital: the #1 candidate can be a SUSPECT_OPEN/genuinely-unenclosed space (measured
+    // enclosed=0%), and bbox-centre itself then measured enclosed=0% too — landing the dive nowhere
+    // real. This is NOT the "next largest room" iteration the user called disastrous and abandoned in
+    // #925 (that combined iteration WITH floor-level re-scoring, so which room won jumped around
+    // unpredictably floor to floor). Here the order never changes — same area/centrality score, same
+    // sort — this only SKIPS a candidate that fails the existing enclosure sanity check, same threshold
+    // that already existed. Bounded to the top 6 (same cap R2 used before #925 removed floor-weighting,
+    // reused here for its own sake, not because floor-weighting is back).
+    var CINEMA_SPACE_TRY_MAX = 6;
+    var chosenCand = null, chosenEv = null;
+    for (var sci = 0; sci < Math.min(spaceCands.length, CINEMA_SPACE_TRY_MAX); sci++) {
+      var sc = spaceCands[sci];
+      var scEv = _cinemaEvalCand(sc);
+      console.log('§CINEMA_SPACE cand=' + sc.guid + ' area=' + sc.area.toFixed(1) +
+        ' enclosed=' + (scEv.frac * 100).toFixed(0) + '% chosen=' + (scEv.frac >= CINEMA_ENCLOSED_THRESHOLD) +
+        (sci > 0 ? ' (rank=' + (sci + 1) + ', skipped ' + sci + ' unenclosed above)' : ''));
+      if (scEv.frac >= CINEMA_ENCLOSED_THRESHOLD) { chosenCand = sc; chosenEv = scEv; break; }
+    }
+    if (chosenCand) {
+      diveIfc = chosenCand.ifc; diveName = chosenCand.name; diveArea = chosenCand.area;
+      diveSrc = 'room-graph';
+      dive3 = chosenEv.c3; floorY = chosenEv.fy; settle = { x: chosenEv.st.x, y: chosenEv.st.y, z: chosenEv.st.z };
+      fan = chosenEv.f; enclosedFrac = chosenEv.frac;
+    } else if (bboxCentre) {
+      // Every real candidate tried failed enclosure (or none existed) — fall to bbox-centre, same
+      // last-resort this always had.
+      var evB = _cinemaEvalCand(bboxCentre);
+      diveIfc = bboxCentre.ifc; diveName = 'bbox-centre'; diveArea = 0;
+      diveSrc = 'bbox-centre (no enclosed candidate among top ' + Math.min(spaceCands.length, CINEMA_SPACE_TRY_MAX) + ')';
+      dive3 = evB.c3; floorY = evB.fy; settle = { x: evB.st.x, y: evB.st.y, z: evB.st.z }; fan = evB.f; enclosedFrac = evB.frac;
+      console.log('§CINEMA_SPACE cand=bbox-centre area=0.0 enclosed=' + (evB.frac * 100).toFixed(0) + '% chosen=true (fallback)');
     }
     if (!settle) { settle = { x: pivot.x, y: pivot.y, z: pivot.z }; fan = _cinemaFan(settle, CINEMA_FAN_RAYS); }
     // BVH fan nudge: slide toward the open side so we land in the MIDDLE of the space rather than
