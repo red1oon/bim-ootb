@@ -641,6 +641,10 @@
     // injection is in flight (guards double-press).
     var _lastPresent = null;
     var _needleBusy = false;
+    // §FIND_ENSURE_ROOMS (ROOM_INJECTOR_NEEDLE.md, 2026-07-21): building name the Room lens has
+    // already run A.ensureRooms({}) for this session, so entering/refreshing the room tree does not
+    // re-fire the shared injection core on every filter keystroke / sub-toggle switch.
+    var _roomsEnsuredBld = null;
     // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
     // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
     // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
@@ -1157,8 +1161,12 @@
       }
     }
 
-    function _isolateLensGroup(lens, g) {
+    async function _isolateLensGroup(lens, g) {
       if (!A.db || !A.filterByGuids) return;
+      // §FIND_ENSURE_ROOMS: if a room self-heal is mid-flight (user entered the lens then tapped a
+      // group on the pre-recompile tree before it rebuilt), wait for it so we isolate against the
+      // current rel_contained_in_space rows — same single shared A.ensureRooms core, no 2nd path.
+      if (lens === 'room' && A._ensureRoomsInflight) { try { await A._ensureRoomsInflight; } catch (e) {} }
       if (A.filterStorey) A.filterStorey(null);
       if (A.filterDisc) A.filterDisc(null);
       var set = new Set();
@@ -2835,6 +2843,29 @@
 
     // §RP-T3 axis builders — list the groups for Room / Material / Phase.
     function _buildRoomTree() {
+      // §FIND_ENSURE_ROOMS (ROOM_INJECTOR_NEEDLE.md): the Room lens reads spatial_structure /
+      // rel_contained_in_space directly (below + in _isolateLensGroup) and used to depend on Fly
+      // Tour / Cinema/MaxQ / DLOD-nav ('o') having called A.ensureRooms() FIRST in the same page
+      // session — pure order-of-operations luck. Call the ONE shared injection core here so Find
+      // stops relying on another feature to warm it. Non-force (this is NOT the needle's force:true
+      // recompute button): it respects the Stage-4 version-check trust path — ~9ms when already
+      // fresh, pays the real recompile only once. Guarded per-building so keystrokes/sub-toggles
+      // don't re-fire it. A real self-heal (status==='injected') rebuilds the tree so the user sees
+      // current (post-recompile) rooms instead of the stale set that was on screen.
+      if (A.ensureRooms && _roomsEnsuredBld !== (A.activeBuilding || '')) {
+        _roomsEnsuredBld = A.activeBuilding || '';
+        A.ensureRooms({}).then(function(res) {
+          if (res && res.status === 'injected') {
+            console.log('[RP-T3] §FIND_ENSURE_ROOMS self-heal bld=' + _roomsEnsuredBld + ' source=' + res.source + ' rooms=' + res.rooms + ' — rebuilding room tree');
+            if (_treeMode === 'room') buildTree();
+          } else {
+            console.log('[RP-T3] §FIND_ENSURE_ROOMS current bld=' + _roomsEnsuredBld + ' status=' + (res && res.status));
+          }
+        }).catch(function(e) {
+          _roomsEnsuredBld = null; // failed — allow a later room-lens entry to retry
+          console.warn('[RP-T3] §FIND_ENSURE_ROOMS_ERR ' + (e && e.message));
+        });
+      }
       // §RP Task A: with volume data the Room axis is a HIGHLIGHT lens (rooms glow,
       // model x-rayed) — NOT a contents isolate. Tapping focuses a room (box + zoom-to-fit).
       // §RP Room sub-toggle: group rooms [Storey | Type]. Storey (default) nests rooms under
