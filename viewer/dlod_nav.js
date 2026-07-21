@@ -46,6 +46,7 @@
   var _fades = [];                 // active transitions
   var _unitBox = null, _zeroM = null, _frustum = null, _psm = null, _sphere = null, _m4 = null;
   var _lastCamSig = null, _lastEvalT = 0;
+  var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0 };
   window.__dlodNav = _stats;
 
@@ -307,8 +308,13 @@
       if (e.state === 'box') boxed++; else real++;
     }
     _stats.active = real; _stats.boxed = boxed; _stats.evalMs = +(performance.now() - t0).toFixed(1);
-    if (started) console.log('§DLOD_NAV active=' + real + ' boxed=' + boxed + ' mode=on started=' + started +
-      ' fades=' + _fades.length + ' eval_ms=' + _stats.evalMs);
+    _logAccStarted += started;
+    var _nowLog = performance.now();
+    if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
+      console.log('§DLOD_NAV active=' + real + ' boxed=' + boxed + ' mode=on started=' + _logAccStarted +
+        ' fades=' + _fades.length + ' eval_ms=' + _stats.evalMs);
+      _logAccStarted = 0; _lastLogT = _nowLog;
+    }
     if (app.markDirty) app.markDirty();
   }
 
