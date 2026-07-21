@@ -1251,6 +1251,84 @@
     return hits;
   }
 
+  // §CONTAINMENT-ALIAS join, hoisted (FLY_TOUR_DLOD_SCALE.md §13): the per-canonical-floor Z-anchor
+  // join writeRooms() has always used for element containment, factored out so the camera-side room
+  // lookup (buildCameraRoomIndex below) resolves floors with the IDENTICAL math — §11.2 Q2 measured
+  // observable cross-floor mispicks (VÅNING_2 → VÅNING_1) from a naive nearest-cz match that skipped
+  // this. Returns joinKey(storey, cz): canonical floor if the storey label parses, else nearest
+  // anchor by cz, else the raw storey label (unresolvable — no regression fallback).
+  function _makeJoinKey(floorAnchors) {
+    var floorAnchorNames = Object.keys(floorAnchors).sort();
+    function joinKey(storey, cz) {
+      var cf = _canonicalFloor(storey);
+      if (cf !== null) return cf;
+      if (cz === null || cz === undefined || !floorAnchorNames.length) return storey; // unresolvable — raw fallback, no regression
+      var best = null, bd = Infinity;
+      for (var i = 0; i < floorAnchorNames.length; i++) {
+        var d = Math.abs(cz - floorAnchors[floorAnchorNames[i]]);
+        if (d < bd) { bd = d; best = floorAnchorNames[i]; }
+      }
+      return best;
+    }
+    joinKey.anchorNames = floorAnchorNames;
+    return joinKey;
+  }
+
+  // §ROOM_OCCL (FLY_TOUR_DLOD_SCALE.md §13, step 1): camera-side room lookup index, read back from
+  // the COMPILED rooms already persisted in spatial_structure. Same rect test writeRooms() applies
+  // to element centres (abs(x-cx)<=sx/2 && abs(y-cy)<=sy/2), same floor-anchor Z-join (_makeJoinKey
+  // above) — evaluated against the CAMERA's IFC-space position instead of an element's. SUSPECT
+  // rooms are excluded exactly as writeRooms() excludes them from containment (an unreviewed
+  // corridor/void must not become anyone's "current room" either). roomAt() returns the LOGICAL
+  // room guid (room_guid — §MULTI-RECT: N rects, one room) or null (camera in no compiled room —
+  // §13's explicit no-room state; the caller must treat null as "criterion contributes nothing").
+  function buildCameraRoomIndex(db) {
+    // Schema tolerance: room_guid (§MULTI-RECT) is ALTERed in by writeRooms — rooms compiled by an
+    // older walker/patch predate it. Absent column ⇒ every row is its own primary rect (guid).
+    var hasRoomGuid = _rows(db, "PRAGMA table_info(spatial_structure)")
+      .some(function (c) { return c.name === 'room_guid'; });
+    var rows = _rows(db,
+      "SELECT r.guid g, " + (hasRoomGuid ? "r.room_guid" : "NULL") + " rg, " +
+      "r.center_x cx, r.center_y cy, r.center_z cz, " +
+      "r.size_x sx, r.size_y sy, r.predefined_type pt, p.name storey " +
+      "FROM spatial_structure r LEFT JOIN spatial_structure p ON p.guid = r.parent_guid " +
+      "WHERE r.type='IfcSpace' AND r.guid LIKE 'RM\\_%' ESCAPE '\\' AND r.center_x IS NOT NULL " +
+      "AND r.size_x IS NOT NULL AND r.size_y IS NOT NULL");
+    rows = rows.filter(function (r) { return !(r.pt && String(r.pt).indexOf('SUSPECT') === 0); });
+    var acc = {};
+    rows.forEach(function (r) {
+      var cf = _canonicalFloor(r.storey);
+      if (cf !== null) (acc[cf] = acc[cf] || []).push(r.cz);
+    });
+    var anchors = {};
+    Object.keys(acc).forEach(function (cf) {
+      var v = acc[cf];
+      anchors[cf] = v.reduce(function (s, x) { return s + x; }, 0) / v.length;
+    });
+    var joinKey = _makeJoinKey(anchors);
+    var floors = {};
+    rows.forEach(function (r) {
+      var k = joinKey(r.storey, r.cz);
+      if (k === null || k === undefined) return;
+      (floors[k] = floors[k] || []).push({ cx: r.cx, cy: r.cy, sx: r.sx, sy: r.sy, room: r.rg || r.g });
+    });
+    return {
+      rects: rows.length,
+      anchors: anchors,
+      anchorNames: joinKey.anchorNames,
+      floors: floors,
+      roomAt: function (x, y, z) {
+        // camera carries no storey label — always the Z-anchor branch of the join (storey=null)
+        var cand = floors[joinKey(null, z)] || [];
+        for (var i = 0; i < cand.length; i++) {
+          var c = cand[i];
+          if (Math.abs(x - c.cx) <= c.sx / 2 && Math.abs(y - c.cy) <= c.sy / 2) return c.room;
+        }
+        return null;
+      }
+    };
+  }
+
   // Persist a compileRooms() result into spatial_structure + rel_contained_in_space (the --write
   // half of compile_rooms.py's main()). Idempotent: prior compiled rows (RM_%/STC_%) are replaced.
   function writeRooms(db, compiled) {
@@ -1323,18 +1401,7 @@
       var v = floorAnchorsAcc[cf];
       floorAnchors[cf] = v.reduce(function (s, x) { return s + x; }, 0) / v.length;
     });
-    var floorAnchorNames = Object.keys(floorAnchors).sort();
-    function _joinKey(storey, cz) {
-      var cf = _canonicalFloor(storey);
-      if (cf !== null) return cf;
-      if (cz === null || cz === undefined || !floorAnchorNames.length) return storey; // unresolvable — raw fallback, no regression
-      var best = null, bd = Infinity;
-      for (var i = 0; i < floorAnchorNames.length; i++) {
-        var d = Math.abs(cz - floorAnchors[floorAnchorNames[i]]);
-        if (d < bd) { bd = d; best = floorAnchorNames[i]; }
-      }
-      return best;
-    }
+    var _joinKey = _makeJoinKey(floorAnchors); // §ROOM_OCCL hoist — same math, now shared (see _makeJoinKey)
     // §ROOM-FORM: SUSPECT rooms get no element containment — an unreviewed corridor/void must not
     // capture elements away from real rooms.
     allrooms.forEach(function (r) {
@@ -1392,6 +1459,7 @@
     floodRooms: floodRooms, partitionByDoors: partitionByDoors,
     mergeRooms: mergeRooms, rejectRooms: rejectRooms, allWallsRaw: allWallsRaw, allDoorsRaw: allDoorsRaw,
     compileRooms: compileRooms, writeRooms: writeRooms, walk: walk,
+    buildCameraRoomIndex: buildCameraRoomIndex,
     RES: RES, MIN_AREA: MIN_AREA, DOOR_SHORTFALL_RATIO: DOOR_SHORTFALL_RATIO,
     VERT_FACTOR: VERT_FACTOR, OPEN_PERIM_FACTOR: OPEN_PERIM_FACTOR,
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,

@@ -5,6 +5,12 @@
  */
 // dlod_nav.js — Implementing FLY_TOUR_DLOD_SCALE.md §9 (v1) — Witnesses: W-DLOD-NAV-EQUIV,
 // W-DLOD-NAV-PROXY, W-DLOD-NAV-PERF, W-DLOD-NAV-NO-REBUILD.
+// §ROOM_OCCL step 1 — Implementing FLY_TOUR_DLOD_SCALE.md §13 — Witnesses: W-ROOM-OCCL-EQUIV,
+// W-ROOM-OCCL-PROXY, W-ROOM-OCCL-PERF, W-ROOM-OCCL-STABILITY. Room-mismatch (camera's current
+// room ≠ element's contained room) as a THIRD OR'd demote criterion in the same _boxIndex state
+// machine; live point-in-rect current-room test with the walker's floor-anchor Z-join; N-eval
+// membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled (default
+// false) — when false, behavior is identical to the pre-§13 module.
 //
 // Nav-scope DLOD box-proxy: during free orbit/pan and Fly Tour on large buildings (>50k
 // elements), far/out-of-frustum elements render as wireframe boxes (TM_DLOD_SCALE.md §9's
@@ -46,6 +52,9 @@
   var DEPTH_MAX_RADIUS = 25;       // §9 shine-thru fix: no depth pass for oversized bboxes — a
                                    // giant slab's invisible occluder would erase REAL nearby
                                    // geometry (center-distance ≠ bbox extent); wireframe-only there
+  var ROOM_STABLE_N = 12;          // §13 membership-stability gate (§11.2 Q4: 10-15 frames —
+                                   // filters all 17 measured A→B→A flaps at ~0.2s switch latency,
+                                   // well under the 500ms median room dwell)
 
   var _pillOn = false;             // user toggle — OFF = this module does exactly nothing
   var _engaged = false;            // gate currently satisfied and proxy state applied
@@ -60,7 +69,14 @@
   var _guidArr = null, _evalCursor = 0, _scanPending = false; // §FLY_SMOOTH: chunked-scan state
   var _passReal = 0, _passBoxed = 0; // partition counters accumulated across a pass
   var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
-  var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0 };
+  // §ROOM_OCCL state (§13) — ALL of it inert unless _stats.roomOcclEnabled is flipped true
+  var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
+  var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
+  var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
+    // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
+    // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
+    roomOcclEnabled: false, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
+    roomIdxRects: 0, roomIdxStamped: 0 };
   window.__dlodNav = _stats;
 
   function _gateBlockReason(app) {
@@ -289,17 +305,103 @@
     _fades.length = 0;
   }
 
+  // ══ §ROOM_OCCL — FLY_TOUR_DLOD_SCALE.md §13: room-mismatch demote, STEP 1 ══
+  // §11.2 Q3 gate: room-criterion active only on interior legs. During a tour, interior =
+  // flyPath legs plus the interior pause/lookAround beats between them (they hold camera
+  // position, so interior-ness persists; the finale lookAround is distinguished by carrying
+  // lookAtX). Tour-driven orbit/moveTo/Bird's-eye/Final legs disable it. Outside a tour there
+  // is no aerial/orbit leg concept — free navigation counts as interior by default (§13).
+  function _roomLegActive(app) {
+    if (app.flyActive && app.walkActions && app.walkActions.length) {
+      var act = app.walkActions[app.walkActionIdx];
+      if (!act) return false;
+      if (act.type === 'flyPath') return true;
+      if ((act.type === 'pause' || act.type === 'lookAround') && act.lookAtX === undefined) return true;
+      return false; // orbit / moveTo / rise / riseAndTilt / finale lookAround
+    }
+    return true;
+  }
+
+  // Lazy, building-keyed camera-room index + per-element room stamp. Only ever called when
+  // roomOcclEnabled — zero queries, zero cost otherwise. Rooms may not be compiled yet when the
+  // flag is first flipped (ensureRooms is idle-deferred on 'o'): retry throttled, never spin.
+  function _roomIdxEnsure(app) {
+    if (_roomIdx && _roomIdxBld === app.activeBuilding && _roomStampRef === _boxIndex) return true;
+    var now = performance.now();
+    if (now - _roomIdxTriedT < 3000) return false;
+    _roomIdxTriedT = now;
+    if (!window.RoomWalker || !window.RoomWalker.buildCameraRoomIndex || !app.db || !app.dbQuery || !_boxIndex) return false;
+    var t0 = performance.now(), idx;
+    try { idx = window.RoomWalker.buildCameraRoomIndex(app.db); }
+    catch (e) { console.log('§ROOM_OCCL_INDEX_ERR ' + e.message); return false; }
+    if (!idx || !idx.rects) { console.log('§ROOM_OCCL_INDEX rects=0 (rooms not compiled yet — will retry)'); return false; }
+    // Stamp each element's LOGICAL contained room from rel_contained_in_space (compiled RM_ rows
+    // only — the same domain roomAt() resolves into). Elements with no row keep room=undefined and
+    // are simply never eligible for the room-criterion (§13: distance/frustum unchanged for them).
+    var stamped = 0;
+    try {
+      var rel = app.dbQuery("SELECT element_guid, space_guid FROM rel_contained_in_space " +
+        "WHERE space_guid LIKE 'RM\\_%' ESCAPE '\\'") || [];
+      for (var i = 0; i < rel.length; i++) { var be = _boxIndex[rel[i][0]]; if (be) { be.room = rel[i][1]; stamped++; } }
+    } catch (e2) { console.log('§ROOM_OCCL_INDEX_ERR rel ' + e2.message); return false; }
+    _roomIdx = idx; _roomIdxBld = app.activeBuilding; _roomStampRef = _boxIndex;
+    _stats.roomIdxRects = idx.rects; _stats.roomIdxStamped = stamped;
+    console.log('§ROOM_OCCL_INDEX bld=' + app.activeBuilding + ' rects=' + idx.rects +
+      ' floors=' + idx.anchorNames.length + ' stamped=' + stamped + ' ms=' + (performance.now() - t0).toFixed(0));
+    return true;
+  }
+
+  function _roomReset() {
+    if (_roomCur !== null) _scanPending = true; // room dropped — re-partition so room-demoted elements can promote
+    _roomCur = null; _roomPend = undefined; _roomPendN = 0; _roomActive = false;
+    _stats.roomCur = null; _stats.roomLeg = false;
+  }
+
+  // Per-frame current-room eval (same rAF loop as everything else — no second timer, §13). The
+  // stability window is counted in FRAMES per §11.2 Q4's measurement; a room ACCEPTANCE re-arms
+  // the chunked scan so the partition updates even when the camera pose itself is unchanged
+  // (e.g. stability maturing while hovering). The point-in-rect test is one camera point vs the
+  // compiled rect rows on ONE floor — trivial next to the element scan (§11.2 Q2).
+  function _roomEval(app) {
+    if (!_roomIdxEnsure(app)) { _roomReset(); return; }
+    if (!_roomLegActive(app)) { _roomReset(); return; }
+    _stats.roomLeg = true;
+    var off = app.modelOffset, c = app.camera.position;
+    if (!off) { _roomReset(); return; }
+    // three→IFC: inverse of A.ifc2three (same mapping navigate_engine.js startNavigation uses)
+    var raw = _roomIdx.roomAt(c.x + off.x, -c.z + off.y, c.y + off.z);
+    _roomEvals++; _stats.roomEvals = _roomEvals;
+    // §13 membership-stability gate: accept a NEW current room (including null) only after
+    // ROOM_STABLE_N consecutive evals agree — filters the measured A→B→A flap churn (§11.2 Q4).
+    if (raw === _roomPend) { _roomPendN++; } else { _roomPend = raw; _roomPendN = 1; }
+    if (_roomPendN >= ROOM_STABLE_N && raw !== _roomCur) {
+      _roomCur = raw; _stats.roomCur = raw; _stats.roomChanges++;
+      console.log('§ROOM_OCCL_ROOM room=' + (raw || 'none') + ' stableN=' + _roomPendN +
+        ' changes=' + _stats.roomChanges);
+      _scanPending = true;
+    }
+    // §13 explicit no-room state: camera outside all compiled rects ⇒ criterion contributes
+    // nothing this tick — distance/frustum alone still govern. Never "no room = demote all."
+    _roomActive = (_roomCur !== null);
+  }
+
   // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
   function _wantedReal(e, camPos) {
     var d2 = camPos.distanceToSquared(e.pos);
+    // §13 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only bites
+    // when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
+    // compiled containment row (e.room). false ⇒ short-circuits to the shipped decision rule.
+    var roomMis = _roomActive && e.room !== undefined && e.room !== _roomCur;
     if (e.state === 'real') {
-      // demote only when clearly out: >80m OR sphere+5m margin outside frustum
+      // demote only when clearly out: >80m OR sphere+5m margin outside frustum OR room mismatch
       if (d2 > DEMOTE_SQ) return false;
+      if (roomMis) return false;
       _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
       return _frustum.intersectsSphere(_sphere);
     }
-    // promote only when clearly in: ≤50m AND exact frustum
+    // promote only when clearly in: ≤50m AND exact frustum AND (room matches or criterion inert)
     if (d2 > PROMOTE_SQ) return false;
+    if (roomMis) return false;
     _sphere.center.copy(e.pos); _sphere.radius = e.radius;
     return _frustum.intersectsSphere(_sphere);
   }
@@ -337,7 +439,8 @@
       var _nowLog = performance.now();
       if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
         console.log('§DLOD_NAV active=' + _stats.active + ' boxed=' + _stats.boxed + ' mode=on started=' + _logAccStarted +
-          ' fades=' + _fades.length + ' chunk_ms=' + _stats.evalMs);
+          ' fades=' + _fades.length + ' chunk_ms=' + _stats.evalMs +
+          (_stats.roomOcclEnabled === true ? ' room=' + (_roomActive ? (_roomCur || 'none') : (_stats.roomLeg ? 'none' : 'leg-off')) : ''));
         _logAccStarted = 0; _lastLogT = _nowLog;
       }
     }
@@ -351,6 +454,7 @@
   }
 
   function _restoreAll(app, reason) {
+    _roomReset(); // §ROOM_OCCL: disengage clears current-room state (index stays, building-keyed)
     _cancelFadesSnap(app);
     if (_boxIndex) {
       for (var guid in _boxIndex) {
@@ -386,6 +490,10 @@
       _engaged = true; _lastCamSig = null;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
+    // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
+    // var reset (fires once after a live flip back to false, restoring the shipped partition).
+    if (_stats.roomOcclEnabled === true) _roomEval(app);
+    else if (_roomActive || _roomCur !== null || _roomPendN) _roomReset();
     var fading = _stepFades(app);
     if (fading && app.markDirty) app.markDirty();
     var sig = _camSig(app);
@@ -456,15 +564,26 @@
     if (!_engaged || !_boxIndex) return { engaged: false, mismatch: -1 };
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
-    var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0;
+    var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0, roomOnly = 0;
     for (var guid in _boxIndex) {
       var e = _boxIndex[guid];
       var want = _wantedReal(e, camPos);
       if (want !== (e.state === 'real')) mismatch++;
       if (e.state === 'box') boxed++; else real++;
+      // §ROOM_OCCL (W-ROOM-OCCL-PROXY support): boxed PURELY because of room mismatch — i.e.
+      // within promote distance and in-frustum, so distance/frustum alone would have it real.
+      if (e.state === 'box' && _roomActive && e.room !== undefined && e.room !== _roomCur) {
+        if (camPos.distanceToSquared(e.pos) <= PROMOTE_SQ) {
+          _sphere.center.copy(e.pos); _sphere.radius = e.radius;
+          if (_frustum.intersectsSphere(_sphere)) roomOnly++;
+        }
+      }
     }
-    var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps };
-    console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length);
+    var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps,
+      roomOccl: { enabled: _stats.roomOcclEnabled === true, active: _roomActive, room: _roomCur,
+        legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly } };
+    console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length +
+      (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : ''));
     return res;
   };
 
