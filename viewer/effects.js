@@ -3177,7 +3177,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v11 (§CINEMA_SPACE_ENCLOSED_SKIP + §CINEMA_GHOST_RESET)';
+  var EFFECTS_V = 'v12 (§CINEMA_SPACE_MEP_SKIP + §CINEMA_SPACE_ENCLOSED_SKIP + §CINEMA_GHOST_RESET)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3391,15 +3391,53 @@ async function setupEffects(A, renderer, scene, camera) {
     // sort — this only SKIPS a candidate that fails the existing enclosure sanity check, same threshold
     // that already existed. Bounded to the top 6 (same cap R2 used before #925 removed floor-weighting,
     // reused here for its own sake, not because floor-weighting is back).
+    // §CINEMA_SPACE_MEP_SKIP (2026-07-21, user report + DB-confirmed live on Hospital: dive landed
+    // in RM_Level_2_20, 270m^2, 97% "enclosed" by the ray-fan — but it's a rooftop MECHANICAL PLANT
+    // room, not a habitable space. rel_contained_in_space: 304 IfcPipeFitting + 290 IfcPipeSegment +
+    // 49 IfcDuctFitting + 14 IfcDistributionControlElement + 11 IfcFireSuppressionTerminal of ~858
+    // total contained (78%), with only 2 IfcSlab elements found anywhere above its footprint — an
+    // open plant yard screened by walls, not a real room. §CINEMA_SPACE_ENCLOSED_SKIP's ray-fan is
+    // horizontal-only (_cinemaFan: dir.set(cos,0,sin) — no vertical component), so it structurally
+    // cannot see "no roof," only "no walls" — walls-for-screening pass it fine. Area/centrality
+    // ranking alone can't tell a plant room from a ward either — MEP rooms are often large. This is
+    // a SEPARATE disqualifier, same "skip and keep looking" pattern as the enclosure check, not a
+    // replacement for it — both must pass.
+    var CINEMA_MEP_CLASSES = { IfcPipeFitting: 1, IfcPipeSegment: 1, IfcDuctFitting: 1, IfcDuctSegment: 1,
+      IfcDistributionControlElement: 1, IfcFireSuppressionTerminal: 1, IfcFlowTerminal: 1,
+      IfcFlowController: 1, IfcFlowFitting: 1, IfcFlowSegment: 1, IfcFlowStorageDevice: 1,
+      IfcFlowTreatmentDevice: 1, IfcFlowMovingDevice: 1, IfcEnergyConversionDevice: 1,
+      IfcCableSegment: 1, IfcCableFitting: 1, IfcCableCarrierSegment: 1, IfcCableCarrierFitting: 1,
+      IfcTank: 1, IfcBoiler: 1, IfcChiller: 1, IfcCompressor: 1, IfcCondenser: 1, IfcCoolingTower: 1,
+      IfcPump: 1, IfcFan: 1 };
+    var CINEMA_MEP_SKIP_MIN_TOTAL = 20;  // guard against tiny-sample false positives
+    var CINEMA_MEP_SKIP_FRACTION = 0.5;  // majority of contained elements are plant/services classes
+    function _cinemaMepFraction(guid) {
+      var rows = A.dbQuery ? A.dbQuery(
+        "SELECT m.ifc_class, COUNT(*) FROM rel_contained_in_space r " +
+        "JOIN elements_meta m ON m.guid=r.element_guid WHERE r.space_guid=? GROUP BY m.ifc_class",
+        [guid]) : [];
+      if (!rows.length) return 0;
+      var total = 0, mep = 0;
+      for (var i = 0; i < rows.length; i++) {
+        total += rows[i][1];
+        if (CINEMA_MEP_CLASSES[rows[i][0]]) mep += rows[i][1];
+      }
+      return total >= CINEMA_MEP_SKIP_MIN_TOTAL ? mep / total : 0;
+    }
+
     var CINEMA_SPACE_TRY_MAX = 6;
     var chosenCand = null, chosenEv = null;
     for (var sci = 0; sci < Math.min(spaceCands.length, CINEMA_SPACE_TRY_MAX); sci++) {
       var sc = spaceCands[sci];
       var scEv = _cinemaEvalCand(sc);
+      var mepFrac = _cinemaMepFraction(sc.guid);
+      var mepSkip = mepFrac >= CINEMA_MEP_SKIP_FRACTION;
+      var okCand = scEv.frac >= CINEMA_ENCLOSED_THRESHOLD && !mepSkip;
       console.log('§CINEMA_SPACE cand=' + sc.guid + ' area=' + sc.area.toFixed(1) +
-        ' enclosed=' + (scEv.frac * 100).toFixed(0) + '% chosen=' + (scEv.frac >= CINEMA_ENCLOSED_THRESHOLD) +
-        (sci > 0 ? ' (rank=' + (sci + 1) + ', skipped ' + sci + ' unenclosed above)' : ''));
-      if (scEv.frac >= CINEMA_ENCLOSED_THRESHOLD) { chosenCand = sc; chosenEv = scEv; break; }
+        ' enclosed=' + (scEv.frac * 100).toFixed(0) + '%' +
+        ' mep=' + (mepFrac * 100).toFixed(0) + '% chosen=' + okCand +
+        (sci > 0 ? ' (rank=' + (sci + 1) + ', skipped ' + sci + ' disqualified above)' : ''));
+      if (okCand) { chosenCand = sc; chosenEv = scEv; break; }
     }
     if (chosenCand) {
       diveIfc = chosenCand.ifc; diveName = chosenCand.name; diveArea = chosenCand.area;
