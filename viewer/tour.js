@@ -52,25 +52,30 @@ function setupTour(A) {
       // 2026-07-16). Cache-key mismatch or parse failure falls through to the full prepare.
       var _ckPeek = null;
       try { _ckPeek = _tourCacheKey(); } catch (e) {}
-      var _hasCached = false;
-      try { _hasCached = !!(_ckPeek && localStorage.getItem(_ckPeek)); } catch (e) {}
-      if (_hasCached) {
-        (async function() {
-          let _sw = 0;
-          while (A.streaming && A.flyActive) { await new Promise(function(r) { setTimeout(r, 500); }); _sw += 500; }
-          if (_sw) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _sw);
-          A._flyPreparing = false;
-          if (!A.flyActive) return; // user toggled off while waiting
-          console.log('[TOUR] §TOUR_CACHE fast-path (prepare skipped)');
-          A._startFlyTour(btn);
-        })();
-        return;
-      }
-      A._prepareGraphTour().then(function() {
-        A._flyPreparing = false;
-        if (!A.flyActive) return; // user toggled off while preparing
-        A._startFlyTour(btn);
-      });
+      var _decide = function(json) {
+        var cachedTour = null;
+        if (json) { try { cachedTour = JSON.parse(json); } catch (e) { cachedTour = null; } }
+        if (Array.isArray(cachedTour) && cachedTour.length >= 1) {
+          (async function() {
+            let _sw = 0;
+            while (A.streaming && A.flyActive) { await new Promise(function(r) { setTimeout(r, 500); }); _sw += 500; }
+            if (_sw) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _sw);
+            A._flyPreparing = false;
+            if (!A.flyActive) return; // user toggled off while waiting
+            console.log('[TOUR] §TOUR_CACHE fast-path (prepare skipped)');
+            A._tourCachedRoute = { key: _ckPeek, tour: cachedTour }; // consumed by _startFlyTour
+            A._startFlyTour(btn);
+          })();
+        } else {
+          A._prepareGraphTour().then(function() {
+            A._flyPreparing = false;
+            if (!A.flyActive) return; // user toggled off while preparing
+            A._startFlyTour(btn);
+          });
+        }
+      };
+      if (_ckPeek) _tourCacheFetch(_ckPeek).then(_decide, function() { _decide(null); });
+      else _decide(null);
       return;
     } else {
       A.status.textContent = 'Fly stopped.';
@@ -109,7 +114,7 @@ function setupTour(A) {
       try {
         if (A.flyActive && A.ensureRooms && A.getRoomGraph && window.RoomGraph) {
           let probe = null;
-          try { probe = A._buildGraphRoute({}); } catch (ep) { probe = null; }
+          try { probe = A._buildGraphRoute(A._tourStoreyZ()); } catch (ep) { probe = null; } // §FLY_PLAN_DEDUPE: same key as buildTour → its pass reuses this one
           if (!probe) {
             let compiledOnly = false;
             try {
@@ -153,6 +158,81 @@ function setupTour(A) {
         v.join('-') + ':' + Math.max(1, A.buildingsRendered.size);
     } catch (e) { return null; }
   }
+  // §TOUR_CACHE_IDB (TOUR_ROUTE_CACHE.md §5, 2026-07-21): localStorage on the shared github.io
+  // origin is quota-starved by OTHER apps' keys (op-logs etc.) — §4's evict only reclaims tour
+  // keys (observed live: removed=0) so on a full origin the cache NEVER stored and Fly re-planned
+  // every press. IndexedDB has a per-origin quota orders of magnitude larger and survives page
+  // refresh; localStorage is now READ-ONLY legacy (a hit migrates to IDB and frees the LS key).
+  var _tourIdbP = null;
+  function _tourIdb() {
+    if (_tourIdbP) return _tourIdbP;
+    _tourIdbP = new Promise(function(resolve) {
+      try {
+        var rq = indexedDB.open('bim-tour-routes', 1);
+        rq.onupgradeneeded = function() { rq.result.createObjectStore('routes'); };
+        rq.onsuccess = function() { resolve(rq.result); };
+        rq.onerror = function() { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+    return _tourIdbP;
+  }
+  function _tourIdbGet(key) {
+    return _tourIdb().then(function(db) {
+      if (!db) return null;
+      return new Promise(function(resolve) {
+        try {
+          var rq = db.transaction('routes').objectStore('routes').get(key);
+          rq.onsuccess = function() { resolve(rq.result || null); };
+          rq.onerror = function() { resolve(null); };
+        } catch (e) { resolve(null); }
+      });
+    });
+  }
+  function _tourIdbPut(key, json) {
+    return _tourIdb().then(function(db) {
+      if (!db) return false;
+      return new Promise(function(resolve) {
+        try {
+          var tx = db.transaction('routes', 'readwrite');
+          tx.objectStore('routes').put(json, key);
+          tx.oncomplete = function() { resolve(true); };
+          tx.onerror = function() { resolve(false); };
+        } catch (e) { resolve(false); }
+      });
+    });
+  }
+  function _tourIdbDeletePrefix(prefix, keepVer) {
+    return _tourIdb().then(function(db) {
+      if (!db) return 0;
+      return new Promise(function(resolve) {
+        try {
+          var tx = db.transaction('routes', 'readwrite'), st = tx.objectStore('routes');
+          var rq = st.getAllKeys(), removed = 0;
+          rq.onsuccess = function() {
+            (rq.result || []).forEach(function(k) {
+              if (typeof k !== 'string' || k.indexOf(prefix) !== 0) return;
+              if (keepVer && k.indexOf(':' + keepVer + ':') !== -1) return;
+              st.delete(k); removed++;
+            });
+          };
+          tx.oncomplete = function() { resolve(removed); };
+          tx.onerror = function() { resolve(removed); };
+        } catch (e) { resolve(0); }
+      });
+    });
+  }
+  // Unified async lookup: legacy localStorage first (migrate + free origin quota), then IDB.
+  function _tourCacheFetch(key) {
+    var ls = null;
+    try { ls = localStorage.getItem(key); } catch (e) {}
+    if (ls) {
+      _tourIdbPut(key, ls).then(function(ok) {
+        if (ok) { try { localStorage.removeItem(key); console.log('[TOUR] §TOUR_CACHE_MIGRATE ls→idb key=' + key); } catch (e) {} }
+      });
+      return Promise.resolve(ls);
+    }
+    return _tourIdbGet(key);
+  }
   A._tourCacheBust = function() { // §FLY_RECURE recompiles rooms — a cached route may now be illegal
     try {
       for (var i = localStorage.length - 1; i >= 0; i--) {
@@ -160,6 +240,10 @@ function setupTour(A) {
         if (k && k.indexOf('tmTourCache:' + (A.activeBuilding || '') + ':') === 0) localStorage.removeItem(k);
       }
     } catch (e) {}
+    _tourIdbDeletePrefix('tmTourCache:' + (A.activeBuilding || '') + ':').then(function(n) {
+      if (n) console.log('[TOUR] §TOUR_CACHE_BUST idb removed=' + n);
+    });
+    A._grMemo = null; // §FLY_PLAN_DEDUPE: recompiled rooms invalidate the memoized route
   };
   // §TOUR_CACHE_EVICT (TOUR_ROUTE_CACHE.md §4, 2026-07-20): nothing else ever removed a
   // tmTourCache key — old TOUR_CACHE_VER generations, other buildings, other DB-recompile counts
@@ -181,42 +265,24 @@ function setupTour(A) {
     if (removed) console.log('[TOUR] §TOUR_CACHE_PRUNE stale-version removed=' + removed);
   }
   _tourCachePruneStale(); // once per module setup (page load) — cheap, unconditional
-  function _tourCacheEvictAndRetry(key, json) {
-    var removed = 0, bytesFreed = 0;
-    try {
-      for (var i = localStorage.length - 1; i >= 0; i--) {
-        var k = localStorage.key(i);
-        if (k && k.indexOf('tmTourCache:') === 0 && k !== key) {
-          var v = localStorage.getItem(k);
-          bytesFreed += (v ? v.length : 0);
-          localStorage.removeItem(k); removed++;
-        }
-      }
-    } catch (e) { return false; }
-    console.log('[TOUR] §TOUR_CACHE_EVICT removed=' + removed + ' bytes_freed=' + bytesFreed);
-    try {
-      localStorage.setItem(key, json);
-      return true;
-    } catch (e2) {
-      console.log('[TOUR] §TOUR_CACHE store-skip (post-evict) ' + (e2 && e2.message));
-      return false;
-    }
-  }
+  _tourIdbDeletePrefix('tmTourCache:', TOUR_CACHE_VER).then(function(n) {
+    if (n) console.log('[TOUR] §TOUR_CACHE_PRUNE idb stale-version removed=' + n);
+  });
+  // _tourCacheEvictAndRetry RETIRED (TOUR_ROUTE_CACHE.md §5): it could only evict tmTourCache
+  // keys, proven impotent on a quota-full shared origin (removed=0 live). Store path is IDB now.
 
   // The original fly-start body (tour build + orbit fallback), unchanged except for extraction.
   A._startFlyTour = function(btn) {
     {
       var _ck = _tourCacheKey(), tour = null, _fromCache = false;
-      if (_ck) {
-        try {
-          var _hit = localStorage.getItem(_ck);
-          if (_hit) {
-            tour = JSON.parse(_hit);
-            _fromCache = Array.isArray(tour) && tour.length >= 1;
-            if (!_fromCache) tour = null;
-          }
-        } catch (e) { tour = null; }
+      // §TOUR_CACHE_IDB: the async fast-path pre-fetched the route (IDB or legacy LS) and stashed
+      // it — a sync localStorage read here can no longer be the source of truth.
+      if (_ck && A._tourCachedRoute && A._tourCachedRoute.key === _ck &&
+          Array.isArray(A._tourCachedRoute.tour) && A._tourCachedRoute.tour.length >= 1) {
+        tour = A._tourCachedRoute.tour;
+        _fromCache = true;
       }
+      A._tourCachedRoute = null;
       if (_fromCache) {
         console.log('[TOUR] §TOUR_CACHE hit actions=' + tour.length + ' key=' + _ck);
       } else {
@@ -239,14 +305,12 @@ function setupTour(A) {
         }
         if (!_fromCache && _ck) {
           var _json = JSON.stringify(tour);
-          if (_json.length < 1500000) { // localStorage budget guard — skip absurd routes, keep the rest of the app's keys safe
-            var _stored = false;
-            try { localStorage.setItem(_ck, _json); _stored = true; }
-            catch (e) {
-              console.log('[TOUR] §TOUR_CACHE store-skip ' + (e && e.message));
-              _stored = _tourCacheEvictAndRetry(_ck, _json); // §TOUR_CACHE_EVICT — see fn above
-            }
-            if (_stored) console.log('[TOUR] §TOUR_CACHE store actions=' + tour.length + ' bytes=' + _json.length + ' key=' + _ck);
+          if (_json.length < 8000000) { // sanity guard only — IDB per-origin quota is ample
+            var _nAct = tour.length;
+            _tourIdbPut(_ck, _json).then(function(ok) {
+              if (ok) console.log('[TOUR] §TOUR_CACHE store idb actions=' + _nAct + ' bytes=' + _json.length + ' key=' + _ck);
+              else console.log('[TOUR] §TOUR_CACHE store-skip idb-unavailable');
+            });
           }
         }
         A.walkMode = true;
@@ -340,7 +404,37 @@ function setupTour(A) {
   // stairwell climbs via real stairwp nodes → descent back to the exit, preferring a stair the
   // ascent did not use (edge-filtered graph view — RoomGraph API untouched). EXTRACT ONLY:
   // every waypoint is a measured node position from the graph; nothing invented.
+  // §FLY_PLAN_DEDUPE (TOUR_ROUTE_CACHE.md §5, 2026-07-21 user "hangs the browser during
+  // calculating"): the §THIN-GRAPH-RECURE probe ran the FULL route builder, then buildTour ran
+  // it AGAIN — two multi-second-to-minutes planning passes per first press. The door-floor-z
+  // input is one cheap GROUP BY (extracted here so probe and buildTour share it), and the route
+  // result is memoized on (graph identity, storeyZ signature) — the second pass is now a lookup.
+  A._tourStoreyZ = function() {
+    const storeyZ = {};
+    try {
+      const sz = A.db.exec(`
+        SELECT m.storey, MIN(t.center_z) as floor_z
+        FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid
+        WHERE m.ifc_class IN ('IfcDoor','IfcDoorStandardCase')
+        GROUP BY m.storey ORDER BY floor_z
+      `);
+      if (sz.length) for (const [st, z] of sz[0].values) storeyZ[st] = z;
+    } catch(e) {}
+    return storeyZ;
+  };
+  A._grMemo = null; // { g, zsig, result } — g identity changes on room recompile (auto-invalidates)
   A._buildGraphRoute = function(storeyZ) {
+    const _g0 = (A.getRoomGraph && window.RoomGraph) ? A.getRoomGraph() : null;
+    const _zsig = JSON.stringify(storeyZ || {});
+    if (A._grMemo && A._grMemo.g === _g0 && A._grMemo.zsig === _zsig) {
+      console.log('[TOUR] §FLY_PLAN_DEDUPE memo-hit');
+      return A._grMemo.result;
+    }
+    const _res = A._buildGraphRouteInner(storeyZ);
+    if (_g0) A._grMemo = { g: _g0, zsig: _zsig, result: _res };
+    return _res;
+  };
+  A._buildGraphRouteInner = function(storeyZ) {
     const RG = window.RoomGraph;
     if (!RG || !A.getRoomGraph) return null;
     const g = A.getRoomGraph();
@@ -605,16 +699,7 @@ function setupTour(A) {
       if (st.length) stairs = st[0].values.map(([x,y,z,s]) => ({x,y,z,storey:s}));
     } catch(e) {}
 
-    let storeyZ = {};
-    try {
-      const sz = A.db.exec(`
-        SELECT m.storey, MIN(t.center_z) as floor_z
-        FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid
-        WHERE m.ifc_class IN ('IfcDoor','IfcDoorStandardCase')
-        GROUP BY m.storey ORDER BY floor_z
-      `);
-      if (sz.length) for (const [st, z] of sz[0].values) storeyZ[st] = z;
-    } catch(e) {}
+    let storeyZ = A._tourStoreyZ(); // §FLY_PLAN_DEDUPE: shared with the recure probe
 
     let roomsByStorey = {};
     try {

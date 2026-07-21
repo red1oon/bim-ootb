@@ -207,6 +207,7 @@
     }
 
     // ── Highlight sync ──
+    var _lastSyncN = -1; // 2026-07-21 user "remove history log spam": log only when the count CHANGES
     function _sync() {
       var n = 0;
       _actions.forEach(function(act) {
@@ -218,7 +219,7 @@
         btn.classList.toggle('active', on);
         n++;
       });
-      console.log('§PILL_SYNC synced=' + n);
+      if (n !== _lastSyncN) { console.log('§PILL_SYNC synced=' + n); _lastSyncN = n; }
     }
 
     // §PILL-AUTOSYNC (2026-07-06, see the doc block up top): resync on ANY element add/remove
