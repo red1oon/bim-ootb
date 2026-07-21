@@ -24,7 +24,7 @@
   // constant in scripts/compile_rooms.py (py/js parity discipline). 'v2' continues the existing
   // lib/room_walker.js?v=2 loader lineage rather than restarting at an arbitrary v1.
   // Stage 2 writes it to rooms_meta after each compile; nothing reads it yet (stage 3).
-  var ROOM_WALKER_V = 'v2 (§LOCAL-FRAME + §RASTER-EPS, post-§SUSPECT-LARGE)';
+  var ROOM_WALKER_V = 'v3 (§LOCAL-FRAME + §RASTER-EPS + §CONTAINMENT-ALIAS, post-§SUSPECT-LARGE)';
 
   var RES = 0.20;          // grid cell size (m)
   var MIN_AREA = 4.0;      // m^2 — drop slivers / wall cavities
@@ -159,6 +159,21 @@
       if (d < bd) { bd = d; best = anchorNames[i]; }
     }
     return best;
+  }
+
+  // §CONTAINMENT-ALIAS (bim-compiler CONTAINMENT_LTU_STOREY_ALIAS.md, py+js parity —
+  // ROOM_WALKER_PHASE_INVARIANCE convention): each discipline's source IFC spells the same
+  // physical floor differently (ARC "VÅNING N", STR "VÅN N", MEP "Plan N"/"Storey N" — measured
+  // via Z-band clustering, LTU_AHouse: all four spellings' center_z bands match for the same N).
+  // Rooms are detected ARC-only, so the containment join must canonicalize BOTH sides onto one
+  // key or every non-ARC element is silently excluded (LTU: 83.7% of elements are MEP, zero
+  // matched before this). Returns null for anything that isn't a known numbered-floor form
+  // (Unknown/TAKPLAN/Ref./etc.) — never guessed here, Z-band resolved in the caller instead.
+  var FLOOR_ALIAS_RE = /^(?:V[ÅA]NING|V[ÅA]N|PLAN|STOREY)\s*0*([0-9]+)$/i;
+  function _canonicalFloor(storey) {
+    if (!storey) return null;
+    var m = FLOOR_ALIAS_RE.exec(String(storey).trim());
+    return m ? ('F' + m[1]) : null;
   }
 
   function storeyWalls(db, vertMin, anchors) {
@@ -1290,19 +1305,47 @@
       db.run('CREATE TABLE rel_contained_in_space (space_guid TEXT, element_guid TEXT)');
     }
     db.run("DELETE FROM rel_contained_in_space WHERE space_guid LIKE 'RM\\_%' ESCAPE '\\'");
-    var els = _rows(db, "SELECT m.guid g, m.storey st, t.center_x ex, t.center_y ey FROM elements_meta m " +
+    var els = _rows(db, "SELECT m.guid g, m.storey st, t.center_x ex, t.center_y ey, t.center_z ez FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid=m.guid WHERE t.center_x IS NOT NULL");
     var byst = {};
+    // §CONTAINMENT-ALIAS: per-canonical-floor Z anchor, built from the (ARC-only) rooms' own cz —
+    // lets a non-numbered storey label (Unknown/TAKPLAN/Ref.) be Z-band resolved to its nearest
+    // real floor, same nearest-anchor technique as _assignByZ above, keyed on canonical floors
+    // rather than raw ARC storey strings (those don't exist yet for the other disciplines).
+    var floorAnchorsAcc = {};
+    allrooms.forEach(function (r) {
+      if (r.suspect) return;
+      var cf = _canonicalFloor(r.storey);
+      if (cf !== null) (floorAnchorsAcc[cf] = floorAnchorsAcc[cf] || []).push(r.cz);
+    });
+    var floorAnchors = {};
+    Object.keys(floorAnchorsAcc).forEach(function (cf) {
+      var v = floorAnchorsAcc[cf];
+      floorAnchors[cf] = v.reduce(function (s, x) { return s + x; }, 0) / v.length;
+    });
+    var floorAnchorNames = Object.keys(floorAnchors).sort();
+    function _joinKey(storey, cz) {
+      var cf = _canonicalFloor(storey);
+      if (cf !== null) return cf;
+      if (cz === null || cz === undefined || !floorAnchorNames.length) return storey; // unresolvable — raw fallback, no regression
+      var best = null, bd = Infinity;
+      for (var i = 0; i < floorAnchorNames.length; i++) {
+        var d = Math.abs(cz - floorAnchors[floorAnchorNames[i]]);
+        if (d < bd) { bd = d; best = floorAnchorNames[i]; }
+      }
+      return best;
+    }
     // §ROOM-FORM: SUSPECT rooms get no element containment — an unreviewed corridor/void must not
     // capture elements away from real rooms.
     allrooms.forEach(function (r) {
       if (r.suspect) return;
-      (byst[r.storey] = byst[r.storey] || []).push(r);
+      var k = _joinKey(r.storey, r.cz);
+      (byst[k] = byst[k] || []).push(r);
     });
     var relStmt = db.prepare('INSERT INTO rel_contained_in_space (space_guid, element_guid) VALUES (?,?)');
     var rel = 0;
     els.forEach(function (e) {
-      var candidates = byst[e.st] || [];
+      var candidates = byst[_joinKey(e.st, e.ez)] || [];
       for (var i = 0; i < candidates.length; i++) {
         var r = candidates[i];
         // §MULTI-RECT: contained iff inside ANY of the room's rects; the rel row keys the
