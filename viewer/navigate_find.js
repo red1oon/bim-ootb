@@ -891,6 +891,21 @@
       elAxisBar.appendChild(btn);
     }
 
+    // §ROOM_WALKER_VERSION_STAMP (ROOM_INJECTOR_NEEDLE.md) — shared lazy-loader for the
+    // room_walker.js port, used both by the version-check gate below and S2.2's actual compile,
+    // so the script is fetched at most once per page regardless of which caller needs it first.
+    async function _ensureRoomWalkerLoaded() {
+      if (window.RoomWalker) return;
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'lib/room_walker.js?v=3'; // v3: §ROOM_WALKER_VERSION_STAMP stages 1+2 (ROOM_INJECTOR_NEEDLE.md)
+        s.onload = function() { resolve(); };
+        s.onerror = function() { reject(new Error('room_walker.js load failed')); };
+        document.head.appendChild(s);
+      });
+      if (!window.RoomWalker) throw new Error('RoomWalker unavailable after load');
+    }
+
     // ══ FLY_TOUR_CORRIDOR_GRAPH.md §S1 — A.ensureRooms: the ONE shared injection core ══
     // Extracted verbatim from _needleInject (ROOM_INJECTOR_NEEDLE.md S2+S3+S4's cache half) so the
     // Fly tour can run the SAME patch→walker→IDB sequence without forking it. Semantics:
@@ -938,8 +953,31 @@
                       _r0[3] >= _e0[2] && _r0[2] <= _e0[3];
           }
         } catch (eIf) { /* inFrame stays true */ }
-        if (inFrame) return { status: 'present', real: false };
-        console.warn('[NEEDLE] §NEEDLE_FRAME_STALE compiled rooms outside building extent — recompiling');
+        // §ROOM_WALKER_VERSION_STAMP stage 3 (ROOM_INJECTOR_NEEDLE.md) — HHS-ONLY PILOT. Before
+        // trusting an in-frame compiled set, check its stamped algorithm version against the
+        // current ROOM_WALKER_V. Missing rooms_meta (every building compiled before this shipped,
+        // including HHS's confirmed-stale 14-room set) or a version mismatch counts as stale, same
+        // treatment as §PATCH-FRAME-GUARD above. Scoped to HHS_Office_Federated_extracted.db only
+        // — the spec's own risk-cliff guidance is to watch ONE building settle to "recompute once,
+        // then stable, no repeat trigger" before trusting this fleet-wide. Loading room_walker.js
+        // here to read its version constant does NOT itself trigger a recompute (compileRooms is a
+        // separate call, made only in the S2.2 fall-through below) — cheap, cached after first hit.
+        var versionStale = false, storedV = null;
+        var _dbFileNow = (A.DB_URL || '').slice((A.DB_URL || '').lastIndexOf('/') + 1).split('?')[0];
+        if (inFrame && _dbFileNow === 'HHS_Office_Federated_extracted.db') {
+          try {
+            await _ensureRoomWalkerLoaded();
+            var _rmv = A.dbQuery("SELECT version FROM rooms_meta WHERE id=1");
+            storedV = _rmv.length ? _rmv[0][0] : null;
+            versionStale = storedV !== window.RoomWalker.ROOM_WALKER_V;
+          } catch (eV) { versionStale = true; /* no rooms_meta table = compiled before this shipped */ }
+          if (versionStale) {
+            console.warn('[NEEDLE] §NEEDLE_VERSION_STALE bld=HHS_Office_Federated stored=' + storedV +
+              ' current=' + (window.RoomWalker && window.RoomWalker.ROOM_WALKER_V) + ' — recompiling');
+          }
+        }
+        if (inFrame && !versionStale) return { status: 'present', real: false };
+        if (!inFrame) console.warn('[NEEDLE] §NEEDLE_FRAME_STALE compiled rooms outside building extent — recompiling');
       }
       var bld = A.activeBuilding || '';
       var url = A.DB_URL || '';
@@ -1017,16 +1055,7 @@
           // S2.2 — walker source (any building): lazy-load the room_walker JS port, compile
           // deterministically from walls/doors. Refuses honestly (roomsWritten=0) if the
           // building lacks them — never invents rooms.
-          if (!window.RoomWalker) {
-            await new Promise(function(resolve, reject) {
-              var s = document.createElement('script');
-              s.src = 'lib/room_walker.js?v=3'; // v3: §ROOM_WALKER_VERSION_STAMP stages 1+2 (ROOM_INJECTOR_NEEDLE.md)
-              s.onload = function() { resolve(); };
-              s.onerror = function() { reject(new Error('room_walker.js load failed')); };
-              document.head.appendChild(s);
-            });
-          }
-          if (!window.RoomWalker) throw new Error('RoomWalker unavailable after load');
+          await _ensureRoomWalkerLoaded();
           window.RoomWalker.walk(A.db, { write: true });
           source = applied ? 'patch+walker' : 'walker';
         }
