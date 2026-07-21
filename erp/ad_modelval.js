@@ -129,10 +129,25 @@
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')
+        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21) — real iDempiere lets the WINDOW
+        // (via its AD_Window/tab context) override this default to the Purchase side; this port previously
+        // always fell back to the client's Standard SALES doctype regardless of which window authored the
+        // record, so a "Purchase Order" created here got a Sales doctype (and thus a wrong/absent IsSOTrx)
+        // underneath. ctx.issotrx (threaded from the AD_Tab's own WhereClause, e.g. window 181's
+        // "C_Order.IsSOTrx='N'") picks the matching side; absent/ambiguous ctx keeps the original
+        // Standard-Sales fallback (never a behavior change for a caller that supplies no hint).
         var r = info.record;
         if (!Number(r.c_doctypetarget_id)) {
-          var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
-          if (dt) d(info).c_doctypetarget_id = dt.c_doctype_id;
+          var dt = (ctx && ctx.issotrx === 'N')
+            ? db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y' ORDER BY c_doctype_id").get()
+            : db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
+          if (dt) {
+            d(info).c_doctypetarget_id = dt.c_doctype_id;
+            // IsSOTrx has no form field anywhere in this UI (crud_ops.json's c_order entry never declares it) —
+            // this beforeSave slice is the ONLY place it can ever be derived in this engine. Real iDempiere sets
+            // it from the chosen DocType at record construction; ported here since that seam doesn't exist yet.
+            if (!r.issotrx) d(info).issotrx = dt.issotrx;
+          }
         }
         return null;
       }],
