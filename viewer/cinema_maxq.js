@@ -331,6 +331,29 @@
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     _wakeAcquire();
+    // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview correctly showed boxes for speed,
+    // but the bake should auto-switch to solid — investigation found the boxes were NOT a
+    // deliberate LOD choice: dlod_nav.js already fully disengages the instant A._maxqActive is set
+    // above, every frame, so it can't be the source. cinema_maxq.js had zero references to
+    // A.streaming — the boxes are the geometry-streaming pipeline's own unpromoted-element
+    // placeholders bleeding through because nothing waited for them. Same fix as tour.js's
+    // §FLY_STREAM_WAIT, reused not reinvented: wait for streaming to fully drain BEFORE the preview
+    // even starts, so neither the preview nor the bake ever shows a placeholder — a mid-clip switch
+    // would still visibly pop in the baked video, waiting first avoids that entirely.)
+    var _streamWaitedMs = 0;
+    while (A.streaming && !_cancel) {
+      _status('🎬 Waiting for geometry to finish streaming…');
+      await new Promise(function(r) { setTimeout(r, 500); });
+      _streamWaitedMs += 500;
+    }
+    if (_streamWaitedMs) console.log('§MAXQ_STREAM_WAIT ms=' + _streamWaitedMs);
+    if (_cancel) {
+      console.log('§MAXQ_CANCEL during stream-wait — nothing baked, nothing saved');
+      _status('🎬 MaxQ cancelled');
+      _active = false; _cancel = false; A._maxqActive = false;
+      _wakeRelease();
+      return;
+    }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
     // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
     // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
