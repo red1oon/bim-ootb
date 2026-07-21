@@ -2812,6 +2812,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         window.APP = window.APP || {};
         var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
         window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
+        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "order-LINE stale parent FK") —
+        // a child tab's (tabLevel>0) New form has a locked/readonly parent-link column (e.g.
+        // C_OrderLine.C_Order_ID) but nothing ever seeded its value with the actual parent record's pk:
+        // defaultsFor() only resolves AD_Column.DefaultValue (empty here, by real iDempiere convention —
+        // the parent link is set programmatically, never via a column default), so the field rendered
+        // empty, then populateRefs()'s FK dropdown (never matching that empty value against any real row)
+        // silently fell through to whichever row sorts first — an ARBITRARY, WRONG parent order. Reuses the
+        // SAME naming-convention parent-column resolution renderActiveTab() already uses for GRID filtering
+        // (pKey = the parent tab's own key column name, matched by identity against the child table — real
+        // iDempiere's GridTab.getLinkColumnName() convention) to seed the value BEFORE the form renders.
+        var seedVals = null, _lvl = tab.tabLevel || 0;
+        if (_lvl > 0) {
+          var _w = _curWin(), _pIdx = -1;
+          for (var _pi = _activeTabIdx - 1; _pi >= 0; _pi--) { if ((_w.tabs[_pi].tabLevel || 0) === _lvl - 1) { _pIdx = _pi; break; } }
+          if (_pIdx >= 0) {
+            var _pTab = _w.tabs[_pIdx], _pKey = _keyCol(_pTab), _pPk = _selByLevel[_lvl - 1];
+            if (_pPk != null && _pKey && _colExists(tab.tableName, _pKey)) { seedVals = {}; seedVals[_pKey.toLowerCase()] = _pPk; }
+          }
+        }
+        if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
         else window.__crud.createInline(tn, nmount, opts);
       });
