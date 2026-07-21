@@ -3221,9 +3221,20 @@ async function setupEffects(A, renderer, scene, camera) {
   A._cinemaFanMeshesDebug = _cinemaFanMeshes;   // exposed for the §BBOX_GHOST_RAYCAST_FILTER witness harness
   // Returns { free:[N], bearings:[N], min, max, maxBearing, mean, openDir:{x,z} } — free[i] is the
   // metres of clear air along bearing i (CINEMA_FAN_FAR when nothing was hit).
+  // §CINEMA_SPIN_GLAZING (2026-07-22, prompts/PHOTOREAL_STILL_RENDER.md §Issue 2, spin-at-wall):
+  // glazing classes for the fan's per-ray hit classification below — "the fan's nearest hit is
+  // glazing, not opaque" IS an acceptable outcome per the user's own words ("being near glass with
+  // a view IS the marker of a good spot"), reusing the same curtain-wall/window family PHOTO_SPARKLE
+  // already classifies for a different feature (§320 above), not a new invented grouping.
+  var CINEMA_GLAZING_CLASSES = { IfcWindow: 1, IfcCurtainWall: 1, IfcPlate: 1, IfcMember: 1 };
+  function _cinemaHitIsGlazing(hits) {
+    if (!hits || !hits.length) return false;
+    var o = hits[0].object, cls = o && o.userData && o.userData.ifcClass;
+    return !!(cls && CINEMA_GLAZING_CLASSES[cls]);
+  }
   function _cinemaFan(pos, nRays) {
     var N = nRays || CINEMA_FAN_RAYS;
-    var out = { free: [], bearings: [], min: CINEMA_FAN_FAR, max: 0, maxBearing: 0, mean: 0,
+    var out = { free: [], bearings: [], glazing: [], min: CINEMA_FAN_FAR, minGlazing: false, max: 0, maxBearing: 0, mean: 0,
                 openDir: { x: 0, z: 0 }, rays: N };
     var meshes = _cinemaFanMeshes();
     if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
@@ -3231,17 +3242,17 @@ async function setupEffects(A, renderer, scene, camera) {
     var sum = 0;
     for (var i = 0; i < N; i++) {
       var b = (i / N) * Math.PI * 2;
-      var d = CINEMA_FAN_FAR;
+      var d = CINEMA_FAN_FAR, isGlazing = false;
       if (meshes.length) {
         dir.set(Math.cos(b), 0, Math.sin(b));
         _cineFanRay.set(origin, dir);
         _cineFanRay.far = CINEMA_FAN_FAR;
         var hits = null;
         try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { hits = null; }
-        if (hits && hits.length) d = hits[0].distance;
+        if (hits && hits.length) { d = hits[0].distance; isGlazing = _cinemaHitIsGlazing(hits); }
       }
-      out.free.push(d); out.bearings.push(b); sum += d;
-      if (d < out.min) out.min = d;
+      out.free.push(d); out.bearings.push(b); out.glazing.push(isGlazing); sum += d;
+      if (d < out.min) { out.min = d; out.minGlazing = isGlazing; }
       if (d > out.max) { out.max = d; out.maxBearing = b; }
     }
     out.mean = sum / N;
@@ -3471,9 +3482,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // BVH fan nudge: slide toward the open side so we land in the MIDDLE of the space rather than
     // against a wall. Bounded, so it can never wander out of the room. When the pose is nose-to-a-
     // wall this IS the "backing away" the spec asks for.
+    // §CINEMA_SPIN_GLAZING (2026-07-22, §Issue 2 spin-at-wall): the 3m cap can leave `settle` still
+    // close to geometry in a large/elongated room (root cause named in the spec). Per the user's
+    // own words, being close to GLAZING is fine as-is — only extend the nudge when what's actually
+    // nearby is opaque (a real wall) AND the true open point is farther than the normal cap allows.
+    var nudgeCap = CINEMA_FAN_NUDGE_MAX;
+    if (fan.min < CINEMA_FAN_NUDGE_MAX && !fan.minGlazing) nudgeCap = CINEMA_FAN_NUDGE_MAX * 3;
     nudgeL = Math.hypot(fan.openDir.x, fan.openDir.z);
     if (nudgeL > 0.01) {
-      var nk = Math.min(1, CINEMA_FAN_NUDGE_MAX / nudgeL);
+      var nk = Math.min(1, nudgeCap / nudgeL);
       settle.x += fan.openDir.x * nk; settle.z += fan.openDir.z * nk;
     }
     // "Facing a wall" is not a branch — it is just a short free-distance along yaw0, reported so a
@@ -3492,7 +3509,8 @@ async function setupEffects(A, renderer, scene, camera) {
       ' floorY=' + (floorY === null ? 'n/a' : floorY.toFixed(2)) + ' eye=' + CINEMA_EYE_M +
       ' fanMin=' + fan.min.toFixed(1) + ' fanMax=' + fan.max.toFixed(1) + ' fanMean=' + fan.mean.toFixed(1) +
       ' openBearing=' + (fan.maxBearing * 180 / Math.PI).toFixed(0) + '°' +
-      ' facingFree=' + fan.free[wallIdx].toFixed(1) + ' nudge=' + Math.min(nudgeL, CINEMA_FAN_NUDGE_MAX).toFixed(2) + 'm' +
+      ' facingFree=' + fan.free[wallIdx].toFixed(1) + ' nudge=' + Math.min(nudgeL, nudgeCap).toFixed(2) + 'm' +
+      ' fanMinGlazing=' + fan.minGlazing + ' nudgeCap=' + nudgeCap +
       ' enclosed=' + (enclosedFrac * 100).toFixed(0) + '%' +
       ' yaw0=' + (yaw0 * 180 / Math.PI).toFixed(1) + '° pitch0=' + (pitch0 * 180 / Math.PI).toFixed(1) + '°' +
       ' diveDist=' + diveDist.toFixed(1) + 'm');
