@@ -31,7 +31,18 @@
   var FRUSTUM_MARGIN = 5;          // §9: angular hysteresis — must be 5m OUTSIDE frustum to demote
   var FADE_FRAMES = 10;            // §8 FINDINGS #4: N=10 sufficed; 5 and 20 both worse
   var FADE_CAP = 128;              // §9: transitions beyond cap SNAP (= shipped TM-DLOD behavior)
-  var EVAL_THROTTLE_MS = 150;      // full-index re-evaluation cadence while camera moves
+                                   // (a per-frame TRANSITION_BUDGET was tried 2026-07-21 and
+                                   // MEASURED WORSE — throttling convergence left the scene
+                                   // half-real through the demote wave, draw calls 3245→7984,
+                                   // sweep mean 19.9→92.5ms. Transitions are not the flight
+                                   // bottleneck; do not re-add without new numbers.)
+  var EVAL_CHUNK = 16384;          // §FLY_SMOOTH (2026-07-21 user "still lagging in flight"):
+                                   // one monolithic 122k-element eval measured 42ms/hit at a
+                                   // 150ms cadence = 28% main-thread duty cycle + 7k-transition
+                                   // bursts per hit (473k snaps/600 flight frames). The scan is
+                                   // now CHUNKED — ~16k elements per rAF tick (~3-4ms), a full
+                                   // pass every ~8 frames — same partition, amortized cost,
+                                   // transition bursts spread across frames.
   var DEPTH_MAX_RADIUS = 25;       // §9 shine-thru fix: no depth pass for oversized bboxes — a
                                    // giant slab's invisible occluder would erase REAL nearby
                                    // geometry (center-distance ≠ bbox extent); wireframe-only there
@@ -45,7 +56,9 @@
   var _realIndex = null;           // guid → {kind:'mesh'|'inst'|'batch', obj, idx|slotId, meta}
   var _fades = [];                 // active transitions
   var _unitBox = null, _zeroM = null, _frustum = null, _psm = null, _sphere = null, _m4 = null;
-  var _lastCamSig = null, _lastEvalT = 0;
+  var _lastCamSig = null;
+  var _guidArr = null, _evalCursor = 0, _scanPending = false; // §FLY_SMOOTH: chunked-scan state
+  var _passReal = 0, _passBoxed = 0; // partition counters accumulated across a pass
   var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0 };
   window.__dlodNav = _stats;
@@ -117,6 +130,7 @@
       meshes.push(im); meshes.push(imDepth);
     }
     _boxIndex = index; _boxMeshes = meshes; _boxBld = app.activeBuilding;
+    _guidArr = Object.keys(index); _evalCursor = 0; _scanPending = false; // §FLY_SMOOTH chunk state
     console.log('§DLOD_NAV_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length +
       ' build_ms=' + (performance.now() - t0).toFixed(0));
     return true;
@@ -290,32 +304,44 @@
     return _frustum.intersectsSphere(_sphere);
   }
 
-  function _evaluate(app) {
+  // §FLY_SMOOTH: one CHUNK of the scan per rAF tick. Camera pose is re-read per chunk — elements
+  // in different chunks see slightly different poses within a pass; the 50/80m + 5m-frustum
+  // hysteresis bands absorb that skew by design (they exist to absorb pose jitter).
+  function _evalChunk(app) {
+    if (!_guidArr || !_guidArr.length) return;
     var t0 = performance.now();
     if (!_frustum) { _frustum = new THREE.Frustum(); _psm = new THREE.Matrix4(); _sphere = new THREE.Sphere(); _m4 = new THREE.Matrix4(); }
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
     var camPos = app.camera.position;
-    var boxed = 0, real = 0, started = 0;
-    for (var guid in _boxIndex) {
-      var e = _boxIndex[guid];
+    var end = Math.min(_evalCursor + EVAL_CHUNK, _guidArr.length);
+    var started = 0;
+    for (var i = _evalCursor; i < end; i++) {
+      var guid = _guidArr[i], e = _boxIndex[guid];
       var want = _wantedReal(e, camPos);
-      if (want === (e.state === 'real')) { if (e.state === 'box') boxed++; else real++; continue; }
+      if (want === (e.state === 'real')) { if (e.state === 'box') _passBoxed++; else _passReal++; continue; }
       var r = _realIndex[guid];
-      if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident (never streamed) — index only
+      if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident — index only
       _startFade(app, guid, e, r, !want);
       started++;
-      if (e.state === 'box') boxed++; else real++;
+      if (e.state === 'box') _passBoxed++; else _passReal++;
     }
-    _stats.active = real; _stats.boxed = boxed; _stats.evalMs = +(performance.now() - t0).toFixed(1);
+    _evalCursor = end;
+    _stats.evalMs = +(performance.now() - t0).toFixed(1); // per-CHUNK cost now (was per full pass)
     _logAccStarted += started;
-    var _nowLog = performance.now();
-    if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
-      console.log('§DLOD_NAV active=' + real + ' boxed=' + boxed + ' mode=on started=' + _logAccStarted +
-        ' fades=' + _fades.length + ' eval_ms=' + _stats.evalMs);
-      _logAccStarted = 0; _lastLogT = _nowLog;
+    if (_evalCursor >= _guidArr.length) { // pass complete — publish partition, rearm on next pose change
+      _stats.active = _passReal; _stats.boxed = _passBoxed;
+      _passReal = 0; _passBoxed = 0;
+      _evalCursor = 0;
+      _scanPending = false;
+      var _nowLog = performance.now();
+      if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
+        console.log('§DLOD_NAV active=' + _stats.active + ' boxed=' + _stats.boxed + ' mode=on started=' + _logAccStarted +
+          ' fades=' + _fades.length + ' chunk_ms=' + _stats.evalMs);
+        _logAccStarted = 0; _lastLogT = _nowLog;
+      }
     }
-    if (app.markDirty) app.markDirty();
+    if (started && app.markDirty) app.markDirty();
   }
 
   function _camSig(app) {
@@ -363,11 +389,8 @@
     var fading = _stepFades(app);
     if (fading && app.markDirty) app.markDirty();
     var sig = _camSig(app);
-    var now = performance.now();
-    if (sig !== _lastCamSig && (now - _lastEvalT) >= EVAL_THROTTLE_MS) {
-      _lastCamSig = sig; _lastEvalT = now;
-      _evaluate(app);
-    }
+    if (sig !== _lastCamSig) { _lastCamSig = sig; _scanPending = true; } // pose changed — (re)arm scan
+    if (_scanPending) _evalChunk(app); // one chunk per frame until the pass completes
     _rafId = requestAnimationFrame(_tick);
   }
 
