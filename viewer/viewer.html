@@ -93,6 +93,11 @@
   }
   .bim-panel .bim-slider-row button:hover { background: rgba(255,255,255,0.1); }
   .bim-panel .bim-slider-row button.active { color: #4fc3f7; }
+  /* §CINEMA_ROW_BUSY (2026-07-18): distinct "processing..." pulse — steady active=done/showing,
+     pulsing busy=still working (16-sample TAA/AO fold, cutout texture decode) so a slow machine
+     doesn't read as "did nothing happen" during the few-seconds gap. */
+  .bim-panel .bim-slider-row button.busy { color: #4fc3f7; animation: bimBusyPulse 0.9s ease-in-out infinite; }
+  @keyframes bimBusyPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   .bim-panel .bim-slider-row button svg { width: 18px; height: 18px; pointer-events: none; }
   .bim-panel .bim-slider-row input[type=range] {
     flex: 1; accent-color: #4fc3f7; cursor: pointer; min-width: 0;
@@ -799,29 +804,41 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 </div>
 
 <!-- §S276: Import map for Three.js r184 WebGPU — includes WebGPURenderer + TSL + compat mode -->
+<!-- §GI_POC (2026-07-16, sandbox spike): repointed "three" -> three.module.min.js, the SAME build
+     scene.js actually loads for the real WebGLRenderer (window.THREE). This bare specifier was
+     previously unused anywhere in the app (grepped — zero `from 'three'` imports in viewer/*.js),
+     so this is safe: it now lets the vendored postprocessing-n8ao.bundle.js's internal `from
+     'three'` imports resolve to the SAME THREE instance as the rest of the app, avoiding a second
+     incompatible THREE.js copy. Revert to three.webgpu.min.js if TSL/WebGPU work resumes. -->
 <script type="importmap">
-{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+{ "imports": {
+  "three": "./lib/three.module.min.js",
+  "three/examples/jsm/postprocessing/Pass.js": "./lib/Pass.js"
+} }
 </script>
 <script src="loader.js?v=12"></script>
 <script src="lib/httpvfs.js?v=1" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=1" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="effects.js?v=1" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects.js?v=2" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
+<script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
+<script src="cinema_maxq.js?v=2" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
 <script src="input_registry.js?v=1" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
 <script src="../common/pill_builder.js?v=1" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=1" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
-<script src="../common/history_tap.js?v=6" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
+<script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
 <script src="scene.js?v=51" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=5" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
-<script src="streaming.js?v=53" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=54" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=7" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="panels.js?v=42" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=28" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
-<script src="tour.js?v=4" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
+<script src="tour.js?v=12" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=1" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=1" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
 <script src="clash_matrix.js?v=1" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
@@ -872,7 +889,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="elevation.js?v=1" onerror="console.warn('[Elevation] elevation.js skipped')"></script>
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
-<script src="kernel_ops.js?v=4" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
+<script src="kernel_ops.js?v=5" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
 <script src="../common/whole_history.js?v=4" onerror="console.warn('[WholeHistory] common/whole_history.js skipped')"></script>
 <script src="../common/history_bar.js?v=6" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (the command-palette corner download triangle → AboutDIY.open; the Help pill keeps the shortcuts palette). Self-contained
@@ -906,10 +923,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
-<script src="time_machine.js?v=59" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
-<script src="schedule_author.js?v=8" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
-<script src="schedule_sync.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_author_ui.js?v=6" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
+<script src="time_machine.js?v=63" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="dlod_nav.js?v=1" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
+<script src="schedule_author.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
+<script src="schedule_author_ui.js?v=7" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
 <script src="sfx.js?v=1" onerror="console.warn('§LOAD_FAIL sfx.js — audio feedback disabled')"></script>
 <!-- HR_BIM_Asset spatial lenses (prompts/RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). ADDITIVE peer module: the
@@ -997,9 +1015,20 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=527')
+  navigator.serviceWorker.register('sw.js?v=532')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
+  // §BUILD_VERSION_STAMP: log the ACTIVE (controlling) service worker's CACHE_VERSION at page
+  // onset — a one-line answer to "is this tab running the latest deploy" without hunting for a
+  // later feature-specific log line. No controller yet = this load isn't SW-controlled (first
+  // visit, or the SW just updated and hasn't taken over) — reload once to get a controller.
+  if(navigator.serviceWorker.controller){
+    var _bvCh=new MessageChannel();
+    _bvCh.port1.onmessage=function(ev){console.log('§BUILD_VERSION '+(ev.data&&ev.data.version||'?')+' (sw-controlled)')};
+    navigator.serviceWorker.controller.postMessage({type:'GET_PRECACHE'},[_bvCh.port2]);
+  } else {
+    console.log('§BUILD_VERSION (no active controller yet — reload once to confirm)');
+  }
 }
 // §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
 window._installPrompt = null;

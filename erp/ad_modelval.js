@@ -129,11 +129,42 @@
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')
+        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21) — real iDempiere lets the WINDOW
+        // (via its AD_Window/tab context) override this default to the Purchase side; this port previously
+        // always fell back to the client's Standard SALES doctype regardless of which window authored the
+        // record, so a "Purchase Order" created here got a Sales doctype (and thus a wrong/absent IsSOTrx)
+        // underneath. ctx.issotrx (threaded from the AD_Tab's own WhereClause, e.g. window 181's
+        // "C_Order.IsSOTrx='N'") picks the matching side; absent/ambiguous ctx keeps the original
+        // Standard-Sales fallback (never a behavior change for a caller that supplies no hint).
         var r = info.record;
         if (!Number(r.c_doctypetarget_id)) {
-          var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
-          if (dt) d(info).c_doctypetarget_id = dt.c_doctype_id;
+          var dt = (ctx && ctx.issotrx === 'N')
+            ? db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y' ORDER BY c_doctype_id").get()
+            : db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
+          if (dt) {
+            d(info).c_doctypetarget_id = dt.c_doctype_id;
+            // IsSOTrx has no form field anywhere in this UI (crud_ops.json's c_order entry never declares it) —
+            // this beforeSave slice is the ONLY place it can ever be derived in this engine. Real iDempiere sets
+            // it from the chosen DocType at record construction; ported here since that seam doesn't exist yet.
+            if (!r.issotrx) d(info).issotrx = dt.issotrx;
+          }
         }
+        return null;
+      }],
+      ['MOrder.deliveryInvoiceRuleDefault', function (ctx, info) {
+        // §DR-IR-LAST-MILE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "DeliveryRule/InvoiceRule undeclared") —
+        // NOT a beforeSave line in real MOrder.java: DeliveryRule/InvoiceRule are AD_Column DefaultValue
+        // fields, applied at NEW-record time by the window layer, not by the model's beforeSave. This engine
+        // has no such "apply AD_Column default at NEW" seam yet, and c_order's crud_ops.json entry (like
+        // M_Warehouse_ID/IsSOTrx above) declares no visible field for either — genShipmentLines/
+        // genInvoiceLines (ad_process.js) silently treat an undefined rule as "named-deferred", so every
+        // freshly-created order produced zero shippable/invoiceable lines regardless of DocStatus/IsSOTrx/
+        // Warehouse all being correct. Values are the REAL AD_Column.DefaultValue rows for C_Order in the
+        // seed (queried live: DeliveryRule='F' Force, InvoiceRule='I' Immediate — confirmed, not assumed;
+        // Availability was the initial guess and would have been WRONG).
+        var r = info.record;
+        if (!r.deliveryrule) d(info).deliveryrule = 'F';
+        if (!r.invoicerule) d(info).invoicerule = 'I';
         return null;
       }],
       ['MOrder.paymentTermDefault', function (ctx, info) {   // :1315-1327  IsDefault='Y' payment term

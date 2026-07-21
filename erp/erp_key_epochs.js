@@ -144,6 +144,55 @@
 
   function _fail(id, why) { console.log('§EPOCH verify FAIL at id=' + id + ' why=' + why); return { ok: false, brokeAt: id, why: why }; }
 
+  // verifyMultiDeviceOps(ops, opts) — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction
+  // Cross-Device Attribution S8 (corrected) — Witness: W-MULTI-DEVICE-VERIFY.
+  //
+  // verifyEpochSigsOps (above) enforces a SINGLE `activeKid` at every position — correct for its own
+  // job (one device rotating/revoking its OWN key over time, the Teams importBranch path) but WRONG
+  // for N devices that are all simultaneously, independently valid signers with no rotation between
+  // them (confirmed by probe 2026-07-21: two concurrent devices with no ROTATE op between them —
+  // verifyEpochSigsOps REJECTS the second one outright, "superseded key cannot sign new ops"). That
+  // would break the exact N-device concurrent convergence witness_e2e_n_converge.js/W-N10-CONCURRENT-
+  // TODAY already proved works.
+  //
+  // This is the correct model for THAT case: each op's `signed_by` kid is looked up directly in a flat
+  // roster and its sig verified against THAT kid's own pubkey, INDEPENDENT of every other op's signer —
+  // no state carried between ops, no rotation/revocation semantics (a device that wants those uses
+  // verifyEpochSigsOps on its OWN single-writer branch instead — this function does not replace that).
+  // Only v2 (content-signed) rows are attributable at all (a v1 sig can't survive a rebase/renumber
+  // regardless, per kernel_ops.js _sigBase) — a v1 row or one with no `signed_by` is skipped (counted,
+  // not failed): pre-S8 ops and rows from a device that never installed a kid stay valid but anonymous.
+  //   opts = { roster: {kid→pubJwk} (direct — a witness/test roster; HQ-signed DISTRIBUTION over the
+  //            relay is Phase 3, not this), verify: async(msgHex,sigHex,pubJwk)->bool, contentHash?,
+  //            isV2? }
+  //   returns { ok, len, attributed:{id→kid}, anonymous:[id,...], brokeAt?, why? }
+  async function verifyMultiDeviceOps(ops, opts) {
+    opts = opts || {};
+    var S = _snapSign();
+    var verify = opts.verify || (S && function (msg, sig, pub) { return S.verifyTip(msg, sig, pub); });
+    if (!verify) return { ok: false, why: 'no verify fn' };
+    var pubByKid = opts.roster || opts.pubByKid;
+    if (!pubByKid) return { ok: false, why: 'no roster/pubByKid' };
+    var attributed = {}, anonymous = [];
+    ops = ops || [];
+    for (var i = 0; i < ops.length; i++) {
+      var o = ops[i], id = o.id;
+      if (o.op_hash == null) return _fail(id, 'unsealed (hash chain not sealed)');
+      var K = _kernel();
+      var isV2 = (opts.isV2) || (K && K._isV2);
+      if (!(isV2 && isV2(o.parameters))) { anonymous.push(id); continue; }   // v1 or no content-sign: skip, don't fail
+      var p = o.parameters; try { p = JSON.parse(p); } catch (e) { p = {}; }
+      var signer = p.signed_by;
+      if (!signer) { anonymous.push(id); continue; }   // v2 but no kid stamped (signer never installed one)
+      if (!pubByKid[signer]) return _fail(id, 'op signed by key ' + signer + ' NOT in the roster (forged/unknown device)');
+      var msg = await _sigMessage(o, opts);
+      if (!(await verify(msg, o.sig, pubByKid[signer]))) return _fail(id, 'signature invalid under ' + signer + ' (forged or wrong key)');
+      attributed[id] = signer;
+    }
+    console.log('§EPOCH verifyMultiDevice OK len=' + ops.length + ' attributed=' + Object.keys(attributed).length + ' anonymous=' + anonymous.length);
+    return { ok: true, len: ops.length, attributed: attributed, anonymous: anonymous };
+  }
+
   // singleKeyVerify — the NO-EPOCH baseline (the §FALSIFIER straw man): one fixed key forges forever.
   // Kept from the POC only to witness the contrast against verifyEpochSigs.
   async function singleKeyVerify(db, opts) {
@@ -158,8 +207,9 @@
   }
 
   var _api = { signRoster: signRoster, verifyRoster: verifyRoster,
-    verifyEpochSigs: verifyEpochSigs, verifyEpochSigsOps: verifyEpochSigsOps, singleKeyVerify: singleKeyVerify };
+    verifyEpochSigs: verifyEpochSigs, verifyEpochSigsOps: verifyEpochSigsOps, singleKeyVerify: singleKeyVerify,
+    verifyMultiDeviceOps: verifyMultiDeviceOps };   // S8: N concurrently-valid devices, no rotation state
   if (typeof module !== 'undefined' && module.exports) { module.exports = _api; }
   if (typeof window !== 'undefined') { window.ErpKeyEpochs = _api; }
-  if (typeof console !== 'undefined') { console.log('§EPOCH_LOADED v2 (roster + key-epoch verification, content-aware — T1/W-ROSTER-VERIFY)'); }
+  if (typeof console !== 'undefined') { console.log('§EPOCH_LOADED v3 (roster + key-epoch verification + multi-device concurrent verify, content-aware — T1/W-ROSTER-VERIFY/W-MULTI-DEVICE-VERIFY)'); }
 })();

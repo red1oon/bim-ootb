@@ -71,7 +71,7 @@ function setupStreaming(A) {
             SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                    t.center_x, t.center_y, t.center_z,
                    t.rotation_x, t.rotation_y, t.rotation_z,
-                   m.storey, m.ifc_class${bboxCols}
+                   m.storey, m.ifc_class, m.element_name${bboxCols}
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN element_transforms t ON t.guid = m.guid
@@ -93,9 +93,9 @@ function setupStreaming(A) {
           var _insertInst = A.db.prepare('INSERT OR IGNORE INTO element_instances VALUES (?,?)');
           for (var ri = 0; ri < rows.length; ri++) {
             var r = rows[ri];
-            // r: [guid, hash, rgba, disc, cx, cy, cz, rx, ry, rz, storey, ifcClass, bx?, by?, bz?]
+            // r: [guid, hash, rgba, disc, cx, cy, cz, rx, ry, rz, storey, ifcClass, elementName, bx?, by?, bz?]
             _insertMeta.run([r[0], nearest, r[10], r[3], r[11]]);
-            _insertTx.run([r[0], r[4], r[5], r[6], A._hasBbox ? r[12] : null, A._hasBbox ? r[13] : null, A._hasBbox ? r[14] : null]);
+            _insertTx.run([r[0], r[4], r[5], r[6], A._hasBbox ? r[13] : null, A._hasBbox ? r[14] : null, A._hasBbox ? r[15] : null]);
             _insertInst.run([r[0], r[1]]);
           }
           _insertMeta.free(); _insertTx.free(); _insertInst.free();
@@ -129,7 +129,7 @@ function setupStreaming(A) {
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
-               m.storey, m.ifc_class${bboxCols}
+               m.storey, m.ifc_class, m.element_name${bboxCols}
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
@@ -190,13 +190,18 @@ function setupStreaming(A) {
     var MAX_PLACEHOLDERS = A._isMobile ? 20000 : 200000;
     // Sample evenly if building has more elements than cap
     const step = rows.length > MAX_PLACEHOLDERS ? Math.ceil(rows.length / MAX_PLACEHOLDERS) : 1;
-    // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, bbox_x, bbox_y, bbox_z]
+    // row: [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifc_class, element_name, bbox_x, bbox_y, bbox_z]
+    // §BBOX_ROW_SHIFT guard: bbox MUST sit at 13-15 (16-slot row). A 15-slot producer (pre-#839
+    // layout) silently reads bbox_y/bbox_z/undefined here → squashed 0.3m-tall bars (ghost_bbxes.png).
     const byDisc = {};
+    let _shortRows = 0;
     for (let i = 0; i < rows.length; i += step) {
+      if (rows[i].length < 16) _shortRows++;
       const disc = rows[i][3] || '_';
       if (!byDisc[disc]) byDisc[disc] = [];
       byDisc[disc].push(rows[i]);
     }
+    if (_shortRows) console.warn(`[BBOX] §BBOX_ROW_SHIFT short_rows=${_shortRows} — 15-slot rows reaching 16-slot reader, bbox misread`);
     const geo = new THREE.BoxGeometry(1, 1, 1);
     const _m4 = new THREE.Matrix4();
     const _pos = new THREE.Vector3();
@@ -208,7 +213,7 @@ function setupStreaming(A) {
     function _buildNextDisc() {
       if (di >= discEntries.length) {
         var shown = Object.values(byDisc).reduce((s, a) => s + a.length, 0);
-        console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${discEntries.length} mobile=${A._isMobile}`);
+        console.log(`[BBOX] §BBOX_PLACEHOLDERS total=${rows.length} shown=${shown} step=${step} discs=${discEntries.length} mobile=${A._isMobile} short_rows=${_shortRows}`);
         return;
       }
       var disc = discEntries[di][0], drows = discEntries[di][1];
@@ -225,7 +230,7 @@ function setupStreaming(A) {
         for (var j = ri; j < end; j++) {
           var r = drows[j];
           var p = A.ifc2three(r[4], r[5], r[6]);
-          var bx = r[12] || 0.3, by = r[13] || 0.3, bz = r[14] || 0.3;
+          var bx = r[13] || 0.3, by = r[14] || 0.3, bz = r[15] || 0.3;
           _pos.set(p.x, p.y, p.z);
           _scl.set(bx, bz, by);
           _m4.compose(_pos, _quat, _scl);
@@ -261,7 +266,30 @@ function setupStreaming(A) {
   };
 
 
-  A._getMaterial = function(rgbaStr, ifcClass) {
+  // §ENTOURAGE (PHOTOREAL_STILL_RENDER.md, 2026-07-17 "SuperLook / advance-realism" spec, real-data
+  // -first item): the Revit RPC entourage exported into some IFCs (people, deciduous trees, facade
+  // logo text) all land as class IfcBuildingElementProxy with a generic cream placeholder color
+  // (0.920,0.900,0.850) — the RPC exporter's default, NOT a deliberate design color, so it reads as
+  // pale ghosts. This maps the real element_name → a presentation material variant. Anchored-prefix
+  // match on the observed real names (RPC Male/Female/Tree, Model Text:Logo) — deterministic,
+  // extracted from actual DB rows (see spec's DB census), no invented classes. Returns '' for
+  // everything else so non-entourage geometry is completely untouched.
+  // §RPC_M_PREFIX (2026-07-17, found via BimWhale_Advanced): some Revit exports use the metric-
+  // template family prefix "M_" (M_RPC Male/Female/Beetle) instead of the bare "RPC ..." name seen
+  // in Ifc4_Revit — same RPC content, different export convention. Strip a leading "M_" before the
+  // anchored match so both conventions land the same variant; without this BimWhale's real RPC
+  // entourage never gets the flat-exporter-grey fix.
+  A._entourageVariant = function(ifcClass, name) {
+    if (ifcClass !== 'IfcBuildingElementProxy' || !name) return '';
+    var n = name.indexOf('M_') === 0 ? name.slice(2) : name;
+    if (n.indexOf('RPC Male') === 0 || n.indexOf('RPC Female') === 0) return 'person';
+    if (n.indexOf('RPC Tree') === 0) return 'tree';
+    if (n.indexOf('RPC Beetle') === 0) return 'vehicle';
+    if (n.indexOf('Model Text:Logo') === 0) return 'logo';
+    return '';
+  };
+
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -318,8 +346,74 @@ function setupStreaming(A) {
       IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 },  // elevator
     };
 
+    // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
+    // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
+    // RUNTIME by uTriActive (flipped every frame by each material's own onBeforeRender, reading
+    // A._stillRefineActive — see §TRIPLANAR_RECOMPILE_FIX below), not at compile time — a uniform
+    // branch costs ~nothing when false, so normal navigation pays no per-fragment triplanar cost.
+    // Two maps only (diffuse + roughness). Concrete verified first per spec (real bug found+fixed
+    // — see PHOTOREAL_STILL_RENDER.md §SESSION RECORD); plaster+metal now wired on the same proven
+    // pattern. Class → texture-group assignment matches STD_MAT's own real-world-material comments
+    // above (e.g. IfcSlab "cast concrete", IfcCovering "plasterboard") — not invented groupings.
+    // §TRIPLANAR_CONTRAST (resume-brief item 2, user verbatim: "surface material of metal,
+    // concrete are all not evident enough"). normFactor above only re-centers the texture's
+    // AVERAGE luminance to ~1.0 (so the multiply-blend doesn't darken/brighten the base IFC
+    // color on average) — it does NOT change how much the texture varies AROUND that average,
+    // and diffuse photo textures tend to have fairly subtle local variance to begin with, which
+    // reads as a near-flat wash once multiplied against a mid-grey base color. contrastBoost
+    // expands each texture's deviation from the 1.0 average before the multiply (see the
+    // `(triDiffuse - 1.0) * uTriContrast + 1.0` shader line below) — same average brightness,
+    // more visible grain/streak. Metal gets the strongest boost (brushed-streak highlights are
+    // the most visually distinctive of the three); concrete/plaster more modest.
+    var _TRI_CONCRETE = {
+      diffuse: 'textures/materials/concrete_color_1k.jpg',
+      roughness: 'textures/materials/concrete_rough_1k.jpg',
+      tileMeters: 2.5,     // world units per texture repeat
+      normFactor: 1.384,   // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      contrastBoost: 1.6
+    };
+    var _TRI_PLASTER = {
+      diffuse: 'textures/materials/plaster_color_1k.jpg',
+      roughness: 'textures/materials/plaster_rough_1k.jpg',
+      tileMeters: 2.0,
+      normFactor: 1.348,   // 1 / 0.742
+      contrastBoost: 1.5
+    };
+    var _TRI_METAL = {
+      diffuse: 'textures/materials/metal_color_1k.jpg',
+      roughness: 'textures/materials/metal_rough_1k.jpg',
+      tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
+      normFactor: 1.870,   // 1 / 0.535
+      contrastBoost: 1.9
+    };
+    var TRIPLANAR_MAT = {
+      // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
+      IfcWall: _TRI_CONCRETE,
+      IfcSlab: _TRI_CONCRETE,
+      IfcColumn: _TRI_CONCRETE,
+      IfcFooting: _TRI_CONCRETE,
+      IfcPile: _TRI_CONCRETE,
+      IfcStair: _TRI_CONCRETE,
+      IfcRamp: _TRI_CONCRETE,
+      // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
+      IfcWallStandardCase: _TRI_PLASTER,
+      IfcCovering: _TRI_PLASTER,
+      // ── Metal (STD_MAT: metal > 0.3 — steel structure, railings, MEP) ──
+      IfcBeam: _TRI_METAL,
+      IfcMember: _TRI_METAL,
+      IfcPlate: _TRI_METAL,
+      IfcRailing: _TRI_METAL,
+      IfcPipe: _TRI_METAL,
+      IfcPipeFitting: _TRI_METAL,
+      IfcPipeSegment: _TRI_METAL,
+      IfcDuct: _TRI_METAL,
+      IfcDuctFitting: _TRI_METAL,
+      IfcDuctSegment: _TRI_METAL,
+      IfcCableCarrier: _TRI_METAL
+    };
+
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '');
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -347,13 +441,20 @@ function setupStreaming(A) {
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
     if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.6; } // §refl: 0.3->0.6 — more realistic reflection emphasis
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
+    // the real photo texture takes over that job, stacking both would double-bump the normal
+    // with two uncorrelated patterns.
+    var triMat = (ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null;
+
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
-    else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
+    if (!triMat) {
+      if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
+      else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
+    }
     if (_perturbScale > 0) {
       var _ps = _perturbScale;
       mat.onBeforeCompile = function(shader) {
@@ -373,6 +474,195 @@ function setupStreaming(A) {
           ].join('\n')
         );
       };
+    }
+    // §TRIPLANAR: real PBR diffuse+roughness, still-render-only (see table + comment above).
+    if (triMat) {
+      A._triplanarTexCache = A._triplanarTexCache || {};
+      A._triplanarLoader = A._triplanarLoader || new THREE.TextureLoader();
+      function _triTex(path, isColor) {
+        if (A._triplanarTexCache[path]) return A._triplanarTexCache[path];
+        var tex = A._triplanarLoader.load(path, function() {
+          console.log('§TRIPLANAR_TEX_READY path=' + path);
+        }, undefined, function() {
+          console.warn('§TRIPLANAR_TEX_FAIL path=' + path);
+        });
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        if (isColor) {
+          if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+          else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+        }
+        A._triplanarTexCache[path] = tex;
+        return tex;
+      }
+      var _diffuseTex = _triTex(triMat.diffuse, true);
+      var _roughTex = _triTex(triMat.roughness, false);
+      var _triUvScale = 1.0 / triMat.tileMeters;
+      var _triNorm = triMat.normFactor;
+      var _triContrast = triMat.contrastBoost || 1.0;
+      mat.onBeforeCompile = function(shader) {
+        shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
+        shader.uniforms.uTriDiffuse = { value: _diffuseTex };
+        shader.uniforms.uTriRoughness = { value: _roughTex };
+        shader.uniforms.uTriScale = { value: _triUvScale };
+        shader.uniforms.uTriNorm = { value: _triNorm };
+        shader.uniforms.uTriContrast = { value: _triContrast };
+        // §PHOTO_PAINT (2026-07-16, user ask, realreflect.jpg: "uneven colored... easy to run a
+        // sort of random paint treat, so each time it is done first time it returns a diff"):
+        // A._photoPaintSeed (effects.js §PHOTO_VARIATION — re-rolled per Alt+S trigger, locked by
+        // Cinema Orbit) drives a coarse, low-frequency blotch/weathering tint on top of the real
+        // photographic texture below — a genuinely different-looking "paint job" each roll, not
+        // just a UV-tile shift (which would look near-identical on a seamlessly-tiled texture).
+        shader.uniforms.uPaintSeed = { value: A._photoPaintSeed || 0 };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'varying vec3 vTriWorldPos;',
+            'varying vec3 vTriWorldNormal;'
+          ].join('\n'))
+          .replace('#include <worldpos_vertex>', [
+            '#include <worldpos_vertex>',
+            '{',
+            '  vec4 triWp = vec4(transformed, 1.0);',
+            '  #ifdef USE_BATCHING',
+            '    triWp = batchingMatrix * triWp;',
+            '  #endif',
+            '  #ifdef USE_INSTANCING',
+            '    triWp = instanceMatrix * triWp;',
+            '  #endif',
+            '  vTriWorldPos = (modelMatrix * triWp).xyz;',
+            '}'
+          ].join('\n'))
+          .replace('#include <defaultnormal_vertex>', [
+            '#include <defaultnormal_vertex>',
+            '{',
+            '  vec3 triN = objectNormal;',
+            '  #ifdef USE_INSTANCING',
+            '    triN = mat3(instanceMatrix) * triN;',
+            '  #endif',
+            '  vTriWorldNormal = normalize(mat3(modelMatrix) * triN);',
+            '}'
+          ].join('\n'));
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'varying vec3 vTriWorldPos;',
+            'varying vec3 vTriWorldNormal;',
+            'uniform sampler2D uTriDiffuse;',
+            'uniform sampler2D uTriRoughness;',
+            'uniform float uTriActive;',
+            'uniform float uTriScale;',
+            'uniform float uTriNorm;',
+            'uniform float uTriContrast;',
+            'uniform float uPaintSeed;'
+          ].join('\n'))
+          .replace('#include <roughnessmap_fragment>', [
+            '#include <roughnessmap_fragment>',
+            'if (uTriActive > 0.5) {',   // uniform branch — near-zero cost when off (normal nav)
+            '  vec3 triW = abs(normalize(vTriWorldNormal));',
+            '  triW = pow(triW, vec3(4.0));',
+            '  triW /= (triW.x + triW.y + triW.z + 1e-5);',
+            '  vec2 uvX = vTriWorldPos.zy * uTriScale;',
+            '  vec2 uvY = vTriWorldPos.xz * uTriScale;',
+            '  vec2 uvZ = vTriWorldPos.xy * uTriScale;',
+            '  vec3 dX = texture2D(uTriDiffuse, uvX).rgb;',
+            '  vec3 dY = texture2D(uTriDiffuse, uvY).rgb;',
+            '  vec3 dZ = texture2D(uTriDiffuse, uvZ).rgb;',
+            '  vec3 triDiffuse = dX * triW.x + dY * triW.y + dZ * triW.z;',
+            '  float rX = texture2D(uTriRoughness, uvX).r;',
+            '  float rY = texture2D(uTriRoughness, uvY).r;',
+            '  float rZ = texture2D(uTriRoughness, uvZ).r;',
+            '  float triRough = rX * triW.x + rY * triW.y + rZ * triW.z;',
+            // §TRIPLANAR_CONTRAST (resume-brief item 2): normFactor (uTriNorm) recenters the
+            // texture's AVERAGE to ~1.0 so the multiply doesn't shift overall brightness, but
+            // does nothing for how much it varies around that average — expand the deviation
+            // from 1.0 by uTriContrast BEFORE the multiply, same average, more visible grain.
+            '  vec3 triNormalized = triDiffuse * uTriNorm;',
+            '  vec3 triContrasted = clamp((triNormalized - 1.0) * uTriContrast + 1.0, 0.0, 2.5);',
+            // §PHOTO_PAINT: coarse blotch noise, seeded per-session — two octaves (a broad blotch
+            // + a finer freckle) so it reads as uneven weathering, not a single flat tint shift.
+            '  vec2 paintCoord = vTriWorldPos.xz * 0.12 + vec2(uPaintSeed * 71.317, uPaintSeed * 113.729);',
+            '  float paintA = fract(sin(dot(floor(paintCoord * 1.5), vec2(12.9898, 78.233))) * 43758.5453);',
+            '  float paintB = fract(sin(dot(paintCoord * 4.0, vec2(39.201, 61.789))) * 24634.6345);',
+            '  float paintBlotch = mix(paintA, paintB, 0.35);',
+            '  vec3 paintTint = mix(vec3(0.72, 0.71, 0.69), vec3(1.22, 1.16, 1.04), paintBlotch);',
+            '  triContrasted *= paintTint;',
+            '  diffuseColor.rgb *= triContrasted;',
+            '  roughnessFactor *= mix(0.6, 1.4, triRough);',
+            '}'
+          ].join('\n'));
+        // §TRIPLANAR_CLONE_BOMB: plain property, NEVER mat.userData — Material.copy() deep-copies
+        // userData via JSON.parse(JSON.stringify(...)), so a shader stored there made every
+        // material.clone() (_buildShapeMeshes on any Find-panel select) serialize the full GLSL
+        // source + every uniform INCLUDING textures/envMap — a multi-second main-thread stall per
+        // tap on a large building (live LTU hang, 2026-07-16). A clone recompiles fresh anyway.
+        mat._triplanarShader = shader;
+        // §TRIPLANAR_RECOMPILE_FIX: three.js can silently recompile a material's program
+        // (fresh onBeforeCompile call, fresh default-valued uniforms) in response to renderer
+        // state changes — observed here on the very first still-refine frame, which reset
+        // uTriActive back to 0 and silently undid effects.js's one-time uniform push, leaving
+        // the texture dark for the whole accumulation. onBeforeRender runs every frame per
+        // object and re-asserts the CURRENT value from live state, so it self-heals across
+        // any recompile instead of relying on a single push at start time.
+        shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+      };
+      mat.onBeforeRender = function() {
+        var sh = mat._triplanarShader;
+        if (sh) {
+          sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+          sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+        }
+      };
+      A._triplanarMaterials = A._triplanarMaterials || [];
+      A._triplanarMaterials.push(mat);
+      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
+    }
+    // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
+    // still-refine pass — gated at RUNTIME by uEntActive (re-asserted every frame from
+    // A._stillRefineActive via onBeforeRender, exactly like §TRIPLANAR_RECOMPILE_FIX self-heals),
+    // NOT at compile time. During normal navigation the real IFC cream color is shown untouched
+    // (§S265c "trust IFC data" — the cream IS an assigned rgba, so it is never overridden always-on;
+    // this treatment is a presentation RESULT-stage effect, same standing as the dusk-staging props).
+    var ENTOURAGE_MAT = {
+      person:  { color: [0.55, 0.48, 0.42], mix: 0.80, emissive: [0, 0, 0] },   // clothing/skin mid-tone
+      tree:    { color: [0.26, 0.40, 0.20], mix: 0.90, emissive: [0, 0, 0] },   // deciduous foliage green
+      vehicle: { color: [0.74, 0.76, 0.79], mix: 0.75, emissive: [0, 0, 0] },   // neutral car-body grey
+      logo:    { color: [0.12, 0.12, 0.14], mix: 0.90, emissive: [0.48, 0.40, 0.22] } // warm lit/printed sign
+    };
+    var entMat = (matVariant && ENTOURAGE_MAT[matVariant]) ? ENTOURAGE_MAT[matVariant] : null;
+    if (entMat && !triMat && _perturbScale === 0) {
+      var _entColor = new THREE.Vector3(entMat.color[0], entMat.color[1], entMat.color[2]);
+      var _entMix = entMat.mix;
+      var _entEmissive = new THREE.Vector3(entMat.emissive[0], entMat.emissive[1], entMat.emissive[2]);
+      mat.onBeforeCompile = function(shader) {
+        shader.uniforms.uEntActive = { value: A._stillRefineActive ? 1.0 : 0.0 };
+        shader.uniforms.uEntColor = { value: _entColor };
+        shader.uniforms.uEntMix = { value: _entMix };
+        shader.uniforms.uEntEmissive = { value: _entEmissive };
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', [
+            '#include <common>',
+            'uniform float uEntActive;',
+            'uniform vec3 uEntColor;',
+            'uniform float uEntMix;',
+            'uniform vec3 uEntEmissive;'
+          ].join('\n'))
+          .replace('#include <color_fragment>', [
+            '#include <color_fragment>',
+            'if (uEntActive > 0.5) { diffuseColor.rgb = mix(diffuseColor.rgb, uEntColor, uEntMix); }'
+          ].join('\n'))
+          .replace('#include <emissivemap_fragment>', [
+            '#include <emissivemap_fragment>',
+            'if (uEntActive > 0.5) { totalEmissiveRadiance += uEntEmissive; }'
+          ].join('\n'));
+        // Plain property, never mat.userData — see §TRIPLANAR_CLONE_BOMB rationale above.
+        mat._entShader = shader;
+      };
+      mat.onBeforeRender = function() {
+        var sh = mat._entShader;
+        if (sh) sh.uniforms.uEntActive.value = A._stillRefineActive ? 1.0 : 0.0;
+      };
+      console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
     mat.userData.origOpacity = a;
     mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
@@ -630,13 +920,14 @@ function setupStreaming(A) {
 
     for (let i = 0; i < batch; i++) {
       const row = A.streamQueue[A.streamIdx + i];
-      const [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifcClass] = row;
+      const [guid, hash, rgba, disc, cx, cy, cz, rotX, rotY, rotZ, storey, ifcClass, elementName] = row;
       if (!hash || !A.meshCache[hash]) continue;
       if (!A._pendingInstances[hash]) A._pendingInstances[hash] = [];
       A._pendingInstances[hash].push({ guid, hash, rgba, disc, cx, cy, cz,
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
-        bx: row[12] || 0.3, by: row[13] || 0.3, bz: row[14] || 0.3 });
+        matVariant: A._entourageVariant(ifcClass, elementName),
+        bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
 
@@ -731,12 +1022,15 @@ function setupStreaming(A) {
       if (elements.length === 1) {
         // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
         const el = elements[0];
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default');
+        // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
+        // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
+        // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
+        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
         if (!batchBuckets[key]) batchBuckets[key] = [];
         batchBuckets[key].push({ el, geo });
       } else {
         // 2+ instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -789,7 +1083,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '');
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -830,6 +1124,10 @@ function setupStreaming(A) {
             console.warn('§BATCHED_ADDGEO_FAIL bucket=' + key + ' i=' + i + ' err=' + e.message);
             continue;
           }
+          // FLY_TOUR_DLOD_SCALE.md §9: slot→source-geometry ref for dlod_nav's overlay-hoist
+          // cross-fade (BatchedMesh has no per-instance alpha on r185). Reference only — geo
+          // already resident in A.meshCache; contract structures (_batchMeta etc.) untouched.
+          (bm.userData.slotGeo = bm.userData.slotGeo || {})[slotId] = geo;
 
           // Position via matrix
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
@@ -850,6 +1148,8 @@ function setupStreaming(A) {
         }
 
         A._batchMeta[bm.id] = meta;
+      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: invalidates TM's event index
+        A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: invalidates TM's event index
         bm.matrixAutoUpdate = false;  // §S260b: static scene — skip per-frame matrix recalc
         bm.updateMatrix();
         A.scene.add(bm);
@@ -862,7 +1162,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant);
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -1012,6 +1312,9 @@ function setupStreaming(A) {
       console.log('§CONTRACT_CHECK batch=' + _ca_batch + ' instanced=' + _ca_inst +
         ' guidMap=' + _ca_guid + ' streamed=' + A.streamedCount + ' orphans=' + _ca_orphan);
     }
+    // §TM_STREAM_RESWEEP: newly-flushed geometry defaults to visible — if Time Machine is
+    // active, sweep it against the current cursor (no-op when TM isn't active).
+    if (window.tmResweep) window.tmResweep();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1075,7 +1378,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant);
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -1097,7 +1400,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant);
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -1180,6 +1483,8 @@ function setupStreaming(A) {
       ' draw_calls=' + drawCalls + ' skip=' + skipCount +
       ' start=real reserved_mb=' + reservedMB);
     document.getElementById('s-meshes').textContent = drawCalls.toLocaleString() + ' draw calls (DLOD)';
+    // §TM_STREAM_RESWEEP: see _flushInstanced — same reasoning, DLOD bbox flush path.
+    if (window.tmResweep) window.tmResweep();
   };
 
   // §S260c: Consolidate fragmented BatchedMesh from progressive flushes into one set.
@@ -1240,15 +1545,16 @@ function setupStreaming(A) {
       var cx = row[4], cy = row[5], cz = row[6];
       var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
       var storey = row[10] || '', ifcClass = row[11] || '';
+      var matVariant = A._entourageVariant(ifcClass, row[12]);
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default');
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '');
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant });
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -1270,7 +1576,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant);
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1317,6 +1623,7 @@ function setupStreaming(A) {
       }
 
       A._batchMeta[newBM.id] = newMeta;
+      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: §CONSOLIDATE rebuilds meshes -> new slotIds
       newBM.updateMatrix();
       A.scene.add(newBM);
       newDrawCalls++;
@@ -1328,6 +1635,9 @@ function setupStreaming(A) {
       ' elements=' + totalElements + ' ms=' + ms);
     document.getElementById('s-meshes').textContent = newDrawCalls.toLocaleString() + ' draw calls';
     if (A.markDirty) A.markDirty();
+    // §TM_STREAM_RESWEEP: see _flushInstanced — consolidation rebuilds BatchedMesh objects
+    // (new object identities), so this needs its own sweep even though nothing NEW streamed in.
+    if (window.tmResweep) window.tmResweep();
   };
 
   // DB init
@@ -1407,8 +1717,8 @@ function setupStreaming(A) {
             posView.getFloat32(off, true),      // center_x
             posView.getFloat32(off + 4, true),  // center_y
             posView.getFloat32(off + 8, true),  // center_z
-            null, null, null, null, null,        // rotation, storey, class
-            posView.getFloat32(off + 12, true), // bbox_x
+            null, null, null, null, null, null,  // rotation, storey, class, element_name
+            posView.getFloat32(off + 12, true), // bbox_x (idx 13 — _drawBboxPlaceholders 16-slot layout)
             posView.getFloat32(off + 16, true), // bbox_y
             posView.getFloat32(off + 20, true)  // bbox_z
           ]);
@@ -1489,7 +1799,7 @@ function setupStreaming(A) {
           if (_posLoaded && A._drawBboxPlaceholders) {
             var _colorRows = A.dbQuery(`SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
               t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z,
-              m.storey, m.ifc_class, t.bbox_x, t.bbox_y, t.bbox_z
+              m.storey, m.ifc_class, m.element_name, t.bbox_x, t.bbox_y, t.bbox_z
               FROM elements_meta m JOIN element_instances i ON m.guid=i.guid
               JOIN element_transforms t ON t.guid=m.guid
               WHERE m.building=? AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`, [A.activeBuilding]);
@@ -1574,7 +1884,7 @@ function setupStreaming(A) {
           _posRows.push([
             null, null, null, null,
             _posView.getFloat32(_soff, true), _posView.getFloat32(_soff + 4, true), _posView.getFloat32(_soff + 8, true),
-            null, null, null, null, null,
+            null, null, null, null, null, null,  // rotation, storey, class, element_name (16-slot layout — bbox at 13-15)
             _posView.getFloat32(_soff + 12, true), _posView.getFloat32(_soff + 16, true), _posView.getFloat32(_soff + 20, true)
           ]);
         }

@@ -1,0 +1,19 @@
+Layer 3 triplanar PBR material textures — sourced from ambientCG (https://ambientcg.com),
+license CC0 1.0 (public domain, no attribution required). Vendored 2026-07-15 via the
+ambientCG public API (https://ambientcg.com/api/v2/full_json). Diffuse+roughness only
+(no normal/AO — see PHOTOREAL_STILL_RENDER.md §LAYER 3, two-maps-only first pass).
+
+  concrete_color_1k.jpg / concrete_rough_1k.jpg  <- Concrete034      (IfcWall)
+  plaster_color_1k.jpg  / plaster_rough_1k.jpg   <- PaintedPlaster017 (IfcWallStandardCase)
+  metal_color_1k.jpg    / metal_rough_1k.jpg     <- Metal032          (metal classes)
+
+Measured average diffuse luminance (64x64 downsample, used to derive each set's
+normFactor in streaming.js TRIPLANAR_MAT — keeps the textured surface's average
+brightness close to the original flat IFC-tinted color, not systematically darker):
+  concrete: 0.723   plaster: 0.742   metal: 0.535
+
+Source URL pattern:
+  https://ambientcg.com/get?file=<AssetId>_1K-JPG.zip
+
+CC0: free for any use, commercial or private, no permission/credit needed. This NOTICE
+is courtesy attribution only.

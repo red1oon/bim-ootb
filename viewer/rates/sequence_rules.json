@@ -260,6 +260,7 @@
     "HVAC_TECH": {
       "rate_per_day": 185,
       "crew_size": 2,
+      "max_crews": 2,
       "trade": "HVAC Technician (Skilled)",
       "productivity": {
         "IfcDuct": 18,
@@ -274,6 +275,7 @@
     "PLUMBER": {
       "rate_per_day": 165,
       "crew_size": 2,
+      "max_crews": 2,
       "trade": "Pipefitter (Skilled)",
       "productivity": {
         "IfcPipe": 25,
@@ -291,6 +293,7 @@
     "ELECTRICIAN": {
       "rate_per_day": 175,
       "crew_size": 2,
+      "max_crews": 2,
       "trade": "Electrician (Skilled)",
       "productivity": {
         "IfcCableCarrier": 30,
@@ -306,6 +309,7 @@
     "STEEL_ERECTOR": {
       "rate_per_day": 195,
       "crew_size": 4,
+      "max_crews": 3,
       "trade": "Steel Erector (Skilled)",
       "productivity": {
         "IfcBeam": 8,
@@ -317,6 +321,7 @@
     "CONCRETE_GANG": {
       "rate_per_day": 145,
       "crew_size": 6,
+      "max_crews": 3,
       "trade": "Concrete Gang (Mixed)",
       "productivity": {
         "IfcSlab": 35,
@@ -330,6 +335,7 @@
     "MASON": {
       "rate_per_day": 155,
       "crew_size": 3,
+      "max_crews": 2,
       "trade": "Mason (Skilled) + Laborers",
       "productivity": {
         "IfcWall": 12,
@@ -341,6 +347,7 @@
     "CARPENTER": {
       "rate_per_day": 165,
       "crew_size": 2,
+      "max_crews": 2,
       "trade": "Carpenter (Skilled)",
       "productivity": {
         "IfcDoor": 6,
@@ -354,6 +361,7 @@
     "ROOFER": {
       "rate_per_day": 175,
       "crew_size": 3,
+      "max_crews": 1,
       "trade": "Roofer (Skilled)",
       "productivity": {
         "IfcRoof": 25
@@ -362,6 +370,7 @@
     "FINISHER": {
       "rate_per_day": 135,
       "crew_size": 2,
+      "max_crews": 2,
       "trade": "Finisher (Skilled)",
       "productivity": {
         "IfcCovering": 20,
@@ -372,6 +381,7 @@
     "LABORER": {
       "rate_per_day": 95,
       "crew_size": 1,
+      "max_crews": 1,
       "trade": "General Laborer",
       "productivity": {}
     }

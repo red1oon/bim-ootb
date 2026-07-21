@@ -29,6 +29,7 @@ function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
   return !(hasNeg && hasPos);
 }
 function pointInRect(px, py, rc) { return px >= rc.x0 && px <= rc.x1 && py >= rc.y0 && py <= rc.y1; }
+function inflateRect(rc, slack) { return { x0: rc.x0 - slack, x1: rc.x1 + slack, y0: rc.y0 - slack, y1: rc.y1 + slack }; }
 
 async function loadDb(SQL, dbPath, patchPath) {
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
@@ -86,7 +87,28 @@ function buildStoreyRaster(dbQuery, geomIdx, graph, storey, log) {
   const roomRects = [];
   roomsHere.forEach(n => n.rects.forEach(rc => roomRects.push(rc)));
   const { triangles, fallbackRects } = slabTrianglesForStorey(dbQuery, geomIdx, storey, storeyZ, log);
-  const allRects = roomRects.concat(fallbackRects);
+  // §RASTER-CORRIDOR-PARITY (2026-07-15, real regression found+fixed): a raster used to be built
+  // from slab triangles + room rects ONLY — but room_graph.js's own _pointWalkable() fallback (the
+  // behavior this raster REPLACES once shipped) also trusts corridorRectsByStorey (real,
+  // wall+door-verified hallway_backbone.js buckets). Omitting them here meant a storey with real
+  // corridor evidence but little/no resolved IfcSlab geometry (measured on Hospital: 5 of 7
+  // storeys had ZERO slabs) got a raster that was STRICTLY WORSE than the fallback it replaced —
+  // Hospital's DETOUR_FAIL rate regressed 39.6%->44.1% before this fix. A raster must never drop
+  // evidence the fallback already had.
+  const corridorRects = (graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey]) || [];
+  // §RASTER-SLACK-PARITY (2026-07-15, found while Hospital's raster still lagged the no-raster
+  // baseline even after §RASTER-CORRIDOR-PARITY above): _pointWalkable()'s fallback path inflates
+  // room rects by DOOR_BUFFER_SLACK (0.20m) and corridor rects by CORRIDOR_RECT_SLACK (0.30m) —
+  // real, already-justified margins (wall-thickness/measurement rounding, see room_graph.js's own
+  // comments on each) — but this build script's plain pointInRect() test applies neither, so a
+  // raster cell within that margin of a real rect's edge flips from walkable (fallback) to
+  // not-walkable (raster). A raster must be a superset of what its own fallback already granted,
+  // never stricter — same principle as the corridor-rect fix above, same DOOR_BUFFER_SLACK /
+  // CORRIDOR_RECT_SLACK constants (not new magic numbers).
+  const DOOR_BUFFER_SLACK = 0.20, CORRIDOR_RECT_SLACK = 0.30;
+  const allRects = roomRects.map(rc => inflateRect(rc, DOOR_BUFFER_SLACK))
+    .concat(fallbackRects)
+    .concat(corridorRects.map(rc => inflateRect(rc, CORRIDOR_RECT_SLACK)));
 
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   allRects.forEach(rc => { x0 = Math.min(x0, rc.x0); x1 = Math.max(x1, rc.x1); y0 = Math.min(y0, rc.y0); y1 = Math.max(y1, rc.y1); });

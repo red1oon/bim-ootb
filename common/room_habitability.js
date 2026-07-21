@@ -64,8 +64,169 @@
     } catch (e) { return null; }
   }
 
+  // §UTILITY-CONTENT (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10, 2026-07-15): a SECOND, independent
+  // non-habitable signal alongside spaceHabitable()'s label/zband check — element COMPOSITION, not
+  // label text. Real root cause this exists: Clinic's 8 fullConnectivity() islands (measured
+  // 2026-07-15, PR #794) carry a generic "COMPILED INTERNAL" synthetic label with no descriptive
+  // space name at all, so the label-keyword check above can never catch them — but their CONTENTS
+  // are unambiguous: 6 of the 8 are dominated by ACMV `IfcFlowSegment` rows (a duct/pipe SEGMENT —
+  // the signature of ductwork physically ROUTING THROUGH a shaft/riser, distinct from a normal
+  // room's occasional terminal diffuser, which is a different ifc_class), 1 is pure
+  // STR `IfcFooting` (a foundation void). DELIBERATELY NOT force-fit: the 8th room (Clinic First
+  // Floor R56) has neither signal in its own contained elements (just an ordinary structural beam,
+  // the same as countless real habitable rooms) — measured, not classified here, rather than
+  // padding the count to match an assumed "8/8" story. `DOOR_BUFFER_SLACK`/`rectDist` are the SAME
+  // real constant/formula `common/room_graph.js`'s E1/E2 door-matching already uses (not
+  // reinvented) — a room with a genuine nearby door is NEVER classified Utilities regardless of
+  // its contents (a real ACMV plant room with its own access door is still occupiable/serviced
+  // space, not a sealed void).
+  var DOOR_BUFFER_SLACK = 0.20;
+  function _rectDist(x0, x1, y0, y1, px, py) {
+    var dx = Math.max(x0 - px, 0, px - x1);
+    var dy = Math.max(y0 - py, 0, py - y1);
+    return Math.hypot(dx, dy);
+  }
+  function _hasNearbyDoor(room, dbQueryFn) {
+    var x0 = room.cx - room.sx / 2, x1 = room.cx + room.sx / 2;
+    var y0 = room.cy - room.sy / 2, y1 = room.cy + room.sy / 2;
+    var doors;
+    try {
+      doors = dbQueryFn("SELECT t.center_x, t.center_y, t.bbox_x, t.bbox_y FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class LIKE 'IfcDoor%' " +
+        "AND m.discipline='ARC' AND m.storey=?", [room.storey]) || [];
+    } catch (e) { return false; } // no door data at all — treat as "can't tell", caller stays ok:true
+    for (var i = 0; i < doors.length; i++) {
+      var d = doors[i], buf = Math.max(d[2] || 0, d[3] || 0) / 2 + DOOR_BUFFER_SLACK;
+      if (_rectDist(x0, x1, y0, y1, d[0], d[1]) <= buf) return true;
+    }
+    return false;
+  }
+  // room: { cx, cy, sx, sy, storey } — same fields buildGraph()'s room nodes already carry
+  // (cx/cy center, sx/sy = a rect's x1-x0/y1-y0 — caller's own logical-room union, §MULTI-RECT
+  // aware the same way room_graph.js is: pass the room's OWN bbox, not re-derived here).
+  // Small 0.3m margin on the containment query — real elements sitting exactly on a wall boundary
+  // (measured this session) still count; not a guessed number, matches the scratch query this
+  // signal was measured with before being written up.
+  // §DOOR-EXEMPTION-POLICY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): the door check on
+  // line ~124/~179 answers "is this room an occupiable/serviced space (has an access door) vs a
+  // sealed void" — CORRECT for the display purpose (navigate_find.js's Type-lens: don't hide a
+  // doored serviced room as a void). It is WRONG for ROUTING preference: a cabling closet's
+  // maintenance-access door doesn't make it a good circulation shortcut. Rather than fork a second
+  // classifier (the codebase's "one shared signal" discipline), `opts.ignoreDoorExemption` lets the
+  // routing caller (room_graph.js buildGraph) classify by element COMPOSITION alone while every
+  // existing display caller keeps today's exact door-exempting behavior (default false → byte-
+  // identical). Additive opt-in only — never changes the default.
+  function utilityContentClass(room, dbQueryFn, opts) {
+    opts = opts || {};
+    var margin = 0.3;
+    var x0 = room.cx - room.sx / 2 - margin, x1 = room.cx + room.sx / 2 + margin;
+    var y0 = room.cy - room.sy / 2 - margin, y1 = room.cy + room.sy / 2 + margin;
+    var rows;
+    try {
+      rows = dbQueryFn("SELECT m.discipline, m.ifc_class, COUNT(*) c FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid WHERE m.storey=? AND t.center_x BETWEEN ? AND ? " +
+        "AND t.center_y BETWEEN ? AND ? GROUP BY m.discipline, m.ifc_class",
+        [room.storey, x0, x1, y0, y1]) || [];
+    } catch (e) { return { ok: true }; } // no element data — can't classify, never invent
+    var hasFlowSegment = rows.some(function (r) { return r[0] === 'ACMV' && /IfcFlowSegment/.test(r[1] || ''); });
+    var hasFooting = rows.some(function (r) { return /IfcFooting/.test(r[1] || ''); });
+    if (!hasFlowSegment && !hasFooting) return { ok: true };
+    // §DOOR-EXEMPTION-POLICY: skip the "has a door → serviced space, not a void" exemption for
+    // routing callers (opts.ignoreDoorExemption) — classify by composition alone. Default unchanged.
+    if (!opts.ignoreDoorExemption && _hasNearbyDoor(room, dbQueryFn)) return { ok: true };
+    return { ok: false, why: hasFlowSegment ? 'utility:ACMV' : 'utility:footing' };
+  }
+
+  // §UTILITY-CONTENT-BATCH (2026-07-15, real perf regression found live — Hospital, 311 rooms/
+  // 63182 elements, appeared to HANG): `utilityContentClass()` runs 2 real SQL queries PER ROOM
+  // (element-composition range-scan + door-proximity scan) — fine on Clinic/HHS (~100-120 rooms,
+  // unnoticeable), but the Viewer calls it once per logical room EVERY time the Room axis is
+  // entered, and sql.js (WASM, browser-side) is far slower per-query than the node/better-sqlite3
+  // harness this was measured against. On Hospital that's 600+ unbatched range-scans per Room-axis
+  // entry — a genuine hang, not a fluke. Fix: batch BOTH queries to run ONCE for the whole building
+  // regardless of room count, then classify every room via cheap in-memory loops over the small
+  // pre-fetched candidate lists (ACMV IfcFlowSegment/STR IfcFooting elements are always a small
+  // minority of a building's elements; same for doors relative to all elements). Same real
+  // signal/thresholds as utilityContentClass() above — this does not change WHAT gets classified,
+  // only how many queries it costs. utilityContentClass() itself is left in place (single-room
+  // ad-hoc use, e.g. a future one-room checker), just no longer called in a per-room loop by the
+  // Viewer — see navigate_find.js's §ROOM_LENS_TAXONOMY call sites.
+  // opts.ignoreDoorExemption (default false) — see §DOOR-EXEMPTION-POLICY on utilityContentClass
+  // above. Same signal/thresholds as the single-room version; the batched path applies the identical
+  // door policy (skip the nearDoor exemption when set). Default false = byte-identical to every
+  // existing display caller.
+  function classifyUtilityRooms(rooms, dbQueryFn, opts) {
+    opts = opts || {};
+    var out = {};
+    if (!rooms || !rooms.length) return out;
+    var candidateRows, doorRows;
+    try {
+      candidateRows = dbQueryFn("SELECT m.discipline, m.ifc_class, m.storey, t.center_x, t.center_y " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid " +
+        "WHERE (m.discipline='ACMV' AND m.ifc_class LIKE '%IfcFlowSegment%') OR m.ifc_class LIKE '%IfcFooting%'") || [];
+    } catch (e) { candidateRows = []; }
+    try {
+      doorRows = dbQueryFn("SELECT m.storey, t.center_x, t.center_y, t.bbox_x, t.bbox_y FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC'") || [];
+    } catch (e) { doorRows = []; }
+    var candByStorey = {}, doorsByStorey = {};
+    candidateRows.forEach(function (r) { (candByStorey[r[2] || ''] = candByStorey[r[2] || ''] || []).push(r); });
+    doorRows.forEach(function (r) { (doorsByStorey[r[0] || ''] = doorsByStorey[r[0] || ''] || []).push(r); });
+    rooms.forEach(function (room) {
+      var margin = 0.3;
+      var x0 = room.cx - room.sx / 2 - margin, x1 = room.cx + room.sx / 2 + margin;
+      var y0 = room.cy - room.sy / 2 - margin, y1 = room.cy + room.sy / 2 + margin;
+      var cands = candByStorey[room.storey || ''] || [];
+      var hasFlowSegment = false, hasFooting = false;
+      for (var i = 0; i < cands.length; i++) {
+        var c = cands[i];
+        if (c[3] < x0 || c[3] > x1 || c[4] < y0 || c[4] > y1) continue;
+        if (c[0] === 'ACMV' && /IfcFlowSegment/.test(c[1] || '')) hasFlowSegment = true;
+        if (/IfcFooting/.test(c[1] || '')) hasFooting = true;
+      }
+      if (!hasFlowSegment && !hasFooting) return;
+      // §DOOR-EXEMPTION-POLICY: routing callers skip the door exemption (opts.ignoreDoorExemption),
+      // classifying by composition alone; display callers keep today's behavior (default).
+      if (!opts.ignoreDoorExemption) {
+        var doors = doorsByStorey[room.storey || ''] || [];
+        var rx0 = room.cx - room.sx / 2, rx1 = room.cx + room.sx / 2;
+        var ry0 = room.cy - room.sy / 2, ry1 = room.cy + room.sy / 2;
+        var nearDoor = false;
+        for (var j = 0; j < doors.length; j++) {
+          var d = doors[j], buf = Math.max(d[3] || 0, d[4] || 0) / 2 + DOOR_BUFFER_SLACK;
+          if (_rectDist(rx0, rx1, ry0, ry1, d[1], d[2]) <= buf) { nearDoor = true; break; }
+        }
+        if (nearDoor) return; // real door → serviced space, not a sealed void
+      }
+      out[room.guid] = hasFlowSegment ? 'utility:ACMV' : 'utility:footing';
+    });
+    return out;
+  }
+
+  // §RESTROOM-CLASS (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md — restroom shell hue, 2026-07-17): a wet
+  // sanitary room (toilet/WC/bathroom/washroom) gets its own shell color, no longer collapsed into
+  // 'habitable'. Deterministic, non-invent: token match on the room's ALREADY-REAL type/name fields
+  // (the caller passes g.label = object_type+predefined_type+name joined — same widened-field signal
+  // spaceHabitable/utility use; never a fabricated label). Keyword set is drawn from real IFC space
+  // naming (Duplex object_type='Bathroom 1/2'; public buildings use Toilet/WC/Restroom/Lavatory).
+  // Word-boundary anchored so 'wc'/'bath' don't match inside unrelated words.
+  var RESTROOM_RE = /(^|[^a-z])(toilet|rest\s*room|restroom|water\s*closet|wc|lavatory|washroom|bathroom|bath|powder\s*room|en-?suite|ensuite)([^a-z]|$)/i;
+  function classifyRestroom(label) {
+    if (!label) return false;
+    return RESTROOM_RE.test(String(label));
+  }
+  // §KITCHEN-CLASS / §BEDROOM-CLASS (2026-07-17): two more name-driven room-shell hues, same
+  // deterministic widened-field token match as classifyRestroom (label = object_type+predefined_
+  // type+name). NOTE 'bedroom' is anchored so the generic 'Room' object_type never matches it.
+  var KITCHEN_RE = /(^|[^a-z])(kitchen(ette)?)([^a-z]|$)/i;
+  var BEDROOM_RE = /(^|[^a-z])(bed\s*room)([^a-z]|$)/i;
+  function classifyKitchen(label) { return label ? KITCHEN_RE.test(String(label)) : false; }
+  function classifyBedroom(label) { return label ? BEDROOM_RE.test(String(label)) : false; }
+
   var API = { spaceHabitable: spaceHabitable, NONHAB_TYPES: NONHAB_TYPES,
-    envelopeFromTransforms: envelopeFromTransforms };
+    envelopeFromTransforms: envelopeFromTransforms, utilityContentClass: utilityContentClass,
+    classifyUtilityRooms: classifyUtilityRooms, classifyRestroom: classifyRestroom,
+    classifyKitchen: classifyKitchen, classifyBedroom: classifyBedroom };
   ROOT.RoomHabitability = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

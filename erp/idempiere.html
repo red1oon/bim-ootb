@@ -601,6 +601,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <script src="crud_overlay.js?v=20"></script>
+<!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
+     (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
+     test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
+     page is opened with ?relay=<url> — no relay param, zero behavior change from today. Must load AFTER
+     crud_overlay.js (erp_sync_relay.js reaches window.__crud.syncNow at DOMContentLoaded). -->
+<script src="erp_relay_client.js?v=1"></script>
+<script src="erp_sync_fsm.js?v=1"></script>
+<script src="erp_sync_relay.js?v=1"></script>
 <!-- BLUE FUTURE (FRONTEND_LANE_MASTER §OUTSTANDING item 0 browser legs) — the UNOFFICIAL speculative-branch skin
      over kernel v9 (branchOps/discardBranch/acceptBranchUpTo). crud_overlay.js consumes its readBranch()/groupMeta()
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
@@ -641,6 +649,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _viewMode = 'grid';    // 'grid' | 'form'
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
+  var _lastFoldCreated = []; // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+                              // most recent _overlayListTip() fold's `created` synthetic-pk list (ascending
+                              // opId order — see CORE.listTip in crud_overlay.js). CRUD_CREATE ops never carry
+                              // a real pk on their op record (buildOp() only sets base.id for update/delete/
+                              // process) so overlay:committed's `id` is always null for a create — the ONLY
+                              // place the new row's synthetic pk (-opId) becomes known is this fold's `created`
+                              // array. The CRUD_CREATE handler reads the LAST entry (the just-committed row)
+                              // to thread the correct pk into _selByLevel instead of leaving it stale.
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
@@ -821,6 +837,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { SQL = await initSqlJs({ locateFile: function () { return 'lib/sql-wasm-fts5.wasm'; } }); }
     catch (e) { SQL = await initSqlJs({ locateFile: function () { return 'https://cdn.jsdelivr.net/npm/sql.js-fts5@1.4.0/dist/sql-wasm.wasm'; } }); }
     window.SQL = SQL;   // exposed for the Kanban host (KanbanHost.publish needs a SQL.Database factory)
+
+    // Implementing prompts/ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S7 —
+    // Witness: W-REBASE-ATTRIB. Same best-effort, non-blocking idiom erp.html:224-226 already uses (A2)
+    // — install the real per-device edge signer, then opt every NEW op into v2 content-addressed signing
+    // (kernel_ops.js setContentSigning; "production posture since T2/#630" per witness_t7_incremental.js)
+    // so a sig attests the id-independent content hash, not the position-dependent chain hash — the ONLY
+    // shape of sig that can survive erp_sync_fsm.js's rebase() (reorder + re-id). Previously idempiere.html
+    // loaded erp_signer.js but never called installSigner() — every op's sig was silently NULL forever.
+    if (window.ErpSigner && window.KernelOps) {
+      ErpSigner.installSigner(window.KernelOps).then(function () {
+        KernelOps.setContentSigning(true);
+      }).catch(function (e) { console.warn('§SIGN install error', e); });
+    }
 
     // §VFS — CONSTRAINT_MITIGATION item 3 wired live: detect OPFS-vs-IndexedDB at boot (FoldEngineConstraints
     // §6 vfs_backend monitor). On GH Pages this is IDB (no COOP/COEP) — NAMED, not a silent downgrade.
@@ -2045,6 +2074,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         created = created.filter(function (p) { return kept[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
+      _lastFoldCreated = created;   // W-SO-CHILD-BIND — ascending-opId synthetic pks; last entry = most recent create
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
@@ -2227,6 +2257,34 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
   }
   // ctx — REAL row accessors for the registered handlers (EXTRACT: every value is a seed row; absent table → honest 0).
+  // §GENSHIP-LIVE / §GENINV-LIVE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "Stage 2, one layer deeper") —
+  // _procCtx's fetchOrder/fetchOrderLines used to read ONLY window.__idmpDb (the raw seed bundle), so a
+  // synthetic (CRUD_CREATE-only) order's post-DocAction status and lines were invisible to the process
+  // HANDLERS even though renderOrderPicker (same file, below) already offers such orders as candidates —
+  // same "wrong source" bug the picker fix (§Fix 2026-07-21 above) closed for the SELECTOR, not yet for the
+  // RUN path. Folds via the SAME window.__crud.core.listTip/readTip primitives renderOrderPicker already
+  // uses (non-invent, reused verbatim). Sync, not withSidecar-async: by the time Run is clicked, the
+  // picker's own withSidecar call already hydrated window.__crud.kernelDb() once (paint() only runs after
+  // that resolves), so a synchronous read here is safe — falls through to the base-only row/rows on any
+  // infra gap (never worse than before).
+  function _foldOrderRow(id) {
+    var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_order', 'c_order_id', base ? [base] : [], null); } catch (e) { folded = null; }
+    var row = ((folded && folded.rows) || []).filter(function (r) { return Number(r.c_order_id) === Number(id); })[0] || base;
+    if (row) { try { var tip = c.core.readTip(sdb, 'c_order', row.c_order_id, null); if (tip != null) row.docstatus = tip; } catch (e) {} }
+    return row;
+  }
+  function _foldOrderLines(id) {
+    var base = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_orderline', 'c_orderline_id', base, null); } catch (e) { folded = null; }
+    return ((folded && folded.rows) || base).filter(function (r) { return Number(r.c_order_id) === Number(id); });
+  }
   function _procCtx() {
     var RM = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : {};
     function header(key, info) {
@@ -2299,11 +2357,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
       fetchOrder: function (info) {
         var id = info && info.Record_ID; if (id == null) return null;
-        return _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+        return _foldOrderRow(id);
       },
       fetchOrderLines: function (info) {
         var id = info && info.Record_ID; if (id == null) return [];
-        return _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+        return _foldOrderLines(id);
       },
       onHandOf: function (pid, wh) {
         var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
@@ -2360,15 +2418,24 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var isInv = proc.classname === 'org.compiere.process.InvoiceGenerate';
     var verb = isInv ? 'Generate Invoice' : 'Generate Shipment';
     var tag = isInv ? '§GENINV-LIVE' : '§GENSHIP-LIVE';
+    var wantStatus = isInv ? ['CO', 'CL'] : ['CO'];
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
     pane.appendChild(el('div', 'sub', 'Process · AD_Process ' + proc.AD_Process_ID + ' · pick a completed Sales Order to ' + (isInv ? 'generate an invoice from' : 'generate a shipment from')));
-    var statusClause = isInv ? "docstatus IN ('CO','CL')" : "docstatus='CO'";
-    var rows = _sqlRows("SELECT c_order_id, documentno, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE " + statusClause + " AND issotrx='Y' ORDER BY c_order_id");
+    // Implementing prompts/ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21 (Stage 2/3) — Witness: W-GENPICKER-OVERLAY.
+    // ISSUE: this SELECT read ONLY window.__idmpDb (the raw seed bundle) — a freshly-created-then-Completed
+    // order (a signed CRUD_CREATE + SET_STATUS pair in the op-log sidecar, per §Fix 2026-07-21 Stage 1) was
+    // never a candidate, no matter how legitimately DR->CO it went, because it was never a real base row. Same
+    // class of bug this whole lane keeps finding (engine/UI reading the wrong source). FIX: pull ALL IsSOTrx='Y'
+    // base rows (no status filter yet — a synthetic row's status only exists post-fold), fold CRUD_CREATE/UPDATE
+    // via CORE.listTip (the SAME primitive idempiere.html's own _overlayListTip already uses for grids), overlay
+    // each row's latest signed SET_STATUS via CORE.readTip (the SAME primitive _overlayDocTip uses for the status
+    // chip), THEN apply the status filter — so a freshly-created order that reached DocStatus=CO through the
+    // real DocAction bar is offered exactly like a seed order would be. No sidecar/engine → fall through to the
+    // OLD base-only behavior (never worse than before, never silently empty on an infra gap).
+    var baseRows = _sqlRows("SELECT c_order_id, documentno, docstatus, deliveryrule, invoicerule, m_warehouse_id, ad_org_id FROM c_order WHERE issotrx='Y' ORDER BY c_order_id");
     var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Sales Order'));
     var sel = document.createElement('select'); sel.setAttribute(isInv ? 'data-geninv-order' : 'data-genship-order', '1');
-    if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
-    rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
     fld.appendChild(sel); pane.appendChild(fld);
     var actions = el('div', 'actions');
     var run = el('button', 'run', verb); run.setAttribute('data-proc-run', '1');
@@ -2388,6 +2455,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
+    function paint(rows) {
+      sel.innerHTML = '';
+      if (!rows.length) { var o0 = el('option', null, '— no completed Sales Orders in this tenant —'); o0.value = ''; sel.appendChild(o0); }
+      rows.forEach(function (r) { var o = el('option', null, (r.documentno || ('Order ' + r.c_order_id)) + '  (rule ' + (isInv ? r.invoicerule : r.deliveryrule) + ')'); o.value = String(r.c_order_id); o.setAttribute('data-wh', String(r.m_warehouse_id)); o.setAttribute('data-org', String(r.ad_org_id)); sel.appendChild(o); });
+      console.log(tag + '-CANDIDATES count=' + rows.length + ' ids=[' + rows.map(function (r) { return r.c_order_id; }).join(',') + ']');
+    }
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') {
+      paint(baseRows.filter(function (r) { return wantStatus.indexOf(String(r.docstatus).toUpperCase()) >= 0; }));
+      return;
+    }
+    var o0 = el('option', null, 'Loading…'); o0.value = ''; sel.appendChild(o0);
+    c.withSidecar(function (sdb) {
+      var rows = baseRows;
+      if (sdb) {
+        var folded = null;
+        try { folded = c.core.listTip(sdb, 'c_order', 'c_order_id', baseRows, null); } catch (e) { folded = null; }
+        rows = (folded && folded.rows) || baseRows;
+        rows.forEach(function (r) {
+          try { var tip = c.core.readTip(sdb, 'c_order', r.c_order_id, null); if (tip != null) r.docstatus = tip; } catch (e) {}
+        });
+      }
+      paint(rows.filter(function (r) { return wantStatus.indexOf(String(r.docstatus).toUpperCase()) >= 0; }));
+    });
   }
   function renderProjectPicker(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
@@ -2563,7 +2654,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var res = window.AdProcess.dispatch(b, info, _procCtx());
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
-      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason) : ' reason=' + res.reason));
+      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
   function renderProcResult(proc, res) {
@@ -2634,6 +2725,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         : isInv
         ? r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') + ' folded (QtyInvoiced = QtyOrdered − QtyInvoiced)'
         : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
+      // §GENPROCESS-CONFIRM (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "missing commit wiring") — real
+      // iDempiere's own Generate-Shipments/Invoices UX is preview-then-confirm (this table IS the preview);
+      // the missing half was the commit itself. r.ops here is the SAME CREATE_DOCUMENT+N×CREATE_LINE group
+      // erp_engine.js's buildDoc already produces (its own header: "Verbs return ops[]; the kernel applies
+      // + commitOps them") — pos_lens.js's buildSaleGroup/buildRegisterGroup already commit the identical
+      // shape via KO.commitGroup; window.__crud.applyOpGroup (crud_overlay.js) wraps that same primitive.
+      var cfWrap = el('div', 'actions'); cfWrap.style.cssText = 'margin-top:10px';
+      var cfBtn = el('button', 'run', 'Confirm & Post'); cfBtn.setAttribute('data-genprocess-confirm', '1');
+      var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
+      cfBtn.addEventListener('click', function () {
+        cfBtn.disabled = true; cfBtn.textContent = 'Posting…';
+        window.__crud.applyOpGroup(r.ops, function (out) {
+          if (!out || !out.committed) {
+            cfBtn.disabled = false; cfBtn.textContent = 'Confirm & Post';
+            cfMsg.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
+            console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=N reason=' + ((out && out.reason) || 'unknown'));
+            return;
+          }
+          cfBtn.textContent = 'Posted ✓'; cfBtn.style.opacity = '0.6';
+          cfMsg.textContent = (isShip ? 'Shipment' : isInv ? 'Invoice' : 'Order') + ' posted — group ' + String(out.gid).slice(0, 8) + '… · ' + out.ids.length + ' ops · signed=' + (out.verifyOk ? 'Y' : 'N');
+          console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=Y gid=' + out.gid + ' ops=' + out.ids.length + ' verifyOk=' + out.verifyOk);
+        });
+      });
+      cfWrap.appendChild(cfBtn); pane.appendChild(cfWrap); pane.appendChild(cfMsg);
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
@@ -2710,6 +2825,37 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var copyFrom = _newMode.copyFrom;
       _withFoldedEntry(tn, 'create', function () {
         var opts = _inlineOptsFor(tn, nf);
+        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "IsSOTrx/DocType gap") — the AD_Tab's
+        // own WhereClause is the REAL per-window signal iDempiere already uses to split Sales vs Purchase Order
+        // windows (e.g. "C_Order.IsSOTrx='Y'" vs "...='N'", confirmed live: window 143 vs 181), already loaded
+        // into tab.whereClause for grid filtering but never consulted at CREATE time — beforeSave's
+        // docTypeTargetDefault always fell back to the client's Standard SALES doctype regardless of which
+        // window authored the record. Stash it as a create-scoped hint on window.APP (the SAME session-context
+        // channel _docCtx() already reads orgId/clientId from), read+applied only for this one create, cleared
+        // right after so it never leaks into an unrelated later save.
+        window.APP = window.APP || {};
+        var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
+        window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
+        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "order-LINE stale parent FK") —
+        // a child tab's (tabLevel>0) New form has a locked/readonly parent-link column (e.g.
+        // C_OrderLine.C_Order_ID) but nothing ever seeded its value with the actual parent record's pk:
+        // defaultsFor() only resolves AD_Column.DefaultValue (empty here, by real iDempiere convention —
+        // the parent link is set programmatically, never via a column default), so the field rendered
+        // empty, then populateRefs()'s FK dropdown (never matching that empty value against any real row)
+        // silently fell through to whichever row sorts first — an ARBITRARY, WRONG parent order. Reuses the
+        // SAME naming-convention parent-column resolution renderActiveTab() already uses for GRID filtering
+        // (pKey = the parent tab's own key column name, matched by identity against the child table — real
+        // iDempiere's GridTab.getLinkColumnName() convention) to seed the value BEFORE the form renders.
+        var seedVals = null, _lvl = tab.tabLevel || 0;
+        if (_lvl > 0) {
+          var _w = _curWin(), _pIdx = -1;
+          for (var _pi = _activeTabIdx - 1; _pi >= 0; _pi--) { if ((_w.tabs[_pi].tabLevel || 0) === _lvl - 1) { _pIdx = _pi; break; } }
+          if (_pIdx >= 0) {
+            var _pTab = _w.tabs[_pIdx], _pKey = _keyCol(_pTab), _pPk = _selByLevel[_lvl - 1];
+            if (_pPk != null && _pKey && _colExists(tab.tableName, _pKey)) { seedVals = {}; seedVals[_pKey.toLowerCase()] = _pPk; }
+          }
+        }
+        if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
         else window.__crud.createInline(tn, nmount, opts);
       });
@@ -2969,6 +3115,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
         try { _overlayListTip(ct, _records); } catch (er) {}
+        // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
+        // A CRUD_CREATE folds the new row into _records but previously left _recIdx/_selByLevel pointing at
+        // whatever record was current at window open — so a child tab drilled after New+Save filtered by the
+        // STALE parent pk (master-detail reads _selByLevel[level-1], see renderActiveTab ~line 1723), not the
+        // record just created. NOTE (verified against the real code, differs from the original bug report):
+        // d.id is NOT usable here — buildOp() in crud_overlay.js only sets base.id for update/delete/process,
+        // never for create, so overlay:committed's `id` field is always null on a CRUD_CREATE. The new row's
+        // real synthetic pk (-opId) only becomes known inside _overlayListTip's listTip() fold — captured just
+        // above into _lastFoldCreated (ascending opId order; last entry = the row this very commit just made).
+        if (d.op_type === 'CRUD_CREATE') {
+          try {
+            var newPk = _lastFoldCreated.length ? _lastFoldCreated[_lastFoldCreated.length - 1] : null;
+            var newKeyCol = _keyCol(ct), foundIdx = -1;
+            if (newPk != null) {
+              for (var ri = 0; ri < _records.length; ri++) {
+                if (String(recVal(_records[ri], newKeyCol)) === String(newPk)) { foundIdx = ri; break; }
+              }
+            }
+            if (foundIdx >= 0) { _recIdx = foundIdx; _setSel(ct); }
+            console.log('§CRUD-CREATE-SEL table=' + t + ' id=' + newPk + ' recIdx=' + foundIdx + ' selLevel=' + (ct.tabLevel || 0) + ' sel=' + _selByLevel[ct.tabLevel || 0]);
+          } catch (er4) { console.log('§CRUD-CREATE-SEL-ERROR table=' + t + ' id=' + d.id + ' err=' + er4); }
+        }
         // P2/P3 — repaint the CURRENT view post-commit: form view re-mounts the inline editor from the now-committed
         //   tip (baseline resets, dirty clears); grid view repaints so a created row APPEARS / a deleted row vanishes.
         if (_viewMode === 'form') { try { refreshForm(); } catch (er2) {} } else { try { renderBody(); } catch (er3) {} }
@@ -3129,14 +3297,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
 
   // ── Pill rail (mobile-style, right edge) — Posted · Graph · Kanban · Install · Migrate (Odoo effects). ──
-  function _overlay(title, node) {
+  // onClose (optional, §BUGFIX 2026-07-13): callers that mount extra body-level chrome alongside `node`
+  // (POS lens's cart float panel + ⋯ dock — see pos_lens.js) pass a teardown so it fires on EVERY close
+  // path (✕ tap, back-gesture), not just their own explicit exit button. Unused callers are unaffected.
+  function _overlay(title, node, onClose) {
     _injectPostedCSS(); _injectPillCSS();
     var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
     var ov = el('div'); ov.id = 'posted-overlay';
     var hd = el('div', 'posted-ov-hd', title);
     var x = el('span', 'posted-ov-x', '✕');
     var unbind = window.AcctsPosted.bindBack(close);
-    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); }
+    function close() { if (ov.parentNode) ov.parentNode.removeChild(ov); if (unbind) unbind(); if (typeof onClose === 'function') { try { onClose(); } catch (e) {} } }
     x.addEventListener('click', close); hd.appendChild(x);
     ov.appendChild(hd); ov.appendChild(node); document.body.appendChild(ov);
   }

@@ -139,7 +139,10 @@ async function initViewer() {
       // Lazy-loaded here (not a static viewer.html <script>) since it's only ever needed alongside
       // navigate_find.js itself — no reason to spend the bytes on every boot.
       var modules = [
-        '../common/room_habitability.js?v=1',
+        // v2 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classifyUtilityRooms/utilityContentClass
+        // gain an additive opts.ignoreDoorExemption (default false = identical display behavior); the
+        // routing caller (room_graph.js) passes true. A stale v1 cache would ignore the new arg.
+        '../common/room_habitability.js?v=2',
         // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
         // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
         // window.StoreyRaster when it reads storey_walkable_raster).
@@ -149,8 +152,27 @@ async function initViewer() {
         // room_habitability.js above (only needed alongside navigate_find.js itself).
         // v3 (PATH_LEGAL_SEGMENTS.md, 2026-07-13): same-storey chord legality + visibility-graph
         // detour — a returning browser's cached v2 never draws the courtyard-void fix without this bump.
-        '../common/room_graph.js?v=3',
-        'navigate_find.js?v=48',
+        // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
+        // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
+        // v5 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): expose chordIllegalCount witness helper.
+        // v6 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): §UTILITY-ROUTING-PENALTY — buildGraph()
+        // tags utility rooms via RoomHabitability.classifyUtilityRooms; _buildAdjacency() penalises
+        // (x8, never removes) any edge touching one so room→room routing prefers corridors.
+        // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
+        // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
+        '../common/room_graph.js?v=7',
+        // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
+        // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
+        // in the browser, despite passing every Node-based witness, because this line never
+        // existed): room_graph.js's buildGraph() reads window.HallwayBackbone (used for E5/E6/E7/E8
+        // spine wiring, corridor-room backprop, and classifyCorridorRooms' Type-tree label) but the
+        // script that DEFINES it was never added to this load list. Must load AFTER room_graph.js
+        // (room_graph.js's HallwayBackbone read happens inside buildGraph(), called later — fine)
+        // but hallway_backbone.js itself reads window.RoomGraph at its OWN top-level IIFE execution
+        // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
+        '../common/hallway_backbone.js?v=1',
+        // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
+        'navigate_find.js?v=55',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -650,6 +672,18 @@ async function initViewer() {
   var _orbitDPR = window._isMobile ? 0.75 : Math.min(_fullDPR, 1);  // §S274: mobile=0.75x during drag
   var _orbiting = false;
   APP.controls.addEventListener('start', function() {
+    // §STILL_REFINE: a real drag/touch beginning is the "touching canvas" signal the still-refine
+    // spec asked for — cancel here, NOT from the generic _startLoop choke point (that also fires
+    // from keydown/markDirty on things unrelated to touching the canvas, e.g. the history bar's
+    // own event-sniffer refreshing itself right after logging the Alt+S keypress that started the
+    // refine — confirmed live, 2026-07-15: start->cancelled within the same event, nothing the
+    // user actually touched in between).
+    // §STAGE1 (sandbox spike): OrbitControls 'start' is unambiguously pure camera movement, never
+    // a selection — soft-cancel only (keeps staging), not the full teardown.
+    // §STAGE2_MIDDRAG_FIX (review finding 6): also fire during soft-park (_photoAutoStageOn) so
+    // every new drag re-arms/reset the Stage-2 idle timer — gating on _stillRefineActive alone
+    // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
+    if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
     if (!_orbiting && APP.streamedCount > 5000) {
       _orbiting = true;
@@ -692,8 +726,67 @@ async function initViewer() {
   // §IDLE-PARK: belt-and-suspenders — ANY user input revives a parked loop, regardless of
   // which feature it triggers (fly/walk/streaming started by a click after idle). _startLoop
   // is guarded, and these fire only on real interaction, so a truly idle scene stays parked.
-  window.addEventListener('pointerdown', _startLoop);
-  window.addEventListener('wheel', _startLoop, { passive: true });
+  // §STILL_REFINE: cancel on the actual touch/scroll signal — deliberately NOT on keydown (that
+  // fires for every key including Alt+S itself, and for incidental logging-triggered wakes).
+  // §STAGE2_MIDDRAG_FIX (review finding 6): both cancel paths must also fire during soft-park
+  // (photo staging kept alive, Stage-2 idle timer armed, _stillRefineActive=false) — gating on
+  // _stillRefineActive alone made every soft-park interaction a no-op, so the idle timer counted
+  // from the FIRST move only and Stage 2 re-fired mid-gesture (the "ghosting has returned" report).
+  // §AUTO_STAGE2_DISABLED (2026-07-16, user directive): with the Stage-2 idle auto-refire off,
+  // soft-park is signalled by the kept-alive staging alone (APP._photoStagingOn, mirrored by
+  // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
+  // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
+  function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
+  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
+  // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
+  // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
+  // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
+  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
+  // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
+  // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
+  // which never consulted window._panels (scene.js's own registry, populated via InputReg.register
+  // from every pill-built panel, Sunglass/Cinema included). Touching any registered UI panel (tune
+  // HUD, Sunglass, future panels) doesn't need to fully exit photo mode/cinema recording any more
+  // than a camera-drag does — soft-cancel (keep staging, only restart the TAA polish) is the right
+  // default for panel interaction in general. Find-panel's own "selecting a result exits photo
+  // mode" behavior is untouched — that comes from focusElement's own separate teardown path when a
+  // real result is clicked, not from this generic listener, so this stays general/abstract instead
+  // of a one-off allowlist of panel ids.
+  function _insideRegisteredPanel(target) {
+    var panels = window._panels || [];
+    for (var i = 0; i < panels.length; i++) {
+      if (panels[i].el && panels[i].el.contains(target)) return true;
+    }
+    return false;
+  }
+  var _photoCanvasDown = null;
+  window.addEventListener('pointerdown', function(e) {
+    if (APP.renderer && e.target === APP.renderer.domElement) {
+      _photoCanvasDown = { x: e.clientX, y: e.clientY };
+      _cancelStillRefineSoft();
+    } else if (_insideRegisteredPanel(e.target)) {
+      _photoCanvasDown = null;
+      _cancelStillRefineSoft();
+    } else {
+      _photoCanvasDown = null;
+      _cancelStillRefine();
+    }
+    _startLoop();
+  });
+  // §STAGE1_TAP_SELECT (review finding 1): canvas click-to-select IS a live core feature —
+  // picking.js selects on pointerup when the pointer moved ≤5px (tap), so pointerdown on the
+  // canvas is ambiguous between drag-start and tap-select. Classify at pointerup with picking.js's
+  // own tap-vs-drag test and escalate a tap to the FULL teardown ("when i select an item it
+  // breaks to old nature"); a real drag stays soft (staging kept), unchanged.
+  window.addEventListener('pointerup', function(e) {
+    if (!_photoCanvasDown) return;
+    var dx = e.clientX - _photoCanvasDown.x, dy = e.clientY - _photoCanvasDown.y;
+    _photoCanvasDown = null;
+    if (Math.sqrt(dx * dx + dy * dy) <= 5) _cancelStillRefine();
+  });
+  window.addEventListener('wheel', function() { _cancelStillRefineSoft(); _startLoop(); }, { passive: true });
   window.addEventListener('keydown', _startLoop);
   // §S276: WebGPURenderer compiles shader pipelines per material. On 122K scenes with 100+
   // materials, synchronous compilation during render() times out the main thread.
@@ -761,7 +854,8 @@ async function initViewer() {
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
         // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
       }
@@ -773,7 +867,8 @@ async function initViewer() {
       // timer → renderAtTime() (markDirty + direct render), so the loop is redundant even
       // for TM. Every other camera path already calls markDirty.
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
-        if (APP._composer && APP._composerEnabled) APP._composer.render();
+        if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
+        else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
         if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }

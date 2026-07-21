@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v746';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v840';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -29,6 +29,34 @@ const SHELL_LIBS = [
   'lib/sql-wasm.wasm',
   'lib/chart.umd.min.js',
   'lib/FileSaver.min.js',
+  // §EFFECTS_COMPOSER_OFFLINE: setupEffects() (effects.js) dynamic-imports these 6 unconditionally
+  // on every desktop (non-mobile) load, before streaming.js starts — not gated behind a keypress
+  // like Alt+P/Alt+S. ~56KB total, trivial next to the libs above. Were never precached; on a
+  // genuine offline+uncached load each import() rejects (sw.js's cacheFirst() synthesizes a 503 on
+  // a failed fetch), caught by setupEffects()'s own try/catch (§EFFECTS_INIT_FAIL, degrades to
+  // direct render) — not a crash, but silently drops SSAO shadows, the pick/clash/Find outline
+  // highlight, and Alt+S Still-Refine. SHELL not DEFERRED: unlike web-ifc/xlsx these aren't behind
+  // an optional feature, so they should be as guaranteed-present as the libs above.
+  'lib/EffectComposer.js',
+  'lib/RenderPass.js',
+  'lib/TAARenderPass.js',
+  'lib/SSAOPass.js',
+  'lib/OutlinePass.js',
+  'lib/OutputPass.js',
+  // §CINEMA_SSAA (2026-07-18) + transitive-import completion: the 6 modules above `import` these
+  // 8 (Pass/CopyShader ← everything; ShaderPass/MaskPass ← EffectComposer; SSAARenderPass ←
+  // TAARenderPass; SimplexNoise/SSAOShader ← SSAOPass; OutputShader ← OutputPass) — precaching
+  // only the 6 top-level files still 503'd the module graph's inner nodes on a genuine
+  // offline+uncached load, same failure class §EFFECTS_COMPOSER_OFFLINE describes. In addition,
+  // SSAARenderPass.js is now DIRECTLY imported by Cinema Orbit (Alt+C, effects.js §CINEMA_SSAA).
+  'lib/Pass.js',
+  'lib/CopyShader.js',
+  'lib/ShaderPass.js',
+  'lib/MaskPass.js',
+  'lib/SSAARenderPass.js',
+  'lib/SimplexNoise.js',
+  'lib/SSAOShader.js',
+  'lib/OutputShader.js',
 ];
 // DEFERRED — heavy, feature-gated; cache-on-first-use OR via the offline-download button.
 const DEFERRED_LIBS = [
@@ -37,8 +65,28 @@ const DEFERRED_LIBS = [
   'lib/xlsx.full.min.js',      // ~0.9MB — only on boq_charts.html / spreadsheet export
   'lib/exceljs.min.js',        // ~0.9MB — only on Excel export
 ];
+// §STAFFAGE_OFFLINE: Alt+P populate-staffage sprite cutouts (~4.2MB, PR #845) — shipped without
+// ever being added here, so they fell through to the default cacheFirst() path: cache miss + a
+// failed real fetch (offline) synthesizes a 503 (see cacheFirst()'s catch below), breaking Alt+P
+// offline even after "Make available offline". Feature-gated like DEFERRED_LIBS, not auto-installed.
+// SOURCE OF TRUTH is effects.js's _STAFFAGE_PEOPLE/_STAFFAGE_TREES — this list must mirror it
+// exactly (see the matching comment there). Add/remove a staffage png in BOTH places, same PR.
+const STAFFAGE_ASSETS = [
+  'textures/staffage/people/person_sitting_casual_female.png',
+  'textures/staffage/people/person_sitting_formal_male.png',
+  'textures/staffage/people/person_standing_casual_male.png',
+  'textures/staffage/people/person_standing_gesture_female.png',
+  'textures/staffage/people/person_walking_gym_female.png',
+  'textures/staffage/people/person_walking_shopping_female.png',
+  'textures/staffage/trees/tree_beech.png',
+  'textures/staffage/trees/tree_linden_big_old.png',
+  'textures/staffage/trees/tree_linden_city.png',
+  'textures/staffage/trees/tree_oak_big.png',
+  'textures/staffage/trees/tree_oak_young.png',
+  'textures/staffage/trees/tree_poplar.png',
+];
 // FULL set (back-compat): GET_PRECACHE returns this so the offline button = full offline.
-const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
+const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS, ...STAFFAGE_ASSETS];
 
 // CDN fallback URLs — cached opportunistically if loader falls back to them
 const CDN_ASSETS = [
@@ -64,6 +112,8 @@ const PRECACHE_ASSETS = [
   'helpers.js',
   'loader.js',
   'effects.js',
+  'cinema_maxq.js',
+  'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
   'scene.js',
   'streaming.js',
@@ -137,6 +187,7 @@ const PRECACHE_ASSETS = [
   'precision_cam.js',
   'schedule_gate.js',
   'time_machine.js',
+  'dlod_nav.js',
   'schedule_author.js',
   'schedule_author_ui.js',
   'foreign_schedule.js',
@@ -218,6 +269,12 @@ const _PRECACHE_SET = new Set(PRECACHE_ASSETS);
 // Precached files use cache-first — freshness guaranteed by CACHE_VERSION bump on deploy.
 function isNetworkFirst(url) {
   var base = url.split('?')[0];
+  // room_walker.js lives under lib/ by folder placement only — it's OUR frequently-changing
+  // room logic (PR #773/#776/#779 all touched it), not a third-party immutable vendor lib.
+  // The blanket lib/ rule below silently starved it of the network-first path for 3 straight
+  // deploys (found 2026-07-14, prompts/FUNCTIONAL_SPACE_MGMT_NEXT_SESSION.md §CACHE-LANDMINE) —
+  // exempt it explicitly rather than trusting folder placement to imply immutability.
+  if (base.endsWith('/lib/room_walker.js')) return true;
   // lib/ files are versioned and immutable — always cache-first
   if (base.includes('/lib/')) return false;
   // CDN fallback assets are also immutable — cache-first

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
+  // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
+  console.log('[TOUR] §TOUR_VERSION v12 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -20,6 +22,7 @@ function setupTour(A) {
       A.walkMode = true;
       A.flyActive = true;
       A.walkLastTime = 0;
+      if (A.markDirty) A.markDirty(); // §IDLE-PARK: revive the rAF chain on programmatic resume
       if (btn) btn.classList.add('active');
       var _speedBtn = document.getElementById('walk-speed-btn');
       if (_speedBtn) _speedBtn.style.display = '';
@@ -30,11 +33,263 @@ function setupTour(A) {
 
     A.flyActive = !A.flyActive;
     if (btn) btn.classList.toggle('active', A.flyActive);
+    if (A.flyActive && A.markDirty) A.markDirty(); // §IDLE-PARK: revive the rAF chain (a parked
+    // loop only wakes on input events — a programmatic toggle would otherwise never tick)
 
     if (A.flyActive) {
-      const tour = A.buildTour();
+      // FLY_TOUR_CORRIDOR_GRAPH.md §S1 — async prepare BEFORE building the tour: lazy-load the
+      // navigate stack (RoomGraph + HallwayBackbone + navigate_find's ensureRooms/getRoomGraph)
+      // and auto-inject compiled rooms when the building has none. Falls through to the legacy
+      // centroid tour on any failure — never blocks the fly button.
+      if (A._flyPreparing) return;
+      A._flyPreparing = true;
+      A.status.textContent = 'Preparing tour…';
+      // §TOUR_CACHE fast path (TOUR_ROUTE_CACHE.md): a cached route makes the whole prepare —
+      // loadNavigate + ensureRooms + the §THIN-GRAPH-RECURE probe (which runs the FULL route
+      // builder every activation, the actual repeat-click cost on LTU) — unnecessary: the
+      // finished action array is already stored. Only §STREAM-FIRST still applies (touring
+      // mid-stream tours placeholder bboxes and starves the promote pipeline — user doctrine
+      // 2026-07-16). Cache-key mismatch or parse failure falls through to the full prepare.
+      var _ckPeek = null;
+      try { _ckPeek = _tourCacheKey(); } catch (e) {}
+      var _decide = function(json) {
+        var cachedTour = null;
+        if (json) { try { cachedTour = JSON.parse(json); } catch (e) { cachedTour = null; } }
+        if (Array.isArray(cachedTour) && cachedTour.length >= 1) {
+          (async function() {
+            let _sw = 0;
+            while (A.streaming && A.flyActive) { await new Promise(function(r) { setTimeout(r, 500); }); _sw += 500; }
+            if (_sw) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _sw);
+            A._flyPreparing = false;
+            if (!A.flyActive) return; // user toggled off while waiting
+            console.log('[TOUR] §TOUR_CACHE fast-path (prepare skipped)');
+            A._tourCachedRoute = { key: _ckPeek, tour: cachedTour }; // consumed by _startFlyTour
+            A._startFlyTour(btn);
+          })();
+        } else {
+          A._prepareGraphTour().then(function() {
+            A._flyPreparing = false;
+            if (!A.flyActive) return; // user toggled off while preparing
+            A._startFlyTour(btn);
+          });
+        }
+      };
+      if (_ckPeek) _tourCacheFetch(_ckPeek).then(_decide, function() { _decide(null); });
+      else _decide(null);
+      return;
+    } else {
+      A.status.textContent = 'Fly stopped.';
+      document.getElementById('walk-speed-btn').style.display = 'none';
+    }
+  };
+
+  // §S1 — the awaited pre-step. Never throws; §FLY_INJECT logs what happened.
+  A._prepareGraphTour = async function() {
+    try {
+      // §STREAM-FIRST (user 2026-07-16: tour "switching to Alt-X bbxes"): those are streaming
+      // placeholder bboxes — elements not yet promoted to real geometry. Flying mid-stream tours
+      // a box model and starves the promote pipeline. Wait for streaming to drain first (the
+      // status bar keeps showing live progress; toggling fly off aborts the wait).
+      let _streamWaited = 0;
+      while (A.streaming && A.flyActive) {
+        await new Promise(function(r) { setTimeout(r, 500); });
+        _streamWaited += 500;
+      }
+      if (_streamWaited) console.log('[TOUR] §FLY_STREAM_WAIT ms=' + _streamWaited);
+      if (!A.flyActive) return;
+      if (A.loadNavigate) await A.loadNavigate();
+      if (A.ensureRooms) {
+        const res = await A.ensureRooms();
+        console.log('[TOUR] §FLY_INJECT bld=' + (A.activeBuilding || '') +
+          ' status=' + (res && res.status) + ' source=' + ((res && res.source) || 'none') +
+          ' rooms=' + (res && res.rooms != null ? res.rooms : '-'));
+      }
+      // §THIN-GRAPH-RECURE (2026-07-17, third independent live report): rooms can be present,
+      // in-frame AND compiler-owned yet still route-thin — a stale weak compile persisted in
+      // IDB that neither the presence check nor §PATCH-FRAME-GUARD can fault. Probe the route
+      // once; if it rejects and EVERY room is compiler-owned (RM_ prefix — real IfcSpace
+      // extractions are never touched), re-cure with the current walker (skipPatch: the patch
+      // is what produced these rooms) and let buildTour rebuild on the fresh set. One attempt,
+      // no loop — the inject mechanism exists to cure poor data (user doctrine).
+      try {
+        if (A.flyActive && A.ensureRooms && A.getRoomGraph && window.RoomGraph) {
+          let probe = null;
+          try { probe = A._buildGraphRoute(A._tourStoreyZ()); } catch (ep) { probe = null; } // §FLY_PLAN_DEDUPE: same key as buildTour → its pass reuses this one
+          if (!probe) {
+            let compiledOnly = false;
+            try {
+              const r = A.db.exec("SELECT COUNT(*), COUNT(CASE WHEN guid LIKE 'RM\\_%' ESCAPE '\\' THEN 1 END)" +
+                " FROM spatial_structure WHERE type='IfcSpace'");
+              const t = r.length ? r[0].values[0][0] : 0, c = r.length ? r[0].values[0][1] : 0;
+              compiledOnly = t > 0 && t === c;
+            } catch (ec) { /* compiledOnly stays false */ }
+            if (compiledOnly) {
+              const rc = await A.ensureRooms({ force: true, skipPatch: true });
+              console.log('[TOUR] §FLY_RECURE status=' + (rc && rc.status) +
+                ' source=' + ((rc && rc.source) || '-') +
+                ' rooms=' + (rc && rc.rooms != null ? rc.rooms : '-'));
+              if (A._tourCacheBust) A._tourCacheBust(); // §TOUR_CACHE: recompiled rooms invalidate any cached route
+            }
+          }
+        }
+      } catch (er) { console.warn('[TOUR] §FLY_RECURE_ERR ' + (er && er.message)); }
+    } catch (e) {
+      console.warn('[TOUR] §FLY_PREP_ERR ' + (e && e.message));
+    }
+  };
+
+  // §TOUR_CACHE (prompts/TOUR_ROUTE_CACHE.md): the graph route + door-legality pass is the slow
+  // part of Fly Tour on big buildings (minutes on LTU 122k). The finished action array is plain
+  // JSON (coords + durations, no live object refs), so cache it per building. Key carries:
+  // §TOUR_VERSION (route algorithm changes bust it), element/door/room counts from the DB (a new
+  // extraction or a room recompile busts it), and the rendered-building-set size (city tours append
+  // extra orbit actions — a different set must not replay a single-building route).
+  var TOUR_CACHE_VER = 'v12'; // keep in lockstep with the §TOUR_VERSION banner above
+  function _tourCacheKey() {
+    try {
+      var r = A.db.exec(
+        "SELECT (SELECT COUNT(*) FROM elements_meta)," +
+        " (SELECT COUNT(*) FROM elements_meta WHERE ifc_class IN ('IfcDoor','IfcDoorStandardCase'))," +
+        " (SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace')");
+      var v = r.length ? r[0].values[0] : [];
+      // max(1,…): the rendered-set populates async during load — sizes 0 and 1 are both
+      // "single building" semantics and must produce the SAME key (witnessed miss, 2026-07-20).
+      return 'tmTourCache:' + (A.activeBuilding || '') + ':' + TOUR_CACHE_VER + ':' +
+        v.join('-') + ':' + Math.max(1, A.buildingsRendered.size);
+    } catch (e) { return null; }
+  }
+  // §TOUR_CACHE_IDB (TOUR_ROUTE_CACHE.md §5, 2026-07-21): localStorage on the shared github.io
+  // origin is quota-starved by OTHER apps' keys (op-logs etc.) — §4's evict only reclaims tour
+  // keys (observed live: removed=0) so on a full origin the cache NEVER stored and Fly re-planned
+  // every press. IndexedDB has a per-origin quota orders of magnitude larger and survives page
+  // refresh; localStorage is now READ-ONLY legacy (a hit migrates to IDB and frees the LS key).
+  var _tourIdbP = null;
+  function _tourIdb() {
+    if (_tourIdbP) return _tourIdbP;
+    _tourIdbP = new Promise(function(resolve) {
+      try {
+        var rq = indexedDB.open('bim-tour-routes', 1);
+        rq.onupgradeneeded = function() { rq.result.createObjectStore('routes'); };
+        rq.onsuccess = function() { resolve(rq.result); };
+        rq.onerror = function() { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+    return _tourIdbP;
+  }
+  function _tourIdbGet(key) {
+    return _tourIdb().then(function(db) {
+      if (!db) return null;
+      return new Promise(function(resolve) {
+        try {
+          var rq = db.transaction('routes').objectStore('routes').get(key);
+          rq.onsuccess = function() { resolve(rq.result || null); };
+          rq.onerror = function() { resolve(null); };
+        } catch (e) { resolve(null); }
+      });
+    });
+  }
+  function _tourIdbPut(key, json) {
+    return _tourIdb().then(function(db) {
+      if (!db) return false;
+      return new Promise(function(resolve) {
+        try {
+          var tx = db.transaction('routes', 'readwrite');
+          tx.objectStore('routes').put(json, key);
+          tx.oncomplete = function() { resolve(true); };
+          tx.onerror = function() { resolve(false); };
+        } catch (e) { resolve(false); }
+      });
+    });
+  }
+  function _tourIdbDeletePrefix(prefix, keepVer) {
+    return _tourIdb().then(function(db) {
+      if (!db) return 0;
+      return new Promise(function(resolve) {
+        try {
+          var tx = db.transaction('routes', 'readwrite'), st = tx.objectStore('routes');
+          var rq = st.getAllKeys(), removed = 0;
+          rq.onsuccess = function() {
+            (rq.result || []).forEach(function(k) {
+              if (typeof k !== 'string' || k.indexOf(prefix) !== 0) return;
+              if (keepVer && k.indexOf(':' + keepVer + ':') !== -1) return;
+              st.delete(k); removed++;
+            });
+          };
+          tx.oncomplete = function() { resolve(removed); };
+          tx.onerror = function() { resolve(removed); };
+        } catch (e) { resolve(0); }
+      });
+    });
+  }
+  // Unified async lookup: legacy localStorage first (migrate + free origin quota), then IDB.
+  function _tourCacheFetch(key) {
+    var ls = null;
+    try { ls = localStorage.getItem(key); } catch (e) {}
+    if (ls) {
+      _tourIdbPut(key, ls).then(function(ok) {
+        if (ok) { try { localStorage.removeItem(key); console.log('[TOUR] §TOUR_CACHE_MIGRATE ls→idb key=' + key); } catch (e) {} }
+      });
+      return Promise.resolve(ls);
+    }
+    return _tourIdbGet(key);
+  }
+  A._tourCacheBust = function() { // §FLY_RECURE recompiles rooms — a cached route may now be illegal
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:' + (A.activeBuilding || '') + ':') === 0) localStorage.removeItem(k);
+      }
+    } catch (e) {}
+    _tourIdbDeletePrefix('tmTourCache:' + (A.activeBuilding || '') + ':').then(function(n) {
+      if (n) console.log('[TOUR] §TOUR_CACHE_BUST idb removed=' + n);
+    });
+    A._grMemo = null; // §FLY_PLAN_DEDUPE: recompiled rooms invalidate the memoized route
+  };
+  // §TOUR_CACHE_EVICT (TOUR_ROUTE_CACHE.md §4, 2026-07-20): nothing else ever removed a
+  // tmTourCache key — old TOUR_CACHE_VER generations, other buildings, other DB-recompile counts
+  // all coexist forever and can fill the origin's real localStorage quota, after which EVERY
+  // future store silently fails (never a crash, but the 41×-faster cache never engages again).
+  // Two-part self-heal: (1) drop stale-version keys unconditionally, cheap, no error needed to
+  // trigger it; (2) on an actual quota error, drop every OTHER tmTourCache key and retry once —
+  // makes the very next Fly press benefit, not just a hand-cleared profile.
+  function _tourCachePruneStale() {
+    var removed = 0;
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('tmTourCache:') === 0 && k.indexOf(':' + TOUR_CACHE_VER + ':') === -1) {
+          localStorage.removeItem(k); removed++;
+        }
+      }
+    } catch (e) {}
+    if (removed) console.log('[TOUR] §TOUR_CACHE_PRUNE stale-version removed=' + removed);
+  }
+  _tourCachePruneStale(); // once per module setup (page load) — cheap, unconditional
+  _tourIdbDeletePrefix('tmTourCache:', TOUR_CACHE_VER).then(function(n) {
+    if (n) console.log('[TOUR] §TOUR_CACHE_PRUNE idb stale-version removed=' + n);
+  });
+  // _tourCacheEvictAndRetry RETIRED (TOUR_ROUTE_CACHE.md §5): it could only evict tmTourCache
+  // keys, proven impotent on a quota-full shared origin (removed=0 live). Store path is IDB now.
+
+  // The original fly-start body (tour build + orbit fallback), unchanged except for extraction.
+  A._startFlyTour = function(btn) {
+    {
+      var _ck = _tourCacheKey(), tour = null, _fromCache = false;
+      // §TOUR_CACHE_IDB: the async fast-path pre-fetched the route (IDB or legacy LS) and stashed
+      // it — a sync localStorage read here can no longer be the source of truth.
+      if (_ck && A._tourCachedRoute && A._tourCachedRoute.key === _ck &&
+          Array.isArray(A._tourCachedRoute.tour) && A._tourCachedRoute.tour.length >= 1) {
+        tour = A._tourCachedRoute.tour;
+        _fromCache = true;
+      }
+      A._tourCachedRoute = null;
+      if (_fromCache) {
+        console.log('[TOUR] §TOUR_CACHE hit actions=' + tour.length + ' key=' + _ck);
+      } else {
+        tour = A.buildTour();
+      }
       if (tour && tour.length >= 1) {
-        if (A.buildingsRendered.size > 1) {
+        if (!_fromCache && A.buildingsRendered.size > 1) {
           const primaryName = Object.keys(A.buildingCentres)[0];
           for (const name of A.buildingsRendered) {
             if (name === primaryName) continue;
@@ -46,6 +301,16 @@ function setupTour(A) {
             tour.push({type:'riseAndTilt', targetY:ctr.y + 20, tiltDeg:80, name:`${name} bird's eye`});
             tour.push({type:'pause', seconds:3});
             A.wlog(`City: added ${name}`);
+          }
+        }
+        if (!_fromCache && _ck) {
+          var _json = JSON.stringify(tour);
+          if (_json.length < 8000000) { // sanity guard only — IDB per-origin quota is ample
+            var _nAct = tour.length;
+            _tourIdbPut(_ck, _json).then(function(ok) {
+              if (ok) console.log('[TOUR] §TOUR_CACHE store idb actions=' + _nAct + ' bytes=' + _json.length + ' key=' + _ck);
+              else console.log('[TOUR] §TOUR_CACHE store-skip idb-unavailable');
+            });
           }
         }
         A.walkMode = true;
@@ -60,6 +325,14 @@ function setupTour(A) {
         document.getElementById('walk-speed-btn').textContent = '1x';
         A.wlog(`START cinematic tour: ${tour.length} actions`);
         A.status.textContent = `Cinematic tour: ${tour.length} actions`;
+        // §IDLE-PARK: _startFlyTour runs after an async route-planning gap (buildTour/room-graph),
+        // during which an idle loop can self-park again — the caller's markDirty() (toggleFlyAround)
+        // fired BEFORE that gap and is stale by the time walkMode actually goes true here. Without
+        // this, a chain that re-parked during planning never restarts: walkMode sits true, unread,
+        // and walkTick() (which drives the camera) never runs a single frame. Confirmed live on
+        // LTU_AHouse (TOUR_WALKMODE_IDLE_PARK_STUCK.md) — log showed "START cinematic tour" then
+        // §IDLE_GATE park, then silence, camera never moving despite a fully-built 25-action tour.
+        if (A.markDirty) A.markDirty();
         return;
       }
 
@@ -78,9 +351,7 @@ function setupTour(A) {
       A.flyAngle = 0;
       A.flyTransitioning = false;
       A.status.textContent = `Flying around ${A.flyTargets[0].name}...`;
-    } else {
-      A.status.textContent = 'Fly stopped.';
-      document.getElementById('walk-speed-btn').style.display = 'none';
+      if (A.markDirty) A.markDirty(); // same async-gap risk as the walkMode path above
     }
   };
 
@@ -125,6 +396,250 @@ function setupTour(A) {
         A.status.textContent = `Flying to ${A.flyTargets[A.flyTargetIdx].name}...`;
       }
     }
+  };
+
+  // ═══ FLY_TOUR_CORRIDOR_GRAPH.md §S2 — occupant-graph itinerary ═══
+  // Route = entrance exit-node → per storey (lowest→highest): corridor cruise stop + top-K rooms
+  // NN-chained through RoomGraph.shortestPath (wall-legal, rides doors/corridor junctions) →
+  // stairwell climbs via real stairwp nodes → descent back to the exit, preferring a stair the
+  // ascent did not use (edge-filtered graph view — RoomGraph API untouched). EXTRACT ONLY:
+  // every waypoint is a measured node position from the graph; nothing invented.
+  // §FLY_PLAN_DEDUPE (TOUR_ROUTE_CACHE.md §5, 2026-07-21 user "hangs the browser during
+  // calculating"): the §THIN-GRAPH-RECURE probe ran the FULL route builder, then buildTour ran
+  // it AGAIN — two multi-second-to-minutes planning passes per first press. The door-floor-z
+  // input is one cheap GROUP BY (extracted here so probe and buildTour share it), and the route
+  // result is memoized on (graph identity, storeyZ signature) — the second pass is now a lookup.
+  A._tourStoreyZ = function() {
+    const storeyZ = {};
+    try {
+      const sz = A.db.exec(`
+        SELECT m.storey, MIN(t.center_z) as floor_z
+        FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid
+        WHERE m.ifc_class IN ('IfcDoor','IfcDoorStandardCase')
+        GROUP BY m.storey ORDER BY floor_z
+      `);
+      if (sz.length) for (const [st, z] of sz[0].values) storeyZ[st] = z;
+    } catch(e) {}
+    return storeyZ;
+  };
+  A._grMemo = null; // { g, zsig, result } — g identity changes on room recompile (auto-invalidates)
+  A._buildGraphRoute = function(storeyZ) {
+    const _g0 = (A.getRoomGraph && window.RoomGraph) ? A.getRoomGraph() : null;
+    const _zsig = JSON.stringify(storeyZ || {});
+    if (A._grMemo && A._grMemo.g === _g0 && A._grMemo.zsig === _zsig) {
+      console.log('[TOUR] §FLY_PLAN_DEDUPE memo-hit');
+      return A._grMemo.result;
+    }
+    const _res = A._buildGraphRouteInner(storeyZ);
+    if (_g0) A._grMemo = { g: _g0, zsig: _zsig, result: _res };
+    return _res;
+  };
+  A._buildGraphRouteInner = function(storeyZ) {
+    const RG = window.RoomGraph;
+    if (!RG || !A.getRoomGraph) return null;
+    const g = A.getRoomGraph();
+    if (!g || !g.nodes || g.nodes.length < 2) return null;
+
+    // Bucket rooms by storey. Corridors (backprop 'Hall / Corridor' nodes + compiled
+    // SUSPECT_ELONGATED — a real corridor is usually one of these, see spec §R4) become cruise
+    // stops; other SUSPECT_* rooms are never destinations (§ROOM-FORM: review candidates).
+    const byStorey = {}, stZSum = {}, stN = {};
+    for (const n of g.nodes) {
+      const lbl = String(n.label || '');
+      let area = 0;
+      for (const rc of (n.rects || [])) area += Math.max(0, rc.x1 - rc.x0) * Math.max(0, rc.y1 - rc.y0);
+      if (!byStorey[n.storey]) byStorey[n.storey] = { corridors: [], rooms: [] };
+      const rec = { guid: n.guid, node: n, area };
+      if (lbl.indexOf('Hall / Corridor') >= 0 || lbl.indexOf('SUSPECT_ELONGATED') >= 0) byStorey[n.storey].corridors.push(rec);
+      else if (lbl.indexOf('SUSPECT_') < 0) byStorey[n.storey].rooms.push(rec);
+      stZSum[n.storey] = (stZSum[n.storey] || 0) + n.cz;
+      stN[n.storey] = (stN[n.storey] || 0) + 1;
+    }
+    const storeys = Object.keys(byStorey).sort((a, b) => stZSum[a] / stN[a] - stZSum[b] / stN[b]);
+    // §R6-BUDGET (Hospital live-report: "lingers too long on first floor"): rooms per storey
+    // scale DOWN as storey count grows — tall buildings get a tighter, corridor-dominant tour.
+    const K = storeys.length >= 4 ? 2 : storeys.length === 3 ? 3 : 4;
+
+    // Entrance: the lowest exit node (E4 — a real non-room door), when the building has one.
+    let entrance = null;
+    for (const k in g.nodesByGuid) {
+      const n = g.nodesByGuid[k];
+      if (n.kind === 'exit' && (entrance === null || n.cz < entrance.cz)) entrance = n;
+    }
+
+    // Itinerary: per storey, LARGEST spaces first (user 2026-07-16: "go for the great
+    // opportunities from large hallways or entrance to large areas first") — the corridor cruise
+    // leads, then rooms in descending measured area. Drama over travel economy: the legs between
+    // stops are still graph-shortest, so the route stays wall-legal either way.
+    // §CONNECTED-STOPS (LTU live-report 2026-07-16: "same route, nothing major change" — LTU has
+    // 0 exit nodes, and its largest corridor node carries no edges, so the route anchored on an
+    // isolated node, every leg failed, pts=1 → permanent legacy fallback): a stop must appear in
+    // the edge set to be routable AT ALL; isolated nodes are dropped up front.
+    const edgeGuids = {};
+    for (const e of g.edges) { edgeGuids[e.a] = true; edgeGuids[e.b] = true; }
+    // §R6-TYPE-DEDUPE (user: "not go to same type of rooms"): real IfcSpace names carry the
+    // room's function (Ward, WC, Office…) — visit the FIRST of each name-type only, tour-wide.
+    // Compiled rooms (object_type COMPILED, names like "R28") carry no semantic type → exempt.
+    const seenType = {};
+    function typeToken(n) {
+      if (String(n.label || '').indexOf('COMPILED') >= 0) return null;
+      const t = String(n.name || '').toLowerCase().replace(/[0-9]+/g, ' ')
+        .replace(/[^a-zÀ-￿ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return t.length >= 2 ? t : null;
+    }
+    let isolatedDropped = 0, typeDeduped = 0;
+    const stops = [];
+    for (const st of storeys) {
+      const b = byStorey[st];
+      b.corridors.sort((a, c) => c.area - a.area);
+      b.rooms.sort((a, c) => c.area - a.area);
+      // §R6-CORRIDOR-SPINE (user: "stick more to long corridors and hallways"): corridors are
+      // the tour's spine — up to 3 cruise stops per storey (was 1), rooms are brief detours.
+      const picks = b.corridors.slice(0, 3);
+      let roomsTaken = 0;
+      for (const r of b.rooms) {
+        if (roomsTaken >= K) break;
+        const tok = typeToken(r.node);
+        if (tok && seenType[tok]) { typeDeduped++; continue; }
+        if (tok) seenType[tok] = true;
+        picks.push(r);
+        roomsTaken++;
+      }
+      for (const r of picks) {
+        if (edgeGuids[r.guid]) stops.push(r);
+        else isolatedDropped++;
+      }
+    }
+    if (isolatedDropped || typeDeduped) console.log('[TOUR] §FLY_ROUTE_ISOLATED dropped=' +
+      isolatedDropped + ' typeDeduped=' + typeDeduped);
+    if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
+
+    // §S3 — the largest room actually PICKED per storey gets the pause + look-around beat
+    // (§R6: dedupe/budget may drop the storey's largest room; corridors keep moving, no beat).
+    const pauseGuids = {};
+    const pausedStorey = {};
+    for (const s of stops) {
+      const st = s.node.storey;
+      if (pausedStorey[st]) continue;
+      if (byStorey[st].corridors.indexOf(s) >= 0) continue;
+      pauseGuids[s.guid] = true;
+      pausedStorey[st] = true;
+    }
+
+    // Chain the stops through the graph (Dijkstra, legalized — see room_graph.js).
+    // A stop the graph cannot reach (room island — real on sparse federated models, measured
+    // HHS) is SKIPPED, never straight-hopped: an occupant can't walk there, and this route
+    // invents nothing. EXTRACT ONLY.
+    const pathGuids = [];
+    let skipped = 0, visitedStops = 0;
+    let curGuid = entrance ? entrance.guid : stops[0].guid;
+    pathGuids.push(curGuid);
+    for (const s of stops) {
+      if (s.guid === curGuid) { visitedStops++; continue; }
+      const sp = RG.shortestPath(g, curGuid, s.guid);
+      if (sp && sp.path && sp.path.length > 1) {
+        for (let i = 1; i < sp.path.length; i++) pathGuids.push(sp.path[i]);
+        visitedStops++;
+        curGuid = s.guid;
+      } else { skipped++; }
+    }
+
+    const usedStairs = {};
+    for (const pg of pathGuids) {
+      const n = g.nodesByGuid[pg];
+      if (n && n.kind === 'stairwp') usedStairs[pg] = true;
+    }
+    const stairUp = Object.keys(usedStairs)[0] || null;
+
+    // §S2.5 — descent finale back to the entrance, preferring a stair the ascent did NOT use:
+    // same graph minus the used stairwps' edges (plain filtered view), full graph as fallback.
+    let stairDown = null;
+    if (entrance && curGuid !== entrance.guid) {
+      let spBack = null;
+      if (Object.keys(usedStairs).length) {
+        const filtered = Object.assign({}, g, { edges: g.edges.filter(e => !usedStairs[e.a] && !usedStairs[e.b]) });
+        spBack = RG.shortestPath(filtered, curGuid, entrance.guid);
+      }
+      if (!spBack || !spBack.path || spBack.path.length < 2) spBack = RG.shortestPath(g, curGuid, entrance.guid);
+      if (spBack && spBack.path && spBack.path.length > 1) {
+        for (let i = 1; i < spBack.path.length; i++) {
+          pathGuids.push(spBack.path[i]);
+          const n = g.nodesByGuid[spBack.path[i]];
+          if (!stairDown && n && n.kind === 'stairwp') stairDown = spBack.path[i];
+        }
+      }
+    }
+
+    // Guids → real points. Rooms/exits ride each storey's door-derived floor z (same convention
+    // as the legacy tour); stairwps keep their OWN measured z ends — that IS the climb/descent.
+    const pts = [];
+    const ifcTrail = [];
+    let circWps = 0;
+    let prevPg = null, prevN = null;
+    for (const pg of pathGuids) {
+      const n = g.nodesByGuid[pg];
+      if (!n || n.cx === undefined) continue;
+      const fz = (n.kind === 'stairwp') ? n.cz : (storeyZ[n.storey] !== undefined ? storeyZ[n.storey] : n.cz);
+      const tp = A.ifc2three(n.cx, n.cy, fz);
+      // §R6-STAIR-FLIGHT (user: "really go up stairs"): a lo↔hi hop on the SAME stair gets a
+      // mid-flight point (halfway along the flight's own measured run), so the camera tracks
+      // base → landing → top instead of one smoothed diagonal. Both endpoints are real stairwp
+      // node positions; the midpoint is their measured interpolation, nothing invented.
+      if (n.kind === 'stairwp' && prevN && prevN.kind === 'stairwp' &&
+          String(pg).replace(/::(lo|hi)$/, '') === String(prevPg).replace(/::(lo|hi)$/, '')) {
+        const mtp = A.ifc2three((prevN.cx + n.cx) / 2, (prevN.cy + n.cy) / 2, (prevN.cz + n.cz) / 2);
+        pts.push({ x: mtp.x, y: mtp.y + A.WALK_EYE_HEIGHT, z: mtp.z, name: '', pause: null });
+        ifcTrail.push({ storey: n.storey, cx: (prevN.cx + n.cx) / 2, cy: (prevN.cy + n.cy) / 2, vertical: true });
+      }
+      prevPg = pg; prevN = n;
+      if (n.kind === 'doorwp' || n.kind === 'circ' || n.kind === 'spine') circWps++;
+      // §HEADS-UP (user 2026-07-16: "moving across storeys, having heads up where are the open
+      // spaces"): arriving on a NEW storey up a stair gets a 'storey' look-around beat before
+      // flying it. Ascent only — descent stays continuous.
+      const py = tp.y + A.WALK_EYE_HEIGHT;
+      const prevPt = pts[pts.length - 1];
+      const storeyArrival = n.kind === 'stairwp' && prevPt && (py - prevPt.y) > 1;
+      pts.push({ x: tp.x, y: py, z: tp.z,
+                 name: (n.kind === 'room' || n.kind === 'exit' || n.kind === 'stairwp') ? n.name : '',
+                 pause: pauseGuids[pg] ? 'room' : (storeyArrival ? 'storey' : null) });
+      ifcTrail.push({ storey: n.storey, cx: n.cx, cy: n.cy, vertical: n.kind === 'stairwp' });
+    }
+    if (pts.length < 3) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=thin-path pts=' + pts.length + ' → legacy tour'); return null; }
+
+    // §S4 witness — every same-storey chord must be walk-legal (0 chords with illegal samples).
+    let illegalChords = 0, checkedChords = 0;
+    if (typeof RG.chordIllegalCount === 'function') {
+      for (let i = 1; i < ifcTrail.length; i++) {
+        const a = ifcTrail[i - 1], b = ifcTrail[i];
+        if (a.storey !== b.storey || a.vertical || b.vertical) continue;
+        checkedChords++;
+        if (RG.chordIllegalCount(g, a.storey, a.cx, a.cy, b.cx, b.cy) > 0) illegalChords++;
+      }
+    }
+    const corridorStops = stops.filter(s => byStorey[s.node.storey].corridors.indexOf(s) >= 0).length;
+    console.log('[TOUR] §FLY_ROUTE storeys=' + storeys.length + ' stops=' + visitedStops + '/' + stops.length +
+      ' skipped=' + skipped + ' corridorStops=' + corridorStops + ' circWps=' + circWps +
+      ' stairUp=' + (stairUp || '-') + ' stairDown=' + (stairDown || '-') +
+      ' pts=' + pts.length + ' illegalChords=' + illegalChords + '/' + checkedChords);
+    // §S5 QUALITY GATE — every flown leg is graph-connected by construction (unreachable stops
+    // are skipped above, never hopped). Chords inside a shortestPath result are the engine's OWN
+    // legalized best-effort (_legalizePath keeps a chord when no detour exists — identical to
+    // what PATH mode draws for users), so `illegalChords` is reported, not gated (measured:
+    // Terminal 10/89 residual, HHS 0/50). What IS gated: a route that barely exists — a thin
+    // graph (this local Duplex snapshot: 5 approx nodes, 3 edges, most stops unreachable) must
+    // fall back to the legacy tour, not ship a worse flight.
+    // §MAJORITY-LEGAL (2026-07-17, Duplex regression witness): a route whose chords are MOSTLY
+    // wall-illegal is junk data passing the coverage gate (Duplex: 2/2 = 100% illegal on a
+    // 3-pt route after v2 walker connected its 2 approx rooms). Engine residual stays welcome
+    // (Terminal 10/89≈11%, HHS 0/50); majority-illegal rejects.
+    if (!g.edges.length || visitedStops < 2 || visitedStops < stops.length * 0.5 ||
+        (checkedChords > 0 && illegalChords * 2 > checkedChords)) {
+      console.log('[TOUR] §FLY_ROUTE_REJECT edges=' + g.edges.length + ' visited=' + visitedStops +
+        '/' + stops.length + ' illegalChords=' + illegalChords + ' → legacy tour');
+      return null;
+    }
+    A.wlog(`GraphRoute: ${stops.length} stops, ${pts.length} pts, stairs ${stairUp ? '↑' : '-'}${stairDown ? '↓' : ''}`);
+    return { pts, entrance, stats: { illegalChords, checkedChords, circWps, corridorStops } };
   };
 
   // S206: Cinematic building tour — nearest-neighbor choreography
@@ -184,16 +699,7 @@ function setupTour(A) {
       if (st.length) stairs = st[0].values.map(([x,y,z,s]) => ({x,y,z,storey:s}));
     } catch(e) {}
 
-    let storeyZ = {};
-    try {
-      const sz = A.db.exec(`
-        SELECT m.storey, MIN(t.center_z) as floor_z
-        FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid
-        WHERE m.ifc_class IN ('IfcDoor','IfcDoorStandardCase')
-        GROUP BY m.storey ORDER BY floor_z
-      `);
-      if (sz.length) for (const [st, z] of sz[0].values) storeyZ[st] = z;
-    } catch(e) {}
+    let storeyZ = A._tourStoreyZ(); // §FLY_PLAN_DEDUPE: shared with the recure probe
 
     let roomsByStorey = {};
     try {
@@ -233,11 +739,23 @@ function setupTour(A) {
     if (!bldgCtr) bldgCtr = {x: ep.x, y: ep.y, z: ep.z};
     const cx = bldgCtr.x, cz = bldgCtr.z;
 
+    // FLY_TOUR_CORRIDOR_GRAPH.md §S2 — try the occupant-graph route first (computed before
+    // PART 2 so the approach + finale aim at the graph's real entrance door). Null ⇒ S5 fallback
+    // to the legacy centroid collection below, unchanged.
+    let graphRoute = null;
+    try { graphRoute = A._buildGraphRoute(storeyZ); } catch (e) { console.warn('[TOUR] §FLY_ROUTE_ERR ' + (e && e.message)); }
+    if (graphRoute && graphRoute.entrance && ep !== bldgCtr) {
+      const etp = A.ifc2three(graphRoute.entrance.cx, graphRoute.entrance.cy, graphRoute.entrance.cz);
+      ep.x = etp.x; ep.y = etp.y; ep.z = etp.z;
+    }
+
     // ═══ PART 1: ORBIT — scaled to building ═══
+    // User 2026-07-16: "Initial should fly around at least near full circle from outside" —
+    // fullCircle at the same angular speed (duration ×2 vs the old half-circle).
     const orbitR = Math.max(15, envelope * 0.6);
-    const orbitDur = envelope > 30 ? 6 : 4;  // shorter for small buildings
+    const orbitDur = (envelope > 30 ? 6 : 4) * 2;
     actions.push({type:'orbit', cx:bldgCtr.x, cy:bldgCtr.y, cz:bldgCtr.z,
-                  radius:orbitR, tiltDeg:35, duration:orbitDur});
+                  radius:orbitR, tiltDeg:35, duration:orbitDur, fullCircle:true});
 
     // ═══ PART 2: APPROACH — fly to entrance (separate action) ═══
     actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance'});
@@ -254,7 +772,23 @@ function setupTour(A) {
     flyPts.push({x: ep.x, y: ep.y + A.WALK_EYE_HEIGHT, z: ep.z});
     flyNames.push('Entrance');
 
-    for (let si = 0; si < storeys.length; si++) {
+    // §S2 — occupant-graph waypoints (corridors/doors/stairwells), already wall-legal;
+    // pauseIdx marks the look-around beats (§S3). Legacy loop below runs only without a route.
+    const pauseIdx = [];  // {i, kind:'room'|'storey'} — look-around beats (§S3 + §HEADS-UP)
+    if (graphRoute) {
+      for (const p of graphRoute.pts) {
+        const last = flyPts[flyPts.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) < 0.3) {
+          if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
+          continue;
+        }
+        flyPts.push({x: p.x, y: p.y, z: p.z});
+        flyNames.push(p.name || '');
+        if (p.pause) pauseIdx.push({i: flyPts.length - 1, kind: p.pause});
+      }
+    }
+
+    if (!graphRoute) for (let si = 0; si < storeys.length; si++) {
       const storey = storeys[si];
       const floorY = A.ifc2three(0, 0, storeyZ[storey] || 0).y + A.WALK_EYE_HEIGHT;
 
@@ -315,9 +849,32 @@ function setupTour(A) {
 
     if (pathLen > 30) {
       // ═══ Big building: full interior flyPath + finale ═══
-      const duration = Math.max(pathLen / 3.5, 8);
-      actions.push({type:'flyPath', points: flyPts, names: flyNames, duration});
-      A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${duration.toFixed(0)}s`);
+      // §S3 — split the spline at each storey's largest room for a pause + look-around beat;
+      // no pause marks (legacy route) ⇒ one flyPath exactly as before.
+      // §R6-PACE: flat 3.5 m/s makes a long hospital path a multi-minute crawl — beyond 300m of
+      // interior path, pace up to 4.5 m/s (still walking-film speed, ~22% shorter).
+      const flySpd = pathLen > 300 ? 4.5 : 3.5;
+      const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
+        arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
+      const segments = [];
+      let segFrom = 0;
+      for (const sv of splits) { if (sv.i > segFrom) { segments.push({from: segFrom, to: sv.i, beat: sv.kind}); segFrom = sv.i; } }
+      segments.push({from: segFrom, to: flyPts.length - 1, beat: null});
+      for (let sI = 0; sI < segments.length; sI++) {
+        const pts = flyPts.slice(segments[sI].from, segments[sI].to + 1);
+        if (pts.length < 2) continue;
+        let segLen = 0;
+        for (let i = 1; i < pts.length; i++)
+          segLen += Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y, pts[i].z-pts[i-1].z);
+        actions.push({type:'flyPath', points: pts, names: flyNames.slice(segments[sI].from, segments[sI].to + 1),
+                      duration: Math.max(segLen / flySpd, segments.length === 1 ? 8 : 3)});
+        if (sI < segments.length - 1 && segments[sI].beat) {
+          // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces.
+          actions.push({type:'pause', seconds: 0.4});
+          actions.push({type:'lookAround', degrees: segments[sI].beat === 'storey' ? 180 : 270});
+        }
+      }
+      A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${segments.length} seg(s)`);
       // Finale: fly outside+above, pause, land
       const topZ = Math.max(...Object.values(storeyZ), 0);
       const topY = A.ifc2three(0, 0, topZ).y;
@@ -335,7 +892,13 @@ function setupTour(A) {
     const endX = cx + (endDx / endLen) * orbitR;
     const endZ = cz + (endDz / endLen) * orbitR;
     actions.push({type:'moveTo', x:endX, y:ep.y, z:endZ, name:'Final'});
-    actions.push({type:'lookAround', degrees:1, lookAtX:cx, lookAtZ:cz});
+    // User 2026-07-16: "Ending should be outside looking at it from ground level" — camera at
+    // ground (entrance height), slow 90° pan centred on the facade, gaze tilted UP to 40% of the
+    // building's measured top (storeyZ max), so the tour closes on the building, not the horizon.
+    const _endTopZ = Object.values(storeyZ).length ? Math.max(...Object.values(storeyZ)) : 0;
+    const _endTopY = A.ifc2three(0, 0, _endTopZ).y;
+    actions.push({type:'lookAround', degrees:90, lookAtX:cx, lookAtZ:cz,
+                  lookAtY: ep.y + Math.max(3, (_endTopY - ep.y) * 0.4)});
     actions.push({type:'pause', seconds:1});
 
     // §TOUR_PATH — dump full path as JSON for inspection
@@ -345,7 +908,7 @@ function setupTour(A) {
       envelope, MIN_SEP, storeys: storeys.length
     }, null, 0));
     A.wlog(`Tour: ${actions.length} actions, ${storeys.length} storeys, ${flyPts.length} interior pts`);
-    window._walkStrategy = `CINE(${actions.length}acts,${flyPts.length}pts)`;
+    window._walkStrategy = `${graphRoute ? 'CINE-GRAPH' : 'CINE'}(${actions.length}acts,${flyPts.length}pts)`;
     return actions;
   };
 
@@ -466,7 +1029,8 @@ function setupTour(A) {
       const lookDist = 3.0;
       A.controls.target.x = A.camera.position.x + lookDist * Math.sin(rad);
       A.controls.target.z = A.camera.position.z + lookDist * Math.cos(rad);
-      A.controls.target.y = A.camera.position.y;
+      // §ENDING: an explicit lookAtY tilts the gaze (ground-level facade shot); default stays level.
+      A.controls.target.y = (act.lookAtY !== undefined) ? act.lookAtY : A.camera.position.y;
       A.controls.update();
       A.status.textContent = `Looking around ${(A.walkPanAngle).toFixed(0)}° [${spd}x]`;
       if (A.walkPanAngle >= totalDeg) {
@@ -612,10 +1176,13 @@ function setupTour(A) {
       const t = Math.min(A.walkActionT / duration, 1.0);
       const pos = act._curve.getPointAt(t);
       A.camera.position.copy(pos);
-      const lookT = Math.min(t + 0.03, 0.999);
+      // §SOFTEN (user 2026-07-16: "soften the sudden switch to new track"): look further ahead
+      // (0.05 vs 0.03) and pan the gaze more gently (lerp 0.08 vs 0.15) — spur-room reversals
+      // (walk in, walk out) sweep instead of whip.
+      const lookT = Math.min(t + 0.05, 0.999);
       const lookPt = act._curve.getPointAt(lookT);
       if (!act._prevLook) act._prevLook = lookPt.clone();
-      act._prevLook.lerp(lookPt, 0.15);
+      act._prevLook.lerp(lookPt, 0.08);
       A.controls.target.copy(act._prevLook);
       A.controls.update();
       // Find nearest named point for status

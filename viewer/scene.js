@@ -312,6 +312,10 @@ async function setupScene(A) {
   // Ground plane — positioned after DB load to sit below the lowest building
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(50000, 50000),
+    // §GROUND_METALLIC_REVERT (2026-07-17, user: "We have to contain what we want only within S
+    // and J" — a permanent base metallic material was the wrong shape for this ask; superseded by
+    // the wetness-override mechanism (effects.js §GROUND_WETNESS_OVERRIDE), auto-applied when Alt+S
+    // stages and tunable via Alt+J's dial. Reverted to the original earth-brown matte default.
     new THREE.MeshStandardMaterial({ color: 0x5C4033, roughness: 0.95, metalness: 0.0, envMapIntensity: 0.15, side: THREE.DoubleSide })  // §S276b: earth brown, subtle sky reflection (0.15)
   );
   ground.rotation.x = -Math.PI / 2;
@@ -323,6 +327,8 @@ async function setupScene(A) {
   // §S278 Phase 3: EffectComposer extracted to effects.js
   // setupEffects(A, renderer, scene, camera) — loads SSAO/Outline/Output on desktop, skips on mobile
   if (typeof setupEffects === 'function') await setupEffects(A, renderer, scene, camera);
+  // §GI_POC (sandbox spike, feat/ssgi-composer-poc): N8AO via pmndrs/postprocessing, Alt+G gated
+  if (typeof setupGIPoc === 'function') await setupGIPoc(A, renderer, scene, camera);
 
   // State
   A.db = null;
@@ -393,6 +399,36 @@ async function setupScene(A) {
     }).catch(function() {});
   }
 
+  // §IDB_VERSION_FALLBACK (2026-07-18): a browser profile whose bim_ootb_cache is ALREADY at a
+  // version higher than 2 (another tab/build that bumped it further, dev/test residue — IndexedDB
+  // versions only ever increase, never reopen at a LOWER version) makes the explicit
+  // indexedDB.open(name, 2) below throw VersionError on EVERY call, forever, for that profile —
+  // silently breaking ALL caching routed through this opener (buildings, schedules, ad_seed.db —
+  // confirmed live: user report "reopening the 4D schedule panel still shows initial stage" +
+  // repeated §CACHE_SKIP reason=IDB_unavailable for every DB, not just schedules). kernel_ops.js
+  // already proved the fix for this exact class of drift in its own fallback opener (unversioned
+  // open — whatever version is actually stored, never throws VersionError); this applies the same
+  // fallback to the app's SINGLE opener so every caller (buildings, kernel_ops, schedule_author)
+  // benefits without touching their own code.
+  function _openCacheDbUnversioned(resolve) {
+    try {
+      var req2 = indexedDB.open(A.CACHE_DB_NAME);   // no version → whatever's actually stored
+      req2.onupgradeneeded = function() {
+        var db = req2.result;
+        if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
+        if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+      };
+      req2.onsuccess = function() {
+        console.log('[S203] §IDB_VERSION_FALLBACK_OK opened at stored version (unversioned)');
+        resolve(req2.result);
+      };
+      req2.onerror = function() {
+        console.warn('[S203] §IDB_OPEN_ERR (unversioned) err=' + (req2.error || 'unknown'));
+        resolve(null);
+      };
+      req2.onblocked = function() { resolve(null); };
+    } catch (e) { resolve(null); }
+  }
   A.openCacheDB = function() {
     return new Promise((resolve, reject) => {
       try {
@@ -405,6 +441,11 @@ async function setupScene(A) {
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = function() {
+          if (req.error && req.error.name === 'VersionError') {
+            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 2 — falling back to unversioned open');
+            _openCacheDbUnversioned(resolve);
+            return;
+          }
           console.warn('[S203] §IDB_OPEN_ERR name=' + A.CACHE_DB_NAME + ' err=' + (req.error || 'unknown'));
           resolve(null);
         };
@@ -472,10 +513,27 @@ async function setupScene(A) {
   // Monolith (A.libDb === A.db): A.db already holds meta+geometry → export directly.
   // Split (A.db=meta, A.libDb=geometry): fold the geometry tables into a meta clone so the saved
   // single file re-opens WITH geometry (no-cubes gate — never save a geometry-less stub).
+  // §STAFFAGE_PERSIST (2026-07-18, user: "only when save that last scene is stored in DB. If not,
+  // discarded"): staffage (effects.js) lives only in the THREE.js scene graph — write it into
+  // whichever sql.js DB is about to be exported so a reopen can rehydrate the exact placed set.
+  // Decoupled via A._getStaffageInstances so this module doesn't need to know effects.js internals.
+  function _writeStaffageTable(db) {
+    var rows = (A._getStaffageInstances && A._getStaffageInstances()) || [];
+    if (!rows.length) return;
+    try {
+      db.run("DROP TABLE IF EXISTS staffage_instances");
+      db.run("CREATE TABLE staffage_instances (kind TEXT, file TEXT, ifc_x REAL, ifc_y REAL, ifc_z REAL, rot_y REAL)");
+      var stmt = db.prepare("INSERT INTO staffage_instances VALUES (?,?,?,?,?,?)");
+      rows.forEach(function(r) { stmt.run(r); });
+      stmt.free();
+      console.log('§STAFFAGE_SAVE rows=' + rows.length);
+    } catch (e) { console.warn('§STAFFAGE_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      _writeStaffageTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -500,6 +558,7 @@ async function setupScene(A) {
       copied++;
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    _writeStaffageTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -582,7 +641,13 @@ async function setupScene(A) {
           req.onerror = () => resolve(null);
         });
         if (cached) {
-          console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
+          // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
+          A._cacheHitLogged = A._cacheHitLogged || {};
+          if (!A._cacheHitLogged[url]) {
+            A._cacheHitLogged[url] = 1;
+            console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          }
           // Update LRU timestamp on hit
           try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), url); } catch(e2) {}
           return cached;
@@ -831,6 +896,7 @@ async function setupScene(A) {
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
     'w':  function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }, // §WHIST: open/close the cross-page World-history overlay (HISTORY_KNOB_DIAL.md)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
+    'o':  function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); }, // FLY_TOUR_DLOD_SCALE.md §9: nav LOD boxes (bOx; plain o — Ctrl+O stays open-model)
     'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
     'n':  function() { if (typeof window.toggleNightMode === 'function') window.toggleNightMode(); },
@@ -1168,6 +1234,13 @@ async function setupScene(A) {
       // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
       all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
       all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
+      // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
+      // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
+      // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
+      all.push({ seq: 'ALT+C', name: 'MaxQ Movie', icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
+      // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
+      all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
@@ -1768,6 +1841,20 @@ async function setupScene(A) {
     // Alt+Z = 3-state cycle Off→X-Ray→Bbox→Off (Blender Alt+Z convention, extended). Alt+X
     // deleted — merged into this single cycle, see A.cycleXrayBboxMode (tools.js).
     if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); console.log('§KBD_ROUTE Alt+Z → xray-cycle'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray-cycle', { xray: true }); return; }
+    // Alt+S = still-refine — progressive TAA supersample of the current camera view (2026-07-15,
+    // user ask). Cancels itself on any interaction via the A.markDirty() wrap in effects.js.
+    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
+    // §GI_POC (sandbox spike, feat/ssgi-composer-poc, isolated branch — not a shipped feature)
+    if (e.altKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); console.log('§KBD_ROUTE Alt+G → GI preview (N8AO POC)'); return; }
+    if (e.altKey && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); if (typeof A.toggleSSGIPreview === 'function') A.toggleSSGIPreview(); console.log('§KBD_ROUTE Alt+J → SSGI preview (realism-effects spike)'); return; }
+    // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema... no shortcut... What do u suggest?" — confirmed
+    // Alt+C, distinct namespace from plain 'c' (Clash), no conflict). Previously only reachable via
+    // the Sunglass panel's Cinema row (panels.js) — user separately confirmed Cinema Orbit works
+    // fine without ever pressing Alt+S first, just adjust the starting camera view and go.
+    if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); console.log('§KBD_ROUTE Alt+C → MaxQ movie (toggle=cancel)'); return; }
+    // §PHOTO_POPULATE (2026-07-17): Alt+P toggles the fabricated staffage layer (people + trees),
+    // separate from Alt+S. Distinct namespace from plain 'p' — no conflict.
+    if (e.altKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); if (typeof A.togglePopulate === 'function') A.togglePopulate(); console.log('§KBD_ROUTE Alt+P → populate (staffage)'); return; }
     if (e.key === 'F1') { e.preventDefault(); console.log('§KBD_ROUTE F1 → help'); showCommandPalette(); return; }
     if (e.key === 'F11') { e.preventDefault(); console.log('§KBD_ROUTE F11 → fullscreen'); A.toggleFullscreen(); return; }
     // Ctrl/Cmd+S = Save Building, Ctrl/Cmd+O = Open Building — preventDefault suppresses the browser's

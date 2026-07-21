@@ -15,14 +15,25 @@
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.45 -apple-system, Segoe UI, Roboto, sans-serif;
          background: #11151c; color: #d8e0ea; }
-  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
            background: linear-gradient(180deg, #1b2230, #161b25); border-bottom: 1px solid #2a3342; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; color: #eaf1fb; }
   header .sub { color: #7d8aa0; font-size: 11px; }
-  #se-import-btn { margin-left: auto; background: #243042; border: 1px solid #34465e; color: #cdd7e4;
+  #se-bld { color: #4fc3f7; font-size: 11px; margin-left: auto; }
+  /* Ribbon — grouped button clusters, MS-Project-style, separated by thin dividers */
+  .se-ribbon { display: flex; align-items: center; gap: 0; padding: 6px 16px; background: #161b24;
+               border-bottom: 1px solid #232c3a; flex-wrap: wrap; }
+  .se-ribbon-group { display: flex; align-items: center; gap: 5px; padding: 0 12px;
+                     border-right: 1px solid #232c3a; }
+  .se-ribbon-group:last-child { border-right: none; }
+  .se-ribbon-label { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: #566177;
+                     margin-right: 4px; }
+  #se-import-btn { background: #243042; border: 1px solid #34465e; color: #cdd7e4;
     font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
   #se-import-btn:hover { background: #2c3a50; }
-  #se-bld { color: #4fc3f7; font-size: 11px; margin-left: 12px; }
+  .zoom-btn { background: #1c2430; border: 1px solid #313c4d; color: #9fb0c6; cursor: pointer;
+              padding: 3px 9px; font-size: 11px; border-radius: 4px; }
+  .zoom-btn.active { background: #1f6feb; border-color: #1f6feb; color: #fff; font-weight: 600; }
   #se-status { padding: 6px 16px; background: #0d1118; color: #9fb0c6; font-size: 11px;
                border-bottom: 1px solid #222b38; min-height: 26px; }
   main { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.2fr); gap: 0;
@@ -34,6 +45,7 @@
   /* WBS outline */
   .se-wbs-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px;
                 white-space: nowrap; }
+  .se-wbs-row:nth-child(even) { background: #151a24; }
   .se-wbs-row:hover { background: #1a2230; }
   .se-twisty { width: 12px; color: #5e6b80; cursor: default; user-select: none; }
   .se-wbs-row .se-twisty:hover { color: #9fb0c6; }
@@ -42,6 +54,11 @@
   .se-badge { font-size: 10px; color: #76d1a0; background: #16271f; padding: 1px 6px;
               border-radius: 8px; }
   .se-dates { font-size: 10px; color: #6f7d93; margin-left: 6px; }
+  .se-row-actions { margin-left: auto; display: inline-flex; gap: 3px; align-items: center; }
+  .se-row-actions button { font-size: 10px; line-height: 1; padding: 2px 6px; cursor: pointer; }
+  .se-indent-btn { color: #9fb0c6; }
+  .se-indent-btn:disabled { opacity: .3; cursor: default; }
+  .se-add-sub-btn { color: #76d1a0; }
   /* CPM: critical rail + float */
   .se-wbs-row.se-critical { box-shadow: inset 3px 0 0 #e0556b; }
   .se-float { font-size: 10px; margin-left: 6px; }
@@ -77,6 +94,16 @@
   .g-handle:hover { color: #fff; }
   .g-link-mode .g-bar { outline: 1px dashed #4a6fa5; }
   .gantt-empty { color: #6f7d93; font-style: italic; padding: 14px 4px; }
+  .g-row:nth-child(even) { background: #151a24; }
+  /* §SE-5b milestone diamond — a 0-day task */
+  .g-milestone { position: absolute; top: 4px; width: 16px; height: 16px; background: #e0b070;
+                 transform: rotate(45deg); margin-left: -8px; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .g-milestone.crit { background: #d2475c; }
+  /* §SE-5b today marker — vertical line across the whole Gantt body */
+  .g-today-line { position: absolute; top: -16px; bottom: 0; width: 1px; background: #4fc3f7;
+                  z-index: 1; opacity: .6; pointer-events: none; }
+  .g-today-line::before { content: 'today'; position: absolute; top: -14px; left: 3px; font-size: 9px;
+                           color: #4fc3f7; opacity: 1; }
   /* dependency rows */
   .se-dep-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
                 border-bottom: 1px solid #1c2531; }
@@ -102,12 +129,38 @@
 <body>
 <header>
   <h1>Schedule Editor</h1>
-  <span class="sub">WBS outline + dependencies</span>
-  <button id="se-import-btn" title="Import a Primavera P6 programme (.xer or .xml/PMXML) — adopt its WBS, logic and dates onto this model, then bind tasks to elements">⤓ Import P6</button>
-  <input id="se-import-file" type="file" accept=".xer,.xml" style="display:none">
-  <label id="se-autobind-wrap" title="If the activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="se-autobind-cb" type="checkbox" checked> auto-bind by convention</label>
+  <span class="sub">WBS &middot; Dependencies &middot; CPM &middot; Gantt</span>
   <span id="se-bld">—</span>
 </header>
+<div class="se-ribbon">
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Generate</span>
+    <button id="se-generate-btn" title="Materialize (or regenerate) the rule-based default schedule from this model — phases + every element assigned. Safe to re-run; does nothing if this model already carries an imported programme.">⚙ Generate</button>
+  </div>
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Import</span>
+    <button id="se-import-btn" title="Import a Primavera P6 programme (.xer or .xml/PMXML) — adopt its WBS, logic and dates onto this model, then bind tasks to elements">⤓ P6</button>
+    <input id="se-import-file" type="file" accept=".xer,.xml" style="display:none">
+    <label id="se-autobind-wrap" title="If the activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="se-autobind-cb" type="checkbox" checked> auto-bind</label>
+  </div>
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Export</span>
+    <button id="se-export-msp-btn" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project, or re-imports here via ⤓ P6.">⤒ MS Project</button>
+    <button id="se-export-pmxml-btn" title="Export the current schedule as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here via ⤓ P6. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">⤒ P6 XML</button>
+    <button id="se-export-xer-btn" title="Export the current schedule as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as ⤒ P6 XML.">⤒ P6 XER</button>
+  </div>
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Compute</span>
+    <button id="se-cpm-btn" title="Critical-path forward/backward pass over the dependency graph">▶ CPM</button>
+    <span id="se-cpm-out"></span>
+  </div>
+  <div class="se-ribbon-group">
+    <span class="se-ribbon-label">Zoom</span>
+    <button class="zoom-btn" data-zoom="day" title="Show daily ticks">Day</button>
+    <button class="zoom-btn" data-zoom="week" title="Show weekly ticks">Week</button>
+    <button class="zoom-btn" data-zoom="month" title="Show monthly ticks">Month</button>
+  </div>
+</div>
 <div id="se-status">Initialising…</div>
 <main>
   <section class="pane left">
@@ -116,10 +169,6 @@
   </section>
   <section class="pane right">
     <h2>Dependencies</h2>
-    <div class="se-toolbar">
-      <button id="se-cpm-btn" title="Critical-path forward/backward pass over the dependency graph">▶ Compute CPM</button>
-      <span id="se-cpm-out"></span>
-    </div>
     <div id="se-deps"></div>
     <div class="se-add">
       <label>Add link:</label>
@@ -138,9 +187,9 @@
 </section>
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
 <script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
-<script src="schedule_author.js?v=8" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=10" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="foreign_schedule.js?v=1" onerror="console.warn('§LOAD_FAIL foreign_schedule.js')"></script>
-<script src="schedule_sync.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_editor_ui.js?v=6" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+<script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
+<script src="schedule_editor_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>
 </html>

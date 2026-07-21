@@ -179,10 +179,16 @@
   // is NOT part of the hash, so the chain stays byte-identical across devices while sigs vary.
   var GENESIS = '0'.repeat(64);
   var _signer = null;   // optional { sign: async(hashHex)->sigHex, verify: async(hashHex,sigHex)->bool }
+  var _signerKid = null;   // optional: this device's own roster identity (its pubKeyHex) — see setSigner
 
   // Set an edge signer to turn on W-SIGN. Key custody lives at the edge (the device/merchant),
   // never in this module. Leave unset for W-CHAIN-only (tamper-evidence without signatures).
-  function setSigner(signer) { _signer = signer; }
+  // kid (optional) — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §DocAction Cross-Device Attribution S8
+  // — Witness: W-MULTI-DEVICE-VERIFY. This device's own roster identity (its pubKeyHex, from
+  // erp_signer.js installSigner()), stamped into every NEW v2 op's params as `signed_by` (see
+  // _stampSigv below) so a roster-gated verifier elsewhere can attribute the op to the device that
+  // actually signed it. Omit for W-SIGN-only (signing on, no cross-device attribution stamped).
+  function setSigner(signer, kid) { _signer = signer; _signerKid = kid || null; }
 
   // T2 (prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION, bim-compiler) — Witness: W-CONTENT-SIGN.
   // CONTENT-ADDRESSED SIGNING, additive-version (no flag-day, history never re-signed):
@@ -241,6 +247,11 @@
     if (_sigCanonical !== 2 || !params || typeof params !== 'object') return params;
     var out = {}; for (var k in params) if (Object.prototype.hasOwnProperty.call(params, k)) out[k] = params[k];
     out._sigv = 2;
+    // S8 (W-MULTI-DEVICE-VERIFY): stamp the signing device's own roster kid alongside _sigv:2 — a
+    // SIGNED fact (inside the v2-content-hashed payload), same additive pattern as _sigv itself. Only
+    // meaningful for v2 rows (a v1 sig can't survive a rebase/renumber regardless — attribution would
+    // be moot), so bundled into this same gate rather than a separate flag.
+    if (_signerKid) out.signed_by = _signerKid;
     return out;
   }
 
@@ -328,6 +339,92 @@
     }
     console.log('§KRN_SEAL_FROM fromId=' + tip.id + ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
     return { sealed: sealed, tip: prev, fromId: tip.id };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1/F2/F10 — Witness: W-OPLOG-APPEND / W-OPLOG-MIGRATE.
+  // Generic per-op store mechanics — deliberately NOT tied to any one caller's IndexedDB database/store
+  // names (crud_overlay.js's sidecar passes its own `glassbowl_kernel_ops`/`ops`). This module owns the
+  // kernel_ops ROW SHAPE (rowsByIds/allRowsPlain/replayRowsInto); the caller owns which IDB database is
+  // open and the cross-tab lock (F3) around using them — separation of concern per this fix's boundaries.
+  // ════════════════════════════════════════════════════════════════════════
+  var OPS_ROW_COLS = ['id', 'op_uuid', 'timestamp', 'op_type', 'parameters', 'input_guids', 'output_guid',
+                       'undone', 'prev_hash', 'op_hash', 'sig', 'gid', 'branch_id', 'user_tag'];
+
+  // rowsByIds — snapshot SPECIFIC kernel_ops rows (by id) as plain JSON-able objects, in id order. Used
+  // to capture exactly the row(s) a commit/undo/redo just touched, for appending to the ops store (F1).
+  function rowsByIds(db, ids) {
+    ensureTable(db);
+    if (!ids || !ids.length) return [];
+    var r = db.exec('SELECT ' + OPS_ROW_COLS.join(',') + ' FROM kernel_ops WHERE id IN (' +
+                     ids.map(Number).join(',') + ') ORDER BY id');
+    if (!r.length) return [];
+    return r[0].values.map(function (v) { var o = {}; OPS_ROW_COLS.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+  // allRowsPlain — snapshot the WHOLE kernel_ops table as plain objects, id order. Used by F10 migration
+  // to explode a legacy whole-blob export into individual per-op records.
+  function allRowsPlain(db) {
+    ensureTable(db);
+    var r = db.exec('SELECT ' + OPS_ROW_COLS.join(',') + ' FROM kernel_ops ORDER BY id');
+    if (!r.length) return [];
+    return r[0].values.map(function (v) { var o = {}; OPS_ROW_COLS.forEach(function (c, i) { o[c] = v[i]; }); return o; });
+  }
+  // replayRowsInto — INSERT OR REPLACE each row VERBATIM (id/prev_hash/op_hash/sig preserved, never
+  // re-sealed) into an already ensureTable'd kernel_ops table, in the array's given order (F2: hydration
+  // = read-all + replay). "OR REPLACE" is what lets a LATER snapshot of the same row id — e.g. a row
+  // re-appended after undo/redo flips its `undone` flag — correctly supersede an earlier snapshot of the
+  // same id on replay: the IndexedDB *record* itself is still only ever add()-ed, never put()/overwritten
+  // (F1's structural guarantee is untouched); "last snapshot per id wins" is resolved here, in memory,
+  // from an ORDERED read-all, not by mutating storage.
+  function replayRowsInto(db, rows) {
+    ensureTable(db);
+    var ph = OPS_ROW_COLS.map(function () { return '?'; }).join(',');
+    for (var i = 0; i < rows.length; i++) {
+      var o = rows[i];
+      db.run('INSERT OR REPLACE INTO kernel_ops (' + OPS_ROW_COLS.join(',') + ') VALUES (' + ph + ')',
+             OPS_ROW_COLS.map(function (c) { return o[c] !== undefined ? o[c] : null; }));
+    }
+  }
+  // appendOpsRecords(idbDb, storeName, rows) -> Promise<Array<autoKey>> — add() each row into storeName
+  // within ONE readwrite transaction; resolves with the assigned autoIncrement key per row, in the same
+  // order as `rows`. add() NEVER put(): two callers' concurrent transactions against the SAME
+  // autoIncrement store cannot physically collide — IndexedDB's own per-store write-transaction queueing
+  // assigns each add() a distinct, monotonically-increasing key (a platform guarantee, not new code).
+  // This is what makes F1's "two tabs' commits cannot physically destroy each other's record" structural
+  // rather than merely defended against.
+  function appendOpsRecords(idbDb, storeName, rows) {
+    return new Promise(function (resolve, reject) {
+      if (!rows || !rows.length) { resolve([]); return; }
+      try {
+        var keys = new Array(rows.length);
+        var tx = idbDb.transaction(storeName, 'readwrite');
+        var store = tx.objectStore(storeName);
+        rows.forEach(function (r, i) {
+          var req = store.add(r);
+          req.onsuccess = function (e) { keys[i] = e.target.result; };
+        });
+        tx.oncomplete = function () { resolve(keys); };
+        tx.onerror = function () { reject(tx.error || new Error('appendOpsRecords tx error')); };
+        tx.onabort = function () { reject(tx.error || new Error('appendOpsRecords tx abort')); };
+      } catch (e) { reject(e); }
+    });
+  }
+  // readAllOpsRecords(idbDb, storeName) -> Promise<Array<row>> — cursor-scan the WHOLE store in key
+  // order (autoIncrement key order = append order = the canonical total order this fix's hydration
+  // replays in, F2).
+  function readAllOpsRecords(idbDb, storeName) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var out = [];
+        var tx = idbDb.transaction(storeName, 'readonly');
+        var req = tx.objectStore(storeName).openCursor();
+        req.onsuccess = function (e) {
+          var cur = e.target.result;
+          if (cur) { out.push(cur.value); cur.continue(); } else { resolve(out); }
+        };
+        req.onerror = function () { reject(req.error || new Error('readAllOpsRecords cursor error')); };
+      } catch (e) { reject(e); }
+    });
   }
 
   // Implementing ENGINE_FULL_ERP_ISSUES.md §I-J — Witness: W-RATE-INPUT
@@ -809,8 +906,13 @@
     stableStringify: stableStringify,     // T2: the shared canonical serializer (agrees with teams/connectors.js)
     _canonicalV2: _canonicalV2,           // T2: content-addressed signable payload (no id/prev — merge-safe)
     _contentHash: _contentHash,           // T2: sha256('cs2|' + _canonicalV2) — what a v2 sig attests (async)
-    _isV2: _isV2                          // T2: is this row content-signed? (reads the SIGNED _sigv marker)
+    _isV2: _isV2,                         // T2: is this row content-signed? (reads the SIGNED _sigv marker)
+    rowsByIds:         rowsByIds,         // F1/F10 (W-OPLOG-APPEND): snapshot specific rows as plain objects
+    allRowsPlain:       allRowsPlain,     // F10 (W-OPLOG-MIGRATE): snapshot the whole table (legacy-blob explode)
+    replayRowsInto:     replayRowsInto,   // F2 (W-OPLOG-APPEND): INSERT OR REPLACE rows verbatim, in order
+    appendOpsRecords:   appendOpsRecords, // F1: add() rows into an IDB store, resolves assigned autoKeys
+    readAllOpsRecords:  readAllOpsRecords // F2: cursor-scan a whole IDB store in key order
   };
 
-  console.log('§KERNEL_OPS_LOADED v12 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental)');
+  console.log('§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)');
 })();

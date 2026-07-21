@@ -408,6 +408,13 @@
     var b3 = cfg.b3, el = cfg.el;
     var pos = q1(b3, 'SELECT * FROM c_pos LIMIT 1');
     if (!pos) { cfg.status('No POS station (c_pos) in this tenant'); return; }
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — the overlay's
+    // native ✕ only tore down #posted-overlay, not the body-level cart float/dock (see the onClose hook
+    // below for the real fix); a stray pair could survive a prior visit. Guard re-open: never stack a
+    // second float/dock on top of a leftover one.
+    ['pos-float-panel', 'pos-dock'].forEach(function (id) {
+      var stale = document.getElementById(id); if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    });
     var plv = q1(b3, 'SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=?', pos.m_pricelist_id);
     var tiles = qa(b3,
       'SELECT k.c_poskey_id, k.m_product_id, p.name, pp.pricestd FROM c_poskey k ' +
@@ -654,14 +661,23 @@
       (dtSO ? ' doctype=' + dtSO.c_doctype_id + ' ship=' + dtSO.c_doctypeshipment_id : '') +
       ' (dictionary-gated docsubtypeso=SO)');
 
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — root cause:
+    // the overlay's native ✕ only tore down #posted-overlay; the cart float panel + ⋯ dock live at
+    // document.body level (outside the overlay) and were left floating over iDempiere.html. Fix: pass
+    // this as the overlay's onClose (below, cfg.overlay(...)) so EVERY close path (✕ tap, back-gesture)
+    // disposes them too — one teardown, reused by the dock Home button as well (it now just clicks the
+    // overlay's own ✕ so the whole app has exactly one "POS is closed" moment).
+    function _disposePosChrome() {
+      [floatPanel, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+      console.log('§POS-HOME closed dispose=float+dock');
+    }
     // §D-3 ⋯ dock — home · import · receipt · deliver-later (data-gated) — reveal-up
     var homeBtn   = document.createElement('button'); homeBtn.className = 'pos-dock-item'; homeBtn.title = 'Close POS';
     homeBtn.innerHTML = _svgIcon('home', 18);
     homeBtn.addEventListener('pointerup', function () {
-      var ov = document.getElementById('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-      // dispose POS-owned body floats (not inside the overlay — must be removed explicitly)
-      [floatPanel, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
-      console.log('§POS-HOME closed dispose=float+modal+dock');
+      // trigger the SAME close the overlay's own ✕ uses, so onClose (→ _disposePosChrome) always fires.
+      var x = document.querySelector('#posted-overlay .posted-ov-x');
+      if (x) x.click(); else _disposePosChrome();   // fallback if the overlay DOM ever changes shape
     });
     var importBtn = document.createElement('button'); importBtn.className = 'pos-dock-item'; importBtn.id = 'pos-pill-import';
     importBtn.title = 'Register a new product (snap · scan · price)';
@@ -1520,7 +1536,7 @@
     itemsBody.insertBefore(stationInfo, cartBox);
 
     renderCart();
-    cfg.overlay('POS — ' + pos.name, wrap);
+    cfg.overlay('POS — ' + pos.name, wrap, _disposePosChrome);
     console.log('§POS-LIVE open station=' + pos.c_pos_id + ' tiles=' + tiles.length + ' priced=' + tiles.length + ' handAuthored=0');
     // §T1-SPEC lens.1: no auto-fire on open — replenishment is generated on the explicit button
     console.log('§POS-REPLENISH-IDLE trigger=#pos-repl-generate (staged review; nothing proposed until asked)');
