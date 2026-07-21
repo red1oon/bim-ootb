@@ -1397,7 +1397,9 @@ function setupPanels(A) {
       // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
       // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
       // tm-lod. Default OFF; no-ops with a toast on <50k-element buildings (§DLOD_NAV_GATE).
-      { id: 'dlodnav',    name: 'Nav LOD (large bldgs)', pill: false,
+      // 2026-07-21 user feedback: key 'o' (bOx; 'b' is Background) + listed in Navigate drawer —
+      // v1 registered the entry but put it in NO drawer id-list, so the icon rendered nowhere.
+      { id: 'dlodnav',    name: 'Nav LOD (large bldgs)', key: 'o', pill: false,
         icon: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
         fn: function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); },
         isActive: function() { return !!window._dlodNavOn; },
@@ -1675,7 +1677,7 @@ function setupPanels(A) {
     // §FLY_TO_NAVIGATE (2026-07-18, user ask): Fly Tour is camera navigation, not inspection — moved
     // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
     // this only changes which drawer lists it.
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly']);
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
