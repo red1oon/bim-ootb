@@ -382,6 +382,27 @@
       _pillOn = true; window._dlodNavOn = true;
       console.log('§DLOD_NAV_TOGGLE on=true');
       if (!_rafId) _rafId = requestAnimationFrame(_tick);
+      // §DLOD_NAV_ROOMS: a >50k-element building crossing the nav-LOD gate is the same "about to
+      // navigate seriously" signal Fly Tour already treats as "make sure rooms are fresh"
+      // (tour.js's A._prepareGraphTour: A.loadNavigate() then A.ensureRooms()) — reuses that exact
+      // call, not a fork. Deferred via requestIdleCallback (same idiom as effects.js's staffage
+      // preload and navigate_find.js's ghost-shell build) rather than fired immediately: measured
+      // live, loadNavigate()'s 10-script chain contends hard with an in-flight geometry-streaming
+      // pipeline on exactly the large buildings this gate targets — firing it the instant 'o' is
+      // pressed risks competing with the box-proxy's own frame budget for the one thing DLOD-nav
+      // exists to protect. Idle-deferred, this only warms rooms up opportunistically once the main
+      // thread is actually free, for whatever Find/Fly/Cinema feature runs next.
+      if (app && app.loadNavigate) {
+        var _warmRooms = function() {
+          app.loadNavigate().then(function() {
+            return app.ensureRooms ? app.ensureRooms({}) : null;
+          }).then(function(res) {
+            if (res) console.log('§DLOD_NAV_ROOMS status=' + res.status + ' source=' + (res.source || 'none') + ' rooms=' + (res.rooms != null ? res.rooms : '-'));
+          }).catch(function(e) { console.warn('§DLOD_NAV_ROOMS_ERR ' + (e && e.message)); });
+        };
+        if (window.requestIdleCallback) window.requestIdleCallback(_warmRooms, { timeout: 8000 });
+        else setTimeout(_warmRooms, 5000);
+      }
     } else {
       _pillOn = false; window._dlodNavOn = false;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
