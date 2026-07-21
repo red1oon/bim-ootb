@@ -1102,6 +1102,11 @@
         _pathGraphCache = null; _pathGraphBld = null;
         _corridorLabelsCache = null; _corridorLabelsBld = null;
         _roomVolCache = null; _roomVolCacheBld = null; // §ROOM-VOL-CACHE: injected rooms invalidate it too
+        // §TOUR_ROUTE_CACHE.md §6 — a stage-3 version-triggered recompile (§NEEDLE_VERSION_STALE
+        // above) means the Fly tour's cached route was planned against the stale room set; bust it
+        // in the same breath so the next Fly press re-plans against the fresh rooms instead of
+        // fast-pathing straight past _ensureRoomsCore (guarded: tour.js may not be loaded).
+        if (versionStale && A._tourCacheBust) A._tourCacheBust();
         return { status: 'injected', source: source, rooms: roomsN, rects: rectsN };
       } catch (e) {
         console.warn('[NEEDLE] §NEEDLE_INJECT_ERR ' + (e && e.message));
