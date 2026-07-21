@@ -2725,6 +2725,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         : isInv
         ? r.lineCount + ' invoice line' + (r.lineCount === 1 ? '' : 's') + ' folded (QtyInvoiced = QtyOrdered − QtyInvoiced)'
         : r.lineCount + ' order line' + (r.lineCount === 1 ? '' : 's') + ' folded (Qty = PlannedQty − InvoicedQty; Price = PlannedPrice)'));
+      // §GENPROCESS-CONFIRM (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "missing commit wiring") — real
+      // iDempiere's own Generate-Shipments/Invoices UX is preview-then-confirm (this table IS the preview);
+      // the missing half was the commit itself. r.ops here is the SAME CREATE_DOCUMENT+N×CREATE_LINE group
+      // erp_engine.js's buildDoc already produces (its own header: "Verbs return ops[]; the kernel applies
+      // + commitOps them") — pos_lens.js's buildSaleGroup/buildRegisterGroup already commit the identical
+      // shape via KO.commitGroup; window.__crud.applyOpGroup (crud_overlay.js) wraps that same primitive.
+      var cfWrap = el('div', 'actions'); cfWrap.style.cssText = 'margin-top:10px';
+      var cfBtn = el('button', 'run', 'Confirm & Post'); cfBtn.setAttribute('data-genprocess-confirm', '1');
+      var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
+      cfBtn.addEventListener('click', function () {
+        cfBtn.disabled = true; cfBtn.textContent = 'Posting…';
+        window.__crud.applyOpGroup(r.ops, function (out) {
+          if (!out || !out.committed) {
+            cfBtn.disabled = false; cfBtn.textContent = 'Confirm & Post';
+            cfMsg.textContent = 'Not posted: ' + ((out && out.reason) || 'unknown');
+            console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=N reason=' + ((out && out.reason) || 'unknown'));
+            return;
+          }
+          cfBtn.textContent = 'Posted ✓'; cfBtn.style.opacity = '0.6';
+          cfMsg.textContent = (isShip ? 'Shipment' : isInv ? 'Invoice' : 'Order') + ' posted — group ' + String(out.gid).slice(0, 8) + '… · ' + out.ids.length + ' ops · signed=' + (out.verifyOk ? 'Y' : 'N');
+          console.log('§GENPROCESS-CONFIRM table=' + h.table + ' committed=Y gid=' + out.gid + ' ops=' + out.ids.length + ' verifyOk=' + out.verifyOk);
+        });
+      });
+      cfWrap.appendChild(cfBtn); pane.appendChild(cfWrap); pane.appendChild(cfMsg);
     }
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
