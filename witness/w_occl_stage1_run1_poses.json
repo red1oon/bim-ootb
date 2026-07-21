@@ -1,0 +1,258 @@
+[
+ {
+  "P": {
+   "px": -33.560168840719136,
+   "py": -1.7753997075330037,
+   "pz": -6.916661989321032,
+   "qx": -0.005423824876090276,
+   "qy": 0.4096232940097564,
+   "qz": 0.002435473382335212,
+   "qw": 0.9122353904545221,
+   "actIdx": 2,
+   "interiorFrame": 1
+  },
+  "res": {
+   "activeTotal": 27062,
+   "classified": 27062,
+   "occluded": 26710,
+   "clear": 352,
+   "selfFirst": 314,
+   "noHit": 38,
+   "noCenter": 0,
+   "ms": 150372,
+   "objWithActive": 4785,
+   "objFullyOccl": 4680,
+   "objMixed": 56,
+   "objAllClear": 49,
+   "elsInFullyOccl": 25916,
+   "drawCalls": 4916,
+   "triangles": 4484633
+  },
+  "pct": 98.69928312763284,
+  "ceilPct": 97.80564263322884
+ },
+ {
+  "P": {
+   "px": 20.176830206128994,
+   "py": -3.2654956214237205,
+   "pz": 5.721641050408928,
+   "qx": -0.0012524087265501202,
+   "qy": -0.8384737659946558,
+   "qz": -0.0019270330984577624,
+   "qw": 0.5449371172479979,
+   "actIdx": 2,
+   "interiorFrame": 351
+  },
+  "res": {
+   "activeTotal": 24177,
+   "classified": 24177,
+   "occluded": 24114,
+   "clear": 63,
+   "selfFirst": 54,
+   "noHit": 9,
+   "noCenter": 0,
+   "ms": 132641,
+   "objWithActive": 3747,
+   "objFullyOccl": 3715,
+   "objMixed": 28,
+   "objAllClear": 4,
+   "elsInFullyOccl": 22948,
+   "drawCalls": 4552,
+   "triangles": 3945235
+  },
+  "pct": 99.7394217644869,
+  "ceilPct": 99.14598345342941
+ },
+ {
+  "P": {
+   "px": 58.70546987577334,
+   "py": -3.334405015280594,
+   "pz": -9.469830088693778,
+   "qx": -3.5135800220887504e-15,
+   "qy": 0.3096796809855228,
+   "qz": 1.1443389670950301e-15,
+   "qw": 0.9508409410541308,
+   "actIdx": 2,
+   "interiorFrame": 701
+  },
+  "res": {
+   "activeTotal": 32929,
+   "classified": 32929,
+   "occluded": 32916,
+   "clear": 13,
+   "selfFirst": 9,
+   "noHit": 4,
+   "noCenter": 0,
+   "ms": 215218,
+   "objWithActive": 5719,
+   "objFullyOccl": 5710,
+   "objMixed": 9,
+   "objAllClear": 0,
+   "elsInFullyOccl": 32742,
+   "drawCalls": 5717,
+   "triangles": 5098939
+  },
+  "pct": 99.96052112120016,
+  "ceilPct": 99.84262983038992
+ },
+ {
+  "P": {
+   "px": -20.457921826503686,
+   "py": -3.3344050152805904,
+   "pz": 2.4198302118761283,
+   "qx": -1.409652378169508e-16,
+   "qy": 0.024098583062730175,
+   "qz": 3.398049330266512e-18,
+   "qw": 0.9997095869773224,
+   "actIdx": 2,
+   "interiorFrame": 1051
+  },
+  "res": {
+   "activeTotal": 27816,
+   "classified": 27816,
+   "occluded": 27807,
+   "clear": 9,
+   "selfFirst": 9,
+   "noHit": 0,
+   "noCenter": 0,
+   "ms": 159871,
+   "objWithActive": 4457,
+   "objFullyOccl": 4449,
+   "objMixed": 6,
+   "objAllClear": 2,
+   "elsInFullyOccl": 27784,
+   "drawCalls": 5057,
+   "triangles": 4413542
+  },
+  "pct": 99.96764452113891,
+  "ceilPct": 99.82050706753422
+ },
+ {
+  "P": {
+   "px": 57.74574119876719,
+   "py": -3.334405015280594,
+   "pz": -11.838215099223737,
+   "qx": 5.885332329175716e-17,
+   "qy": 0.9096504920393657,
+   "qz": 1.2888598937036753e-16,
+   "qw": -0.4153745085251861,
+   "actIdx": 2,
+   "interiorFrame": 1401
+  },
+  "res": {
+   "activeTotal": 30510,
+   "classified": 30510,
+   "occluded": 30504,
+   "clear": 6,
+   "selfFirst": 4,
+   "noHit": 2,
+   "noCenter": 0,
+   "ms": 186301,
+   "objWithActive": 5170,
+   "objFullyOccl": 5164,
+   "objMixed": 6,
+   "objAllClear": 0,
+   "elsInFullyOccl": 30476,
+   "drawCalls": 5365,
+   "triangles": 4989920
+  },
+  "pct": 99.9803343166175,
+  "ceilPct": 99.88394584139265
+ },
+ {
+  "P": {
+   "px": -4.006564805485149,
+   "py": 0.1670973487847212,
+   "pz": -27.79695689903833,
+   "qx": 0.021598703854794697,
+   "qy": 0.6514234949582701,
+   "qz": -0.018557476631448636,
+   "qw": 0.7581797585462294,
+   "actIdx": 5,
+   "interiorFrame": 1751
+  },
+  "res": {
+   "activeTotal": 30820,
+   "classified": 30820,
+   "occluded": 30814,
+   "clear": 6,
+   "selfFirst": 5,
+   "noHit": 1,
+   "noCenter": 0,
+   "ms": 206907,
+   "objWithActive": 5138,
+   "objFullyOccl": 5134,
+   "objMixed": 3,
+   "objAllClear": 1,
+   "elsInFullyOccl": 30707,
+   "drawCalls": 5608,
+   "triangles": 4865457
+  },
+  "pct": 99.9805321219987,
+  "ceilPct": 99.92214869599066
+ },
+ {
+  "P": {
+   "px": -41.47722059235737,
+   "py": 0.4652448024009544,
+   "pz": 12.086637134109976,
+   "qx": -2.9613604339294406e-13,
+   "qy": 0.8849901145217496,
+   "qz": -5.628693040831566e-13,
+   "qw": -0.46560981218052155,
+   "actIdx": 8,
+   "interiorFrame": 2101
+  },
+  "res": {
+   "activeTotal": 35688,
+   "classified": 35688,
+   "occluded": 35670,
+   "clear": 18,
+   "selfFirst": 16,
+   "noHit": 2,
+   "noCenter": 0,
+   "ms": 266203,
+   "objWithActive": 5763,
+   "objFullyOccl": 5752,
+   "objMixed": 9,
+   "objAllClear": 2,
+   "elsInFullyOccl": 35579,
+   "drawCalls": 5825,
+   "triangles": 5389383
+  },
+  "pct": 99.94956287827841,
+  "ceilPct": 99.80912719069929
+ },
+ {
+  "P": {
+   "px": -5.497711795460457,
+   "py": 0.4652448024009532,
+   "pz": 15.211852867549657,
+   "qx": 1.7871808739895633e-16,
+   "qy": -0.3732366935797411,
+   "qz": 7.189991224327394e-17,
+   "qw": 0.9277361535294734,
+   "actIdx": 11,
+   "interiorFrame": 2451
+  },
+  "res": {
+   "activeTotal": 21002,
+   "classified": 21002,
+   "occluded": 20976,
+   "clear": 26,
+   "selfFirst": 26,
+   "noHit": 0,
+   "noCenter": 0,
+   "ms": 113516,
+   "objWithActive": 3400,
+   "objFullyOccl": 3386,
+   "objMixed": 13,
+   "objAllClear": 1,
+   "elsInFullyOccl": 20851,
+   "drawCalls": 3791,
+   "triangles": 3628006
+  },
+  "pct": 99.87620226645082,
+  "ceilPct": 99.58823529411765
+ }
+]
