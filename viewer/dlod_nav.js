@@ -1,0 +1,409 @@
+/**
+ * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
+ * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+ * SPDX-License-Identifier: MIT
+ */
+// dlod_nav.js — Implementing FLY_TOUR_DLOD_SCALE.md §9 (v1) — Witnesses: W-DLOD-NAV-EQUIV,
+// W-DLOD-NAV-PROXY, W-DLOD-NAV-PERF, W-DLOD-NAV-NO-REBUILD.
+//
+// Nav-scope DLOD box-proxy: during free orbit/pan and Fly Tour on large buildings (>50k
+// elements), far/out-of-frustum elements render as wireframe boxes (TM_DLOD_SCALE.md §9's
+// established proxy look), real mesh otherwise. SIBLING of time_machine.js's TM-only DLOD —
+// reuses the PATTERN, shares NO state with it (four prior retractions all involved coupled
+// visibility systems; mutual exclusion instead: this module disengages whenever TM is open).
+//
+// §8 FINDINGS combo (measured, both SwiftShader + RTX 4060): hysteresis (promote ≤50m in-frustum,
+// demote >80m or 5m-outside-frustum) + 10-frame overlay-hoist cross-fade + depthWrite:false on
+// fading materials. Overlay-hoist (§8 ADDENDUM B) because BatchedMesh has no per-instance alpha
+// on r185 — hide slot + same-frame standalone copy measured pixel-identical.
+//
+// ENGAGE GATE (§9; any failure ⇒ full disengage+restore): pill ON, >50k elements, !streaming,
+// !TM (_tmOn), !Find isolation (activeGuidFilter — §3 USER-DICTATED scope), !storey/disc filter,
+// !Cinema (_cinemaOrbitActive/_maxqActive), !Photoreal still (_stillRefineActive).
+(function () {
+  'use strict';
+
+  function A() { return window.APP || window.A; }
+
+  var NAV_MIN_ELEMENTS = 50000;    // LARGE_BUILDING, time_machine.js:471 — same proven gate
+  var PROMOTE_DIST = 50, DEMOTE_DIST = 80;          // §8: S261's band, now with fade on top
+  var PROMOTE_SQ = PROMOTE_DIST * PROMOTE_DIST, DEMOTE_SQ = DEMOTE_DIST * DEMOTE_DIST;
+  var FRUSTUM_MARGIN = 5;          // §9: angular hysteresis — must be 5m OUTSIDE frustum to demote
+  var FADE_FRAMES = 10;            // §8 FINDINGS #4: N=10 sufficed; 5 and 20 both worse
+  var FADE_CAP = 128;              // §9: transitions beyond cap SNAP (= shipped TM-DLOD behavior)
+  var EVAL_THROTTLE_MS = 150;      // full-index re-evaluation cadence while camera moves
+  var DEPTH_MAX_RADIUS = 25;       // §9 shine-thru fix: no depth pass for oversized bboxes — a
+                                   // giant slab's invisible occluder would erase REAL nearby
+                                   // geometry (center-distance ≠ bbox extent); wireframe-only there
+
+  var _pillOn = false;             // user toggle — OFF = this module does exactly nothing
+  var _engaged = false;            // gate currently satisfied and proxy state applied
+  var _rafId = null;
+  var _boxIndex = null;            // guid → {mesh, idx, matrix, pos, radius, state:'real'|'box', boxVisible}
+  var _boxMeshes = null;           // wireframe InstancedMesh per discipline (nav-owned set)
+  var _boxBld = null;
+  var _realIndex = null;           // guid → {kind:'mesh'|'inst'|'batch', obj, idx|slotId, meta}
+  var _fades = [];                 // active transitions
+  var _unitBox = null, _zeroM = null, _frustum = null, _psm = null, _sphere = null, _m4 = null;
+  var _lastCamSig = null, _lastEvalT = 0;
+  var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0 };
+  window.__dlodNav = _stats;
+
+  function _gateBlockReason(app) {
+    if (!app || !app.scene || !app.camera || typeof THREE === 'undefined') return 'no-app';
+    if (!(app.activeBuildingTotal > NAV_MIN_ELEMENTS)) return 'small-building';
+    if (app.streaming) return 'streaming';
+    if (app._tmOn) return 'tm-open';                          // TM owns visibility when open
+    if (app.activeGuidFilter) return 'find-isolation';        // §3 scope decision: full disengage
+    if (app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) return 'storey-filter';
+    if (app.hiddenDiscs && app.hiddenDiscs.size > 0) return 'disc-filter';
+    if (app._cinemaOrbitActive || app._maxqActive) return 'cinema';   // §3: Alt+C excluded
+    if (app._stillRefineActive) return 'photoreal';                   // §3: Alt+P excluded
+    return null;
+  }
+
+  // ── Box set + index (pattern: time_machine.js _dlodBuildBoxes, TM_DLOD_SCALE.md §9) ──
+  function _buildBoxes(app) {
+    if (_boxIndex && _boxBld === app.activeBuilding) return true;
+    if (!app.dbQuery || !app.ifc2three) { console.log('§DLOD_NAV_BUILD_SKIP deps'); return false; }
+    var t0 = performance.now(), rows;
+    try {
+      rows = app.dbQuery("SELECT t.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.discipline" +
+        " FROM element_transforms t JOIN elements_meta m ON m.guid = t.guid WHERE t.center_x IS NOT NULL") || [];
+    } catch (e) { console.log('§DLOD_NAV_BUILD_SKIP query ' + e.message); return false; }
+    _disposeBoxes();
+    var byDisc = {};
+    for (var i = 0; i < rows.length; i++) { var d = rows[i][7] || '_'; (byDisc[d] = byDisc[d] || []).push(rows[i]); }
+    var discs = Object.keys(byDisc);
+    if (!discs.length) { console.log('§DLOD_NAV_BUILD_EMPTY rows=' + rows.length); return false; }
+    if (!_unitBox) _unitBox = new THREE.BoxGeometry(1, 1, 1);
+    if (!_zeroM) _zeroM = new THREE.Matrix4().makeScale(0, 0, 0);
+    var index = Object.create(null), meshes = [], total = 0;
+    var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
+    for (var di = 0; di < discs.length; di++) {
+      var disc = discs[di], drows = byDisc[disc];
+      var color = (app.DISC_COLORS && app.DISC_COLORS[disc]) || app.DEFAULT_COLOR || 0x8899aa;
+      // Wireframe look verbatim — feedback_no_fake_lod_unbreakable.md: boxes must read as proxy
+      var mat = new THREE.MeshBasicMaterial({ color: color, wireframe: true, transparent: true, opacity: 0.4 });
+      var im = new THREE.InstancedMesh(_unitBox, mat, drows.length);
+      im.frustumCulled = false;
+      im.userData.isBboxPlaceholder = true;  // proven pick-exclusion (picking.js:257)
+      im.userData.isDlodNavProxy = true;     // nav-scope marker (vs isDlodTmProxy)
+      // §9 addition (user: "bboxes must not shine thru"): paired depth-only pass — boxed masses
+      // self-occlude, so interior boxes stop X-raying through boxed facades. Opaque pass
+      // (transparent:false) ⇒ depth is laid down before the transparent wireframes render.
+      var depthMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      var imDepth = new THREE.InstancedMesh(_unitBox, depthMat, drows.length);
+      imDepth.frustumCulled = false;
+      imDepth.userData.isBboxPlaceholder = true;
+      imDepth.userData.isDlodNavDepth = true;
+      // NEVER registered in _instanceMeta/_batchMeta — landmine 1 (TM_DLOD_SCALE.md §5.1)
+      for (var j = 0; j < drows.length; j++) {
+        var r = drows[j], p = app.ifc2three(r[1], r[2], r[3]);
+        var bx = r[4] || 0.3, by = r[5] || 0.3, bz = r[6] || 0.3;
+        _pos.set(p.x, p.y, p.z);
+        _scl.set(bx, bz, by); // axis swap matches _buildMergedGhost / TM box build
+        m4.compose(_pos, _q, _scl);
+        im.setMatrixAt(j, _zeroM);
+        imDepth.setMatrixAt(j, _zeroM);
+        index[r[0]] = { mesh: im, depthMesh: imDepth, idx: j, matrix: m4.clone(), pos: _pos.clone(),
+          radius: Math.sqrt(bx * bx + by * by + bz * bz) * 0.5, state: 'real', boxVisible: false };
+        total++;
+      }
+      im.instanceMatrix.needsUpdate = true;
+      imDepth.instanceMatrix.needsUpdate = true;
+      app.scene.add(imDepth); app.scene.add(im);
+      meshes.push(im); meshes.push(imDepth);
+    }
+    _boxIndex = index; _boxMeshes = meshes; _boxBld = app.activeBuilding;
+    console.log('§DLOD_NAV_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length +
+      ' build_ms=' + (performance.now() - t0).toFixed(0));
+    return true;
+  }
+
+  function _disposeBoxes() {
+    if (_boxMeshes) for (var i = 0; i < _boxMeshes.length; i++) {
+      var m = _boxMeshes[i];
+      if (m.parent) m.parent.remove(m);
+      m.material.dispose(); // geometry (_unitBox) is shared — disposed never, module-lifetime
+    }
+    _boxMeshes = null; _boxIndex = null; _boxBld = null; _realIndex = null;
+  }
+
+  // ── Real-mesh reverse index: guid → where its real representation lives ──
+  function _buildRealIndex(app) {
+    if (_realIndex) return;
+    var t0 = performance.now(), idx = Object.create(null), n = 0, aggs = 0;
+    app.scene.traverse(function (obj) {
+      if (!obj.userData) return;
+      if (obj.userData.isBboxPlaceholder) return; // never index proxies (ours or TM's or load-time)
+      if (obj.userData.guid && obj.isMesh) { idx[obj.userData.guid] = { kind: 'mesh', obj: obj }; n++; return; }
+      // Per-mesh aggregate: per-slot hiding (zero-scale/setVisibleAt) never removes the mesh
+      // OBJECT's draw call — when every slot of a mesh is DLOD-hidden, drop the whole mesh from
+      // the render list (mesh.visible=false), same lever as A.filterInstancedMesh's anyVisible.
+      // Measured on LTU (W-DLOD-NAV-PERF run 2): without this, all-boxed only cut 15675→13639
+      // draw calls — the scene is ~15K small mesh objects, the object-level flag is the lever.
+      if (obj.isInstancedMesh && app._instanceMeta && app._instanceMeta[obj.id]) {
+        var metas = app._instanceMeta[obj.id];
+        var agg = { obj: obj, total: metas.length, hidden: 0 }; aggs++;
+        for (var i = 0; i < metas.length; i++) { idx[metas[i].guid] = { kind: 'inst', obj: obj, idx: i, meta: metas[i], agg: agg }; n++; }
+        return;
+      }
+      if (obj.isBatchedMesh && app._batchMeta && app._batchMeta[obj.id]) {
+        var bmetas = app._batchMeta[obj.id];
+        var bagg = { obj: obj, total: bmetas.length, hidden: 0 }; aggs++;
+        for (var b = 0; b < bmetas.length; b++) { idx[bmetas[b].guid] = { kind: 'batch', obj: obj, slotId: bmetas[b].slotId, meta: bmetas[b], agg: bagg }; n++; }
+      }
+    });
+    _realIndex = idx;
+    console.log('§DLOD_NAV_REALIDX entries=' + n + ' meshAggs=' + aggs + ' ms=' + (performance.now() - t0).toFixed(0));
+  }
+
+  function _hideReal(r) {
+    _stats.mutations++;
+    if (r.kind === 'mesh') { r.obj.visible = false; return; }
+    if (r.kind === 'inst') {
+      if (!r.meta._origMatrix) { r.meta._origMatrix = new THREE.Matrix4(); r.obj.getMatrixAt(r.idx, r.meta._origMatrix); }
+      r.obj.setMatrixAt(r.idx, _zeroM); r.obj.instanceMatrix.needsUpdate = true;
+    } else {
+      r.obj.setVisibleAt(r.slotId, false);
+    }
+    r.agg.hidden++;
+    if (r.agg.hidden >= r.agg.total) r.obj.visible = false; // whole mesh boxed — kill its draw call
+  }
+  function _showReal(r) {
+    _stats.mutations++;
+    if (r.kind === 'mesh') { r.obj.visible = true; return; }
+    if (r.kind === 'inst') {
+      if (r.meta._origMatrix) { r.obj.setMatrixAt(r.idx, r.meta._origMatrix); r.obj.instanceMatrix.needsUpdate = true; }
+    } else {
+      r.obj.setVisibleAt(r.slotId, true);
+    }
+    r.agg.hidden--;
+    if (!r.obj.visible) r.obj.visible = true;
+  }
+  function _realMatrix(r, out) {
+    if (r.kind === 'mesh') { out.copy(r.obj.matrixWorld); return true; }
+    if (r.kind === 'inst') {
+      if (r.meta._origMatrix) out.copy(r.meta._origMatrix); else r.obj.getMatrixAt(r.idx, out);
+      out.premultiply(r.obj.matrixWorld); return true;
+    }
+    r.obj.getMatrixAt(r.slotId, out); out.premultiply(r.obj.matrixWorld); return true;
+  }
+  function _realGeometry(r) {
+    if (r.kind === 'mesh') return r.obj.geometry;
+    if (r.kind === 'inst') return r.obj.geometry;
+    var sg = r.obj.userData.slotGeo; // recorded at flush (streaming.js §9 additive line)
+    return (sg && sg[r.slotId]) || null;
+  }
+  function _realMaterial(r) {
+    var m = r.obj.material;
+    return Array.isArray(m) ? m[0] : m;
+  }
+
+  function _setBoxInstance(e, visible) {
+    if (e.boxVisible === visible) return;
+    e.boxVisible = visible;
+    var m = visible ? e.matrix : _zeroM;
+    e.mesh.setMatrixAt(e.idx, m);
+    e.mesh.instanceMatrix.needsUpdate = true;
+    // §9: paired depth-only pass tracks the wireframe — except oversized bboxes (see DEPTH_MAX_RADIUS)
+    e.depthMesh.setMatrixAt(e.idx, (visible && e.radius <= DEPTH_MAX_RADIUS) ? e.matrix : _zeroM);
+    e.depthMesh.instanceMatrix.needsUpdate = true;
+    _stats.mutations++;
+  }
+
+  // ── Cross-fade transitions (§8 FINDINGS #4: overlay-hoist + depthWrite:false, N=10) ──
+  function _startFade(app, guid, e, r, toBox) {
+    var geo = _realGeometry(r);
+    if (!geo) { _snap(app, e, r, toBox); return; }   // no slot geometry recorded → snap (graceful)
+    if (_fades.length >= FADE_CAP) { _snap(app, e, r, toBox); _stats.snaps++; return; }
+    var m4 = new THREE.Matrix4();
+    _realMatrix(r, m4);
+    var realMat = _realMaterial(r);
+    if (!realMat) { _snap(app, e, r, toBox); return; }
+    var rm = realMat.clone(); rm.transparent = true; rm.depthWrite = false;
+    var realCopy = new THREE.Mesh(geo, rm);
+    realCopy.matrixAutoUpdate = false; realCopy.matrix.copy(m4);
+    realCopy.userData.isDlodNavOverlay = true; realCopy.userData.isBboxPlaceholder = true; // pick-excluded
+    var bm = e.mesh.material.clone(); bm.depthWrite = false; // wireframe, already transparent
+    var boxCopy = new THREE.Mesh(_unitBox, bm);
+    boxCopy.matrixAutoUpdate = false; boxCopy.matrix.copy(e.matrix);
+    boxCopy.userData.isDlodNavOverlay = true; boxCopy.userData.isBboxPlaceholder = true;
+    // same-frame swap: hide both canonical representations, overlays take over (pixel-identical, §8 ADDENDUM P3)
+    _hideReal(r);
+    _setBoxInstance(e, false);
+    rm.opacity = toBox ? 1 : 0;
+    bm.opacity = toBox ? 0 : 0.4;
+    app.scene.add(realCopy); app.scene.add(boxCopy);
+    e.state = toBox ? 'box' : 'real'; // target state owned immediately; fade is presentation only
+    _fades.push({ e: e, r: r, toBox: toBox, frame: 0, realCopy: realCopy, boxCopy: boxCopy });
+    _stats.fades++;
+  }
+
+  function _snap(app, e, r, toBox) {
+    if (toBox) { _hideReal(r); _setBoxInstance(e, true); } else { _setBoxInstance(e, false); _showReal(r); }
+    e.state = toBox ? 'box' : 'real';
+  }
+
+  function _finishFade(app, f) {
+    app.scene.remove(f.realCopy); app.scene.remove(f.boxCopy);
+    f.realCopy.material.dispose(); f.boxCopy.material.dispose(); // clones only; geometries shared
+    if (f.toBox) { _setBoxInstance(f.e, true); } else { _showReal(f.r); }
+  }
+
+  function _stepFades(app) {
+    if (!_fades.length) return false;
+    for (var i = _fades.length - 1; i >= 0; i--) {
+      var f = _fades[i];
+      f.frame++;
+      var t = Math.min(1, f.frame / FADE_FRAMES);
+      var real01 = f.toBox ? 1 - t : t;
+      f.realCopy.material.opacity = real01;
+      f.boxCopy.material.opacity = 0.4 * (1 - real01);
+      if (t >= 1) { _finishFade(app, f); _fades.splice(i, 1); }
+    }
+    return true;
+  }
+
+  function _cancelFadesSnap(app) {
+    for (var i = 0; i < _fades.length; i++) {
+      var f = _fades[i];
+      _finishFade(app, f); // jump to target state instantly
+    }
+    _fades.length = 0;
+  }
+
+  // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
+  function _wantedReal(e, camPos) {
+    var d2 = camPos.distanceToSquared(e.pos);
+    if (e.state === 'real') {
+      // demote only when clearly out: >80m OR sphere+5m margin outside frustum
+      if (d2 > DEMOTE_SQ) return false;
+      _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
+      return _frustum.intersectsSphere(_sphere);
+    }
+    // promote only when clearly in: ≤50m AND exact frustum
+    if (d2 > PROMOTE_SQ) return false;
+    _sphere.center.copy(e.pos); _sphere.radius = e.radius;
+    return _frustum.intersectsSphere(_sphere);
+  }
+
+  function _evaluate(app) {
+    var t0 = performance.now();
+    if (!_frustum) { _frustum = new THREE.Frustum(); _psm = new THREE.Matrix4(); _sphere = new THREE.Sphere(); _m4 = new THREE.Matrix4(); }
+    _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+    _frustum.setFromProjectionMatrix(_psm);
+    var camPos = app.camera.position;
+    var boxed = 0, real = 0, started = 0;
+    for (var guid in _boxIndex) {
+      var e = _boxIndex[guid];
+      var want = _wantedReal(e, camPos);
+      if (want === (e.state === 'real')) { if (e.state === 'box') boxed++; else real++; continue; }
+      var r = _realIndex[guid];
+      if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident (never streamed) — index only
+      _startFade(app, guid, e, r, !want);
+      started++;
+      if (e.state === 'box') boxed++; else real++;
+    }
+    _stats.active = real; _stats.boxed = boxed; _stats.evalMs = +(performance.now() - t0).toFixed(1);
+    if (started) console.log('§DLOD_NAV active=' + real + ' boxed=' + boxed + ' mode=on started=' + started +
+      ' fades=' + _fades.length + ' eval_ms=' + _stats.evalMs);
+    if (app.markDirty) app.markDirty();
+  }
+
+  function _camSig(app) {
+    var p = app.camera.position, q = app.camera.quaternion;
+    return p.x.toFixed(2) + ',' + p.y.toFixed(2) + ',' + p.z.toFixed(2) + '|' +
+           q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + ',' + q.w.toFixed(3);
+  }
+
+  function _restoreAll(app, reason) {
+    _cancelFadesSnap(app);
+    if (_boxIndex) {
+      for (var guid in _boxIndex) {
+        var e = _boxIndex[guid];
+        if (e.state === 'box') {
+          var r = _realIndex && _realIndex[guid];
+          _setBoxInstance(e, false);
+          if (r) _showReal(r);
+          e.state = 'real';
+        }
+      }
+    }
+    // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
+    if (app.activeGuidFilter && app.filterByGuids) app.filterByGuids(app.activeGuidFilter);
+    else if ((app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) && app.filterStorey) app.filterStorey(app.activeStoreyFilter);
+    if (app.markDirty) app.markDirty();
+    console.log('§DLOD_NAV_DISENGAGE reason=' + reason + ' mutations=' + _stats.mutations);
+  }
+
+  function _tick() {
+    _rafId = null;
+    if (!_pillOn) return; // pill off mid-flight — _toggleOff already restored
+    var app = A();
+    var block = _gateBlockReason(app);
+    if (block) {
+      if (_engaged) { _restoreAll(app, block); _engaged = false; _lastCamSig = null; }
+      _rafId = requestAnimationFrame(_tick); // stay alive; re-engage when the gate clears
+      return;
+    }
+    if (!_engaged) {
+      if (!_buildBoxes(app)) { _rafId = requestAnimationFrame(_tick); return; }
+      _buildRealIndex(app);
+      _engaged = true; _lastCamSig = null;
+      console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
+    }
+    var fading = _stepFades(app);
+    if (fading && app.markDirty) app.markDirty();
+    var sig = _camSig(app);
+    var now = performance.now();
+    if (sig !== _lastCamSig && (now - _lastEvalT) >= EVAL_THROTTLE_MS) {
+      _lastCamSig = sig; _lastEvalT = now;
+      _evaluate(app);
+    }
+    _rafId = requestAnimationFrame(_tick);
+  }
+
+  window.toggleDlodNav = function () {
+    var app = A();
+    if (!_pillOn) {
+      if (!app || !(app.activeBuildingTotal > NAV_MIN_ELEMENTS)) {
+        console.log('§DLOD_NAV_GATE elements=' + (app ? app.activeBuildingTotal : 0) + ' threshold=' + NAV_MIN_ELEMENTS + ' verdict=too-small');
+        if (app && app.toast) app.toast('Nav LOD needs a large building (>50k elements)');
+        return;
+      }
+      _pillOn = true; window._dlodNavOn = true;
+      console.log('§DLOD_NAV_TOGGLE on=true');
+      if (!_rafId) _rafId = requestAnimationFrame(_tick);
+    } else {
+      _pillOn = false; window._dlodNavOn = false;
+      if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+      if (_engaged) { _restoreAll(app, 'pill-off'); _engaged = false; }
+      _disposeBoxes();
+      console.log('§DLOD_NAV_TOGGLE on=false');
+    }
+    if (app && app.markDirty) app.markDirty();
+  };
+
+  // W-DLOD-NAV-PROXY: recompute the wanted partition from scratch, compare to applied state.
+  // Elements mid-fade count as their target state (state is set at fade START by design).
+  window.__dlodNavAudit = function () {
+    var app = A();
+    if (!_engaged || !_boxIndex) return { engaged: false, mismatch: -1 };
+    _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+    _frustum.setFromProjectionMatrix(_psm);
+    var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0;
+    for (var guid in _boxIndex) {
+      var e = _boxIndex[guid];
+      var want = _wantedReal(e, camPos);
+      if (want !== (e.state === 'real')) mismatch++;
+      if (e.state === 'box') boxed++; else real++;
+    }
+    var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps };
+    console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length);
+    return res;
+  };
+
+  console.log('§DLOD_NAV_READY pill=off engaged=false');
+})();

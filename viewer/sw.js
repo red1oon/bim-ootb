@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v835';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v836';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -187,6 +187,7 @@ const PRECACHE_ASSETS = [
   'precision_cam.js',
   'schedule_gate.js',
   'time_machine.js',
+  'dlod_nav.js',
   'schedule_author.js',
   'schedule_author_ui.js',
   'foreign_schedule.js',
