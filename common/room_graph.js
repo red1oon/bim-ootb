@@ -340,17 +340,31 @@
     var utilityRoomCount = 0;
     if (RoomHabitability && RoomHabitability.classifyUtilityRooms) {
       try {
-        var utilDescs = roomOrder.map(function (lg) {
-          var g = nodes[lg];
-          var minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
-          g.rects.forEach(function (rc) {
-            if (rc.x0 < minx) minx = rc.x0; if (rc.x1 > maxx) maxx = rc.x1;
-            if (rc.y0 < miny) miny = rc.y0; if (rc.y1 > maxy) maxy = rc.y1;
+        var utilDescs = roomOrder
+          // §NEVER-PENALISE-A-CORRIDOR (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): synthetic
+          // CORRIDOR_ROOM::* nodes (injected by §CORRIDOR-ROOM-BACKPROP) ARE circulation by
+          // construction — the very thing routing should PREFER. With the door exemption ignored a
+          // footing under a corridor slab would otherwise tag the corridor itself utility:footing
+          // (measured: Hospital_3 tagged all 8 of its corridor nodes) and penalise the route we want
+          // to favour — exactly backwards. Exclude them from utility classification outright.
+          .filter(function (lg) { return lg.indexOf('CORRIDOR_ROOM::') !== 0; })
+          .map(function (lg) {
+            var g = nodes[lg];
+            var minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+            g.rects.forEach(function (rc) {
+              if (rc.x0 < minx) minx = rc.x0; if (rc.x1 > maxx) maxx = rc.x1;
+              if (rc.y0 < miny) miny = rc.y0; if (rc.y1 > maxy) maxy = rc.y1;
+            });
+            return { guid: lg, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2,
+              sx: maxx - minx, sy: maxy - miny, storey: g.storey };
           });
-          return { guid: lg, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2,
-            sx: maxx - minx, sy: maxy - miny, storey: g.storey };
-        });
-        var utilMap = RoomHabitability.classifyUtilityRooms(utilDescs, dbQuery) || {};
+        // §DOOR-EXEMPTION-POLICY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): routing must
+        // ignore classifyUtilityRooms's door-exemption. That exemption ("a room with a nearby door
+        // is a serviced space, not a void") is right for the Type-lens DISPLAY, but for ROUTING it
+        // meant every utility room that could ever be a through-hop (a graph edge REQUIRES a nearby
+        // door) was exempted out — so the penalty never fired on a real door-carrying cabling closet.
+        // ignoreDoorExemption:true classifies by element composition alone, closing that gap.
+        var utilMap = RoomHabitability.classifyUtilityRooms(utilDescs, dbQuery, { ignoreDoorExemption: true }) || {};
         Object.keys(utilMap).forEach(function (guid) {
           if (nodes[guid]) { nodes[guid].isUtility = true; nodes[guid].utilityWhy = utilMap[guid]; utilityRoomCount++; }
         });

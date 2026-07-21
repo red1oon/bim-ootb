@@ -61,3 +61,5 @@ tests/*.png
 
 # W-UTIL-PENALTY witness regenerates this from a pinned SHA — never commit it
 common/_room_graph_before.js
+
+common/_room_habitability_before.js

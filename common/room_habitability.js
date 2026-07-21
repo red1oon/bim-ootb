@@ -107,7 +107,17 @@
   // Small 0.3m margin on the containment query — real elements sitting exactly on a wall boundary
   // (measured this session) still count; not a guessed number, matches the scratch query this
   // signal was measured with before being written up.
-  function utilityContentClass(room, dbQueryFn) {
+  // §DOOR-EXEMPTION-POLICY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): the door check on
+  // line ~124/~179 answers "is this room an occupiable/serviced space (has an access door) vs a
+  // sealed void" — CORRECT for the display purpose (navigate_find.js's Type-lens: don't hide a
+  // doored serviced room as a void). It is WRONG for ROUTING preference: a cabling closet's
+  // maintenance-access door doesn't make it a good circulation shortcut. Rather than fork a second
+  // classifier (the codebase's "one shared signal" discipline), `opts.ignoreDoorExemption` lets the
+  // routing caller (room_graph.js buildGraph) classify by element COMPOSITION alone while every
+  // existing display caller keeps today's exact door-exempting behavior (default false → byte-
+  // identical). Additive opt-in only — never changes the default.
+  function utilityContentClass(room, dbQueryFn, opts) {
+    opts = opts || {};
     var margin = 0.3;
     var x0 = room.cx - room.sx / 2 - margin, x1 = room.cx + room.sx / 2 + margin;
     var y0 = room.cy - room.sy / 2 - margin, y1 = room.cy + room.sy / 2 + margin;
@@ -121,7 +131,9 @@
     var hasFlowSegment = rows.some(function (r) { return r[0] === 'ACMV' && /IfcFlowSegment/.test(r[1] || ''); });
     var hasFooting = rows.some(function (r) { return /IfcFooting/.test(r[1] || ''); });
     if (!hasFlowSegment && !hasFooting) return { ok: true };
-    if (_hasNearbyDoor(room, dbQueryFn)) return { ok: true }; // real door → serviced space, not a sealed void
+    // §DOOR-EXEMPTION-POLICY: skip the "has a door → serviced space, not a void" exemption for
+    // routing callers (opts.ignoreDoorExemption) — classify by composition alone. Default unchanged.
+    if (!opts.ignoreDoorExemption && _hasNearbyDoor(room, dbQueryFn)) return { ok: true };
     return { ok: false, why: hasFlowSegment ? 'utility:ACMV' : 'utility:footing' };
   }
 
@@ -139,7 +151,12 @@
   // only how many queries it costs. utilityContentClass() itself is left in place (single-room
   // ad-hoc use, e.g. a future one-room checker), just no longer called in a per-room loop by the
   // Viewer — see navigate_find.js's §ROOM_LENS_TAXONOMY call sites.
-  function classifyUtilityRooms(rooms, dbQueryFn) {
+  // opts.ignoreDoorExemption (default false) — see §DOOR-EXEMPTION-POLICY on utilityContentClass
+  // above. Same signal/thresholds as the single-room version; the batched path applies the identical
+  // door policy (skip the nearDoor exemption when set). Default false = byte-identical to every
+  // existing display caller.
+  function classifyUtilityRooms(rooms, dbQueryFn, opts) {
+    opts = opts || {};
     var out = {};
     if (!rooms || !rooms.length) return out;
     var candidateRows, doorRows;
@@ -168,15 +185,19 @@
         if (/IfcFooting/.test(c[1] || '')) hasFooting = true;
       }
       if (!hasFlowSegment && !hasFooting) return;
-      var doors = doorsByStorey[room.storey || ''] || [];
-      var rx0 = room.cx - room.sx / 2, rx1 = room.cx + room.sx / 2;
-      var ry0 = room.cy - room.sy / 2, ry1 = room.cy + room.sy / 2;
-      var nearDoor = false;
-      for (var j = 0; j < doors.length; j++) {
-        var d = doors[j], buf = Math.max(d[3] || 0, d[4] || 0) / 2 + DOOR_BUFFER_SLACK;
-        if (_rectDist(rx0, rx1, ry0, ry1, d[1], d[2]) <= buf) { nearDoor = true; break; }
+      // §DOOR-EXEMPTION-POLICY: routing callers skip the door exemption (opts.ignoreDoorExemption),
+      // classifying by composition alone; display callers keep today's behavior (default).
+      if (!opts.ignoreDoorExemption) {
+        var doors = doorsByStorey[room.storey || ''] || [];
+        var rx0 = room.cx - room.sx / 2, rx1 = room.cx + room.sx / 2;
+        var ry0 = room.cy - room.sy / 2, ry1 = room.cy + room.sy / 2;
+        var nearDoor = false;
+        for (var j = 0; j < doors.length; j++) {
+          var d = doors[j], buf = Math.max(d[3] || 0, d[4] || 0) / 2 + DOOR_BUFFER_SLACK;
+          if (_rectDist(rx0, rx1, ry0, ry1, d[1], d[2]) <= buf) { nearDoor = true; break; }
+        }
+        if (nearDoor) return; // real door → serviced space, not a sealed void
       }
-      if (nearDoor) return; // real door → serviced space, not a sealed void
       out[room.guid] = hasFlowSegment ? 'utility:ACMV' : 'utility:footing';
     });
     return out;
