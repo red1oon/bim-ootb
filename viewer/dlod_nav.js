@@ -371,6 +371,17 @@
     _rafId = requestAnimationFrame(_tick);
   }
 
+  // 2026-07-21 user ask: momentary status-bar confirmation on toggle (same convention as Fly's
+  // "Fly stopped." — A.status.textContent). Auto-clears after 5s ONLY if nothing overwrote it.
+  var _statusClearT = null;
+  function _statusMsg(app, msg) {
+    if (!app || !app.status) return;
+    app.status.textContent = msg;
+    if (_statusClearT) clearTimeout(_statusClearT);
+    _statusClearT = setTimeout(function () {
+      if (app.status.textContent === msg) app.status.textContent = '';
+    }, 5000);
+  }
   window.toggleDlodNav = function () {
     var app = A();
     if (!_pillOn) {
@@ -381,6 +392,7 @@
       }
       _pillOn = true; window._dlodNavOn = true;
       console.log('§DLOD_NAV_TOGGLE on=true');
+      _statusMsg(app, 'Nav LOD ON — boxing far elements (o to turn off)');
       if (!_rafId) _rafId = requestAnimationFrame(_tick);
     } else {
       _pillOn = false; window._dlodNavOn = false;
@@ -388,6 +400,7 @@
       if (_engaged) { _restoreAll(app, 'pill-off'); _engaged = false; }
       _disposeBoxes();
       console.log('§DLOD_NAV_TOGGLE on=false');
+      _statusMsg(app, 'Nav LOD OFF — full detail restored');
     }
     if (app && app.markDirty) app.markDirty();
   };
