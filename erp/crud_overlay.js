@@ -157,9 +157,22 @@
     if (type === 'number' || type === 'fk') return Number(val);
     return String(val);
   }
-  function cleanVals(entry, values) {
+  // ON CREATE ONLY: also carry any hook-derived, undeclared column already merged into `values` (saveForm's
+  // fireBeforeSaveHooks callback, crud_overlay.js ~line 1242) — a beforeSave default with no form field (e.g.
+  // M_Warehouse_ID) must still persist on the new row. gatherVals() only ever seeds `values` from entry.fields,
+  // so any OTHER key present is provably hook-derived, never stray UI state. UPDATE keeps the tight declared-only
+  // guard (unchanged) since that path never merges undeclared keys into `values` in the first place.
+  function cleanVals(entry, values, verb) {
     var out = {};
-    (entry.fields || []).forEach(function (f) { var c = coerce(f.type, values[f.col]); if (c != null) out[f.col] = c; });
+    var declared = {};
+    (entry.fields || []).forEach(function (f) { declared[f.col] = true; var c = coerce(f.type, values[f.col]); if (c != null) out[f.col] = c; });
+    if (verb === 'create' && values) {
+      Object.keys(values).forEach(function (k) {
+        if (declared[k]) return;
+        var v = values[k];
+        if (v != null && v !== '') out[k] = v;
+      });
+    }
     return out;
   }
 
@@ -209,7 +222,7 @@
     ctx = ctx || {};
     var base = { key: entry.key, table: entry.key, verb: verb, ownerGated: !!entry.ownerGated, op_uuid: ctx.opUuid || null };
     if (verb === 'create') {
-      base.op_type = 'CRUD_CREATE'; base.fields = cleanVals(entry, values); base.cas = entry.cas || null;
+      base.op_type = 'CRUD_CREATE'; base.fields = cleanVals(entry, values, verb); base.cas = entry.cas || null;
       // Task 1 — iDempiere setStandardDefaults parity: carry actor+tenant onto the op; listTip materialises them
       var _cActor = ctx.actor != null ? ctx.actor : sessionActor();
       var _cCid   = ctx.clientId != null ? ctx.clientId : sessionClientId();
