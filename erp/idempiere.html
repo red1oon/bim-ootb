@@ -2257,6 +2257,34 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
   }
   // ctx — REAL row accessors for the registered handlers (EXTRACT: every value is a seed row; absent table → honest 0).
+  // §GENSHIP-LIVE / §GENINV-LIVE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "Stage 2, one layer deeper") —
+  // _procCtx's fetchOrder/fetchOrderLines used to read ONLY window.__idmpDb (the raw seed bundle), so a
+  // synthetic (CRUD_CREATE-only) order's post-DocAction status and lines were invisible to the process
+  // HANDLERS even though renderOrderPicker (same file, below) already offers such orders as candidates —
+  // same "wrong source" bug the picker fix (§Fix 2026-07-21 above) closed for the SELECTOR, not yet for the
+  // RUN path. Folds via the SAME window.__crud.core.listTip/readTip primitives renderOrderPicker already
+  // uses (non-invent, reused verbatim). Sync, not withSidecar-async: by the time Run is clicked, the
+  // picker's own withSidecar call already hydrated window.__crud.kernelDb() once (paint() only runs after
+  // that resolves), so a synchronous read here is safe — falls through to the base-only row/rows on any
+  // infra gap (never worse than before).
+  function _foldOrderRow(id) {
+    var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_order', 'c_order_id', base ? [base] : [], null); } catch (e) { folded = null; }
+    var row = ((folded && folded.rows) || []).filter(function (r) { return Number(r.c_order_id) === Number(id); })[0] || base;
+    if (row) { try { var tip = c.core.readTip(sdb, 'c_order', row.c_order_id, null); if (tip != null) row.docstatus = tip; } catch (e) {} }
+    return row;
+  }
+  function _foldOrderLines(id) {
+    var base = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    var c = window.__crud;
+    if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
+    var sdb = c.kernelDb(); if (!sdb) return base;
+    var folded; try { folded = c.core.listTip(sdb, 'c_orderline', 'c_orderline_id', base, null); } catch (e) { folded = null; }
+    return ((folded && folded.rows) || base).filter(function (r) { return Number(r.c_order_id) === Number(id); });
+  }
   function _procCtx() {
     var RM = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : {};
     function header(key, info) {
@@ -2329,11 +2357,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // order (the seed's state) → the handler honestly yields 0 lines, never a fabricated shipment.
       fetchOrder: function (info) {
         var id = info && info.Record_ID; if (id == null) return null;
-        return _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+        return _foldOrderRow(id);
       },
       fetchOrderLines: function (info) {
         var id = info && info.Record_ID; if (id == null) return [];
-        return _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+        return _foldOrderLines(id);
       },
       onHandOf: function (pid, wh) {
         var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
@@ -2626,7 +2654,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var res = window.AdProcess.dispatch(b, info, _procCtx());
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
-      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason) : ' reason=' + res.reason));
+      (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
     renderProcResult(proc, res);
   }
   function renderProcResult(proc, res) {
