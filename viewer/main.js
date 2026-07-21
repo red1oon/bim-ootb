@@ -139,7 +139,10 @@ async function initViewer() {
       // Lazy-loaded here (not a static viewer.html <script>) since it's only ever needed alongside
       // navigate_find.js itself — no reason to spend the bytes on every boot.
       var modules = [
-        '../common/room_habitability.js?v=1',
+        // v2 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classifyUtilityRooms/utilityContentClass
+        // gain an additive opts.ignoreDoorExemption (default false = identical display behavior); the
+        // routing caller (room_graph.js) passes true. A stale v1 cache would ignore the new arg.
+        '../common/room_habitability.js?v=2',
         // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
         // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
         // window.StoreyRaster when it reads storey_walkable_raster).
@@ -155,7 +158,9 @@ async function initViewer() {
         // v6 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): §UTILITY-ROUTING-PENALTY — buildGraph()
         // tags utility rooms via RoomHabitability.classifyUtilityRooms; _buildAdjacency() penalises
         // (x8, never removes) any edge touching one so room→room routing prefers corridors.
-        '../common/room_graph.js?v=6',
+        // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
+        // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
+        '../common/room_graph.js?v=7',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never

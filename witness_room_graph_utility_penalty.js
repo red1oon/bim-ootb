@@ -1,196 +1,205 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-UTIL-PENALTY scope (READ THE LOG after every run)
- * SCOPE: common/room_graph.js §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10,
- * 2026-07-22). buildGraph() tags utility rooms via RoomHabitability.classifyUtilityRooms();
- * _buildAdjacency() multiplies (never removes) any edge touching a tagged node by
- * UTILITY_EDGE_PENALTY (=8). Both shortestPath() and escapeRoute() consume that adjacency.
+ * SCOPE: VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10 utility-room routing penalty.
+ *   PR #959 (base): common/room_graph.js buildGraph() tags utility rooms; _buildAdjacency()
+ *     multiplies any edge touching a tagged node by UTILITY_EDGE_PENALTY (=8) — a penalty, not
+ *     removal. Both shortestPath() and escapeRoute() consume that adjacency.
+ *   THIS change (door-exemption): common/room_habitability.js classifyUtilityRooms/utilityContentClass
+ *     gain an additive opts.ignoreDoorExemption (default false = byte-identical display behavior).
+ *     room_graph.js's routing call passes {ignoreDoorExemption:true} so real door-carrying service
+ *     rooms are classified by element COMPOSITION alone (the door-exempt display default missed
+ *     them — a graph edge REQUIRES a nearby door, so before, no through-hoppable room was ever
+ *     tagged). CORRIDOR_ROOM circulation nodes are excluded from tagging outright (never penalise a
+ *     corridor). This is what actually closes the reported bug (screenshot: Hospital Level 1 R7/R13
+ *     used as corridor-bypass through-hops).
  *
- * ISSUES THIS PROVES / DISPROVES (each check names its issue):
- *   A1 CLASSIFY-WIRED  — real Clinic: classifyUtilityRooms is actually called from buildGraph and
- *                        tags the 7 utility rooms onto the graph's own room nodes (node.isUtility).
- *   A2 STRUCTURAL-FINDING (honest) — on ALL current real fixtures every utility-classified room is a
- *                        DOORLESS sealed void (classifyUtilityRooms excludes any room with a nearby
- *                        door; graph edges REQUIRE a nearby door), so those rooms carry ZERO routing
- *                        edges and the penalty is a present-day NO-OP for them. Reported, not hidden —
- *                        the screenshot's door-carrying through-hop rooms are NOT flagged by this
- *                        classifier by design (§10 point 4). Follow-up named in the doc.
- *   B1 MULTIPLIER-MATH — a directly-connected real room pair's shortest-path distance is exactly
- *                        ×UTILITY_EDGE_PENALTY when one endpoint is tagged utility (the weighting is
- *                        the real multiplier, computed from real center-to-center distance).
- *   B2 REROUTE / B2b COST+REACHABLE — a real Clinic through-hop room, force-tagged utility (the
- *                        "clearest available real-data reproduction" §10's witness section asks for,
- *                        since no real utility room has an edge): a room→room query that USED it as a
- *                        mid-hop now AVOIDS it when a corridor/alternative exists (B2), or — when it is
- *                        the only route — still resolves at higher cost, never null (B2b). Proves both
- *                        "prefer circulation" AND "stays reachable".
- *   B3 REACHABLE-AS-DEST — a path whose DESTINATION is the (force-tagged) utility room still returns a
- *                        valid non-null result (single arrival-edge penalty), never unreachable.
- *   C  NO-REGRESSION    — a building with no utility rooms in play (Duplex): NEW module's paths are
- *                        byte-identical (path array + distance) to the origin/main "before" module.
+ * ISSUES PROVEN / DISPROVED (each check names its issue):
+ *   A DISPLAY-REGRESSION — classifyUtilityRooms with DEFAULT opts is byte-identical to the origin/main
+ *     "before" module on every building (Clinic/Duplex/JKR) → navigate_find.js's two Type-lens
+ *     display call sites (which pass no opts) are provably unaffected. VERIFIED, not just asserted.
+ *   B ROUTING-TAG-FIRES — buildGraph (ignoreDoorExemption:true) now tags real door-carrying utility
+ *     rooms that CARRY EDGES (Hospital: the real screenshot rooms RM_Level_1_7 + RM_Level_1_13), and
+ *     tags ZERO CORRIDOR_ROOM circulation nodes (the guard). The door-exempt default tagged none of
+ *     these (contrast quoted). This is the gap #959 could not reach, now closed.
+ *   C MULTIPLIER-MATH — a touching edge's weight is exactly ×UTILITY_EDGE_PENALTY when tagged.
+ *   D REAL-REROUTE — on Hospital (the real screenshot building), a query that USED R13/R7 as a
+ *     corridor-bypass through-hop now AVOIDS them in favour of the corridor. REAL tags (not forced).
+ *   E REACHABLE — a tagged utility room is still reachable as a destination (finite penalty, non-null).
+ *   F NO-REGRESSION — a building with no routing utility rooms (JKR) is byte-identical NEW vs before.
+ *   HONEST FINDING — logged: composition-PRESENCE (a duct overhead) over-tags on duct-dense buildings
+ *     (Clinic), so the net effect there is general corridor-preference rather than cabling-only
+ *     targeting; a duct-DOMINANCE threshold is the named follow-up. Reported, not hidden.
  *
  * RUN: node witness_room_graph_utility_penalty.js   (from the worktree root)
  */
 'use strict';
-const path = require('path');
-const fs = require('fs');
-const cp = require('child_process');
+const path = require('path'), fs = require('fs'), cp = require('child_process');
 const Database = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'better-sqlite3'));
-// "before" = room_graph.js at the pinned pre-change commit (origin/main at dispatch). Regenerated
-// on demand next to the live siblings so its own require('./storey_raster.js') etc. resolve; the
-// file is gitignored (never committed). Pinning a SHA keeps this deterministic across future merges.
-const BEFORE_SHA = '0269cec';
-const BEFORE_PATH = path.join(__dirname, 'common', '_room_graph_before.js');
-if (!fs.existsSync(BEFORE_PATH)) {
-  fs.writeFileSync(BEFORE_PATH, cp.execSync('git show ' + BEFORE_SHA + ':common/room_graph.js', { cwd: __dirname, maxBuffer: 1 << 24 }));
+// "before" = origin/main @ #959 merge (post-PR-959, pre-this door-exemption change). Regenerated
+// next to the live siblings so requires resolve; gitignored, never committed. Pinning keeps it stable.
+const BEFORE_SHA = '6209f54';
+function before(name) {
+  const p = path.join(__dirname, 'common', '_' + name + '_before.js');
+  if (!fs.existsSync(p)) fs.writeFileSync(p, cp.execSync('git show ' + BEFORE_SHA + ':common/' + name + '.js', { cwd: __dirname, maxBuffer: 1 << 24 }));
+  return require(p);
 }
-const RG = require('./common/room_graph.js');                 // NEW (under test)
-const RGbefore = require('./common/_room_graph_before.js');   // origin/main "before" (gitignored, regenerated)
-const RH = require('./common/room_habitability.js');
+const RG = require('./common/room_graph.js');           // NEW (under test)
+const RH = require('./common/room_habitability.js');    // NEW
+const RGbefore = before('room_graph');                  // origin/main @ #959
+const RHbefore = before('room_habitability');           // origin/main @ #959
 
-const CLINIC = '/home/red1/bim-ootb/buildings/Clinic_extracted.db';
-const DUPLEX = '/home/red1/bim-ootb/buildings/Duplex_extracted.db';
-const PEN = 8; // UTILITY_EDGE_PENALTY — kept in sync with room_graph.js's own constant, asserted below
-
+const B = n => '/home/red1/bim-ootb/buildings/' + n + '_extracted.db';
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
-function openQ(p) { const db = new Database(p, { readonly: true }); return { db: db, q: (sql, prm) => db.prepare(sql).raw(true).all(...(prm || [])) }; }
+const openQ = p => { const db = new Database(p, { readonly: true }); return { db, q: (s, prm) => db.prepare(s).raw(true).all(...(prm || [])) }; };
 const roomList = (g, p) => p.filter(x => g.nodesByGuid[x] && g.nodesByGuid[x].kind === 'room');
-
-console.log('§W-UTIL-PENALTY');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Part A — real Clinic classification + honest structural finding
-// ─────────────────────────────────────────────────────────────────────────────
-console.log('\n§CLINIC classification + structural finding');
-{
-  const { db, q } = openQ(CLINIC);
-  const logs = [];
-  const g = RG.buildGraph(q, { log: m => { logs.push(m); } });
-  const utilLine = logs.find(l => l.indexOf('§ROOM_GRAPH_UTILITY ') === 0) || '(none)';
-  console.log('  §log: ' + utilLine);
-
-  const tagged = g.nodes.filter(n => n.isUtility);
-  chk('A1 CLASSIFY-WIRED buildGraph tagged the real utility rooms via classifyUtilityRooms',
-    tagged.length === 7, 'tagged=' + tagged.length + ' [' + tagged.map(n => n.guid).join(',') + ']');
-
-  // cross-check: same set the classifier returns directly
-  const descs = g.nodes.map(n => {
+function descsOf(g) {
+  return g.nodes.filter(n => n.guid.indexOf('CORRIDOR_ROOM::') !== 0).map(n => {
     let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
     n.rects.forEach(r => { a = Math.min(a, r.x0); b = Math.max(b, r.x1); c = Math.min(c, r.y0); d = Math.max(d, r.y1); });
     return { guid: n.guid, cx: (a + b) / 2, cy: (c + d) / 2, sx: b - a, sy: d - c, storey: n.storey };
   });
-  const direct = RH.classifyUtilityRooms(descs, q);
-  chk('A1b tags match classifyUtilityRooms output exactly',
-    tagged.every(n => direct[n.guid]) && Object.keys(direct).length === tagged.length,
-    'directKeys=' + Object.keys(direct).length);
-
-  const edgeCount = g2 => n => g2.edges.filter(e => e.a === n.guid || e.b === n.guid).length;
-  const withEdges = tagged.filter(n => edgeCount(g)(n) > 0);
-  console.log('  §UTIL_EDGELESS ' + tagged.map(n => n.guid + '(edges=' + edgeCount(g)(n) + ',' + n.utilityWhy + ')').join(' '));
-  chk('A2 STRUCTURAL-FINDING every real utility room is a doorless void with ZERO routing edges → penalty is a present-day no-op for them (reported honestly, see doc §10 follow-up)',
-    withEdges.length === 0, 'utilityRoomsWithEdges=' + withEdges.length + '/' + tagged.length);
-  db.close();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Part B — penalty MECHANISM on the real Clinic graph (constructed real-data reproduction)
-// ─────────────────────────────────────────────────────────────────────────────
-console.log('\n§CLINIC penalty mechanism (force-tag on the real graph)');
+console.log('§W-UTIL-PENALTY');
+
+// ── Part A — DISPLAY REGRESSION (the opts default must not disturb the Type-lens) ──
+console.log('\n§A display regression — classifyUtilityRooms default == origin/main "before"');
+['Clinic', 'Duplex', 'JKR'].forEach(name => {
+  const { db, q } = openQ(B(name));
+  const g = RGbefore.buildGraph(q, { log: () => {} }); // any graph — we only need room descs
+  const descs = descsOf(g);
+  const dNew = RH.classifyUtilityRooms(descs, q);                              // no opts
+  const dNewEmpty = RH.classifyUtilityRooms(descs, q, {});                     // {} opts
+  const dNewFalse = RH.classifyUtilityRooms(descs, q, { ignoreDoorExemption: false });
+  const dBefore = RHbefore.classifyUtilityRooms(descs, q);                     // origin/main
+  const same = JSON.stringify(dNew) === JSON.stringify(dBefore) &&
+    JSON.stringify(dNewEmpty) === JSON.stringify(dBefore) && JSON.stringify(dNewFalse) === JSON.stringify(dBefore);
+  console.log('  §A_DISPLAY ' + name + ' before=' + Object.keys(dBefore).length + ' newDefault=' + Object.keys(dNew).length);
+  chk('A-' + name + ' DISPLAY-REGRESSION default opts byte-identical to origin/main (display call sites unaffected)',
+    same, Object.keys(dNew).length + '==' + Object.keys(dBefore).length);
+  db.close();
+});
+
+// ── Part B — routing tag now fires on real door-carrying rooms; corridors excluded ──
+console.log('\n§B routing tag fires on real door-carrying service rooms (Hospital screenshot rooms)');
 {
-  const { db, q } = openQ(CLINIC);
-  const g = RG.buildGraph(q, { log: () => {} });
-
-  // B1 — MULTIPLIER MATH: a directly-connected real room pair, 1 E1 edge, exact ×PEN.
-  //   Find an E1 edge whose two endpoints are rooms and whose direct edge is their shortest path.
-  let e1 = g.edges.find(e => e.kind === 'E1' && g.nodesByGuid[e.a].kind === 'room' && g.nodesByGuid[e.b].kind === 'room');
-  const A = e1.a, B = e1.b;
-  const before = RG.shortestPath(g, A, B);
-  g.nodesByGuid[A].isUtility = true;
-  const after = RG.shortestPath(g, A, B);
-  delete g.nodesByGuid[A].isUtility;
-  const ratio = after.distance / before.distance;
-  console.log('  §MULTIPLIER pair=' + A + '->' + B + ' d_before=' + before.distance.toFixed(4) + ' d_after=' + after.distance.toFixed(4) + ' ratio=' + ratio.toFixed(4));
-  chk('B1 MULTIPLIER-MATH tagging one endpoint multiplies the touching edge weight by exactly UTILITY_EDGE_PENALTY',
-    Math.abs(ratio - PEN) < 1e-6 && !!after, 'ratio=' + ratio.toFixed(4) + ' expected=' + PEN);
-
-  // B2 — REROUTE / B2b COST+REACHABLE around a real through-hop.
-  //   M is the degree-37 real hub RM_First_Floor_20; RM_First_Floor_29->RM_First_Floor_39 routes
-  //   THROUGH it. Force-tag M utility (the honest constructed repro — no real utility room has an edge).
-  const M = 'RM_First_Floor_20', pA = 'RM_First_Floor_29', pB = 'RM_First_Floor_39';
-  const p0 = RG.shortestPath(g, pA, pB);
-  const wentThrough = p0 && p0.path.indexOf(M) >= 0;
-  g.nodesByGuid[M].isUtility = true;
-  const p1 = RG.shortestPath(g, pA, pB);
-  g.nodesByGuid[M].isUtility = false;
-  console.log('  §THRUHOP ' + pA + '->' + pB + ' before rooms=[' + roomList(g, p0.path).join(',') + '] d=' + p0.distance.toFixed(2));
-  console.log('  §THRUHOP ' + pA + '->' + pB + ' M=' + M + ' tagged: rooms=[' + roomList(g, p1.path).join(',') + '] d=' + p1.distance.toFixed(2) + ' avoidsM=' + (p1.path.indexOf(M) < 0));
-  chk('B2-pre confirms the OLD route used the (to-be-tagged) room as a mid through-hop', wentThrough, 'through=' + wentThrough);
-  const avoided = p1 && p1.path.indexOf(M) < 0;
-  const costlierButReachable = p1 && p1.path.indexOf(M) >= 0 && p1.distance > p0.distance;
-  chk('B2 REROUTE/B2b either the route now AVOIDS the tagged utility room, or (M being the only route) it stays reachable at higher cost — never null',
-    !!p1 && (avoided || costlierButReachable), avoided ? 'REROUTED-around-M' : (costlierButReachable ? 'costlier+reachable(only-route)' : 'FAIL'));
-
-  // B2c — an explicit real REROUTE: RM_First_Floor_1 -> RM_First_Floor_2 normally threads through
-  //   RM_First_Floor_9 as a mid-hop; tagging RF9 utility makes the route AVOID it (hub RF20 -> RF2
-  //   direct) — a real "prefer circulation over cutting through" reroute, slightly longer, non-null.
-  const rrA = 'RM_First_Floor_1', rrB = 'RM_First_Floor_2', rrM = 'RM_First_Floor_9';
-  const rr0 = RG.shortestPath(g, rrA, rrB);
-  g.nodesByGuid[rrM].isUtility = true;
-  const rr1 = RG.shortestPath(g, rrA, rrB);
-  g.nodesByGuid[rrM].isUtility = false;
-  console.log('  §REROUTE_EXAMPLE ' + rrA + '->' + rrB + ' before=[' + roomList(g, rr0.path).join(',') + '](d=' + rr0.distance.toFixed(2) + ') after=[' + roomList(g, rr1.path).join(',') + '](d=' + rr1.distance.toFixed(2) + ') avoids ' + rrM + '=' + (rr1.path.indexOf(rrM) < 0));
-  chk('B2c REROUTE-EXAMPLE a real room→room route that used a room as a mid through-hop now AVOIDS it (in favour of a corridor/direct alternative) once it is tagged utility, and still resolves',
-    rr0.path.indexOf(rrM) >= 0 && !!rr1 && rr1.path.indexOf(rrM) < 0,
-    'before-through=' + (rr0.path.indexOf(rrM) >= 0) + ' after-avoids=' + (rr1 && rr1.path.indexOf(rrM) < 0));
-
-  // B3 — REACHABLE-AS-DESTINATION: path whose destination IS the tagged utility room resolves non-null.
-  g.nodesByGuid[M].isUtility = true;
-  const dest = RG.shortestPath(g, pA, M);
-  g.nodesByGuid[M].isUtility = false;
-  const destUntagged = RG.shortestPath(g, pA, M);
-  console.log('  §DEST_REACHABLE ' + pA + '->' + M + '(tagged) d=' + (dest ? dest.distance.toFixed(2) : 'null') + ' vs untagged d=' + (destUntagged ? destUntagged.distance.toFixed(2) : 'null'));
-  chk('B3 REACHABLE-AS-DEST a maintenance-access query whose destination is the utility room still returns a valid non-null path (higher cost, never unreachable)',
-    !!dest && dest.distance >= destUntagged.distance, dest ? ('d=' + dest.distance.toFixed(2)) : 'NULL');
+  const { db, q } = openQ(B('Hospital'));
+  const logs = [];
+  const g = RG.buildGraph(q, { log: m => logs.push(m) });
+  console.log('  §log: ' + (logs.find(l => l.indexOf('§ROOM_GRAPH_UTILITY ') === 0) || '(none)'));
+  const tagged = g.nodes.filter(n => n.isUtility);
+  const corridorTagged = tagged.filter(n => n.guid.indexOf('CORRIDOR_ROOM::') === 0);
+  const deg = gid => g.edges.filter(e => e.a === gid || e.b === gid).length;
+  const screenshot = ['RM_Level_1_7', 'RM_Level_1_13'];
+  const scTagged = screenshot.filter(gid => g.nodesByGuid[gid] && g.nodesByGuid[gid].isUtility && deg(gid) > 0);
+  // contrast: door-exempt "before" module tagged none of the screenshot rooms
+  const gBefore = RGbefore.buildGraph(q, { log: () => {} });
+  const scBefore = screenshot.filter(gid => gBefore.nodesByGuid[gid] && gBefore.nodesByGuid[gid].isUtility);
+  console.log('  §B_SCREENSHOT ' + screenshot.map(gid => gid + '(nowTagged=' + !!(g.nodesByGuid[gid] && g.nodesByGuid[gid].isUtility) + ',deg=' + deg(gid) + ',beforeTagged=' + (gBefore.nodesByGuid[gid] ? !!gBefore.nodesByGuid[gid].isUtility : 'n/a') + ')').join(' '));
+  chk('B1 ROUTING-TAG-FIRES both real screenshot rooms (RM_Level_1_7, RM_Level_1_13) now tagged utility WITH edges (door-exempt default tagged neither)',
+    scTagged.length === 2 && scBefore.length === 0, 'nowTagged=' + scTagged.length + '/2 beforeTagged=' + scBefore.length);
+  chk('B2 NEVER-PENALISE-A-CORRIDOR zero CORRIDOR_ROOM circulation nodes tagged utility (the guard holds)',
+    corridorTagged.length === 0, 'corridorTagged=' + corridorTagged.length + ' of ' + tagged.length + ' tagged');
   db.close();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Part C — no-regression on a building with no utility rooms in play (Duplex)
-// ─────────────────────────────────────────────────────────────────────────────
-function noRegression(dbPath, label, limit) {
-  const { db, q } = openQ(dbPath);
+// ── Part C — multiplier math (unchanged from #959, re-verified) ──
+console.log('\n§C multiplier math ×UTILITY_EDGE_PENALTY');
+{
+  const { db, q } = openQ(B('Clinic'));
+  const g = RG.buildGraph(q, { log: () => {} });
+  // clear all tags to get a clean baseline edge, then tag one endpoint
+  const saved = {}; g.nodes.forEach(n => { saved[n.guid] = n.isUtility; n.isUtility = false; });
+  const e1 = g.edges.find(e => e.kind === 'E1' && g.nodesByGuid[e.a].kind === 'room' && g.nodesByGuid[e.b].kind === 'room');
+  const d0 = RG.shortestPath(g, e1.a, e1.b).distance;
+  g.nodesByGuid[e1.a].isUtility = true;
+  const d1 = RG.shortestPath(g, e1.a, e1.b).distance;
+  g.nodes.forEach(n => { n.isUtility = saved[n.guid]; });
+  const ratio = d1 / d0;
+  console.log('  §MULTIPLIER pair=' + e1.a + '->' + e1.b + ' d0=' + d0.toFixed(4) + ' d1=' + d1.toFixed(4) + ' ratio=' + ratio.toFixed(4));
+  chk('C MULTIPLIER-MATH exactly ×8', Math.abs(ratio - 8) < 1e-6, 'ratio=' + ratio.toFixed(4));
+  db.close();
+}
+
+// ── Part D — REAL reroute on Hospital (real tags, not forced) ──
+console.log('\n§D real reroute on Hospital — avoids the screenshot service rooms via the corridor');
+{
+  const { db, q } = openQ(B('Hospital'));
+  const g = RG.buildGraph(q, { log: () => {} });
+  const A = 'RM_Level_1_16', M = 'RM_Level_1_13';
+  // discover a Level-1 corridor destination whose UNPENALISED path threads M, then show the real
+  // (penalised) path avoids M. "before" = clear tags (door-exempt tagging left these edged rooms
+  // untagged → penalty inert → same as no tags for path selection).
+  const corridors = g.nodes.filter(n => n.guid.indexOf('CORRIDOR_ROOM::Level 1') === 0).map(n => n.guid);
+  let ex = null;
+  for (const Bc of corridors) {
+    const saved = {}; g.nodes.forEach(n => { saved[n.guid] = n.isUtility; n.isUtility = false; });
+    const b0 = RG.shortestPath(g, A, Bc);
+    g.nodes.forEach(n => { n.isUtility = saved[n.guid]; });
+    if (!b0 || b0.path.slice(1, -1).indexOf(M) < 0) continue;
+    const b1 = RG.shortestPath(g, A, Bc); // real tags active
+    if (b1 && b1.path.indexOf(M) < 0) { ex = { Bc, b0, b1 }; break; }
+  }
+  if (ex) {
+    console.log('  §REAL_REROUTE ' + A + '->' + ex.Bc);
+    console.log('    before(unpenalised) rooms=[' + roomList(g, ex.b0.path).join(',') + '] d=' + ex.b0.distance.toFixed(2));
+    console.log('    after (penalised)   rooms=[' + roomList(g, ex.b1.path).join(',') + '] d=' + ex.b1.distance.toFixed(2) + ' avoids ' + M + '=' + (ex.b1.path.indexOf(M) < 0));
+  }
+  chk('D REAL-REROUTE a real Hospital query that cut through RM_Level_1_13 (+R7) now routes via the corridor instead, and still resolves',
+    !!ex && ex.b1.path.indexOf(M) < 0 && ex.b0.path.indexOf(M) >= 0,
+    ex ? ('rerouted, d ' + ex.b0.distance.toFixed(1) + '→' + ex.b1.distance.toFixed(1)) : 'no case found');
+  db.close();
+}
+
+// ── Part E — reachability preserved ──
+console.log('\n§E reachability preserved (destination IS a tagged utility room)');
+{
+  const { db, q } = openQ(B('Hospital'));
+  const g = RG.buildGraph(q, { log: () => {} });
+  const M = 'RM_Level_1_13';
+  // pick any ordinary room that can reach M; confirm non-null with real tags active
+  const src = g.nodes.find(n => n.kind === 'room' && !n.isUtility && RG.shortestPath(g, n.guid, M));
+  const p = src ? RG.shortestPath(g, src.guid, M) : null;
+  console.log('  §E_REACHABLE ' + (src ? src.guid : '?') + '->' + M + ' tagged=' + !!g.nodesByGuid[M].isUtility + ' d=' + (p ? p.distance.toFixed(2) : 'null'));
+  chk('E REACHABLE a tagged utility room is still reachable as a destination (finite penalty, non-null)',
+    !!p && p.distance > 0, p ? ('d=' + p.distance.toFixed(2)) : 'NULL');
+  db.close();
+}
+
+// ── Part F — no-regression on a routing-inert building ──
+console.log('\n§F no-regression (JKR, 0 routing utility rooms) — byte-identical vs before');
+{
+  const { db, q } = openQ(B('JKR'));
   const gNew = RG.buildGraph(q, { log: () => {} });
   const gOld = RGbefore.buildGraph(q, { log: () => {} });
-  const util = gNew.nodes.filter(n => n.isUtility);
-  const utilWithEdges = util.filter(n => gNew.edges.some(e => e.a === n.guid || e.b === n.guid));
-  console.log('  §NOREG_' + label + ' utilityRooms=' + util.length + ' ofWhichWithEdges=' + utilWithEdges.length);
-  // Invariant that makes this a real no-regression, not luck: any utility room present is edgeless,
-  // so the penalty branch is inert and paths cannot change (the structural finding, re-confirmed).
-  chk('C0-' + label + ' utility rooms present (if any) are edgeless → penalty branch is inert here',
-    utilWithEdges.length === 0, 'utilityRooms=' + util.length + ' withEdges=' + utilWithEdges.length);
-
+  const nUtil = gNew.nodes.filter(n => n.isUtility).length;
   const rooms = gNew.nodes.map(n => n.guid);
-  let compared = 0, identical = 0, firstDiff = null;
-  const LIMIT = Math.min(rooms.length, limit);
-  for (let i = 0; i < LIMIT; i++) for (let j = i + 1; j < LIMIT; j++) {
-    const pN = RG.shortestPath(gNew, rooms[i], rooms[j]);
-    const pO = RGbefore.shortestPath(gOld, rooms[i], rooms[j]);
-    compared++;
-    const same = (pN === null && pO === null) ||
-      (pN && pO && JSON.stringify(pN.path) === JSON.stringify(pO.path) && Math.abs(pN.distance - pO.distance) < 1e-9);
-    if (same) identical++; else if (!firstDiff) firstDiff = rooms[i] + '->' + rooms[j];
+  let cmp = 0, id = 0, firstDiff = null;
+  const L = Math.min(rooms.length, 20);
+  for (let i = 0; i < L; i++) for (let j = i + 1; j < L; j++) {
+    const pN = RG.shortestPath(gNew, rooms[i], rooms[j]), pO = RGbefore.shortestPath(gOld, rooms[i], rooms[j]);
+    cmp++;
+    const same = (pN === null && pO === null) || (pN && pO && JSON.stringify(pN.path) === JSON.stringify(pO.path) && Math.abs(pN.distance - pO.distance) < 1e-9);
+    if (same) id++; else if (!firstDiff) firstDiff = rooms[i] + '->' + rooms[j];
   }
-  console.log('  §NOREG_' + label + ' compared=' + compared + ' identical=' + identical + (firstDiff ? ' firstDiff=' + firstDiff : ''));
-  chk('C1-' + label + ' every path byte-identical (path + distance) to the origin/main module',
-    identical === compared && compared > 0, identical + '/' + compared + ' identical');
+  console.log('  §F_NOREG JKR utilityRooms=' + nUtil + ' compared=' + cmp + ' identical=' + id + (firstDiff ? ' firstDiff=' + firstDiff : ''));
+  chk('F NO-REGRESSION JKR (no routing utility rooms) every path byte-identical to origin/main', nUtil === 0 && id === cmp && cmp > 0, id + '/' + cmp);
   db.close();
 }
-// Duplex: 2 edgeless utility rooms present → proves the penalty stays inert even when a building
-// DOES carry utility rooms (as long as they're the doorless voids the classifier flags).
-noRegression(DUPLEX, 'DUPLEX', 22);
-// JKR: a building with genuinely ZERO utility rooms in play — the literal "no utility rooms" case.
-noRegression('/home/red1/bim-ootb/buildings/JKR_extracted.db', 'JKR', 20);
+
+// ── Honest finding: composition-presence over-tags duct-dense buildings ──
+console.log('\n§HONEST-FINDING composition-presence over-tagging (reported, not a failure)');
+{
+  const { db, q } = openQ(B('Clinic'));
+  const g = RG.buildGraph(q, { log: () => {} });
+  const tagged = g.nodes.filter(n => n.isUtility).length, rooms = g.nodes.filter(n => n.kind === 'room').length;
+  console.log('  §OVERTAG Clinic tagged=' + tagged + '/' + rooms + ' rooms — HVAC ducts traverse most ceilings, so composition-PRESENCE');
+  console.log('    tags most rooms; net effect there = general corridor-preference (corridors exempt), NOT cabling-only targeting.');
+  console.log('    Follow-up (named in doc §10): a duct-DOMINANCE threshold to single out true service rooms. Not invented here.');
+  db.close();
+}
 
 console.log('\n§W-UTIL-PENALTY DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);
