@@ -2445,6 +2445,43 @@
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — unknown op');
   }
 
+  // applyOpGroup — commit a MULTI-op result (e.g. a Generate-Shipments/-Invoices/-Order-from-Project
+  // KIND-2 CREATE_DOCUMENT + N×CREATE_LINE group, erp_engine.js's buildDoc/genShipmentLines/genInvoiceLines)
+  // as ONE atomic signed op-group. Implementing ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22 "missing commit
+  // wiring" — erp_engine.js's own header already documented the intent ("Verbs return ops[]; the kernel
+  // applies + commitOps them") but no caller ever existed for the Generate-process UI path; a working
+  // caller for the SAME shape already exists in pos_lens.js (buildSaleGroup/buildRegisterGroup →
+  // KO.commitGroup(opDb, ops.map(o=>({op_type:o.op_type,params:o})), {})) — this reuses that exact
+  // primitive+shape, wrapped in the SAME cross-tab-safe _withFreshSide hydration commitCrud already uses
+  // (none of these ops are owner-gated — every op is a fresh CREATE, matching commitCrud's own "CREATE has
+  // no prior owner to gate" note). K.commitGroup's own atomicity guarantee means every op in the group
+  // commits together or none do. cb(result) — result = {committed, gid?, ids?, sealed?, verifyOk?, reason?}.
+  function applyOpGroup(ops, cb) {
+    cb = cb || function () {};
+    if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
+    var K = kernel();
+    withSidecar(function (db) {
+      if (!db || !K || typeof K.commitGroup !== 'function') { console.log('§CRUD-GROUP kernel/sql.js absent — cannot commit'); cb({ committed: false, reason: 'kernel/sql.js absent' }); return; }
+      _withFreshSide(K, function (freshDb, done) {
+        var groupOps = ops.map(function (o) { return { op_type: o.op_type, params: o }; });
+        Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
+          if (!res || res.committed !== true) {
+            console.warn('§CRUD-GROUP commitGroup not-committed reason=' + (res && res.reason || '?'));
+            cb({ committed: false, reason: (res && res.reason) || 'not-committed' }); done(); return;
+          }
+          return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
+            return _sidePersist(K, freshDb, res.ids).then(function () {
+              console.log('§CRUD-GROUP-PERSIST ops=' + res.ids.length + ' source=sidecar gid=' + res.gid + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              try { global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'CREATE_GROUP', id: null, gid: res.gid } })); } catch (ev) {}
+              cb({ committed: true, gid: res.gid, ids: res.ids, sealed: res.sealed, verifyOk: !!(v && v.ok) });
+              done();
+            });
+          });
+        }).catch(function (er) { console.warn('§CRUD-GROUP commit error', er && er.message); cb({ committed: false, reason: 'error: ' + (er && er.message) }); done(); });
+      });
+    });
+  }
+
   // ── page-data helpers (truth-bound Edit pre-fill from the real bundle row) ──
   // recId — the record's pk value. key+'_id' is the convention; lookup is CASE-INSENSITIVE so it works on
   // glassbowl rows (lower-case cols) AND the iDempiere renderer's SELECT * rows (original-case cols, e.g.
@@ -2687,6 +2724,7 @@
 
   global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
+                    applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
