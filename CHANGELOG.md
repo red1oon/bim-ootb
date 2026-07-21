@@ -4,6 +4,43 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.24.0](https://github.com/red1oon/bim-ootb/compare/v1.23.0...v1.24.0) (2026-07-21)
+
+
+### ✨ Features
+
+* **cinema:** §CINEMA_FLAT_ENDING — monotonic glide to a held, flat orbit ending ([#923](https://github.com/red1oon/bim-ootb/issues/923)) ([a5b65fd](https://github.com/red1oon/bim-ootb/commit/a5b65fd06d6bff04ff6a79e3c561858bbab36ef6))
+* **cinema:** §CINEMA_ORBIT_V2 — the whole route redesigned per live-trial feedback ([#925](https://github.com/red1oon/bim-ootb/issues/925)) ([3df154f](https://github.com/red1oon/bim-ootb/commit/3df154f87b53595093df5f5e81a701c4b17ae329))
+* **erp:** multi-device roster verification for cross-device DocAction attribution (W-MULTI-DEVICE-VERIFY) ([#932](https://github.com/red1oon/bim-ootb/issues/932)) ([352f441](https://github.com/red1oon/bim-ootb/commit/352f441f348b669392b702de700acf4ccd824ecd))
+* **rooms:** §ROOM_WALKER_VERSION_STAMP stages 1+2 — sync room_walker.js port + cache-bust ([#934](https://github.com/red1oon/bim-ootb/issues/934)) ([793a054](https://github.com/red1oon/bim-ootb/commit/793a054c1b606600fc084c079af04b40af3d619d))
+* **schedule:** add PMXML/XER writers — the missing P6 write-back (prompts/XER_PMXML_WRITER_LANE.md) ([#911](https://github.com/red1oon/bim-ootb/issues/911)) ([2264092](https://github.com/red1oon/bim-ootb/commit/2264092fd168dbaa625eb93a648d083069b28ad0))
+* **time-machine:** DLOD Phase 3 — box-proxy inactive-built elements by construction-time activity ([#918](https://github.com/red1oon/bim-ootb/issues/918)) ([4e9be99](https://github.com/red1oon/bim-ootb/commit/4e9be99dbcb6a237c1657aab6294c5e958efc002))
+* **time-machine:** DLOD Phase 3 redesign — view-based, not time-based (user ask) ([#920](https://github.com/red1oon/bim-ootb/issues/920)) ([62b126e](https://github.com/red1oon/bim-ootb/commit/62b126e81c15e86a0f9275d0073424c712f83692))
+* **tour:** §TOUR_CACHE — cache the computed Fly Tour route per building (16.5s → 0.4s repeat activation on LTU) ([#917](https://github.com/red1oon/bim-ootb/issues/917)) ([4ccf5ef](https://github.com/red1oon/bim-ootb/commit/4ccf5ef335b7f05511c47fec076f04abaa62ff81))
+* **viewer:** nav-scope DLOD box-proxy — Fly Tour/free-orbit LOD for large buildings (FLY_TOUR_DLOD_SCALE.md §9) ([#935](https://github.com/red1oon/bim-ootb/issues/935)) ([29b7735](https://github.com/red1oon/bim-ootb/commit/29b7735d628ab443c593c7f7c237e4e955334867))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_SPACE_ENCLOSED_SKIP — skip disqualified dive candidates before bbox-centre ([#933](https://github.com/red1oon/bim-ootb/issues/933)) ([4a24cde](https://github.com/red1oon/bim-ootb/commit/4a24cde3d567094d7dbfb089f43bc44022d8b70c))
+* **erp:** install the device signer + preserve gid/sig/branch_id through a relay rebase (W-REBASE-ATTRIB) ([#930](https://github.com/red1oon/bim-ootb/issues/930)) ([cb58306](https://github.com/red1oon/bim-ootb/commit/cb58306e30b881d8b4debf311519f506cfe599f4))
+* **erp:** Sales Order child tab was binding to a stale parent order ([#928](https://github.com/red1oon/bim-ootb/issues/928)) ([5044d0d](https://github.com/red1oon/bim-ootb/commit/5044d0d11958de757043a775f901b15e6592cbe3))
+* **history:** back-arrow no longer mints a spurious forward dot mid-scrub ([#924](https://github.com/red1oon/bim-ootb/issues/924)) ([bbf8c9e](https://github.com/red1oon/bim-ootb/commit/bbf8c9edac255550dc1a8c33ace1a1c2ad4d940e))
+* **tests:** witness_disc_density D3 oracle — true-midpoint grid + per-host footprint for bound fixtures ([#929](https://github.com/red1oon/bim-ootb/issues/929)) ([ed1aafd](https://github.com/red1oon/bim-ootb/commit/ed1aafd8fc2254cb18b46aa671c0aed3643cdc41))
+* **time-machine:** DLOD Phase 3 boxes → wireframe, not solid (user ask) ([#919](https://github.com/red1oon/bim-ootb/issues/919)) ([490c768](https://github.com/red1oon/bim-ootb/commit/490c76810d8f9249bc6c9e87f9f38ab127de9aeb))
+* **time-machine:** startPlayback wrap warps render via renderAtTime — last cursor-pre-mutation sites ([#912](https://github.com/red1oon/bim-ootb/issues/912) audit) ([#916](https://github.com/red1oon/bim-ootb/issues/916)) ([43b9eb5](https://github.com/red1oon/bim-ootb/commit/43b9eb583cb779b2473c52f98cd68797634207ce))
+* **time-machine:** stop pre-mutating _cursor before renderAtTime — fixes playback freeze under Phase 2 delta skip ([#912](https://github.com/red1oon/bim-ootb/issues/912)) ([58a9f2a](https://github.com/red1oon/bim-ootb/commit/58a9f2a93687945231c21d5a8e5feea8f38e1a79))
+* **tm:** §DLOD_TM_CAMGUARD — box→real restore was skipped on camera-only ticks ([#927](https://github.com/red1oon/bim-ootb/issues/927)) ([ee57a3e](https://github.com/red1oon/bim-ootb/commit/ee57a3e40e06a6b4efdd378bca2ed81eba5ae8a6))
+* **tour:** §IDLE-PARK wake missing in _startFlyTour — cinematic tour built but never ticked (LTU freeze) ([#914](https://github.com/red1oon/bim-ootb/issues/914)) ([a71a699](https://github.com/red1oon/bim-ootb/commit/a71a699167e87c59b5aa96ee48d26a2d40f5e5b4))
+* **tour:** §TOUR_CACHE self-heals on quota-exceeded — evict stale keys and retry (prompts/TOUR_ROUTE_CACHE.md §4) ([#926](https://github.com/red1oon/bim-ootb/issues/926)) ([2353e1d](https://github.com/red1oon/bim-ootb/commit/2353e1dfe1211837be99ef9051f97ef80b10d9ec))
+* **viewer:** §BBOX_GHOST_STUCK_RESET + §BBOX_GHOST_RAYCAST_FILTER — the merged-ghost shell never reverted, and raycasts never learned to ignore it ([#921](https://github.com/red1oon/bim-ootb/issues/921)) ([ddd25bd](https://github.com/red1oon/bim-ootb/commit/ddd25bd44406d8ff8c42b0dd06082a00e448b75d))
+* **viewer:** §CINEMA_GHOST_RESET — Alt+C leaves ghost bbox/x-ray shell stuck visible ([#931](https://github.com/red1oon/bim-ootb/issues/931)) ([c6fe5b6](https://github.com/red1oon/bim-ootb/commit/c6fe5b6864a6c64d3576fc0d0982435de987e792))
+
+
+### ⚡ Performance
+
+* **time-machine:** §PERF_INCR Phase 2 — delta skip now engages under Shadow/Alt-G ([#909](https://github.com/red1oon/bim-ootb/issues/909)) ([98416d9](https://github.com/red1oon/bim-ootb/commit/98416d952268fc3f851959aeae9749eb29082279))
+
 ## [1.23.0](https://github.com/red1oon/bim-ootb/compare/v1.22.0...v1.23.0) (2026-07-19)
 
 
