@@ -1207,6 +1207,26 @@
         console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || '(first)') + '"');
       } else if (f.type === 'fk' && typeof withBundle === 'function') {
         var keep = el.value;
+        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — a readonly fk (a child tab's
+        // locked parent-link column, e.g. C_OrderLine.C_Order_ID, or any other read-only fk) must KEEP its
+        // seeded/current value verbatim. The full LIST query below is scoped to the raw base table and can
+        // NEVER include a synthetic/overlay-only row (a freshly created parent, negative pk) — repopulating
+        // from it silently replaced a correct-but-unmatched value with whichever row sorted first (the
+        // actual root cause of the order-line-gets-a-stale-parent bug). Look up just THIS row's friendly
+        // label instead of the full list; if the pk isn't a real base row (synthetic), fall back to showing
+        // the raw value — correct, just not pretty, same degrade-gracefully convention used elsewhere.
+        if (f.readonly) {
+          if (keep === '' || keep == null) return;
+          withBundle(function (db) {
+            try {
+              var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
+              var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
+              el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
+            } catch (er) {}
+          });
+          return;
+        }
         withBundle(function (db) {
           try {
             var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
@@ -1420,6 +1440,11 @@
       if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-NEW table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
       var vals = CORE.defaultsFor(e, today());
       _seedDocNoPreview(e, vals);
+      // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — opts.seedVals lets the host
+      // (idempiere.html, for a child tab's locked parent-link column) inject a value defaultsFor() has no
+      // way to know — AD_Column.DefaultValue is empty for a parent-link FK by convention (it's set
+      // programmatically, never via a column default). Optional; every other caller is unaffected.
+      if (opts.seedVals) { var _sk = Object.keys(opts.seedVals); for (var _si = 0; _si < _sk.length; _si++) vals[_sk[_si]] = opts.seedVals[_sk[_si]]; }
       renderInline('create', e, vals, null, null, host, opts);
     });
   }
