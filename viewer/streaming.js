@@ -1124,6 +1124,10 @@ function setupStreaming(A) {
             console.warn('§BATCHED_ADDGEO_FAIL bucket=' + key + ' i=' + i + ' err=' + e.message);
             continue;
           }
+          // FLY_TOUR_DLOD_SCALE.md §9: slot→source-geometry ref for dlod_nav's overlay-hoist
+          // cross-fade (BatchedMesh has no per-instance alpha on r185). Reference only — geo
+          // already resident in A.meshCache; contract structures (_batchMeta etc.) untouched.
+          (bm.userData.slotGeo = bm.userData.slotGeo || {})[slotId] = geo;
 
           // Position via matrix
           const pos = A.ifc2three(el.cx, el.cy, el.cz);

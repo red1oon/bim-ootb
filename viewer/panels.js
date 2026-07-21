@@ -1394,6 +1394,14 @@ function setupPanels(A) {
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
+      // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
+      // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
+      // tm-lod. Default OFF; no-ops with a toast on <50k-element buildings (§DLOD_NAV_GATE).
+      { id: 'dlodnav',    name: 'Nav LOD (large bldgs)', pill: false,
+        icon: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+        fn: function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); },
+        isActive: function() { return !!window._dlodNavOn; },
+        children: [ { name: 'Boxes far/off-screen elements while you fly/orbit' }, { name: 'Real mesh within 50 m + in view' }, { name: 'Off during Time Machine, Find isolate, Cinema' } ] },
       { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
