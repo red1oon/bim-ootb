@@ -907,6 +907,174 @@ async function setupScene(A) {
     console.log('§ZOOM dir=' + dir + ' ' + (dir > 0 ? 'in' : 'out'));
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // ROOM_CYCLE_HOME_SHORTCUTS.md — plain R cycles to progressively smaller rooms by real area;
+  // plain Home resets the cycle + fits a tight exterior view. Fully independent of Alt+C
+  // Cinema/MaxQ (no shared state, never calls startMaxQualityOrbit/startCinemaOrbit).
+  // ══════════════════════════════════════════════════════════════
+  var _roomCycleList = null;   // [{guid,area,name,cx,cy,cz,sx,sy}] sorted area DESC — IFC-space centers
+  var _roomCycleIdx = -1;      // -1 = fresh/reset; 0 = largest; clamps at list.length-1
+  var _roomCycleBld = null;    // building the list was built for — a building switch forces a rebuild
+
+  // "Largest" per ROOM_CYCLE_HOME_SHORTCUTS.md §Spec: SUM(size_x*size_y) GROUP BY room_guid over
+  // spatial_structure (existing columns — no schema change), excluding SUSPECT_* (compiler's own
+  // low-confidence flag, same filter class as Alt+C's §CINEMA_SPACE_ENCLOSED_SKIP). `room_guid` is
+  // only present after room_walker.js's writeRooms() ALTERs it in (§MULTI-RECT compiled rooms) —
+  // real/un-compiled IfcSpace data has no such column, same schema-tolerance fallback (bare `guid`)
+  // navigate_find.js/room_graph.js/hallway_backbone.js already use everywhere else.
+  function _buildRoomAreaList() {
+    if (!A.dbQuery) return [];
+    var hasRoomGuid = false;
+    try {
+      var cols = A.dbQuery('PRAGMA table_info(spatial_structure)');
+      hasRoomGuid = cols.some(function(c) { return c[1] === 'room_guid'; });
+    } catch (e) { /* table missing — rows below will just come back empty */ }
+    var rg = hasRoomGuid ? 'room_guid' : 'guid';
+    var rows = A.dbQuery(
+      'SELECT ' + rg + ' AS rg, SUM(size_x * size_y) AS area FROM spatial_structure ' +
+      "WHERE type='IfcSpace' AND " + rg + ' IS NOT NULL ' +
+      "AND (predefined_type IS NULL OR predefined_type NOT LIKE 'SUSPECT\\_%' ESCAPE '\\') " +
+      'GROUP BY ' + rg + ' ORDER BY area DESC');
+    var list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var guid = rows[i][0], area = rows[i][1];
+      if (!guid || !(area > 0)) continue;
+      // Primary rect row (§MULTI-RECT: guid === room_guid is the un-suffixed first sub-rect) —
+      // its own center/size is the room's anchor position, not an average across sub-rects.
+      var pr = A.dbQuery('SELECT name, center_x, center_y, center_z, size_x, size_y ' +
+        "FROM spatial_structure WHERE type='IfcSpace' AND guid = ?", [guid]);
+      if (!pr.length) continue;
+      list.push({ guid: guid, area: area, name: pr[0][0] || guid,
+        cx: pr[0][1], cy: pr[0][2], cz: pr[0][3], sx: pr[0][4], sy: pr[0][5] });
+    }
+    return list;
+  }
+
+  // The building's main entrance = the lowest-cz 'exit' node of the room/corridor graph — reused
+  // verbatim from tour.js's own entrance pick (never reimplemented, per the spec's Confirmed facts).
+  function _graphEntrance(graph) {
+    if (!graph || !graph.nodesByGuid) return null;
+    var entrance = null;
+    for (var k in graph.nodesByGuid) {
+      var n = graph.nodesByGuid[k];
+      if (n.kind === 'exit' && (!entrance || n.cz < entrance.cz)) entrance = n;
+    }
+    return entrance ? { cx: entrance.cx, cy: entrance.cy, cz: entrance.cz } : null;
+  }
+
+  // A specific room's OWN doorway — any graph edge touching this room's guid that carries a real
+  // doorGuid (E1/E2/E4), reusing the door-carrying-room routing tag (bim-ootb#03a6cb7) rather than
+  // reinventing door detection. Every such door is registered in graph.nodesByGuid (kind 'doorwp'/
+  // 'exit') with its own real measured position — never a storey centroid.
+  function _roomOwnDoor(graph, roomGuid) {
+    if (!graph || !graph.edges) return null;
+    for (var i = 0; i < graph.edges.length; i++) {
+      var e = graph.edges[i];
+      if (!e.doorGuid) continue;
+      if (e.a === roomGuid || e.b === roomGuid) {
+        var dn = graph.nodesByGuid && graph.nodesByGuid[e.doorGuid];
+        if (dn) return { cx: dn.cx, cy: dn.cy, cz: dn.cz };
+      }
+    }
+    return null;
+  }
+
+  // Point the camera at `room` (controls.target = room's own center, per spec) so its view
+  // direction leans toward `facing` (entrance for the largest room, own doorway for the rest) —
+  // i.e. the camera is positioned on the OPPOSITE side of the room from `facing`, so continuing
+  // forward from the camera through the room center points at the facing point's bearing.
+  function _faceRoom(room, facing, facingSrc) {
+    var roomC3 = A.ifc2three(room.cx, room.cy, room.cz);
+    var roomSpan = Math.max(room.sx || 0, room.sy || 0, 4);
+    var dist = Math.max(4, roomSpan * 1.5); // same 1.5 fit-margin convention as streaming.js §CAMERA
+    var camPos;
+    if (facing) {
+      var facing3 = A.ifc2three(facing.cx, facing.cy, facing.cz);
+      var dx = facing3.x - roomC3.x, dz = facing3.z - roomC3.z;
+      var horiz = Math.hypot(dx, dz);
+      var ux = horiz > 1e-6 ? dx / horiz : 1, uz = horiz > 1e-6 ? dz / horiz : 0;
+      camPos = { x: roomC3.x - ux * dist * 0.6, y: roomC3.y + dist * 0.8, z: roomC3.z - uz * dist * 0.6 };
+    } else {
+      facingSrc = 'none';
+      camPos = { x: roomC3.x + dist * 0.6, y: roomC3.y + dist * 0.8, z: roomC3.z + dist * 0.6 };
+    }
+    A.camera.position.set(camPos.x, camPos.y, camPos.z);
+    A.controls.target.set(roomC3.x, roomC3.y, roomC3.z);
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+    return facingSrc;
+  }
+
+  async function _cycleRoom() {
+    if (!A.camera || !A.controls || typeof THREE === 'undefined' || !A.dbQuery) {
+      console.log('§ROOM_CYCLE no-op reason=no-engine'); return;
+    }
+    // Lazy-load the Navigate bundle — A.ensureRooms/A.getRoomGraph live there (78KB saved on first
+    // paint; same warm-up pattern effects.js's §CINEMA_ROOMS already uses for the same reason).
+    if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) {
+      try { await A.loadNavigate(); } catch (e) { console.log('§ROOM_CYCLE loadNavigate_err=' + e.message); return; }
+    }
+    if (typeof A.ensureRooms === 'function') {
+      try { await A.ensureRooms({}); } catch (e) { console.log('§ROOM_CYCLE ensureRooms_err=' + e.message); }
+    }
+    if (_roomCycleIdx < 0 || _roomCycleBld !== A.activeBuilding) {
+      _roomCycleList = _buildRoomAreaList();
+      _roomCycleBld = A.activeBuilding;
+      _roomCycleIdx = -1;
+    }
+    if (!_roomCycleList || !_roomCycleList.length) { console.log('§ROOM_CYCLE no-op reason=no-rooms'); return; }
+    if (_roomCycleIdx < _roomCycleList.length - 1) _roomCycleIdx++;  // clamp at the smallest, never wrap
+    var room = _roomCycleList[_roomCycleIdx];
+    var graph = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
+    var isFirst = _roomCycleIdx === 0;
+    // §JUDGMENT-CALL (spec "Out of scope", flagged not user-confirmed): room #2+ faces its OWN
+    // doorway rather than the global entrance — falls back to the entrance if the room has no
+    // tagged door edge (e.g. an isolated/no-door compiled room) so a facing is still attempted.
+    var facing = isFirst ? _graphEntrance(graph) : (_roomOwnDoor(graph, room.guid) || _graphEntrance(graph));
+    var facingSrc = isFirst ? 'entrance' : (_roomOwnDoor(graph, room.guid) ? 'own-door' : 'entrance-fallback');
+    facingSrc = _faceRoom(room, facing, facing ? facingSrc : 'none');
+    console.log('§ROOM_CYCLE press=' + (_roomCycleIdx + 1) + ' guid=' + room.guid +
+      ' area=' + room.area.toFixed(1) + ' name=' + room.name + ' facing=' + facingSrc);
+  }
+
+  // Fit the camera to a TIGHT (zero-margin) exterior view of the whole building's
+  // element_transforms bbox — byte-identical elevation/azimuth ratio (0.6,0.8,0.6) and buildingCentres
+  // target as the initial-load §CAMERA framing (streaming.js, confirmed via grep before copying),
+  // just with the padding multiplier dropped from 1.5 to 1.0 (the 80m floor is a degenerate-envelope
+  // safety clamp, not "margin", so it stays).
+  function _homeFillFrame() {
+    if (!A.camera || !A.controls || !A.dbQuery || typeof THREE === 'undefined') {
+      console.log('§ROOM_HOME no-op reason=no-engine'); return;
+    }
+    var bboxQ = A.dbQuery(A._hasBbox
+      ? 'SELECT MAX(bbox_x), MAX(bbox_y), MAX(bbox_z), MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms'
+      : 'SELECT NULL, NULL, NULL, MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
+    var envW = 500, envD = 500, envH = 100;
+    if (bboxQ.length > 0 && bboxQ[0][3] != null) {
+      var xMin = bboxQ[0][3], xMax = bboxQ[0][4], yMin = bboxQ[0][5], yMax = bboxQ[0][6], zMin = bboxQ[0][7], zMax = bboxQ[0][8];
+      envW = xMax - xMin; envD = yMax - yMin; envH = zMax - zMin;
+    }
+    if (envW < 1 && A.buildingCentres && Object.keys(A.buildingCentres).length > 0) {
+      var bc0 = Object.values(A.buildingCentres)[0];
+      envW = Math.max(50, Math.sqrt(bc0.count) * 2); envD = envW; envH = envW * 0.5;
+    }
+    var envelope = Math.max(envW, envD, envH);
+    var dist = Math.max(80, envelope * 1.0);  // §ZERO_MARGIN: was envelope*1.5 at load time
+    var firstBc = (A.buildingCentres && Object.keys(A.buildingCentres).length) ? Object.values(A.buildingCentres)[0] : null;
+    var ctr = firstBc ? A.ifc2three(firstBc.ix, firstBc.iy, firstBc.iz) : A.ifc2three(0, 0, 0);
+    A.camera.position.set(ctr.x + dist * 0.6, ctr.y + dist * 0.8, ctr.z + dist * 0.6);
+    A.controls.target.set(ctr.x, ctr.y, ctr.z);
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+    console.log('§ROOM_HOME reset=cycle+frame bbox=' + envW.toFixed(0) + 'x' + envD.toFixed(0) + 'x' + envH.toFixed(0) + 'm dist=' + dist.toFixed(0) + 'm');
+  }
+
+  function _homeResetAndFrame() {
+    _roomCycleIdx = -1;   // next R press goes back to the largest room
+    _homeFillFrame();
+  }
+  A._roomCycle = { list: function() { return _roomCycleList; }, idx: function() { return _roomCycleIdx; } }; // exposed for tests
+
   var _shortcuts = {
     '+':  function() { _zoomStep(1); },             // zoom in
     '-':  function() { _zoomStep(-1); },            // zoom out
@@ -1115,6 +1283,9 @@ async function setupScene(A) {
     // the pill-drawer reorg (§DELETIONS, e433ac4) but this binding + window.toggleRecord() were
     // left behind, throwing ReferenceError: _recBtn is not defined on every press. No live caller
     // left anywhere in the codebase — matches the reorg's own "no longer in use, delete" verdict.
+    // ROOM_CYCLE_HOME_SHORTCUTS.md (2026-07-22): 'r' reused for Room Cycle — plain R is confirmed
+    // free (grepped), unrelated to the retired Record binding above.
+    'r':  function() { _cycleRoom(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…
@@ -1958,6 +2129,19 @@ async function setupScene(A) {
         _focusedPanel.nav.onTypeahead(e.key);
         return;
       }
+    }
+
+    // ROOM_CYCLE_HOME_SHORTCUTS.md — plain Home resets the R-cycle + fits a tight exterior frame,
+    // but ONLY in the genuine gap where Home is otherwise unclaimed: placed AFTER the _focusedPanel
+    // block above (so a focused list-nav panel keeps owning Home for jump-to-top, case 2 in the
+    // spec's Confirmed facts) and guarded off whenever corridor-nav is active (navigate_engine.js's
+    // own separate keydown listener already owns Home for route-reset via A._nav.active, case 1) —
+    // NOT placed in the top "always-on modifiers" section, which runs before the panel-focus check
+    // and would wrongly steal case 2.
+    if (noMod && notInput && e.key === 'Home' && !(A._nav && A._nav.active) && !_focusedPanel) {
+      e.preventDefault();
+      _homeResetAndFrame();
+      return;
     }
 
     if (!noMod || !notInput) { console.log('§KBD_ROUTE drop key=' + e.key + ' noMod=' + noMod + ' notInput=' + notInput); return; }
