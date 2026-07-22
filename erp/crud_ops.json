@@ -95,6 +95,12 @@
       { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
         "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
       { "col": "movementdate", "label": "Movement Date", "type": "date", "required": true, "default": "today" },
+      { "col": "m_warehouse_id", "label": "Warehouse (ID)", "type": "number", "required": false,
+        "note": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — Java header field (org.compiere.model.MInOut header), manual entry same as C_Order.M_PriceList_ID; required for a Purchase (vendor) receipt, since InOutGenerate's SO-only fold never populates it here." },
+      { "col": "c_bpartner_id", "label": "Business Partner (ID)", "type": "number", "required": false,
+        "note": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — same header extension; a vendor receipt's BPartner is entered manually (real Java: MInOut header, not derived) — see CreateFromInOut/createLineFrom for how PO lines are then pulled in against this header." },
+      { "col": "c_order_id", "label": "Purchase Order (ID)", "type": "number", "required": false,
+        "note": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — the PO this receipt is against; lines are pulled from this order's lines via the Create-Lines-From-PO picker (§Fix 2), mirroring org.compiere.process.CreateFromInOut." },
       { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
       { "col": "docstatus", "label": "Status", "type": "list", "ref": "docStatus", "required": true, "default": "DR" }
     ]
@@ -103,13 +109,18 @@
   "c_invoice": {
     "op": "o2c", "ordinal": 3, "kind": "bubble", "tab": "Data",
     "title": "Invoice",
-    "verbs": ["update", "delete", "process"],
+    "verbs": ["create", "update", "delete", "process"],
     "docAction": { "action": "CO", "from": "DR", "to": "CO", "requires": ["dateinvoiced"], "oracle": "org.compiere.model.MInvoice.completeIt()" },
     "ownerGated": true,
+    "createNote": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — 'create' is reachable ONLY via the Create-Invoice-Lines-from-PO/Receipt picker (§Fix 4, mirrors org.compiere.process.CreateFromInvoice), never a bare blank invoice — grandtotal stays derived, never typed (see grandtotal note below), matching the real Java's price-always-copied-from-the-order-line rule.",
     "fields": [
       { "col": "documentno", "label": "Document No", "type": "string", "required": true, "default": "auto",
         "validation": { "regex": "^[0-9]+$", "valRule": "docno_numeric" } },
       { "col": "dateinvoiced", "label": "Date Invoiced", "type": "date", "required": true, "default": "today" },
+      { "col": "c_bpartner_id", "label": "Business Partner (ID)", "type": "number", "required": false,
+        "note": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — a vendor invoice's BPartner (Sales invoices derive it from the order; this is the Purchase-side manual header field)." },
+      { "col": "c_order_id", "label": "Purchase Order (ID)", "type": "number", "required": false,
+        "note": "Implementing ERP_P2P_INVOICE_MATCH.md §Fix 1 — the PO this vendor invoice is against; lines pulled via §Fix 4's picker." },
       { "col": "grandtotal", "label": "Grand Total", "type": "number", "readonly": true,
         "note": "derived by replaying the log against the order/shipment — not entered (help_ops c_invoice: 'derived by replaying the log, not stored twice')" },
       { "col": "description", "label": "Description", "type": "string", "required": false, "default": "" },
