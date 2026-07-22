@@ -4,6 +4,51 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.25.0](https://github.com/red1oon/bim-ootb/compare/v1.24.0...v1.25.0) (2026-07-22)
+
+
+### ✨ Features
+
+* **erp:** Confirm & Post — Generate-Shipments/Invoices/PO results now actually commit ([#960](https://github.com/red1oon/bim-ootb/issues/960)) ([81518d2](https://github.com/red1oon/bim-ootb/commit/81518d2bf725dd5c27a9d48833fd23e3c05bba51))
+* **room-path:** raster-constrained A* polyline — the drawn route hugs real floor (§13 Stage B) ([#967](https://github.com/red1oon/bim-ootb/issues/967)) ([302f694](https://github.com/red1oon/bim-ootb/commit/302f694ea4ae51bfaba6c576571daa161cf77ec1))
+* **rooms:** §ROOM_WALKER_VERSION_STAMP stage 3 — HHS-only version-check pilot ([#939](https://github.com/red1oon/bim-ootb/issues/939)) ([811a7e3](https://github.com/red1oon/bim-ootb/commit/811a7e3f3180460f796e73e17158e080fe485964))
+* **rooms:** §ROOM_WALKER_VERSION_STAMP stage 4 — widen version-check fleet-wide ([#947](https://github.com/red1oon/bim-ootb/issues/947)) ([34e6495](https://github.com/red1oon/bim-ootb/commit/34e6495237b7f8231082e5c0edf5887d0c3b1a61))
+* **viewer:** 'o' DLOD-nav warms rooms via the existing ensureRooms path (idle-deferred) ([#942](https://github.com/red1oon/bim-ootb/issues/942)) ([b48a576](https://github.com/red1oon/bim-ootb/commit/b48a57676ab740826be5ac2db13a3e8b0a4062b4))
+* **viewer:** GPU capability degradation warning (FLY_TOUR_DLOD_SCALE.md §14) ([#965](https://github.com/red1oon/bim-ootb/issues/965)) ([9e33777](https://github.com/red1oon/bim-ootb/commit/9e337773913cc024503fa77c6d8bfedfefe4d529))
+* **viewer:** log active CACHE_VERSION at page onset (§BUILD_VERSION) ([#951](https://github.com/red1oon/bim-ootb/issues/951)) ([9bf2688](https://github.com/red1oon/bim-ootb/commit/9bf26881d6dcf2b05b8294951d6fd8fd45767857))
+* **viewer:** room-mismatch demote, step 1 (FLY_TOUR_DLOD_SCALE.md §13) ([#962](https://github.com/red1oon/bim-ootb/issues/962)) ([e84a079](https://github.com/red1oon/bim-ootb/commit/e84a079e6e36f1c52cd485c7a8f1f090fb65c922))
+* **viewer:** status-bar confirmation on Nav LOD toggle (user ask) — ON/OFF message, 5s auto-clear ([#941](https://github.com/red1oon/bim-ootb/issues/941)) ([7ba7537](https://github.com/red1oon/bim-ootb/commit/7ba75378e9c35a62eb385ac9c6b584e51240ce65))
+
+
+### 🐛 Fixes
+
+* **cinema:** spin-at-wall — glazing hits no longer trigger avoidance nudging (prompts/PHOTOREAL_STILL_RENDER.md §Issue 2a) ([#958](https://github.com/red1oon/bim-ootb/issues/958)) ([57a0f4d](https://github.com/red1oon/bim-ootb/commit/57a0f4dcef6d552f80822ed346cb35df96c57ad4))
+* **disc-walker:** STOREY-ZBAND — measured-interval Z guard for hostBind SIDE selection ([#963](https://github.com/red1oon/bim-ootb/issues/963)) ([e5dd2bf](https://github.com/red1oon/bim-ootb/commit/e5dd2bf38575ae8217436384275cc9a71f8f7451))
+* **erp:** C_Order.DeliveryRule/InvoiceRule now derive real AD_Column defaults, not left undefined ([#955](https://github.com/red1oon/bim-ootb/issues/955)) ([e27d1bf](https://github.com/red1oon/bim-ootb/commit/e27d1bfbdc0861c52014dc46aa7d54de869ae4e6))
+* **erp:** child-tab New forms seed their locked parent-link FK with the real parent pk ([#956](https://github.com/red1oon/bim-ootb/issues/956)) ([0269cec](https://github.com/red1oon/bim-ootb/commit/0269cec26b077f23c76ed8ad204cf02bc342c98a))
+* **erp:** cleanVals lets hook-derived CREATE fields ride the op — M_Warehouse_ID no longer dropped ([#944](https://github.com/red1oon/bim-ootb/issues/944)) ([b70f1ba](https://github.com/red1oon/bim-ootb/commit/b70f1baee406ea3614808085f846b0da7c4480e7))
+* **erp:** fold the op-log overlay into the Generate-Shipments/Invoices order picker ([#938](https://github.com/red1oon/bim-ootb/issues/938)) ([2033997](https://github.com/red1oon/bim-ootb/commit/20339977ad6602d28e3d40cec08dce2d5ff988e2))
+* **erp:** Generate-Shipments/Invoices handlers fold the op-log overlay, not just the raw base table ([#948](https://github.com/red1oon/bim-ootb/issues/948)) ([573a29f](https://github.com/red1oon/bim-ootb/commit/573a29f42687297b5703861149ec30c958e4c403))
+* **erp:** listTip's stdDefaults fold writes lowercase columns, not mixed-case — fixes AD_Org_ID=NaN ([#968](https://github.com/red1oon/bim-ootb/issues/968)) ([e73c23c](https://github.com/red1oon/bim-ootb/commit/e73c23cd9e94494b7d5e24a25778ebfc4581b46a))
+* **erp:** Sales vs Purchase Order windows now derive a real, distinct DocType/IsSOTrx ([#953](https://github.com/red1oon/bim-ootb/issues/953)) ([e9a35c7](https://github.com/red1oon/bim-ootb/commit/e9a35c7d2ea7ac61300eea4734c1f25db14c261e))
+* **raster:** split-DB-aware walkable-raster build — Terminal slabs 0/174 → 174/174 ([#964](https://github.com/red1oon/bim-ootb/issues/964)) ([f60344a](https://github.com/red1oon/bim-ootb/commit/f60344a64142caad38f47c4b61b9fe8b4ce943c1))
+* **room-graph:** tag door-carrying service rooms for routing (close §10 gap) ([#961](https://github.com/red1oon/bim-ootb/issues/961)) ([03a6cb7](https://github.com/red1oon/bim-ootb/commit/03a6cb702693806c87240b000f29a377247a55bb))
+* **room-graph:** utility-room routing penalty in shared Dijkstra weighting ([#959](https://github.com/red1oon/bim-ootb/issues/959)) ([6209f54](https://github.com/red1oon/bim-ootb/commit/6209f54971dfa21f4e79c0834242a0da0b29eca3))
+* **rooms:** Find Panel Room lens calls A.ensureRooms() itself — no longer depends on Fly/Cinema/DLOD warming it first ([#954](https://github.com/red1oon/bim-ootb/issues/954)) ([df5def1](https://github.com/red1oon/bim-ootb/commit/df5def1a26408be531ad60db68cde46078e43f42))
+* **rooms:** port containment storey-alias fix to room_walker.js (JS twin) ([#950](https://github.com/red1oon/bim-ootb/issues/950)) ([1db5117](https://github.com/red1oon/bim-ootb/commit/1db511785e49ffa2f760e7c727ffcd495ee51f9b))
+* **staffage:** Alt+P camera-room avoidance — dd floor + lateral-fan scaling (prompts/PHOTOREAL_STILL_RENDER.md §Issue 1) ([#957](https://github.com/red1oon/bim-ootb/issues/957)) ([33f20c9](https://github.com/red1oon/bim-ootb/commit/33f20c9592d4a50667506db1ee70bb09b25d3e7a))
+* **tour:** IDB route cache + single planning pass — Fly instant on repeat/refresh (TOUR_ROUTE_CACHE.md §5); quiet §PILL_SYNC/§DLOD_NAV log spam ([#940](https://github.com/red1oon/bim-ootb/issues/940)) ([b10f2dd](https://github.com/red1oon/bim-ootb/commit/b10f2dd7303e8dbf7f13b786ceb732f72aa602b8))
+* **viewer:** §CINEMA_SPACE_MEP_SKIP — dive candidates dominated by MEP/plant elements are excluded ([#949](https://github.com/red1oon/bim-ootb/issues/949)) ([9d070e2](https://github.com/red1oon/bim-ootb/commit/9d070e2bac4c067ee4e067b89466bf0434c181fc))
+* **viewer:** §MAXQ_STREAM_FIRST — MaxQ waits for geometry streaming before baking ([#945](https://github.com/red1oon/bim-ootb/issues/945)) ([8e57fb8](https://github.com/red1oon/bim-ootb/commit/8e57fb8a549cb8ff7f2a6390cfa1d445b566c470))
+* **viewer:** bust Fly tour route cache on stage-3 version recompile ([#946](https://github.com/red1oon/bim-ootb/issues/946)) ([7e20d3f](https://github.com/red1oon/bim-ootb/commit/7e20d3f3d9547f76dcf8f43288768338bf93a87a))
+* **viewer:** Nav LOD findable + 'o' shortcut — v1 registered the entry in no drawer list (user: can't find icon; 'b' taken by Background) ([#936](https://github.com/red1oon/bim-ootb/issues/936)) ([2a80960](https://github.com/red1oon/bim-ootb/commit/2a80960fb6ee7d7047ab3baedd295d71b42148fc))
+* **viewer:** NEEDLE_VERSION_STALE/FRAME_STALE log at console.log, not warn ([#952](https://github.com/red1oon/bim-ootb/issues/952)) ([1088805](https://github.com/red1oon/bim-ootb/commit/1088805448f89a1ff36fe6b6402390d76de07c36))
+
+
+### ⚡ Performance
+
+* **viewer:** chunked DLOD-nav evaluation — kills the 42ms in-flight eval hitch (user: 'still lagging in flight') ([#943](https://github.com/red1oon/bim-ootb/issues/943)) ([af6f492](https://github.com/red1oon/bim-ootb/commit/af6f492a17e58e73f8d1e033d426bc45d7a943b9))
+
 ## [1.24.0](https://github.com/red1oon/bim-ootb/compare/v1.23.0...v1.24.0) (2026-07-21)
 
 
