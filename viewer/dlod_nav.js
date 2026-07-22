@@ -575,8 +575,18 @@
         return;
       }
       _pillOn = true; window._dlodNavOn = true;
-      console.log('§DLOD_NAV_TOGGLE on=true');
-      _statusMsg(app, 'Nav LOD ON — boxing far elements (o to turn off)');
+      // §DLOD_NAV_TOGGLE_BLOCKED: toggling on while a gate condition already holds (e.g. bbox/ghost
+      // mode's filterByGuids(new Set()) leaves activeGuidFilter truthy) used to log on=true and stay
+      // silently disengaged — no ENGAGE line, no toast, no way to tell it did nothing. Surface it now;
+      // _tick still auto-engages once the block clears, this is feedback-only, no behavior change.
+      var _armBlock = _gateBlockReason(app);
+      if (_armBlock) {
+        console.log('§DLOD_NAV_TOGGLE on=true blocked=' + _armBlock);
+        _statusMsg(app, 'Nav LOD armed but blocked (' + _armBlock + ') — will engage once cleared');
+      } else {
+        console.log('§DLOD_NAV_TOGGLE on=true');
+        _statusMsg(app, 'Nav LOD ON — boxing far elements (o to turn off)');
+      }
       if (!_rafId) _rafId = requestAnimationFrame(_tick);
       // §DLOD_NAV_ROOMS: a >50k-element building crossing the nav-LOD gate is the same "about to
       // navigate seriously" signal Fly Tour already treats as "make sure rooms are fresh"
