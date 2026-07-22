@@ -1591,6 +1591,11 @@
       // the right-side default doctype instead of always the client's Standard Sales doctype. Only ever read
       // for the derivation-if-unset case (existing docTypeTarget on an UPDATE is left alone regardless).
       if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') ctx.issotrx = app._createIsSOTrx;
+      // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — the M_InOut sibling of the IsSOTrx thread above:
+      // window.APP._createMovementType is set by idempiere.html's buildForm() from the active AD_Tab's own
+      // WhereClause (M_InOut's real per-window signal is MovementType, e.g. Material Receipt tab 296's
+      // "MovementType IN ('V+')" — verified against ad_seed.db, not assumed).
+      if (/^[A-Z][+-]$/.test(app._createMovementType || '')) ctx.movementtype = app._createMovementType;
     } catch (e) {}
     return ctx;
   }
@@ -1891,9 +1896,21 @@
   // pattern): the bundle carries no c_ordertax (a fresh order's invoice tax legs are non-derivable) and
   // post_resolver is not mounted — the omission is LOGGED, never faked. Ship/Invoice creation still works.
   // cb(fanout|null): null → the honest status-only group (engine absent / non-CO / no policy / re-complete).
+  // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3/5 — Witness: W-FOLD-MATCHPO/W-FOLD-MATCHINV. Generalized
+  // from c_order-only to also dispatch m_inout (Receipt CO → M_MatchPO, completeReceipt) and c_invoice
+  // (Invoice CO → M_MatchInv, completeInvoice — already written in erp_engine.js, just never reached this
+  // dispatcher before). Same CO/success/re-complete gate, same withBundle/SELECT*/lower-case convention —
+  // only the per-table body differs (each table's own completeFanout<X> below).
   function completeFanout(op, cb) {
-    if (!(op.key === 'c_order' && op.action === 'CO' && op.to === 'CO' && op.outcome === 'success')) { cb(null); return; }
-    if (op.from === 'CO') { console.log('§SO-COMPLETE fan-out skipped: already CO (no duplicate consequence docs)'); cb(null); return; }
+    if (!(op.action === 'CO' && op.to === 'CO' && op.outcome === 'success')) { cb(null); return; }
+    if (op.from === 'CO') { console.log('§' + fname(op.key) + '-COMPLETE fan-out skipped: already CO (no duplicate consequence docs)'); cb(null); return; }
+    if (op.key === 'c_order')  { completeFanoutOrder(op, cb);   return; }
+    if (op.key === 'm_inout')  { completeFanoutReceipt(op, cb); return; }
+    if (op.key === 'c_invoice') { completeFanoutInvoice(op, cb); return; }
+    cb(null);
+  }
+
+  function completeFanoutOrder(op, cb) {
     var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
     if (!E || typeof E.completeOrder !== 'function' || typeof withBundle !== 'function' || op.id == null) {
       console.log('§SO-COMPLETE fan-out gated: ' + (E ? 'bundle/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
@@ -1918,6 +1935,82 @@
         fanout = ops.length ? { ops: ops, glGate: 'no-order-side-acct/tax-linkage' } : null;
       } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
       cb(fanout);
+    });
+  }
+
+  // _rawRows — SELECT * against the raw bundle, lower-cased columns, plain array of objects. Shared by the
+  // two fold-based fanouts below (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3/5).
+  function _rawRows(db, sql) {
+    var r = db.exec(sql);
+    if (!r.length) return [];
+    return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[String(c).toLowerCase()] = v[i]; }); return o; });
+  }
+
+  // completeFanoutReceipt — M_InOut Complete → M_MatchPO (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 3).
+  // Unlike completeFanoutOrder's raw-bundle SELECT (which only ever finds a SEED row — a manually-created
+  // Receipt lives ONLY as CRUD_CREATE ops in the sidecar's kernel_ops, per §Fix 2026-07-21's own listTip/
+  // readTip discovery for renderOrderPicker), this reads via CORE.listTip fold — baseRows (raw, usually
+  // empty for a fresh tenant) overlaid with every CRUD_CREATE for m_inout/m_inoutline. No DOCPOLICY gate —
+  // real Java (MInOut.completeIt()) gates purely on IsSOTrx, which completeReceipt() itself checks.
+  function completeFanoutReceipt(op, cb) {
+    var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
+    if (!E || typeof E.completeReceipt !== 'function' || typeof withBundle !== 'function' || typeof withSidecar !== 'function' || op.id == null) {
+      console.log('§RECEIPT-COMPLETE fan-out gated: ' + (E ? 'bundle/sidecar/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
+      cb(null); return;
+    }
+    withBundle(function (db) {
+      var baseHdr = _rawRows(db, 'SELECT * FROM m_inout');
+      var baseLines = _rawRows(db, 'SELECT * FROM m_inoutline');
+      withSidecar(function (sdb) {
+        var fanout = null;
+        try {
+          var hdrRows = baseHdr, lineRows = baseLines;
+          if (sdb) {
+            try { var f1 = CORE.listTip(sdb, 'm_inout', 'm_inout_id', baseHdr, null); hdrRows = (f1 && f1.rows) || baseHdr; } catch (e1) {}
+            try { var f2 = CORE.listTip(sdb, 'm_inoutline', 'm_inoutline_id', baseLines, null); lineRows = (f2 && f2.rows) || baseLines; } catch (e2) {}
+          }
+          var receipt = hdrRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); })[0];
+          if (!receipt) { console.log('§RECEIPT-COMPLETE fan-out gated: receipt ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
+          var lines = lineRows.filter(function (r) { return String(r.m_inout_id) === String(op.id); });
+          var ops = E.completeReceipt(receipt, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          console.log('§RECEIPT-FANOUT receipt=' + op.id + ' issotrx=' + receipt.issotrx + ' lines=' + lines.length + ' matchPoOps=' + ops.length);
+          fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
+        } catch (er) { console.log('§RECEIPT-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+        cb(fanout);
+      });
+    });
+  }
+
+  // completeFanoutInvoice — C_Invoice Complete → M_MatchInv (Implementing ERP_P2P_INVOICE_MATCH.md §Fix 5).
+  // erp_engine.js's completeInvoice() was written earlier (O2C lane) but never reached the live UI's
+  // dispatcher until this fix — same listTip-fold convention as completeFanoutReceipt above (a manually-
+  // created vendor invoice is equally sidecar-only, never in the raw bundle).
+  function completeFanoutInvoice(op, cb) {
+    var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
+    if (!E || typeof E.completeInvoice !== 'function' || typeof withBundle !== 'function' || typeof withSidecar !== 'function' || op.id == null) {
+      console.log('§INVOICE-COMPLETE fan-out gated: ' + (E ? 'bundle/sidecar/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
+      cb(null); return;
+    }
+    withBundle(function (db) {
+      var baseHdr = _rawRows(db, 'SELECT * FROM c_invoice');
+      var baseLines = _rawRows(db, 'SELECT * FROM c_invoiceline');
+      withSidecar(function (sdb) {
+        var fanout = null;
+        try {
+          var hdrRows = baseHdr, lineRows = baseLines;
+          if (sdb) {
+            try { var f1 = CORE.listTip(sdb, 'c_invoice', 'c_invoice_id', baseHdr, null); hdrRows = (f1 && f1.rows) || baseHdr; } catch (e1) {}
+            try { var f2 = CORE.listTip(sdb, 'c_invoiceline', 'c_invoiceline_id', baseLines, null); lineRows = (f2 && f2.rows) || baseLines; } catch (e2) {}
+          }
+          var invoice = hdrRows.filter(function (r) { return String(r.c_invoice_id) === String(op.id); })[0];
+          if (!invoice) { console.log('§INVOICE-COMPLETE fan-out gated: invoice ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
+          var lines = lineRows.filter(function (r) { return String(r.c_invoice_id) === String(op.id); });
+          var ops = E.completeInvoice(invoice, lines, null).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          console.log('§INVOICE-FANOUT invoice=' + op.id + ' issotrx=' + invoice.issotrx + ' lines=' + lines.length + ' matchInvOps=' + ops.length);
+          fanout = ops.length ? { ops: ops, glGate: 'none' } : null;
+        } catch (er) { console.log('§INVOICE-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+        cb(fanout);
+      });
     });
   }
 
