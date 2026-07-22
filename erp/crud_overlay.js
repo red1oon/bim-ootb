@@ -383,25 +383,32 @@
         if (type === 'CRUD_CREATE') {
           var synth = -opId;                                  // synthetic, collision-free, durable pk for the new row
           var nr = {}; var f = p.fields || {}; for (var c in f) if (f.hasOwnProperty(c)) nr[c] = f[c];
-          // Task 1 — iDempiere setStandardDefaults parity: fill audit+tenant cols from the recorded stdDefaults
+          // Task 1 — iDempiere setStandardDefaults parity: fill audit+tenant cols from the recorded stdDefaults.
+          // §ADORGID-CASING (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — these keys were previously written in
+          // MIXED CASE ('AD_Org_ID', 'CreatedBy', etc.) while every OTHER key on `nr` (from `f`, op.fields) is
+          // lowercase, matching this codebase's column convention throughout (m_warehouse_id, c_currency_id...).
+          // Nothing anywhere reads the mixed-case form as a JS property (grep-confirmed, only SQL text —
+          // case-insensitive — ever used it) — readers expecting `r.ad_org_id` (renderOrderPicker among them)
+          // silently found nothing on a freshly-created row, surfacing as `AD_Org_ID=NaN` in Generate-Invoices.
+          // Now lowercase, matching every other key this same block sits beside.
           if (p.stdDefaults) {
             var sd = p.stdDefaults, tcols = _getTableCols(want), fkeys = {};
             for (var _fk in f) if (Object.prototype.hasOwnProperty.call(f, _fk)) fkeys[String(_fk).toLowerCase()] = 1;
             if (sd.actor != null) {
-              if (tcols['createdby']  && !fkeys['createdby'])  nr['CreatedBy']  = sd.actor;
-              if (tcols['updatedby']  && !fkeys['updatedby'])  nr['UpdatedBy']  = sd.actor;
+              if (tcols['createdby']  && !fkeys['createdby'])  nr['createdby']  = sd.actor;
+              if (tcols['updatedby']  && !fkeys['updatedby'])  nr['updatedby']  = sd.actor;
             }
             if (opTs != null) {
               // iDempiere convention: Created/Updated are `yyyy-MM-dd HH:mm:ss` strings (match the seed rows)
-              if (tcols['created'] && !fkeys['created']) nr['Created'] = _fmtKernelTs(opTs);
-              if (tcols['updated'] && !fkeys['updated']) nr['Updated'] = _fmtKernelTs(opTs);
+              if (tcols['created'] && !fkeys['created']) nr['created'] = _fmtKernelTs(opTs);
+              if (tcols['updated'] && !fkeys['updated']) nr['updated'] = _fmtKernelTs(opTs);
             }
-            if (sd.clientId != null && tcols['ad_client_id'] && !fkeys['ad_client_id']) nr['AD_Client_ID'] = sd.clientId;
-            if (sd.orgId    != null && tcols['ad_org_id']    && !fkeys['ad_org_id'])    nr['AD_Org_ID']    = sd.orgId;
-            if (tcols['isactive']   && !fkeys['isactive'])   nr['IsActive']   = 'Y';
-            if (tcols['processed']  && !fkeys['processed'])  nr['Processed']  = 'N';
-            if (tcols['processing'] && !fkeys['processing']) nr['Processing'] = 'N';
-            if (tcols['posted']     && !fkeys['posted'])     nr['Posted']     = 'N';
+            if (sd.clientId != null && tcols['ad_client_id'] && !fkeys['ad_client_id']) nr['ad_client_id'] = sd.clientId;
+            if (sd.orgId    != null && tcols['ad_org_id']    && !fkeys['ad_org_id'])    nr['ad_org_id']    = sd.orgId;
+            if (tcols['isactive']   && !fkeys['isactive'])   nr['isactive']   = 'Y';
+            if (tcols['processed']  && !fkeys['processed'])  nr['processed']  = 'N';
+            if (tcols['processing'] && !fkeys['processing']) nr['processing'] = 'N';
+            if (tcols['posted']     && !fkeys['posted'])     nr['posted']     = 'N';
             console.log('§STD-DEFAULTS create table=' + want + ' client=' + sd.clientId + ' org=' + sd.orgId + ' by=' + sd.actor + ' active=Y');
           }
           nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
