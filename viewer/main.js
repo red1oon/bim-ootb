@@ -677,8 +677,11 @@ async function initViewer() {
     if (_fpsN && (now - _fpsLastLogT) >= 2000) {
       var mean = +(_fpsSum / _fpsN).toFixed(1);
       var disp = APP.xrayOn ? 'xray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'bbox' : 'solid');
+      // dlod= reads _dlodNavEngaged (actually classifying/boxing), not the pill-pressed _dlodNavOn —
+      // a gate-blocked press (streaming/find-isolation/etc, see dlod_nav.js _gateBlockReason) does
+      // nothing at all, and tagging those frames "on" would silently poison this exact comparison.
       console.log('§FPS_MODE mean=' + mean + ' max=' + _fpsMax.toFixed(1) + ' n=' + _fpsN +
-        ' dlod=' + (window._dlodNavOn ? 'on' : 'off') + ' disp=' + disp +
+        ' dlod=' + (window._dlodNavEngaged ? 'on' : 'off') + ' disp=' + disp +
         ' fly=' + (APP.flyActive ? 1 : 0) + ' orbit=' + (_orbiting ? 1 : 0));
       _fpsSum = 0; _fpsN = 0; _fpsMax = 0; _fpsLastLogT = now;
     }
