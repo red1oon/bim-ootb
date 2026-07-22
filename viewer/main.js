@@ -160,7 +160,7 @@ async function initViewer() {
         // (x8, never removes) any edge touching one so room→room routing prefers corridors.
         // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
         // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
-        '../common/room_graph.js?v=7',
+        '../common/room_graph.js?v=8',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
@@ -172,7 +172,7 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=55',
+        'navigate_find.js?v=56',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
