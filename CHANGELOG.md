@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.26.0](https://github.com/red1oon/bim-ootb/compare/v1.25.0...v1.26.0) (2026-07-22)
+
+
+### ✨ Features
+
+* **viewer:** R room-cycle + Home fill-frame keyboard shortcuts ([#969](https://github.com/red1oon/bim-ootb/issues/969)) ([ed1caa5](https://github.com/red1oon/bim-ootb/commit/ed1caa5e256822e952d499e7cd048167800baee3))
+* **viewer:** room-graph portal PVS, step 2 (FLY_TOUR_DLOD_SCALE.md §16) ([#971](https://github.com/red1oon/bim-ootb/issues/971)) ([cb503f4](https://github.com/red1oon/bim-ootb/commit/cb503f4bee5ba3b234799b7a2531ffed871421f6))
+
 ## [1.25.0](https://github.com/red1oon/bim-ootb/compare/v1.24.0...v1.25.0) (2026-07-22)
 
 
