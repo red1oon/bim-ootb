@@ -506,25 +506,47 @@
            q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + ',' + q.w.toFixed(3);
   }
 
-  function _restoreAll(app, reason) {
+  // §FPS_MODE finding (2026-07-23): the old _restoreAll was a single synchronous loop over the
+  // whole box index — measured 2.5-3.6s frame_ms spike on LTU_AHouse (122k) on every disengage,
+  // worse than the cold-engage burst it mirrors. Chunked the same way _evalChunk already is
+  // (EVAL_CHUNK per rAF tick). _restoreFlush lets a re-engage force-finish a still-draining
+  // restore synchronously first, so _buildBoxes never races a stale in-flight drain — bounded to
+  // "whatever's left undone" rather than always the full 122k.
+  var _restoreFlush = null;
+  function _restoreAllNow(app, reason, onDone) {
     _roomReset(); // §ROOM_OCCL: disengage clears current-room state (index stays, building-keyed)
     _cancelFadesSnap(app);
-    if (_boxIndex) {
-      for (var guid in _boxIndex) {
-        var e = _boxIndex[guid];
+    var idx = _boxIndex, ridx = _realIndex;
+    var guids = idx ? Object.keys(idx) : [];
+    var i = 0;
+    function runTo(end) {
+      for (; i < end; i++) {
+        var guid = guids[i], e = idx[guid];
         if (e.state === 'box') {
-          var r = _realIndex && _realIndex[guid];
+          var r = ridx && ridx[guid];
           _setBoxInstance(e, false);
           if (r) _showReal(r);
           e.state = 'real';
         }
       }
     }
-    // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
-    if (app.activeGuidFilter && app.filterByGuids) app.filterByGuids(app.activeGuidFilter);
-    else if ((app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) && app.filterStorey) app.filterStorey(app.activeStoreyFilter);
-    if (app.markDirty) app.markDirty();
-    console.log('§DLOD_NAV_DISENGAGE reason=' + reason + ' mutations=' + _stats.mutations);
+    function finish() {
+      runTo(guids.length); // no-op if step() already finished the loop
+      _restoreFlush = null;
+      // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
+      if (app.activeGuidFilter && app.filterByGuids) app.filterByGuids(app.activeGuidFilter);
+      else if ((app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) && app.filterStorey) app.filterStorey(app.activeStoreyFilter);
+      if (app.markDirty) app.markDirty();
+      console.log('§DLOD_NAV_DISENGAGE reason=' + reason + ' mutations=' + _stats.mutations);
+      if (onDone) onDone();
+    }
+    function step() {
+      runTo(Math.min(i + EVAL_CHUNK, guids.length));
+      if (i < guids.length) requestAnimationFrame(step);
+      else finish();
+    }
+    _restoreFlush = finish;
+    step();
   }
 
   function _tick() {
@@ -533,14 +555,15 @@
     var app = A();
     var block = _gateBlockReason(app);
     if (block) {
-      if (_engaged) { _restoreAll(app, block); _engaged = false; _lastCamSig = null; }
+      if (_engaged) { _engaged = false; window._dlodNavEngaged = false; _lastCamSig = null; _restoreAllNow(app, block); }
       _rafId = requestAnimationFrame(_tick); // stay alive; re-engage when the gate clears
       return;
     }
     if (!_engaged) {
+      if (_restoreFlush) _restoreFlush(); // finish any still-draining restore before rebuilding the index
       if (!_buildBoxes(app)) { _rafId = requestAnimationFrame(_tick); return; }
       _buildRealIndex(app);
-      _engaged = true; _lastCamSig = null;
+      _engaged = true; window._dlodNavEngaged = true; _lastCamSig = null;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
     // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
@@ -612,10 +635,14 @@
     } else {
       _pillOn = false; window._dlodNavOn = false;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-      if (_engaged) { _restoreAll(app, 'pill-off'); _engaged = false; }
-      _disposeBoxes();
       console.log('§DLOD_NAV_TOGGLE on=false');
       _statusMsg(app, 'Nav LOD OFF — full detail restored');
+      if (_engaged) {
+        _engaged = false; window._dlodNavEngaged = false;
+        _restoreAllNow(app, 'pill-off', _disposeBoxes); // dispose only once the chunked drain finishes
+      } else {
+        _disposeBoxes();
+      }
     }
     if (app && app.markDirty) app.markDirty();
   };
