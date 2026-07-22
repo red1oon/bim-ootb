@@ -53,6 +53,44 @@ async function setupScene(A) {
     var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
     console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
   } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
+  // ── Implementing FLY_TOUR_DLOD_SCALE.md §14 (bim-compiler prompts/Viewer/) — GPU capability
+  // warning. Witnesses: W-GPU-WARN-FIRSTRUN / -DEGRADED / -RECOVERED / -NONAG.
+  // Compares the caps just probed above against the "last known good" signature in localStorage
+  // (key bim_gpu_lastgood) and shows ONE dismissible toast if it looks like a real degradation
+  // (silent iGPU fallback / lost multi_draw — both real incidents were 100% silent before this).
+  // Cheap by construction: one localStorage read + conditional write, zero extra GPU queries.
+  // Decision logic lives in gpuBaselineCheck() (end of this file) so node witnesses can drive it
+  // with a mocked storage. _gpu/_md are var-hoisted from the try above; undefined (probe failed)
+  // → gpuBaselineCheck no-ops.
+  function _showGpuWarnToast(msg) {
+    // Amber warning toast, modeled on error_reporter.js's dismissible toast + main.js's
+    // net-status-toast. NOT routed through A.reportError — that styles it as a red app error
+    // ("Something went wrong" + Report button) and burns its 3-toasts-per-session error budget.
+    var old = document.getElementById('_gpu_warn_toast');
+    if (old) old.remove();
+    var t = document.createElement('div');
+    t.id = '_gpu_warn_toast';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;' +
+      'background:rgba(45,32,5,0.95);border:1px solid #e6a817;border-radius:10px;padding:12px 20px;' +
+      'font-family:"Segoe UI",sans-serif;color:#e0e0e0;font-size:13px;max-width:520px;width:90%;' +
+      'box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:12px;';
+    var m = document.createElement('div');
+    m.style.cssText = 'flex:1;line-height:1.4;word-break:break-word';
+    m.textContent = msg;
+    var x = document.createElement('button');
+    x.textContent = '✕';
+    x.title = 'Dismiss';
+    x.style.cssText = 'padding:6px 10px;background:transparent;color:#888;border:1px solid #555;' +
+      'border-radius:6px;font-size:11px;cursor:pointer;flex-shrink:0';
+    x.onclick = function() { t.remove(); };
+    t.appendChild(m); t.appendChild(x);
+    document.body.appendChild(t);
+    // Auto-fade after 30s — it's a warning, not a modal; the don't-nag flag (see gpuBaselineCheck)
+    // keeps it from returning on the next load for the same degraded state.
+    setTimeout(function() { if (t.parentNode) t.remove(); }, 30000);
+  }
+  try { gpuBaselineCheck(_gpu, _md, window.localStorage, _showGpuWarnToast); }
+  catch (_egpu) { console.log('§GPU_WARN_CHECK failed: ' + (_egpu && _egpu.message)); }
   A._isWebGPU = _isWebGPU;
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(_isMobileRenderer ? 1 : Math.min(window.devicePixelRatio, 2));  // §S271: mobile=1x, desktop=cap 2x
@@ -2062,4 +2100,53 @@ async function setupScene(A) {
   }
   // Initial state
   setTimeout(_updateUrButtons, 2000);
+}
+
+// ── Implementing FLY_TOUR_DLOD_SCALE.md §14 (bim-compiler prompts/Viewer/) — GPU degradation
+// decision logic. Witnesses: W-GPU-WARN-FIRSTRUN / -DEGRADED / -RECOVERED / -NONAG.
+// Pure logic, no DOM/GPU access — node witnesses drive it with a mocked localStorage-shaped
+// `storage` ({getItem,setItem,removeItem}). `onWarn(msg)` fires ONLY when a toast should show.
+// Returns 'skip' | 'init' | 'warn' | 'nonag' | 'update' (witness-readable outcome tag).
+//
+// DON'T-NAG MECHANISM (§14 left this open; pinned here): PERSISTED, via localStorage key
+// `bim_gpu_warned` holding the exact degraded signature ("<renderer>|<multiDraw>") already warned
+// about. A session-only dismissed-flag was rejected because every fresh page load is a new JS
+// session — it would re-toast on every open, exactly the nagging §14 forbids. The toast re-shows
+// only when the degraded signature CHANGES (degrades further, or recovers then re-degrades); the
+// flag is cleared on any same-or-improved load so a future degradation warns again.
+function gpuBaselineCheck(gpu, md, storage, onWarn) {
+  if (typeof gpu !== 'string' || typeof md !== 'boolean' || !storage) return 'skip';
+  var raw = storage.getItem('bim_gpu_lastgood');
+  var nowSig = JSON.stringify({ renderer: gpu, multiDraw: md, ts: Date.now() });
+  var last = null;
+  if (raw) { try { last = JSON.parse(raw); } catch (e) { last = null; } }
+  if (!last || typeof last.renderer !== 'string') {
+    // First-ever run (or unreadable stored blob): nothing to compare against — just store.
+    storage.setItem('bim_gpu_lastgood', nowSig);
+    console.log('§GPU_BASELINE_INIT gpu=' + gpu + ' multi_draw=' + md);
+    return 'init';
+  }
+  // §14 heuristic — EXACTLY this simple by spec ("do not over-engineer a full GPU classifier"):
+  // DEGRADED = multiDraw true→false, OR renderer string moved discrete-looking → integrated-looking.
+  var degraded = (last.multiDraw === true && md === false) ||
+    (/nvidia|amd|radeon/i.test(last.renderer) && /intel|uhd|iris/i.test(gpu));
+  if (degraded) {
+    // Baseline deliberately NOT overwritten — last-known-good stays meaningful so the warning
+    // still fires against the true baseline on later checks (W-GPU-WARN-DEGRADED semantics).
+    console.log('§GPU_DEGRADED_WARN was=' + last.renderer + ' multi_draw=' + last.multiDraw +
+      ' now=' + gpu + ' multi_draw=' + md);
+    var sig = gpu + '|' + md;
+    if (storage.getItem('bim_gpu_warned') === sig) {
+      console.log('§GPU_DEGRADED_NONAG same degraded signature already warned, toast suppressed sig=' + sig);
+      return 'nonag';
+    }
+    storage.setItem('bim_gpu_warned', sig);
+    if (onWarn) onWarn('Rendering fell back to a slower GPU (' + gpu + ') — if this seems wrong, check GPU drivers or reboot.');
+    return 'warn';
+  }
+  // Same or IMPROVED: silently refresh what "good" means (a fixed driver / back on the dGPU must
+  // not stay pinned to a stale weaker baseline) and clear the warned flag so a future degrade warns.
+  storage.setItem('bim_gpu_lastgood', nowSig);
+  storage.removeItem('bim_gpu_warned');
+  return 'update';
 }
