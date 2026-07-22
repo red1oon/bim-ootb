@@ -1403,13 +1403,73 @@
     return result;
   }
 
+  // FLY_TOUR_DLOD_SCALE.md §16 — precomputed room-to-room Potentially-Visible-Set (portal
+  // culling), built ONCE per graph build, never per frame (§15 already proved per-frame CPU
+  // raycasting is 4 orders of magnitude too slow; §7 already flagged GPU occlusion-query
+  // driver-inconsistency/per-object overhead as a reason to prefer a precomputed approach).
+  // Model: travelling through circulation space (E2/E5/E6/E7/E8/E9 — corridor/junction/lone-door
+  // edges) is FREE — a hallway is one open volume by the walker's own corridor-room backprop
+  // convention, not a chain of doors. Crossing a REAL room<->room door (E1) or a stair flight
+  // (E3, the vertical equivalent of a door — deliberately NOT "the whole floor above is visible",
+  // matching §5/§10's storey-occlusion atrium/stairwell carve-out) costs ONE "door crossing".
+  // opts.maxDoorCrossings (default 1) caps how many such crossings stay inside the visible set —
+  // §16.4's Stage-0 validation is what should confirm/adjust this default with real numbers, not
+  // this comment. Door open/closed state is NOT modeled (no per-frame IFC operation state exists)
+  // — a portal is always "open": a deliberate conservative bias (may show a few elements through
+  // an actually-closed door — safe, costs a few extra draw calls — never hides something visible).
+  // Returns { roomGuid: { roomGuid: true, ... }, ... } — every room maps to itself plus whatever
+  // it can see; a plain object used as a Set (guid membership), not a Map, for JSON-friendliness.
+  function buildRoomPVS(graph, opts) {
+    opts = opts || {};
+    var maxCross = (opts.maxDoorCrossings !== undefined) ? opts.maxDoorCrossings : 1;
+    var adj = {};
+    function addAdj(a, b, cost) {
+      if (!a || !b || a === b) return;
+      (adj[a] = adj[a] || []).push({ to: b, cost: cost });
+      (adj[b] = adj[b] || []).push({ to: a, cost: cost });
+    }
+    (graph.edges || []).forEach(function (e) {
+      if (e.kind === 'E4') return; // exit — leads outside, never a compiled room, not useful here
+      var cost = (e.kind === 'E1' || e.kind === 'E3') ? 1 : 0;
+      addAdj(e.a, e.b, cost);
+    });
+    var roomGuids = (graph.nodes || []).map(function (n) { return n.guid; });
+    var pvs = {};
+    roomGuids.forEach(function (startGuid) {
+      // 0-1 BFS (deque): 0-cost edges push to the front, 1-cost edges push to the back — same
+      // result as Dijkstra for a 2-value cost domain, O(V+E) per room, no priority queue needed.
+      var dist = {}; dist[startGuid] = 0;
+      var deque = [startGuid];
+      while (deque.length) {
+        var u = deque.shift();
+        var uEdges = adj[u] || [];
+        for (var i = 0; i < uEdges.length; i++) {
+          var v = uEdges[i].to, nd = dist[u] + uEdges[i].cost;
+          if (nd <= maxCross && (dist[v] === undefined || nd < dist[v])) {
+            dist[v] = nd;
+            if (uEdges[i].cost === 0) deque.unshift(v); else deque.push(v);
+          }
+        }
+      }
+      var visible = {};
+      Object.keys(dist).forEach(function (g) {
+        var n = graph.nodesByGuid[g];
+        if (n && n.kind === 'room') visible[g] = true;
+      });
+      pvs[startGuid] = visible;
+    });
+    return pvs;
+  }
+
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
     shortestPath: shortestPath, escapeRoute: escapeRoute, isRoomDoor: isRoomDoor,
     stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal
     // sample points on a same-storey chord (the same test _legalizePath uses internally).
-    chordIllegalCount: _chordIllegalCount
+    chordIllegalCount: _chordIllegalCount,
+    // FLY_TOUR_DLOD_SCALE.md §16 — room-to-room portal PVS for real occlusion culling.
+    buildRoomPVS: buildRoomPVS
   };
   ROOT.RoomGraph = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

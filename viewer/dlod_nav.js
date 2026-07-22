@@ -11,6 +11,12 @@
 // machine; live point-in-rect current-room test with the walker's floor-anchor Z-join; N-eval
 // membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled (default
 // false) — when false, behavior is identical to the pre-§13 module.
+// §ROOM_OCCL step 2 (portal/PVS) — Implementing FLY_TOUR_DLOD_SCALE.md §16 — Witnesses:
+// W-PVS-EQUIV, W-PVS-CORRECT, W-PVS-STABILITY, W-PVS-PERF. window.__dlodNav.pvsEnabled (default
+// false) REPLACES the plain room-equality mismatch test with room-graph-derived visible-room-set
+// membership (common/room_graph.js's buildRoomPVS) when true; false ⇒ behavior identical to the
+// shipped §13 mechanism (this flag is a pure superset gated behind its OWN lever, never implied by
+// roomOcclEnabled alone — §13's own EQUIV/PROXY/STABILITY witnesses stay valid unchanged).
 //
 // Nav-scope DLOD box-proxy: during free orbit/pan and Fly Tour on large buildings (>50k
 // elements), far/out-of-frustum elements render as wireframe boxes (TM_DLOD_SCALE.md §9's
@@ -72,11 +78,16 @@
   // §ROOM_OCCL state (§13) — ALL of it inert unless _stats.roomOcclEnabled is flipped true
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
+  // §ROOM_OCCL step 2 (§16) — portal/PVS state, ALL inert unless _stats.pvsEnabled is flipped true
+  var _pvs = null, _pvsBld = null, _pvsTriedT = 0;
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
     // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
     // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
     roomOcclEnabled: false, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
-    roomIdxRects: 0, roomIdxStamped: 0 };
+    roomIdxRects: 0, roomIdxStamped: 0,
+    // §16 step-2 testing lever: same convention — console-only (window.__dlodNav.pvsEnabled =
+    // true), independent of roomOcclEnabled's own default; false ⇒ §13's exact shipped behavior.
+    pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0 };
   window.__dlodNav = _stats;
 
   function _gateBlockReason(app) {
@@ -357,6 +368,45 @@
     _stats.roomCur = null; _stats.roomLeg = false;
   }
 
+  // §16 — lazy, building-keyed room-to-room PVS. Only ever called when pvsEnabled; reuses the
+  // SAME cached graph navigate_find.js's Find panel / room-path routing already builds
+  // (app.getRoomGraph()), never a second graph build (FLY_TOUR_CORRIDOR_GRAPH.md R2's "one cache"
+  // rule). Retry-throttled like _roomIdxEnsure — the graph may not exist yet the instant the
+  // console flag is flipped (loadNavigate()'s chain is async, §DLOD_NAV_ROOMS idle-defers it).
+  function _pvsEnsure(app) {
+    if (_pvs && _pvsBld === app.activeBuilding) return true;
+    var now = performance.now();
+    if (now - _pvsTriedT < 3000) return false;
+    _pvsTriedT = now;
+    if (!app.getRoomGraph || !window.RoomGraph || !window.RoomGraph.buildRoomPVS) return false;
+    var graph;
+    try { graph = app.getRoomGraph(); } catch (eG) { console.log('§ROOM_PVS_ERR graph ' + eG.message); return false; }
+    if (!graph || !graph.edges || !graph.edges.length) {
+      console.log('§ROOM_PVS graph not ready (edges=0) — will retry'); return false;
+    }
+    var t0 = performance.now(), pvs;
+    try { pvs = window.RoomGraph.buildRoomPVS(graph, { maxDoorCrossings: 1 }); }
+    catch (eB) { console.log('§ROOM_PVS_ERR build ' + eB.message); return false; }
+    _pvs = pvs; _pvsBld = app.activeBuilding;
+    var roomKeys = Object.keys(pvs), totalVis = 0;
+    roomKeys.forEach(function (k) { totalVis += Object.keys(pvs[k]).length; });
+    _stats.pvsRooms = roomKeys.length;
+    _stats.pvsAvgVisible = roomKeys.length ? +(totalVis / roomKeys.length).toFixed(1) : 0;
+    console.log('§ROOM_PVS_BUILD bld=' + app.activeBuilding + ' rooms=' + roomKeys.length +
+      ' avgVisible=' + _stats.pvsAvgVisible + ' ms=' + (performance.now() - t0).toFixed(0));
+    return true;
+  }
+
+  // §16 — room-mismatch test, shared by _wantedReal and __dlodNavAudit so both always agree.
+  // pvsEnabled=false (default) ⇒ IDENTICAL to §13's shipped equality test, byte-for-byte — the
+  // PVS set (when built) always contains the room itself, so pvsEnabled=true is a pure superset
+  // of "same room", never a stricter test.
+  function _roomMismatch(e) {
+    if (!_roomActive || e.room === undefined) return false;
+    if (_stats.pvsEnabled === true && _pvs && _pvs[_roomCur]) return !_pvs[_roomCur][e.room];
+    return e.room !== _roomCur;
+  }
+
   // Per-frame current-room eval (same rAF loop as everything else — no second timer, §13). The
   // stability window is counted in FRAMES per §11.2 Q4's measurement; a room ACCEPTANCE re-arms
   // the chunked scan so the partition updates even when the camera pose itself is unchanged
@@ -364,6 +414,9 @@
   // compiled rect rows on ONE floor — trivial next to the element scan (§11.2 Q2).
   function _roomEval(app) {
     if (!_roomIdxEnsure(app)) { _roomReset(); return; }
+    // §16: best-effort, never blocks the §13 path — until the PVS is ready, _roomMismatch()
+    // degrades to the plain equality test (§13's shipped behavior), never a crash or a stall.
+    if (_stats.pvsEnabled === true) _pvsEnsure(app);
     if (!_roomLegActive(app)) { _roomReset(); return; }
     _stats.roomLeg = true;
     var off = app.modelOffset, c = app.camera.position;
@@ -388,10 +441,10 @@
   // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
   function _wantedReal(e, camPos) {
     var d2 = camPos.distanceToSquared(e.pos);
-    // §13 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only bites
-    // when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
+    // §13/§16 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only
+    // bites when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
     // compiled containment row (e.room). false ⇒ short-circuits to the shipped decision rule.
-    var roomMis = _roomActive && e.room !== undefined && e.room !== _roomCur;
+    var roomMis = _roomMismatch(e);
     if (e.state === 'real') {
       // demote only when clearly out: >80m OR sphere+5m margin outside frustum OR room mismatch
       if (d2 > DEMOTE_SQ) return false;
@@ -570,9 +623,10 @@
       var want = _wantedReal(e, camPos);
       if (want !== (e.state === 'real')) mismatch++;
       if (e.state === 'box') boxed++; else real++;
-      // §ROOM_OCCL (W-ROOM-OCCL-PROXY support): boxed PURELY because of room mismatch — i.e.
+      // §ROOM_OCCL/§16 (W-ROOM-OCCL-PROXY / W-PVS-CORRECT support): boxed PURELY because of room
+      // mismatch (equality OR PVS-membership, whichever _roomMismatch is currently using) — i.e.
       // within promote distance and in-frustum, so distance/frustum alone would have it real.
-      if (e.state === 'box' && _roomActive && e.room !== undefined && e.room !== _roomCur) {
+      if (e.state === 'box' && _roomMismatch(e)) {
         if (camPos.distanceToSquared(e.pos) <= PROMOTE_SQ) {
           _sphere.center.copy(e.pos); _sphere.radius = e.radius;
           if (_frustum.intersectsSphere(_sphere)) roomOnly++;
@@ -581,9 +635,11 @@
     }
     var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps,
       roomOccl: { enabled: _stats.roomOcclEnabled === true, active: _roomActive, room: _roomCur,
-        legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly } };
+        legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly,
+        pvsEnabled: _stats.pvsEnabled === true, pvsRooms: _stats.pvsRooms, pvsAvgVisible: _stats.pvsAvgVisible } };
     console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length +
-      (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : ''));
+      (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : '') +
+      (_stats.pvsEnabled === true ? ' §PVS_AUDIT rooms=' + _stats.pvsRooms + ' avgVisible=' + _stats.pvsAvgVisible : ''));
     return res;
   };
 
