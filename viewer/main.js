@@ -661,6 +661,28 @@ async function initViewer() {
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
   let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
+
+  // §FPS_MODE: frame_ms sampler tagged by nav-DLOD/xray-cycle/fly/orbit state — landed to settle
+  // whether nav-DLOD ('o') actually helps frame time while flying vs dragging vs bbox-cycle mode
+  // (bbox mode gates nav-DLOD off via activeGuidFilter, see dlod_nav.js _gateBlockReason). Only
+  // accumulates on frames that actually did work (post-_awake) — idle-parked gaps aren't real cost.
+  var _fpsSum = 0, _fpsN = 0, _fpsMax = 0, _fpsLastT = 0, _fpsLastLogT = 0;
+  function _fpsSample(now) {
+    if (_fpsLastT) {
+      var dt = now - _fpsLastT;
+      _fpsSum += dt; _fpsN++;
+      if (dt > _fpsMax) _fpsMax = dt;
+    }
+    _fpsLastT = now;
+    if (_fpsN && (now - _fpsLastLogT) >= 2000) {
+      var mean = +(_fpsSum / _fpsN).toFixed(1);
+      var disp = APP.xrayOn ? 'xray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'bbox' : 'solid');
+      console.log('§FPS_MODE mean=' + mean + ' max=' + _fpsMax.toFixed(1) + ' n=' + _fpsN +
+        ' dlod=' + (window._dlodNavOn ? 'on' : 'off') + ' disp=' + disp +
+        ' fly=' + (APP.flyActive ? 1 : 0) + ' orbit=' + (_orbiting ? 1 : 0));
+      _fpsSum = 0; _fpsN = 0; _fpsMax = 0; _fpsLastLogT = now;
+    }
+  }
   // §IDLE-PARK: these are the wake points. markDirty/controls-change now also REVIVE the
   // rAF chain (the loop self-parks when idle — see animate()). _startLoop is hoisted + guarded
   // (no-op if already running), so calling it on every change is cheap.
@@ -826,6 +848,7 @@ async function initViewer() {
       return;
     }
     _rafId = requestAnimationFrame(animate);
+    _fpsSample(performance.now()); // §FPS_MODE — elapsed since previous awake-frame start = full per-frame cost
     if (!APP.walkModeActive) {
       APP.controls.update();
       if (APP.walkMode) { APP.walkTick(); } else { APP.flyTick(); }
