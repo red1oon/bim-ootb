@@ -1256,13 +1256,24 @@
         }
       });
       if (A.scene && A.ifc2three && typeof THREE !== 'undefined') {
+        // markers sit at the logical room/door waypoints (unchanged) …
         var pts = result.path.map(function(g) {
           var n = graph.nodesByGuid[g];
           var c = A.ifc2three(n.cx, n.cy, n.cz || 0);
           return new THREE.Vector3(c.x, c.y + 0.05, c.z); // +0.05 lift so the line clears room-shell faces
         });
+        // … but the connecting LINE follows result.polyline — the real A*-on-walkable-raster route
+        // (common/room_graph.js §RASTER-ASTAR, VIEWER_FIND_PANEL_ROOM_ACCURACY.md §13) — so it HUGS
+        // real floor instead of cutting straight between graph waypoints (which §11 measured slicing
+        // through walls / open atrium air). Additive: path/doors/distance and every marker/room-list/
+        // zoom consumer below are UNCHANGED. Falls back to the room-center points if a stale cached
+        // room_graph.js (pre-Stage-B) returns no polyline — never breaks the drawn line.
+        var linePts = (result.polyline && result.polyline.length > 1) ? result.polyline.map(function(p) {
+          var c = A.ifc2three(p.x, p.y, p.z || 0);
+          return new THREE.Vector3(c.x, c.y + 0.05, c.z);
+        }) : pts;
         if (pts.length > 1) {
-          var geo = new THREE.BufferGeometry().setFromPoints(pts);
+          var geo = new THREE.BufferGeometry().setFromPoints(linePts);
           // §PATH_ORANGE (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2/§9, 2026-07-15, supersedes the
           // earlier neon-green §PATH_NEON): bright orange reads cleanly against BOTH the purple
           // (habitable) and blue (corridor) room-shell category colors §9 introduced — green risked

@@ -1134,6 +1134,199 @@
     return out;
   }
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // §RASTER-ASTAR (Stage B — VIEWER_FIND_PANEL_ROOM_ACCURACY.md §13, 2026-07-22): the ACTUAL walked
+  // polyline. `_legalizePath` above still owns the logical `path`/`doors`/`distance` (and the
+  // §PATH_LEGAL_DETOUR_FAIL metric the raster witnesses measure) — UNTOUCHED. This computes an
+  // ADDITIVE `result.polyline`: between two consecutive same-storey path anchors it grid-searches
+  // (A*) the storey's own walkable evidence (`_pointWalkable` — raster-first, room+corridor-rect
+  // fallback, null=no-data) so the drawn line HUGS real floor by construction, instead of the old
+  // straight chord + sparse door-visibility detour that §11 measured cutting through walls/atrium
+  // air. It changes ONLY geometry, never which rooms/doors the route uses. Honest degrade preserved:
+  // where `_pointWalkable` returns null (no floor data at all for the storey) the straight segment is
+  // the only non-invented route; where A* finds no on-floor route it also falls back to straight
+  // (same "never fabricate, never fail" contract the old detour honoured). Reuses storey_raster.js's
+  // contains() via _pointWalkable — no second raster representation is built.
+  var ASTAR_CELL = 0.25;          // fine grid step (local pass) — matches raster res / PATH_LEGAL_SAMPLE_RES
+  var ASTAR_WINDOW_MARGIN = 6.0;  // local-search window padding around the chord bbox (DETOUR_LOCALITY spirit)
+  var ASTAR_WIDEN_MARGIN = 28.0;  // bounded wider-pass padding (covers a 20-30m spine-to-spine corridor route)
+  var ASTAR_WIDEN_CELL = 0.5;     // coarser cell for the wider pass (corridors are >=1m; verification re-tests fine)
+  var ASTAR_MAX_CELLS = 400000;   // safety cap per grid; beyond it the pass abandons -> straight
+
+  // Tiny binary min-heap keyed by .f — keeps A* fast even on the storey-wide widen pass (a linear
+  // open-set scan is O(N^2) and would stall on Hospital-scale grids; measured, not assumed).
+  function _Heap() { this.a = []; }
+  _Heap.prototype.push = function (n) { var a = this.a; a.push(n); var i = a.length - 1; while (i > 0) { var p = (i - 1) >> 1; if (a[p].f <= a[i].f) break; var t = a[p]; a[p] = a[i]; a[i] = t; i = p; } };
+  _Heap.prototype.pop = function () { var a = this.a; if (!a.length) return null; var top = a[0], last = a.pop(); if (a.length) { a[0] = last; var i = 0, n = a.length; for (;;) { var l = 2 * i + 1, r = l + 1, s = i; if (l < n && a[l].f < a[s].f) s = l; if (r < n && a[r].f < a[s].f) s = r; if (s === i) break; var t = a[s]; a[s] = a[i]; a[i] = t; i = s; } } return top; };
+  _Heap.prototype.size = function () { return this.a.length; };
+
+  function _storeyExtent(graph, storey) {
+    var r = graph.rasters && graph.rasters[storey];
+    if (r) return { x0: r.x0, y0: r.y0, x1: r.x0 + r.cols * r.res, y1: r.y0 + r.rows * r.res };
+    var ext = null;
+    ['roomRectsByStorey', 'corridorRectsByStorey'].forEach(function (k) {
+      var rects = graph[k] && graph[k][storey]; if (!rects) return;
+      rects.forEach(function (rc) {
+        if (!ext) ext = { x0: rc.x0, y0: rc.y0, x1: rc.x1, y1: rc.y1 };
+        else { ext.x0 = Math.min(ext.x0, rc.x0); ext.y0 = Math.min(ext.y0, rc.y0); ext.x1 = Math.max(ext.x1, rc.x1); ext.y1 = Math.max(ext.y1, rc.y1); }
+      });
+    });
+    return ext;
+  }
+
+  // 8-connected A* over a bounded window; cell walkable iff _pointWalkable(cell center)===true.
+  // Returns {cells:[{c,r}...], wx0, wy0, cell} or null (no window fit / no route / start|goal unsnappable).
+  function _astarGrid(graph, storey, ax, ay, bx, by, win, cellSize) {
+    var cell = cellSize || ASTAR_CELL, wx0 = win.x0, wy0 = win.y0;
+    var cols = Math.max(1, Math.ceil((win.x1 - win.x0) / cell)), rows = Math.max(1, Math.ceil((win.y1 - win.y0) / cell));
+    if (cols * rows > ASTAR_MAX_CELLS) return null;
+    function cw(c, r) { return _pointWalkable(graph, storey, wx0 + (c + 0.5) * cell, wy0 + (r + 0.5) * cell) === true; }
+    function inb(c, r) { return c >= 0 && r >= 0 && c < cols && r < rows; }
+    function toCell(x, y) { return { c: Math.floor((x - wx0) / cell), r: Math.floor((y - wy0) / cell) }; }
+    function snap(c0) {
+      if (inb(c0.c, c0.r) && cw(c0.c, c0.r)) return c0;
+      var R = Math.ceil(1.2 / cell) + 1; // snap a room-center/door-wp onto floor within ~1.2m
+      for (var rad = 1; rad <= R; rad++) for (var dc = -rad; dc <= rad; dc++) for (var dr = -rad; dr <= rad; dr++) {
+        if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue;
+        var c = c0.c + dc, r = c0.r + dr; if (inb(c, r) && cw(c, r)) return { c: c, r: r };
+      }
+      return null;
+    }
+    var s = snap(toCell(ax, ay)), g = snap(toCell(bx, by));
+    if (!s || !g) return null;
+    var idx = function (c, r) { return r * cols + c; };
+    var goalI = idx(g.c, g.r), gscore = {}, came = {}, closed = {};
+    gscore[idx(s.c, s.r)] = 0;
+    function h(c, r) { var dc = Math.abs(c - g.c), dr = Math.abs(r - g.r); return (dc + dr) + (Math.SQRT2 - 2) * Math.min(dc, dr); }
+    var heap = new _Heap(); heap.push({ i: idx(s.c, s.r), c: s.c, r: s.r, f: h(s.c, s.r) });
+    var dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+    var expansions = 0;
+    while (heap.size()) {
+      var cur = heap.pop();
+      if (cur.i === goalI) {
+        var out = [], ci = goalI; while (ci != null) { var cc = ci % cols, rr = (ci - cc) / cols; out.push({ c: cc, r: rr }); ci = came[ci]; }
+        out.reverse(); return { cells: out, wx0: wx0, wy0: wy0, cell: cell };
+      }
+      if (closed[cur.i]) continue; closed[cur.i] = 1;
+      if (++expansions > ASTAR_MAX_CELLS) return null;
+      for (var d = 0; d < 8; d++) {
+        var nc = cur.c + dirs[d][0], nr = cur.r + dirs[d][1];
+        if (!inb(nc, nr) || !cw(nc, nr)) continue;
+        // no diagonal corner-cutting: both orthogonal neighbours must also be walkable
+        if (dirs[d][2] > 1 && (!cw(cur.c + dirs[d][0], cur.r) || !cw(cur.c, cur.r + dirs[d][1]))) continue;
+        var ni = idx(nc, nr); if (closed[ni]) continue;
+        var ng = gscore[cur.i] + dirs[d][2];
+        if (gscore[ni] == null || ng < gscore[ni]) { gscore[ni] = ng; came[ni] = cur.i; heap.push({ i: ni, c: nc, r: nr, f: ng + h(nc, nr) }); }
+      }
+    }
+    return null;
+  }
+
+  // Greedy line-of-sight string-pull: collapse a dense cell path to its minimal turn points, keeping
+  // only vertices where the straight run to the next kept point would cross non-walkable space (same
+  // _chordIllegalCount legality test the rest of this file uses). Turns ~120 grid cells into a handful.
+  function _simplifyLOS(graph, storey, pts) {
+    if (pts.length <= 2) return pts.slice();
+    var out = [pts[0]], i = 0;
+    while (i < pts.length - 1) {
+      var j = pts.length - 1;
+      for (; j > i + 1; j--) { if (_chordIllegalCount(graph, storey, pts[i].x, pts[i].y, pts[j].x, pts[j].y) === 0) break; }
+      out.push(pts[j]); i = j;
+    }
+    return out;
+  }
+
+  // Interior walked points between two same-storey anchors (a,b excluded — caller re-adds them).
+  // Returns: [] = a straight segment IS the honest route (chord already on-floor, or no floor data);
+  //          [p,...] = A* found an on-floor route (these turn points);
+  //          null = A* was attempted (chord illegal, data present) but found NO on-floor route — the
+  //                 caller decides whether to keep a synthetic bypass anchor or degrade to straight.
+  function _astarHop(graph, a, b) {
+    var storey = a.storey;
+    var hasData = (graph.rasters && graph.rasters[storey]) ||
+      (graph.roomRectsByStorey && graph.roomRectsByStorey[storey] && graph.roomRectsByStorey[storey].length) ||
+      (graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey] && graph.corridorRectsByStorey[storey].length);
+    if (!hasData) return [];
+    if (_chordIllegalCount(graph, storey, a.cx, a.cy, b.cx, b.cy) === 0) return []; // fast path — most hops
+    // Local pass first at fine res (fast, handles the common short corridor jog), then a BOUNDED wider
+    // pass at a coarser cell (§WIDEN-BOUNDED): the widen window is capped to the chord bbox + a large
+    // margin (not the whole storey — that made a cross-wing Hospital path stack several full-storey A*
+    // passes, measured 205ms max) and searched at 0.5m cells (corridors are >=1m wide, so coarser is
+    // safe; the end-to-end §ON-FLOOR-GUARANTEE verification below re-tests at fine res regardless, so
+    // any coarseness error just degrades to null → honest straight, never a bad line). Keeps a single
+    // interactive click well under budget while still rescuing the 20-30m spine-to-spine corridor routes.
+    var m = ASTAR_WINDOW_MARGIN;
+    var localWin = { x0: Math.min(a.cx, b.cx) - m, y0: Math.min(a.cy, b.cy) - m, x1: Math.max(a.cx, b.cx) + m, y1: Math.max(a.cy, b.cy) + m };
+    var res = _astarGrid(graph, storey, a.cx, a.cy, b.cx, b.cy, localWin, ASTAR_CELL);
+    if (!res) {
+      var W = ASTAR_WIDEN_MARGIN;
+      var wideWin = { x0: Math.min(a.cx, b.cx) - W, y0: Math.min(a.cy, b.cy) - W, x1: Math.max(a.cx, b.cx) + W, y1: Math.max(a.cy, b.cy) + W };
+      res = _astarGrid(graph, storey, a.cx, a.cy, b.cx, b.cy, wideWin, ASTAR_WIDEN_CELL);
+    }
+    if (!res) return null; // A* genuinely found no on-floor route — caller degrades honestly
+    var pts = res.cells.map(function (cl) { return { x: res.wx0 + (cl.c + 0.5) * res.cell, y: res.wy0 + (cl.r + 0.5) * res.cell }; });
+    var simp = _simplifyLOS(graph, storey, pts);
+    // trim a snapped endpoint that sits right on top of the anchor the caller re-adds (avoids a hairline stub)
+    if (simp.length && Math.hypot(simp[0].x - a.cx, simp[0].y - a.cy) < ASTAR_CELL) simp.shift();
+    if (simp.length && Math.hypot(simp[simp.length - 1].x - b.cx, simp[simp.length - 1].y - b.cy) < ASTAR_CELL) simp.pop();
+    // §ON-FLOOR-GUARANTEE (Stage B): only return a route that is VERIFIABLY on real floor end to end —
+    // including the two anchor connectors (a -> first turn point, last -> b) the LOS pass didn't test.
+    // If the snapped route still leaves any illegal sample (e.g. a rect-fallback building whose A* path
+    // hugs rect cells but the a->simp connector crosses an uncovered doorway seam), return null so the
+    // caller degrades to the original straight/synthetic route instead of drawing a subtly-off-floor
+    // line. This is what makes "the polyline stays on real floor" a guarantee, not a best-effort.
+    var chain = [{ x: a.cx, y: a.cy }]; for (var s = 0; s < simp.length; s++) chain.push(simp[s]); chain.push({ x: b.cx, y: b.cy });
+    var bad = 0; for (var q = 0; q + 1 < chain.length; q++) bad += _chordIllegalCount(graph, storey, chain[q].x, chain[q].y, chain[q + 1].x, chain[q + 1].y);
+    if (bad > 0) return null;
+    return simp;
+  }
+
+  // §POLYLINE: the additive floor-hugging geometry for result.polyline — world {x,y,z} points. Rooms/
+  // doors/circ anchors from `path` are kept as-is; A* interior points are spliced between same-storey
+  // pairs; a cross-storey (stair) pair keeps its straight vertical segment (no raster spans floors).
+  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (n.cz || 0) }; }
+  function _buildPolyline(graph, path) {
+    if (!path || !path.length) return [];
+    var anchors = [];
+    for (var pi = 0; pi < path.length; pi++) { var nn = graph.nodesByGuid[path[pi]]; if (nn) anchors.push(nn); }
+    if (!anchors.length) return [];
+    var out = [];
+    function pushPt(p) {
+      var L = out.length ? out[out.length - 1] : null;
+      if (!L || Math.hypot(L.x - p.x, L.y - p.y) > 1e-6 || Math.abs((L.z || 0) - (p.z || 0)) > 1e-6) out.push(p);
+    }
+    function pushInterior(hop, z) { for (var k = 0; k < hop.length; k++) pushPt({ x: hop[k].x, y: hop[k].y, z: z }); }
+    pushPt(_polyPt(anchors[0]));
+    var i = 0;
+    while (i + 1 < anchors.length) {
+      var a = anchors[i];
+      // §CIRC-NOT-A-WALKPOINT (Stage B, the key §11 finding proven on real data): a `circ` node is a
+      // per-storey circulation-hub CENTROID (stair-group average), NOT a walked floor point — measured
+      // on HHS/Terminal it routinely sits on a DISCONNECTED raster island, so A* cannot reach it and
+      // every room→…→circ→…→room chord degraded to the old straight (off-floor) line. It is a
+      // TOPOLOGICAL connector; the real walk goes spine→spine along the corridor it bridges. So when the
+      // next anchor is a circ, TRY A* straight from `a` to the anchor AFTER it (bypassing circ): if A*
+      // routes it on real floor (verified: HHS spine→spine straight=61 illegal → A* polyline=0), take
+      // that and drop circ from the DRAWN line (never from `path` — room list/markers keep it). If A*
+      // can't (e.g. a rect-fallback building whose doorways aren't rect-covered — Clinic), KEEP circ and
+      // fall through to the normal per-segment handling, so a raster-less building is never made WORSE
+      // than before. Cross-storey never relies on circ (those surface as real `stairwp` via _publicHop).
+      if (anchors[i + 1].kind === 'circ' && i + 2 < anchors.length && a.storey != null && a.storey === anchors[i + 2].storey) {
+        var c = anchors[i + 2];
+        var bypass = _astarHop(graph, a, c);
+        if (bypass !== null) { pushInterior(bypass, (a.cz || 0)); pushPt(_polyPt(c)); i += 2; continue; }
+      }
+      var b = anchors[i + 1];
+      if (a.storey != null && a.storey === b.storey) {
+        var hop = _astarHop(graph, a, b);
+        if (hop && hop.length) pushInterior(hop, (a.cz || 0));
+      }
+      pushPt(_polyPt(b));
+      i += 1;
+    }
+    return out;
+  }
+
   // Dijkstra shortest path over the FULL occupant graph. SAME SIGNATURE / SAME RESULT SHAPE as
   // before ({path, doors, distance}) — every existing consumer (viewer/navigate_find.js) needs
   // zero edits: `path` entries still resolve via `graph.nodesByGuid[g]` to a real {cx,cy,cz,name}
@@ -1159,7 +1352,9 @@
       cur = p.from;
     }
     path = _legalizePath(graph, path);
-    return { path: path, doors: doors, distance: core.dist[toGuid] };
+    // §RASTER-ASTAR: additive floor-hugging geometry (see _buildPolyline). path/doors/distance are
+    // unchanged — polyline is the ONLY new field, consumed by navigate_find.js for the drawn line.
+    return { path: path, doors: doors, distance: core.dist[toGuid], polyline: _buildPolyline(graph, path) };
   }
 
   // §ESCAPE-ROUTE (OCCUPANT_PATHFINDER.md SPEC — "falls out" of shortestPath, not a separate
