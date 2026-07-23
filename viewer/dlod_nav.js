@@ -9,8 +9,10 @@
 // W-ROOM-OCCL-PROXY, W-ROOM-OCCL-PERF, W-ROOM-OCCL-STABILITY. Room-mismatch (camera's current
 // room ≠ element's contained room) as a THIRD OR'd demote criterion in the same _boxIndex state
 // machine; live point-in-rect current-room test with the walker's floor-anchor Z-join; N-eval
-// membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled (default
-// false) — when false, behavior is identical to the pre-§13 module.
+// membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled — DEFAULT
+// TRUE as of §18/§19 (2026-07-23): PROMOTE/DEMOTE tightened (below) on the condition the camera's
+// own current room stays solid regardless of distance, which needs this criterion always live, not
+// console-only. Flip to false for the old §9-only distance/frustum behavior.
 // §ROOM_OCCL step 2 (portal/PVS) — Implementing FLY_TOUR_DLOD_SCALE.md §16 — Witnesses:
 // W-PVS-EQUIV, W-PVS-CORRECT, W-PVS-STABILITY, W-PVS-PERF. window.__dlodNav.pvsEnabled (default
 // false) REPLACES the plain room-equality mismatch test with room-graph-derived visible-room-set
@@ -38,7 +40,11 @@
   function A() { return window.APP || window.A; }
 
   var NAV_MIN_ELEMENTS = 50000;    // LARGE_BUILDING, time_machine.js:471 — same proven gate
-  var PROMOTE_DIST = 50, DEMOTE_DIST = 80;          // §8: S261's band, now with fade on top
+  // §19 (2026-07-23, user: "tightening distances OK as long as in-room remain solid" — §18
+  // measured ~4.5→~8.4fps mean at the §8 band, full-ghost ceiling ~13.4fps): tightened from
+  // 50/80 now that _wantedReal has a same-room-as-camera bypass (below) protecting whatever room
+  // the camera is actually in from distance demotion regardless of these numbers.
+  var PROMOTE_DIST = 38, DEMOTE_DIST = 60;
   var PROMOTE_SQ = PROMOTE_DIST * PROMOTE_DIST, DEMOTE_SQ = DEMOTE_DIST * DEMOTE_DIST;
   var FRUSTUM_MARGIN = 5;          // §9: angular hysteresis — must be 5m OUTSIDE frustum to demote
   var FADE_FRAMES = 10;            // §8 FINDINGS #4: N=10 sufficed; 5 and 20 both worse
@@ -75,15 +81,15 @@
   var _guidArr = null, _evalCursor = 0, _scanPending = false; // §FLY_SMOOTH: chunked-scan state
   var _passReal = 0, _passBoxed = 0; // partition counters accumulated across a pass
   var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
-  // §ROOM_OCCL state (§13) — ALL of it inert unless _stats.roomOcclEnabled is flipped true
+  // §ROOM_OCCL state (§13) — live by default since §19; inert only if roomOcclEnabled is set false
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
   // §ROOM_OCCL step 2 (§16) — portal/PVS state, ALL inert unless _stats.pvsEnabled is flipped true
   var _pvs = null, _pvsBld = null, _pvsTriedT = 0;
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
-    // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
-    // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
-    roomOcclEnabled: false, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
+    // §19: default TRUE — see file-header note. Still live-flippable from the console
+    // (window.__dlodNav.roomOcclEnabled = false) to fall back to plain distance/frustum.
+    roomOcclEnabled: true, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
     roomIdxRects: 0, roomIdxStamped: 0,
     // §16 step-2 testing lever: same convention — console-only (window.__dlodNav.pvsEnabled =
     // true), independent of roomOcclEnabled's own default; false ⇒ §13's exact shipped behavior.
@@ -445,15 +451,20 @@
     // bites when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
     // compiled containment row (e.room). false ⇒ short-circuits to the shipped decision rule.
     var roomMis = _roomMismatch(e);
+    // §19: element is contained in the room the camera is CURRENTLY in — exempt from the distance
+    // gate entirely (frustum/hysteresis still applies below). Without this, tightening
+    // PROMOTE/DEMOTE for far-field aggression would also box out the room the user is standing in.
+    var sameRoom = _roomActive && e.room !== undefined && e.room === _roomCur;
     if (e.state === 'real') {
-      // demote only when clearly out: >80m OR sphere+5m margin outside frustum OR room mismatch
-      if (d2 > DEMOTE_SQ) return false;
+      // demote only when clearly out: >60m OR sphere+5m margin outside frustum OR room mismatch
+      // (distance skipped entirely when sameRoom — see §19 above)
+      if (!sameRoom && d2 > DEMOTE_SQ) return false;
       if (roomMis) return false;
       _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
       return _frustum.intersectsSphere(_sphere);
     }
-    // promote only when clearly in: ≤50m AND exact frustum AND (room matches or criterion inert)
-    if (d2 > PROMOTE_SQ) return false;
+    // promote only when clearly in: ≤38m AND exact frustum AND (room matches or criterion inert)
+    if (!sameRoom && d2 > PROMOTE_SQ) return false;
     if (roomMis) return false;
     _sphere.center.copy(e.pos); _sphere.radius = e.radius;
     return _frustum.intersectsSphere(_sphere);
