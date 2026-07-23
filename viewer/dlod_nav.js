@@ -111,6 +111,13 @@
   var _occlFrame = 0;                  // traversal frame counter (HOLD window bookkeeping)
   var _occlM4 = null;                  // scratch MVP for query-proxy rendering
   var _lastOcclEnabled = false;        // §17.11 lesson: lever flips must re-arm the scan themselves
+  // §17.13 depth-prepass fix (FLY_TOUR_DLOD_SCALE.md §17.12 root-cause probe) — occlusion queries
+  // must depth-test against REAL geometry only, never the box-proxy meshes _buildBoxes owns
+  // (isDlodNavProxy/isDlodNavDepth InstancedMeshes). An offscreen WebGLRenderTarget, box meshes
+  // hidden for the duration of ONE render() call, is the occluder source for queries instead of
+  // "whatever the default framebuffer last held" — fully decoupled from the visible canvas, so the
+  // real display frame (box proxies included) is never disturbed (no flicker risk by construction).
+  var _occlDepthRT = null, _occlDepthMat = null;
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
     // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
     // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
@@ -621,10 +628,48 @@
     return changed;
   }
 
+  // §17.13 — depth-only pre-pass, REAL geometry only (box-proxy InstancedMeshes hidden for the
+  // duration of this one render() call). Renders into an offscreen target the visible canvas never
+  // sees, so the main app's own render(scene,camera) (box proxies included) is untouched — this
+  // pass exists purely to give the occlusion queries a depth buffer to test against that isn't
+  // contaminated by nav-DLOD's own wireframe stand-ins (§17.12's named root-cause hypothesis).
+  // Returns the render target actually bound to the GL context afterward — the caller reads/
+  // restores it once queries are issued (never leaves the renderer render-targeted off the canvas).
+  function _occlDepthEnsure(app) {
+    var sz = app.renderer.getSize(new THREE.Vector2());
+    var w = Math.max(1, sz.x | 0), h = Math.max(1, sz.y | 0);
+    if (_occlDepthRT && _occlDepthRT.width === w && _occlDepthRT.height === h) return;
+    if (_occlDepthRT) _occlDepthRT.dispose();
+    _occlDepthRT = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false });
+  }
+  function _occlDepthPrepass(app) {
+    _occlDepthEnsure(app);
+    if (!_occlDepthMat) _occlDepthMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+    var i, savedVis = [];
+    if (_boxMeshes) for (i = 0; i < _boxMeshes.length; i++) { savedVis.push(_boxMeshes[i].visible); _boxMeshes[i].visible = false; }
+    // §8's cross-fade overlays (_startFade) also carry a wireframe "boxCopy" clone tagged
+    // isBboxPlaceholder — the SAME contamination risk as the steady-state box meshes above, just
+    // bounded to FADE_CAP=128 elements at a time. Hide only the box half; the realCopy half is
+    // genuine real geometry mid-transition and stays a legitimate occluder.
+    var savedFadeVis = [];
+    for (i = 0; i < _fades.length; i++) { savedFadeVis.push(_fades[i].boxCopy.visible); _fades[i].boxCopy.visible = false; }
+    var prevTarget = app.renderer.getRenderTarget();
+    var prevOverride = app.scene.overrideMaterial;
+    app.scene.overrideMaterial = _occlDepthMat;
+    app.renderer.setRenderTarget(_occlDepthRT);
+    app.renderer.clear(true, true, false);
+    app.renderer.render(app.scene, app.camera);
+    app.scene.overrideMaterial = prevOverride;
+    if (_boxMeshes) for (i = 0; i < _boxMeshes.length; i++) _boxMeshes[i].visible = savedVis[i];
+    for (i = 0; i < _fades.length; i++) _fades[i].boxCopy.visible = savedFadeVis[i];
+    return prevTarget; // render target is CURRENTLY the depth RT — caller restores prevTarget when done
+  }
+
   // §17.3 raw-GL query resources — WebGL2 core occlusion queries (ANY_SAMPLES_PASSED_CONSERVATIVE
   // is core WebGL2; EXT_occlusion_query_boolean is its WebGL1 spelling). One tiny program: a unit
-  // cube stretched to a node's AABB by uMin/uMax, color/depth writes OFF, depth-TEST on against
-  // whatever the renderer last drew (the real scene IS the occluder — §17.7, no synthetic proxies).
+  // cube stretched to a node's AABB by uMin/uMax, color/depth writes OFF, depth-TEST on against the
+  // §17.13 depth-prepass's REAL-only render (not "whatever the renderer last drew" — §17.12 found
+  // that included box proxies and caused a self-amplifying false-hide feedback loop).
   function _occlGlInit(app) {
     if (_occlGl) return _occlGl.ok;
     var gl = app.renderer.getContext();
@@ -707,7 +752,7 @@
     var gl = _occlGl.gl, changed = 0, issued = 0, camPos = app.camera.position;
     if (!_occlM4) _occlM4 = new THREE.Matrix4();
     _occlM4.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
-    var glReady = false;
+    var glReady = false, prevTarget = null;
     for (var step = 0; step < len && issued < OCCL_QUERY_BUDGET; step++) {
       var n = _occlCut[(_occlCutIdx + step) % len];
       if (!n.inCut || n.pending || _occlFrame < n.holdUntil) continue;
@@ -716,7 +761,10 @@
         continue;
       }
       if (!glReady) {
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // §17.13: real-only depth pre-pass, THEN issue queries against ITS depth buffer — never
+        // the default framebuffer (which is whatever the last full frame drew, box proxies
+        // included). _occlDepthPrepass leaves the depth RT bound; restored below once done.
+        prevTarget = _occlDepthPrepass(app);
         gl.useProgram(_occlGl.prog);
         gl.bindVertexArray(_occlGl.vao);
         gl.uniformMatrix4fv(_occlGl.uMVP, false, _occlM4.elements);
@@ -742,6 +790,8 @@
     _stats.occlQueriesIssued += issued;
     if (glReady) {
       gl.bindVertexArray(null);
+      app.renderer.setRenderTarget(prevTarget); // §17.13: hand the canvas back — never leaves the
+                                                 // renderer targeted off-screen for the display render
       app.renderer.resetState();            // hand three.js back a truthful state cache
     }
     return changed;
