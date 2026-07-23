@@ -23,6 +23,11 @@ function setupDLOD(A) {
   var _zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
   var _lastCamX = 0, _lastCamY = 0, _lastCamZ = 0;  // §S260b: skip tick when camera idle
   var _lastTargX = 0, _lastTargY = 0, _lastTargZ = 0;
+  // §DLOD_TICK whitebox (2026-07-23): testing whether this always-on, UNCHUNKED per-slot culler
+  // (full instancedMatrix re-upload on any flip — see §S274 comment below) is the source of
+  // bbox-mode's fly > orbit lag reported after nav-DLOD (dlod_nav.js, separate module) was ruled
+  // out — bbox mode gates dlod_nav off entirely but this tick still runs unconditionally.
+  var _tickN = 0, _tickMs = 0, _tickFlips = 0, _tickLastLogT = 0;
 
   // ── §S274: Direct refs built once after streaming ──
   var _instancedMeshes = []; // [{obj, meta}, ...] — IM only, BM handled by r160 native
@@ -134,6 +139,7 @@ function setupDLOD(A) {
     // ── InstancedMesh: per-instance zero-scale (desktop only) ──
     // §S274: On mobile, instanceMatrix.needsUpdate re-uploads entire buffer to GPU per tick.
     // Cost exceeds savings. BatchedMesh setVisibleAt is cheap (indirect draw flag only).
+    var flips = 0; // §DLOD_TICK whitebox
     if (A._isMobile) { /* skip IM culling on mobile */ }
     else for (var ii = 0; ii < _instancedMeshes.length; ii++) {
       var im = _instancedMeshes[ii];
@@ -160,6 +166,7 @@ function setupDLOD(A) {
             obj.setMatrixAt(m.instanceIndex, _zeroScale);
             m._dlodHid = true;
             changed = true;
+            flips++;
           }
           imHid++;
         } else {
@@ -167,12 +174,25 @@ function setupDLOD(A) {
             obj.setMatrixAt(m.instanceIndex, m._origMatrix);
             m._dlodHid = false;
             changed = true;
+            flips++;
           }
           imVis++;
         }
       }
 
       if (changed) obj.instanceMatrix.needsUpdate = true;
+    }
+
+    // §DLOD_TICK whitebox — throttled ~2s like every other §-log in this codebase (dlod_nav.js's
+    // own idiom). ms = this tick's own cost; flips = instances whose full-buffer re-upload fired.
+    var _tms = performance.now() - t0;
+    _tickN++; _tickMs += _tms; _tickFlips += flips;
+    var _now = performance.now();
+    if (_now - _tickLastLogT >= 2000) {
+      console.log('§DLOD_TICK n=' + _tickN + ' ms_mean=' + (_tickMs / _tickN).toFixed(2) +
+        ' ms_max=' + _tms.toFixed(2) + ' flips_mean=' + (_tickFlips / _tickN).toFixed(1) +
+        ' fly=' + (A.flyActive ? 1 : 0));
+      _tickN = 0; _tickMs = 0; _tickFlips = 0; _tickLastLogT = _now;
     }
 
     if ((imHid > 0 || imVis > 0) && A.markDirty) A.markDirty();
