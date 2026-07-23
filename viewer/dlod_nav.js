@@ -17,6 +17,16 @@
 // membership (common/room_graph.js's buildRoomPVS) when true; false ⇒ behavior identical to the
 // shipped §13 mechanism (this flag is a pure superset gated behind its OWN lever, never implied by
 // roomOcclEnabled alone — §13's own EQUIV/PROXY/STABILITY witnesses stay valid unchanged).
+// §ROOM_OCCL step 3 (hierarchical GPU occlusion) — Implementing FLY_TOUR_DLOD_SCALE.md §17.2-17.4
+// — Witnesses: W-OCCL-BVH-EQUIV, W-OCCL-BVH-CORRECT, W-OCCL-BVH-STABILITY, W-OCCL-BVH-PERF.
+// window.__dlodNav.occlBvhEnabled (default false) adds a FOURTH OR'd demote criterion: an
+// in-memory median-split BVH over element AABBs (§17.2, built sync once per building — measured
+// 312ms build over the real 122,330-element set, §17.9 decision 1) traversed top-down with async
+// WebGL2 occlusion queries (§17.3, ANY_SAMPLES_PASSED_CONSERVATIVE on each visited node's AABB
+// proxy, depth-tested against the already-rendered frame; hidden ⇒ whole subtree demoted, no
+// descent; visible ⇒ descend on a later cycle), round-robined across frames with a per-node
+// result HOLD window (§17.4). COMPOSES with §16's PVS per §17.9 decision 3 — roomMis runs as the
+// free first filter, occlMis is a plain further OR. false ⇒ behavior identical to shipped §13+§16.
 //
 // Nav-scope DLOD box-proxy: during free orbit/pan and Fly Tour on large buildings (>50k
 // elements), far/out-of-frustum elements render as wireframe boxes (TM_DLOD_SCALE.md §9's
@@ -61,6 +71,16 @@
   var ROOM_STABLE_N = 12;          // §13 membership-stability gate (§11.2 Q4: 10-15 frames —
                                    // filters all 17 measured A→B→A flaps at ~0.2s switch latency,
                                    // well under the 500ms median room dwell)
+  var OCCL_LEAF_SIZE = 4;          // §17.2: small leaf — object-grain culling floor (POC §17.11
+                                   // proved object-grain demotion is what moves frame_ms)
+  var OCCL_HOLD = FADE_FRAMES;     // §17.4: per-node result reuse window before re-query — start
+                                   // from the SAME tuned FADE_FRAMES=10 constant, not a new number
+  var OCCL_QUERY_BUDGET = 64;      // §17.4 round-robin: max occlusion queries ISSUED per frame
+                                   // ("chunk" = N visited nodes/frame, tree analogue of EVAL_CHUNK)
+  var OCCL_CAM_MARGIN = 1.0;       // camera inside (node AABB + margin) ⇒ unconditionally visible,
+                                   // never queried — an inside-the-box proxy can rasterize 0 samples
+                                   // (faces behind/clipped) and would FALSE-HIDE the camera's own
+                                   // surroundings; §17.5 pitfall 2's by-construction guard
 
   var _pillOn = false;             // user toggle — OFF = this module does exactly nothing
   var _engaged = false;            // gate currently satisfied and proxy state applied
@@ -80,6 +100,17 @@
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
   // §ROOM_OCCL step 2 (§16) — portal/PVS state, ALL inert unless _stats.pvsEnabled is flipped true
   var _pvs = null, _pvsBld = null, _pvsTriedT = 0;
+  // §ROOM_OCCL step 3 (§17) — occl-BVH state, ALL inert unless _stats.occlBvhEnabled is flipped true
+  var _bvh = null, _bvhBld = null;     // median-split BVH root (lazy, building-keyed like _pvsEnsure)
+  var _occlHidden = null;              // guid → true: live hide-set maintained by the traversal
+  var _occlCut = [];                   // active traversal frontier (vis/hid boundary nodes)
+  var _occlCutIdx = 0, _occlCutDead = 0; // round-robin cursor + lazy-compaction counter
+  var _occlPendingList = [];           // nodes with an ISSUED, not-yet-resolved GPU query
+  var _occlTouched = [];               // nodes ever given query/state — reset list for disable/rebuild
+  var _occlGl = null;                  // {ok, gl, prog, vao, uMin, uMax, uMVP} raw-GL query resources
+  var _occlFrame = 0;                  // traversal frame counter (HOLD window bookkeeping)
+  var _occlM4 = null;                  // scratch MVP for query-proxy rendering
+  var _lastOcclEnabled = false;        // §17.11 lesson: lever flips must re-arm the scan themselves
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
     // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
     // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
@@ -87,7 +118,11 @@
     roomIdxRects: 0, roomIdxStamped: 0,
     // §16 step-2 testing lever: same convention — console-only (window.__dlodNav.pvsEnabled =
     // true), independent of roomOcclEnabled's own default; false ⇒ §13's exact shipped behavior.
-    pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0 };
+    pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0,
+    // §17 step-3 testing lever: same convention — console-only (window.__dlodNav.occlBvhEnabled =
+    // true), independent of the §13/§16 levers; false ⇒ identical to shipped §13+§16 behavior.
+    occlBvhEnabled: false, occlBvhNodes: 0, occlHidden: 0, occlCut: 0,
+    occlQueriesIssued: 0, occlResultsRead: 0 };
   window.__dlodNav = _stats;
 
   function _gateBlockReason(app) {
@@ -147,8 +182,14 @@
         m4.compose(_pos, _q, _scl);
         im.setMatrixAt(j, _zeroM);
         imDepth.setMatrixAt(j, _zeroM);
+        // §17.2: real AABB half-extents stashed at the same build step (3 more floats vs sphere) —
+        // Three.js WORLD space with the SAME bx/bz/by axis swap as _scl above (§17.2's named
+        // coordinate-frame landmine: the BVH must live in the frame camPos/frustum already use).
+        var hx = bx * 0.5, hy = bz * 0.5, hz = by * 0.5;
         index[r[0]] = { mesh: im, depthMesh: imDepth, idx: j, matrix: m4.clone(), pos: _pos.clone(),
-          radius: Math.sqrt(bx * bx + by * by + bz * bz) * 0.5, state: 'real', boxVisible: false };
+          radius: Math.sqrt(bx * bx + by * by + bz * bz) * 0.5, state: 'real', boxVisible: false,
+          minX: p.x - hx, minY: p.y - hy, minZ: p.z - hz,
+          maxX: p.x + hx, maxY: p.y + hy, maxZ: p.z + hz };
         total++;
       }
       im.instanceMatrix.needsUpdate = true;
@@ -407,6 +448,333 @@
     return e.room !== _roomCur;
   }
 
+  // ══ §17 — FLY_TOUR_DLOD_SCALE.md §17.2-17.4: hierarchical GPU occlusion culling, STEP 3 ══
+  // §17.3 integration: occlMis is a FOURTH plain OR'd demote criterion next to roomMis. The guid
+  // is in the traversal's live hide-set only while the lever is on and a resolved GPU query said
+  // the guid's covering BVH node is occluded. Keys by guid (unlike _roomMismatch's e.room) —
+  // hide-ownership lives on tree nodes, elements are only ever looked up.
+  function _occlBvhMismatch(guid) {
+    return _stats.occlBvhEnabled === true && _occlHidden !== null && _occlHidden[guid] === true;
+  }
+
+  // §17.2: plain median-split BVH over _boxIndex's already-resident AABBs (zero new SQL). Real
+  // traversable JS nodes {minX..maxZ, children|leaf, parent} — never an opaque blob (§17.9
+  // decision 2). Built SYNCHRONOUSLY once per building (§17.9 decision 1: measured 312ms build /
+  // 439ms total over the real 122,330-element set — cheap enough, no idle-defer), lazy
+  // building-keyed cache exactly like _pvsEnsure/_roomIdxEnsure.
+  function _bvhBuildNode(items, lo, hi, parent) {
+    var minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (var i = lo; i < hi; i++) {
+      var it = items[i];
+      if (it.minX < minX) minX = it.minX; if (it.minY < minY) minY = it.minY; if (it.minZ < minZ) minZ = it.minZ;
+      if (it.maxX > maxX) maxX = it.maxX; if (it.maxY > maxY) maxY = it.maxY; if (it.maxZ > maxZ) maxZ = it.maxZ;
+    }
+    var node = { minX: minX, minY: minY, minZ: minZ, maxX: maxX, maxY: maxY, maxZ: maxZ,
+      parent: parent, children: null, leaf: null,
+      // traversal state (§17.3/§17.4) — res: null|'vis'|'hid'; pending: query issued, unresolved
+      q: null, pending: false, res: null, holdUntil: 0, inCut: false, hiddenMarked: false, touched: false };
+    if (hi - lo <= OCCL_LEAF_SIZE) {
+      var guids = [];
+      for (var g = lo; g < hi; g++) guids.push(items[g].guid);
+      node.leaf = guids;
+      return node;
+    }
+    var dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+    var axis = (dx >= dy && dx >= dz) ? 'cx' : (dy >= dz ? 'cy' : 'cz');
+    var sub = items.slice(lo, hi);
+    sub.sort(function (a, b) { return a[axis] - b[axis]; });
+    for (var s = 0; s < sub.length; s++) items[lo + s] = sub[s];
+    var mid = lo + ((hi - lo) >> 1);
+    node.children = [_bvhBuildNode(items, lo, mid, node), _bvhBuildNode(items, mid, hi, node)];
+    return node;
+  }
+
+  function _bvhEnsure(app) {
+    if (_bvh && _bvhBld === app.activeBuilding) {
+      // §17-BUG1 fix: a prior _occlDisable() reset _occlCut to [] without touching _bvh/_bvhBld —
+      // the tree itself is still valid, only the traversal cut needs re-seeding on re-enable.
+      // Without this, off->on within the same building never issues another query (permanently inert).
+      if (!_occlCut.length) {
+        _occlCut = _bvh.children ? _bvh.children.slice() : [_bvh];
+        for (var c = 0; c < _occlCut.length; c++) { _occlCut[c].inCut = true; _occlTouch(_occlCut[c]); }
+        _occlCutIdx = 0; _occlCutDead = 0;
+        console.log('§OCCL_BVH_REENABLE bld=' + app.activeBuilding + ' cut=' + _occlCut.length);
+      }
+      return true;
+    }
+    if (!_boxIndex) return false;
+    _occlResetTraversal();                 // old tree's nodes/queries are garbage — drop cleanly
+    if (_occlHidden) { for (var k in _occlHidden) { _scanPending = true; break; } }
+    _occlHidden = Object.create(null);
+    var t0 = performance.now(), items = [], guid;
+    for (guid in _boxIndex) {
+      var e = _boxIndex[guid];
+      items.push({ guid: guid, minX: e.minX, minY: e.minY, minZ: e.minZ,
+        maxX: e.maxX, maxY: e.maxY, maxZ: e.maxZ, cx: e.pos.x, cy: e.pos.y, cz: e.pos.z });
+    }
+    if (!items.length) return false;
+    _bvh = _bvhBuildNode(items, 0, items.length, null);
+    _bvhBld = app.activeBuilding;
+    var nodes = 0, leaves = 0, maxDepth = 0;
+    (function count(n, d) { nodes++; if (d > maxDepth) maxDepth = d;
+      if (n.leaf) leaves++; else { count(n.children[0], d + 1); count(n.children[1], d + 1); } })(_bvh, 0);
+    _stats.occlBvhNodes = nodes;
+    // §17.3: traversal starts at the root's CHILDREN — never query the root singleton (its box is
+    // the whole building; the camera is always inside it).
+    _occlCut = _bvh.children ? _bvh.children.slice() : [_bvh];
+    for (var c = 0; c < _occlCut.length; c++) { _occlCut[c].inCut = true; _occlTouch(_occlCut[c]); }
+    _occlCutIdx = 0; _occlCutDead = 0;
+    console.log('§OCCL_BVH_BUILD bld=' + app.activeBuilding + ' elements=' + items.length +
+      ' nodes=' + nodes + ' leaves=' + leaves + ' depth=' + maxDepth +
+      ' build_ms=' + (performance.now() - t0).toFixed(0));
+    return true;
+  }
+
+  function _occlTouch(n) { if (!n.touched) { n.touched = true; _occlTouched.push(n); } }
+
+  // Reset every node that ever carried traversal/query state; delete its GL query object.
+  function _occlResetTraversal() {
+    var gl = _occlGl && _occlGl.ok ? _occlGl.gl : null;
+    for (var i = 0; i < _occlTouched.length; i++) {
+      var n = _occlTouched[i];
+      if (n.q && gl) gl.deleteQuery(n.q);
+      n.q = null; n.pending = false; n.res = null; n.holdUntil = 0; n.inCut = false;
+      n.hiddenMarked = false; n.touched = false;
+    }
+    _occlTouched.length = 0; _occlPendingList.length = 0;
+    _occlCut = []; _occlCutIdx = 0; _occlCutDead = 0;
+    _stats.occlCut = 0;
+  }
+
+  // Live-flip back to false (or lever-off path): clear the hide-set so the very next scan pass
+  // restores the shipped §13+§16 partition — the same one-shot reset shape as _roomReset.
+  function _occlDisable() {
+    var had = false;
+    if (_occlHidden) { for (var k in _occlHidden) { had = true; break; } }
+    _occlHidden = null;
+    _occlResetTraversal();
+    if (had) _scanPending = true;
+    _stats.occlHidden = 0;
+    _lastOcclEnabled = false;
+    console.log('§OCCL_BVH_OFF hiddenCleared=' + had);
+  }
+
+  function _markSubtree(n, hide) {
+    var changed = 0;
+    (function walk(x) {
+      if (x.leaf) {
+        for (var i = 0; i < x.leaf.length; i++) {
+          var g = x.leaf[i];
+          if (hide) { if (_occlHidden[g] !== true) { _occlHidden[g] = true; changed++; } }
+          else if (_occlHidden[g] === true) { delete _occlHidden[g]; changed++; }
+        }
+      } else { walk(x.children[0]); walk(x.children[1]); }
+    })(n);
+    return changed;
+  }
+
+  function _occlCamInside(n, c) {
+    return c.x > n.minX - OCCL_CAM_MARGIN && c.x < n.maxX + OCCL_CAM_MARGIN &&
+           c.y > n.minY - OCCL_CAM_MARGIN && c.y < n.maxY + OCCL_CAM_MARGIN &&
+           c.z > n.minZ - OCCL_CAM_MARGIN && c.z < n.maxZ + OCCL_CAM_MARGIN;
+  }
+
+  function _occlRemoveFromCut(n) { n.inCut = false; _occlCutDead++; }
+  function _occlAddToCut(n) {
+    if (n.inCut) return;
+    n.inCut = true; _occlTouch(n); _occlCut.push(n);
+  }
+
+  // "Visible" outcome for a cut node — from a resolved query OR the camera-inside guard.
+  function _occlNodeVisible(n) {
+    var changed = 0;
+    n.res = 'vis'; n.holdUntil = _occlFrame + OCCL_HOLD;
+    if (n.hiddenMarked) { changed = _markSubtree(n, false); n.hiddenMarked = false; }
+    if (n.children) {
+      // §17.3: descend — children join the cut, the (now redundant) parent leaves it. A node in
+      // the cut therefore never has active descendants in the cut at the same time.
+      _occlAddToCut(n.children[0]); _occlAddToCut(n.children[1]);
+      _occlRemoveFromCut(n);
+    }
+    // visible LEAF stays in the cut — re-queried after its hold window (may become hidden later)
+    return changed;
+  }
+
+  // "Hidden" outcome (0 samples): whole subtree demoted, NO descent (§17.3's early-out — this is
+  // where one query culls thousands of elements across discipline buckets at once).
+  function _occlNodeHidden(n) {
+    var changed = 0;
+    n.res = 'hid'; n.holdUntil = _occlFrame + OCCL_HOLD;
+    if (!n.hiddenMarked) { changed = _markSubtree(n, true); n.hiddenMarked = true; }
+    // Collapse upward: when BOTH children of a parent sit hidden in the cut, replace them with
+    // the parent (bounds the cut to the vis/hid boundary; repeated cycles cascade further up).
+    var p = n.parent;
+    if (p && p !== _bvh) {
+      var sib = p.children[0] === n ? p.children[1] : p.children[0];
+      if (sib.inCut && sib.res === 'hid' && !sib.pending && n.inCut && !n.pending) {
+        _occlRemoveFromCut(n); _occlRemoveFromCut(sib);
+        n.hiddenMarked = false; sib.hiddenMarked = false; // ownership moves up — guids stay hidden
+        p.res = 'hid'; p.hiddenMarked = true; p.holdUntil = _occlFrame + OCCL_HOLD;
+        _occlAddToCut(p);
+      }
+    }
+    return changed;
+  }
+
+  // §17.3 raw-GL query resources — WebGL2 core occlusion queries (ANY_SAMPLES_PASSED_CONSERVATIVE
+  // is core WebGL2; EXT_occlusion_query_boolean is its WebGL1 spelling). One tiny program: a unit
+  // cube stretched to a node's AABB by uMin/uMax, color/depth writes OFF, depth-TEST on against
+  // whatever the renderer last drew (the real scene IS the occluder — §17.7, no synthetic proxies).
+  function _occlGlInit(app) {
+    if (_occlGl) return _occlGl.ok;
+    var gl = app.renderer.getContext();
+    if (!(typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext)) {
+      _occlGl = { ok: false };
+      console.log('§OCCL_BVH_GL webgl2=false — occl-BVH criterion inert on this context');
+      return false;
+    }
+    function sh(type, src) {
+      var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    }
+    try {
+      var prog = gl.createProgram();
+      gl.attachShader(prog, sh(gl.VERTEX_SHADER,
+        '#version 300 es\nin vec3 p; uniform vec3 uMin; uniform vec3 uMax; uniform mat4 uMVP;\n' +
+        'void main(){ gl_Position = uMVP * vec4(mix(uMin, uMax, p), 1.0); }'));
+      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER,
+        '#version 300 es\nprecision lowp float; out vec4 c; void main(){ c = vec4(1.0); }'));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      var vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      var vb = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+      // 8 unit-cube corners; corner i = (i&1, i>>1&1, i>>2&1)
+      var pos = new Float32Array(24);
+      for (var i = 0; i < 8; i++) { pos[i * 3] = i & 1; pos[i * 3 + 1] = (i >> 1) & 1; pos[i * 3 + 2] = (i >> 2) & 1; }
+      gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+      var ib = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([
+        0, 1, 2, 1, 3, 2, 4, 6, 5, 5, 6, 7, 0, 4, 1, 1, 4, 5,
+        2, 3, 6, 3, 7, 6, 0, 2, 4, 2, 6, 4, 1, 5, 3, 3, 5, 7]), gl.STATIC_DRAW);
+      gl.bindVertexArray(null);
+      _occlGl = { ok: true, gl: gl, prog: prog, vao: vao,
+        uMin: gl.getUniformLocation(prog, 'uMin'), uMax: gl.getUniformLocation(prog, 'uMax'),
+        uMVP: gl.getUniformLocation(prog, 'uMVP') };
+      // Raw GL just ran under three.js's back — invalidate its cached state tracker.
+      app.renderer.resetState();
+      console.log('§OCCL_BVH_GL webgl2=true program=ok');
+      return true;
+    } catch (err) {
+      _occlGl = { ok: false };
+      if (app.renderer.resetState) app.renderer.resetState();
+      console.log('§OCCL_BVH_GL_ERR ' + err.message);
+      return false;
+    }
+  }
+
+  // §17.3 "async by construction" — THE canonical way this gets implemented wrong is a
+  // synchronous stall (issue + immediately read). This function only ever POLLS
+  // QUERY_RESULT_AVAILABLE; a result is consumed on whatever later frame it resolves. NEVER
+  // gl.finish()/getQueryParameter(QUERY_RESULT) before AVAILABLE says so.
+  function _occlPollResults() {
+    if (!_occlPendingList.length) return 0;
+    var gl = _occlGl.gl, changed = 0, keep = [];
+    for (var i = 0; i < _occlPendingList.length; i++) {
+      var n = _occlPendingList[i];
+      if (!gl.getQueryParameter(n.q, gl.QUERY_RESULT_AVAILABLE)) { keep.push(n); continue; }
+      n.pending = false;
+      _stats.occlResultsRead++;
+      if (!n.inCut) continue;               // collapsed/reset while in flight — result is moot
+      var anySamples = gl.getQueryParameter(n.q, gl.QUERY_RESULT);
+      changed += anySamples ? _occlNodeVisible(n) : _occlNodeHidden(n);
+    }
+    _occlPendingList = keep;
+    return changed;
+  }
+
+  // Issue up to OCCL_QUERY_BUDGET queries this frame, round-robin over the cut (§17.4 — the tree
+  // analogue of EVAL_CHUNK's flat chunking: N visited NODES per frame, never the whole tree).
+  function _occlIssueQueries(app) {
+    var len = _occlCut.length;
+    if (!len) return 0;
+    var gl = _occlGl.gl, changed = 0, issued = 0, camPos = app.camera.position;
+    if (!_occlM4) _occlM4 = new THREE.Matrix4();
+    _occlM4.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+    var glReady = false;
+    for (var step = 0; step < len && issued < OCCL_QUERY_BUDGET; step++) {
+      var n = _occlCut[(_occlCutIdx + step) % len];
+      if (!n.inCut || n.pending || _occlFrame < n.holdUntil) continue;
+      if (_occlCamInside(n, camPos)) {      // §17.5 pitfall-2 guard — never query around the camera
+        changed += _occlNodeVisible(n);
+        continue;
+      }
+      if (!glReady) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.useProgram(_occlGl.prog);
+        gl.bindVertexArray(_occlGl.vao);
+        gl.uniformMatrix4fv(_occlGl.uMVP, false, _occlM4.elements);
+        gl.colorMask(false, false, false, false);
+        gl.depthMask(false);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+        gl.disable(gl.CULL_FACE);           // camera near a box: back faces must still rasterize
+        gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST);
+        glReady = true;
+      }
+      if (!n.q) n.q = gl.createQuery();
+      _occlTouch(n);
+      gl.uniform3f(_occlGl.uMin, n.minX, n.minY, n.minZ);
+      gl.uniform3f(_occlGl.uMax, n.maxX, n.maxY, n.maxZ);
+      gl.beginQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE, n.q);
+      gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_BYTE, 0);
+      gl.endQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
+      n.pending = true;
+      _occlPendingList.push(n);
+      issued++;
+    }
+    _occlCutIdx = len ? (_occlCutIdx + Math.max(1, issued)) % len : 0;
+    _stats.occlQueriesIssued += issued;
+    if (glReady) {
+      gl.bindVertexArray(null);
+      app.renderer.resetState();            // hand three.js back a truthful state cache
+    }
+    return changed;
+  }
+
+  function _occlCompactCut() {
+    if (_occlCutDead < 256) return;
+    var alive = [];
+    for (var i = 0; i < _occlCut.length; i++) if (_occlCut[i].inCut) alive.push(_occlCut[i]);
+    _occlCut = alive; _occlCutDead = 0; _occlCutIdx = 0;
+  }
+
+  // §17 per-frame stage — driven from the SAME _tick rAF loop as everything else (header
+  // doctrine: no second rAF/timer), but with its OWN amortization, independent of _scanPending:
+  // queries in flight resolve on their own schedule whether or not the camera moved.
+  function _occlTick(app) {
+    if (!_bvhEnsure(app)) return;
+    if (!_occlGlInit(app)) return;
+    _occlFrame++;
+    var changed = _occlPollResults();
+    changed += _occlIssueQueries(app);
+    _occlCompactCut();
+    if (changed) {
+      // §17.11's landmine, generalized: the element scan only re-arms on camera-pose change —
+      // a hide-set change with a frozen camera would otherwise never be applied.
+      _scanPending = true;
+      var hn = 0; for (var k in _occlHidden) hn++;
+      _stats.occlHidden = hn;
+    }
+    _stats.occlCut = _occlCut.length - _occlCutDead;
+    _lastOcclEnabled = true;
+  }
+
   // Per-frame current-room eval (same rAF loop as everything else — no second timer, §13). The
   // stability window is counted in FRAMES per §11.2 Q4's measurement; a room ACCEPTANCE re-arms
   // the chunked scan so the partition updates even when the camera pose itself is unchanged
@@ -439,22 +807,28 @@
   }
 
   // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
-  function _wantedReal(e, camPos) {
+  function _wantedReal(e, camPos, guid) {
     var d2 = camPos.distanceToSquared(e.pos);
     // §13/§16 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only
     // bites when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
     // compiled containment row (e.room). false ⇒ short-circuits to the shipped decision rule.
     var roomMis = _roomMismatch(e);
+    // §17 occl-BVH: FOURTH OR'd demote criterion, keyed by guid (the traversal's hide-set is
+    // guid-keyed — the reason this function now takes guid at all). Composes with PVS per §17.9
+    // decision 3: roomMis filters first for free, occlMis is a plain further OR — no short-circuit
+    // engineering into the traversal itself (correctness first, v1).
+    var occlMis = _occlBvhMismatch(guid);
     if (e.state === 'real') {
       // demote only when clearly out: >80m OR sphere+5m margin outside frustum OR room mismatch
+      // OR GPU-query-proven occluded
       if (d2 > DEMOTE_SQ) return false;
-      if (roomMis) return false;
+      if (roomMis || occlMis) return false;
       _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
       return _frustum.intersectsSphere(_sphere);
     }
-    // promote only when clearly in: ≤50m AND exact frustum AND (room matches or criterion inert)
+    // promote only when clearly in: ≤50m AND exact frustum AND no criterion still demoting
     if (d2 > PROMOTE_SQ) return false;
-    if (roomMis) return false;
+    if (roomMis || occlMis) return false;
     _sphere.center.copy(e.pos); _sphere.radius = e.radius;
     return _frustum.intersectsSphere(_sphere);
   }
@@ -473,7 +847,7 @@
     var started = 0;
     for (var i = _evalCursor; i < end; i++) {
       var guid = _guidArr[i], e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos);
+      var want = _wantedReal(e, camPos, guid);
       if (want === (e.state === 'real')) { if (e.state === 'box') _passBoxed++; else _passReal++; continue; }
       var r = _realIndex[guid];
       if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident — index only
@@ -493,7 +867,8 @@
       if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
         console.log('§DLOD_NAV active=' + _stats.active + ' boxed=' + _stats.boxed + ' mode=on started=' + _logAccStarted +
           ' fades=' + _fades.length + ' chunk_ms=' + _stats.evalMs +
-          (_stats.roomOcclEnabled === true ? ' room=' + (_roomActive ? (_roomCur || 'none') : (_stats.roomLeg ? 'none' : 'leg-off')) : ''));
+          (_stats.roomOcclEnabled === true ? ' room=' + (_roomActive ? (_roomCur || 'none') : (_stats.roomLeg ? 'none' : 'leg-off')) : '') +
+          (_stats.occlBvhEnabled === true ? ' occlHidden=' + _stats.occlHidden + ' occlCut=' + _stats.occlCut : ''));
         _logAccStarted = 0; _lastLogT = _nowLog;
       }
     }
@@ -547,6 +922,11 @@
     // var reset (fires once after a live flip back to false, restoring the shipped partition).
     if (_stats.roomOcclEnabled === true) _roomEval(app);
     else if (_roomActive || _roomCur !== null || _roomPendN) _roomReset();
+    // §17 occl-BVH stage: same convention — lever on ⇒ run the traversal's own amortized stage;
+    // flip back to false ⇒ one-shot _occlDisable clears the hide-set + re-arms the scan so the
+    // shipped §13+§16 partition is restored. Default-false path touches NOTHING.
+    if (_stats.occlBvhEnabled === true) _occlTick(app);
+    else if (_lastOcclEnabled) _occlDisable();
     var fading = _stepFades(app);
     if (fading && app.markDirty) app.markDirty();
     var sig = _camSig(app);
@@ -620,7 +1000,7 @@
     var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0, roomOnly = 0;
     for (var guid in _boxIndex) {
       var e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos);
+      var want = _wantedReal(e, camPos, guid);
       if (want !== (e.state === 'real')) mismatch++;
       if (e.state === 'box') boxed++; else real++;
       // §ROOM_OCCL/§16 (W-ROOM-OCCL-PROXY / W-PVS-CORRECT support): boxed PURELY because of room
@@ -636,12 +1016,23 @@
     var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps,
       roomOccl: { enabled: _stats.roomOcclEnabled === true, active: _roomActive, room: _roomCur,
         legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly,
-        pvsEnabled: _stats.pvsEnabled === true, pvsRooms: _stats.pvsRooms, pvsAvgVisible: _stats.pvsAvgVisible } };
+        pvsEnabled: _stats.pvsEnabled === true, pvsRooms: _stats.pvsRooms, pvsAvgVisible: _stats.pvsAvgVisible },
+      // §17 (W-OCCL-BVH-* support) — counters are 0/false while occlBvhEnabled is default-false
+      occlBvh: { enabled: _stats.occlBvhEnabled === true, hidden: _stats.occlHidden,
+        cut: _stats.occlCut, nodes: _stats.occlBvhNodes,
+        queriesIssued: _stats.occlQueriesIssued, resultsRead: _stats.occlResultsRead } };
     console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length +
       (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : '') +
-      (_stats.pvsEnabled === true ? ' §PVS_AUDIT rooms=' + _stats.pvsRooms + ' avgVisible=' + _stats.pvsAvgVisible : ''));
+      (_stats.pvsEnabled === true ? ' §PVS_AUDIT rooms=' + _stats.pvsRooms + ' avgVisible=' + _stats.pvsAvgVisible : '') +
+      (_stats.occlBvhEnabled === true ? ' §OCCL_BVH_AUDIT hidden=' + _stats.occlHidden + ' cut=' + _stats.occlCut +
+        ' issued=' + _stats.occlQueriesIssued + ' read=' + _stats.occlResultsRead : ''));
     return res;
   };
+
+  // §17 (W-OCCL-BVH-CORRECT support) — debug accessor exposing the traversal's live guid hide-set
+  // (same console-only convention as __dlodNavAudit; counts alone can't be cross-checked against
+  // the §15 ground-truth classifier, the witness needs the actual guids).
+  window.__dlodOcclHiddenGuids = function () { return _occlHidden ? Object.keys(_occlHidden) : []; };
 
   console.log('§DLOD_NAV_READY pill=off engaged=false');
 })();

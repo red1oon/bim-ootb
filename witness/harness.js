@@ -1,10 +1,12 @@
-// Shared harness for W-ROOM-OCCL-* browser witnesses. Headless HARDWARE-GL Chrome (same
-// §HARNESS_GL approach as every prior witness in FLY_TOUR_DLOD_SCALE.md) against the static
-// server at :8401. Aborts hard if the renderer is SwiftShader (no software-GL evidence allowed).
+// Shared harness for W-OCCL-BVH-* browser witnesses (§17 real build). Headless HARDWARE-GL Chrome
+// (same §HARNESS_GL approach as every prior witness in FLY_TOUR_DLOD_SCALE.md) against the static
+// server at :8405 (this worktree's OWN server, /tmp/wt-occl-bvh — kept off :8401/:8402/:8403/:8404
+// so it never collides with other concurrent worktrees' own standing servers there). Aborts hard if
+// the renderer is SwiftShader (no software-GL evidence allowed).
 const path = require('path');
 const { chromium } = require(path.join('/home/red1/bim-ootb/tests/node_modules', 'playwright-core'));
 
-const URL = 'http://localhost:8401/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
+const URL = 'http://localhost:8405/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
 
 async function launch(logSink) {
   const browser = await chromium.launch({
