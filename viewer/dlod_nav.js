@@ -129,6 +129,15 @@
   var _occlFrame = 0;                  // traversal frame counter (HOLD window bookkeeping)
   var _occlM4 = null;                  // scratch MVP for query-proxy rendering
   var _lastOcclEnabled = false;        // §17.11 lesson: lever flips must re-arm the scan themselves
+  // §17.15 diagnostic (FLY_TOUR_DLOD_SCALE.md §17.15) — inert unless window.__dlodNav.occlDebugTrace
+  // = true. _occlHiddenGen increments every time the hide-set ACTUALLY changes (any guid added or
+  // removed by _markSubtree); _occlHiddenCount is a running count maintained incrementally (avoids
+  // an O(hidden-set-size) for-in on every change). Each node stamps the generation/count/frame it
+  // saw AT QUERY-ISSUE time; when a result resolves to a DIFFERENT verdict than the node's last one,
+  // §OCCL_BVH_FLIP logs latency (frames between issue and resolve) and how much the world (hide-set)
+  // moved during that window — the direct test for §17.15's hypotheses (a) self-referential depth
+  // feedback and (b) async staleness.
+  var _occlNodeId = 0, _occlHiddenGen = 0, _occlHiddenCount = 0;
   // §17.13 depth-prepass fix (FLY_TOUR_DLOD_SCALE.md §17.12 root-cause probe) — occlusion queries
   // must depth-test against REAL geometry only, never the box-proxy meshes _buildBoxes owns
   // (isDlodNavProxy/isDlodNavDepth InstancedMeshes). An offscreen WebGLRenderTarget, box meshes
@@ -147,7 +156,17 @@
     // §17 step-3 testing lever: same convention — console-only (window.__dlodNav.occlBvhEnabled =
     // true), independent of the §13/§16 levers; false ⇒ identical to shipped §13+§16 behavior.
     occlBvhEnabled: false, occlBvhNodes: 0, occlHidden: 0, occlCut: 0,
-    occlQueriesIssued: 0, occlResultsRead: 0 };
+    occlQueriesIssued: 0, occlResultsRead: 0,
+    // §17.15 diagnostic lever — console-only, default false, zero cost while off (guarded at each
+    // call site below, never a hot-path branch when disabled beyond one boolean check).
+    occlDebugTrace: false,
+    // §17.15 — NEGATIVE RESULT, default false, own sub-lever so occlBvhEnabled=true ALONE stays
+    // byte-identical to §17.14's already-measured (22.27% false-hide, still-oscillating) behavior.
+    // See _occlForceHiddenRealVisible's own header comment: measured WORSE oscillation (genDelta/
+    // hiddenCountDelta both up ~25-30%) AND ~130-172ms per depth-prepass call (≥8x the ~16.6ms
+    // frame budget) — kept in the tree, gated off, as a documented dead end so a future attempt
+    // doesn't re-walk this exact fix shape without knowing it was already tried and falsified.
+    occlDepthDecoupleEnabled: false };
   window.__dlodNav = _stats;
 
   function _gateBlockReason(app) {
@@ -345,7 +364,9 @@
     bm.opacity = toBox ? 0 : 0.4;
     app.scene.add(realCopy); app.scene.add(boxCopy);
     e.state = toBox ? 'box' : 'real'; // target state owned immediately; fade is presentation only
-    _fades.push({ e: e, r: r, toBox: toBox, frame: 0, realCopy: realCopy, boxCopy: boxCopy });
+    // §17.15: guid stashed too (was only on e/r's callers before) — the depth-prepass decouple fix
+    // (_occlForceHiddenRealVisible) needs to look up "is this guid currently mid-fade" by guid.
+    _fades.push({ e: e, r: r, guid: guid, toBox: toBox, frame: 0, realCopy: realCopy, boxCopy: boxCopy });
     _stats.fades++;
   }
 
@@ -497,9 +518,10 @@
     var ddx = maxX - minX, ddy = maxY - minY, ddz = maxZ - minZ;
     var node = { minX: minX, minY: minY, minZ: minZ, maxX: maxX, maxY: maxY, maxZ: maxZ,
       diag: Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz),   // §17.14: box diagonal — the size gate test
-      parent: parent, children: null, leaf: null,
+      parent: parent, children: null, leaf: null, nid: _occlNodeId++,  // §17.15: stable id for trace logs
       // traversal state (§17.3/§17.4) — res: null|'vis'|'hid'; pending: query issued, unresolved
-      q: null, pending: false, res: null, holdUntil: 0, inCut: false, hiddenMarked: false, touched: false };
+      q: null, pending: false, res: null, holdUntil: 0, inCut: false, hiddenMarked: false, touched: false,
+      _issueFrame: 0, _issueGen: 0, _issueHiddenCount: 0 }; // §17.15 diagnostic stamps (see _occlIssueQueries)
     if (hi - lo <= OCCL_LEAF_SIZE) {
       var guids = [];
       for (var g = lo; g < hi; g++) guids.push(items[g].guid);
@@ -540,6 +562,7 @@
         maxX: e.maxX, maxY: e.maxY, maxZ: e.maxZ, cx: e.pos.x, cy: e.pos.y, cz: e.pos.z });
     }
     if (!items.length) return false;
+    _occlNodeId = 0; _occlHiddenGen = 0; _occlHiddenCount = 0;   // §17.15: fresh trace ids/counters per build
     _bvh = _bvhBuildNode(items, 0, items.length, null);
     _bvhBld = app.activeBuilding;
     var nodes = 0, leaves = 0, maxDepth = 0, oversized = 0;
@@ -609,6 +632,13 @@
         }
       } else { walk(x.children[0]); walk(x.children[1]); }
     })(n);
+    // §17.15 diagnostic bookkeeping — running hide-set size + a generation counter that ticks on
+    // every REAL change (never on a no-op mark), used to correlate query flips with "how much did
+    // the hide-set move while this node's query was in flight."
+    if (changed) {
+      _occlHiddenCount += hide ? changed : -changed;
+      _occlHiddenGen++;
+    }
     return changed;
   }
 
@@ -674,6 +704,82 @@
     if (_occlDepthRT) _occlDepthRT.dispose();
     _occlDepthRT = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false });
   }
+  // §17.15 diagnosis + fix attempt (FLY_TOUR_DLOD_SCALE.md §17.15) — NEGATIVE RESULT, gated off by
+  // its own occlDepthDecoupleEnabled lever (default false); read the full write-up in the spec doc
+  // before reviving this shape. §17.12/§17.13/§17.14 all measured a large, never-converging
+  // false-hide rate but never diagnosed WHY the hide-set kept oscillating at a frozen camera.
+  // §17.15's diagnostic trace (§OCCL_BVH_FLIP, window.__dlodNav.occlDebugTrace) found the direct
+  // correlation: hiding a guid for DISPLAY (real→box, via _hideReal) also removes it from the
+  // depth-only prepass's occluder source, since that pass only ever draws whatever's currently
+  // shown as real — measured genDelta up to 91 (other hide-set mutations) and hiddenCountDelta up
+  // to 18,162 guids inside the SAME single-frame window one query was in flight; 859/868 sampled
+  // flips were hid→vis. Confirmed NOT async staleness — latencyFrames was exactly 1 for every
+  // single sampled flip (the GPU query resolves essentially next-frame; no growing backlog).
+  // ATTEMPTED FIX below: restore every _occlHidden guid's REAL geometry (cached matrix) into the
+  // depth-only prepass for the duration of that one render() call, so occl-BVH demoting a guid
+  // could never erase its own ability to occlude something else.
+  // MEASURED RESULT (real RTX 4060, same frozen pose-0, same trace instrumentation): the fix did
+  // NOT reduce oscillation — meanGenDelta actually rose 32.83→42.49 and meanAbsHiddenCountDelta
+  // rose 3669.72→4501.58 (both ~25-30% WORSE, not better), hidden-count still swung ~95k-112k (same
+  // magnitude as pre-fix ~88k-113k) — AND cost 130-172ms PER depth-prepass call (≥8x the ~16.6ms
+  // frame budget; §OCCL_BVH_PREPASS_COST), which alone disqualifies it regardless of correctness.
+  // The run also crashed (headless-Chrome "context closed", the standing §16.8 long-real-GPU-run
+  // failure mode) before reaching settle, consistent with the added per-frame cost.
+  // Why it likely didn't work (inferred from the evidence, not separately isolated): this fix only
+  // restores geometry for guids occl-BVH ITSELF hid (_occlHidden, ~95-112k of the ~120k boxed
+  // total) — the remaining ~8-25k guids boxed by the INDEPENDENT §9/§13/§16 distance/room criteria
+  // (plausibly including the actual dividing walls/floors between rooms — an adjacent room's own
+  // wall is routinely room-mismatch-boxed regardless of occl-BVH) stay excluded from the depth
+  // source exactly as before, so the same class of "occluder vanished" event keeps happening
+  // through that door. A complete version of this fix would need to decouple ALL demoted real
+  // geometry, not just occl-BVH's own subset — arithmetically equivalent to rendering ~100% of the
+  // building's real geometry every occlusion-query frame, which directly conflicts with DLOD's own
+  // reason to exist and would cost even more than the ~150ms/call already measured for the partial
+  // set. This looks like a genuine architectural dead end for the "cached-matrix restore into a
+  // shared depth prepass" fix shape specifically — not an implementation bug to patch further.
+  // Kept in the tree, OFF by default, so a future attempt has the code + this write-up rather than
+  // re-deriving and re-falsifying the same shape from scratch.
+  function _occlForceHiddenRealVisible() {
+    if (!_occlHidden || !_realIndex) return null;
+    var fadingGuids = null;
+    if (_fades.length) { fadingGuids = Object.create(null); for (var f = 0; f < _fades.length; f++) fadingGuids[_fades[f].guid] = true; }
+    var restoreInst = [], restoreBatch = [], restoreMesh = [], forcedObjs = Object.create(null), n = 0;
+    for (var g in _occlHidden) {
+      if (fadingGuids && fadingGuids[g]) continue;   // realCopy already covers this guid this pass
+      var r = _realIndex[g];
+      if (!r) continue;
+      if (r.kind === 'inst') {
+        if (!r.meta._origMatrix) continue;           // never actually hidden yet — nothing to restore
+        r.obj.setMatrixAt(r.idx, r.meta._origMatrix);
+        restoreInst.push(r);
+        if (!forcedObjs[r.obj.id]) { forcedObjs[r.obj.id] = { obj: r.obj, wasVisible: r.obj.visible }; r.obj.visible = true; }
+      } else if (r.kind === 'batch') {
+        r.obj.setVisibleAt(r.slotId, true);
+        restoreBatch.push(r);
+        if (!forcedObjs[r.obj.id]) { forcedObjs[r.obj.id] = { obj: r.obj, wasVisible: r.obj.visible }; r.obj.visible = true; }
+      } else { // 'mesh'
+        restoreMesh.push({ r: r, wasVisible: r.obj.visible });
+        r.obj.visible = true;
+      }
+      n++;
+    }
+    var instObjs = [];
+    for (var k in forcedObjs) instObjs.push(forcedObjs[k]);
+    if (n) { for (var oi = 0; oi < instObjs.length; oi++) instObjs[oi].obj.instanceMatrix && (instObjs[oi].obj.instanceMatrix.needsUpdate = true); }
+    return { restoreInst: restoreInst, restoreBatch: restoreBatch, restoreMesh: restoreMesh, forcedObjs: instObjs, n: n };
+  }
+  function _occlRestoreHiddenReal(st) {
+    if (!st) return;
+    for (var i = 0; i < st.restoreInst.length; i++) { var r = st.restoreInst[i]; r.obj.setMatrixAt(r.idx, _zeroM); }
+    for (i = 0; i < st.restoreBatch.length; i++) st.restoreBatch[i].obj.setVisibleAt(st.restoreBatch[i].slotId, false);
+    for (i = 0; i < st.restoreMesh.length; i++) st.restoreMesh[i].r.obj.visible = st.restoreMesh[i].wasVisible;
+    for (i = 0; i < st.forcedObjs.length; i++) {
+      st.forcedObjs[i].obj.visible = st.forcedObjs[i].wasVisible;
+      if (st.forcedObjs[i].obj.instanceMatrix) st.forcedObjs[i].obj.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  var _occlPrepassLogged = 0; // §17.15: log the decoupled-restore cost a handful of times, not every frame
   function _occlDepthPrepass(app) {
     _occlDepthEnsure(app);
     if (!_occlDepthMat) _occlDepthMat = new THREE.MeshBasicMaterial({ colorWrite: false });
@@ -685,6 +791,12 @@
     // genuine real geometry mid-transition and stays a legitimate occluder.
     var savedFadeVis = [];
     for (i = 0; i < _fades.length; i++) { savedFadeVis.push(_fades[i].boxCopy.visible); _fades[i].boxCopy.visible = false; }
+    // §17.15 — NEGATIVE RESULT, default OFF (own sub-lever, see occlDepthDecoupleEnabled's own
+    // comment above _stats): measured WORSE oscillation + ≥8x frame-budget cost. occlBvhEnabled
+    // alone (this flag left false) stays byte-identical to §17.14's already-measured behavior.
+    var decouple = _stats.occlDepthDecoupleEnabled === true;
+    var t0 = (decouple && _occlPrepassLogged < 20) ? performance.now() : 0;
+    var restoreState = decouple ? _occlForceHiddenRealVisible() : null;
     var prevTarget = app.renderer.getRenderTarget();
     var prevOverride = app.scene.overrideMaterial;
     app.scene.overrideMaterial = _occlDepthMat;
@@ -692,8 +804,15 @@
     app.renderer.clear(true, true, false);
     app.renderer.render(app.scene, app.camera);
     app.scene.overrideMaterial = prevOverride;
+    if (decouple) _occlRestoreHiddenReal(restoreState); // undo the decouple, back to display state
     if (_boxMeshes) for (i = 0; i < _boxMeshes.length; i++) _boxMeshes[i].visible = savedVis[i];
     for (i = 0; i < _fades.length; i++) _fades[i].boxCopy.visible = savedFadeVis[i];
+    if (t0) {
+      _occlPrepassLogged++;
+      console.log('§OCCL_BVH_PREPASS_COST forcedGuids=' + (restoreState ? restoreState.n : 0) +
+        ' forcedObjs=' + (restoreState ? restoreState.forcedObjs.length : 0) +
+        ' ms=' + (performance.now() - t0).toFixed(2));
+    }
     return prevTarget; // render target is CURRENTLY the depth RT — caller restores prevTarget when done
   }
 
@@ -763,6 +882,7 @@
   function _occlPollResults() {
     if (!_occlPendingList.length) return 0;
     var gl = _occlGl.gl, changed = 0, keep = [];
+    var trace = _stats.occlDebugTrace === true;   // §17.15 — one boolean check, zero cost when off
     for (var i = 0; i < _occlPendingList.length; i++) {
       var n = _occlPendingList[i];
       if (!gl.getQueryParameter(n.q, gl.QUERY_RESULT_AVAILABLE)) { keep.push(n); continue; }
@@ -770,6 +890,21 @@
       _stats.occlResultsRead++;
       if (!n.inCut) continue;               // collapsed/reset while in flight — result is moot
       var anySamples = gl.getQueryParameter(n.q, gl.QUERY_RESULT);
+      var prevRes = n.res;
+      var newRes = anySamples ? 'vis' : 'hid';
+      if (trace && prevRes !== null && prevRes !== newRes) {
+        // §17.15 §OCCL_BVH_FLIP — direct evidence line for hypotheses (a)/(b): latencyFrames = how
+        // long this query sat in flight; genDelta/countDelta = how much the hide-set (and therefore
+        // the depth-prepass occluder set, since a hidden element's real geometry stops rendering —
+        // §17.12/§17.13's own finding) moved WHILE the query was unresolved.
+        console.log('§OCCL_BVH_FLIP nid=' + n.nid + ' leaf=' + (n.leaf ? n.leaf.length : 0) +
+          ' diag=' + n.diag.toFixed(1) + ' prevRes=' + prevRes + ' newRes=' + newRes +
+          ' issueFrame=' + n._issueFrame + ' readFrame=' + _occlFrame +
+          ' latencyFrames=' + (_occlFrame - n._issueFrame) +
+          ' issueHiddenCount=' + n._issueHiddenCount + ' readHiddenCount=' + _occlHiddenCount +
+          ' hiddenCountDelta=' + (_occlHiddenCount - n._issueHiddenCount) +
+          ' genDelta=' + (_occlHiddenGen - n._issueGen));
+      }
       changed += anySamples ? _occlNodeVisible(n) : _occlNodeHidden(n);
     }
     _occlPendingList = keep;
@@ -829,6 +964,9 @@
       gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_BYTE, 0);
       gl.endQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
       n.pending = true;
+      // §17.15 diagnostic stamp — snapshot the world state AT ISSUE time so the eventual resolve
+      // (whenever it lands, §_occlPollResults) can report how much it moved underneath the query.
+      n._issueFrame = _occlFrame; n._issueGen = _occlHiddenGen; n._issueHiddenCount = _occlHiddenCount;
       _occlPendingList.push(n);
       issued++;
     }
