@@ -64,6 +64,25 @@
   var DEPTH_MAX_RADIUS = 25;       // §9 shine-thru fix: no depth pass for oversized bboxes — a
                                    // giant slab's invisible occluder would erase REAL nearby
                                    // geometry (center-distance ≠ bbox extent); wireframe-only there
+  // §20 (2026-07-24) adaptive mesh-budget distance boost. Real sweep on LTU_AHouse (RTX 4060,
+  // headless hardware-GL, witness/w_budget_perf.log — real frame_ms at a fixed aerial pose with
+  // forceBoost pinned across 11 values, active count 46→43,422): the ~16.6-16.7ms fully-boxed
+  // floor (matches §10's 17.3ms) holds flat through ~3,700 active, is still only +9% at 7,795
+  // (18.1ms), but is ALREADY +33% by 11,094 (22.2ms) and +65% by 15,616 (27.5ms) — the real knee
+  // sits around 10-12k active, notably EARLIER than the 20k figure floated in conversation
+  // (§20.2's own warning, confirmed: that figure was not measured). Watermarks placed with
+  // margin on both sides of the real knee, not at its edge:
+  var BUDGET_LOW = 6000;           // comfortably below the +9%-at-7,795 point — genuine headroom
+  var BUDGET_HIGH = 12000;         // just past the +33% mark, before the steeper +65%/+90% climb
+                                    // at 15,616/20,001 — decrements before the expensive zone
+  var BUDGET_STEP = 2;             // meters per eval cycle (150ms throttle) — slow ramp, no pop;
+                                    // ≈500-750 active elements/meter in the transition zone per
+                                    // the sweep, so one step moves the count by roughly 1,000-1,500
+  var MAX_BOOST = 60;              // meters (PROMOTE 38→98, DEMOTE 60→120 at full boost) — the
+                                    // sweep's own boost=60 point (active=20,001, 31.6ms, ~1.9x
+                                    // floor) is where BUDGET_HIGH's decrement would already be
+                                    // firing; capped here as a sanity ceiling, not the primary
+                                    // safety valve (BUDGET_HIGH's count-based decrement is)
   var ROOM_STABLE_N = 12;          // §13 membership-stability gate (§11.2 Q4: 10-15 frames —
                                    // filters all 17 measured A→B→A flaps at ~0.2s switch latency,
                                    // well under the 500ms median room dwell)
@@ -81,6 +100,15 @@
   var _guidArr = null, _evalCursor = 0, _scanPending = false; // §FLY_SMOOTH: chunked-scan state
   var _passReal = 0, _passBoxed = 0; // partition counters accumulated across a pass
   var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
+  // §20 (2026-07-24) — persisted closed-loop distance-boost state. At 0 (shipped default, and
+  // whenever budgetBoostEnabled is false) PROMOTE_DIST/DEMOTE_DIST are used completely unmodified
+  // — byte-identical to §19 (W-BUDGET-EQUIV). forceBoost, when non-null, pins _budgetBoost for
+  // witness use (sweep/delta) and disables the controller's own ramp/decay that cycle.
+  var _budgetBoost = 0;
+  var _appliedBoost = 0;           // effective boost baked into the CURRENT partition (change ⇒ rearm scan)
+  var _lastBudgetT = 0;            // periodic-tick throttle clock (150ms — see _tick)
+  var _passPromoteSq = 0, _passDemoteSq = 0; // effective thresholds, frozen per-pass (see _evalChunk)
+  var _passBoostVal = 0;           // the boost value the CURRENTLY-COMPLETING pass was frozen at
   // §ROOM_OCCL state (§13) — live by default since §19; inert only if roomOcclEnabled is set false
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
@@ -93,8 +121,36 @@
     roomIdxRects: 0, roomIdxStamped: 0,
     // §16 step-2 testing lever: same convention — console-only (window.__dlodNav.pvsEnabled =
     // true), independent of roomOcclEnabled's own default; false ⇒ §13's exact shipped behavior.
-    pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0 };
+    pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0,
+    // §20 (2026-07-24) — console-only lever, same convention: false ⇒ §19's exact shipped
+    // PROMOTE_DIST/DEMOTE_DIST behavior, byte-identical (W-BUDGET-EQUIV). forceBoost (null =
+    // controller-driven) lets a witness pin the effective boost directly for a sweep/delta
+    // measurement without waiting for the ramp to converge.
+    budgetBoostEnabled: true, budgetBoost: 0, forceBoost: null };
   window.__dlodNav = _stats;
+
+  // §20 — effective boost this pass: forceBoost (witness pin) wins outright; otherwise the
+  // controller's own ramped value when enabled; 0 (shipped) when disabled.
+  function _effBoost() {
+    if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) return _stats.forceBoost;
+    if (_stats.budgetBoostEnabled !== true) return 0;
+    return _budgetBoost;
+  }
+
+  // §20 closed-loop controller — called on the periodic 150ms budget-tick (below), driven off
+  // the LAST PUBLISHED active count (_stats.active, from the most recently completed scan pass —
+  // reads the same field §18/§19 already log, no new counting). Returns the resulting effective
+  // boost. A forced boost (witness pin) short-circuits the ramp entirely — ramp state (_budgetBoost)
+  // itself does not move while pinned, so releasing the pin resumes from wherever it was, not 0.
+  function _budgetControl() {
+    if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) { _stats.budgetBoost = _stats.forceBoost; return _stats.forceBoost; }
+    if (_stats.budgetBoostEnabled !== true) { _budgetBoost = 0; _stats.budgetBoost = 0; return 0; }
+    if (_stats.active < BUDGET_LOW) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
+    else if (_stats.active > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
+    // between watermarks: hold steady, no assignment — this dead band IS the hysteresis
+    _stats.budgetBoost = _budgetBoost;
+    return _budgetBoost;
+  }
 
   function _gateBlockReason(app) {
     if (!app || !app.scene || !app.camera || typeof THREE === 'undefined') return 'no-app';
@@ -445,7 +501,11 @@
   }
 
   // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
-  function _wantedReal(e, camPos) {
+  // §20: promoteSq/demoteSq are passed in (effective PROMOTE_DIST/DEMOTE_DIST + boost, squared,
+  // precomputed ONCE per pass by the caller) rather than read as fixed module constants — at
+  // boost=0 these equal PROMOTE_SQ/DEMOTE_SQ exactly, so this is a pure generalization, not a
+  // behavior change on the boost=0 path (W-BUDGET-EQUIV).
+  function _wantedReal(e, camPos, promoteSq, demoteSq) {
     var d2 = camPos.distanceToSquared(e.pos);
     // §13/§16 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only
     // bites when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
@@ -456,15 +516,15 @@
     // PROMOTE/DEMOTE for far-field aggression would also box out the room the user is standing in.
     var sameRoom = _roomActive && e.room !== undefined && e.room === _roomCur;
     if (e.state === 'real') {
-      // demote only when clearly out: >60m OR sphere+5m margin outside frustum OR room mismatch
-      // (distance skipped entirely when sameRoom — see §19 above)
-      if (!sameRoom && d2 > DEMOTE_SQ) return false;
+      // demote only when clearly out: >60m (+boost) OR sphere+5m margin outside frustum OR room
+      // mismatch (distance skipped entirely when sameRoom — see §19 above)
+      if (!sameRoom && d2 > demoteSq) return false;
       if (roomMis) return false;
       _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
       return _frustum.intersectsSphere(_sphere);
     }
-    // promote only when clearly in: ≤38m AND exact frustum AND (room matches or criterion inert)
-    if (!sameRoom && d2 > PROMOTE_SQ) return false;
+    // promote only when clearly in: ≤38m (+boost) AND exact frustum AND (room matches or inert)
+    if (!sameRoom && d2 > promoteSq) return false;
     if (roomMis) return false;
     _sphere.center.copy(e.pos); _sphere.radius = e.radius;
     return _frustum.intersectsSphere(_sphere);
@@ -480,11 +540,25 @@
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
     var camPos = app.camera.position;
+    // §20: effective thresholds frozen at PASS START (_evalCursor===0), not recomputed every
+    // chunk-tick — the periodic 150ms budget-tick (in _tick) can fire mid-pass (a pass takes
+    // ~8 chunk-ticks to cover 122k elements, close to the same 150ms cadence), and letting the
+    // threshold drift mid-pass left early-chunk elements evaluated under an older boost than
+    // late-chunk elements in the SAME pass — a smear that never got a follow-up clean pass to
+    // reconcile once the ramp stopped (found via W-BUDGET-DELTA: mismatch stuck at 804 after 20s
+    // with boost visibly steady). Freezing per-pass fixes it: at boost=0 this is still exactly
+    // PROMOTE_SQ/DEMOTE_SQ every pass (W-BUDGET-EQUIV unaffected).
+    if (_evalCursor === 0) {
+      _passBoostVal = _effBoost();
+      _passPromoteSq = _passBoostVal ? (PROMOTE_DIST + _passBoostVal) * (PROMOTE_DIST + _passBoostVal) : PROMOTE_SQ;
+      _passDemoteSq = _passBoostVal ? (DEMOTE_DIST + _passBoostVal) * (DEMOTE_DIST + _passBoostVal) : DEMOTE_SQ;
+    }
+    var promoteSq = _passPromoteSq, demoteSq = _passDemoteSq;
     var end = Math.min(_evalCursor + EVAL_CHUNK, _guidArr.length);
     var started = 0;
     for (var i = _evalCursor; i < end; i++) {
       var guid = _guidArr[i], e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos);
+      var want = _wantedReal(e, camPos, promoteSq, demoteSq);
       if (want === (e.state === 'real')) { if (e.state === 'box') _passBoxed++; else _passReal++; continue; }
       var r = _realIndex[guid];
       if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident — index only
@@ -499,7 +573,15 @@
       _stats.active = _passReal; _stats.boxed = _passBoxed;
       _passReal = 0; _passBoxed = 0;
       _evalCursor = 0;
-      _scanPending = false;
+      // §20: if the boost moved on (periodic tick fired) WHILE this pass was still mid-flight —
+      // a real race, a pass takes ~8 chunk-ticks (~130ms) at close to the same 150ms cadence the
+      // boost can change on — this pass was frozen at a now-stale value (_passBoostVal). Clearing
+      // _scanPending here would silently strand the partition at that stale value forever (no
+      // camera/room change left to re-arm it) — found via W-BUDGET-DELTA (mismatch stuck at
+      // 1000+ indefinitely after boost visibly stopped changing). Instead, leave _scanPending
+      // true so a fresh pass starts IMMEDIATELY under the current boost — at most one extra pass,
+      // and only while boost is still actively moving; a converged/steady boost never re-triggers.
+      _scanPending = (_passBoostVal !== _effBoost());
       var _nowLog = performance.now();
       if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
         console.log('§DLOD_NAV active=' + _stats.active + ' boxed=' + _stats.boxed + ' mode=on started=' + _logAccStarted +
@@ -575,6 +657,9 @@
       if (!_buildBoxes(app)) { _rafId = requestAnimationFrame(_tick); return; }
       _buildRealIndex(app);
       _engaged = true; window._dlodNavEngaged = true; _lastCamSig = null;
+      // §20: fresh engage starts the boost ramp at 0 (never carries a stale value across a
+      // disengage/re-engage cycle — same discipline as _lastCamSig reset above).
+      _budgetBoost = 0; _stats.budgetBoost = 0; _appliedBoost = 0; _lastBudgetT = 0;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
     // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
@@ -585,6 +670,27 @@
     if (fading && app.markDirty) app.markDirty();
     var sig = _camSig(app);
     if (sig !== _lastCamSig) { _lastCamSig = sig; _scanPending = true; } // pose changed — (re)arm scan
+    // §20: periodic 150ms budget-tick, INDEPENDENT of camera movement — this is the one new
+    // periodic driver this feature adds (everything else in this file only re-evaluates on pose
+    // change). Reads the last-published _stats.active (guarded until a pass has actually
+    // completed at least once, so the cold-engage active=0 burst can't be misread as "empty,
+    // ramp up"). Only re-arms a scan pass when the effective boost actually CHANGED — a converged,
+    // steady boost costs nothing extra per frame beyond this one cheap comparison (self-limiting,
+    // §20.1's own design goal: near-zero overhead once settled, whether settled at 0 or at max).
+    if (_stats.budgetBoostEnabled === true || (_stats.forceBoost !== null && _stats.forceBoost !== undefined)) {
+      var nowB = performance.now();
+      if (nowB - _lastBudgetT >= 150) {
+        _lastBudgetT = nowB;
+        if ((_stats.active + _stats.boxed) > 0) {
+          var newBoost = _budgetControl();
+          if (newBoost !== _appliedBoost) {
+            _appliedBoost = newBoost;
+            _scanPending = true; // partition must be recomputed under the new effective distance
+            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed);
+          }
+        }
+      }
+    }
     if (_scanPending) _evalChunk(app); // one chunk per frame until the pass completes
     _rafId = requestAnimationFrame(_tick);
   }
@@ -666,9 +772,15 @@
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
     var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0, roomOnly = 0;
+    // §20: same effective-threshold generalization as _evalChunk — at boost=0 (or the mechanism
+    // disabled) this is PROMOTE_SQ/DEMOTE_SQ exactly, so the audit still agrees with a boost=0
+    // partition byte-for-byte (W-BUDGET-EQUIV covers this path too).
+    var _boost = _effBoost();
+    var _promoteSq = _boost ? (PROMOTE_DIST + _boost) * (PROMOTE_DIST + _boost) : PROMOTE_SQ;
+    var _demoteSq = _boost ? (DEMOTE_DIST + _boost) * (DEMOTE_DIST + _boost) : DEMOTE_SQ;
     for (var guid in _boxIndex) {
       var e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos);
+      var want = _wantedReal(e, camPos, _promoteSq, _demoteSq);
       if (want !== (e.state === 'real')) mismatch++;
       if (e.state === 'box') boxed++; else real++;
       // §ROOM_OCCL/§16 (W-ROOM-OCCL-PROXY / W-PVS-CORRECT support): boxed PURELY because of room
@@ -682,6 +794,8 @@
       }
     }
     var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps,
+      budget: { enabled: _stats.budgetBoostEnabled === true, boost: _boost,
+        promoteDist: PROMOTE_DIST + _boost, demoteDist: DEMOTE_DIST + _boost },
       roomOccl: { enabled: _stats.roomOcclEnabled === true, active: _roomActive, room: _roomCur,
         legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly,
         pvsEnabled: _stats.pvsEnabled === true, pvsRooms: _stats.pvsRooms, pvsAvgVisible: _stats.pvsAvgVisible } };
