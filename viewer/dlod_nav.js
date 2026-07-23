@@ -81,6 +81,24 @@
                                    // never queried — an inside-the-box proxy can rasterize 0 samples
                                    // (faces behind/clipped) and would FALSE-HIDE the camera's own
                                    // surroundings; §17.5 pitfall 2's by-construction guard
+  var OCCL_MAX_HIDE_DIAG = 30;     // §17.14 (FLY_TOUR_DLOD_SCALE.md): root-cause fix for §17.12/
+                                   // §17.13's 31.48% false-hide rate — a coarse node's AABB diagonal
+                                   // must be small enough that "hidden" (0 samples) is a plausible
+                                   // verdict for its WHOLE subtree, not just a screen-space accident
+                                   // of a huge, mostly-empty box. §17.13 measured LTU_AHouse's root
+                                   // at 514m diag, its own children still 289-408m — building-scale,
+                                   // never trustworthy as a single occluder proxy. 30m matches this
+                                   // codebase's OWN existing "oversized proxy" sense of scale
+                                   // (DEPTH_MAX_RADIUS=25 above, §9's giant-slab depth-pass exclusion
+                                   // — a comparable single-room/small-structure order of magnitude),
+                                   // not an arbitrary new number. A node above this diag NEVER gets
+                                   // its "hidden" query result trusted/acted on — see
+                                   // _occlIssueQueries: it is force-descended into its children
+                                   // instead (or, if a leaf, left permanently visible — safe/
+                                   // conservative direction, §17.5 pitfall 2), so only nodes that are
+                                   // actually small enough to be a valid single-occluder proxy ever
+                                   // cull their subtree. Measured depth/diag distribution logged once
+                                   // per BVH build at §OCCL_BVH_BUILD_OVERSIZED above the count().
 
   var _pillOn = false;             // user toggle — OFF = this module does exactly nothing
   var _engaged = false;            // gate currently satisfied and proxy state applied
@@ -476,7 +494,9 @@
       if (it.minX < minX) minX = it.minX; if (it.minY < minY) minY = it.minY; if (it.minZ < minZ) minZ = it.minZ;
       if (it.maxX > maxX) maxX = it.maxX; if (it.maxY > maxY) maxY = it.maxY; if (it.maxZ > maxZ) maxZ = it.maxZ;
     }
+    var ddx = maxX - minX, ddy = maxY - minY, ddz = maxZ - minZ;
     var node = { minX: minX, minY: minY, minZ: minZ, maxX: maxX, maxY: maxY, maxZ: maxZ,
+      diag: Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz),   // §17.14: box diagonal — the size gate test
       parent: parent, children: null, leaf: null,
       // traversal state (§17.3/§17.4) — res: null|'vis'|'hid'; pending: query issued, unresolved
       q: null, pending: false, res: null, holdUntil: 0, inCut: false, hiddenMarked: false, touched: false };
@@ -522,10 +542,22 @@
     if (!items.length) return false;
     _bvh = _bvhBuildNode(items, 0, items.length, null);
     _bvhBld = app.activeBuilding;
-    var nodes = 0, leaves = 0, maxDepth = 0;
+    var nodes = 0, leaves = 0, maxDepth = 0, oversized = 0;
     (function count(n, d) { nodes++; if (d > maxDepth) maxDepth = d;
+      if (n.diag > OCCL_MAX_HIDE_DIAG) oversized++;
       if (n.leaf) leaves++; else { count(n.children[0], d + 1); count(n.children[1], d + 1); } })(_bvh, 0);
     _stats.occlBvhNodes = nodes;
+    // §17.14 measurement (2026-07-23, real 122,330-element LTU_AHouse, logged once per build for
+    // any future retune): per-depth diag(min/avg/max) — root diag=514m (confirms §17.13's finding);
+    // deep-tree outliers (sparse/far-apart element clusters, e.g. site/landscape features) still hit
+    // diag~194-210m as late as depth 10 — a DEPTH cutoff alone would not be sufficient, only a
+    // direct per-node SIZE gate (below) generalizes correctly regardless of tree depth:
+    // d0(n=1 avg=514) d1(n=2 avg=359,min=310,max=408) d2(n=4 avg=283,min=208,max=368)
+    // d3(n=8 avg=196,min=122,max=256) d4(n=16 avg=135,min=66,max=217) d5(n=32 avg=98,min=42,max=210)
+    // d6(n=64 avg=74,min=27,max=208) d7(n=128 avg=57,min=18,max=201) d8(n=256 avg=42,min=11,max=196)
+    // d9(n=512 avg=32,min=7,max=196) d10(n=1024 avg=24,min=2,max=194)
+    console.log('§OCCL_BVH_BUILD_OVERSIZED bld=' + app.activeBuilding + ' maxHideDiag=' + OCCL_MAX_HIDE_DIAG +
+      ' oversizedNodes=' + oversized + '/' + nodes + ' — these never get a trusted hide verdict, only descended');
     // §17.3: traversal starts at the root's CHILDREN — never query the root singleton (its box is
     // the whole building; the camera is always inside it).
     _occlCut = _bvh.children ? _bvh.children.slice() : [_bvh];
@@ -757,6 +789,20 @@
       var n = _occlCut[(_occlCutIdx + step) % len];
       if (!n.inCut || n.pending || _occlFrame < n.holdUntil) continue;
       if (_occlCamInside(n, camPos)) {      // §17.5 pitfall-2 guard — never query around the camera
+        changed += _occlNodeVisible(n);
+        continue;
+      }
+      // §17.14 size gate — root-cause fix for §17.12/§17.13's 31.48% false-hide rate: a node whose
+      // AABB diagonal exceeds OCCL_MAX_HIDE_DIAG is NEVER trusted with a "hidden" verdict, no matter
+      // how it entered the cut (original fan-out OR §17.3's upward hidden-sibling collapse — that
+      // collapse can re-insert an oversized ancestor as a live cut member, and it would otherwise
+      // get freshly re-queried once its hold window expires). Skip the query entirely and force the
+      // SAME outcome a "visible" query result would produce: descend into children (a smaller node
+      // CAN be a valid proxy) without spending a GPU query on a box too coarse to trust. A leaf that
+      // is itself still oversized (rare — sparse, far-apart elements, §17.14's own measured
+      // depth10 max=194m outlier) has no children to descend into and is simply left visible
+      // permanently — safe/conservative, never the wrong direction (§17.5 pitfall 2).
+      if (n.diag > OCCL_MAX_HIDE_DIAG) {
         changed += _occlNodeVisible(n);
         continue;
       }
