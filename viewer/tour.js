@@ -953,12 +953,21 @@ function setupTour(A) {
     const factor = refDistance / d; // the "simple inverse formula": far => small factor (fast), close => large factor (slow)
     return Math.max(PACE_FACTOR_MIN, Math.min(PACE_FACTOR_MAX, factor));
   }
-  function _clearancePace(pos) {
-    if (typeof A.cinemaFan !== 'function') return 1;
-    let c;
-    try { c = A.cinemaFan(pos, 8).min; } catch (e) { return 1; }
-    if (!(c > 0)) return 1;
-    return _invPace(c, 3.0, 0.6); // REF=3m clearance reads as neutral pace, same scale a normal room aisle gives
+  // §INTERIOR_PACING_LOS (user 2026-07-26: "Measure by LOS - what is in front of the middle in
+  // the frame, if it is far, fast. Near, slow" — a courtyard traversal was still reading slow
+  // under the omnidirectional fan-min because SOMETHING nearby in SOME direction (a low wall,
+  // furniture, staffage off to the side) triggered it even though what's actually ahead in view
+  // was wide open). Single forward raycast toward the NEXT waypoint (or, at the last point, the
+  // same heading the final incoming leg already has) — real line-of-sight, not "closest thing in
+  // any direction." `pts` is the same real point array the remap is being built over.
+  function _losPace(pts, i) {
+    if (typeof A.cinemaLookDist !== 'function') return 1;
+    let dx, dz;
+    if (i < pts.length - 1) { dx = pts[i + 1].x - pts[i].x; dz = pts[i + 1].z - pts[i].z; }
+    else { dx = pts[i].x - pts[i - 1].x; dz = pts[i].z - pts[i - 1].z; }
+    let d;
+    try { d = A.cinemaLookDist(pts[i], dx, dz); } catch (e) { return 1; }
+    return _invPace(d, 3.0, 0.6); // REF=3m ahead reads as neutral pace, same scale a normal room aisle gives
   }
   // Builds a monotonic time-fraction<->position-fraction remap from real sample points + a
   // per-point pace factor (>1 slower, <1 faster than neutral). Two effects, both from the SAME
@@ -1300,10 +1309,10 @@ function setupTour(A) {
           // duration (not just its internal distribution) so a genuinely open stretch actually
           // takes less real time, not just a smaller share of a duration that was already capped
           // by the flat 0.3x interior baseline.
-          act._paceRemap = _paceBuildRemap(pts3, _clearancePace);
+          act._paceRemap = _paceBuildRemap(pts3, (p, i) => _losPace(pts3, i));
           if (act._paceRemap) {
             act.duration = Math.max((act.duration || 30) * act._paceRemap.meanFactor, 3);
-            console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} clearanceRange=[${act._paceRemap.minFactor.toFixed(2)},${act._paceRemap.maxFactor.toFixed(2)}] mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act.duration.toFixed(1)}s`);
+            console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} losRange=[${act._paceRemap.minFactor.toFixed(2)},${act._paceRemap.maxFactor.toFixed(2)}] mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act.duration.toFixed(1)}s`);
           }
         } catch(e) {
           console.error('[TOUR] §FLYPATH_CRASH', e.message);

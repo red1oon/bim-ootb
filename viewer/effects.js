@@ -3968,6 +3968,26 @@ async function setupEffects(A, renderer, scene, camera) {
   // comment above _cinemaFanMeshes) to tour.js's flight-pacing — real measured clearance-to-
   // nearest-surface, not a second invented proximity system. tour.js is the only outside caller.
   A.cinemaFan = _cinemaFan;
+  // §INTERIOR_PACING_LOS (2026-07-26, user: "Measure by LOS - what is in front of the middle in
+  // the frame, if it is far, fast. Near, slow" — courtyard traversal was still measuring slow
+  // because `_cinemaFan`'s min-of-8-rays fires on ANYTHING close in ANY direction, e.g. a low
+  // wall or piece of furniture off to the side, even when what's actually ahead in view is wide
+  // open). Single forward raycast, same mesh set/raycaster the fan already uses — not a second
+  // invented proximity system, just the one ray that matters for pacing: where the camera is
+  // heading, not everything around it.
+  function _cinemaLookDist(pos, dirX, dirZ) {
+    var meshes = _cinemaFanMeshes();
+    if (!meshes.length) return CINEMA_FAN_FAR;
+    if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
+    var len = Math.hypot(dirX, dirZ);
+    if (len < 1e-6) return CINEMA_FAN_FAR;
+    _cineFanRay.set(new THREE.Vector3(pos.x, pos.y, pos.z), new THREE.Vector3(dirX / len, 0, dirZ / len));
+    _cineFanRay.far = CINEMA_FAN_FAR;
+    var hits = null;
+    try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return CINEMA_FAN_FAR; }
+    return (hits && hits.length) ? hits[0].distance : CINEMA_FAN_FAR;
+  }
+  A.cinemaLookDist = _cinemaLookDist;
   // §CINEMA_HDRI_RACE (2026-07-24): exposed so cinema_maxq.js's warm-up (the REAL Alt+C entry
   // point — scene.js's §KBD_ROUTE always finds A.startMaxQualityOrbit and never falls through to
   // A.startCinemaOrbit below) can await the same HDRI readiness this file's own dead-code capture
