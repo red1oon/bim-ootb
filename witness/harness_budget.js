@@ -1,12 +1,14 @@
-// Shared harness for W-OCCL-BVH-* browser witnesses (§17 real build). Headless HARDWARE-GL Chrome
-// (same §HARNESS_GL approach as every prior witness in FLY_TOUR_DLOD_SCALE.md) against the static
-// server at :8405 (this worktree's OWN server, /tmp/wt-occl-bvh — kept off :8401/:8402/:8403/:8404
-// so it never collides with other concurrent worktrees' own standing servers there). Aborts hard if
-// the renderer is SwiftShader (no software-GL evidence allowed).
+// Shared harness for W-BUDGET-* witnesses (FLY_TOUR_DLOD_SCALE.md §20). Copy of the existing
+// tracked witness/harness.js (§13/§16 room-occlusion work) with ONE change: its own port (8406,
+// this worktree's own static server) instead of the shared :8401, per worktree-hygiene "don't
+// collide with a concurrent worktree's own standing server" — kept as a SEPARATE file rather than
+// editing the tracked harness.js's URL, to avoid touching shared test infra for an unrelated
+// change. Adds aerialPose() (§20-specific: a wide-orbit pose from the DB envelope, matching §10's
+// "wide orbit" measurement shape) on top of the same proven primitives.
 const path = require('path');
 const { chromium } = require(path.join('/home/red1/bim-ootb/tests/node_modules', 'playwright-core'));
 
-const URL = 'http://localhost:8405/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
+const URL = 'http://localhost:8406/viewer/viewer.html?db=/buildings/LTU_AHouse_extracted.db';
 
 async function launch(logSink) {
   const browser = await chromium.launch({
@@ -23,9 +25,6 @@ async function launch(logSink) {
 
 async function loadLTU(page, logSink) {
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  // wait for geometry ACTUALLY resident: meta total + !streaming is not enough (streaming=false
-  // before the stream even starts — first harness run engaged on an empty scene, REALIDX=0).
-  // Poll the real per-guid representation count until >100k and stable across two polls.
   await page.waitForFunction(() =>
     (window.APP || window.A) && (window.APP || window.A).activeBuildingTotal > 100000 &&
     !(window.APP || window.A).streaming, null, { timeout: 300000, polling: 500 });
@@ -56,8 +55,6 @@ async function loadLTU(page, logSink) {
   return { gl, total };
 }
 
-// Turn nav-DLOD pill on and wait until engaged (boxes built + real index). Asserts the real
-// index is non-trivial — an entries=0 engage means the harness raced streaming (invalid run).
 async function engageDlod(page, logLines) {
   await page.evaluate(() => window.toggleDlodNav());
   await page.waitForFunction(() => {
@@ -71,19 +68,7 @@ async function engageDlod(page, logLines) {
   }
 }
 
-// Compile/warm rooms explicitly (dlod's own warm is idle-deferred — witnesses need it NOW)
-async function ensureRooms(page, logSink) {
-  const res = await page.evaluate(async () => {
-    const A = window.APP || window.A;
-    await A.loadNavigate();
-    const r = await A.ensureRooms({});
-    return r;
-  });
-  logSink('§HARNESS_ROOMS ' + JSON.stringify(res));
-  return res;
-}
-
-// Wait until the chunked scan has fully settled at the current pose: run rAF frames until
+// Wait until the chunked scan has fully settled at the current pose/boost: run rAF frames until
 // N consecutive audits report mismatch==0 and fades==0 (end-state, not mid-transition).
 async function settle(page, maxMs = 20000) {
   return await page.evaluate(async (maxMs) => {
@@ -99,34 +84,6 @@ async function settle(page, maxMs = 20000) {
   }, maxMs);
 }
 
-// Deterministic scene fingerprint of the nav-proxy box set: FNV-1a over every isDlodNavProxy
-// InstancedMesh's instanceMatrix array (meshes sorted by a stable key), plus counts.
-async function proxyFingerprint(page) {
-  return await page.evaluate(() => {
-    const A = window.APP || window.A;
-    const meshes = [];
-    A.scene.traverse(o => { if (o.userData && o.userData.isDlodNavProxy) meshes.push(o); });
-    meshes.sort((a, b) => (a.count - b.count) || (a.material.color.getHex() - b.material.color.getHex()));
-    let h = 0x811c9dc5, nonZero = 0;
-    for (const m of meshes) {
-      const arr = m.instanceMatrix.array;
-      for (let i = 0; i < arr.length; i++) {
-        // hash the float bits
-        const v = arr[i];
-        const u = new Uint32Array(new Float32Array([v]).buffer)[0];
-        h ^= u & 0xff; h = Math.imul(h, 0x01000193) >>> 0;
-        h ^= (u >>> 8) & 0xff; h = Math.imul(h, 0x01000193) >>> 0;
-        h ^= (u >>> 16) & 0xff; h = Math.imul(h, 0x01000193) >>> 0;
-        h ^= (u >>> 24) & 0xff; h = Math.imul(h, 0x01000193) >>> 0;
-      }
-      for (let i = 0; i < m.count; i++) { if (arr[i * 16 + 0] !== 0 || arr[i * 16 + 5] !== 0) nonZero++; }
-    }
-    let hiddenMeshes = 0;
-    A.scene.traverse(o => { if (o.isMesh && !o.visible && o.userData && o.userData.guid) hiddenMeshes++; });
-    return { hash: ('00000000' + h.toString(16)).slice(-8), boxInstancesVisible: nonZero, hiddenMeshes, proxyMeshes: meshes.length };
-  });
-}
-
 // Move camera to a pose (three coords) and look at a target, mark dirty
 async function setPose(page, pos, look) {
   await page.evaluate(({ pos, look }) => {
@@ -139,4 +96,19 @@ async function setPose(page, pos, look) {
   }, { pos, look });
 }
 
-module.exports = { launch, loadLTU, engageDlod, ensureRooms, settle, proxyFingerprint, setPose, URL };
+// §20-specific: a wide aerial pose (same shape as §10's "wide orbit" case) from the DB envelope.
+// factor scales how far out from the envelope (1.3 = comfortably wide, matches §10's fully-boxed
+// aerial regime); angle rotates around the building center for multiple vantage samples.
+async function aerialPose(page, factor, angle) {
+  return await page.evaluate(({ factor, angle }) => {
+    const A = window.APP || window.A;
+    const env = A.dbQuery("SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MAX(center_z) FROM element_transforms")[0];
+    const cx = (env[0] + env[1]) / 2, cy = (env[2] + env[3]) / 2;
+    const rad = Math.max(env[1] - env[0], env[3] - env[2]) * factor;
+    const ctr = A.ifc2three(cx, cy, env[4] / 2);
+    const p = A.ifc2three(cx + rad * Math.cos(angle), cy + rad * Math.sin(angle), env[4] * 1.1);
+    return { pos: [p.x, p.y, p.z], look: [ctr.x, ctr.y, ctr.z] };
+  }, { factor, angle });
+}
+
+module.exports = { launch, loadLTU, engageDlod, settle, setPose, aerialPose, URL };

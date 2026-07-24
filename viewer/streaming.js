@@ -1019,17 +1019,36 @@ function setupStreaming(A) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
-      if (elements.length === 1) {
-        // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
-        const el = elements[0];
-        // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
-        // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
-        // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
-        if (!batchBuckets[key]) batchBuckets[key] = [];
-        batchBuckets[key].push({ el, geo });
+      // §S280e (2026-07-25, FLY_TOUR_DLOD_SCALE.md §21 follow-up — verified live via
+      // scene.traverse() on LTU_AHouse: 13,453 InstancedMesh scene objects averaging only 2.7
+      // instances each. Each is a real, separate scene-graph object paying full per-object
+      // frustum-cull traversal every frame (three.js perObjectFrustumCulled) regardless of
+      // visibility — confirmed as the cause of a frame-cost floor that persisted even with draw
+      // calls cut to ~16 via box-proxy (Duplex, ~150 objects total, ran 4-8x faster at a
+      // comparable draw-call count). Raising the BatchedMesh cutoff from "1 instance only" to
+      // "LOW_INSTANCE_BATCH_MAX or fewer" folds these near-empty hashes into the SAME
+      // already-existing multi-geometry BatchedMesh bucketing used for single-instance elements
+      // (bucketed by storey|disc|rgba|matVariant, not by hash — a bucket already holds many
+      // different geometries, so a few instances of the same geometry is not a new capability).
+      // UNVERIFIED against TM/picking/storey+disc filter — this is the "sacred, do NOT change
+      // without testing" line above. Do not treat this as shipped/done until those three are
+      // re-tested on a large building; _batchMeta/_instanceMeta contract shape is unchanged
+      // (every element still lands in exactly one, via the same _registerBatchSlot call), which
+      // is why this is expected to be safe, but expectation is not the same as verification.
+      var LOW_INSTANCE_BATCH_MAX = 3;
+      if (elements.length <= LOW_INSTANCE_BATCH_MAX) {
+        // §S260/§S280e: Desktop — bucket for BatchedMesh (low-instance-count hashes)
+        for (let li = 0; li < elements.length; li++) {
+          const el = elements[li];
+          // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
+          // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
+          // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
+          if (!batchBuckets[key]) batchBuckets[key] = [];
+          batchBuckets[key].push({ el, geo });
+        }
       } else {
-        // 2+ instances — InstancedMesh (both desktop and mobile)
+        // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread

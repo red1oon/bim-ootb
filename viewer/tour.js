@@ -1269,15 +1269,24 @@ function setupTour(A) {
       A.walkActionT = 0;
     }
 
-    // ── Adaptive smoothing: heavy on sudden jumps, light on steady motion ──
+    // ── Adaptive smoothing: dampens SUDDEN jumps only (action transitions/reversals) —
+    // steady motion is already eased by the action itself (spline/smoothstep) and needs no
+    // second pass. FIX (2026-07-24, FLY_TOUR_DLOD_SCALE.md walkTick-vs-pvStep comparison):
+    // this used to run unconditionally with SMOOTH=0.6 even in the "steady" band, silently
+    // applying only 60% of each frame's intended step every single frame while walkActionT
+    // still advanced the full dt — a permanent ~40%-of-one-frame lag-behind, on top of
+    // whatever render cost exists, throttling real travel speed below the tour's own
+    // computed duration/speed. Now a no-op below the jump threshold; real transition jumps
+    // still get damped exactly as before.
     const posDelta = _prevCamPos.distanceTo(A.camera.position);
     const tgtDelta = _prevTarget.distanceTo(A.controls.target);
     const maxDelta = Math.max(posDelta, tgtDelta);
-    // Steady (<0.5m/frame): track closely. Sudden (>2m/frame): dampen hard.
-    const SMOOTH = maxDelta < 0.5 ? 0.6 : maxDelta > 2 ? 0.12 : 0.3;
-    A.camera.position.lerpVectors(_prevCamPos, A.camera.position, SMOOTH);
-    A.controls.target.lerpVectors(_prevTarget, A.controls.target, SMOOTH);
-    A.controls.update();
+    if (maxDelta >= 0.5) {
+      const SMOOTH = maxDelta > 2 ? 0.12 : 0.3;
+      A.camera.position.lerpVectors(_prevCamPos, A.camera.position, SMOOTH);
+      A.controls.target.lerpVectors(_prevTarget, A.controls.target, SMOOTH);
+      A.controls.update();
+    }
   };
 
   // ── Legacy path builders (kept for fallback) ──
