@@ -180,6 +180,22 @@ function setupDLOD(A) {
         }
       }
 
+      // §DLOD_TICK partial-upload idea EXPLORED, NOT APPLIED (2026-07-24, FLY_TOUR_DLOD_SCALE.md):
+      // instanceMatrix.addUpdateRange(idx*16,16) per flip would shrink this full-buffer re-upload
+      // (confirmed via vendored three.js source: empty updateRanges = full bufferSubData) to just
+      // the changed instances — real, verified win in isolation. NOT applied: helpers.js
+      // (filterInstancedMesh — Find isolate/room-isolate/storey+discipline filters),
+      // navigate_find.js, and time_machine.js's own DLOD ALL call setMatrixAt+needsUpdate on these
+      // SAME InstancedMesh objects without ever calling addUpdateRange. If any of them mutate the
+      // same mesh in the same frame as a dlod.js flip, a non-empty updateRanges (from this file
+      // alone) would make the renderer upload ONLY dlod.js's ranges — silently dropping the other
+      // caller's change for that frame. Before this exploration, every plain needsUpdate=true
+      // always forced a full upload, so no caller could ever starve another's write; partial
+      // ranges break that safety net for everyone else unless every setMatrixAt caller on shared
+      // buffers adopts the same convention. That's real cross-file work, not a dlod.js-only fix —
+      // exactly the kind of thing the DLOD consolidation (dlod.js/dlod_nav.js/time_machine.js DLOD/
+      // Find's filter, unified) should settle once, not something to patch piecemeal per-caller.
+      // Left as plain needsUpdate=true here, unchanged from before this session.
       if (changed) obj.instanceMatrix.needsUpdate = true;
     }
 

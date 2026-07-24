@@ -331,15 +331,21 @@
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     _wakeAcquire();
-    // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview correctly showed boxes for speed,
-    // but the bake should auto-switch to solid — investigation found the boxes were NOT a
-    // deliberate LOD choice: dlod_nav.js already fully disengages the instant A._maxqActive is set
-    // above, every frame, so it can't be the source. cinema_maxq.js had zero references to
-    // A.streaming — the boxes are the geometry-streaming pipeline's own unpromoted-element
+    // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview was SEEN showing boxes — initial
+    // assumption was that this was a deliberate LOD-for-speed choice. WRONG, disproven by
+    // investigation: dlod_nav.js already fully disengages the instant A._maxqActive is set above,
+    // every frame, so DLOD/box-proxy cannot be the source — cinema_maxq.js had zero references to
+    // A.streaming. The boxes were the geometry-streaming pipeline's own unpromoted-element
     // placeholders bleeding through because nothing waited for them. Same fix as tour.js's
     // §FLY_STREAM_WAIT, reused not reinvented: wait for streaming to fully drain BEFORE the preview
     // even starts, so neither the preview nor the bake ever shows a placeholder — a mid-clip switch
-    // would still visibly pop in the baked video, waiting first avoids that entirely.)
+    // would still visibly pop in the baked video, waiting first avoids that entirely.
+    // Post-fix result, load-bearing for FLY_TOUR_DLOD_SCALE.md: the preview now renders 100% real
+    // geometry — zero DLOD, zero boxes, confirmed disengaged above — across the same dive→orbit
+    // path plan tour.js's Fly Tour uses (shared A.cinemaPathPlan, effects.js), at a LARGER radius
+    // (envelope×2.5 here vs tour.js's measured r=255) — and runs smooth. Full real geometry at a
+    // wide-orbit distance is therefore not inherently expensive; whatever makes Fly Tour lag is not
+    // simply "too much real geometry in view at range."
     var _streamWaitedMs = 0;
     while (A.streaming && !_cancel) {
       _status('🎬 Waiting for geometry to finish streaming…');
