@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v13 (highlight-first: main hall → stairs → rest — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v14 (highlight-first + SUSPECT_OPEN halls eligible — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -150,7 +150,7 @@ function setupTour(A) {
   // (§TOUR_CACHE store … key=…:v12:…). The key's other components are DB counts — they bust on a
   // re-extraction or room recompile, never on a code change. This constant is the ONLY thing that
   // invalidates a cached route when the routing ALGORITHM changes.
-  var TOUR_CACHE_VER = 'v13'; // keep in lockstep with the §TOUR_VERSION banner above
+  var TOUR_CACHE_VER = 'v14'; // keep in lockstep with the §TOUR_VERSION banner above
   function _tourCacheKey() {
     try {
       var r = A.db.exec(
@@ -449,7 +449,16 @@ function setupTour(A) {
     // Bucket rooms by storey. Corridors (backprop 'Hall / Corridor' nodes + compiled
     // SUSPECT_ELONGATED — a real corridor is usually one of these, see spec §R4) become cruise
     // stops; other SUSPECT_* rooms are never destinations (§ROOM-FORM: review candidates).
+    // §SUSPECT-OPEN-ELIGIBLE (OCCUPANT_PATHFINDER.md §G3-FINAL, user live report "still does not
+    // show large space", 2026-07-25): SUSPECT_OPEN is the ONE exception. It is a room-DETECTION
+    // confidence flag meaning "enclosure fraction below SUSPECT_OPEN_ENCLOSURE" — i.e. the space is
+    // OPEN — which is precisely what a hall or atrium IS. Measured on the user's saved live Hospital
+    // (~/Projects/BIM_DB/Hospital.db, an exact repro of the live console): the building's LARGEST
+    // room is 315.7 m² and carries SUSPECT_OPEN, so the old blanket exclusion hid it and the tour
+    // fell back to a 219 m² × 3.3m corridor. 62 of 214 rooms were excluded this way.
+    // SUSPECT_NO_DOOR stays excluded — that one is a genuine reachability doubt, not a shape.
     const byStorey = {}, stZSum = {}, stN = {};
+    let suspectOpenAdmitted = 0;
     for (const n of g.nodes) {
       const lbl = String(n.label || '');
       let area = 0;
@@ -457,7 +466,10 @@ function setupTour(A) {
       if (!byStorey[n.storey]) byStorey[n.storey] = { corridors: [], rooms: [] };
       const rec = { guid: n.guid, node: n, area };
       if (lbl.indexOf('Hall / Corridor') >= 0 || lbl.indexOf('SUSPECT_ELONGATED') >= 0) byStorey[n.storey].corridors.push(rec);
-      else if (lbl.indexOf('SUSPECT_') < 0) byStorey[n.storey].rooms.push(rec);
+      else if (lbl.indexOf('SUSPECT_') < 0 || lbl.indexOf('SUSPECT_OPEN') >= 0) {
+        if (lbl.indexOf('SUSPECT_OPEN') >= 0) suspectOpenAdmitted++;
+        byStorey[n.storey].rooms.push(rec);
+      }
       stZSum[n.storey] = (stZSum[n.storey] || 0) + n.cz;
       stN[n.storey] = (stN[n.storey] || 0) + 1;
     }
@@ -566,7 +578,8 @@ function setupTour(A) {
       console.log('[TOUR] §FLY_HL_FIRST mainHall="' + (mainHall.node.name || mainHall.guid) + '" area=' +
         mainHall.area.toFixed(1) + ' storey=' + mainHall.node.storey +
         ' ascent=' + (ascent ? '"' + (ascent.node.name || ascent.guid) + '"/' + ascent.node.storey : '-') +
-        ' extras=' + (picked.length - (ascent ? 2 : 1)) + ' stops=' + stops.length);
+        ' extras=' + (picked.length - (ascent ? 2 : 1)) + ' stops=' + stops.length +
+        ' suspectOpenAdmitted=' + suspectOpenAdmitted);  // §SUSPECT-OPEN-ELIGIBLE
     }
 
     // §S3 — the largest room actually PICKED per storey gets the pause + look-around beat
