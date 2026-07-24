@@ -3196,10 +3196,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // §CINEMA_TIMING_672 (2026-07-24, user: "ensure last 3 sec is a roll to stop"): 2→3. The orbit
   // itself shrank to ~8s (dive/out grew, orbit gives way — see CINEMA_N_FRAMES above), so the cap
   // this divides against (below, at the use site) was raised too — see that comment.
-  var CINEMA_END_DECEL_SEC = 3;
-  // §CINEMA_START_EASE: mirrors END_DECEL — orbit ramps INTO rotation rather than snapping to a
-  // constant rate the instant Beat 4's rise hands off. See use site for the "why" (2026-07-24).
-  var CINEMA_START_EASE_SEC = 2;
+  var CINEMA_END_DECEL_SEC = 3;  // same duration used symmetrically at orbit start too — see use site
   var CINEMA_FAN_RAYS = 32;     // BVH horizontal fan: "am I facing a wall / where is open"
   var CINEMA_FAN_FAR = 60;      // metres; no hit inside this = open in that bearing
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
@@ -3790,31 +3787,29 @@ async function setupEffects(A, renderer, scene, camera) {
     // cut. f(t)=t+t^2-t^3 is the unique cubic with f(0)=0, f(1)=1, f'(0)=1, f'(1)=0 — it matches the
     // constant rate=1 coming in from the linear portion and eases exactly to rate=0 by the end, so
     // there is no kink at the window boundary, only at the (now motionless) very end.
-    // §CINEMA_TIMING_672 (2026-07-24, user: "ensure last 3 sec is a roll to stop"): 2→3s. Cap raised
-    // 0.25→0.4 so the full 3s survives now that the orbit itself is shorter (~8s, dive/out grew and
-    // the exterior orbit gives way to them — see CINEMA_N_FRAMES above) — at loopSec=8, 3/8=0.375
-    // would otherwise get truncated to 2s by the old 0.25 ceiling.
-    var endDecelU = Math.min(0.4, CINEMA_END_DECEL_SEC / loopSec);
-    // §CINEMA_START_EASE (2026-07-24, user: "while orbiting no sharp turn, all slow down ease out
-    // then orbit... calmly"): mirrors END_DECEL above — without this, Beat 4's straight-line glide
-    // (rate=0) handed off directly into Beat 5's constant-rate rotation (rate=1) with an actual
-    // instantaneous jump in angular velocity, a real "sharp turn" at the orbit's own start, not just
-    // a figure of speech. h(t)=1-f(1-t) is f's mirror image: h(0)=0, h(1)=1, h'(0)=0, h'(1)=1 — glues
-    // to the following rate=1 linear run with no kink, same no-kink guarantee the end-decel already had.
-    var startEaseU = Math.min(0.25, CINEMA_START_EASE_SEC / loopSec);
-    function _cinemaEaseCubic(t) { return t + t * t - t * t * t; }
+    // §CINEMA_TIMING_672 (2026-07-24, user: "ensure last 3 sec is a roll to stop"... "in short, all
+    // throughout must be smooth, no jerks"): ONE symmetric ease, same CINEMA_END_DECEL_SEC duration
+    // used at BOTH ends — not two separately-tuned mechanisms. Without the start half, Beat 4's
+    // straight-line glide (rate=0) handed off directly into Beat 5's constant rotation (rate=1) with
+    // an actual instantaneous jump in angular velocity — a real jerk at the orbit's own start, same
+    // class of abruptness as the cut this was already built to avoid at the end. Cap raised 0.25→0.4
+    // so the full 3s survives now that the orbit itself is shorter (~8s, dive/out grew and the
+    // exterior orbit gives way to them — see CINEMA_N_FRAMES above); at loopSec=8, 3/8=0.375 would
+    // otherwise get truncated by the old 0.25 ceiling.
+    var easeU = Math.min(0.4, CINEMA_END_DECEL_SEC / loopSec);
+    function _cinemaEaseCubic(t) { return t + t * t - t * t * t; }  // f(0)=0,f(1)=1,f'(0)=1,f'(1)=0 — no kink against a slope-1 linear run
     function _cinemaAzU(u) {
-      if (startEaseU > 0 && u < startEaseU) {
-        var s = u / startEaseU;
-        return startEaseU * (1 - _cinemaEaseCubic(1 - s));
+      if (easeU > 0 && u < easeU) {
+        var s = u / easeU;
+        return easeU * (1 - _cinemaEaseCubic(1 - s));  // mirror of the cubic below: rate ramps 0→1 into the linear middle
       }
-      var u0 = 1 - endDecelU;
-      if (endDecelU <= 0 || u <= u0) return u;
-      var t = (u - u0) / endDecelU;
-      return u0 + endDecelU * _cinemaEaseCubic(t);
+      var u0 = 1 - easeU;
+      if (easeU <= 0 || u <= u0) return u;
+      var t = (u - u0) / easeU;
+      return u0 + easeU * _cinemaEaseCubic(t);  // rate ramps 1→0, the roll to a stop
     }
-    console.log('§CINEMA_START_EASE startEaseU=' + startEaseU.toFixed(3) + ' (~' + (startEaseU * loopSec).toFixed(1) +
-      's) endDecelU=' + endDecelU.toFixed(3) + ' (~' + (endDecelU * loopSec).toFixed(1) + 's) loopSec=' + loopSec.toFixed(1));
+    console.log('§CINEMA_SMOOTH_ORBIT easeU=' + easeU.toFixed(3) + ' (~' + (easeU * loopSec).toFixed(1) +
+      's each end) loopSec=' + loopSec.toFixed(1));
 
     // ══ The standard ending: one plain orbit off the side we emerged on, with the classic wide
     // pull-back flourish. Same close for EVERY film (§CINEMA_SIMPLE decision 2 — the reciprocal
@@ -3846,7 +3841,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // ramps back OUT (ellOut) across the flat-ending glide (sunLast only — sunFirst has no
       // equivalent damping need, its ending is elevated and the end-decel window below already
       // calms the sweep), and is further damped by the universal end-deceleration window.
-      var endW = (u > 1 - endDecelU) ? Math.max(0, 1 - (u - (1 - endDecelU)) / endDecelU) : 1;
+      var endW = (u > 1 - easeU) ? Math.max(0, 1 - (u - (1 - easeU)) / easeU) : 1;
       var ell = 1 + CINEMA_ELLIPTICITY * _cinemaSmoothstep(u / 0.15) * ellOut * endW * Math.cos(2 * (az - exitAz));
       var radius = orbitRadius * ell;
       if (u > CINEMA_PULLBACK_START) {
@@ -3887,7 +3882,14 @@ async function setupEffects(A, renderer, scene, camera) {
         // ── Beat 3: walk it out through the door the pose chose.
         var e3 = _cinemaSmoothstep((tNorm - tS) / Math.max(1e-6, tO - tS));
         var p3 = _outPos(e3);
-        var ah = _outPos(Math.min(1, e3 + 0.06));
+        // §CINEMA_TIMING_672 (2026-07-24, user: "no chasing interim targets when exiting building
+        // mostly"): 0.06→0.15. Position already moves at constant speed along the route; this
+        // lookahead point only steers where the camera LOOKS. On a multi-waypoint room-graph route
+        // (a corridor with turns), the instant this window crosses a corner the look-at direction
+        // swung hard onto the next segment — a real gaze snap, not just position. A wider window
+        // means the look-at is further past any given corner while still approaching it, so the
+        // direction change is spread out instead of happening in one frame.
+        var ah = _outPos(Math.min(1, e3 + 0.15));
         if (Math.hypot(ah.x - p3.x, ah.z - p3.z) < 0.5) ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
         var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
         var aheadTx = p3.x + (ah.x - p3.x) / ad * 20, aheadTy = p3.y + (ah.y - p3.y) / ad * 20, aheadTz = p3.z + (ah.z - p3.z) / ad * 20;
@@ -3936,6 +3938,14 @@ async function setupEffects(A, renderer, scene, camera) {
              indoor: true, poseAt: poseAt };
   }
   A.cinemaPathPlan = _cinemaPathPlan;   // shared with cinema_maxq.js — see §CINEMA_PATH above
+  // §CINEMA_HDRI_RACE (2026-07-24): exposed so cinema_maxq.js's warm-up (the REAL Alt+C entry
+  // point — scene.js's §KBD_ROUTE always finds A.startMaxQualityOrbit and never falls through to
+  // A.startCinemaOrbit below) can await the same HDRI readiness this file's own dead-code capture
+  // path already does. MaxQ's own warm-up fold (_waitFoldDone) polls the TAA/AO accumulate-fold's
+  // busy flag only — a SEPARATE async load from the HDRI texture fetch+PMREM-generate, so the fold
+  // can report "done" while the HDRI is still loading, live-confirmed via a real user's own pasted
+  // console log (§STILL_REFINE done fired ~2.2s in, §LAYER2_HDRI_READY only later).
+  A.ensureHdriEnvMapReady = _ensureHdriEnvMap;
   A.startCinemaOrbit = async function() {
     if (_cinemaActive || A._stillRefineActive || !A.camera || !A.controls || !A.renderer) return;
     if (!A.renderer.domElement.captureStream || typeof MediaRecorder === 'undefined') {

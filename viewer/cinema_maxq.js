@@ -444,6 +444,23 @@
       _status('🎬 MaxQ warming up…');
       A.startStillRefine();
       await _waitFoldDone(30000);
+      // §CINEMA_HDRI_RACE (2026-07-24, user-reported live via their own pasted console log —
+      // "flicker or snapping... before Alt-S fully applied"): _waitFoldDone above only tracks the
+      // TAA/AO accumulate fold's own busy flag. A.startStillRefine() ALSO kicks off the HDRI envMap
+      // load (real photographed reflections) as a separate async texture fetch+PMREM-generate, and
+      // that one is NOT what the fold's "done" flag tracks — confirmed live: the user's log showed
+      // `§STILL_REFINE done` firing at elapsedMs=2221 while `§LAYER2_HDRI_READY` only arrived later.
+      // Wait for it explicitly too, so frame 0 doesn't bake with placeholder lighting. 20s cap (vs
+      // the flagged-dead-code live-capture path's 5s) — MaxQ is an offline multi-minute bake, not
+      // latency-sensitive, and this is a ONE-TIME cost per session (cached after the first load).
+      if (typeof A.ensureHdriEnvMapReady === 'function') {
+        var _hdriT0 = performance.now();
+        await Promise.race([
+          A.ensureHdriEnvMapReady(),
+          new Promise(function(res) { setTimeout(res, 20000); })
+        ]);
+        console.log('§MAXQ_HDRI_RACE waitedMs=' + Math.round(performance.now() - _hdriT0));
+      }
       A.stopStillRefine(true);
       await _raf2(); await _sleep(3000);
       t0 = _etaPrev = performance.now();
