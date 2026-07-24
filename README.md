@@ -142,9 +142,9 @@ erp/                  — Kernel-ERP engine
   docs/               — ERP feature specs
 ```
 
-## 25 Pre-loaded Buildings
+## 32 Pre-loaded Buildings
 
-The gallery includes 25 IFC buildings from public datasets (8 landmark + 17 city) — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
+The gallery includes 32 IFC buildings from public datasets — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
 
 ## Deploy
 
@@ -188,7 +188,7 @@ cd tests && npm install && npx playwright test
 
 This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **800+ commits across 540+ PRs through June 2026**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **1,274 commits across 966 merged PRs through July 2026**, now **208 vanilla JS modules** (119 BIM + 89 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
 
 The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 
