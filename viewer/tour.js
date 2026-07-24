@@ -761,7 +761,7 @@ function setupTour(A) {
     // §INTERIOR_PACING — user 2026-07-25: "zoom into building can hasten up 2X". speedMul only
     // affects this one moveTo (the outside→entrance zoom); the finale moveTo actions (PART 5,
     // bird's-eye/centre/final) stay at their existing pace, unaffected — see the moveTo handler.
-    actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance', speedMul: 2});
+    actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance', speedMul: 2, dynamicPace: true});
 
     // ═══ PART 3: INTERIOR PATH (spline flyPath) ═══
     // Collect waypoints per storey, nearest-neighbor sorted
@@ -932,6 +932,64 @@ function setupTour(A) {
     A.wlog(`Speed: ${A.walkSpeedMult}x`);
   };
 
+  // §INTERIOR_PACING (FLY_TOUR_CORRIDOR_GRAPH.md §INTERIOR_PACING_NOT_A_SPEED_FACTOR, user
+  // 2026-07-25/26: "when things far off, hasten... when really close slow down... its a simple
+  // inverse formula" — "the inverse distance speed law is not proper... it is a simple maths, no
+  // overthink". Corrected from the first pass, which used a HORIZONTAL-only BVH ray fan for the
+  // orbit/approach too — live LTU log showed `orbit clearancePace min=0.35 max=0.35` (flat, no
+  // effect at all): a mostly-VERTICAL descent never registers on a horizontal fan, so it measured
+  // nothing was ever near and stayed pinned at "fully open." Fixed by using the actual known
+  // geometry directly instead of raycasting for the two actions that already know exactly what
+  // they're approaching: orbit paces off real height-above-ground (`camY - groundY`), moveTo
+  // paces off real remaining distance-to-destination. Only flyPath (interior — no single known
+  // target) keeps the BVH clearance fan, and no longer multiplies it by a separate turn-angle
+  // term (that stacking produced the other live bug — `combinedFactorRange=[0.35,16.00]`, a
+  // runaway 16x local slowdown): clearance alone already reads as "tight" for a dead-end spur
+  // (walls close on every side) without a second signal compounding on top of it.
+  const PACE_FACTOR_MIN = 0.35;     // fastest allowed (far/open) — ~3x hasten
+  const PACE_FACTOR_MAX = 4.0;      // slowest allowed (right up against a surface/target)
+  function _invPace(distance, refDistance, minDistance) {
+    const d = Math.max(distance, minDistance);
+    const factor = refDistance / d; // the "simple inverse formula": far => small factor (fast), close => large factor (slow)
+    return Math.max(PACE_FACTOR_MIN, Math.min(PACE_FACTOR_MAX, factor));
+  }
+  function _clearancePace(pos) {
+    if (typeof A.cinemaFan !== 'function') return 1;
+    let c;
+    try { c = A.cinemaFan(pos, 8).min; } catch (e) { return 1; }
+    if (!(c > 0)) return 1;
+    return _invPace(c, 3.0, 0.6); // REF=3m clearance reads as neutral pace, same scale a normal room aisle gives
+  }
+  // Builds a monotonic time-fraction<->position-fraction remap from real sample points + a
+  // per-point pace factor (>1 slower, <1 faster than neutral). Two effects, both from the SAME
+  // table: (1) `meanFactor` rescales the action's OWN total duration — a genuinely open whole
+  // path (LTU courtyard) gets a shorter total duration outright, not just a bigger internal SHARE
+  // of a duration that was already fixed small; (2) per-frame lookup (`_paceLookup`) redistributes
+  // WHERE in that (possibly rescaled) duration the time is spent, so a close/tight moment within
+  // an otherwise-open path still gets its own real slowdown. Shared by orbit/moveTo/flyPath.
+  function _paceBuildRemap(pts, paceOf) {
+    const n = pts.length;
+    if (n < 2) return null;
+    const segLens = [], rawU = [0]; let cum = 0;
+    for (let i = 1; i < n; i++) { const L = pts[i].distanceTo(pts[i - 1]); segLens.push(L); cum += L; rawU.push(cum); }
+    for (let i = 0; i < rawU.length; i++) rawU[i] = cum > 0 ? rawU[i] / cum : 0;
+    const factors = pts.map(paceOf);
+    const wCum = [0]; let wTotal = 0;
+    for (let i = 0; i < segLens.length; i++) { wTotal += segLens[i] * Math.max(factors[i], factors[i + 1]); wCum.push(wTotal); }
+    return { u: rawU, t: wCum.map(w => wTotal > 0 ? w / wTotal : 0),
+             maxFactor: Math.max(...factors), minFactor: Math.min(...factors),
+             meanFactor: cum > 0 ? wTotal / cum : 1 };
+  }
+  function _paceLookup(remap, tLinear) {
+    if (!remap) return tLinear;
+    const pt = remap.t, pu = remap.u;
+    let lo = 0, hi = pt.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pt[mid] <= tLinear) lo = mid; else hi = mid; }
+    const span = pt[hi] - pt[lo];
+    const f = span > 1e-6 ? (tLinear - pt[lo]) / span : 0;
+    return pu[lo] + (pu[hi] - pu[lo]) * f;
+  }
+
   // Action-based walkTick
   A.walkTick = function() {
     if (!A.walkMode || !A.walkActions || A.walkActions.length === 0) return;
@@ -969,6 +1027,23 @@ function setupTour(A) {
         // every other moveTo (finale bird's-eye/centre/final) is speedMul-less and unaffected.
         act._duration = Math.max(act._dist / (speed * spd * (act.speedMul || 1)), 0.3);
         if (act.speedMul) A.wlog(`§INTERIOR_PACING moveTo "${act.name}" speedMul=${act.speedMul} dur=${act._duration.toFixed(1)}s`);
+        // §INTERIOR_PACING dynamicPace (opt-in, entrance zoom only — see buildTour PART 2): real
+        // REMAINING DISTANCE to the entrance along the approach line — far away hastens well past
+        // the flat speedMul, genuinely nearing the entrance slows it back down. Rescales the
+        // action's own total duration (meanFactor), not just its internal distribution — a long
+        // open aerial gap should take LESS total time outright, not just relatively less within
+        // an unchanged fixed duration.
+        if (act.dynamicPace) {
+          const dest0 = new THREE.Vector3(act.x, act.y + A.WALK_EYE_HEIGHT, act.z);
+          const PACE_SAMPLES = 8;
+          const samplePts = [];
+          for (let si = 0; si < PACE_SAMPLES; si++) samplePts.push(act._startPos.clone().lerp(dest0, si / (PACE_SAMPLES - 1)));
+          act._paceRemap = _paceBuildRemap(samplePts, p => _invPace(p.distanceTo(dest0), 10, 1));
+          if (act._paceRemap) {
+            act._duration = Math.max(act._duration * act._paceRemap.meanFactor, 0.3);
+            A.wlog(`§INTERIOR_PACING moveTo "${act.name}" distPace min=${act._paceRemap.minFactor.toFixed(2)} max=${act._paceRemap.maxFactor.toFixed(2)} mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act._duration.toFixed(1)}s`);
+          }
+        }
         // Pre-compute final look direction: if next action has lookAtX/Z, face that way on arrival
         const nextAct = A.walkActions[A.walkActionIdx + 1];
         if (nextAct && nextAct.lookAtX !== undefined && nextAct.lookAtZ !== undefined) {
@@ -978,7 +1053,8 @@ function setupTour(A) {
       }
       A.walkActionT += dt;
       const t = Math.min(A.walkActionT / act._duration, 1.0);
-      const s = t * t * (3 - 2 * t);
+      let s = t * t * (3 - 2 * t);
+      if (act._paceRemap) s = _paceLookup(act._paceRemap, s);
       const dest = new THREE.Vector3(act.x, act.y + A.WALK_EYE_HEIGHT, act.z);
       A.camera.position.lerpVectors(act._startPos, dest, s);
       // Smoothly orient toward the next lookAround target in the last 40% of travel
@@ -1079,7 +1155,6 @@ function setupTour(A) {
 
     } else if (act.type === 'orbit') {
       const tiltRad = (act.tiltDeg || 40) * Math.PI / 180;
-      const duration = act.duration || 8;
       const totalRad = act.fullCircle ? Math.PI * 2 : Math.PI;
       if (A.walkActionT === 0) {
         A.walkOrbitAngle = Math.atan2(A.camera.position.z - act.cz, A.camera.position.x - act.cx);
@@ -1089,9 +1164,41 @@ function setupTour(A) {
         act._startTarget = A.controls.target.clone();
         act._startPos = A.camera.position.clone();
         A.wlog(`Orbit: r=${act.radius?.toFixed(0)} from ${(A.walkOrbitAngle*180/Math.PI).toFixed(0)}°`);
+        // §INTERIOR_PACING (user 2026-07-25: "thus aerial also affected") — sample the orbit's
+        // OWN known geometry (same formula as the per-frame code below, unremapped) at a handful
+        // of t values to measure real clearance, then remap t itself so the aerial sweep hastens
+        // over open ground and only slows for real as it nears the descent/building.
+        const orbitHInit = act.cy + act.radius * Math.sin(tiltRad);
+        const samplePts = [];
+        const PACE_SAMPLES = 10;
+        for (let si = 0; si < PACE_SAMPLES; si++) {
+          const tt = si / (PACE_SAMPLES - 1);
+          const smoothTt = tt * tt * (3 - 2 * tt);
+          const angTt = act._startAngle + totalRad * smoothTt;
+          let camYtt;
+          if (tt < 0.2) { const ht = tt / 0.2, hs = ht * ht * (3 - 2 * ht); camYtt = act._startY + (orbitHInit - act._startY) * hs; }
+          else if (tt < 0.6) camYtt = orbitHInit;
+          else { const dt2 = (tt - 0.6) / 0.4, ds = dt2 * dt2 * (3 - 2 * dt2); camYtt = orbitHInit + (act._groundY - orbitHInit) * ds; }
+          const descTt = tt > 0.6 ? (tt - 0.6) / 0.4 : 0;
+          const tiltTt = tiltRad * (1 - descTt * descTt);
+          samplePts.push(new THREE.Vector3(act.cx + Math.cos(angTt) * act.radius * Math.cos(tiltTt), camYtt,
+                                            act.cz + Math.sin(angTt) * act.radius * Math.cos(tiltTt)));
+        }
+        // Real height-above-ground at each sample (not a raycast — the ground/target height is
+        // already known geometry here), so a mostly-vertical descent actually registers: far
+        // above ground during the sweep hastens, nearing the ground for the landing slows down.
+        act._paceRemap = _paceBuildRemap(samplePts, p => _invPace(Math.abs(p.y - act._groundY), 15, 1));
+        if (act._paceRemap) {
+          act._duration = Math.max((act.duration || 8) * act._paceRemap.meanFactor, 2);
+          A.wlog(`§INTERIOR_PACING orbit heightPace min=${act._paceRemap.minFactor.toFixed(2)} max=${act._paceRemap.maxFactor.toFixed(2)} mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act._duration.toFixed(1)}s`);
+        } else {
+          act._duration = act.duration || 8;
+        }
       }
+      const duration = act._duration || act.duration || 8;
       A.walkActionT += dt;
-      const t = Math.min(A.walkActionT / duration, 1.0);
+      const tLinear = Math.min(A.walkActionT / duration, 1.0);
+      const t = act._paceRemap ? _paceLookup(act._paceRemap, tLinear) : tLinear;
       const smooth = t * t * (3 - 2 * t);
       A.walkOrbitAngle = act._startAngle + totalRad * smooth;
       const orbitH = act.cy + act.radius * Math.sin(tiltRad);
@@ -1183,46 +1290,21 @@ function setupTour(A) {
           }
           // §TIGHT_TURN_PACING (FLY_TOUR_CORRIDOR_GRAPH.md §INTERIOR_PACING_NOT_A_SPEED_FACTOR,
           // user 2026-07-25: "even slower when too close to object or spaces as they will simply
-          // flash by meaninglessly"). Real path geometry, not a flat multiplier: at each original
-          // waypoint, measure the turn angle between the incoming/outgoing legs AND how short
-          // those legs are (a dead-end spur — fly in, reverse, fly out — is both a sharp turn and
-          // a short leg; a corridor cruise is neither). Build a monotonic time→u remap so MORE of
-          // the segment's fixed duration (set by INTERIOR_PACE_FACTOR above) is spent near tight
-          // vertices and less on straight stretches — total duration is unchanged, only its
-          // distribution along the curve is. u stays real curve parameter fed to getPointAt, so
-          // camera position itself is untouched — only pacing (speed) varies.
-          const rawU = [0]; // cumulative straight-line length fraction at each pts3 vertex
-          let cumLen = 0;
-          const segLens = [];
-          for (let i = 1; i < pts3.length; i++) {
-            const L = pts3[i].distanceTo(pts3[i - 1]);
-            segLens.push(L); cumLen += L; rawU.push(cumLen);
+          // flash by meaninglessly"; 2026-07-26: "For LTU in its courtyards, it is too slow" +
+          // "the inverse distance speed law is not proper... simple maths, no overthink" — corrected
+          // from the first pass, which multiplied this clearance factor by a SEPARATE turn-angle
+          // term and produced a runaway combined range (live LTU log: up to 16x). Clearance ALONE
+          // already reads a dead-end spur as tight (walls close on every side, not just at the
+          // vertex angle) and a courtyard as open, so the second signal was redundant AND the
+          // cause of the blow-up — dropped. `meanFactor` also rescales this segment's OWN total
+          // duration (not just its internal distribution) so a genuinely open stretch actually
+          // takes less real time, not just a smaller share of a duration that was already capped
+          // by the flat 0.3x interior baseline.
+          act._paceRemap = _paceBuildRemap(pts3, _clearancePace);
+          if (act._paceRemap) {
+            act.duration = Math.max((act.duration || 30) * act._paceRemap.meanFactor, 3);
+            console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} clearanceRange=[${act._paceRemap.minFactor.toFixed(2)},${act._paceRemap.maxFactor.toFixed(2)}] mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act.duration.toFixed(1)}s`);
           }
-          for (let i = 0; i < rawU.length; i++) rawU[i] = cumLen > 0 ? rawU[i] / cumLen : 0;
-          const tight = new Array(pts3.length).fill(0); // 0=straight/open .. 1=sharp/tight
-          for (let i = 1; i < pts3.length - 1; i++) {
-            const l1 = segLens[i - 1], l2 = segLens[i];
-            let turnDeg = 0;
-            if (l1 > 0.01 && l2 > 0.01) {
-              const v1 = new THREE.Vector3().subVectors(pts3[i], pts3[i - 1]).normalize();
-              const v2 = new THREE.Vector3().subVectors(pts3[i + 1], pts3[i]).normalize();
-              turnDeg = Math.acos(THREE.MathUtils.clamp(v1.dot(v2), -1, 1)) * 180 / Math.PI;
-            }
-            const shortness = Math.max(0, 1 - Math.min(l1, l2) / 4); // legs <4m start reading "close"
-            tight[i] = Math.max(turnDeg / 180, shortness);
-          }
-          // Per-segment pace factor (>=1, higher = slower) from the tighter of its two endpoints;
-          // PACE_K bounds the extra slowdown a single sharp/short vertex can add (4x floor).
-          const PACE_K = 3;
-          const paceFactor = [];
-          for (let i = 1; i < pts3.length; i++) paceFactor.push(1 + PACE_K * Math.max(tight[i - 1], tight[i]));
-          let wTotal = 0;
-          const wCum = [0];
-          for (let i = 0; i < segLens.length; i++) { wTotal += segLens[i] * paceFactor[i]; wCum.push(wTotal); }
-          act._paceU = rawU;
-          act._paceT = wCum.map(w => wTotal > 0 ? w / wTotal : 0); // time-fraction at each rawU
-          const maxTight = Math.max(...tight);
-          console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} maxTightness=${maxTight.toFixed(2)} paceKFactorRange=[${Math.min(...paceFactor).toFixed(2)},${Math.max(...paceFactor).toFixed(2)}]`);
         } catch(e) {
           console.error('[TOUR] §FLYPATH_CRASH', e.message);
           A.walkActionIdx++; A.walkActionT = 0; return;
@@ -1231,16 +1313,9 @@ function setupTour(A) {
       const duration = (act.duration || 30) / spd;
       A.walkActionT += dt;
       const tLinear = Math.min(A.walkActionT / duration, 1.0);
-      // §TIGHT_TURN_PACING: remap linear elapsed-time fraction to the curve's own u parameter via
-      // the weighted table built above — u advances slower through tight/short legs.
       let t = tLinear;
-      if (act._paceT && act._paceT.length > 1) {
-        const pt = act._paceT, pu = act._paceU;
-        let lo = 0, hi = pt.length - 1;
-        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pt[mid] <= tLinear) lo = mid; else hi = mid; }
-        const span = pt[hi] - pt[lo];
-        const f = span > 1e-6 ? (tLinear - pt[lo]) / span : 0;
-        t = pu[lo] + (pu[hi] - pu[lo]) * f;
+      if (act._paceRemap) {
+        t = _paceLookup(act._paceRemap, tLinear);
       }
       const pos = act._curve.getPointAt(t);
       A.camera.position.copy(pos);

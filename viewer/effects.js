@@ -3963,6 +3963,11 @@ async function setupEffects(A, renderer, scene, camera) {
              indoor: true, poseAt: poseAt };
   }
   A.cinemaPathPlan = _cinemaPathPlan;   // shared with cinema_maxq.js — see §CINEMA_PATH above
+  // §INTERIOR_PACING (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-25): exposes the SAME BVH raycast fan
+  // §CINEMA_SPACE already trusts as "the ONLY where-is-open-space source" (see the file-header
+  // comment above _cinemaFanMeshes) to tour.js's flight-pacing — real measured clearance-to-
+  // nearest-surface, not a second invented proximity system. tour.js is the only outside caller.
+  A.cinemaFan = _cinemaFan;
   // §CINEMA_HDRI_RACE (2026-07-24): exposed so cinema_maxq.js's warm-up (the REAL Alt+C entry
   // point — scene.js's §KBD_ROUTE always finds A.startMaxQualityOrbit and never falls through to
   // A.startCinemaOrbit below) can await the same HDRI readiness this file's own dead-code capture
