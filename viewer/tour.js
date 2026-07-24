@@ -144,7 +144,13 @@ function setupTour(A) {
   // §TOUR_VERSION (route algorithm changes bust it), element/door/room counts from the DB (a new
   // extraction or a room recompile busts it), and the rendered-building-set size (city tours append
   // extra orbit actions — a different set must not replay a single-building route).
-  var TOUR_CACHE_VER = 'v12'; // keep in lockstep with the §TOUR_VERSION banner above
+  // ⚠ LOCKSTEP WITH §TOUR_VERSION — bumping the banner without bumping THIS silently replays the
+  // OLD route from IDB for every user who toured that building before the deploy. Missed on the
+  // §HL-FIRST ship (banner → v13, this stayed v12); the user's live Hospital log caught it
+  // (§TOUR_CACHE store … key=…:v12:…). The key's other components are DB counts — they bust on a
+  // re-extraction or room recompile, never on a code change. This constant is the ONLY thing that
+  // invalidates a cached route when the routing ALGORITHM changes.
+  var TOUR_CACHE_VER = 'v13'; // keep in lockstep with the §TOUR_VERSION banner above
   function _tourCacheKey() {
     try {
       var r = A.db.exec(
