@@ -946,8 +946,12 @@ function setupTour(A) {
   // term (that stacking produced the other live bug — `combinedFactorRange=[0.35,16.00]`, a
   // runaway 16x local slowdown): clearance alone already reads as "tight" for a dead-end spur
   // (walls close on every side) without a second signal compounding on top of it.
-  const PACE_FACTOR_MIN = 0.35;     // fastest allowed (far/open) — ~3x hasten
-  const PACE_FACTOR_MAX = 4.0;      // slowest allowed (right up against a surface/target)
+  // §PACE_RANGE_TAMPER (2026-07-26, user live-review: interior slowed to "near dead stop" near a
+  // wall/object and aerial orbit ran "way too fast" — both symptoms of the SAME clamp being too
+  // wide (0.35-4.0, an 11x swing). Narrowed to a more graceful range; the inverse formula itself
+  // (_invPace below) is untouched — this only tightens how far it's allowed to swing.
+  const PACE_FACTOR_MIN = 0.5;      // fastest allowed (far/open) — 2x hasten
+  const PACE_FACTOR_MAX = 2.0;      // slowest allowed (right up against a surface/target) — 2x slow
   const LOOKAHEAD_M = 5;             // §TARGET_BOUNDED_LOOKAHEAD — absolute gaze-ahead distance for
                                       // flyPath, same scale as the clearance/LOS reference distances
                                       // above; independent of total path length (see the flyPath init
