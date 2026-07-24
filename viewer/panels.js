@@ -724,6 +724,7 @@ function setupPanels(A) {
       A.filterBatchedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
     console.log(`[S200] §STOREY_FILTER ${Array.isArray(storey) ? '[' + storey.join(',') + ']' : (storey || 'ALL')}`);
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -827,6 +828,7 @@ function setupPanels(A) {
         return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -849,6 +851,7 @@ function setupPanels(A) {
       A.filterBatchedMesh(mesh, meta => keep(meta.guid));
     });
     console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 

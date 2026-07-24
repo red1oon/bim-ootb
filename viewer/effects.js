@@ -2127,6 +2127,13 @@ async function setupEffects(A, renderer, scene, camera) {
   // still-refine, not just at the first instant.
   function _reassertPhotoShadowCoverage() {
     if (!_photoShadowSelfEnabled || !A.scene) return;
+    var _idx = A.streamIdx || 0, _kids = A.scene.children.length, _vis = A._visibilityGen || 0;
+    if (_idx === _photoShadowCheckIdx && _kids === _photoShadowCheckKids && _vis === _photoShadowCheckVis) {
+      _photoShadowReassertSkips++;
+      return;  // nothing streamed, nothing added to the scene, nothing re-filtered — a fresh traverse would find nothing new
+    }
+    _photoShadowCheckIdx = _idx; _photoShadowCheckKids = _kids; _photoShadowCheckVis = _vis;
+    _photoShadowReassertRuns++;
     var changed = false;
     A.scene.traverse(function(o) {
       if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !o.castShadow) {
@@ -2180,10 +2187,27 @@ async function setupEffects(A, renderer, scene, camera) {
   // building envelope), NOT reinvented, just triggered from here instead of the 'h' Shadow pill.
   // If the user's OWN Shadow mode is already on, this leaves it alone entirely — never double-set.
   var _photoShadowSelfEnabled = false;
+  // §PHOTO_SHADOW_SKIP (2026-07-25, borrowing nav-DLOD's change-detection idea — see
+  // prompts/PHOTOREAL_STILL_RENDER.md 2026-07-24/2026-07-25 SPEC ONLY sections): the reassert
+  // traversal below existed to catch geometry/visibility that changed AFTER the initial
+  // _enablePhotoShadows() pass — but it ran an unconditional full-scene traverse every single
+  // caller frame regardless of whether anything actually changed. Shared by BOTH Alt+S
+  // (step(), up to 16 calls) and Alt+C/MaxQ Cinema orbit (step(), up to CINEMA_N_FRAMES=576
+  // calls) since both go through this one function — gating it benefits both automatically.
+  // Tracks the same three signals the function's own purpose already depends on: streaming
+  // progress (A.streamIdx), new top-level scene content (A.scene.children.length, the same
+  // signal §PROGRESSIVE_FLUSH already logs as drawCalls), and discipline/storey/isolate
+  // visibility edits (A._visibilityGen, bumped by panels.js's 3 visibility-mutation entry
+  // points). If all three are unchanged since the last check, a fresh traverse would find
+  // zero new objects — skip it, don't do the redundant O(scene) work.
+  var _photoShadowCheckIdx = -1, _photoShadowCheckKids = -1, _photoShadowCheckVis = -1;
+  var _photoShadowReassertRuns = 0, _photoShadowReassertSkips = 0;
   function _enablePhotoShadows() {
     if (A._shadowOn) { _photoShadowSelfEnabled = false; return; }  // user's own Shadow mode active — don't touch
     if (!A.sun || !A.renderer || !A.scene) return;
     _photoShadowSelfEnabled = true;
+    _photoShadowCheckIdx = -1; _photoShadowCheckKids = -1; _photoShadowCheckVis = -1;
+    _photoShadowReassertRuns = 0; _photoShadowReassertSkips = 0;
     if (!A._shadowInited) {
       A.renderer.shadowMap.enabled = true;
       A.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -2235,7 +2259,8 @@ async function setupEffects(A, renderer, scene, camera) {
       var end = Math.min(_ui + 5000, _unshadowList.length);
       for (; _ui < end; _ui++) { _unshadowList[_ui].castShadow = false; _unshadowList[_ui].receiveShadow = false; }
       if (_ui < _unshadowList.length) setTimeout(_chunk, 0);
-      else console.log('§PHOTO_SHADOW disabled');
+      else console.log('§PHOTO_SHADOW disabled reassertRuns=' + _photoShadowReassertRuns +
+        ' reassertSkips=' + _photoShadowReassertSkips);
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
