@@ -758,7 +758,10 @@ function setupTour(A) {
                   radius:orbitR, tiltDeg:35, duration:orbitDur, fullCircle:true});
 
     // ═══ PART 2: APPROACH — fly to entrance (separate action) ═══
-    actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance'});
+    // §INTERIOR_PACING — user 2026-07-25: "zoom into building can hasten up 2X". speedMul only
+    // affects this one moveTo (the outside→entrance zoom); the finale moveTo actions (PART 5,
+    // bird's-eye/centre/final) stay at their existing pace, unaffected — see the moveTo handler.
+    actions.push({type:'moveTo', x:ep.x, y:ep.y, z:ep.z, name:'Entrance', speedMul: 2});
 
     // ═══ PART 3: INTERIOR PATH (spline flyPath) ═══
     // Collect waypoints per storey, nearest-neighbor sorted
@@ -853,7 +856,16 @@ function setupTour(A) {
       // no pause marks (legacy route) ⇒ one flyPath exactly as before.
       // §R6-PACE: flat 3.5 m/s makes a long hospital path a multi-minute crawl — beyond 300m of
       // interior path, pace up to 4.5 m/s (still walking-film speed, ~22% shorter).
-      const flySpd = pathLen > 300 ? 4.5 : 3.5;
+      // §INTERIOR_PACING (FLY_TOUR_CORRIDOR_GRAPH.md §INTERIOR_PACING_NOT_A_SPEED_FACTOR, user
+      // 2026-07-25: "within building X0.3 and even slower when too close to object or spaces").
+      // INTERIOR_PACE_FACTOR is the baseline interior cruise slowdown; EXTRA slowdown at tight
+      // turns/short legs (dead-end spurs, close corners — "flash by meaninglessly") is layered on
+      // top per-segment inside the flyPath action itself (§TIGHT_TURN_PACING below), derived from
+      // the real path's own point geometry — not a second flat multiplier. Exterior orbit (PART 1,
+      // untouched) and the entrance zoom-in (PART 2, sped up separately) never see this factor —
+      // it only multiplies flySpd, which only feeds flyPath durations.
+      const INTERIOR_PACE_FACTOR = 0.3;
+      const flySpd = (pathLen > 300 ? 4.5 : 3.5) * INTERIOR_PACE_FACTOR;
       const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
         arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
       const segments = [];
@@ -953,7 +965,10 @@ function setupTour(A) {
         act._startTarget = A.controls.target.clone();
         act._dist = A.camera.position.distanceTo(new THREE.Vector3(act.x, act.y + A.WALK_EYE_HEIGHT, act.z));
         const speed = act._dist > 5 ? Math.max(A.WALK_SPEED, act._dist / 3.0) : A.WALK_SPEED;
-        act._duration = Math.max(act._dist / (speed * spd), 0.3);
+        // §INTERIOR_PACING: speedMul is opt-in per action (only the entrance zoom-in sets it) —
+        // every other moveTo (finale bird's-eye/centre/final) is speedMul-less and unaffected.
+        act._duration = Math.max(act._dist / (speed * spd * (act.speedMul || 1)), 0.3);
+        if (act.speedMul) A.wlog(`§INTERIOR_PACING moveTo "${act.name}" speedMul=${act.speedMul} dur=${act._duration.toFixed(1)}s`);
         // Pre-compute final look direction: if next action has lookAtX/Z, face that way on arrival
         const nextAct = A.walkActions[A.walkActionIdx + 1];
         if (nextAct && nextAct.lookAtX !== undefined && nextAct.lookAtZ !== undefined) {
@@ -1166,6 +1181,48 @@ function setupTour(A) {
             console.warn('[TOUR] §FLYPATH_SKIP degenerate curve len=' + act._totalLen);
             A.walkActionIdx++; A.walkActionT = 0; return;
           }
+          // §TIGHT_TURN_PACING (FLY_TOUR_CORRIDOR_GRAPH.md §INTERIOR_PACING_NOT_A_SPEED_FACTOR,
+          // user 2026-07-25: "even slower when too close to object or spaces as they will simply
+          // flash by meaninglessly"). Real path geometry, not a flat multiplier: at each original
+          // waypoint, measure the turn angle between the incoming/outgoing legs AND how short
+          // those legs are (a dead-end spur — fly in, reverse, fly out — is both a sharp turn and
+          // a short leg; a corridor cruise is neither). Build a monotonic time→u remap so MORE of
+          // the segment's fixed duration (set by INTERIOR_PACE_FACTOR above) is spent near tight
+          // vertices and less on straight stretches — total duration is unchanged, only its
+          // distribution along the curve is. u stays real curve parameter fed to getPointAt, so
+          // camera position itself is untouched — only pacing (speed) varies.
+          const rawU = [0]; // cumulative straight-line length fraction at each pts3 vertex
+          let cumLen = 0;
+          const segLens = [];
+          for (let i = 1; i < pts3.length; i++) {
+            const L = pts3[i].distanceTo(pts3[i - 1]);
+            segLens.push(L); cumLen += L; rawU.push(cumLen);
+          }
+          for (let i = 0; i < rawU.length; i++) rawU[i] = cumLen > 0 ? rawU[i] / cumLen : 0;
+          const tight = new Array(pts3.length).fill(0); // 0=straight/open .. 1=sharp/tight
+          for (let i = 1; i < pts3.length - 1; i++) {
+            const l1 = segLens[i - 1], l2 = segLens[i];
+            let turnDeg = 0;
+            if (l1 > 0.01 && l2 > 0.01) {
+              const v1 = new THREE.Vector3().subVectors(pts3[i], pts3[i - 1]).normalize();
+              const v2 = new THREE.Vector3().subVectors(pts3[i + 1], pts3[i]).normalize();
+              turnDeg = Math.acos(THREE.MathUtils.clamp(v1.dot(v2), -1, 1)) * 180 / Math.PI;
+            }
+            const shortness = Math.max(0, 1 - Math.min(l1, l2) / 4); // legs <4m start reading "close"
+            tight[i] = Math.max(turnDeg / 180, shortness);
+          }
+          // Per-segment pace factor (>=1, higher = slower) from the tighter of its two endpoints;
+          // PACE_K bounds the extra slowdown a single sharp/short vertex can add (4x floor).
+          const PACE_K = 3;
+          const paceFactor = [];
+          for (let i = 1; i < pts3.length; i++) paceFactor.push(1 + PACE_K * Math.max(tight[i - 1], tight[i]));
+          let wTotal = 0;
+          const wCum = [0];
+          for (let i = 0; i < segLens.length; i++) { wTotal += segLens[i] * paceFactor[i]; wCum.push(wTotal); }
+          act._paceU = rawU;
+          act._paceT = wCum.map(w => wTotal > 0 ? w / wTotal : 0); // time-fraction at each rawU
+          const maxTight = Math.max(...tight);
+          console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} maxTightness=${maxTight.toFixed(2)} paceKFactorRange=[${Math.min(...paceFactor).toFixed(2)},${Math.max(...paceFactor).toFixed(2)}]`);
         } catch(e) {
           console.error('[TOUR] §FLYPATH_CRASH', e.message);
           A.walkActionIdx++; A.walkActionT = 0; return;
@@ -1173,7 +1230,18 @@ function setupTour(A) {
       }
       const duration = (act.duration || 30) / spd;
       A.walkActionT += dt;
-      const t = Math.min(A.walkActionT / duration, 1.0);
+      const tLinear = Math.min(A.walkActionT / duration, 1.0);
+      // §TIGHT_TURN_PACING: remap linear elapsed-time fraction to the curve's own u parameter via
+      // the weighted table built above — u advances slower through tight/short legs.
+      let t = tLinear;
+      if (act._paceT && act._paceT.length > 1) {
+        const pt = act._paceT, pu = act._paceU;
+        let lo = 0, hi = pt.length - 1;
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pt[mid] <= tLinear) lo = mid; else hi = mid; }
+        const span = pt[hi] - pt[lo];
+        const f = span > 1e-6 ? (tLinear - pt[lo]) / span : 0;
+        t = pu[lo] + (pu[hi] - pu[lo]) * f;
+      }
       const pos = act._curve.getPointAt(t);
       A.camera.position.copy(pos);
       // §SOFTEN (user 2026-07-16: "soften the sudden switch to new track"): look further ahead
