@@ -39,9 +39,14 @@ const Database = require(path.join(process.env.HOME, 'bim-compiler', 'node_modul
 // "before" = origin/main @ #959 merge (post-PR-959, pre-this door-exemption change). Regenerated
 // next to the live siblings so requires resolve; gitignored, never committed. Pinning keeps it stable.
 const BEFORE_SHA = '6209f54';
+const BEFORE_PATHS = {
+  room_graph: path.join(__dirname, 'common', '_room_graph_before.js'),
+  room_habitability: path.join(__dirname, 'common', '_room_habitability_before.js')
+};
 function before(name) {
-  const p = path.join(__dirname, 'common', '_' + name + '_before.js');
-  if (!fs.existsSync(p)) fs.writeFileSync(p, cp.execSync('git show ' + BEFORE_SHA + ':common/' + name + '.js', { cwd: __dirname, maxBuffer: 1 << 24 }));
+  const p = BEFORE_PATHS[name];
+  if (!p) throw new Error('Unknown module: ' + name);
+  if (!fs.existsSync(p)) fs.writeFileSync(p, cp.execFileSync('git', ['show', BEFORE_SHA + ':common/' + name + '.js'], { cwd: __dirname, maxBuffer: 1 << 24 }));
   return require(p);
 }
 const RG = require('./common/room_graph.js');           // NEW (under test)
