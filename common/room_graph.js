@@ -708,6 +708,59 @@
     });
     if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
+    // ── §ROOM-SPINE-BRIDGE (OCCUPANT_PATHFINDER.md §ROOM-SPINE-BRIDGE, 2026-07-25) ──
+    // A room with ZERO edges is unroutable: §CONNECTED-STOPS drops it, Find cannot path to it, and
+    // on Hospital that stranded 42 rooms (room-pair pathability 56.2%) INCLUDING the building's
+    // largest space (315.7 m² atrium, deg=0). Measured cause: E1 is door-based, and a low-enclosure
+    // space has no door on its boundary — the very property that earns it SUSPECT_OPEN. Two fixes
+    // were falsified on the real fixture before this one: widening the door slack (cannot reach the
+    // 22 rooms whose nearest door is 8-10m, and needs a 5x constant move for the atrium), and
+    // room-to-room rect adjacency (0 of 42 stranded rooms have a neighbour ROOM rect within RES —
+    // compiled rooms do not tile the floor). What IS in reach is CIRCULATION: all 42 have a spine/
+    // circ node nearby, the atrium's is 1.31m away. So an open space connects through an OPENING
+    // ONTO A CORRIDOR, not through a door to another room — and that is an edge this engine already
+    // knows how to make: identical shape to the §ISLAND_BRIDGE circ-per-chain edge above, which
+    // already bridges up to 51.97m on this same building. No new constant, no threshold, no cap:
+    // nearest real spine point, real measured distance, logged for audit.
+    var roomBridges = 0;
+    var _degSoFar = {};
+    edges.forEach(function (e) {
+      _degSoFar[e.a] = (_degSoFar[e.a] || 0) + 1;
+      _degSoFar[e.b] = (_degSoFar[e.b] || 0) + 1;
+    });
+    order.forEach(function (lg) {
+      var g = nodes[lg];
+      if (g.kind !== 'room' || _degSoFar[lg]) return;
+      var pts = spineByStorey[g.storey];
+      if (!pts || !pts.length) return;
+      var best = null, bestD = Infinity;
+      pts.forEach(function (p) {
+        // rect distance, not centroid: a long room's centre can be far from a corridor its EDGE
+        // touches (the atrium reads 1.31m by rect, much further by centre).
+        var d;
+        if (g.rects && g.rects.length) {
+          d = Infinity;
+          for (var ri = 0; ri < g.rects.length; ri++) {
+            var rc = g.rects[ri];
+            var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
+            var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
+            var dd = Math.hypot(ddx, ddy);
+            if (dd < d) d = dd;
+          }
+        } else {
+          d = Math.hypot(p.cx - g.cx, p.cy - g.cy);
+        }
+        if (d < bestD) { bestD = d; best = p; }
+      });
+      if (!best) return;
+      edges.push({ a: lg, b: best.guid, doorGuid: null, doorName: 'Opening onto corridor',
+                   storey: g.storey, kind: 'E6', w: bestD, wpA: best.guid });
+      roomBridges++;
+      log('§ROOM_SPINE_BRIDGE room="' + (g.name || lg) + '" storey=' + g.storey +
+          ' spine=' + best.guid + ' dist=' + bestD.toFixed(2) + 'm');
+    });
+    if (roomBridges) log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges);
+
     // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
     // target); connect the nearest room-or-circ node on that storey (real distance, not invented).
     var exits = 0, e4 = 0;
