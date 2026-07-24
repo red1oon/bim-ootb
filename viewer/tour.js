@@ -948,6 +948,11 @@ function setupTour(A) {
   // (walls close on every side) without a second signal compounding on top of it.
   const PACE_FACTOR_MIN = 0.35;     // fastest allowed (far/open) — ~3x hasten
   const PACE_FACTOR_MAX = 4.0;      // slowest allowed (right up against a surface/target)
+  const LOOKAHEAD_M = 5;             // §TARGET_BOUNDED_LOOKAHEAD — absolute gaze-ahead distance for
+                                      // flyPath, same scale as the clearance/LOS reference distances
+                                      // above; independent of total path length (see the flyPath init
+                                      // block below for why the old fixed-fraction version broke on
+                                      // long multi-room routes).
   function _invPace(distance, refDistance, minDistance) {
     const d = Math.max(distance, minDistance);
     const factor = refDistance / d; // the "simple inverse formula": far => small factor (fast), close => large factor (slow)
@@ -1314,6 +1319,18 @@ function setupTour(A) {
             act.duration = Math.max((act.duration || 30) * act._paceRemap.meanFactor, 3);
             console.log(`[TOUR] §TIGHT_TURN_PACING verts=${pts3.length} losRange=[${act._paceRemap.minFactor.toFixed(2)},${act._paceRemap.maxFactor.toFixed(2)}] mean=${act._paceRemap.meanFactor.toFixed(2)} dur=${act.duration.toFixed(1)}s`);
           }
+          // §TARGET_BOUNDED_LOOKAHEAD (2026-07-26, FLY_TOUR_DLOD_SCALE.md §23/§24) — the look-at
+          // lookahead below used to be a fixed FRACTION (0.05) of this action's own total arc
+          // length. MaxQ/Clash both bound their gaze target to something of room/clash SCALE (a
+          // few meters); MaxQ's own Beat-3 walk-out lookahead (effects.js §CINEMA_TIMING_672, also
+          // a 0.05-of-path-style fraction) only ever stays a few meters ahead because that beat's
+          // own path is short (settle point to nearest door). flyPath's action can span an entire
+          // storey's route (100+m, many rooms) — the SAME fractional mechanism there aims the gaze
+          // many meters past the current room/corridor, into far geometry through doorways/down
+          // corridors, well before the camera itself arrives. Cap the lookahead to an ABSOLUTE
+          // arc-length distance instead, independent of how long the overall route is.
+          act._lookAheadFrac = act._totalLen > 0 ? Math.min(0.05, LOOKAHEAD_M / act._totalLen) : 0.05;
+          console.log(`[TOUR] §TARGET_BOUNDED_LOOKAHEAD totalLen=${act._totalLen.toFixed(1)} lookAheadM=${LOOKAHEAD_M} frac=${act._lookAheadFrac.toFixed(4)} (was fixed 0.05)`);
         } catch(e) {
           console.error('[TOUR] §FLYPATH_CRASH', e.message);
           A.walkActionIdx++; A.walkActionT = 0; return;
@@ -1331,7 +1348,7 @@ function setupTour(A) {
       // §SOFTEN (user 2026-07-16: "soften the sudden switch to new track"): look further ahead
       // (0.05 vs 0.03) and pan the gaze more gently (lerp 0.08 vs 0.15) — spur-room reversals
       // (walk in, walk out) sweep instead of whip.
-      const lookT = Math.min(t + 0.05, 0.999);
+      const lookT = Math.min(t + (act._lookAheadFrac || 0.05), 0.999);
       const lookPt = act._curve.getPointAt(lookT);
       if (!act._prevLook) act._prevLook = lookPt.clone();
       act._prevLook.lerp(lookPt, 0.08);
