@@ -946,16 +946,19 @@ function setupTour(A) {
   // term (that stacking produced the other live bug — `combinedFactorRange=[0.35,16.00]`, a
   // runaway 16x local slowdown): clearance alone already reads as "tight" for a dead-end spur
   // (walls close on every side) without a second signal compounding on top of it.
-  // §PACE_RANGE_TAMPER (2026-07-26, user live-review): interior slowed to "near dead stop" near a
-  // wall/object and aerial orbit ran "way too fast" — both symptoms of the SAME clamp being too
-  // wide. First pass narrowed 0.35-4.0 -> 0.5-2.0; live-tested again and a SMALL room (walls close
-  // on every side, so the near-wall LOS reading is the SUSTAINED state for the whole room, not a
-  // brief dip) still read as "dreadfully slow" throughout — the 2x floor, stacked on top of the
-  // separate flat INTERIOR_PACE_FACTOR=0.3 interior baseline, compounds to a real crawl. Narrowed
-  // again to 0.6-1.6, a gentler swing around neutral (1.0). The inverse formula itself
-  // (_invPace below) and its direction (far=fast/near=slow) are untouched — only the clamp width.
-  const PACE_FACTOR_MIN = 0.6;      // fastest allowed (far/open) — 1.67x hasten
-  const PACE_FACTOR_MAX = 1.6;      // slowest allowed (right up against a surface/target) — 1.6x slow
+  // §PACE_SWING (2026-07-26, user: "why can't there be a simple inverse dynamic but a single knob
+  // variable... every edit, it is just a single number change") — the clamp had been two separately
+  // hand-tuned numbers (0.35/4.0, then 0.5/2.0, then 0.6/1.6 across three live-review rounds), which
+  // is why every tamper needed touching both. Collapsed to ONE knob: PACE_SWING is how far the pace
+  // is allowed to swing from neutral (1.0) in EITHER direction, symmetric in ratio terms (2x too
+  // fast is the mirror of 2x too slow) — MIN=1/PACE_SWING, MAX=PACE_SWING, derived, never edited
+  // directly. Current value (1.6) reproduces the just-tested 0.6-1.6 near-exactly (1/1.6=0.625).
+  // Future re-tuning ("still too slow/fast") is ONE number: raise PACE_SWING for more range, lower
+  // it for gentler. The inverse formula itself (_invPace below) and its direction (far=fast,
+  // near=slow) are untouched — this only ever adjusted how far it's allowed to swing.
+  const PACE_SWING = 1.6;
+  const PACE_FACTOR_MIN = 1 / PACE_SWING;  // fastest allowed (far/open)
+  const PACE_FACTOR_MAX = PACE_SWING;      // slowest allowed (right up against a surface/target)
   const LOOKAHEAD_M = 5;             // §TARGET_BOUNDED_LOOKAHEAD — absolute gaze-ahead distance for
                                       // flyPath, same scale as the clearance/LOS reference distances
                                       // above; independent of total path length (see the flyPath init
