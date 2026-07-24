@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v12 (occupant-graph corridors/stairs — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v13 (highlight-first: main hall → stairs → rest — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -514,15 +514,71 @@ function setupTour(A) {
       isolatedDropped + ' typeDeduped=' + typeDeduped);
     if (!stops.length) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=no-stops → legacy tour'); return null; }
 
+    // ═══ §HL-FIRST (FLY_TOUR_CORRIDOR_GRAPH.md §HIGHLIGHTS_FIRST_ROUTING, RESOLVED 2026-07-25 —
+    // user: "explore main hall/space first.. climb stairs, main highlights to capture initial user
+    // impression") — stop ORDER only. Selection, budgets (§R6-BUDGET), type-dedupe, corridor spine
+    // and every legality gate below are UNTOUCHED: the same stops fly, in an impression-first order.
+    // The main hall is the largest MEASURED space in the whole building (corridor-class nodes
+    // included — a real "main hall" often is one, §R4); the second highlight is the largest stop on
+    // a HIGHER storey, which is what pulls the stair climb into the opening block instead of
+    // leaving it to the storey sweep. EXTRACT ONLY: rect area from the graph, no invented ranking.
+    const HL_EXTRA = 1;  // highlights beyond mainHall+ascent — the opening stays a beat, not the tour
+    const storeyZOf = st => stZSum[st] / stN[st];
+    let mainHallGuid = null;
+    // §HL-ORIGIN: buildings with no graph exit node (measured: HHS federated, Clinic) start the
+    // walk at stops[0], which UNDER THE OLD storey-sequential order was implicitly the lowest
+    // storey's first pick. Reordering stops would have moved that origin to the main hall — on HHS
+    // the tour then began on Level 3 and walked DOWN (first climb slipped 0.224 → 0.432 of the
+    // route). Capture the pre-reorder origin so the walk still STARTS low and CLIMBS to the
+    // highlight, which is the whole point of the user's "climb stairs" ask.
+    const seqOriginGuid = stops[0].guid;
+    {
+      const byArea = stops.slice().sort((a, c) => c.area - a.area);
+      const mainHall = byArea[0];
+      const taken = {}; taken[mainHall.guid] = true;
+      const picked = [mainHall];
+      const mhZ = storeyZOf(mainHall.node.storey);
+      let ascent = null;
+      for (const s of byArea) {
+        if (taken[s.guid]) continue;
+        // "higher storey" = a DIFFERENT storey whose own measured mean z is above the hall's.
+        // No metre threshold: storey identity comes from the data, and the comparison is between
+        // two measured means — nothing to tune, nothing building-specific.
+        if (s.node.storey !== mainHall.node.storey && storeyZOf(s.node.storey) > mhZ) { ascent = s; break; }
+      }
+      if (ascent) { picked.push(ascent); taken[ascent.guid] = true; }
+      for (const s of byArea) {
+        if (picked.length >= (ascent ? 2 : 1) + HL_EXTRA) break;
+        if (taken[s.guid]) continue;
+        picked.push(s); taken[s.guid] = true;
+      }
+      const rest = stops.filter(s => !taken[s.guid]);  // today's storey-sequential order, minus the highlights
+      stops.length = 0;
+      for (const s of picked) stops.push(s);
+      for (const s of rest) stops.push(s);
+      mainHallGuid = mainHall.guid;
+      console.log('[TOUR] §FLY_HL_FIRST mainHall="' + (mainHall.node.name || mainHall.guid) + '" area=' +
+        mainHall.area.toFixed(1) + ' storey=' + mainHall.node.storey +
+        ' ascent=' + (ascent ? '"' + (ascent.node.name || ascent.guid) + '"/' + ascent.node.storey : '-') +
+        ' extras=' + (picked.length - (ascent ? 2 : 1)) + ' stops=' + stops.length);
+    }
+
     // §S3 — the largest room actually PICKED per storey gets the pause + look-around beat
     // (§R6: dedupe/budget may drop the storey's largest room; corridors keep moving, no beat).
-    const pauseGuids = {};
+    // §HL-FIRST item 4: the main hall ALWAYS gets a beat, and a fuller one — kind 'hall' → a 360°
+    // turn-around ("turn around in them"), reusing §S3's own beat machinery, not a new grammar.
+    // It counts as its storey's beat, so no storey is double-beaten.
+    const pauseKind = {};
     const pausedStorey = {};
+    if (mainHallGuid && g.nodesByGuid[mainHallGuid]) {
+      pauseKind[mainHallGuid] = 'hall';
+      pausedStorey[g.nodesByGuid[mainHallGuid].storey] = true;
+    }
     for (const s of stops) {
       const st = s.node.storey;
       if (pausedStorey[st]) continue;
       if (byStorey[st].corridors.indexOf(s) >= 0) continue;
-      pauseGuids[s.guid] = true;
+      pauseKind[s.guid] = 'room';
       pausedStorey[st] = true;
     }
 
@@ -532,7 +588,7 @@ function setupTour(A) {
     // invents nothing. EXTRACT ONLY.
     const pathGuids = [];
     let skipped = 0, visitedStops = 0;
-    let curGuid = entrance ? entrance.guid : stops[0].guid;
+    let curGuid = entrance ? entrance.guid : seqOriginGuid;  // §HL-ORIGIN — start low, climb to the highlight
     pathGuids.push(curGuid);
     for (const s of stops) {
       if (s.guid === curGuid) { visitedStops++; continue; }
@@ -601,7 +657,7 @@ function setupTour(A) {
       const storeyArrival = n.kind === 'stairwp' && prevPt && (py - prevPt.y) > 1;
       pts.push({ x: tp.x, y: py, z: tp.z,
                  name: (n.kind === 'room' || n.kind === 'exit' || n.kind === 'stairwp') ? n.name : '',
-                 pause: pauseGuids[pg] ? 'room' : (storeyArrival ? 'storey' : null) });
+                 pause: pauseKind[pg] || (storeyArrival ? 'storey' : null) });
       ifcTrail.push({ storey: n.storey, cx: n.cx, cy: n.cy, vertical: n.kind === 'stairwp' });
     }
     if (pts.length < 3) { console.log('[TOUR] §FLY_ROUTE_REJECT reason=thin-path pts=' + pts.length + ' → legacy tour'); return null; }
@@ -866,7 +922,11 @@ function setupTour(A) {
       // it only multiplies flySpd, which only feeds flyPath durations.
       const INTERIOR_PACE_FACTOR = 0.3;
       const flySpd = (pathLen > 300 ? 4.5 : 3.5) * INTERIOR_PACE_FACTOR;
-      const splits = pauseIdx.filter((v, i, arr) => v.i > 1 && v.i < flyPts.length - 2 &&
+      // §HL-FIRST: `> 0` (was `> 1`) — when the main hall IS the route's first interior stop
+      // (measured: Clinic, a building with no graph exit node, mainHall lands at flyPts[1]), the
+      // old bound silently dropped its 360° turn-around beat. flyPts[0] is always the entrance
+      // point, so index 1 is a real 2-point approach segment, not a degenerate one.
+      const splits = pauseIdx.filter((v, i, arr) => v.i > 0 && v.i < flyPts.length - 2 &&
         arr.findIndex(w => w.i === v.i) === i).sort((a, b) => a.i - b.i);
       const segments = [];
       let segFrom = 0;
@@ -881,9 +941,12 @@ function setupTour(A) {
         actions.push({type:'flyPath', points: pts, names: flyNames.slice(segments[sI].from, segments[sI].to + 1),
                       duration: Math.max(segLen / flySpd, segments.length === 1 ? 8 : 3)});
         if (sI < segments.length - 1 && segments[sI].beat) {
-          // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces.
-          actions.push({type:'pause', seconds: 0.4});
-          actions.push({type:'lookAround', degrees: segments[sI].beat === 'storey' ? 180 : 270});
+          // room beat = full survey; storey arrival = shorter heads-up sweep of the open spaces;
+          // §HL-FIRST 'hall' = a full 360° turn-around in the building's main space (user: "turn
+          // around in them") — same lookAround action, fuller sweep, no new camera grammar.
+          actions.push({type:'pause', seconds: segments[sI].beat === 'hall' ? 0.8 : 0.4});
+          actions.push({type:'lookAround',
+            degrees: segments[sI].beat === 'storey' ? 180 : segments[sI].beat === 'hall' ? 360 : 270});
         }
       }
       A.wlog(`FlyPath: ${flyPts.length} pts, ${pathLen.toFixed(0)}m, ${segments.length} seg(s)`);
