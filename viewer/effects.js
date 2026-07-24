@@ -2398,34 +2398,52 @@ async function setupEffects(A, renderer, scene, camera) {
   // directly), cached for every subsequent Alt+S. Reuses the EXISTING _reassertPhotoEnvMap() loop
   // (already runs every accumulation frame, decoupled from when A._envMap last changed) to push
   // this onto materials — no new per-frame code needed, just swap the source texture it reads.
-  var _hdriEnvMap = null, _hdriLoading = false, _hdriPmrem = null;
+  var _hdriEnvMap = null, _hdriLoading = false, _hdriPmrem = null, _hdriReadyPromise = null;
   var _photoEnvMapSaved = null;
+  // §CINEMA_HDRI_RACE (2026-07-24, user: "the scene capture also has some flicker or snapping at
+  // the wrong frame, before the Alt-S fully applied"): _applyPhotoStaging() below kicks this load
+  // off fire-and-forget — A.startCinemaOrbit's live Alt+C recording used to call it synchronously
+  // then start capturing frame 0 immediately, so the HDRI envMap (real photographed reflections)
+  // was still mid-fetch/mid-PMREM-generate on the early frames and popped in whenever the promise
+  // happened to resolve — a real snap at a non-deterministic frame, not eyeballing. MaxQ's exporter
+  // already avoids this with a "warm-up fold, discarded" (cinema_maxq.js §MAXQ warm-up) — this
+  // returns a promise so the live path can await the same readiness before recorder.start() rather
+  // than duplicating a fold mechanism it doesn't otherwise need. Always resolves (never rejects) —
+  // load failure is a legitimate outcome (fall back to the procedural sky envMap), not a capture-
+  // blocking error.
   function _ensureHdriEnvMap() {
-    if (_hdriEnvMap || _hdriLoading) return;
+    if (_hdriEnvMap) return Promise.resolve(_hdriEnvMap);
+    if (_hdriReadyPromise) return _hdriReadyPromise;
     _hdriLoading = true;
-    Promise.all([import('./lib/HDRLoader.js')]).then(function(mods) {
+    _hdriReadyPromise = Promise.all([import('./lib/HDRLoader.js')]).then(function(mods) {
       var _hdrMod = mods[0];
       if (!_hdrMod.HDRLoader) throw new Error('HDRLoader not exported');
       if (!_hdriPmrem) { _hdriPmrem = new THREE.PMREMGenerator(A.renderer); _hdriPmrem.compileEquirectangularShader(); }
-      new _hdrMod.HDRLoader().load('textures/hdri/belfast_sunset_puresky_1k.hdr', function(tex) {
-        tex.mapping = THREE.EquirectangularReflectionMapping;
-        var envRT = _hdriPmrem.fromEquirectangular(tex);
-        _hdriEnvMap = envRT.texture;
-        tex.dispose();
-        _hdriLoading = false;
-        console.log('§LAYER2_HDRI_READY belfast_sunset_puresky_1k — real photographed envMap ready');
-        // If still mid-photoshoot when the load finally resolves, apply immediately rather than
-        // waiting for the next Alt+S — same "don't miss a slow-arriving asset" discipline as the
-        // streaming-race fixes elsewhere in this file.
-        if (A._stillRefineActive || _autoStageOn) A._envMap = _hdriEnvMap;
-      }, undefined, function(err) {
-        _hdriLoading = false;
-        console.warn('§LAYER2_HDRI_FAIL ' + (err && err.message ? err.message : err));
+      return new Promise(function(resolve) {
+        new _hdrMod.HDRLoader().load('textures/hdri/belfast_sunset_puresky_1k.hdr', function(tex) {
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          var envRT = _hdriPmrem.fromEquirectangular(tex);
+          _hdriEnvMap = envRT.texture;
+          tex.dispose();
+          _hdriLoading = false;
+          console.log('§LAYER2_HDRI_READY belfast_sunset_puresky_1k — real photographed envMap ready');
+          // If still mid-photoshoot when the load finally resolves, apply immediately rather than
+          // waiting for the next Alt+S — same "don't miss a slow-arriving asset" discipline as the
+          // streaming-race fixes elsewhere in this file.
+          if (A._stillRefineActive || _autoStageOn) A._envMap = _hdriEnvMap;
+          resolve(_hdriEnvMap);
+        }, undefined, function(err) {
+          _hdriLoading = false;
+          console.warn('§LAYER2_HDRI_FAIL ' + (err && err.message ? err.message : err));
+          resolve(null);
+        });
       });
     }).catch(function(e) {
       _hdriLoading = false;
       console.warn('§LAYER2_HDRI_FAIL ' + e.message);
+      return null;
     });
+    return _hdriReadyPromise;
   }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
@@ -3100,7 +3118,11 @@ async function setupEffects(A, renderer, scene, camera) {
   // Laptop GPU (headless Chromium, ANGLE, Duplex @1280x800) — ~2.3x headroom over the 41.7ms/24fps
   // budget. Heavier buildings/viewports will differ: §CINEMA_PERF telemetry below is the ongoing
   // witness. N_FRAMES scaled 360→576 so total duration stays ~24s (576/24).
-  var CINEMA_N_FRAMES = 576, CINEMA_FPS = 24;      // 24s (576/24)
+  var CINEMA_N_FRAMES = 576, CINEMA_FPS = 24;      // 24s (576/24) — total HELD fixed (2026-07-24,
+                                                    // user: "External orbit giving way was made
+                                                    // clear from first request"). Dive+out below grew
+                                                    // 4→6s each; the exterior orbit absorbs that by
+                                                    // shrinking (~12s → ~8s), not the total duration.
   var CINEMA_SSAA_LEVEL = 2;  // 2^2 = 4 jittered sub-pixel scene renders per frame (SSAARenderPass caps at 5)
   var _cinemaSsaaPass = null, _cinemaSsaaImportFailed = false;  // lazy singleton, reused across recordings
   var CINEMA_PULLBACK_START = 0.80, CINEMA_PULLBACK_SCALE = 1.4;
@@ -3136,12 +3158,14 @@ async function setupEffects(A, renderer, scene, camera) {
   // The start pose still shapes the film, but EMERGENTLY through geometry rather than through a
   // parameter table: it decides where you settle and which way you are facing at t=4s, and THAT
   // decides which exit you take, which side you emerge on, and which facade the exterior act sees.
-  var CINEMA_DIVE_SEC = 4;      // FIXED — never clamped, never distance-proportional. Start far →
+  var CINEMA_DIVE_SEC = 6;      // FIXED — never clamped, never distance-proportional. Start far →
                                 // hard zoom in; start near → the same gesture reads slow and
                                 // graceful. That is the ONE authoring lever left (§CINEMA_SIMPLE
                                 // "the dive is TIME-BOXED"). Do not "fix" the rush on big buildings.
+                                // §CINEMA_TIMING_672 (2026-07-24, user: "6/6 to give more ease and
+                                // ensure smooth transitions... no sharp switch of frame pov"): 4→6.
   var CINEMA_SPIN_SEC = 2;      // the spin IS the search for the way out, not decoration
-  var CINEMA_OUT_SEC  = 4;      // travel out through the chosen exit
+  var CINEMA_OUT_SEC  = 6;      // travel out through the chosen exit — §CINEMA_TIMING_672: 4→6, same reason as DIVE above
   var CINEMA_RISE_SEC = 2;      // rise onto the orbit band / the 45° look-down
   // §CINEMA_BEAT_OVERLAP: the turn-to-face-the-building starts blending in during the LAST
   // CINEMA_TURN_OVERLAP fraction of the walk-out (Beat 3), reaching CINEMA_TURN_OVERLAP_MAX by the
@@ -3169,7 +3193,13 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_CLIMB_MIN_SEC = 3;
   // §CINEMA_END_DECEL (overall "no abruptness" rule): the whole camera motion — not just tilt —
   // eases to a stop in the final stretch instead of cutting while still actively orbiting.
-  var CINEMA_END_DECEL_SEC = 2;
+  // §CINEMA_TIMING_672 (2026-07-24, user: "ensure last 3 sec is a roll to stop"): 2→3. The orbit
+  // itself shrank to ~8s (dive/out grew, orbit gives way — see CINEMA_N_FRAMES above), so the cap
+  // this divides against (below, at the use site) was raised too — see that comment.
+  var CINEMA_END_DECEL_SEC = 3;
+  // §CINEMA_START_EASE: mirrors END_DECEL — orbit ramps INTO rotation rather than snapping to a
+  // constant rate the instant Beat 4's rise hands off. See use site for the "why" (2026-07-24).
+  var CINEMA_START_EASE_SEC = 2;
   var CINEMA_FAN_RAYS = 32;     // BVH horizontal fan: "am I facing a wall / where is open"
   var CINEMA_FAN_FAR = 60;      // metres; no hit inside this = open in that bearing
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
@@ -3760,13 +3790,31 @@ async function setupEffects(A, renderer, scene, camera) {
     // cut. f(t)=t+t^2-t^3 is the unique cubic with f(0)=0, f(1)=1, f'(0)=1, f'(1)=0 — it matches the
     // constant rate=1 coming in from the linear portion and eases exactly to rate=0 by the end, so
     // there is no kink at the window boundary, only at the (now motionless) very end.
-    var endDecelU = Math.min(0.25, CINEMA_END_DECEL_SEC / loopSec);
+    // §CINEMA_TIMING_672 (2026-07-24, user: "ensure last 3 sec is a roll to stop"): 2→3s. Cap raised
+    // 0.25→0.4 so the full 3s survives now that the orbit itself is shorter (~8s, dive/out grew and
+    // the exterior orbit gives way to them — see CINEMA_N_FRAMES above) — at loopSec=8, 3/8=0.375
+    // would otherwise get truncated to 2s by the old 0.25 ceiling.
+    var endDecelU = Math.min(0.4, CINEMA_END_DECEL_SEC / loopSec);
+    // §CINEMA_START_EASE (2026-07-24, user: "while orbiting no sharp turn, all slow down ease out
+    // then orbit... calmly"): mirrors END_DECEL above — without this, Beat 4's straight-line glide
+    // (rate=0) handed off directly into Beat 5's constant-rate rotation (rate=1) with an actual
+    // instantaneous jump in angular velocity, a real "sharp turn" at the orbit's own start, not just
+    // a figure of speech. h(t)=1-f(1-t) is f's mirror image: h(0)=0, h(1)=1, h'(0)=0, h'(1)=1 — glues
+    // to the following rate=1 linear run with no kink, same no-kink guarantee the end-decel already had.
+    var startEaseU = Math.min(0.25, CINEMA_START_EASE_SEC / loopSec);
+    function _cinemaEaseCubic(t) { return t + t * t - t * t * t; }
     function _cinemaAzU(u) {
+      if (startEaseU > 0 && u < startEaseU) {
+        var s = u / startEaseU;
+        return startEaseU * (1 - _cinemaEaseCubic(1 - s));
+      }
       var u0 = 1 - endDecelU;
       if (endDecelU <= 0 || u <= u0) return u;
       var t = (u - u0) / endDecelU;
-      return u0 + endDecelU * (t + t * t - t * t * t);
+      return u0 + endDecelU * _cinemaEaseCubic(t);
     }
+    console.log('§CINEMA_START_EASE startEaseU=' + startEaseU.toFixed(3) + ' (~' + (startEaseU * loopSec).toFixed(1) +
+      's) endDecelU=' + endDecelU.toFixed(3) + ' (~' + (endDecelU * loopSec).toFixed(1) + 's) loopSec=' + loopSec.toFixed(1));
 
     // ══ The standard ending: one plain orbit off the side we emerged on, with the classic wide
     // pull-back flourish. Same close for EVERY film (§CINEMA_SIMPLE decision 2 — the reciprocal
@@ -3970,6 +4018,19 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillRefineStartMs = performance.now();
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
+    // §CINEMA_HDRI_RACE (2026-07-24): wait for the HDRI envMap _applyPhotoStaging() just kicked off
+    // (or already-cached, in which case this resolves on the next microtask) so frame 0 doesn't
+    // record the OLD procedural-sky envMap and then snap to the real HDRI mid-recording once the
+    // fetch/PMREM-generate finishes — the exact "flicker/snapping... before Alt-S fully applied"
+    // report. 5s cap (vs MaxQ's 30s) — this is the interactive live-capture path, a slow/broken
+    // network should degrade to the procedural envMap rather than stall the recording indefinitely.
+    var _hdriWaitMs = 0, _hdriWaitT0 = performance.now();
+    await Promise.race([
+      _ensureHdriEnvMap(),
+      new Promise(function(res) { setTimeout(res, 5000); })
+    ]);
+    _hdriWaitMs = performance.now() - _hdriWaitT0;
+    console.log('§CINEMA_HDRI_RACE waitedMs=' + _hdriWaitMs.toFixed(0) + ' ready=' + !!_hdriEnvMap);
     console.log('§CINEMA_ORBIT start envelope=' + envelope.toFixed(1) + ' arcOnly=' + plan.arcOnly +
       ' fillDistance=' + plan.fillDistance.toFixed(1) + ' pushInRadius=' + plan.pushInRadius.toFixed(1) +
       ' radiusBand=[' + plan.radiusMin.toFixed(1) + ',' + plan.radiusMax.toFixed(1) + '] triplanarMaterials=' + _triCount);
