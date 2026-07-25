@@ -243,8 +243,20 @@ async function setupScene(A) {
       A._envMapThrottle = true;
       setTimeout(function() {
         try {
-          var envRT = _pmrem.fromScene(_sky);
-          A._envMap = envRT.texture;
+          // §ALT_FRAME_LUMINANCE (2026-07-25): while a photoshoot/MaxQ bake has swapped A._envMap
+          // to the real photographed HDRI (effects.js _applyPhotoStaging, A._envMapHdriActive),
+          // this throttled callback must NOT stomp it back to the procedural sky-only PMREM — it
+          // fires up to 2000ms after the updateSky() call that scheduled it, which lands mid-frame
+          // on any capture loop (Alt+S/Alt+C) whose own cadence is close to that same 2000ms window,
+          // silently swapping every material's reflection source frame-to-frame and reading as an
+          // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
+          // is unaffected — this flag is only ever true during a staged photoshoot.
+          if (!A._envMapHdriActive) {
+            var envRT = _pmrem.fromScene(_sky);
+            A._envMap = envRT.texture;
+          } else {
+            console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
+          }
         } catch(e) {}
         A._envMapThrottle = false;
       }, 2000);

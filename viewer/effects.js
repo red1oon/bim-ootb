@@ -2542,6 +2542,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // real HDRI if already loaded, or kick off the (one-time, cached) load if not yet ready —
     // _ensureHdriEnvMap applies it itself once resolved, per the mid-photoshoot check inside it.
     _photoEnvMapSaved = A._envMap;
+    // §ALT_FRAME_LUMINANCE: HDRI is now the authoritative envMap for the whole staged session —
+    // tell scene.js's updateSky() (called on the next line, and again every subsequent Alt+S/
+    // Alt+C frame while staging stays on) not to silently overwrite it with a procedural PMREM
+    // regen from its own 2s-throttled setTimeout — see that guard for the full race explanation.
+    A._envMapHdriActive = true;
     if (_hdriEnvMap) A._envMap = _hdriEnvMap; else _ensureHdriEnvMap();
     _photoSkyWasVisible = !!(A._sky && A._sky.visible);
     if (A.sun) {
@@ -2630,6 +2635,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
+    A._envMapHdriActive = false;  // §ALT_FRAME_LUMINANCE: scene.js's throttled regen is safe again
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
