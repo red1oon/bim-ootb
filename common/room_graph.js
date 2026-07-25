@@ -810,18 +810,44 @@
       }).sort(function (a, b) { return a.d - b.d; });
       for (var k = 0; k < ranked.length; k++) {
         var sp = ranked[k].p;
-        if (_chordIllegalCount(_legalCtx, g.storey, g.cx, g.cy, sp.cx, sp.cy) > 0) continue;
-        var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy);
+        // §BRIDGE-ROUTED-LEGAL (2026-07-25, review correction to §BRIDGE-WALL-LEGAL above):
+        // _chordIllegalCount samples a STRAIGHT segment — that is a visibility test, not a
+        // connectivity test. A person leaving a 9.7x34.1m atrium walks through the opening and
+        // TURNS; nothing says their route to the corridor is a straight line. So "the straight
+        // chord is not walkable" never established "no walkable route exists", and rejecting on it
+        // is as unmeasured a claim as the unvalidated bridges §BRIDGE-WALL-LEGAL was written to
+        // kill — just erring the other way. _astarHop is the honest predicate and it already
+        // exists in this file, over the SAME walkable evidence (_pointWalkable, raster-first) that
+        // the straight test reads: [] = the straight segment is itself on-floor (fast path, most
+        // bridges), [pts] = an on-floor ROUTE exists (its turn points), null = A* searched and
+        // found none. It carries its own §ON-FLOOR-GUARANTEE re-verification, so an accepted
+        // routed bridge is verified end to end, anchors included.
+        // The edge WEIGHT is the routed length, never the straight distance — an edge that claims
+        // a shorter walk than the only real way there is the same class of lie as an invented
+        // passage. Nothing else changes: candidates are still tried nearest-first, the first
+        // ACCEPTED one wins, and a room with no route stays deg-0 on purpose (logged as REJECT).
+        // _buildPolyline re-derives the same A* interior points at render time, so the drawn route
+        // follows the floor without this block having to store geometry on the edge.
+        var hop = _astarHop(_legalCtx, { storey: g.storey, cx: g.cx, cy: g.cy },
+                                       { storey: g.storey, cx: sp.cx, cy: sp.cy });
+        if (hop === null) continue; // A* searched the walkable evidence and found no on-floor route
+        var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy), routedVia = 'straight';
+        if (hop.length) {
+          var px = g.cx, py = g.cy, L = 0;
+          for (var hp = 0; hp < hop.length; hp++) { L += Math.hypot(hop[hp].x - px, hop[hp].y - py); px = hop[hp].x; py = hop[hp].y; }
+          w = L + Math.hypot(sp.cx - px, sp.cy - py);
+          routedVia = 'routed(' + hop.length + ' turns)';
+        }
         edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Opening onto corridor',
                      storey: g.storey, kind: 'E6', w: w, wpA: sp.guid });
         roomBridges++;
         log('§ROOM_SPINE_BRIDGE room="' + (g.name || lg) + '" storey=' + g.storey +
-            ' spine=' + sp.guid + ' gap=' + ranked[k].d.toFixed(2) + 'm walk=' + w.toFixed(2) + 'm');
+            ' spine=' + sp.guid + ' gap=' + ranked[k].d.toFixed(2) + 'm walk=' + w.toFixed(2) + 'm via=' + routedVia);
         return;
       }
       bridgeRejected++;
       log('§ROOM_SPINE_BRIDGE_REJECT room="' + (g.name || lg) + '" storey=' + g.storey +
-          ' candidates=' + ranked.length + ' nearest=' + ranked[0].d.toFixed(2) + 'm — no wall-legal chord');
+          ' candidates=' + ranked.length + ' nearest=' + ranked[0].d.toFixed(2) + 'm — no walkable route (straight or A*)');
     });
     if (roomBridges || bridgeRejected)
       log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected);
@@ -1538,6 +1564,11 @@
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal
     // sample points on a same-storey chord (the same test _legalizePath uses internally).
     chordIllegalCount: _chordIllegalCount,
+    // OCCUPANT_PATHFINDER.md §BRIDGE-ROUTED-LEGAL — read-only witness helper, same precedent as
+    // chordIllegalCount above: the ROUTED (A*, on-floor) counterpart of the straight-chord test.
+    // [] = straight segment is already honest, [pts] = an on-floor route exists (its turn points),
+    // null = no on-floor route. Exported so a harness can measure the gate without re-implementing it.
+    astarHop: _astarHop,
     // FLY_TOUR_DLOD_SCALE.md §16 — room-to-room portal PVS for real occlusion culling.
     buildRoomPVS: buildRoomPVS
   };
