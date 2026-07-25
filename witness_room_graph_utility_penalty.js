@@ -181,11 +181,19 @@ console.log('\n§F no-regression (JKR, 0 routing utility rooms) — byte-identic
   for (let i = 0; i < L; i++) for (let j = i + 1; j < L; j++) {
     const pN = RG.shortestPath(gNew, rooms[i], rooms[j]), pO = RGbefore.shortestPath(gOld, rooms[i], rooms[j]);
     cmp++;
-    const same = (pN === null && pO === null) || (pN && pO && JSON.stringify(pN.path) === JSON.stringify(pO.path) && Math.abs(pN.distance - pO.distance) < 1e-9);
+    // §NOREG-SCOPE-SHARPENED 2026-07-25 (see witness_room_path_raster_polyline.js's identical note):
+    // compare THE ROUTE (room-stop sequence + distance), not the drawn geometry anchors — `path`
+    // legitimately carries waypoints, and §HOP-DOOR-WAYPOINT adds the real door an E2 room->spine hop
+    // already records. doors[]/distance/stop-sequence measured 100% identical on JKR.
+    const stops = (r, gg) => JSON.stringify(r.path.filter(x => {
+      const k = (gg.nodesByGuid[x] || {}).kind; return k === 'room' || k === 'exit';
+    }));
+    const same = (pN === null && pO === null) || (pN && pO && stops(pN, gNew) === stops(pO, gOld) &&
+      JSON.stringify(pN.doors) === JSON.stringify(pO.doors) && Math.abs(pN.distance - pO.distance) < 1e-9);
     if (same) id++; else if (!firstDiff) firstDiff = rooms[i] + '->' + rooms[j];
   }
   console.log('  §F_NOREG JKR utilityRooms=' + nUtil + ' compared=' + cmp + ' identical=' + id + (firstDiff ? ' firstDiff=' + firstDiff : ''));
-  chk('F NO-REGRESSION JKR (no routing utility rooms) every path byte-identical to origin/main', nUtil === 0 && id === cmp && cmp > 0, id + '/' + cmp);
+  chk('F NO-REGRESSION JKR (no routing utility rooms) every ROUTE identical to origin/main — doors[], distance, room-stop sequence', nUtil === 0 && id === cmp && cmp > 0, id + '/' + cmp);
   db.close();
 }
 

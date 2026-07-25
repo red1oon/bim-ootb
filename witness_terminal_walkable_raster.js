@@ -92,8 +92,15 @@ function sweep(SQL, patchSql) {
 
   chk('G1 baseline has NO raster loaded (rooms-only patch), with-raster loads all 6 storeys',
     base.rasterStoreys === 0 && rast.rasterStoreys === 6, 'base=' + base.rasterStoreys + ' with=' + rast.rasterStoreys);
-  chk('G2 connectivity is unchanged by the raster (a raster legalizes chords on existing edges, it does not add/remove edges)',
-    Math.abs(base.connPct - rast.connPct) < 0.01, 'base=' + base.connPct.toFixed(1) + '% with=' + rast.connPct.toFixed(1) + '%');
+  // §G2-RESPECIFIED 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17). ⚠ ATTRIBUTION: this assertion
+// was ALREADY failing on an unmodified origin/main engine (measured: base=73.8% with=77.9%, the same
+// numbers as below), so it is not §17's doing. Its premise — "a raster only legalizes chords on
+// existing edges" — stopped being true when §ROOM-SPINE-BRIDGE started GATING each room->circulation
+// bridge on measured walkability (#995/#996/#997, OCCUPANT_PATHFINDER.md): better floor evidence now
+// validates more real bridges, so connectivity is legitimately raster-DEPENDENT and can only go UP.
+// Re-specified to that: connectivity must never DROP with the raster loaded.
+chk('G2 connectivity never DROPS with the raster loaded (walkability-gated bridges may legitimately ADD edges — see §G2-RESPECIFIED)',
+    rast.connPct >= base.connPct - 0.01, 'base=' + base.connPct.toFixed(1) + '% with=' + rast.connPct.toFixed(1) + '%');
   chk('G3 the accurate raster does NOT regress chord-legality vs the crude bbox-fallback baseline (it improves or ties)',
     rast.failPct <= base.failPct + 0.01, 'baseDetourFail=' + base.failPct.toFixed(1) + '% withRaster=' + rast.failPct.toFixed(1) + '%');
 

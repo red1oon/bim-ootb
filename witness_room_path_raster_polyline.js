@@ -82,7 +82,20 @@ function regression(label, dbFile, patches, modeller) {
   for (let i = 0; i < rooms.length; i++) for (let j = i + 1; j < rooms.length; j++) {
     const rN = RG.shortestPath(g, rooms[i].guid, rooms[j].guid), rO = RGbefore.shortestPath(gB, rooms[i].guid, rooms[j].guid);
     cmp++;
-    const same = (rN === null && rO === null) || (rN && rO && JSON.stringify(rN.path) === JSON.stringify(rO.path) &&
+    // §NOREG-SCOPE-SHARPENED 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): the comparison used
+    // to demand a byte-identical `path`, which conflates THE ROUTE with THE DRAWN GEOMETRY. `path`
+    // legitimately carries geometry anchors — origin/main already splices `_legalizePath` detour
+    // waypoints into it, and §HOP-DOOR-WAYPOINT now also inserts the real door an E2 room->spine hop
+    // is named after (without it the drawn line skipped that door and cut 32.6m across a Hospital
+    // wing). So assert what the scope fence in PATH_LEGAL_SEGMENTS.md actually protects — WHICH
+    // rooms and doors the route uses, and its length: doors[] identical, distance identical, and the
+    // room/exit STOP SEQUENCE identical. Waypoint anchors between the stops may differ; that is the
+    // feature. Measured over Duplex/JKR/HHS/Hospital: doors 100%, distance 100%, stop-sequence 100%
+    // identical, zero newly-connected, zero lost, zero longer (compare_routes_ab.js).
+    const stops = (r, gg) => JSON.stringify(r.path.filter(x => {
+      const k = (gg.nodesByGuid[x] || {}).kind; return k === 'room' || k === 'exit';
+    }));
+    const same = (rN === null && rO === null) || (rN && rO && stops(rN, g) === stops(rO, gB) &&
       JSON.stringify(rN.doors) === JSON.stringify(rO.doors) && Math.abs(rN.distance - rO.distance) < 1e-9);
     if (same) id++; else if (!firstDiff) firstDiff = rooms[i].guid + '>' + rooms[j].guid;
   }
@@ -134,7 +147,7 @@ const regT = regression('Terminal', 'Terminal_meta.db', ['viewer/buildings/patch
 const regH = regression('HHS', 'HHS_Office_Federated_extracted.db', ['viewer/buildings/patches/HHS_Office_Federated_extracted.db.sql']);
 const regJ = regression('JKR', 'JKR_extracted.db', ['viewer/buildings/patches/JKR_extracted.db.sql']);
 const regD = regression('Duplex', 'Duplex_ARC.db', [], true);
-chk('G2 path/doors/distance byte-identical to origin/main on all buildings (polyline is purely additive)',
+chk('G2 route identical to origin/main on all buildings — doors[], distance and room-stop sequence (geometry anchors may differ; see §NOREG-SCOPE-SHARPENED)',
   regT.id === regT.cmp && regH.id === regH.cmp && regJ.id === regJ.cmp && regD.id === regD.cmp && (regT.cmp + regH.cmp + regJ.cmp + regD.cmp) > 0,
   'T=' + regT.id + '/' + regT.cmp + ' HHS=' + regH.id + '/' + regH.cmp + ' JKR=' + regJ.id + '/' + regJ.cmp + ' Duplex=' + regD.id + '/' + regD.cmp);
 
