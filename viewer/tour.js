@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v18 (timeline-scrub + highlight-first + SUSPECT_OPEN + wall-legal room-spine bridge + A* polyline flight — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v19 (timeline-scrub + highlight-first + SUSPECT_OPEN + wall-legal room-spine bridge + A* polyline flight + no lift-door entrance — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -176,7 +176,7 @@ function setupTour(A) {
   // (§TOUR_CACHE store … key=…:v12:…). The key's other components are DB counts — they bust on a
   // re-extraction or room recompile, never on a code change. This constant is the ONLY thing that
   // invalidates a cached route when the routing ALGORITHM changes.
-  var TOUR_CACHE_VER = 'v17'; // keep in lockstep with the §TOUR_VERSION banner above
+  var TOUR_CACHE_VER = 'v18'; // keep in lockstep with the §TOUR_VERSION banner above
   function _tourCacheKey() {
     try {
       var r = A.db.exec(

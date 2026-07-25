@@ -753,29 +753,24 @@
     if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
 
-    // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
-    // target); connect the nearest room-or-circ node on that storey (real distance, not invented).
-    var exits = 0, e4 = 0;
-    doorRows.forEach(function (d) {
-      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5];
-      if (isRoomDoor(name)) return; // only the name-filtered set — see file header
-      var exitGuid = 'EXIT::' + guid;
-      nodes[exitGuid] = { guid: exitGuid, kind: 'exit', name: 'Exit — ' + (name || guid), storey: storey,
-        cx: dx, cy: dy, cz: dz };
-      order.push(exitGuid); exits++;
-      var best = null, bestD = Infinity;
-      order.forEach(function (lg) {
-        var g = nodes[lg];
-        if (g.guid === exitGuid || g.storey !== storey) return;
-        if (g.kind !== 'room' && g.kind !== 'circ') return;
-        var dd = Math.hypot(g.cx - dx, g.cy - dy);
-        if (dd < bestD) { bestD = dd; best = lg; }
-      });
-      if (best) {
-        edges.push({ a: best, b: exitGuid, doorGuid: guid, doorName: name, storey: storey, kind: 'E4', w: bestD });
-        e4++;
-      }
-    });
+    // ── E4: REMOVED 2026-07-26 — §G1-EXIT-IS-A-LIFT-DOOR (OCCUPANT_PATHFINDER.md, work order step 1).
+    // E4 used to turn every door that FAILED `isRoomDoor()` into an `EXIT::` node "free fire-escape
+    // target". But `isRoomDoor()` is a LIFT-NAME test (`NON_ROOM_DOOR_NAMES` = liftdeur/lift/elevator/
+    // aufzug/fahrstuhl/hoist, ported from compile_rooms.py for the ROOM test, above at §DOOR-NOT-ROOM).
+    // Nothing in it — or anywhere else in this codebase — ever tested whether a door faces OUTSIDE.
+    // Measured over the fleet's 1633 ARC doors: the ONLY building that produced exits was Terminal,
+    // with 5 — and all five are elevator doors ("Side_opening_ElevatorLift_Door_with_Call_buttons…").
+    // That shipped two live wrong answers: the Fly Tour's `entrance` (= lowest exit node) was a LIFT
+    // DOOR on Terminal — the source of its 2 residual wall-illegal chords, logged
+    // `§PATH_LEGAL_DETOUR_FAIL cause=ENDPOINT_OFF_FLOOR` because a lift car is not walkable floor —
+    // and `escapeRoute()`, once wired, would have routed EGRESS TO A LIFT.
+    // So `exits` is now 0 fleet-wide. That is the HONEST state, not a regression: 6 of the 7 measured
+    // buildings already had 0, so every consumer's no-exit path (tour.js §HL-ORIGIN, scene.js
+    // _graphEntrance→'none', effects.js §CINEMA_EXIT→`exitSrc=db-doors`) is already the common path.
+    // A real exit node returns when the MEASURED exterior test lands (work order step 2: sample either
+    // side of a door against the storey walkable raster + footprint — proven feasible, HHS yields 3
+    // candidates of 133 doors). Do NOT restore a name-based or synthesised exit: see that doc.
+    var exits = 0;   // kept so the §ROOM_GRAPH log line and stats.exits keep their shape (now always 0)
 
     var circCount = order.filter(function (lg) { return nodes[lg].kind === 'circ'; }).length;
     log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
