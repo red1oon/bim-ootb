@@ -60,7 +60,11 @@ let engine = {};
 try {
   git('fetch', 'origin', '--quiet');
   const sha = git('rev-parse', 'HEAD');
-  const dirty = git('status', '--porcelain');
+  // The gate's OWN output (<patch>.manifest.json) must not count as engine dirt — it is written by
+  // this script, so a second run would otherwise always fail on the first run's artifact. Everything
+  // else counts, including untracked files: an uncommitted verifier is not reproducible from any SHA.
+  const dirty = git('status', '--porcelain').split('\n')
+    .filter(l => l.trim() && !/\.manifest\.json$/.test(l)).join('\n');
   const behind = parseInt(git('rev-list', '--count', 'HEAD..origin/main') || '0', 10);
   const ahead = parseInt(git('rev-list', '--count', 'origin/main..HEAD') || '0', 10);
   engine = { worktree: repoRoot, sha, behind_origin_main: behind, ahead_origin_main: ahead,
