@@ -1352,7 +1352,15 @@
         _clearPathHighlight();
         return null;
       }
-      var roomNames = result.path.map(function(g) { return graph.nodesByGuid[g].name; });
+      // §STOPS-VS-VIA: `rooms=[...]` used to list EVERY path anchor under a field named "rooms", which
+      // is how the field came to read "12 rooms" for a 4-room route (the rest were corridor spine, door
+      // and stair waypoints). Split it: `stops=` is the real room/exit sequence, `via=` is the way
+      // between them. Same data, no extra query, and each field now means what it says.
+      var stopNames = [], viaNames = [];
+      result.path.forEach(function(g) {
+        var n = graph.nodesByGuid[g] || {};
+        if (n.kind === 'room' || n.kind === 'exit') stopNames.push(n.name); else viaNames.push(n.name);
+      });
       var doorGuids = result.doors.map(function(d) { return d.guid; });
       // §ROOM_PATH_PRECISION (2026-07-25, §14's summary-first rule applied to this line): the old
       // form printed `hops=<doors.length> rooms=[<every path node's name>]`, which read as "12 rooms,
@@ -1371,7 +1379,7 @@
         ' hops=' + result.doors.length + ' portals=' + Object.keys(distinctDoors).length +
         ' anchors={' + Object.keys(counts).map(function(k) { return k + ':' + counts[k]; }).join(' ') + '}' +
         ' polyPts=' + ((result.polyline || []).length) +
-        ' rooms=[' + roomNames.join(',') + ']' +
+        ' stops=[' + stopNames.join(',') + '] via=[' + viaNames.join(',') + ']' +
         ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm' +
         (repeated.length ? ' repeatedPortals=[' + repeated.map(function(g) { return g + 'x' + distinctDoors[g]; }).join(',') + ']' : ''));
       _drawPathHighlight(graph, result);
