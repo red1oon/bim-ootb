@@ -1268,10 +1268,15 @@
   // back to the full unrestricted storey-wide search if no local detour exists — never REMOVES a
   // detour that used to work, only prefers a nearby one when one exists.
   var DETOUR_LOCALITY_MARGIN = 6.0; // m — padding around the chord's own bbox for the local pass
-  function _detourCandidates(graph, storey, ax, ay, bx, by, localOnly) {
+  // §DETOUR-MID-MARGIN (2026-07-26): `margin` used to be the single hardcoded DETOUR_LOCALITY_MARGIN.
+  // It is now a parameter so _detourForChord can try a BOUNDED wider window before giving up and
+  // going storey-wide — see that function. `excludeIds` lets the caller veto specific waypoints
+  // (§DETOUR-NO-REVISIT) without touching the candidate rule itself.
+  function _detourCandidates(graph, storey, ax, ay, bx, by, localOnly, margin, excludeIds) {
+    var M = (margin == null) ? DETOUR_LOCALITY_MARGIN : margin;
     var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
-    var x0 = Math.min(ax, bx) - DETOUR_LOCALITY_MARGIN, x1 = Math.max(ax, bx) + DETOUR_LOCALITY_MARGIN;
-    var y0 = Math.min(ay, by) - DETOUR_LOCALITY_MARGIN, y1 = Math.max(ay, by) + DETOUR_LOCALITY_MARGIN;
+    var x0 = Math.min(ax, bx) - M, x1 = Math.max(ax, bx) + M;
+    var y0 = Math.min(ay, by) - M, y1 = Math.max(ay, by) + M;
     Object.keys(graph.nodesByGuid).forEach(function (g) {
       var n = graph.nodesByGuid[g];
       // §HALLWAY-BACKBONE: real corridor spine points are ALSO valid detour candidates, not just
@@ -1283,6 +1288,7 @@
       // route, never remove an already-legal one.
       if (!((n.kind === 'doorwp' || n.kind === 'spine' || n.kind === 'circ') && n.storey === storey)) return;
       if (localOnly && (n.cx < x0 || n.cx > x1 || n.cy < y0 || n.cy > y1)) return;
+      if (excludeIds && excludeIds[g]) return;
       pts.push({ id: g, x: n.cx, y: n.cy });
     });
     return pts;
@@ -1321,11 +1327,31 @@
     for (var k = 1; k < hopIdx.length - 1; k++) mid.push(pts[hopIdx[k]].id);
     return mid;
   }
-  function _detourForChord(graph, storey, ax, ay, bx, by) {
-    var localPts = _detourCandidates(graph, storey, ax, ay, bx, by, true);
+  // §DETOUR-MID-MARGIN (2026-07-26, from a real live capture): the search was local(6m) -> storey-wide,
+  // and Hospital's `≈ Level 1 R35 -> ≈ Level 4 R8` route logged `§PATH_LEGAL_DETOUR_NONLOCAL` twice on
+  // Level 4 — both chords fell straight through to the UNRESTRICTED storey-wide Dijkstra, which has no
+  // sense of overall direction (the exact failure mode §DETOUR-LOCALITY was written to bound: a route
+  // that walks to the far end of the building because that is still "legal"). A bounded MID pass now
+  // sits between them. This is monotone by construction: a chord that already succeeded locally never
+  // reaches the mid pass, and a chord that previously went storey-wide still does if the mid pass finds
+  // nothing — so the only possible change is a NEARER legal detour replacing a far-flung one.
+  // MID margin = ASTAR_WIDEN_MARGIN's 28m, reused deliberately (that constant was already measured as
+  // "covers a 20-30m spine-to-spine corridor route" for the A* widen pass) — no new magic number.
+  var DETOUR_MID_MARGIN = 28.0;
+  function _detourForChord(graph, storey, ax, ay, bx, by, excludeIds) {
+    var localPts = _detourCandidates(graph, storey, ax, ay, bx, by, true, DETOUR_LOCALITY_MARGIN, excludeIds);
     var localResult = _detourDijkstra(graph, storey, localPts);
     if (localResult) return localResult;
-    var globalPts = _detourCandidates(graph, storey, ax, ay, bx, by, false);
+    var midPts = _detourCandidates(graph, storey, ax, ay, bx, by, true, DETOUR_MID_MARGIN, excludeIds);
+    if (midPts.length > localPts.length) {
+      var midResult = _detourDijkstra(graph, storey, midPts);
+      if (midResult) {
+        _log('§PATH_LEGAL_DETOUR_MID storey=' + storey + ' no local detour within ' + DETOUR_LOCALITY_MARGIN +
+          'm, found one within ' + DETOUR_MID_MARGIN + 'm (' + midResult.length + ' waypoint(s))');
+        return midResult;
+      }
+    }
+    var globalPts = _detourCandidates(graph, storey, ax, ay, bx, by, false, DETOUR_LOCALITY_MARGIN, excludeIds);
     var globalResult = _detourDijkstra(graph, storey, globalPts);
     if (!globalResult) {
       // §DETOUR_FAIL_CAUSE (2026-07-25, §14's "self-diagnosing on one line" rule): the old message
@@ -1391,6 +1417,47 @@
       var illegal = _chordIllegalCount(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
       if (illegal > 0) {
         var mid = _detourForChord(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
+        // §DETOUR-NO-REVISIT (2026-07-26, from a real live capture): a detour waypoint may coincide
+        // with an anchor the route visits LATER, which renders as a visible back-step — on Hospital's
+        // `≈ Level 1 R35 -> ≈ Level 4 R8` the door `…531444` was spliced in as a detour for the
+        // spine->775497 chord and then used again 3 hops later to leave R9 into R8 (a real ~3m
+        // wiggle; legal, but it is the shape once reported as `MissCOback2doors`). Retry ONCE with
+        // those guids vetoed. Honest degrade, never a regression: if no alternative legal detour
+        // exists, the original stands — the drawn line is never made worse, only less wiggly.
+        if (mid && mid.length) {
+          var laterAnchors = {};
+          for (var k = i + 2; k < path.length; k++) laterAnchors[path[k]] = 1;
+          var revisits = mid.filter(function (g) { return laterAnchors[g]; });
+          if (revisits.length) {
+            var veto = {};
+            revisits.forEach(function (g) { veto[g] = 1; });
+            var alt = _detourForChord(graph, a.storey, a.cx, a.cy, b.cx, b.cy, veto);
+            // §NOREVISIT-LENGTH-GUARD (measured, 2026-07-26): taking the vetoed alternative
+            // UNCONDITIONALLY traded one cosmetic flaw for another — on the Hospital live fixture it
+            // removed the ~3m back-step through …531444 but routed via a door 24m west instead,
+            // lengthening the DRAWN line 229.4m -> 230.9m. So only accept the alternative when it is
+            // no longer than the detour it replaces: the wiggle goes away when that is free, and the
+            // shorter line wins when it is not. Both options are already legality-verified by
+            // _detourForChord, so this only ever picks between two honest routes.
+            var chainLen = function (wps) {
+              var px = a.cx, py = a.cy, L = 0;
+              for (var w = 0; w < wps.length; w++) {
+                var n = graph.nodesByGuid[wps[w]]; if (!n) continue;
+                L += Math.hypot(n.cx - px, n.cy - py); px = n.cx; py = n.cy;
+              }
+              return L + Math.hypot(b.cx - px, b.cy - py);
+            };
+            if (alt && alt.length && chainLen(alt) <= chainLen(mid) + 1e-9) {
+              _log('§PATH_LEGAL_DETOUR_NOREVISIT storey=' + a.storey + ' replaced ' + revisits.length +
+                ' waypoint(s) the route visits later (' + revisits.join(',') + ') with a no-longer detour ' +
+                chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm');
+              mid = alt;
+            } else if (alt && alt.length) {
+              _log('§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=' + a.storey + ' the only revisit-free detour is ' +
+                'longer (' + chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm) — keeping the shorter line');
+            }
+          }
+        }
         if (mid && mid.length) { detoured++; mid.forEach(function (g) { out.push(g); }); }
       }
       out.push(path[i + 1]);
