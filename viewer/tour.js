@@ -8,11 +8,28 @@ function setupTour(A) {
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
 
+    // §SCRUB_BAR_LIFECYCLE (user 2026-07-25: "L should check if bar panel is present, be careful not
+    // to break discovery otherwise"). SAFETY NET, deliberately narrow: if a tour is RUNNING but its
+    // control is off-screen, L restores the control instead of pausing — the user pressing L with no
+    // bar visible is asking for the control back, not asking to stop. Never fires in the normal
+    // running case (bar visible → falls straight through to the pause branch below), so ordinary
+    // L-pause behaviour and free canvas discovery are untouched.
+    if (A.walkMode && A.walkActions && A.walkActions.length > 0 && A._scrubVisible && !A._scrubVisible()) {
+      if (A._scrubShow) A._scrubShow();
+      console.log('[TOUR] §SCRUB_BAR_REVEAL tour was running with the bar hidden — restored, playback untouched idx=' + A.walkActionIdx);
+      return;
+    }
+
     if (A.walkMode) {
       A.walkMode = false;
       A.walkLastTime = 0;
       A.flyActive = false;
       if (btn) btn.classList.remove('active');
+      // §SCRUB_BAR_LIFECYCLE (D3) — the bar STAYS VISIBLE on an ✈-pause (the presenter stopped here
+      // on purpose and may still want to scrub), but it must not LIE: previously it kept showing ⏸
+      // (= playing) while nothing played, and pressing its ▶ then set _tourPaused=true, which made a
+      // later ✈-resume early-return in walkTick forever. Mark the real state instead.
+      if (A._tourPaused === false && A.tourTogglePause) A.tourTogglePause(true);
       A.status.textContent = `Walk paused at action ${A.walkActionIdx}/${A.walkActions.length} — tap ✈ to resume`;
       A.wlog(`PAUSED at action ${A.walkActionIdx}`);
       return;
@@ -26,6 +43,14 @@ function setupTour(A) {
       if (btn) btn.classList.add('active');
       var _speedBtn = document.getElementById('walk-speed-btn');
       if (_speedBtn) _speedBtn.style.display = '';
+      // §SCRUB_BAR_LIFECYCLE (D1 — user-reported live 2026-07-25: "the scrubber panel cannot reappear
+      // when user interupts canvas and drag freely... Pressing L continues the tour but the panel
+      // remains hidden"). picking.js:108 hides the bar on a canvas tap but leaves walkActionIdx
+      // intact, so the next ✈ lands HERE — and this branch never called _scrubShow, the only caller
+      // being the fresh-tour path at :339. The bar therefore stayed hidden for the whole rest of the
+      // tour. _scrubShow also calls tourTogglePause(false), which is what stops a stale _tourPaused
+      // from freezing the resumed tour (D3). Witness: W-SCRUB-RESUME-BAR.
+      if (A._scrubShow) A._scrubShow();
       A.status.textContent = `Walk resumed at action ${A.walkActionIdx}/${A.walkActions.length}`;
       A.wlog(`RESUMED at action ${A.walkActionIdx}`);
       return;
@@ -1785,6 +1810,13 @@ function setupTour(A) {
     if (tv) tv.textContent = _fmtMS(T) + ' / ' + _fmtMS(total);
   }
 
+  // §SCRUB_BAR_LIFECYCLE — single source of truth for "is the bar on screen?". Reads the DOM by id
+  // rather than the module-local _scrubPanel so any caller (including toggleFlyAround above, and the
+  // witness) asks the same question the user is actually asking: can I see the control?
+  A._scrubVisible = function() {
+    var el = document.getElementById('tour-scrub-panel');
+    return !!el && el.style.display === 'flex';
+  };
   A._scrubShow = function() {
     _scrubBuild();
     _scrubBuildTicks();

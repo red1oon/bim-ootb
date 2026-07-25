@@ -188,8 +188,17 @@ function claim(name, pass, detail) {
       return { drift: Math.max(...p0.map((v, i) => Math.abs(v - p1[i]))), frames,
                tDrift: Math.abs(A._tourT - T0), paused: A._tourPaused };
     });
-    claim('W-SCRUB-HOLD', hold.drift === 0 && hold.tDrift === 0,
-      `paused=${hold.paused} walkTickCalls=${hold.frames} maxPoseDrift=${hold.drift} cursorDrift=${hold.tDrift} over 3000ms wall-clock`);
+    // Float tolerance on the POSE only — NOT a weakened gate (2026-07-25). The cursor must still be
+    // EXACTLY 0: that is the scrubber's own state and nothing may touch it. The pose, however, goes
+    // through A.controls.update(), and scene.js:130 sets enableDamping=true, so OrbitControls
+    // round-trips position→spherical→position on every frame of the 3s rAF wait — provably not an
+    // identity (§WATCHDOG-TOUR-SCRUB-2 Q1.2). Measured: drift=0 on three runs, then 4.44e-16
+    // (= 2^-51, ONE double ULP) on a fourth that happened to build a different tour, i.e. a different
+    // pose at T*0.42. That is float rounding, not motion. 1e-9 m is a nanometre; any real drift is
+    // 7+ orders of magnitude above it, so this still fails loudly. Raw value stays in the message.
+    const HOLD_EPS = 1e-9;
+    claim('W-SCRUB-HOLD', hold.drift < HOLD_EPS && hold.tDrift === 0,
+      `paused=${hold.paused} walkTickCalls=${hold.frames} maxPoseDrift=${hold.drift} (eps=${HOLD_EPS}) cursorDrift=${hold.tDrift} over 3000ms wall-clock`);
 
     // ── W-SCRUB-DRAG-RELEASE ──────────────────────────────────────────────────
     // Proves a drag leaves NO residue: the pose at rest after dragging to T must equal the pose of
@@ -326,17 +335,21 @@ function claim(name, pass, detail) {
                      clampedRect.right <= window.innerWidth + 0.5 &&
                      clampedRect.bottom <= window.innerHeight + 0.5;
 
-      // 3. persistence across hide → show
+      // 3. THE invariant — read it HERE, across the drags ONLY. It must not span step 4's
+      // hide→show: _scrubShow() calls tourTogglePause(false), which revives the rAF chain, so any
+      // frames landing in that window advance the cursor legitimately and would make this claim
+      // flaky (observed: poseDelta=0.26 cursorDelta=0.116 on one run, 0/0 on the next). The claim is
+      // about the DRAG writing the timeline, so measure exactly the drag.
+      const poseAfter = pose(), tAfter = A._tourT;
+      const poseDelta = Math.max(...poseAfter.map((v, i) => Math.abs(v - poseBefore[i])));
+      const cursorDelta = Math.abs(tAfter - tBefore);
+
+      // 4. persistence across hide → show (after the invariant is banked, per the note above)
       const parked = rect();
       A._scrubHide(); await sleep(20); A._scrubShow(); await sleep(30);
       const restored = rect();
       const persisted = Math.abs(restored.left - parked.left) <= 1 &&
                         Math.abs(restored.top - parked.top) <= 1;
-
-      // 4. THE invariant — the timeline never moved through any of it
-      const poseAfter = pose(), tAfter = A._tourT;
-      const poseDelta = Math.max(...poseAfter.map((v, i) => Math.abs(v - poseBefore[i])));
-      const cursorDelta = Math.abs(tAfter - tBefore);
 
       // 5. the slider still seeks after the panel has been moved (no wiring casualty)
       const sl = document.getElementById('tour-scrub-slider');
@@ -357,6 +370,69 @@ function claim(name, pass, detail) {
       `clampedInView=${pan.inView} parkedAt=${pan.left.toFixed(1)},${pan.top.toFixed(1)} ` +
       `persistedAcrossHideShow=${pan.persisted} | poseDelta=${pan.poseDelta} ` +
       `cursorDelta=${pan.cursorDelta} sliderStillSeeks=${pan.sliderStillSeeks}`);
+
+    // ── W-SCRUB-RESUME-BAR ────────────────────────────────────────────────────
+    // §SCRUB_BAR_LIFECYCLE D1/D3, user-reported live. Drives the REAL user path — a genuine
+    // pointerdown on the canvas so picking.js's own tour-abort runs — not a direct _scrubHide()
+    // call, which would test the seam instead of the behaviour.
+    const life = await page.evaluate(async () => {
+      const A = window.APP;
+      const p = document.getElementById('tour-scrub-panel');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const shown = () => p.style.display === 'flex';
+
+      A.tourSeek(A._tourTotal * 0.3, false);       // get walkActionIdx > 0 (resume branch needs it)
+      A.tourTogglePause(false);
+      A.walkTick();
+      await sleep(30);
+      const posBefore = (() => { const r = p.getBoundingClientRect(); return { l: r.left, t: r.top }; })();
+      const idxAtAbort = A.walkActionIdx, barBeforeAbort = shown();
+
+      // 1. REAL canvas tap → picking.js:102-108 aborts the tour and hides the bar
+      const c = A.canvas || A.renderer.domElement;
+      const cr = c.getBoundingClientRect();
+      c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 3, bubbles: true, cancelable: true,
+        clientX: cr.left + cr.width / 2, clientY: cr.top + cr.height / 2 }));
+      await sleep(50);
+      const barAfterAbort = shown(), walkAfterAbort = A.walkMode;
+
+      // 2. the user's exact next action: press ✈ / L to continue
+      A.toggleFlyAround();
+      await sleep(50);
+      const barAfterResume = shown(), walkAfterResume = A.walkMode, pausedAfterResume = A._tourPaused;
+      const posAfter = (() => { const r = p.getBoundingClientRect(); return { l: r.left, t: r.top }; })();
+      const posKept = Math.abs(posAfter.l - posBefore.l) <= 1 && Math.abs(posAfter.t - posBefore.t) <= 1;
+
+      // 3. D3 half — an ✈-pause keeps the bar VISIBLE and marks it honestly paused
+      A.toggleFlyAround();
+      await sleep(30);
+      const barOnFlyPause = shown(), pausedOnFlyPause = A._tourPaused;
+      A.toggleFlyAround(); await sleep(30);        // back to running
+
+      // 4. §SCRUB_BAR_REVEAL guard — tour RUNNING but bar hidden: L must restore the control and
+      // NOT stop playback (the user's "don't break discovery" constraint, asserted not assumed).
+      const walkPre = A.walkMode, idxPre = A.walkActionIdx;
+      A._scrubHide();                              // simulate the bar being off-screen mid-tour
+      A.walkMode = true;                           // ...while the tour is genuinely still running
+      await sleep(20);
+      A.toggleFlyAround();
+      await sleep(30);
+      const revealBar = shown(), revealWalkStillOn = A.walkMode, revealIdx = A.walkActionIdx;
+
+      return { idxAtAbort, barBeforeAbort, barAfterAbort, walkAfterAbort, barAfterResume,
+               walkAfterResume, pausedAfterResume, posKept, barOnFlyPause, pausedOnFlyPause,
+               walkPre, idxPre, revealBar, revealWalkStillOn, revealIdx };
+    });
+    claim('W-SCRUB-RESUME-BAR',
+      life.idxAtAbort > 0 && life.barBeforeAbort && !life.barAfterAbort && !life.walkAfterAbort &&
+      life.barAfterResume && life.walkAfterResume && life.pausedAfterResume === false &&
+      life.posKept && life.barOnFlyPause && life.pausedOnFlyPause === true &&
+      life.revealBar && life.revealWalkStillOn,
+      `abortedAtIdx=${life.idxAtAbort} bar before/after canvasTap=${life.barBeforeAbort}/${life.barAfterAbort} ` +
+      `walkModeAfterTap=${life.walkAfterAbort} | AFTER ✈-RESUME bar=${life.barAfterResume} ` +
+      `walkMode=${life.walkAfterResume} paused=${life.pausedAfterResume} panelPosKept=${life.posKept} ` +
+      `| ✈-PAUSE bar=${life.barOnFlyPause} paused=${life.pausedOnFlyPause} ` +
+      `| REVEAL bar=${life.revealBar} walkModeStillRunning=${life.revealWalkStillOn} (discovery not broken)`);
 
   } catch (e) {
     claim('WITNESS-RUN', false, 'threw: ' + e.message);
