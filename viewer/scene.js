@@ -401,6 +401,12 @@ async function setupScene(A) {
   // Don't auto-reload — user loses Red Pill / Doc context. Just show a banner to tap.
   canvas.addEventListener('webglcontextlost', function(e) {
     e.preventDefault();
+    // §MAXQ_CONTEXT_LOSS (2026-07-26, real user repro — Hospital, ~7min single-tab bake): a long
+    // MaxQ capture keeps rendering "successfully" after context loss — WebGL calls become silent
+    // no-ops rather than throwing, so every frame from this point on captures a blank/black canvas
+    // with zero error. Expose the flag on A so cinema_maxq.js's per-frame loop can detect it and
+    // stop+salvage, the same way it already handles a lost IndexedDB connection mid-bake.
+    A._webglContextLost = true;
     console.log('§WEBGL_CONTEXT_LOST — tap banner to reload');
     var banner = document.createElement('div');
     banner.id = 'webgl-lost-banner';
@@ -410,6 +416,7 @@ async function setupScene(A) {
     document.body.appendChild(banner);
   });
   canvas.addEventListener('webglcontextrestored', function() {
+    A._webglContextLost = false;
     var banner = document.getElementById('webgl-lost-banner');
     if (banner) banner.remove();
     renderer.setSize(window.innerWidth, window.innerHeight);
