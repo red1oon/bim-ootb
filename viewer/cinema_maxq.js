@@ -430,6 +430,8 @@
     }
     var db = null;
     var framesDone = 0;
+    var _idbLost = false;
+    var _glLost = false;
     var t0 = performance.now();
     // §MAXQ_ETA_ROLLING (user 2026-07-19: "74 mins... suddenly 38... now 33.. it is not accurate"):
     // lifetime-average ETA is poisoned by the expensive early frames (indoor prelude close-ups cost
@@ -472,6 +474,11 @@
       t0 = _etaPrev = performance.now();
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
+        // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
+        // further frames now would just save blank/black canvas with no error, silently corrupting
+        // the tail of the movie. Stop here and salvage whatever was captured before the loss,
+        // same treatment as the IDB-connection-lost path below.
+        if (A._webglContextLost) { _glLost = true; console.log('§MAXQ_GL_LOST i=' + i + ' salvaging ' + framesDone + ' already-captured frames'); break; }
         if (A._stillRefineActive) A.stopStillRefine(true);
         await _raf2();
         await _sleep(SETTLE_MS);
@@ -486,7 +493,27 @@
         _restoreRandom();
         if (!ok) console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is');
         var blob = await _captureFrame(w, h);
-        await _idbPut(db, i, blob);
+        // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
+        // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
+        // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
+        // before the failure — classic background-tab throttling, not a code race). Previously this
+        // threw straight past the §MAXQ_PARTIAL stitch logic below (it only runs when the loop exits
+        // normally/via `break`), silently discarding every frame captured so far — losing minutes of
+        // cook the SAME way a manual cancel explicitly promises never to (see that logic's own
+        // comment). Treat an IDB write failure the same as a cancel: stop capturing, keep what's
+        // already saved, and try to hand the stitch phase a FRESH connection since the old handle is
+        // permanently unusable once "closing" — reopening is cheap and the underlying stored data
+        // (frames already put successfully) is untouched by the old handle dying.
+        try {
+          await _idbPut(db, i, blob);
+        } catch (idbErr) {
+          _idbLost = true;
+          console.warn('§MAXQ_IDB_LOST i=' + i + ' ' + idbErr.message +
+            ' — tab likely backgrounded/throttled; salvaging ' + framesDone + ' already-captured frames');
+          try { db = _db = await _idbOpen(); console.log('§MAXQ_IDB_REOPEN ok'); }
+          catch (reopenErr) { console.warn('§MAXQ_IDB_REOPEN_FAIL ' + reopenErr.message); }
+          break;
+        }
         framesDone = i + 1;
         var _etaNow = performance.now();
         _etaRecent.push(_etaNow - _etaPrev); _etaPrev = _etaNow;
@@ -518,6 +545,17 @@
         if (!mp4ok) await _stitch(db, framesDone, fps, w, h);
       } else if (_cancel) {
         _status('🎬 MaxQ cancelled at frame ' + framesDone + ' — under 1s of footage, nothing saved');
+      } else if (_idbLost) {
+        // §MAXQ_IDB_SALVAGE: the non-cancel break path above falls through both branches above
+        // silently otherwise — with zero user-visible feedback this reads as "hung", not "failed
+        // with nothing to save" (real user report, 2026-07-26).
+        _status('🎬 MaxQ stopped at frame ' + framesDone +
+          ' — lost its storage connection (tab backgrounded, or another MaxQ bake running in a ' +
+          'different tab of this app) before enough footage was captured to save');
+      } else if (_glLost) {
+        _status('🎬 MaxQ stopped at frame ' + framesDone +
+          ' — the browser reclaimed the 3D view (long-idle GPU throttle) before enough footage ' +
+          'was captured to save');
       }
     } catch (e) {
       console.warn('§MAXQ_FAIL ' + e.message);
