@@ -4,6 +4,42 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.27.0](https://github.com/red1oon/bim-ootb/compare/v1.26.0...v1.27.0) (2026-07-25)
+
+
+### ✨ Features
+
+* **deploy:** §PATCH-PROVENANCE-GATE — mechanical pre-upload check for OCI patches ([#998](https://github.com/red1oon/bim-ootb/issues/998)) ([9f18562](https://github.com/red1oon/bim-ootb/commit/9f18562f9d6ad91c348fc96c8d15c18f365ab569))
+* **graph:** §ROOM-SPINE-BRIDGE — connect stranded rooms to circulation; pathability 56%→86% ([#995](https://github.com/red1oon/bim-ootb/issues/995)) ([4a65a44](https://github.com/red1oon/bim-ootb/commit/4a65a44a4ff19f44abe3e4969f5edbd4203e4c5e))
+* **viewer:** Cinema/MaxQ Alt+C timing — 6/6 dive-out, roll-to-stop, HDRI race fix ([#978](https://github.com/red1oon/bim-ootb/issues/978)) ([cbb8cae](https://github.com/red1oon/bim-ootb/commit/cbb8cae99bafc756afcd593978c79ce07e21d145))
+* **viewer:** Fly Tour highlight-first routing — main hall → stairs → the rest ([#989](https://github.com/red1oon/bim-ootb/issues/989)) ([fab68d4](https://github.com/red1oon/bim-ootb/commit/fab68d4e026e22f430ac5c3ea69bb8cc83cbd3f5))
+
+
+### 🐛 Fixes
+
+* **graph:** §BRIDGE-ROUTED-LEGAL — gate room-spine bridges on a walkable ROUTE, not a straight chord ([#997](https://github.com/red1oon/bim-ootb/issues/997)) ([abc48cd](https://github.com/red1oon/bim-ootb/commit/abc48cd5922afe9dfc8ac56e7a79e5f65cc2adb2))
+* **graph:** §BRIDGE-WALL-LEGAL — gate room-spine bridges on a measured chord ([#996](https://github.com/red1oon/bim-ootb/issues/996)) ([290c6be](https://github.com/red1oon/bim-ootb/commit/290c6be49e3376ebfa657fd2a01d6eeb4c51dd9a))
+* **viewer:** bump TOUR_CACHE_VER v12→v13 — §HL-FIRST was masked by a stale cached route ([#991](https://github.com/red1oon/bim-ootb/issues/991)) ([5b8c071](https://github.com/red1oon/bim-ootb/commit/5b8c071846bcceff2841d3fd8494c0ed165e28b1))
+* **viewer:** Cinema orbit — symmetric smooth ease, MaxQ HDRI wait, exit-gaze corner fix ([#979](https://github.com/red1oon/bim-ootb/issues/979)) ([8d12254](https://github.com/red1oon/bim-ootb/commit/8d1225422f256de4c5c4806d4dd5b55ace176e30))
+* **viewer:** Fly Tour — SUSPECT_OPEN rooms are eligible highlight destinations ([#994](https://github.com/red1oon/bim-ootb/issues/994)) ([b951cae](https://github.com/red1oon/bim-ootb/commit/b951caeabdfc2cf64f5e631be055015cfa1a0b85))
+* **viewer:** Fly Tour flyPath — bound look-ahead to absolute distance, not fraction of total path ([#986](https://github.com/red1oon/bim-ootb/issues/986)) ([119b5f0](https://github.com/red1oon/bim-ootb/commit/119b5f0d56d0f69517fd05e4f4601f57fa5af55f))
+* **viewer:** Fly Tour interior pacing — 0.3x baseline + real-turn-angle slowdown, 2x entrance zoom ([#980](https://github.com/red1oon/bim-ootb/issues/980)) ([45d22b5](https://github.com/red1oon/bim-ootb/commit/45d22b522fb57b4493198e831944359092738b4e))
+* **viewer:** Fly Tour interior pacing — measure line-of-sight ahead, not omnidirectional min ([#985](https://github.com/red1oon/bim-ootb/issues/985)) ([6938759](https://github.com/red1oon/bim-ootb/commit/6938759b4c44dc55b3da612141e71d2d208b3091))
+* **viewer:** Fly Tour pacing — narrow clamp again + collapse to single PACE_SWING knob ([#988](https://github.com/red1oon/bim-ootb/issues/988)) ([c722195](https://github.com/red1oon/bim-ootb/commit/c7221953bf15f300ca6b10f7c18d885c8736878b))
+* **viewer:** Fly Tour pacing — narrow inverse-distance clamp range, less extreme ([#987](https://github.com/red1oon/bim-ootb/issues/987)) ([077391d](https://github.com/red1oon/bim-ootb/commit/077391d30d3df28461d13df726c426d6bc12c12a))
+* **viewer:** Fly Tour pacing v2 — real height/distance-based inverse law (orphaned from [#980](https://github.com/red1oon/bim-ootb/issues/980)) ([#984](https://github.com/red1oon/bim-ootb/issues/984)) ([3918140](https://github.com/red1oon/bim-ootb/commit/39181404cadf27c59d06743d4b6f5dc86adde619))
+
+
+### ⚡ Performance
+
+* **viewer:** object-count fix + walkTick damping fix (LTU 200-270ms→86.7ms) ([#981](https://github.com/red1oon/bim-ootb/issues/981)) ([1c2a625](https://github.com/red1oon/bim-ootb/commit/1c2a625b4f9688b369314d7f8811a088beea18cf))
+* **viewer:** skip redundant shadow-reassert traversals in Alt+S/Alt+C ([#983](https://github.com/red1oon/bim-ootb/issues/983)) ([0760a2b](https://github.com/red1oon/bim-ootb/commit/0760a2b1d57a0d6e5c2a831062317e43ebaf6402))
+
+
+### 📝 Documentation
+
+* **readme:** refresh stale commit/PR/module/building counts ([#992](https://github.com/red1oon/bim-ootb/issues/992)) ([754ce8d](https://github.com/red1oon/bim-ootb/commit/754ce8d11738b24364ee44693dda9baae1df8f4f))
+
 ## [1.26.0](https://github.com/red1oon/bim-ootb/compare/v1.25.0...v1.26.0) (2026-07-22)
 
 
