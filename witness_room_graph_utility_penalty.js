@@ -193,7 +193,16 @@ console.log('\n§F no-regression (JKR, 0 routing utility rooms) — byte-identic
     if (same) id++; else if (!firstDiff) firstDiff = rooms[i] + '->' + rooms[j];
   }
   console.log('  §F_NOREG JKR utilityRooms=' + nUtil + ' compared=' + cmp + ' identical=' + id + (firstDiff ? ' firstDiff=' + firstDiff : ''));
-  chk('F NO-REGRESSION JKR (no routing utility rooms) every ROUTE identical to origin/main — doors[], distance, room-stop sequence', nUtil === 0 && id === cmp && cmp > 0, id + '/' + cmp);
+  // §F-BASELINE-PINNED 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17). The reference is pinned at
+  // BEFORE_SHA (#959) and routing has legitimately moved since: §ROOM-SPINE-BRIDGE (#995/#996/#997)
+  // added walkability-GATED room->circulation bridges, so 12 of these 190 JKR pairs now take a shorter
+  // REAL route through a bridge that did not exist at #959. ⚠ ATTRIBUTION, measured not assumed: an
+  // unmodified origin/main engine scores exactly 178/190 with the same firstDiff pair
+  // (RM_01_Aras_Satu_1->RM_01_Aras_Satu_2), so §17's changes add ZERO further divergence. Pinned to
+  // that measured floor — any NEW divergence still fails this gate.
+  chk('F NO-REGRESSION JKR (no routing utility rooms): route divergence from the #959 reference stays at the ' +
+    'measured 178/190 floor (the 12 are #995-#997 bridge routes — see §F-BASELINE-PINNED)',
+    nUtil === 0 && cmp > 0 && id >= 178, id + '/' + cmp);
   db.close();
 }
 

@@ -95,8 +95,13 @@ function regression(label, dbFile, patches, modeller) {
     const stops = (r, gg) => JSON.stringify(r.path.filter(x => {
       const k = (gg.nodesByGuid[x] || {}).kind; return k === 'room' || k === 'exit';
     }));
+    // Distance may only IMPROVE. §BRIDGE-ROUTED-LEGAL (#997) weights a room->circulation bridge by its
+    // ROUTED walk length, so better walkable evidence can straighten a bridge that previously needed a
+    // 2-turn detour: measured on JKR-with-raster, 50/1281 pairs got SHORTER by the same doors through
+    // the same rooms, 0 longer, 0 lost, 0 newly-connected. Demanding exact equality would fail on an
+    // improvement; demanding "never longer" keeps the real guarantee.
     const same = (rN === null && rO === null) || (rN && rO && stops(rN, g) === stops(rO, gB) &&
-      JSON.stringify(rN.doors) === JSON.stringify(rO.doors) && Math.abs(rN.distance - rO.distance) < 1e-9);
+      JSON.stringify(rN.doors) === JSON.stringify(rO.doors) && rN.distance <= rO.distance + 1e-9);
     if (same) id++; else if (!firstDiff) firstDiff = rooms[i].guid + '>' + rooms[j].guid;
   }
   console.log = realLog; src.db.close(); fs.unlinkSync(src.tmp);
@@ -137,8 +142,15 @@ chk('G0 shortestPath returns a polyline (raster-backed pairs carry a real floor-
   term.single > 0 && hhs.single > 0 && term.oldPts > 0, 'Terminal pairs=' + term.single + ' HHS pairs=' + hhs.single);
 chk('G1a Terminal(raster): polyline is ON FLOOR — old straight path had ' + term.oldPts + ' illegal pts, polyline reduces >=99%',
   term.red >= 99 && term.oldPts > 0, 'reduction=' + term.red.toFixed(1) + '% (new=' + term.newPts + ')');
-chk('G1b HHS(raster): polyline reduces the old straight-path off-floor sampling by >=95% (circ-island bypass)',
-  hhs.red >= 95 && hhs.oldPts > 0, 'reduction=' + hhs.red.toFixed(1) + '% old=' + hhs.oldPts + ' new=' + hhs.newPts + ' improvedPairs=' + hhs.improved);
+// §G1b-VACUOUS-GUARD 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): this asserted a >=95%
+// REDUCTION, which cannot be met once there is nothing left to reduce. HHS's straight chords are now
+// legal AT SOURCE (measured OLD_illegalPts=0, was 90): §DOOR-THRESHOLD-WALKABLE and
+// §STAIR-FOOTPRINT-WALKABLE cover the doorway/stair gaps its circ-island bypass used to work around,
+// and the raster is a union member again. The invariant that actually matters either way is
+// NEW_illegalPts === 0, so assert the reduction only when there is a real baseline to reduce.
+chk('G1b HHS(raster): polyline is ON FLOOR — >=95% reduction when the straight path had illegal pts, else 0 left',
+  (hhs.oldPts > 0 ? hhs.red >= 95 : hhs.newPts === 0),
+  'reduction=' + hhs.red.toFixed(1) + '% old=' + hhs.oldPts + ' new=' + hhs.newPts + ' improvedPairs=' + hhs.improved);
 chk('G1c ON-FLOOR GUARANTEE: the polyline is NEVER worse than the old straight path (0 worse pairs on every building)',
   term.worse === 0 && hhs.worse === 0 && clinic.worse === 0 && dup.worse === 0,
   'worsePairs T=' + term.worse + ' HHS=' + hhs.worse + ' Clinic=' + clinic.worse + ' Duplex=' + dup.worse);
@@ -147,7 +159,7 @@ const regT = regression('Terminal', 'Terminal_meta.db', ['viewer/buildings/patch
 const regH = regression('HHS', 'HHS_Office_Federated_extracted.db', ['viewer/buildings/patches/HHS_Office_Federated_extracted.db.sql']);
 const regJ = regression('JKR', 'JKR_extracted.db', ['viewer/buildings/patches/JKR_extracted.db.sql']);
 const regD = regression('Duplex', 'Duplex_ARC.db', [], true);
-chk('G2 route identical to origin/main on all buildings — doors[], distance and room-stop sequence (geometry anchors may differ; see §NOREG-SCOPE-SHARPENED)',
+chk('G2 route never regresses vs origin/main on all buildings — same doors[], same room-stop sequence, distance never longer (see §NOREG-SCOPE-SHARPENED)',
   regT.id === regT.cmp && regH.id === regH.cmp && regJ.id === regJ.cmp && regD.id === regD.cmp && (regT.cmp + regH.cmp + regJ.cmp + regD.cmp) > 0,
   'T=' + regT.id + '/' + regT.cmp + ' HHS=' + regH.id + '/' + regH.cmp + ' JKR=' + regJ.id + '/' + regJ.cmp + ' Duplex=' + regD.id + '/' + regD.cmp);
 
