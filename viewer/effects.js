@@ -2125,13 +2125,24 @@ async function setupEffects(A, renderer, scene, camera) {
   // — already-flagged objects/materials are skipped instantly) from startStillRefine's step()
   // loop below, so anything that streams in mid-accumulation still gets caught within the same
   // still-refine, not just at the first instant.
-  function _reassertPhotoShadowCoverage() {
+  function _reassertPhotoShadowCoverage(force) {
     if (!_photoShadowSelfEnabled || !A.scene) return;
     var _idx = A.streamIdx || 0, _kids = A.scene.children.length, _vis = A._visibilityGen || 0;
-    if (_idx === _photoShadowCheckIdx && _kids === _photoShadowCheckKids && _vis === _photoShadowCheckVis) {
+    // §PHOTO_SHADOW_FINALCAPTURE (2026-07-25): the skip-gate below is safe for the accumulation
+    // ticks it was built for, but the LAST reassert before a frame is handed off (Alt+S freeze /
+    // MaxQ per-frame capture) must never be a skip — a skipped final tick means the captured frame
+    // inherits whichever shadow-caster state happened to be cached, not a guaranteed-fresh one.
+    // `force` bypasses the gate for exactly that one caller (_finishStillRefine), at the cost of
+    // one extra traverse per finished/captured frame, not per tick.
+    var _wouldSkip = (_idx === _photoShadowCheckIdx && _kids === _photoShadowCheckKids && _vis === _photoShadowCheckVis);
+    if (!force && _wouldSkip) {
       _photoShadowReassertSkips++;
       return;  // nothing streamed, nothing added to the scene, nothing re-filtered — a fresh traverse would find nothing new
     }
+    // forcedSaves: how many times THIS SPECIFIC forced call is the only reason a real traverse ran
+    // — i.e. the exact case §PHOTO_SHADOW_FINALCAPTURE exists for (a captured frame that would
+    // otherwise have inherited a stale/skipped shadow-caster state).
+    if (force && _wouldSkip) _photoShadowForcedSaves++;
     _photoShadowCheckIdx = _idx; _photoShadowCheckKids = _kids; _photoShadowCheckVis = _vis;
     _photoShadowReassertRuns++;
     var changed = false;
@@ -2201,13 +2212,13 @@ async function setupEffects(A, renderer, scene, camera) {
   // points). If all three are unchanged since the last check, a fresh traverse would find
   // zero new objects — skip it, don't do the redundant O(scene) work.
   var _photoShadowCheckIdx = -1, _photoShadowCheckKids = -1, _photoShadowCheckVis = -1;
-  var _photoShadowReassertRuns = 0, _photoShadowReassertSkips = 0;
+  var _photoShadowReassertRuns = 0, _photoShadowReassertSkips = 0, _photoShadowForcedSaves = 0;
   function _enablePhotoShadows() {
     if (A._shadowOn) { _photoShadowSelfEnabled = false; return; }  // user's own Shadow mode active — don't touch
     if (!A.sun || !A.renderer || !A.scene) return;
     _photoShadowSelfEnabled = true;
     _photoShadowCheckIdx = -1; _photoShadowCheckKids = -1; _photoShadowCheckVis = -1;
-    _photoShadowReassertRuns = 0; _photoShadowReassertSkips = 0;
+    _photoShadowReassertRuns = 0; _photoShadowReassertSkips = 0; _photoShadowForcedSaves = 0;
     if (!A._shadowInited) {
       A.renderer.shadowMap.enabled = true;
       A.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -2260,7 +2271,7 @@ async function setupEffects(A, renderer, scene, camera) {
       for (; _ui < end; _ui++) { _unshadowList[_ui].castShadow = false; _unshadowList[_ui].receiveShadow = false; }
       if (_ui < _unshadowList.length) setTimeout(_chunk, 0);
       else console.log('§PHOTO_SHADOW disabled reassertRuns=' + _photoShadowReassertRuns +
-        ' reassertSkips=' + _photoShadowReassertSkips);
+        ' reassertSkips=' + _photoShadowReassertSkips + ' forcedSaves=' + _photoShadowForcedSaves);
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
@@ -2679,6 +2690,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // the full revert.
   function _finishStillRefine(idx) {
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
+    // §PHOTO_SHADOW_FINALCAPTURE: guarantee the frame that AO/SSGI (and MaxQ's capture) inherit
+    // was checked fresh, regardless of whether the skip-gate happened to skip the last accumulation
+    // tick — see effects.js _reassertPhotoShadowCoverage's `force` param.
+    _reassertPhotoShadowCoverage(true);
     var ms = _stillRefineStartMs ? Math.round(performance.now() - _stillRefineStartMs) : 0;
     console.log('§STILL_REFINE done accumulateIndex=' + idx + ' elapsedMs=' + ms + ' (frozen — stays until interaction)');
     // §PHOTO_SSGI (2026-07-17): the frozen still now folds in real bounce-light GI (effects_gi_poc.js
