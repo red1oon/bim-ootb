@@ -3,7 +3,7 @@
 // tour.js — Fly around, cinematic tour, walk-through engine, path building
 function setupTour(A) {
   // FLY_TOUR_CORRIDOR_GRAPH.md — build banner: proves which tour build a tab is running.
-  console.log('[TOUR] §TOUR_VERSION v17 (timeline-scrub + highlight-first + SUSPECT_OPEN + wall-legal room-spine bridge — FLY_TOUR_CORRIDOR_GRAPH.md)');
+  console.log('[TOUR] §TOUR_VERSION v18 (timeline-scrub + highlight-first + SUSPECT_OPEN + wall-legal room-spine bridge + A* polyline flight — FLY_TOUR_CORRIDOR_GRAPH.md)');
 
   A.toggleFlyAround = function() {
     const btn = document.getElementById('fly-btn');  // §S280: may be null (pill removed button)
@@ -176,7 +176,7 @@ function setupTour(A) {
   // (§TOUR_CACHE store … key=…:v12:…). The key's other components are DB counts — they bust on a
   // re-extraction or room recompile, never on a code change. This constant is the ONLY thing that
   // invalidates a cached route when the routing ALGORITHM changes.
-  var TOUR_CACHE_VER = 'v16'; // keep in lockstep with the §TOUR_VERSION banner above
+  var TOUR_CACHE_VER = 'v17'; // keep in lockstep with the §TOUR_VERSION banner above
   function _tourCacheKey() {
     try {
       var r = A.db.exec(
@@ -638,15 +638,57 @@ function setupTour(A) {
     // A stop the graph cannot reach (room island — real on sparse federated models, measured
     // HHS) is SKIPPED, never straight-hopped: an occupant can't walk there, and this route
     // invents nothing. EXTRACT ONLY.
+    // §TOUR-POLYLINE (FLY_TOUR_CORRIDOR_GRAPH.md §TOUR_HIGHLIGHT_LANE Task 1, 2026-07-26):
+    // shortestPath() returns an ADDITIVE `polyline` — the A*-verified, floor-hugging geometry the
+    // Find panel draws (room_graph.js §RASTER-ASTAR, §ON-FLOOR-GUARANTEE: it returns null rather
+    // than a subtly-off line). The tour used to fly graph-node CENTROIDS and discard it, which is
+    // why a leg could cut a wall the same building's drawn Find route never crosses.
+    // `legSteps` aligns that polyline back onto the leg's own anchors: a polyline point sitting on
+    // the next anchor's measured position IS that anchor (it keeps its guid, so the name/pause/
+    // stair-flight handling below is byte-for-byte the old code); every other point is an interior
+    // TURN point, flown at the same storey's floor z. A leg with no polyline (rect-fallback
+    // building, or A* declined the hop) degrades to the anchors alone = exactly today's path.
+    // EXTRACT ONLY: every interior point is an A* cell centre off the storey's measured walkable
+    // raster, LOS-simplified — nothing invented, and no stop set/order/ordering rule is touched.
+    const _samePt = (n, p) => Math.abs(n.cx - p.x) < 1e-6 && Math.abs(n.cy - p.y) < 1e-6 &&
+                              Math.abs((n.cz || 0) - (p.z || 0)) < 1e-6;
+    function legSteps(sp) {
+      const anchors = [];
+      for (const guid of sp.path) { const n = g.nodesByGuid[guid]; if (n && n.cx !== undefined) anchors.push({ guid: guid, n: n }); }
+      const poly = sp.polyline;
+      if (!anchors.length) return [];
+      if (!poly || poly.length < 2) return anchors.slice(1).map(a => ({ guid: a.guid, ai: 1 }));
+      const out = [];
+      let ai = 0;  // first anchor not yet emitted
+      for (const p of poly) {
+        let hit = -1;
+        // Look ahead by 2 only: enough to absorb §CIRC-NOT-A-WALKPOINT (the polyline drops a
+        // bypassed `circ` centroid from the DRAWN line — see room_graph.js), never enough to
+        // silently skip a real stop.
+        for (let k = ai; k < anchors.length && k <= ai + 2; k++) if (_samePt(anchors[k].n, p)) { hit = k; break; }
+        if (hit >= 0) { out.push({ guid: anchors[hit].guid, ai: hit }); ai = hit + 1; }
+        else out.push({ pt: p, storey: (ai > 0 ? anchors[ai - 1].n.storey : anchors[0].n.storey) });
+      }
+      for (let k = ai; k < anchors.length; k++) out.push({ guid: anchors[k].guid, ai: k });  // defensive: anchor-complete by construction
+      let cut = 0;  // drop through the leg's own origin anchor — the route is already standing there
+      for (let i = 0; i < out.length; i++) if (out[i].ai === 0) { cut = i + 1; break; }
+      return out.slice(cut);
+    }
+
     const pathGuids = [];
-    let skipped = 0, visitedStops = 0;
+    const steps = [];   // {guid} anchors interleaved with {pt,storey} polyline turn points
+    let skipped = 0, visitedStops = 0, polyLegs = 0, routedLegs = 0;
     let curGuid = entrance ? entrance.guid : seqOriginGuid;  // §HL-ORIGIN — start low, climb to the highlight
     pathGuids.push(curGuid);
+    steps.push({ guid: curGuid });
     for (const s of stops) {
       if (s.guid === curGuid) { visitedStops++; continue; }
       const sp = RG.shortestPath(g, curGuid, s.guid);
       if (sp && sp.path && sp.path.length > 1) {
-        for (let i = 1; i < sp.path.length; i++) pathGuids.push(sp.path[i]);
+        const ls = legSteps(sp);
+        for (const st of ls) { steps.push(st); if (st.guid) pathGuids.push(st.guid); }
+        routedLegs++;
+        if (ls.some(st => st.pt)) polyLegs++;
         visitedStops++;
         curGuid = s.guid;
       } else { skipped++; }
@@ -670,10 +712,15 @@ function setupTour(A) {
       }
       if (!spBack || !spBack.path || spBack.path.length < 2) spBack = RG.shortestPath(g, curGuid, entrance.guid);
       if (spBack && spBack.path && spBack.path.length > 1) {
-        for (let i = 1; i < spBack.path.length; i++) {
-          pathGuids.push(spBack.path[i]);
-          const n = g.nodesByGuid[spBack.path[i]];
-          if (!stairDown && n && n.kind === 'stairwp') stairDown = spBack.path[i];
+        const ls = legSteps(spBack);   // §TOUR-POLYLINE — the descent flies the same on-floor geometry
+        routedLegs++;
+        if (ls.some(st => st.pt)) polyLegs++;
+        for (const st of ls) {
+          steps.push(st);
+          if (!st.guid) continue;
+          pathGuids.push(st.guid);
+          const n = g.nodesByGuid[st.guid];
+          if (!stairDown && n && n.kind === 'stairwp') stairDown = st.guid;
         }
       }
     }
@@ -682,9 +729,22 @@ function setupTour(A) {
     // as the legacy tour); stairwps keep their OWN measured z ends — that IS the climb/descent.
     const pts = [];
     const ifcTrail = [];
-    let circWps = 0;
+    let circWps = 0, polyPts = 0;
     let prevPg = null, prevN = null;
-    for (const pg of pathGuids) {
+    for (const step of steps) {
+      // §TOUR-POLYLINE interior turn point: no guid, no name, no beat — pure geometry, flown on the
+      // same door-derived floor z its flanking anchors use, so the leg follows the corridor instead
+      // of cutting the chord between two room centres.
+      if (step.pt) {
+        const ist = step.storey;
+        const ifz = (storeyZ[ist] !== undefined) ? storeyZ[ist] : (step.pt.z || 0);
+        const itp = A.ifc2three(step.pt.x, step.pt.y, ifz);
+        pts.push({ x: itp.x, y: itp.y + A.WALK_EYE_HEIGHT, z: itp.z, name: '', pause: null });
+        ifcTrail.push({ storey: ist, cx: step.pt.x, cy: step.pt.y, vertical: false });
+        polyPts++;
+        continue;
+      }
+      const pg = step.guid;
       const n = g.nodesByGuid[pg];
       if (!n || n.cx === undefined) continue;
       const fz = (n.kind === 'stairwp') ? n.cz : (storeyZ[n.storey] !== undefined ? storeyZ[n.storey] : n.cz);
@@ -728,7 +788,8 @@ function setupTour(A) {
     console.log('[TOUR] §FLY_ROUTE storeys=' + storeys.length + ' stops=' + visitedStops + '/' + stops.length +
       ' skipped=' + skipped + ' corridorStops=' + corridorStops + ' circWps=' + circWps +
       ' stairUp=' + (stairUp || '-') + ' stairDown=' + (stairDown || '-') +
-      ' pts=' + pts.length + ' illegalChords=' + illegalChords + '/' + checkedChords);
+      ' pts=' + pts.length + ' illegalChords=' + illegalChords + '/' + checkedChords +
+      ' polyPts=' + polyPts + ' polyLegs=' + polyLegs + '/' + routedLegs);  // §TOUR-POLYLINE
     // §S5 QUALITY GATE — every flown leg is graph-connected by construction (unreachable stops
     // are skipped above, never hopped). Chords inside a shortestPath result are the engine's OWN
     // legalized best-effort (_legalizePath keeps a chord when no detour exists — identical to
