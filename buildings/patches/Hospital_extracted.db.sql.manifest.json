@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-07-25T01:07:09.861Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-patch-gate",
+    "sha": "60ac47573819196745cf42ff34f5d4e4de6bba0d",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 2,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_extracted.db",
+    "etag": "b95cabb6-141f-46a0-a1eb-3f18910ae199",
+    "content-md5": null,
+    "size": "263307264",
+    "last-modified": "Fri, 05 Jun 2026 10:17:40 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "buildings/patches/Hospital_extracted.db.sql",
+    "bytes": 144960,
+    "md5": "b78752414fbaaf06d27373bb802dedde",
+    "md5_b64": "t4dSQU+6rwbSc3O7gC3t3g==",
+    "object": "buildings/patches/Hospital_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "554bd44c-e1b2-40f5-9f74-efe1a7d668da",
+    "size": "144960",
+    "last-modified": "Sat, 25 Jul 2026 00:49:12 GMT"
+  },
+  "verification": {
+    "cmd": "node scripts/verify_raster_provenance.js /tmp/wt-patch-gate \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "  ≈ Level 5 R5                   100.0%   storey=Level 5 (storey raster 19.6%)",
+      "  ≈ Level 6 R1                   100.0%   storey=Level 6 (storey raster 27.3%)",
+      "  ≈ Level 7 R1                   100.0%   storey=Level 7 (storey raster 60.1%)",
+      "  ≈ Level 7 R2                   100.0%   storey=Level 7 (storey raster 60.1%)",
+      "",
+      "§RASTER_PROVENANCE worst_room_own_footprint=100.0% rooms=156 verdict=PASS — raster belongs to this room set"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": []
+}

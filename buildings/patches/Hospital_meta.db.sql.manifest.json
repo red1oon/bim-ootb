@@ -1,0 +1,44 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-07-25T01:06:04.350Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/home/red1/bim-ootb",
+    "sha": "73d367679078e614abf982de2d2119bd217658e3",
+    "behind_origin_main": 25,
+    "ahead_origin_main": 2,
+    "clean": false,
+    "dirty_paths": [
+      "?? .claude/",
+      "?? erp/bench_facts.json"
+    ]
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "2fd95d47-fde0-4fde-aaaa-039deac32233",
+    "content-md5": "cTpK9OHSgS1SDXGvbPPkHA==",
+    "size": "4342707",
+    "last-modified": "Sat, 06 Jun 2026 08:15:58 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "../../../tmp/wt-patch-gate/buildings/patches/Hospital_meta.db.sql",
+    "bytes": 144960,
+    "md5": "b78752414fbaaf06d27373bb802dedde",
+    "md5_b64": "t4dSQU+6rwbSc3O7gC3t3g==",
+    "object": "buildings/patches/Hospital_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "10d2a309-c67e-4c19-810c-61d3fd5b0f63",
+    "size": "144960",
+    "last-modified": "Sat, 25 Jul 2026 00:49:21 GMT"
+  },
+  "verification": null,
+  "verdict": "FAIL",
+  "failures": [
+    "engine is 25 commit(s) BEHIND origin/main — the stale-checkout failure. Measure from a fresh origin/main worktree.",
+    "engine worktree is DIRTY — the verification is not reproducible from any commit."
+  ]
+}
