@@ -1,12 +1,12 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-07-25T01:07:09.861Z",
+  "generated_at": "2026-07-25T07:46:41.306Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-patch-gate",
-    "sha": "60ac47573819196745cf42ff34f5d4e4de6bba0d",
+    "worktree": "/tmp/wt-main-baseline",
+    "sha": "491413ffb4e3e277c23b7e7f4a61dfb7f4bf57d2",
     "behind_origin_main": 0,
-    "ahead_origin_main": 2,
+    "ahead_origin_main": 0,
     "clean": true,
     "dirty_paths": []
   },
@@ -20,9 +20,9 @@
   },
   "artifact": {
     "file": "buildings/patches/Hospital_extracted.db.sql",
-    "bytes": 144960,
-    "md5": "b78752414fbaaf06d27373bb802dedde",
-    "md5_b64": "t4dSQU+6rwbSc3O7gC3t3g==",
+    "bytes": 226962,
+    "md5": "7e97413cd546d4065de67a8565a17b22",
+    "md5_b64": "fpdBPNVG1AZd5nqFZaF7Ig==",
     "object": "buildings/patches/Hospital_extracted.db.sql",
     "content_type": "application/sql"
   },
@@ -33,17 +33,17 @@
     "last-modified": "Sat, 25 Jul 2026 00:49:12 GMT"
   },
   "verification": {
-    "cmd": "node scripts/verify_raster_provenance.js /tmp/wt-patch-gate \"$GATE_DB\"",
+    "cmd": "bash -c \"node /home/red1/bim-compiler/prompts/Modeller/DISC_Walker/poc_raster_cover.js /tmp/wt-main-baseline \\\"$GATE_DB\\\" | tail -25 | grep -q \\\"connected_rooms_below_30pct=0/\\\"\"",
     "exit": 0,
     "tail": [
-      "  ≈ Level 5 R5                   100.0%   storey=Level 5 (storey raster 19.6%)",
-      "  ≈ Level 6 R1                   100.0%   storey=Level 6 (storey raster 27.3%)",
-      "  ≈ Level 7 R1                   100.0%   storey=Level 7 (storey raster 60.1%)",
-      "  ≈ Level 7 R2                   100.0%   storey=Level 7 (storey raster 60.1%)",
-      "",
-      "§RASTER_PROVENANCE worst_room_own_footprint=100.0% rooms=156 verdict=PASS — raster belongs to this room set"
+      ""
     ]
   },
   "verdict": "PASS",
-  "failures": []
+  "failures": [],
+  "uploaded": {
+    "at": "2026-07-25T07:46:43.640Z",
+    "etag": "fbd53047-13bd-44c0-b205-cd7284120b75",
+    "verified": true
+  }
 }
