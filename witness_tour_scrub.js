@@ -18,6 +18,12 @@
 //   W-SCRUB-SPEED       — is the speed knob a dt multiplier, not a timeline rescale? PASS =
 //                         _tourTotal is unchanged by tourSetSpeed(0.5/1/2).
 //   W-SCRUB-UI          — all four knob groups present, linear bar, no rotary dial.
+//   W-SCRUB-PANEL-DRAG  — §SCRUB_PANEL_DRAG: is the panel movable WITHOUT becoming a second way to
+//                         scrub? PASS = the panel rect moves by the exact synthesized delta, clamps
+//                         inside the viewport when dragged off-screen, the position survives
+//                         hide→show, AND _tourT + camera pose are UNCHANGED by the drag (the
+//                         "nothing broken" assertion — moving the chrome must never write the
+//                         timeline). FAIL = any pose/cursor movement, or a lost/unclamped panel.
 //
 // Whitebox doctrine: every assertion below reads REAL numeric object state (camera position,
 // controls.target, _tourT, _tourStarts) out of the live page. No screenshots, no eyeballing.
@@ -278,6 +284,79 @@ function claim(name, pass, detail) {
       `barVisible=${ui.visible} linearRangeThumb=${ui.slider} chapterTicks=${ui.ticks} ` +
       `play/prev/next/restart=${ui.play}/${ui.prev}/${ui.next}/${ui.restart} speedBtns=${ui.speeds} ` +
       `mmss="${ui.time}" rotaryDials=${ui.dial}`);
+
+    // ── W-SCRUB-PANEL-DRAG ────────────────────────────────────────────────────
+    // §SCRUB_PANEL_DRAG. Synthesizes real PointerEvents on the panel BACKGROUND (not the slider,
+    // not a button) and reads back the rect + the timeline state. The pose/cursor invariant is the
+    // point of this witness: the panel is chrome, the timeline is data, and they must not touch.
+    const pan = await page.evaluate(async () => {
+      const A = window.APP;
+      const p = document.getElementById('tour-scrub-panel');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const rect = () => { const r = p.getBoundingClientRect(); return { left: r.left, top: r.top }; };
+      const pose = () => [A.camera.position.x, A.camera.position.y, A.camera.position.z,
+                          A.controls.target.x, A.controls.target.y, A.controls.target.z];
+      // grab a point on the panel background: just inside the top edge, clear of the label row's
+      // controls (the header <span>s are not input/button so they drag — that is intended).
+      const send = (type, x, y) => p.dispatchEvent(new PointerEvent(type, {
+        pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+
+      A.tourSeek(A._tourTotal * 0.4, false);
+      A.tourTogglePause(true);                 // hold the pose so any drift is the drag's fault
+      await sleep(50);
+      const before = rect(), poseBefore = pose(), tBefore = A._tourT;
+
+      // 1. exact-delta move
+      const DX = -120, DY = -90;
+      send('pointerdown', before.left + 40, before.top + 6);
+      send('pointermove', before.left + 40 + DX, before.top + 6 + DY);
+      send('pointerup',   before.left + 40 + DX, before.top + 6 + DY);
+      await sleep(30);
+      const after = rect();
+      const dx = after.left - before.left, dy = after.top - before.top;
+      const exact = Math.abs(dx - DX) <= 1 && Math.abs(dy - DY) <= 1;
+
+      // 2. clamp — drag hard off the top-left; must park at the edge, never leave the viewport
+      send('pointerdown', after.left + 40, after.top + 6);
+      send('pointermove', -5000, -5000);
+      send('pointerup',   -5000, -5000);
+      await sleep(30);
+      const clampedRect = p.getBoundingClientRect();
+      const inView = clampedRect.left >= -0.5 && clampedRect.top >= -0.5 &&
+                     clampedRect.right <= window.innerWidth + 0.5 &&
+                     clampedRect.bottom <= window.innerHeight + 0.5;
+
+      // 3. persistence across hide → show
+      const parked = rect();
+      A._scrubHide(); await sleep(20); A._scrubShow(); await sleep(30);
+      const restored = rect();
+      const persisted = Math.abs(restored.left - parked.left) <= 1 &&
+                        Math.abs(restored.top - parked.top) <= 1;
+
+      // 4. THE invariant — the timeline never moved through any of it
+      const poseAfter = pose(), tAfter = A._tourT;
+      const poseDelta = Math.max(...poseAfter.map((v, i) => Math.abs(v - poseBefore[i])));
+      const cursorDelta = Math.abs(tAfter - tBefore);
+
+      // 5. the slider still seeks after the panel has been moved (no wiring casualty)
+      const sl = document.getElementById('tour-scrub-slider');
+      const tPre = A._tourT;
+      sl.value = String(Math.round(0.75 * 1000));
+      sl.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(30);
+      const sliderStillSeeks = Math.abs(A._tourT - tPre) > 1;
+
+      A.tourTogglePause(false);
+      return { exact, dx, dy, inView, persisted, poseDelta, cursorDelta, sliderStillSeeks,
+               left: clampedRect.left, top: clampedRect.top };
+    });
+    claim('W-SCRUB-PANEL-DRAG',
+      pan.exact && pan.inView && pan.persisted && pan.poseDelta === 0 && pan.cursorDelta === 0 &&
+      pan.sliderStillSeeks,
+      `movedBy=${pan.dx.toFixed(1)},${pan.dy.toFixed(1)} exactDelta=${pan.exact} ` +
+      `clampedInView=${pan.inView} parkedAt=${pan.left.toFixed(1)},${pan.top.toFixed(1)} ` +
+      `persistedAcrossHideShow=${pan.persisted} | poseDelta=${pan.poseDelta} ` +
+      `cursorDelta=${pan.cursorDelta} sliderStillSeeks=${pan.sliderStillSeeks}`);
 
   } catch (e) {
     claim('WITNESS-RUN', false, 'threw: ' + e.message);
