@@ -1354,9 +1354,26 @@
       }
       var roomNames = result.path.map(function(g) { return graph.nodesByGuid[g].name; });
       var doorGuids = result.doors.map(function(d) { return d.guid; });
+      // §ROOM_PATH_PRECISION (2026-07-25, §14's summary-first rule applied to this line): the old
+      // form printed `hops=<doors.length> rooms=[<every path node's name>]`, which read as "12 rooms,
+      // 6 doors" on the real Hospital capture when the truth was 4 distinct portals (one of them a
+      // STAIR crossed on 3 storey hops, hence the same guid three times) and only 4 actual rooms —
+      // the rest of `rooms=[]` were corridor-spine, door- and stair-WAYPOINTS. A reader could not
+      // tell a real double-back from a repeated stair hop. Now: node KINDS are named, portals are
+      // counted distinctly, and the drawn-polyline point count is on the same line, so the log alone
+      // distinguishes "route revisits a door" from "one stair, three flights".
+      var kindOf = function(g) { return (graph.nodesByGuid[g] || {}).kind || '?'; };
+      var counts = {};
+      result.path.forEach(function(g) { var k = kindOf(g); counts[k] = (counts[k] || 0) + 1; });
+      var distinctDoors = {}; doorGuids.forEach(function(g) { distinctDoors[g] = (distinctDoors[g] || 0) + 1; });
+      var repeated = Object.keys(distinctDoors).filter(function(g) { return distinctDoors[g] > 1; });
       console.log('[RP-PATH] §ROOM_PATH from=' + fromN.name + ' to=' + toN.name +
-        ' hops=' + result.doors.length + ' rooms=[' + roomNames.join(',') + ']' +
-        ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm');
+        ' hops=' + result.doors.length + ' portals=' + Object.keys(distinctDoors).length +
+        ' anchors={' + Object.keys(counts).map(function(k) { return k + ':' + counts[k]; }).join(' ') + '}' +
+        ' polyPts=' + ((result.polyline || []).length) +
+        ' rooms=[' + roomNames.join(',') + ']' +
+        ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm' +
+        (repeated.length ? ' repeatedPortals=[' + repeated.map(function(g) { return g + 'x' + distinctDoors[g]; }).join(',') + ']' : ''));
       _drawPathHighlight(graph, result);
       return result;
     }
@@ -3193,21 +3210,65 @@
         box.appendChild(msg);
         return;
       }
+      // §PATH_PANEL_KINDS (2026-07-25, real user screenshots `RoomsPath{Top,Front,Side}View.png`):
+      // this list used to render EVERY `res.path` entry as a numbered ROOM stop and pair it with
+      // `res.doors[i]` POSITIONALLY. The two arrays are neither the same length nor the same
+      // sequence — `path` carries room nodes AND corridor-spine / door / stair waypoints, `doors`
+      // carries one entry per traversed portal edge — so the panel showed a DOOR
+      // ("M_Single-Flush:0915 x 2134mm_Wood:668663") as numbered stop 4, printed
+      // "└─ door: Stair:180mm max riser 280mm going" under three corridor rows, listed the same
+      // corridor twice, and headed the list "6 doors" when the route crosses 4 distinct portals
+      // (one a stair, counted once per storey hop). Fixed by rendering each anchor BY ITS OWN KIND
+      // straight off the path — no positional zip can go out of step — and counting portals
+      // distinctly in the header. Same data, no new query.
+      var stairNamePrefixes = [];
+      Object.keys(graph.nodesByGuid).forEach(function(g) {
+        var n = graph.nodesByGuid[g];
+        if (n && n.kind === 'stairwp' && n.name) stairNamePrefixes.push(String(n.name).replace(/ \((lower|upper)\)$/, ''));
+      });
+      var isStairPortal = function(d) {
+        var nm = String((d && d.name) || '');
+        return stairNamePrefixes.some(function(p) { return p && nm.indexOf(p) === 0; });
+      };
+      var seen = {}, nDoor = 0, nStair = 0;
+      (res.doors || []).forEach(function(d) {
+        if (!d || seen[d.guid]) return;
+        seen[d.guid] = 1;
+        if (isStairPortal(d)) nStair++; else nDoor++;
+      });
       var hdr = document.createElement('div');
       hdr.style.cssText = 'font-size:10px;color:#4fc3f7;padding:4px 2px 2px';
-      hdr.textContent = res.doors.length + (res.doors.length === 1 ? ' door · ' : ' doors · ') + res.distance.toFixed(1) + 'm';
+      hdr.textContent = nDoor + (nDoor === 1 ? ' door' : ' doors') +
+        (nStair ? ' · ' + nStair + (nStair === 1 ? ' stair' : ' stairs') : '') +
+        ' · ' + res.distance.toFixed(1) + 'm';
       box.appendChild(hdr);
-      res.path.forEach(function(guid, i) {
+      var stopNo = 0, lastCorridorKey = null;
+      res.path.forEach(function(guid) {
         var n = graph.nodesByGuid[guid];
-        box.appendChild(_treeNode((i + 1) + '. ' + n.name + ' · ' + (n.label || n.name), '', 1,
-          { onTap: function() { _roomSelect(guid); } }));
-        if (i < res.doors.length) {
-          var d = document.createElement('div');
-          d.style.cssText = 'padding:2px 10px 2px 34px;font-size:9px;color:#777;display:flex;align-items:center;gap:4px';
-          d.textContent = '└─ door: ' + (res.doors[i].name || res.doors[i].guid);
-          d.title = 'door guid: ' + res.doors[i].guid;
-          box.appendChild(d);
+        if (!n) return;
+        if (n.kind === 'room' || n.kind === 'exit') {
+          lastCorridorKey = null;
+          stopNo++;
+          box.appendChild(_treeNode(stopNo + '. ' + n.name + ' · ' + (n.label || n.name), '', 1,
+            { onTap: function() { _roomSelect(guid); } }));
+          return;
         }
+        // waypoint anchors: shown as the WAY you get there, indented under the previous stop
+        var lead = '', title = '';
+        if (n.kind === 'doorwp') { lead = '└─ through door: ' + n.name; title = 'door guid: ' + guid; lastCorridorKey = null; }
+        else if (n.kind === 'stairwp') { lead = '└─ via stair: ' + n.name; title = 'stair waypoint: ' + guid; lastCorridorKey = null; }
+        else { // spine / circ — one line per continuous corridor run, not one per bucket
+          var key = 'corr|' + (n.storey || '');
+          if (key === lastCorridorKey) return;
+          lastCorridorKey = key;
+          lead = '└─ along ' + (n.name || 'corridor');
+          title = 'circulation waypoint: ' + guid;
+        }
+        var d = document.createElement('div');
+        d.style.cssText = 'padding:2px 10px 2px 34px;font-size:9px;color:#777;display:flex;align-items:center;gap:4px';
+        d.textContent = lead;
+        d.title = title;
+        box.appendChild(d);
       });
     }
 

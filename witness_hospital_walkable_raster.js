@@ -1,25 +1,26 @@
 #!/usr/bin/env node
 /**
  * # ⚠ DO NOT REMOVE — W-HOSPITAL-WALKABLE-RASTER scope (READ THE LOG after every run)
- * SCOPE: bim-compiler prompts/ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §22-§24 — unlike HHS (PR #802)
- * and JKR (PR #803), Hospital's walkable raster does NOT reduce its DETOUR_FAIL rate, and this is
- * an intentional, understood, PERMANENT state, not a bug still to be fixed. Two real build-script
- * bugs were found and fixed along the way (missing corridorRectsByStorey union; missing
- * DOOR_BUFFER_SLACK/CORRIDOR_RECT_SLACK parity with _pointWalkable()'s fallback) which took
- * Hospital's raster from a REGRESSION (39.6%->44.1%) to a dead-even TIE with the no-raster
- * baseline (still 39.6%) - proven via exact pair-level identity, not just a matching percentage
- * (the SAME 1197/3023 sampled pairs fail before and after, zero pairs flipped either direction).
- * Root cause: even Hospital's Level 1 §PATH_LEGAL_DETOUR_FAIL log shows "no legal detour among 128
- * doors" - plenty of real candidate waypoints exist, but Hospital's real floor-evidence coverage is
- * still only 20-40% per storey even after both fixes (vs Clinic's ~65-75%), so almost any
- * cross-floor chord between two arbitrary doors crosses at least one uncovered patch somewhere
- * along its length. This is the SAME already-tracked corridor-coverage gap as
- * witness_hospital_corridor_baseline.js (17.8% join ratio vs Clinic/HHS's ~45%) - a real geometry-
- * recognition gap in hallway_backbone.js, not something a walkable-raster fix can touch. Ships
- * Hospital's raster anyway (most-accurate available walkable-floor ground truth, valuable for this
- * spec's own VISUAL rendering purpose independent of pathfinding), but this witness's whole point
- * is to stop a future session from re-attempting "make Hospital's raster better" as if it were an
- * open bug - it is not, until hallway_backbone.js's corridor-join gap for Hospital closes further.
+ * SCOPE: bim-compiler prompts/ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §22-§24 + VIEWER_FIND_PANEL_ROOM_
+ * ACCURACY.md §17 — Hospital's walkable raster vs the no-raster baseline, measured pair by pair.
+ *
+ * ⚠ THIS WITNESS'S PREMISE WAS REWRITTEN 2026-07-25, per its OWN closing instruction ("if G3 ever
+ * shows onlyBase>0 ... re-derive numbers, don't just bump this witness's floor"). It previously
+ * asserted that Hospital's raster is a permanent TIE with the baseline — same 1197/3023 pairs
+ * failing before and after — and existed to stop sessions re-attempting "make Hospital's raster
+ * better" as if it were an open bug. That premise was FALSE, and the reason was found by measurement,
+ * not by re-attempting the thing it warned against: the raster BUILDER selected slabs in a hardcoded
+ * z window `[storeyZ-2, storeyZ+1]` around the average ROOM-CENTRE z, and on this building that
+ * missed the real floor plate by FIVE CENTIMETRES (Level 4 window [181.79,184.79] vs floor slab
+ * z=181.74, area 8270 m²; same on Level 1 and Level 5). So the shipped raster carried rooms and
+ * corridors only, and a "tie" was the best it could do. With the floor plane DERIVED instead
+ * (§FLOOR-PLANE-NOT-FIXED-WINDOW in scripts/build_storey_walkable_raster.js) the same building's
+ * coverage goes Level 1 39.8%->69.3%, Level 4 20.5%->41.2%, and this sweep goes from
+ * baseline 63.3% (1914/3023 pairs) to 0.0% (0/3023) with ZERO newly-broken pairs.
+ * The old note also blamed hallway_backbone.js's corridor-join ratio (17.8% vs Clinic's ~45%). That
+ * gap is real and still open (witness_hospital_corridor_baseline.js owns it) but it was NOT what
+ * capped this metric — do not re-derive the two as the same finding.
+ * G3 now asserts the real invariant: the raster must IMPROVE the baseline and break nothing.
  * RUN: node witness_hospital_walkable_raster.js   (from the worktree root)
  */
 'use strict';
@@ -83,9 +84,17 @@ chk('G1 raster patch applies cleanly (156 rooms, matches the raw db — Hospital
   rastered.rooms === 156, 'rooms=' + rastered.rooms);
 chk('G2 raster does NOT regress the baseline (this is the thing both earlier attempts got wrong)',
   rastered.pct <= baseline.pct + 0.5, 'baseline=' + baseline.pct.toFixed(1) + '% withRaster=' + rastered.pct.toFixed(1) + '%');
-chk('G3 documents the honest finding: it is a TIE, not an improvement — same failing pairs, not just a matching count',
-  onlyBase === 0 && onlyRastered === 0, 'fixed=' + onlyBase + ' newlyBroken=' + onlyRastered + ' overlap=' + both);
+// G3 (rewritten 2026-07-25, see the scope block): the raster must FIX pairs and break none. The old
+// assertion demanded an exact tie, which now fails BY SUCCEEDING — the floor-plane fix turns 1914
+// failing pairs into 0. `newlyBroken===0` keeps the guarantee that mattered in the tie era: more
+// walkable evidence can only turn illegal->legal, never the reverse.
+chk('G3 raster IMPROVES the baseline and breaks nothing (was asserted as a permanent TIE until the ' +
+  'builder\'s floor-plane bug was found — see scope block)',
+  onlyBase > 0 && onlyRastered === 0, 'fixed=' + onlyBase + ' newlyBroken=' + onlyRastered + ' overlap=' + both);
 
 console.log('\n§W-HOSPITAL-WALKABLE-RASTER DONE pass=' + pass + ' fail=' + fail +
-  ' — if G3 ever shows onlyBase>0, hallway_backbone.js\'s corridor coverage genuinely improved for Hospital; re-derive numbers, don\'t just bump this witness\'s floor.');
+  ' — if G3 ever REGRESSES (newlyBroken>0, or fixed drops toward 0), the raster patch in ' +
+  'buildings/patches/ has gone stale against the room set or the builder\'s floor-plane detection ' +
+  'broke; re-derive from scripts/build_storey_walkable_raster.js\'s §RASTER_FLOOR_PLANE log, don\'t ' +
+  'relax this assertion.');
 process.exit(fail ? 1 : 0);
