@@ -1588,6 +1588,7 @@ function setupTour(A) {
     // The panel is a fixed overlay, not a canvas child — picking.js's tour-abort listener is bound
     // to A.canvas, so panel pointers never reach it. stopPropagation is belt-and-braces.
     _scrubPanel.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
+    _scrubWireDrag();
 
     _scrubSlider = document.getElementById('tour-scrub-slider');
     _scrubSlider.addEventListener('pointerdown', function() { _scrubDragging = true; _scrubDragT = A._tourT || 0; });
@@ -1622,6 +1623,104 @@ function setupTour(A) {
     for (var i = 0; i < spds.length; i++) {
       spds[i].onclick = function() { A.tourSetSpeed(parseFloat(this.getAttribute('data-spd'))); };
     }
+  }
+
+  // ═══════════ §SCRUB_PANEL_DRAG — movable panel (FLY_TOUR_CORRIDOR_GRAPH.md §SCRUB_PANEL_DRAG) ═══
+  // WHY: §2 item 2 of the usage review asked whether the always-on bar competes with the cinematic
+  // view. Moving it answers that WITHOUT reopening the rejected hidden/reveal-icon design — the
+  // presenter parks it off whatever they are showing, and it stays put across beats and reloads.
+  // The panel is the ONLY thing that moves: a panel drag must never write the timeline (W-SCRUB-
+  // PANEL-DRAG asserts A._tourT and the camera pose are byte-identical across a drag).
+  var SCRUB_POS_KEY = 'bim.tourScrub.pos';
+  var _scrubDragPan = null;            // {dx, dy, id} while a panel drag is live, else null
+
+  // Clamp fully on-screen — a drag aimed off-viewport parks at the edge, the panel is never lost.
+  function _scrubClampPos(left, top) {
+    var w = _scrubPanel.offsetWidth, h = _scrubPanel.offsetHeight;
+    return { left: Math.max(0, Math.min(left, window.innerWidth - w)),
+             top:  Math.max(0, Math.min(top,  window.innerHeight - h)) };
+  }
+  // Shipped default is bottom-centre via left:50% + translateX(-50%). Freeze that into explicit
+  // left/top px measured from the CURRENT rect, so the first grab cannot shift under the cursor.
+  function _scrubFreezePos() {
+    if (_scrubPanel.style.transform === 'none') return;
+    var r = _scrubPanel.getBoundingClientRect();
+    _scrubPanel.style.transform = 'none';
+    _scrubPanel.style.bottom = 'auto';
+    _scrubPanel.style.left = r.left + 'px';
+    _scrubPanel.style.top = r.top + 'px';
+  }
+  function _scrubApplyPos(left, top, why) {
+    _scrubFreezePos();
+    var c = _scrubClampPos(left, top);
+    var clamped = (c.left !== left || c.top !== top);
+    _scrubPanel.style.left = c.left + 'px';
+    _scrubPanel.style.top = c.top + 'px';
+    if (why) console.log('[TOUR] §SCRUB_PANEL_POS ' + why + ' left=' + c.left.toFixed(1) +
+                         ' top=' + c.top.toFixed(1) + ' clamped=' + clamped);
+    return c;
+  }
+  function _scrubSavePos() {
+    try {
+      var r = _scrubPanel.getBoundingClientRect();
+      localStorage.setItem(SCRUB_POS_KEY, JSON.stringify({ left: r.left, top: r.top }));
+    } catch (e) {}
+  }
+  // Restore on every show — re-clamped, because the viewport may have resized since it was stored.
+  function _scrubRestorePos() {
+    var raw = null;
+    try { raw = localStorage.getItem(SCRUB_POS_KEY); } catch (e) {}
+    if (!raw) return false;
+    var p; try { p = JSON.parse(raw); } catch (e) { return false; }
+    if (!p || !isFinite(p.left) || !isFinite(p.top)) return false;
+    _scrubApplyPos(p.left, p.top, 'restore');
+    return true;
+  }
+  function _scrubResetPos() {
+    try { localStorage.removeItem(SCRUB_POS_KEY); } catch (e) {}
+    var tmp = document.getElementById('time-machine-panel');
+    _scrubPanel.style.bottom = (tmp && tmp.style.display && tmp.style.display !== 'none') ? '260px' : '80px';
+    _scrubPanel.style.top = 'auto';
+    _scrubPanel.style.left = '50%';
+    _scrubPanel.style.transform = 'translateX(-50%)';
+    console.log('[TOUR] §SCRUB_PANEL_POS reset left=50% (bottom-centre default restored)');
+  }
+
+  function _scrubWireDrag() {
+    // Handle = the panel BACKGROUND only. The slider, the four knob groups and the clickable
+    // chapter ticks keep their exact shipped behaviour — a pointerdown on any of them is not a drag.
+    _scrubPanel.addEventListener('pointerdown', function(e) {
+      if (e.target.closest && e.target.closest('input,button,#tour-scrub-ticks')) return;
+      _scrubFreezePos();
+      var r = _scrubPanel.getBoundingClientRect();
+      _scrubDragPan = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId,
+                        from: { left: r.left, top: r.top } };
+      try { _scrubPanel.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    });
+    _scrubPanel.addEventListener('pointermove', function(e) {
+      if (!_scrubDragPan || e.pointerId !== _scrubDragPan.id) return;
+      _scrubApplyPos(e.clientX - _scrubDragPan.dx, e.clientY - _scrubDragPan.dy, null);
+      e.preventDefault();
+    });
+    var end = function(e) {
+      if (!_scrubDragPan || (e.pointerId !== undefined && e.pointerId !== _scrubDragPan.id)) return;
+      var f = _scrubDragPan.from;
+      _scrubDragPan = null;
+      try { _scrubPanel.releasePointerCapture(e.pointerId); } catch (err) {}
+      var r = _scrubPanel.getBoundingClientRect();
+      _scrubSavePos();
+      console.log('[TOUR] §SCRUB_PANEL_DRAG from=' + f.left.toFixed(1) + ',' + f.top.toFixed(1) +
+                  ' to=' + r.left.toFixed(1) + ',' + r.top.toFixed(1) +
+                  ' T=' + (A._tourT || 0).toFixed(4) + ' (timeline untouched)');
+    };
+    _scrubPanel.addEventListener('pointerup', end);
+    _scrubPanel.addEventListener('pointercancel', end);
+    // Double-click the background → back to the shipped bottom-centre default.
+    _scrubPanel.addEventListener('dblclick', function(e) {
+      if (e.target.closest && e.target.closest('input,button,#tour-scrub-ticks')) return;
+      _scrubResetPos();
+    });
   }
 
   A.tourTogglePause = function(force) {
@@ -1692,6 +1791,7 @@ function setupTour(A) {
     A.tourSetSpeed(A.tourScrubSpeed || 1);
     A.tourTogglePause(false);
     _scrubPanel.style.display = 'flex';
+    _scrubRestorePos();          // §SCRUB_PANEL_DRAG — survives tour stop/restart and reload
     _scrubSync(true);
     console.log('[TOUR] §SCRUB_UI show actions=' + A.walkActions.length + ' total=' + (A._tourTotal || 0).toFixed(2) + 's bar=linear-thumb dial=none');
   };
