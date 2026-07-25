@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v847';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v848';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -284,6 +284,20 @@ function isNetworkFirst(url) {
   // Precached local files — cache-first (CACHE_VERSION bump purges + refreshes)
   var filename = base.split('/').pop();
   if (_PRECACHE_SET.has(filename)) return false;
+  // §SQL-PATCH-NETWORK-FIRST (2026-07-25, measured on a real user session —
+  // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): `buildings/patches/*.sql` used to fall through to
+  // cacheFirst, because only .html/.js were network-first and .sql matched nothing. That silently
+  // breaks THE PROJECT'S OWN DB-CHANGE DOCTRINE (CLAUDE.md §DB CHANGES): every DB fix ships as a
+  // small .sql applied at load by A._applyPendingPatch(), so an UPDATED patch could never reach an
+  // already-installed client — the SW kept serving the first body it ever cached. Proven live: the
+  // regenerated Hospital walkable raster went to OCI at 07:45:18Z, and a session SIX HOURS later
+  // (rooms_meta.built_at 13:37:44Z) still compiled against the OLD raster — its saved db carries the
+  // pre-fix Level 1 signature (x0=-0.0147 cols=304 rows=332 instead of x0=-12.5998 cols=403 rows=372)
+  // and its console reproduced all three pre-fix §PATH_LEGAL_DETOUR_FAIL legs exactly
+  // (34.2m/96, 39.5m/135, 10.1m/34). With the live patch applied to that same saved db: zero
+  // DETOUR_FAIL. networkFirst (not no-cache) keeps the offline PWA path intact — it falls back to the
+  // cached body when the network is gone, which is what §38-offline-pwa needs.
+  if (base.endsWith('.sql')) return true;
   // Unknown JS/HTML not in precache list — network-first (safe default)
   if (base.endsWith('.html') || base.endsWith('.js')) return true;
   return false;
