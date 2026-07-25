@@ -708,58 +708,6 @@
     });
     if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
-    // ── §ROOM-SPINE-BRIDGE (OCCUPANT_PATHFINDER.md §ROOM-SPINE-BRIDGE, 2026-07-25) ──
-    // A room with ZERO edges is unroutable: §CONNECTED-STOPS drops it, Find cannot path to it, and
-    // on Hospital that stranded 42 rooms (room-pair pathability 56.2%) INCLUDING the building's
-    // largest space (315.7 m² atrium, deg=0). Measured cause: E1 is door-based, and a low-enclosure
-    // space has no door on its boundary — the very property that earns it SUSPECT_OPEN. Two fixes
-    // were falsified on the real fixture before this one: widening the door slack (cannot reach the
-    // 22 rooms whose nearest door is 8-10m, and needs a 5x constant move for the atrium), and
-    // room-to-room rect adjacency (0 of 42 stranded rooms have a neighbour ROOM rect within RES —
-    // compiled rooms do not tile the floor). What IS in reach is CIRCULATION: all 42 have a spine/
-    // circ node nearby, the atrium's is 1.31m away. So an open space connects through an OPENING
-    // ONTO A CORRIDOR, not through a door to another room — and that is an edge this engine already
-    // knows how to make: identical shape to the §ISLAND_BRIDGE circ-per-chain edge above, which
-    // already bridges up to 51.97m on this same building. No new constant, no threshold, no cap:
-    // nearest real spine point, real measured distance, logged for audit.
-    var roomBridges = 0;
-    var _degSoFar = {};
-    edges.forEach(function (e) {
-      _degSoFar[e.a] = (_degSoFar[e.a] || 0) + 1;
-      _degSoFar[e.b] = (_degSoFar[e.b] || 0) + 1;
-    });
-    order.forEach(function (lg) {
-      var g = nodes[lg];
-      if (g.kind !== 'room' || _degSoFar[lg]) return;
-      var pts = spineByStorey[g.storey];
-      if (!pts || !pts.length) return;
-      var best = null, bestD = Infinity;
-      pts.forEach(function (p) {
-        // rect distance, not centroid: a long room's centre can be far from a corridor its EDGE
-        // touches (the atrium reads 1.31m by rect, much further by centre).
-        var d;
-        if (g.rects && g.rects.length) {
-          d = Infinity;
-          for (var ri = 0; ri < g.rects.length; ri++) {
-            var rc = g.rects[ri];
-            var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
-            var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
-            var dd = Math.hypot(ddx, ddy);
-            if (dd < d) d = dd;
-          }
-        } else {
-          d = Math.hypot(p.cx - g.cx, p.cy - g.cy);
-        }
-        if (d < bestD) { bestD = d; best = p; }
-      });
-      if (!best) return;
-      edges.push({ a: lg, b: best.guid, doorGuid: null, doorName: 'Opening onto corridor',
-                   storey: g.storey, kind: 'E6', w: bestD, wpA: best.guid });
-      roomBridges++;
-      log('§ROOM_SPINE_BRIDGE room="' + (g.name || lg) + '" storey=' + g.storey +
-          ' spine=' + best.guid + ' dist=' + bestD.toFixed(2) + 'm');
-    });
-    if (roomBridges) log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges);
 
     // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
     // target); connect the nearest room-or-circ node on that storey (real distance, not invented).
@@ -808,6 +756,75 @@
       if (!roomRectsByStorey[g.storey]) roomRectsByStorey[g.storey] = [];
       g.rects.forEach(function (rc) { roomRectsByStorey[g.storey].push(rc); });
     });
+
+    // ── §ROOM-SPINE-BRIDGE + §BRIDGE-WALL-LEGAL (OCCUPANT_PATHFINDER.md, 2026-07-25) ──
+    // A room with ZERO edges is unroutable: §CONNECTED-STOPS drops it, Find cannot path to it, and
+    // on Hospital that stranded 42 rooms (room-pair pathability 56.2%) INCLUDING the building's
+    // largest space (315.7 m² atrium). E1 is door-based, and a low-enclosure space has no door on
+    // its boundary — the property that earns it SUSPECT_OPEN. Two alternatives were falsified on a
+    // real fixture first: widening the door slack (cannot reach rooms whose nearest door is 8-10m;
+    // needs a 5x constant move) and room-to-room rect adjacency (0 of 42 have a neighbour ROOM rect
+    // within RES — compiled rooms do not tile the floor). Circulation IS in reach: the atrium's
+    // nearest spine point is 1.31m away.
+    // §BRIDGE-WALL-LEGAL — the review's correction, and it is the point of the whole edge: an
+    // UNVALIDATED bridge is an INVENTED PASSAGE. The first cut emitted 40 bridges of which 17
+    // exceeded 15m and the longest was 45.7m, each stored as doorName 'Opening onto corridor' with
+    // doorGuid null — Find would happily route a user through 45.7m of solid wall. So the segment
+    // must be MEASURED, not asserted: sample room-centre -> spine point and require ZERO illegal
+    // samples via the engine's own _chordIllegalCount (raster when the storey has one, room/corridor
+    // rects otherwise — the same predicate shortestPath's legalizer already trusts). This block
+    // therefore lives HERE, after `rasters` and `roomRectsByStorey` exist, not up beside the circ
+    // bridge. Candidates are tried nearest-first and the first LEGAL one wins; if none is legal the
+    // room stays deg-0 ON PURPOSE. A graph that admits a gap is recoverable; one that invents a
+    // passage produces confidently wrong egress/MEP/quantity answers downstream.
+    var roomBridges = 0, bridgeRejected = 0;
+    var _legalCtx = { rasters: rasters, roomRectsByStorey: roomRectsByStorey,
+                      corridorRectsByStorey: corridorRectsByStorey };
+    var _degSoFar = {};
+    edges.forEach(function (e) {
+      _degSoFar[e.a] = (_degSoFar[e.a] || 0) + 1;
+      _degSoFar[e.b] = (_degSoFar[e.b] || 0) + 1;
+    });
+    order.forEach(function (lg) {
+      var g = nodes[lg];
+      if (g.kind !== 'room' || _degSoFar[lg]) return;
+      var pts = spineByStorey[g.storey];
+      if (!pts || !pts.length) return;
+      // rect distance ranks candidates (a long room's centre can be far from a corridor its EDGE
+      // touches); the LEGALITY test uses centre->spine, which is the segment a router actually draws.
+      var ranked = pts.map(function (p) {
+        var d;
+        if (g.rects && g.rects.length) {
+          d = Infinity;
+          for (var ri = 0; ri < g.rects.length; ri++) {
+            var rc = g.rects[ri];
+            var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
+            var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
+            var dd = Math.hypot(ddx, ddy);
+            if (dd < d) d = dd;
+          }
+        } else {
+          d = Math.hypot(p.cx - g.cx, p.cy - g.cy);
+        }
+        return { p: p, d: d };
+      }).sort(function (a, b) { return a.d - b.d; });
+      for (var k = 0; k < ranked.length; k++) {
+        var sp = ranked[k].p;
+        if (_chordIllegalCount(_legalCtx, g.storey, g.cx, g.cy, sp.cx, sp.cy) > 0) continue;
+        var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy);
+        edges.push({ a: lg, b: sp.guid, doorGuid: null, doorName: 'Opening onto corridor',
+                     storey: g.storey, kind: 'E6', w: w, wpA: sp.guid });
+        roomBridges++;
+        log('§ROOM_SPINE_BRIDGE room="' + (g.name || lg) + '" storey=' + g.storey +
+            ' spine=' + sp.guid + ' gap=' + ranked[k].d.toFixed(2) + 'm walk=' + w.toFixed(2) + 'm');
+        return;
+      }
+      bridgeRejected++;
+      log('§ROOM_SPINE_BRIDGE_REJECT room="' + (g.name || lg) + '" storey=' + g.storey +
+          ' candidates=' + ranked.length + ' nearest=' + ranked[0].d.toFixed(2) + 'm — no wall-legal chord');
+    });
+    if (roomBridges || bridgeRejected)
+      log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected);
 
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
