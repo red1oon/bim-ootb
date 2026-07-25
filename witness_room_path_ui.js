@@ -138,7 +138,7 @@ const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  '
   const pathLogLine = logs.filter(l => l.indexOf('§ROOM_PATH from=') >= 0).slice(-1)[0] || '';
   console.log('  ' + pathLogLine);
   chk('§ROOM_PATH log line carries the route AND the §ROOM_PATH_PRECISION fields (portals/anchors/polyPts)',
-    /§ROOM_PATH from=.+ to=.+ hops=\d+ portals=\d+ anchors=\{[^}]*\} polyPts=\d+ rooms=\[.*\] doors=\[.*\]/.test(pathLogLine),
+    /§ROOM_PATH from=.+ to=.+ hops=\d+ portals=\d+ anchors=\{[^}]*\} polyPts=\d+ stops=\[.*\] via=\[.*\] doors=\[.*\]/.test(pathLogLine),
     pathLogLine || 'not found');
 
   const treeText = await pg.evaluate(() => { const t = document.getElementById('find-tree'); return t ? t.textContent : ''; });
