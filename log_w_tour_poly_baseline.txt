@@ -1,0 +1,245 @@
+══ W-TOUR-POLYLINE-PATH — tour flown geometry: node centroids vs A* polyline ══
+
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=15 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=9 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=7 detoured=0
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 4 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL legalized=9 detoured=1
+§PATH_LEGAL legalized=3 detoured=1
+§PATH_LEGAL legalized=4 detoured=1
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=15 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=9 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=7 detoured=0
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=8 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 4 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL legalized=9 detoured=1
+§PATH_LEGAL legalized=3 detoured=1
+§PATH_LEGAL legalized=4 detoured=1
+§PATH_LEGAL legalized=6 detoured=0
+── Hospital  (nodes=156 edges=545)
+   BEFORE  pts=159 illegalChords=0/146 (0.0%) illegalSamples=0 planMs=42
+   AFTER   pts=159 illegalChords=0/146 (0.0%) illegalSamples=0 planMs=35
+   BEFORE §FLY_ROUTE storeys=7 stops=22/22 skipped=0 corridorStops=12 circWps=121 stairUp=1wrNt7GW19tOpUaBLGwvsc::Level_2::hi stairDown=- pts=159 illegalChords=0/146
+   AFTER  §FLY_ROUTE storeys=7 stops=22/22 skipped=0 corridorStops=12 circWps=121 stairUp=1wrNt7GW19tOpUaBLGwvsc::Level_2::hi stairDown=- pts=159 illegalChords=0/146
+  ✅ Hospital: never worse (illegal chord RATIO)  0.0% → 0.0%
+  ✅ Hospital: illegal SAMPLE count never worse  0 → 0
+  ✅ Hospital: stop set + order untouched  identical
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=15.7m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=31.6m illegal=14 candidates=32
+§PATH_LEGAL_DETOUR_MID storey=Aras 01 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=6 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras 01 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 02 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=32.6m illegal=6 candidates=31
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=3.1m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=41.4m illegal=16 candidates=32
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=42.4m illegal=18 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=40.5m illegal=22 candidates=32
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=40.5m illegal=22 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=42.4m illegal=18 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=24.0m illegal=44 candidates=32
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=24.0m illegal=44 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 02 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=41.4m illegal=5 candidates=31
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=4 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 04 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=2.2m illegal=3 candidates=8
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=3.1m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=15.7m illegal=9 candidates=72
+§PATH_LEGAL legalized=6 detoured=2
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=15.7m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=31.6m illegal=14 candidates=32
+§PATH_LEGAL_DETOUR_MID storey=Aras 01 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=6 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras 01 no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 02 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=32.6m illegal=6 candidates=31
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=3.1m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (2 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=41.4m illegal=16 candidates=32
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=42.4m illegal=18 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=40.5m illegal=22 candidates=32
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=40.5m illegal=22 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=42.4m illegal=18 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=24.0m illegal=44 candidates=32
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 01 cause=WALKABLE_ISLANDS aWalkable=true bWalkable=true len=24.0m illegal=44 candidates=32
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 02 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=41.4m illegal=5 candidates=31
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=4 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras 04 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=2.2m illegal=3 candidates=8
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=3.1m illegal=9 candidates=72
+§PATH_LEGAL_DETOUR_MID storey=Aras Tanah no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL_DETOUR_FAIL storey=Aras Tanah cause=ENDPOINT_OFF_FLOOR aWalkable=true bWalkable=false len=15.7m illegal=9 candidates=72
+§PATH_LEGAL legalized=6 detoured=2
+── Terminal  (nodes=55 edges=170)
+   BEFORE  pts=113 illegalChords=8/92 (8.7%) illegalSamples=186 planMs=361
+   AFTER   pts=113 illegalChords=8/92 (8.7%) illegalSamples=186 planMs=423
+   BEFORE §FLY_ROUTE storeys=6 stops=14/14 skipped=0 corridorStops=5 circWps=80 stairUp=T0_Terminal_293$TSvKL8N8bgo2seUjZp::Aras_01::hi stairDown=T0_Terminal_317rFPKoL6eO76U6ttKtCp::Aras_03::lo pts=113 illegalChords=8/92
+   AFTER  §FLY_ROUTE storeys=6 stops=14/14 skipped=0 corridorStops=5 circWps=80 stairUp=T0_Terminal_293$TSvKL8N8bgo2seUjZp::Aras_01::hi stairDown=T0_Terminal_317rFPKoL6eO76U6ttKtCp::Aras_03::lo pts=113 illegalChords=8/92
+  ✅ Terminal: never worse (illegal chord RATIO)  8.7% → 8.7%
+  ✅ Terminal: illegal SAMPLE count never worse  186 → 186
+  ✅ Terminal: stop set + order untouched  identical
+§PATH_LEGAL legalized=7 detoured=2
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL_DETOUR_MID storey=Second Floor no local detour within 6m, found one within 28m (5 waypoint(s))
+§PATH_LEGAL_DETOUR_MID storey=Second Floor no local detour within 6m, found one within 28m (5 waypoint(s))
+§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=Second Floor the only revisit-free detour is longer (44.4m -> 45.4m) — keeping the shorter line
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=7 detoured=2
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL_DETOUR_MID storey=Second Floor no local detour within 6m, found one within 28m (5 waypoint(s))
+§PATH_LEGAL_DETOUR_MID storey=Second Floor no local detour within 6m, found one within 28m (5 waypoint(s))
+§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=Second Floor the only revisit-free detour is longer (44.4m -> 45.4m) — keeping the shorter line
+§PATH_LEGAL legalized=6 detoured=1
+§PATH_LEGAL legalized=4 detoured=0
+── Clinic  (nodes=119 edges=339)
+   BEFORE  pts=62 illegalChords=0/55 (0.0%) illegalSamples=0 planMs=395
+   AFTER   pts=62 illegalChords=0/55 (0.0%) illegalSamples=0 planMs=327
+   BEFORE §FLY_ROUTE storeys=3 stops=7/7 skipped=0 corridorStops=1 circWps=51 stairUp=09Eh99qNP7cx7E8HsVBkZD::Second_Floor::hi stairDown=- pts=62 illegalChords=0/55
+   AFTER  §FLY_ROUTE storeys=3 stops=7/7 skipped=0 corridorStops=1 circWps=51 stairUp=09Eh99qNP7cx7E8HsVBkZD::Second_Floor::hi stairDown=- pts=62 illegalChords=0/55
+  ✅ Clinic: never worse (illegal chord RATIO)  0.0% → 0.0%
+  ✅ Clinic: illegal SAMPLE count never worse  0 → 0
+  ✅ Clinic: stop set + order untouched  identical
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=3 detoured=1
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Level 2 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=4.3m illegal=3 candidates=44
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=3 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=9 detoured=2
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=9 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=3 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=5 detoured=0
+§PATH_LEGAL legalized=3 detoured=1
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL_DETOUR_FAIL storey=Level 2 cause=ENDPOINT_OFF_FLOOR aWalkable=false bWalkable=true len=4.3m illegal=3 candidates=44
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=3 detoured=2
+§PATH_LEGAL_DETOUR_MID storey=Level 2 no local detour within 6m, found one within 28m (1 waypoint(s))
+§PATH_LEGAL legalized=9 detoured=2
+§PATH_LEGAL legalized=4 detoured=0
+§PATH_LEGAL legalized=9 detoured=0
+§PATH_LEGAL legalized=6 detoured=0
+§PATH_LEGAL legalized=4 detoured=0
+── HHS  (nodes=23 edges=157)
+   BEFORE  pts=80 illegalChords=0/68 (0.0%) illegalSamples=0 planMs=29
+   AFTER   pts=80 illegalChords=0/68 (0.0%) illegalSamples=0 planMs=27
+   BEFORE §FLY_ROUTE storeys=4 stops=13/15 skipped=2 corridorStops=9 circWps=50 stairUp=1Sr6AcX_X1yu$fCVWBVc86::Level_2::hi stairDown=- pts=80 illegalChords=0/68
+   AFTER  §FLY_ROUTE storeys=4 stops=13/15 skipped=2 corridorStops=9 circWps=50 stairUp=1Sr6AcX_X1yu$fCVWBVc86::Level_2::hi stairDown=- pts=80 illegalChords=0/68
+  ✅ HHS: never worse (illegal chord RATIO)  0.0% → 0.0%
+  ✅ HHS: illegal SAMPLE count never worse  0 → 0
+  ✅ HHS: stop set + order untouched  identical
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=9 detoured=2
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=11 detoured=2
+§PATH_LEGAL legalized=13 detoured=2
+§PATH_LEGAL legalized=4 detoured=2
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL legalized=12 detoured=2
+§PATH_LEGAL legalized=7 detoured=1
+§PATH_LEGAL legalized=9 detoured=2
+§PATH_LEGAL legalized=5 detoured=1
+§PATH_LEGAL legalized=11 detoured=2
+§PATH_LEGAL legalized=13 detoured=2
+§PATH_LEGAL legalized=4 detoured=2
+§PATH_LEGAL legalized=5 detoured=2
+§PATH_LEGAL legalized=12 detoured=2
+── LTU_AHouse  (nodes=371 edges=797)
+   BEFORE  pts=95 illegalChords=0/81 (0.0%) illegalSamples=0 planMs=55
+   AFTER   pts=95 illegalChords=0/81 (0.0%) illegalSamples=0 planMs=52
+   BEFORE §FLY_ROUTE storeys=6 stops=8/10 skipped=2 corridorStops=2 circWps=65 stairUp=T0_LTU_AHouse_2vRt0f4Hr4n8mp5Py6SD$K::V_N_1::hi stairDown=- pts=95 illegalChords=0/81
+   AFTER  §FLY_ROUTE storeys=6 stops=8/10 skipped=2 corridorStops=2 circWps=65 stairUp=T0_LTU_AHouse_2vRt0f4Hr4n8mp5Py6SD$K::V_N_1::hi stairDown=- pts=95 illegalChords=0/81
+  ✅ LTU_AHouse: never worse (illegal chord RATIO)  0.0% → 0.0%
+  ✅ LTU_AHouse: illegal SAMPLE count never worse  0 → 0
+  ✅ LTU_AHouse: stop set + order untouched  identical
+
+── summary (illegal chords / checked) ──
+   Hospital     0/146      → 0/146       pts 159→159  planMs 42→35
+   Terminal     8/92       → 8/92        pts 113→113  planMs 361→423
+   Clinic       0/55       → 0/55        pts 62→62  planMs 395→327
+   HHS          0/68       → 0/68        pts 80→80  planMs 29→27
+   LTU_AHouse   0/81       → 0/81        pts 95→95  planMs 55→52
+
+✅ PASS 15 passed, 0 failed
