@@ -105,6 +105,7 @@ function setupPicking(A) {
       A.walkPath = [];
       var _fb = document.getElementById('fly-btn'); if (_fb) _fb.classList.remove('active');
       document.getElementById('walk-speed-btn').style.display = 'none';
+      if (A._scrubHide) A._scrubHide();   // §TOUR_TIMELINE_SCRUB — canvas tap aborts the tour, bar goes with it
     }
     // Long-press (500ms) → volume info card (mobile-friendly right-click)
     // Only start on single-finger touch; cancel if pinch (2nd pointer) or any move
