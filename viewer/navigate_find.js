@@ -4350,6 +4350,13 @@
       if (A.filterByGuids) A.filterByGuids(null);
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing: category-reveal doors and the
+      // Path highlight survived a Find-panel close/reopen): _roomLensReset() only tears down
+      // _roomBoxes — the category reveal's OWN door meshes (_revealDoorMeshes) and the Path
+      // sub-mode's line/markers (_pathExtraMeshes) are separate arrays neither reset touches. Clear
+      // both explicitly, same as every other overlay this open path already resets.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
       _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
@@ -4385,6 +4392,12 @@
       // cruft — always tear them down on close so nothing lingers invisibly.
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing): same gap as openFindPanel's
+      // fresh-open reset above — _roomLensReset() never touches _revealDoorMeshes (category-reveal
+      // brown doors) or _pathExtraMeshes (Path sub-mode line+markers), both separate arrays. Without
+      // this they survive closeFindPanel() and leak into the scene after the panel is gone.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       // §PICK-BBOX-LEAK (user): the picking.js-owned bbox (window._pickHighlight, a LineSegments
       // EdgesGeometry) is a SHARED global cleared only when a NEW pick happens — clearHighlight()
       // above disposes it ONLY when it === the Find-local _highlight (and early-returns when that's
