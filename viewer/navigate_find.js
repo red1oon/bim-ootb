@@ -2131,7 +2131,7 @@
     function _clearRoomCuboid() {
       var kept = [];
       _roomBoxes.forEach(function(rb) {
-        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidFillGlow' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire') {
+        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidFillGlow' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire' || rb.guid === '_cuboidDoor') {
           if (rb.mesh) {
             if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
             if (rb.mesh.geometry) rb.mesh.geometry.dispose();
@@ -2164,7 +2164,12 @@
     // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
     // animations, never a leaked rAF loop after the mesh is gone).
     var _pulseId = 0;
-    function _drawRoomCuboid(center, size, category) {
+    // §ROOM_SELECT_DOORS (2026-07-26, user ask: "when we zoom to particular room it is just a box
+    // purple without its accompanying door... let's have that too since its free" — free because
+    // _spawnDoorMeshesForRooms already exists for the category-reveal case; a single selected room
+    // is just a 1-guid call to the SAME function, not new logic): roomGuid is optional so every
+    // existing caller that doesn't pass one keeps working with no door drawn, unchanged.
+    function _drawRoomCuboid(center, size, category, roomGuid) {
       if (!A.scene || typeof THREE === 'undefined') return;
       _clearRoomCuboid();
       var myPulse = ++_pulseId;
@@ -2196,6 +2201,12 @@
       A.scene.add(wire2); _roomBoxes.push({ guid: '_cuboidWireOuter', mesh: wire2 });
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
+
+      if (roomGuid) {
+        var doorMeshes = _spawnDoorMeshesForRooms([roomGuid]);
+        doorMeshes.forEach(function(m) { _roomBoxes.push({ guid: '_cuboidDoor', mesh: m }); });
+        console.log('[RP-TA] §ROOM_SELECT_DOORS guid=' + roomGuid + ' doors=' + doorMeshes.length);
+      }
 
       var restFillOp = 0.5, restWireScale = 1.0, restWire2Scale = 1.015, overshoot = 0.09;
       var t = 0;
@@ -2726,14 +2737,14 @@
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=cuboid guid=' + guid + ' bound=' + bound.size +
           ' box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) + 'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, clipPlanes: _clip, zoomMult: 1.8, suppressHighlight: true });
-        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
+        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory, guid);
       } else if (bound.size) {
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=bounding-elements guid=' + guid + ' (no zoomBox available)');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, zoomMult: 1.8 });
       } else {
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=' + (zoomBox ? 'cuboid' : 'cuboid-fallback') + ' guid=' + guid + ' (no bounding mesh found)');
         _drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
-        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
+        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory, guid);
       }
     }
 
@@ -2801,27 +2812,21 @@
       }
       return out;
     }
-    function _revealCategoryGroup(gk, groupRooms) {
-      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
-      _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
-      var guidSet = {};
-      (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
-      var brightened = 0;
-      _roomBoxes.forEach(function(rb) {
-        if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
-          rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
-          rb.mesh.material.needsUpdate = true;
-          brightened++;
-        }
-      });
-      var doorPositions = _doorPositionsForRooms(Object.keys(guidSet));
+    // §DOOR-REAL-BOX (factored out 2026-07-26 so a SINGLE room's own select can reuse it too, not
+    // just a whole-category reveal — see _drawRoomCuboid's call below): a box sized to the door's
+    // own real bbox_x/bbox_y/bbox_z + yawed by its real rotation_z reads as an actual door leaf, not
+    // an arbitrary sphere — real measured data, not invented. Every door SHARES one geometry+material
+    // per (sizeX,sizeY,sizeZ) combo would be ideal but doors legitimately vary in size
+    // building-to-building; a fresh BoxGeometry per marker is cheap (both callers cap this at a
+    // handful of rooms' worth of doors, never the whole building) and disposal is the CALLER's job
+    // (each caller tracks the returned meshes in its own array). Same fixed 0x8d5524 brown regardless
+    // of which category/room is revealing them — including Restrooms, whose own shell fill (0x6d4c41,
+    // ROOM_CATEGORY_COLORS above) is a close brown too; not fixed here, just noting the low-contrast
+    // case exists (user asked, 2026-07-26) in case a future pass wants a distinct door hue instead.
+    function _spawnDoorMeshesForRooms(guids) {
+      var doorPositions = _doorPositionsForRooms(guids);
+      var meshes = [];
       if (A.scene && A.ifc2three && typeof THREE !== 'undefined' && doorPositions.length) {
-        // §DOOR-REAL-BOX: a box sized to the door's own real bbox_x/bbox_y/bbox_z + yawed by its
-        // real rotation_z reads as an actual door leaf, not an arbitrary sphere — real measured
-        // data, not invented. Every door SHARES one geometry+material per (sizeX,sizeY,sizeZ)
-        // combo would be ideal but doors legitimately vary in size building-to-building; a fresh
-        // BoxGeometry per marker is cheap (this reveal is capped at one room-category's doors,
-        // never the whole building) and disposed on toggle-off (see _clearCategoryReveal above).
         var sphereGeo = null; // lazy singleton fallback, only built if a door is missing dims
         var doorMat = new THREE.MeshBasicMaterial({ color: 0x8d5524, transparent: true, opacity: 0.85, depthTest: false });
         var boxCount = 0, sphereCount = 0;
@@ -2840,14 +2845,31 @@
           }
           m.position.set(c.x, c.y + 0.05, c.z);
           m.renderOrder = 1002;
+          m.userData._doorMarker = true; // §-verifiable: witnesses can traverse the scene for this tag rather than guessing by color/position
           A.scene.add(m);
-          _revealDoorMeshes.push(m);
+          meshes.push(m);
         });
         console.log('[RP-TA] §DOOR_MARKER_SHAPE boxes=' + boxCount + ' spheres(no-real-dims-fallback)=' + sphereCount);
       }
+      return meshes;
+    }
+    function _revealCategoryGroup(gk, groupRooms) {
+      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
+      _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
+      var guidSet = {};
+      (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
+      var brightened = 0;
+      _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
+          rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
+          rb.mesh.material.needsUpdate = true;
+          brightened++;
+        }
+      });
+      _revealDoorMeshes = _spawnDoorMeshesForRooms(Object.keys(guidSet));
       _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' doors=' + doorPositions.length);
+      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' doors=' + _revealDoorMeshes.length);
     }
 
     // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
