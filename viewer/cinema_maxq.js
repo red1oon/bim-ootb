@@ -50,6 +50,32 @@
   function _sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
   function _status(t) { var A = window.APP; if (A && A.status) A.status.textContent = t; }
 
+  // §CINEMA_DAMPING_BLEED (2026-07-26 — PHOTOREAL_STILL_RENDER.md §CINEMA_DAMPING_BLEED).
+  // Both authored loops below (the 10s path preview AND the frame bake) do
+  // camera.position.set(pose) → controls.update(). OrbitControls.update() recomputes the position
+  // from its own spherical state with the dampened deltas applied, OVERWRITING the authored pose.
+  // With scene.js's dampingFactor=0.08 the residual from whatever the user did right before Alt+C
+  // bleeds in at 1.637% of the look distance on frame 0, decaying by exactly 1-dampingFactor per
+  // frame — the reported "slight twitch at the first second of the movie". Damping is an
+  // interaction affordance; an authored camera must not be subject to it. Paired with
+  // _wakeAcquire/_wakeRelease so every exit path that releases the wake lock releases this too.
+  var _dampSaved = null;
+  function _dampHold() {
+    var A = window.APP;
+    if (!A || !A.controls || _dampSaved !== null) return;
+    _dampSaved = A.controls.enableDamping;
+    A.controls.enableDamping = false;
+    A.controls.update();   // flush the residual BEFORE the first authored pose
+    console.log('§CINEMA_DAMPING_BLEED held (enableDamping ' + _dampSaved + ' -> false for preview+bake)');
+  }
+  function _dampRelease() {
+    var A = window.APP;
+    if (_dampSaved === null) return;
+    if (A && A.controls) A.controls.enableDamping = _dampSaved;
+    console.log('§CINEMA_DAMPING_BLEED released (enableDamping restored to ' + _dampSaved + ')');
+    _dampSaved = null;
+  }
+
   // §MAXQ_IDB — open must NEVER hang silently. An earlier run that exited abnormally (or a second
   // app tab still holding a connection) leaves _idbDestroy's deleteDatabase() pending-blocked, and
   // every later open() then queues behind it FOREVER with no event, no error, no log — the exact
@@ -331,6 +357,7 @@
     _active = true; _cancel = false;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     _wakeAcquire();
+    _dampHold();   // §CINEMA_DAMPING_BLEED — the preview and the bake are both authored cameras
     // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview was SEEN showing boxes — initial
     // assumption was that this was a deliberate LOD-for-speed choice. WRONG, disproven by
     // investigation: dlod_nav.js already fully disengages the instant A._maxqActive is set above,
@@ -357,7 +384,7 @@
       console.log('§MAXQ_CANCEL during stream-wait — nothing baked, nothing saved');
       _status('🎬 MaxQ cancelled');
       _active = false; _cancel = false; A._maxqActive = false;
-      _wakeRelease();
+      _wakeRelease(); _dampRelease();
       return;
     }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
@@ -423,7 +450,7 @@
         console.log('§MAXQ_CANCEL during preview — nothing baked, nothing saved');
         _status('🎬 MaxQ cancelled during preview');
         _active = false; _cancel = false; A._maxqActive = false;
-        _wakeRelease();
+        _wakeRelease(); _dampRelease();
         return;
       }
       console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
@@ -571,7 +598,7 @@
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
       _active = false; _cancel = false;
       A._maxqActive = false;
-      _wakeRelease();
+      _wakeRelease(); _dampRelease();
       await _idbDestroy(db);
     }
   }

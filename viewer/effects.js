@@ -3276,7 +3276,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v13 (§CINEMA_TURN_SLERP look-back + §CINEMA_EXIT_BREATHE overlap)';
+  var EFFECTS_V = 'v14 (§CINEMA_TURN_SLERP look-back + §CINEMA_DAMPING_BLEED authored-pose hold)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -4155,6 +4155,33 @@ async function setupEffects(A, renderer, scene, camera) {
     ]);
     _hdriWaitMs = performance.now() - _hdriWaitT0;
     console.log('§CINEMA_HDRI_RACE waitedMs=' + _hdriWaitMs.toFixed(0) + ' ready=' + !!_hdriEnvMap);
+    // §CINEMA_DAMPING_BLEED (2026-07-26, user: "a slight twitch at the first second of the movie,
+    // where the screen size is adjusted slightly narrower. Tested on two buildings it is so").
+    // A recording is a FULLY AUTHORED camera — cinemaPathPlan owns every pose. But step() below does
+    // camera.position.set(pose) → controls.update(), and OrbitControls.update() recomputes the
+    // position from its OWN spherical state with the dampened deltas applied, OVERWRITING the pose
+    // that was just authored. With scene.js's enableDamping/dampingFactor=0.08, the residual left by
+    // whatever navigation the user did immediately before pressing Alt+C bleeds into the film:
+    // measured 1.637% of the look distance at frame 0, decaying by exactly 0.92 = 1 - dampingFactor
+    // per frame, i.e. ~1-2s to become invisible. That is the reported twitch.
+    // Damping is an INTERACTION affordance; it has no business editing an authored pose. Hold it off
+    // for the run and flush the residual here, BEFORE frame 0. update() is still called every frame
+    // (it has other duties) — with damping off it applies zeroed deltas and preserves the pose
+    // exactly. Restored on every exit path below, next to the SSAA detach.
+    var _dampSaved = A.controls.enableDamping, _dampHeld = false;
+    function _cinemaDampRelease() {
+      if (!_dampHeld) return;
+      _dampHeld = false; A.controls.enableDamping = _dampSaved;
+      console.log('§CINEMA_DAMPING_BLEED released (enableDamping restored to ' + _dampSaved + ')');
+    }
+    A.controls.enableDamping = false; _dampHeld = true;
+    // One-off flush: with damping off, update() applies the ENTIRE remaining delta at once instead
+    // of 8% of it per frame (measured 13.3m on a fresh drag). That is exactly what we want, and it
+    // is harmless here — it lands BEFORE the first authored pose, which overwrites the position
+    // outright. Doing it after frame 0 would put that whole jump INSIDE the film.
+    A.controls.update();
+    console.log('§CINEMA_DAMPING_BLEED held (enableDamping ' + _dampSaved + ' -> false for the recording)');
+
     console.log('§CINEMA_ORBIT start envelope=' + envelope.toFixed(1) + ' arcOnly=' + plan.arcOnly +
       ' fillDistance=' + plan.fillDistance.toFixed(1) + ' pushInRadius=' + plan.pushInRadius.toFixed(1) +
       ' radiusBand=[' + plan.radiusMin.toFixed(1) + ',' + plan.radiusMax.toFixed(1) + '] triplanarMaterials=' + _triCount);
@@ -4189,7 +4216,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ? 'video/webm;codecs=vp9' : 'video/webm';
     var recorder;
     try { recorder = new MediaRecorder(stream, { mimeType: mimeType }); }
-    catch (e) { console.warn('§CINEMA_FAIL MediaRecorder ctor: ' + e.message); _cinemaSsaaDetach(); _teardownStillRefine('cinema-fail'); _cinemaActive = false; return; }
+    catch (e) { console.warn('§CINEMA_FAIL MediaRecorder ctor: ' + e.message); _cinemaDampRelease(); _cinemaSsaaDetach(); _teardownStillRefine('cinema-fail'); _cinemaActive = false; return; }
     recorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = function() {
       var blob = new Blob(chunks, { type: mimeType });
@@ -4199,6 +4226,7 @@ async function setupEffects(A, renderer, scene, camera) {
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
       console.log('§CINEMA_ORBIT saved size=' + blob.size + ' type=' + mimeType);
+      _cinemaDampRelease();      // §CINEMA_DAMPING_BLEED: recording over — user's damping back
       _cinemaSsaaDetach();       // §CINEMA_SSAA: recording over — plain head pass back
       _giCinemaPresetRestore();  // §GI_CINEMA_PRESET: recording over — full-quality GI settings back
       _teardownStillRefine('cinema-orbit-done');
@@ -4210,7 +4238,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var durationMs = (CINEMA_N_FRAMES / CINEMA_FPS) * 1000;
     var _cinePerfN = 0, _cinePerfMs = 0, _cinePrevFrameMs = 0;  // §CINEMA_PERF frame-time telemetry
     function step() {
-      if (!_cinemaActive) { _giCinemaPresetRestore(); _cinemaSsaaDetach(); return; }  // early abort (stopCinemaOrbit) — restore GI + head pass too
+      if (!_cinemaActive) { _giCinemaPresetRestore(); _cinemaDampRelease(); _cinemaSsaaDetach(); return; }  // early abort (stopCinemaOrbit) — restore GI + head pass + damping too
       var tNorm = Math.min(1, (performance.now() - startMs) / durationMs);
       // §CINEMA_PATH: pose from the shared plan (§CINEMA_SIMPLE's one routine — dive → spin →
       // out → rise → orbit) — the SAME path the MaxQ exporter flies.
