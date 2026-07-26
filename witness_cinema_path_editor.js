@@ -194,9 +194,16 @@ const FPS = 15;
         for (let i = 1; i < sharp.length - 1; i++) {
           let best = 1e18;
           for (const p of flown) best = Math.min(best, Math.hypot(p.x - sharp[i].x, p.y - sharp[i].y, p.z - sharp[i].z));
-          let clear = null;
-          try { const f = A.cinemaFan({ x: sharp[i].x, y: sharp[i].y, z: sharp[i].z }, 8); clear = f && isFinite(f.min) ? f.min : null; } catch (e) {}
-          dev.push({ i, deviation: best, clearance: clear });
+          // A fan that hits NOTHING returns CINEMA_FAN_FAR (60) — that is "unknown", not "60m of
+          // space". Comparing the cut against it is how this gate passed vacuously on Terminal
+          // before the live Hospital log exposed it. Report it as unknown and assert the
+          // conservative cap instead.
+          let clear = null, noHit = false;
+          try {
+            const f = A.cinemaFan({ x: sharp[i].x, y: sharp[i].y, z: sharp[i].z }, 8);
+            if (f && isFinite(f.min)) { if (f.min >= 59.99) noHit = true; else clear = f.min; }
+          } catch (e) {}
+          dev.push({ i, deviation: best, clearance: clear, noHit });
         }
         out.g8 = { perCorner: dev };
 
@@ -275,10 +282,16 @@ const FPS = 15;
       res.g7.peakDegPerFrame <= DEG_PER_FRAME_CAP,
       `peak=${res.g7.peakDegPerFrame.toFixed(1)} deg/frame at t=${res.g7.atT.toFixed(3)} (fps=${res.g7.fps})`);
 
-    const g8bad = res.g8.perCorner.filter(c => c.clearance != null && c.deviation > c.clearance);
-    P('G8 curve deviation <= measured clearance at every corner',
+    // Two ways to fail, no way to pass vacuously: where clearance was really measured the cut must
+    // fit inside it; where the fan saw nothing the cut must obey the conservative 3m nudge cap.
+    const NUDGE_CAP = 3;
+    const g8bad = res.g8.perCorner.filter(c => c.noHit ? (c.deviation > NUDGE_CAP / 2 + 1e-6)
+                                                       : (c.clearance != null && c.deviation > c.clearance));
+    P('G8 deviation <= measured clearance, or <= the conservative cap where clearance is unknown',
       g8bad.length === 0,
-      res.g8.perCorner.map(c => `corner${c.i}: dev=${c.deviation.toFixed(2)}m clear=${c.clearance == null ? 'n/a' : c.clearance.toFixed(2) + 'm'}`).join(' | '));
+      res.g8.perCorner.map(c => `corner${c.i}: dev=${c.deviation.toFixed(2)}m ` +
+        (c.noHit ? `clear=UNKNOWN(no-hit) cap=${(NUDGE_CAP / 2).toFixed(2)}m`
+                 : `clear=${c.clearance == null ? 'n/a' : c.clearance.toFixed(2) + 'm'}`)).join(' | '));
 
     P('G9 constant speed: time ratio == length ratio',
       Math.abs(res.g9.ratioTime - res.g9.ratioLen) < 1e-9,

@@ -486,10 +486,17 @@
       if (_cpeRes && _cpeRes.override) {
         // Constant speed means an edited path generally changes the total, so the frame count is
         // re-derived from it (item 11 — this is the render cost the editor surfaced).
+        var _framesWas = nFrames;
         nFrames = Math.max(1, Math.round(_cpeRes.durationSec * fps));
         plan = A.cinemaPathPlan(nFrames / fps, _cpeRes.override);
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _cpeRes.override.waypoints.length + ' saved=' + !!_cpeRes.saved);
+        // §MAXQ_START was printed before the editor opened, so its frame count is now stale — a
+        // pasted console must not disagree with what actually gets baked (observed live: START said
+        // 360, the bake ran 489).
+        if (nFrames !== _framesWas)
+          console.log('§MAXQ_START_REVISED frames=' + _framesWas + '→' + nFrames +
+            ' (path edited; §MAXQ_START above is superseded)');
       } else {
         // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
         // literally the same object, so the film is byte-identical to one recorded without the
