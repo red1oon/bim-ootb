@@ -3141,12 +3141,27 @@ async function setupEffects(A, renderer, scene, camera) {
                                 // graceful. That is the ONE authoring lever left (§CINEMA_SIMPLE
                                 // "the dive is TIME-BOXED"). Do not "fix" the rush on big buildings.
   var CINEMA_SPIN_SEC = 2;      // the spin IS the search for the way out, not decoration
-  var CINEMA_OUT_SEC  = 4;      // travel out through the chosen exit
+  // §CINEMA_EXIT_BREATHE (2026-07-26, live user report): "the 11-13 sec, the camera rush and turns
+  // too rapidly. It should allow some more seconds into 15th sec to exit and not turn until the
+  // 15th sec to look back after exiting a building. The outside 10 secs just going around is
+  // luxurious, and need not orbit the building more than once."
+  // WAS 4s: on the 24s default film that put the walk-out at 6-10s and crushed the ENTIRE
+  // turn-to-face-the-building into Beat 4's 2s (10-12s) — that 2s turn is the "rush" being
+  // reported, not the walk itself. +3s (exactly the 3 the user proposed) is funded from the
+  // exterior loop, which had 12s for what is only ever ONE revolution (az = exitAz +
+  // _cinemaAzU(u)*2pi, u:0->1 — it never orbited more than once, so nothing is lost by spending
+  // some of that time on the exit instead). New 24s shape: walk-out 6-13s, turn+rise 13-15s,
+  // orbit 15-24s. No hard stop anywhere — §CINEMA_END_DECEL still rolls the loop to rest.
+  var CINEMA_OUT_SEC  = 7;      // travel out through the chosen exit — breathe, do not hurry
   var CINEMA_RISE_SEC = 2;      // rise onto the orbit band / the 45° look-down
   // §CINEMA_BEAT_OVERLAP: the turn-to-face-the-building starts blending in during the LAST
   // CINEMA_TURN_OVERLAP fraction of the walk-out (Beat 3), reaching CINEMA_TURN_OVERLAP_MAX by the
   // time the walk ends, so Beat 4 continues the turn rather than starting a fresh spin from zero.
-  var CINEMA_TURN_OVERLAP = 0.4, CINEMA_TURN_OVERLAP_MAX = 0.5;
+  // §CINEMA_EXIT_BREATHE lowered the overlap 0.4 -> 0.25: the look-back must not begin while still
+  // walking out of the door. Deliberately KEPT (not zeroed) — §CINEMA_BEAT_OVERLAP exists so Beat 4
+  // continues a turn already in motion instead of snapping into a fresh spin. On the 24s film the
+  // look-back now starts at 6 + 0.75*7 = 11.25s (was 8.4s) and completes at 15s.
+  var CINEMA_TURN_OVERLAP = 0.25, CINEMA_TURN_OVERLAP_MAX = 0.5;
   var CINEMA_EYE_M = 1.7;       // standing eye height above the floor actually under that point
   var CINEMA_LOOKDOWN_DEG = 45; // the exterior act's look-down angle
   var CINEMA_SUN_GUARD_DEG = 35;// Sun within this of the emergence heading → hold the look-down
