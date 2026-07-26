@@ -2109,11 +2109,25 @@
     // §RP-SHELL (option 3): a room's drawable OUTLINE is its IfcSpace volume (center+size), not a
     // mesh. Draw it as a translucent shine-through box so the Room axis shows the room MAP and a
     // selected room reads as a bright shell with its contents dimmer inside.
+    // §SHELL-SHINE-THROUGH (2026-07-26, user-reported live testing: category colors — corridor
+    // blue and, per the user's own follow-up, every other category too — only read correctly in the
+    // large-building bbox-ghost mode, not in the small/medium-building X-Ray mode): this material
+    // never set `depthTest`, so it defaulted to `true` — a real wall/floor dimmed-but-still-rendered
+    // by X-Ray still occludes it, same root cause §FILL-SHINE-THROUGH already fixed for the SINGLE
+    // selected-room cuboid (_drawRoomCuboid, above) 11 days earlier. The bbox-ghost path never showed
+    // this because it HIDES real geometry outright (A.filterByGuids(new Set())) — nothing left to
+    // occlude the shell with — so the bug was invisible there and only showed up in X-Ray's dimmed-
+    // but-still-solid mode. `depthTest:false` here (unlike the cuboid's two-layer glow+fill trick)
+    // is deliberately the SIMPLE one-mesh version: this function draws one shell PER ROOM (up to
+    // several hundred on a large building), so doubling every shell's mesh count the way the single
+    // cuboid does would multiply real per-frame draw cost across the whole building; a flat
+    // always-visible box already matches this function's own "shine-through box" name and intent
+    // (uniform legibility of the whole room map), not a depth-graduated single-selection accent.
     function _drawRoomShell(center, size, opacity, color) {
       if (!A.scene || typeof THREE === 'undefined') return null;
       var geo = new THREE.BoxGeometry(size.x, size.y, size.z);
       var mat = new THREE.MeshBasicMaterial({ color: color || 0x4fc3f7, transparent: true,
-        opacity: opacity, depthWrite: false, side: THREE.DoubleSide });
+        opacity: opacity, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
       var mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(center);
       mesh.renderOrder = 998;           // over the x-rayed model, under the cyan item overlay (999)
