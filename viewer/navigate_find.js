@@ -2767,12 +2767,25 @@
         if (m.material) m.material.dispose();
       });
       _revealDoorMeshes = [];
+      // §CORRIDOR-REVEAL-SHELL: a shell _revealCategoryGroup added for a backprop CORRIDOR_ROOM::*
+      // guid was never part of the base Room Lens batch (_roomLensOn never draws one for it) — DROP
+      // it entirely here rather than just dimming, or it lingers as a phantom faint box forever
+      // (until the whole lens resets on axis-switch/panel-close, a much later teardown).
+      var kept = [];
       _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.userData && rb.mesh.userData._revealAdded) {
+          if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
+          if (rb.mesh.geometry) rb.mesh.geometry.dispose();
+          if (rb.mesh.material) rb.mesh.material.dispose();
+          return;
+        }
         if (rb.mesh && rb.mesh.material && rb.mesh.userData && rb.mesh.userData._roomShell) {
           rb.mesh.material.opacity = 0.10;   // §RP-SHELL's own baseline shine-through opacity
           rb.mesh.material.needsUpdate = true;
         }
+        kept.push(rb);
       });
+      _roomBoxes = kept;
       _categoryRevealOn = null;
       if (A.markDirty) A.markDirty();
     }
@@ -2858,18 +2871,45 @@
       _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
       var guidSet = {};
       (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
-      var brightened = 0;
+      var brightened = 0, matchedGuids = {};
       _roomBoxes.forEach(function(rb) {
         if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
           rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
           rb.mesh.material.needsUpdate = true;
           brightened++;
+          matchedGuids[rb.guid] = true;
+        }
+      });
+      // §CORRIDOR-REVEAL-SHELL (2026-07-26, user-reported live testing: tapping "Hall / Corridor"
+      // lit doors brown but left every shell dark — confirmed in a live console capture,
+      // `§CATEGORY_REVEAL on gk="Hall / Corridor" rooms=0 doors=59`): a `CORRIDOR_ROOM::*` guid (the
+      // §CORRIDOR-ROOM-BACKPROP synthetic hallway bucket, real door+wall-verified but with NO
+      // spatial_structure row) never gets a shell in `_roomBoxes` — `_allRoomVolumes()` only queries
+      // real rows, same reason `_roomSelect` needs its own `isCorridorRoom`/`_corridorRoomBBox`
+      // branch instead of the normal `_roomBoxes` lookup. The `rooms=0` case above is exactly a
+      // Hall/Corridor group made ENTIRELY of these backprop entries — nothing in `_roomBoxes` could
+      // ever match. Draw a fresh shell for each unmatched member here, same helper `_roomSelect`
+      // already uses for the single-room case — real measured position/span, not invented — and
+      // start it already brightened (0.55) since it's created FOR this reveal, never dim-then-skip.
+      var addedShells = 0;
+      Object.keys(guidSet).forEach(function(g) {
+        if (matchedGuids[g] || g.indexOf('CORRIDOR_ROOM::') !== 0) return;
+        var rw = _corridorRoomBBox(g);
+        if (!rw || rw.cx == null || rw.sx == null || !A.ifc2three || typeof THREE === 'undefined') return;
+        var cc = A.ifc2three(rw.cx, rw.cy, rw.cz);
+        var center = new THREE.Vector3(cc.x, cc.y, cc.z);
+        var size = new THREE.Vector3(Math.max(rw.sx || 0.5, 0.5), Math.max(rw.sz || 0.5, 0.5), Math.max(rw.sy || 0.5, 0.5));
+        var mesh = _drawRoomShell(center, size, 0.55, _categoryColor('corridor').fill);
+        if (mesh) {
+          mesh.userData._revealAdded = true; // §CORRIDOR-REVEAL-SHELL: never part of the base Room Lens batch — _clearCategoryReveal must DISPOSE it, not just dim it, or it leaks into every later view
+          _roomBoxes.push({ guid: g, name: rw.name, mesh: mesh, center: center, size: size, category: 'corridor' });
+          addedShells++; brightened++;
         }
       });
       _revealDoorMeshes = _spawnDoorMeshesForRooms(Object.keys(guidSet));
       _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' doors=' + _revealDoorMeshes.length);
+      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' addedShells=' + addedShells + ' doors=' + _revealDoorMeshes.length);
     }
 
     // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
@@ -4350,6 +4390,13 @@
       if (A.filterByGuids) A.filterByGuids(null);
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing: category-reveal doors and the
+      // Path highlight survived a Find-panel close/reopen): _roomLensReset() only tears down
+      // _roomBoxes — the category reveal's OWN door meshes (_revealDoorMeshes) and the Path
+      // sub-mode's line/markers (_pathExtraMeshes) are separate arrays neither reset touches. Clear
+      // both explicitly, same as every other overlay this open path already resets.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
       _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
@@ -4385,6 +4432,12 @@
       // cruft — always tear them down on close so nothing lingers invisibly.
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing): same gap as openFindPanel's
+      // fresh-open reset above — _roomLensReset() never touches _revealDoorMeshes (category-reveal
+      // brown doors) or _pathExtraMeshes (Path sub-mode line+markers), both separate arrays. Without
+      // this they survive closeFindPanel() and leak into the scene after the panel is gone.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       // §PICK-BBOX-LEAK (user): the picking.js-owned bbox (window._pickHighlight, a LineSegments
       // EdgesGeometry) is a SHARED global cleared only when a NEW pick happens — clearHighlight()
       // above disposes it ONLY when it === the Find-local _highlight (and early-returns when that's
