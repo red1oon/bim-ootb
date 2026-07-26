@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v10 (§CINEMA_SIMPLE path; room-graph warmed before planning)';
+  var MAXQ_V = 'v11 (§CPE_OK_CRASH — edited paths reach the bake again)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -503,8 +503,15 @@
         var _framesWas = nFrames;
         nFrames = Math.max(1, Math.round(_cpeRes.durationSec * fps));
         plan = A.cinemaPathPlan(nFrames / fps, _cpeRes.override);
+        // §CPE_OK_CRASH (CINEMA_PATH_EDITOR.md) — this line used to read `override.waypoints.length`
+        // and threw `undefined.length` on EVERY edited path: §CPE_BANDS changed the editor's override
+        // to carry `bands` (3 bands → 6 waypoints, expanded inside effects.js), and this one consumer
+        // was never ported. The plan above had already succeeded — a stale LOG line was killing the
+        // bake. Count what the plan actually flew, and never let this line be the thing that throws.
+        var _ov = _cpeRes.override;
+        var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
-          ' waypoints=' + _cpeRes.override.waypoints.length + ' saved=' + !!_cpeRes.saved);
+          ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
         // §MAXQ_START was printed before the editor opened, so its frame count is now stale — a
         // pasted console must not disagree with what actually gets baked (observed live: START said
         // 360, the bake ran 489).
