@@ -55,11 +55,14 @@ const BLD = process.env.BLD || 'Duplex';
     A._cinemaPathEdit = null;
     const derived = A.cinemaPathPlan(DUR);
     const derivedSample = sample(derived);
-    const wp = derived.waypoints.map(w => ({ x: w.x, y: w.y, z: w.z }));
-
-    // A clearly visible edit: shove waypoint 1 sideways 6m and raise the whole path 1m.
-    const edited = wp.map((w, i) => ({ x: w.x + (i === 1 ? 6 : 0), y: w.y + 1, z: w.z }));
-    const ov = { waypoints: edited, diveSec: derived.sec.dive, spinSec: derived.sec.spin,
+    // §CPE_BANDS: the authored unit is now a BAND (anchor, direction, length), and that is what the
+    // file stores — three records, not six loose points, so rigidity survives the reload.
+    const seeded = A.cinemaSeedBands(derived.waypoints, derived.pathLen);
+    // A clearly visible edit: shove band 1 sideways 6m and raise the whole path 1m.
+    const edited = seeded.map((b, i) => ({
+      c: { x: b.c.x + (i === 1 ? 6 : 0), y: b.c.y + 1, z: b.c.z },
+      d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len }));
+    const ov = { bands: edited, diveSec: derived.sec.dive, spinSec: derived.sec.spin,
                  outSec: derived.sec.out, riseSec: derived.sec.rise, _total: DUR };
     const editedSample = sample(A.cinemaPathPlan(DUR, ov));
 
@@ -91,8 +94,7 @@ const BLD = process.env.BLD || 'Duplex';
 
     return { derivedSample, editedSample, hasTableNoSave, savedRows,
              editedDelta: maxDiff(derivedSample, editedSample),
-             bytesSaved: Array.from(bytesSaved.slice(0, 0)), // not transferred; reopened in-page below
-             wpCount: wp.length };
+             wpCount: seeded.length };
   });
 
   P('G4b ephemeral: adjusting without saving writes NO cinema_path table',
@@ -148,8 +150,8 @@ const BLD = process.env.BLD || 'Duplex';
       const q = p.poseAt(i / N);
       m = Math.max(m, Math.abs(q.x - before[i][0]), Math.abs(q.y - before[i][1]), Math.abs(q.z - before[i][2]));
     }
-    return { restored: !!A._cinemaPathEdit,
-             wpRestored: A._cinemaPathEdit ? A._cinemaPathEdit.waypoints.length : 0,
+    return { restored: !!(A._cinemaPathEdit && A._cinemaPathEdit.bands),
+             wpRestored: A._cinemaPathEdit && A._cinemaPathEdit.bands ? A._cinemaPathEdit.bands.length : 0,
              authored: !!p.authored, poseDiff: m };
   }, before);
 

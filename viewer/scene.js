@@ -440,6 +440,10 @@ async function setupScene(A) {
   A.three2ifc = function(x, y, z) {
     return { ix: x + A.modelOffset.x, iy: -z + A.modelOffset.y, iz: y + A.modelOffset.z };
   };
+  // Direction vectors carry NO offset — only the axis swap. Running a direction through the point
+  // converters would add the model offset to it and silently rotate/scale it into nonsense.
+  A.three2ifcDir = function(x, y, z) { return { ix: x, iy: -z, iz: y }; };
+  A.ifc2threeDir = function(ix, iy, iz) { return { x: ix, y: iz, z: -iy }; };
 
   // IndexedDB cache
   A.CACHE_DB_NAME = 'bim_ootb_cache';
@@ -601,20 +605,29 @@ async function setupScene(A) {
   // having changed the building.
   // Positions only, plus the beat seconds — camera ANGLE is never stored because it is never
   // authored (it is LOS to the next waypoint, re-derived on load).
+  // §CPE_BANDS rule 6 — store BANDS, not the six loose waypoints they expand to. Rigidity then
+  // survives a save/reload STRUCTURALLY: six free points would just be six points, with nothing
+  // stopping them drifting apart or bending on the next session. One row per band: anchor, unit
+  // direction, length. Both in IFC space, for the same reason staffage_instances is — A.modelOffset
+  // is established at load time, so three.js coordinates are only meaningful to the session that
+  // wrote them.
   function _writeCinemaPathTable(db) {
     var ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
-    if (!ov || !ov.waypoints || ov.waypoints.length < 2) return;
+    if (!ov || !ov.bands || ov.bands.length < 2) return;
     try {
       db.run("DROP TABLE IF EXISTS cinema_path");
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
+             "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
              "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?)");
-      ov.waypoints.forEach(function(w, i) {
-        var p = A.three2ifc(w.x, w.y, w.z);
-        stmt.run([i, p.ix, p.iy, p.iz, ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec]);
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      ov.bands.forEach(function(b, i) {
+        var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
+        var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
+        stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
+                  ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec]);
       });
       stmt.free();
-      console.log('§CINEMA_PATH_SAVE rows=' + ov.waypoints.length + ' total=' + ov._total.toFixed(1) + 's');
+      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }
   A._exportBuildingDb = function() {
