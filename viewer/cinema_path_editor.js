@@ -15,10 +15,9 @@
 //      and discards them.
 (function() {
   'use strict';
-  var CPE_V = 'v2 (§CPE_BANDS — rigid bands, tangent-matched connectors, full-film tube)';
+  var CPE_V = 'v3 (§CPE_BANDS + §CPE_SCREEN_PLANE — drag in the plane you face, canvas never frozen)';
   console.log('§CPE_LOADED ' + CPE_V);
 
-  var DRAG_VERT_M_PER_PX = 0.02;   // ctrl+drag pixels → metres
   var HANDLE_R = 0.30;             // metres
   var GRAB_PX = 18;                // screen-space grab tolerance
   var PULSE_HZ = 12;               // throttled: an every-frame markDirty defeats idle parking
@@ -397,10 +396,10 @@
     var el = document.getElementById('cpe-hint');
     if (!el) return;
     el.innerHTML = _state.held
-      ? '<b style="color:#ff8c00">Holding ' + (ROW_LABEL[_state.held.b] || '') +
-        (_state.held.z === 'mid' ? ' (whole band)' : ' (end — pivots about the other end)') +
-        '</b> — drag to move, ctrl+drag for height, wheel still zooms. <b>Double-click empty space to release.</b>'
-      : 'Click a band end to pivot it, or its middle to move the whole band. Camera always aims at the next point, so a band is a direction as well as a place.';
+      ? '<b style="color:#ff8c00">' + (ROW_LABEL[_state.held.b] || '') +
+        (_state.held.z === 'mid' ? ' — whole band' : ' — end, pivots about the other end') +
+        '</b>. It moves in the plane you are <b>facing</b>: orbit first to choose the axes, then drag.'
+      : 'Drag a band end to pivot it, its middle to move the whole band. Anywhere else orbits the scene as normal — turn to face the axes you want, since a drag moves in the plane you are looking at.';
   }
 
   function _syncButtons() {
@@ -430,8 +429,10 @@
   function _hold(bi, zone, frame) {
     var same = _state.held && _state.held.b === bi && _state.held.z === zone;
     _state.held = { b: bi, z: zone };
-    if (A().controls) A().controls.enabled = false;   // grid_drag.js pattern, not a new one
-    if (!same) console.log('§CPE_HOLD band=' + bi + ' zone=' + zone + ' controls.enabled=false');
+    // §CPE_SCREEN_PLANE: the canvas is NEVER frozen. Orbiting is half the editing gesture, so
+    // disabling controls would disable the way you choose which axes a drag moves in. Dragging and
+    // orbiting are told apart by the hit-test on pointerdown, not by a mode.
+    if (!same) console.log('§CPE_SELECT band=' + bi + ' zone=' + zone + ' (canvas stays live)');
     _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
     _pulse();
     if (frame) _frameBand(bi);
@@ -442,8 +443,7 @@
     var was = _state.held;
     _state.held = null;
     _stopPulse();
-    if (A().controls) A().controls.enabled = true;
-    console.log('§CPE_RELEASE band=' + was.b + ' zone=' + was.z + ' why=' + why + ' controls.enabled=true');
+    console.log('§CPE_DESELECT band=' + was.b + ' zone=' + was.z + ' why=' + why);
     _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
   }
 
@@ -488,16 +488,26 @@
     }
     return best;
   }
-  function _planePoint(ev, height) {
+  // §CPE_SCREEN_PLANE (user, 2026-07-27): the point moves in the CAMERA'S OWN VIEW PLANE through
+  // wherever it currently sits — "the dot when moved is merely facing X/Y ranging... it can only
+  // move in that Xy sense". You choose the axes by orbiting the scene to face them first, which is
+  // why the canvas must stay live: orbiting IS half the gesture.
+  // This replaces the horizontal-plane drag plus ctrl+drag-for-height. Height is no longer a special
+  // case — orbit to a side view and up/down on screen IS height.
+  function _viewPlanePoint(ev, anchor) {
     var a = A(), r = a.canvas.getBoundingClientRect();
     var ndc = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     var rc = new THREE.Raycaster();
     rc.setFromCamera(ndc, a.camera);
-    var dir = rc.ray.direction, org = rc.ray.origin;
-    if (Math.abs(dir.y) < 1e-5) return null;
-    var t = (height - org.y) / dir.y;
+    var n = new THREE.Vector3();
+    a.camera.getWorldDirection(n);                       // plane normal = where the camera looks
+    var p0 = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
+    var denom = n.dot(rc.ray.direction);
+    if (Math.abs(denom) < 1e-6) return null;
+    var t = p0.clone().sub(rc.ray.origin).dot(n) / denom;
     if (t <= 0) return null;
-    return { x: org.x + dir.x * t, y: height, z: org.z + dir.z * t };
+    var q = rc.ray.origin.clone().addScaledVector(rc.ray.direction, t);
+    return { x: q.x, y: q.y, z: q.z };
   }
 
   function _wire() {
@@ -506,38 +516,27 @@
       if (!_state) return;
       var hit = _hitTest(ev);
       if (hit) {
+        // Only a hit is claimed. Everything else falls straight through to OrbitControls, so the
+        // scene stays fully navigable while the editor is open.
         ev.preventDefault(); ev.stopPropagation();
         _hold(hit.b, hit.z, false);
-        _state.drag = { b: hit.b, z: hit.z, ctrl: !!ev.ctrlKey, y0: ev.clientY,
+        _state.drag = { b: hit.b, z: hit.z,
                         c0: { x: _state.bands[hit.b].c.x, y: _state.bands[hit.b].c.y, z: _state.bands[hit.b].c.z },
                         p0: { x: hit.p.x, y: hit.p.y, z: hit.p.z } };
-        return;
       }
-      if (_state.held) { ev.preventDefault(); ev.stopPropagation(); }   // no element picking mid-edit
     };
     h.move = function(ev) {
       if (!_state || !_state.drag) return;
       ev.preventDefault(); ev.stopPropagation();
-      var d = _state.drag, b = _state.bands[d.b], vert = d.ctrl || ev.ctrlKey;
+      var d = _state.drag, b = _state.bands[d.b];
+      var p = _viewPlanePoint(ev, d.p0);   // the plane the grabbed handle already lies in
+      if (!p) return;
       if (d.z === 'mid') {
         // Middle = the whole length moving as one.
-        if (vert) b.c.y = d.c0.y + (d.y0 - ev.clientY) * DRAG_VERT_M_PER_PX;
-        else {
-          var p = _planePoint(ev, b.c.y);
-          if (p) { b.c.x = p.x; b.c.z = p.z; }
-        }
+        b.c.x = p.x; b.c.y = p.y; b.c.z = p.z;
       } else {
         // End = pivot about the far end. Length is invariant, so this is pure rotation.
-        var movingIsB = (d.z === 'b');
-        var tgt;
-        if (vert) {
-          var e = _ends(b);
-          var cur = movingIsB ? e[1] : e[0];
-          tgt = { x: cur.x, y: d.p0.y + (d.y0 - ev.clientY) * DRAG_VERT_M_PER_PX, z: cur.z };
-        } else {
-          tgt = _planePoint(ev, movingIsB ? _ends(b)[1].y : _ends(b)[0].y);
-        }
-        if (tgt) _rotateAbout(b, movingIsB, tgt);
+        _rotateAbout(b, d.z === 'b', p);
       }
       _state.staged = false;
       _redrawScene();          // handles track the cursor instantly
@@ -547,31 +546,14 @@
       if (!_state || !_state.drag) return;
       var d = _state.drag, b = _state.bands[d.b];
       _state.drag = null;
-      console.log('§CPE_DRAG band=' + d.b + ' zone=' + d.z + ' axis=' + (d.ctrl ? 'height' : 'xz') +
+      console.log('§CPE_DRAG band=' + d.b + ' zone=' + d.z + ' plane=view' +
         ' centre=(' + b.c.x.toFixed(2) + ',' + b.c.y.toFixed(2) + ',' + b.c.z.toFixed(2) + ')' +
         ' dir=(' + b.d.x.toFixed(2) + ',' + b.d.y.toFixed(2) + ',' + b.d.z.toFixed(2) + ') len=' + b.len.toFixed(2));
       _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
     };
-    // Double-click releases (single click was rejected as too easy to trigger and lose focus).
-    h.dbl = function(ev) {
-      if (!_state || _hitTest(ev)) return;
-      ev.preventDefault(); ev.stopPropagation();
-      _release('dblclick');
-    };
-    // Touch has no dblclick — same 350ms window picking.js:174 already uses for measure mode.
-    h.touchTap = function(ev) {
-      if (!_state) return;
-      var t = ev.changedTouches && ev.changedTouches[0];
-      if (!t || _hitTest({ clientX: t.clientX, clientY: t.clientY })) return;
-      var now = Date.now();
-      if (_state.lastTap && now - _state.lastTap < 350) { _state.lastTap = 0; _release('double-tap'); }
-      else _state.lastTap = now;
-    };
     c.addEventListener('pointerdown', h.down, true);
     window.addEventListener('pointermove', h.move, true);
     window.addEventListener('pointerup', h.up, true);
-    c.addEventListener('dblclick', h.dbl, true);
-    c.addEventListener('touchend', h.touchTap, true);
     _state.handlers = h;
   }
   function _unwire() {
@@ -580,8 +562,6 @@
     c.removeEventListener('pointerdown', h.down, true);
     window.removeEventListener('pointermove', h.move, true);
     window.removeEventListener('pointerup', h.up, true);
-    c.removeEventListener('dblclick', h.dbl, true);
-    c.removeEventListener('touchend', h.touchTap, true);
   }
 
   // ══════════════════ public API ══════════════════

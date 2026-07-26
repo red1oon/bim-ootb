@@ -407,6 +407,20 @@
     if (typeof A.cinemaPathPlan === 'function') {
       try { plan = A.cinemaPathPlan(nFrames / fps); } catch (e) { console.warn('§MAXQ_PATH plan failed: ' + e.message); }
     }
+    // §CPE_PACING: the film's length is a CONSEQUENCE of the building, not an input. Frames used to
+    // set the duration (360/15 = 24s for everything); now the plan measures its own beats from real
+    // distances and angles, and the frame count follows. A caller that asked for a specific frame
+    // count still gets it — only the default defers to the geometry.
+    if (plan && plan.naturalTotal && !opts.frames) {
+      var _natFrames = Math.max(1, Math.round(plan.naturalTotal * fps));
+      if (_natFrames !== nFrames) {
+        console.log('§MAXQ_DURATION_DERIVED ' + (nFrames / fps).toFixed(1) + 's→' +
+          plan.naturalTotal.toFixed(1) + 's, frames ' + nFrames + '→' + _natFrames +
+          ' (paced from this building, not a fixed runtime)');
+        nFrames = _natFrames;
+        try { plan = A.cinemaPathPlan(nFrames / fps); } catch (e2) {}
+      }
+    }
     var tgt = A.controls.target.clone();
     var dx = A.camera.position.x - tgt.x, dy = A.camera.position.y - tgt.y, dz = A.camera.position.z - tgt.z;
     var radius = Math.hypot(dx, dz), height = dy, az0 = Math.atan2(dz, dx);
