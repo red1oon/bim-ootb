@@ -4,6 +4,28 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.28.0](https://github.com/red1oon/bim-ootb/compare/v1.27.0...v1.28.0) (2026-07-26)
+
+
+### ✨ Features
+
+* **tour:** §TOUR-POLYLINE — Fly Tour flies the A* on-floor polyline, not node centroids ([#1012](https://github.com/red1oon/bim-ootb/issues/1012)) ([ee0b844](https://github.com/red1oon/bim-ootb/commit/ee0b8443b2e8f38abbbcace65693b61bc3aeeb00))
+* **viewer:** single room-select cuboid now shows its own real door(s) ([#1016](https://github.com/red1oon/bim-ootb/issues/1016)) ([dbff9f4](https://github.com/red1oon/bim-ootb/commit/dbff9f49bf5494e2684dabcb48d10d049735530a))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_TURN_SLERP — the look-back was a ONE-FRAME 180° snap, not a turn ([#1018](https://github.com/red1oon/bim-ootb/issues/1018)) ([1ccc024](https://github.com/red1oon/bim-ootb/commit/1ccc0244a579d2761dbe3dd5349f21d9d56eebe5))
+* **graph:** §G1-EXIT-IS-A-LIFT-DOOR step 1 — an `exit` node was a lift door; stop creating it ([#1014](https://github.com/red1oon/bim-ootb/issues/1014)) ([78036f6](https://github.com/red1oon/bim-ootb/commit/78036f66fc1fc58339b9a16002478e9f1de29a42))
+* **graph:** bound the detour search (§DETOUR-MID-MARGIN) + explain the door-revisit wiggle instead of trading it for a longer line ([#1010](https://github.com/red1oon/bim-ootb/issues/1010)) ([34c0286](https://github.com/red1oon/bim-ootb/commit/34c028621f79ca2d5b7ecdfa0bcf31ac940c82d7))
+* **graph:** Room→Path draws on real floor — raster union, door/stair thresholds, floor-plane raster (§17) ([#1006](https://github.com/red1oon/bim-ootb/issues/1006)) ([8356978](https://github.com/red1oon/bim-ootb/commit/8356978205879a4fdb02d218b167f8b6334af957))
+* **sw:** serve buildings/patches/*.sql network-first — an updated DB patch could never reach a client ([#1009](https://github.com/red1oon/bim-ootb/issues/1009)) ([ffb71b1](https://github.com/red1oon/bim-ootb/commit/ffb71b176d7d2d22f8575c83bb98f5a9c6486557))
+* **tour:** §SCRUB_BAR_LIFECYCLE — scrub bar returns after a canvas interrupt (11/11) ([#1002](https://github.com/red1oon/bim-ootb/issues/1002)) ([a2d01c7](https://github.com/red1oon/bim-ootb/commit/a2d01c7082b4e14b2a534ce36a8a5e0fc51671f8))
+* **viewer:** §ROOM_PATH — split the misnamed rooms=[] into stops=[] and via=[] ([#1007](https://github.com/red1oon/bim-ootb/issues/1007)) ([491413f](https://github.com/red1oon/bim-ootb/commit/491413ffb4e3e277c23b7e7f4a61dfb7f4bf57d2))
+* **viewer:** guarantee a fresh shadow reassert before Alt+S/Alt+C frame handoff (§PHOTO_SHADOW_FINALCAPTURE) ([#1004](https://github.com/red1oon/bim-ootb/issues/1004)) ([de7120f](https://github.com/red1oon/bim-ootb/commit/de7120f1d414996693b70c28e385d5694f89cc97))
+* **viewer:** salvage MaxQ bakes that lose their IDB connection or WebGL context mid-run ([#1011](https://github.com/red1oon/bim-ootb/issues/1011)) ([8f7be57](https://github.com/red1oon/bim-ootb/commit/8f7be576473d24f773c2442105aa93f3462495bf))
+* **viewer:** stop scene.js's throttled sky env-map regen from clobbering a staged HDRI (§ENVMAP_STOMP_GUARD) ([#1005](https://github.com/red1oon/bim-ootb/issues/1005)) ([9b01172](https://github.com/red1oon/bim-ootb/commit/9b01172f365c17be9fa6e3e6850230f0fd9e0546))
+
 ## [1.27.0](https://github.com/red1oon/bim-ootb/compare/v1.26.0...v1.27.0) (2026-07-25)
 
 
