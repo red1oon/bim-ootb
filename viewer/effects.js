@@ -3162,6 +3162,9 @@ async function setupEffects(A, renderer, scene, camera) {
   // continues a turn already in motion instead of snapping into a fresh spin. On the 24s film the
   // look-back now starts at 6 + 0.75*7 = 11.25s (was 8.4s) and completes at 15s.
   var CINEMA_TURN_OVERLAP = 0.25, CINEMA_TURN_OVERLAP_MAX = 0.5;
+  // §CINEMA_TURN_SLERP: within this of a dead-180° turn the "short way" is undefined — see
+  // _cinemaGazeBlend for why that case is the COMMON one, not the corner case.
+  var CINEMA_TURN_ANTIPODAL_RAD = 179.5 * Math.PI / 180;
   var CINEMA_EYE_M = 1.7;       // standing eye height above the floor actually under that point
   var CINEMA_LOOKDOWN_DEG = 45; // the exterior act's look-down angle
   var CINEMA_SUN_GUARD_DEG = 35;// Sun within this of the emergence heading → hold the look-down
@@ -3206,7 +3209,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v12 (§CINEMA_SPACE_MEP_SKIP + §CINEMA_SPACE_ENCLOSED_SKIP + §CINEMA_GHOST_RESET)';
+  var EFFECTS_V = 'v13 (§CINEMA_EXIT_BREATHE beats + §CINEMA_TURN_SLERP look-back)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -3826,6 +3829,34 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var orbitStart = _orbitPose(0);
 
+    // §CINEMA_TURN_SLERP (2026-07-26 — PHOTOREAL_STILL_RENDER.md §CINEMA_TURN_SLERP). Implementing
+    // §CINEMA_TURN_SLERP "the fix" — Witness: witness_cinema_exit_breathe.js G3.
+    // Both look-back blends used to LERP THE LOOK-AT POINT from "20m ahead" toward the pivot. On a
+    // straight walk-out the pivot sits exactly 180° BEHIND, so that segment runs back THROUGH the
+    // camera. Measured on Duplex: the gaze azimuth held 132.3° dead flat all the way in while the
+    // gaze distance collapsed 20m → 1.5m, then INVERTED to −47.7° in a single frame. The camera
+    // never turned — it snapped, and that one frame is the user's "the camera rush and turns too
+    // rapidly". Rotating the DIRECTION at a fixed 20m range cannot do that: the target never
+    // approaches the camera, so there is no singularity left to whip through.
+    function _cinemaGazeBlend(px, py, pz, dx, dy, dz, w) {
+      var pdx = pivot.x - px, pdy = pivot.y - py, pdz = pivot.z - pz;
+      var yawA = Math.atan2(dz, dx),   pitA = Math.atan2(dy, Math.hypot(dx, dz));
+      var yawB = Math.atan2(pdz, pdx), pitB = Math.atan2(pdy, Math.hypot(pdx, pdz));
+      var raw = yawB - yawA, dYaw = raw;
+      while (dYaw > Math.PI) dYaw -= 2 * Math.PI;
+      while (dYaw < -Math.PI) dYaw += 2 * Math.PI;
+      // Dead-antipodal leaves the short way undefined, and on a radial walk-out that is the NORMAL
+      // case. Take the + way, which is the direction the exterior orbit itself turns
+      // (az = exitAz + _cinemaAzU(u)*2π), so look-back and orbit rotate together. Kept as a modulo
+      // of the RAW delta, not a hardcoded +π, so w=1 still lands EXACTLY on the pivot bearing —
+      // that exactness is what keeps the Beat 4 → _orbitPose(0) handoff free of a kink.
+      if (Math.abs(dYaw) >= CINEMA_TURN_ANTIPODAL_RAD)
+        dYaw = ((raw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      var yaw = yawA + dYaw * w, pit = pitA + (pitB - pitA) * w, cp = Math.cos(pit);
+      return { x: px, y: py, z: pz,
+               tx: px + Math.cos(yaw) * 20 * cp, ty: py + Math.sin(pit) * 20, tz: pz + Math.sin(yaw) * 20 * cp };
+    }
+
     function poseAt(tNorm) {
       tNorm = Math.max(0, Math.min(1, tNorm));
       if (tNorm <= tD) {
@@ -3857,7 +3888,6 @@ async function setupEffects(A, renderer, scene, camera) {
         var ah = _outPos(Math.min(1, e3 + 0.06));
         if (Math.hypot(ah.x - p3.x, ah.z - p3.z) < 0.5) ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
         var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
-        var aheadTx = p3.x + (ah.x - p3.x) / ad * 20, aheadTy = p3.y + (ah.y - p3.y) / ad * 20, aheadTz = p3.z + (ah.z - p3.z) / ad * 20;
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
         // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
@@ -3867,10 +3897,10 @@ async function setupEffects(A, renderer, scene, camera) {
         var turnW3 = (e3 > 1 - CINEMA_TURN_OVERLAP)
           ? _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP) * CINEMA_TURN_OVERLAP_MAX
           : 0;
-        return { x: p3.x, y: p3.y, z: p3.z,
-                 tx: aheadTx + (pivot.x - aheadTx) * turnW3,
-                 ty: aheadTy + (pivot.y - aheadTy) * turnW3,
-                 tz: aheadTz + (pivot.z - aheadTz) * turnW3 };
+        // turnW3=0 reproduces the old pure-walk target exactly (p3 + aheadDir*20) — the walk-out
+        // itself is untouched; only the blend that follows changed shape.
+        return _cinemaGazeBlend(p3.x, p3.y, p3.z,
+                                (ah.x - p3.x) / ad, (ah.y - p3.y) / ad, (ah.z - p3.z) / ad, turnW3);
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
@@ -3878,14 +3908,15 @@ async function setupEffects(A, renderer, scene, camera) {
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
         var e4 = _cinemaSmoothstep((tNorm - tO) / Math.max(1e-6, tR - tO));
-        var la = { x: exitOuter.x + odx * 20, y: exitOuter.y, z: exitOuter.z + odz * 20 };
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
-        return { x: exitOuter.x + (orbitStart.x - exitOuter.x) * e4,
-                 y: exitOuter.y + (orbitStart.y - exitOuter.y) * e4,
-                 z: exitOuter.z + (orbitStart.z - exitOuter.z) * e4,
-                 tx: la.x + (pivot.x - la.x) * turnW4,
-                 ty: la.y + (pivot.y - la.y) * turnW4,
-                 tz: la.z + (pivot.z - la.z) * turnW4 };
+        // (odx,odz) IS the direction Beat 3 ends on — its last route leg is the outward push past
+        // the doorway — so e4=0 continues Beat 3's final gaze exactly. At e4=1, turnW4=1 yields the
+        // camera→pivot bearing, which is the same orientation _orbitPose(0) produces by aiming at
+        // pivot: both seams are continuous by construction, not by tuning.
+        return _cinemaGazeBlend(exitOuter.x + (orbitStart.x - exitOuter.x) * e4,
+                                exitOuter.y + (orbitStart.y - exitOuter.y) * e4,
+                                exitOuter.z + (orbitStart.z - exitOuter.z) * e4,
+                                odx, 0, odz, turnW4);
       }
       // ── Beat 5: the standard ending.
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
