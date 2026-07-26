@@ -3304,6 +3304,65 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_FAN_FAR = 60;      // metres; no hit inside this = open in that bearing
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
   var CINEMA_ENCLOSED_THRESHOLD = 0.6; // BVH fan fraction that counts as "genuinely enclosed"
+
+  // ══ §CINEMA_PATH_EDITOR — authored path state + corner rounding. Spec:
+  // prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL (settled with the user 2026-07-26).
+  // _cpeWp is the ONE piece of authored state the plan reads. Null = nothing authored = the plan
+  // behaves EXACTLY as it did before this feature existed, which is what makes guardrail 2 ("OK
+  // without an edit must be byte-identical to today") true by construction rather than by test.
+  var _cpeWp = null;
+  var CINEMA_CORNER_ARC_SEGS = 8;    // sample points per rounded corner
+  var CINEMA_CORNER_LEG_FRAC = 0.4;  // a corner may never eat more than 40% of either adjoining leg
+  // Corner rounding, clearance-bounded (§CINEMA_PATH_EDITOR_MODEL items 5-7). Straight runs pass
+  // through verbatim; every interior corner is replaced by a quadratic Bézier that leaves the
+  // incoming leg `r` before the waypoint and rejoins the outgoing leg `r` after it, with the
+  // waypoint itself as the control point. A quadratic Bézier's furthest excursion from its control
+  // point is at u=0.5 and equals 0.25·r·|b̂−â| ≤ r/2 — so the flown curve can never stray more than
+  // HALF the measured clearance from the point the user placed. That bound is the G8 claim, and it
+  // is why `r` may be taken straight from _cinemaFan.min with no safety fudge factor invented on top.
+  function _cinemaRoundCorners(wp) {
+    if (!wp || wp.length < 3) return (wp || []).slice();
+    var out = [{ x: wp[0].x, y: wp[0].y, z: wp[0].z }], rounded = 0, rMin = 1e9, rMax = 0;
+    for (var i = 1; i < wp.length - 1; i++) {
+      var p0 = wp[i - 1], p1 = wp[i], p2 = wp[i + 1];
+      var ax = p1.x - p0.x, ay = p1.y - p0.y, az = p1.z - p0.z;
+      var bx = p2.x - p1.x, by = p2.y - p1.y, bz = p2.z - p1.z;
+      var aL = Math.hypot(ax, ay, az), bL = Math.hypot(bx, by, bz);
+      if (aL < 1e-4 || bL < 1e-4) { out.push({ x: p1.x, y: p1.y, z: p1.z }); continue; }
+      // A waypoint the path runs straight through is not a corner — leave it alone rather than
+      // spend a BVH fan on it.
+      var dot = (ax * bx + ay * by + az * bz) / (aL * bL);
+      var turnDeg = Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI;
+      if (turnDeg < 3) { out.push({ x: p1.x, y: p1.y, z: p1.z }); continue; }
+      // MEASURED clearance at this corner. Fallback is CINEMA_FAN_NUDGE_MAX — an existing constant
+      // that already means "how far the camera may slide about inside a room" — not a new number.
+      var clear = CINEMA_FAN_NUDGE_MAX;
+      try {
+        var fanC = _cinemaFan({ x: p1.x, y: p1.y, z: p1.z }, 8);
+        if (fanC && isFinite(fanC.min)) clear = fanC.min;
+      } catch (eC) { /* no BVH yet → the existing nudge budget stands in */ }
+      var r = Math.min(clear, aL * CINEMA_CORNER_LEG_FRAC, bL * CINEMA_CORNER_LEG_FRAC);
+      if (!(r > 0.01)) { out.push({ x: p1.x, y: p1.y, z: p1.z }); continue; }
+      rounded++; rMin = Math.min(rMin, r); rMax = Math.max(rMax, r);
+      var pA = { x: p1.x - ax / aL * r, y: p1.y - ay / aL * r, z: p1.z - az / aL * r };
+      var pB = { x: p1.x + bx / bL * r, y: p1.y + by / bL * r, z: p1.z + bz / bL * r };
+      out.push(pA);
+      for (var s = 1; s < CINEMA_CORNER_ARC_SEGS; s++) {
+        var u = s / CINEMA_CORNER_ARC_SEGS, iu = 1 - u;
+        out.push({ x: iu * iu * pA.x + 2 * iu * u * p1.x + u * u * pB.x,
+                   y: iu * iu * pA.y + 2 * iu * u * p1.y + u * u * pB.y,
+                   z: iu * iu * pA.z + 2 * iu * u * p1.z + u * u * pB.z });
+      }
+      out.push(pB);
+    }
+    var last = wp[wp.length - 1];
+    out.push({ x: last.x, y: last.y, z: last.z });
+    console.log('§CINEMA_CORNERS control=' + wp.length + ' flown=' + out.length + ' rounded=' + rounded +
+      ' rMin=' + (rounded ? rMin.toFixed(2) : 'n/a') + ' rMax=' + (rounded ? rMax.toFixed(2) : 'n/a') +
+      ' maxDeviation=' + (rounded ? (rMax / 2).toFixed(2) : '0.00') + 'm (bound=clearance/2)');
+    return out;
+  }
+  A.cinemaRoundCorners = _cinemaRoundCorners;   // witness G7/G8 read this directly
   // Exit cost = dist × (1 − FACE_GAIN·facingDot) × perimFactor. facingDot=+1 (door dead ahead) →
   // (1-GAIN)×dist; facingDot=−1 (door behind you) → (1+GAIN)×dist. This asymmetry is the entire
   // "myriad of paths" mechanism: two poses at the SAME spot facing different ways can pick DIFFERENT
@@ -3757,24 +3816,88 @@ async function setupEffects(A, renderer, scene, camera) {
                       y: chosenExit.p.y + CINEMA_EYE_M,
                       z: chosenExit.p.z + odz * Math.max(8, envelope * 0.15) };
     outWp.push(exitOuter);
+    // ══ §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL item 1):
+    // AUTHORED waypoints replace the derived walk-out wholesale. Waypoints are the ONLY authored
+    // data in this whole feature — position plus camera height, nothing else. The camera ANGLE is
+    // never authored (item 2): it stays LOS toward the next waypoint, which is exactly what _outPos
+    // and the existing §CINEMA_TURN_SLERP already derive. That is WHY this feature cannot weaken
+    // §CINEMA_TURN_SLERP's witness (item 4) — it changes that law's inputs, never the law.
+    var cpeOrbitScale = 1, cpeOrbitDY = 0;
+    if (_cpeWp && _cpeWp.length >= 2) {
+      // ══ The LAST waypoint is the orbit's control point, and it acts ELASTICALLY (user, 2026-07-26:
+      // "that curve remains static, it is just its waypoint that gets adjusted... it is elastic,
+      // relative to its original orbit"). The orbit KEEPS ITS SHAPE — ellipse, Sun-glint swoop, flat
+      // hold, decelerating ending, all formula-driven and all already witnessed. The stop row only
+      // stretches it: a RATIO on radius and an OFFSET on height, both measured against the derived
+      // orbit rather than replacing it.
+      // Relative, not absolute, on purpose: a stored path is re-applied later against a plan that
+      // may have been derived from a different start pose (hence a different fillDistance). A ratio
+      // still means "a bit wider than this building's natural orbit" then; an absolute radius in
+      // metres would not.
+      // The third lever needs no code at all: `exitAz` below is measured off exitOuter, and it is
+      // what decides where the Sun crossing falls in the loop — whether the film catches the
+      // reflection early and then rises, or rises into it at the end. Reassigning exitOuter is
+      // enough for the stop row to re-shape the orbit's whole mood through existing code.
+      var derivedOuter = exitOuter;
+      var derivedR = Math.hypot(derivedOuter.x - pivot.x, derivedOuter.z - pivot.z);
+      outWp = _cpeWp.map(function(w) { return { x: w.x, y: w.y, z: w.z }; });
+      outRoute = 'authored';
+      exitOuter = outWp[outWp.length - 1];
+      // ── Two things downstream still pointed at the DERIVED route and had to be re-aimed at the
+      // authored one. Both were caught by witness numbers, not by reading the code:
+      //
+      // (a) `settle` — Beats 1-2 (dive, spin) fly to `settle`, which came from the §CINEMA_SPACE
+      //     pick, while Beat 3 starts from outWp[0]. Authoring row 0 without this moved only the
+      //     walk, so the camera teleported at the beat seam. G3 measured it exactly: a 1.5m
+      //     height edit produced dy over the walk-out of [0.000, 1.508] — the 0.000 IS the seam.
+      //     Mutated in place because the beat closures captured this object.
+      // (b) `odx/odz` — the outward push direction past the doorway. Beat 3's gaze falls back to it
+      //     whenever the look-ahead point collapses onto the position (the last half-metre of the
+      //     walk, line ~4146), and Beat 4 assumes "(odx,odz) IS the direction Beat 3 ends on". With
+      //     an authored path that was still the derived exit's bearing, so the gaze SNAPPED onto it
+      //     at the end of the walk: G7 measured 115.2 deg in a single frame — six times worse than
+      //     the 19.8 deg/frame whip this feature set out to retire.
+      settle.x = outWp[0].x; settle.y = outWp[0].y; settle.z = outWp[0].z;
+      var lastLeg = outWp[outWp.length - 1], prevLeg = outWp[outWp.length - 2];
+      var lgx = lastLeg.x - prevLeg.x, lgz = lastLeg.z - prevLeg.z;
+      var lgL = Math.hypot(lgx, lgz);
+      if (lgL > 1e-4) { odx = lgx / lgL; odz = lgz / lgL; }
+      var authoredR = Math.hypot(exitOuter.x - pivot.x, exitOuter.z - pivot.z);
+      if (derivedR > 0.01) cpeOrbitScale = authoredR / derivedR;
+      cpeOrbitDY = exitOuter.y - derivedOuter.y;
+      console.log('§CINEMA_PATH_EDIT authored waypoints=' + outWp.length + ' (derived route replaced)' +
+        ' orbitScale=' + cpeOrbitScale.toFixed(3) + ' orbitDY=' + cpeOrbitDY.toFixed(2) + 'm');
+    }
+    // ══ §CINEMA_PATH_EDITOR_MODEL items 5-7: the waypoints are CONTROL points, not corners. The
+    // flown curve CUTS INSIDE every corner (user: "yes cut inside"), so a sharp corner is not a
+    // state this path can reach — user: "that means there are no 'sharp' corners." The cut is
+    // bounded by MEASURED clearance at each waypoint (_cinemaFan.min, this project's single source
+    // for "how much open space is here", already trusted by §CINEMA_SPACE), never by a guessed
+    // fillet constant: tight room → tight curve, open hall → wide graceful arc.
+    // This retires the ungated "D2 walk-out corner whip" (19.8°/frame) the user reported as "about
+    // 2 jerks, fast jump at least a frame" — tolerable while the route was derived-and-tame, trivial
+    // to hit once waypoints are user-draggable. Gated by G7 (°/frame cap) and G8 (deviation ≤ the
+    // measured clearance). `outWp` stays the authored control points (the editor's table and the
+    // LOS derivation both read it); `flowWp` is what is actually flown.
+    var flowWp = _cinemaRoundCorners(outWp);
     var segLen = [0];
-    for (var wi = 1; wi < outWp.length; wi++)
-      segLen.push(segLen[wi - 1] + Math.hypot(outWp[wi].x - outWp[wi - 1].x,
-                                              outWp[wi].y - outWp[wi - 1].y,
-                                              outWp[wi].z - outWp[wi - 1].z));
+    for (var wi = 1; wi < flowWp.length; wi++)
+      segLen.push(segLen[wi - 1] + Math.hypot(flowWp[wi].x - flowWp[wi - 1].x,
+                                              flowWp[wi].y - flowWp[wi - 1].y,
+                                              flowWp[wi].z - flowWp[wi - 1].z));
     var totalLen = segLen[segLen.length - 1] || 1;
     function _outPos(f) {
       var want = Math.max(0, Math.min(1, f)) * totalLen;
-      for (var i2 = 1; i2 < outWp.length; i2++) {
-        if (want <= segLen[i2] || i2 === outWp.length - 1) {
+      for (var i2 = 1; i2 < flowWp.length; i2++) {
+        if (want <= segLen[i2] || i2 === flowWp.length - 1) {
           var seg = (segLen[i2] - segLen[i2 - 1]) || 1;
           var lf = Math.max(0, Math.min(1, (want - segLen[i2 - 1]) / seg));
-          return { x: outWp[i2 - 1].x + (outWp[i2].x - outWp[i2 - 1].x) * lf,
-                   y: outWp[i2 - 1].y + (outWp[i2].y - outWp[i2 - 1].y) * lf,
-                   z: outWp[i2 - 1].z + (outWp[i2].z - outWp[i2 - 1].z) * lf };
+          return { x: flowWp[i2 - 1].x + (flowWp[i2].x - flowWp[i2 - 1].x) * lf,
+                   y: flowWp[i2 - 1].y + (flowWp[i2].y - flowWp[i2 - 1].y) * lf,
+                   z: flowWp[i2 - 1].z + (flowWp[i2].z - flowWp[i2 - 1].z) * lf };
         }
       }
-      return outWp[outWp.length - 1];
+      return flowWp[flowWp.length - 1];
     }
     // The spin's destination bearing: the FIRST leg of the route out, so the spin ends looking
     // exactly where the walk begins (no seam between the two beats).
@@ -3816,7 +3939,18 @@ async function setupEffects(A, renderer, scene, camera) {
     var sunAz = A.sun ? Math.atan2(A.sun.position.z - pivot.z, A.sun.position.x - pivot.x) : exitAz + Math.PI;
     var lookdownTilt = Math.max(tiltMin, Math.min(tiltMax, CINEMA_LOOKDOWN_DEG * Math.PI / 180));
     var flatTiltRad = THREE.MathUtils.degToRad(CINEMA_FLAT_TILT_DEG);
-    var orbitRadius = Math.max(radiusMin, Math.min(radiusMax, fillDistance));
+    // §CINEMA_PATH_EDITOR: the stop row stretches the orbit elastically. The radius band still
+    // clamps the result — that band is what keeps the building framed at all (too close clips, too
+    // far is a speck), so a stretch is honoured WITHIN it, never in place of it. Both the requested
+    // and the granted value are logged, so a clamp is visible in the log instead of silently
+    // swallowing what the user dragged.
+    var orbitRadiusWant = fillDistance * cpeOrbitScale;
+    var orbitRadius = Math.max(radiusMin, Math.min(radiusMax, orbitRadiusWant));
+    if (cpeOrbitScale !== 1 || cpeOrbitDY !== 0)
+      console.log('§CINEMA_ORBIT_ELASTIC scale=' + cpeOrbitScale.toFixed(3) +
+        ' requested=' + orbitRadiusWant.toFixed(1) + ' granted=' + orbitRadius.toFixed(1) +
+        ' band=[' + radiusMin.toFixed(1) + ',' + radiusMax.toFixed(1) + ']' +
+        ' clamped=' + (Math.abs(orbitRadius - orbitRadiusWant) > 0.05) + ' dY=' + cpeOrbitDY.toFixed(2) + 'm');
 
     // ══ Beat boundaries, in normalized time. Fixed SECONDS, so a longer film gets a longer orbit,
     // never a longer dive (§CINEMA_SIMPLE: the dive is time-boxed at 4s and must not be clamped).
@@ -3953,7 +4087,11 @@ async function setupEffects(A, renderer, scene, camera) {
         radius *= 1 + (CINEMA_PULLBACK_SCALE - 1) * pb;
       }
       var hr = radius * Math.cos(tilt);
-      return { x: pivot.x + hr * Math.cos(az), y: pivot.y + radius * Math.sin(tilt),
+      // cpeOrbitDY: the elastic height offset from the authored stop row (§CINEMA_PATH_EDITOR).
+      // Additive on the whole loop, so the orbit rides higher or lower while keeping every shape
+      // rule above — tilt easing, flat ending, pull-back — exactly as derived. Zero when nothing is
+      // authored, so this line is a no-op on the default path.
+      return { x: pivot.x + hr * Math.cos(az), y: pivot.y + radius * Math.sin(tilt) + cpeOrbitDY,
                z: pivot.z + hr * Math.sin(az), tx: pivot.x, ty: pivot.y, tz: pivot.z };
     }
     var orbitStart = _orbitPose(0);
@@ -4069,9 +4207,94 @@ async function setupEffects(A, renderer, scene, camera) {
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
              pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
              beats: { dive: tD, spin: tS, out: tO, rise: tR },
+             // §CINEMA_PATH_EDITOR: the editor's table renders `waypoints` (authored control points,
+             // NOT the rounded flown polyline) and re-times off `pathLen`. `sec` echoes the beat
+             // seconds actually in force for this plan so the editor never has to guess them back
+             // out of the normalized beat fractions.
+             waypoints: outWp.map(function(w) { return { x: w.x, y: w.y, z: w.z }; }),
+             flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
+             sec: { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC },
+             eyeM: CINEMA_EYE_M, lookdownDeg: CINEMA_LOOKDOWN_DEG, durationSec: durationSec,
              indoor: true, poseAt: poseAt };
   }
-  A.cinemaPathPlan = _cinemaPathPlan;   // shared with cinema_maxq.js — see §CINEMA_PATH above
+  // ══ §CINEMA_PATH_EDITOR — the override seam. Deliberately a THIN WRAPPER rather than edits inside
+  // _cinemaPathPlan: the plan function is 600+ lines and its §CINEMA_SPACE block is another session's
+  // working set (see the spec's DO-NOT-REMOVE header), so this feature touches it as little as
+  // possible. The overridable inputs are module-level `var`s in this same IIFE, so they can be set,
+  // the untouched plan called, and restored in `finally`.
+  // Guardrail 2 falls out for free: with no override this calls _cinemaPathPlan(durationSec) with
+  // every global at its original value — the same function with the same inputs, so "OK without an
+  // edit is byte-identical to today" is a property of the code, not a hope pinned on a test.
+  var _CPE_KEYS = [['diveSec', 'CINEMA_DIVE_SEC'], ['spinSec', 'CINEMA_SPIN_SEC'],
+                   ['outSec', 'CINEMA_OUT_SEC'], ['riseSec', 'CINEMA_RISE_SEC'],
+                   ['eyeM', 'CINEMA_EYE_M'], ['lookdownDeg', 'CINEMA_LOOKDOWN_DEG']];
+  function _cpeSet(name, v) {
+    if (name === 'CINEMA_DIVE_SEC') CINEMA_DIVE_SEC = v;
+    else if (name === 'CINEMA_SPIN_SEC') CINEMA_SPIN_SEC = v;
+    else if (name === 'CINEMA_OUT_SEC') CINEMA_OUT_SEC = v;
+    else if (name === 'CINEMA_RISE_SEC') CINEMA_RISE_SEC = v;
+    else if (name === 'CINEMA_EYE_M') CINEMA_EYE_M = v;
+    else if (name === 'CINEMA_LOOKDOWN_DEG') CINEMA_LOOKDOWN_DEG = v;
+  }
+  function _cpeGet(name) {
+    return name === 'CINEMA_DIVE_SEC' ? CINEMA_DIVE_SEC : name === 'CINEMA_SPIN_SEC' ? CINEMA_SPIN_SEC :
+           name === 'CINEMA_OUT_SEC' ? CINEMA_OUT_SEC : name === 'CINEMA_RISE_SEC' ? CINEMA_RISE_SEC :
+           name === 'CINEMA_EYE_M' ? CINEMA_EYE_M : CINEMA_LOOKDOWN_DEG;
+  }
+  // ── §CINEMA_PATH_EDITOR persistence, read side. Restored LAZILY at first plan rather than at load:
+  // the plan is the only consumer, so there is no window in which a stored path could be missed, and
+  // it needs no hook in the load path at all. (This is deliberately NOT the staffage bug the spec
+  // lists — staffage restores on first Alt+P, which is a *user action* and therefore genuinely too
+  // late; a plan-time restore happens before the first thing that could observe it.)
+  var _cpeLoaded = false;
+  function _cpeLoadFromDb() {
+    if (_cpeLoaded) return;
+    _cpeLoaded = true;
+    try {
+      if (!A.dbQuery) return;
+      var has = A.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cinema_path'");
+      if (!has || !has.length) { console.log('§CINEMA_PATH_RESTORE none (no cinema_path table) — derived path'); return; }
+      var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,total_sec,dive_sec,spin_sec,out_sec,rise_sec FROM cinema_path ORDER BY seq");
+      if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
+      var wp = rows.map(function(r) {
+        var p = A.ifc2three(r[1], r[2], r[3]);
+        return { x: p.x, y: p.y, z: p.z };
+      });
+      A._cinemaPathEdit = { waypoints: wp, diveSec: rows[0][5], spinSec: rows[0][6],
+                            outSec: rows[0][7], riseSec: rows[0][8], _total: rows[0][4] };
+      console.log('§CINEMA_PATH_RESTORE rows=' + wp.length + ' total=' + rows[0][4].toFixed(1) + 's — authored path in force');
+    } catch (e) { console.warn('§CINEMA_PATH_RESTORE_FAIL ' + e.message); }
+  }
+  // Staged by the editor's "Save this path"; read by scene.js `_writeCinemaPathTable` at export.
+  A.stageCinemaPath = function(ov) {
+    A._cinemaPathEdit = ov;
+    console.log('§CINEMA_PATH_STAGE waypoints=' + (ov && ov.waypoints ? ov.waypoints.length : 0) +
+      ' total=' + (ov && ov._total ? ov._total.toFixed(1) : '?') + 's (Ctrl+S writes it to the file)');
+  };
+  A._getCinemaPathEdit = function() { return A._cinemaPathEdit || null; };
+  A.clearCinemaPath = function() { A._cinemaPathEdit = null; console.log('§CINEMA_PATH_CLEAR authored path dropped'); };
+
+  A.cinemaPathPlan = function(durationSec, ov) {
+    // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
+    // stored edit" — the G5 control path needs that distinction to be expressible.
+    if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; }
+    if (!ov) return _cinemaPathPlan(durationSec);
+    var saved = [], i;
+    for (i = 0; i < _CPE_KEYS.length; i++) {
+      var k = _CPE_KEYS[i][0], g = _CPE_KEYS[i][1];
+      saved.push(_cpeGet(g));
+      if (ov[k] != null && isFinite(ov[k])) _cpeSet(g, ov[k]);
+    }
+    var savedWp = _cpeWp;
+    if (ov.waypoints && ov.waypoints.length >= 2) _cpeWp = ov.waypoints;
+    try {
+      return _cinemaPathPlan(durationSec);
+    } finally {
+      for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
+      _cpeWp = savedWp;
+    }
+  };
+  A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison
   // §INTERIOR_PACING (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-25): exposes the SAME BVH raycast fan
   // §CINEMA_SPACE already trusts as "the ONLY where-is-open-space source" (see the file-header
   // comment above _cinemaFanMeshes) to tour.js's flight-pacing — real measured clearance-to-
