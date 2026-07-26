@@ -433,6 +433,13 @@ async function setupScene(A) {
   A.ifc2three = function(ix, iy, iz) {
     return { x: ix - A.modelOffset.x, y: iz - A.modelOffset.z, z: -(iy - A.modelOffset.y) };
   };
+  // Exact inverse. Anything PERSISTED must be stored in IFC space, never three.js space:
+  // A.modelOffset is established at load time, so a three.js coordinate written into a .db is only
+  // meaningful to the session that wrote it. This is why staffage_instances stores ifc_* columns,
+  // and §CINEMA_PATH_EDITOR's cinema_path table follows it.
+  A.three2ifc = function(x, y, z) {
+    return { ix: x + A.modelOffset.x, iy: -z + A.modelOffset.y, iz: y + A.modelOffset.z };
+  };
 
   // IndexedDB cache
   A.CACHE_DB_NAME = 'bim_ootb_cache';
@@ -586,11 +593,36 @@ async function setupScene(A) {
       console.log('§STAFFAGE_SAVE rows=' + rows.length);
     } catch (e) { console.warn('§STAFFAGE_SAVE_FAIL ' + e.message); }
   }
+  // §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md, guardrail 5 + §CINEMA_PATH_EDITOR_MODEL):
+  // an edited cinema path is AUTHORED data, so under the prime rule it must be STORED, never
+  // re-guessed. Mirrors staffage_instances exactly — same explicit-action model: "Save this path"
+  // stages the edit into memory, the user's normal Ctrl+S is what writes it to the file. Adjusting
+  // and proceeding stays ephemeral, so a user experimenting with waypoints can walk away without
+  // having changed the building.
+  // Positions only, plus the beat seconds — camera ANGLE is never stored because it is never
+  // authored (it is LOS to the next waypoint, re-derived on load).
+  function _writeCinemaPathTable(db) {
+    var ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
+    if (!ov || !ov.waypoints || ov.waypoints.length < 2) return;
+    try {
+      db.run("DROP TABLE IF EXISTS cinema_path");
+      db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
+             "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?)");
+      ov.waypoints.forEach(function(w, i) {
+        var p = A.three2ifc(w.x, w.y, w.z);
+        stmt.run([i, p.ix, p.iy, p.iz, ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec]);
+      });
+      stmt.free();
+      console.log('§CINEMA_PATH_SAVE rows=' + ov.waypoints.length + ' total=' + ov._total.toFixed(1) + 's');
+    } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
       _writeStaffageTable(A.db);
+      _writeCinemaPathTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -616,6 +648,7 @@ async function setupScene(A) {
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
     _writeStaffageTable(mono);
+    _writeCinemaPathTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;

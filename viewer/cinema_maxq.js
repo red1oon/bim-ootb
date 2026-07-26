@@ -455,6 +455,48 @@
       }
       console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
     }
+    // ══ §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL item 12): the
+    // waypoint editor opens HERE — after the preview has shown the path and put the camera back.
+    //
+    // Item 20, a real defect this placement exposes and must fix: `A._maxqActive`, the wake lock and
+    // the damping hold are all claimed at the TOP of start(), before the plan and preview. In
+    // particular `A._maxqActive` makes dlod_nav.js:307 report 'cinema' and fully disengage DLOD. A
+    // user editing for five minutes would otherwise hold a screen wake lock and run Terminal/Hospital
+    // at full detail with no LOD the entire time. So all three are released for the duration of the
+    // editor and re-claimed on OK. Gated by G11 — proven released, not merely described as released.
+    if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false) {
+      A._maxqActive = false;
+      _wakeRelease(); _dampRelease();
+      console.log('§CPE_LOCKS released for editing (maxqActive=false, wake+damping released)');
+      _status('🎬 Edit the path, then OK to record');
+      var _cpeRes = null;
+      try {
+        _cpeRes = await A.cinemaPathEditor.open({ plan: plan, durationSec: nFrames / fps, fps: fps });
+      } catch (eE) { console.warn('§CPE_FAIL ' + eE.message + ' — proceeding with the derived path'); }
+      A._maxqActive = true;
+      _wakeAcquire(); _dampHold();
+      console.log('§CPE_LOCKS re-claimed for the bake (maxqActive=true)');
+      if (_cpeRes && _cpeRes.action === 'cancel') {
+        console.log('§MAXQ_CANCEL from path editor — nothing baked, nothing saved');
+        _status('🎬 Cancelled');
+        _active = false; _cancel = false; A._maxqActive = false;
+        _wakeRelease(); _dampRelease();
+        return;
+      }
+      if (_cpeRes && _cpeRes.override) {
+        // Constant speed means an edited path generally changes the total, so the frame count is
+        // re-derived from it (item 11 — this is the render cost the editor surfaced).
+        nFrames = Math.max(1, Math.round(_cpeRes.durationSec * fps));
+        plan = A.cinemaPathPlan(nFrames / fps, _cpeRes.override);
+        console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
+          ' waypoints=' + _cpeRes.override.waypoints.length + ' saved=' + !!_cpeRes.saved);
+      } else {
+        // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
+        // literally the same object, so the film is byte-identical to one recorded without the
+        // editor existing. The default cost of this feature is one click and nothing else.
+        console.log('§CPE_APPLIED none — derived plan unchanged (guardrail 2: OK is a no-op)');
+      }
+    }
     var db = null;
     var framesDone = 0;
     var _idbLost = false;
