@@ -912,6 +912,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // show `§HELPERS_QUERY_ERR no such table: storey_walkable_raster`, so it cannot carry a rule that
   // must hold on every building.
   var _clrRay = new THREE.Raycaster();
+  // §STAFFAGE_FLOOR_PHANTOM tuning. MIN_LIFT: below this a wrong floor pick is not visible as
+  // "in the air", and a coincident-surface ray can self-miss — not worth a false reject. TOL: how
+  // far below the bbox's claimed slab top a real triangle may be and still count as that floor.
+  var _FLOOR_PHANTOM_MIN_LIFT = 0.75, _FLOOR_PHANTOM_TOL = 0.60;
   // Real-geometry meshes only — staffage's own sprites/car meshes must never count as an obstruction
   // (and must never read as a "ceiling"). Collected once per press by the caller, not per candidate.
   function _solidMeshes() {
@@ -1051,7 +1055,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // outside people on the terrain). One slab list, in-memory point-in-footprint test — not a
     // per-figure DB query.
     var _slabs = A.dbQuery("SELECT center_x, center_y, center_z, bbox_x, bbox_y, bbox_z FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid WHERE m.ifc_class IN ('IfcSlab','IfcSlabStandardCase') AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.5 AND t.center_x IS NOT NULL") || [];
-    var _floorSlab = 0, _floorGround = 0;
+    var _floorSlab = 0, _floorGround = 0, _floorPhantom = 0;
     function _floorThreeY(x, y, refZ) {
       var best = null;
       for (var si = 0; si < _slabs.length; si++) {
@@ -1060,7 +1064,34 @@ async function setupEffects(A, renderer, scene, camera) {
           if (best === null || top > best) best = top;
         }
       }
-      if (best !== null) { _floorSlab++; return A.ifc2three(x, y, best).y; }
+      if (best !== null) {
+        var slabY = A.ifc2three(x, y, best).y;
+        // §STAFFAGE_FLOOR_PHANTOM (2026-07-26, user: "some will stand in air outside first floor").
+        // The loop above is a pure AXIS-ALIGNED BBOX test, and this file's own §STAFFAGE_GROUNDSNAP
+        // lesson is that BBOXES LIE: an exterior spot can sit inside an upper slab's bounding
+        // RECTANGLE while being nowhere near its real geometry — the notch of an L-shaped plate, a
+        // courtyard, or just past a facade edge inside the 0.5m tolerance. The spot is then lifted
+        // to that floor's height with nothing under it: a figure standing in mid-air outside the
+        // building. Same defect class, same remedy already trusted elsewhere in this file — ask the
+        // real rendered triangles (BVH raycaster), not the bbox.
+        // Only checked when the lift is big enough to actually read as floating; at ground level a
+        // coincident-surface ray can self-miss and a false reject would be worse than the symptom.
+        var lift = slabY - _staffageGroundY;
+        if (lift > _FLOOR_PHANTOM_MIN_LIFT && typeof _solids !== 'undefined' && _solids && _solids.length) {
+          var p3 = A.ifc2three(x, y, best);
+          _clrRay.set(new THREE.Vector3(p3.x, slabY + 1.0, p3.z), new THREE.Vector3(0, -1, 0));
+          _clrRay.far = 1.0 + _FLOOR_PHANTOM_TOL;
+          var hits = _clrRay.intersectObjects(_solids, false);
+          if (!hits.length) {
+            _floorPhantom++;
+            console.log('§STAFFAGE_FLOOR_PHANTOM bbox slab at y=' + slabY.toFixed(2) + ' (lift=' +
+              lift.toFixed(2) + 'm) has NO real geometry beneath — falling back to groundY=' +
+              _staffageGroundY.toFixed(2));
+            _floorGround++; return _staffageGroundY;
+          }
+        }
+        _floorSlab++; return slabY;
+      }
       _floorGround++; return _staffageGroundY;
     }
     // Place a figure at IFC (x,y), feet on the actual floor slab under it (raised floors respected),
@@ -1225,7 +1256,18 @@ async function setupEffects(A, renderer, scene, camera) {
       // §STAFFAGE_FACADE_FACING (user: "they should be camera facing - facade") — also restrict to
       // facing==='toward' (the face-on shot, reads as looking at the viewer) — the 'away'-facing
       // standing pose is shot from behind and would read as looking away from a facade-facing camera.
-      var outsidePoses = _STAFFAGE_PEOPLE.filter(function(p) { return p.role === 'stand' && p.facing === 'toward'; });
+      // §STAFFAGE_OUTSIDE_VARIETY (2026-07-26, user: "Alt-P made outside standing persons the same,
+      // should be the diff standing sprites" — live log showed 3 placed and all three the SAME male).
+      // The old filter was `role==='stand' && facing==='toward'`, and EXACTLY ONE asset in
+      // _STAFFAGE_PEOPLE satisfies both (person_standing_casual_male: the other 'stand' pose is
+      // 'away'). So outsidePoses.length was 1 and `placedP % length` was always 0 — every exterior
+      // figure on every building was that one cutout. Not intermittent, not a draw-luck artifact.
+      // Widening it does NOT re-litigate §STAFFAGE_FACING, it applies it: that doctrine says route
+      // each pose where its FIXED orientation makes sense, and its own worked example is "the lady
+      // with bags... facing to the building" — an 'away' pose reads as moving toward whatever is
+      // beyond her, which outside a building is the building. 'toward' (facing the camera) also
+      // reads fine outdoors. Only 'sit' is excluded: there is nothing to sit on out here.
+      var outsidePoses = _shuffle(_STAFFAGE_PEOPLE.filter(function(p) { return p.role !== 'sit'; }).slice());
       var doors = A.dbQuery("SELECT et.center_x, et.center_y, et.center_z, et.bbox_z, MAX(COALESCE(et.bbox_x,0), COALESCE(et.bbox_y,0)) FROM element_transforms et JOIN elements_meta em ON et.guid=em.guid WHERE em.ifc_class='IfcDoor' AND et.center_x IS NOT NULL") || [];
       var ext = [];
       for (var di = 0; di < doors.length; di++) {
@@ -1271,6 +1313,7 @@ async function setupEffects(A, renderer, scene, camera) {
       pSrc = gfExt.length ? 'entrance+silhouette' : 'silhouette';
       _shuffle(candSpots);
       var _paxTried = candSpots.length, _rejFBefore = _rejFrustum, _rejOBefore = _rejOcclude, _rejDedup = 0;
+      var _outsideUsed = [];
       for (var si2 = 0; si2 < candSpots.length && thisPressPax < PAX_CAP; si2++) {
         var sp = candSpots[si2], pos3 = A.ifc2three(sp[0], sp[1], sp[2]); pos3.y = _floorThreeY(sp[0], sp[1], sp[2]);
         var inF = _inFrame(pos3);
@@ -1281,9 +1324,11 @@ async function setupEffects(A, renderer, scene, camera) {
         // wings) sits INSIDE another part of the building — frustum+occlusion never noticed.
         if (!_spaceOK(_solids, 'pax', pos3)) continue;
         var pose = outsidePoses[placedP % outsidePoses.length];
+        _outsideUsed.push(pose.file.replace('people/person_', '').replace('.png', ''));
         _placeAt(pose, sp[0], sp[1], sp[2], true);
         placedP++; thisPressPax++;
       }
+      console.log('§STAFFAGE_OUTSIDE_VARIETY pool=' + outsidePoses.length + ' used=[' + _outsideUsed.join(',') + '] distinct=' + (new Set(_outsideUsed)).size);
       console.log('§STAFFAGE_PAX_REJECT tried=' + _paxTried + ' placed=' + thisPressPax + ' rejFrustum=' + (_rejFrustum - _rejFBefore) + ' rejOcclude=' + (_rejOcclude - _rejOBefore) + ' rejDedup=' + _rejDedup);
       if (!thisPressPax) {
         // §STAFFAGE_WIDE_FALLBACK (2026-07-18, user: "the 4/1/2 formula should apply any building"
@@ -1537,7 +1582,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _fMin = Infinity, _fMax = -Infinity;
     _photoStaffage.children.forEach(function(s) { var dy = (s.position.y + (s.userData.baseOffset || 0)) - _staffageGroundY; if (dy < _fMin) _fMin = dy; if (dy > _fMax) _fMax = dy; });
     if (!_photoStaffage.children.length) { _fMin = 0; _fMax = 0; }
-    console.log('§PHOTO_STAFFAGE thisPress(people=' + placedP + ' trees=' + placedT + ') cumulative(people=' + _photoStaffage.userData.counts.people + ' trees=' + _photoStaffage.userData.counts.trees + ' cars=' + _photoStaffage.userData.counts.cars + ') pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ')');
+    console.log('§PHOTO_STAFFAGE thisPress(people=' + placedP + ' trees=' + placedT + ') cumulative(people=' + _photoStaffage.userData.counts.people + ' trees=' + _photoStaffage.userData.counts.trees + ' cars=' + _photoStaffage.userData.counts.cars + ') pSrc=' + pSrc + ' floor=slab:' + _floorSlab + '/ground:' + _floorGround + '/phantom:' + _floorPhantom + ' feetVsGroundY=[' + _fMin.toFixed(2) + ',' + _fMax.toFixed(2) + '] groundY=' + _staffageGroundY.toFixed(2) + ' slabs=' + _slabs.length + ' build_ms=' + (performance.now() - _bt0).toFixed(0) + ' (realPeople=' + realPeople + ' realTrees=' + realTrees + ' realCars=' + realCars + ')');
     // §STAFFAGE_REAL_DEDUP witness (spec S1): how many real entourage positions guarded, how many
     // synthetic candidates they rejected this press.
     console.log('§STAFFAGE_REAL_DEDUP n=' + _realDedup.length + ' rejReal=' + _rejReal);
@@ -3276,7 +3321,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v14 (§CINEMA_TURN_SLERP look-back + §CINEMA_DAMPING_BLEED authored-pose hold)';
+  var EFFECTS_V = 'v15 (§STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
