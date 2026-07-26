@@ -30,10 +30,11 @@
   // depthTest:false/renderOrder so the marker SHINES THROUGH WALLS. That last property is
   // load-bearing, not decoration — when the editor opens the camera is outside the building, so a
   // depth-tested marker sitting in a room would simply not be visible at all.
-  function _mkMarker(p, color) {
+  function _mkMarker(p, color, scale, opacity) {
     var a = A();
-    var geo = new THREE.SphereGeometry(MARKER_R, 12, 10);
-    var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.9,
+    var geo = new THREE.SphereGeometry(MARKER_R * (scale == null ? 1 : scale), 12, 10);
+    var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true,
+                                            opacity: (opacity == null ? 0.9 : opacity),
                                             depthTest: false, depthWrite: false });
     var m = new THREE.Mesh(geo, mat);
     m.position.set(p.x, p.y, p.z);
@@ -82,8 +83,10 @@
     _state.objs.push(_mkLine(flown, 0x4fc3f7, 2));
     for (var i = 0; i < wp.length; i++) {
       var held = (i === _state.held);
-      var sel = (i === _state.sel);
-      var m = _mkMarker(wp[i], held ? 0xffcc00 : sel ? 0xffffff : 0x4fc3f7);
+      // Blue = a waypoint you have not picked up; ORANGE and breathing = the one you are holding.
+      // The blue ones stay clearly visible (they ARE the rest of the path, not decoration) but read
+      // as secondary, so at a glance it is obvious which single point your drag will move.
+      var m = _mkMarker(wp[i], held ? 0xff8c00 : 0x4fc3f7, held ? 1 : 0.7, held ? 0.95 : 0.75);
       m.userData._cpeIndex = i;
       _state.objs.push(m);
       _state.markers.push(m);
@@ -91,23 +94,39 @@
     if (a.markDirty) a.markDirty();
   }
 
+  // CONTINUOUS pulse while a point is held, not a one-shot settle (user, 2026-07-27: "status
+  // feedback, the buttons should pulse louder perhaps some orange"). A held point freezes the
+  // canvas, so its marker has to stay visibly alive the whole time it is held — a pulse that
+  // finishes after 300ms leaves a frozen scene with a static dot, which is exactly the state that
+  // reads as a hang.
+  // Throttled to PULSE_HZ: every frame would markDirty() continuously and stop the renderer's idle
+  // parking for as long as a point is held — on Hospital that is 63k elements re-rendering at full
+  // rate while the user types in a text box. 12Hz still reads as a smooth breath.
+  var PULSE_HZ = 12;
   function _pulse(idx) {
     var a = A();
     if (!_state || !_state.markers[idx]) return;
     var m = _state.markers[idx];
     var myPulse = ++_state.pulseId;
-    var t = 0;
+    var t0 = performance.now(), lastPaint = 0;
     (function frame() {
       if (!_state || myPulse !== _state.pulseId || !m.parent) return;
-      t += 0.06; if (t > 1) t = 1;
-      var e = 1 - Math.pow(1 - t, 3);
-      var k = 1 - e;
-      m.scale.setScalar(1 + k * 1.8);
-      m.material.opacity = 0.9 - k * 0.3;
-      if (a.markDirty) a.markDirty();
-      if (t < 1) requestAnimationFrame(frame);
-      else { m.scale.setScalar(1); m.material.opacity = 0.9; if (a.markDirty) a.markDirty(); }
+      var now = performance.now();
+      if (now - lastPaint >= 1000 / PULSE_HZ) {
+        lastPaint = now;
+        var phase = ((now - t0) % 900) / 900;              // 0.9s breath
+        var k = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2); // smooth 0→1→0
+        m.scale.setScalar(1 + k * 0.9);
+        m.material.opacity = 0.65 + k * 0.35;
+        if (a.markDirty) a.markDirty();
+      }
+      requestAnimationFrame(frame);
     })();
+  }
+  function _stopPulse() {
+    if (!_state) return;
+    _state.pulseId++;
+    if (A().markDirty) A().markDirty();
   }
 
   // ── Frame a waypoint: back the camera up so the point is genuinely in view and grabbable
@@ -192,12 +211,25 @@
     d.style.cssText = 'position:fixed;top:60px;right:12px;width:396px;max-height:calc(100vh - 96px);' +
       'overflow:auto;background:rgba(20,22,26,0.96);border:1px solid #3a3f47;border-radius:8px;' +
       'z-index:10000;font-family:system-ui,sans-serif;color:#ddd;box-shadow:0 8px 32px rgba(0,0,0,0.6)';
+    // Orange breathing glow, same language as the held marker in the canvas — one visual idea for
+    // "this is live / this wants your attention", not two unrelated ones.
+    if (!document.getElementById('cpe-style')) {
+      var st = document.createElement('style');
+      st.id = 'cpe-style';
+      st.textContent =
+        '@keyframes cpe-breathe{0%,100%{box-shadow:0 0 4px rgba(255,140,0,0.35)}50%{box-shadow:0 0 16px rgba(255,140,0,0.95)}}' +
+        '.cpe-live{animation:cpe-breathe 1.2s ease-in-out infinite}' +
+        '#cpe-panel button{transition:background .15s,color .15s,border-color .15s}' +
+        '#cpe-panel button:disabled{opacity:.45;cursor:default}';
+      document.head.appendChild(st);
+    }
     d.innerHTML =
       '<div style="padding:10px 12px;border-bottom:1px solid #3a3f47;font-size:13px;font-weight:600;color:#4fc3f7">' +
         'Cinema path <span style="font-weight:400;color:#888;font-size:11px">— edit before recording</span></div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px" id="cpe-clock"></div>' +
+      '<div id="cpe-state" style="padding:0 12px 6px;font-size:10px;color:#666"></div>' +
       '<div style="padding:10px 12px;border-top:1px solid #3a3f47;display:flex;gap:8px;justify-content:flex-end">' +
         '<button id="cpe-cancel" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Cancel</button>' +
         '<button id="cpe-save" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Save this path</button>' +
@@ -243,7 +275,8 @@
             if (!isFinite(v)) { inp.value = _num(wp[i][ax]); return; }
             wp[i][ax] = v;
             console.log('§CPE_KEY i=' + i + ' ' + ax + '=' + v.toFixed(2));
-            _redrawScene(); _renderClock();
+            _state.staged = false;   // the staged path no longer matches what is on screen
+            _redrawScene(); _renderClock(); _syncButtons();
           });
           inp.addEventListener('click', function(ev) { ev.stopPropagation(); });
           row.appendChild(inp);
@@ -281,7 +314,8 @@
       if (!isFinite(v) || v < 1) { inp.value = (Math.round(total * 10) / 10); return; }
       _state.userTotal = v;
       console.log('§CPE_TOTAL set=' + v.toFixed(1) + 's natural=' + nat.total.toFixed(1) + 's scale=' + (v / nat.total).toFixed(3));
-      _renderClock();
+      _state.staged = false;
+      _renderClock(); _syncButtons();
     });
     line1.appendChild(inp);
     var sfx = document.createElement('span');
@@ -310,11 +344,14 @@
   }
 
   function _select(i, frame) {
+    var was = _state.held;
     _state.sel = i;
     _state.held = i;
     if (A().controls) A().controls.enabled = false;   // item 13 — same pattern as grid_drag.js
-    console.log('§CPE_HOLD i=' + i + ' controls.enabled=false');
-    _redrawScene(); _renderRows(); _renderHint();
+    // Only log a CHANGE of hold. Re-clicking the same row is common and logged it every time
+    // (observed 4-5 identical lines in a row, live Hospital 2026-07-27).
+    if (was !== i) console.log('§CPE_HOLD i=' + i + ' controls.enabled=false');
+    _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
     _pulse(i);
     if (frame) _frameWaypoint(i);
   }
@@ -323,9 +360,53 @@
     if (_state.held == null) return;
     var was = _state.held;
     _state.held = null;
+    _stopPulse();
     if (A().controls) A().controls.enabled = true;
     console.log('§CPE_RELEASE i=' + was + ' why=' + why + ' controls.enabled=true');
-    _redrawScene(); _renderRows(); _renderHint();
+    _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
+  }
+
+  // ══ Button status feedback (user, 2026-07-27: "status feedback, the buttons should pulse louder
+  // perhaps some orange"). The buttons carry the answer to "what happens if I stop now?":
+  //   nothing edited → OK is the plain default, Save is disabled (there is nothing to save)
+  //   edited        → OK turns ORANGE and breathes (a different film is queued), Save lights up
+  //   saved         → Save goes quiet and says so, because the edit is now staged
+  // Same orange, same breath as the held marker in the canvas — one idea, two places.
+  function _syncButtons() {
+    var ok = document.getElementById('cpe-ok'),
+        save = document.getElementById('cpe-save'),
+        note = document.getElementById('cpe-state');
+    if (!ok || !save) return;
+    var edited = _isEdited();
+    ok.classList.toggle('cpe-live', edited);
+    ok.style.background = edited ? '#ff8c00' : '#4fc3f7';
+    ok.textContent = edited ? 'OK — record this' : 'OK';
+    save.disabled = !edited || _state.staged;
+    save.classList.toggle('cpe-live', edited && !_state.staged);
+    save.style.borderColor = (edited && !_state.staged) ? '#ff8c00' : '#4a4f57';
+    save.style.color = (edited && !_state.staged) ? '#ffb74d' : '#ddd';
+    save.textContent = _state.staged ? 'Path saved' : 'Save this path';
+    if (note) {
+      var nat = _naturalDuration();
+      var total = _state.userTotal != null ? _state.userTotal : nat.total;
+      note.style.color = edited ? '#ffb74d' : '#666';
+      note.textContent = _state.staged
+        ? 'Saved — Ctrl+S writes it into the building file.'
+        : edited
+          ? 'Edited — ' + total.toFixed(1) + 's film queued. Not saved to the building.'
+          : 'Unedited — OK records exactly the film the preview just showed.';
+    }
+  }
+
+  function _isEdited() {
+    if (!_state || !_state.origWp) return false;
+    if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
+    var b = _state.origWp;
+    if (_state.wp.length !== b.length) return true;
+    for (var i = 0; i < b.length; i++)
+      if (Math.abs(_state.wp[i].x - b[i].x) > 1e-6 || Math.abs(_state.wp[i].y - b[i].y) > 1e-6 ||
+          Math.abs(_state.wp[i].z - b[i].z) > 1e-6) return true;
+    return false;
   }
 
   // ══════════════════ canvas interaction ══════════════════
@@ -394,7 +475,8 @@
         var p = _planePoint(ev, w.y);
         if (p) { w.x = p.x; w.z = p.z; }
       }
-      _redrawScene(); _renderRows(); _renderClock();
+      _state.staged = false;
+      _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
     };
 
     h.up = function(ev) {
@@ -458,6 +540,10 @@
       }
       _state = {
         wp: plan.waypoints.map(function(w) { return { x: w.x, y: w.y, z: w.z }; }),
+        // Pristine copy — "edited" is measured against what the plan derived, so a value typed and
+        // typed back does not count as an edit and guardrail 2 still holds.
+        origWp: plan.waypoints.map(function(w) { return { x: w.x, y: w.y, z: w.z }; }),
+        staged: false,
         sel: null, held: null, drag: null, objs: [], markers: [], pulseId: 0, flyId: 0,
         baseSec: { dive: plan.sec.dive, spin: plan.sec.spin, out: plan.sec.out, rise: plan.sec.rise },
         baseOutSec: plan.sec.out,
@@ -477,12 +563,13 @@
 
       var panel = _buildPanel();
       _state.panel = panel;
-      _redrawScene(); _renderRows(); _renderClock(); _renderHint();
+      _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _syncButtons();
       _wire();
 
       function finish(action) {
         var ov = (action === 'ok' || action === 'save') ? _buildOverride() : null;
-        var edited = ov ? _edited(ov) : false;
+        var edited = ov ? _isEdited() : false;
+        _stopPulse();
         _release('close');
         _unwire();
         _clearScene();
@@ -505,20 +592,6 @@
                   durationSec: edited ? total : ctx.durationSec });
       }
 
-      // "Edited" means the authored path actually differs from what the plan derived. Floating
-      // point round-trips through the number inputs must not count as an edit.
-      function _edited(ov) {
-        if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
-        var base = plan.waypoints;
-        if (ov.waypoints.length !== base.length) return true;
-        for (var i = 0; i < base.length; i++) {
-          if (Math.abs(ov.waypoints[i].x - base[i].x) > 1e-6) return true;
-          if (Math.abs(ov.waypoints[i].y - base[i].y) > 1e-6) return true;
-          if (Math.abs(ov.waypoints[i].z - base[i].z) > 1e-6) return true;
-        }
-        return false;
-      }
-
       document.getElementById('cpe-ok').addEventListener('click', function() { finish('ok'); });
       document.getElementById('cpe-cancel').addEventListener('click', function() { finish('cancel'); });
       document.getElementById('cpe-save').addEventListener('click', function() {
@@ -526,7 +599,10 @@
         // carries it to the file, exactly as staffage does. Never auto-persist on adjust.
         var ov = _buildOverride();
         if (typeof a.stageCinemaPath === 'function') a.stageCinemaPath(ov);
-        finish('save');
+        // Staging is not closing: the user said "save this path", not "record it now". Keep the
+        // editor open so they can carry on adjusting, and let the buttons say what happened.
+        _state.staged = true;
+        _syncButtons();
       });
     });
   }
