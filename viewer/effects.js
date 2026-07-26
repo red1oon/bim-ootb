@@ -3305,6 +3305,27 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_FAN_NUDGE_MAX = 3; // metres the settle point may slide toward the open side
   var CINEMA_ENCLOSED_THRESHOLD = 0.6; // BVH fan fraction that counts as "genuinely enclosed"
 
+  // ══════════ §CPE_PACING — total duration is DERIVED from real geometry, never a fixed number ══
+  // User directive 2026-07-27: "the film's total length should not be a fixed constant... if interior
+  // speed is held to a constant m/s, and the exterior pull-back is paced by real distance rather than
+  // a fixed duration, then total duration falls out naturally from each building's actual size."
+  // Confirmed derived (dive, spin and orbit included) when asked.
+  //
+  // The model this REPLACES was inverted: total was fixed at nFrames/fps and speed was whatever made
+  // the derived walk fit CINEMA_OUT_SEC, so the BIGGER the building the FASTER the camera —
+  // measured 2.10 m/s on Duplex against 4.99 on LTU_AHouse. Every rate below is a stated constant
+  // and every duration is that rate applied to a MEASURED distance or angle, so a building's size
+  // now sets its runtime instead of being squeezed into someone else's.
+  var CINEMA_WALK_MPS     = 1.3;   // interior walking pace — deliberately slower than the old 2.1-5.0
+  var CINEMA_PULLBACK_MPS = 6.5;   // exterior recede: flying, not walking
+  var CINEMA_DIVE_MPS     = 20;    // the approach is a fly-IN; dive distances run 20-150m
+  var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap
+  var CINEMA_DIVE_MIN_SEC = 2.5;   // a floor, so a tiny building still gets an arrival rather than a cut
+  var CINEMA_SPIN_MIN_SEC = 0.8;
+  // Set by the wrapper when the editor supplies explicit beat seconds; then those win over the
+  // derived ones. Nothing else may set it.
+  var _cpeSecOverride = false;
+
   // ══ §CINEMA_PATH_EDITOR — authored path state + corner rounding. Spec:
   // prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL (settled with the user 2026-07-26).
   // _cpeWp is the ONE piece of authored state the plan reads. Null = nothing authored = the plan
@@ -4158,10 +4179,51 @@ async function setupEffects(A, renderer, scene, camera) {
     // Computed BEFORE _orbitPose because loopSec (needed to convert the swoop/hold/descent SECONDS
     // constants into this act's own u-domain) depends on tR, and _orbitPose(0) is called immediately
     // after to seed the Beat 4 handoff target. ═══════════════════════════════════════════════════
-    var tD = Math.min(0.30, CINEMA_DIVE_SEC / durationSec);
-    var tS = Math.min(0.42, tD + CINEMA_SPIN_SEC / durationSec);
-    var tO = Math.min(0.62, tS + CINEMA_OUT_SEC / durationSec);
-    var tR = Math.min(0.72, tO + CINEMA_RISE_SEC / durationSec);
+    // ══ §CPE_PACING — every beat's length is a measured distance or angle over a stated rate.
+    // The pull-back is the recede from where the walk ends to the final orbit radius, which is the
+    // "pull back from near to the final orbit distance" the user asked for — paced by that real
+    // distance instead of a fixed 2s.
+    var _pullNearR = Math.hypot(exitOuter.x - pivot.x, exitOuter.z - pivot.z);
+    var _pullDist = Math.max(0, orbitRadius - _pullNearR);
+    // ⚠ diveDist and dYaw are properties of WHERE THE USER WAS STANDING, not of the building —
+    // measured LTU_AHouse: a 746m approach and a 522° spin, because the camera happened to be far
+    // out and facing away. Pacing them raw made the runtime depend on the user's pose (LTU came out
+    // at 93.6s, of which 37.3s was dive and 11.6s spin), which contradicts the whole point: the
+    // total is supposed to fall out of the BUILDING's size. So both are bounded by building-derived
+    // quantities — the approach is capped at the envelope, the spin at a half turn (the most that is
+    // ever needed to face anywhere) — and only then converted at their stated rates.
+    var _diveEff = Math.min(diveDist, envelope);
+    var _spinDeg = Math.min(180, Math.abs(dYaw) * 180 / Math.PI);
+    var _natSec = {
+      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS),
+      spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
+      out:   totalLen / CINEMA_WALK_MPS,
+      rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
+      orbit: 360 / CINEMA_TURN_DPS
+    };
+    var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.rise + _natSec.orbit;
+    // An explicit override (the editor's "set the total") scales the whole film uniformly; the SHAPE
+    // is geometric either way, so the beat fractions are derived-seconds over the natural total and
+    // do not depend on durationSec at all. That is what makes "key 20s and everything speeds up
+    // uniformly" true by construction.
+    var _useSec = _cpeSecOverride
+      ? { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC,
+          orbit: _natSec.orbit }
+      : _natSec;
+    var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.rise + _useSec.orbit;
+    var tD = _useSec.dive / _shapeTotal;
+    var tS = tD + _useSec.spin / _shapeTotal;
+    var tO = tS + _useSec.out / _shapeTotal;
+    var tR = tO + _useSec.rise / _shapeTotal;
+    console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
+      ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
+      ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
+      '  (walk ' + totalLen.toFixed(1) + 'm @' + CINEMA_WALK_MPS + 'm/s, dive ' + diveDist.toFixed(1) +
+      'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + CINEMA_PULLBACK_MPS +
+      'm/s, dive raw ' + diveDist.toFixed(0) + 'm capped to envelope ' + _diveEff.toFixed(0) +
+      'm, spin raw ' + Math.abs(dYaw * 180 / Math.PI).toFixed(0) + 'deg capped ' + _spinDeg.toFixed(0) +
+      'deg @' + CINEMA_TURN_DPS + 'deg/s)' +
+      ' override=' + _cpeSecOverride + ' running=' + durationSec.toFixed(1) + 's');
     console.log('§CINEMA_BEATS dive=' + tD.toFixed(3) + ' spin=' + tS.toFixed(3) + ' out=' + tO.toFixed(3) +
       ' rise=' + tR.toFixed(3) + ' turnOverlap=' + CINEMA_TURN_OVERLAP +
       ' (dur=' + durationSec.toFixed(1) + 's) route=' + outRoute +
@@ -4430,7 +4492,8 @@ async function setupEffects(A, renderer, scene, camera) {
                return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
              }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
-             sec: { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC },
+             sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
+             naturalSec: _natSec, naturalTotal: _natTotal,
              eyeM: CINEMA_EYE_M, lookdownDeg: CINEMA_LOOKDOWN_DEG, durationSec: durationSec,
              indoor: true, poseAt: poseAt };
   }
@@ -4502,7 +4565,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // stored edit" — the G5 control path needs that distinction to be expressible.
     if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; }
     if (!ov) return _cinemaPathPlan(durationSec);
-    var saved = [], i;
+    var saved = [], i, savedSecOv = _cpeSecOverride;
+    _cpeSecOverride = ['diveSec', 'spinSec', 'outSec', 'riseSec']
+      .some(function(k) { return ov[k] != null && isFinite(ov[k]); });
     for (i = 0; i < _CPE_KEYS.length; i++) {
       var k = _CPE_KEYS[i][0], g = _CPE_KEYS[i][1];
       saved.push(_cpeGet(g));
@@ -4517,7 +4582,7 @@ async function setupEffects(A, renderer, scene, camera) {
       return _cinemaPathPlan(durationSec);
     } finally {
       for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
-      _cpeWp = savedWp; _cpeBands = savedBands;
+      _cpeWp = savedWp; _cpeBands = savedBands; _cpeSecOverride = savedSecOv;
     }
   };
   A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison
