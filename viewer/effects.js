@@ -3322,7 +3322,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // is why `r` may be taken straight from _cinemaFan.min with no safety fudge factor invented on top.
   function _cinemaRoundCorners(wp) {
     if (!wp || wp.length < 3) return (wp || []).slice();
-    var out = [{ x: wp[0].x, y: wp[0].y, z: wp[0].z }], rounded = 0, rMin = 1e9, rMax = 0;
+    var out = [{ x: wp[0].x, y: wp[0].y, z: wp[0].z }], rounded = 0, rMin = 1e9, rMax = 0, unmeasured = 0;
     for (var i = 1; i < wp.length - 1; i++) {
       var p0 = wp[i - 1], p1 = wp[i], p2 = wp[i + 1];
       var ax = p1.x - p0.x, ay = p1.y - p0.y, az = p1.z - p0.z;
@@ -3336,11 +3336,23 @@ async function setupEffects(A, renderer, scene, camera) {
       if (turnDeg < 3) { out.push({ x: p1.x, y: p1.y, z: p1.z }); continue; }
       // MEASURED clearance at this corner. Fallback is CINEMA_FAN_NUDGE_MAX — an existing constant
       // that already means "how far the camera may slide about inside a room" — not a new number.
-      var clear = CINEMA_FAN_NUDGE_MAX;
+      //
+      // ⚠ NO-HIT IS NOT A MEASUREMENT (live Hospital log, 2026-07-27). `_cinemaFan` returns
+      // CINEMA_FAN_FAR for a ray that hits nothing, so a fan that hits nothing AT ALL reports
+      // min=60.0 — which reads as "60 metres of clearance" but actually means "unknown, the BVH saw
+      // no geometry here." Taking it at face value let the rounding radius fall through to the
+      // 40%-of-leg cap and cut 7.50m inside a point the user had placed by hand, while G8 passed
+      // vacuously by comparing that cut against the same fictional 60m. Treat a full no-hit fan as
+      // UNKNOWN and fall back to the same conservative nudge budget as an outright fan failure.
+      var clear = CINEMA_FAN_NUDGE_MAX, clearSrc = 'no-bvh';
       try {
         var fanC = _cinemaFan({ x: p1.x, y: p1.y, z: p1.z }, 8);
-        if (fanC && isFinite(fanC.min)) clear = fanC.min;
+        if (fanC && isFinite(fanC.min)) {
+          if (fanC.min >= CINEMA_FAN_FAR - 0.01) { clearSrc = 'unknown(no-hit)'; }
+          else { clear = fanC.min; clearSrc = 'measured'; }
+        }
       } catch (eC) { /* no BVH yet → the existing nudge budget stands in */ }
+      if (clearSrc !== 'measured') unmeasured++;
       var r = Math.min(clear, aL * CINEMA_CORNER_LEG_FRAC, bL * CINEMA_CORNER_LEG_FRAC);
       if (!(r > 0.01)) { out.push({ x: p1.x, y: p1.y, z: p1.z }); continue; }
       rounded++; rMin = Math.min(rMin, r); rMax = Math.max(rMax, r);
@@ -3357,11 +3369,22 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var last = wp[wp.length - 1];
     out.push({ x: last.x, y: last.y, z: last.z });
-    console.log('§CINEMA_CORNERS control=' + wp.length + ' flown=' + out.length + ' rounded=' + rounded +
-      ' rMin=' + (rounded ? rMin.toFixed(2) : 'n/a') + ' rMax=' + (rounded ? rMax.toFixed(2) : 'n/a') +
-      ' maxDeviation=' + (rounded ? (rMax / 2).toFixed(2) : '0.00') + 'm (bound=clearance/2)');
+    // Throttled: a live drag re-plans on every pointermove, and an unthrottled line here flooded a
+    // real user's console with dozens of identical rows per second (observed Hospital, 2026-07-27).
+    // Log only when the shape actually changes, plus at most once a second.
+    var sig = wp.length + '|' + out.length + '|' + rounded + '|' + rMax.toFixed(2) + '|' + unmeasured;
+    var nowMs = (typeof performance !== 'undefined') ? performance.now() : 0;
+    if (sig !== _cornersLastSig || nowMs - _cornersLastMs > 1000) {
+      _cornersLastSig = sig; _cornersLastMs = nowMs;
+      console.log('§CINEMA_CORNERS control=' + wp.length + ' flown=' + out.length + ' rounded=' + rounded +
+        ' rMin=' + (rounded ? rMin.toFixed(2) : 'n/a') + ' rMax=' + (rounded ? rMax.toFixed(2) : 'n/a') +
+        ' maxDeviation=' + (rounded ? (rMax / 2).toFixed(2) : '0.00') + 'm' +
+        ' unmeasuredCorners=' + unmeasured + '/' + rounded +
+        (unmeasured ? ' (fan saw no geometry — radius capped at the ' + CINEMA_FAN_NUDGE_MAX + 'm nudge budget, NOT treated as ' + CINEMA_FAN_FAR + 'm of space)' : ' (bound=measured clearance/2)'));
+    }
     return out;
   }
+  var _cornersLastSig = '', _cornersLastMs = 0;
   A.cinemaRoundCorners = _cinemaRoundCorners;   // witness G7/G8 read this directly
   // Exit cost = dist × (1 − FACE_GAIN·facingDot) × perimFactor. facingDot=+1 (door dead ahead) →
   // (1-GAIN)×dist; facingDot=−1 (door behind you) → (1+GAIN)×dist. This asymmetry is the entire
