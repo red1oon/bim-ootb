@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v11 (§CPE_OK_CRASH — edited paths reach the bake again)';
+  var MAXQ_V = 'v13 (§MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -46,7 +46,28 @@
     _wakeLock = null;
   }
 
-  function _raf2() { return new Promise(function(res) { requestAnimationFrame(function() { requestAnimationFrame(res); }); }); }
+  // §MAXQ_HIDDEN_PAUSE — THE chokepoint, found by probing the browser rather than reasoning about
+  // it. requestAnimationFrame does not merely slow down in a hidden tab, it STOPS: a probe counted
+  // rAF ticks frozen at exactly 167 for a full 6s of hiding, resuming only on reveal. So every
+  // `await _raf2()` in the bake blocks indefinitely while hidden — the loop parks HERE, before any
+  // frame-boundary or fold-timeout check can run, which is why the first cut of this fix logged
+  // hiddenPauses=0 after being hidden for 20 real seconds. Waiting for visibility FIRST is what
+  // makes the pause observable; the rAF-vs-timeout race then covers the case where the tab hides
+  // between the check and the callback, so a lost frame cannot wedge a multi-minute bake.
+  function _raf2(why) {
+    return (async function() {
+      for (;;) {
+        if (_isHidden()) await _awaitVisible(why || 'render tick');
+        var got = await new Promise(function(r) {
+          var settled = false;
+          var fin = function(v) { if (!settled) { settled = true; r(v); } };
+          requestAnimationFrame(function() { requestAnimationFrame(function() { fin(true); }); });
+          setTimeout(function() { fin(false); }, 1500);
+        });
+        if (got) return;
+      }
+    })();
+  }
   function _sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
   function _status(t) { var A = window.APP; if (A && A.status) A.status.textContent = t; }
 
@@ -156,16 +177,71 @@
   }
   function _restoreRandom() { if (window.__maxqOrigRandom) Math.random = window.__maxqOrigRandom; }
 
-  function _waitFoldDone(timeoutMs) {
-    var A = window.APP;
+  // ══ §MAXQ_HIDDEN_PAUSE (PHOTOREAL_STILL_RENDER.md §MAXQ_HIDDEN_PAUSE, 2026-07-27).
+  //
+  // A backgrounded tab does not merely slow the bake down — it RUINS it, silently. Chrome throttles
+  // rAF to a near-stop when hidden, so the per-frame TAA fold + §PHOTO_AO never converge,
+  // _waitFoldDone's wall-clock timeout expires, and §MAXQ_FRAME_TIMEOUT saves a frame that never
+  // finished. Consecutive such captures come out near-duplicates, so the delivered MP4 ends in a
+  // stretch of visually dead video. It does not throw, it does not stop, and the file plays fine:
+  // the user lost a 45s Hospital film to this and only knew because they remembered the tab was
+  // unfocused — a measurement pass looking for defects had already mis-attributed it to pacing.
+  //
+  // NOT re-plumbed onto timers, and the reason is physical rather than stylistic: a hidden tab does
+  // not reliably composite WebGL at all, so a timer-driven fold would accumulate nothing either. It
+  // would fail identically while looking fixed. A converged frame cannot be rendered in a
+  // backgrounded tab, so the only honest behaviour is to refuse to pretend.
+  var _hiddenMsTotal = 0, _hiddenPauses = 0, _unconverged = 0;
+  function _isHidden() { return typeof document !== 'undefined' && document.visibilityState === 'hidden'; }
+  // Resolves as soon as the tab is visible. `why` is logged so a pasted console shows WHERE the bake
+  // was parked, not merely that it was slow.
+  function _awaitVisible(why) {
+    if (!_isHidden()) return Promise.resolve(0);
     return new Promise(function(res) {
       var t0 = performance.now();
-      (function poll() {
-        if (!A._stillRefineBusy) return res(true);
-        if (performance.now() - t0 > timeoutMs) return res(false);
-        setTimeout(poll, 100);
-      })();
+      _hiddenPauses++;
+      console.log('§MAXQ_HIDDEN_PAUSE at ' + why + ' — tab is hidden; the bake is PARKED, not ' +
+        'degrading. A hidden tab cannot converge a frame, so advancing here would save unconverged ' +
+        'frames and silently ruin the film. Bring the tab back to resume.');
+      _status('⏸ Paused — bring this tab back to the front to continue the bake');
+      // Two things can notice the reveal — the visibilitychange listener and the poll below — and
+      // without this guard BOTH run, so the hidden time is added twice. Measured: one 20516ms pause
+      // reported totalHiddenMs=40908. A health line that overstates is as useless as one that lies.
+      var settled = false;
+      var done = function() {
+        if (_isHidden() || settled) return;
+        settled = true;
+        document.removeEventListener('visibilitychange', done);
+        var ms = performance.now() - t0;
+        _hiddenMsTotal += ms;
+        console.log('§MAXQ_HIDDEN_RESUME at ' + why + ' hiddenMs=' + Math.round(ms) +
+          ' totalHiddenMs=' + Math.round(_hiddenMsTotal) + ' pauses=' + _hiddenPauses);
+        res(ms);
+      };
+      document.addEventListener('visibilitychange', done);
+      // Belt and braces: visibilitychange is the signal, but a poll means a missed event cannot
+      // wedge a multi-minute bake forever.
+      (function poll() { if (_isHidden()) return setTimeout(poll, 250); done(); })();
     });
+  }
+  // The fold's budget must be measured in VISIBLE time, AND the wait must itself park when the tab
+  // goes hidden. Parking only at the frame boundary is not enough and the witness proved it: a
+  // 20s hide landed entirely inside ONE frame's cook (swiftshader frames are slow), so the loop
+  // never reached the boundary check, nothing was logged, and the run reported hiddenPauses=0 while
+  // having been hidden for 20 seconds. A pause that does not announce itself is the same silent
+  // failure this whole section exists to kill — so the wait reports through the same bookkeeping.
+  async function _waitFoldDone(timeoutMs, why) {
+    var A = window.APP;
+    var spentVisible = 0, last = performance.now();
+    for (;;) {
+      if (_isHidden()) { await _awaitVisible(why); last = performance.now(); }
+      if (!A._stillRefineBusy) return true;
+      if (spentVisible > timeoutMs) return false;
+      await _sleep(100);
+      var now = performance.now();
+      spentVisible += now - last;
+      last = now;
+    }
   }
 
   // One explicit composer render, then SAME-TASK drawImage into a 2D canvas (clash_snag.js's
@@ -355,6 +431,9 @@
     }
     var nFrames = opts.frames || MAXQ_N_FRAMES, fps = opts.fps || MAXQ_FPS;
     _active = true; _cancel = false;
+    // §MAXQ_HIDDEN_PAUSE / §MAXQ_QUALITY counters are per-RUN, not per-session — a second bake must
+    // not inherit the first one's pauses or its unconverged count and report someone else's health.
+    _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     _wakeAcquire();
     _dampHold();   // §CINEMA_DAMPING_BLEED — the preview and the bake are both authored cameras
@@ -585,7 +664,7 @@
       // than later ones (whole-building tint shift — measured 21.6dB vs 24.3dB PSNR in the PoC).
       _status('🎬 MaxQ warming up…');
       A.startStillRefine();
-      await _waitFoldDone(30000);
+      await _waitFoldDone(30000, 'warm-up fold');
       // §CINEMA_HDRI_RACE (2026-07-24, user-reported live via their own pasted console log —
       // "flicker or snapping... before Alt-S fully applied"): _waitFoldDone above only tracks the
       // TAA/AO accumulate fold's own busy flag. A.startStillRefine() ALSO kicks off the HDRI envMap
@@ -614,7 +693,10 @@
         // same treatment as the IDB-connection-lost path below.
         if (A._webglContextLost) { _glLost = true; console.log('§MAXQ_GL_LOST i=' + i + ' salvaging ' + framesDone + ' already-captured frames'); break; }
         if (A._stillRefineActive) A.stopStillRefine(true);
-        await _raf2();
+        // §MAXQ_HIDDEN_PAUSE: park BEFORE the cook, not after. Waiting here means the frame is
+        // begun with the tab already visible, so the fold has a real rAF loop to converge on.
+        await _awaitVisible('frame ' + i + '/' + nFrames);
+        await _raf2('frame ' + i + ' settle');
         await _sleep(SETTLE_MS);
         _freezeRandom();
         var pose = poseAt(nFrames > 1 ? i / (nFrames - 1) : 0);  // tNorm hits 1.0 on the last frame so the pull-back completes
@@ -622,10 +704,14 @@
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
         A.startStillRefine();
-        var ok = await _waitFoldDone(30000);
-        await _raf2();
+        var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
+        await _raf2('frame ' + i + ' capture');
         _restoreRandom();
-        if (!ok) console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is');
+        // A timeout can now only mean a genuinely slow frame, since hidden time no longer counts
+        // against the budget. Counted rather than merely warned: the total is what lets the run
+        // state its own health at the end instead of leaving a degraded film to look identical to
+        // a good one.
+        if (!ok) { _unconverged++; console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is (UNCONVERGED, count=' + _unconverged + ')'); }
         var blob = await _captureFrame(w, h);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -681,6 +767,17 @@
       }
       if (A._stillRefineActive) A.stopStillRefine(true);
       _restoreRandom();
+      // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
+      // The defect this exists for is a film that looks complete and plays fine while its last
+      // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
+      // load-bearing number, because it counts frames captured before the fold finished — exactly
+      // the frames that come out as near-duplicates and read as the film stalling. With
+      // §MAXQ_HIDDEN_PAUSE in place a hidden tab should contribute ZERO of them, so a non-zero
+      // count now means genuinely slow frames and nothing else.
+      console.log('§MAXQ_QUALITY frames=' + framesDone + ' unconverged=' + _unconverged +
+        (_unconverged ? ' ⚠ THOSE FRAMES DID NOT FINISH — expect dead-looking video where they land' : ' (every frame converged)') +
+        ' hiddenPauses=' + _hiddenPauses + ' totalHiddenMs=' + Math.round(_hiddenMsTotal) +
+        (_hiddenPauses ? ' — the bake PARKED while the tab was hidden rather than degrading; the wall clock is longer, the film is not worse' : ''));
       // §MAXQ_PARTIAL: cancel SAVES what's cooked so far (user Q 2026-07-19 — losing minutes of
       // cook must never be the default). Threshold: at least 1s of footage (fps frames) on a
       // cancelled run — below that there's nothing worth stitching.
