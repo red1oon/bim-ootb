@@ -855,6 +855,18 @@ function setupTools(A) {
   A._nightMixAmber = 0.20;   // share forced distinctly amber
   var NIGHT_MIX_BLUE  = 0xa8c8ff;   // cold cast, clearly blue against the warm
   var NIGHT_MIX_AMBER = 0xffb45c;   // strong amber, warmer than NIGHT_WARM
+  // §NIGHT_MIX_WHITE (2026-07-27, user: "can we have 20/20/60 - amber/blue/white lighting?").
+  // The 20/20 buckets already existed; the remaining 60% fell through to the TYPE-derived cool/warm
+  // tints, so the mix was never actually 20/20/60 — it was 20/20/(a spread of warm and cool). This
+  // makes the majority bucket explicitly white, which is also what a modern LED building looks like:
+  // mostly neutral, with amber and blue as character rather than as the base note.
+  // Pure 0xffffff reads clinical, and it would throw away temperature the model actually STATES
+  // (Terminal's family names carry cw/ww), so the white bucket is neutral by default and tinted a
+  // few points when the model says which it is. The 20/20/60 SHARES stay exact either way — the
+  // stated data changes the shade of the white bucket, never which bucket a fixture lands in.
+  var NIGHT_MIX_WHITE = 0xffffff;   // neutral — the 60%
+  var NIGHT_WHITE_COOL = 0xf2f6ff;  // stated cw/cool — white with a touch of blue
+  var NIGHT_WHITE_WARM = 0xfff4e4;  // stated ww/warm — white with a touch of amber
   function _mixHash(key) {
     // FNV-1a, then to [0,1). Deterministic across sessions and machines.
     var h = 2166136261;
@@ -874,8 +886,11 @@ function setupTools(A) {
     if (A.nightIsExitSign(n)) return NIGHT_EXIT;
     if (key !== undefined) {
       var h = _mixHash(String(key));
-      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;
-      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;
+      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;                      // 20%
+      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;  // 20%
+      // §NIGHT_MIX_WHITE — the remaining 60%. FLAT white, user's call: the cw/ww tinting was offered
+      // and declined, so stated temperature no longer changes the shade here either. 20/20/60 exact.
+      return NIGHT_MIX_WHITE;
     }
     if (!n) return NIGHT_AMBER;
     if (/\bcw\b|cool/.test(n)) return NIGHT_COOL;      // stated in the model — outranks the type default
@@ -890,6 +905,101 @@ function setupTools(A) {
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
+  // ══ §NIGHT_DIFFUSER (2026-07-27, user: "that cover supposed to be translucent", and the warning
+  // that came with it: "otherwise the alt-s will get those black boxes").
+  //
+  // A troffer's diffuser reads as an opaque grey lid at night. Making it translucent means writing
+  // `transparent`/`opacity` on a SCENE material — the exact class of act that produced the lit wall
+  // panels and the black rectangles under §PHOTO_EMBER. It is safe here for one measured reason:
+  // A._matCache is keyed `rgba|ifcClass|variant` (streaming.js), so a material is shared only by
+  // elements of the SAME COLOUR AND THE SAME CLASS — not by everything a batched mesh happens to
+  // draw, which is what the ember guard was (wrongly) measuring at mesh level.
+  //
+  // Measured per key on the shipped buildings:
+  //   Hospital  _default|IfcLightFixture          1151 elements, 1151 luminaires,    0 others  APPLY
+  //   Clinic    0.384,0.384,0.384|IfcFlowTerminal  601 elements,  601 luminaires,    0 others  APPLY
+  //   Clinic    0.920,0.900,0.850|IfcFlowTerminal 1974 elements,  384 luminaires, 1590 others  SKIP
+  // That last key is the cream shared with sinks and diffuser grilles. Making 1590 of those
+  // translucent is precisely the failure being avoided, so exclusivity is required, not preferred.
+  //
+  // THE BLACK-BOX GUARD: this NEVER writes `toneMapped`. The black rectangles were `toneMapped=false`
+  // landing on a shared transparent panel — bypassing tone mapping on a surface the OutputPass still
+  // expected to tone map. Transparency alone does not cause it; transparency plus a tone-mapping
+  // bypass does. Only the sprite cloud's OWN material (shared with nothing) sets toneMapped=false.
+  var NIGHT_DIFFUSER_OPACITY = 0.55;
+  var _diffuserMats = null;
+  // Set of `rgba|ifcClass` prefixes where EVERY element on that key is a luminaire. Built once per
+  // building from the DB, using the same vocabulary as the fixture selector.
+  A._nightExclusiveLumKey = null;
+  A._buildExclusiveLumKeys = function() {
+    if (A._nightExclusiveLumKey || !A.db) return;
+    A._nightExclusiveLumKey = Object.create(null);
+    var isLum = "(m.ifc_class='IfcLightFixture' OR LOWER(m.element_name) LIKE '%light%' OR " +
+      "LOWER(m.element_name) LIKE '%troffer%' OR LOWER(m.element_name) LIKE '%downlight%' OR " +
+      "LOWER(m.element_name) LIKE '%luminaire%' OR LOWER(m.element_name) LIKE '%lamp%' OR " +
+      "LOWER(m.element_name) LIKE '%sconce%' OR LOWER(m.element_name) LIKE '%pendant%' OR " +
+      "LOWER(m.element_name) LIKE '%exit sign%' OR LOWER(m.element_name) LIKE '%keluar%' OR " +
+      "LOWER(m.element_name) LIKE '%signage%') " +
+      // Must mirror the SELECTOR, or a key holding only fire-alarm beacons counts as an exclusive
+      // luminaire key and gets frosted (Terminal's 9 IfcAlarm did exactly that before this line).
+      "AND m.ifc_class NOT IN ('IfcAlarm','IfcSensor','IfcFireSuppressionTerminal'," +
+      "  'IfcProtectiveDevice','IfcSanitaryTerminal','IfcWindow','IfcDoor','IfcSlab','IfcWall')";
+    try {
+      var r = A.db.exec(
+        "SELECT COALESCE(m.material_rgba,'_default'), m.ifc_class, COUNT(*), " +
+        "SUM(CASE WHEN " + isLum + " THEN 1 ELSE 0 END) " +
+        "FROM elements_meta m GROUP BY 1,2");
+      if (r.length) {
+        r[0].values.forEach(function(row) {
+          if (row[2] > 0 && row[3] === row[2]) A._nightExclusiveLumKey[row[0] + '|' + row[1]] = row[2];
+        });
+      }
+    } catch (e) { console.warn('§NIGHT_DIFFUSER key scan failed: ' + e.message); }
+  };
+  // Returns true when the material was turned into a diffuser, so the caller knows to leave its
+  // emissive alone.
+  function _applyDiffuser(matKey, m) {
+    if (!A._nightExclusiveLumKey) return false;
+    // matCache key is `rgba|ifcClass|variant`; the exclusivity set is keyed on the first two.
+    var i1 = matKey.indexOf('|'), i2 = matKey.indexOf('|', i1 + 1);
+    if (i1 < 0) return false;
+    // §LUM_VARIANT (streaming.js): a '|lum' key holds luminaires and nothing else BY CONSTRUCTION —
+    // the material was split off by name at load time — so no per-building exclusivity measurement
+    // is needed for it. The DB scan below stays as the fallback for any material that reached the
+    // cache without a variant.
+    if (matKey.substring(i2 + 1) === 'lum') { /* exclusive by construction */ }
+    else if (!A._nightExclusiveLumKey[i2 < 0 ? matKey : matKey.substring(0, i2)]) {
+      A._nightDiffuserSkipped++; return false;
+    }
+    if (!_diffuserMats) _diffuserMats = [];
+    _diffuserMats.push({ mat: m, tr: m.transparent, op: m.opacity, dw: m.depthWrite,
+                         e: m.emissive.getHex(), ei: m.emissiveIntensity });
+    m.transparent = true;
+    m.opacity = NIGHT_DIFFUSER_OPACITY;
+    // depthWrite OFF is what makes it TRANSMIT rather than merely look faded: a transparent surface
+    // that still writes depth kills whatever is behind it before the blend ever happens, so the
+    // glow inside the housing would be depth-culled by its own cover and the panel would read as a
+    // dim grey lid. With it off, "against light" actually shows through.
+    m.depthWrite = false;
+    // No emissive of its own — it transmits, it does not emit. Reset to black in case a previous
+    // reassert pass or a 4D phase colour left one on it.
+    m.emissive.setHex(0x000000);
+    m.emissiveIntensity = 1;
+    // deliberately NOT touching m.toneMapped — see the black-box guard above
+    m.needsUpdate = true;
+    A._nightDiffuserApplied++;
+    return true;
+  }
+  A._restoreNightDiffuser = function() {
+    if (!_diffuserMats) return;
+    _diffuserMats.forEach(function(d) {
+      d.mat.transparent = d.tr; d.mat.opacity = d.op; d.mat.depthWrite = d.dw;
+      d.mat.emissive.setHex(d.e); d.mat.emissiveIntensity = d.ei; d.mat.needsUpdate = true;
+    });
+    console.log('§NIGHT_DIFFUSER restored ' + _diffuserMats.length + ' materials');
+    _diffuserMats = null;
+  };
+
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
   // No-op (cheap) once every current matCache key has already been processed.
@@ -897,18 +1007,43 @@ function setupTools(A) {
     if (!A._nightMode || !A._matCache || !A._nightGlowMatKeys) return;
     var mc = A._matCache;
     var _glowCount = 0, _windowGlowCount = 0;
+    // §LUM_VARIANT_GLOW — which materials count as "a light" for the emissive glow.
+    //
+    // THE COLLATERAL THIS KILLS (user: "others got accidentally lighted so look out for those
+    // without semblance to lighting and clearly assigned other role"): the test below used to be
+    // "does the key contain one of the glow CLASSES", and on the Clinic that list falls back to
+    // IfcFlowTerminal because the building has no IfcLightFixture. IfcFlowTerminal is a grab-bag —
+    // so the '≈ Off-White|IfcFlowTerminal' material, which covers 1974 elements across 20 families
+    // (grab bars, towel dispensers, duplex receptacles, supply diffusers, shower seats, an
+    // elevator), was being given emissive 0xffe4b5 at 0.8 every night. Pre-existing, and exactly the
+    // "no semblance to lighting" case being reported.
+    // Now that §LUM_VARIANT splits luminaires into their own '|lum' materials by NAME, the glow can
+    // key on that instead of on a class that means almost nothing. The class test survives only as a
+    // fallback for a cache with no variants in it at all, so nothing regresses to unlit.
+    var hasLum = false;
+    for (var lk in mc) { if (lk.slice(-4) === '|lum') { hasLum = true; break; } }
     for (var mk in mc) {
       if (A._nightGlowMatKeys[mk]) continue;
       A._nightGlowMatKeys[mk] = true;
       var m = mc[mk];
       if (!m || !m.emissive) continue;
       var isLight = false;
-      for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
-        if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
+      if (hasLum) {
+        isLight = mk.slice(-4) === '|lum';
+      } else {
+        for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
+          if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
+        }
       }
       var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
+      // §NIGHT_DIFFUSER first: a cover that becomes translucent must NOT also be given an emissive
+      // of its own (user: "translucent must not have own source of light but allow light thru if it
+      // is against light"). A diffuser is lit from BEHIND — it transmits, it does not emit. Applying
+      // both would make the panel a self-luminous slab that also happens to be see-through, which is
+      // neither of the two things it should be.
+      if (isLight && _applyDiffuser(mk, m)) { _glowCount++; continue; }
       A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
       if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.8; _glowCount++; }
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
@@ -987,7 +1122,30 @@ function setupTools(A) {
           "AND NOT (LOWER(m.element_name) LIKE '%switch%' OR LOWER(m.element_name) LIKE '%receptacle%' " +
           "  OR LOWER(m.element_name) LIKE '%panelboard%' OR LOWER(m.element_name) LIKE '%socket%' " +
           "  OR LOWER(m.element_name) LIKE '%outlet%' " +
-          "  OR LOWER(m.element_name) LIKE '%flight%' OR LOWER(m.element_name) LIKE '%skylight%')");
+          "  OR LOWER(m.element_name) LIKE '%flight%' OR LOWER(m.element_name) LIKE '%skylight%' " +
+          // §NIGHT_ROLE_EXCLUDE (2026-07-27, user: "others got accidentally lighted so look out for
+          // those without semblance to lighting and clearly assigned other role"). Two guards:
+          //
+          // BY NAME — role words that a lighting word can collide with. '%lamp%' matches CLAMP,
+          // which would turn every pipe clamp in a model into a luminaire; alarm/detector/sprinkler
+          // are devices that live on the same ceiling and get named alongside lights. None of these
+          // currently hit in the five shipped buildings — they are the latent traps, blocked before
+          // the model that contains one arrives.
+          "  OR LOWER(m.element_name) LIKE '%clamp%' OR LOWER(m.element_name) LIKE '%alarm%' " +
+          "  OR LOWER(m.element_name) LIKE '%detector%' OR LOWER(m.element_name) LIKE '%sprinkler%') " +
+          // BY ROLE — the class is not used to FIND luminaires any more (§NIGHT_NAME_NOT_CLASS), but
+          // it is still the best statement of what an element IS FOR, so it is used to REJECT.
+          // The live case: Terminal's 'jkrME_fir-al_Flashing Light_Red & Green' (IfcAlarm, 9) is a
+          // fire-alarm beacon. It genuinely contains "Light" and it genuinely emits, but it is
+          // assigned a fire-detection role and lighting a building by its alarm beacons is wrong.
+          // Structural/opening/plumbing classes are here for the same reason skylight is excluded by
+          // name — they can only ever match by accident. IfcBuildingElementProxy is deliberately NOT
+          // in this list: it is the catch-all a model may legitimately file its luminaires under.
+          "AND m.ifc_class NOT IN ('IfcAlarm','IfcSensor','IfcFireSuppressionTerminal'," +
+          "  'IfcProtectiveDevice','IfcProtectiveDeviceTrippingUnit','IfcSanitaryTerminal'," +
+          "  'IfcDuctSegment','IfcPipeSegment','IfcDuctFitting','IfcPipeFitting'," +
+          "  'IfcWindow','IfcDoor','IfcSlab','IfcWall','IfcWallStandardCase'," +
+          "  'IfcStair','IfcStairFlight','IfcMember','IfcBeam','IfcColumn','IfcRailing')");
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
             A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0 });
@@ -1071,6 +1229,9 @@ function setupTools(A) {
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       A._nightGlowMats = [];
       A._nightGlowMatKeys = {};  // §NIGHT_GLOW_REASSERT below — tracks which matCache keys are done
+      // §NIGHT_DIFFUSER — exclusivity set must exist before the glow pass calls _applyDiffuser
+      A._nightDiffuserApplied = 0; A._nightDiffuserSkipped = 0;
+      A._buildExclusiveLumKeys();
       // Determine which IFC classes to glow
       A._nightGlowClasses = ['IfcLightFixture'];
       // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
@@ -1123,6 +1284,9 @@ function setupTools(A) {
       A._applyNightGlowToMatCache();
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
         ' glowMats=' + A._nightGlowMats.length);
+      console.log('§NIGHT_DIFFUSER applied=' + A._nightDiffuserApplied + ' skipped=' +
+        A._nightDiffuserSkipped + ' (skipped = material shared with non-luminaires; translucency ' +
+        'there would frost sinks and grilles. toneMapped untouched — that is what made black boxes)');
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
       // §PHOTO_GLOW_SPRITE: the fixtures themselves read as lit, not just the surfaces near them.
@@ -1154,6 +1318,7 @@ function setupTools(A) {
         A._nightGlowMats = null;
         A._nightGlowMatKeys = null;
       }
+      A._restoreNightDiffuser();   // §NIGHT_DIFFUSER — translucency must not outlive night mode
       // Restore day
       if (A._nightSaved) {
         A.sun.intensity = A._nightSaved.sunI;
