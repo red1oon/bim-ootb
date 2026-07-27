@@ -3270,10 +3270,14 @@ async function setupEffects(A, renderer, scene, camera) {
   // past the 15th second the user asked for. Only the overlap moves: 0.4 → 0.25, so the look-back
   // does not begin while still walking out of the door (window opens 11.9s, not 11.3s). Deliberately
   // KEPT non-zero — §CINEMA_BEAT_OVERLAP exists so Beat 4 continues a turn already in motion.
-  // §CPE_LOOK_HOME (user, 2026-07-27: "the cam when leaving building must look to building centre
-  // (all gracefully)"). The blend to the pivot used to occupy the last quarter of the walk; it now
-  // occupies most of it, so the camera spends the walk turning to face the building rather than
-  // following the path and then whipping round at the end.
+  // §CPE_LOOK_HOME — NOT DONE, and deliberately not done by widening this number.
+  // User (2026-07-27): "the cam when leaving building must look to building centre (all
+  // gracefully)", then narrowed it: "the only concern is when leaving building OUTER WALL".
+  // Widening this fraction to 0.75 was tried and REVERTED: it starts the blend while the camera is
+  // still inside, so the gaze stops aiming at the next waypoint and G10 broke (Terminal wp1
+  // aimErr=36.5deg against a 25 cap). The trigger is the WALL CROSSING, not a fraction of the walk
+  // — `exitOuter` is already computed in the plan, so the crossing point is available to key off.
+  // It also did NOT help the jerk: 21.6 -> 20.2 only, so it buys nothing to rush it.
   //
   // This is also the jerk fix the pacing could not reach. deg/frame = (deg/metre) x (metres/frame),
   // and every attempt so far fought the SECOND term against a 1.6x range that MEASURED saturated at
@@ -3281,7 +3285,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // deg/frame. This attacks the FIRST term instead: the pivot is a FIXED point, so aiming at it has
   // no path curvature in it at all, while a path look-ahead inherits every wiggle of the route.
   // The larger the blend weight, the less of the walk's own noise reaches the gaze.
-  var CINEMA_TURN_OVERLAP = 0.75, CINEMA_TURN_OVERLAP_MAX = 0.5;
+  var CINEMA_TURN_OVERLAP = 0.25, CINEMA_TURN_OVERLAP_MAX = 0.5;
   // §CINEMA_TURN_SLERP: within this of a dead-180° turn the "short way" is undefined — see
   // _cinemaGazeBlend for why that case is the COMMON one, not the corner case.
   var CINEMA_TURN_ANTIPODAL_RAD = 179.5 * Math.PI / 180;
