@@ -15,7 +15,7 @@
 //      and discards them.
 (function() {
   'use strict';
-  var CPE_V = 'v3 (§CPE_BANDS + §CPE_SCREEN_PLANE — drag in the plane you face, canvas never frozen)';
+  var CPE_V = 'v4 (§CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG — panel moves by its header)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -25,6 +25,9 @@
   var REPLAN_MS = 120;             // trailing throttle for the live re-derive
 
   var _state = null;
+  // §CPE_PANEL_DRAG: where the user last dragged the panel, remembered for the session only (see
+  // the spec's "scope note"). Module scope, not _state — _state dies with each editor session.
+  var _panelPos = null;
   function A() { return window.APP; }
 
   // ══════════════════ scene objects ══════════════════
@@ -274,9 +277,12 @@
     d.style.cssText = 'position:fixed;top:60px;right:12px;width:412px;max-height:calc(100vh - 96px);' +
       'overflow:auto;background:rgba(20,22,26,0.96);border:1px solid #3a3f47;border-radius:8px;' +
       'z-index:10000;font-family:system-ui,sans-serif;color:#ddd;box-shadow:0 8px 32px rgba(0,0,0,0.6)';
+    // §CPE_PANEL_DRAG: the header is the grab handle. Titled with the gesture so it is discoverable
+    // without a tooltip hunt — the same "say what the drag does" habit as #cpe-hint below.
     d.innerHTML =
-      '<div style="padding:10px 12px;border-bottom:1px solid #3a3f47;font-size:13px;font-weight:600;color:#4fc3f7">' +
-        'Cinema path <span style="font-weight:400;color:#888;font-size:11px">— 3 bands</span></div>' +
+      '<div id="cpe-title" title="drag to move this panel" style="padding:10px 12px;border-bottom:1px solid #3a3f47;' +
+        'font-size:13px;font-weight:600;color:#4fc3f7;cursor:move;user-select:none">' +
+        'Cinema path <span style="font-weight:400;color:#888;font-size:11px">— 3 bands · drag this bar to move</span></div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px" id="cpe-clock"></div>' +
@@ -287,6 +293,41 @@
         '<button id="cpe-ok" style="padding:6px 14px;font-size:12px;background:#4fc3f7;color:#0b0d10;border:none;border-radius:4px;font-weight:600;cursor:pointer">OK</button>' +
       '</div>';
     document.body.appendChild(d);
+
+    // ══ §CPE_PANEL_DRAG (CINEMA_PATH_EDITOR.md) — user 2026-07-27: "can u make the editor panel
+    // draggable". The panel sits over exactly the strip of viewport the user orbits the bands into
+    // once §CPE_SCREEN_PLANE has them facing the plane they want to drag in.
+    // REUSE, not a second implementation: A._makeDraggable (measure.js:13) is this viewer's one
+    // panel-drag utility, already carrying ~10 panels. Do not fork it, do not edit it.
+    // _dragStrip = 36 pins the grab zone to the header exactly — the rows below carry number inputs
+    // whose keyed edits must never fling the panel (gate D3).
+    var a = A();
+    if (a && typeof a._makeDraggable === 'function') {
+      d._dragStrip = 36;
+      a._makeDraggable(d);
+      if (_panelPos) { d.style.left = _panelPos.left + 'px'; d.style.top = _panelPos.top + 'px'; d.style.right = 'auto'; }
+      // Remember where the user put it for the rest of the session (spec §CPE_PANEL_DRAG "scope
+      // note"): re-opening for the next bake should not throw the panel back across the screen.
+      // Nothing is persisted to the DB — this is not `cinema_path` state.
+      // Measured off the element itself rather than off the pointer, so the log is the truth about
+      // where the panel ENDED UP, not where the cursor was.
+      var _pdRect = null;
+      d.addEventListener('pointerdown', function() { _pdRect = d.getBoundingClientRect(); });
+      d.addEventListener('pointerup', function() {
+        if (!_pdRect) return;
+        var r = d.getBoundingClientRect();
+        var mx = r.left - _pdRect.left, my = r.top - _pdRect.top;
+        _pdRect = null;
+        if (Math.abs(mx) + Math.abs(my) < 1) return;   // a tap on the header is not a move
+        _panelPos = { left: Math.round(r.left), top: Math.round(r.top) };
+        console.log('§CPE_PANEL_MOVED dx=' + mx.toFixed(0) + ' dy=' + my.toFixed(0) +
+          ' left=' + _panelPos.left + ' top=' + _panelPos.top + ' (remembered for this session)');
+      });
+      console.log('§CPE_PANEL_DRAGGABLE handle=cpe-title strip=' + d._dragStrip +
+        (_panelPos ? ' restored left=' + _panelPos.left + ' top=' + _panelPos.top : ' at default anchor'));
+    } else {
+      console.warn('§CPE_PANEL_DRAGGABLE unavailable — A._makeDraggable missing (measure.js not loaded)');
+    }
     return d;
   }
 
