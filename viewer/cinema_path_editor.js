@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v7 (§CPE_DRAG_TELEPORT delta + §CPE_DRAG_REACH cap; §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v7 (§CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -598,19 +598,17 @@
         // DELTA, not absolute: `c0` was already captured on pointerdown for this and was never read
         // — the intent was here all along. A zero-pixel drag is now a zero-metre move by
         // construction, and any p0 depth error cancels out of (p - p0) instead of accumulating.
-        // §CPE_DRAG_REACH: 1:1 with the cursor is correct, but the view plane sits at the grab
-        // depth — zoomed out to 46m that is ~0.06 m/px, so a long drag legitimately threw the band
-        // ~46m in one gesture (user, Hospital: centre y -9.58 -> +36.89). Cap the REACH of a single
-        // gesture at the building's own derived walk length: a measured quantity from this building,
-        // not an invented constant. Direction is preserved, so the drag still goes where the cursor
-        // points — it just cannot fling the band outside the film it belongs to.
-        var _dx = p.x - d.p0.x, _dy = p.y - d.p0.y, _dz = p.z - d.p0.z;
-        var _dl = Math.hypot(_dx, _dy, _dz);
-        var _cap = Math.max(2, _state.baseLen || 0);
-        if (_dl > _cap) { var _k = _cap / _dl; _dx *= _k; _dy *= _k; _dz *= _k; }
-        b.c.x = d.c0.x + _dx;
-        b.c.y = d.c0.y + _dy;
-        b.c.z = d.c0.z + _dz;
+        // §CPE_DRAG_REACH — REMOVED, and the removal is the finding. A per-gesture cap was tried
+        // (limit reach to the building's derived walk length) and G-DRAG-3 measured it BREAKING the
+        // very case it was meant to help: at 0.132 m/px a 175px drag wants 23m, the cap granted
+        // 12.6m, so the band stopped under a cursor that had moved on — the handle was no longer
+        // where the user was pointing, the return drag hit nothing, and out-and-back left a 12.6m
+        // residue. Direct manipulation has ONE invariant: the thing you grabbed stays under the
+        // cursor. A reach cap cannot hold that invariant by construction. The sensitivity the user
+        // felt was the absolute-assignment bug (fixed above), not the 1:1 mapping itself.
+        b.c.x = d.c0.x + (p.x - d.p0.x);
+        b.c.y = d.c0.y + (p.y - d.p0.y);
+        b.c.z = d.c0.z + (p.z - d.p0.z);
       } else {
         // End = pivot about the far end. Length is invariant, so this is pure rotation.
         _rotateAbout(b, d.z === 'b', p);
