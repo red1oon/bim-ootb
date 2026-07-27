@@ -175,22 +175,6 @@
 
   function togglePivot() { _pivot ? pivotOff() : pivotOn(); }
 
-  // §RESET_AMBIENT_AUTO: 3 user moves (drag/zoom), then reset A automatically once the
-  // user stops. Self-contained — does not modify fineOn/resetOrbit/pivotOn.
-  var _ambientResetCount = 0, _ambientResetTimer = null;
-  function _ambientResetOnEnd() {
-    if (_pivot || _fine) { _ambientResetCount = 0; clearTimeout(_ambientResetTimer); return; }
-    _ambientResetCount++;
-    clearTimeout(_ambientResetTimer);
-    _ambientResetTimer = setTimeout(function() {
-      if (_ambientResetCount >= 3 && !_pivot && !_fine) {
-        resetOrbit();
-        console.log('§reset ambient-auto fired count=' + _ambientResetCount);
-      }
-      _ambientResetCount = 0;
-    }, 1500);
-  }
-
   // Caps Lock toggles fine mode (desktop)
   document.addEventListener('keydown', function(e) {
     if (e.code === 'CapsLock') toggleFine();
@@ -271,21 +255,6 @@
     // If fine is active, reflect in panel button
     if (_fine) document.getElementById('prec-fine-btn').style.background = '#1a6b8a';
     if (_pivot) _pivotPaint();
-
-    // §RESET_AMBIENT_AUTO wiring: A().controls doesn't exist yet at DOMContentLoaded
-    // (setupScene creates it later, async) — poll briefly, then attach the listener once.
-    var _ambientResetWireTries = 0;
-    var _ambientResetWireTimer = setInterval(function() {
-      _ambientResetWireTries++;
-      if (A() && A().controls) {
-        clearInterval(_ambientResetWireTimer);
-        A().controls.addEventListener('end', _ambientResetOnEnd);
-        console.log('§reset ambient-auto wired tries=' + _ambientResetWireTries);
-      } else if (_ambientResetWireTries > 100) {  // ~10s — give up quietly
-        clearInterval(_ambientResetWireTimer);
-        console.log('§reset ambient-auto wiring timeout — controls never became ready');
-      }
-    }, 100);
 
     // S265: Precision Camera button — Lucide focus icon, matches overflow grid style
     var toolbar = document.querySelector('#search-body > div');
