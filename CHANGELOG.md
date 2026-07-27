@@ -4,6 +4,40 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.29.0](https://github.com/red1oon/bim-ootb/compare/v1.28.0...v1.29.0) (2026-07-27)
+
+
+### ✨ Features
+
+* **cinema:** §CINEMA_PATH_EDITOR — waypoint editor in the Alt+C gap ([#1023](https://github.com/red1oon/bim-ootb/issues/1023)) ([08bbd3e](https://github.com/red1oon/bim-ootb/commit/08bbd3e6c2692a2d9f4eeff1c9e30dc9766e7e9a))
+* **cinema:** §CPE_BANDS — rigid bands, tangent-matched connectors, full-film tube ([#1026](https://github.com/red1oon/bim-ootb/issues/1026)) ([ecbeacc](https://github.com/red1oon/bim-ootb/commit/ecbeacc9660c6772217166030290e8454f65a429))
+* **cinema:** §CPE_EVEN_TURN + §CPE_SEAM_CONTINUOUS + §CPE_UNDO ([#1042](https://github.com/red1oon/bim-ootb/issues/1042)) ([5687e14](https://github.com/red1oon/bim-ootb/commit/5687e1436e717f4a41c8bf5ee718591c182b26e8))
+* **cinema:** §CPE_PANEL_DRAG — the path editor panel moves by its header ([#1030](https://github.com/red1oon/bim-ootb/issues/1030)) ([1456d9a](https://github.com/red1oon/bim-ootb/commit/1456d9a83bd8fee8427b562883a66661ab06054d))
+* **cinema:** §CPE_SCREEN_PLANE drag + §CPE_PACING derived duration ([#1027](https://github.com/red1oon/bim-ootb/issues/1027)) ([8c310eb](https://github.com/red1oon/bim-ootb/commit/8c310eb8efe0d380abad69c721a98b7460d827fc))
+* **cinema:** §CPE_WALK 2.3m/s base pace + §CPE_DRAG_REACH gesture cap ([#1037](https://github.com/red1oon/bim-ootb/issues/1037)) ([758c45c](https://github.com/red1oon/bim-ootb/commit/758c45c62b196648f888204f6868a47f0a6a6c08))
+* **precision-cam:** §PIVOT_AMBIENT_AUTO — continuous nav by default, without touching Q/Fine/Reset ([#1039](https://github.com/red1oon/bim-ootb/issues/1039)) ([10d6670](https://github.com/red1oon/bim-ootb/commit/10d66700a7f7a6153dcac598b85e585363ac27f4))
+* **precision-cam:** §PIVOT_DEFAULT_ON — Auto-Pivot active by default, Fine wins over auto-recenter ([#1033](https://github.com/red1oon/bim-ootb/issues/1033)) ([da61ccb](https://github.com/red1oon/bim-ootb/commit/da61ccb28d7956fbfaf9cc0350040fde39042876))
+
+
+### 🐛 Fixes
+
+* **bugreport:** §BUGREPORT_MAILTO_LEN — cascade-truncate email log lines to fit mailto: length limit ([#1028](https://github.com/red1oon/bim-ootb/issues/1028)) ([fad6992](https://github.com/red1oon/bim-ootb/commit/fad6992a837162a4c2e060bd22370c2a012a5f73))
+* **cinema:** §CINEMA_DAMPING_BLEED — OrbitControls damping overwrites the authored cinema pose ([#1020](https://github.com/red1oon/bim-ootb/issues/1020)) ([8ad8877](https://github.com/red1oon/bim-ootb/commit/8ad8877f0558e5962c3d7465d132dac8f78eed00))
+* **cinema:** §CINEMA_PATH_EDITOR — no-hit fan is UNKNOWN not 60m, plus orange held-state feedback ([#1025](https://github.com/red1oon/bim-ootb/issues/1025)) ([15c54a0](https://github.com/red1oon/bim-ootb/commit/15c54a077e920b54fcc4653b894d7cd2ec7a82d5))
+* **cinema:** §CPE_DRAG_TELEPORT — mid-band drag moves by the gesture, not to the cursor ray ([#1035](https://github.com/red1oon/bim-ootb/issues/1035)) ([eecb9c5](https://github.com/red1oon/bim-ootb/commit/eecb9c5fc86fc247f2db1d0da3af585b588b29ad))
+* **cinema:** §CPE_OK_CRASH — OK after a path edit no longer kills the bake ([#1029](https://github.com/red1oon/bim-ootb/issues/1029)) ([db04360](https://github.com/red1oon/bim-ootb/commit/db043609ad44176781e6142f79adaab5a9ca3b95))
+* **cinema:** §CPE_PREVIEW_DIVERGENCE — the film you edit is the film that bakes ([#1031](https://github.com/red1oon/bim-ootb/issues/1031)) ([2fc4db9](https://github.com/red1oon/bim-ootb/commit/2fc4db9074ca1791d26705d2c433f77de59e833c))
+* **cinema:** remove §CPE_DRAG_REACH cap — G-DRAG-3 measured it BREAKING out-and-back ([#1038](https://github.com/red1oon/bim-ootb/issues/1038)) ([f23127c](https://github.com/red1oon/bim-ootb/commit/f23127c96ea9bd3ae91b21dd24441f685b21b5ca))
+* **precision-cam:** §RESET_AMBIENT_AUTO calls resetOrbit() (A), not recenterPivot() (Q) ([#1040](https://github.com/red1oon/bim-ootb/issues/1040)) ([325896c](https://github.com/red1oon/bim-ootb/commit/325896ccdf725b03bb8473b309a1df12af3e0007))
+* **precision-cam:** re-check Q/Fine at fire-time, not just at count-time ([#1041](https://github.com/red1oon/bim-ootb/issues/1041)) ([e89418e](https://github.com/red1oon/bim-ootb/commit/e89418ed09eeb129531822845aa9a8085a49f50b))
+* **staffage:** §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM — one sprite for everyone, and figures 3.5m in the air ([#1022](https://github.com/red1oon/bim-ootb/issues/1022)) ([37ccd52](https://github.com/red1oon/bim-ootb/commit/37ccd52de3de0cecc101346bf1ba0f6484f9d9db))
+* **viewer:** Find-panel close-leak recovery + Hall/Corridor shell reveal ([#1019](https://github.com/red1oon/bim-ootb/issues/1019)) ([c564934](https://github.com/red1oon/bim-ootb/commit/c564934e06b790b8fb520c57b71f0564c61ad0be))
+
+
+### ⏪ Reverts
+
+* **precision-cam:** §PIVOT_DEFAULT_ON — back to opt-in, real usage showed drift + breaks Reset ([#1034](https://github.com/red1oon/bim-ootb/issues/1034)) ([08c0809](https://github.com/red1oon/bim-ootb/commit/08c0809fdccf2178e0a2deb9c25413f8f9a9cb8a))
+
 ## [1.28.0](https://github.com/red1oon/bim-ootb/compare/v1.27.0...v1.28.0) (2026-07-26)
 
 
