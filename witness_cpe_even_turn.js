@@ -8,11 +8,11 @@
 // of space". The fix takes a MEASUREMENT instead of reinterpreting the sentinel — one ray along the
 // direction the connector actually bulges.
 //
-//   T1 the rescue — on a hostile layout (bands aimed apart, the shape that produces the user's
-//      report), joins the fan cannot read are probed by the bow ray, and the resulting bow is LARGER
-//      than the 3m cap allowed. Disproves "the cap was already big enough".
-//   T2 the point of it — peak turn rate over the WHOLE film drops, and lands under the B5 cap.
-//      A bigger bow that did not buy a gentler corner would be motion for its own sake.
+//   T1 RETIRED — the bow-ray rescue hypothesis, disproven by measurement (see the INFO line in the
+//      body). Reported, not gated.
+//   T2 the point of it — peak GAZE SWEEP over the WHOLE film stays under the cap. Measures the angle
+//      the gaze direction turns between frames (what a viewer sees as jerk), NOT yaw: yaw is
+//      degenerate near-vertical and read 46.8 deg/frame on Terminal where the true sweep was 7.2.
 //   T3 the doctrine — a join whose bow ray ALSO hits nothing still obeys the 3m cap. Unknown stays
 //      unknown; this must not become a back door to treating the sentinel as space.
 //   T4 no regression — where the fan DID measure, the measured clearance still binds (§CPE_BANDS B4).
@@ -70,20 +70,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         len: b.len,
       }));
 
+      // What "jerk" IS: the angle the gaze DIRECTION sweeps between consecutive frames — the motion
+      // the viewer actually sees. This used to measure YAW instead, and yaw is the wrong instrument:
+      // it is degenerate near-vertical, where a tiny real movement swings it arbitrarily far.
+      // MEASURED on Terminal: yaw read 46.8 deg/frame at u=0.329 while the gaze sat at 87.2 deg of
+      // pitch (horizontal component 0.049) — the true frame-to-frame sweep there was under 7.2 deg.
+      // The 46.8 was an artefact of the instrument, not motion on screen.
+      // This is NOT a weakened gate: the 3D sweep is >= the visible motion in every non-degenerate
+      // case too, and it additionally catches PITCH whips that a yaw-only gate could never see.
+      // Where the camera POINTS is the user's creative control (their call, 2026-07-27); how fast it
+      // is allowed to CHANGE is what this witness owns.
       const turnPeak = (plan) => {
         const n = Math.max(2, Math.round(dur * fps));
-        let peak = 0, peakT = 0, prev = null, total = 0;
+        let peak = 0, peakT = 0, prev = null, total = 0, peakPitch = 0;
+        let yawPeak = 0, yawPeakT = 0, yawPeakPitch = 0, prevYaw = null;
         for (let i = 0; i < n; i++) {
           const u = i / (n - 1), p = plan.poseAt(u);
-          const yaw = Math.atan2(p.tz - p.z, p.tx - p.x) * 180 / Math.PI;
+          const gx = p.tx - p.x, gy = p.ty - p.y, gz = p.tz - p.z;
+          const gl = Math.hypot(gx, gy, gz) || 1;
+          const g = { x: gx / gl, y: gy / gl, z: gz / gl };
+          const pitch = Math.asin(Math.max(-1, Math.min(1, g.y))) * 180 / Math.PI;
+          const yaw = Math.atan2(gz, gx) * 180 / Math.PI;
           if (prev !== null) {
-            let d = Math.abs(yaw - prev); if (d > 180) d = 360 - d;
+            const d = Math.acos(Math.max(-1, Math.min(1, g.x * prev.x + g.y * prev.y + g.z * prev.z))) * 180 / Math.PI;
             total += d;
-            if (d > peak) { peak = d; peakT = u; }
+            if (d > peak) { peak = d; peakT = u; peakPitch = pitch; }
+            let dy = Math.abs(yaw - prevYaw); if (dy > 180) dy = 360 - dy;
+            if (dy > yawPeak) { yawPeak = dy; yawPeakT = u; yawPeakPitch = pitch; }
           }
-          prev = yaw;
+          prev = g; prevYaw = yaw;
         }
-        return { peak, peakT, total, frames: n };
+        return { peak, peakT, peakPitch, total, frames: n, yawPeak, yawPeakT, yawPeakPitch };
       };
 
       const run = (bands) => {
@@ -124,7 +141,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           try { if (Math.hypot(bx, bz) > 1e-4) bowRay = A.cinemaLookDist(at, bx, bz); } catch (e) {}
           bows.push({ i, bow, fanMin, bowRay });
         }
-        return { bows, turn: turnPeak(plan), flown: flow.length };
+        return { bows, turn: turnPeak(plan), flown: flow.length, beats: plan.beats || plan.sec || null };
       };
 
       return { hostile: run(hostile), seeded: run(seeded) };
@@ -135,18 +152,27 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const rescued = unread.filter(b => b.bowRay !== null && b.bowRay < 59.99);
     const stuck = unread.filter(b => !(b.bowRay !== null && b.bowRay < 59.99));
 
-    P('T1 a join the fan cannot read is probed along its own bow, and bows past the 3m cap',
-      rescued.length === 0 ? unread.length === 0 : rescued.some(b => b.bow > NUDGE_CAP + 0.01),
-      unread.length === 0
-        ? `no unread joins on this building — the fan measured all ${H.bows.length}, nothing to rescue`
-        : rescued.map(b => `join${b.i}: fanMin=${b.fanMin === null ? 'n/a' : b.fanMin.toFixed(2)} ` +
-            `bowRay=${b.bowRay.toFixed(2)}m -> bow=${b.bow.toFixed(2)}m (cap was ${NUDGE_CAP})`).join(' | ') ||
-          `${unread.length} unread join(s), none rescued`);
+    // T1 RETIRED 2026-07-27 — reported, no longer gated. It asserted the BOW-RAY RESCUE hypothesis:
+    // that a wider corner was what the jerk needed. Measurement killed that twice over. First the
+    // cap was shown never to bind (Duplex bows 0.26/0.29m against 0.86/0.87m of MEASURED clearance
+    // — k never shrinks, so there was nothing for a rescue to unlock). Then the jerk turned out not
+    // to be a corner-width problem at all: it was frames spaced evenly in DISTANCE (§CPE_EVEN_TURN)
+    // and a discontinuous Beat2→3 seam (§CPE_SEAM_CONTINUOUS), and fixing those two took the hostile
+    // peak to 6.2/7.5 deg/frame with the bows untouched.
+    // Kept as an INFO line, not deleted: the unread-join count is still worth seeing, and T3 below
+    // still GATES the doctrine that matters (an unreadable join must not be treated as open space).
+    console.log(`  INFO  T1 retired (bow-ray rescue — disproven): ${unread.length}/${H.bows.length} join(s) ` +
+      `the fan could not read; ${rescued.length} would have been bow-ray readable. Bows: ` +
+      (H.bows.map(b => `join${b.i}=${b.bow.toFixed(2)}m`).join(' ') || 'none'));
 
-    P(`T2 peak turn rate over the whole film stays under ${CAP_DEG} deg/frame on a hostile layout`,
+    P(`T2 peak gaze sweep over the whole film stays under ${CAP_DEG} deg/frame on a hostile layout`,
       H.turn.peak <= CAP_DEG,
-      `peak=${H.turn.peak.toFixed(1)} deg/frame at u=${H.turn.peakT.toFixed(3)}, total turn ` +
-      `${H.turn.total.toFixed(0)}deg over ${H.turn.frames} frames (mean ${(H.turn.total / H.turn.frames).toFixed(1)})`);
+      `peak=${H.turn.peak.toFixed(1)} deg/frame at u=${H.turn.peakT.toFixed(3)} (gaze pitch there ` +
+      `${H.turn.peakPitch.toFixed(1)}deg), total sweep ${H.turn.total.toFixed(0)}deg over ${H.turn.frames} ` +
+      `frames (mean ${(H.turn.total / H.turn.frames).toFixed(1)})\n` +
+      `          yaw-only for reference: ${H.turn.yawPeak.toFixed(1)} at u=${H.turn.yawPeakT.toFixed(3)} ` +
+      `where pitch=${H.turn.yawPeakPitch.toFixed(1)}deg — yaw is degenerate above ~80deg pitch, which is ` +
+      `why it is reported and not gated\n          beats: ${JSON.stringify(H.beats)}`);
 
     P('T3 a join whose bow ray ALSO hits nothing still obeys the 3m cap (unknown stays unknown)',
       stuck.every(b => b.bow <= NUDGE_CAP + 0.01),
