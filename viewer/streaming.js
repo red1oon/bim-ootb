@@ -1671,6 +1671,16 @@ function setupStreaming(A) {
     const SQL = await initSqlJs(sqlOpts);
     A._SQL = SQL; // Cache for reuse (diff DB, import) — avoids re-downloading WASM
 
+    // Implementing prompts/Viewer/BLANK_VIEWER_LANDING_CARD.md §1 (bim-ootb port) — Witness: manual, see §STATUS
+    // Blank mode with nothing opened: fetch(A.DB_URL) below would resolve '' to the page's own HTML and
+    // fail confusingly. A.openModelDb() (Ctrl+O / Open Building pill) navigates to viewer.html?db=import://…
+    // once a file is picked — a fresh page load, so no re-entry guard is needed here.
+    if (A.BLANK_MODE && !A.DB_URL) {
+      A.status.textContent = 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
+      console.log('§BLANK_MODE active=1 waiting_for_open=1');
+      return;
+    }
+
     if (A.CITY_URL) {
       // S250 §6: On mobile, defer city_index.db auto-load to save memory
       if (A._isMobile) {
