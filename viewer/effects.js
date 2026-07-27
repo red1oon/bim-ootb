@@ -3317,8 +3317,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // sprites are written above 1.0 in linear space precisely so the bloom threshold can find them,
     // and without the pass they are a handful of bright pixels that spread nothing (measured under
     // §PHOTO_EMBER: emissive alone moved mean luminance 56.13 -> 56.13).
-    // A._bloomOff = true kills bloom outright without touching the sprites — one switch, because
-    // "not nice" may end up meaning "none" rather than "less".
+    // §BLOOM_DEFAULT_OFF (2026-07-27) — bloom is OFF by default, and that is the revert the user
+    // asked for: "black boxes were never there.. remove the impact", i.e. they are NEW, introduced
+    // by this work, not a pre-existing fault. It fits exactly — before §PHOTO_GLOW_SPRITE, ember was
+    // disarmed, so _bloomPass.enabled was ALWAYS false and this pass never ran in any build the user
+    // had seen. Turning it on for Alt+S is the one new thing in the frame, so it goes back off.
+    // Set A._bloomOff = false to try it again; §BLOOM_TEMPER's 1.2/0.45 and the depth-test fix in
+    // BloomPass.js both remain, so re-arming it starts from a better place than it left.
+    // The sprites do NOT need bloom — it only spreads them.
+    if (A._bloomOff === undefined) A._bloomOff = true;
     if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
     // §PHOTO_GLOW_SPRITE: night mode may already have staged these. Restage anyway, so the eye
@@ -3332,9 +3339,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // 841-fixture building was being lit by 12 of them.
     // §NIGHT_STILL_LIGHTS_REGATE (2026-07-27, found answering "how many POL did we employ?"): this
     // was gated on A._emberEnabled, which §PHOTO_EMBER_DISARMED set to false — so the 48-light still
-    // budget has been DEAD CODE ever since, and every Alt+S still has been lit by the 12-light
-    // NAVIGATION budget. Gate it on whichever still-lighting feature is actually live.
-    if ((A._emberEnabled || A._glowSpriteEnabled) &&
+    // budget had been DEAD CODE ever since, and every Alt+S still was lit by the 12-light NAVIGATION
+    // budget. Re-arming it made Alt+S measurably heavier (user: "alt-s also getting heavy";
+    // §STILL_REFINE elapsedMs 4496 -> 6560 on Hospital), which is exactly what 4x the point lights
+    // costs: per-fragment lighting on every lit material, plus a shader recompile when the count
+    // changes. So it stays OFF — opt in with A._nightStillBoost = true.
+    // It also buys little now: §PHOTO_GLOW_SPRITE already makes all 1272 fixtures READ as lit for
+    // one draw call, and the point lights only add throw onto nearby surfaces. The finding stands
+    // recorded; the cost is not paid by default.
+    if (A._nightStillBoost &&
         A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty

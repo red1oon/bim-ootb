@@ -279,39 +279,7 @@ function setupStreaming(A) {
   // in Ifc4_Revit — same RPC content, different export convention. Strip a leading "M_" before the
   // anchored match so both conventions land the same variant; without this BimWhale's real RPC
   // entourage never gets the flat-exporter-grey fix.
-  // §LUM_VARIANT (2026-07-27) — luminaires get their OWN material, split off by name at load time.
-  //
-  // User: "why do we need a material split? Cant we apply migration script to a local extracted DB
-  // to test first?" Neither is needed. The problem was that the Clinic paints its downlight cans and
-  // its grab bars with ONE authored material ('≈ Off-White', rgba 0.920,0.900,0.850, 1974 elements
-  // across 20 families) — verified in the DB, and material_name does not separate them either
-  // because there is genuinely only one material. So §NIGHT_DIFFUSER had to SKIP that key: frosting
-  // it would have frosted 1590 grab bars, towel dispensers and diffuser grilles.
-  //
-  // But matVariant is already a runtime discriminator that splits a shared rgba into separate
-  // materials from the NAME — it is how RPC people/trees/logos get their own materials — and it is
-  // part of the cache key (`rgba|ifcClass|matVariant`) AND of the batching key, so a batch can never
-  // mix variants. Adding 'lum' means every luminaire has a material shared with nothing but other
-  // luminaires, in EVERY building, BY CONSTRUCTION rather than by measurement.
-  //
-  // No DB change, so nothing is invented: the split is derived from the same name vocabulary that
-  // already decides what a luminaire is. A migration would have had to assign a colour the model
-  // never authored — that WOULD have been invention, and it would have had to be repeated for every
-  // building. This costs one extra material per (rgba, class) that contains luminaires.
-  A.isLuminaire = function(ifcClass, name) {
-    if (ifcClass === 'IfcLightFixture') return true;
-    var n = String(name || '').toLowerCase();
-    if (!n) return false;
-    // Must agree with A._loadNightFixtures' SQL in tools.js — same words, same exclusions.
-    if (/switch|receptacle|panelboard|socket|outlet|flight|skylight|clamp|alarm|detector|sprinkler/.test(n)) return false;
-    if (ifcClass === 'IfcAlarm' || ifcClass === 'IfcSensor' || ifcClass === 'IfcFireSuppressionTerminal' ||
-        ifcClass === 'IfcProtectiveDevice' || ifcClass === 'IfcSanitaryTerminal' ||
-        ifcClass === 'IfcWindow' || ifcClass === 'IfcDoor' || ifcClass === 'IfcSlab' || ifcClass === 'IfcWall') return false;
-    return /light|troffer|downlight|luminaire|lamp|sconce|pendant|exit sign|keluar|signage/.test(n);
-  };
-
   A._entourageVariant = function(ifcClass, name) {
-    if (A.isLuminaire(ifcClass, name)) return 'lum';   // §LUM_VARIANT — before the proxy gate
     if (ifcClass !== 'IfcBuildingElementProxy' || !name) return '';
     var n = name.indexOf('M_') === 0 ? name.slice(2) : name;
     if (n.indexOf('RPC Male') === 0 || n.indexOf('RPC Female') === 0) return 'person';
