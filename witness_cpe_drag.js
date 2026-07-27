@@ -12,8 +12,8 @@
 //            and by ZERO along the camera's view normal (a translate must not change depth).
 //   G-DRAG-3 drag out and back to the same pixel => the centre RETURNS. Literally the user's report,
 //            and the gate that would have caught this before they hit it.
-//   G-DRAG-4 §CPE_DRAG_REACH: a huge drag is capped at the building's own derived walk length, and
-//            its DIRECTION is preserved (a cap that also rotated the gesture would be a new bug).
+//   G-DRAG-4 a huge drag stays exactly 1:1 with the cursor (same m/px as G-DRAG-2, same direction).
+//            The §CPE_DRAG_REACH cap this once asserted was REMOVED — it broke G-DRAG-3.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8402;
@@ -127,15 +127,33 @@ const bandsOf = page => page.evaluate(() => window.__cpeBands ? window.__cpeBand
       back < 0.05,
       `returned within ${back.toFixed(4)}m — the user's "draging it back, still flew back" case`);
 
-    // ── G-DRAG-4: a huge drag, capped at the building's own derived walk length.
+    // ── G-DRAG-4: a HUGE drag stays exactly 1:1 with the cursor — same metres-per-pixel as the
+    // modest drag G-DRAG-2 measured, and the same direction. This gate was originally written to
+    // assert the §CPE_DRAG_REACH cap; the cap was removed because G-DRAG-3 measured it breaking
+    // out-and-back (a capped band stops under a cursor that has moved on, so the return drag grabs
+    // nothing). So the gate is re-aimed at what direct manipulation actually requires: the thing you
+    // grabbed stays under the cursor no matter how far you throw it. A re-introduced cap fails here.
+    const mpp = mag / Math.hypot(DX, DY);          // metres per pixel at the grab depth, measured
+    const x4 = Math.round(proj.sx + DX), y4 = Math.round(proj.sy + DY), tx4 = 20, ty4 = 780;
+    const pdx = tx4 - x4, pdy = ty4 - y4, pxDist = Math.hypot(pdx, pdy);
     const before4 = await centres();
-    await drag(page, Math.round(proj.sx + DX), Math.round(proj.sy + DY), 20, 780);
+    await drag(page, x4, y4, tx4, ty4);
     const after4 = await centres();
-    const reach = Math.hypot(after4[0].x - before4[0].x, after4[0].y - before4[0].y, after4[0].z - before4[0].z);
-    const baseLen = parseFloat((logs.filter(l => /§CPE_OPEN/.test(l))[0] || '').match(/pathLen=([\d.]+)/)?.[1] || 'NaN');
-    P('G-DRAG-4 §CPE_DRAG_REACH: one gesture cannot exceed the building\'s own walk length',
-      isFinite(baseLen) ? reach <= Math.max(2, baseLen) + 0.5 : reach < 1e6,
-      `reach ${reach.toFixed(2)}m against cap ${isFinite(baseLen) ? baseLen.toFixed(2) : '?'}m (the derived pathLen)`);
+    const mv4 = { x: after4[0].x - before4[0].x, y: after4[0].y - before4[0].y, z: after4[0].z - before4[0].z };
+    const reach = Math.hypot(mv4.x, mv4.y, mv4.z);
+    const want = pxDist * mpp;
+    const ratio = reach / want;
+    // Direction the pixels asked for, in world: screen-right * dx + screen-up * (-dy).
+    const ex = proj.right.x * pdx - proj.up.x * pdy;
+    const ey = proj.right.y * pdx - proj.up.y * pdy;
+    const ez = proj.right.z * pdx - proj.up.z * pdy;
+    const eL = Math.hypot(ex, ey, ez);
+    const cos = (mv4.x * ex + mv4.y * ey + mv4.z * ez) / (reach * eL || 1);
+    const angErr = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+    P('G-DRAG-4 a huge drag is still exactly 1:1 with the cursor — no reach cap, direction preserved',
+      Math.abs(ratio - 1) < 0.03 && angErr < 2,
+      `reach ${reach.toFixed(2)}m vs ${want.toFixed(2)}m asked (${pxDist.toFixed(0)}px x ${mpp.toFixed(3)} m/px) ` +
+      `= ${ratio.toFixed(4)}x 1:1; direction off by ${angErr.toFixed(2)}deg`);
 
     try { await page.evaluate(() => document.getElementById('cpe-cancel').click()); } catch (e) {}
     console.log(`  INFO  ${logs.filter(l => /§CPE_LOADED/.test(l))[0] || '(no §CPE_LOADED)'}`);
