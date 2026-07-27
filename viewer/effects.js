@@ -4364,10 +4364,18 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     // How many elements are within one fan-horizon of this point. CINEMA_FAN_FAR is reused as the
     // neighbourhood radius rather than inventing a second range constant.
-    function _densityAt(p) {
+    // The radius must be commensurate with how far the BEAT travels. MEASURED: a fixed
+    // CINEMA_FAN_FAR (60m) neighbourhood is constant across a 12-36m walk — the walk's noise series
+    // came out maxChange=0 on BOTH buildings, i.e. the term was inert and Terminal's 2.27s crawl
+    // was untouched. Half the beat's own travel is the natural scale (the neighbourhood turns over
+    // roughly once across the beat), capped at the fan horizon so a 250m dive does not read the
+    // whole site as one blur. Derived from the path, not picked.
+    function _noiseRadius(travel) { return Math.max(3, Math.min(CINEMA_FAN_FAR, travel / 2)); }
+    function _densityAt(p, R) {
       var pts = _densPoints();
       if (!pts.length || typeof A.three2ifc !== 'function') return 0;
-      var q = A.three2ifc(p.x, p.y, p.z), R2 = CINEMA_FAN_FAR * CINEMA_FAN_FAR, n = 0;
+      var rr = R || CINEMA_FAN_FAR;
+      var q = A.three2ifc(p.x, p.y, p.z), R2 = rr * rr, n = 0;
       for (var i = 0; i < pts.length; i++) {
         var dx = pts[i][0] - q.ix, dy = pts[i][1] - q.iy, dz = pts[i][2] - q.iz;
         if (dx * dx + dy * dy + dz * dz < R2) n++;
@@ -4402,6 +4410,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _DV_N = 64, _dvC = null, _diveBusy = 0;
     (function _diveNoiseBuild() {
       var i, j, dens = [], series = [];
+      var _dvR = _noiseRadius(Math.hypot(settle.x - camPos0.x, settle.y - camPos0.y, settle.z - camPos0.z));
       for (i = 0; i < _DV_N; i++) {
         var e = (i + 0.5) / _DV_N;
         dens.push(_densityAt({ x: camPos0.x + (settle.x - camPos0.x) * e,
@@ -4954,10 +4963,45 @@ async function setupEffects(A, renderer, scene, camera) {
       // WORSE on the metric that matters (Hospital 11.2 → 16.5 → 18.3 deg/frame), because
       // smoothing the noise removes the slowdown exactly at the corner that needed it. Keep the
       // provable bound; buy the headroom with FRAMES instead (§CPE_TURN_BUDGET).
-      var c = [];
-      for (i = 0; i <= _etN; i++) c.push((1 - w) * (ss[i] / S) + w * (ts[i] / T));
+      // §CPE_NOISE_LAW, the walk's share (user, 2026-07-27: "i thnk the stalls are ok, it may mean
+      // a sec or two pause which is fine in the film" ... "but if the noise ratio tempers it a bit
+      // also ok"). The stall is ACCEPTED, so this does not remove it — it TEMPERS it, and it does
+      // so by finishing the law rather than by adding a second mechanism.
+      //
+      // The crawl happens where dθ dominates a cost step: the camera turns hard, cost runs out, and
+      // metres-per-frame collapses. But a hard turn whose CONTENT is not changing is precisely the
+      // "not moving makes a boring show" case — so weight each cost increment by the same bbox rate
+      // of change the dive uses. A corner with little change stays cheap (the film keeps moving);
+      // a corner where the scene really is turning over still pays. 32 density probes, interpolated
+      // across the 240 cost samples — measured at ~15ms on Terminal's 48k rows, against a plan
+      // budget already in the hundreds.
+      var _nk = 32, nz = [], nzMax = 0, q;
+      for (q = 0; q <= _nk; q++) {
+        var pq = _beat3Pose(q / _nk);
+        nz.push(_densityAt({ x: pq.x, y: pq.y, z: pq.z }, _noiseRadius(s)));
+      }
+      var nzC = [];
+      for (q = 0; q <= _nk; q++) {
+        var lo = nz[Math.max(0, q - 1)], hi = nz[Math.min(_nk, q + 1)];
+        nzC.push(Math.abs(hi - lo));
+        if (nzC[q] > nzMax) nzMax = nzC[q];
+      }
+      var noiseAt = function (e) {
+        var x = Math.max(0, Math.min(_nk, e * _nk)), j = Math.min(_nk - 1, Math.floor(x)), f = x - j;
+        return nzMax > 0 ? (nzC[j] * (1 - f) + nzC[j + 1] * f) / nzMax : 0;
+      };
+      var c = [0], acc = 0;
+      for (i = 1; i <= _etN; i++) {
+        var dRaw = (1 - w) * ((ss[i] - ss[i - 1]) / S) + w * ((ts[i] - ts[i - 1]) / T);
+        acc += dRaw * (1 + (CINEMA_PACE_SWING - 1) * noiseAt((i - 0.5) / _etN));
+        c.push(acc);
+      }
+      if (acc > 1e-9) for (i = 0; i <= _etN; i++) c[i] /= acc;
       c = _paceFloor(c, ss, S);
       _etC = c;
+      console.log('§CPE_NOISE_LAW beat=walk src=bbox probes=' + (_nk + 1) +
+        ' maxChange=' + nzMax + ' radius=' + _noiseRadius(s).toFixed(1) + 'm elems=' + _densPoints().length +
+        ' — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap');
       console.log('§CPE_EVEN_TURN blended-cost, PACE_SWING=' + CINEMA_PACE_SWING +
         ' walkLen=' + s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) +
         'deg samples=' + (_etN + 1) +

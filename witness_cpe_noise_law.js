@@ -22,6 +22,8 @@ const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8403;
 const BUILDINGS = (process.env.BLDS || 'Duplex,Terminal').split(',');
 const FPS = 15, DUR = 24, PACE_SWING = 1.6;
+// 'a sec or two ... is fine in the film' (user). Two seconds plus a frame of slack.
+const STALL_CEIL = parseFloat(process.env.STALL_CEIL || '3.0');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
@@ -186,10 +188,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       stalls.push({ bn, worstFrames: worst, sec: worst / res.fps, at, mean: m, floor });
     });
     const worstStall = stalls.reduce((a, x) => (x.sec > a.sec ? x : a), { sec: 0, bn: '-', worstFrames: 0, at: 0 });
-    P('N5 no beat stalls at its seams (no run under beat-mean/PACE_SWING longer than 0.5s)',
-      worstStall.sec <= 0.5,
-      `worst run ${worstStall.worstFrames} frames = ${worstStall.sec.toFixed(2)}s in the ${worstStall.bn} at u=${(worstStall.at || 0).toFixed(3)}; ` +
-      stalls.map(x => `${x.bn}: ${x.sec.toFixed(2)}s under ${x.floor.toFixed(3)}m/frame`).join(', '));
+    // ⚖ USER RULING 2026-07-27, and the reason this is a REPORT and not a gate: "i thnk the
+    // stalls are ok, it may mean a sec or two pause which is fine in the film" ... "but if the
+    // noise ratio tempers it a bit also ok". A pause is film-making, not a defect, so gating it at
+    // 0.5s was gating the user's own taste. The number is still printed every run — a stall that
+    // grows past a couple of seconds is worth SEEING even though it is not worth failing — and the
+    // ceiling below is deliberately generous, set from their own words rather than from a feel.
+    console.log(`  INFO  N5 stall report (accepted by ruling, not gated below ${STALL_CEIL}s): ` +
+      `worst ${worstStall.worstFrames} frames = ${worstStall.sec.toFixed(2)}s in the ${worstStall.bn} ` +
+      `at u=${(worstStall.at || 0).toFixed(3)}; ` + stalls.map(x => `${x.bn} ${x.sec.toFixed(2)}s`).join(', '));
+    P(`N5 no beat pauses beyond what the user called fine (a sec or two; ceiling ${STALL_CEIL}s)`,
+      worstStall.sec <= STALL_CEIL,
+      `worst pause ${worstStall.sec.toFixed(2)}s in the ${worstStall.bn}` +
+      (worstStall.sec > 0.5 ? ' — a real pause, and an accepted one' : ' — none worth calling a pause'));
 
     const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
     P('N3 the pacing changed, the path did not (dive still ends exactly on the settle point)',
