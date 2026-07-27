@@ -72,6 +72,41 @@ function setupHelpers(A) {
     mesh.visible = anyVisible;
   };
 
+  // ── A.filterMergedMesh(mesh, filterFn) ───────────────────────────────────
+  // §MERGED_GUID (MOBILE_PERF.md §SPEC 2026-07-28 Part 3, item 2). Witness: W-MERGED-FILTER.
+  // ISSUE IT PROVES: a merged mesh has no setVisibleAt, and filterByGuids only ever matched
+  // isMesh-with-userData.guid / isInstancedMesh / isBatchedMesh — so before this, an isolate or
+  // Room Lens left every merged element on screen (silently wrong, not an error).
+  // MECHANISM: hidden elements get their index slice overwritten with a repeated vertex index —
+  // degenerate (zero-area) triangles, discarded at rasterisation. Deliberately NOT index compaction:
+  // compacting would move every later element's idxStart and invalidate the whole range map that
+  // picking and raycasting depend on. Ranges stay pinned; only their CONTENT toggles.
+  // filterFn(meta) → true = visible. meta = A._mergedMeta[mesh.id][i]
+  A.filterMergedMesh = function(mesh, filterFn) {
+    if (!mesh.userData || !mesh.userData.isMerged) return;
+    const meta = A._mergedMeta && A._mergedMeta[mesh.id];
+    if (!meta) return;
+    const geo = mesh.geometry, idxAttr = geo.index;
+    if (!idxAttr) return;
+    const arr = idxAttr.array;
+    // Lazy pristine copy — costs nothing until something actually filters, which on the mobile
+    // path may be never. Kept afterwards: isolate/restore cycles are repeated, not one-shot.
+    let full = geo.userData._fullIndex;
+    if (!full) full = geo.userData._fullIndex = arr.slice();
+    let anyVisible = false, changed = 0;
+    for (let i = 0; i < meta.length; i++) {
+      const m = meta[i], vis = !!filterFn(m);
+      if (vis) anyVisible = true;
+      if (vis === !m.hidden) continue;              // already in the requested state
+      if (vis) arr.set(full.subarray(m.idxStart, m.idxStart + m.idxCount), m.idxStart);
+      else arr.fill(full[m.idxStart], m.idxStart, m.idxStart + m.idxCount);
+      m.hidden = !vis;
+      changed++;
+    }
+    if (changed) idxAttr.needsUpdate = true;
+    mesh.visible = anyVisible;
+  };
+
   // ── A.dbQuery(sql, params) ────────────────────────────────────────────────
   // Safe db.exec wrapper. Returns [] if db not ready or no results.
   // Each item in the returned array is a row-values array (same shape as db.exec rows[0].values).

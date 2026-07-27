@@ -52,7 +52,15 @@ async function setupScene(A) {
     var _dbg = _capGl.getExtension('WEBGL_debug_renderer_info');
     var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
     console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
-  } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
+    // §MERGED_GUID (MOBILE_PERF.md §SPEC 2026-07-28 Part 4): PERSIST the capability — S280c's
+    // `_hasMultiDraw` was computed and thrown away here, which is why the merged low-draw fallback
+    // has been dead since 68bd9a7 (2026-05-27). streaming.js reads this to decide merge routing.
+    // Default TRUE on probe failure = keep the BatchedMesh path (never merge on unknown caps).
+    A._hasMultiDraw = _md;
+  } catch(_e) {
+    A._hasMultiDraw = true;
+    console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message));
+  }
   // ── Implementing FLY_TOUR_DLOD_SCALE.md §14 (bim-compiler prompts/Viewer/) — GPU capability
   // warning. Witnesses: W-GPU-WARN-FIRSTRUN / -DEGRADED / -RECOVERED / -NONAG.
   // Compares the caps just probed above against the "last known good" signature in localStorage

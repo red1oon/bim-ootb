@@ -850,7 +850,16 @@ function setupPanels(A) {
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => keep(meta.guid));
     });
-    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    // §MERGED_GUID: merged meshes are plain isMesh with no userData.guid — they matched NONE of the
+    // three collectors above, so an isolate used to leave them fully visible. Fourth collector, same
+    // keep() predicate, per-element via the index-range map.
+    var _mgVis = 0, _mgMeshes = 0;
+    A.collectMeshes(o => o.userData && o.userData.isMerged).forEach(mesh => {
+      _mgMeshes++;
+      A.filterMergedMesh(mesh, meta => { var k = keep(meta.guid); if (k) _mgVis++; return k; });
+    });
+    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)) +
+      (_mgMeshes ? ' merged_meshes=' + _mgMeshes + ' merged_visible=' + _mgVis : ''));
     A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
