@@ -3557,7 +3557,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v16 (§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
+  var EFFECTS_V = 'v17 (§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -4139,9 +4139,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // a second guess at it (asserted below against _beat3Pose(0), the pose that actually flies).
     // NOTE: the spin does NOT pay for the pitch — see the _spinDeg comment below for why that was
     // tried, measured, and reverted.
-    var _wkP0 = _outPos(0), _wkA0 = _outPos(0.15);
-    if (Math.hypot(_wkA0.x - _wkP0.x, _wkA0.y - _wkP0.y, _wkA0.z - _wkP0.z) < 0.5)
-      _wkA0 = { x: _wkP0.x + odx * 20, y: _wkP0.y, z: _wkP0.z + odz * 20 };
+    var _wkP0 = _outPos(0), _wkA0 = _lookAhead(_wkP0, 0);   // ONE look-ahead rule, shared with Beat 3
     var _wkDy = _wkA0.y - _wkP0.y;
     var _wkL = Math.hypot(_wkA0.x - _wkP0.x, _wkDy, _wkA0.z - _wkP0.z) || 1;
     var dYaw = spinTo - yaw0;
@@ -4493,6 +4491,60 @@ async function setupEffects(A, renderer, scene, camera) {
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
     }
 
+    // ══ Where the walk is LOOKING at progress u — the one rule, used everywhere. ═══════════════
+    // The look-ahead means "where does the path go next". The old guard answered a collapsed
+    // look-ahead by SUBSTITUTING a level (odx,odz) bearing 20m out — a different vector, switched
+    // to in a single frame. MEASURED on Hospital: the gaze went (-0.230,0.973,-0.019) → (-0.733,
+    // 0.000,0.680), 81.0 deg in ONE frame at u=0.312, and it did NOT shrink at 100x sampling
+    // density (ratio 1.0x) — a true discontinuity, exactly what §CPE_JERK_DEFINITION item 3 calls
+    // a step. The `y` of exactly 0.000 is the substitution's fingerprint.
+    //
+    // The problem is the THRESHOLD, not the window size. Any rule of the form "if the look-ahead
+    // is too close, use something else" has a switch in it, and a switch is a step. Searching
+    // forward for the first point clearing a radius is still such a rule — it only made the step
+    // smaller (MEASURED: 81.0 → 21.3 deg/frame, still ratio 1.4x at 100x density, still a step),
+    // because on a path that folds the first-clearing point can itself jump.
+    //
+    // So there is no threshold. The look-ahead is the point a fixed ARC LENGTH further along the
+    // path. That point always exists and always moves continuously with u, on any path shape,
+    // because arc length is monotone in u — a fold-back cannot collapse it and there is nothing to
+    // substitute. L is derived, not picked: the same 0.15 of the walk the fraction window meant,
+    // now measured in metres so it stops depending on how the parameter happens to be spaced.
+    //
+    // The (odx,odz) fallback survives for exactly one case: a walk with no length at all, where
+    // there is no path to read a direction from. Beat 4 opens on (odx,0,odz), so it is the
+    // continuous answer there rather than a substitution.
+    var _AH_FRAC = 0.15, _ahN = 240, _ahS = null, _ahL = 0;
+    function _ahBuild() {                      // cumulative arc length of the walk, sampled once
+      _ahS = [0];
+      var prev = _outPos(0), s = 0;
+      for (var i = 1; i <= _ahN; i++) {
+        var q = _outPos(i / _ahN);
+        s += Math.hypot(q.x - prev.x, q.y - prev.y, q.z - prev.z);
+        _ahS.push(s); prev = q;
+      }
+      _ahL = s;
+    }
+    function _ahArcAt(u) {                     // arc length travelled by parameter u
+      if (!_ahS) _ahBuild();
+      var t = Math.max(0, Math.min(1, u)) * _ahN, i = Math.min(_ahN - 1, Math.floor(t));
+      return _ahS[i] + (_ahS[i + 1] - _ahS[i]) * (t - i);
+    }
+    function _ahAtArc(s) {                     // the inverse: parameter u at arc length s
+      if (!_ahS) _ahBuild();
+      if (s <= 0) return 0;
+      if (s >= _ahL) return 1;
+      var lo = 0, hi = _ahN;
+      while (hi - lo > 1) { var m = (lo + hi) >> 1; if (_ahS[m] <= s) lo = m; else hi = m; }
+      var d = _ahS[hi] - _ahS[lo];
+      return (lo + (d > 1e-12 ? (s - _ahS[lo]) / d : 0)) / _ahN;
+    }
+    function _lookAhead(p, u) {
+      if (!_ahS) _ahBuild();
+      if (_ahL < 1e-6) return { x: p.x + odx * 20, y: p.y, z: p.z + odz * 20 };
+      return _outPos(_ahAtArc(_ahArcAt(u) + _AH_FRAC * _ahL));
+    }
+
     // The walk-out pose as a pure function of its OWN progress e3 ∈ [0,1]. Extracted verbatim out of
     // poseAt so §CPE_EVEN_TURN's cost table can sample the REAL poses — sampling a re-implementation
     // of the gaze rule would let the table and the film drift apart silently.
@@ -4505,7 +4557,6 @@ async function setupEffects(A, renderer, scene, camera) {
         // swung hard onto the next segment — a real gaze snap, not just position. A wider window
         // means the look-at is further past any given corner while still approaching it, so the
         // direction change is spread out instead of happening in one frame.
-        var ah = _outPos(Math.min(1, e3 + 0.15));
         // §CINEMA_LOOKAHEAD_VERTICAL (2026-07-27): this collapse test used to measure HORIZONTAL
         // distance only, so any near-vertical stretch of path tripped it even though the look-ahead
         // point was metres away — it was simply above rather than ahead. The gaze then snapped from
@@ -4513,8 +4564,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // climbs 17m with x/z barely moving: target jumped (-0.80,-6.19,-1.14) → (-21.82,-25.65,
         // -1.67), a 113 deg/frame whip at t=0.411. A 3D test is what the guard actually meant —
         // "has the look-ahead collapsed onto me", not "has it collapsed horizontally".
-        if (Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) < 0.5)
-          ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
+        var ah = _lookAhead(p3, e3);
         var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
         // §CPE_SEAM_CONTINUOUS: at e3=0 look EXACTLY where the spin left off, then ease onto the
         // walk's own aim across _openU. Smoothstep, so the rate is zero at the seam and there is no

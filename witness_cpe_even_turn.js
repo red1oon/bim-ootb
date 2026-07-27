@@ -103,6 +103,61 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return { peak, peakT, peakPitch, total, frames: n, yawPeak, yawPeakT, yawPeakPitch };
       };
 
+      // §CPE_JERK_DEFINITION item 2 — the POSITION half, which the user named FIRST ("pov sudden
+      // position") and which nothing gated until now. T2 above measures only how fast the gaze
+      // sweeps; a camera can hold a perfectly steady aim while TELEPORTING, and that reads as the
+      // worst jerk of all.
+      //
+      // The cap is DERIVED per beat, not invented. Each beat is parameterized by a smoothstep of
+      // its own time fraction, and smoothstep's derivative peaks at exactly 1.5 — so a beat that
+      // moves smoothly along its own path can never exceed 1.5x its OWN mean step. Anything past
+      // that is a discontinuity in that beat, whatever the beat's nominal speed is (dive at 20m/s
+      // and the walk at 2.3m/s are both held to their own mean, so no per-beat constant is needed).
+      // Tolerance 1.1x on top, for the beat-boundary frame that straddles two parameterizations.
+      //
+      // TWO beats need a different bound, both for stated reasons, neither to make this pass:
+      //  - THE WALK is deliberately NOT arc-uniform. §CPE_EVEN_TURN parameterizes it by a blended
+      //    distance+turn cost, so its distance step is bounded by 1/(1-w) = PACE_SWING = 1.6x the
+      //    nominal, and the smoothstep ease multiplies that by 1.5 -> 2.4x. Holding the walk to
+      //    1.5x would gate the FEATURE, not a defect. 2.4x is the same bound the §CPE_EVEN_TURN
+      //    derivation states, so this gate is what checks that derivation against the real film.
+      //  - IN-PLACE beats (the spin) barely translate at all: mean steps of 1-3cm make the ratio
+      //    pure numerical noise (measured 7.8-13.6x on a 2cm mean). A beat that moves less than a
+      //    centimetre per frame on average has no meaningful position bound, so it is reported and
+      //    not gated. The spin's motion is a TURN, and T2 already owns that.
+      const posPeak = (plan) => {
+        const n = Math.max(2, Math.round(dur * fps));
+        const b = plan.beats || {};
+        const bounds = [
+          ['dive', 0, b.dive], ['spin', b.dive, b.spin], ['walk', b.spin, b.out],
+          ['rise', b.out, b.rise], ['orbit', b.rise, 1],
+        ].filter(x => typeof x[1] === 'number' && typeof x[2] === 'number' && x[2] > x[1]);
+        const per = [];
+        for (const [name, u0, u1] of bounds) {
+          const steps = [];
+          for (let i = 1; i < n; i++) {
+            const ua = (i - 1) / (n - 1), ub = i / (n - 1);
+            if (ub <= u0 || ua > u1) continue;
+            const p0 = plan.poseAt(ua), p1 = plan.poseAt(ub);
+            steps.push({ d: Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z), u: ub });
+          }
+          if (steps.length < 3) continue;
+          const mean = steps.reduce((a, s) => a + s.d, 0) / steps.length;
+          const top = steps.reduce((a, s) => (s.d > a.d ? s : a), steps[0]);
+          const PACE_SWING = 1.6;                       // the user's dial, mirrored from effects.js
+          const shape = (name === 'walk') ? 1.5 * PACE_SWING : 1.5;
+          // The spin is an IN-PLACE turn by definition, not a traverse — it pivots on the settle
+          // point. Exempted by name rather than by a magnitude threshold, because a threshold would
+          // just be a picked number that happens to straddle the three buildings (measured means:
+          // Duplex 0.01m, Terminal 0.02m, Hospital 0.03m per frame). Its motion is rotational and
+          // T2 gates it; its position numbers are printed so the exemption stays visible.
+          const inPlace = (name === 'spin');
+          per.push({ beat: name, mean, peak: top.d, at: top.u, inPlace, shape,
+                     cap: shape * 1.1 * mean, ratio: mean > 1e-9 ? top.d / mean : 0 });
+        }
+        return per;
+      };
+
       const run = (bands) => {
         const flow = A.cinemaBandFlow(bands);
         const plan = A.cinemaPathPlan(dur, { bands: bands, _total: dur });
@@ -141,7 +196,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           try { if (Math.hypot(bx, bz) > 1e-4) bowRay = A.cinemaLookDist(at, bx, bz); } catch (e) {}
           bows.push({ i, bow, fanMin, bowRay });
         }
-        return { bows, turn: turnPeak(plan), flown: flow.length, beats: plan.beats || plan.sec || null };
+        return { bows, turn: turnPeak(plan), pos: posPeak(plan), flown: flow.length,
+                 beats: plan.beats || plan.sec || null };
       };
 
       return { hostile: run(hostile), seeded: run(seeded) };
@@ -173,6 +229,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       `          yaw-only for reference: ${H.turn.yawPeak.toFixed(1)} at u=${H.turn.yawPeakT.toFixed(3)} ` +
       `where pitch=${H.turn.yawPeakPitch.toFixed(1)}deg — yaw is degenerate above ~80deg pitch, which is ` +
       `why it is reported and not gated\n          beats: ${JSON.stringify(H.beats)}`);
+
+    // T5 — the POSITION half of §CPE_JERK_DEFINITION, the user's own first-named symptom. Proves
+    // or disproves: does any beat move the camera further in one frame than a smooth traverse of
+    // that same beat could? Each beat is held to 1.5x its OWN mean step (smoothstep's peak
+    // derivative) + 10%, so the cap is derived from the beat, never from a picked number.
+    const bad = H.pos.filter(p => !p.inPlace && p.peak > p.cap);
+    P('T5 no beat steps further in one frame than its own shape allows (1.5x mean; the walk 2.4x, being cost-parameterized)',
+      bad.length === 0,
+      H.pos.map(p => `${p.beat}: peak=${p.peak.toFixed(2)}m mean=${p.mean.toFixed(2)}m ` +
+        `(${p.ratio.toFixed(1)}x of ${p.shape.toFixed(1)}x allowed, cap ${p.cap.toFixed(2)}m) at u=${p.at.toFixed(3)}` +
+        (p.inPlace ? '  [in-place beat — reported, not gated]' : '') +
+        (!p.inPlace && p.peak > p.cap ? '  <-- VIOLATION' : '')).join('\n          '));
 
     P('T3 a join whose bow ray ALSO hits nothing still obeys the 3m cap (unknown stays unknown)',
       stuck.every(b => b.bow <= NUDGE_CAP + 0.01),
