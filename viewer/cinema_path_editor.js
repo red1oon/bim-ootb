@@ -584,7 +584,19 @@
       if (!p) return;
       if (d.z === 'mid') {
         // Middle = the whole length moving as one.
-        b.c.x = p.x; b.c.y = p.y; b.c.z = p.z;
+        // §CPE_DRAG_TELEPORT (user, Hospital, 2026-07-27: "went off to a spot user didnt put.
+        // Draging it back, still flew back"). This USED to assign the projected cursor point
+        // absolutely — `b.c = p` — so the band's new centre became whatever the grab ray happened
+        // to meet, not the centre plus the gesture. Any depth error in the grab point `p0` therefore
+        // became a PERMANENT offset, and every later drag re-anchored its plane at the already-wrong
+        // depth — which is exactly "dragging it back still flew back". Measured in their log: band 1
+        // centre y=+39.24 against floorY=-15.47 (~55m above the floor), pathLen 32.3m -> 161.7m.
+        // DELTA, not absolute: `c0` was already captured on pointerdown for this and was never read
+        // — the intent was here all along. A zero-pixel drag is now a zero-metre move by
+        // construction, and any p0 depth error cancels out of (p - p0) instead of accumulating.
+        b.c.x = d.c0.x + (p.x - d.p0.x);
+        b.c.y = d.c0.y + (p.y - d.p0.y);
+        b.c.z = d.c0.z + (p.z - d.p0.z);
       } else {
         // End = pivot about the far end. Length is invariant, so this is pure rotation.
         _rotateAbout(b, d.z === 'b', p);
