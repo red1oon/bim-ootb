@@ -23,8 +23,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
              lamps: q("SELECT COUNT(*) FROM elements_meta WHERE element_name LIKE 'BIM_OOTB_Floodlight%'"),
              fin:   q("SELECT finish, COUNT(*) FROM render_finishes GROUP BY 1") };
   });
+  // §BILLBOARD_ALWAYS gate: the art must exist BEFORE Alt+S is ever pressed. Measured first,
+  // because that was the live defect — the panel rendered as a black slab in normal navigation.
+  const preStill = await page.evaluate(() => { let n = 0; window.APP.scene.traverse(o => {
+    if (o.isMesh && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.isMeshBasicMaterial) n++; }); return n; });
   await page.evaluate(() => window.APP.startStillRefine());
-  await sleep(12000);
+  // Wait for the CONDITION, never a fixed sleep: the art quad's texture arrives after up to four
+  // sequential image probes (404, 404, then the hit), and a timed guess measured a null map and
+  // reported a working feature as broken. Second occurrence of this exact race in this suite —
+  // the ground witness needed the same fix for _applyGroundTexture's async load.
+  await page.waitForFunction(() => {
+    let ok = false;
+    window.APP.scene.traverse(o => { if (o.isMesh && o.geometry && o.geometry.type === 'PlaneGeometry'
+      && o.material && o.material.isMeshBasicMaterial && o.material.map) ok = true; });
+    return ok;
+  }, { timeout: 120000, polling: 500 }).catch(() => {});
+  await sleep(2000);
   const art = await page.evaluate(() => {
     let found = null, count = 0, shared = 0;
     const mats = [];
@@ -41,6 +55,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   P(db.lamps[0] && db.lamps[0][0]===4, `corner floodlights in DB: ${db.lamps[0]?db.lamps[0][0]:0} (expect 4)`);
   P(db.fin.length>0, `render_finishes: ${db.fin.map(r=>r[0]+'='+r[1]).join(', ')}`);
   console.log('\n─ 2. ART QUAD built from those rows');
+  P(preStill === 1, `§BILLBOARD_ALWAYS: art quad exists BEFORE any Alt+S (found ${preStill}, must be 1)`);
   P(!!art.found, `art quad exists (count=${art.count}, must be 1)`);
   if (art.found) {
     P(Math.abs(art.found.w-db.panel[0][2])<0.01 && Math.abs(art.found.h-db.panel[0][3])<0.01, `sized from the DB row: ${art.found.w}m x ${art.found.h}m`);
@@ -48,9 +63,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     P(art.found.hasMap, `texture bound (fallback notice or billboard.png)`);
     P(art.shared===1, `material shared with ${art.shared} mesh — the invariant (must be 1: itself)`);
   }
-  console.log('\n─ 3. FALLBACK (no billboard.png present)');
-  const fb = logs.filter(l=>/§BILLBOARD_ART/.test(l));
-  P(fb.some(l=>/fallback notice drawn/.test(l)), `notice fallback fired, not a silent blank panel`);
+  console.log('\n─ 3. IMAGE PICKUP + ASPECT FIT');
+  const fb = logs.filter(l=>/§BILLBOARD_(ART|FIT)/.test(l));
+  const got = fb.find(l=>/§BILLBOARD_ART image=/.test(l));
+  P(!!got, `real image picked up by convention (not the fallback): ${got ? got.split('image=')[1] : 'NONE — fell back'}`);
+  const fit = fb.find(l=>/§BILLBOARD_FIT/.test(l));
+  P(!!fit && /mode=cover/.test(fit), `artwork COVER-fitted (crop to fill), never stretched: ${fit ? fit.replace('§BILLBOARD_FIT ','') : 'no fit line'}`);
   console.log('\n─ § lines'); fb.forEach(l=>console.log('   '+l));
   const errs = logs.filter(l=>/PAGEERROR/.test(l)); if (errs.length){ console.log('\n─ errors'); errs.slice(0,3).forEach(l=>console.log('   '+l)); }
   await b.close();

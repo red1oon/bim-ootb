@@ -2163,6 +2163,16 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§BILLBOARD_ART fallback notice drawn (' + W + 'x' + H + ') — no billboard.png found');
     return tex;
   }
+  // §BILLBOARD_ALWAYS (2026-07-28, user live: "its blank black.. ah i see it, alt-s!!") — the art
+  // quad was only ever built from _showPhotoProps(true), so outside Alt+S the panel rendered as its
+  // own near-black hoarding body with no face on it, and it looked broken rather than unlit. A sign
+  // is a sign all the time; it should not need a photoshoot to have a face. Built once when the
+  // model has finished streaming, and _showPhotoProps's call is now just a harmless re-assert
+  // (the function is idempotent — it returns immediately if the mesh exists).
+  A._billboardAutoBuild = function() {
+    if (!A.db || !A.scene) return;
+    try { A._buildBillboardArt(); } catch (e) { console.warn('§BILLBOARD_ART auto-build failed: ' + e.message); }
+  };
   A._buildBillboardArt = function() {
     if (_billboardMesh || !A.db || !A.ifc2three) return;
     var rows;
@@ -2180,23 +2190,63 @@ async function setupEffects(A, renderer, scene, camera) {
     var mat = new THREE.MeshBasicMaterial({ toneMapped: true, side: THREE.DoubleSide });
     // MeshBasic, not Standard: a sign face reads as self-lit, so it stays legible at dusk without
     // depending on whether the corner floodlights are inside the night light budget this frame.
+    // §BILLBOARD_SOURCE — candidates tried in order, first hit wins, then stop. Derived from the
+    // DB's own filename rather than hardcoded: "Terminal_Hi.db" -> first token "Terminal" ->
+    // TerminalBillboard.jpg. So either `billboard.<ext>` or `<Building>Billboard.<ext>` beside the
+    // .db is found without a code change. A._billboardImage overrides everything (console-testable:
+    //   APP._setBillboardImage('whatever.jpg')  — swaps the map on the live mesh, no reload).
     var dir = (A.DB_URL || '').replace(/[^/]*$/, '');
-    var url = dir + 'billboard.png';
-    new THREE.TextureLoader().load(url,
-      function(tex) {
-        if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
-        mat.map = tex; mat.needsUpdate = true;
-        console.log('§BILLBOARD_ART image=' + url);
-      },
-      undefined,
-      function() { mat.map = _billboardFallbackTexture(wy, hz); mat.needsUpdate = true; });
+    var stem = ((A.DB_URL || '').replace(/^.*\//, '').replace(/\.db$/i, '').split('_')[0]) || 'building';
+    var cands = A._billboardImage ? [A._billboardImage.indexOf('/') >= 0 ? A._billboardImage : dir + A._billboardImage]
+      : [dir + 'billboard.png', dir + 'billboard.jpg', dir + stem + 'Billboard.jpg', dir + stem + 'Billboard.png'];
+    // §BILLBOARD_FIT — the artwork almost never matches the hoarding's aspect (the first real test
+    // image was 945x960 = 0.98 against a 2.00 panel, which stretches to twice its width if mapped
+    // raw). COVER-fit: scale by the LARGER ratio so the artwork fills the whole hoarding and the
+    // overflow is cropped evenly from both edges — user's call ("the script simply crop any pic
+    // landed"), and it is the right one for a billboard: a real hoarding is never letterboxed.
+    // Aspect is always preserved; only the overflow is lost, never the proportions.
+    A._billboardFit = function(img, wm, hm) {
+      var W = 1024, H = Math.max(1, Math.round(W * (hm / wm)));
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var g = c.getContext('2d');
+      g.fillStyle = '#0d1017'; g.fillRect(0, 0, W, H);
+      var s = Math.max(W / img.width, H / img.height);   // COVER: fill the board, crop the overflow
+      var dw = img.width * s, dh = img.height * s;
+      g.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      var tex = new THREE.CanvasTexture(c);
+      if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+      console.log('§BILLBOARD_FIT src=' + img.width + 'x' + img.height + ' (aspect ' + (img.width / img.height).toFixed(2) +
+        ') -> panel ' + W + 'x' + H + ' (aspect ' + (wm / hm).toFixed(2) + ') mode=cover scale=' + s.toFixed(3) + ' cropped=' + (((img.width*s - W)/s).toFixed(0)) + 'x' + (((img.height*s - H)/s).toFixed(0)) + 'px');
+      return tex;
+    };
+    function _tryLoad(list, n) {
+      if (n >= list.length) { mat.map = _billboardFallbackTexture(wy, hz); mat.needsUpdate = true; return; }
+      var im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = function() { mat.map = A._billboardFit(im, wy, hz); mat.needsUpdate = true;
+        console.log('§BILLBOARD_ART image=' + list[n]); if (A.markDirty) A.markDirty(); };
+      im.onerror = function() { _tryLoad(list, n + 1); };
+      im.src = list[n];
+    }
+    _tryLoad(cands, 0);
+    // Live swap for iteration — no reload, no rebuild of the quad.
+    A._setBillboardImage = function(u) {
+      if (!_billboardMesh) { console.log('§BILLBOARD_ART no mesh yet — press Alt+S once'); return; }
+      var full = (u.indexOf('/') >= 0) ? u : dir + u;
+      var im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = function() { _billboardMesh.material.map = A._billboardFit(im, wy, hz);
+        _billboardMesh.material.needsUpdate = true; console.log('§BILLBOARD_ART swapped image=' + full);
+        if (A.markDirty) A.markDirty(); };
+      im.onerror = function() { console.warn('§BILLBOARD_ART load failed ' + full); };
+      im.src = full;
+    };
     _billboardMesh = new THREE.Mesh(geo, mat);
     _billboardMesh.position.set(p.x, p.y, p.z);
     _billboardMesh.rotation.y = Math.PI / 2;   // PlaneGeometry normal +Z -> +X, matching the facade
     _billboardMesh.renderOrder = 1;
     A.scene.add(_billboardMesh);
     console.log('§BILLBOARD_ART built ' + wy.toFixed(1) + 'm x ' + hz.toFixed(1) + 'm at ifc(' +
-      cx.toFixed(2) + ',' + cy.toFixed(2) + ',' + cz.toFixed(2) + ') source=' + url + ' drawCalls=1');
+      cx.toFixed(2) + ',' + cy.toFixed(2) + ',' + cz.toFixed(2) + ') candidates=' + cands.length + ' drawCalls=1');
     if (A.markDirty) A.markDirty();
   };
 
@@ -2206,7 +2256,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _buildPhotoProps();
     }
     if (show) _updateFacadeFacingLights();
-    if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent, builds once
+    if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent; also built outside staging, see §BILLBOARD_ALWAYS
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;

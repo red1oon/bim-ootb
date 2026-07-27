@@ -1334,6 +1334,9 @@ function setupStreaming(A) {
     // §TM_STREAM_RESWEEP: newly-flushed geometry defaults to visible — if Time Machine is
     // active, sweep it against the current cursor (no-op when TM isn't active).
     if (window.tmResweep) window.tmResweep();
+    // §BILLBOARD_ALWAYS: the model is fully streamed here, so any billboard element in the DB can
+    // now be read and given its face. Idempotent and a no-op for buildings that have no billboard.
+    if (A._billboardAutoBuild) A._billboardAutoBuild();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
