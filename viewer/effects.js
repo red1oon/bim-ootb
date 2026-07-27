@@ -3342,6 +3342,11 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_WALK_MPS     = 2.3;   // interior pace — was 1.3
   var CINEMA_PULLBACK_MPS = 6.5;   // exterior recede: flying, not walking
   var CINEMA_DIVE_MPS     = 20;    // the approach is a fly-IN; dive distances run 20-150m
+  // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
+  // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
+  // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
+  // both read it, and the walk's copy used to be a local declared 400 lines below the dive.
+  var CINEMA_PACE_SWING = 1.6;
   var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap
   var CINEMA_DIVE_MIN_SEC = 2.5;   // a floor, so a tiny building still gets an arrival rather than a cut
   var CINEMA_SPIN_MIN_SEC = 0.8;
@@ -3618,6 +3623,25 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_EXIT_FACE_GAIN_RUSHED = 0.1;
   var _cinemaActive = false;
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+  // §CPE_NOISE_LAW — the FLOORED ease. User, live, 2026-07-27: "also noticing last wpt stalling as
+  // the first one ... thus it is not using the noise ratio". They are right, and it is measurable:
+  // a beat's raw speed spans 3.66/0.186 = 20x (witness_cpe_noise_law, Duplex dive) and ALL of that
+  // is smoothstep, whose derivative 6e(1-e) is exactly ZERO at both ends of every beat. The noise
+  // ratio only modulates 1.1-1.5x on top. So the clock governs and the law decorates — the opposite
+  // of the ruling — and the zero at each seam IS the stall the user sees at the first and last
+  // waypoint.
+  //
+  // Fix without throwing away the ease: mix in enough linear rate that the ends never reach zero,
+  // with the mix taken from the user's OWN dial rather than a new number:
+  //     easeF(t) = a·t + (1-a)·smoothstep(t),   a = 1/PACE_SWING
+  // giving easeF'(0) = easeF'(1) = a = 1/1.6 (the slow rail exactly) and easeF'(0.5) = 1.19 (well
+  // inside the fast rail). Ends at 0->0 and 1->1 unchanged, so no beat boundary moves and no path
+  // changes. The ease now spans 1.9x instead of infinity, which leaves the NOISE ratio as the term
+  // that actually shapes the film.
+  function _cinemaEaseFloored(t) {
+    var a = 1 / CINEMA_PACE_SWING;
+    return a * Math.max(0, Math.min(1, t)) + (1 - a) * _cinemaSmoothstep(t);
+  }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
   var EFFECTS_V = 'v17 (§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
@@ -4306,6 +4330,142 @@ async function setupEffects(A, renderer, scene, camera) {
       return deg;
     }
     var _diveEff = Math.min(diveDist, envelope);
+    // ══ §CPE_NOISE_LAW (user, 2026-07-27: "the speed of dive to the wp1 is still not using noise
+    // ratio" / "it governs thrughout"). The noise ratio is not a walk feature — it is the film's
+    // one pacing law, and until now Beat 3 was the only beat that obeyed it. Measured before this
+    // change: Hospital's dive/orbit cover 253 m in a 2 s window while its walk covers 1.0 m
+    // (witness_cpe_gaze_spin S3), i.e. the beats OUTSIDE the walk ran on a clock with no noise term
+    // at all.
+    //
+    // Busyness = the fraction of the fan that hits ANYTHING within its own range. Open sky reads 0,
+    // a room reads 1. It is a DENSITY, not the fan MIN that was retired for the courtyard bug, and
+    // it introduces NO new constant: the rays and the range are _cinemaFan's own.
+    //
+    // ⚠ NOT the ray fan. Two measured reasons, both from this session:
+    //   1. The fan is HORIZONTAL only (`_cinemaFan`: dir.set(cos,0,sin)) — a camera 100 m up has
+    //      nothing beside it, so a descent reads as empty however busy the building below is.
+    //   2. It can be BLIND. On Terminal in the headless rig `_cinemaFanMeshes()` returns ZERO
+    //      meshes, so every ray reports the CINEMA_FAN_FAR sentinel and the whole dive measured
+    //      0.000 — and §CINEMA_SPACE fell back to bbox-centre for the same reason. A no-hit is not
+    //      a measurement (§CPE_LIVE's standing rule).
+    // The user's own answer (2026-07-27): "isnt it best to use the bbxes to smell out the frame
+    // rate". `element_transforms` is DB truth, always loaded, deterministic on every machine, and
+    // it cannot go blind. Counted in IFC space so the 48k rows are never converted — one sample
+    // point is converted instead (A.three2ifc).
+    var _densPts = null;
+    function _densPoints() {
+      if (_densPts) return _densPts;
+      _densPts = [];
+      try {
+        var rows = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms');
+        for (var i = 0; i < rows.length; i++) _densPts.push(rows[i]);
+      } catch (e) {}
+      return _densPts;
+    }
+    // How many elements are within one fan-horizon of this point. CINEMA_FAN_FAR is reused as the
+    // neighbourhood radius rather than inventing a second range constant.
+    // The radius must be commensurate with how far the BEAT travels. MEASURED: a fixed
+    // CINEMA_FAN_FAR (60m) neighbourhood is constant across a 12-36m walk — the walk's noise series
+    // came out maxChange=0 on BOTH buildings, i.e. the term was inert and Terminal's 2.27s crawl
+    // was untouched. Half the beat's own travel is the natural scale (the neighbourhood turns over
+    // roughly once across the beat), capped at the fan horizon so a 250m dive does not read the
+    // whole site as one blur. Derived from the path, not picked.
+    function _noiseRadius(travel) { return Math.max(3, Math.min(CINEMA_FAN_FAR, travel / 2)); }
+    function _densityAt(p, R) {
+      var pts = _densPoints();
+      if (!pts.length || typeof A.three2ifc !== 'function') return 0;
+      var rr = R || CINEMA_FAN_FAR;
+      var q = A.three2ifc(p.x, p.y, p.z), R2 = rr * rr, n = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var dx = pts[i][0] - q.ix, dy = pts[i][1] - q.iy, dz = pts[i][2] - q.iz;
+        if (dx * dx + dy * dy + dz * dz < R2) n++;
+      }
+      return n;
+    }
+    // ⚖ USER RULING 2026-07-27, SETTLED — do not re-derive, do not reintroduce a density term:
+    //   "20% density, 80% noise ie rate of change"  →  then, final: "i would say its 100% rate of
+    //   change of bbxes".
+    // Their reason, verbatim: "because if frame not changing, not matter how dense the animation is
+    // not moving makes a boring show". Density is NOT the signal: a dense corridor the camera
+    // slides along without the view changing is a still, and lingering on it is the boredom, not
+    // the craft. The signal is how fast the bbox neighbourhood CHANGES along the path — so the
+    // brake fires at a roofline, a doorway, a wall crossing, and releases on a static frame however
+    // full it is. Charging cost by it makes metres-per-frame fall exactly where the change is, so
+    // the content crossing the frame per frame comes out EVEN: change is the integrand, even noise
+    // is the invariant.
+    // ⚖ And the saturation question, asked and answered by the user in the same breath: "when
+    // outside building it changes as the building is far off, or it hits the max ... the
+    // surrounding panaroma rate of change is consistent for formula. We are in a range, thus no
+    // worry." Outside, the signal either flattens (nothing entering the neighbourhood) or pins at
+    // the max — and BOTH are harmless because the cost multiplier is bounded by PACE_SWING either
+    // way. So there is deliberately NO outside/inside special case, no panorama branch, and no
+    // clamp beyond the one the range already provides. Do not add one.
+    var NOISE_W_DENSITY = 0, NOISE_W_CHANGE = 1;
+    // The dive is a straight LERP, so its arc and its gaze turn are both uniform in e — the blended
+    // distance+turn cost that paces the walk is the IDENTITY here and can do nothing. Busyness is
+    // the only term that varies along a dive, which is exactly why the user could still see this
+    // beat ignoring the law. Cost per metre = 1 + (SWING-1)·busy, so the emptiest stretch runs at
+    // most PACE_SWING times the speed of the busiest: the same single dial, the same provable
+    // bound, no second knob.
+    var _DV_N = 64, _dvC = null, _diveBusy = 0;
+    (function _diveNoiseBuild() {
+      var i, j, dens = [], series = [];
+      var _dvR = _noiseRadius(Math.hypot(settle.x - camPos0.x, settle.y - camPos0.y, settle.z - camPos0.z));
+      for (i = 0; i < _DV_N; i++) {
+        var e = (i + 0.5) / _DV_N;
+        dens.push(_densityAt({ x: camPos0.x + (settle.x - camPos0.x) * e,
+                               y: camPos0.y + (settle.y - camPos0.y) * e,
+                               z: camPos0.z + (settle.z - camPos0.z) * e }));
+      }
+      // Rate of change = the central difference of the density series. Both channels are
+      // normalised by their OWN maximum, which is what makes this a RATIO (the user's word) rather
+      // than a count with a machine-dependent scale — an empty dive and a dense one both span 0..1.
+      var chg = [], dMax = 0, cMax = 0;
+      for (i = 0; i < _DV_N; i++) {
+        var a = dens[Math.max(0, i - 1)], b = dens[Math.min(_DV_N - 1, i + 1)];
+        chg.push(Math.abs(b - a));
+        if (dens[i] > dMax) dMax = dens[i];
+        if (chg[i] > cMax) cMax = chg[i];
+      }
+      var c = [0], sum = 0, ns = 0, nMax = 0, nMin = 1;
+      for (i = 0; i < _DV_N; i++) {
+        var noise = NOISE_W_DENSITY * (dMax > 0 ? dens[i] / dMax : 0) +
+                    NOISE_W_CHANGE  * (cMax > 0 ? chg[i] / cMax : 0);
+        if (i % 8 === 0 || i === _DV_N - 1) series.push(((i + 0.5) / _DV_N).toFixed(2) + ':' + noise.toFixed(2));
+        ns += noise; if (noise > nMax) nMax = noise; if (noise < nMin) nMin = noise;
+        sum += 1 + (CINEMA_PACE_SWING - 1) * noise;
+        c.push(sum);
+      }
+      if (sum > 1e-9) for (j = 0; j <= _DV_N; j++) c[j] /= sum;
+      _dvC = c; _diveBusy = ns / _DV_N;
+      var bMin = nMin, bMax = nMax;
+      // The delivered speed ratio along the dive, stated as a number rather than claimed: the
+      // emptiest sample runs (1+(SWING-1)·bMax)/(1+(SWING-1)·bMin) times faster than the busiest.
+      // meshes= is the first thing to read when meanBusy is 0.000: MEASURED on Terminal in the
+// headless rig, _cinemaFanMeshes() returns ZERO meshes, so every fan reports the CINEMA_FAN_FAR
+      // sentinel, every §CINEMA_SPACE candidate reads enclosed=0%, and the settle falls back to
+      // bbox-centre. A busyness of 0 then means "the fan is blind", NOT "the scene is empty" —
+      // exactly the §CPE_LIVE rule that a no-hit is not a measurement. The law is inert there by
+      // construction (a flat cost table is the identity remap), which is the correct behaviour, but
+      // it must be visible rather than look like a passing measurement.
+      console.log('§CPE_NOISE_LAW beat=dive src=bbox elems=' + _densPoints().length +
+        ' w=' + NOISE_W_DENSITY + '/' + NOISE_W_CHANGE + ' (density/change)' +
+        ' meanNoise=' + _diveBusy.toFixed(3) +
+        ' busy=' + bMin.toFixed(2) + '..' + bMax.toFixed(2) + ' samples=' + _DV_N +
+        ' swing=' + CINEMA_PACE_SWING +
+        ' deliveredRange=' + ((1 + (CINEMA_PACE_SWING - 1) * bMax) / (1 + (CINEMA_PACE_SWING - 1) * bMin)).toFixed(2) + 'x' +
+        ' series=[' + series.join(' ') + ']' +
+        ' — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number');
+    })();
+    // Monotone inverse of the dive's cost table — same shape as _evenTurnRemap, one table each.
+    function _diveRemap(u) {
+      if (!_dvC) return u;
+      u = Math.max(0, Math.min(1, u));
+      var lo = 0, hi = _DV_N;
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (_dvC[mid] <= u) lo = mid; else hi = mid; }
+      var c0 = _dvC[lo], c1 = _dvC[hi], f = (c1 - c0 > 1e-12) ? (u - c0) / (c1 - c0) : 0;
+      return (lo + Math.max(0, Math.min(1, f))) / _DV_N;
+    }
     // ⚠ §CPE_SEAM_CONTINUOUS — DO NOT add a pitch term to _spinDeg. It was tried this session and
     // reverted: pricing the walk's opening pitch into the spin makes the spin's DURATION depend on
     // the authored path, which shifts every beat fraction before it and breaks G2's "an edit
@@ -4323,7 +4483,13 @@ async function setupEffects(A, renderer, scene, camera) {
     var _openDir = { x: (_wkA0.x - _wkP0.x) / _wkL, y: _wkDy / _wkL, z: (_wkA0.z - _wkP0.z) / _wkL };
     var _spinDeg = Math.min(180, Math.abs(dYaw) * 180 / Math.PI);
     var _natSec = {
-      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS),
+      // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
+      // ("where sudden diff is adverse noise impact and introduce frames to smoothen", the user's
+      // rule, already applied to the walk in `out` below via _walkTurnDeg). A dive that ends deep
+      // inside a busy building buys up to PACE_SWING times the seconds of one that drops into an
+      // empty yard; redistribution alone could never do this, because with the frame count fixed
+      // the mean speed is fixed whatever the parameterization does.
+      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
       out:   totalLen / CINEMA_WALK_MPS + _walkTurnDeg() / (CINEMA_TURN_DPS / 3),
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
@@ -4543,7 +4709,11 @@ async function setupEffects(A, renderer, scene, camera) {
         // exit is chosen at t=4s by position AND facing, so if the ease were free to re-aim you at
         // the space centre, every film on a building would face the same way here, pick the same
         // door, and the whole feature would collapse to one film per building.
-        var e = _cinemaSmoothstep(tD > 0 ? tNorm / tD : 1);
+        // §CPE_NOISE_LAW: the dive's progress is the eased time fraction run through the busyness
+        // cost table, exactly as Beat 3's is run through _evenTurnRemap. Empty sky is crossed fast,
+        // the arrival into the building slows — without either end of the beat losing its ease, so
+        // the seams stay as smooth as they were.
+        var e = _diveRemap(_cinemaEaseFloored(tD > 0 ? tNorm / tD : 1));
         var px = camPos0.x + (settle.x - camPos0.x) * e;
         var py = camPos0.y + (settle.y - camPos0.y) * e;
         var pz = camPos0.z + (settle.z - camPos0.z) * e;
@@ -4564,7 +4734,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // §CPE_EVEN_TURN: the frame's progress along the walk is no longer the eased TIME fraction
         // — it is that fraction run through _evenTurnRemap, which spaces frames evenly in the
         // blended distance+turn metric instead of evenly in distance. See the remap's own comment.
-        var e3 = _evenTurnRemap(_cinemaSmoothstep((tNorm - tS) / Math.max(1e-6, tO - tS)));
+        var e3 = _evenTurnRemap(_cinemaEaseFloored((tNorm - tS) / Math.max(1e-6, tO - tS)));
         return _beat3Pose(e3);
       }
       if (tNorm <= tR) {
@@ -4572,7 +4742,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // on _orbitPose(0), which is what keeps the handoff continuous (the old Act III handoff
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
-        var e4 = _cinemaSmoothstep((tNorm - tO) / Math.max(1e-6, tR - tO));
+        var e4 = _cinemaEaseFloored((tNorm - tO) / Math.max(1e-6, tR - tO));
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
         // (odx,odz) IS the direction Beat 3 ends on — its last route leg is the outward push past
         // the doorway — so e4=0 continues Beat 3's final gaze exactly. At e4=1, turnW4=1 yields the
@@ -4730,7 +4900,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // Slow-in-the-turn and pick-up-in-the-open are not imposed by a brake — they are what equal
     // cost stepping DOES, and the brake releases in open space for free because there is no dθ to
     // pay for there.
-    var CINEMA_PACE_SWING = 1.6;
+    // CINEMA_PACE_SWING now lives at module scope (§CPE_NOISE_LAW) — one dial for every beat.
     var _etW = 1 - 1 / CINEMA_PACE_SWING;
     var _etN = 240, _etC = null;
     // §CPE_PACE_FLOOR — a SEPARATE concern from the cost function, and kept separate.
@@ -4793,10 +4963,45 @@ async function setupEffects(A, renderer, scene, camera) {
       // WORSE on the metric that matters (Hospital 11.2 → 16.5 → 18.3 deg/frame), because
       // smoothing the noise removes the slowdown exactly at the corner that needed it. Keep the
       // provable bound; buy the headroom with FRAMES instead (§CPE_TURN_BUDGET).
-      var c = [];
-      for (i = 0; i <= _etN; i++) c.push((1 - w) * (ss[i] / S) + w * (ts[i] / T));
+      // §CPE_NOISE_LAW, the walk's share (user, 2026-07-27: "i thnk the stalls are ok, it may mean
+      // a sec or two pause which is fine in the film" ... "but if the noise ratio tempers it a bit
+      // also ok"). The stall is ACCEPTED, so this does not remove it — it TEMPERS it, and it does
+      // so by finishing the law rather than by adding a second mechanism.
+      //
+      // The crawl happens where dθ dominates a cost step: the camera turns hard, cost runs out, and
+      // metres-per-frame collapses. But a hard turn whose CONTENT is not changing is precisely the
+      // "not moving makes a boring show" case — so weight each cost increment by the same bbox rate
+      // of change the dive uses. A corner with little change stays cheap (the film keeps moving);
+      // a corner where the scene really is turning over still pays. 32 density probes, interpolated
+      // across the 240 cost samples — measured at ~15ms on Terminal's 48k rows, against a plan
+      // budget already in the hundreds.
+      var _nk = 32, nz = [], nzMax = 0, q;
+      for (q = 0; q <= _nk; q++) {
+        var pq = _beat3Pose(q / _nk);
+        nz.push(_densityAt({ x: pq.x, y: pq.y, z: pq.z }, _noiseRadius(s)));
+      }
+      var nzC = [];
+      for (q = 0; q <= _nk; q++) {
+        var lo = nz[Math.max(0, q - 1)], hi = nz[Math.min(_nk, q + 1)];
+        nzC.push(Math.abs(hi - lo));
+        if (nzC[q] > nzMax) nzMax = nzC[q];
+      }
+      var noiseAt = function (e) {
+        var x = Math.max(0, Math.min(_nk, e * _nk)), j = Math.min(_nk - 1, Math.floor(x)), f = x - j;
+        return nzMax > 0 ? (nzC[j] * (1 - f) + nzC[j + 1] * f) / nzMax : 0;
+      };
+      var c = [0], acc = 0;
+      for (i = 1; i <= _etN; i++) {
+        var dRaw = (1 - w) * ((ss[i] - ss[i - 1]) / S) + w * ((ts[i] - ts[i - 1]) / T);
+        acc += dRaw * (1 + (CINEMA_PACE_SWING - 1) * noiseAt((i - 0.5) / _etN));
+        c.push(acc);
+      }
+      if (acc > 1e-9) for (i = 0; i <= _etN; i++) c[i] /= acc;
       c = _paceFloor(c, ss, S);
       _etC = c;
+      console.log('§CPE_NOISE_LAW beat=walk src=bbox probes=' + (_nk + 1) +
+        ' maxChange=' + nzMax + ' radius=' + _noiseRadius(s).toFixed(1) + 'm elems=' + _densPoints().length +
+        ' — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap');
       console.log('§CPE_EVEN_TURN blended-cost, PACE_SWING=' + CINEMA_PACE_SWING +
         ' walkLen=' + s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) +
         'deg samples=' + (_etN + 1) +
@@ -4930,15 +5135,35 @@ async function setupEffects(A, renderer, scene, camera) {
   // the beat-second overrides above already use — the plan function itself stays untouched.
   // Nothing here moves the camera as far as any renderer is concerned: the swap and the restore
   // happen inside one synchronous call with no frame in between.
+  // §CPE_BASIS_HALF_PIN (user's Hospital console, 2026-07-27 — "drag still jumps"). This pinned the
+  // camera's POSITION and the orbit TARGET but never re-aimed the camera, and yaw0/pitch0 are read
+  // from A.camera.getWorldDirection() — the camera's ROTATION, which this left untouched. So every
+  // editor re-plan ran with the pinned position and whatever rotation the user had orbited to,
+  // while the bake (finish() sets position + target + controls.update(), which DOES re-aim) ran
+  // with the real basis. MEASURED in their log, same session, same edit:
+  //     editing: yaw0=-88.9 pitch0=-16.9  exit facingDot=+0.456  spin -35.3 deg
+  //     baking : yaw0=+91.5 pitch0=-81.0  exit facingDot=-0.450  spin 504.3 deg class=behind(full-lap)
+  // A DIFFERENT exit door and a full extra lap of spin — the film they authored was not the film
+  // that baked, which is the very thing §CPE_PREVIEW_DIVERGENCE was supposed to have closed. It was
+  // only half closed: half a pin is not a pin.
   function _withCamBasis(basis, fn) {
     if (!basis) return fn();
     var c = A.camera, t = A.controls.target;
     var sp = { x: c.position.x, y: c.position.y, z: c.position.z };
     var st = { x: t.x, y: t.y, z: t.z };
+    var sq = c.quaternion.clone();
     c.position.set(basis.px, basis.py, basis.pz);
     t.set(basis.tx, basis.ty, basis.tz);
+    // The half that was missing: re-aim at the pinned target so getWorldDirection() reports the
+    // basis being pinned, not the live orbit. updateMatrixWorld because the plan reads world state
+    // within this same task, before any render tick would have refreshed it.
+    c.lookAt(basis.tx, basis.ty, basis.tz);
+    c.updateMatrixWorld(true);
     try { return fn(); }
-    finally { c.position.set(sp.x, sp.y, sp.z); t.set(st.x, st.y, st.z); }
+    finally {
+      c.position.set(sp.x, sp.y, sp.z); t.set(st.x, st.y, st.z);
+      c.quaternion.copy(sq); c.updateMatrixWorld(true);
+    }
   }
 
   A.cinemaPathPlan = function(durationSec, ov) {

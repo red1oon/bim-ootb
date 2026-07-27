@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v8 (§CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v10 (§CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -147,8 +147,22 @@
     var povr = {}; for (var k in ov) povr[k] = ov[k];
     var cs = _state.camSave;
     if (cs) povr._camBasis = { px: cs.px, py: cs.py, pz: cs.pz, tx: cs.tx, ty: cs.ty, tz: cs.tz };
+    // ══ §CPE_HOLDER_INTEGRITY (user, 2026-07-27: "u can persist in a holder, then calc, then apply
+    // back to holder" / "or there is something in the canvas code threejs that mutates?").
+    // _state.bands IS that holder, and _buildOverride already hands the plan a deep COPY of centre,
+    // direction and length — so the calc is separated "but taking its form", as asked. What was
+    // never PROVEN is that nothing writes back through some alias (the drawn handles hold `b.c` by
+    // reference for the mid zone, and the plan chain runs through cinemaSeedBands/cinemaBandFlow/
+    // three.js). So assert it instead of trusting it: snapshot the holder, run the calc, compare.
+    // Costs a 3-band string compare per re-plan and turns "is something mutating?" into a log line.
+    var _holder0 = JSON.stringify(_state.bands);
     var plan = null;
     try { plan = a.cinemaPathPlan(ov._total, povr); } catch (e) { console.warn('§CPE_REPLAN_FAIL ' + e.message); }
+    if (JSON.stringify(_state.bands) !== _holder0) {
+      console.warn('§CPE_HOLDER_MUTATED the calc wrote back into the authored bands — ' +
+        'before=' + _holder0 + ' after=' + JSON.stringify(_state.bands) +
+        ' (the holder must be read-only to the plan; this is a real defect, not a warning to live with)');
+    }
     if (!plan) return;
     var pts = [];
     for (var i = 0; i <= FILM_SAMPLES; i++) {
@@ -597,26 +611,40 @@
     }
     return best;
   }
-  // §CPE_SCREEN_PLANE (user, 2026-07-27): the point moves in the CAMERA'S OWN VIEW PLANE through
-  // wherever it currently sits — "the dot when moved is merely facing X/Y ranging... it can only
-  // move in that Xy sense". You choose the axes by orbiting the scene to face them first, which is
-  // why the canvas must stay live: orbiting IS half the gesture.
-  // This replaces the horizontal-plane drag plus ctrl+drag-for-height. Height is no longer a special
-  // case — orbit to a side view and up/down on screen IS height.
-  function _viewPlanePoint(ev, anchor) {
+  // ══ §CPE_DRAG_SCALE — FIXED AT THE SOURCE (user, 2026-07-27: "the jumping wypt still happening"
+  // → "fix the scale" → "FIX THE SOURCE").
+  //
+  // The source is the projection itself. The old `_viewPlanePoint` intersected the cursor ray with
+  // a plane through the handle, so world-metres-per-pixel was the handle's DISTANCE FROM THE CAMERA
+  // divided by the focal length — measured 0.151 m/px on Duplex (handle 91 m out), 0.227 on
+  // Terminal (138 m) and 0.453 on Hospital (274 m). Same gesture, three different world speeds; on
+  // Hospital a 50 px nudge threw a waypoint 22.7 m, 76% of the whole walk. That is the jump, and no
+  // clamp downstream can fix it because the mapping itself is wrong.
+  //
+  // The fix: the drag rate is a property of the BUILDING, not of where the camera happens to be
+  // standing. One screen height = one building envelope, in the camera's own right/up basis (so
+  // §CPE_SCREEN_PLANE's "it moves in the plane you are facing" is unchanged — only the SCALE is).
+  //     m/px = envelope / canvasHeightPx
+  // Derived, not picked: `envelope` is the plan's own max building dimension, already used for the
+  // orbit radius and the tube thickness. Every building now drags at the same fraction-of-itself
+  // per pixel, and zooming the camera no longer silently changes the gearing.
+  function _dragBasis() {
     var a = A(), r = a.canvas.getBoundingClientRect();
-    var ndc = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
-    var rc = new THREE.Raycaster();
-    rc.setFromCamera(ndc, a.camera);
-    var n = new THREE.Vector3();
-    a.camera.getWorldDirection(n);                       // plane normal = where the camera looks
-    var p0 = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
-    var denom = n.dot(rc.ray.direction);
-    if (Math.abs(denom) < 1e-6) return null;
-    var t = p0.clone().sub(rc.ray.origin).dot(n) / denom;
-    if (t <= 0) return null;
-    var q = rc.ray.origin.clone().addScaledVector(rc.ray.direction, t);
-    return { x: q.x, y: q.y, z: q.z };
+    var env = (_state && _state.plan && _state.plan.envelope) || 50;
+    var mpp = env / Math.max(1, r.height);
+    var right = new THREE.Vector3(), up = new THREE.Vector3(), fwd = new THREE.Vector3();
+    a.camera.matrixWorld.extractBasis(right, up, fwd);
+    return { mpp: mpp, right: right, up: up, env: env, h: r.height };
+  }
+  // Screen pixels since pointerdown -> a world offset. Pure delta: a zero-pixel drag is a
+  // zero-metre move by construction, and returning the cursor returns the waypoint EXACTLY (the
+  // invariant §CPE_DRAG_TELEPORT established and G-DRAG-3 proved a reach cap destroys).
+  function _dragDelta(ev, d) {
+    var B = _dragBasis();
+    var dx = (ev.clientX - d.sx0) * B.mpp, dy = -(ev.clientY - d.sy0) * B.mpp;
+    return { x: B.right.x * dx + B.up.x * dy,
+             y: B.right.y * dx + B.up.y * dy,
+             z: B.right.z * dx + B.up.z * dy };
   }
 
   function _wire() {
@@ -635,16 +663,21 @@
         // previous edit. Taken on the FIRST actual movement instead (see h.move), which is the
         // moment an edit genuinely begins.
         _state.drag = { b: hit.b, z: hit.z, snapped: false,
+                        sx0: ev.clientX, sy0: ev.clientY,     // §CPE_DRAG_SCALE: the gesture is measured in PIXELS now
                         c0: { x: _state.bands[hit.b].c.x, y: _state.bands[hit.b].c.y, z: _state.bands[hit.b].c.z },
                         p0: { x: hit.p.x, y: hit.p.y, z: hit.p.z } };
+        var _b0 = _dragBasis();
+        console.log('§CPE_DRAG_SCALE grab band=' + hit.b + ' zone=' + hit.z +
+          ' rate=' + _b0.mpp.toFixed(3) + ' m/px (envelope ' + _b0.env.toFixed(0) + 'm / ' +
+          _b0.h.toFixed(0) + 'px) — camera distance no longer sets the gearing');
       }
     };
     h.move = function(ev) {
       if (!_state || !_state.drag) return;
       ev.preventDefault(); ev.stopPropagation();
       var d = _state.drag, b = _state.bands[d.b];
-      var p = _viewPlanePoint(ev, d.p0);   // the plane the grabbed handle already lies in
-      if (!p) return;
+      var dw = _dragDelta(ev, d);          // §CPE_DRAG_SCALE: pixels x a building-derived rate
+      var p = { x: d.p0.x + dw.x, y: d.p0.y + dw.y, z: d.p0.z + dw.z };
       // First real movement of this gesture = the edit is now happening; snapshot the pre-drag
       // state exactly once, before anything below mutates it.
       if (!d.snapped) { d.snapped = true; _undoPush('drag band ' + d.b + ' (' + d.z + ')'); }
@@ -668,22 +701,36 @@
         // residue. Direct manipulation has ONE invariant: the thing you grabbed stays under the
         // cursor. A reach cap cannot hold that invariant by construction. The sensitivity the user
         // felt was the absolute-assignment bug (fixed above), not the 1:1 mapping itself.
-        b.c.x = d.c0.x + (p.x - d.p0.x);
-        b.c.y = d.c0.y + (p.y - d.p0.y);
-        b.c.z = d.c0.z + (p.z - d.p0.z);
+        b.c.x = d.c0.x + dw.x;
+        b.c.y = d.c0.y + dw.y;
+        b.c.z = d.c0.z + dw.z;
       } else {
         // End = pivot about the far end. Length is invariant, so this is pure rotation.
         _rotateAbout(b, d.z === 'b', p);
       }
       _state.staged = false;
       _redrawScene();          // handles track the cursor instantly
-      _scheduleReplan();       // the film curve follows on a trailing throttle
+      // ══ §CPE_DRAG_LAND_FIRST (user, 2026-07-27: "i think it jumps because of the post calcn.
+      // Thus it is to separate the two. Let it land first, persisted." — and their console proves
+      // it). The re-plan used to run on a 120ms trailing throttle DURING the gesture, and it is not
+      // cheap: their log shows §CPE_REPLAN_SLOW ms=1218 firing repeatedly mid-drag. Each one
+      // re-derives the WHOLE plan under the moving cursor — measured in that same log, across one
+      // drag: pitch0 -80.5° -> -5.9°, the chosen exit door changed (Double-Flush -> Curtain Wall),
+      // orbitDY 0.09m -> -20.79m, pathLen 30 -> 64 -> 106 -> 187m. The following pointermove then
+      // resolved against a scene that had moved under it, and the band landed at
+      // centre=(-1.32,63.47,-11.49) — y=63.47 IS the camera's own height (cam=(0.5,63.4,-10.6)).
+      // The waypoint jumped onto the camera.
+      //
+      // Dragging and re-deriving are now SEPARATE: the gesture only moves handles (pure, local,
+      // instant), and the film re-derives ONCE in h.up after the drag has landed. No throttle to
+      // tune, and no plan can change mid-gesture because none runs mid-gesture.
+      if (_state._replanTimer) { clearTimeout(_state._replanTimer); _state._replanTimer = null; }
     };
     h.up = function() {
       if (!_state || !_state.drag) return;
       var d = _state.drag, b = _state.bands[d.b];
       _state.drag = null;
-      console.log('§CPE_DRAG band=' + d.b + ' zone=' + d.z + ' plane=view' +
+      console.log('§CPE_DRAG landed band=' + d.b + ' zone=' + d.z + ' plane=view (re-plan runs NOW, once)' +
         ' centre=(' + b.c.x.toFixed(2) + ',' + b.c.y.toFixed(2) + ',' + b.c.z.toFixed(2) + ')' +
         ' dir=(' + b.d.x.toFixed(2) + ',' + b.d.y.toFixed(2) + ',' + b.d.z.toFixed(2) + ') len=' + b.len.toFixed(2));
       _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
