@@ -256,24 +256,6 @@
     if (_fine) document.getElementById('prec-fine-btn').style.background = '#1a6b8a';
     if (_pivot) _pivotPaint();
 
-    // §PIVOT_DEFAULT_ON (2026-07-27): Auto-Pivot active out of the box — gamer-style
-    // continuous navigation, no manual Q press needed to escape a stale/stuck target.
-    // A().controls doesn't exist yet at DOMContentLoaded (setupScene creates it later,
-    // async) — poll briefly, then call pivotOn() exactly as if the user had pressed Q.
-    // Still toggleable off afterward via Q / the panel / drawer chip, unchanged.
-    var _pivotDefaultTries = 0;
-    var _pivotDefaultTimer = setInterval(function() {
-      _pivotDefaultTries++;
-      if (A() && A().controls) {
-        clearInterval(_pivotDefaultTimer);
-        pivotOn();
-        console.log('§pivot default-on tries=' + _pivotDefaultTries);
-      } else if (_pivotDefaultTries > 100) {  // ~10s — give up quietly, Q still works manually
-        clearInterval(_pivotDefaultTimer);
-        console.log('§pivot default-on timeout — controls never became ready');
-      }
-    }, 100);
-
     // S265: Precision Camera button — Lucide focus icon, matches overflow grid style
     var toolbar = document.querySelector('#search-body > div');
     if (!toolbar) return;
