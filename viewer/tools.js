@@ -905,123 +905,6 @@ function setupTools(A) {
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
-  // ══ §NIGHT_DIFFUSER (2026-07-27, user: "that cover supposed to be translucent", and the warning
-  // that came with it: "otherwise the alt-s will get those black boxes").
-  //
-  // A troffer's diffuser reads as an opaque grey lid at night. Making it translucent means writing
-  // `transparent`/`opacity` on a SCENE material — the exact class of act that produced the lit wall
-  // panels and the black rectangles under §PHOTO_EMBER. It is safe here for one measured reason:
-  // A._matCache is keyed `rgba|ifcClass|variant` (streaming.js), so a material is shared only by
-  // elements of the SAME COLOUR AND THE SAME CLASS — not by everything a batched mesh happens to
-  // draw, which is what the ember guard was (wrongly) measuring at mesh level.
-  //
-  // Measured per key on the shipped buildings:
-  //   Hospital  _default|IfcLightFixture          1151 elements, 1151 luminaires,    0 others  APPLY
-  //   Clinic    0.384,0.384,0.384|IfcFlowTerminal  601 elements,  601 luminaires,    0 others  APPLY
-  //   Clinic    0.920,0.900,0.850|IfcFlowTerminal 1974 elements,  384 luminaires, 1590 others  SKIP
-  // That last key is the cream shared with sinks and diffuser grilles. Making 1590 of those
-  // translucent is precisely the failure being avoided, so exclusivity is required, not preferred.
-  //
-  // THE BLACK-BOX GUARD: this NEVER writes `toneMapped`. The black rectangles were `toneMapped=false`
-  // landing on a shared transparent panel — bypassing tone mapping on a surface the OutputPass still
-  // expected to tone map. Transparency alone does not cause it; transparency plus a tone-mapping
-  // bypass does. Only the sprite cloud's OWN material (shared with nothing) sets toneMapped=false.
-  var NIGHT_DIFFUSER_OPACITY = 0.55;
-  var _diffuserMats = null;
-  // Set of `rgba|ifcClass` prefixes where EVERY element on that key is a luminaire. Built once per
-  // building from the DB, using the same vocabulary as the fixture selector.
-  A._nightExclusiveLumKey = null;
-  A._buildExclusiveLumKeys = function() {
-    if (A._nightExclusiveLumKey || !A.db) return;
-    A._nightExclusiveLumKey = Object.create(null);
-    var isLum = "(m.ifc_class='IfcLightFixture' OR LOWER(m.element_name) LIKE '%light%' OR " +
-      "LOWER(m.element_name) LIKE '%troffer%' OR LOWER(m.element_name) LIKE '%downlight%' OR " +
-      "LOWER(m.element_name) LIKE '%luminaire%' OR LOWER(m.element_name) LIKE '%lamp%' OR " +
-      "LOWER(m.element_name) LIKE '%sconce%' OR LOWER(m.element_name) LIKE '%pendant%' OR " +
-      "LOWER(m.element_name) LIKE '%exit sign%' OR LOWER(m.element_name) LIKE '%keluar%' OR " +
-      "LOWER(m.element_name) LIKE '%signage%') " +
-      // Must mirror the SELECTOR, or a key holding only fire-alarm beacons counts as an exclusive
-      // luminaire key and gets frosted (Terminal's 9 IfcAlarm did exactly that before this line).
-      "AND m.ifc_class NOT IN ('IfcAlarm','IfcSensor','IfcFireSuppressionTerminal'," +
-      "  'IfcProtectiveDevice','IfcSanitaryTerminal','IfcWindow','IfcDoor','IfcSlab','IfcWall')";
-    try {
-      var r = A.db.exec(
-        "SELECT COALESCE(m.material_rgba,'_default'), m.ifc_class, COUNT(*), " +
-        "SUM(CASE WHEN " + isLum + " THEN 1 ELSE 0 END) " +
-        "FROM elements_meta m GROUP BY 1,2");
-      if (r.length) {
-        r[0].values.forEach(function(row) {
-          if (row[2] > 0 && row[3] === row[2]) A._nightExclusiveLumKey[row[0] + '|' + row[1]] = row[2];
-        });
-      }
-    } catch (e) { console.warn('§NIGHT_DIFFUSER key scan failed: ' + e.message); }
-  };
-  // Returns true when the material was turned into a diffuser, so the caller knows to leave its
-  // emissive alone.
-  function _applyDiffuser(matKey, m) {
-    // ══ §NIGHT_DIFFUSER_OFF (2026-07-27) — OFF by default. THIS FEATURE WAS THE BLACK BOXES.
-    //
-    // The user reported black boxes across three builds. They were blamed on §PHOTO_EMBER's
-    // emissive, then on bloom. Both were wrong, and their log named the real one:
-    //     §NIGHT_DIFFUSER applied=5 ... §NIGHT_MODE on fixtures=1272 ... glowMats=3
-    // Hospital has only FIVE luminaire materials, and this took all five. What it did to them:
-    // forced `emissive` to BLACK (so the panel stops glowing), set `transparent`, and turned
-    // `depthWrite` off. All 1151 'M_Plain Recessed Lighting Fixture' panels therefore rendered as
-    // dark translucent rectangles set into a dark ceiling. That is the artifact, exactly.
-    //
-    // The instruction it was built from — "translucent must not have own source of light but allow
-    // light thru if it is against light" — is correct PHYSICS and was implemented as literal code:
-    // the emissive was removed, but nothing was ever put BEHIND the cover to shine through it. A
-    // diffuser with no source behind it is just a dark panel. §PHOTO_GLOW_SPRITE's sprite sits at
-    // the emitting FACE (§GLOW_EMIT_DOWN), i.e. in FRONT of the cover, not inside the housing, so it
-    // cannot light it from behind either.
-    //
-    // Making this work needs a light source inside the housing AND a cover that transmits it —
-    // two halves. Only the second half was built. Until the first exists, the honest behaviour is
-    // the one that was working: let the luminaire material keep its emissive glow.
-    // Set A._nightDiffuserOn = true to experiment.
-    if (!A._nightDiffuserOn) return false;
-    if (!A._nightExclusiveLumKey) return false;
-    // matCache key is `rgba|ifcClass|variant`; the exclusivity set is keyed on the first two.
-    var i1 = matKey.indexOf('|'), i2 = matKey.indexOf('|', i1 + 1);
-    if (i1 < 0) return false;
-    // §LUM_VARIANT (streaming.js): a '|lum' key holds luminaires and nothing else BY CONSTRUCTION —
-    // the material was split off by name at load time — so no per-building exclusivity measurement
-    // is needed for it. The DB scan below stays as the fallback for any material that reached the
-    // cache without a variant.
-    if (matKey.substring(i2 + 1) === 'lum') { /* exclusive by construction */ }
-    else if (!A._nightExclusiveLumKey[i2 < 0 ? matKey : matKey.substring(0, i2)]) {
-      A._nightDiffuserSkipped++; return false;
-    }
-    if (!_diffuserMats) _diffuserMats = [];
-    _diffuserMats.push({ mat: m, tr: m.transparent, op: m.opacity, dw: m.depthWrite,
-                         e: m.emissive.getHex(), ei: m.emissiveIntensity });
-    m.transparent = true;
-    m.opacity = NIGHT_DIFFUSER_OPACITY;
-    // depthWrite OFF is what makes it TRANSMIT rather than merely look faded: a transparent surface
-    // that still writes depth kills whatever is behind it before the blend ever happens, so the
-    // glow inside the housing would be depth-culled by its own cover and the panel would read as a
-    // dim grey lid. With it off, "against light" actually shows through.
-    m.depthWrite = false;
-    // No emissive of its own — it transmits, it does not emit. Reset to black in case a previous
-    // reassert pass or a 4D phase colour left one on it.
-    m.emissive.setHex(0x000000);
-    m.emissiveIntensity = 1;
-    // deliberately NOT touching m.toneMapped — see the black-box guard above
-    m.needsUpdate = true;
-    A._nightDiffuserApplied++;
-    return true;
-  }
-  A._restoreNightDiffuser = function() {
-    if (!_diffuserMats) return;
-    _diffuserMats.forEach(function(d) {
-      d.mat.transparent = d.tr; d.mat.opacity = d.op; d.mat.depthWrite = d.dw;
-      d.mat.emissive.setHex(d.e); d.mat.emissiveIntensity = d.ei; d.mat.needsUpdate = true;
-    });
-    console.log('§NIGHT_DIFFUSER restored ' + _diffuserMats.length + ' materials');
-    _diffuserMats = null;
-  };
-
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
   // No-op (cheap) once every current matCache key has already been processed.
@@ -1029,43 +912,28 @@ function setupTools(A) {
     if (!A._nightMode || !A._matCache || !A._nightGlowMatKeys) return;
     var mc = A._matCache;
     var _glowCount = 0, _windowGlowCount = 0;
-    // §LUM_VARIANT_GLOW — which materials count as "a light" for the emissive glow.
-    //
-    // THE COLLATERAL THIS KILLS (user: "others got accidentally lighted so look out for those
-    // without semblance to lighting and clearly assigned other role"): the test below used to be
-    // "does the key contain one of the glow CLASSES", and on the Clinic that list falls back to
-    // IfcFlowTerminal because the building has no IfcLightFixture. IfcFlowTerminal is a grab-bag —
-    // so the '≈ Off-White|IfcFlowTerminal' material, which covers 1974 elements across 20 families
-    // (grab bars, towel dispensers, duplex receptacles, supply diffusers, shower seats, an
-    // elevator), was being given emissive 0xffe4b5 at 0.8 every night. Pre-existing, and exactly the
-    // "no semblance to lighting" case being reported.
-    // Now that §LUM_VARIANT splits luminaires into their own '|lum' materials by NAME, the glow can
-    // key on that instead of on a class that means almost nothing. The class test survives only as a
-    // fallback for a cache with no variants in it at all, so nothing regresses to unlit.
-    var hasLum = false;
-    for (var lk in mc) { if (lk.slice(-4) === '|lum') { hasLum = true; break; } }
+    // KNOWN, PRE-EXISTING, DELIBERATELY NOT FIXED HERE: this asks "does the key contain one of the
+    // glow CLASSES", and on the Clinic that list falls back to IfcFlowTerminal (the building has no
+    // IfcLightFixture). IfcFlowTerminal is a grab-bag, so the '≈ Off-White|IfcFlowTerminal' material
+    // — 1974 elements across 20 families: grab bars, towel dispensers, duplex receptacles, supply
+    // diffusers, shower seats, an elevator — gets emissive 0xffe4b5 at 0.8 every night. That is the
+    // "others got accidentally lighted" report, and it predates all of this work.
+    // A fix was built (§LUM_VARIANT: split luminaires into their own materials by name, then key the
+    // glow on that) and has been REMOVED along with everything else here that reshaped or wrote to
+    // scene materials — the diffuser built on the same machinery turned 1151 Hospital fixtures into
+    // black boxes. Worth redoing on its own, deliberately, not as a rider on a lighting change.
     for (var mk in mc) {
       if (A._nightGlowMatKeys[mk]) continue;
       A._nightGlowMatKeys[mk] = true;
       var m = mc[mk];
       if (!m || !m.emissive) continue;
       var isLight = false;
-      if (hasLum) {
-        isLight = mk.slice(-4) === '|lum';
-      } else {
-        for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
-          if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
-        }
+      for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
+        if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
       }
       var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
-      // §NIGHT_DIFFUSER first: a cover that becomes translucent must NOT also be given an emissive
-      // of its own (user: "translucent must not have own source of light but allow light thru if it
-      // is against light"). A diffuser is lit from BEHIND — it transmits, it does not emit. Applying
-      // both would make the panel a self-luminous slab that also happens to be see-through, which is
-      // neither of the two things it should be.
-      if (isLight && _applyDiffuser(mk, m)) { _glowCount++; continue; }
       A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
       if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.8; _glowCount++; }
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
@@ -1251,9 +1119,6 @@ function setupTools(A) {
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       A._nightGlowMats = [];
       A._nightGlowMatKeys = {};  // §NIGHT_GLOW_REASSERT below — tracks which matCache keys are done
-      // §NIGHT_DIFFUSER — exclusivity set must exist before the glow pass calls _applyDiffuser
-      A._nightDiffuserApplied = 0; A._nightDiffuserSkipped = 0;
-      A._buildExclusiveLumKeys();
       // Determine which IFC classes to glow
       A._nightGlowClasses = ['IfcLightFixture'];
       // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
@@ -1306,9 +1171,6 @@ function setupTools(A) {
       A._applyNightGlowToMatCache();
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
         ' glowMats=' + A._nightGlowMats.length);
-      console.log('§NIGHT_DIFFUSER applied=' + A._nightDiffuserApplied + ' skipped=' +
-        A._nightDiffuserSkipped + ' (skipped = material shared with non-luminaires; translucency ' +
-        'there would frost sinks and grilles. toneMapped untouched — that is what made black boxes)');
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
       // §PHOTO_GLOW_SPRITE: the fixtures themselves read as lit, not just the surfaces near them.
@@ -1340,7 +1202,6 @@ function setupTools(A) {
         A._nightGlowMats = null;
         A._nightGlowMatKeys = null;
       }
-      A._restoreNightDiffuser();   // §NIGHT_DIFFUSER — translucency must not outlive night mode
       // Restore day
       if (A._nightSaved) {
         A.sun.intensity = A._nightSaved.sunI;
