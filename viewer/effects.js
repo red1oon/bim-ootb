@@ -5135,15 +5135,35 @@ async function setupEffects(A, renderer, scene, camera) {
   // the beat-second overrides above already use — the plan function itself stays untouched.
   // Nothing here moves the camera as far as any renderer is concerned: the swap and the restore
   // happen inside one synchronous call with no frame in between.
+  // §CPE_BASIS_HALF_PIN (user's Hospital console, 2026-07-27 — "drag still jumps"). This pinned the
+  // camera's POSITION and the orbit TARGET but never re-aimed the camera, and yaw0/pitch0 are read
+  // from A.camera.getWorldDirection() — the camera's ROTATION, which this left untouched. So every
+  // editor re-plan ran with the pinned position and whatever rotation the user had orbited to,
+  // while the bake (finish() sets position + target + controls.update(), which DOES re-aim) ran
+  // with the real basis. MEASURED in their log, same session, same edit:
+  //     editing: yaw0=-88.9 pitch0=-16.9  exit facingDot=+0.456  spin -35.3 deg
+  //     baking : yaw0=+91.5 pitch0=-81.0  exit facingDot=-0.450  spin 504.3 deg class=behind(full-lap)
+  // A DIFFERENT exit door and a full extra lap of spin — the film they authored was not the film
+  // that baked, which is the very thing §CPE_PREVIEW_DIVERGENCE was supposed to have closed. It was
+  // only half closed: half a pin is not a pin.
   function _withCamBasis(basis, fn) {
     if (!basis) return fn();
     var c = A.camera, t = A.controls.target;
     var sp = { x: c.position.x, y: c.position.y, z: c.position.z };
     var st = { x: t.x, y: t.y, z: t.z };
+    var sq = c.quaternion.clone();
     c.position.set(basis.px, basis.py, basis.pz);
     t.set(basis.tx, basis.ty, basis.tz);
+    // The half that was missing: re-aim at the pinned target so getWorldDirection() reports the
+    // basis being pinned, not the live orbit. updateMatrixWorld because the plan reads world state
+    // within this same task, before any render tick would have refreshed it.
+    c.lookAt(basis.tx, basis.ty, basis.tz);
+    c.updateMatrixWorld(true);
     try { return fn(); }
-    finally { c.position.set(sp.x, sp.y, sp.z); t.set(st.x, st.y, st.z); }
+    finally {
+      c.position.set(sp.x, sp.y, sp.z); t.set(st.x, st.y, st.z);
+      c.quaternion.copy(sq); c.updateMatrixWorld(true);
+    }
   }
 
   A.cinemaPathPlan = function(durationSec, ov) {
