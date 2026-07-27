@@ -2119,12 +2119,94 @@ async function setupEffects(A, renderer, scene, camera) {
     if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
     else setTimeout(run, 4000);
   })();
+  // ══ §BILLBOARD_ART (2026-07-28, user: "make it pick a png image i can place later in the same
+  // DB folder. For now just 'RUANG IKLAN UNTUK DI SEWA'… if no image, it gives that notice.")
+  //
+  // The billboard PANEL is real BIM data — a genuine IfcBuildingElementProxy injected into the DB
+  // (migration/billboards/terminal_billboard.sql), so it is pickable, quantifiable and casts
+  // shadows like any other element. The ARTWORK cannot ride that same mesh: component_geometries
+  // stores vertices + faces ONLY, with no UV channel anywhere in the extraction pipeline (the same
+  // blocker §LAYER 3 had to solve with triplanar), so a texture map has nothing to sample against.
+  // So the art is its own quad, sized and placed FROM THE PANEL'S OWN ROW, sitting a few
+  // millimetres off its display face. One PlaneGeometry, ONE draw call, its own material shared
+  // with nothing — the §PHOTO_GLOW_SPRITE invariant, unbroken.
+  //
+  // IMAGE SOURCE: <folder of A.DB_URL>/billboard.png — drop the file next to the .db and it is
+  // picked up on the next load, no code change. If it is absent or fails to load, the canvas
+  // fallback below draws the notice instead, which is the behaviour the user asked for: an empty
+  // advertising hoarding advertises itself.
+  var BILLBOARD_NOTICE = 'RUANG IKLAN UNTUK DI SEWA';
+  var _billboardMesh = null;
+  function _billboardFallbackTexture(wm, hm) {
+    var W = 1024, H = Math.max(256, Math.round(W * (hm / wm)));
+    var c = document.createElement('canvas'); c.width = W; c.height = H;
+    var g = c.getContext('2d');
+    g.fillStyle = '#0d1017'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#e8c34a'; g.lineWidth = Math.round(H * 0.035);
+    g.strokeRect(g.lineWidth, g.lineWidth, W - g.lineWidth * 2, H - g.lineWidth * 2);
+    // Fit the notice to the board rather than guessing a point size — the panel's real aspect
+    // comes from its DB bbox, so this stays correct if the sign is ever resized.
+    var words = BILLBOARD_NOTICE.split(' '), lines = [words.slice(0, 2).join(' '), words.slice(2).join(' ')];
+    var size = Math.round(H * 0.26);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#f2e6c0';
+    for (var pass = 0; pass < 12; pass++) {
+      g.font = '700 ' + size + 'px system-ui, sans-serif';
+      var widest = Math.max.apply(null, lines.map(function(l) { return g.measureText(l).width; }));
+      if (widest <= W * 0.82) break;
+      size = Math.round(size * 0.9);
+    }
+    for (var i = 0; i < lines.length; i++) {
+      g.fillText(lines[i], W / 2, H / 2 + (i - (lines.length - 1) / 2) * size * 1.15);
+    }
+    var tex = new THREE.CanvasTexture(c);
+    if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+    console.log('§BILLBOARD_ART fallback notice drawn (' + W + 'x' + H + ') — no billboard.png found');
+    return tex;
+  }
+  A._buildBillboardArt = function() {
+    if (_billboardMesh || !A.db || !A.ifc2three) return;
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.element_name LIKE 'BIM_OOTB_Billboard%' LIMIT 1");
+    } catch (e) { return; }
+    if (!rows || !rows.length) return;
+    var r = rows[0], cx = r[0], cy = r[1], cz = r[2], tx = r[3], wy = r[4], hz = r[5];
+    // Display face is +X in IFC (the host wall is on the building's x-max facade); nudge 8mm clear
+    // of it so the art never z-fights the panel it sits on.
+    var p = A.ifc2three(cx + tx / 2 + 0.008, cy, cz);
+    var geo = new THREE.PlaneGeometry(wy, hz);
+    var mat = new THREE.MeshBasicMaterial({ toneMapped: true, side: THREE.DoubleSide });
+    // MeshBasic, not Standard: a sign face reads as self-lit, so it stays legible at dusk without
+    // depending on whether the corner floodlights are inside the night light budget this frame.
+    var dir = (A.DB_URL || '').replace(/[^/]*$/, '');
+    var url = dir + 'billboard.png';
+    new THREE.TextureLoader().load(url,
+      function(tex) {
+        if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+        mat.map = tex; mat.needsUpdate = true;
+        console.log('§BILLBOARD_ART image=' + url);
+      },
+      undefined,
+      function() { mat.map = _billboardFallbackTexture(wy, hz); mat.needsUpdate = true; });
+    _billboardMesh = new THREE.Mesh(geo, mat);
+    _billboardMesh.position.set(p.x, p.y, p.z);
+    _billboardMesh.rotation.y = Math.PI / 2;   // PlaneGeometry normal +Z -> +X, matching the facade
+    _billboardMesh.renderOrder = 1;
+    A.scene.add(_billboardMesh);
+    console.log('§BILLBOARD_ART built ' + wy.toFixed(1) + 'm x ' + hz.toFixed(1) + 'm at ifc(' +
+      cx.toFixed(2) + ',' + cy.toFixed(2) + ',' + cz.toFixed(2) + ') source=' + url + ' drawCalls=1');
+    if (A.markDirty) A.markDirty();
+  };
+
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
       _buildPhotoProps();
     }
     if (show) _updateFacadeFacingLights();
+    if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent, builds once
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
