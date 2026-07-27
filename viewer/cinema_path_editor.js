@@ -647,6 +647,64 @@
              z: B.right.z * dx + B.up.z * dy };
   }
 
+  // ══ §CPE_DRAG_TRACK — the lag, measured in the app, on every real gesture.
+  //
+  // §CPE_DRAG_SCALE gears the drag to the BUILDING (envelope/canvasHeight), not to the handle's
+  // distance from the camera. A constant rate equals the perspective rate at exactly one depth, so
+  // everywhere else the handle cannot land under the cursor. Measured by witness_cpe_drag_track.js
+  // on 2026-07-27: Duplex 0.071 m/px in force against 0.151 needed at the handle's 91m depth (the
+  // band landed 102px behind a 194px gesture), Terminal 0.097 against 0.219 at 132m (108px behind).
+  // Consistently 0.44-0.47x.
+  //
+  // USER RULING, 2026-07-27, shown those numbers — this is NOT a defect and must not be gated:
+  //   "I think it is fine.. the slight jump is no longer exagerated, it is in small measures so the
+  //    user able to hold and see it coming back quicker than before. I see the effect is the path
+  //    only follows after releasing the wypt which may still jump but in small leap which is more of
+  //    a feature as user need not drag further on fear of losing to big jump."
+  // The under-gearing IS the safety margin: half-speed means an overshoot is small and recoverable,
+  // which is the whole reason §CPE_DRAG_TELEPORT's big leaps were frightening in the first place.
+  //
+  // So this is a LOG, not a gate. It exists because a rate that drifts from ~0.45x — toward 1.0x
+  // (the leaps come back) or toward 0 (the drag stops responding) — is the shape of the next
+  // regression, and nothing else in the console would show it. Derived from the gesture's own
+  // pixels and the camera frustum, independent of how _dragBasis computed the rate, so it can
+  // contradict that code rather than merely echo it.
+  function _logDragTrack(d, b, len0) {
+    if (d.lx == null) return;                      // a press that never moved: nothing to measure
+    var a = A(), r = a.canvas.getBoundingClientRect();
+    var pix = Math.hypot(d.lx - d.sx0, d.ly - d.sy0);
+    if (pix < 1) return;
+    // How far the thing actually travelled. For 'mid' that is the centre; for an end drag the band
+    // rotates about its far end, so the moved end is centre +/- half the (rigid) length along dir.
+    var s = d.z === 'b' ? 1 : d.z === 'a' ? -1 : 0;
+    var now = { x: b.c.x + b.d.x * b.len / 2 * s, y: b.c.y + b.d.y * b.len / 2 * s, z: b.c.z + b.d.z * b.len / 2 * s };
+    var world = Math.hypot(now.x - d.p0.x, now.y - d.p0.y, now.z - d.p0.z);
+    // The rate that WOULD have kept the handle under the cursor: one pixel subtends
+    // 2*D*tan(fov/2)/H metres at the grabbed handle's depth D.
+    var D = Math.hypot(d.p0.x - a.camera.position.x, d.p0.y - a.camera.position.y, d.p0.z - a.camera.position.z);
+    var need = 2 * D * Math.tan(a.camera.fov * Math.PI / 180 / 2) / Math.max(1, r.height);
+    var got = world / pix;
+    var ratio = need > 0 ? got / need : 0;
+    // ── THE LEVER. User, 2026-07-27, describing what they actually feel: "Its like a lever effect.
+    // Move small length, it exagerates bigger but not jump as the path has not react yet until
+    // release." That is NOT the cursor->band gearing above (which is under-geared, 0.45x) — it is
+    // the SECOND stage: band -> re-derived path. A metre of band moves the walk by more than a
+    // metre, because the plan re-routes the whole leg around it. The two stages point opposite
+    // ways, which is precisely why the gesture feels safe and the result still feels big, and why
+    // measuring only one of them explains neither. Lever = metres of path per metre of band.
+    var lever = (len0 != null && _state.plan && world > 0.01)
+      ? (_state.plan.pathLen - len0) / world : null;
+    console.log('§CPE_DRAG_TRACK zone=' + d.z + ' gesture=' + pix.toFixed(0) + 'px moved=' + world.toFixed(2) +
+      'm rate=' + got.toFixed(4) + ' m/px vs cursor-lock ' + need.toFixed(4) + ' m/px at depth ' +
+      D.toFixed(0) + 'm — ratio=' + ratio.toFixed(2) + 'x' +
+      (d.z === 'mid' ? ' lag=' + (pix * (1 - ratio)).toFixed(0) + 'px' : ' (end drag: rigid length, rotation not translation)') +
+      ' — UNDER-GEARED BY DESIGN (user ruling 2026-07-27: small leaps are the feature). Watch for drift toward 1.00x.' +
+      ' | LEVER pathLen ' + (len0 == null ? '?' : len0.toFixed(1)) + 'm -> ' +
+      (_state.plan ? _state.plan.pathLen.toFixed(1) : '?') + 'm = ' +
+      (lever == null ? 'n/a' : (lever >= 0 ? '+' : '') + lever.toFixed(2) + 'm of path per metre of band') +
+      ' (the exaggeration; it lands ONCE, after release, never during the gesture)');
+  }
+
   function _wire() {
     var a = A(), c = a.canvas, h = {};
     h.down = function(ev) {
@@ -678,6 +736,7 @@
       var d = _state.drag, b = _state.bands[d.b];
       var dw = _dragDelta(ev, d);          // §CPE_DRAG_SCALE: pixels x a building-derived rate
       var p = { x: d.p0.x + dw.x, y: d.p0.y + dw.y, z: d.p0.z + dw.z };
+      d.lx = ev.clientX; d.ly = ev.clientY;   // §CPE_DRAG_TRACK reads the gesture's own last pixel
       // First real movement of this gesture = the edit is now happening; snapshot the pre-drag
       // state exactly once, before anything below mutates it.
       if (!d.snapped) { d.snapped = true; _undoPush('drag band ' + d.b + ' (' + d.z + ')'); }
@@ -733,7 +792,10 @@
       console.log('§CPE_DRAG landed band=' + d.b + ' zone=' + d.z + ' plane=view (re-plan runs NOW, once)' +
         ' centre=(' + b.c.x.toFixed(2) + ',' + b.c.y.toFixed(2) + ',' + b.c.z.toFixed(2) + ')' +
         ' dir=(' + b.d.x.toFixed(2) + ',' + b.d.y.toFixed(2) + ',' + b.d.z.toFixed(2) + ') len=' + b.len.toFixed(2));
-      _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
+      var _len0 = _state.plan ? _state.plan.pathLen : null;   // the path as it stood when you let go
+      _replanFilm();
+      _logDragTrack(d, b, _len0);
+      _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
     };
     // §CPE_UNDO: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y) while the editor is OPEN. Same bindings
     // grid_drag.js already uses, and like it this listener is added on open and removed on close, so
