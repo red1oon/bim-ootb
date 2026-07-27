@@ -959,6 +959,28 @@ function setupTools(A) {
   // Returns true when the material was turned into a diffuser, so the caller knows to leave its
   // emissive alone.
   function _applyDiffuser(matKey, m) {
+    // ══ §NIGHT_DIFFUSER_OFF (2026-07-27) — OFF by default. THIS FEATURE WAS THE BLACK BOXES.
+    //
+    // The user reported black boxes across three builds. They were blamed on §PHOTO_EMBER's
+    // emissive, then on bloom. Both were wrong, and their log named the real one:
+    //     §NIGHT_DIFFUSER applied=5 ... §NIGHT_MODE on fixtures=1272 ... glowMats=3
+    // Hospital has only FIVE luminaire materials, and this took all five. What it did to them:
+    // forced `emissive` to BLACK (so the panel stops glowing), set `transparent`, and turned
+    // `depthWrite` off. All 1151 'M_Plain Recessed Lighting Fixture' panels therefore rendered as
+    // dark translucent rectangles set into a dark ceiling. That is the artifact, exactly.
+    //
+    // The instruction it was built from — "translucent must not have own source of light but allow
+    // light thru if it is against light" — is correct PHYSICS and was implemented as literal code:
+    // the emissive was removed, but nothing was ever put BEHIND the cover to shine through it. A
+    // diffuser with no source behind it is just a dark panel. §PHOTO_GLOW_SPRITE's sprite sits at
+    // the emitting FACE (§GLOW_EMIT_DOWN), i.e. in FRONT of the cover, not inside the housing, so it
+    // cannot light it from behind either.
+    //
+    // Making this work needs a light source inside the housing AND a cover that transmits it —
+    // two halves. Only the second half was built. Until the first exists, the honest behaviour is
+    // the one that was working: let the luminaire material keep its emissive glow.
+    // Set A._nightDiffuserOn = true to experiment.
+    if (!A._nightDiffuserOn) return false;
     if (!A._nightExclusiveLumKey) return false;
     // matCache key is `rgba|ifcClass|variant`; the exclusivity set is keyed on the first two.
     var i1 = matKey.indexOf('|'), i2 = matKey.indexOf('|', i1 + 1);
