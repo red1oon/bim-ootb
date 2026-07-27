@@ -121,12 +121,23 @@ const FPS = 15;
         const moved = wp0.map(w => ({ ...w }));
         moved[1] = { x: wp0[1].x + 5, y: wp0[1].y + 1, z: wp0[1].z };
         const planM = A.cinemaPathPlan(DUR, { waypoints: moved });
-        const sA = sample(planA), sM = sample(planM);
-        // where in normalized time does the difference live?
+        // Compare the two films at the same ABSOLUTE SECOND, not the same percentage through.
+        // The edited path is longer, and section 9 doctrine ("path length sets the clock") means the
+        // edited film legitimately RUNS LONGER — cinema_maxq.js:414 sets the real bake's frame count
+        // from plan.naturalTotal, so this is the product's actual behaviour, not a theory. Sampling
+        // both at the same normalized t therefore lines up second 3 of a 24s film against second 4
+        // of a 32s one and reports the opening as "changed" when nothing about it moved. Beat
+        // seconds are derived independently of path length (dive from its own distance), so at equal
+        // real time the opening is identical by construction — which is what this now measures.
+        const tA = planA.naturalTotal || DUR, tM = planM.naturalTotal || DUR;
+        const secs = [];
+        for (let i = 0; i <= N; i++) secs.push(i / N * Math.min(tA, tM));
+        const sA = secs.map(sec => planA.poseAt(sec / tA));
+        const sM = secs.map(sec => planM.poseAt(sec / tM));
         let firstDiffT = null, lastDiffT = null, maxD = 0;
         for (let i = 0; i <= N; i++) {
           const d = Math.hypot(sA[i].x - sM[i].x, sA[i].y - sM[i].y, sA[i].z - sM[i].z);
-          if (d > 0.01) { if (firstDiffT === null) firstDiffT = i / N; lastDiffT = i / N; }
+          if (d > 0.01) { if (firstDiffT === null) firstDiffT = secs[i] / tA; lastDiffT = secs[i] / tA; }
           maxD = Math.max(maxD, d);
         }
         out.g2 = { firstDiffT, lastDiffT, maxD, diveBeatEnd: beats.dive, outBeatEnd: beats.out,
@@ -175,9 +186,16 @@ const FPS = 15;
         // G7 — peak angular rate of the LOOK direction, per rendered frame.
         const nF = Math.round(24 * fps);
         let peak = 0, peakT = 0, prev = null;
+        // The walk window must come from THIS plan. It used to read planA.beats — a DIFFERENT
+        // plan, built from a different path, whose walk occupies a different fraction of the film.
+        // So the window was misaligned with planS's own walk and the gate sampled beats the walk's
+        // pacing does not govern (the spin runs on a clock, not on the path). That is why G7 stayed
+        // at 15.7/20.4 to the decimal while every other jerk number moved: the peak it reported was
+        // not in the walk at all. Verify the instrument before the code under test.
+        const sBeats = planS.beats || beats;
         for (let f = 0; f <= nF; f++) {
           const t = f / nF;
-          if (t < beats.spin || t > beats.out) { prev = null; continue; }
+          if (t < sBeats.spin || t > sBeats.out) { prev = null; continue; }
           const p = planS.poseAt(t);
           const b = Math.atan2(p.tz - p.z, p.tx - p.x) * 180 / Math.PI;
           if (prev !== null) {
