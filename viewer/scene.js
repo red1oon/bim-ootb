@@ -100,11 +100,13 @@ async function setupScene(A) {
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // §PHOTO_EXPOSURE (2026-07-27, user: "Scene still too dark drab"). Was 0.45 — less than half
-  // three.js's own default of 1.0, i.e. the whole app was rendering roughly a stop under-exposed,
-  // which is a large part of why interiors read as drab and why emissive luminaires were invisible
-  // (a glow measured through a half-stop-down exposure has half a stop less to show).
-  renderer.toneMappingExposure = 1.0;
+  // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
+  // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
+  // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
+  // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
+  // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
+  // how bloom, ember and the 48-light budget are all still-only.
+  renderer.toneMappingExposure = 0.45;
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display

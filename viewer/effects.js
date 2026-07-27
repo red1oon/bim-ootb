@@ -2104,6 +2104,13 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_HEMI_SKY_COLOR = 0x6a5a7a;  // dusky violet-warm sky half of the hemi light
   var PHOTO_SUN_INTENSITY_SCALE = 0.7;  // dimmer than full daylight — evening, not noon
   var PHOTO_EXPOSURE_SCALE = 0.85;      // slightly underexposed overall — "materials in little light"
+  // §PHOTO_EXPOSURE_LIFT (2026-07-27, user: "Scene still too dark drab"). The still was rendering at
+  // 0.45 x 0.85 = 0.3825 — about a stop and a half under three.js's default, which is most of why
+  // interiors read as drab and why emissive luminaires had so little to show. Lifted here rather
+  // than at the renderer default because that default is the DAY NAVIGATION value and the user
+  // recalls overexposure from raising it. 2.2x lands the still at ~0.85, bright enough to read
+  // without blowing out the sky, and it touches nothing outside the photoshoot.
+  var PHOTO_EXPOSURE_LIFT = 2.2;
   // §PHOTO_SUN_REFLECTION (user ask, continued session — "get the Sun reflection beautiful
   // realistic surface material impact correct firsts"): three things were found reading the
   // existing sun/sky code rather than adding a new one:
@@ -2663,7 +2670,7 @@ async function setupEffects(A, renderer, scene, camera) {
         A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
         A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
-        A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE;
+        A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
       }
     }
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
