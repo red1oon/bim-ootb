@@ -841,10 +841,37 @@ function setupTools(A) {
   var NIGHT_WARM   = 0xffdca8;   // ~2900K, downlight / sconce / pendant
   var NIGHT_AMBER  = 0xffe4b5;   // the original, and the fallback
   var NIGHT_EXIT   = 0x9bffc0;   // running-man signage green
-  A.nightLightColor = function(name) {
+  // §NIGHT_MIX_RATIO (2026-07-27, user: "and can we have say 20%/20% blue/amber?"). The type-derived
+  // mix above follows the model, which on the Clinic lands ~71% cool / 28% warm — accurate, but a
+  // corridor of identical troffers still reads uniform. This lays a DELIBERATE ratio over it: a
+  // stated share of fixtures get a distinctly blue or amber cast regardless of type, which is what
+  // gives an interior the mixed-temperature look real photographs have.
+  //
+  // Assignment is a stable hash of the fixture's own name+position, NOT Math.random and NOT the
+  // query's row order: the same building must light the same way on every run, or two bakes of one
+  // film disagree frame to frame and the whole thing shimmers. Set either share to 0 to switch that
+  // colour off and fall back entirely to the type-derived mix.
+  A._nightMixBlue  = 0.20;   // share of fixtures forced distinctly blue
+  A._nightMixAmber = 0.20;   // share forced distinctly amber
+  var NIGHT_MIX_BLUE  = 0xa8c8ff;   // cold cast, clearly blue against the warm
+  var NIGHT_MIX_AMBER = 0xffb45c;   // strong amber, warmer than NIGHT_WARM
+  function _mixHash(key) {
+    // FNV-1a, then to [0,1). Deterministic across sessions and machines.
+    var h = 2166136261;
+    for (var i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ((h >>> 0) % 100000) / 100000;
+  }
+  A.nightLightColor = function(name, key) {
     var n = String(name || '').toLowerCase();
-    if (!n) return NIGHT_AMBER;
+    // Exit signage keeps its own colour whatever the ratio says — a green running-man sign that
+    // came out blue would be wrong, not stylish.
     if (n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0) return NIGHT_EXIT;
+    if (key !== undefined) {
+      var h = _mixHash(String(key));
+      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;
+      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;
+    }
+    if (!n) return NIGHT_AMBER;
     if (/\bcw\b|cool/.test(n)) return NIGHT_COOL;      // stated in the model — outranks the type default
     if (/\bww\b|warm/.test(n)) return NIGHT_WARM;
     if (n.indexOf('troffer') >= 0 || n.indexOf('batten') >= 0 || n.indexOf('t8') >= 0 ||
@@ -1117,7 +1144,8 @@ function setupTools(A) {
     if (!A._nightFixturePositions) {
       A._nightFixturePositions = A._nightFixtures.map(function(f) {
         var p = A.ifc2three(f.x, f.y, f.z);
-        p.__color = A.nightLightColor(f.name);   // §NIGHT_LIGHT_MIX — derived once, with the position
+        // Key the ratio on name+position so it is stable per fixture and independent of row order.
+        p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
         return p;
       });
     }
