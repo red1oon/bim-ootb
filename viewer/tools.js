@@ -829,6 +829,57 @@ function setupTools(A) {
   A._nightMaxLightsStill = 48;     // frozen-still budget — 4x, paid once
   A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
   A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
+  // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
+  // One flat 0xffe4b5 for every fixture is what makes a lit building read as a single lamp repeated
+  // N times. Real interiors mix colour temperature by FITTING TYPE, so derive it from the fitting
+  // rather than randomising: fluorescent/LED troffers and battens are cool, downlights/sconces/
+  // pendants are warm, exit signage is its own green. Where the model states the temperature —
+  // Terminal's families carry "cw" and "ww" in the name — that wins over the type default, because
+  // stated data beats a convention. These are STATED constants, in Kelvin-ish sRGB, not tuned per
+  // building; a fitting type that matches nothing keeps the original amber.
+  var NIGHT_COOL   = 0xdce8ff;   // ~5000K, fluorescent/LED troffer
+  var NIGHT_WARM   = 0xffdca8;   // ~2900K, downlight / sconce / pendant
+  var NIGHT_AMBER  = 0xffe4b5;   // the original, and the fallback
+  var NIGHT_EXIT   = 0x9bffc0;   // running-man signage green
+  // §NIGHT_MIX_RATIO (2026-07-27, user: "and can we have say 20%/20% blue/amber?"). The type-derived
+  // mix above follows the model, which on the Clinic lands ~71% cool / 28% warm — accurate, but a
+  // corridor of identical troffers still reads uniform. This lays a DELIBERATE ratio over it: a
+  // stated share of fixtures get a distinctly blue or amber cast regardless of type, which is what
+  // gives an interior the mixed-temperature look real photographs have.
+  //
+  // Assignment is a stable hash of the fixture's own name+position, NOT Math.random and NOT the
+  // query's row order: the same building must light the same way on every run, or two bakes of one
+  // film disagree frame to frame and the whole thing shimmers. Set either share to 0 to switch that
+  // colour off and fall back entirely to the type-derived mix.
+  A._nightMixBlue  = 0.20;   // share of fixtures forced distinctly blue
+  A._nightMixAmber = 0.20;   // share forced distinctly amber
+  var NIGHT_MIX_BLUE  = 0xa8c8ff;   // cold cast, clearly blue against the warm
+  var NIGHT_MIX_AMBER = 0xffb45c;   // strong amber, warmer than NIGHT_WARM
+  function _mixHash(key) {
+    // FNV-1a, then to [0,1). Deterministic across sessions and machines.
+    var h = 2166136261;
+    for (var i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ((h >>> 0) % 100000) / 100000;
+  }
+  A.nightLightColor = function(name, key) {
+    var n = String(name || '').toLowerCase();
+    // Exit signage keeps its own colour whatever the ratio says — a green running-man sign that
+    // came out blue would be wrong, not stylish.
+    if (n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0) return NIGHT_EXIT;
+    if (key !== undefined) {
+      var h = _mixHash(String(key));
+      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;
+      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;
+    }
+    if (!n) return NIGHT_AMBER;
+    if (/\bcw\b|cool/.test(n)) return NIGHT_COOL;      // stated in the model — outranks the type default
+    if (/\bww\b|warm/.test(n)) return NIGHT_WARM;
+    if (n.indexOf('troffer') >= 0 || n.indexOf('batten') >= 0 || n.indexOf('t8') >= 0 ||
+        n.indexOf('recessed_mprl') >= 0 || n.indexOf('low bay') >= 0) return NIGHT_COOL;
+    if (n.indexOf('downlight') >= 0 || n.indexOf('sconce') >= 0 || n.indexOf('pendant') >= 0 ||
+        n.indexOf('surface mounted') >= 0) return NIGHT_WARM;
+    return NIGHT_AMBER;
+  };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
@@ -915,7 +966,7 @@ function setupTools(A) {
           // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
           // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
           var r = A.db.exec(
-            "SELECT t.center_x, t.center_y, t.center_z FROM elements_meta m " +
+            "SELECT t.center_x, t.center_y, t.center_z, m.element_name FROM elements_meta m " +
             "JOIN element_transforms t ON m.guid=t.guid " +
             "WHERE m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') " +
             "AND (LOWER(m.element_name) LIKE '%light%' OR LOWER(m.element_name) LIKE '%troffer%' " +
@@ -927,7 +978,7 @@ function setupTools(A) {
             "  OR LOWER(m.element_name) LIKE '%outlet%')");
           if (r.length && r[0].values.length > 0) {
             r[0].values.forEach(function(row) {
-              A._nightFixtures.push({ x: row[0], y: row[1], z: row[2] });
+              A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '' });
             });
             source = 'IFC';
           }
@@ -1092,7 +1143,10 @@ function setupTools(A) {
     // Convert all fixture positions to Three.js coords (cached after first call)
     if (!A._nightFixturePositions) {
       A._nightFixturePositions = A._nightFixtures.map(function(f) {
-        return A.ifc2three(f.x, f.y, f.z);
+        var p = A.ifc2three(f.x, f.y, f.z);
+        // Key the ratio on name+position so it is stable per fixture and independent of row order.
+        p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
+        return p;
       });
     }
     var allPos = A._nightFixturePositions;
@@ -1141,7 +1195,7 @@ function setupTools(A) {
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
       var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
-      var light = new THREE.PointLight(0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+      var light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
       A._nightLights.push(light);
