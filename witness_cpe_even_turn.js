@@ -124,7 +124,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           try { if (Math.hypot(bx, bz) > 1e-4) bowRay = A.cinemaLookDist(at, bx, bz); } catch (e) {}
           bows.push({ i, bow, fanMin, bowRay });
         }
-        return { bows, turn: turnPeak(plan), flown: flow.length };
+        return { bows, turn: turnPeak(plan), flown: flow.length, beats: plan.beats || plan.sec || null };
       };
 
       return { hostile: run(hostile), seeded: run(seeded) };
@@ -146,7 +146,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     P(`T2 peak turn rate over the whole film stays under ${CAP_DEG} deg/frame on a hostile layout`,
       H.turn.peak <= CAP_DEG,
       `peak=${H.turn.peak.toFixed(1)} deg/frame at u=${H.turn.peakT.toFixed(3)}, total turn ` +
-      `${H.turn.total.toFixed(0)}deg over ${H.turn.frames} frames (mean ${(H.turn.total / H.turn.frames).toFixed(1)})`);
+      `${H.turn.total.toFixed(0)}deg over ${H.turn.frames} frames (mean ${(H.turn.total / H.turn.frames).toFixed(1)})\n` +
+      `          beats: ${JSON.stringify(H.beats)}`);
 
     P('T3 a join whose bow ray ALSO hits nothing still obeys the 3m cap (unknown stays unknown)',
       stuck.every(b => b.bow <= NUDGE_CAP + 0.01),
