@@ -4566,11 +4566,38 @@ async function setupEffects(A, renderer, scene, camera) {
   A._getCinemaPathEdit = function() { return A._cinemaPathEdit || null; };
   A.clearCinemaPath = function() { A._cinemaPathEdit = null; console.log('§CINEMA_PATH_CLEAR authored path dropped'); };
 
+  // ══ §CPE_PREVIEW_DIVERGENCE (CINEMA_PATH_EDITOR.md) — the plan reads A.camera.position and
+  // A.controls.target directly, so it silently depends on WHERE THE USER IS LOOKING FROM at the
+  // moment it is called. Measured live (user, Hospital, 2026-07-27): while editing, the orbited-in
+  // camera gave targetOffCam=16.7 — under envelope*0.25=36.9, so §CINEMA_PIVOT stayed
+  // `arc-bbox-centre` (dive 14.2m, spin 0.0deg). On OK the editor restores the camera it captured at
+  // open, targetOffCam became 54.0 — over the threshold, so the SAME building planned
+  // `controls-target(plausible)` at the origin: dive 77.2m, spin 118.1deg, facingDot 0.980 -> -0.471.
+  // The user previewed a film with no spin and baked one that turns 118 degrees at the start.
+  // FIX: an explicit camera basis. Same "set, call the untouched plan, restore in finally" pattern
+  // the beat-second overrides above already use — the plan function itself stays untouched.
+  // Nothing here moves the camera as far as any renderer is concerned: the swap and the restore
+  // happen inside one synchronous call with no frame in between.
+  function _withCamBasis(basis, fn) {
+    if (!basis) return fn();
+    var c = A.camera, t = A.controls.target;
+    var sp = { x: c.position.x, y: c.position.y, z: c.position.z };
+    var st = { x: t.x, y: t.y, z: t.z };
+    c.position.set(basis.px, basis.py, basis.pz);
+    t.set(basis.tx, basis.ty, basis.tz);
+    try { return fn(); }
+    finally { c.position.set(sp.x, sp.y, sp.z); t.set(st.x, st.y, st.z); }
+  }
+
   A.cinemaPathPlan = function(durationSec, ov) {
     // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
     // stored edit" — the G5 control path needs that distinction to be expressible.
     if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; }
     if (!ov) return _cinemaPathPlan(durationSec);
+    if (ov._camBasis) return _withCamBasis(ov._camBasis, function() {
+      var o = {}; for (var q in ov) if (q !== '_camBasis') o[q] = ov[q];
+      return A.cinemaPathPlan(durationSec, o);
+    });
     var saved = [], i, savedSecOv = _cpeSecOverride;
     _cpeSecOverride = ['diveSec', 'spinSec', 'outSec', 'riseSec']
       .some(function(k) { return ov[k] != null && isFinite(ov[k]); });

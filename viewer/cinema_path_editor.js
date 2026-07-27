@@ -15,7 +15,7 @@
 //      and discards them.
 (function() {
   'use strict';
-  var CPE_V = 'v4 (§CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG — panel moves by its header)';
+  var CPE_V = 'v5 (§CPE_PREVIEW_DIVERGENCE — plan pinned to the open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG — panel moves by its header)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -133,8 +133,18 @@
   function _replanFilm() {
     var a = A(), t0 = performance.now();
     var ov = _buildOverride();
+    // §CPE_PREVIEW_DIVERGENCE: plan from the camera pose the editor OPENED with — the pose the bake
+    // will plan from, because finish() restores exactly this before resolving. Without it the film
+    // silently re-derived from wherever the user had orbited to, so (a) the baked film differed from
+    // the edited one and (b) merely LOOKING at the path from another angle changed it.
+    // Attached to a COPY, never to the override itself: _buildOverride() is also what "Save this
+    // path" stages and what finish() hands the bake, and a camera basis is session state — pinning a
+    // stored path to one session's camera is exactly the bug this fixes, inverted.
+    var povr = {}; for (var k in ov) povr[k] = ov[k];
+    var cs = _state.camSave;
+    if (cs) povr._camBasis = { px: cs.px, py: cs.py, pz: cs.pz, tx: cs.tx, ty: cs.ty, tz: cs.tz };
     var plan = null;
-    try { plan = a.cinemaPathPlan(ov._total, ov); } catch (e) { console.warn('§CPE_REPLAN_FAIL ' + e.message); }
+    try { plan = a.cinemaPathPlan(ov._total, povr); } catch (e) { console.warn('§CPE_REPLAN_FAIL ' + e.message); }
     if (!plan) return;
     var pts = [];
     for (var i = 0; i <= FILM_SAMPLES; i++) {
@@ -634,6 +644,13 @@
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
       var panel = _buildPanel();
+      // §CPE_PREVIEW_DIVERGENCE: state the basis every re-plan below is pinned to, once. If a pasted
+      // console ever shows the bake's §CINEMA_PIVOT disagreeing with the editor's, this line says
+      // which camera the editor was planning from.
+      console.log('§CPE_CAM_BASIS cam=(' + _state.camSave.px.toFixed(1) + ',' + _state.camSave.py.toFixed(1) +
+        ',' + _state.camSave.pz.toFixed(1) + ') target=(' + _state.camSave.tx.toFixed(1) + ',' +
+        _state.camSave.ty.toFixed(1) + ',' + _state.camSave.tz.toFixed(1) + ')' +
+        ' — every re-plan uses THIS pose, not the live camera, so orbiting to look cannot change the film');
       _replanFilm();
       _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _syncButtons();
       _wire();
@@ -644,12 +661,12 @@
         _stopPulse(); _release('close'); _unwire(); _clearScene();
         if (_state._replanTimer) { clearTimeout(_state._replanTimer); _state._replanTimer = null; }
         if (panel.parentNode) panel.parentNode.removeChild(panel);
+        var total = ov ? ov._total : _state.baseTotal;
         if (a.controls) a.controls.enabled = _state.controlsWere;
         a.camera.position.set(_state.camSave.px, _state.camSave.py, _state.camSave.pz);
         a.controls.target.set(_state.camSave.tx, _state.camSave.ty, _state.camSave.tz);
         a.controls.update();
         if (a.markDirty) a.markDirty();
-        var total = ov ? ov._total : _state.baseTotal;
         console.log('§CPE_CLOSE action=' + action + ' edited=' + edited + ' total=' + total.toFixed(1) + 's');
         _state = null;
         // Guardrail 2: an untouched OK hands back NO override, so the bake re-uses the derived plan
