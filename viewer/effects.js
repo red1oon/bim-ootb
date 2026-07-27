@@ -3557,7 +3557,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v15 (§STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
+  var EFFECTS_V = 'v16 (§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -4133,17 +4133,17 @@ async function setupEffects(A, renderer, scene, camera) {
         'walk-start look-ahead instead (' + firstLeg.x.toFixed(2) + ',' + firstLeg.z.toFixed(2) + ')');
     }
     var spinTo = Math.atan2(firstLeg.z - settle.z, firstLeg.x - settle.x);
-    // §CPE_SEAM_CONTINUOUS — the PITCH the walk opens on, computed here (before the beat seconds)
-    // because the spin now has to cover it and therefore has to be PAID for in the spin's time
-    // budget. Same look-ahead point and same 0.5m collapse guard Beat 3 itself uses at e3=0, so
-    // this is the walk's real opening gaze, not a second guess at it (asserted below against
-    // _beat3Pose(0), which is the pose that actually flies).
+    // §CPE_SEAM_CONTINUOUS — the direction the walk opens on, sampled here (before the beat
+    // seconds) because _openDir/_openDeg below are derived from it. Same look-ahead point and same
+    // 0.5m collapse guard Beat 3 itself uses at e3=0, so this is the walk's real opening gaze, not
+    // a second guess at it (asserted below against _beat3Pose(0), the pose that actually flies).
+    // NOTE: the spin does NOT pay for the pitch — see the _spinDeg comment below for why that was
+    // tried, measured, and reverted.
     var _wkP0 = _outPos(0), _wkA0 = _outPos(0.15);
     if (Math.hypot(_wkA0.x - _wkP0.x, _wkA0.y - _wkP0.y, _wkA0.z - _wkP0.z) < 0.5)
       _wkA0 = { x: _wkP0.x + odx * 20, y: _wkP0.y, z: _wkP0.z + odz * 20 };
     var _wkDy = _wkA0.y - _wkP0.y;
     var _wkL = Math.hypot(_wkA0.x - _wkP0.x, _wkDy, _wkA0.z - _wkP0.z) || 1;
-    var _spinEndPitch = Math.asin(Math.max(-1, Math.min(1, _wkDy / _wkL)));
     var dYaw = spinTo - yaw0;
     while (dYaw > Math.PI) dYaw -= 2 * Math.PI;
     while (dYaw < -Math.PI) dYaw += 2 * Math.PI;
@@ -4212,13 +4212,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // quantities — the approach is capped at the envelope, the spin at a half turn (the most that is
     // ever needed to face anywhere) — and only then converted at their stated rates.
     var _diveEff = Math.min(diveDist, envelope);
-    // §CPE_SEAM_CONTINUOUS: count the PITCH sweep too. The spin turns in yaw AND tilts to the
-    // walk's opening pitch, but this budget used to price the yaw alone — so on a walk that opens
-    // steeply the tilt was crammed into a beat sized for a flat turn. MEASURED on Terminal: yaw
-    // asked for under 36 deg (so the beat fell to the 0.8s floor) while the real sweep was ~142 deg,
-    // giving 17.7 deg/frame. Same CINEMA_TURN_DPS rate, applied to the whole sweep. The pitch is
-    // capped at 90 for the same reason the yaw is capped at 180: a quarter turn is the most a tilt
-    // can ever need, so a pathological pose cannot inflate the runtime.
+    // ⚠ §CPE_SEAM_CONTINUOUS — DO NOT add a pitch term to _spinDeg. It was tried this session and
+    // reverted: pricing the walk's opening pitch into the spin makes the spin's DURATION depend on
+    // the authored path, which shifts every beat fraction before it and breaks G2's "an edit
+    // changes nothing before it". _spinDeg stays yaw-only, and the pitch handoff is paid inside the
+    // WALK instead (see _beat3Pose's opening blend). This comment previously described the reverted
+    // version as if it had shipped — it had not.
     // §CPE_SEAM_CONTINUOUS — the direction the walk WANTS to open on, and the direction the spin
     // actually hands over (level, on the spin's final bearing). The gap between them was being paid
     // in ONE frame at the Beat2->3 seam: MEASURED 81 deg on Terminal, and it did NOT shrink when
@@ -4558,21 +4557,36 @@ async function setupEffects(A, renderer, scene, camera) {
     //
     //     dc = (1-w)·(ds/S) + w·(dθ/Θ)
     //
-    // where S is the walk's arc length and Θ its total gaze turn. Because every frame advances the
-    // same Δc = 1/N, each term is bounded on its own by construction:
+    // where S is the walk's arc length and Θ its total gaze turn. If frames advanced by a constant
+    // Δc, each term would be bounded on its own by construction:
     //
     //     Δθ ≤ Θ/(w·N)         — turn per frame, at most 1/w × the perfectly-even Θ/N
     //     Δs ≤ S/((1-w)·N)     — distance per frame, at most 1/(1-w) × the nominal speed
     //
-    // So 1/(1-w) IS the speed range. The user set that range at PACE_SWING = 1.6 ("have a speed
-    // range… don't overdo it"), which fixes w = 1 - 1/1.6 = 0.375 exactly. Nothing here is a tuned
-    // constant: the one dial was already chosen by the user, and the turn bound falls out of it.
+    // ⚠ Δc IS NOT CONSTANT HERE, and the bounds above are the per-cost-step ones, not what the film
+    // delivers. Beat 3 feeds the remap an EASED time fraction — _evenTurnRemap(_cinemaSmoothstep(t))
+    // — and smoothstep's derivative peaks at 1.5 at its midpoint, so cost advances at up to 1.5/N
+    // per frame and every bound above carries a ×1.5:
+    //
+    //     Δθ ≤ 1.5·Θ/(w·N)     Δs ≤ 1.5·S/((1-w)·N)
+    //
+    // So the DELIVERED speed range is 1.5/(1-w) ≈ 2.4×, not 1/(1-w) = 1.6×: against a nominal
+    // CINEMA_WALK_MPS of 2.3 the walk peaks near 5.5 m/s, and §CPE_WALK's "2.3 m/s pace" is a MEAN,
+    // not the pace. The ease is deliberate (zero rate at both beat seams, so the walk does not start
+    // or stop abruptly) — the ×1.5 is the price of it, and it is stated here rather than left for a
+    // reader to derive from the fact that the two do not agree.
+    //
+    // w itself is still not tuned: PACE_SWING = 1.6 is the user's own dial ("have a speed range…
+    // don't overdo it") and fixes w = 1 - 1/1.6 = 0.375 exactly. What is NOT yet settled is whether
+    // 2.4× is inside what they meant by "don't overdo it" — the gaze half passes comfortably (7.3
+    // measured against a 12 cap) but the POSITION half of §CPE_JERK_DEFINITION is still ungated, and
+    // gating it is what would turn this from an argument into a measurement.
     // Slow-in-the-turn and pick-up-in-the-open are not imposed by a brake — they are what equal
     // cost stepping DOES, and the brake releases in open space for free because there is no dθ to
     // pay for there.
     var CINEMA_PACE_SWING = 1.6;
     var _etW = 1 - 1 / CINEMA_PACE_SWING;
-    var _etN = 240, _etC = null, _etS = 0, _etT = 0;
+    var _etN = 240, _etC = null;
     function _evenTurnBuild() {
       var ss = [], ts = [], prev = null, prevD = null, s = 0, th = 0;
       for (var i = 0; i <= _etN; i++) {
@@ -4589,7 +4603,6 @@ async function setupEffects(A, renderer, scene, camera) {
         ss.push(s); ts.push(th);
         prev = { x: ps.x, y: ps.y, z: ps.z }; prevD = { x: gx, y: gy, z: gz };
       }
-      _etS = s; _etT = th;
       // A walk with no turn in it has no turn to even out: fall back to pure arc length, which is
       // byte-for-byte today's behaviour. Guards ts[i]/Θ against dividing by ~0.
       var w = (th > 1e-3) ? _etW : 0;
@@ -4600,7 +4613,9 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§CPE_EVEN_TURN w=' + w.toFixed(3) + ' (PACE_SWING=' + CINEMA_PACE_SWING + ') walkLen=' +
         s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) + 'deg samples=' + (_etN + 1) +
         ' boundPerFrameTurn=' + (w > 0 ? (th * 180 / Math.PI / w).toFixed(1) + 'deg/N' : 'n/a (straight walk)') +
-        ' speedRange=' + (w > 0 ? (1 / (1 - w)).toFixed(2) + 'x' : '1.00x'));
+        ' speedRange=' + (w > 0 ? (1 / (1 - w)).toFixed(2) + 'x per cost-step, ' +
+          (1.5 / (1 - w)).toFixed(2) + 'x delivered (x1.5 from the smoothstep ease — see the derivation)'
+          : '1.00x'));
     }
     // Monotone inverse of the cost table: given uniform progress in cost, return the walk fraction.
     function _evenTurnRemap(u) {
@@ -4611,12 +4626,6 @@ async function setupEffects(A, renderer, scene, camera) {
       var c0 = _etC[lo], c1 = _etC[hi], f = (c1 - c0 > 1e-12) ? (u - c0) / (c1 - c0) : 0;
       return (lo + Math.max(0, Math.min(1, f))) / _etN;
     }
-    // §CPE_SEAM_CONTINUOUS: the pitch Beat 3 opens on, read off the REAL opening pose rather than
-    // re-derived from the waypoints — so the spin lands on the walk's gaze, not on a second guess
-    // at it. Declared here (after _beat3Pose) and read by Beat 2 at frame time.
-    // The spin's landing pitch was computed up at §CINEMA_SPIN_BASELINE so the beat seconds could
-    // pay for it. Assert it against the pose that ACTUALLY flies — if these ever diverge the seam
-    // silently reopens, so the drift is logged rather than assumed to be zero.
     // Assert the seam is actually closed, on the poses that FLY: the angle between Beat 2's last
     // gaze and Beat 3's first. Logged rather than assumed — if a future change reopens it, the
     // number moves off zero here instead of surfacing as a jerk nobody can locate.
