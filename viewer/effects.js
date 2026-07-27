@@ -2185,6 +2185,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // raw sin(6 deg) ground darkness, not enough to wash out contrast.
   var PHOTO_HEMI_INTENSITY_SCALE = 1.25;
   var PHOTO_AMBIENT_INTENSITY_SCALE = 1.15;
+  // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
+  // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
+  // cast shadow; this one scales lit and shadowed ground by the same factor. The claim that the
+  // ground was "ALREADY rendering at maximum brightness… no tint could ever make it brighter" is
+  // wrong: _setGroundColor forces WHITE under a map, and white is the multiplicative identity, not
+  // a ceiling. Full analysis + the 52:1 arithmetic: PHOTOREAL_STILL_RENDER.md §GROUND_DARK_RETHINK.
+  // MEASURED, not assumed: linear-average luminance of viewer/textures/ground/paved_1k.jpg over a
+  // 128x128 downsample, sRGB-decoded — the same method textures/materials/NOTICE.txt already uses
+  // to derive each TRIPLANAR_MAT normFactor (concrete 0.723, plaster 0.742, metal 0.535).
+  var GROUND_TEX_AVG_LUM = 0.155;
+  A._photoGroundAlbedoGain = 2.3;   // 2.3 x 0.155 = 0.36 albedo. Console-tunable for A/B.
   var _photoSunPosSaved = null, _photoSunTargetSaved = null;
   var _photoFlarePrevTone = null, _photoHaloPrevTone = null;
   var _photoEnvBoostedMats = [];
@@ -2593,8 +2604,20 @@ async function setupEffects(A, renderer, scene, camera) {
       // existing 'paved' texture (same real asset Shadow mode already uses — concrete look, per
       // user's own suggestion) with a much brighter warm tint. Fancier grass+paved-rectangle
       // pattern is a separate later experiment, not needed just to fix "too dark."
+      // §GROUND_ALBEDO (2026-07-28, user: "the Alt+S evening ground is too dark… albedo, try it") —
+      // Witness: W-GROUND-ALBEDO. Set BEFORE _applyGroundTexture, because that function calls
+      // _setGroundColor itself (with the remembered solid colour) as soon as the texture lands.
+      // 2.3 x the map's measured 0.155 average puts the ground at ~0.36 albedo — real dry concrete
+      // (0.25-0.40), not the asphalt (0.05-0.12) it renders as today. Live-tunable from the console
+      // for the A/B the user asked for: APP._photoGroundAlbedoGain = 1.0 (default look) / 2.3 / 3.5,
+      // then Alt+S again. See tools.js §GROUND_ALBEDO for why a gain and not more fill light.
+      A._groundAlbedoGain = A._photoGroundAlbedoGain;
       A._applyGroundTexture('paved');
       if (A._setGroundColor) A._setGroundColor(0xd9c39a);  // bright warm sunlit-concrete tone
+      console.log('§GROUND_ALBEDO gain=' + A._groundAlbedoGain.toFixed(2) + ' texAvgLum=' +
+        GROUND_TEX_AVG_LUM.toFixed(3) + ' effAlbedo=' + (GROUND_TEX_AVG_LUM * A._groundAlbedoGain).toFixed(3) +
+        ' color=' + (A.ground.material.color ? A.ground.material.color.r.toFixed(2) : 'n/a') +
+        ' map=' + (A.ground.material.map ? 'paved' : 'none'));
       // §PHOTO_GROUND_WHITE_REVERTED (user reported "Shadows? None on the ground" right after
       // this shipped): a flat emissive add is NOT shadow-map-occluded at all in three.js — it
       // washes out relative contrast between the sun's shadowed and lit ground patches, which is
@@ -2700,6 +2723,22 @@ async function setupEffects(A, renderer, scene, camera) {
       A.scene.fog.color.setHex(0xc9a878);
       A.scene.fog.density = Math.min(A.scene.fog.density, 0.00006);  // lighter haze, not a wall of fog
     }
+    // §GROUND_COLOR_ORDER_FIX (2026-07-28, found by W-GROUND-ALBEDO, not by reading) — the SAME
+    // clobber §PHOTO_FOG_ORDER_FIX above documents, on the SAME call, missed for the ground.
+    // A.toggleNightMode() (line ~2694, called for its amber-glow mechanism) also does
+    // _setGroundColor(0x0a0a15) (tools.js §S277c) as a side effect. The photo ground colour is set
+    // ~78 lines EARLIER, so night's moonlight dim always won: 0x0a0a15's channel sum is 41, under
+    // the 0x60 night-dim threshold, so the ground rendered at 0x555566 = 0.333 instead of the
+    // intended photo-true 1.0. **The evening ground has been rendering at ONE THIRD of the
+    // brightness this file thought it set, since §PHOTO_GROUND_LIT shipped — the 0xd9c39a "bright
+    // warm sunlit-concrete tone" never reached the material at all.**
+    // MEASURED, same run: §GROUND_ALBEDO logged color=2.30 at staging, and the material read 0.333
+    // nine seconds later. Re-asserted HERE, after both clobbering calls, exactly like the fog.
+    if (A.ground && A._setGroundColor) {
+      A._setGroundColor(0xd9c39a);
+      console.log('§GROUND_COLOR_ORDER_FIX reasserted color=' + A.ground.material.color.r.toFixed(2) +
+        ' gain=' + A._groundAlbedoGain.toFixed(2));
+    }
     _showPhotoProps(true);
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
@@ -2741,9 +2780,15 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoEnvBoostedMats = [];
     _disablePhotoShadows();
     if (A.ground && A._applyGroundTexture) {
+      // §GROUND_ALBEDO: hand the gain back BEFORE restoring, or the lift follows the user out of
+      // the photoshoot into normal navigation — the same "restore what you borrowed" rule
+      // A._nightMaxLightsStill already has (NIGHT_AND_FIXTURE_LIGHTING.md §constants).
+      A._groundAlbedoGain = 1.0;
       A._applyGroundTexture(_photoGroundPrevKey);  // null → clears map, restores flat color
       if (_photoGroundPrevColor != null && A._setGroundColor) A._setGroundColor(_photoGroundPrevColor);
       A.ground.visible = _photoGroundWasVisible;
+      console.log('§GROUND_ALBEDO restored gain=' + A._groundAlbedoGain.toFixed(2) +
+        ' color=' + (A.ground.material.color ? A.ground.material.color.r.toFixed(2) : 'n/a'));
     }
     if (A.scene && A.scene.fog && _photoFogColorSaved != null) {
       A.scene.fog.color.setHex(_photoFogColorSaved);
