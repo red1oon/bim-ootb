@@ -307,6 +307,13 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
+  // §FACADE_WARM_COOL — the two illuminants this scene already declares (PHOTO_SUN_COLOR warm,
+  // PHOTO_HEMI_SKY_COLOR cool dusk sky). Warm pair unchanged from what shipped; cool pair chosen
+  // LUMINANCE-MATCHED to it (0.728 vs 0.714, 0.825 vs 0.837 — within 2%) so the split is purely
+  // chromatic and no facade gets brighter. See the assignment block for the full reasoning.
+  var PHOTO_FACADE_WARM_UP = 0xffaa55, PHOTO_FACADE_WARM_DOWN = 0xffcf9a;
+  var PHOTO_FACADE_COOL_UP = 0x8cc0ff, PHOTO_FACADE_COOL_DOWN = 0xb0d8ff;
+  A._facadeWarmCool = true;   // console kill-switch for the A/B: APP._facadeWarmCool = false
   var PHOTO_FACADE_DIM_FRACTION = 0.3;  // non-facing facades still lit, just weaker — not pitch dark
   var PHOTO_BACK_ACCENT_BOOST = 1.8;  // user ask: "ground based spotlights too" on the back portion —
                                        // paired with the roof-corner twin spot, not just the dim baseline
@@ -782,13 +789,51 @@ async function setupEffects(A, renderer, scene, camera) {
     // front). backIdx computed first so the strength loop below can special-case it.
     var backIdx = 0;
     for (var fi = 1; fi < 4; fi++) { if (facings[fi] < facings[backIdx]) backIdx = fi; }
+    // §FACADE_WARM_COOL (2026-07-28, user: "do facade colour if it's more realistic and not costly")
+    // — Witness: W-FACADE-WARM-COOL. Spec: bim-compiler PHOTOREAL_STILL_RENDER.md §FACADE_COLOUR.
+    //
+    // REALISM, not theatre. This scene already declares TWO illuminants and then contradicts itself:
+    // PHOTO_SUN_COLOR 0xffa55c (warm — a low sun's long air path scatters the blue out) and
+    // PHOTO_HEMI_SKY_COLOR 0x6a5a7a (the cool dusk sky dome). A surface that cannot see the sun is
+    // lit by the SKY, so it reads cool — that is what every real dusk photograph shows. Yet every
+    // facade wash, both roof spots, the sconces and the tree uplights are amber inside a ~30° hue
+    // span, so a sun-facing wall and a wall in full shade are painted the same colour. This makes
+    // the wash agree with the scene's own two-illuminant model instead of overriding it.
+    //
+    // FREE. No new light objects, no new draw calls, no shader recompile — a colour is a uniform.
+    // The sun azimuth is read from A.sun.position, which A.updateSky() has already repositioned by
+    // the time this runs, and the outward normal per edge is already stored in _photoFacadeLights.
+    //
+    // LUMINANCE-MATCHED ON PURPOSE: Y(warm up 0xffaa55) = 0.714 vs Y(cool up 0x8cc0ff) = 0.728;
+    // Y(warm down 0xffcf9a) = 0.837 vs Y(cool down 0xb0d8ff) = 0.825 — within 2%. The split is
+    // CHROMATIC, never a brightness change, so it cannot reintroduce the contrast-flattening that
+    // §PHOTO_CONTRAST_DIALBACK and §PHOTO_GROUND_WHITE_REVERTED were both reverted for.
+    var _sunAz = null, _warmN = 0, _coolN = 0;
+    if (A.sun && A._facadeWarmCool !== false) {
+      var sx = A.sun.position.x, sz = A.sun.position.z, sl = Math.hypot(sx, sz);
+      if (sl > 1e-6) _sunAz = { x: sx / sl, z: sz / sl };   // horizontal direction TOWARD the sun
+    }
     _photoFacadeLights.forEach(function(f, i) {
       var facingFrac = Math.max(0, Math.min(1, facings[i]));  // 0 (away/edge-on) .. 1 (directly facing)
       var strength = PHOTO_FACADE_DIM_FRACTION + (1 - PHOTO_FACADE_DIM_FRACTION) * facingFrac;
       if (i === backIdx) strength *= PHOTO_BACK_ACCENT_BOOST;  // ground-based spotlight, back portion
       f.up.intensity = PHOTO_FACADE_UP_BASE * strength;
       f.down.intensity = PHOTO_FACADE_DOWN_BASE * strength;
+      // A facade whose OUTWARD normal points toward the sun is the one the sun actually reaches.
+      // The OFF branch must REPAINT warm, not merely skip: the lights keep whatever colour the last
+      // recompute left on them, so a kill-switch that only stops assigning freezes the split in
+      // place instead of undoing it. Found by W-FACADE-WARM-COOL gate 6 — the control gate existed
+      // precisely to catch a switch that does not switch.
+      var warm = true, toSun = null;
+      if (_sunAz) { toSun = f.normalThree.x * _sunAz.x + f.normalThree.z * _sunAz.z; warm = toSun > 0; }
+      f.up.color.setHex(warm ? PHOTO_FACADE_WARM_UP : PHOTO_FACADE_COOL_UP);
+      f.down.color.setHex(warm ? PHOTO_FACADE_WARM_DOWN : PHOTO_FACADE_COOL_DOWN);
+      f.warm = warm; f.toSun = toSun;
+      if (warm) _warmN++; else _coolN++;
     });
+    if (_sunAz) console.log('§FACADE_WARM_COOL sunAz=' + _sunAz.x.toFixed(3) + ',' + _sunAz.z.toFixed(3) +
+      ' warm=' + _warmN + ' cool=' + _coolN + ' dots=' +
+      _photoFacadeLights.map(function(f) { return (f.toSun === undefined ? 'n/a' : f.toSun.toFixed(2)); }).join(','));
     // Recomputed fresh here alongside the facade wash, same discipline (never cached across triggers).
     if (_photoRoofSpotA && _photoRoofCorners.length === 4 && facings.length === 4) {
       var c1 = _photoRoofCorners[backIdx], c2 = _photoRoofCorners[(backIdx + 1) % 4];
