@@ -4321,7 +4321,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _natSec = {
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS),
       spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
-      out:   totalLen / CINEMA_WALK_MPS + _walkTurnDeg() / CINEMA_TURN_DPS,
+      out:   totalLen / CINEMA_WALK_MPS + _walkTurnDeg() / (CINEMA_TURN_DPS / 3),
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
@@ -4729,6 +4729,39 @@ async function setupEffects(A, renderer, scene, camera) {
     var CINEMA_PACE_SWING = 1.6;
     var _etW = 1 - 1 / CINEMA_PACE_SWING;
     var _etN = 240, _etC = null;
+    // §CPE_PACE_FLOOR — a SEPARATE concern from the cost function, and kept separate.
+    // _evenTurnBuild decides WHERE the film should slow (the blended cost). This decides HOW SLOW
+    // it is ever allowed to get. Mixing them made one loop answer two questions; it is a pure
+    // transform on a finished cost table now, testable and removable on its own.
+    //
+    // The blended cost bounds the fast side and the turn, and stalls on the slow side: MEASURED
+    // 5-8% of the ease's own prediction, which is the "2 secs pausing there" the user reported.
+    // Rule: cost may not accumulate faster than PACE_SWING x uniform-per-arc — the same statement
+    // as "the walk may not run slower than nominal/PACE_SWING".
+    // Clamp-then-renormalise does NOT work: rescaling by the shrunk span multiplies every slope by
+    // 1/span > 1 and restores exactly what was removed. The removed cost must go to the segments
+    // NOT at the cap: water-filling, bisect k with sum(min(k*raw, SWING*dArc)) = 1.
+    function _paceFloor(c, ss, S) {
+      var n = c.length - 1, raw = [], dA = [], i;
+      for (i = 1; i <= n; i++) { raw.push(c[i] - c[i - 1]); dA.push((ss[i] - ss[i - 1]) / S); }
+      var sumAt = function (k) {
+        var t = 0;
+        for (var j = 0; j < raw.length; j++) t += Math.min(k * raw[j], CINEMA_PACE_SWING * dA[j]);
+        return t;
+      };
+      if (sumAt(1e9) < 1) return c;                    // infeasible — leave the cost untouched
+      var lo = 0, hi = 1;
+      while (sumAt(hi) < 1 && hi < 1e9) hi *= 2;
+      for (var it = 0; it < 60; it++) {
+        var m = 0.5 * (lo + hi);
+        if (sumAt(m) < 1) lo = m; else hi = m;
+      }
+      var out = [0];
+      for (i = 0; i < raw.length; i++) out.push(out[i] + Math.min(hi * raw[i], CINEMA_PACE_SWING * dA[i]));
+      var sp = out[n];
+      if (sp > 1e-9) for (i = 0; i <= n; i++) out[i] /= sp;
+      return out;
+    }
     function _evenTurnBuild() {
       var ss = [], ts = [], prev = null, prevD = null, s = 0, th = 0;
       for (var i = 0; i <= _etN; i++) {
@@ -4749,57 +4782,22 @@ async function setupEffects(A, renderer, scene, camera) {
       // byte-for-byte today's behaviour. Guards ts[i]/Θ against dividing by ~0.
       var w = (th > 1e-3) ? _etW : 0;
       var S = s || 1, T = th || 1;
-      // ── THE SPEED FUNCTION (user, 2026-07-27: "my solution of noise-speed solves all... it is
-      // just a single function"). They are right, and the blended-cost form was the long way round.
-      //
-      //     v(u) = clamp( meanTurnPerMetre / turnPerMetre(u),  1/SWING,  SWING )
-      //
-      // Speed is set by how much NOISE (turning) each metre carries, relative to the average metre
-      // of this walk. Busy metre -> slow. Open metre -> quick. Then step the frames at equal
-      // increments of  dc = ds / v  and every property this lane has been chasing falls out of the
-      // clamp instead of out of a separate patch:
-      //   * Δs ≤ SWING × nominal      — the speed range, the fast half
-      //   * Δs ≥ nominal / SWING      — the STALL bound, the slow half (the "2 secs pausing")
-      //   * Δθ bounded with it        — a busy metre is spread over more frames, which IS the jerk fix
-      // The previous form bounded only the fast half, then needed a cost-slope clamp AND a
-      // water-filling redistribution to get the slow half back, and still landed at 60-62% of a
-      // 63% floor. Clamping the SPEED needs neither: the bound is on the quantity itself.
-      // TWO passes, and the second one is not optional. Clamping the RAW speed and then scaling the
-      // table to [0,1] does not bound anything: the scale divides by the walk's mean speed, so a
-      // walk whose mean v is 1.28 turns a clamped 0.625 into a delivered 0.49. MEASURED exactly
-      // that — 50% against a 63% floor — while every individual v was inside the clamp. The bound
-      // has to be on speed RELATIVE TO THIS WALK'S OWN MEAN, because that is what "1.6x range"
-      // means. So: compute raw speeds, take their arc-weighted mean, divide, THEN clamp.
-      var _turnPerM = th / (s || 1);                     // this walk's average noise per metre
-      var _dsA = [], _vRaw = [];
-      for (i = 1; i <= _etN; i++) {
-        var _ds = ss[i] - ss[i - 1], _dth = ts[i] - ts[i - 1];
-        // Noise of THIS metre. A segment with no length carries its turn as pure rotation — there
-        // is no distance to spread it over, so it cannot set a distance speed; it takes v=1.
-        var _tpm = _ds > 1e-9 ? (_dth / _ds) : _turnPerM;
-        _dsA.push(_ds);
-        _vRaw.push((w > 0 && _turnPerM > 1e-9) ? _turnPerM / Math.max(1e-9, _tpm) : 1);
-      }
-      // Arc-weighted mean speed = total distance / total time-at-those-speeds. Dividing by it makes
-      // v dimensionless against this walk, so the clamp is the user's range and nothing else.
-      var _tSum = 0, _sSum = 0;
-      for (i = 0; i < _vRaw.length; i++) { _tSum += _dsA[i] / Math.max(1e-9, _vRaw[i]); _sSum += _dsA[i]; }
-      var _vBar = _tSum > 1e-9 ? _sSum / _tSum : 1;
-      var c = [0], _vMin = 1e9, _vMax = 0;
-      for (i = 0; i < _vRaw.length; i++) {
-        var _v = Math.max(1 / CINEMA_PACE_SWING, Math.min(CINEMA_PACE_SWING, _vRaw[i] / _vBar));
-        _vMin = Math.min(_vMin, _v); _vMax = Math.max(_vMax, _v);
-        c.push(c[i] + _dsA[i] / _v);
-      }
-      var _cT = c[_etN] || 1;
-      for (i = 0; i <= _etN; i++) c[i] /= _cT;
+      // The blended cost — RESTORED after measuring its replacement. A speed heuristic
+      // v=f(noise) has no bound on turn-per-frame; this form does, by construction:
+      //     dc = (1-w)(ds/S) + w(dθ/Θ)   ⇒   Δθ ≤ Θ/(w·N),  Δs ≤ S/((1-w)·N)
+      // The noise-speed version was tried in both per-segment and windowed forms and MEASURED
+      // WORSE on the metric that matters (Hospital 11.2 → 16.5 → 18.3 deg/frame), because
+      // smoothing the noise removes the slowdown exactly at the corner that needed it. Keep the
+      // provable bound; buy the headroom with FRAMES instead (§CPE_TURN_BUDGET).
+      var c = [];
+      for (i = 0; i <= _etN; i++) c.push((1 - w) * (ss[i] / S) + w * (ts[i] / T));
+      c = _paceFloor(c, ss, S);
       _etC = c;
-      console.log('§CPE_EVEN_TURN speed=noise/time ratio, PACE_SWING=' + CINEMA_PACE_SWING +
+      console.log('§CPE_EVEN_TURN blended-cost, PACE_SWING=' + CINEMA_PACE_SWING +
         ' walkLen=' + s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) +
-        'deg avgNoise=' + (_turnPerM * 180 / Math.PI).toFixed(1) + 'deg/m samples=' + (_etN + 1) +
-        ' vRange=[' + _vMin.toFixed(2) + ',' + _vMax.toFixed(2) + ']x nominal' +
-        ' (clamped to [' + (1 / CINEMA_PACE_SWING).toFixed(2) + ',' + CINEMA_PACE_SWING.toFixed(2) +
-        '] — the slow bound is the anti-stall, the fast bound is the speed range)' +
+        'deg samples=' + (_etN + 1) +
+        ' boundPerFrameTurn=' + (w > 0 ? (th * 180 / Math.PI / w).toFixed(1) + 'deg/N' : 'n/a') +
+        ' speedRange=' + (1 / (1 - w)).toFixed(2) + 'x' +
         ' x1.5 more from the smoothstep ease at the beat midpoint');
     }
     // Monotone inverse of the cost table: given uniform progress in cost, return the walk fraction.

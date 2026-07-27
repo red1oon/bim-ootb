@@ -81,7 +81,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // Where the camera POINTS is the user's creative control (their call, 2026-07-27); how fast it
       // is allowed to CHANGE is what this witness owns.
       const turnPeak = (plan) => {
-        const n = Math.max(2, Math.round(dur * fps));
+        // The film the PRODUCT bakes is plan.naturalTotal seconds long (cinema_maxq.js:414 sets
+        // the frame count from it), not `dur`. Sampling dur*fps measured a 24s film that no user
+        // ever sees: on Hospital the real film is 44-69s, i.e. 2-3x the frames, and deg/FRAME
+        // falls with frame count. Same instrument class as the G7/G2 bugs — measure the regime
+        // the product actually enters.
+        const n = Math.max(2, Math.round((plan.naturalTotal || dur) * fps));
         let peak = 0, peakT = 0, prev = null, total = 0, peakPitch = 0;
         let yawPeak = 0, yawPeakT = 0, yawPeakPitch = 0, prevYaw = null;
         for (let i = 0; i < n; i++) {
@@ -126,8 +131,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       //    centimetre per frame on average has no meaningful position bound, so it is reported and
       //    not gated. The spin's motion is a TURN, and T2 already owns that.
       const posPeak = (plan) => {
-        const n = Math.max(2, Math.round(dur * fps));
+        const n = Math.max(2, Math.round((plan.naturalTotal || dur) * fps));
         const b = plan.beats || {};
+        const nSec = plan.naturalTotal || dur;
         const bounds = [
           ['dive', 0, b.dive], ['spin', b.dive, b.spin], ['walk', b.spin, b.out],
           ['rise', b.out, b.rise], ['orbit', b.rise, 1],
