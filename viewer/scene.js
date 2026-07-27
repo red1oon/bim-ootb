@@ -100,7 +100,11 @@ async function setupScene(A) {
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.45;
+  // §PHOTO_EXPOSURE (2026-07-27, user: "Scene still too dark drab"). Was 0.45 — less than half
+  // three.js's own default of 1.0, i.e. the whole app was rendering roughly a stop under-exposed,
+  // which is a large part of why interiors read as drab and why emissive luminaires were invisible
+  // (a glow measured through a half-stop-down exposure has half a stop less to show).
+  renderer.toneMappingExposure = 1.0;
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display
