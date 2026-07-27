@@ -855,6 +855,18 @@ function setupTools(A) {
   A._nightMixAmber = 0.20;   // share forced distinctly amber
   var NIGHT_MIX_BLUE  = 0xa8c8ff;   // cold cast, clearly blue against the warm
   var NIGHT_MIX_AMBER = 0xffb45c;   // strong amber, warmer than NIGHT_WARM
+  // §NIGHT_MIX_WHITE (2026-07-27, user: "can we have 20/20/60 - amber/blue/white lighting?").
+  // The 20/20 buckets already existed; the remaining 60% fell through to the TYPE-derived cool/warm
+  // tints, so the mix was never actually 20/20/60 — it was 20/20/(a spread of warm and cool). This
+  // makes the majority bucket explicitly white, which is also what a modern LED building looks like:
+  // mostly neutral, with amber and blue as character rather than as the base note.
+  // Pure 0xffffff reads clinical, and it would throw away temperature the model actually STATES
+  // (Terminal's family names carry cw/ww), so the white bucket is neutral by default and tinted a
+  // few points when the model says which it is. The 20/20/60 SHARES stay exact either way — the
+  // stated data changes the shade of the white bucket, never which bucket a fixture lands in.
+  var NIGHT_MIX_WHITE = 0xffffff;   // neutral — the 60%
+  var NIGHT_WHITE_COOL = 0xf2f6ff;  // stated cw/cool — white with a touch of blue
+  var NIGHT_WHITE_WARM = 0xfff4e4;  // stated ww/warm — white with a touch of amber
   function _mixHash(key) {
     // FNV-1a, then to [0,1). Deterministic across sessions and machines.
     var h = 2166136261;
@@ -874,8 +886,13 @@ function setupTools(A) {
     if (A.nightIsExitSign(n)) return NIGHT_EXIT;
     if (key !== undefined) {
       var h = _mixHash(String(key));
-      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;
-      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;
+      if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;                      // 20%
+      if (h < A._nightMixBlue + A._nightMixAmber) return NIGHT_MIX_AMBER;  // 20%
+      // §NIGHT_MIX_WHITE — the remaining 60%. Tinted by what the model STATES, never re-bucketed
+      // by it, so the 20/20/60 shares hold exactly whatever the family names happen to say.
+      if (/\bcw\b|cool/.test(n)) return NIGHT_WHITE_COOL;
+      if (/\bww\b|warm/.test(n)) return NIGHT_WHITE_WARM;
+      return NIGHT_MIX_WHITE;
     }
     if (!n) return NIGHT_AMBER;
     if (/\bcw\b|cool/.test(n)) return NIGHT_COOL;      // stated in the model — outranks the type default
@@ -987,7 +1004,30 @@ function setupTools(A) {
           "AND NOT (LOWER(m.element_name) LIKE '%switch%' OR LOWER(m.element_name) LIKE '%receptacle%' " +
           "  OR LOWER(m.element_name) LIKE '%panelboard%' OR LOWER(m.element_name) LIKE '%socket%' " +
           "  OR LOWER(m.element_name) LIKE '%outlet%' " +
-          "  OR LOWER(m.element_name) LIKE '%flight%' OR LOWER(m.element_name) LIKE '%skylight%')");
+          "  OR LOWER(m.element_name) LIKE '%flight%' OR LOWER(m.element_name) LIKE '%skylight%' " +
+          // §NIGHT_ROLE_EXCLUDE (2026-07-27, user: "others got accidentally lighted so look out for
+          // those without semblance to lighting and clearly assigned other role"). Two guards:
+          //
+          // BY NAME — role words that a lighting word can collide with. '%lamp%' matches CLAMP,
+          // which would turn every pipe clamp in a model into a luminaire; alarm/detector/sprinkler
+          // are devices that live on the same ceiling and get named alongside lights. None of these
+          // currently hit in the five shipped buildings — they are the latent traps, blocked before
+          // the model that contains one arrives.
+          "  OR LOWER(m.element_name) LIKE '%clamp%' OR LOWER(m.element_name) LIKE '%alarm%' " +
+          "  OR LOWER(m.element_name) LIKE '%detector%' OR LOWER(m.element_name) LIKE '%sprinkler%') " +
+          // BY ROLE — the class is not used to FIND luminaires any more (§NIGHT_NAME_NOT_CLASS), but
+          // it is still the best statement of what an element IS FOR, so it is used to REJECT.
+          // The live case: Terminal's 'jkrME_fir-al_Flashing Light_Red & Green' (IfcAlarm, 9) is a
+          // fire-alarm beacon. It genuinely contains "Light" and it genuinely emits, but it is
+          // assigned a fire-detection role and lighting a building by its alarm beacons is wrong.
+          // Structural/opening/plumbing classes are here for the same reason skylight is excluded by
+          // name — they can only ever match by accident. IfcBuildingElementProxy is deliberately NOT
+          // in this list: it is the catch-all a model may legitimately file its luminaires under.
+          "AND m.ifc_class NOT IN ('IfcAlarm','IfcSensor','IfcFireSuppressionTerminal'," +
+          "  'IfcProtectiveDevice','IfcProtectiveDeviceTrippingUnit','IfcSanitaryTerminal'," +
+          "  'IfcDuctSegment','IfcPipeSegment','IfcDuctFitting','IfcPipeFitting'," +
+          "  'IfcWindow','IfcDoor','IfcSlab','IfcWall','IfcWallStandardCase'," +
+          "  'IfcStair','IfcStairFlight','IfcMember','IfcBeam','IfcColumn','IfcRailing')");
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
             A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0 });
