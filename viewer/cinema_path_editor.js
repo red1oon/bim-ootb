@@ -629,8 +629,12 @@
         // scene stays fully navigable while the editor is open.
         ev.preventDefault(); ev.stopPropagation();
         _hold(hit.b, hit.z, false);
-        _undoPush('drag band ' + hit.b + ' (' + hit.z + ')');
-        _state.drag = { b: hit.b, z: hit.z,
+        // §CPE_UNDO: the snapshot is NOT taken here. A press that never moves must not leave an
+        // undo entry behind — G-DRAG-1 gates that a zero-pixel press changes nothing, so an undo
+        // step for it would be a Ctrl+Z that visibly does nothing and silently eats the user's real
+        // previous edit. Taken on the FIRST actual movement instead (see h.move), which is the
+        // moment an edit genuinely begins.
+        _state.drag = { b: hit.b, z: hit.z, snapped: false,
                         c0: { x: _state.bands[hit.b].c.x, y: _state.bands[hit.b].c.y, z: _state.bands[hit.b].c.z },
                         p0: { x: hit.p.x, y: hit.p.y, z: hit.p.z } };
       }
@@ -641,6 +645,9 @@
       var d = _state.drag, b = _state.bands[d.b];
       var p = _viewPlanePoint(ev, d.p0);   // the plane the grabbed handle already lies in
       if (!p) return;
+      // First real movement of this gesture = the edit is now happening; snapshot the pre-drag
+      // state exactly once, before anything below mutates it.
+      if (!d.snapped) { d.snapped = true; _undoPush('drag band ' + d.b + ' (' + d.z + ')'); }
       if (d.z === 'mid') {
         // Middle = the whole length moving as one.
         // §CPE_DRAG_TELEPORT (user, Hospital, 2026-07-27: "went off to a spot user didnt put.

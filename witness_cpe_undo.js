@@ -16,6 +16,10 @@
 //      user's actual ask ("reflecting in the history line"), not just an internal stack.
 //   U5 a KEYED edit (typing in the panel, not dragging) is undoable too — the panel and the canvas
 //      are the same state per §CINEMA_PATH_EDITOR_MODEL item 19, so undo cannot cover only one.
+//   U6 a press that never MOVES leaves no phantom undo entry. Found by review, not by the user: the
+//      snapshot was originally taken on pointerdown, so a zero-pixel press (which G-DRAG-1 proves
+//      changes nothing) still pushed a step — making the next Ctrl+Z appear to do nothing while
+//      silently consuming the user's real previous edit.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8403;
@@ -104,6 +108,36 @@ async function ctrlZ(page, shift) {
       `centre moved ${dist(cOpen[0], cEmpty[0]).toExponential(2)}m; ` +
       `${logs.filter(l => l.startsWith('PAGEERROR')).length} page error(s); ` +
       `log: ${(logs.filter(l => /§CPE_UNDO/.test(l)).slice(-1)[0] || '(none)')}`);
+
+    // ── U6: a press with NO movement must not leave an undo entry. If it did, the next Ctrl+Z
+    // would visibly do nothing AND silently eat the user's real previous edit.
+    // Sequence: make a real edit, press-without-moving on the handle, then Ctrl+Z once — it must
+    // undo the REAL edit, not a phantom press.
+    const projU6 = await page.evaluate(() => {
+      const A = window.APP, c = A.camera;
+      const row = document.querySelectorAll('#cpe-rows > div')[0].querySelectorAll('input');
+      const p = new THREE.Vector3(parseFloat(row[0].value), parseFloat(row[2].value), parseFloat(row[1].value));
+      const v = p.clone().project(c);
+      const r = A.canvas.getBoundingClientRect();
+      return { sx: r.left + (v.x + 1) / 2 * r.width, sy: r.top + (1 - v.y) / 2 * r.height };
+    });
+    const u6base = await centres();
+    await page.evaluate(() => {
+      const inp = document.querySelectorAll('#cpe-rows > div')[0].querySelectorAll('input')[2];
+      inp.value = String(parseFloat(inp.value) + 3);
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await sleep(250);
+    const u6edited = await centres();
+    await page.mouse.move(Math.round(projU6.sx), Math.round(projU6.sy));
+    await page.mouse.down(); await page.mouse.up();
+    await sleep(250);
+    await ctrlZ(page, false);
+    const u6undone = await centres();
+    P('U6 a press with no movement leaves no phantom undo entry',
+      dist(u6base[0], u6edited[0]) > 0.5 && dist(u6base[0], u6undone[0]) < 1e-9,
+      `edit moved ${dist(u6base[0], u6edited[0]).toFixed(2)}m; after a zero-pixel press + ONE Ctrl+Z ` +
+      `the residue is ${dist(u6base[0], u6undone[0]).toExponential(2)}m (a phantom entry would leave the edit in place)`);
 
     // Where band 0 projects on screen.
     const proj = await page.evaluate(() => {
