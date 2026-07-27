@@ -3270,18 +3270,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // past the 15th second the user asked for. Only the overlap moves: 0.4 → 0.25, so the look-back
   // does not begin while still walking out of the door (window opens 11.9s, not 11.3s). Deliberately
   // KEPT non-zero — §CINEMA_BEAT_OVERLAP exists so Beat 4 continues a turn already in motion.
-  // §CPE_LOOK_HOME (user, 2026-07-27: "the cam when leaving building must look to building centre
-  // (all gracefully)"). The blend to the pivot used to occupy the last quarter of the walk; it now
-  // occupies most of it, so the camera spends the walk turning to face the building rather than
-  // following the path and then whipping round at the end.
-  //
-  // This is also the jerk fix the pacing could not reach. deg/frame = (deg/metre) x (metres/frame),
-  // and every attempt so far fought the SECOND term against a 1.6x range that MEASURED saturated at
-  // both rails (vRange=[0.63,1.60] against a [0.63,1.60] clamp) while Hospital still turned 21.6
-  // deg/frame. This attacks the FIRST term instead: the pivot is a FIXED point, so aiming at it has
-  // no path curvature in it at all, while a path look-ahead inherits every wiggle of the route.
-  // The larger the blend weight, the less of the walk's own noise reaches the gaze.
-  var CINEMA_TURN_OVERLAP = 0.75, CINEMA_TURN_OVERLAP_MAX = 0.5;
+  var CINEMA_TURN_OVERLAP = 0.25, CINEMA_TURN_OVERLAP_MAX = 0.5;
   // §CINEMA_TURN_SLERP: within this of a dead-180° turn the "short way" is undefined — see
   // _cinemaGazeBlend for why that case is the COMMON one, not the corner case.
   var CINEMA_TURN_ANTIPODAL_RAD = 179.5 * Math.PI / 180;
@@ -3534,60 +3523,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // Seed three bands from a derived plan's three waypoints. Direction at each anchor is the local
   // path tangent (Catmull-Rom style: previous→next), so the seeded bands already lie along the route
   // and the very first render is a no-op-looking curve rather than a scrambled one.
-  // Length was 5% of the interior walk ("a stretch say about 5% of the inside") with a 1m floor.
-  // It is NOT draggable — rule 4, length is a typed field.
-  //
-  // §CPE_BAND_REACH (user, 2026-07-27: "make that 'stick' longer as it is hard to grab the right
-  // end", and "the stick band should curve along more.. now it is short, if twisted its curve still
-  // short.. having more make it more useful to craft"). TWO changes, because the difficulty has two
-  // separate causes and the obvious one is not the binding one:
-  //
-  //  1. The fraction doubles, 5% -> 10%. That is the "curve along more" half — a longer band sweeps
-  //     a longer arc when twisted, which is what makes it useful to craft with.
-  //
-  //  2. A SCREEN-SPACE floor, which is the half that actually fixes "hard to grab the right end".
-  //     A band's world length says nothing about how grabbable it is: the view plane sits at the
-  //     handle's camera distance, MEASURED at 0.453 m/px on Hospital (0.151 Duplex, 0.227 Terminal),
-  //     so a 1.5m band spans ~3 PIXELS there and its three 0.30m handles are individually
-  //     SUB-PIXEL. No world-space length chosen for one building can fix that for another — the
-  //     seed has to measure the camera. 88px is the span at which the two END handles are one
-  //     standard 44px touch target apart, so end-vs-mid is separable by pointer or by finger;
-  //     96 for margin. Falls back to the world rule if the camera is not readable.
-  var CINEMA_BAND_FRAC = 0.10, CINEMA_BAND_MIN_M = 1.0, CINEMA_BAND_MIN_PX = 96;
+  // Length is 5% of the interior walk ("a stretch say about 5% of the inside") with a floor so a
+  // short path never seeds a degenerate band. It is NOT draggable — rule 4, length is a typed field.
+  var CINEMA_BAND_FRAC = 0.05, CINEMA_BAND_MIN_M = 1.0;
   function _cinemaSeedBands(wp, pathLen) {
     if (!wp || wp.length < 2) return null;
     var len = Math.max(CINEMA_BAND_MIN_M, (pathLen || 0) * CINEMA_BAND_FRAC), bands = [];
-    // Screen-space floor: metres per pixel in the view plane at the band's own distance is
-    // 2·d·tan(fov/2)/viewportHeight — the same geometry the drag itself uses.
-    try {
-      var _cam = A.camera, _el = A.renderer && A.renderer.domElement;
-      if (_cam && _cam.isPerspectiveCamera && _el && _el.clientHeight > 0) {
-        var _mid = wp[Math.floor(wp.length / 2)];
-        var _d = Math.hypot(_mid.x - _cam.position.x, _mid.y - _cam.position.y, _mid.z - _cam.position.z);
-        var _mPerPx = 2 * _d * Math.tan(_cam.fov * Math.PI / 360) / _el.clientHeight;
-        var _screenMin = _mPerPx * CINEMA_BAND_MIN_PX;
-        // Hard cap as a fraction of the walk. Unclamped, the screen floor is absurd on a big
-        // building viewed from far out: MEASURED 43.49m of band on Hospital's 29.8m walk — a stick
-        // longer than the path it edits. Beyond this the honest answer is not a bigger stick, it
-        // is to zoom in, which §CPE_SCREEN_PLANE already settled as the workflow ("you cannot
-        // change height from top-down... some moves take two steps").
-        //
-        // The cap is set by the CONNECTORS, not by taste. Band length is walk the connectors do
-        // not get: three bands at 25% each leave only 25% of the walk to turn every corner in, and
-        // that MEASURED 25.2 deg/frame on Terminal against B5's 12 cap — the longer stick bought
-        // back the very jerk this lane spent the session removing. 15% leaves 55% for connectors
-        // and holds B5. Raising this requires re-running witness_cinema_bands, not judgement.
-        var _cap = 0.15 * (pathLen || 0);
-        var _want = Math.min(_screenMin, _cap > 0 ? _cap : _screenMin);
-        if (isFinite(_want) && _want > len) {
-          console.log('§CPE_BAND_REACH screen floor binds: ' + len.toFixed(2) + 'm -> ' +
-            _want.toFixed(2) + 'm = ' + (_want / _mPerPx).toFixed(0) + 'px (' +
-            _mPerPx.toFixed(3) + ' m/px at ' + _d.toFixed(0) + 'm; wanted ' +
-            CINEMA_BAND_MIN_PX + 'px = ' + _screenMin.toFixed(2) + 'm, cap ' + _cap.toFixed(2) + 'm)');
-          len = _want;
-        }
-      }
-    } catch (e) {}
     for (var i = 0; i < wp.length; i++) {
       var a = wp[Math.max(0, i - 1)], b = wp[Math.min(wp.length - 1, i + 1)];
       var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -4716,58 +4657,53 @@ async function setupEffects(A, renderer, scene, camera) {
       // byte-for-byte today's behaviour. Guards ts[i]/Θ against dividing by ~0.
       var w = (th > 1e-3) ? _etW : 0;
       var S = s || 1, T = th || 1;
-      // ── THE SPEED FUNCTION (user, 2026-07-27: "my solution of noise-speed solves all... it is
-      // just a single function"). They are right, and the blended-cost form was the long way round.
+      var c = [];
+      for (i = 0; i <= _etN; i++) c.push((1 - w) * (ss[i] / S) + w * (ts[i] / T));
+      // §CPE_PACE_FLOOR — PACE_SWING is a RANGE, and only its fast half was ever enforced.
+      // Δs ≤ 1.5·S/((1-w)·N) caps how FAST the walk gets. Nothing capped how SLOW: where dθ
+      // dominates a cost step, ds → 0 and the camera can crawl arbitrarily, spending many frames
+      // in the same place. USER, live on Hospital: "it must be 2 secs pausing there in movie" —
+      // a stall, not a jerk, and the exact opposite failure of the one §CPE_EVEN_TURN was built
+      // for. Total turn there is 488 deg over 36 m, so a single corner can eat the whole budget.
       //
-      //     v(u) = clamp( meanTurnPerMetre / turnPerMetre(u),  1/SWING,  SWING )
-      //
-      // Speed is set by how much NOISE (turning) each metre carries, relative to the average metre
-      // of this walk. Busy metre -> slow. Open metre -> quick. Then step the frames at equal
-      // increments of  dc = ds / v  and every property this lane has been chasing falls out of the
-      // clamp instead of out of a separate patch:
-      //   * Δs ≤ SWING × nominal      — the speed range, the fast half
-      //   * Δs ≥ nominal / SWING      — the STALL bound, the slow half (the "2 secs pausing")
-      //   * Δθ bounded with it        — a busy metre is spread over more frames, which IS the jerk fix
-      // The previous form bounded only the fast half, then needed a cost-slope clamp AND a
-      // water-filling redistribution to get the slow half back, and still landed at 60-62% of a
-      // 63% floor. Clamping the SPEED needs neither: the bound is on the quantity itself.
-      // TWO passes, and the second one is not optional. Clamping the RAW speed and then scaling the
-      // table to [0,1] does not bound anything: the scale divides by the walk's mean speed, so a
-      // walk whose mean v is 1.28 turns a clamped 0.625 into a delivered 0.49. MEASURED exactly
-      // that — 50% against a 63% floor — while every individual v was inside the clamp. The bound
-      // has to be on speed RELATIVE TO THIS WALK'S OWN MEAN, because that is what "1.6x range"
-      // means. So: compute raw speeds, take their arc-weighted mean, divide, THEN clamp.
-      var _turnPerM = th / (s || 1);                     // this walk's average noise per metre
-      var _dsA = [], _vRaw = [];
-      for (i = 1; i <= _etN; i++) {
-        var _ds = ss[i] - ss[i - 1], _dth = ts[i] - ts[i - 1];
-        // Noise of THIS metre. A segment with no length carries its turn as pure rotation — there
-        // is no distance to spread it over, so it cannot set a distance speed; it takes v=1.
-        var _tpm = _ds > 1e-9 ? (_dth / _ds) : _turnPerM;
-        _dsA.push(_ds);
-        _vRaw.push((w > 0 && _turnPerM > 1e-9) ? _turnPerM / Math.max(1e-9, _tpm) : 1);
+      // The bound is the user's own dial, applied symmetrically: cost may not accumulate faster
+      // than PACE_SWING × uniform-per-arc, which is the same thing as saying the walk may not run
+      // slower than nominal/PACE_SWING. Clamping the cost SLOPE against normalised arc is how —
+      // it leaves every gentle stretch untouched and only bites where a corner was about to stall.
+      // Renormalised afterwards so the table still spans [0,1] exactly.
+      // Clamp then RENORMALISE does not work and was measured not working: rescaling by the
+      // shrunk span multiplies every slope by 1/span > 1, putting back exactly what the clamp
+      // removed (measured 53-57% of the ease's prediction against a 63% floor). The removed cost
+      // has to be redistributed to the segments that are NOT at the cap, not smeared over all of
+      // them. That is a water-filling problem: find the scale k on the unclamped part such that
+      //     Σ min(k·raw_i, SWING·dArc_i) = 1
+      // Monotone in k, so bisect. Feasible because Σ SWING·dArc = SWING = 1.6 > 1.
+      var raw = [], dA = [];
+      for (i = 1; i <= _etN; i++) { raw.push(c[i] - c[i - 1]); dA.push((ss[i] - ss[i - 1]) / S); }
+      var sumAt = function (k) {
+        var t = 0;
+        for (var j = 0; j < raw.length; j++) t += Math.min(k * raw[j], CINEMA_PACE_SWING * dA[j]);
+        return t;
+      };
+      var kLo = 0, kHi = 1;
+      while (sumAt(kHi) < 1 && kHi < 1e6) kHi *= 2;
+      for (var it = 0; it < 60; it++) {
+        var kMid = 0.5 * (kLo + kHi);
+        if (sumAt(kMid) < 1) kLo = kMid; else kHi = kMid;
       }
-      // Arc-weighted mean speed = total distance / total time-at-those-speeds. Dividing by it makes
-      // v dimensionless against this walk, so the clamp is the user's range and nothing else.
-      var _tSum = 0, _sSum = 0;
-      for (i = 0; i < _vRaw.length; i++) { _tSum += _dsA[i] / Math.max(1e-9, _vRaw[i]); _sSum += _dsA[i]; }
-      var _vBar = _tSum > 1e-9 ? _sSum / _tSum : 1;
-      var c = [0], _vMin = 1e9, _vMax = 0;
-      for (i = 0; i < _vRaw.length; i++) {
-        var _v = Math.max(1 / CINEMA_PACE_SWING, Math.min(CINEMA_PACE_SWING, _vRaw[i] / _vBar));
-        _vMin = Math.min(_vMin, _v); _vMax = Math.max(_vMax, _v);
-        c.push(c[i] + _dsA[i] / _v);
-      }
-      var _cT = c[_etN] || 1;
-      for (i = 0; i <= _etN; i++) c[i] /= _cT;
+      var cl = [0];
+      for (i = 0; i < raw.length; i++)
+        cl.push(cl[i] + Math.min(kHi * raw[i], CINEMA_PACE_SWING * dA[i]));
+      var span = cl[_etN];
+      if (span > 1e-9) for (i = 0; i <= _etN; i++) cl[i] /= span;   // residual rounding only
+      c = cl;
       _etC = c;
-      console.log('§CPE_EVEN_TURN speed=noise/time ratio, PACE_SWING=' + CINEMA_PACE_SWING +
-        ' walkLen=' + s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) +
-        'deg avgNoise=' + (_turnPerM * 180 / Math.PI).toFixed(1) + 'deg/m samples=' + (_etN + 1) +
-        ' vRange=[' + _vMin.toFixed(2) + ',' + _vMax.toFixed(2) + ']x nominal' +
-        ' (clamped to [' + (1 / CINEMA_PACE_SWING).toFixed(2) + ',' + CINEMA_PACE_SWING.toFixed(2) +
-        '] — the slow bound is the anti-stall, the fast bound is the speed range)' +
-        ' x1.5 more from the smoothstep ease at the beat midpoint');
+      console.log('§CPE_EVEN_TURN w=' + w.toFixed(3) + ' (PACE_SWING=' + CINEMA_PACE_SWING + ') walkLen=' +
+        s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) + 'deg samples=' + (_etN + 1) +
+        ' boundPerFrameTurn=' + (w > 0 ? (th * 180 / Math.PI / w).toFixed(1) + 'deg/N' : 'n/a (straight walk)') +
+        ' speedRange=' + (w > 0 ? (1 / (1 - w)).toFixed(2) + 'x per cost-step, ' +
+          (1.5 / (1 - w)).toFixed(2) + 'x delivered (x1.5 from the smoothstep ease — see the derivation)'
+          : '1.00x'));
     }
     // Monotone inverse of the cost table: given uniform progress in cost, return the walk fraction.
     function _evenTurnRemap(u) {
