@@ -183,7 +183,7 @@
     _ambientResetCount++;
     clearTimeout(_ambientResetTimer);
     _ambientResetTimer = setTimeout(function() {
-      if (_ambientResetCount >= 3) {
+      if (_ambientResetCount >= 3 && !_pivot && !_fine) {
         resetOrbit();
         console.log('§reset ambient-auto fired count=' + _ambientResetCount);
       }
