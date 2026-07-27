@@ -23,6 +23,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
              lamps: q("SELECT COUNT(*) FROM elements_meta WHERE element_name LIKE 'BIM_OOTB_Floodlight%'"),
              fin:   q("SELECT finish, COUNT(*) FROM render_finishes GROUP BY 1") };
   });
+  // §BILLBOARD_ALWAYS gate: the art must exist BEFORE Alt+S is ever pressed. Measured first,
+  // because that was the live defect — the panel rendered as a black slab in normal navigation.
+  const preStill = await page.evaluate(() => { let n = 0; window.APP.scene.traverse(o => {
+    if (o.isMesh && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.isMeshBasicMaterial) n++; }); return n; });
   await page.evaluate(() => window.APP.startStillRefine());
   // Wait for the CONDITION, never a fixed sleep: the art quad's texture arrives after up to four
   // sequential image probes (404, 404, then the hit), and a timed guess measured a null map and
@@ -51,6 +55,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   P(db.lamps[0] && db.lamps[0][0]===4, `corner floodlights in DB: ${db.lamps[0]?db.lamps[0][0]:0} (expect 4)`);
   P(db.fin.length>0, `render_finishes: ${db.fin.map(r=>r[0]+'='+r[1]).join(', ')}`);
   console.log('\n─ 2. ART QUAD built from those rows');
+  P(preStill === 1, `§BILLBOARD_ALWAYS: art quad exists BEFORE any Alt+S (found ${preStill}, must be 1)`);
   P(!!art.found, `art quad exists (count=${art.count}, must be 1)`);
   if (art.found) {
     P(Math.abs(art.found.w-db.panel[0][2])<0.01 && Math.abs(art.found.h-db.panel[0][3])<0.01, `sized from the DB row: ${art.found.w}m x ${art.found.h}m`);

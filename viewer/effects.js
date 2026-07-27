@@ -2163,6 +2163,16 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§BILLBOARD_ART fallback notice drawn (' + W + 'x' + H + ') — no billboard.png found');
     return tex;
   }
+  // §BILLBOARD_ALWAYS (2026-07-28, user live: "its blank black.. ah i see it, alt-s!!") — the art
+  // quad was only ever built from _showPhotoProps(true), so outside Alt+S the panel rendered as its
+  // own near-black hoarding body with no face on it, and it looked broken rather than unlit. A sign
+  // is a sign all the time; it should not need a photoshoot to have a face. Built once when the
+  // model has finished streaming, and _showPhotoProps's call is now just a harmless re-assert
+  // (the function is idempotent — it returns immediately if the mesh exists).
+  A._billboardAutoBuild = function() {
+    if (!A.db || !A.scene) return;
+    try { A._buildBillboardArt(); } catch (e) { console.warn('§BILLBOARD_ART auto-build failed: ' + e.message); }
+  };
   A._buildBillboardArt = function() {
     if (_billboardMesh || !A.db || !A.ifc2three) return;
     var rows;
@@ -2246,7 +2256,7 @@ async function setupEffects(A, renderer, scene, camera) {
       _buildPhotoProps();
     }
     if (show) _updateFacadeFacingLights();
-    if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent, builds once
+    if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent; also built outside staging, see §BILLBOARD_ALWAYS
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;
