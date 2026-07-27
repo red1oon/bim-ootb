@@ -100,6 +100,12 @@ async function setupScene(A) {
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
+  // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
+  // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
+  // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
+  // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
+  // how bloom, ember and the 48-light budget are all still-only.
   renderer.toneMappingExposure = 0.45;
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;

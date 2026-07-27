@@ -819,7 +819,16 @@ function setupTools(A) {
   A._nightLights = [];       // active THREE.PointLight objects
   A._nightFixtures = [];     // [{x,y,z}] from DB — IFC coordinates
   A._nightSaved = null;      // saved day settings
-  var NIGHT_MAX_LIGHTS = 12; // §S277d: 12 proximity-culled lights — perf cap (each light = per-pixel cost/frame)
+  // §NIGHT_STILL_LIGHTS (2026-07-27, user: "alt-s is quite impressive if more lights chances").
+  // 12 is a NAVIGATION budget — every point light costs per-pixel work on every lit material every
+  // frame, so 12 is what a 60fps orbit can carry. A frozen still has no frame budget to protect: it
+  // renders once and then sits there. So the cap is a variable the still can raise, not a constant.
+  // Read through A._nightMaxLights everywhere below so raising it and re-running _nightUpdateLights
+  // is all that is needed.
+  A._nightMaxLights = 12;          // navigation budget
+  A._nightMaxLightsStill = 48;     // frozen-still budget — 4x, paid once
+  A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
+  A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
@@ -898,7 +907,24 @@ function setupTools(A) {
       if (A.db) {
         try {
           // §S277c: Include IfcFlowTerminal + IfcElectricAppliance — most models lack IfcLightFixture
-          var r = A.db.exec("SELECT t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance')");
+          // §NIGHT_FIXTURE_VOCAB (2026-07-27): class alone is far too wide — on the Clinic,
+          // IfcFlowTerminal covers 961 M_Duplex Receptacle and 236 M_Lighting Switches as well as
+          // the real luminaires, so every power socket in the building became a light source.
+          // Keep the class net (it is what finds luminaires in models with no IfcLightFixture) but
+          // require the NAME to look like a luminaire and not like an accessory — the same
+          // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
+          // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
+          var r = A.db.exec(
+            "SELECT t.center_x, t.center_y, t.center_z FROM elements_meta m " +
+            "JOIN element_transforms t ON m.guid=t.guid " +
+            "WHERE m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') " +
+            "AND (LOWER(m.element_name) LIKE '%light%' OR LOWER(m.element_name) LIKE '%troffer%' " +
+            "  OR LOWER(m.element_name) LIKE '%downlight%' OR LOWER(m.element_name) LIKE '%luminaire%' " +
+            "  OR LOWER(m.element_name) LIKE '%lamp%' OR LOWER(m.element_name) LIKE '%sconce%' " +
+            "  OR LOWER(m.element_name) LIKE '%pendant%') " +
+            "AND NOT (LOWER(m.element_name) LIKE '%switch%' OR LOWER(m.element_name) LIKE '%receptacle%' " +
+            "  OR LOWER(m.element_name) LIKE '%panelboard%' OR LOWER(m.element_name) LIKE '%socket%' " +
+            "  OR LOWER(m.element_name) LIKE '%outlet%')");
           if (r.length && r[0].values.length > 0) {
             r[0].values.forEach(function(row) {
               A._nightFixtures.push({ x: row[0], y: row[1], z: row[2] });
@@ -938,14 +964,24 @@ function setupTools(A) {
       // Determine which IFC classes to glow
       A._nightGlowClasses = ['IfcLightFixture'];
       // Check if building has any IfcLightFixture — if not, fallback to FlowTerminal
-      var _hasNamedLights = false;
+      // §NIGHT_GLOW_CLASS_GATE (2026-07-27, user: "In Night mode, these were not identified, thus
+      // the Alt-s also didn't pick it up nor alt-c" — reporting M_Troffer Light on the Clinic).
+      // THE BUG: this test used to read
+      //     ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR ...
+      // which mixes two different questions. The Clinic HAS named lights (1105 rows match on name)
+      // but ZERO IfcLightFixture — its luminaires are IfcFlowTerminal. So the gate came back true,
+      // the IfcFlowTerminal widening was SKIPPED, _nightGlowClasses stayed ['IfcLightFixture'], and
+      // nothing at all glowed. Having named lights disabled the very fallback that would have
+      // caught them. The only question this gate should ask is whether the CLASS is present, since
+      // the class list is all it controls.
+      var _hasClassLights = false;
       if (A.db) {
         try {
-          var lr = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcLightFixture' OR LOWER(element_name) LIKE '%light%' OR LOWER(element_name) LIKE '%lamp%' OR LOWER(element_name) LIKE '%led%' OR LOWER(element_name) LIKE '%luminaire%'");
-          _hasNamedLights = lr.length && lr[0].values[0][0] > 0;
+          var lr = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class='IfcLightFixture'");
+          _hasClassLights = lr.length && lr[0].values[0][0] > 0;
         } catch(e) {}
       }
-      if (!_hasNamedLights) {
+      if (!_hasClassLights) {
         A._nightGlowClasses.push('IfcFlowTerminal', 'IfcElectricAppliance');
         source += '+fallback';
       }
@@ -1062,7 +1098,7 @@ function setupTools(A) {
     var allPos = A._nightFixturePositions;
     var camPos = A.camera.position;
     var needed;
-    if (allPos.length <= NIGHT_MAX_LIGHTS) {
+    if (allPos.length <= A._nightMaxLights) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
@@ -1081,7 +1117,7 @@ function setupTools(A) {
         var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      needed = sorted.slice(0, NIGHT_MAX_LIGHTS);
+      needed = sorted.slice(0, A._nightMaxLights);
     }
     // Remove old lights
     A._nightLights.forEach(function(l) {
@@ -1096,7 +1132,15 @@ function setupTools(A) {
     needed.forEach(function(f) {
       var dist = camPos.distanceTo(f.pos);
       var fade = Math.min(1.0, dist / 15);              // 0 at the light, full at 15m+
-      var intensity = NIGHT_LIGHT_INTENSITY * (0.3 + 0.7 * fade);  // never below 30%
+      // §NIGHT_NEAR_FADE (2026-07-27, user: "They dont catch even lights right near to cam").
+      // This fade cuts a light to 30% as you approach it — added to fix "inside too bright", and it
+      // is exactly backwards for the complaint now being made: standing under a fixture gives the
+      // WEAKEST light in the scene. Kept for navigation (it is what stops an interior orbit
+      // blowing out) but lifted to full strength for the frozen still, where there is no exposure
+      // to protect and where the whole point is that the fixture you are standing under reads as
+      // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
+      var floor = A._nightNearFadeFloor;
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
       var light = new THREE.PointLight(0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);

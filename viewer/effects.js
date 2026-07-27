@@ -23,13 +23,14 @@ async function setupEffects(A, renderer, scene, camera) {
 
   try {
     // §S277c: Parallel import — all 6 addons load concurrently, not sequentially
-    var [_ecMod, _rpMod, _taaMod, _ssaoMod, _outMod, _opMod] = await Promise.all([
+    var [_ecMod, _rpMod, _taaMod, _ssaoMod, _outMod, _opMod, _blMod] = await Promise.all([
       import('./lib/EffectComposer.js'),
       import('./lib/RenderPass.js'),
       import('./lib/TAARenderPass.js'),
       import('./lib/SSAOPass.js'),
       import('./lib/OutlinePass.js'),
-      import('./lib/OutputPass.js')
+      import('./lib/OutputPass.js'),
+      import('./lib/BloomPass.js')
     ]);
 
     var _composer = new _ecMod.EffectComposer(renderer);
@@ -64,11 +65,24 @@ async function setupEffects(A, renderer, scene, camera) {
     _outlinePass.enabled = false;  // enabled on demand by pick/clash
     _composer.addPass(_outlinePass);
 
-    // Pass 4: Output — tone mapping + color space
+    // Pass 4: §PHOTO_BLOOM — BEFORE OutputPass, so it runs in linear HDR where an emissive material
+    // with toneMapped=false genuinely exceeds 1.0 and the threshold means something. After tone
+    // mapping everything is clamped into 0-1 and there is nothing left to find.
+    //
+    // OFF during navigation, ON only for the Alt+S still (see startStillRefine). Same discipline as
+    // Layer 3's triplanar PBR: a bake can afford a few ms a frame, a 60fps orbit cannot, and this
+    // renders 7 extra full-screen draws (bright + 3 levels x 2 blur directions) plus a composite.
+    var _bloomPass = new _blMod.BloomPass(window.innerWidth, window.innerHeight,
+      { strength: 0.9, threshold: 1.0, knee: 0.6 });
+    _bloomPass.enabled = false;
+    _composer.addPass(_bloomPass);
+
+    // Pass 5: Output — tone mapping + color space
     var _outputPass = new _opMod.OutputPass();
     _composer.addPass(_outputPass);
 
     A._composer = _composer;
+    A._bloomPass = _bloomPass;
     A._ssaoPass = _ssaoPass;
     A._outlinePass = _outlinePass;
     A._renderPass = _renderPass;
@@ -2090,6 +2104,13 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_HEMI_SKY_COLOR = 0x6a5a7a;  // dusky violet-warm sky half of the hemi light
   var PHOTO_SUN_INTENSITY_SCALE = 0.7;  // dimmer than full daylight — evening, not noon
   var PHOTO_EXPOSURE_SCALE = 0.85;      // slightly underexposed overall — "materials in little light"
+  // §PHOTO_EXPOSURE_LIFT (2026-07-27, user: "Scene still too dark drab"). The still was rendering at
+  // 0.45 x 0.85 = 0.3825 — about a stop and a half under three.js's default, which is most of why
+  // interiors read as drab and why emissive luminaires had so little to show. Lifted here rather
+  // than at the renderer default because that default is the DAY NAVIGATION value and the user
+  // recalls overexposure from raising it. 2.2x lands the still at ~0.85, bright enough to read
+  // without blowing out the sky, and it touches nothing outside the photoshoot.
+  var PHOTO_EXPOSURE_LIFT = 2.2;
   // §PHOTO_SUN_REFLECTION (user ask, continued session — "get the Sun reflection beautiful
   // realistic surface material impact correct firsts"): three things were found reading the
   // existing sun/sky code rather than adding a new one:
@@ -2649,7 +2670,7 @@ async function setupEffects(A, renderer, scene, camera) {
         A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
         A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
-        A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE;
+        A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
       }
     }
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
@@ -2931,6 +2952,19 @@ async function setupEffects(A, renderer, scene, camera) {
     if (_stillRefineRAF) { cancelAnimationFrame(_stillRefineRAF); _stillRefineRAF = null; }
     if (A._taaPass) { A._taaPass.accumulate = false; A._taaPass.accumulateIndex = -1; }
     _stopStillAOPhase(reason);  // §PHOTO_AO: disable the still-only AO pass on ANY exit path
+    // §PHOTO_EMBER / §PHOTO_BLOOM: same rule, and this is the ONLY place they are turned off —
+    // every cancel, interaction and cinema handoff funnels through here, so a glowing building can
+    // never outlive its still. Restoring the materials matters more than disabling the pass: an
+    // emissive left on would follow the user back into navigation.
+    if (A._bloomPass) A._bloomPass.enabled = false;
+    _emberOff();
+    // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the 4x set follows the user into
+    // their next orbit and the frame rate goes with it.
+    if (A._nightMaxLights !== 12 && typeof A._nightUpdateLights === 'function') {
+      A._nightMaxLights = 12;
+      A._nightNearFadeFloor = 0.3;
+      if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
+    }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
     // Alt+J preview survives, only dropped back to nav-quality knobs; see effects_gi_poc.js).
     if (typeof A.stopStillSSGIPhase === 'function') A.stopStillSSGIPhase(reason);
@@ -2961,6 +2995,74 @@ async function setupEffects(A, renderer, scene, camera) {
                                                         // sparkle visibility is camera-position-dependent
                                                         // and the natural step() loop stops re-evaluating
                                                         // it once still-refine freezes.
+
+  // ══ §PHOTO_EMBER (PHOTOREAL_STILL_RENDER.md) — the luminaires light up for the still.
+  //
+  // User, 2026-07-27: "Can we get light to emit from those fixtures. Scene still too dark drab."
+  // Measured first, and the measurement is why this is emissive+bloom TOGETHER rather than emissive
+  // alone: at one Alt+C pose, glow-only moved mean luminance 56.13 -> 56.13, i.e. not at all. A
+  // luminaire is a handful of pixels and nothing spreads its energy, so raising emissiveIntensity
+  // only makes the same few pixels whiter. Bloom is what turns a bright pixel into a lamp.
+  //
+  // DETECTION is a vocabulary over element_name, NOT the IFC class, and NOT a bare '%light%':
+  //   - class is inconsistent across buildings — Terminal/Hospital use IfcLightFixture, the Clinic
+  //     uses IfcFlowTerminal, so keying on the class finds ZERO luminaires in the Clinic.
+  //   - '%light%' also matches 236 "M_Lighting Switches" and 28 "M_Lighting and Appliance
+  //     Panelboard" in that same building. Measured: 1105 naive matches vs 841 real luminaires.
+  // Save/restore mirrors ghostglass.js, which already does exactly this per material.
+  //
+  // Instanced/batched meshes share one material across every element drawn by them, so emissive
+  // cannot be per-instance — measured collateral on the Clinic is 33 non-luminaire elements out of
+  // 8408. Reported rather than hidden; it is a footnote, not a defect to discover later.
+  var EMBER_WORDS = ['light', 'troffer', 'downlight', 'luminaire', 'lamp', 'sconce', 'pendant'];
+  var EMBER_NOT   = ['switch', 'receptacle', 'panelboard', 'socket', 'outlet'];
+  var _emberMats = null;
+  function _emberOn() {
+    if (_emberMats || typeof A.dbQuery !== 'function') return;
+    var like = function(w, j) { return w.map(function(x) { return "lower(element_name) LIKE '%" + x + "%'"; }).join(j); };
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT guid FROM elements_meta WHERE (" + like(EMBER_WORDS, ' OR ') +
+                       ") AND NOT (" + like(EMBER_NOT, ' OR ') + ")") || [];
+    } catch (e) { console.warn('§PHOTO_EMBER query failed: ' + e.message); return; }
+    if (!rows.length) { console.log('§PHOTO_EMBER no luminaires in this building — nothing to light'); return; }
+    var want = Object.create(null);
+    for (var i = 0; i < rows.length; i++) want[rows[i][0]] = 1;
+    var ids = Object.create(null), hits = 0;
+    for (var k in A.guidMap) if (want[A.guidMap[k]]) { ids[parseInt(String(k).split('_')[0], 10)] = 1; hits++; }
+    _emberMats = [];
+    var seen = Object.create(null), meshes = 0;
+    A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
+      if (!ids[o.id]) return;
+      meshes++;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+        if (!m || !m.emissive || seen[m.uuid]) return;
+        seen[m.uuid] = 1;
+        _emberMats.push({ m: m, e: m.emissive.getHex(), i: m.emissiveIntensity || 0, tm: m.toneMapped !== false });
+        // Warm white, STATED not measured. Terminal's family names carry wattage and colour temp
+        // ("2 X 28W ... cw"); the Clinic's carry neither, so a per-kind default is the honest
+        // fallback and it is declared here rather than tuned silently per building.
+        // toneMapped=false is what pushes the surface above 1.0 in linear space so the bloom
+        // threshold can find it at all.
+        m.emissive.setHex(0xfff2d0);
+        m.emissiveIntensity = 3.0;
+        m.toneMapped = false;
+        m.needsUpdate = true;
+      });
+    });
+    console.log('§PHOTO_EMBER lit ' + rows.length + ' luminaires -> ' + hits + ' guidMap hits, ' +
+      meshes + ' meshes, ' + _emberMats.length + ' materials (bloom threshold ' +
+      (A._bloomPass ? A._bloomPass.threshold : '?') + ', strength ' + (A._bloomPass ? A._bloomPass.strength : '?') + ')');
+  }
+  function _emberOff() {
+    if (!_emberMats) return;
+    _emberMats.forEach(function(r) {
+      r.m.emissive.setHex(r.e); r.m.emissiveIntensity = r.i; r.m.toneMapped = r.tm; r.m.needsUpdate = true;
+    });
+    console.log('§PHOTO_EMBER restored ' + _emberMats.length + ' materials');
+    _emberMats = null;
+  }
+
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
@@ -2976,6 +3078,22 @@ async function setupEffects(A, renderer, scene, camera) {
     // in _teardownStillRefine (every cancel/interaction/cinema-handoff exit), so it can never get
     // stuck true.
     A._stillRefineBusy = true;
+    // §PHOTO_EMBER + §PHOTO_BLOOM: both are STILL-ONLY, same discipline as Layer 3's triplanar PBR.
+    // Navigation keeps the cheap chain; the frozen still can afford 7 extra full-screen draws.
+    if (A._bloomPass) A._bloomPass.enabled = true;
+    _emberOn();
+    // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
+    // navigation budget (every light costs per-pixel work on every lit material every frame); a
+    // frozen still renders once and then sits there, so that budget does not apply to it. The
+    // user's report is that the night lights "have been weak" — part of that is simply that a
+    // 841-fixture building was being lit by 12 of them.
+    if (A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
+      A._nightMaxLights = A._nightMaxLightsStill;
+      A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
+      A._nightUpdateLights();
+      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
+        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still');
+    }
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
     A._taaPass.accumulateIndex = -1;
