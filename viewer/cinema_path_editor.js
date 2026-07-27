@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v7 (§CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v8 (§CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -347,6 +347,58 @@
 
   function _num(v) { return (Math.round(v * 100) / 100).toFixed(2); }
 
+  // ══ §CPE_UNDO (user, 2026-07-27: "allow UNDO, Ctl-Z as reflecting in the history line to take
+  // effect so a misplaced can be easily reverted"). A misplaced drag is now one keystroke away from
+  // being gone, which is what makes direct manipulation safe to experiment with.
+  //
+  // DELIBERATELY a local snapshot stack, NOT KernelOps/UniversalHistory.undo(): a waypoint edit is
+  // TRANSIENT editor state until the user explicitly saves the path (§CPE_BUILT persistence), so it
+  // has no signed kernel op to flip. Routing it through the model op-log would mint fake model ops
+  // for edits that may never be saved, and Ctrl+Z would then undo the wrong thing once the editor
+  // closed. The history LINE still shows it — via UniversalHistory.recordEvent, the existing
+  // read-only detail-event channel (universal_history.js, HISTORY_SESSION_EVENTS.md A1) — so the
+  // user sees the edit land on the timeline exactly as they asked, without faking a model change.
+  var _UNDO_MAX = 50;
+  function _cloneBands(bs) {
+    return bs.map(function(b) {
+      return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
+    });
+  }
+  // Call BEFORE mutating, with a label naming the edit. Redo is dropped on a new edit — the standard
+  // linear-undo rule, and the same one UniversalHistory itself applies to a new op after a step-back.
+  function _undoPush(label) {
+    if (!_state) return;
+    if (!_state.undo) { _state.undo = []; _state.redo = []; }
+    _state.undo.push({ bands: _cloneBands(_state.bands), label: label });
+    if (_state.undo.length > _UNDO_MAX) _state.undo.shift();
+    _state.redo = [];
+  }
+  function _histEvent(label) {
+    // The history line. recordEvent is the read-only channel, so this never touches kernel_ops.
+    try {
+      var UH = window.UniversalHistory;
+      if (UH && UH.recordEvent) UH.recordEvent('CINEMA_PATH_EDIT', label, null);
+    } catch (e) {}
+  }
+  function _undoApply(fromStack, toStack, dir) {
+    if (!_state || !fromStack || !fromStack.length) {
+      console.log('§CPE_UNDO ' + dir + ' — nothing to ' + dir);
+      return false;
+    }
+    var snap = fromStack.pop();
+    toStack.push({ bands: _cloneBands(_state.bands), label: snap.label });
+    _state.bands = _cloneBands(snap.bands);
+    _state.staged = false;
+    _state.held = null; _state.drag = null;
+    console.log('§CPE_UNDO ' + dir + ' "' + snap.label + '" depth=' + fromStack.length +
+      ' bands=' + _state.bands.length);
+    _histEvent((dir === 'undo' ? 'Undo: ' : 'Redo: ') + snap.label);
+    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _syncButtons();
+    return true;
+  }
+  function _undo() { return _undoApply(_state && _state.undo, _state && _state.redo, 'undo'); }
+  function _redo() { return _undoApply(_state && _state.redo, _state && _state.undo, 'redo'); }
+
   function _renderRows() {
     var box = document.getElementById('cpe-rows');
     if (!box) return;
@@ -374,6 +426,7 @@
           inp.addEventListener('change', function() {
             var v = parseFloat(inp.value);
             if (!isFinite(v)) { inp.value = _num(b.c[ax]); return; }
+            _undoPush('band ' + i + ' ' + ax);
             b.c[ax] = v;
             console.log('§CPE_KEY band=' + i + ' centre.' + ax + '=' + v.toFixed(2));
             _state.staged = false;
@@ -391,6 +444,7 @@
         len.addEventListener('change', function() {
           var v = parseFloat(len.value);
           if (!isFinite(v) || v <= 0.05) { len.value = _num(b.len); return; }
+          _undoPush('band ' + i + ' length');
           b.len = v;
           console.log('§CPE_LEN band=' + i + ' len=' + v.toFixed(2) + 'm');
           _state.staged = false;
@@ -575,6 +629,7 @@
         // scene stays fully navigable while the editor is open.
         ev.preventDefault(); ev.stopPropagation();
         _hold(hit.b, hit.z, false);
+        _undoPush('drag band ' + hit.b + ' (' + hit.z + ')');
         _state.drag = { b: hit.b, z: hit.z,
                         c0: { x: _state.bands[hit.b].c.x, y: _state.bands[hit.b].c.y, z: _state.bands[hit.b].c.z },
                         p0: { x: hit.p.x, y: hit.p.y, z: hit.p.z } };
@@ -626,6 +681,18 @@
         ' dir=(' + b.d.x.toFixed(2) + ',' + b.d.y.toFixed(2) + ',' + b.d.z.toFixed(2) + ') len=' + b.len.toFixed(2));
       _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
     };
+    // §CPE_UNDO: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y) while the editor is OPEN. Same bindings
+    // grid_drag.js already uses, and like it this listener is added on open and removed on close, so
+    // it cannot shadow any other Ctrl+Z once the editor is gone. Capture phase + preventDefault so
+    // the browser's own text-undo never fights it while a number input has focus.
+    h.key = function(e) {
+      if (!_state) return;
+      var k = (e.key || '').toLowerCase();
+      if (!e.ctrlKey || (k !== 'z' && k !== 'y')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (k === 'y' || (k === 'z' && e.shiftKey)) _redo(); else _undo();
+    };
+    window.addEventListener('keydown', h.key, true);
     c.addEventListener('pointerdown', h.down, true);
     window.addEventListener('pointermove', h.move, true);
     window.addEventListener('pointerup', h.up, true);
@@ -637,6 +704,7 @@
     c.removeEventListener('pointerdown', h.down, true);
     window.removeEventListener('pointermove', h.move, true);
     window.removeEventListener('pointerup', h.up, true);
+    if (h.key) window.removeEventListener('keydown', h.key, true);
   }
 
   // ══════════════════ public API ══════════════════
@@ -653,7 +721,7 @@
         return bs.map(function(b) { return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len }; });
       };
       _state = {
-        bands: clone(seeded), origBands: clone(seeded), staged: false,
+        bands: clone(seeded), origBands: clone(seeded), staged: false, undo: [], redo: [],
         held: null, drag: null, objs: [], handles: [], pulseId: 0, flyId: 0,
         baseSec: { dive: plan.sec.dive, spin: plan.sec.spin, out: plan.sec.out, rise: plan.sec.rise },
         baseOutSec: plan.sec.out, baseTotal: ctx.durationSec, baseLen: plan.pathLen,
