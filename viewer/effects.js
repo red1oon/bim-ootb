@@ -2962,6 +2962,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // their next orbit and the frame rate goes with it.
     if (A._nightMaxLights !== 12 && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = 12;
+      A._nightNearFadeFloor = 0.3;
       if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
     }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
@@ -3088,8 +3089,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // 841-fixture building was being lit by 12 of them.
     if (A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
+      A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightUpdateLights();
-      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length + ' lights for the still');
+      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
+        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still');
     }
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;

@@ -827,6 +827,8 @@ function setupTools(A) {
   // is all that is needed.
   A._nightMaxLights = 12;          // navigation budget
   A._nightMaxLightsStill = 48;     // frozen-still budget — 4x, paid once
+  A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
+  A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
   var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
@@ -1130,7 +1132,15 @@ function setupTools(A) {
     needed.forEach(function(f) {
       var dist = camPos.distanceTo(f.pos);
       var fade = Math.min(1.0, dist / 15);              // 0 at the light, full at 15m+
-      var intensity = NIGHT_LIGHT_INTENSITY * (0.3 + 0.7 * fade);  // never below 30%
+      // §NIGHT_NEAR_FADE (2026-07-27, user: "They dont catch even lights right near to cam").
+      // This fade cuts a light to 30% as you approach it — added to fix "inside too bright", and it
+      // is exactly backwards for the complaint now being made: standing under a fixture gives the
+      // WEAKEST light in the scene. Kept for navigation (it is what stops an interior orbit
+      // blowing out) but lifted to full strength for the frozen still, where there is no exposure
+      // to protect and where the whole point is that the fixture you are standing under reads as
+      // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
+      var floor = A._nightNearFadeFloor;
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
       var light = new THREE.PointLight(0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
       light.position.copy(f.pos);
       A.scene.add(light);
