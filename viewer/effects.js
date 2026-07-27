@@ -3321,7 +3321,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // frozen still renders once and then sits there, so that budget does not apply to it. The
     // user's report is that the night lights "have been weak" — part of that is simply that a
     // 841-fixture building was being lit by 12 of them.
-    if (A._emberEnabled && A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
+    // §NIGHT_STILL_LIGHTS_REGATE (2026-07-27, found answering "how many POL did we employ?"): this
+    // was gated on A._emberEnabled, which §PHOTO_EMBER_DISARMED set to false — so the 48-light still
+    // budget has been DEAD CODE ever since, and every Alt+S still has been lit by the 12-light
+    // NAVIGATION budget. Gate it on whichever still-lighting feature is actually live.
+    if ((A._emberEnabled || A._glowSpriteEnabled) &&
+        A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightUpdateLights();

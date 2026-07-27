@@ -963,8 +963,14 @@ function setupTools(A) {
     // matCache key is `rgba|ifcClass|variant`; the exclusivity set is keyed on the first two.
     var i1 = matKey.indexOf('|'), i2 = matKey.indexOf('|', i1 + 1);
     if (i1 < 0) return false;
-    var prefix = i2 < 0 ? matKey : matKey.substring(0, i2);
-    if (!A._nightExclusiveLumKey[prefix]) { A._nightDiffuserSkipped++; return false; }
+    // §LUM_VARIANT (streaming.js): a '|lum' key holds luminaires and nothing else BY CONSTRUCTION —
+    // the material was split off by name at load time — so no per-building exclusivity measurement
+    // is needed for it. The DB scan below stays as the fallback for any material that reached the
+    // cache without a variant.
+    if (matKey.substring(i2 + 1) === 'lum') { /* exclusive by construction */ }
+    else if (!A._nightExclusiveLumKey[i2 < 0 ? matKey : matKey.substring(0, i2)]) {
+      A._nightDiffuserSkipped++; return false;
+    }
     if (!_diffuserMats) _diffuserMats = [];
     _diffuserMats.push({ mat: m, tr: m.transparent, op: m.opacity, dw: m.depthWrite,
                          e: m.emissive.getHex(), ei: m.emissiveIntensity });
@@ -1001,14 +1007,33 @@ function setupTools(A) {
     if (!A._nightMode || !A._matCache || !A._nightGlowMatKeys) return;
     var mc = A._matCache;
     var _glowCount = 0, _windowGlowCount = 0;
+    // §LUM_VARIANT_GLOW — which materials count as "a light" for the emissive glow.
+    //
+    // THE COLLATERAL THIS KILLS (user: "others got accidentally lighted so look out for those
+    // without semblance to lighting and clearly assigned other role"): the test below used to be
+    // "does the key contain one of the glow CLASSES", and on the Clinic that list falls back to
+    // IfcFlowTerminal because the building has no IfcLightFixture. IfcFlowTerminal is a grab-bag —
+    // so the '≈ Off-White|IfcFlowTerminal' material, which covers 1974 elements across 20 families
+    // (grab bars, towel dispensers, duplex receptacles, supply diffusers, shower seats, an
+    // elevator), was being given emissive 0xffe4b5 at 0.8 every night. Pre-existing, and exactly the
+    // "no semblance to lighting" case being reported.
+    // Now that §LUM_VARIANT splits luminaires into their own '|lum' materials by NAME, the glow can
+    // key on that instead of on a class that means almost nothing. The class test survives only as a
+    // fallback for a cache with no variants in it at all, so nothing regresses to unlit.
+    var hasLum = false;
+    for (var lk in mc) { if (lk.slice(-4) === '|lum') { hasLum = true; break; } }
     for (var mk in mc) {
       if (A._nightGlowMatKeys[mk]) continue;
       A._nightGlowMatKeys[mk] = true;
       var m = mc[mk];
       if (!m || !m.emissive) continue;
       var isLight = false;
-      for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
-        if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
+      if (hasLum) {
+        isLight = mk.slice(-4) === '|lum';
+      } else {
+        for (var gi = 0; gi < A._nightGlowClasses.length; gi++) {
+          if (mk.indexOf(A._nightGlowClasses[gi]) >= 0) { isLight = true; break; }
+        }
       }
       var isWindow = !isLight && A._nightWindowGlowClasses.some(function(c) { return mk.indexOf(c) >= 0; });
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
