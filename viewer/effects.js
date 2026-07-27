@@ -72,8 +72,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // OFF during navigation, ON only for the Alt+S still (see startStillRefine). Same discipline as
     // Layer 3's triplanar PBR: a bake can afford a few ms a frame, a 60fps orbit cannot, and this
     // renders 7 extra full-screen draws (bright + 3 levels x 2 blur directions) plus a composite.
+    // §BLOOM_TEMPER (2026-07-27, user: "bloom also overshot its not nice"). It was strength 0.9 at
+    // threshold 1.0, and §PHOTO_GLOW_SPRITE writes its sprites at gain 3.0 — three times over the
+    // threshold, then amplified nearly 1:1. Everything that qualified bloomed hard, and on Hospital
+    // that is 1272 sprites plus 4103 window lights.
+    // Two dials, moved together: raise the BAR so only genuine sources qualify (a night-glow surface
+    // at emissiveIntensity 0.8 no longer does), and halve the AMOUNT so the ones that do qualify
+    // spread rather than flare. Exit signs stay at gain 0.9, still deliberately under the bar.
     var _bloomPass = new _blMod.BloomPass(window.innerWidth, window.innerHeight,
-      { strength: 0.9, threshold: 1.0, knee: 0.6 });
+      { strength: 0.45, threshold: 1.2, knee: 0.6 });
     _bloomPass.enabled = false;
     _composer.addPass(_bloomPass);
 
@@ -3310,7 +3317,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // sprites are written above 1.0 in linear space precisely so the bloom threshold can find them,
     // and without the pass they are a handful of bright pixels that spread nothing (measured under
     // §PHOTO_EMBER: emissive alone moved mean luminance 56.13 -> 56.13).
-    if (A._bloomPass) A._bloomPass.enabled = !!A._emberEnabled || !!A._glowSpriteEnabled;
+    // A._bloomOff = true kills bloom outright without touching the sprites — one switch, because
+    // "not nice" may end up meaning "none" rather than "less".
+    if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
     // §PHOTO_GLOW_SPRITE: night mode may already have staged these. Restage anyway, so the eye
     // offset is computed against the pose the still is actually frozen at rather than wherever the
