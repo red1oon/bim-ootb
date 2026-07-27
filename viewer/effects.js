@@ -4554,8 +4554,14 @@ async function setupEffects(A, renderer, scene, camera) {
   // Staged by the editor's "Save this path"; read by scene.js `_writeCinemaPathTable` at export.
   A.stageCinemaPath = function(ov) {
     A._cinemaPathEdit = ov;
-    console.log('§CINEMA_PATH_STAGE waypoints=' + (ov && ov.waypoints ? ov.waypoints.length : 0) +
-      ' total=' + (ov && ov._total ? ov._total.toFixed(1) : '?') + 's (Ctrl+S writes it to the file)');
+    // Same stale-field species as §CPE_OK_CRASH (cinema_maxq.js:507), caught while answering the
+    // user's "how do I open a saved path?": §CPE_BANDS made the override carry `bands`, so this line
+    // printed a flat `waypoints=0` for every save — guarded, so it never threw, and therefore never
+    // got noticed. A log that lies about the thing it is reporting is worse than no log.
+    console.log('§CINEMA_PATH_STAGE bands=' + (ov && ov.bands ? ov.bands.length : 0) +
+      ' waypoints=' + (ov && ov.bands ? ov.bands.length * 2 : (ov && ov.waypoints ? ov.waypoints.length : 0)) +
+      ' total=' + (ov && ov._total ? ov._total.toFixed(1) : '?') + 's' +
+      ' — STAGED ONLY; Ctrl+S (Save Building) writes the cinema_path table into the .db');
   };
   A._getCinemaPathEdit = function() { return A._cinemaPathEdit || null; };
   A.clearCinemaPath = function() { A._cinemaPathEdit = null; console.log('§CINEMA_PATH_CLEAR authored path dropped'); };
