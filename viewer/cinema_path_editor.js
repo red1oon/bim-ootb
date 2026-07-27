@@ -15,7 +15,11 @@
 //      and discards them.
 (function() {
   'use strict';
-  var CPE_V = 'v5 (§CPE_PREVIEW_DIVERGENCE — plan pinned to the open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG — panel moves by its header)';
+  // ⚠ BUMP THIS ON EVERY BEHAVIOUR CHANGE — it is how a pasted console answers "which build is this?".
+  // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
+  // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
+  // right version?" could not be answered from their own log. That is the whole job of this line.
+  var CPE_V = 'v6 (§CPE_DRAG_TELEPORT drag=delta; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
