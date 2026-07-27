@@ -535,6 +535,7 @@
     // far more than wide exterior frames). Use the mean of the LAST 15 frames instead — tracks the
     // current phase's real rate.
     var _etaPrev = t0, _etaRecent = [];
+    var MAXQ_LOG_MS = 5000, _logPrev = t0;   // console cadence in TIME, not frames (§MAXQ_ETA_TICK)
     try {
       // IDB first, INSIDE the guard: this open used to sit bare between the preview and the warm-up,
       // so a blocked open froze the run with zero log lines, _active stuck true (swallowing the next
@@ -615,15 +616,31 @@
         var _etaNow = performance.now();
         _etaRecent.push(_etaNow - _etaPrev); _etaPrev = _etaNow;
         if (_etaRecent.length > 15) _etaRecent.shift();
-        if (i % 15 === 0 || i === nFrames - 1) {
-          var _el = _etaNow - t0;
-          var _per = _etaRecent.reduce(function(a, b) { return a + b; }, 0) / _etaRecent.length;
-          var _eta = i > 0 ? Math.round(_per * (nFrames - i - 1) / 1000) : -1;
+        // §MAXQ_ETA_TICK — the progress readout is driven by MEASURED TIME, not a frame count.
+        // Both used to sit behind `i % 15`, which is a rate only if frames are fast. They are not:
+        // a photoreal frame cooks the 16-sample TAA fold + the 24-frame AO pass, MEASURED at
+        // 1600-1812 ms/frame on Hospital (942 frames, ~25 min). At that speed `i % 15` left the
+        // status line frozen on a stale number for ~24 SECONDS at a time, which is exactly long
+        // enough to read as a hang — reported as "it gets stuck" on a run that was progressing
+        // normally the whole time.
+        //
+        // So: the STATUS updates every frame (a textContent write, free next to a 1.6s cook), and
+        // the CONSOLE throttles on elapsed ms rather than frame index, so its cadence is the same
+        // wall-clock rhythm whether a frame takes 20ms or 2s. Nothing here needs to know how slow
+        // a frame is — it measures.
+        var _el = _etaNow - t0;
+        var _per = _etaRecent.reduce(function(a, b) { return a + b; }, 0) / _etaRecent.length;
+        var _eta = i > 0 ? Math.round(_per * (nFrames - i - 1) / 1000) : -1;
+        var _etaTxt = _eta < 0 ? 'estimating'
+          : _eta < 90 ? Math.max(1, Math.round(_eta)) + 's left'
+          : Math.ceil(_eta / 60) + ' min left';
+        _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
+          _etaTxt + ' (Alt+C / cinema icon cancels + saves partial)');
+        if (_etaNow - _logPrev >= MAXQ_LOG_MS || i === 0 || i === nFrames - 1) {
+          _logPrev = _etaNow;
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
-            ' perFrameMs=' + Math.round(_per) + ' etaSec=' + _eta + ' (rolling-15)');
-          _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
-            (_eta >= 0 ? Math.ceil(_eta / 60) + ' min left' : 'estimating') +
-            ' (Alt+C / cinema icon cancels + saves partial)');
+            ' perFrameMs=' + Math.round(_per) + ' etaSec=' + _eta + ' (rolling-15, log every ' +
+            (MAXQ_LOG_MS / 1000) + 's)');
         }
       }
       if (A._stillRefineActive) A.stopStillRefine(true);
