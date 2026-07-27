@@ -861,11 +861,17 @@ function setupTools(A) {
     for (var i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
     return ((h >>> 0) % 100000) / 100000;
   }
+  // ONE test for "is this an exit sign", shared by the colour rule and by §PHOTO_GLOW_SPRITE's
+  // brightness rule — they must never disagree about which fittings are signage.
+  A.nightIsExitSign = function(name) {
+    var n = String(name || '').toLowerCase();
+    return n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0;
+  };
   A.nightLightColor = function(name, key) {
     var n = String(name || '').toLowerCase();
     // Exit signage keeps its own colour whatever the ratio says — a green running-man sign that
     // came out blue would be wrong, not stylish.
-    if (n.indexOf('exit') >= 0 || n.indexOf('keluar') >= 0 || n.indexOf('signage') >= 0) return NIGHT_EXIT;
+    if (A.nightIsExitSign(n)) return NIGHT_EXIT;
     if (key !== undefined) {
       var h = _mixHash(String(key));
       if (h < A._nightMixBlue) return NIGHT_MIX_BLUE;
@@ -913,6 +919,111 @@ function setupTools(A) {
         ' totalGlowMats=' + A._nightGlowMats.length);
     }
   };
+  // §NIGHT_FIXTURE_VOCAB / §PHOTO_GLOW_SPRITE — the ONE place luminaire POSITIONS are extracted.
+  // Extracted out of toggleNightMode (2026-07-27) because a second consumer now needs the same
+  // positions: the still's glow sprites. The spec's standing rule is that every path selecting
+  // luminaires must share one vocabulary — two copies of this SQL is exactly how the '%light%'
+  // filter ended up living in one query as a test and never as the selector. Returns the source
+  // string ('IFC' | 'synthetic (N storeys)' | 'none') that §NIGHT_MODE reports.
+  // force=true re-queries even when a list is already cached — what toggleNightMode does, because
+  // more models may have streamed in since the last toggle. The sprite path passes nothing and
+  // reuses whatever night mode already extracted.
+  A._loadNightFixtures = function(force) {
+    if (!force && A._nightFixtures && A._nightFixtures.length) return A._nightFixtureSource || 'IFC';
+    A._nightFixtures = [];
+    A._nightFixturePositions = null;   // world-space cache is derived from this list — invalidate together
+    var source = 'none';
+    if (A.db) {
+      try {
+        // §S277c: Include IfcFlowTerminal + IfcElectricAppliance — most models lack IfcLightFixture
+        // §NIGHT_FIXTURE_VOCAB (2026-07-27): class alone is far too wide — on the Clinic,
+        // IfcFlowTerminal covers 961 M_Duplex Receptacle and 236 M_Lighting Switches as well as
+        // the real luminaires, so every power socket in the building became a light source.
+        // Keep the class net (it is what finds luminaires in models with no IfcLightFixture) but
+        // require the NAME to look like a luminaire and not like an accessory — the same
+        // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
+        // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
+        var r = A.db.exec(
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name FROM elements_meta m " +
+          "JOIN element_transforms t ON m.guid=t.guid " +
+          // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
+          // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
+          //     m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') AND ...
+          // and silently dropped any luminaire filed under a different class. Measured over all five
+          // shipped buildings, removing it adds exactly 12 elements: 9 real (Terminal's
+          // 'jkrME_fir-al_Flashing Light_Red & Green', class IfcAlarm) and 3 substring accidents
+          // ('Life_FLIGHT_Helicopter', 'M_SkyLIGHT' x2) which the NOT clause below now names.
+          // The class was never doing useful work anyway: inside those three classes, every family
+          // the vocabulary rejects is a receptacle, diffuser, sink, grab bar, data outlet or
+          // sprinkler — verified per family on all five DBs — so the NAME was always the selector
+          // and the class was only ever hiding luminaires that lived elsewhere.
+          // UNION, not intersection (user: "its easy to spot.. they are in ceilings, overheads,
+          // walls as individual elements"). `IfcLightFixture` is unambiguous BY ITSELF — an element
+          // of that class is a luminaire whatever it is called, so a model that names its fittings
+          // 'Type A' still lights up. The name vocabulary then catches everything filed under some
+          // OTHER class. The old query ANDed these two and so needed BOTH to be true, which is what
+          // made a luminaire invisible if either its class or its name was unusual.
+          "WHERE (m.ifc_class = 'IfcLightFixture' " +
+          "  OR LOWER(m.element_name) LIKE '%light%' OR LOWER(m.element_name) LIKE '%troffer%' " +
+          "  OR LOWER(m.element_name) LIKE '%downlight%' OR LOWER(m.element_name) LIKE '%luminaire%' " +
+          "  OR LOWER(m.element_name) LIKE '%lamp%' OR LOWER(m.element_name) LIKE '%sconce%' " +
+          "  OR LOWER(m.element_name) LIKE '%pendant%' " +
+          // §NIGHT_EXIT_SIGNS (2026-07-27): an exit sign is a lit fixture and was ALWAYS intended to
+          // be one — A.nightLightColor has carried an `exit 0x9bffc0` branch for exit/keluar/signage
+          // since §NIGHT_LIGHT_MIX. It was never in the SELECTOR, so that branch could not fire and
+          // the signs were dark. Same bug class as the '%light%' filter that existed only as a test.
+          // Measured over all five shipped buildings: Clinic 841 -> 884 (+43 Exit Sign Ceiling/End
+          // Mount), Hospital 1215 -> 1272 (+57 Exit Sign Ceiling Based, class IfcLightFixture),
+          // Terminal/Duplex/HHS unchanged (their signs already carry the word 'Light'). ZERO false
+          // positives: every element matching these three words in all five DBs is already in a
+          // luminaire class. 'exit sign' not bare 'exit' — bare would reach exit corridors and doors.
+          "  OR LOWER(m.element_name) LIKE '%exit sign%' OR LOWER(m.element_name) LIKE '%keluar%' " +
+          "  OR LOWER(m.element_name) LIKE '%signage%') " +
+          // The exclusions. First five are ACCESSORIES that carry the word 'lighting' but emit
+          // nothing. Last two are SUBSTRING ACCIDENTS — 'flight' and 'skylight' both contain the
+          // letters l-i-g-h-t and neither is a lamp; they are the only two found across all five
+          // shipped buildings, and they are the price of selecting on the name, which is the right
+          // price to pay.
+          "AND NOT (LOWER(m.element_name) LIKE '%switch%' OR LOWER(m.element_name) LIKE '%receptacle%' " +
+          "  OR LOWER(m.element_name) LIKE '%panelboard%' OR LOWER(m.element_name) LIKE '%socket%' " +
+          "  OR LOWER(m.element_name) LIKE '%outlet%' " +
+          "  OR LOWER(m.element_name) LIKE '%flight%' OR LOWER(m.element_name) LIKE '%skylight%')");
+        if (r.length && r[0].values.length > 0) {
+          r[0].values.forEach(function(row) {
+            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '' });
+          });
+          source = 'IFC';
+        }
+      } catch(e) {}
+      // §S259: Fallback — generate synthetic lights from storey centroids
+      if (A._nightFixtures.length === 0) {
+        try {
+          var sr = A.db.exec("SELECT m.storey, AVG(t.center_x), AVG(t.center_y), AVG(t.center_z), MIN(t.center_x), MAX(t.center_x), MIN(t.center_y), MAX(t.center_y) FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid GROUP BY m.storey");
+          if (sr.length) {
+            sr[0].values.forEach(function(row) {
+              var cx = row[1], cy = row[2], cz = row[3];
+              var xMin = row[4], xMax = row[5], yMin = row[6], yMax = row[7];
+              var dx = (xMax - xMin) || 10, dy = (yMax - yMin) || 10;
+              // Place a grid of lights per storey — one every ~15m
+              var nx = Math.max(1, Math.ceil(dx / 15));
+              var ny = Math.max(1, Math.ceil(dy / 15));
+              for (var ix = 0; ix < nx; ix++) {
+                for (var iy = 0; iy < ny; iy++) {
+                  var fx = xMin + (ix + 0.5) * (dx / nx);
+                  var fy = yMin + (iy + 0.5) * (dy / ny);
+                  A._nightFixtures.push({ x: fx, y: fy, z: cz + 1.5 });
+                }
+              }
+            });
+            source = 'synthetic (' + sr[0].values.length + ' storeys)';
+          }
+        } catch(e) { console.warn('§NIGHT fallback query failed', e); }
+      }
+    }
+    A._nightFixtureSource = source;
+    return source;
+  };
+
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
     var btn = document.getElementById('night-btn');
@@ -952,62 +1063,10 @@ function setupTools(A) {
       document.getElementById('sl-hemi-val').textContent = '0.1';
       document.getElementById('sl-exposure').value = 0.8;
       document.getElementById('sl-exposure-val').textContent = '0.8';
-      // Load IFC light fixtures from DB — fallback to storey centroids if none
-      A._nightFixtures = [];
-      var source = 'none';
-      if (A.db) {
-        try {
-          // §S277c: Include IfcFlowTerminal + IfcElectricAppliance — most models lack IfcLightFixture
-          // §NIGHT_FIXTURE_VOCAB (2026-07-27): class alone is far too wide — on the Clinic,
-          // IfcFlowTerminal covers 961 M_Duplex Receptacle and 236 M_Lighting Switches as well as
-          // the real luminaires, so every power socket in the building became a light source.
-          // Keep the class net (it is what finds luminaires in models with no IfcLightFixture) but
-          // require the NAME to look like a luminaire and not like an accessory — the same
-          // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
-          // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
-          var r = A.db.exec(
-            "SELECT t.center_x, t.center_y, t.center_z, m.element_name FROM elements_meta m " +
-            "JOIN element_transforms t ON m.guid=t.guid " +
-            "WHERE m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') " +
-            "AND (LOWER(m.element_name) LIKE '%light%' OR LOWER(m.element_name) LIKE '%troffer%' " +
-            "  OR LOWER(m.element_name) LIKE '%downlight%' OR LOWER(m.element_name) LIKE '%luminaire%' " +
-            "  OR LOWER(m.element_name) LIKE '%lamp%' OR LOWER(m.element_name) LIKE '%sconce%' " +
-            "  OR LOWER(m.element_name) LIKE '%pendant%') " +
-            "AND NOT (LOWER(m.element_name) LIKE '%switch%' OR LOWER(m.element_name) LIKE '%receptacle%' " +
-            "  OR LOWER(m.element_name) LIKE '%panelboard%' OR LOWER(m.element_name) LIKE '%socket%' " +
-            "  OR LOWER(m.element_name) LIKE '%outlet%')");
-          if (r.length && r[0].values.length > 0) {
-            r[0].values.forEach(function(row) {
-              A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '' });
-            });
-            source = 'IFC';
-          }
-        } catch(e) {}
-        // §S259: Fallback — generate synthetic lights from storey centroids
-        if (A._nightFixtures.length === 0) {
-          try {
-            var sr = A.db.exec("SELECT m.storey, AVG(t.center_x), AVG(t.center_y), AVG(t.center_z), MIN(t.center_x), MAX(t.center_x), MIN(t.center_y), MAX(t.center_y) FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid GROUP BY m.storey");
-            if (sr.length) {
-              sr[0].values.forEach(function(row) {
-                var cx = row[1], cy = row[2], cz = row[3];
-                var xMin = row[4], xMax = row[5], yMin = row[6], yMax = row[7];
-                var dx = (xMax - xMin) || 10, dy = (yMax - yMin) || 10;
-                // Place a grid of lights per storey — one every ~15m
-                var nx = Math.max(1, Math.ceil(dx / 15));
-                var ny = Math.max(1, Math.ceil(dy / 15));
-                for (var ix = 0; ix < nx; ix++) {
-                  for (var iy = 0; iy < ny; iy++) {
-                    var fx = xMin + (ix + 0.5) * (dx / nx);
-                    var fy = yMin + (iy + 0.5) * (dy / ny);
-                    A._nightFixtures.push({ x: fx, y: fy, z: cz + 1.5 });
-                  }
-                }
-              });
-              source = 'synthetic (' + sr[0].values.length + ' storeys)';
-            }
-          } catch(e) { console.warn('§NIGHT fallback query failed', e); }
-        }
-      }
+      // Load IFC light fixtures from DB — fallback to storey centroids if none.
+      // The extraction itself lives in A._loadNightFixtures() (above) so the still's glow sprites
+      // read the same list from the same vocabulary.
+      var source = A._loadNightFixtures(true);
       // §S277d: Make light fixture materials emissive — glow at any distance, zero cost.
       // Uses matCache keys (rgba|ifcClass) — catches ALL material surfaces per fixture.
       A._nightGlowMats = [];
@@ -1066,6 +1125,11 @@ function setupTools(A) {
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
+      // §PHOTO_GLOW_SPRITE: the fixtures themselves read as lit, not just the surfaces near them.
+      // Staged here rather than in Alt+S because it is ONE additive draw call for every fixture in
+      // the building — there is no per-light budget for it to blow, so a user turning night mode on
+      // should see the luminaires on without pressing anything else.
+      if (typeof A._glowStage === 'function') A._glowStage();
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
         A._nightControlsListener = function() {
@@ -1120,6 +1184,8 @@ function setupTools(A) {
       });
       A._nightLights = [];
       A._nightFixturePositions = null;
+      // §PHOTO_GLOW_SPRITE: night's sprites must not survive night mode
+      if (typeof A._glowUnstage === 'function') A._glowUnstage();
       // Unhook
       if (A.controls && A._nightControlsListener) {
         A.controls.removeEventListener('change', A._nightControlsListener);
@@ -1138,18 +1204,30 @@ function setupTools(A) {
     if (A.markDirty) A.markDirty();
   };
 
-  A._nightUpdateLights = function() {
-    if (!A._nightMode || !A._nightFixtures.length) return;
-    // Convert all fixture positions to Three.js coords (cached after first call)
+  // Fixture positions in WORLD space, with their §NIGHT_LIGHT_MIX colour attached. Cached after the
+  // first call and invalidated by A._loadNightFixtures(true). Two consumers: the point lights below
+  // and §PHOTO_GLOW_SPRITE in effects.js — the sprite at a fixture and the light at that fixture
+  // must be the same position and the same colour, so both read this one list.
+  // A.ifc2three is the ONLY DB->world mapping; three attempts to reinvent it put a probe camera
+  // inside walls (see NIGHT_AND_FIXTURE_LIGHTING.md).
+  A._nightFixtureWorldPositions = function() {
     if (!A._nightFixturePositions) {
+      A._loadNightFixtures();
+      if (!A._nightFixtures.length) return [];
       A._nightFixturePositions = A._nightFixtures.map(function(f) {
         var p = A.ifc2three(f.x, f.y, f.z);
         // Key the ratio on name+position so it is stable per fixture and independent of row order.
         p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
+        p.__exit = A.nightIsExitSign(f.name);   // §GLOW_EXIT_SOFT — a sign is not a troffer
         return p;
       });
     }
-    var allPos = A._nightFixturePositions;
+    return A._nightFixturePositions;
+  };
+
+  A._nightUpdateLights = function() {
+    if (!A._nightMode || !A._nightFixtures.length) return;
+    var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
     var needed;
     if (allPos.length <= A._nightMaxLights) {
