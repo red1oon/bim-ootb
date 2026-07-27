@@ -3316,7 +3316,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // measured 2.10 m/s on Duplex against 4.99 on LTU_AHouse. Every rate below is a stated constant
   // and every duration is that rate applied to a MEASURED distance or angle, so a building's size
   // now sets its runtime instead of being squeezed into someone else's.
-  var CINEMA_WALK_MPS     = 1.3;   // interior walking pace — deliberately slower than the old 2.1-5.0
+  // §CPE_PACE_LOS base pace (CINEMA_PATH_EDITOR.md). 1.3 was a literal pedestrian and the user called
+  // the result too slow twice. MEASURED from their own runs: a 92.5m Hospital edit spent 71.2s of a
+  // 99.5s film walking and baked 1015 frames (~26 min of cook at their measured 1.6s/frame). Their
+  // stated expectation is ~15s on Duplex against the 26.1s derived, i.e. ~1.8x faster; 1.3 x 1.8 =
+  // 2.34. Stated rate with the arithmetic shown, per this block's own rule that every rate is a
+  // stated constant applied to a MEASURED distance — not a taste dial.
+  // This is the BASE only. The busyness/noise temperament (§CPE_PACE_LOS, still to build) varies the
+  // pace AROUND it within the user's PACE_SWING range; it does not replace this number.
+  var CINEMA_WALK_MPS     = 2.3;   // interior pace — was 1.3
   var CINEMA_PULLBACK_MPS = 6.5;   // exterior recede: flying, not walking
   var CINEMA_DIVE_MPS     = 20;    // the approach is a fly-IN; dive distances run 20-150m
   var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap

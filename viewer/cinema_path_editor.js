@@ -15,7 +15,11 @@
 //      and discards them.
 (function() {
   'use strict';
-  var CPE_V = 'v5 (§CPE_PREVIEW_DIVERGENCE — plan pinned to the open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG — panel moves by its header)';
+  // ⚠ BUMP THIS ON EVERY BEHAVIOUR CHANGE — it is how a pasted console answers "which build is this?".
+  // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
+  // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
+  // right version?" could not be answered from their own log. That is the whole job of this line.
+  var CPE_V = 'v7 (§CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -586,15 +590,22 @@
         // Middle = the whole length moving as one.
         // §CPE_DRAG_TELEPORT (user, Hospital, 2026-07-27: "went off to a spot user didnt put.
         // Draging it back, still flew back"). This USED to assign the projected cursor point
-        // absolutely — `b.c = p` — which silently made the band's new centre whatever the grab
-        // ray happened to meet, not the centre plus the gesture. Any depth error in the grab point
-        // `p0` therefore became a PERMANENT offset, and every later drag re-anchored its plane at
-        // the already-wrong depth, which is exactly "dragging it back still flew back". Measured in
-        // their log: band 1 centre y=+39.24 against floorY=-15.47 (~55m above the floor), pathLen
-        // 32.3m -> 161.7m in three drags.
+        // absolutely — `b.c = p` — so the band's new centre became whatever the grab ray happened
+        // to meet, not the centre plus the gesture. Any depth error in the grab point `p0` therefore
+        // became a PERMANENT offset, and every later drag re-anchored its plane at the already-wrong
+        // depth — which is exactly "dragging it back still flew back". Measured in their log: band 1
+        // centre y=+39.24 against floorY=-15.47 (~55m above the floor), pathLen 32.3m -> 161.7m.
         // DELTA, not absolute: `c0` was already captured on pointerdown for this and was never read
         // — the intent was here all along. A zero-pixel drag is now a zero-metre move by
         // construction, and any p0 depth error cancels out of (p - p0) instead of accumulating.
+        // §CPE_DRAG_REACH — REMOVED, and the removal is the finding. A per-gesture cap was tried
+        // (limit reach to the building's derived walk length) and G-DRAG-3 measured it BREAKING the
+        // very case it was meant to help: at 0.132 m/px a 175px drag wants 23m, the cap granted
+        // 12.6m, so the band stopped under a cursor that had moved on — the handle was no longer
+        // where the user was pointing, the return drag hit nothing, and out-and-back left a 12.6m
+        // residue. Direct manipulation has ONE invariant: the thing you grabbed stays under the
+        // cursor. A reach cap cannot hold that invariant by construction. The sensitivity the user
+        // felt was the absolute-assignment bug (fixed above), not the 1:1 mapping itself.
         b.c.x = d.c0.x + (p.x - d.p0.x);
         b.c.y = d.c0.y + (p.y - d.p0.y);
         b.c.z = d.c0.z + (p.z - d.p0.z);

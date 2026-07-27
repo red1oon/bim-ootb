@@ -15,10 +15,16 @@
   var _slow = { rotateSpeed: 0.15, zoomSpeed: 0.2, panSpeed: 0.15 };
   var _indicator, _panel, _pivotInd;
 
+  // §PIVOT_AMBIENT_AUTO state (declared here so fineOn/resetOrbit/pivotOn below can all
+  // proactively clear it — see _ambientOnEnd further down for what it drives).
+  var _ambientCount = 0, _ambientTimer = null;
+  function _ambientClear() { _ambientCount = 0; clearTimeout(_ambientTimer); }
+
   function fineOn() {
     if (_fine) return;
     if (!A() || !A().controls) return;
     _fine = true;
+    _ambientClear();  // avoid misfire — Fine is deliberate, don't let a queued ambient correct it away
     var c = A().controls;
     c.rotateSpeed = _slow.rotateSpeed;
     c.zoomSpeed = _slow.zoomSpeed;
@@ -51,6 +57,7 @@
   // As if you just started navigating from this spot
   function resetOrbit() {
     if (!A() || !A().controls) return;
+    _ambientClear();  // avoid misfire — don't let a queued ambient correction undo this manual Reset
     var c = A().controls;
     var cam = c.object;
 
@@ -151,7 +158,11 @@
     if (!A() || !A().controls) return;
     _pivot = true;
     window._autoPivot = true;  // exposed for Help-row isActive highlight
-    _onEnd = function() { if (_pivot) recenterPivot(); };
+    _ambientClear();  // avoid misfire — Q's own recenter below covers it now, ambient steps aside
+    // §PIVOT_FINE_WINS: Fine is a deliberate user act (visible top-centre icon) for slowly
+    // closing in on one specific point — Auto-Pivot yanking the target elsewhere on every
+    // drag-end would fight that. Fine wins: pause auto-recenter while Fine is active.
+    _onEnd = function() { if (_pivot && !_fine) recenterPivot(); };
     A().controls.addEventListener('end', _onEnd);
     _pivotPaint();
     if (_pivotInd) _pivotInd.style.display = 'flex';  // top-centre orbit-icon notice
@@ -171,6 +182,36 @@
   }
 
   function togglePivot() { _pivot ? pivotOff() : pivotOn(); }
+
+  // §PIVOT_AMBIENT_AUTO (2026-07-27): background pivot correction, active by default —
+  // gives the "continuous navigation, pivot never goes stale" feel without requiring the
+  // user to know about Q. Deliberately a SEPARATE listener from Q's own _onEnd above, not
+  // a change to Q's default state (that was tried in #1033 and reverted in #1034 — firing
+  // on every single drag-end read as the view drifting on its own). Two things make this
+  // one safe where that one wasn't:
+  //   1. Steps aside whenever Q or Fine are active (checked first, and each of pivotOn/
+  //      fineOn/resetOrbit above also proactively clears any pending timer on engage —
+  //      "avoid misfire", no race where a queued ambient correction lands after the user
+  //      just deliberately took over).
+  //   2. Debounced AND count-gated: only fires once the user has actually stopped (no new
+  //      drag/zoom for _AMBIENT_REST_MS), and only if at least _AMBIENT_THRESHOLD drags/
+  //      zooms built up since the last correction — never mid-navigation, never for one
+  //      small nudge. Uses the same raycast-based recenterPivot() Q uses, NOT resetOrbit()
+  //      (resetOrbit is geometry-blind — automating it would reintroduce the "orbiting
+  //      empty space" problem Auto-Pivot was built to fix in the first place).
+  var _AMBIENT_REST_MS = 1500, _AMBIENT_THRESHOLD = 3;
+  function _ambientOnEnd() {
+    if (_pivot || _fine) { _ambientClear(); return; }  // Q/Fine own the recenter instead
+    _ambientCount++;
+    clearTimeout(_ambientTimer);
+    _ambientTimer = setTimeout(function() {
+      if (_ambientCount >= _AMBIENT_THRESHOLD) {
+        recenterPivot();
+        console.log('§pivot ambient-auto fired count=' + _ambientCount);
+      }
+      _ambientCount = 0;
+    }, _AMBIENT_REST_MS);
+  }
 
   // Caps Lock toggles fine mode (desktop)
   document.addEventListener('keydown', function(e) {
@@ -252,6 +293,24 @@
     // If fine is active, reflect in panel button
     if (_fine) document.getElementById('prec-fine-btn').style.background = '#1a6b8a';
     if (_pivot) _pivotPaint();
+
+    // §PIVOT_AMBIENT_AUTO wiring: A().controls doesn't exist yet at DOMContentLoaded
+    // (setupScene creates it later, async) — poll briefly, then attach the ambient
+    // listener PERMANENTLY (never removed — it self-no-ops via the _pivot||_fine check
+    // inside _ambientOnEnd, so there's nothing to toggle here). Bounded, self-clearing
+    // either branch — zero steady-state cost once resolved.
+    var _ambientWireTries = 0;
+    var _ambientWireTimer = setInterval(function() {
+      _ambientWireTries++;
+      if (A() && A().controls) {
+        clearInterval(_ambientWireTimer);
+        A().controls.addEventListener('end', _ambientOnEnd);
+        console.log('§pivot ambient-auto wired tries=' + _ambientWireTries);
+      } else if (_ambientWireTries > 100) {  // ~10s — give up quietly
+        clearInterval(_ambientWireTimer);
+        console.log('§pivot ambient-auto wiring timeout — controls never became ready');
+      }
+    }, 100);
 
     // S265: Precision Camera button — Lucide focus icon, matches overflow grid style
     var toolbar = document.querySelector('#search-body > div');
