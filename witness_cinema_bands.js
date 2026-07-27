@@ -184,10 +184,16 @@ const NUDGE_CAP = 3;   // CINEMA_FAN_NUDGE_MAX — the conservative bound where 
         { c: { x: c0.x + 14, y: c0.y, z: c0.z + 14 }, d: { x: 0, y: 0, z: -1 }, len: 3 },
         { c: { x: c0.x + 28, y: c0.y, z: c0.z }, d: { x: -1, y: 0, z: 0 }, len: 3 },
       ];
-      const nF = Math.round(DUR * fps);
+      // The film the PRODUCT bakes is plan.naturalTotal seconds (cinema_maxq.js:414 sets the
+      // frame count from it), and §CPE_TURN_BUDGET now makes that grow with how much the route
+      // turns — the film is no longer 24s. Sampling DUR*fps measured a fixed-length film no user
+      // sees, and deg/FRAME falls with frame count, so this gate was reporting a jerk that only
+      // exists at the wrong duration. Per-plan, because two plans here have different lengths.
+      const framesOf = (pl) => Math.round((pl.naturalTotal || DUR) * fps);
       // Peak per-frame gaze rate over the walk, plus the TOTAL turn, so a high peak can be read
       // against how much turning the layout actually demands rather than in isolation.
       const rateOf = (pl) => {
+        const nF = framesOf(pl);
         let peak = 0, peakT = 0, total = 0, prev = null, frames = 0;
         for (let f = 0; f <= nF; f++) {
           const t = f / nF;

@@ -81,7 +81,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // Where the camera POINTS is the user's creative control (their call, 2026-07-27); how fast it
       // is allowed to CHANGE is what this witness owns.
       const turnPeak = (plan) => {
-        const n = Math.max(2, Math.round(dur * fps));
+        // The film the PRODUCT bakes is plan.naturalTotal seconds long (cinema_maxq.js:414 sets
+        // the frame count from it), not `dur`. Sampling dur*fps measured a 24s film that no user
+        // ever sees: on Hospital the real film is 44-69s, i.e. 2-3x the frames, and deg/FRAME
+        // falls with frame count. Same instrument class as the G7/G2 bugs — measure the regime
+        // the product actually enters.
+        const n = Math.max(2, Math.round((plan.naturalTotal || dur) * fps));
         let peak = 0, peakT = 0, prev = null, total = 0, peakPitch = 0;
         let yawPeak = 0, yawPeakT = 0, yawPeakPitch = 0, prevYaw = null;
         for (let i = 0; i < n; i++) {
@@ -126,8 +131,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       //    centimetre per frame on average has no meaningful position bound, so it is reported and
       //    not gated. The spin's motion is a TURN, and T2 already owns that.
       const posPeak = (plan) => {
-        const n = Math.max(2, Math.round(dur * fps));
+        const n = Math.max(2, Math.round((plan.naturalTotal || dur) * fps));
         const b = plan.beats || {};
+        const nSec = plan.naturalTotal || dur;
         const bounds = [
           ['dive', 0, b.dive], ['spin', b.dive, b.spin], ['walk', b.spin, b.out],
           ['rise', b.out, b.rise], ['orbit', b.rise, 1],
@@ -144,6 +150,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           if (steps.length < 3) continue;
           const mean = steps.reduce((a, s) => a + s.d, 0) / steps.length;
           const top = steps.reduce((a, s) => (s.d > a.d ? s : a), steps[0]);
+          const bot = steps.reduce((a, s) => (s.d < a.d ? s : a), steps[0]);
           const PACE_SWING = 1.6;                       // the user's dial, mirrored from effects.js
           const shape = (name === 'walk') ? 1.5 * PACE_SWING : 1.5;
           // The spin is an IN-PLACE turn by definition, not a traverse — it pivots on the settle
@@ -152,7 +159,31 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           // Duplex 0.01m, Terminal 0.02m, Hospital 0.03m per frame). Its motion is rotational and
           // T2 gates it; its position numbers are printed so the exemption stays visible.
           const inPlace = (name === 'spin');
+          // §CPE_PACE_FLOOR — the SLOW side. PACE_SWING is a range, so the walk may not crawl
+          // below nominal/SWING either. A stall reads as a pause in the film ("2 secs pausing
+          // there", user, Hospital); T5 only ever had a ceiling.
+          //
+          // It CANNOT be measured against the beat mean. Every beat is a smoothstep of its own
+          // time fraction, so its first and last frames legitimately approach zero speed — that
+          // ease is what makes the seams smooth. A flat floor flags the ease-out and reports a
+          // stall at the walk's own end (measured: min=0.000m at u=0.524, which IS beats.out).
+          // So compare each frame against what the ease alone predicts THERE:
+          //     expected(e) = mean x smoothstep'(e) = mean x 6e(1-e)
+          // and the stall test is measured/expected < 1/PACE_SWING. Exact at every point, and it
+          // cannot be fooled by the ramps. Frames where the ease itself predicts under 5% of mean
+          // are skipped — there the ratio is 0/0 and carries no information.
+          let slowest = null;
+          if (name === 'walk') {
+            for (const st of steps) {
+              const e = (st.u - u0) / (u1 - u0);
+              const expect = mean * 6 * e * (1 - e);
+              if (expect < 0.05 * mean) continue;
+              const r = st.d / expect;
+              if (!slowest || r < slowest.r) slowest = { r, u: st.u, d: st.d, expect };
+            }
+          }
           per.push({ beat: name, mean, peak: top.d, at: top.u, inPlace, shape,
+                     min: bot.d, minAt: bot.u, slowest, swing: PACE_SWING,
                      cap: shape * 1.1 * mean, ratio: mean > 1e-9 ? top.d / mean : 0 });
         }
         return per;
@@ -241,6 +272,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         `(${p.ratio.toFixed(1)}x of ${p.shape.toFixed(1)}x allowed, cap ${p.cap.toFixed(2)}m) at u=${p.at.toFixed(3)}` +
         (p.inPlace ? '  [in-place beat — reported, not gated]' : '') +
         (!p.inPlace && p.peak > p.cap ? '  <-- VIOLATION' : '')).join('\n          '));
+
+    // T6 — §CPE_PACE_FLOOR, the slow half of the same range. Proves or disproves the user's
+    // "2 secs pausing there in movie": does the walk ever crawl so slowly it reads as a stall?
+    const wk = H.pos.find(p => p.beat === 'walk');
+    const sl = wk && wk.slowest;
+    P(`T6 the walk never crawls below 1/${wk ? wk.swing : 1.6} of what its own ease predicts (PACE_SWING is a RANGE, not just a ceiling)`,
+      // Tolerance is the cost table's resolution, not slack for a bad result: the table has 240
+      // segments while the film runs 640-1068 frames, so 3-4 frames interpolate inside one segment
+      // and a frame can land a fraction under the segment's own bound. 2% covers that; anything
+      // larger would be hiding a real stall (an actual one MEASURED 5-8%, not 60%).
+      !sl || sl.r >= (1 / wk.swing) * 0.98,
+      sl ? `slowest frame is ${(sl.r * 100).toFixed(0)}% of the ease's own prediction at u=${sl.u.toFixed(3)} ` +
+           `(moved ${sl.d.toFixed(3)}m, ease predicts ${sl.expect.toFixed(3)}m; floor is ` +
+           `${(100 / wk.swing).toFixed(0)}%)` + (sl.r < 1 / wk.swing ? '  <-- VIOLATION (stall)' : '')
+         : 'no walk beat measured on this layout');
 
     P('T3 a join whose bow ray ALSO hits nothing still obeys the 3m cap (unknown stays unknown)',
       stuck.every(b => b.bow <= NUDGE_CAP + 0.01),
