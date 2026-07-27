@@ -2110,7 +2110,9 @@ async function setupEffects(A, renderer, scene, camera) {
   // than at the renderer default because that default is the DAY NAVIGATION value and the user
   // recalls overexposure from raising it. 2.2x lands the still at ~0.85, bright enough to read
   // without blowing out the sky, and it touches nothing outside the photoshoot.
-  var PHOTO_EXPOSURE_LIFT = 2.2;
+  // Reverted to 1.0 with §PHOTO_EMBER_DISARMED — the lift was part of the same look and is judged
+  // with it, not separately. The arithmetic and the reasoning stay above for the next session.
+  var PHOTO_EXPOSURE_LIFT = 1.0;
   // §PHOTO_SUN_REFLECTION (user ask, continued session — "get the Sun reflection beautiful
   // realistic surface material impact correct firsts"): three things were found reading the
   // existing sun/sky code rather than adding a new one:
@@ -3014,10 +3016,22 @@ async function setupEffects(A, renderer, scene, camera) {
   // Instanced/batched meshes share one material across every element drawn by them, so emissive
   // cannot be per-instance — measured collateral on the Clinic is 33 non-luminaire elements out of
   // 8408. Reported rather than hidden; it is a footnote, not a defect to discover later.
+  // ══ §PHOTO_EMBER_DISARMED (2026-07-27) — OFF by default, deliberately, pending a dedicated
+  // session. Shipped and reverted the same day: on Hospital the user got black rectangles and lit
+  // wall panels, because 1216 luminaires resolve to only SEVEN shared materials in a 63,182-element
+  // building (batched/instanced meshes share one material across everything they draw). An
+  // exclusivity guard was written and DOES cut the collateral — measured on the Clinic, 6 materials
+  // -> 4 applied, 2 skipped — but that only proves the approach cannot reach most fixtures either:
+  // the same sharing that causes the damage is what the fixtures are drawn with. Per-material
+  // emissive is the wrong mechanism at this scale and needs replacing, not tuning.
+  // Set A._emberEnabled = true to re-arm for experiments. See
+  // bim-compiler prompts/NIGHT_AND_FIXTURE_LIGHTING.md §NEXT SESSION.
+  A._emberEnabled = false;
   var EMBER_WORDS = ['light', 'troffer', 'downlight', 'luminaire', 'lamp', 'sconce', 'pendant'];
   var EMBER_NOT   = ['switch', 'receptacle', 'panelboard', 'socket', 'outlet'];
   var _emberMats = null;
   function _emberOn() {
+    if (!A._emberEnabled) return;                    // §PHOTO_EMBER_DISARMED
     if (_emberMats || typeof A.dbQuery !== 'function') return;
     var like = function(w, j) { return w.map(function(x) { return "lower(element_name) LIKE '%" + x + "%'"; }).join(j); };
     var rows;
@@ -3030,14 +3044,45 @@ async function setupEffects(A, renderer, scene, camera) {
     for (var i = 0; i < rows.length; i++) want[rows[i][0]] = 1;
     var ids = Object.create(null), hits = 0;
     for (var k in A.guidMap) if (want[A.guidMap[k]]) { ids[parseInt(String(k).split('_')[0], 10)] = 1; hits++; }
+    // ══ §PHOTO_EMBER_EXCLUSIVE (2026-07-27, user live on Hospital: black boxes + "lighting up wall
+    // panels"). Their log is the whole diagnosis:
+    //     §PHOTO_EMBER lit 1216 luminaires -> 1216 guidMap hits, 86 meshes, 7 materials
+    // SEVEN materials for 1216 luminaires in a 63,182-element building. Batched/instanced meshes
+    // share one material across everything drawn by them, so those 7 are shared with thousands of
+    // NON-luminaires — walls, beams, railings — and emissive+toneMapped=false lit every one of
+    // them. The black rectangles are the same cause: a TRANSPARENT panel sharing one of those
+    // materials renders black once tone mapping is bypassed on it.
+    //
+    // The Clinic hid this: 33 collateral elements out of 8408 read as a footnote, and the number
+    // was reported but not acted on. At Hospital scale the same ratio is a broken render. So the
+    // rule is now exclusivity, not counting: a material is lit ONLY if every element drawn with it
+    // is a luminaire. Anything shared is skipped and SAID so, because fewer lit fixtures is a
+    // visible, explicable outcome and glowing walls is not.
+    var meshLum = Object.create(null), meshAll = Object.create(null);
+    for (var k2 in A.guidMap) {
+      var id2 = parseInt(String(k2).split('_')[0], 10);
+      meshAll[id2] = (meshAll[id2] || 0) + 1;
+      if (want[A.guidMap[k2]]) meshLum[id2] = (meshLum[id2] || 0) + 1;
+    }
+    // A material is disqualified by ANY mesh that uses it and carries a non-luminaire.
+    var matShared = Object.create(null);
+    A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
+      var mixed = (meshAll[o.id] || 0) > (meshLum[o.id] || 0);
+      if (!mixed) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+        if (m) matShared[m.uuid] = 1;
+      });
+    });
+
     _emberMats = [];
-    var seen = Object.create(null), meshes = 0;
+    var seen = Object.create(null), meshes = 0, skipped = 0;
     A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
       if (!ids[o.id]) return;
       meshes++;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
         if (!m || !m.emissive || seen[m.uuid]) return;
         seen[m.uuid] = 1;
+        if (matShared[m.uuid]) { skipped++; return; }   // shared with non-luminaires — leave it alone
         _emberMats.push({ m: m, e: m.emissive.getHex(), i: m.emissiveIntensity || 0, tm: m.toneMapped !== false });
         // Warm white, STATED not measured. Terminal's family names carry wattage and colour temp
         // ("2 X 28W ... cw"); the Clinic's carry neither, so a per-kind default is the honest
@@ -3051,7 +3096,10 @@ async function setupEffects(A, renderer, scene, camera) {
       });
     });
     console.log('§PHOTO_EMBER lit ' + rows.length + ' luminaires -> ' + hits + ' guidMap hits, ' +
-      meshes + ' meshes, ' + _emberMats.length + ' materials (bloom threshold ' +
+      meshes + ' meshes, ' + _emberMats.length + ' materials, ' + skipped +
+      ' SKIPPED as shared with non-luminaires (§PHOTO_EMBER_EXCLUSIVE — a shared material would ' +
+      'light walls, beams and railings, and black out any transparent panel sharing it)' +
+      ' (bloom threshold ' +
       (A._bloomPass ? A._bloomPass.threshold : '?') + ', strength ' + (A._bloomPass ? A._bloomPass.strength : '?') + ')');
   }
   function _emberOff() {
@@ -3080,14 +3128,14 @@ async function setupEffects(A, renderer, scene, camera) {
     A._stillRefineBusy = true;
     // §PHOTO_EMBER + §PHOTO_BLOOM: both are STILL-ONLY, same discipline as Layer 3's triplanar PBR.
     // Navigation keeps the cheap chain; the frozen still can afford 7 extra full-screen draws.
-    if (A._bloomPass) A._bloomPass.enabled = true;
+    if (A._bloomPass) A._bloomPass.enabled = !!A._emberEnabled;   // §PHOTO_EMBER_DISARMED
     _emberOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
     // user's report is that the night lights "have been weak" — part of that is simply that a
     // 841-fixture building was being lit by 12 of them.
-    if (A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
+    if (A._emberEnabled && A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
       A._nightUpdateLights();
