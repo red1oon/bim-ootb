@@ -4268,6 +4268,39 @@ async function setupEffects(A, renderer, scene, camera) {
     // total is supposed to fall out of the BUILDING's size. So both are bounded by building-derived
     // quantities — the approach is capped at the envelope, the spin at a half turn (the most that is
     // ever needed to face anywhere) — and only then converted at their stated rates.
+    // §CPE_TURN_BUDGET (user, 2026-07-27: "where sudden diff is adverse noise impact and introduce
+    // frames to smoothen"). The walk's seconds were derived from DISTANCE alone, so a route that
+    // turns 496 deg and one that turns 90 deg over the same metres got the same frame count.
+    //
+    // Why redistribution alone could never fix this: with N frames fixed, mean turn per frame is
+    // Θ/N whatever the parameterization does — §CPE_EVEN_TURN can move WHERE the turning falls but
+    // not how much there is per frame on average. MEASURED on Hospital: 495.8 deg over ~122 walk
+    // frames = 4 deg/frame mean against a peak of 20, with the speed function already saturated at
+    // both rails. Redistribution cannot beat its own mean; only more frames can.
+    //
+    // So the same noise ratio pays twice: it sets speed WITHIN the walk (the cost parameterization)
+    // and it buys the walk's TIME here. Sudden difference ⇒ more frames to smooth it, which is the
+    // user's rule stated directly. No new constant — rotation is charged at CINEMA_TURN_DPS, the
+    // rate the spin and the orbit lap already turn at, so a degree of turning costs the same
+    // wherever it occurs.
+    function _walkTurnDeg() {
+      var N = 60, prev = null, prevD = null, deg = 0;
+      for (var q = 0; q <= N; q++) {
+        var p = _outPos(q / N);
+        if (prev) {
+          var dx = p.x - prev.x, dy = p.y - prev.y, dz = p.z - prev.z;
+          var L = Math.hypot(dx, dy, dz);
+          if (L > 1e-6) {
+            var d = { x: dx / L, y: dy / L, z: dz / L };
+            if (prevD) deg += Math.acos(Math.max(-1, Math.min(1,
+              d.x * prevD.x + d.y * prevD.y + d.z * prevD.z))) * 180 / Math.PI;
+            prevD = d;
+          }
+        }
+        prev = p;
+      }
+      return deg;
+    }
     var _diveEff = Math.min(diveDist, envelope);
     // ⚠ §CPE_SEAM_CONTINUOUS — DO NOT add a pitch term to _spinDeg. It was tried this session and
     // reverted: pricing the walk's opening pitch into the spin makes the spin's DURATION depend on
@@ -4288,7 +4321,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _natSec = {
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS),
       spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
-      out:   totalLen / CINEMA_WALK_MPS,
+      out:   totalLen / CINEMA_WALK_MPS + _walkTurnDeg() / CINEMA_TURN_DPS,
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
