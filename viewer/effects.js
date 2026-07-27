@@ -4125,6 +4125,17 @@ async function setupEffects(A, renderer, scene, camera) {
         'walk-start look-ahead instead (' + firstLeg.x.toFixed(2) + ',' + firstLeg.z.toFixed(2) + ')');
     }
     var spinTo = Math.atan2(firstLeg.z - settle.z, firstLeg.x - settle.x);
+    // §CPE_SEAM_CONTINUOUS — the PITCH the walk opens on, computed here (before the beat seconds)
+    // because the spin now has to cover it and therefore has to be PAID for in the spin's time
+    // budget. Same look-ahead point and same 0.5m collapse guard Beat 3 itself uses at e3=0, so
+    // this is the walk's real opening gaze, not a second guess at it (asserted below against
+    // _beat3Pose(0), which is the pose that actually flies).
+    var _wkP0 = _outPos(0), _wkA0 = _outPos(0.15);
+    if (Math.hypot(_wkA0.x - _wkP0.x, _wkA0.y - _wkP0.y, _wkA0.z - _wkP0.z) < 0.5)
+      _wkA0 = { x: _wkP0.x + odx * 20, y: _wkP0.y, z: _wkP0.z + odz * 20 };
+    var _wkDy = _wkA0.y - _wkP0.y;
+    var _wkL = Math.hypot(_wkA0.x - _wkP0.x, _wkDy, _wkA0.z - _wkP0.z) || 1;
+    var _spinEndPitch = Math.asin(Math.max(-1, Math.min(1, _wkDy / _wkL)));
     var dYaw = spinTo - yaw0;
     while (dYaw > Math.PI) dYaw -= 2 * Math.PI;
     while (dYaw < -Math.PI) dYaw += 2 * Math.PI;
@@ -4193,6 +4204,22 @@ async function setupEffects(A, renderer, scene, camera) {
     // quantities — the approach is capped at the envelope, the spin at a half turn (the most that is
     // ever needed to face anywhere) — and only then converted at their stated rates.
     var _diveEff = Math.min(diveDist, envelope);
+    // §CPE_SEAM_CONTINUOUS: count the PITCH sweep too. The spin turns in yaw AND tilts to the
+    // walk's opening pitch, but this budget used to price the yaw alone — so on a walk that opens
+    // steeply the tilt was crammed into a beat sized for a flat turn. MEASURED on Terminal: yaw
+    // asked for under 36 deg (so the beat fell to the 0.8s floor) while the real sweep was ~142 deg,
+    // giving 17.7 deg/frame. Same CINEMA_TURN_DPS rate, applied to the whole sweep. The pitch is
+    // capped at 90 for the same reason the yaw is capped at 180: a quarter turn is the most a tilt
+    // can ever need, so a pathological pose cannot inflate the runtime.
+    // §CPE_SEAM_CONTINUOUS — the direction the walk WANTS to open on, and the direction the spin
+    // actually hands over (level, on the spin's final bearing). The gap between them was being paid
+    // in ONE frame at the Beat2->3 seam: MEASURED 81 deg on Terminal, and it did NOT shrink when
+    // sampled at 100x density, so it was a true discontinuity that no pacing could ever spread.
+    // It is closed inside the WALK (see _beat3Pose) rather than inside the spin, because the walk
+    // already owns thousands of frames while the spin's length is derived from its own yaw — paying
+    // for it in the spin would make the spin's DURATION depend on the authored path, which shifts
+    // every beat fraction before it and breaks G2's "an edit changes nothing before it".
+    var _openDir = { x: (_wkA0.x - _wkP0.x) / _wkL, y: _wkDy / _wkL, z: (_wkA0.z - _wkP0.z) / _wkL };
     var _spinDeg = Math.min(180, Math.abs(dYaw) * 180 / Math.PI);
     var _natSec = {
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS),
@@ -4210,6 +4237,19 @@ async function setupEffects(A, renderer, scene, camera) {
       ? { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC,
           orbit: _natSec.orbit }
       : _natSec;
+    // The pose Beat 2 ends on: level, on the spin's final bearing. Beat 3 must START here.
+    var _handYaw = yaw0 + dYaw;
+    var _handDir = { x: Math.cos(_handYaw), y: 0, z: Math.sin(_handYaw) };
+    var _openDeg = Math.acos(Math.max(-1, Math.min(1,
+      _handDir.x * _openDir.x + _handDir.y * _openDir.y + _handDir.z * _openDir.z))) * 180 / Math.PI;
+    // How much of the walk the handoff needs, at the project's OWN established turn rate
+    // (CINEMA_TURN_DPS — the rate the spin and the orbit lap already use). Not a new constant, and
+    // not a fraction picked to make a gate green: it is "how long a graceful turn of this size
+    // takes", expressed as a share of the walk's own seconds.
+    var _openU = Math.min(1, (_openDeg / CINEMA_TURN_DPS) / Math.max(1e-6, _useSec.out));
+    console.log('§CPE_SEAM_CONTINUOUS openDeg=' + _openDeg.toFixed(1) + ' openU=' + _openU.toFixed(4) +
+      ' (~' + (_openU * _useSec.out).toFixed(2) + 's of the ' + _useSec.out.toFixed(1) +
+      's walk) handoffYawDeg=' + (_handYaw * 180 / Math.PI).toFixed(1));
     var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.rise + _useSec.orbit;
     var tD = _useSec.dive / _shapeTotal;
     var tS = tD + _useSec.spin / _shapeTotal;
@@ -4420,39 +4460,11 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       if (tNorm <= tO) {
         // ── Beat 3: walk it out through the door the pose chose.
-        var e3 = _cinemaSmoothstep((tNorm - tS) / Math.max(1e-6, tO - tS));
-        var p3 = _outPos(e3);
-        // §CINEMA_TIMING_672 (2026-07-24, user: "no chasing interim targets when exiting building
-        // mostly"): 0.06→0.15. Position already moves at constant speed along the route; this
-        // lookahead point only steers where the camera LOOKS. On a multi-waypoint room-graph route
-        // (a corridor with turns), the instant this window crosses a corner the look-at direction
-        // swung hard onto the next segment — a real gaze snap, not just position. A wider window
-        // means the look-at is further past any given corner while still approaching it, so the
-        // direction change is spread out instead of happening in one frame.
-        var ah = _outPos(Math.min(1, e3 + 0.15));
-        // §CINEMA_LOOKAHEAD_VERTICAL (2026-07-27): this collapse test used to measure HORIZONTAL
-        // distance only, so any near-vertical stretch of path tripped it even though the look-ahead
-        // point was metres away — it was simply above rather than ahead. The gaze then snapped from
-        // looking up the shaft to the flat (odx,odz) bearing. MEASURED on Terminal, whose walk-out
-        // climbs 17m with x/z barely moving: target jumped (-0.80,-6.19,-1.14) → (-21.82,-25.65,
-        // -1.67), a 113 deg/frame whip at t=0.411. A 3D test is what the guard actually meant —
-        // "has the look-ahead collapsed onto me", not "has it collapsed horizontally".
-        if (Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) < 0.5)
-          ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
-        var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
-        // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
-        // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
-        // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
-        // Beat 4's turn is a CONTINUATION picked up mid-blend, not a fresh spin starting from zero.
-        // Both this ramp-in and Beat 4's ramp-out use smoothstep, so the blend weight is continuous
-        // AND has matching (zero) slope at the tO boundary — no kink in the gaze direction.
-        var turnW3 = (e3 > 1 - CINEMA_TURN_OVERLAP)
-          ? _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP) * CINEMA_TURN_OVERLAP_MAX
-          : 0;
-        // turnW3=0 reproduces the old pure-walk target exactly (p3 + aheadDir*20) — the walk-out
-        // itself is untouched; only the blend that follows changed shape.
-        return _cinemaGazeBlend(p3.x, p3.y, p3.z,
-                                (ah.x - p3.x) / ad, (ah.y - p3.y) / ad, (ah.z - p3.z) / ad, turnW3);
+        // §CPE_EVEN_TURN: the frame's progress along the walk is no longer the eased TIME fraction
+        // — it is that fraction run through _evenTurnRemap, which spaces frames evenly in the
+        // blended distance+turn metric instead of evenly in distance. See the remap's own comment.
+        var e3 = _evenTurnRemap(_cinemaSmoothstep((tNorm - tS) / Math.max(1e-6, tO - tS)));
+        return _beat3Pose(e3);
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
@@ -4473,6 +4485,142 @@ async function setupEffects(A, renderer, scene, camera) {
       // ── Beat 5: the standard ending.
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
     }
+
+    // The walk-out pose as a pure function of its OWN progress e3 ∈ [0,1]. Extracted verbatim out of
+    // poseAt so §CPE_EVEN_TURN's cost table can sample the REAL poses — sampling a re-implementation
+    // of the gaze rule would let the table and the film drift apart silently.
+    function _beat3Pose(e3) {
+        var p3 = _outPos(e3);
+        // §CINEMA_TIMING_672 (2026-07-24, user: "no chasing interim targets when exiting building
+        // mostly"): 0.06→0.15. Position already moves at constant speed along the route; this
+        // lookahead point only steers where the camera LOOKS. On a multi-waypoint room-graph route
+        // (a corridor with turns), the instant this window crosses a corner the look-at direction
+        // swung hard onto the next segment — a real gaze snap, not just position. A wider window
+        // means the look-at is further past any given corner while still approaching it, so the
+        // direction change is spread out instead of happening in one frame.
+        var ah = _outPos(Math.min(1, e3 + 0.15));
+        // §CINEMA_LOOKAHEAD_VERTICAL (2026-07-27): this collapse test used to measure HORIZONTAL
+        // distance only, so any near-vertical stretch of path tripped it even though the look-ahead
+        // point was metres away — it was simply above rather than ahead. The gaze then snapped from
+        // looking up the shaft to the flat (odx,odz) bearing. MEASURED on Terminal, whose walk-out
+        // climbs 17m with x/z barely moving: target jumped (-0.80,-6.19,-1.14) → (-21.82,-25.65,
+        // -1.67), a 113 deg/frame whip at t=0.411. A 3D test is what the guard actually meant —
+        // "has the look-ahead collapsed onto me", not "has it collapsed horizontally".
+        if (Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) < 0.5)
+          ah = { x: p3.x + odx * 20, y: p3.y, z: p3.z + odz * 20 };
+        var ad = Math.hypot(ah.x - p3.x, ah.y - p3.y, ah.z - p3.z) || 1;
+        // §CPE_SEAM_CONTINUOUS: at e3=0 look EXACTLY where the spin left off, then ease onto the
+        // walk's own aim across _openU. Smoothstep, so the rate is zero at the seam and there is no
+        // kink against Beat 2's own eased ending. Past _openU this is the untouched walk gaze.
+        var _lx = (ah.x - p3.x) / ad, _ly = (ah.y - p3.y) / ad, _lz = (ah.z - p3.z) / ad;
+        if (_openU > 1e-6 && e3 < _openU) {
+          var wOpen = _cinemaSmoothstep(e3 / _openU);
+          _lx = _handDir.x + (_lx - _handDir.x) * wOpen;
+          _ly = _handDir.y + (_ly - _handDir.y) * wOpen;
+          _lz = _handDir.z + (_lz - _handDir.z) * wOpen;
+          var _ll = Math.hypot(_lx, _ly, _lz) || 1;
+          _lx /= _ll; _ly /= _ll; _lz /= _ll;
+        }
+        // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
+        // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
+        // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
+        // Beat 4's turn is a CONTINUATION picked up mid-blend, not a fresh spin starting from zero.
+        // Both this ramp-in and Beat 4's ramp-out use smoothstep, so the blend weight is continuous
+        // AND has matching (zero) slope at the tO boundary — no kink in the gaze direction.
+        var turnW3 = (e3 > 1 - CINEMA_TURN_OVERLAP)
+          ? _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP) * CINEMA_TURN_OVERLAP_MAX
+          : 0;
+        // turnW3=0 reproduces the old pure-walk target exactly (p3 + aheadDir*20) — the walk-out
+        // itself is untouched; only the blend that follows changed shape.
+        return _cinemaGazeBlend(p3.x, p3.y, p3.z, _lx, _ly, _lz, turnW3);
+    }
+
+    // ══ §CPE_EVEN_TURN — the even-out. ═══════════════════════════════════════════════════════════
+    // User, 2026-07-27: "no jerk, no cam pos/pov jump.. but even out".
+    //
+    // What every earlier attempt got wrong: they kept frames evenly spaced in TIME and tried to fix
+    // the corner by MULTIPLYING the speed there. deg/frame = (deg/metre) × (metres/frame), and a
+    // multiplier bounded by the user's own PACE_SWING can only ever divide the peak by 1.6 — the
+    // measured peak was 29.1 deg/frame against a 12 cap, so a 2.4× reduction was needed and no
+    // tuning of a bounded multiplier could reach it. That is why H3 moved 29.1 → 29.4: not a bug,
+    // an arithmetic ceiling. The three dead ends are recorded in prompts/CINEMA_PATH_EDITOR.md.
+    //
+    // The fix is to stop treating pace as a correction and make it the PARAMETERIZATION. Step the
+    // frames at equal increments of a blended cost
+    //
+    //     dc = (1-w)·(ds/S) + w·(dθ/Θ)
+    //
+    // where S is the walk's arc length and Θ its total gaze turn. Because every frame advances the
+    // same Δc = 1/N, each term is bounded on its own by construction:
+    //
+    //     Δθ ≤ Θ/(w·N)         — turn per frame, at most 1/w × the perfectly-even Θ/N
+    //     Δs ≤ S/((1-w)·N)     — distance per frame, at most 1/(1-w) × the nominal speed
+    //
+    // So 1/(1-w) IS the speed range. The user set that range at PACE_SWING = 1.6 ("have a speed
+    // range… don't overdo it"), which fixes w = 1 - 1/1.6 = 0.375 exactly. Nothing here is a tuned
+    // constant: the one dial was already chosen by the user, and the turn bound falls out of it.
+    // Slow-in-the-turn and pick-up-in-the-open are not imposed by a brake — they are what equal
+    // cost stepping DOES, and the brake releases in open space for free because there is no dθ to
+    // pay for there.
+    var CINEMA_PACE_SWING = 1.6;
+    var _etW = 1 - 1 / CINEMA_PACE_SWING;
+    var _etN = 240, _etC = null, _etS = 0, _etT = 0;
+    function _evenTurnBuild() {
+      var ss = [], ts = [], prev = null, prevD = null, s = 0, th = 0;
+      for (var i = 0; i <= _etN; i++) {
+        var e = i / _etN, ps = _beat3Pose(e);
+        var gx = ps.tx - ps.x, gy = ps.ty - ps.y, gz = ps.tz - ps.z;
+        var gl = Math.hypot(gx, gy, gz) || 1; gx /= gl; gy /= gl; gz /= gl;
+        if (prev) {
+          s += Math.hypot(ps.x - prev.x, ps.y - prev.y, ps.z - prev.z);
+          // Angle between successive gaze DIRECTIONS — the full 3D turn, so a pitch whip costs the
+          // same as a yaw whip. Measuring yaw alone would leave §CINEMA_LOOKAHEAD_VERTICAL's class
+          // of jump unpriced.
+          th += Math.acos(Math.max(-1, Math.min(1, gx * prevD.x + gy * prevD.y + gz * prevD.z)));
+        }
+        ss.push(s); ts.push(th);
+        prev = { x: ps.x, y: ps.y, z: ps.z }; prevD = { x: gx, y: gy, z: gz };
+      }
+      _etS = s; _etT = th;
+      // A walk with no turn in it has no turn to even out: fall back to pure arc length, which is
+      // byte-for-byte today's behaviour. Guards ts[i]/Θ against dividing by ~0.
+      var w = (th > 1e-3) ? _etW : 0;
+      var S = s || 1, T = th || 1;
+      var c = [];
+      for (i = 0; i <= _etN; i++) c.push((1 - w) * (ss[i] / S) + w * (ts[i] / T));
+      _etC = c;
+      console.log('§CPE_EVEN_TURN w=' + w.toFixed(3) + ' (PACE_SWING=' + CINEMA_PACE_SWING + ') walkLen=' +
+        s.toFixed(2) + 'm totalTurn=' + (th * 180 / Math.PI).toFixed(1) + 'deg samples=' + (_etN + 1) +
+        ' boundPerFrameTurn=' + (w > 0 ? (th * 180 / Math.PI / w).toFixed(1) + 'deg/N' : 'n/a (straight walk)') +
+        ' speedRange=' + (w > 0 ? (1 / (1 - w)).toFixed(2) + 'x' : '1.00x'));
+    }
+    // Monotone inverse of the cost table: given uniform progress in cost, return the walk fraction.
+    function _evenTurnRemap(u) {
+      if (!_etC) return u;
+      u = Math.max(0, Math.min(1, u));
+      var lo = 0, hi = _etN;
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (_etC[mid] <= u) lo = mid; else hi = mid; }
+      var c0 = _etC[lo], c1 = _etC[hi], f = (c1 - c0 > 1e-12) ? (u - c0) / (c1 - c0) : 0;
+      return (lo + Math.max(0, Math.min(1, f))) / _etN;
+    }
+    // §CPE_SEAM_CONTINUOUS: the pitch Beat 3 opens on, read off the REAL opening pose rather than
+    // re-derived from the waypoints — so the spin lands on the walk's gaze, not on a second guess
+    // at it. Declared here (after _beat3Pose) and read by Beat 2 at frame time.
+    // The spin's landing pitch was computed up at §CINEMA_SPIN_BASELINE so the beat seconds could
+    // pay for it. Assert it against the pose that ACTUALLY flies — if these ever diverge the seam
+    // silently reopens, so the drift is logged rather than assumed to be zero.
+    // Assert the seam is actually closed, on the poses that FLY: the angle between Beat 2's last
+    // gaze and Beat 3's first. Logged rather than assumed — if a future change reopens it, the
+    // number moves off zero here instead of surfacing as a jerk nobody can locate.
+    (function () {
+      var p0 = _beat3Pose(0);
+      var dl = Math.hypot(p0.tx - p0.x, p0.ty - p0.y, p0.tz - p0.z) || 1;
+      var d = (p0.tx - p0.x) / dl * _handDir.x + (p0.ty - p0.y) / dl * _handDir.y + (p0.tz - p0.z) / dl * _handDir.z;
+      console.log('§CPE_SEAM_CONTINUOUS seamGapDeg=' +
+        (Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI).toFixed(3) +
+        ' (beat2 end -> beat3 start; must be ~0)');
+    })();
+    _evenTurnBuild();
 
     // Plan cost is dominated by the BVH fans + floor raycasts. Measured on this project's headless
     // ANGLE/SwiftShader rig: Duplex ~20-70ms, Terminal/Hospital ~500-750ms — a one-off cost at the
