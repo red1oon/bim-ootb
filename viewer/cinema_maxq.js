@@ -437,9 +437,16 @@
     // "the user sees what its next 10 mins of rendering will be up to". Plain nav look, no Alt+S
     // staging/folds (path rehearsal, not a quality preview — per user, "the fast preview the
     // scene wont be in Alt-S mode"). Alt+C during the preview cancels the whole run for free.
-    if (opts.preview !== false) {
-      console.log('§MAXQ_PREVIEW start 10s real-time mock of the exact path (plain look, no Alt+S)');
-      _status('🎬 Path preview (10s, plain look) — the bake follows; Alt+C cancels');
+    // ONE implementation, two call sites (§CPE_PREVIEW_AFTER below is the second). It reads `poseAt`,
+    // which reads `plan` from this scope at CALL time — so whichever plan is current when it runs is
+    // the plan it flies. That is not incidental: it is what makes the after-edit preview show the
+    // EDITED film through the very same function the bake will step frame by frame, rather than a
+    // second, parallel notion of the path that could drift from it (§CPE_PREVIEW_DIVERGENCE, again).
+    // Returns true if the user cancelled during it.
+    async function _runPreview(phase, status) {
+      console.log('§MAXQ_PREVIEW start phase=' + phase +
+        ' 10s real-time mock of the exact path (plain look, no Alt+S)');
+      _status(status);
       var camSave = { px: A.camera.position.x, py: A.camera.position.y, pz: A.camera.position.z,
                       qx: A.controls.target.x, qy: A.controls.target.y, qz: A.controls.target.z };
       var pv0 = performance.now(), PREV_MS = 10000;
@@ -460,14 +467,21 @@
       A.controls.target.set(camSave.qx, camSave.qy, camSave.qz);
       A.controls.update();
       if (A.markDirty) A.markDirty();
-      if (_cancel) {
-        console.log('§MAXQ_CANCEL during preview — nothing baked, nothing saved');
-        _status('🎬 MaxQ cancelled during preview');
-        _active = false; _cancel = false; A._maxqActive = false;
-        _wakeRelease(); _dampRelease();
+      if (_cancel) return true;
+      console.log('§MAXQ_PREVIEW done phase=' + phase + ' — camera restored');
+      return false;
+    }
+    function _cancelledOut(where) {
+      console.log('§MAXQ_CANCEL during ' + where + ' — nothing baked, nothing saved');
+      _status('🎬 MaxQ cancelled during ' + where);
+      _active = false; _cancel = false; A._maxqActive = false;
+      _wakeRelease(); _dampRelease();
+    }
+    if (opts.preview !== false) {
+      if (await _runPreview('derived', '🎬 Path preview (10s, plain look) — the editor opens next; Alt+C cancels')) {
+        _cancelledOut('preview');
         return;
       }
-      console.log('§MAXQ_PREVIEW done — camera restored, commencing capture');
     }
     // ══ §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL item 12): the
     // waypoint editor opens HERE — after the preview has shown the path and put the camera back.
@@ -518,6 +532,28 @@
         if (nFrames !== _framesWas)
           console.log('§MAXQ_START_REVISED frames=' + _framesWas + '→' + nFrames +
             ' (path edited; §MAXQ_START above is superseded)');
+        // ══ §CPE_PREVIEW_AFTER (CINEMA_PATH_EDITOR.md ask 5) — the preview you get AFTER you edit.
+        // Until now the only 10s rehearsal ran BEFORE the editor opened, so it showed the DERIVED
+        // path — the one film you already knew you did not want, which is why you opened the editor.
+        // The film you actually authored went straight to a ten-minute bake unseen. Confirmed absent
+        // in the user's own console: §CPE_CLOSE -> §CPE_APPLIED -> §MAXQ_FRAME i=0, with no second
+        // §MAXQ_PREVIEW between them.
+        //
+        // It runs ONLY when the path was really edited. An untouched OK re-uses the plan object
+        // computed before the editor opened (guardrail 2, see the else branch), so a second preview
+        // there would be ten seconds spent proving nothing changed — and "the default cost of this
+        // feature is one click and nothing else" is a promise this must not quietly break.
+        //
+        // `plan` was reassigned three lines up, and poseAt() resolves `plan` at call time, so this
+        // flies the EDITED plan through the identical function the bake steps frame by frame. Not
+        // a re-implementation of the path: the same one, which is the whole point.
+        if (opts.preview !== false) {
+          if (await _runPreview('edited', '🎬 Preview of YOUR edit (10s) — the ' + nFrames +
+                                          '-frame bake follows; Alt+C cancels')) {
+            _cancelledOut('the edited-path preview');
+            return;
+          }
+        }
       } else {
         // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
         // literally the same object, so the film is byte-identical to one recorded without the
