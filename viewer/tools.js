@@ -116,6 +116,26 @@ function setupTools(A) {
 
   // Set ground flat color, but respect an active photo texture: color MULTIPLIES the map,
   // so keep it white (photo true) and only dim — never blacken — for night-dark targets.
+  //
+  // §GROUND_ALBEDO (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §GROUND_DARK_RETHINK idea 1,
+  // 2026-07-28) — Witness: W-GROUND-ALBEDO. White here is the multiplicative IDENTITY, not a
+  // ceiling: `diffuseColor = diffuse * map`, `diffuse` is a plain vec3 uniform and THREE.Color is
+  // not clamped to 1, so a value above 1 raises the ground's ALBEDO. That matters because the
+  // ground map's own measured linear-average luminance is 0.155 (paved_1k.jpg = Poly Haven
+  // concrete_floor_01) while every Layer-3 material texture is renormalized to ~1.0 by its
+  // TRIPLANAR_MAT.normFactor — so the ground is ~5.5x darker in albedo than the wall standing on
+  // it, on top of the 9.5x from the 6-degree dusk sun. 0.155 is asphalt; the scene wants a plaza
+  // (real dry concrete is 0.25-0.40).
+  //
+  // WHY A GAIN AND NOT MORE FILL LIGHT — this is the whole point, and both previous attempts got
+  // it backwards. The emissive add (§PHOTO_GROUND_WHITE_REVERTED) and the hemi/ambient boost
+  // (§PHOTO_CONTRAST_DIALBACK, 1.6/1.3 -> 1.25/1.15) are ADDITIVE: they add the same constant to
+  // lit and shadowed pixels, so the shadow's contrast RATIO collapses — that is "Shadows? None on
+  // the ground", reported both times. Albedo is MULTIPLICATIVE: lit and shadowed ground scale by
+  // the SAME factor, so lit/shadow is algebraically unchanged (exactly, pre-tonemap; ACES then
+  // compresses the top end, which softens the high values but never flattens the ratio).
+  // Default 1.0 — navigation and day render byte-identical to before; only the photoshoot lifts it.
+  A._groundAlbedoGain = 1.0;
   A._setGroundColor = function(hex) {
     if (!A.ground) return;
     A._groundSolidColor = hex;   // remember the mode's intended flat color (for 'none')
@@ -123,6 +143,11 @@ function setupTools(A) {
     if (hasMap) {
       var sum = (hex & 0xff) + ((hex >> 8) & 0xff) + ((hex >> 16) & 0xff);
       A.ground.material.color.setHex(sum < 0x60 ? 0x555566 : 0xffffff);  // dim at night, else true
+      // multiplyScalar, never a >1 hex: setHex runs the sRGB->linear transfer, so scaling AFTER it
+      // is unambiguous linear gain. Only lifts the photo-true (white) branch — the night-dim
+      // branch stays dim, since a dark ground at night is deliberate, not the complaint.
+      var g = A._groundAlbedoGain;
+      if (g && g !== 1.0 && sum >= 0x60) A.ground.material.color.multiplyScalar(g);
     } else {
       A.ground.material.color.setHex(hex);
     }
