@@ -2960,6 +2960,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
+    // §PHOTO_GLOW_SPRITE: restage rather than remove when night mode is still on — the sprites
+    // belong to NIGHT, not to the still; only their bloom was still-only. Restaging also refreshes
+    // the eye offset against wherever the camera ended up.
+    _glowOff();
+    if (A._nightMode) _glowOn();
     // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the 4x set follows the user into
     // their next orbit and the frame rate goes with it.
     if (A._nightMaxLights !== 12 && typeof A._nightUpdateLights === 'function') {
@@ -3027,7 +3032,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // Set A._emberEnabled = true to re-arm for experiments. See
   // bim-compiler prompts/NIGHT_AND_FIXTURE_LIGHTING.md §NEXT SESSION.
   A._emberEnabled = false;
-  var EMBER_WORDS = ['light', 'troffer', 'downlight', 'luminaire', 'lamp', 'sconce', 'pendant'];
+  // Must stay identical to the vocabulary in tools.js A._loadNightFixtures — see §NIGHT_EXIT_SIGNS
+  // there for why the last three are in the list and what they are measured to add.
+  var EMBER_WORDS = ['light', 'troffer', 'downlight', 'luminaire', 'lamp', 'sconce', 'pendant',
+                     'exit sign', 'keluar', 'signage'];
   var EMBER_NOT   = ['switch', 'receptacle', 'panelboard', 'socket', 'outlet'];
   var _emberMats = null;
   function _emberOn() {
@@ -3111,6 +3119,166 @@ async function setupEffects(A, renderer, scene, camera) {
     _emberMats = null;
   }
 
+  // ══ §PHOTO_GLOW_SPRITE (bim-compiler prompts/NIGHT_AND_FIXTURE_LIGHTING.md §PHOTO_GLOW_SPRITE)
+  //    — Witness: W-GLOW-SPRITE. The replacement for §PHOTO_EMBER, not an addition to it.
+  //
+  // WHY THE MECHANISM CHANGED. §PHOTO_EMBER set `emissive` on the materials the luminaires are drawn
+  // with. On Hospital that was 1216 luminaires resolving to SEVEN materials, because batched and
+  // instanced meshes share one material across everything they draw — so the emissive lit walls,
+  // beams and railings too, and `toneMapped=false` on a material also used by a TRANSPARENT panel
+  // rendered that panel pure black. An exclusivity guard cut the collateral but proved the approach
+  // is a dead end: the same sharing that causes the damage is what the fixtures are drawn with, so a
+  // correct guard starves the fixtures as well. The problem is not the filter, it is the coupling to
+  // scene geometry.
+  //
+  // Sprites are decoupled from the geometry entirely, so material sharing is IRRELEVANT rather than
+  // guarded against — this code touches no scene material at all, which is the property the witness
+  // asserts (materialsMutated must be 0). One THREE.Points object = one draw call for every fixture
+  // in the building, so the 12/48 light-count budget does not apply: those budget per-fragment
+  // LIGHTING work on every lit material, and a Points cloud has no lighting term.
+  //
+  // Positions and colours come from A._nightFixtureWorldPositions() — the same list, the same
+  // vocabulary and the same §NIGHT_LIGHT_MIX colour the point light at that fixture uses, so the
+  // sprite and the light agree instead of being two independent decisions.
+  A._glowSpriteEnabled = true;
+  var GLOW_SPRITE_SIZE = 1.1;   // metres, halo diameter (sizeAttenuation) — sized against a 0.6x1.2m troffer
+  var GLOW_GAIN        = 3.0;   // linear-space gain on the vertex colour; BloomPass threshold is 1.0,
+                                // so a value at or below 1.0 is invisible to bloom and we are back to
+                                // "emissive alone moved mean luminance 56.13 -> 56.13".
+  // metres toward the eye. NOT a fudge: the DB gives a fixture's CENTRE and the glow leaves its
+  // visible FACE, nearer the camera by about half the fitting's thickness. Without it the fitting's
+  // own geometry wins the depth test against a sprite sitting inside it.
+  //
+  // 0.30 rather than 0.15 is MEASURED, from the occlusion-gap histogram over the Clinic
+  // (probe_glow_diag.js, 21 poses pooled, gap = sprite distance minus nearest blocker distance):
+  //     <=0.05m 115   <=0.1m 19   <=0.2m 25   <=0.3m 29   <=0.5m 26   <=0.8m 72
+  //     <=1.5m 380    <=3m 1173   <=6m 1008   <=12m 2331   >12m 3554
+  // The small-gap group is fittings hiding their own glow; everything from ~1.5m out is a lamp
+  // genuinely behind a WALL, which MUST stay hidden — so this cannot be fixed by pushing the offset
+  // arbitrarily far, and 0.30 clears 188 of the ~286 fitting-occluded without reaching into the
+  // architecture band.
+  //
+  // REJECTED, on cost: a per-sprite raycast that finds the fitting's actual face and sits the glow
+  // in front of it. It is more precise and it recovers the whole <=0.8m group, but raycasting
+  // against BATCHED meshes walks a lot of geometry per ray — measured at roughly 10k rays in
+  // single-digit minutes in the headless rig — so 841 fixtures is a tens-of-seconds stall at
+  // still-start, and Hospital's 1216 in a 63,182-element building is worse. A constant that costs
+  // nothing and recovers most of the group beats a correct one that stalls the fold.
+  var GLOW_EYE_OFFSET  = 0.30;
+  // §GLOW_EXIT_SOFT (user: "exit signs should have soft appropriate lighting"). An exit sign is a
+  // small backlit panel, not a 600x1200 troffer, and giving it the same halo at the same gain reads
+  // as a floodlight over every doorway. GAIN 0.9 is deliberately BELOW the bloom threshold of 1.0 —
+  // that is what makes it soft: the sign glows but never blooms, while the luminaires at gain 3.0
+  // do. SIZE is a multiplier on GLOW_SPRITE_SIZE, so 0.40 x 1.1m = a ~0.44m halo.
+  // Counted on the shipped buildings: Clinic 43 signs, Hospital 57, Terminal 38 (E_Light_Keluar).
+  var GLOW_EXIT_GAIN   = 0.9;
+  var GLOW_EXIT_SIZE   = 0.40;
+  var _glowPoints = null, _glowTex = null;
+
+  function _glowTexture() {
+    if (_glowTex) return _glowTex;
+    var S = 64, c = document.createElement('canvas');
+    c.width = c.height = S;
+    var g = c.getContext('2d');
+    var rad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    rad.addColorStop(0.00, 'rgba(255,255,255,1)');
+    rad.addColorStop(0.22, 'rgba(255,255,255,0.55)');
+    rad.addColorStop(1.00, 'rgba(255,255,255,0)');
+    g.fillStyle = rad; g.fillRect(0, 0, S, S);
+    _glowTex = new THREE.CanvasTexture(c);
+    // Left in NoColorSpace deliberately: this is an alpha falloff ramp, not a colour — additive
+    // blending multiplies it by the vertex colour, and an sRGB decode here would bend the falloff.
+    return _glowTex;
+  }
+
+  function _glowOn() {
+    if (!A._glowSpriteEnabled || _glowPoints) return;
+    if (typeof A._nightFixtureWorldPositions !== 'function') return;
+    var pos = A._nightFixtureWorldPositions();
+    if (!pos || !pos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    // Offset toward the eye, computed ONCE: for a still the camera is frozen, so once is exact; in
+    // navigation a 0.15m staleness as the camera moves is below the size of the halo it positions.
+    var cam = A.camera.position;
+    var xyz = new Float32Array(pos.length * 3), col = new Float32Array(pos.length * 3);
+    var siz = new Float32Array(pos.length);
+    var c = new THREE.Color();
+    var exits = 0;
+    for (var i = 0; i < pos.length; i++) {
+      var p = pos[i];
+      var dx = cam.x - p.x, dy = cam.y - p.y, dz = cam.z - p.z;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var k = GLOW_EYE_OFFSET / d;
+      xyz[i * 3] = p.x + dx * k; xyz[i * 3 + 1] = p.y + dy * k; xyz[i * 3 + 2] = p.z + dz * k;
+      var gain = GLOW_GAIN;
+      siz[i] = 1.0;
+      if (p.__exit) { gain = GLOW_EXIT_GAIN; siz[i] = GLOW_EXIT_SIZE; exits++; }   // §GLOW_EXIT_SOFT
+      c.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      col[i * 3] = c.r * gain; col[i * 3 + 1] = c.g * gain; col[i * 3 + 2] = c.b * gain;
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(siz, 1));
+    var mat = new THREE.PointsMaterial({
+      size: GLOW_SPRITE_SIZE,
+      sizeAttenuation: true,
+      map: _glowTexture(),
+      vertexColors: true,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      // depthTest ON: a lamp behind a wall must not shine through it.
+      // depthWrite OFF: two overlapping halos must not occlude each other.
+      depthTest: true,
+      depthWrite: false,
+      // Safe HERE and not safe on a scene material — nothing but these sprites is drawn with it.
+      // That asymmetry is exactly what blacked out transparent panels under §PHOTO_EMBER.
+      toneMapped: false
+    });
+    // §GLOW_EXIT_SOFT — PointsMaterial.size is a single uniform for the whole cloud, so per-fixture
+    // halo size needs the one-line shader patch below rather than a second Points object. Keeping it
+    // to ONE object is the point of the mechanism: one draw call for every fixture in the building.
+    mat.onBeforeCompile = function(sh) {
+      sh.vertexShader = 'attribute float aSize;\n' +
+        sh.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
+    };
+    _glowPoints = new THREE.Points(geo, mat);
+    // One object spanning the whole building — never cull the CLOUD. (This does not address the
+    // per-point limitation: the GPU clips a point sprite by its centre, so a halo whose fixture is
+    // just off-screen still pops rather than fading at the frame edge. Stated in the spec; the fix
+    // if it ever reads is a billboarded InstancedMesh quad, same positions and colours.)
+    _glowPoints.frustumCulled = false;
+    _glowPoints.renderOrder = 999;       // after opaque geometry, so additive lands on a finished frame
+    _glowPoints.name = '__glowSprites';
+    A.scene.add(_glowPoints);
+    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + ' sprites (' + (pos.length - exits) +
+      ' luminaires gain ' + GLOW_GAIN + ', ' + exits + ' exit signs gain ' + GLOW_EXIT_GAIN +
+      ' x' + GLOW_EXIT_SIZE + ' size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose)' +
+      ', 1 draw call, 0 scene materials touched' +
+      ' (size ' + GLOW_SPRITE_SIZE + 'm, eye-offset ' + GLOW_EYE_OFFSET + 'm' +
+      ', bloom threshold ' + (A._bloomPass ? A._bloomPass.threshold : '?') +
+      ', strength ' + (A._bloomPass ? A._bloomPass.strength : '?') + ')');
+  }
+
+  function _glowOff() {
+    if (!_glowPoints) return;
+    var n = _glowPoints.geometry.attributes.position ? _glowPoints.geometry.attributes.position.count : 0;
+    A.scene.remove(_glowPoints);
+    _glowPoints.geometry.dispose();
+    _glowPoints.material.dispose();
+    console.log('§PHOTO_GLOW_SPRITE removed ' + n + ' sprites');
+    _glowPoints = null;
+  }
+  A._glowSpriteCount = function() {
+    return _glowPoints ? _glowPoints.geometry.attributes.position.count : 0;
+  };
+  // Staged by NIGHT MODE as well as by the still. The point-light budget (12 nav / 48 still) is a
+  // per-fragment lighting cost on every lit material every frame; this is ONE additive draw call for
+  // the whole building whether it holds 12 fixtures or 1216, so there is no navigation budget for it
+  // to blow and no reason to make the user press Alt+S before their luminaires are lit.
+  // Bloom stays still-only — it is 7 extra full-screen draws and that DOES have a 60fps cost.
+  A._glowStage   = function() { _glowOn(); };
+  A._glowUnstage = function() { _glowOff(); };
+
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
@@ -3128,8 +3296,16 @@ async function setupEffects(A, renderer, scene, camera) {
     A._stillRefineBusy = true;
     // §PHOTO_EMBER + §PHOTO_BLOOM: both are STILL-ONLY, same discipline as Layer 3's triplanar PBR.
     // Navigation keeps the cheap chain; the frozen still can afford 7 extra full-screen draws.
-    if (A._bloomPass) A._bloomPass.enabled = !!A._emberEnabled;   // §PHOTO_EMBER_DISARMED
-    _emberOn();
+    // §PHOTO_BLOOM is REQUIRED by §PHOTO_GLOW_SPRITE, not optional decoration on top of it: the
+    // sprites are written above 1.0 in linear space precisely so the bloom threshold can find them,
+    // and without the pass they are a handful of bright pixels that spread nothing (measured under
+    // §PHOTO_EMBER: emissive alone moved mean luminance 56.13 -> 56.13).
+    if (A._bloomPass) A._bloomPass.enabled = !!A._emberEnabled || !!A._glowSpriteEnabled;
+    _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
+    // §PHOTO_GLOW_SPRITE: night mode may already have staged these. Restage anyway, so the eye
+    // offset is computed against the pose the still is actually frozen at rather than wherever the
+    // camera happened to be when night mode was switched on.
+    _glowOff(); _glowOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
