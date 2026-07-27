@@ -40,9 +40,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       d: i % 2 ? { x: -b.d.x, y: b.d.y, z: -b.d.z } : { x: b.d.x, y: b.d.y, z: b.d.z },
       len: b.len,
     }));
-    const flow = A.cinemaBandFlow(hostile);
-    A._cinemaPathEdit = { waypoints: flow };
-    const plan = A.cinemaPathPlan(dur, { waypoints: flow });
+    // EXACTLY the call witness_cpe_even_turn's run() makes — the BANDS path, not the waypoints
+    // path. They plan differently, and probing the wrong one is how the first pass measured 10.2
+    // deg/frame where the gate measured 81.0 on the same building.
+    const plan = A.cinemaPathPlan(dur, { bands: hostile, _total: dur });
 
     const dir = (p) => {
       const x = p.tx - p.x, y = p.ty - p.y, z = p.tz - p.z;
