@@ -94,12 +94,27 @@ class BloomPass extends Pass {
         size: new Vector2(1 / w, 1 / h)
       });
     }
-    this._bright = new ShaderMaterial({ uniforms: UniformsUtils.clone(BrightShader.uniforms),
-      vertexShader: BrightShader.vertexShader, fragmentShader: BrightShader.fragmentShader });
-    this._blur = new ShaderMaterial({ uniforms: UniformsUtils.clone(BlurShader.uniforms),
-      vertexShader: BlurShader.vertexShader, fragmentShader: BlurShader.fragmentShader });
-    this._comp = new ShaderMaterial({ uniforms: UniformsUtils.clone(CompositeShader.uniforms),
-      vertexShader: CompositeShader.vertexShader, fragmentShader: CompositeShader.fragmentShader });
+    // §BLOOM_BLACK_BOXES (2026-07-27, user: "Still getting black boxes...") — THE BUG, and it is
+    // here, not in the emissive that was blamed for it last session.
+    //
+    // render() sets renderer.autoClear = false for the whole pass (correct — each _draw covers its
+    // target completely, so clearing colour would be wasted work). But a ShaderMaterial defaults to
+    // depthTest: true / depthWrite: true, and the composer's targets still hold the DEPTH BUFFER
+    // written by the scene passes that ran before this one. So a full-screen quad sitting at a fixed
+    // NDC depth gets DEPTH-REJECTED everywhere the old scene depth is nearer — and those pixels keep
+    // whatever the target already held, which for a bloom target that was never written is BLACK.
+    // Rectangular black patches locked to geometry are exactly that signature.
+    //
+    // A post-processing pass has no business depth-testing at all: it is 2D compositing over a
+    // finished frame. Turning both off makes every _draw write unconditionally, which is what
+    // autoClear=false was assuming in the first place.
+    var _postDepth = { depthTest: false, depthWrite: false };
+    this._bright = new ShaderMaterial(Object.assign({ uniforms: UniformsUtils.clone(BrightShader.uniforms),
+      vertexShader: BrightShader.vertexShader, fragmentShader: BrightShader.fragmentShader }, _postDepth));
+    this._blur = new ShaderMaterial(Object.assign({ uniforms: UniformsUtils.clone(BlurShader.uniforms),
+      vertexShader: BlurShader.vertexShader, fragmentShader: BlurShader.fragmentShader }, _postDepth));
+    this._comp = new ShaderMaterial(Object.assign({ uniforms: UniformsUtils.clone(CompositeShader.uniforms),
+      vertexShader: CompositeShader.vertexShader, fragmentShader: CompositeShader.fragmentShader }, _postDepth));
     this._quad = new FullScreenQuad(null);
   }
 
