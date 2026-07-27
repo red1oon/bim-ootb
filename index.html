@@ -482,6 +482,12 @@ var BUILDINGS={
   'Schependomlaan':{db:'Schependomlaan_extracted.db'},'SampleCastle':{db:'SampleCastle_extracted.db'},
   'Molio':{db:'Molio_extracted.db'},'BimWhale_Advanced':{db:'BimWhale_Advanced_extracted.db'}
 };
+// Implementing prompts/Viewer/BLANK_VIEWER_LANDING_CARD.md §3 (bim-ootb port) — Witness: manual, see §STATUS
+function openBlankViewer(){
+  sfxPress(); L('§BLANK_VIEWER_OPEN → viewer/viewer.html?blank=1');
+  try { if(window.WholeHistory && WholeHistory.record){ WholeHistory.record({ page:'viewer', label:'Blank', kind:'nav' }); } } catch(e){}
+  var win=window.open('viewer/viewer.html?blank=1&ghost=1','bim_blank'); if(!win){ location.href='viewer/viewer.html?blank=1&ghost=1'; }
+}
 function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); _refreshCachedIndicator(); L('§HUB opened (Buildings/IFC)'); }
 function closeHub(){ document.getElementById('hub').classList.remove('active'); }
 function openBuilding(name){
@@ -546,6 +552,9 @@ async function buildHubBody(){
       '<div style="display:none;margin:8px auto 0;max-width:400px;height:4px;background:#222;border-radius:2px;overflow:hidden">'+
         '<div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width .3s"></div></div>'+
     '</div>'+
+    '<div class="hub-sect"><div class="hub-grid"><div class="hub-card" style="border:1px dashed rgba(79,195,247,.4)" onclick="openBlankViewer()">'+
+      '<div class="nm" style="color:#4fc3f7">&#10133; Blank Viewer</div>'+
+      '<div class="mt">Open your own .db file</div></div></div></div>'+
     '<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px">loading building manifest&hellip;</div>';
   if(typeof wireImportZone==='function') wireImportZone(); else L('§HUB import_own.js not loaded');
   try {
