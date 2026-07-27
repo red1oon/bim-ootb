@@ -3205,10 +3205,20 @@ async function setupEffects(A, renderer, scene, camera) {
     var exits = 0;
     for (var i = 0; i < pos.length; i++) {
       var p = pos[i];
-      var dx = cam.x - p.x, dy = cam.y - p.y, dz = cam.z - p.z;
+      // §GLOW_EMIT_DOWN — drop to the EMITTING FACE first, then nudge toward the eye.
+      // The nudge alone was the bug the user caught: "M_Troffer Light not lighted... M_Downlight
+      // not lighted", while pendants, sconces, surface-mounted and exit signs all lit fine. Those
+      // all HANG BELOW the ceiling; troffers, downlights and plain-recessed are RECESSED FLUSH INTO
+      // it. A toward-the-eye offset is nearly HORIZONTAL for any fixture more than a few metres
+      // down a corridor, so it slid a recessed sprite sideways and left it buried in the slab —
+      // correctly depth-culled, invisible, and only for the recessed families. The one direction
+      // that escapes a recessed fitting is DOWN, which is also the direction it emits.
+      // p.__drop is half the fitting's real bbox height plus clearance (see tools.js).
+      var py = p.y - (p.__drop || 0.12);
+      var dx = cam.x - p.x, dy = cam.y - py, dz = cam.z - p.z;
       var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
       var k = GLOW_EYE_OFFSET / d;
-      xyz[i * 3] = p.x + dx * k; xyz[i * 3 + 1] = p.y + dy * k; xyz[i * 3 + 2] = p.z + dz * k;
+      xyz[i * 3] = p.x + dx * k; xyz[i * 3 + 1] = py + dy * k; xyz[i * 3 + 2] = p.z + dz * k;
       var gain = GLOW_GAIN;
       siz[i] = 1.0;
       if (p.__exit) { gain = GLOW_EXIT_GAIN; siz[i] = GLOW_EXIT_SIZE; exits++; }   // §GLOW_EXIT_SOFT
