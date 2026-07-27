@@ -663,6 +663,13 @@
   //    a feature as user need not drag further on fear of losing to big jump."
   // The under-gearing IS the safety margin: half-speed means an overshoot is small and recoverable,
   // which is the whole reason §CPE_DRAG_TELEPORT's big leaps were frightening in the first place.
+  // And the amplification is wanted for a reason cursor-lock cannot serve, user same day:
+  //   "the amplification is good in sense the user need not do much dragging as it is hard over
+  //    canvas that is overlay to get XY plane"
+  // The gesture is made against an overlay, aiming for a plane the camera has to be orbited into
+  // first — a long drag there is genuinely awkward. Amplifying band->path buys reach that the hand
+  // does not have to supply, which is the OPPOSITE of what a 1:1 cursor-lock would give. Anyone
+  // reading the 0.45x figure as a bug to fix should read this paragraph first.
   //
   // So this is a LOG, not a gate. It exists because a rate that drifts from ~0.45x — toward 1.0x
   // (the leaps come back) or toward 0 (the drag stops responding) — is the shape of the next
