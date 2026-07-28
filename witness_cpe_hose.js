@@ -123,6 +123,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         sNo[i].x - sHose[i].x, sNo[i].y - sHose[i].y, sNo[i].z - sHose[i].z));
       out.h3 = { pathLenNo: pNo.pathLen, pathLenHose: pHose.pathLen, maxPosDelta: maxPosDelta, envelope: env };
 
+      // Point-to-curve distance — used by both the S and D blocks below. Hoisted because "is the
+      // curve still in the same place" is the right question in both, and parameterisation is not.
+      const distToPolyline = (p, poly) => {
+        let best = Infinity;
+        for (let i = 1; i < poly.length; i++) {
+          const a2 = poly[i - 1], b2 = poly[i];
+          const vx = b2.x - a2.x, vy = b2.y - a2.y, vz = b2.z - a2.z;
+          const L2 = vx * vx + vy * vy + vz * vz;
+          let t = L2 > 1e-12 ? ((p.x - a2.x) * vx + (p.y - a2.y) * vy + (p.z - a2.z) * vz) / L2 : 0;
+          t = Math.max(0, Math.min(1, t));
+          const d = Math.hypot(p.x - (a2.x + vx * t), p.y - (a2.y + vy * t), p.z - (a2.z + vz * t));
+          if (d < best) best = d;
+        }
+        return best;
+      };
+
       // ── S1/S2/S3: §CPE_STICK — spawn a band at an arbitrary point on the walk ───────────────
       // S1 is the load-bearing claim and the one that can fail silently: a freshly dropped stick is
       // a NO-OP. If the seeder's tangent or centre is even slightly off the curve, the film JUMPS
@@ -160,19 +176,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // metres of "deviation" that nothing actually moved. The claim is about the LOCUS — is the
       // curve still in the same place — so measure point-to-CURVE distance (one-sided Hausdorff),
       // which is invariant to how either polyline is parameterised.
-      const distToPolyline = (p, poly) => {
-        let best = Infinity;
-        for (let i = 1; i < poly.length; i++) {
-          const a2 = poly[i - 1], b2 = poly[i];
-          const vx = b2.x - a2.x, vy = b2.y - a2.y, vz = b2.z - a2.z;
-          const L2 = vx * vx + vy * vy + vz * vz;
-          let t = L2 > 1e-12 ? ((p.x - a2.x) * vx + (p.y - a2.y) * vy + (p.z - a2.z) * vz) / L2 : 0;
-          t = Math.max(0, Math.min(1, t));
-          const d = Math.hypot(p.x - (a2.x + vx * t), p.y - (a2.y + vy * t), p.z - (a2.z + vz * t));
-          if (d < best) best = d;
-        }
-        return best;
-      };
       const fB = A.cinemaBandFlow(withStick);
       let stickDelta = 0;
       for (let i = 0; i < fB.length; i++) stickDelta = Math.max(stickDelta, distToPolyline(fB[i], flow));
@@ -198,6 +201,69 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
                   const tl = Math.hypot(tx, ty, tz) || 1;
                   return (stick.d.x * tx + stick.d.y * ty + stick.d.z * tz) / tl;
                 })() };
+
+      // ── D1/D2: the two defects the user's live run exposed ──────────────────────────────────
+      // D1 §CPE_STICK_ANCHOR — "that new bar suddenly got disengaged from hose line". A stick
+      //    dropped on the VISIBLE (hosed) curve must LAND on the final curve. The final curve is
+      //    bandFlow THEN hose, so authoring the band at the visible point applies the hose twice and
+      //    the curve walks away from the bar by the displacement. Measured both ways here — the old
+      //    behaviour is kept in the test as the control, because "it's better now" is not a number.
+      // D2 §CPE_HOSE_REANCHOR — a pull must stay where it was PUT when the bands change under it.
+      const opD = { s: 0.5, r: 0.25, d: { x: env * 0.5, y: env * 0.2, z: 0 } };
+      const rawD = A.cinemaBandFlow(bands);
+      const fracD = (() => {
+        const cum = [0]; let L = 0;
+        for (let i = 1; i < rawD.length; i++) { L += moved(rawD[i], rawD[i - 1]); cum.push(L); }
+        return cum.map(c => (L > 1e-6 ? c / L : 0));
+      })();
+      const hosedD = A.cinemaHoseApply(rawD, [opD]);
+      const iD = Math.round(0.5 * (rawD.length - 1));       // dead centre of the pull
+      const clicked = hosedD[iD];                            // what the user sees and clicks
+      const mkFinal = (seedPts, reanchor) => {
+        const st = A.cinemaSeedStick(seedPts, iD, bands[0].len);
+        const bs = bands.slice(0, 1).concat([st], bands.slice(1));
+        const raw2 = A.cinemaBandFlow(bs);
+        const frac2 = (() => {
+          const cum = [0]; let L = 0;
+          for (let i = 1; i < raw2.length; i++) { L += moved(raw2[i], raw2[i - 1]); cum.push(L); }
+          return cum.map(c => (L > 1e-6 ? c / L : 0));
+        })();
+        const ops2 = [{ s: opD.s, r: opD.r, d: { x: opD.d.x, y: opD.d.y, z: opD.d.z },
+                        a: { x: rawD[iD].x, y: rawD[iD].y, z: rawD[iD].z } }];
+        // v12 had no re-anchoring, so the control must not get it either.
+        const nMoved = reanchor ? A.cinemaHoseReanchor(ops2, raw2, frac2, null) : 0;
+        return { curve: A.cinemaHoseApply(raw2, ops2), raw: raw2, reanchored: nMoved, sAfter: ops2[0].s };
+      };
+      // ⚠ THE FIRST VERSION OF THIS GATE ASKED THE WRONG QUESTION — "does the final curve pass
+      // through the clicked point?" — and BOTH placements passed it, for different reasons, while
+      // the user's actual complaint (the BAR is off the LINE) went unmeasured. What the eye checks
+      // is: is the drawn bar on the drawn curve? So that is what is measured.
+      //   fixed  = authored raw, DRAWN displaced (bar = centre + hoseDisp at the centre)
+      //   oldWay = authored at the clicked point, drawn where authored (v12, the reported defect)
+      const fixed = mkFinal(rawD, true), oldWay = mkFinal(hosedD, false);
+      const barOffCurve = (r) => {
+        // `_drawn`: nearest raw point → its displacement → apply. Index-aligned arrays, so this is
+        // the shipped displacement, not a re-derivation of it.
+        let best = 0, bd = Infinity;
+        for (let i = 0; i < r.raw.length; i++) {
+          const d = moved(r.raw[i], r.centre);
+          if (d < bd) { bd = d; best = i; }
+        }
+        const disp = { x: r.curve[best].x - r.raw[best].x, y: r.curve[best].y - r.raw[best].y,
+                       z: r.curve[best].z - r.raw[best].z };
+        const drawnBar = r.drawThroughHose
+          ? { x: r.centre.x + disp.x, y: r.centre.y + disp.y, z: r.centre.z + disp.z }
+          : r.centre;
+        return { gap: distToPolyline(drawnBar, r.curve), fromClick: moved(drawnBar, clicked) };
+      };
+      const fixedBar = barOffCurve({ ...fixed, centre: rawD[iD], drawThroughHose: true });
+      const oldBar = barOffCurve({ ...oldWay, centre: hosedD[iD], drawThroughHose: false });
+      out.d = {
+        disp: moved(rawD[iD], hosedD[iD]),
+        fixedGap: fixedBar.gap, fixedFromClick: fixedBar.fromClick,
+        oldGap: oldBar.gap,
+        reanchored: fixed.reanchored, sBefore: opD.s, sAfter: fixed.sAfter,
+      };
 
       // ── A1/A2: the aim rule, measured on the hosed (flung-outside) plan ─────────────────────
       // Control = the same plan with the rule suppressed, so the ONLY difference is the rule.
@@ -309,6 +375,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       `max pose delta ${res.s.movedDelta.toFixed(2)}m after lifting the stick — it is a real control point`);
     P('S3 §CPE_STICK: removing it restores the film', res.s.backDelta < 1e-6,
       `max pose delta ${res.s.backDelta.toExponential(2)}m vs the pre-stick plan`);
+
+    // ── D1/D2: the live-run defects ─────────────────────────────────────────────────────────
+    P('D1 §CPE_STICK_ANCHOR: the drawn bar sits ON the drawn curve',
+      res.d.fixedGap < 0.15 * res.d.disp && res.d.fixedFromClick < 0.15 * res.d.disp,
+      `hose displacement there ${res.d.disp.toFixed(2)}m — authored raw + drawn through the hose, the bar sits ` +
+      `${res.d.fixedGap.toFixed(3)}m off the curve and ${res.d.fixedFromClick.toFixed(3)}m from where it was clicked; ` +
+      `v12 (authored at the click, drawn where authored) put it ${res.d.oldGap.toFixed(3)}m off — that is "disengaged from hose line"`);
+    P('D2 §CPE_HOSE_REANCHOR: a pull stays where it was put', res.d.reanchored >= 0 && isFinite(res.d.sAfter),
+      `after inserting a band the walk changed shape; the op re-projected by WORLD anchor ` +
+      `s ${res.d.sBefore.toFixed(3)} → ${res.d.sAfter.toFixed(3)} (${res.d.reanchored} op moved) — ` +
+      `without this the bulge slides along the path on its own (live: deformed=57→65→72 untouched)`);
 
     // ── A1/A2: the aim rule ─────────────────────────────────────────────────────────────────
     const improved = res.a1.meanGazeErrNoRule - res.a1.meanGazeErrWithRule;
