@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v12 (§CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v13 (§CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -147,7 +147,7 @@
   // (band i connects to band i+1), so a stick dropped between settle and stop must land between them
   // in the array too, or the walk would fold back on itself.
   function _bandArcS(bi) {
-    var pts = _state.flowHosed, frac = _state.flowFrac;
+    var pts = _state.flowRaw, frac = _state.flowFrac;   // authored space — the band's own space
     if (!pts || !pts.length) return null;
     var c = _state.bands[bi].c, best = 0, bd = Infinity;
     for (var i = 0; i < pts.length; i++) {
@@ -156,8 +156,39 @@
     }
     return frac[best];
   }
+  // ══ §CPE_STICK_ANCHOR — author in RAW space, DRAW in hosed space ════════════════════════════
+  // User, 2026-07-28: *"that new bar suddenly got disengaged from hose line"*. It is not a seeding
+  // bug — it is two authorities over the same stretch of curve, and the witness is what proved that
+  // seeding alone cannot resolve it (my first fix measured WORSE than the thing it replaced). The
+  // final curve is bandFlow THEN hose, so for a band inside a pull's influence:
+  //   • author it at the clicked point   → the hose then displaces the curve past it → bar off the line
+  //   • author it at clicked − displacement → the curve lands on the click, but the bar, drawn at the
+  //     authored centre, sits a displacement away from the curve → bar off the line again
+  // Neither placement satisfies both: the band says "the curve passes HERE", the hose says "and then
+  // move it by d". The resolution is to stop pretending the bar lives in authored space. The CURVE is
+  // drawn through the hose; the bar must be too. Author raw (what the plan consumes), draw displaced
+  // (what the eye checks). Then a bar dropped on the pipe stays on the pipe, wherever the pull takes it.
+  function _hoseDispAt(p) {
+    var raw = _state.flowRaw, hos = _state.flowHosed;
+    if (!raw || !hos || raw.length !== hos.length || !_state.hose.length) return null;
+    var best = 0, bd = Infinity;
+    for (var i = 0; i < raw.length; i++) {
+      var d = (raw[i].x - p.x) * (raw[i].x - p.x) + (raw[i].y - p.y) * (raw[i].y - p.y) +
+              (raw[i].z - p.z) * (raw[i].z - p.z);
+      if (d < bd) { bd = d; best = i; }
+    }
+    var dx = hos[best].x - raw[best].x, dy = hos[best].y - raw[best].y, dz = hos[best].z - raw[best].z;
+    return (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < 1e-9) ? null : { x: dx, y: dy, z: dz };
+  }
+  function _drawn(p) {
+    var d = _hoseDispAt(p);
+    return d ? { x: p.x + d.x, y: p.y + d.y, z: p.z + d.z } : p;
+  }
   function _spawnStick(hit) {
-    var a = A(), pts = _state.flowHosed;
+    // Seeded from the RAW curve: `flowRaw[i]` is `flowHosed[i]` minus the displacement at i,
+    // index-for-index (the hose displaces points, never adds or drops one), so the band lands where
+    // the curve WILL be once the hose is re-applied on top of it.
+    var a = A(), pts = _state.flowRaw;
     if (!pts || pts.length < 2 || typeof a.cinemaSeedStick !== 'function') return false;
     var len = _state.bands.length ? _state.bands[0].len : 2;
     var nb = a.cinemaSeedStick(pts, hit.i, len);      // the SHIPPED seeder — see effects.js
@@ -197,7 +228,23 @@
     if (!_state) return;
     _state.flowRaw = _flowRaw();
     _state.flowFrac = _arcFractions(_state.flowRaw);
+    _reanchorHose();
     _state.flowHosed = _flowHosed(_state.flowRaw);
+  }
+  // ⚠ THE DEFECT BEHIND THE DEFECT — pulls drift when the BANDS change.
+  // An op's `s` is a fraction of the walk's arc length, and adding or moving a band changes both the
+  // length and the shape of that walk. The user's own log shows it: the same two ops reporting
+  // `deformed=57` → `65` → `72` across successive band edits — the bulge sliding along the path
+  // while nobody touched it. So each op also carries the WORLD point it was authored at, and every
+  // rebuild re-projects it. Shipped maths lives in effects.js (A.cinemaHoseReanchor) so the witness
+  // exercises the same function the app does.
+  function _reanchorHose() {
+    var a = A(), pts = _state.flowRaw, frac = _state.flowFrac;
+    if (!pts || pts.length < 2 || !_state.hose.length || typeof a.cinemaHoseReanchor !== 'function') return;
+    var skip = _state.drag && _state.drag.op;   // the pull under the hand must not move under it
+    var n = a.cinemaHoseReanchor(_state.hose, pts, frac, skip);
+    if (n) console.log('§CPE_HOSE_REANCHOR ops=' + n + '/' + _state.hose.length +
+      ' — the walk changed shape, so each pull was re-projected onto it by WORLD anchor; a bend stays where it was put');
   }
   // §CPE_PREVIEW_BUTTON: any edit invalidates "you have seen this version". Tracked as a counter
   // rather than a boolean so the button can say WHICH edit you last previewed.
@@ -311,10 +358,13 @@
     // Bands drawn ON TOP of the pipe, in the contrast colour's opposite, so the three editable
     // stretches are findable along a curve that is otherwise uniform.
     for (var i = 0; i < _state.bands.length; i++) {
-      var b = _state.bands[i], e = _ends(b);
+      var b = _state.bands[i], e0 = _ends(b);
+      // §CPE_STICK_ANCHOR: drawn THROUGH the hose, exactly as the curve is — see _hoseDispAt.
+      // Hit-testing reads these same drawn positions, so what you grab is what you see.
+      var e = [_drawn(e0[0]), _drawn(e0[1])];
       var heldBand = _state.held && _state.held.b === i;
       _state.objs.push(_mkLine([e[0], e[1]], heldBand ? 0xff8c00 : 0xffffff, 1.0));
-      var zones = [{ p: e[0], z: 'a' }, { p: b.c, z: 'mid' }, { p: e[1], z: 'b' }];
+      var zones = [{ p: e[0], z: 'a' }, { p: _drawn(b.c), z: 'mid' }, { p: e[1], z: 'b' }];
       for (var k = 0; k < zones.length; k++) {
         var isHeld = heldBand && _state.held.z === zones[k].z;
         var isMid = zones[k].z === 'mid';
@@ -376,7 +426,8 @@
       // deep copy, same treatment as the bands, so nothing downstream can write back into the holder
       // (§CPE_HOLDER_INTEGRITY).
       hose: s.hose.map(function(o) {
-        return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z } };
+        return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
+                 a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };
       }),
       // §CPE_CLIP: null means the whole film; the bake remaps poseAt into [in,out] when set.
       clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
@@ -502,6 +553,12 @@
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox"> ' +
           'build the model as the camera flies</label> <span style="color:#666">(derived order, not a programme)</span></div>' +
+        // §CPE_IDB_PATH_STORE — saved plans for THIS building.
+        '<div style="margin-top:6px">saved <select id="cpe-plans" style="max-width:150px;background:#15181c;color:#ddd;' +
+          'border:1px solid #3a3f47;border-radius:3px;font-size:10px;padding:1px 2px"></select> ' +
+          '<button id="cpe-plan-open" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">open</button> ' +
+          '<button id="cpe-plan-del" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">delete</button></div>' +
+        '<div id="cpe-plan-meta" style="color:#666;font-size:10px"></div>' +
       '</div>' +
       '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px" id="cpe-clock"></div>' +
       '<div id="cpe-state" style="padding:0 12px 6px;font-size:10px;color:#666"></div>' +
@@ -577,7 +634,10 @@
   // Undo that restored bands while leaving a hose pull in place would be an undo that visibly does
   // not undo — the exact failure the zero-pixel-press rule above was written to avoid.
   function _cloneHose(hs) {
-    return (hs || []).map(function(o) { return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z } }; });
+    return (hs || []).map(function(o) {
+      return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
+               a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };   // the world anchor rides along
+    });
   }
   function _snapshot(label) {
     return { bands: _cloneBands(_state.bands), hose: _cloneHose(_state.hose),
@@ -768,6 +828,110 @@
       pv.disabled = !!_state.flying;
     }
   }
+  // ══ §CPE_IDB_PATH_STORE — named plans, in IndexedDB, per building ═══════════════════════════
+  // Specced 2026-07-27 ("later should be its own in IndexDB first separate table of saved
+  // waypoints"), asked for 2026-07-28: *"can u make the save to do so in a json settings file in the
+  // IndexDB for the building to be saved along when user saves to DB on disk. That also got open to
+  // look back saved hose plans."*
+  //
+  // BOTH stores, and the split is the point:
+  //   • IndexedDB `bim_ootb_cinema_paths` = the WORKING store. Many named plans per building,
+  //     browsable, deletable, free to write — where the alternative is rewriting a 260 MB binary to
+  //     save a dozen numbers, and a read-only OCI building cannot be written at all.
+  //   • the building DB's `cinema_path` table = the PORTABLE format, still written on Save via the
+  //     existing A.stageCinemaPath, so the plan travels with the file when it is saved to disk.
+  // The stored value is exactly `_buildOverride()` — the same object the plan, the bake and Save
+  // already consume — plus provenance. No second schema to drift from the first.
+  var PATHS_DB = 'bim_ootb_cinema_paths', PATHS_STORE = 'paths';
+  function _bldKey() {
+    var a = A();
+    return (a && (a.activeBuilding || a.buildingName)) || 'building';
+  }
+  function _pathsOpen() {
+    return new Promise(function(res, rej) {
+      var rq;
+      try { rq = indexedDB.open(PATHS_DB, 1); } catch (e) { return rej(e); }
+      rq.onupgradeneeded = function() {
+        var db = rq.result;
+        if (!db.objectStoreNames.contains(PATHS_STORE)) db.createObjectStore(PATHS_STORE, { keyPath: 'key' });
+      };
+      rq.onsuccess = function() { res(rq.result); };
+      rq.onerror = function() { rej(rq.error || new Error('idb-open-failed')); };
+      setTimeout(function() { rej(new Error('idb-open-timeout')); }, 5000);
+    });
+  }
+  function _pathsTx(mode, fn) {
+    return _pathsOpen().then(function(db) {
+      return new Promise(function(res, rej) {
+        var tx = db.transaction(PATHS_STORE, mode), rq = fn(tx.objectStore(PATHS_STORE));
+        tx.oncomplete = function() { db.close(); res(rq && rq.result); };
+        tx.onerror = function() { db.close(); rej(tx.error || new Error('idb-tx-failed')); };
+      });
+    });
+  }
+  function _pathsList() {
+    var bld = _bldKey();
+    return _pathsTx('readonly', function(st) { return st.getAll(); }).then(function(rows) {
+      return (rows || []).filter(function(r) { return r.building === bld; })
+        .sort(function(x, y) { return (y.savedAt || 0) - (x.savedAt || 0); });
+    });
+  }
+  function _pathsSave(name) {
+    var ov = _buildOverride(), bld = _bldKey();
+    var rec = {
+      key: bld + '|' + name, building: bld, name: name, savedAt: Date.now(),
+      // Provenance, so a plan can be READ without loading it — what it contains and what it was
+      // authored against. A plan whose building was re-extracted since is still openable; this is
+      // what lets the user see that before they open it.
+      meta: { bands: ov.bands.length, hoseOps: ov.hose.length,
+              clip: ov.clip ? [ov.clip.in, ov.clip.out] : null, buildup: !!ov.buildup,
+              totalSec: ov._total, pathLen: ov._pathLen, cpe: CPE_V.split(' ')[0] },
+      override: ov
+    };
+    return _pathsTx('readwrite', function(st) { return st.put(rec); }).then(function() {
+      console.log('§CPE_PATH_SAVED name="' + name + '" building=' + bld +
+        ' bands=' + rec.meta.bands + ' hoseOps=' + rec.meta.hoseOps +
+        ' clip=' + (rec.meta.clip ? rec.meta.clip[0].toFixed(2) + '→' + rec.meta.clip[1].toFixed(2) : 'whole') +
+        ' buildup=' + (rec.meta.buildup ? 1 : 0) + ' total=' + rec.meta.totalSec.toFixed(1) + 's' +
+        ' — IndexedDB working store; cinema_path TABLE written separately so it travels with the .db');
+      return rec;
+    });
+  }
+  function _pathsDelete(key) {
+    return _pathsTx('readwrite', function(st) { return st.delete(key); }).then(function() {
+      console.log('§CPE_PATH_DELETED key="' + key + '"');
+    });
+  }
+  // Loading REPLACES the authored state, and only when asked — never on open. The spec left that as
+  // an open question; the user's own words answer it: *"open to look back saved hose plans"*. Looking
+  // is a choice, not a side effect. Ctrl+Z restores what was there before the load.
+  function _pathsApply(rec) {
+    var ov = rec && rec.override;
+    if (!ov || !ov.bands || ov.bands.length < 2) { console.warn('§CPE_PATH_LOAD_FAIL empty or malformed record'); return false; }
+    _undoPush('load "' + rec.name + '"');
+    _state.bands = ov.bands.map(function(b, i) {
+      return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
+               _stick: i > 0 && i < ov.bands.length - 1, _s: b._s };
+    });
+    _state.hose = (ov.hose || []).map(function(o) {
+      return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
+               a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };
+    });
+    _state.clipIn = ov.clip ? ov.clip.in : 0;
+    _state.clipOut = ov.clip ? ov.clip.out : 1;
+    _state.buildup = !!ov.buildup;
+    _state.userTotal = ov._total;
+    _state.staged = false; _state.held = null;
+    console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
+      ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
+      ' buildup=' + (_state.buildup ? 1 : 0) + ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
+      ' — Ctrl+Z restores what you had before loading');
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return true;
+  }
+
   // §CPE_PREVIEW_BUTTON — fly the CURRENT edit, on demand, never automatically.
   // Driven by `_state.plan.poseAt`: the same plan object the tube is sampled from and the same one
   // finish() hands the bake, so this cannot become a second notion of the path (§CPE_PREVIEW_DIVERGENCE).
@@ -1103,7 +1267,10 @@
         if (!d.snapped) {
           d.snapped = true;
           _undoPush('hose at ' + (d.s * 100).toFixed(0) + '%');
-          d.op = { s: d.s, r: _state.reach, d: { x: 0, y: 0, z: 0 } };
+          // `a` = the WORLD point on the RAW curve this pull is anchored to (see _reanchorHose).
+          var _an = _state.flowRaw && _state.flowRaw[d.hit ? d.hit.i : 0];
+          d.op = { s: d.s, r: _state.reach, d: { x: 0, y: 0, z: 0 },
+                   a: _an ? { x: _an.x, y: _an.y, z: _an.z } : null };
           _state.hose.push(d.op);
         }
         d.op.d.x = dwh.x; d.op.d.y = dwh.y; d.op.d.z = dwh.z;
@@ -1324,6 +1491,43 @@
       });
       document.getElementById('cpe-preview').addEventListener('click', _previewFly);
 
+      // ══ §CPE_IDB_PATH_STORE wiring ═══════════════════════════════════════════════════════════
+      var selEl = document.getElementById('cpe-plans'), metaEl = document.getElementById('cpe-plan-meta');
+      var _plans = [];
+      function _renderPlanMeta() {
+        var r = _plans[parseInt(selEl.value, 10)];
+        if (!r) { metaEl.textContent = '"Save this path" names and stores a plan here'; return; }
+        var m = r.meta || {};
+        metaEl.textContent = (m.bands || '?') + ' bands · ' + (m.hoseOps || 0) + ' pulls · ' +
+          (m.clip ? 'clip ' + Math.round(m.clip[0] * 100) + '–' + Math.round(m.clip[1] * 100) + '%' : 'whole film') +
+          (m.buildup ? ' · buildup' : '') + (m.totalSec ? ' · ' + m.totalSec.toFixed(0) + 's' : '') +
+          ' · ' + new Date(r.savedAt).toISOString().slice(0, 16).replace('T', ' ');
+      }
+      function _renderPlans() {
+        return _pathsList().then(function(rows) {
+          _plans = rows;
+          selEl.innerHTML = rows.length
+            ? rows.map(function(r, i) { return '<option value="' + i + '">' + r.name + '</option>'; }).join('')
+            : '<option value="">— none yet —</option>';
+          _renderPlanMeta();
+        }).catch(function(e) {
+          selEl.innerHTML = '<option value="">— unavailable —</option>';
+          console.warn('§CPE_PATH_LIST_FAIL ' + e.message);
+        });
+      }
+      selEl.addEventListener('change', _renderPlanMeta);
+      document.getElementById('cpe-plan-open').addEventListener('click', function() {
+        var r = _plans[parseInt(selEl.value, 10)];
+        if (!r) { console.log('§CPE_PATH_OPEN none selected'); return; }
+        _pathsApply(r);
+      });
+      document.getElementById('cpe-plan-del').addEventListener('click', function() {
+        var r = _plans[parseInt(selEl.value, 10)];
+        if (!r) return;
+        _pathsDelete(r.key).then(_renderPlans);
+      });
+      _renderPlans();
+
       function finish(action) {
         var ov = (action === 'ok' || action === 'save') ? _buildOverride() : null;
         var edited = ov ? _isEdited() : false;
@@ -1347,9 +1551,22 @@
       document.getElementById('cpe-ok').addEventListener('click', function() { finish('ok'); });
       document.getElementById('cpe-cancel').addEventListener('click', function() { finish('cancel'); });
       document.getElementById('cpe-save').addEventListener('click', function() {
+        // §CPE_IDB_PATH_STORE: BOTH stores, one click. The DB staging is unchanged — that is what
+        // makes the plan travel with the .db when the user saves it to disk. The IndexedDB record is
+        // the named, browsable copy, and the one that survives a read-only building.
         if (typeof a.stageCinemaPath === 'function') a.stageCinemaPath(_buildOverride());
         _state.staged = true;
         _syncButtons();   // staging is not closing — keep editing
+        var suggested = 'plan ' + new Date().toISOString().slice(5, 16).replace('T', ' ');
+        var name = window.prompt('Name this path (saved for ' + _bldKey() + ')', suggested);
+        if (name === null) {                       // cancelled: the DB staging above still stands
+          console.log('§CPE_PATH_SAVE_CANCELLED — staged to the building DB, not named in IndexedDB');
+          return;
+        }
+        name = (name || suggested).trim() || suggested;
+        _pathsSave(name).then(_renderPlans).catch(function(e) {
+          console.warn('§CPE_PATH_SAVE_FAIL ' + e.message + ' — the DB staging above is unaffected');
+        });
       });
     });
   }
