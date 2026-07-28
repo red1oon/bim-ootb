@@ -4,6 +4,28 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.31.0](https://github.com/red1oon/bim-ootb/compare/v1.30.0...v1.31.0) (2026-07-28)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_BUILDUP_REAL_SCHEDULE — reveal by the REAL schedule when one exists ([#1078](https://github.com/red1oon/bim-ootb/issues/1078)) ([3d440e5](https://github.com/red1oon/bim-ootb/commit/3d440e55c066cbc42e4d6bd6a8032e573bcc4b68))
+* **ifc:** KUL/ stress-test README + reusable large-IFC preflight script ([#1076](https://github.com/red1oon/bim-ootb/issues/1076)) ([79a0d79](https://github.com/red1oon/bim-ootb/commit/79a0d790c1d97f3aba49518b9972621a22c4f6e3))
+* **ifc:** preflight script also reports unique-shape vs placed-instance counts ([#1077](https://github.com/red1oon/bim-ootb/issues/1077)) ([11cebad](https://github.com/red1oon/bim-ootb/commit/11cebad147f6dec0ea901811f1361254e922ba05))
+* **photoreal:** §BILLBOARD_NAME_ELEMENT — the name plate is a real element, revealed last ([#1079](https://github.com/red1oon/bim-ootb/issues/1079)) ([c620bfc](https://github.com/red1oon/bim-ootb/commit/c620bfc251addf49fb9cb75a8fb70d801ba6e396))
+
+
+### 🐛 Fixes
+
+* **buildings:** restore HHS_Office_Federated_extracted.db — PR [#1071](https://github.com/red1oon/bim-ootb/issues/1071) replaced it with a symlink ([#1073](https://github.com/red1oon/bim-ootb/issues/1073)) ([5de3562](https://github.com/red1oon/bim-ootb/commit/5de3562f2248414a955c882e50437b0ad5edfc21))
+* **cinema:** §CPE_CLICK_SLOP — a 4px click on the pipe spawns a stick again ([#1083](https://github.com/red1oon/bim-ootb/issues/1083)) ([58ef91f](https://github.com/red1oon/bim-ootb/commit/58ef91f74b3b805e9b8bd5abe38a82b440b3956f))
+* **cinema:** §CPE_REOPEN_DOUBLE — re-open ADOPTS the authored bands instead of re-seeding them ([#1081](https://github.com/red1oon/bim-ootb/issues/1081)) ([994c0d6](https://github.com/red1oon/bim-ootb/commit/994c0d6f7baf8bf436b05708200de40e57f5b181))
+
+
+### ⚡ Performance
+
+* **viewer:** MergedMesh low-draw path restored (GUID-exact) + HBA opt-in — mobile LTU ([#1071](https://github.com/red1oon/bim-ootb/issues/1071)) ([f091f26](https://github.com/red1oon/bim-ootb/commit/f091f26a5ced174c188ffd2347befbe41ebf68f7))
+
 ## [1.30.0](https://github.com/red1oon/bim-ootb/compare/v1.29.0...v1.30.0) (2026-07-27)
 
 
