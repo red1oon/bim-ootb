@@ -4,6 +4,48 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.30.0](https://github.com/red1oon/bim-ootb/compare/v1.29.0...v1.30.0) (2026-07-27)
+
+
+### ✨ Features
+
+* **night:** §NIGHT_LIGHT_MIX + §NIGHT_MIX_RATIO — mixed colour temperature ([#1055](https://github.com/red1oon/bim-ootb/issues/1055)) ([a6c6caa](https://github.com/red1oon/bim-ootb/commit/a6c6caa45b02581e334733a5fef4f679cda8e59a))
+* **night:** §PHOTO_GLOW_SPRITE — luminaires light up in night mode, without touching a scene material ([#1057](https://github.com/red1oon/bim-ootb/issues/1057)) ([2941984](https://github.com/red1oon/bim-ootb/commit/294198430d579b37dd1a20d4b840cb6707e47dc2))
+* **photoreal:** §BILLBOARD_ART — billboard artwork quad, PNG-from-DB-folder with a notice fallback ([#1066](https://github.com/red1oon/bim-ootb/issues/1066)) ([9345273](https://github.com/red1oon/bim-ootb/commit/9345273a5f471cd49fb17b40e015f8305e8ac792))
+* **photoreal:** §BILLBOARD_SOURCE + §BILLBOARD_FIT + §BILLBOARD_ALWAYS ([#1069](https://github.com/red1oon/bim-ootb/issues/1069)) ([38753c0](https://github.com/red1oon/bim-ootb/commit/38753c0a98794c899b69220761699ccf00cfce16))
+* **photoreal:** §FACADE_WARM_COOL — the facade wash stops contradicting the scene's own two illuminants ([#1064](https://github.com/red1oon/bim-ootb/issues/1064)) ([41d3523](https://github.com/red1oon/bim-ootb/commit/41d35234805b445c2e3b19bb068cdccfd07bf265))
+* **viewer:** add Blank Viewer card to the Buildings/IFC hub ([#1068](https://github.com/red1oon/bim-ootb/issues/1068)) ([fbcd47c](https://github.com/red1oon/bim-ootb/commit/fbcd47ca4b8afba48890cc5d22c4dfe09e42a1aa))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_LOOKAHEAD_ARC — remove the look-ahead threshold that WAS the jerk ([#1044](https://github.com/red1oon/bim-ootb/issues/1044)) ([0eda490](https://github.com/red1oon/bim-ootb/commit/0eda490a06dd02b5e167848debf30102026c3db3))
+* **cinema:** §CPE_NOISE_LAW + drag scale/land-first + basis pin ([#1050](https://github.com/red1oon/bim-ootb/issues/1050)) ([2243034](https://github.com/red1oon/bim-ootb/commit/2243034d8d129cded55ca1a495d2d4f22e326e4e))
+* **cinema:** §CPE_PREVIEW_AFTER + P4 rotation gate + §CPE_DRAG_TRACK ([#1052](https://github.com/red1oon/bim-ootb/issues/1052)) ([998750e](https://github.com/red1oon/bim-ootb/commit/998750e9422097ac848aee1c054e9b4bcca7e0f0))
+* **cinema:** turn budget + longer bars + the instrument bug that hid both ([#1047](https://github.com/red1oon/bim-ootb/issues/1047)) ([fa6d251](https://github.com/red1oon/bim-ootb/commit/fa6d251dc92158d15405d001430f6b4ac2630ac3))
+* **maxq:** §MAXQ_ETA_TICK — progress readout driven by measured time, not frame count ([#1046](https://github.com/red1oon/bim-ootb/issues/1046)) ([de11b91](https://github.com/red1oon/bim-ootb/commit/de11b9145e7290fb5354c766c71c6dfaa0d0d247))
+* **maxq:** hidden-tab pause + §PHOTO_EMBER/§PHOTO_BLOOM + night-mode luminaire fixes ([#1054](https://github.com/red1oon/bim-ootb/issues/1054)) ([1d1f3ff](https://github.com/red1oon/bim-ootb/commit/1d1f3ff26614ef11bfd8b622f816a3ba25c53d75))
+* **modeller:** IFC-opened buildings render ZERO ARC geometry — seed the editable substrate ([#1062](https://github.com/red1oon/bim-ootb/issues/1062)) ([be5da13](https://github.com/red1oon/bim-ootb/commit/be5da13f1fe45f9a560696245809a4d31c98467b))
+* **modeller:** ship rel_fills_host for Duplex + SampleHouse — hosted doors actually ride now ([#1065](https://github.com/red1oon/bim-ootb/issues/1065)) ([c49c057](https://github.com/red1oon/bim-ootb/commit/c49c0577d68c5fdbdb34fd1a5829120f166db9b2))
+* **modeller:** ship SampleCastle rel_fills_host — stretchRide no longer no-ops for lack of the table ([#1051](https://github.com/red1oon/bim-ootb/issues/1051)) ([8de0644](https://github.com/red1oon/bim-ootb/commit/8de06447aba8bcda391c02d2165bb3714788f892))
+* **night:** §GLOW_EMIT_DOWN — recessed troffers and downlights were lit inside the ceiling ([#1058](https://github.com/red1oon/bim-ootb/issues/1058)) ([51c0a01](https://github.com/red1oon/bim-ootb/commit/51c0a0103bb6d3abb43c30da82c448bb4e41d192))
+* **night+bloom:** §BLOOM_BLACK_BOXES, §NIGHT_DIFFUSER, §LUM_VARIANT, §NIGHT_ROLE_EXCLUDE ([#1059](https://github.com/red1oon/bim-ootb/issues/1059)) ([5d6b2f3](https://github.com/red1oon/bim-ootb/commit/5d6b2f33ba6af2dac5a478347beb49f3490cd246))
+* **photoreal:** §GROUND_ALBEDO + §GROUND_COLOR_ORDER_FIX — the evening ground was at 1/3 brightness ([#1063](https://github.com/red1oon/bim-ootb/issues/1063)) ([10059e2](https://github.com/red1oon/bim-ootb/commit/10059e2e36fc67e66e85ff4bc09b8c74b7d7ebee))
+* **sw:** bump CACHE_VERSION v865-&gt;v866 + tools/effects/streaming ?v= — the fix was on main, the browser never got it ([#1061](https://github.com/red1oon/bim-ootb/issues/1061)) ([4b38804](https://github.com/red1oon/bim-ootb/commit/4b38804470c3cb33b056ee36739f0031411a5c23))
+
+
+### 📝 Documentation
+
+* **cinema:** §CPE_DRAG_TRACK — record WHY the amplification is wanted ([#1053](https://github.com/red1oon/bim-ootb/issues/1053)) ([432a049](https://github.com/red1oon/bim-ootb/commit/432a049c8d59edd8301a832a8da3a36683e14e3a))
+* **readme:** announce BIM OOTB Film-Maker (Alt+C), link the demo film ([#1049](https://github.com/red1oon/bim-ootb/issues/1049)) ([970414f](https://github.com/red1oon/bim-ootb/commit/970414f1c16a526cf107a310c54001e0e9aeead0))
+
+
+### ⏪ Reverts
+
+* **night:** strip every scene-material write and the material-cache split ([#1060](https://github.com/red1oon/bim-ootb/issues/1060)) ([33e7718](https://github.com/red1oon/bim-ootb/commit/33e77182afca06cc4cfba714387451e35b6d4889))
+* **photoreal:** §PHOTO_EMBER_DISARMED — turn the still-lighting batch OFF pending a dedicated session ([#1056](https://github.com/red1oon/bim-ootb/issues/1056)) ([819863e](https://github.com/red1oon/bim-ootb/commit/819863e9b86846b161df6cbc0772cb1bebe10f7f))
+* **precision-cam:** remove §RESET_AMBIENT_AUTO entirely — pivot went haywire in real use ([#1048](https://github.com/red1oon/bim-ootb/issues/1048)) ([bac40e6](https://github.com/red1oon/bim-ootb/commit/bac40e6ca6544f42ed58e111dc121debb4e68765))
+
 ## [1.29.0](https://github.com/red1oon/bim-ootb/compare/v1.28.0...v1.29.0) (2026-07-27)
 
 
