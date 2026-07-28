@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v11 (§CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v12 (§CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -137,6 +137,62 @@
   // §CPE_HOSE: keep the canonical/deformed walk polylines in step. Cheap (no plan, no BVH) so it can
   // run on every pointermove — that is what makes the pipe track the cursor while §CPE_DRAG_LAND_FIRST
   // keeps the expensive re-plan on release.
+  // ══ §CPE_STICK — spawn a rigid band at an arbitrary point on the walk ═══════════════════════
+  // Seeded exactly the way _cinemaSeedBands seeds the original three: centre ON the curve, direction
+  // = the LOCAL TANGENT there, length = the length the other bands already carry. So the moment it
+  // appears it is a no-op — the path does not move until the user moves the stick, which is the same
+  // "first render is a no-op-looking curve rather than a scrambled one" property the seeder has.
+  //
+  // Insertion is ORDERED BY ARC POSITION, not appended: `_ops`-style order is what the flow expects
+  // (band i connects to band i+1), so a stick dropped between settle and stop must land between them
+  // in the array too, or the walk would fold back on itself.
+  function _bandArcS(bi) {
+    var pts = _state.flowHosed, frac = _state.flowFrac;
+    if (!pts || !pts.length) return null;
+    var c = _state.bands[bi].c, best = 0, bd = Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      var d = (pts[i].x - c.x) * (pts[i].x - c.x) + (pts[i].y - c.y) * (pts[i].y - c.y) + (pts[i].z - c.z) * (pts[i].z - c.z);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return frac[best];
+  }
+  function _spawnStick(hit) {
+    var a = A(), pts = _state.flowHosed;
+    if (!pts || pts.length < 2 || typeof a.cinemaSeedStick !== 'function') return false;
+    var len = _state.bands.length ? _state.bands[0].len : 2;
+    var nb = a.cinemaSeedStick(pts, hit.i, len);      // the SHIPPED seeder — see effects.js
+    if (!nb) return false;
+    nb._s = hit.s; nb._stick = true;
+    // Where does it belong in the chain? After the last band whose own arc position precedes it.
+    var at = _state.bands.length - 1;   // never before `settle`, never after `stop`
+    for (var k = 1; k < _state.bands.length; k++) {
+      var s = _bandArcS(k);
+      if (s != null && s > hit.s) { at = k; break; }
+    }
+    at = Math.max(1, Math.min(_state.bands.length - 1, at));
+    _undoPush('add stick at ' + Math.round(hit.s * 100) + '%');
+    _state.bands.splice(at, 0, nb);
+    _state.staged = false;
+    console.log('§CPE_STICK added s=' + hit.s.toFixed(3) + ' at index=' + at + '/' + _state.bands.length +
+      ' centre=(' + nb.c.x.toFixed(2) + ',' + nb.c.y.toFixed(2) + ',' + nb.c.z.toFixed(2) + ')' +
+      ' dir=(' + nb.d.x.toFixed(2) + ',' + nb.d.y.toFixed(2) + ',' + nb.d.z.toFixed(2) + ') len=' + len.toFixed(2) +
+      ' — seeded ON the curve with the LOCAL TANGENT, so the path does not move until you move it');
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return true;
+  }
+  function _removeStick(bi) {
+    if (bi <= 0 || bi >= _state.bands.length - 1) return false;   // settle and stop are not removable
+    _undoPush('remove ' + _labelOf(bi));
+    _state.bands.splice(bi, 1);
+    _state.held = null; _state.staged = false;
+    console.log('§CPE_STICK removed index=' + bi + ' remaining=' + _state.bands.length);
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return true;
+  }
   function _refreshFlow() {
     if (!_state) return;
     _state.flowRaw = _flowRaw();
@@ -213,6 +269,23 @@
     if (_state.filmPts && _state.filmPts.length > 1) {
       var tube = _mkTube(_state.filmPts, col, rad);
       if (tube) _state.objs.push(tube);
+      // §CPE_STICK — SHOW WHICH STRETCH IS AUTHORABLE. The user reported "I cannot do the intended
+      // any part of hose"; their own log said why: the pipe draws the WHOLE film (dive → settle →
+      // walk → pull-back → orbit) while only the WALK carries bands, so on JKR they were dragging on
+      // a curve that was ~15% grabbable (walk 18.4 m against a 67.6 m dive) with no way to tell
+      // which 15%. An affordance you cannot see is not an affordance. The walk is drawn as a second,
+      // fatter tube over the top; the rest stays the thin pipe it always was.
+      // Dive and orbit remain underivable-from-bands (§CPE_BANDS "still open" — bands 4 and 5), so
+      // this makes an existing limit VISIBLE rather than pretending it is gone.
+      var bts = _state.plan && _state.plan.beats;
+      if (bts && isFinite(bts.spin) && isFinite(bts.out) && bts.out > bts.spin) {
+        var last = _state.filmPts.length - 1;
+        var wa = Math.max(0, Math.round(bts.spin * last)), wb = Math.min(last, Math.round(bts.out * last));
+        if (wb - wa > 1) {
+          var wtube = _mkTube(_state.filmPts.slice(wa, wb + 1), col, rad * 1.9);
+          if (wtube) { wtube.material.opacity = 0.55; wtube.material.transparent = true; _state.objs.push(wtube); }
+        }
+      }
     }
 
     // §CPE_HOSE: mark where the path has been pulled, so an edit is findable again on a curve that
@@ -344,6 +417,10 @@
     if (_state.clipIn > 0 || _state.clipOut < 1) return true;
     if (_state.buildup) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
+    // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
+    // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
+    // an added stick entirely, handing the bake an override-free "nothing changed").
+    if (_state.bands.length !== _state.origBands.length) return true;
     var o = _state.origBands;
     for (var i = 0; i < o.length; i++) {
       var a = _state.bands[i], b = o[i];
@@ -355,6 +432,30 @@
   }
 
   // ══════════════════ panel ══════════════════
+  // ══ §CPE_STICK — bands are no longer exactly three ═══════════════════════════════════════════
+  // User, 2026-07-28, after flying the hose: *"I cannot do the intended any part of hose to get
+  // arbitrary stick"*, against their original ask *"clicking any point will open an aribitary '3
+  // point band'"*. The hose shipped the deformation half of that sentence and not the spawn half.
+  //
+  // §CPE_BANDS rule 1 ("three bands, no bands added or removed") is the ONE rule of that spec this
+  // supersedes, and deliberately: everything else it settled — rigid length, end=rotate/mid=translate,
+  // tangent authoring, store bands not points — is what makes a spawned stick worth having. The count
+  // becomes N; nothing else about a band changes. `_cinemaBandWaypoints` and `_cinemaBandFlow` were
+  // already written as loops over `bands.length`, so the plan side needs no change at all.
+  //
+  // First and last keep their meaning (the dive lands on the first, the orbit stretches off the last).
+  // Everything between is an authored stick, labelled by where it sits along the walk.
+  function _labelOf(i) {
+    if (i === 0) return 'settle';
+    if (i === _state.bands.length - 1) return 'stop';
+    var b = _state.bands[i];
+    return 'stick' + (b._s != null ? ' @ ' + Math.round(b._s * 100) + '%' : '');
+  }
+  function _helpOf(i) {
+    if (i === 0) return ROW_HELP[0];
+    if (i === _state.bands.length - 1) return ROW_HELP[2];
+    return 'a stick you added — drag its middle to move it, an end to twist the curve through it';
+  }
   var ROW_LABEL = ['settle', 'exit door', 'stop'];
   var ROW_HELP = ['where the dive lands and the camera looks around',
                   'the door it walks out through — drag it back inside to shape the interior leg',
@@ -465,7 +566,11 @@
   var _UNDO_MAX = 50;
   function _cloneBands(bs) {
     return bs.map(function(b) {
-      return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
+      // §CPE_STICK: `_s`/`_stick` are editor-side provenance (where it was dropped, and that it was
+      // dropped rather than seeded) and must survive undo/redo, or a restored stick loses its label
+      // and its removability. They are stripped in _buildOverride — the plan never sees them.
+      return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
+               _s: b._s, _stick: b._stick };
     });
   }
   // §CPE_HOSE/§CPE_CLIP: the snapshot has to carry EVERY authored quantity, not just the bands.
@@ -532,9 +637,20 @@
         head.style.cssText = 'display:flex;align-items:center;gap:5px';
         var lbl = document.createElement('span');
         lbl.style.cssText = 'width:62px;color:#888;flex:none';
-        lbl.textContent = ROW_LABEL[i] || ('band' + i);
-        lbl.title = ROW_HELP[i] || '';
+        lbl.textContent = _labelOf(i);
+        lbl.title = _helpOf(i);
         head.appendChild(lbl);
+        // §CPE_STICK: a spawned stick is removable; settle and stop are not (the dive lands on one
+        // and the orbit stretches off the other — removing either would change what the beats mean).
+        if (b._stick && i > 0 && i < _state.bands.length - 1) {
+          var del = document.createElement('button');
+          del.textContent = '×';
+          del.title = 'remove this stick';
+          del.style.cssText = 'flex:none;width:16px;height:16px;line-height:1;padding:0;font-size:12px;' +
+            'background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer';
+          del.addEventListener('click', function(e) { e.stopPropagation(); _removeStick(i); });
+          head.appendChild(del);
+        }
         ['x', 'z', 'y'].forEach(function(ax) {
           var inp = document.createElement('input');
           inp.type = 'number'; inp.step = '0.1'; inp.value = _num(b.c[ax]);
@@ -575,7 +691,7 @@
         sub.style.cssText = 'padding:2px 0 0 62px;font-size:9px;color:#666;font-family:monospace';
         var yaw = Math.atan2(b.d.z, b.d.x) * 180 / Math.PI;
         var pitch = Math.atan2(b.d.y, Math.hypot(b.d.x, b.d.z)) * 180 / Math.PI;
-        sub.textContent = 'aim ' + Math.round(yaw) + '° / ' + Math.round(pitch) + '°  ·  ' + (ROW_HELP[i] || '');
+        sub.textContent = 'aim ' + Math.round(yaw) + '° / ' + Math.round(pitch) + '°  ·  ' + _helpOf(i);
         row.appendChild(sub);
         row.addEventListener('click', function() { _hold(i, 'mid', true); });
         box.appendChild(row);
@@ -623,10 +739,11 @@
     var el = document.getElementById('cpe-hint');
     if (!el) return;
     el.innerHTML = _state.held
-      ? '<b style="color:#ff8c00">' + (ROW_LABEL[_state.held.b] || '') +
+      ? '<b style="color:#ff8c00">' + _labelOf(_state.held.b) +
         (_state.held.z === 'mid' ? ' — whole band' : ' — end, pivots about the other end') +
         '</b>. It moves in the plane you are <b>facing</b>: orbit first to choose the axes, then drag.'
-      : 'Drag a band end to pivot it, its middle to move the whole band. Anywhere else orbits the scene as normal — turn to face the axes you want, since a drag moves in the plane you are looking at.';
+      : '<b>Click the fat pipe</b> to drop a stick there · <b>drag it</b> to bend the path · drag a stick end to pivot it, its middle to move it. ' +
+        'Only the fat stretch (the walk) is authorable — the thin dive and orbit are derived. Anywhere else orbits the scene as normal; a drag moves in the plane you are facing.';
   }
 
   // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path strip.
@@ -666,23 +783,63 @@
     var save = { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
                  tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z };
     s.flying = true; s.previewedAt = s.edits; _renderWhole();
-    var myFly = ++s.flyId, t0 = performance.now();
-    (function step() {
-      if (!_state || myFly !== _state.flyId) return;
-      var u = Math.min(1, (performance.now() - t0) / dur);
-      var p = _state.plan.poseAt(t0N + (t1N - t0N) * u);
-      a.camera.position.set(p.x, p.y, p.z);
-      a.controls.target.set(p.tx, p.ty, p.tz);
-      a.controls.update();
-      if (a.markDirty) a.markDirty();
-      if (u < 1) return requestAnimationFrame(step);
-      a.camera.position.set(save.px, save.py, save.pz);
-      a.controls.target.set(save.tx, save.ty, save.tz);
-      a.controls.update();
-      if (a.markDirty) a.markDirty();
-      _state.flying = false;
-      console.log('§CPE_PREVIEW done — camera restored to the editing pose');
-      _renderWhole();
+
+    // ══ §CPE_BUILDUP in the PREVIEW — measured before it was assumed expensive ═════════════════
+    // User, 2026-07-28: "i dont expect buildup preview can be done as it be heavy engine work...
+    // I would expect maybe meshed batch or some occlusion happening". Pushed back, with numbers:
+    // NO new engine work exists here. Time Machine already drives per-element visibility through
+    // BatchedMesh `setVisibleAt` / InstancedMesh zero-scale matrices — that is what its playback
+    // does today at ~2/sec on 122k-element buildings. The preview just moves the same cursor.
+    // Costs, measured, not guessed: the mode-D re-key is a ONE-OFF 12-14 ms (1,120 ops) / one pass
+    // over 63,415 ops on Hospital_3; per frame it is `renderAtTime`, measured in
+    // TM_INCREMENTAL_RENDER_PERF.md at 2.0 ms on the delta path and ~23 ms full at 16k objects.
+    // A 10 s preview steps the cursor by span/600 per frame, far under `_INCR_MAX_SPAN_MS` (7 days),
+    // so the delta path engages and this is a few ms a frame. The one case that pays full price is
+    // DLOD engaged (`_dlodCamMoved` forces a full traverse whenever the camera moves) on a very
+    // large building — the preview then runs slower, which for a 10 s rehearsal is acceptable and,
+    // more to the point, VISIBLE in §CPE_PREVIEW_BUILDUP's own ms rather than a mystery.
+    var bkPrev = null;
+    var startFly = function() {
+      var myFly = ++s.flyId, t0 = performance.now(), frames = 0;
+      (function step() {
+        if (!_state || myFly !== _state.flyId) return;
+        var u = Math.min(1, (performance.now() - t0) / dur);
+        var tn = t0N + (t1N - t0N) * u;
+        var p = _state.plan.poseAt(tn);
+        a.camera.position.set(p.x, p.y, p.z);
+        a.controls.target.set(p.tx, p.ty, p.tz);
+        a.controls.update();
+        if (bkPrev && window.tmSetCursor) {
+          window.tmSetCursor(bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart));
+        }
+        frames++;
+        if (a.markDirty) a.markDirty();
+        if (u < 1) return requestAnimationFrame(step);
+        var msPerFrame = (performance.now() - t0) / Math.max(1, frames);
+        a.camera.position.set(save.px, save.py, save.pz);
+        a.controls.target.set(save.tx, save.ty, save.tz);
+        a.controls.update();
+        if (a.markDirty) a.markDirty();
+        // Hand Time Machine back exactly as it was — the preview must never leave the user's
+        // timeline re-ordered, same contract the bake honours on every exit path.
+        if (bkPrev && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); bkPrev = null; }
+        _state.flying = false;
+        console.log('§CPE_PREVIEW done frames=' + frames + ' msPerFrame=' + msPerFrame.toFixed(1) +
+          ' buildup=' + (s.buildup ? 1 : 0) + ' — camera restored to the editing pose');
+        _renderWhole();
+      })();
+    };
+    if (!s.buildup || typeof window.tmOrderByCameraPath !== 'function') { startFly(); return; }
+    (async function() {
+      try {
+        var t0b = performance.now();
+        var ok = await window.tmActivateForBake();
+        if (ok) bkPrev = window.tmOrderByCameraPath(function(t) { return s.plan.poseAt(t); }, 60);
+        console.log('§CPE_PREVIEW_BUILDUP ' + (bkPrev ? 'armed ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no derived build order)') +
+          ' setupMs=' + (performance.now() - t0b).toFixed(0) +
+          ' — the same cursor Time Machine drives at playback, no new visibility mechanism');
+      } catch (e) { console.warn('§CPE_PREVIEW_BUILDUP failed ' + e.message); bkPrev = null; }
+      startFly();
     })();
   }
   function _syncButtons() {
@@ -900,7 +1057,10 @@
         var ph = _hitTestPath(ev);
         if (ph) {
           ev.preventDefault(); ev.stopPropagation();
-          _state.drag = { hose: true, s: ph.s, snapped: false,
+          // §CPE_STICK vs §CPE_HOSE — ONE grab, split by what the hand does, not by a modifier:
+          // let go without moving and you get a stick; move and you bend the pipe. `hit` carries
+          // the whole grab so pointerup can decide after the fact.
+          _state.drag = { hose: true, s: ph.s, snapped: false, hit: ph,
                           sx0: ev.clientX, sy0: ev.clientY,
                           p0: { x: ph.p.x, y: ph.p.y, z: ph.p.z }, op: null };
           var _bh = _dragBasis();
@@ -1010,9 +1170,11 @@
       var d = _state.drag;
       if (d.hose) {
         _state.drag = null;
-        // A press that never moved leaves no op behind — same rule as the band drag's undo snapshot,
-        // and for the same reason: a zero-pixel gesture is not an edit.
-        if (!d.op) return;
+        // A press that never moved is a CLICK, and a click on the pipe drops a stick there — the
+        // user's own original gesture ("clicking any point will open an aribitary '3 point band'").
+        // Nothing is created by a press that also dragged: that gesture already said "bend", and
+        // leaving a stick behind as well would mean one gesture doing two things.
+        if (!d.op) { if (d.hit) _spawnStick(d.hit); return; }
         var mag = Math.hypot(d.op.d.x, d.op.d.y, d.op.d.z);
         if (mag < 1e-4) { _state.hose.pop(); _undo(); return; }
         console.log('§CPE_HOSE landed s=' + d.op.s.toFixed(3) + ' reach=' + d.op.r.toFixed(3) +
