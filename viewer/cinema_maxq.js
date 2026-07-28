@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v15 (§CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v16 (§CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -642,28 +642,25 @@
         if (nFrames !== _framesWas)
           console.log('§MAXQ_START_REVISED frames=' + _framesWas + '→' + nFrames +
             ' (path edited; §MAXQ_START above is superseded)');
-        // ══ §CPE_PREVIEW_AFTER (CINEMA_PATH_EDITOR.md ask 5) — the preview you get AFTER you edit.
-        // Until now the only 10s rehearsal ran BEFORE the editor opened, so it showed the DERIVED
-        // path — the one film you already knew you did not want, which is why you opened the editor.
-        // The film you actually authored went straight to a ten-minute bake unseen. Confirmed absent
-        // in the user's own console: §CPE_CLOSE -> §CPE_APPLIED -> §MAXQ_FRAME i=0, with no second
-        // §MAXQ_PREVIEW between them.
+        // ══ §CPE_PREVIEW_AFTER_RETIRED (prompts/CINEMA_PATH_EDITOR.md, user 2026-07-29: "when OK, do
+        // not run preview again as there is already a Preview button") — the 10 s flight of the EDITED
+        // path used to run HERE, between §CPE_APPLIED and frame 0.
         //
-        // It runs ONLY when the path was really edited. An untouched OK re-uses the plan object
-        // computed before the editor opened (guardrail 2, see the else branch), so a second preview
-        // there would be ten seconds spent proving nothing changed — and "the default cost of this
-        // feature is one click and nothing else" is a promise this must not quietly break.
+        // It was written for a build where the editor could not preview at all: the film you authored
+        // went straight to a ten-minute bake unseen, so a forced rehearsal was the only way to catch a
+        // bad edit. §CPE_PREVIEW_BUTTON closed that gap directly and better — it flies the CURRENT edit
+        // on demand, any number of times, and its stale marker ('Preview ●') answers "have I seen THIS
+        // version?" without guessing. What was left here was ten forced seconds proving something the
+        // user had already chosen when to see. This is the same cut §CPE_PREVIEW_REDUNDANT made above
+        // for the PRE-editor rehearsal, on the same reasoning, applied to the other end.
         //
-        // `plan` was reassigned three lines up, and poseAt() resolves `plan` at call time, so this
-        // flies the EDITED plan through the identical function the bake steps frame by frame. Not
-        // a re-implementation of the path: the same one, which is the whole point.
-        if (opts.preview !== false) {
-          if (await _runPreview('edited', '🎬 Preview of YOUR edit (10s) — the ' + nFrames +
-                                          '-frame bake follows; Alt+C cancels')) {
-            _cancelledOut('the edited-path preview');
-            return;
-          }
-        }
+        // The trade, stated rather than glossed: the replacement is opt-in, so a user who never presses
+        // Preview now bakes unseen. That is the user's ruling, consistent with how they ruled on the
+        // pre-editor preview.
+        //
+        // `_runPreview` STAYS — the `opts.editor === false` branch above (scripted/witness bakes: no
+        // panel, therefore no Preview button) is the one caller that still needs a rehearsal, and
+        // `opts.preview` keeps its meaning for it.
       } else {
         // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
         // literally the same object, so the film is byte-identical to one recorded without the

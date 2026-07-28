@@ -1,25 +1,39 @@
-// WITNESS — §CPE_PREVIEW_AFTER: you get to see the film you edited, before it bakes.
-// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md ask 5.
+// WITNESS — §CPE_PREVIEW_AFTER_RETIRED: OK records. It does not preview first.
+// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_PREVIEW_AFTER_RETIRED.
 //
-// THE DEFECT THIS PROVES OR DISPROVES (user's own console, 2026-07-27, and their ask):
-// The 10s rehearsal ran ONCE, BEFORE the editor opened — so it showed the DERIVED path, the one film
-// you already knew you did not want, which is why you opened the editor at all. The film you then
-// authored went straight into a ten-minute bake completely unseen. Their log shows the gap exactly:
-//     §CPE_CLOSE -> §CPE_APPLIED -> §MAXQ_FRAME i=0        (no second §MAXQ_PREVIEW anywhere)
+// ⚠ RE-AIMED 2026-07-29. This file used to prove the OPPOSITE — that a second 10s rehearsal ran
+// after OK (§CPE_PREVIEW_AFTER). The user removed that feature: "when OK, do not run preview again
+// as there is already a Preview button." A witness left asserting a deleted feature is worse than no
+// witness, so the gates are re-pointed rather than deleted, and each still names its property.
 //
-//   G-PA-1  a second preview exists, and it is in the right place — §MAXQ_PREVIEW phase=edited
-//           strictly AFTER §CPE_APPLIED and strictly BEFORE the first §MAXQ_FRAME. RED on
-//           origin/main by construction: there is only one preview there.
-//   G-PA-2  it flies the EDITED film, not a re-run of the derived one. Both previews are sampled
-//           from the LIVE camera at matched tNorm; after a real edit the two streams must separate.
-//           A second preview that merely replayed the old path would pass G-PA-1 and fail here.
-//   G-PA-3  it flies the same poseAt the BAKE does. The bake's first frame is poseAt(0); the edited
-//           preview's first sample is poseAt(0) of whatever plan it flew. Same plan => same point.
-//           This is the §CPE_PREVIEW_DIVERGENCE property, re-asserted for the new preview.
-//   G-PA-4  guardrail 2 is intact: an UNTOUCHED OK gets exactly ONE preview. The promise is "the
-//           default cost of this feature is one click and nothing else" — a second 10s rehearsal
-//           proving nothing changed would break it, so this gate fails if the preview is
-//           unconditional rather than edit-only.
+// THE DEFECT THIS PROVES OR DISPROVES:
+// Cutting the post-OK rehearsal must remove the WAIT and nothing else. The failure mode that would
+// look identical from the outside is a cut that also loses the EDIT — a bake that quietly reverts to
+// the derived plan prints no edited preview either, and would pass a naive "no preview" check. So
+// G-PA-2/3 assert the authored path still reaches the flown film, numerically.
+//
+//   G-PA-1  no rehearsal runs between §CPE_APPLIED and the first §MAXQ_FRAME after an EDITED OK —
+//           and none anywhere in an editor run (§CPE_PREVIEW_REDUNDANT already removed the
+//           pre-editor one). RED on a build that still has §CPE_PREVIEW_AFTER by construction.
+//   G-PA-2  the edit still reaches the flown path. Measured on the PLANS, not on a camera: the
+//           derived plan and the plan built from the override OK actually handed the bake are
+//           sampled at matched tNorm and must separate after a 12m band edit. This is the gate that
+//           catches "the removal ate the edit", which G-PA-1 alone cannot see.
+//   G-PA-3  §CPE_PREVIEW_DIVERGENCE survives: the bake's first frame is the EDITED plan's poseAt(0).
+//           The bake is now the only flight, so this reads the live camera at frame 0 and compares
+//           it against poseAt(0) recomputed under the pinned §CPE_CAM_BASIS pose.
+//
+// ⚠ TWO INSTRUMENT CORRECTIONS, both measured while re-aiming, both worth keeping in mind before
+// trusting any future gate here (each one first read as a product failure and was not):
+//   1. A._getCinemaPathEdit() is NULL after a plain OK — stageCinemaPath() is wired to "Save this
+//      path" only. Reading the staged copy measures the SAVE path, not the OK path. Tap open()'s
+//      resolve instead (below).
+//   2. The plan reads A.camera/A.controls DIRECTLY and the editor PINS that basis at open. Re-planning
+//      with the live mid-bake camera gave 33.80m of disagreement at poseAt(0) — the witness had moved
+//      the goalposts, not the code. Restore §CPE_CAM_BASIS before any comparison plan.
+//   G-PA-4  an UNTOUCHED OK runs ZERO previews and re-uses the plan object (§CPE_APPLIED none).
+//           ⚠ Previously asserted exactly ONE (phase=derived) — already stale when re-aimed, since
+//           §CPE_PREVIEW_REDUNDANT deleted that pre-editor rehearsal the day before.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8402;
@@ -93,6 +107,21 @@ async function run(browser, BLD, edit) {
   const samples = [];
   const stopSampling = startSampling(page, samples);
 
+  // Tap the editor's RESOLVE, not A._cinemaPathEdit. Measured 2026-07-29: _getCinemaPathEdit()
+  // returns null after a plain OK, because A.stageCinemaPath() is wired to "Save this path" ONLY —
+  // OK hands its override straight to cinema_maxq.js and never stages it. A gate that read the
+  // staged copy was therefore measuring the SAVE path while claiming to measure the OK path.
+  // Wrapping open() keeps the product untouched and captures exactly what OK handed the bake.
+  await page.evaluate(() => {
+    const cpe = window.APP.cinemaPathEditor, orig = cpe.open.bind(cpe);
+    cpe.open = async function(a) {
+      const r = await orig(a);
+      window.__W_OV = (r && r.override) || null;
+      window.__W_DUR = r && r.durationSec;
+      return r;
+    };
+  });
+
   // fps:1 keeps the bake cheap — this witness only needs its first frames, not a finished film.
   await page.evaluate(() => { window.APP.startMaxQualityOrbit({ preview: true, fps: 1 }); });
   await page.waitForSelector('#cpe-ok', { timeout: 300000 });
@@ -120,67 +149,110 @@ async function run(browser, BLD, edit) {
   await sleep(1500);
 
   stopSampling();
+
+  // The numeric half of this witness. With the rehearsal gone there is no second flight to sample, so
+  // the "did the edit survive?" property is read off the PLANS: the derived plan and the plan built
+  // from the staged override (A._getCinemaPathEdit(), the same object the plan wrapper re-applies),
+  // sampled through the bake's own poseAt. Same function the bake steps frame by frame — not a
+  // re-implementation. Only meaningful on the edited run; the untouched run has no override.
+  let planCmp = null;
+  if (edit) {
+    const total = (logs.find(l => /§CPE_APPLIED total=/.test(l.text)) || { text: '' })
+      .text.match(/total=([\d.]+)s/);
+    const durSec = total ? parseFloat(total[1]) : 30;
+    // §CPE_PREVIEW_DIVERGENCE is load-bearing for this comparison: _cinemaPathPlan reads
+    // A.camera.position / A.controls.target DIRECTLY, and the editor PINS that basis to the pose it
+    // opened with. Re-planning here with the live camera (mid-bake, parked on frame 0's pose) plans a
+    // different dive and pivot entirely — measured 33.80m of disagreement at poseAt(0), which read as
+    // a product failure and was the witness moving the goalposts. Restore the pinned basis, which the
+    // editor already prints, so the plan computed here is the plan the bake is flying.
+    const cb = (logs.find(l => /§CPE_CAM_BASIS/.test(l.text)) || { text: '' }).text
+      .match(/cam=\(([-\d.]+),([-\d.]+),([-\d.]+)\) target=\(([-\d.]+),([-\d.]+),([-\d.]+)\)/);
+    const basis = cb ? { px: +cb[1], py: +cb[2], pz: +cb[3], tx: +cb[4], ty: +cb[5], tz: +cb[6] } : null;
+    try {
+      planCmp = await page.evaluate((dur, N, b) => {
+        const A = window.APP;
+        const ov = window.__W_OV || null;
+        if (!ov) return { err: 'the editor resolved no override — OK returned override:null' };
+        if (!b) return { err: 'no §CPE_CAM_BASIS line — cannot reproduce the plan basis' };
+        A.camera.position.set(b.px, b.py, b.pz);
+        A.controls.target.set(b.tx, b.ty, b.tz);
+        A.controls.update();
+        const d = A.cinemaPathPlan(dur, null);   // explicit null = derived, no db load
+        const e = A.cinemaPathPlan(dur, ov);
+        if (!d || !d.poseAt || !e || !e.poseAt) return { err: 'a plan came back without poseAt' };
+        const D = [], E = [];
+        for (let i = 0; i < N; i++) { const t = i / (N - 1); D.push(d.poseAt(t)); E.push(e.poseAt(t)); }
+        const dst = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+        const len = s => s.slice(1).reduce((a, p, i) => a + dst(p, s[i]), 0);
+        let maxSep = 0;
+        for (let i = 0; i < N; i++) maxSep = Math.max(maxSep, dst(D[i], E[i]));
+        const p0 = E[0];
+        return { maxSep: maxSep, dLen: len(D), eLen: len(E), n: N,
+                 pose0: { x: p0.x, y: p0.y, z: p0.z } };
+      }, durSec, 200, basis);
+    } catch (e) { planCmp = { err: 'page.evaluate failed: ' + e.message }; }
+  }
+
   try { await page.evaluate(() => { window.APP.cancelMaxQualityOrbit && window.APP.cancelMaxQualityOrbit(); }); } catch (e) {}
   await sleep(300);
   await page.close();
-  return { logs, samples };
+  return { logs, samples, planCmp };
 }
 
 async function gates(browser, BLD) {
   const checks = [];
   const P = (n, ok, d) => checks.push({ n, ok, d });
 
-  const { logs, samples } = await run(browser, BLD, true);
+  const { logs, samples, planCmp } = await run(browser, BLD, true);
 
   const iApplied = idx(logs, /§CPE_APPLIED total=/);
   const iFrame0  = idx(logs, /§MAXQ_FRAME i=/);
   const previews = logs.filter(isPreviewStart);
-  const iEdited  = idx(logs, /§MAXQ_PREVIEW start phase=edited/);
 
-  P('G-PA-1 a second preview runs, after §CPE_APPLIED and before the first baked frame',
-    iEdited > 0 && iApplied > 0 && iEdited > iApplied && (iFrame0 < 0 || iEdited < iFrame0),
-    `previews=${previews.length} [${previews.map(phaseOf).join(', ')}]  ` +
-    `§CPE_APPLIED@${iApplied}  §MAXQ_PREVIEW(edited)@${iEdited}  §MAXQ_FRAME i=0@${iFrame0}`);
+  // The window the deleted rehearsal used to occupy. Nothing may fly in it, and — because
+  // §CPE_PREVIEW_REDUNDANT already removed the pre-editor one — nothing may fly before it either.
+  const inWindow = previews.filter(p => {
+    const i = logs.indexOf(p);
+    return iApplied > 0 && i > iApplied && (iFrame0 < 0 || i < iFrame0);
+  });
+  P('G-PA-1 OK records without a rehearsal — no §MAXQ_PREVIEW between §CPE_APPLIED and frame 0',
+    iApplied > 0 && inWindow.length === 0 && previews.length === 0,
+    `previews in whole run=${previews.length} [${previews.map(phaseOf).join(', ')}], ` +
+    `in the OK→bake window=${inWindow.length}  ` +
+    `§CPE_APPLIED@${iApplied}  §MAXQ_FRAME i=0@${iFrame0}`);
 
-  // Cut the two preview windows out of the sample stream using the phase log lines as boundaries.
-  const at = re => { const h = logs.find(l => re.test(l.text)); return h ? h.t : null; };
-  const dStart = at(/§MAXQ_PREVIEW start/), dEnd = at(/§MAXQ_PREVIEW done/);
-  const eStart = at(/§MAXQ_PREVIEW start phase=edited/),  eEnd = at(/§MAXQ_PREVIEW done phase=edited/);
-  const D = dStart && dEnd ? resample(between(samples, dStart, dEnd), 20) : null;
-  const E = eStart && eEnd ? resample(between(samples, eStart, eEnd), 20) : null;
+  // G-PA-2 — the property G-PA-1 alone cannot see: a bake that quietly reverted to the derived plan
+  // ALSO prints no preview. Measured on the plans themselves (real object state, per the FUNDAMENTAL
+  // LAW), not on a camera: derived poseAt(t) vs staged-override poseAt(t) at matched tNorm.
+  P('G-PA-2 the edit still reaches the flown path (derived vs authored plans separate)',
+    planCmp !== null && !planCmp.err && planCmp.maxSep > 1.0,
+    planCmp === null || planCmp.err
+      ? `could not compare plans: ${planCmp ? planCmp.err : 'no override staged — A._getCinemaPathEdit() returned null'}`
+      : `derived pathLen ${planCmp.dLen.toFixed(1)}m, authored pathLen ${planCmp.eLen.toFixed(1)}m, ` +
+        `max separation over ${planCmp.n} matched tNorm = ${planCmp.maxSep.toFixed(2)}m ` +
+        `(must be > 1.0m after a 12m band edit)`);
 
-  let maxSep = null, dLen = null, eLen = null;
-  if (D && E) {
-    maxSep = Math.max(...D.map((d, i) => dist(d, E[i])));
-    const pathLen = s => s.slice(1).reduce((a, p, i) => a + dist(p, s[i]), 0);
-    dLen = pathLen(D); eLen = pathLen(E);
-  }
-  P('G-PA-2 the second preview flies the EDITED film, not a replay of the derived one',
-    maxSep !== null && maxSep > 1.0 && eLen > 1.0,
-    `derived preview ${D ? D.length : 0} samples, travelled ${dLen === null ? 'n/a' : dLen.toFixed(1) + 'm'}\n` +
-    `          edited  preview ${E ? E.length : 0} samples, travelled ${eLen === null ? 'n/a' : eLen.toFixed(1) + 'm'}\n` +
-    `          max separation at matched tNorm = ${maxSep === null ? 'n/a' : maxSep.toFixed(2) + 'm'} (must be > 1.0m after a 12m band edit)`);
-
-  // The bake's first frame is poseAt(0). The edited preview's first sample is poseAt(0) of whatever
-  // plan IT flew. Same number => one plan, which is the §CPE_PREVIEW_DIVERGENCE property.
+  // §CPE_PREVIEW_DIVERGENCE, re-asserted against the only flight left: the bake's first frame must be
+  // the EDITED plan's poseAt(0), computed from the same staged override the plan wrapper re-applies.
   const tFrame0 = iFrame0 >= 0 ? logs[iFrame0].t : null;
-  const bakeFirst = tFrame0 ? between(samples, eEnd || 0, tFrame0 + 1200)[0] : null;
-  const editFirst = E ? E[0] : null;
+  const bakeFirst = tFrame0 ? between(samples, tFrame0 - 400, tFrame0 + 1200)[0] : null;
+  const editFirst = planCmp && !planCmp.err ? planCmp.pose0 : null;
   const gap = bakeFirst && editFirst ? dist(bakeFirst, editFirst) : null;
   // If the bake never reached frame 0 inside the wait, say so — an unobserved bake is not evidence
   // either way, and reporting it as a failed comparison would be a false accusation against the code.
-  P('G-PA-3 the edited preview and the bake fly the same plan (poseAt(0) agrees)' +
+  P('G-PA-3 the bake flies the EDITED plan (frame 0 == authored poseAt(0))' +
     (tFrame0 === null ? ' — INCONCLUSIVE, no bake frame observed' : ''),
     tFrame0 === null ? false : (gap !== null && gap < 2.0),
-    `edited preview started at (${editFirst ? [editFirst.x, editFirst.y, editFirst.z].map(v => v.toFixed(1)).join(',') : 'n/a'}), ` +
+    `authored poseAt(0) = (${editFirst ? [editFirst.x, editFirst.y, editFirst.z].map(v => v.toFixed(1)).join(',') : 'n/a'}), ` +
     `bake's first frame at (${bakeFirst ? [bakeFirst.x, bakeFirst.y, bakeFirst.z].map(v => v.toFixed(1)).join(',') : 'n/a'}) ` +
     `— ${gap === null ? 'n/a' : gap.toFixed(2) + 'm apart'}`);
 
-  // Guardrail 2: OK with no edit must not cost a second 10 seconds.
+  // Guardrail 2: OK with no edit costs one click and nothing else — now literally zero rehearsals.
   const r2 = await run(browser, BLD, false);
   const prev2 = r2.logs.filter(isPreviewStart);
-  P('G-PA-4 an untouched OK still gets exactly ONE preview (guardrail 2: one click, nothing else)',
-    prev2.length === 1 && phaseOf(prev2[0]) === 'derived',
+  P('G-PA-4 an untouched OK runs ZERO previews (guardrail 2: one click, nothing else)',
+    prev2.length === 0 && r2.logs.some(l => /§CPE_APPLIED none/.test(l.text)),
     `${prev2.length} preview(s): [${prev2.map(phaseOf).join(', ')}]  ` +
     `— ${r2.logs.some(l => /§CPE_APPLIED none/.test(l.text)) ? '§CPE_APPLIED none (plan object re-used)' : 'no §CPE_APPLIED none line'}`);
 
