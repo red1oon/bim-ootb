@@ -4373,11 +4373,23 @@
 
   function activate() {
     if (_active) return;
-    // Mobile merged meshes have no guid — re-stream as individual meshes
+    // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
+    // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
+    //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
+    //       Since 68bd9a7 killed the merge routing, `_isMobile` re-streamed the WHOLE building on
+    //       every mobile TM open for nothing; and with merging now capability-gated rather than
+    //       device-gated, a no-multi_draw DESKTOP has merged meshes too and needs the same unmerge.
+    //   (2) _forceNoMerge makes the re-stream stick — flipping _isMobile no longer disables merging
+    //       (the gate is A._hasMultiDraw), so without this flag the re-stream would just re-merge.
+    // ONE-SHOT: if a re-stream somehow still produced merged meshes, activate normally rather than
+    // re-streaming forever. Belt-and-braces against the loop described above — a spinning
+    // clearStreamed/streamBuilding cycle is a far worse failure than TM opening with merged geometry.
     var app = A();
-    if (app && app._isMobile) {
-      app._isMobile = false;
+    if (app && app._mergeActive && !app._tmUnmergeTried) {
+      app._tmUnmergeTried = true;
+      app._forceNoMerge = true;
       var bld = app.activeBuilding;
+      console.log('§TM_UNMERGE re-streaming ' + (bld || '?') + ' without merge (TM needs per-element slots)');
       app.clearStreamed();
       if (bld) { app.streamBuilding(bld); }
       // Wait for re-stream to finish, then activate
