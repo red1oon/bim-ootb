@@ -202,6 +202,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
                   return (stick.d.x * tx + stick.d.y * ty + stick.d.z * tz) / tl;
                 })() };
 
+      // ── R1/R2: §CPE_REOPEN_DOUBLE — re-opening an authored path must not multiply the bands ──
+      // The user's report: "it seems to dupe more bars upon alt-c cancel and resume". The mechanism
+      // is reciprocal fan-out — cinemaSeedBands emits ONE band per waypoint, cinemaBandWaypoints
+      // emits TWO waypoints per band — so re-seeding an authored plan's waypoints doubles the count
+      // on every open. R1 measures the doubling directly so the fix is proven against a NUMBER, not
+      // against the absence of a complaint; R2 checks the adoption source is the authored bands
+      // themselves, not a re-derivation that merely happens to have the right length.
+      const pAuth = A.cinemaPathPlan(dur, { bands: withStick, hose: [] });
+      const reSeed = A.cinemaSeedBands(pAuth.waypoints, pAuth.pathLen);
+      let adoptMax = Infinity;
+      if (pAuth.bands && pAuth.bands.length === withStick.length) {
+        adoptMax = 0;
+        for (let i = 0; i < withStick.length; i++) {
+          const a3 = pAuth.bands[i], b3 = withStick[i];
+          adoptMax = Math.max(adoptMax,
+            Math.hypot(a3.c.x - b3.c.x, a3.c.y - b3.c.y, a3.c.z - b3.c.z),
+            Math.hypot(a3.d.x - b3.d.x, a3.d.y - b3.d.y, a3.d.z - b3.d.z),
+            Math.abs(a3.len - b3.len));
+        }
+      }
+      out.r = { authoredN: withStick.length,
+                planBandsN: pAuth.bands ? pAuth.bands.length : 0,
+                reSeedN: reSeed ? reSeed.length : 0,
+                adoptMax: adoptMax,
+                waypoints: pAuth.waypoints.length };
+
       // ── D1/D2: the two defects the user's live run exposed ──────────────────────────────────
       // D1 §CPE_STICK_ANCHOR — "that new bar suddenly got disengaged from hose line". A stick
       //    dropped on the VISIBLE (hosed) curve must LAND on the final curve. The final curve is
@@ -389,6 +415,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ── A1/A2: the aim rule ─────────────────────────────────────────────────────────────────
     const improved = res.a1.meanGazeErrNoRule - res.a1.meanGazeErrWithRule;
+    P('R1 §CPE_REOPEN_DOUBLE: adopting the plan bands does not multiply them',
+      res.r.planBandsN === res.r.authoredN && res.r.reSeedN === 2 * res.r.authoredN,
+      `authored ${res.r.authoredN} bands -> plan carries ${res.r.planBandsN} (adopted, correct); re-seeding the SAME plan's ${res.r.waypoints} waypoints gives ${res.r.reSeedN} — that doubling IS the bug, measured`);
+    P('R2 §CPE_REOPEN_DOUBLE: the adopted bands ARE the authored ones',
+      res.r.adoptMax < 1e-6,
+      `max centre/direction/length deviation ${res.r.adoptMax.toExponential(2)} over ${res.r.authoredN} bands (tol 1e-6) — adoption, not re-derivation`);
     P('A1 §CPE_AIM_DENSITY: gaze turns toward the mass', improved > 0.5,
       `mean angle to building centroid ${res.a1.meanGazeErrNoRule.toFixed(1)}° without the rule → ` +
       `${res.a1.meanGazeErrWithRule.toFixed(1)}° with it (improvement ${improved.toFixed(1)}°, ${res.a1.frames} frames)`);

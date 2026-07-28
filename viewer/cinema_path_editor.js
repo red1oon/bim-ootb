@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v13 (§CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v14 (§CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -1397,9 +1397,25 @@
         console.warn('§CPE_SKIP no waypoints to seed bands from — proceeding unchanged');
         return resolve({ action: 'ok', override: null, durationSec: ctx.durationSec });
       }
-      var seeded = a.cinemaSeedBands(plan.waypoints, plan.pathLen);
+      // §CPE_REOPEN_DOUBLE (CINEMA_PATH_EDITOR.md — user: "it seems to dupe more bars upon alt-c
+      // cancel and resume"). ADOPT the authored bands when the plan was built from them; only SEED
+      // when there are none. The two functions have reciprocal fan-out — _cinemaSeedBands emits one
+      // band per waypoint, _cinemaBandWaypoints emits two waypoints per band — so re-seeding an
+      // authored plan's waypoints DOUBLED the count on every open (N → 2N → 4N), and any save taken
+      // after a re-open stored a band list the user never authored. Cancel was never implicated: it
+      // is the staged override (A._cinemaPathEdit) that feeds the doubled plan back in.
+      // A derived plan carries `bands: null`, so the first open of an unauthored building still runs
+      // the seeder and is byte-identical to before.
+      var authored = !!(plan.bands && plan.bands.length >= 2);
+      var seeded = authored ? plan.bands : a.cinemaSeedBands(plan.waypoints, plan.pathLen);
       var clone = function(bs) {
-        return bs.map(function(b) { return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len }; });
+        return bs.map(function(b, i) {
+          var o = { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
+          // Re-flag the middles so a re-opened stick keeps its × remove affordance, exactly as
+          // _pathsApply does when loading a stored plan.
+          if (authored && i > 0 && i < bs.length - 1) o._stick = true;
+          return o;
+        });
       };
       _state = {
         bands: clone(seeded), origBands: clone(seeded), staged: false, undo: [], redo: [],
@@ -1424,7 +1440,8 @@
                    tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z },
         controlsWere: a.controls ? a.controls.enabled : true
       };
-      console.log('§CPE_OPEN bands=' + _state.bands.length + ' waypoints=' + (_state.bands.length * 2) +
+      console.log('§CPE_OPEN src=' + (authored ? 'authored' : 'seeded') +
+        ' bands=' + _state.bands.length + ' waypoints=' + (_state.bands.length * 2) +
         ' bandLen=' + _state.bands[0].len.toFixed(2) + 'm pathLen=' + plan.pathLen.toFixed(1) +
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
