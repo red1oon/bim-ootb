@@ -69,4 +69,5 @@ witness/
 
 # Private large-project IFC benchmark stress-test set (multi-GB raw source files, never git/LFS —
 # see prompts/IFC_LARGE_PRIVATE_STRESS_TEST.md). Local-only, not a shipped IFC/ resident.
-IFC/KUL/
+IFC/KUL/*
+!IFC/KUL/README.md
