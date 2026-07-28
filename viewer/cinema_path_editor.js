@@ -19,7 +19,11 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v15 (§CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  // §CPE_CLICK_SLOP — how far the pointer may travel and still count as a CLICK on the pipe (a stick),
+  // rather than a drag (a hose bend). 4px is standard click slop; at Hospital's 0.192 m/px that is
+  // 0.77m, comfortably below any intentional bend and comfortably above hand tremor.
+  var CLICK_SLOP_PX = 4;
+  var CPE_V = 'v16 (§CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -1268,6 +1272,17 @@
         // §CPE_HOSE: one op per gesture, mutated live — not one op per pointermove, which would
         // stack hundreds of ops for a single drag and make the stored path grow with the gesture
         // rather than with the edit.
+        // §CPE_CLICK_SLOP (prompts/CINEMA_PATH_EDITOR.md; user 2026-07-29: "when i made a new node in
+        // the pipe, it does not show up in the alt-c panel list"). §CPE_STICK's rule is one grab split
+        // by what the hand does — let go without moving and you get a stick. h.up implements that
+        // correctly (`if (!d.op) _spawnStick`), but this branch used to create the op on the FIRST
+        // pointermove of ANY size, so the stick branch was unreachable in practice: a physical click
+        // emits 1-2px of movement almost every time. The `mag < 1e-4` cancel in h.up does not catch it
+        // either — at Hospital's 0.192 m/px one pixel is 0.19m, four orders of magnitude above it — so
+        // the click landed as a real recorded hose pull. Confirmed in the user's console: five
+        // §CPE_HOSE grab/landed pairs, zero §CPE_STICK, bands=3 unchanged throughout.
+        // Below the slop the grab stays a CANDIDATE CLICK: no op, no deform, no undo entry.
+        if (!d.snapped && Math.hypot(ev.clientX - d.sx0, ev.clientY - d.sy0) < CLICK_SLOP_PX) return;
         var dwh = _dragDelta(ev, d);
         d.lx = ev.clientX; d.ly = ev.clientY;
         if (!d.snapped) {
@@ -1599,6 +1614,30 @@
   }
 
   var _attach = setInterval(function() {
-    if (window.APP) { window.APP.cinemaPathEditor = { open: open, version: CPE_V }; clearInterval(_attach); }
+    // `_probePipe` is a READ-ONLY whitebox hook for witnesses (§CPE_CLICK_SLOP's W-CLICK-STICK): it
+    // answers "does this screen pixel land on the fat walk pipe?" using the editor's OWN hit test, so
+    // a witness never guesses a coordinate or asserts against a re-implementation. Same precedent as
+    // effects.js's `A.cinemaPathPlanDerived`. It mutates nothing and is not part of the UI.
+    if (window.APP) {
+      window.APP.cinemaPathEditor = {
+        open: open, version: CPE_V,
+        _probePipe: function(clientX, clientY) {
+          if (!_state) return null;
+          var h = _hitTestPath({ clientX: clientX, clientY: clientY });
+          return h ? { s: h.s, i: h.i } : null;
+        },
+        // The screen pixel of a point at `frac` along the WALK, through the editor's own projection.
+        // A witness sweeping the canvas for the pipe is a lottery on a small building (measured: a
+        // 42px grid missed Duplex's walk entirely); this hands it the answer the hit test would give.
+        _pipePixel: function(frac) {
+          if (!_state || !_state.flowHosed || _state.flowHosed.length < 2) return null;
+          var pts = _state.flowHosed;
+          var i = Math.max(0, Math.min(pts.length - 1, Math.round((frac || 0.5) * (pts.length - 1))));
+          var s = _screenOf(pts[i]);
+          return s.behind ? null : { x: Math.round(s.x), y: Math.round(s.y), i: i };
+        }
+      };
+      clearInterval(_attach);
+    }
   }, 500);
 })();
