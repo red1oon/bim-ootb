@@ -5067,6 +5067,65 @@
              projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
+  // ── §CPE_BUILDUP_FOLLOW_TM — the film PLAYS the Time Machine; it does not author a build order ──
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_SOURCE_BLIND
+  // User, 2026-07-29: "do not bake anything for TM.. as i said, it is user's own plan" /
+  // "this practices good separation of tasks" — Time Machine owns the build order, Alt+C owns the
+  // camera. The film is a camera over a timeline someone else authored, and nothing about pressing
+  // Alt+C may change WHEN anything is built.
+  //
+  // This is the ONE verb both callers (the bake in cinema_maxq.js and the Preview in
+  // cinema_path_editor.js) now use, which is also the fix for those two having chosen the buildup
+  // source by different rules — the preview called tmOrderByCameraPath unconditionally while the bake
+  // consulted tmScheduleSource(), so on a captured-schedule building the rehearsal and the film could
+  // disagree about what they were showing.
+  //
+  // Like tmOrderBySchedule (which it delegates to for the captured case) it WRITES NOTHING: `_ops`
+  // are already in timeline order the moment the timeline exists — loadOps() reads them ORDER BY
+  // timestamp and computeDays() sets the real project epoch. So "follow the Time Machine" needs no
+  // pass at all, which is why _bkSaved stays null and tmRestoreDerivedOrder() is a genuine no-op.
+  //
+  // mode S = a captured/linked schedule keyed to dated leaf tasks.
+  // mode T = this model's own derived 4D timeline (schedule_gate's geometry-gated, bottom-up order —
+  //          real work, but NOT a construction programme; the wording tiers in §5 still apply).
+  // There is deliberately no mode D here. tmOrderByCameraPath still exists and is still correct at
+  // what it does, but re-keying a timeline to camera proximity is exactly the interference this verb
+  // was written to remove.
+  window.tmFollowTimeline = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    var ss = window.tmScheduleSource();
+    if (ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
+      var cap = window.tmOrderBySchedule();
+      if (cap) return cap;
+      // A degraded captured schedule falls through to the timeline as loaded — still the user's
+      // plan, never a re-key.
+      console.warn('§CPE_BUILDUP_SOURCE fallthrough reason=captured-but-unusable — following the timeline as loaded');
+    }
+    // Count what the reveal can actually show, the same way mode D counted `placed`: an op with no
+    // geometry still holds its place in the order, it just has nothing to appear.
+    var app = A(), placed = 0, noGeom = 0;
+    try {
+      var have = {};
+      var rows = app.dbQuery('SELECT guid FROM element_transforms');
+      for (var r = 0; r < rows.length; r++) have[rows[r][0]] = 1;
+      for (var i = 0; i < _ops.length; i++) {
+        var op = _ops[i];
+        var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+        if (guid && have[guid]) placed++; else noGeom++;
+      }
+    } catch (e) { placed = _ops.length; noGeom = 0; }   // counting failed → do not block the film
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE mode=T reason=generated-timeline ops=' + _ops.length +
+      ' placed=' + placed + ' noGeom=' + noGeom +
+      ' leafTasks=' + ss.leafTasks + ' capOps=' + ss.capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — the reveal FOLLOWS this model\'s own 4D timeline, unmodified (no re-key; not a construction programme)');
+    return { ops: _ops.length, placed: placed, noGeom: noGeom, arc: 0, source: 'timeline',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
   // ── §CPE_BUILDUP_REAL_SCHEDULE §4 — the numeric instrument the witnesses read ──────────────────
   // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §4
   // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
