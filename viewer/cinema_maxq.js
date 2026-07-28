@@ -717,9 +717,34 @@
           console.warn('§CPE_BUILDUP_SKIP reason=no derived build order (Time Machine has no ops for this building)');
           _buildup = false;
         } else {
-          _bkState = window.tmOrderByCameraPath(function(t) { return plan ? plan.poseAt(t) : poseAt(t); }, nFrames);
+          // ══ §CPE_BUILDUP_REAL_SCHEDULE §3.3 — REAL schedule if the building has one, else mode D ══
+          // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.3
+          // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-FALLBACK
+          // Before this branch, tmOrderByCameraPath ran unconditionally and OVERWROTE the real task
+          // dates injectGantt had just written — so a building WITH a linked schedule baked a
+          // byte-identical film to one with none (§2, the defect). The derived path below is
+          // untouched: no usable `tasks` → same call, same args, same behaviour as before (that is
+          // exactly what W-SCHED-FALLBACK gates).
+          var _ss = (typeof window.tmScheduleSource === 'function') ? window.tmScheduleSource() : null;
+          _bkState = null;
+          if (_ss && _ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
+            _bkState = window.tmOrderBySchedule();
+            // A degraded real schedule must never be WORSE than no schedule: fall through to mode D.
+            if (!_bkState) console.warn('§CPE_BUILDUP_SOURCE fallthrough reason=captured-but-unusable — using the derived order');
+          }
+          if (!_bkState) {
+            _bkState = window.tmOrderByCameraPath(function(t) { return plan ? plan.poseAt(t) : poseAt(t); }, nFrames);
+          }
           if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=re-key failed — baking without the buildup'); _buildup = false; }
-          else _status('🎬 Building as the camera flies (' + _bkState.placed + ' elements ordered by the path)');
+          else if (_bkState.source === 'captured') {
+            // §CPE_BUILDUP_REAL_SCHEDULE §5 — the label moves with the data. States scope and
+            // coverage; claims NO predecessor logic, float or resources (this data carries none).
+            _status('🎬 Building to the linked schedule (' + _bkState.leafTasks + ' phases, ' +
+              _bkState.pct + '% of elements)');
+          } else {
+            // §5 — unchanged wording for the derived branch. Never say "the schedule" here.
+            _status('🎬 Building as the camera flies (' + _bkState.placed + ' elements ordered by the path)');
+          }
         }
       }
       t0 = _etaPrev = performance.now();
