@@ -4327,6 +4327,35 @@ async function setupEffects(A, renderer, scene, camera) {
   var _hoseLastSig = '', _hoseLastMs = 0;
   A.cinemaHoseApply = _cinemaHoseApply;   // W-HOSE-ARC reads this directly
 
+  // §CPE_HOSE_REANCHOR — keep a pull where it was PUT when the curve underneath it changes.
+  // An op's `s` is a fraction of the walk's arc length; adding or moving a band changes both the
+  // length and the shape of that walk, so the same fraction lands somewhere else and the bulge
+  // slides along the path on its own (observed live: the same two ops reporting deformed=57 → 65 →
+  // 72 across successive band edits, untouched). Each op therefore also carries `a`, the WORLD point
+  // it was authored at on the raw curve; re-projecting that onto the new curve is what makes the
+  // edit stable. Returns how many moved, so the caller logs a number instead of guessing.
+  // Lives here, beside the apply, so the witness exercises the shipped function.
+  function _cinemaHoseReanchor(ops, pts, fracs, skip) {
+    if (!ops || !ops.length || !pts || pts.length < 2) return 0;
+    var moved = 0;
+    for (var k = 0; k < ops.length; k++) {
+      var op = ops[k];
+      if (!op || op === skip) continue;
+      var idx0 = Math.max(0, Math.min(pts.length - 1, Math.round(op.s * (pts.length - 1))));
+      if (!op.a) { op.a = { x: pts[idx0].x, y: pts[idx0].y, z: pts[idx0].z }; continue; }
+      var best = 0, bd = Infinity;
+      for (var i = 0; i < pts.length; i++) {
+        var dx = pts[i].x - op.a.x, dy = pts[i].y - op.a.y, dz = pts[i].z - op.a.z;
+        var d = dx * dx + dy * dy + dz * dz;
+        if (d < bd) { bd = d; best = i; }
+      }
+      var ns = fracs[best];
+      if (Math.abs(ns - op.s) > 1e-4) { moved++; op.s = ns; }
+    }
+    return moved;
+  }
+  A.cinemaHoseReanchor = _cinemaHoseReanchor;
+
   // Seed three bands from a derived plan's three waypoints. Direction at each anchor is the local
   // path tangent (Catmull-Rom style: previous→next), so the seeded bands already lie along the route
   // and the very first render is a no-op-looking curve rather than a scrambled one.
@@ -4395,6 +4424,25 @@ async function setupEffects(A, renderer, scene, camera) {
     return bands;
   }
   A.cinemaSeedBands = _cinemaSeedBands;
+  // §CPE_STICK — seed ONE band at an arbitrary point on the flown curve. Same rule as the three
+  // seeded bands above: centre on the curve, direction = the LOCAL TANGENT (previous→next), length
+  // inherited. That combination is what makes a freshly dropped stick a NO-OP — it lies along the
+  // path it was dropped on, so the film does not move until the user moves the stick.
+  // Lives here rather than in the editor so the witness exercises the SHIPPED function instead of a
+  // re-implementation of it (the failure mode where a gate passes against its own copy of the maths).
+  function _cinemaSeedStick(pts, i, len) {
+    if (!pts || pts.length < 2) return null;
+    var n = pts.length;
+    i = Math.max(0, Math.min(n - 1, i | 0));
+    var a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    var L = Math.hypot(dx, dy, dz);
+    if (L < 1e-6) { dx = 1; dy = 0; dz = 0; L = 1; }
+    return { c: { x: pts[i].x, y: pts[i].y, z: pts[i].z },
+             d: { x: dx / L, y: dy / L, z: dz / L },
+             len: (len > 0 ? len : Math.max(CINEMA_BAND_MIN_M, 1)) };
+  }
+  A.cinemaSeedStick = _cinemaSeedStick;
   // Exit cost = dist × (1 − FACE_GAIN·facingDot) × perimFactor. facingDot=+1 (door dead ahead) →
   // (1-GAIN)×dist; facingDot=−1 (door behind you) → (1+GAIN)×dist. This asymmetry is the entire
   // "myriad of paths" mechanism: two poses at the SAME spot facing different ways can pick DIFFERENT

@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v14 (§CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v15 (§CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -563,8 +563,20 @@
       _active = false; _cancel = false; A._maxqActive = false;
       _wakeRelease(); _dampRelease();
     }
-    if (opts.preview !== false) {
-      if (await _runPreview('derived', '🎬 Path preview (10s, plain look) — the editor opens next; Alt+C cancels')) {
+    // ══ §CPE_PREVIEW_REDUNDANT (user, 2026-07-28, after flying it: "I see the initial preview is
+    // redundant. Straight showing this is good as preview button is always there and serving well.
+    // Corelation with the whole pipe during the journey is great instant feedback.")
+    // The pre-editor 10 s flight of the DERIVED path used to run here. It was written when the
+    // editor could not preview at all — the film went from an unedited rehearsal straight to a
+    // ten-minute cook. Both of its jobs are now done better by things that came after it: the editor
+    // draws the whole film as a pipe the moment it opens (so the path is visible without flying it),
+    // and §CPE_PREVIEW_BUTTON flies whatever is current, on demand, as many times as wanted.
+    // Keeping it meant ten seconds of forced waiting before every single edit session.
+    // `opts.preview` still gates §CPE_PREVIEW_AFTER below, so a caller can still turn previews off.
+    if (opts.preview !== false && opts.editor === false) {
+      // No editor in this run (a scripted/witness bake): the rehearsal is the ONLY chance to see the
+      // path before the cook, so it still runs there.
+      if (await _runPreview('derived', '🎬 Path preview (10s, plain look) — the bake follows; Alt+C cancels')) {
         _cancelledOut('preview');
         return;
       }
