@@ -4953,9 +4953,143 @@
       ' span=' + Math.round(span) + 'ms installFrames=1.5' +
       ' ms=' + (performance.now() - t0).toFixed(0) +
       ' — DERIVED BUILD ORDER re-keyed to the camera path (NOT a construction programme)');
-    return { ops: n, placed: hit, noGeom: miss, arc: arc,
+    return { ops: n, placed: hit, noGeom: miss, arc: arc, source: 'derived',
              projectStart: _projectStart, projectEnd: _projectEnd };
   };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.1 — is this building's 4D REAL or DERIVED? ────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.1 — Witness: W-SCHED-COVERAGE
+  // PURE READ. Must not trigger injectGantt and must not mutate anything.
+  //
+  // ⚠ MEASURED CORRECTION — `_capActive` ALONE IS THE WRONG TEST, and the witness caught it before
+  // this shipped. `_capActive` is set by injectGantt's `_cap` overlay, so it is a RUN-SCOPED SIDE
+  // EFFECT, not a property of the data. `activate()` deliberately SKIPS injectGantt when the db
+  // already carries usable ELEMENT_PLACE ops with `_end_ts` (the cached/shipped-timeline fast path,
+  // ~line 4462) — which is exactly the case for a building whose schedule was authored in an earlier
+  // session and persisted. Confirmed on TerminalHi4D.db: all 48,433 ops carry `_captured:1` and
+  // `_task:TASK_*`, timestamps spanning the real 2026-01-01..2026-05-30 window, yet `_capActive` was
+  // false and this verb reported 'derived' — i.e. the real schedule was there and would still have
+  // been thrown away by mode D.
+  // So the source is decided by the OPS THEMSELVES: dated leaf tasks must exist AND the loaded ops
+  // must actually be keyed to them (`parameters._captured`, the marker `_cap` persists), with
+  // `_capActive` accepted as the same-session equivalent. Coverage falls back to the op count for the
+  // same reason — `_coveredCount` is only populated on the run where injectGantt executed.
+  window.tmScheduleSource = function() {
+    var leafTasks = 0, summarySkipped = 0, total = 0;
+    var app = A();
+    var capOps = 0;
+    for (var oi = 0; oi < _ops.length; oi++) {
+      if (_ops[oi].parameters && _ops[oi].parameters._captured) capOps++;
+    }
+    if (app && app.db) {
+      try {
+        var tr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE schedule_start IS NOT NULL " +
+          "AND schedule_finish IS NOT NULL AND (is_summary IS NULL OR is_summary = 0)");
+        if (tr.length && tr[0].values.length) leafTasks = tr[0].values[0][0] | 0;
+        var sr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE is_summary = 1");
+        if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
+      } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
+      try {
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement'");
+        if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
+      } catch (e) { total = 0; }
+    }
+    // Coverage is counted off the LOADED OPS FIRST, not off `_coveredCount`. `_coveredCount` tallies
+    // `_cap`'s UPDATE executions against kernel_ops, so a db carrying duplicate ELEMENT_PLACE rows for
+    // a guid inflates it above the element count (measured: 2238 on a 1119-element Duplex after an
+    // extra injectGantt pass). `capOps` is what the film actually reveals, so it is the honest number;
+    // `_coveredCount` is kept only as the fallback for the window where ops have not been reloaded yet.
+    var covered = capOps || _coveredCount;
+    return {
+      source: (leafTasks > 0 && (_capActive || capOps > 0)) ? 'captured' : 'derived',
+      leafTasks: leafTasks, summarySkipped: summarySkipped,
+      capOps: capOps, capActive: _capActive,
+      covered: covered, total: total, coveredUpdates: _coveredCount,
+      pct: total ? Math.min(100, Math.round(covered / total * 100)) : 0,
+      projectStart: _projectStart, projectEnd: _projectEnd, ops: _ops.length
+    };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.2 — the CAPTURED branch of the buildup ───────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.2
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  //
+  // ⚠ This verb deliberately WRITES NOTHING, and that is the whole design — not an omission.
+  // injectGantt's `_cap` overlay has ALREADY keyed every covered op to its own task's
+  // [schedule_start, schedule_finish] window (leaf tasks only — `is_summary` is filtered there), with
+  // §PLAYBACK-STAGGER distributing each task's guids bottom-up by center_z WITHIN that window.
+  // loadOps() then reads them back ORDER BY timestamp and computeDays() sets _projectStart/_projectEnd
+  // to the real project epoch. So "order the reveal by the real schedule" is already true of `_ops`
+  // the moment the timeline exists; mode D's re-key is what was DESTROYING it (§2).
+  //
+  // Returns the SAME shape tmOrderByCameraPath returns, so cinema_maxq.js's per-frame cursor loop
+  // needs no change. Because nothing was written, _bkSaved stays null and tmRestoreDerivedOrder() is a
+  // genuine no-op — stronger than restoring correctly, since there is nothing to get wrong.
+  window.tmOrderBySchedule = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    var ss = window.tmScheduleSource();
+    if (!ss.leafTasks) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-dated-leaf-tasks'); return null; }
+    if (ss.source !== 'captured') { console.warn('§CPE_BUILDUP_SOURCE reject reason=ops-not-keyed-to-tasks'); return null; }
+    var capOps = ss.capOps;
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE source=captured leafTasks=' + ss.leafTasks +
+      ' summarySkipped=' + ss.summarySkipped + ' covered=' + ss.covered + '/' + ss.total +
+      ' pct=' + ss.pct + '% capOps=' + capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — REAL LINKED SCHEDULE, reveal follows schedule_start (no re-key, no float/logic in this data)');
+    return { ops: _ops.length, placed: capOps, noGeom: _ops.length - capOps, arc: 0, source: 'captured',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §4 — the numeric instrument the witnesses read ──────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §4
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  // Read-only, aggregate-only (never 10^5 rows across the bridge). Per dated leaf task it returns the
+  // FIRST and LAST reveal timestamp its bound elements actually get in `_ops` — which is what makes
+  // "the phases do not interleave" a number instead of an opinion. Works in BOTH branches, so the
+  // same instrument reads the captured order and mode D's re-key, and the two can be compared.
+  // `checksum` is the exact-reversibility probe: sums over EVERY op, so any single mutated timestamp
+  // changes it (W-SCHED-REVERSIBLE), without shipping the op list to the caller.
+  window.tmPhaseWindows = function() {
+    var app = A(), out = [], byGuid = {};
+    var chk = { opCount: _ops.length, sumStart: 0, sumEnd: 0 };
+    for (var i = 0; i < _ops.length; i++) { chk.sumStart += _ops[i].start_ts; chk.sumEnd += _ops[i].end_ts; }
+    if (!app || !app.db) return { phases: [], checksum: chk };
+    var rows;
+    try {
+      rows = app.db.exec('SELECT te.guid, te.task_id, t.name, t.schedule_start FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id ' +
+        'WHERE t.schedule_start IS NOT NULL AND t.schedule_finish IS NOT NULL ' +
+        'AND (t.is_summary IS NULL OR t.is_summary = 0)');
+    } catch (e) { return { phases: [], checksum: chk }; }
+    if (!rows.length || !rows[0].values.length) return { phases: [], checksum: chk };
+    var meta = {};
+    rows[0].values.forEach(function(r) {
+      byGuid[r[0]] = r[1];
+      if (!meta[r[1]]) meta[r[1]] = { taskId: r[1], name: r[2], scheduleStart: r[3], n: 0,
+                                      minStart: Infinity, maxStart: -Infinity, bound: 0 };
+      meta[r[1]].bound++;
+    });
+    for (i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var tid = g ? byGuid[g] : null;
+      if (!tid) continue;
+      var m = meta[tid];
+      m.n++;
+      if (op.start_ts < m.minStart) m.minStart = op.start_ts;
+      if (op.start_ts > m.maxStart) m.maxStart = op.start_ts;
+    }
+    for (var k in meta) if (meta[k].n) out.push(meta[k]);
+    out.sort(function(a, b) {
+      return (Date.parse(a.scheduleStart) - Date.parse(b.scheduleStart)) ||
+             (a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0);   // §3.2: stable tie-break only
+    });
+    return { phases: out, checksum: chk };
+  };
+
   window.tmRestoreDerivedOrder = function() {
     if (!_bkSaved) return false;
     for (var i = 0; i < _bkSaved.ops.length; i++) {
