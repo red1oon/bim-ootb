@@ -4050,6 +4050,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // curves". Three bands = six waypoints, but stored and edited as three (user: "in a way the 3
   // bands are actually 6 waypoints... but efficiently folded into 3").
   var _cpeBands = null;
+  // §CPE_HOSE (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE, user 2026-07-28: "what if
+  // we make the whole path editable... just dragging a point where the whole path is like a long
+  // rubber hose, reacting only by proximity to the point been dragged, and the rest just curves
+  // along"). A list of drag OPERATIONS layered on the derived path — never a stored polyline. See
+  // _cinemaHoseApply for the arc-length law and §CPE_BANDS rule 6 for why operations, not points.
+  var _cpeHose = null;
   function _cpeBandEnds(b) {
     var h = b.len / 2;
     return [{ x: b.c.x - b.d.x * h, y: b.c.y - b.d.y * h, z: b.c.z - b.d.z * h },
@@ -4140,6 +4146,60 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   var _bandsLastSig = '', _bandsLastMs = 0;
   A.cinemaBandFlow = _cinemaBandFlow;   // witnesses read this directly
+
+  // ══ §CPE_HOSE — the whole path as a rubber hose ═══════════════════════════════════════════════
+  // Each op is { s, r, d }: `s` = WHERE along the path it was grabbed, as a fraction of the path's
+  // own arc length; `r` = the reach, in the SAME arc-length fraction; `d` = the world displacement
+  // the gesture asked for at the grab point.
+  //
+  // ⚠ THE LAW (spec §CPE_HOSE.2, non-negotiable): the falloff is measured in ARC LENGTH ALONG THE
+  // PATH, never in world distance. A world-space radius deforms an out-and-back path's RETURN leg —
+  // two metres away in space, half a film away in time. That is the exact class of bug that got
+  // §CPE_DRAG_REACH removed in #1038 ("G-DRAG-3 measured it BREAKING out-and-back"), and a
+  // world-distance hose walks it straight back in. W-HOSE-ARC is the gate.
+  //
+  // Falloff shape: (1-u²)² — the smooth bump. Zero displacement AND zero slope at u=1, so a hosed
+  // stretch rejoins the underived path with no kink at either end; and zero slope at u=0, so the
+  // grabbed point is a smooth crest rather than a pulled tent-pole. Spec open question 1 said to
+  // pick this by trying rather than by argument; this is the default, and it is one line to change.
+  //
+  // Superposition is deliberate: overlapping ops ADD. Ten small pulls in one region compose into one
+  // larger, still-smooth deformation, which is how a hose behaves when you keep working it.
+  function _cinemaHoseApply(pts, ops) {
+    if (!pts || pts.length < 2 || !ops || !ops.length) return pts;
+    var i, k, cum = [0], L = 0;
+    for (i = 1; i < pts.length; i++) {
+      L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      cum.push(L);
+    }
+    if (L <= 1e-6) return pts;
+    var out = new Array(pts.length), maxDisp = 0, touched = 0;
+    for (i = 0; i < pts.length; i++) {
+      var s = cum[i] / L, dx = 0, dy = 0, dz = 0;
+      for (k = 0; k < ops.length; k++) {
+        var op = ops[k], r = op && op.r;
+        if (!op || !op.d || !(r > 1e-9)) continue;
+        var u = Math.abs(s - op.s) / r;
+        if (u >= 1) continue;
+        var g = 1 - u * u; g = g * g;
+        dx += op.d.x * g; dy += op.d.y * g; dz += op.d.z * g;
+      }
+      var m = Math.hypot(dx, dy, dz);
+      if (m > 1e-6) { touched++; if (m > maxDisp) maxDisp = m; }
+      out[i] = { x: pts[i].x + dx, y: pts[i].y + dy, z: pts[i].z + dz };
+    }
+    var sigH = ops.length + '|' + maxDisp.toFixed(2) + '|' + touched + '/' + pts.length;
+    var nowH = (typeof performance !== 'undefined') ? performance.now() : 0;
+    if (sigH !== _hoseLastSig || nowH - _hoseLastMs > 1000) {
+      _hoseLastSig = sigH; _hoseLastMs = nowH;
+      console.log('§CPE_HOSE ops=' + ops.length + ' pathLen=' + L.toFixed(1) + 'm points=' + pts.length +
+        ' deformed=' + touched + ' maxDisp=' + maxDisp.toFixed(2) + 'm' +
+        ' falloff=arc-length (NEVER world distance — see #1038 out-and-back)');
+    }
+    return out;
+  }
+  var _hoseLastSig = '', _hoseLastMs = 0;
+  A.cinemaHoseApply = _cinemaHoseApply;   // W-HOSE-ARC reads this directly
 
   // Seed three bands from a derived plan's three waypoints. Direction at each anchor is the local
   // path tangent (Catmull-Rom style: previous→next), so the seeded bands already lie along the route
@@ -4694,7 +4754,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // without adding a second code path through the plan.
     if (_cpeBands && _cpeBands.length >= 2) {
       _cpeWp = _cinemaBandWaypoints(_cpeBands);
-      cpeFlow = _cinemaBandFlow(_cpeBands);
+      // §CPE_HOSE applies to the FLOWN polyline, after the bands have produced it: the bands stay
+      // rigid (§CPE_BANDS rule 2, settled and untouched) and the hose deforms the curve BETWEEN and
+      // AROUND them. `outWp` — the authored control points the rest of the plan reasons about — is
+      // deliberately NOT hosed, so routing, the exit choice and the orbit elasticity all still read
+      // the authored intent rather than a deformed copy of it.
+      cpeFlow = _cinemaHoseApply(_cinemaBandFlow(_cpeBands), _cpeHose);
     }
     if (_cpeWp && _cpeWp.length >= 2) {
       // ══ The LAST waypoint is the orbit's control point, and it acts ELASTICALLY (user, 2026-07-26:
@@ -4983,6 +5048,241 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return n;
     }
+
+    // ══ §CPE_AIM_DENSITY — outside the perimeter with nothing near, face the mass ═══════════════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DENSITY. User directive 2026-07-28:
+    //   "when the rope passes the final building perimeter and no substantial building part nearby,
+    //    then camera turns perpendicular towards the densest nearest part of the building."
+    //
+    // WHY: the walk gaze is a LOOK-AHEAD along the path. §CPE_HOSE lets a stretch be flung far
+    // outside the building, and out there the look-ahead points at empty ground for seconds of film.
+    // This gives those stretches a subject. It only ever changes where the camera LOOKS — never
+    // where it is; the authored path is untouched (§CPE_BANDS rule 8, authored is authored).
+    //
+    // Both trigger terms are CONTINUOUS, and that is a design decision, not an accident: a boolean
+    // trigger would switch the gaze on in one frame, which is exactly the discontinuity
+    // §CPE_JERK_DEFINITION and §CPE_EVEN_TURN exist to kill. Ramping on the measured quantities
+    // themselves means the blend is smooth in position by construction, with no hysteresis state to
+    // get stuck in and nothing to tune.
+    var _aimCells = null;
+    // Coarse occupancy grid over the SAME element centroids §CPE_NOISE_LAW already reads — reuse,
+    // never a second proximity system (the same rule that made _densityAt reuse _densPoints).
+    function _aimGrid() {
+      if (_aimCells) return _aimCells;
+      _aimCells = [];
+      var pts = _densPoints();
+      if (!pts.length) return _aimCells;
+      // Cell size derived from the building, not picked: an eighth of the envelope gives ~8x8 cells
+      // across the footprint — coarse enough that a cell means "a part of the building" rather than
+      // "an element", fine enough to distinguish a wing from the whole.
+      var cs = Math.max(2, envelope / 8), map = {};
+      for (var i = 0; i < pts.length; i++) {
+        var kx = Math.floor(pts[i][0] / cs), ky = Math.floor(pts[i][1] / cs), kz = Math.floor(pts[i][2] / cs);
+        var key = kx + ',' + ky + ',' + kz, c = map[key];
+        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0 }; _aimCells.push(c); }
+        c.n++; c.x += pts[i][0]; c.y += pts[i][1]; c.z += pts[i][2];
+      }
+      for (var j = 0; j < _aimCells.length; j++) {
+        var q = _aimCells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n;
+      }
+      console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + cs.toFixed(1) +
+        'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DENSITY)');
+      return _aimCells;
+    }
+    // "the densest NEAREST part" — both words are in the directive, so the score carries both:
+    // element count divided by distance in envelope units. A big far wing loses to a solid near one,
+    // which is what a camera flying past the building should be looking at.
+    //
+    // ⚠ A WEIGHTED CENTROID, NOT AN ARGMAX — and this is a MEASURED correction, not a preference.
+    // The first cut picked the single best-scoring cell. Both trigger terms were continuous, so the
+    // blend was smooth, but the SUBJECT was not: as the camera travels, the winning cell flips from
+    // one to the next in a single frame and the gaze snaps with it. The witness caught exactly that
+    // — peak gaze change 15.8°/frame without the rule against 78.5°/frame with it (W-HOSE A2, on
+    // Duplex) — i.e. the rule bought its subject with precisely the jerk §CPE_EVEN_TURN exists to
+    // kill. A weight-averaged centre of mass moves continuously with the camera by construction,
+    // because every cell's weight varies smoothly with distance and no cell ever "wins".
+    // The cubed distance term is what keeps it selective: without it the average drifts toward the
+    // centroid of the whole site and stops being the NEAREST part.
+    function _aimSubject(pIfc) {
+      var cells = _aimGrid();
+      if (!cells.length) return null;
+      var scale = Math.max(1, envelope * 0.5);
+      var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz) / scale;
+        var w = c.n / ((1 + d) * (1 + d) * (1 + d));
+        sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
+      }
+      if (sw <= 1e-9) return null;
+      return { x: sx / sw, y: sy / sw, z: sz / sw, n: Math.round(sn / sw) };
+    }
+    // How far OUTSIDE the ARC footprint this point is, in metres (0 while inside). The perimeter is
+    // the building's own bbox — the same arcBbox the orbit radius and the tube thickness derive from.
+    function _aimOutsideM(pIfc) {
+      if (!arcBbox) return 0;
+      var ox = Math.max(arcBbox.xMin - pIfc.ix, 0, pIfc.ix - arcBbox.xMax);
+      var oy = Math.max(arcBbox.yMin - pIfc.iy, 0, pIfc.iy - arcBbox.yMax);
+      return Math.hypot(ox, oy);
+    }
+    // The blend weight, 0..1. Product of two smoothsteps so BOTH conditions must hold — outside the
+    // perimeter AND nothing substantial near — exactly as the directive states them.
+    var _AIM_NEAR_FRAC = 0.12;    // near-radius as a fraction of envelope (derived, not a metre value)
+    var _AIM_DENS_FLOOR = 12;     // "substantial": the soft element weight within the near radius
+                                  // below which the neighbourhood counts as empty. Reported in the
+                                  // witness so it can be argued with from a number, not from taste.
+    // Soft density, for the same reason _aimSubject averages rather than picks: _densityAt is a HARD
+    // count inside a radius, so it steps by whole elements as they cross the boundary, and against a
+    // floor of 12 each step is an ~8% jump in the blend weight — a visible stutter in the gaze on a
+    // path that is merely passing by. The kernel makes an element fade in as it approaches instead
+    // of appearing, which is the same continuity argument applied one level down.
+    function _aimSoftDensity(p, R) {
+      var pts = _densPoints();
+      if (!pts.length || typeof A.three2ifc !== 'function') return 0;
+      var q = A.three2ifc(p.x, p.y, p.z), R2 = R * R, acc = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var dx = pts[i][0] - q.ix, dy = pts[i][1] - q.iy, dz = pts[i][2] - q.iz;
+        var u = (dx * dx + dy * dy + dz * dz) / R2;
+        if (u >= 1) continue;
+        var g = 1 - u;
+        acc += g * g;
+      }
+      return acc;
+    }
+    var _aimLast = { logged: 0 };
+    function _aimWeight(p) {
+      if (typeof A.three2ifc !== 'function') return 0;
+      var pIfc = A.three2ifc(p.x, p.y, p.z);
+      var outM = _aimOutsideM(pIfc);
+      if (outM <= 0) return 0;                       // inside the perimeter: never fires
+      var wOut = _cinemaSmoothstep(Math.min(1, outM / Math.max(1, envelope * 0.15)));
+      var R = Math.max(3, envelope * _AIM_NEAR_FRAC);
+      var dens = _aimSoftDensity(p, R);
+      var wEmpty = 1 - _cinemaSmoothstep(Math.min(1, dens / _AIM_DENS_FLOOR));
+      return { w: wOut * wEmpty, outM: outM, dens: dens, R: R, pIfc: pIfc };
+    }
+    // Aim the gaze at the subject with the ALONG-PATH component projected out — that is what
+    // "perpendicular" means concretely: the camera turns side-on to its own travel and faces the
+    // mass. If the subject is dead ahead or dead behind the projection degenerates, and the honest
+    // answer is to look straight at it rather than to invent a sideways stare.
+    // ══ Probe the walk once, smooth the series, interpolate per pose. ═══════════════════════════
+    // Same idiom §CPE_NOISE_LAW already uses (32 probes interpolated across the cost samples), and
+    // adopted here for the same reason plus a measured one. The probe found a 23.9°/frame gaze
+    // spike mid-walk (t≈0.43) against 15.8 without the rule — an 8-frame swing where the weight and
+    // the subject both moved fast at once. Both are FIELDS ALONG THE PATH, so the fix belongs where
+    // this file already puts it: sample the field, smooth it, read it back — bounding the RATE, not
+    // just the range, exactly as §CPE_PACE_LOS's own amendment argues ("graceful, not just bounded").
+    // The 5-tap binomial pass removes anything narrower than ~1/16 of the walk. It also makes the
+    // per-pose cost a lerp instead of a full density scan, which matters at bake rates.
+    var _aimSeries = null;
+    function _aimBuild() {
+      var K = 64, i, ws = [], sx = [], sy = [], sz = [];
+      for (i = 0; i <= K; i++) {
+        var p = _outPos(i / K);
+        var A0 = _aimWeight(p);
+        var wv = (A0 && A0.w) ? A0.w : 0;
+        var sub = (A0 && A0.w > 1e-4) ? _aimSubject(A0.pIfc) : null;
+        ws.push(wv);
+        // Where the weight is zero the subject is irrelevant but must still be CONTINUOUS through
+        // the smoothing pass, so carry the last known one rather than a hole.
+        var prevN = sx.length - 1;
+        sx.push(sub ? sub.x : (prevN >= 0 ? sx[prevN] : 0));
+        sy.push(sub ? sub.y : (prevN >= 0 ? sy[prevN] : 0));
+        sz.push(sub ? sub.z : (prevN >= 0 ? sz[prevN] : 0));
+      }
+      function smooth(a) {
+        var o = [], k = [1, 4, 6, 4, 1], n = a.length;
+        for (var j = 0; j < n; j++) {
+          var acc = 0, wsum = 0;
+          for (var m = -2; m <= 2; m++) {
+            var idx = j + m;
+            if (idx < 0 || idx >= n) continue;
+            acc += a[idx] * k[m + 2]; wsum += k[m + 2];
+          }
+          o.push(acc / wsum);
+        }
+        return o;
+      }
+      // Two passes: one binomial pass still left a visible step at the trigger edge on Duplex.
+      _aimSeries = { K: K, w: smooth(smooth(ws)),
+                     x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
+      var wMax = 0, wN = 0;
+      for (i = 0; i <= K; i++) { if (_aimSeries.w[i] > wMax) wMax = _aimSeries.w[i]; if (_aimSeries.w[i] > 0.01) wN++; }
+      console.log('§CPE_AIM_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
+        ' maxBlend=' + wMax.toFixed(2) + ' — the weight and the subject are FIELDS along the walk, ' +
+        'sampled and rate-limited here rather than evaluated raw per frame');
+    }
+    function _aimAt(e3) {
+      if (!_aimSeries) _aimBuild();
+      var S = _aimSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
+      var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
+      return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
+               x: S.x[j] * (1 - f) + S.x[j + 1] * f,
+               y: S.y[j] * (1 - f) + S.y[j + 1] * f,
+               z: S.z[j] * (1 - f) + S.z[j + 1] * f };
+    }
+    function _aimApply(p, T, lx, ly, lz, e3) {
+      // Test-only control switch (same pattern as time_machine's window.__forceFull): the witness
+      // needs the SAME plan with the rule suppressed, so that the only difference between the two
+      // measurements is the rule itself. No production effect — nothing sets it in the app.
+      if (A.__cpeAimOff) return null;
+      if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
+      var A0 = _aimAt(e3 == null ? 0 : e3);
+      if (!A0 || !(A0.w > 1e-3)) return null;
+      var subj = { x: A0.x, y: A0.y, z: A0.z, n: 0 };
+      var s3 = A.ifc2three(subj.x, subj.y, subj.z);
+      var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
+      var vL = Math.hypot(vx, vy, vz) || 1;
+      vx /= vL; vy /= vL; vz /= vL;
+      var dot = vx * T.x + vy * T.y + vz * T.z;
+      // ⚠ THE PROJECTION MUST FADE, NOT SWITCH — measured, twice. A full projection
+      // `v - T(v·T)` is discontinuous in DIRECTION exactly where the subject crosses the travel
+      // axis: the residual shrinks to zero and re-emerges pointing the opposite way, so
+      // renormalising it flips the gaze ~180° in one frame. The first cut hid that behind a hard
+      // `pL < 0.2 → look straight at it` fallback, which is itself a switch. Witness A2 measured
+      // both: 78.5°/frame with the argmax subject, and 95.2°/frame after that was smoothed — the
+      // subject was never the cause, this was. (Recorded rather than silently fixed: "don't invent
+      // a root cause to match a feeling" cuts both ways — the first hypothesis was wrong and the
+      // number said so.)
+      //
+      // Scaling the projection by how far off-axis the subject is removes the flip by construction:
+      // k→0 when the subject lies along travel (look straight at it — there is no meaningful
+      // "perpendicular" there), k→1 when it is well off-axis (fully side-on, the directive's
+      // "perpendicular"). Nothing vanishing is ever renormalised.
+      var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));      // |v - T(v·T)| for unit v, T
+      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
+      var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
+      var pL = Math.hypot(px, py, pz) || 1;
+      var degenerate = k < 0.05;
+      px /= pL; py /= pL; pz /= pL;
+      // ⚠ THE RULE MUST BE GONE BY THE SEAM — measured, and it was the biggest number in the file.
+      // The probe put the peak at t=0.8706 against `beats.out=0.8700`: the walk→orbit hand-off. The
+      // walk's own gaze at e3=1 is what Beat 4 was designed to pick up (§CINEMA_BEAT_OVERLAP); an
+      // aim rule still holding the gaze side-on at that instant hands the orbit a direction it never
+      // agreed to, and the seam snaps — 88.4°/frame, against 15.8 without the rule. Taper over the
+      // SAME window the orbit hand-off itself uses, so by the time Beat 4 takes over the gaze is
+      // exactly what it would have been with no rule at all. Not a new constant: CINEMA_TURN_OVERLAP
+      // is the existing hand-off window.
+      var wSeam = 1;
+      if (e3 != null && e3 > 1 - CINEMA_TURN_OVERLAP) {
+        wSeam = 1 - _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP);
+      }
+      var w = A0.w * wSeam;
+      if (!(w > 1e-3)) return null;
+      var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
+      var aL = Math.hypot(ax, ay, az) || 1;
+      var nowA = (typeof performance !== 'undefined') ? performance.now() : 0;
+      if (nowA - _aimLast.logged > 500) {
+        _aimLast.logged = nowA;
+        console.log('§CPE_AIM_DENSITY e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
+          ' floor=' + _AIM_DENS_FLOOR + ' subject=(' + subj.x.toFixed(1) + ',' +
+          subj.y.toFixed(1) + ',' + subj.z.toFixed(1) + ')' +
+          ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
+          ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
+      }
+      return { x: ax / aL, y: ay / aL, z: az / aL };
+    }
+
     // ⚖ USER RULING 2026-07-27, SETTLED — do not re-derive, do not reintroduce a density term:
     //   "20% density, 80% noise ie rate of change"  →  then, final: "i would say its 100% rate of
     //   change of bbxes".
@@ -5445,6 +5745,29 @@ async function setupEffects(A, renderer, scene, camera) {
           var _ll = Math.hypot(_lx, _ly, _lz) || 1;
           _lx /= _ll; _ly /= _ll; _lz /= _ll;
         }
+        // §CPE_AIM_DENSITY: applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS
+        // at e3=0, where its own weight is 0 anyway — the settle is inside the building) and BEFORE
+        // the orbit hand-off below, which must stay the last word on the gaze at the end of the walk.
+        // Travel direction is the path's own derivative, not the gaze: "perpendicular" is defined
+        // against where the camera is GOING, which is the only reading that survives the camera
+        // already having turned to look at something.
+        // ⚠ The travel direction is the local TREND, not the instantaneous tangent — measured, third
+        // and last cause of the A2 spike. A perpendicular aim is defined RELATIVE to T, so it
+        // inherits T's own rate of turn: at a corner in the (hosed, therefore possibly sharp) walk
+        // the tangent swings fast, and a gaze locked square to it swings just as fast. The probe
+        // showed this surviving both earlier fixes unchanged at ~24°/frame around t=0.437, where the
+        // camera was crawling at 0.09 m/frame — a lot of turn for very little travel, which is the
+        // signature of the tangent and not of the subject. A finite difference over ~3% of the walk
+        // reads "where the camera is generally heading" instead, which is what "perpendicular to
+        // travel" means to a viewer anyway.
+        var _eps = 1 / 32;
+        var _pA = _outPos(Math.max(0, e3 - _eps)), _pB = _outPos(Math.min(1, e3 + _eps));
+        var _tvx = _pB.x - _pA.x, _tvy = _pB.y - _pA.y, _tvz = _pB.z - _pA.z;
+        var _tvL = Math.hypot(_tvx, _tvy, _tvz);
+        if (_tvL > 1e-6) {
+          var _aim = _aimApply(p3, { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL }, _lx, _ly, _lz, e3);
+          if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
+        }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
         // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
@@ -5784,7 +6107,10 @@ async function setupEffects(A, renderer, scene, camera) {
       saved.push(_cpeGet(g));
       if (ov[k] != null && isFinite(ov[k])) _cpeSet(g, ov[k]);
     }
-    var savedWp = _cpeWp, savedBands = _cpeBands;
+    var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose;
+    // §CPE_HOSE: ops ride the same override object the editor already stages and saves, so a hosed
+    // path travels through Save / reload / bake by the existing seam — no second persistence path.
+    _cpeHose = (ov.hose && ov.hose.length) ? ov.hose : null;
     if (ov.waypoints && ov.waypoints.length >= 2) _cpeWp = ov.waypoints;
     // §CPE_BANDS takes precedence: bands EXPAND to waypoints inside the plan, so passing both would
     // be ambiguous. Bands win because they carry the rigidity constraint that loose points cannot.
@@ -5793,7 +6119,7 @@ async function setupEffects(A, renderer, scene, camera) {
       return _cinemaPathPlan(durationSec);
     } finally {
       for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
-      _cpeWp = savedWp; _cpeBands = savedBands; _cpeSecOverride = savedSecOv;
+      _cpeWp = savedWp; _cpeBands = savedBands; _cpeHose = savedHose; _cpeSecOverride = savedSecOv;
     }
   };
   A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison

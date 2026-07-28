@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v13 (§MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v14 (§CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -503,7 +503,14 @@
     var tgt = A.controls.target.clone();
     var dx = A.camera.position.x - tgt.x, dy = A.camera.position.y - tgt.y, dz = A.camera.position.z - tgt.z;
     var radius = Math.hypot(dx, dz), height = dy, az0 = Math.atan2(dz, dx);
+    // ══ §CPE_CLIP — in/out markers cut a clip out of the film ══════════════════════════════════
+    // Set from the editor's override below. `poseAt` is the ONE place the window is applied, so
+    // every consumer — the preview, the bake loop, and anything added later — flies the clip through
+    // the same function, and there is no second notion of "which part of the film this is".
+    var _clip = null, _buildup = false, _bkState = null;
+    function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
+      tNorm = _tFilm(tNorm);
       if (plan) return plan.poseAt(tNorm);
       var az = az0 + tNorm * Math.PI * 2;
       return { x: tgt.x + radius * Math.cos(az), y: tgt.y + height, z: tgt.z + radius * Math.sin(az),
@@ -602,6 +609,18 @@
         // was never ported. The plan above had already succeeded — a stale LOG line was killing the
         // bake. Count what the plan actually flew, and never let this line be the thing that throws.
         var _ov = _cpeRes.override;
+        // §CPE_CLIP: a clip is fewer frames of the SAME film, so the frame count scales with the
+        // window — not the duration, which the editor already derived for the whole path.
+        if (_ov.clip && _ov.clip.out > _ov.clip.in) {
+          _clip = { in: _ov.clip.in, out: _ov.clip.out };
+          var _span = _clip.out - _clip.in;
+          var _framesFull = nFrames;
+          nFrames = Math.max(1, Math.round(nFrames * _span));
+          console.log('§CPE_CLIP applied window=' + _clip.in.toFixed(3) + '→' + _clip.out.toFixed(3) +
+            ' span=' + (_span * 100).toFixed(0) + '% frames=' + _framesFull + '→' + nFrames +
+            ' (poseAt remaps; the film itself is unchanged)');
+        }
+        _buildup = !!_ov.buildup;
         var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
@@ -684,6 +703,25 @@
       }
       A.stopStillRefine(true);
       await _raf2(); await _sleep(3000);
+
+      // ══ §CPE_BUILDUP / §MAXQ_TIME mode D — the model assembles itself as the camera flies ══════
+      // The ordering is computed over the WHOLE path (plan.poseAt, deliberately NOT the clipped
+      // poseAt): with a clip, the buildup must be sampled BY the window, not re-normalised to it, or
+      // every clip would open on bare ground instead of on a partially-built building
+      // (PHOTOREAL_STILL_RENDER.md §MAXQ_TIME code-read, §6).
+      if (_buildup) {
+        if (typeof window.tmOrderByCameraPath !== 'function' || typeof window.tmActivateForBake !== 'function') {
+          console.warn('§CPE_BUILDUP_SKIP reason=time_machine.js not loaded — baking without the buildup');
+          _buildup = false;
+        } else if (!(await window.tmActivateForBake())) {
+          console.warn('§CPE_BUILDUP_SKIP reason=no derived build order (Time Machine has no ops for this building)');
+          _buildup = false;
+        } else {
+          _bkState = window.tmOrderByCameraPath(function(t) { return plan ? plan.poseAt(t) : poseAt(t); }, nFrames);
+          if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=re-key failed — baking without the buildup'); _buildup = false; }
+          else _status('🎬 Building as the camera flies (' + _bkState.placed + ' elements ordered by the path)');
+        }
+      }
       t0 = _etaPrev = performance.now();
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
@@ -699,10 +737,24 @@
         await _raf2('frame ' + i + ' settle');
         await _sleep(SETTLE_MS);
         _freezeRandom();
-        var pose = poseAt(nFrames > 1 ? i / (nFrames - 1) : 0);  // tNorm hits 1.0 on the last frame so the pull-back completes
+        var _tn = nFrames > 1 ? i / (nFrames - 1) : 0;
+        var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
+        // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
+        // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
+        // parameter, so a clip samples the middle of the buildup rather than restarting it.
+        if (_buildup && _bkState) {
+          var _bkT = _tFilm(_tn);
+          var _bkMs = _bkState.projectStart + _bkT * (_bkState.projectEnd - _bkState.projectStart);
+          window.tmSetCursor(_bkMs);
+          if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
+            console.log('§CPE_BUILDUP frame=' + i + '/' + nFrames + ' t=' + _bkT.toFixed(3) +
+              ' cursor=' + Math.round(_bkMs) + ' placed=' + (window.tmPlacedCount ? window.tmPlacedCount(_bkMs) : '?') +
+              '/' + _bkState.ops);
+          }
+        }
         A.startStillRefine();
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
@@ -767,6 +819,12 @@
       }
       if (A._stillRefineActive) A.stopStillRefine(true);
       _restoreRandom();
+      // §CPE_BUILDUP: hand the user's Time Machine back exactly as it was. Every loop exit — normal
+      // end, cancel, GL loss, IDB loss — passes through here, so the re-keyed order can never
+      // outlive the bake and silently become what the timeline slider scrubs.
+      if (_bkState && typeof window.tmRestoreDerivedOrder === 'function') {
+        window.tmRestoreDerivedOrder(); _bkState = null;
+      }
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
@@ -813,6 +871,9 @@
       // A throw mid-fold (e.g. the idb-open abort) skips the in-try stop — staging would otherwise
       // stay frozen on screen with the composer accumulating.
       try { if (A._stillRefineActive) A.stopStillRefine(true); } catch (e2) {}
+      // §CPE_BUILDUP: same restore on the THROW path. A re-keyed op-log left behind by a crashed
+      // bake would look like a corrupted schedule to the next person who opens the timeline.
+      try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.

@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v10 (§CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v11 (§CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -134,8 +134,24 @@
   // dive origin → settle → wp1 → stop → orbit"). Sampled from plan.poseAt, which IS what the bake
   // flies — drawing it any other way would be a second implementation of the path, free to drift
   // from the real one.
+  // §CPE_HOSE: keep the canonical/deformed walk polylines in step. Cheap (no plan, no BVH) so it can
+  // run on every pointermove — that is what makes the pipe track the cursor while §CPE_DRAG_LAND_FIRST
+  // keeps the expensive re-plan on release.
+  function _refreshFlow() {
+    if (!_state) return;
+    _state.flowRaw = _flowRaw();
+    _state.flowFrac = _arcFractions(_state.flowRaw);
+    _state.flowHosed = _flowHosed(_state.flowRaw);
+  }
+  // §CPE_PREVIEW_BUTTON: any edit invalidates "you have seen this version". Tracked as a counter
+  // rather than a boolean so the button can say WHICH edit you last previewed.
+  function _markPreviewStale() {
+    if (!_state) return;
+    _state.edits++;
+  }
   function _replanFilm() {
     var a = A(), t0 = performance.now();
+    if (!_state.flowRaw) _refreshFlow();
     var ov = _buildOverride();
     // §CPE_PREVIEW_DIVERGENCE: plan from the camera pose the editor OPENED with — the pose the bake
     // will plan from, because finish() restores exactly this before resolving. Without it the film
@@ -197,6 +213,26 @@
     if (_state.filmPts && _state.filmPts.length > 1) {
       var tube = _mkTube(_state.filmPts, col, rad);
       if (tube) _state.objs.push(tube);
+    }
+
+    // §CPE_HOSE: mark where the path has been pulled, so an edit is findable again on a curve that
+    // is otherwise uniform — and so "how many pulls am I looking at" is answerable without the panel.
+    if (_state.hose.length && _state.flowHosed && _state.flowHosed.length) {
+      for (var hi = 0; hi < _state.hose.length; hi++) {
+        var op = _state.hose[hi];
+        var idx = Math.max(0, Math.min(_state.flowHosed.length - 1, Math.round(op.s * (_state.flowHosed.length - 1))));
+        _state.objs.push(_mkSphere(_state.flowHosed[idx], 0x9ccc65, 0.7, 0.85));
+      }
+    }
+    // §CPE_CLIP: in/out markers sit on the FILM curve (they cut the film, not the walk), drawn as a
+    // pair so the clip window reads as a window rather than as two unrelated dots.
+    if (_state.filmPts && _state.filmPts.length > 1 && (_state.clipIn > 0 || _state.clipOut < 1)) {
+      var lastF = _state.filmPts.length - 1;
+      var iIn = Math.round(_state.clipIn * lastF), iOut = Math.round(_state.clipOut * lastF);
+      _state.objs.push(_mkSphere(_state.filmPts[iIn], 0x66bb6a, 1.1, 1.0));
+      _state.objs.push(_mkSphere(_state.filmPts[iOut], 0xef5350, 1.1, 1.0));
+      var seg = _state.filmPts.slice(Math.min(iIn, iOut), Math.max(iIn, iOut) + 1);
+      if (seg.length > 1) _state.objs.push(_mkLine(seg, 0xffee58, 1.0));
     }
 
     // Bands drawn ON TOP of the pipe, in the contrast colour's opposite, so the three editable
@@ -263,13 +299,50 @@
       bands: s.bands.map(function(b) {
         return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
       }),
+      // §CPE_HOSE: the ops ride the same override the plan, Save and the bake already consume — a
+      // deep copy, same treatment as the bands, so nothing downstream can write back into the holder
+      // (§CPE_HOLDER_INTEGRITY).
+      hose: s.hose.map(function(o) {
+        return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z } };
+      }),
+      // §CPE_CLIP: null means the whole film; the bake remaps poseAt into [in,out] when set.
+      clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
+      buildup: !!s.buildup,
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       outSec: nat.outSec * scale, riseSec: s.baseSec.rise * scale,
       _total: total, _naturalTotal: nat.total, _scale: scale, _pathLen: nat.len
     };
   }
+  // ══ §CPE_HOSE — the walk polyline, undeformed and deformed.
+  // The ops are parameterised on the UNDEFORMED polyline's arc length, so that is what `s` is
+  // measured against; the deformed copy is what the user sees and grabs. Both arrays are
+  // index-aligned by construction (_cinemaHoseApply displaces points, it never adds or drops one),
+  // which is what lets a grab on the visible curve resolve to a stable `s` on the canonical one.
+  function _flowRaw() {
+    var a = A();
+    return (a.cinemaBandFlow ? a.cinemaBandFlow(_state.bands) : []) || [];
+  }
+  function _flowHosed(raw) {
+    var a = A();
+    return (a.cinemaHoseApply ? a.cinemaHoseApply(raw, _state.hose) : raw) || raw;
+  }
+  function _arcFractions(pts) {
+    var cum = [0], L = 0, i;
+    for (i = 1; i < pts.length; i++) {
+      L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      cum.push(L);
+    }
+    if (L > 1e-6) for (i = 0; i < cum.length; i++) cum[i] /= L;
+    return cum;
+  }
   function _isEdited() {
     if (!_state || !_state.origBands) return false;
+    // §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP are edits in their own right: a path that was ONLY hosed,
+    // clipped or check-boxed must still hand back an override, or Guardrail 2's "untouched OK costs
+    // nothing" would silently discard the whole edit.
+    if (_state.hose.length) return true;
+    if (_state.clipIn > 0 || _state.clipOut < 1) return true;
+    if (_state.buildup) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     var o = _state.origBands;
     for (var i = 0; i < o.length; i++) {
@@ -313,9 +386,26 @@
         'Cinema path <span style="font-weight:400;color:#888;font-size:11px">— 3 bands · drag this bar to move</span></div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
+      // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path controls, one strip.
+      // Reach is a PERSISTENT editor setting, not a per-drag one: spec open question 2, resolved by
+      // the file's own "simplest fastest tour maker" scope guardrail — one control the user sets once
+      // beats a modifier they have to remember on every gesture.
+      '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px;line-height:1.9">' +
+        '<div style="color:#4fc3f7;font-weight:600;margin-bottom:4px">Whole path</div>' +
+        '<div>reach <input id="cpe-reach" type="number" min="1" max="100" step="1" style="width:52px">% ' +
+          '<span style="color:#666">of the walk — how far a drag on the pipe carries</span></div>' +
+        '<div id="cpe-hose-n" style="color:#666"></div>' +
+        '<div style="margin-top:6px">clip <span id="cpe-clip-txt" style="font-family:monospace;color:#ddd"></span> ' +
+          '<button id="cpe-mark-in" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark in</button> ' +
+          '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
+          '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox"> ' +
+          'build the model as the camera flies</label> <span style="color:#666">(derived order, not a programme)</span></div>' +
+      '</div>' +
       '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px" id="cpe-clock"></div>' +
       '<div id="cpe-state" style="padding:0 12px 6px;font-size:10px;color:#666"></div>' +
       '<div style="padding:10px 12px;border-top:1px solid #3a3f47;display:flex;gap:8px;justify-content:flex-end">' +
+        '<button id="cpe-preview" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer;margin-right:auto">Preview</button>' +
         '<button id="cpe-cancel" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Cancel</button>' +
         '<button id="cpe-save" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Save this path</button>' +
         '<button id="cpe-ok" style="padding:6px 14px;font-size:12px;background:#4fc3f7;color:#0b0d10;border:none;border-radius:4px;font-weight:600;cursor:pointer">OK</button>' +
@@ -378,12 +468,22 @@
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
     });
   }
+  // §CPE_HOSE/§CPE_CLIP: the snapshot has to carry EVERY authored quantity, not just the bands.
+  // Undo that restored bands while leaving a hose pull in place would be an undo that visibly does
+  // not undo — the exact failure the zero-pixel-press rule above was written to avoid.
+  function _cloneHose(hs) {
+    return (hs || []).map(function(o) { return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z } }; });
+  }
+  function _snapshot(label) {
+    return { bands: _cloneBands(_state.bands), hose: _cloneHose(_state.hose),
+             clipIn: _state.clipIn, clipOut: _state.clipOut, label: label };
+  }
   // Call BEFORE mutating, with a label naming the edit. Redo is dropped on a new edit — the standard
   // linear-undo rule, and the same one UniversalHistory itself applies to a new op after a step-back.
   function _undoPush(label) {
     if (!_state) return;
     if (!_state.undo) { _state.undo = []; _state.redo = []; }
-    _state.undo.push({ bands: _cloneBands(_state.bands), label: label });
+    _state.undo.push(_snapshot(label));
     if (_state.undo.length > _UNDO_MAX) _state.undo.shift();
     _state.redo = [];
   }
@@ -400,14 +500,18 @@
       return false;
     }
     var snap = fromStack.pop();
-    toStack.push({ bands: _cloneBands(_state.bands), label: snap.label });
+    toStack.push(_snapshot(snap.label));
     _state.bands = _cloneBands(snap.bands);
+    _state.hose = _cloneHose(snap.hose);
+    if (snap.clipIn != null) { _state.clipIn = snap.clipIn; _state.clipOut = snap.clipOut; }
     _state.staged = false;
     _state.held = null; _state.drag = null;
     console.log('§CPE_UNDO ' + dir + ' "' + snap.label + '" depth=' + fromStack.length +
-      ' bands=' + _state.bands.length);
+      ' bands=' + _state.bands.length + ' hoseOps=' + _state.hose.length);
     _histEvent((dir === 'undo' ? 'Undo: ' : 'Redo: ') + snap.label);
-    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _syncButtons();
+    _markPreviewStale();
+    _refreshFlow();
+    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _renderWhole(); _syncButtons();
     return true;
   }
   function _undo() { return _undoApply(_state && _state.undo, _state && _state.redo, 'undo'); }
@@ -525,6 +629,62 @@
       : 'Drag a band end to pivot it, its middle to move the whole band. Anywhere else orbits the scene as normal — turn to face the axes you want, since a drag moves in the plane you are looking at.';
   }
 
+  // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path strip.
+  function _renderWhole() {
+    if (!_state) return;
+    var n = document.getElementById('cpe-hose-n');
+    if (n) n.textContent = _state.hose.length
+      ? _state.hose.length + ' pull' + (_state.hose.length === 1 ? '' : 's') + ' on the pipe (Ctrl+Z undoes the last)'
+      : 'drag the pipe anywhere between the bands to bend it';
+    var ct = document.getElementById('cpe-clip-txt');
+    if (ct) ct.textContent = (_state.clipIn > 0 || _state.clipOut < 1)
+      ? (_state.clipIn * 100).toFixed(0) + '% → ' + (_state.clipOut * 100).toFixed(0) + '%  (' +
+        ((_state.clipOut - _state.clipIn) * _naturalDuration().total).toFixed(1) + 's)'
+      : 'whole film';
+    var pv = document.getElementById('cpe-preview');
+    if (pv) {
+      var stale = _state.edits !== _state.previewedAt;
+      pv.textContent = _state.flying ? 'Previewing…' : (stale ? 'Preview ●' : 'Preview');
+      pv.style.color = stale ? '#ffee58' : '#ddd';
+      pv.style.borderColor = stale ? '#7a6f27' : '#4a4f57';
+      pv.title = stale ? 'the path changed since the last preview' : 'you have seen this version';
+      pv.disabled = !!_state.flying;
+    }
+  }
+  // §CPE_PREVIEW_BUTTON — fly the CURRENT edit, on demand, never automatically.
+  // Driven by `_state.plan.poseAt`: the same plan object the tube is sampled from and the same one
+  // finish() hands the bake, so this cannot become a second notion of the path (§CPE_PREVIEW_DIVERGENCE).
+  // Honours the clip window — previewing a clip should show the clip, not the film it was cut from.
+  function _previewFly() {
+    if (!_state || _state.flying || !_state.plan || typeof _state.plan.poseAt !== 'function') return;
+    var a = A(), s = _state;
+    var t0N = s.clipIn, t1N = s.clipOut;
+    var dur = Math.max(1000, (t1N - t0N) * 10000);   // 10s for the whole film, pro-rata for a clip
+    console.log('§CPE_PREVIEW click stale=' + (s.edits !== s.previewedAt ? 1 : 0) + ' edits=' + s.edits +
+      ' window=' + t0N.toFixed(2) + '→' + t1N.toFixed(2) + ' durMs=' + dur.toFixed(0) +
+      ' hoseOps=' + s.hose.length + ' buildup=' + (s.buildup ? 1 : 0));
+    var save = { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
+                 tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z };
+    s.flying = true; s.previewedAt = s.edits; _renderWhole();
+    var myFly = ++s.flyId, t0 = performance.now();
+    (function step() {
+      if (!_state || myFly !== _state.flyId) return;
+      var u = Math.min(1, (performance.now() - t0) / dur);
+      var p = _state.plan.poseAt(t0N + (t1N - t0N) * u);
+      a.camera.position.set(p.x, p.y, p.z);
+      a.controls.target.set(p.tx, p.ty, p.tz);
+      a.controls.update();
+      if (a.markDirty) a.markDirty();
+      if (u < 1) return requestAnimationFrame(step);
+      a.camera.position.set(save.px, save.py, save.pz);
+      a.controls.target.set(save.tx, save.ty, save.tz);
+      a.controls.update();
+      if (a.markDirty) a.markDirty();
+      _state.flying = false;
+      console.log('§CPE_PREVIEW done — camera restored to the editing pose');
+      _renderWhole();
+    })();
+  }
   function _syncButtons() {
     var ok = document.getElementById('cpe-ok'), save = document.getElementById('cpe-save'),
         note = document.getElementById('cpe-state');
@@ -610,6 +770,23 @@
       if (d < bestD) { bestD = d; best = h; }
     }
     return best;
+  }
+  // ══ §CPE_HOSE — grab the PIPE itself, anywhere along the walk.
+  // Screen-space nearest-point, same reasoning as _hitTest above (the pipe draws depthTest:false, so
+  // a raycast would disagree with what is visible). Band handles win ties — they are the precise
+  // control, the hose is the coarse one, and a grab inside a handle's radius means the handle.
+  // Returns the grabbed point plus its arc-length fraction on the CANONICAL (undeformed) polyline.
+  function _hitTestPath(ev) {
+    if (!_state.flowHosed || _state.flowHosed.length < 2) return null;
+    var pts = _state.flowHosed, frac = _state.flowFrac, best = -1, bestD = GRAB_PX;
+    for (var i = 0; i < pts.length; i++) {
+      var s = _screenOf(pts[i]);
+      if (s.behind) continue;
+      var d = Math.hypot(ev.clientX - s.x, ev.clientY - s.y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best < 0) return null;
+    return { i: best, s: frac[best], p: { x: pts[best].x, y: pts[best].y, z: pts[best].z } };
   }
   // ══ §CPE_DRAG_SCALE — FIXED AT THE SOURCE (user, 2026-07-27: "the jumping wypt still happening"
   // → "fix the scale" → "FIX THE SOURCE").
@@ -717,6 +894,22 @@
     h.down = function(ev) {
       if (!_state) return;
       var hit = _hitTest(ev);
+      if (!hit) {
+        // §CPE_HOSE: no band handle under the cursor — try the pipe. A miss on BOTH still falls
+        // through to OrbitControls untouched, so the scene stays navigable exactly as before.
+        var ph = _hitTestPath(ev);
+        if (ph) {
+          ev.preventDefault(); ev.stopPropagation();
+          _state.drag = { hose: true, s: ph.s, snapped: false,
+                          sx0: ev.clientX, sy0: ev.clientY,
+                          p0: { x: ph.p.x, y: ph.p.y, z: ph.p.z }, op: null };
+          var _bh = _dragBasis();
+          console.log('§CPE_HOSE grab s=' + ph.s.toFixed(3) + ' reach=' + (_state.reach * 100).toFixed(0) +
+            '% point=' + ph.i + '/' + _state.flowHosed.length +
+            ' rate=' + _bh.mpp.toFixed(3) + ' m/px — falloff is ARC-LENGTH, the return leg of an out-and-back cannot move');
+        }
+        return;
+      }
       if (hit) {
         // Only a hit is claimed. Everything else falls straight through to OrbitControls, so the
         // scene stays fully navigable while the editor is open.
@@ -740,7 +933,27 @@
     h.move = function(ev) {
       if (!_state || !_state.drag) return;
       ev.preventDefault(); ev.stopPropagation();
-      var d = _state.drag, b = _state.bands[d.b];
+      var d = _state.drag;
+      if (d.hose) {
+        // §CPE_HOSE: one op per gesture, mutated live — not one op per pointermove, which would
+        // stack hundreds of ops for a single drag and make the stored path grow with the gesture
+        // rather than with the edit.
+        var dwh = _dragDelta(ev, d);
+        d.lx = ev.clientX; d.ly = ev.clientY;
+        if (!d.snapped) {
+          d.snapped = true;
+          _undoPush('hose at ' + (d.s * 100).toFixed(0) + '%');
+          d.op = { s: d.s, r: _state.reach, d: { x: 0, y: 0, z: 0 } };
+          _state.hose.push(d.op);
+        }
+        d.op.d.x = dwh.x; d.op.d.y = dwh.y; d.op.d.z = dwh.z;
+        _state.staged = false;
+        _refreshFlow();          // the pipe follows the cursor; the FILM re-derives on release only
+        _redrawScene();
+        if (_state._replanTimer) { clearTimeout(_state._replanTimer); _state._replanTimer = null; }
+        return;
+      }
+      var b = _state.bands[d.b];
       var dw = _dragDelta(ev, d);          // §CPE_DRAG_SCALE: pixels x a building-derived rate
       var p = { x: d.p0.x + dw.x, y: d.p0.y + dw.y, z: d.p0.z + dw.z };
       d.lx = ev.clientX; d.ly = ev.clientY;   // §CPE_DRAG_TRACK reads the gesture's own last pixel
@@ -794,15 +1007,31 @@
     };
     h.up = function() {
       if (!_state || !_state.drag) return;
-      var d = _state.drag, b = _state.bands[d.b];
+      var d = _state.drag;
+      if (d.hose) {
+        _state.drag = null;
+        // A press that never moved leaves no op behind — same rule as the band drag's undo snapshot,
+        // and for the same reason: a zero-pixel gesture is not an edit.
+        if (!d.op) return;
+        var mag = Math.hypot(d.op.d.x, d.op.d.y, d.op.d.z);
+        if (mag < 1e-4) { _state.hose.pop(); _undo(); return; }
+        console.log('§CPE_HOSE landed s=' + d.op.s.toFixed(3) + ' reach=' + d.op.r.toFixed(3) +
+          ' disp=' + mag.toFixed(2) + 'm ops=' + _state.hose.length + ' (re-plan runs NOW, once)');
+        _refreshFlow(); _replanFilm();
+        _markPreviewStale(); _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+        return;
+      }
+      var b = _state.bands[d.b];
       _state.drag = null;
       console.log('§CPE_DRAG landed band=' + d.b + ' zone=' + d.z + ' plane=view (re-plan runs NOW, once)' +
         ' centre=(' + b.c.x.toFixed(2) + ',' + b.c.y.toFixed(2) + ',' + b.c.z.toFixed(2) + ')' +
         ' dir=(' + b.d.x.toFixed(2) + ',' + b.d.y.toFixed(2) + ',' + b.d.z.toFixed(2) + ') len=' + b.len.toFixed(2));
       var _len0 = _state.plan ? _state.plan.pathLen : null;   // the path as it stood when you let go
+      _refreshFlow();            // §CPE_HOSE: the band moved, so the curve the ops ride moved with it
       _replanFilm();
       _logDragTrack(d, b, _len0);
-      _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
+      _markPreviewStale();
+      _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     };
     // §CPE_UNDO: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y) while the editor is OPEN. Same bindings
     // grid_drag.js already uses, and like it this listener is added on open and removed on close, so
@@ -849,6 +1078,18 @@
         baseSec: { dive: plan.sec.dive, spin: plan.sec.spin, out: plan.sec.out, rise: plan.sec.rise },
         baseOutSec: plan.sec.out, baseTotal: ctx.durationSec, baseLen: plan.pathLen,
         speed: plan.pathLen / Math.max(0.001, plan.sec.out),   // the building's OWN pace, not a constant
+        // §CPE_HOSE: ops, and the reach they are created with. 15% of the walk is the seed — a band
+        // is 10% (CINEMA_BAND_FRAC), so the default hose pull is deliberately WIDER than a band:
+        // the two controls should not feel like the same tool at the same scale.
+        hose: [], reach: 0.15, flowRaw: null, flowFrac: null, flowHosed: null,
+        // §CPE_CLIP: the whole film until marked.
+        clipIn: 0, clipOut: 1,
+        // §CPE_BUILDUP: off by default — a film that assembles itself is a deliberate choice, not
+        // the default reading of a fly-through.
+        buildup: false,
+        // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
+        // has actually seen. Equal = "you have seen this version".
+        edits: 0, previewedAt: 0, flying: false,
         userTotal: null, fps: ctx.fps || 15, filmPts: null, plan: plan,
         camSave: { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
                    tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z },
@@ -866,9 +1107,60 @@
         ',' + _state.camSave.pz.toFixed(1) + ') target=(' + _state.camSave.tx.toFixed(1) + ',' +
         _state.camSave.ty.toFixed(1) + ',' + _state.camSave.tz.toFixed(1) + ')' +
         ' — every re-plan uses THIS pose, not the live camera, so orbiting to look cannot change the film');
+      _refreshFlow();
       _replanFilm();
-      _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _syncButtons();
+      _redrawScene(); _renderRows(); _renderClock(); _renderHint(); _renderWhole(); _syncButtons();
       _wire();
+
+      // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP / §CPE_PREVIEW_BUTTON — the whole-path controls.
+      var reachEl = document.getElementById('cpe-reach');
+      reachEl.value = Math.round(_state.reach * 100);
+      reachEl.addEventListener('change', function() {
+        var v = parseFloat(reachEl.value);
+        if (!isFinite(v)) { reachEl.value = Math.round(_state.reach * 100); return; }
+        _state.reach = Math.max(0.01, Math.min(1, v / 100));
+        reachEl.value = Math.round(_state.reach * 100);
+        // Existing ops keep the reach they were MADE with — this sets the reach of the NEXT pull.
+        // Retro-fitting every op would silently rewrite edits the user already accepted.
+        console.log('§CPE_HOSE reach=' + _state.reach.toFixed(2) + ' (applies to the next pull; existing ops keep theirs)');
+      });
+      function _markClip(which) {
+        // Marked at the CENTRE of the current preview window if one is flying, else at the point the
+        // camera is nearest on the film curve — so "mark in" means "here", where the user is looking,
+        // with no extra gesture to learn.
+        var f = _state.filmPts;
+        if (!f || !f.length) return;
+        var best = 0, bd = Infinity, cam = A().camera.position;
+        for (var i = 0; i < f.length; i++) {
+          var dd = (f[i].x - cam.x) * (f[i].x - cam.x) + (f[i].y - cam.y) * (f[i].y - cam.y) + (f[i].z - cam.z) * (f[i].z - cam.z);
+          if (dd < bd) { bd = dd; best = i; }
+        }
+        var t = best / (f.length - 1);
+        if (which === 'in') _state.clipIn = Math.min(t, _state.clipOut - 0.01);
+        else _state.clipOut = Math.max(t, _state.clipIn + 0.01);
+        _state.clipIn = Math.max(0, Math.min(1, _state.clipIn));
+        _state.clipOut = Math.max(0, Math.min(1, _state.clipOut));
+        _markPreviewStale();
+        console.log('§CPE_CLIP mark=' + which + ' t=' + t.toFixed(3) + ' window=' +
+          _state.clipIn.toFixed(3) + '→' + _state.clipOut.toFixed(3) +
+          ' span=' + ((_state.clipOut - _state.clipIn) * 100).toFixed(0) + '% of the film');
+        _redrawScene(); _renderWhole(); _syncButtons();
+      }
+      document.getElementById('cpe-mark-in').addEventListener('click', function() { _markClip('in'); });
+      document.getElementById('cpe-mark-out').addEventListener('click', function() { _markClip('out'); });
+      document.getElementById('cpe-clip-clear').addEventListener('click', function() {
+        _state.clipIn = 0; _state.clipOut = 1; _markPreviewStale();
+        console.log('§CPE_CLIP cleared — whole film');
+        _redrawScene(); _renderWhole(); _syncButtons();
+      });
+      document.getElementById('cpe-buildup').addEventListener('change', function(e) {
+        _state.buildup = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
+          ' — reveal follows the camera path (derived build order, NOT a construction programme)');
+        _renderWhole(); _syncButtons();
+      });
+      document.getElementById('cpe-preview').addEventListener('click', _previewFly);
 
       function finish(action) {
         var ov = (action === 'ok' || action === 'save') ? _buildOverride() : null;
