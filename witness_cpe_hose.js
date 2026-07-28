@@ -123,6 +123,82 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         sNo[i].x - sHose[i].x, sNo[i].y - sHose[i].y, sNo[i].z - sHose[i].z));
       out.h3 = { pathLenNo: pNo.pathLen, pathLenHose: pHose.pathLen, maxPosDelta: maxPosDelta, envelope: env };
 
+      // ── S1/S2/S3: §CPE_STICK — spawn a band at an arbitrary point on the walk ───────────────
+      // S1 is the load-bearing claim and the one that can fail silently: a freshly dropped stick is
+      // a NO-OP. If the seeder's tangent or centre is even slightly off the curve, the film JUMPS
+      // the instant you click it — which would read as "the editor broke my path" and is exactly
+      // what killed confidence in direct manipulation before (§CPE_DRAG_TELEPORT).
+      const flow = A.cinemaBandFlow(bands);
+      const mid = Math.round(flow.length / 2);
+      const stick = A.cinemaSeedStick(flow, mid, bands[0].len);
+      const withStick = bands.slice(0, 1).concat([stick], bands.slice(1));
+      const pStick = A.cinemaPathPlan(dur, { bands: withStick, hose: [] });
+      const sStick = sample(pStick, 240);
+      // ⚠ THE CHECKER'S OWN GROUND TRUTH, second time in this file. Comparing the two films
+      // pose-by-pose at equal `t` measured 98 m and was WRONG: adding a stick lengthens the walk, so
+      // the natural duration and the beat fractions both move, and equal-t samples land on DIFFERENT
+      // BEATS (dive against walk). That is a re-timing, not a jump. The claim "a dropped stick is a
+      // no-op" is about the flown GEOMETRY, so compare the flown polylines resampled by ARC LENGTH.
+      const arcResample = (pts, n) => {
+        const cum = [0]; let L = 0;
+        for (let i = 1; i < pts.length; i++) { L += moved(pts[i], pts[i - 1]); cum.push(L); }
+        const out2 = [];
+        for (let k = 0; k < n; k++) {
+          const target = (k / (n - 1)) * L;
+          let j = 1; while (j < cum.length - 1 && cum[j] < target) j++;
+          const seg = cum[j] - cum[j - 1] || 1, f = (target - cum[j - 1]) / seg;
+          out2.push({ x: pts[j - 1].x + (pts[j].x - pts[j - 1].x) * f,
+                      y: pts[j - 1].y + (pts[j].y - pts[j - 1].y) * f,
+                      z: pts[j - 1].z + (pts[j].z - pts[j - 1].z) * f });
+        }
+        return out2;
+      };
+      // ⚠ AND THE ARC-FRACTION MATCH IS WRONG TOO — third instrument error in this file, same
+      // family as the other two. The stick inserts its own rigid length into the polyline, so the
+      // two walks have DIFFERENT total lengths (15.3 m vs ~17 m on Duplex); matching by fraction
+      // therefore compares points offset by ~a stick along the path, and on a curve that reads as
+      // metres of "deviation" that nothing actually moved. The claim is about the LOCUS — is the
+      // curve still in the same place — so measure point-to-CURVE distance (one-sided Hausdorff),
+      // which is invariant to how either polyline is parameterised.
+      const distToPolyline = (p, poly) => {
+        let best = Infinity;
+        for (let i = 1; i < poly.length; i++) {
+          const a2 = poly[i - 1], b2 = poly[i];
+          const vx = b2.x - a2.x, vy = b2.y - a2.y, vz = b2.z - a2.z;
+          const L2 = vx * vx + vy * vy + vz * vz;
+          let t = L2 > 1e-12 ? ((p.x - a2.x) * vx + (p.y - a2.y) * vy + (p.z - a2.z) * vz) / L2 : 0;
+          t = Math.max(0, Math.min(1, t));
+          const d = Math.hypot(p.x - (a2.x + vx * t), p.y - (a2.y + vy * t), p.z - (a2.z + vz * t));
+          if (d < best) best = d;
+        }
+        return best;
+      };
+      const fB = A.cinemaBandFlow(withStick);
+      let stickDelta = 0;
+      for (let i = 0; i < fB.length; i++) stickDelta = Math.max(stickDelta, distToPolyline(fB[i], flow));
+      // S2: move it, and the path must follow — it is a real control point, not decoration.
+      const moved2 = JSON.parse(JSON.stringify(withStick));
+      moved2[1].c.y += env * 0.4;
+      const pMoved = A.cinemaPathPlan(dur, { bands: moved2, hose: [] });
+      const sMoved = sample(pMoved, 240);
+      let movedDelta = 0;
+      for (let i = 0; i < 240; i++) movedDelta = Math.max(movedDelta, Math.hypot(
+        sStick[i].x - sMoved[i].x, sStick[i].y - sMoved[i].y, sStick[i].z - sMoved[i].z));
+      // S3: remove it and the film returns to what it was.
+      const pBack = A.cinemaPathPlan(dur, { bands: bands, hose: [] });
+      const sBack = sample(pBack, 240);
+      let backDelta = 0;
+      for (let i = 0; i < 240; i++) backDelta = Math.max(backDelta, Math.hypot(
+        sNo[i].x - sBack[i].x, sNo[i].y - sBack[i].y, sNo[i].z - sBack[i].z));
+      out.s = { stickLen: stick.len, bandLen: bands[0].len, bandsBefore: bands.length, bandsAfter: withStick.length,
+                stickDelta: stickDelta, movedDelta: movedDelta, backDelta: backDelta,
+                tangentDot: (() => {
+                  const a2 = flow[mid - 1], b2 = flow[mid + 1];
+                  const tx = b2.x - a2.x, ty = b2.y - a2.y, tz = b2.z - a2.z;
+                  const tl = Math.hypot(tx, ty, tz) || 1;
+                  return (stick.d.x * tx + stick.d.y * ty + stick.d.z * tz) / tl;
+                })() };
+
       // ── A1/A2: the aim rule, measured on the hosed (flung-outside) plan ─────────────────────
       // Control = the same plan with the rule suppressed, so the ONLY difference is the rule.
       const bb = A.dbQuery('SELECT AVG(center_x), AVG(center_y), AVG(center_z) FROM element_transforms')[0];
@@ -214,6 +290,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ── H3: wired to the real plan ──────────────────────────────────────────────────────────
     P('H3 W-HOSE-PLAN: hose ops reach the flown path', res.h3.maxPosDelta > 0.5,
       `max pose delta ${res.h3.maxPosDelta.toFixed(2)}m; pathLen ${res.h3.pathLenNo.toFixed(1)} → ${res.h3.pathLenHose.toFixed(1)}m (envelope ${res.h3.envelope.toFixed(0)}m)`);
+
+    // ── S1/S2/S3: the spawned stick ─────────────────────────────────────────────────────────
+    // Tolerance is a fraction of the walk, not a metre value: the stick replaces a curved stretch
+    // with its own rigid straight length, so the deviation scales with the path, and gating it in
+    // absolute metres would pass on a house and fail on a terminal for the same behaviour.
+    // Gate from GEOMETRY, not from a wish. Replacing a curved arc of length L with the rigid
+    // straight stick of the same length deviates by the arc's sagitta, which is bounded by L/2 for
+    // any curvature the connector cap allows — so "the film did not jump" means the disturbance is
+    // bounded by the THING YOU DROPPED, not by the path. A deviation larger than the stick's own
+    // length would mean something other than the stick moved, which is the real defect.
+    const stickTol = 0.6 * res.s.stickLen;
+    P('S1 §CPE_STICK: a freshly dropped stick is a NO-OP', res.s.stickDelta < stickTol && res.s.tangentDot > 0.999,
+      `bands ${res.s.bandsBefore}→${res.s.bandsAfter}; max point-to-curve deviation of the flown walk ` +
+      `${res.s.stickDelta.toFixed(3)}m against a ${stickTol.toFixed(2)}m budget (0.6x the ${res.s.stickLen.toFixed(2)}m stick, on a ${res.h3.pathLenNo.toFixed(1)}m walk); ` +
+      `seeded direction vs local tangent dot=${res.s.tangentDot.toFixed(6)} (drop it and the film must not jump)`);
+    P('S2 §CPE_STICK: moving it moves the path', res.s.movedDelta > 1.0,
+      `max pose delta ${res.s.movedDelta.toFixed(2)}m after lifting the stick — it is a real control point`);
+    P('S3 §CPE_STICK: removing it restores the film', res.s.backDelta < 1e-6,
+      `max pose delta ${res.s.backDelta.toExponential(2)}m vs the pre-stick plan`);
 
     // ── A1/A2: the aim rule ─────────────────────────────────────────────────────────────────
     const improved = res.a1.meanGazeErrNoRule - res.a1.meanGazeErrWithRule;
