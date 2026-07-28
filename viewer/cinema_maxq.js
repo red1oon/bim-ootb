@@ -10,7 +10,7 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v16 (§CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §CPE_BUILDUP mode-D construction follows the camera; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v17 (§CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -726,33 +726,29 @@
           console.warn('§CPE_BUILDUP_SKIP reason=no derived build order (Time Machine has no ops for this building)');
           _buildup = false;
         } else {
-          // ══ §CPE_BUILDUP_REAL_SCHEDULE §3.3 — REAL schedule if the building has one, else mode D ══
-          // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.3
-          // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-FALLBACK
-          // Before this branch, tmOrderByCameraPath ran unconditionally and OVERWROTE the real task
-          // dates injectGantt had just written — so a building WITH a linked schedule baked a
-          // byte-identical film to one with none (§2, the defect). The derived path below is
-          // untouched: no usable `tasks` → same call, same args, same behaviour as before (that is
-          // exactly what W-SCHED-FALLBACK gates).
-          var _ss = (typeof window.tmScheduleSource === 'function') ? window.tmScheduleSource() : null;
-          _bkState = null;
-          if (_ss && _ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
-            _bkState = window.tmOrderBySchedule();
-            // A degraded real schedule must never be WORSE than no schedule: fall through to mode D.
-            if (!_bkState) console.warn('§CPE_BUILDUP_SOURCE fallthrough reason=captured-but-unusable — using the derived order');
-          }
-          if (!_bkState) {
-            _bkState = window.tmOrderByCameraPath(function(t) { return plan ? plan.poseAt(t) : poseAt(t); }, nFrames);
-          }
-          if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=re-key failed — baking without the buildup'); _buildup = false; }
+          // ══ §CPE_BUILDUP_FOLLOW_TM — the film PLAYS the Time Machine, it does not author an order ══
+          // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_SOURCE_BLIND
+          // User, 2026-07-29: "do not bake anything for TM.. it is user's own plan" /
+          // "this practices good separation of tasks" / "so buildup it gives as it is basis".
+          //
+          // What this replaces: mode D (tmOrderByCameraPath) re-keyed every op to camera-path
+          // proximity. §CPE_BUILDUP_REAL_SCHEDULE had already stopped it eating a CAPTURED schedule,
+          // but a GENERATED timeline — schedule_gate's geometry-gated bottom-up order, which is what
+          // the TM drawer is showing — was still discarded. Reported live on Hospital (63,439 ops, 36
+          // mini-Gantt bars, zero rows in `tasks`): proximity to a 73.6m walk through a building of
+          // boundingR=91.4 reveals every storey at once, which is the "flattens too much too early"
+          // the user saw. One verb now decides for BOTH callers, so the Preview and the bake can no
+          // longer disagree about what they are showing.
+          _bkState = (typeof window.tmFollowTimeline === 'function') ? window.tmFollowTimeline() : null;
+          if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=no timeline to follow — baking without the buildup'); _buildup = false; }
           else if (_bkState.source === 'captured') {
             // §CPE_BUILDUP_REAL_SCHEDULE §5 — the label moves with the data. States scope and
             // coverage; claims NO predecessor logic, float or resources (this data carries none).
             _status('🎬 Building to the linked schedule (' + _bkState.leafTasks + ' phases, ' +
               _bkState.pct + '% of elements)');
           } else {
-            // §5 — unchanged wording for the derived branch. Never say "the schedule" here.
-            _status('🎬 Building as the camera flies (' + _bkState.placed + ' elements ordered by the path)');
+            // §5 tier 2 — a real, model-derived 4D. Never "the schedule", never "a programme".
+            _status('🎬 Building to this model\'s 4D timeline (' + _bkState.placed + ' elements, as the Time Machine has it)');
           }
         }
       }

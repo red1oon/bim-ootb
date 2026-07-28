@@ -19,7 +19,7 @@
   // Missed for §CPE_DRAG_TELEPORT (#1035): the cache-bust and sw CACHE_VERSION were bumped but this
   // string was not, so v5 named both the with- and without-fix builds and a user asking "am I on the
   // right version?" could not be answered from their own log. That is the whole job of this line.
-  var CPE_V = 'v14 (§CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v15 (§CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -552,7 +552,7 @@
           '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox"> ' +
-          'build the model as the camera flies</label> <span style="color:#666">(derived order, not a programme)</span></div>' +
+          'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
         // §CPE_IDB_PATH_STORE — saved plans for THIS building.
         '<div style="margin-top:6px">saved <select id="cpe-plans" style="max-width:150px;background:#15181c;color:#ddd;' +
           'border:1px solid #3a3f47;border-radius:3px;font-size:10px;padding:1px 2px"></select> ' +
@@ -993,13 +993,19 @@
         _renderWhole();
       })();
     };
-    if (!s.buildup || typeof window.tmOrderByCameraPath !== 'function') { startFly(); return; }
+    // §CPE_BUILDUP_FOLLOW_TM — this used to call tmOrderByCameraPath UNCONDITIONALLY, with no
+    // tmScheduleSource() consultation at all: the whole source-selection branch existed only in
+    // cinema_maxq.js, so on a captured-schedule building the rehearsal showed one build order and the
+    // film recorded another. Both callers now go through the single verb, so preview and bake cannot
+    // disagree — and neither of them re-keys anything.
+    if (!s.buildup || typeof window.tmFollowTimeline !== 'function') { startFly(); return; }
     (async function() {
       try {
         var t0b = performance.now();
         var ok = await window.tmActivateForBake();
-        if (ok) bkPrev = window.tmOrderByCameraPath(function(t) { return s.plan.poseAt(t); }, 60);
-        console.log('§CPE_PREVIEW_BUILDUP ' + (bkPrev ? 'armed ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no derived build order)') +
+        if (ok) bkPrev = window.tmFollowTimeline();
+        console.log('§CPE_PREVIEW_BUILDUP ' + (bkPrev ? 'armed mode=' + (bkPrev.source === 'captured' ? 'S' : 'T') +
+            ' ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no timeline to follow)') +
           ' setupMs=' + (performance.now() - t0b).toFixed(0) +
           ' — the same cursor Time Machine drives at playback, no new visibility mechanism');
       } catch (e) { console.warn('§CPE_PREVIEW_BUILDUP failed ' + e.message); bkPrev = null; }
@@ -1502,8 +1508,12 @@
       document.getElementById('cpe-buildup').addEventListener('change', function(e) {
         _state.buildup = !!e.target.checked;
         _markPreviewStale();
+        // §CPE_BUILDUP_FOLLOW_TM — the reveal is the Time Machine's own timeline, unmodified. The
+        // mode (S = linked schedule, T = this model's derived 4D) is decided and logged by
+        // tmFollowTimeline() at preview/bake time, because it is a property of the DATA, not of
+        // this checkbox.
         console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
-          ' — reveal follows the camera path (derived build order, NOT a construction programme)');
+          ' — reveal FOLLOWS the Time Machine timeline as-is (no re-key; the camera does not author the build order)');
         _renderWhole(); _syncButtons();
       });
       document.getElementById('cpe-preview').addEventListener('click', _previewFly);
