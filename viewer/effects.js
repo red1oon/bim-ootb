@@ -2135,6 +2135,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // picked up on the next load, no code change. If it is absent or fails to load, the canvas
   // fallback below draws the notice instead, which is the behaviour the user asked for: an empty
   // advertising hoarding advertises itself.
+  // ⚠ DEV-FIXTURE GOTCHA (2026-07-28): a fresh `/tmp/wt-*` worktree's buildings/ dir does NOT
+  // inherit these image symlinks — each worktree needs its own `billboard.jpg` (or
+  // `<DbStem>Billboard.jpg`) symlinked in beside its Terminal_Hi.db, or every load shows this
+  // fallback notice instead of the real art. Known-good example: `/tmp/wt-albedo/buildings/`.
+  // If you land here debugging "why is my billboard black with Malay text", this is why —
+  // see prompts/PHOTOREAL_STILL_RENDER.md §FACADE_SIGNAGE / §BILLBOARD_ALWAYS.
   var BILLBOARD_NOTICE = 'RUANG IKLAN UNTUK DI SEWA';
   var _billboardMesh = null;
   function _billboardFallbackTexture(wm, hm) {
@@ -2172,6 +2178,7 @@ async function setupEffects(A, renderer, scene, camera) {
   A._billboardAutoBuild = function() {
     if (!A.db || !A.scene) return;
     try { A._buildBillboardArt(); } catch (e) { console.warn('§BILLBOARD_ART auto-build failed: ' + e.message); }
+    try { A._buildBillboardNamePlate(); } catch (e) { console.warn('§BILLBOARD_NAME auto-build failed: ' + e.message); }
   };
   A._buildBillboardArt = function() {
     if (_billboardMesh || !A.db || !A.ifc2three) return;
@@ -2250,6 +2257,124 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A.markDirty) A.markDirty();
   };
 
+  // Implementing prompts/PHOTOREAL_STILL_RENDER.md §BILLBOARD_NAME_ELEMENT —
+  // Witness: W-BILLBOARD-NAME-ELEMENT.
+  // SUPERSEDES §BILLBOARD_BUILDING_NAME, which built the whole plate in JS from a config file.
+  // That was wrong twice over and the user named both: it had no DB row (so it could never be
+  // quantified, costed or schedule-bound) and it was built unconditionally (so it "came on" at
+  // frame 0 of a buildup instead of appearing last).
+  //
+  // THE SPLIT, identical to §BILLBOARD_ART's:
+  //   * the plate BODY is a REAL element — guid BB0BIMOOTBNAME000001A, four rows in
+  //     elements_meta/element_transforms/element_instances/component_geometries
+  //     (migration/billboards/terminal_billboard_nameplate.sql). It streams through the normal
+  //     loader like any other row, so Time Machine, picking, 5D and the ERP fold all see it with
+  //     no special-casing. NOTHING here builds it.
+  //   * only the LETTERING is JS: one always-on-top quad with a canvas texture, own material,
+  //     shared with nothing — the same §PHOTO_GLOW_SPRITE invariant the artwork quad relies on.
+  //   * config carries the TEXT and nothing else. Geometry comes from the element's own
+  //     element_transforms row, read at runtime — config that duplicates DB data is a second
+  //     source of truth. `orientation` is gone too: it is derived from the real bbox aspect.
+  var _billboardNameMesh = null;
+  var _billboardNameGuid = null;
+  function _nameplateTexture(text, wm, hm, vertical) {
+    var W = vertical ? Math.round(1024 * (wm / hm)) : 1024;
+    var H = vertical ? 1024 : Math.max(128, Math.round(1024 * (hm / wm)));
+    W = Math.max(128, W);
+    var c = document.createElement('canvas'); c.width = W; c.height = H;
+    var g = c.getContext('2d');
+    g.fillStyle = '#0d1017'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#e8c34a'; g.lineWidth = Math.round(Math.min(W, H) * 0.03);
+    g.strokeRect(g.lineWidth, g.lineWidth, W - g.lineWidth * 2, H - g.lineWidth * 2);
+    g.save();
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#f2e6c0';
+    if (vertical) { g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); }
+    var boxSpan = vertical ? H : W, size = Math.round((vertical ? W : H) * 0.55);
+    for (var pass = 0; pass < 12; pass++) {
+      g.font = '700 ' + size + 'px system-ui, sans-serif';
+      if (g.measureText(text).width <= boxSpan * 0.85) break;
+      size = Math.round(size * 0.9);
+    }
+    g.fillText(text, 0, 0);
+    g.restore();
+    var tex = new THREE.CanvasTexture(c);
+    if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+  A._buildBillboardNamePlate = function() {
+    if (_billboardNameMesh || !A.db || !A.ifc2three) return;
+    var rows;
+    try {
+      // The plate ELEMENT's own row — found by the same element_name convention _buildBillboardArt
+      // uses for the panel, so neither function ever hardcodes a guid.
+      rows = A.dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.element_name LIKE 'BIM_OOTB_NamePlate%' LIMIT 1");
+    } catch (e) { return; }
+    if (!rows || !rows.length) {
+      console.log('§BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — ' +
+        'apply migration/billboards/terminal_billboard_nameplate.sql'); return;
+    }
+    var r = rows[0], guid = r[0], cx = r[1], cy = r[2], cz = r[3], tx = r[4], wm = r[5], hm = r[6];
+    // Orientation is DERIVED from the element's real bbox, not configured: a plate taller than it
+    // is wide gets vertical type, which is what real narrow-pilaster signage does rather than
+    // shrinking the letters to fit.
+    var vertical = hm > wm;
+    var dir = (A.DB_URL || '').replace(/[^/]*$/, '');
+    var stem = ((A.DB_URL || '').replace(/^.*\//, '').replace(/\.db$/i, '').split('_')[0]) || 'building';
+    fetch(dir + stem + '.config.json').then(function(resp) { return resp.ok ? resp.json() : null; })
+      .then(function(cfg) {
+        if (!cfg || !cfg.buildingName) {
+          console.log('§BILLBOARD_NAME no config/buildingName at ' + dir + stem + '.config.json'); return;
+        }
+        // 8mm clear of the plate's own +X face, exactly as the artwork quad clears the panel's.
+        var p = A.ifc2three(cx + tx / 2 + 0.008, cy, cz);
+        var geo = new THREE.PlaneGeometry(wm, hm);
+        var mat = new THREE.MeshBasicMaterial({ map: _nameplateTexture(cfg.buildingName, wm, hm, vertical),
+          toneMapped: true, side: THREE.DoubleSide });
+        _billboardNameMesh = new THREE.Mesh(geo, mat);
+        _billboardNameMesh.position.set(p.x, p.y, p.z);
+        _billboardNameMesh.rotation.y = Math.PI / 2;   // PlaneGeometry normal +Z -> +X, matching the facade
+        _billboardNameMesh.renderOrder = 1;
+        // NO userData.guid on purpose — see §TM_OVERLAY_SYNC in time_machine.js. Two scene objects
+        // answering to one guid would double-pick in Find/BOM and would take applyHighlight's
+        // cyan/orange install tint across the lettering.
+        _billboardNameGuid = guid;
+        A.scene.add(_billboardNameMesh);
+        A._tmOverlayRegister();
+        console.log('§BILLBOARD_NAME built guid=' + guid + ' name="' + cfg.buildingName + '" ' +
+          wm.toFixed(2) + 'm x ' + hm.toFixed(2) + 'm at ifc(' + cx.toFixed(3) + ',' + cy.toFixed(3) +
+          ',' + cz.toFixed(3) + ') vertical=' + vertical + ' drawCalls=1');
+        if (A.markDirty) A.markDirty();
+      }).catch(function(e) { console.log('§BILLBOARD_NAME fetch failed: ' + e.message); });
+  };
+
+  // §TM_OVERLAY_SYNC consumer — see the seam in time_machine.js renderAtTime.
+  // This is the fix for the defect the user named ("it shall appear last, not like now it came
+  // on"): the lettering carries no userData.guid, so Time Machine's traverse never touched it and
+  // it rendered from frame 0 of a buildup. The predicate TM hands over is the SAME placed/frontier/
+  // recent state it just applied to the real element, so the overlay cannot drift from it.
+  // isVisible === null means TM is off → overlays visible (the sign exists in the finished building).
+  var _nameVisLast = null;
+  A._tmOverlayRegister = function() {
+    if (window.__tmOverlaySync) return;   // idempotent
+    window.__tmOverlaySync = function(isVisible) {
+      if (!_billboardNameMesh || !_billboardNameGuid) return;
+      var v = isVisible ? !!isVisible(_billboardNameGuid) : true;
+      if (v === _nameVisLast) return;     // log + write on CHANGE only, never per tick
+      _nameVisLast = v;
+      _billboardNameMesh.visible = v;
+      console.log('§BILLBOARD_NAME_VIS guid=' + _billboardNameGuid + ' visible=' + v +
+        ' tmActive=' + !!isVisible);
+      if (A.markDirty) A.markDirty();
+    };
+    // Read-only probe for the witness: what the overlay currently believes.
+    A._billboardNameState = function() {
+      return { guid: _billboardNameGuid, built: !!_billboardNameMesh,
+        visible: _billboardNameMesh ? _billboardNameMesh.visible : null };
+    };
+  };
+
   function _showPhotoProps(show) {
     if (show && (!_photoUplights.length || _photoPropsBuilding !== A.activeBuilding)) {
       _disposePhotoProps();
@@ -2257,6 +2382,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     if (show) _updateFacadeFacingLights();
     if (show) A._buildBillboardArt();   // §BILLBOARD_ART — idempotent; also built outside staging, see §BILLBOARD_ALWAYS
+    if (show) A._buildBillboardNamePlate();   // §BILLBOARD_BUILDING_NAME — idempotent re-assert, same as above
     _photoUplights.forEach(function(l) { l.visible = show; });
     if (_photoSkyline) _photoSkyline.visible = show;
     if (_photoSkylineLights) _photoSkylineLights.visible = show;

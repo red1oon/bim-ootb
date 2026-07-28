@@ -1843,6 +1843,26 @@
       _sfxPhases = null;
     }
 
+    // Implementing prompts/PHOTOREAL_STILL_RENDER.md §BILLBOARD_NAME_ELEMENT §5 —
+    // Witness: W-BILLBOARD-NAME-ELEMENT V1/V2.
+    // §TM_OVERLAY_SYNC seam — presentation overlays (the billboard artwork quad and the building
+    // name-plate lettering in effects.js) are NOT elements: they carry no userData.guid, so the
+    // traverse above never touches them and they render from frame 0 of a buildup, even at cursors
+    // where the REAL element they sit on is hidden. Handing them the element's guid instead would
+    // make two scene objects answer to one guid for picking/Find/BOM, and would run applyHighlight
+    // (cyan/orange emissive at 0.85 opacity) over the artwork during its install window.
+    // So: one O(1) feature-detected call, same shape and same place as the §SFX seam above. TM
+    // hands over the visibility it has ALREADY computed for this tick — the overlay owner cannot
+    // drift from the element because it is not re-deriving anything. Passing null (see deactivate)
+    // means "TM is off, show your overlays".
+    if (window.__tmOverlaySync) {
+      try {
+        window.__tmOverlaySync(function (g) {
+          return !!placed[g] || !!frontier[g] || recent[g] !== undefined;
+        });
+      } catch (e) { /* an overlay owner must never be able to break the scrub */ }
+    }
+
     applySunCycle(cursorMs);
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
@@ -4548,6 +4568,10 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    // §TM_OVERLAY_SYNC (see renderAtTime): null = "TM is off". Same contract as _gspClear above —
+    // nothing TM imposed on a presentation overlay may survive TM being switched off, otherwise a
+    // name plate stays hidden in the finished building because the scrub happened to end early.
+    if (window.__tmOverlaySync) { try { window.__tmOverlaySync(null); } catch (e) {} }
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
     _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
     var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
