@@ -76,6 +76,16 @@ grep -oE '=IFC[A-Z0-9]+\(' "$f" | tr -d '=(' | awk '
     print "GEOM_IFCFACE=" typeCount["IFCFACE"]+0;
     print "GEOM_IFCCARTESIANPOINT=" typeCount["IFCCARTESIANPOINT"]+0;
     print "GEOM_IFCFACETEDBREP=" typeCount["IFCFACETEDBREP"]+0;
+    # Instancing: IFCREPRESENTATIONMAP defines a shape ONCE; IFCMAPPEDITEM is a placed instance of
+    # it (like a block insert). UNIQUE_SHAPE_DEFS is the real "how many distinct meshes" number —
+    # ELEMENT_COUNT (placed elements) can be far higher than this when a catalog part repeats.
+    # NOT every element goes through a mapped item — IFCEXTRUDEDAREASOLID direct/parametric solids
+    # (walls, slabs, straight runs) are unique per placement and never show up in this reuse count.
+    umap = typeCount["IFCREPRESENTATIONMAP"]+0; mitem = typeCount["IFCMAPPEDITEM"]+0;
+    print "UNIQUE_SHAPE_DEFS(IFCREPRESENTATIONMAP)=" umap;
+    print "INSTANCED_PLACEMENTS(IFCMAPPEDITEM)=" mitem;
+    if (umap > 0) printf "AVG_REUSE_PER_SHAPE=%.1f\n", mitem/umap;
+    print "DIRECT_PARAMETRIC_SOLIDS(IFCEXTRUDEDAREASOLID, not instanced)=" typeCount["IFCEXTRUDEDAREASOLID"]+0;
     print "OTHER_NON_PRODUCT_ENTITIES=" otherCount+0;
     print "DISTINCT_TYPES=" length(typeCount);
   }
