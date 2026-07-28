@@ -4830,6 +4830,156 @@
     return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
+  // ══ §MAXQ_TIME / §CPE_BUILDUP — drive the construction state from an external baker ═══════════
+  // Spec: bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME (mode D) + prompts/
+  // CINEMA_PATH_EDITOR.md §CPE_BUILDUP. User 2026-07-28: "this construction bit is a checkbox to
+  // animate its buildup as cam goes along... its giving the impression and not chronologically
+  // accurate. But the elements laying on each other according to its part in the 4D is educational."
+  //
+  // ⚠ WORDING, and it is forced by the data, not a hedge: `Terminal_Hi.db` has NO tasks/task_elements
+  // tables and `Hospital_extracted.db` has them EMPTY (tasks=0). What TM synthesises is a DERIVED
+  // BUILD ORDER (Z-band + SEQUENCE_RULES), never a construction programme. Say "derived build order"
+  // — a BIM audience told "the schedule" will ask for the P6/MSP link, and there isn't one.
+  //
+  // renderAtTime() is internal by design; this is the ONE public cursor setter it needs. Note the
+  // §0a lesson from prompts/TM_INCREMENTAL_RENDER_PERF.md: pass the target cursor as a LOCAL value,
+  // never mutate the global `_cursor` first — doing that collapses the delta window to zero width and
+  // the incremental path silently skips the whole scene.
+  window.tmSetCursor = function(ms) {
+    if (!isFinite(ms)) return false;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, ms)));
+    return true;
+  };
+
+  // A bake needs Time Machine's op-log without the user having pressed the button. Same wait shape
+  // as tmJumpToOrder's own whenReady() — activate() is async (it may have to inject the derived
+  // timeline first), so poll for the ops rather than assuming they are there on the next line.
+  window.tmActivateForBake = function() {
+    return new Promise(function(resolve) {
+      if (_active && _ops.length) return resolve(true);
+      if (!_active) { try { activate(); } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); } }
+      var n = 0, iv = setInterval(function() {
+        if (_ops.length || ++n > 60) { clearInterval(iv); resolve(!!_ops.length); }
+      }, 500);
+    });
+  };
+
+  // Mode D: re-key the derived order so the reveal follows the CAMERA PATH instead of the Z-bands.
+  // This adds NO new render path — `renderAtTime` is untouched. It consumes `_ops` purely as "sorted
+  // ascending by start_ts, break past the cursor", so re-keying the timestamps IS the feature.
+  //
+  // The key, and why it is derived rather than tuned:
+  //     revealS = (floor(cameraS · frames) + zRank) / frames
+  // `cameraS` is where along the flight the camera comes closest to the element — the primary order,
+  // which is the user's "construction follows the camera path". `zRank` is the element's place in the
+  // DERIVED 4D order, and dividing by `frames` makes it the tie-break WITHIN one frame of camera
+  // travel — so a region assembles bottom-up in its own 4D order as the camera passes it, which is
+  // the "elements laying on each other according to its part in the 4D" half. The bucket size is the
+  // bake's own frame count, not a chosen constant.
+  //
+  // Install duration is one and a half frames of cursor, deliberately: the playback-derived
+  // `lingerMs = tickMs()*3` is ~2.7h in DAY mode while a film steps DAYS per frame, so inheriting it
+  // would step clean over every frontier state and the film would read as pop-in rather than
+  // assembly (recorded in PHOTOREAL_STILL_RENDER.md §MAXQ_TIME code-read, item 3.2).
+  var _bkSaved = null;
+  window.tmOrderByCameraPath = function(poseAt, frames, opts) {
+    opts = opts || {};
+    var t0 = performance.now();
+    if (typeof poseAt !== 'function') { console.warn('§MAXQ_TIME_ABORT reason=no-poseAt'); return null; }
+    if (!_ops.length) { console.warn('§MAXQ_TIME_ABORT reason=no-ops (Time Machine has no derived order yet)'); return null; }
+    var app = A();
+    if (!app || !app.db || typeof app.three2ifc !== 'function') {
+      console.warn('§MAXQ_TIME_ABORT reason=no-db-or-transform'); return null;
+    }
+    var nF = Math.max(2, frames | 0);
+    // Element positions, in IFC space — the camera path is converted TO ifc rather than every element
+    // to three, because there are ~250 path samples and up to 10^5 elements.
+    var pos = {}, discOf = {}, nPos = 0;
+    try {
+      var rows = app.dbQuery('SELECT t.guid, t.center_x, t.center_y, t.center_z, m.discipline ' +
+                             'FROM element_transforms t LEFT JOIN elements_meta m ON m.guid = t.guid');
+      for (var r = 0; r < rows.length; r++) {
+        pos[rows[r][0]] = [rows[r][1], rows[r][2], rows[r][3]];
+        discOf[rows[r][0]] = rows[r][4] || '?';
+        nPos++;
+      }
+    } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=' + e.message); return null; }
+    if (!nPos) { console.warn('§MAXQ_TIME_ABORT reason=no-element_transforms'); return null; }
+
+    var NS = 256, path = [], k;
+    for (k = 0; k < NS; k++) {
+      var p = poseAt(k / (NS - 1));
+      var q = app.three2ifc(p.x, p.y, p.z);
+      path.push([q.ix, q.iy, q.iz]);
+    }
+    // Save the derived order ONCE so tmRestoreDerivedOrder can put it back exactly, without a
+    // re-query (a re-query would also re-run injectGantt's cost for nothing).
+    if (!_bkSaved) {
+      _bkSaved = { ops: _ops.map(function(o) { return { i: o, s: o.start_ts, e: o.end_ts }; }),
+                   ps: _projectStart, pe: _projectEnd };
+    }
+    var n = _ops.length, span = Math.max(1, _bkSaved.pe - _bkSaved.ps), base = _bkSaved.ps;
+    var hit = 0, miss = 0, arc = 0;
+    for (var i = 0; i < n; i++) {
+      var op = _ops[i];
+      var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var P = guid ? pos[guid] : null;
+      var zRank = n > 1 ? i / (n - 1) : 0;
+      var camS;
+      if (!P) { camS = zRank; miss++; }          // no geometry: keep its derived place, do not invent one
+      else {
+        var bestK = 0, bestD = Infinity;
+        for (k = 0; k < NS; k++) {
+          var dx = path[k][0] - P[0], dy = path[k][1] - P[1], dz = path[k][2] - P[2];
+          var d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < bestD) { bestD = d2; bestK = k; }
+        }
+        camS = bestK / (NS - 1); hit++;
+        if (discOf[guid] === 'ARC') arc++;
+      }
+      var reveal = (Math.floor(camS * nF) + zRank) / nF;
+      if (reveal > 1) reveal = 1;
+      op.start_ts = base + reveal * span;
+      op.end_ts = op.start_ts + (span / nF) * 1.5;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _ops[0].start_ts - 1;
+    _projectEnd = Math.max.apply(null, _ops.map(function(o) { return o.end_ts; }));
+    // The event index is keyed on _ops; it is now stale in every entry. Drop it and require a fresh
+    // full pass before any delta skip can engage again (§PERF_INCR's own invalidation contract).
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    console.log('§MAXQ_TIME mode=D ops=' + n + ' placed=' + hit + ' noGeom=' + miss +
+      ' arc=' + arc + ' frames=' + nF + ' samples=' + NS +
+      ' span=' + Math.round(span) + 'ms installFrames=1.5' +
+      ' ms=' + (performance.now() - t0).toFixed(0) +
+      ' — DERIVED BUILD ORDER re-keyed to the camera path (NOT a construction programme)');
+    return { ops: n, placed: hit, noGeom: miss, arc: arc,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+  window.tmRestoreDerivedOrder = function() {
+    if (!_bkSaved) return false;
+    for (var i = 0; i < _bkSaved.ops.length; i++) {
+      _bkSaved.ops[i].i.start_ts = _bkSaved.ops[i].s;
+      _bkSaved.ops[i].i.end_ts = _bkSaved.ops[i].e;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _bkSaved.ps; _projectEnd = _bkSaved.pe;
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    _bkSaved = null;
+    console.log('§MAXQ_TIME restored — derived Z-band order back in force');
+    return true;
+  };
+  // W-BUILDUP-SAMPLE reads this: how many ops are placed at the current cursor. Counting ops rather
+  // than meshes keeps the witness independent of the render path it is meant to be checking.
+  window.tmPlacedCount = function(ms) {
+    var c = isFinite(ms) ? ms : _cursor, n = 0;
+    for (var i = 0; i < _ops.length; i++) {
+      if (_ops[i].start_ts > c) break;
+      if (_ops[i].end_ts <= c) n++;
+    }
+    return n;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. Returns its boolean (count>0 / false); callers cache.
