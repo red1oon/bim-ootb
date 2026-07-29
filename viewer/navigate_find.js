@@ -1555,6 +1555,36 @@
         var d = rr[7] || '_'; (byDisc[d] = byDisc[d] || []).push(rr);
       }
       var discs = Object.keys(byDisc);
+      // §BBOX_GHOST_ALL — envelope-first, ALL-elements fallback (IFC_LARGE_PRIVATE_STRESS_TEST.md
+      // §KUL002 — Witness: W-BBOX-GHOST-NOENVELOPE). _isEnvelope() matches only Wall|Slab|Roof|
+      // CurtainWall|Covering|Plate. A plant/MEP model has NONE of those — KUL070 is 8 walls + 1 slab
+      // in 25,029 elements — so this returned null, Alt+Z's bbox state drew nothing, and the
+      // large-building shell path silently fell through to x-ray dim (that IS the "why is it
+      // translucent" report). Do NOT widen _isEnvelope itself: for models that DO have an envelope
+      // the filter is the point — it keeps the ghost a shell of far context (LTU 28,569 of 122,667,
+      // Terminal 34,446 of 48,428). Widening globally would 4x LTU's box count and lose that meaning.
+      // Falling back only when the envelope set is EMPTY changes nothing for those models and gives
+      // an envelope-less model the boxes it does have. Cost is unchanged: instanced wireframe boxes
+      // from element_transforms.bbox_*, one BoxGeometry + N instances (project_altx_ghost.md).
+      // Threshold, not just empty: KUL070 has 9 envelope elements in 25,033 (0.04%) — non-zero, so an
+      // "if empty" test misses it and the ghost still draws 9 boxes = visually nothing. Fire when the
+      // envelope is absent OR negligible: <2% of elements AND <200 of them (BOTH, so a small building
+      // with a genuinely thin envelope isn't caught by the ratio alone). Measured margin against the
+      // fleet — nearest real case is Hospital at 4,518/63,415 = 7.1%, well clear of 2%:
+      //   KUL070 9/25,033=0.04% → FALLBACK · Hospital 7.1% · JKR 12.1% · LTU 22.7% · Terminal 71.1% → unchanged.
+      var _envN = 0;
+      for (var k in byDisc) _envN += byDisc[k].length;
+      if (rows.length && (_envN === 0 || (_envN / rows.length < 0.02 && _envN < 200))) {
+        byDisc = {};
+        for (var j = 0; j < rows.length; j++) {
+          var r2 = rows[j], d2 = r2[7] || '_';
+          (byDisc[d2] = byDisc[d2] || []).push(r2);
+        }
+        discs = Object.keys(byDisc);
+        console.log('[MG] §BBOX_GHOST_ALL envelope=' + _envN + '/' + rows.length +
+          ' (' + (100 * _envN / rows.length).toFixed(2) + '%) too thin to be a shell — boxing ALL '
+          + rows.length + ' elements, discs=' + discs.join(','));
+      }
       if (!discs.length) { console.log('[MG] §BBOX_GHOST_EMPTY rows=' + rows.length); return null; }
       var group = new THREE.Group(), geo = new THREE.BoxGeometry(1, 1, 1), total = 0;
       var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();

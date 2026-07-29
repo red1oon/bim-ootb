@@ -172,7 +172,7 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=56',
+        'navigate_find.js?v=57',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
