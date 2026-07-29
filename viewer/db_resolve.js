@@ -21,6 +21,25 @@
 //   R6 absolute non-OCI .../buildings/X → prodBase+buildings/X  (heal a stale absolute GH-Pages link too)
 // NON-INVENT: only the filename (url.split('/').pop()) is reused; no path is fabricated.
 // Read the §-log after every run (Universal Protocol Log Mandate).
+//
+// # ⚠ DO NOT REMOVE — SPEC (W-DB-CACHE-KEY) — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1
+// SCOPE: one pure decision — given a building-asset URL, return the CANONICAL IndexedDB cache key.
+// WHY:   scene.js cachedFetch() stored/looked up the blob under the raw url STRING, and the two ways
+//        a user reaches the same building build two different strings for the same bytes:
+//          landing/hub  (index.html:489)          → '<prodBase>buildings/Hospital_extracted.db'
+//          ERP red pill (erp/idempiere.html:4716) → '../buildings/Hospital_extracted.db'
+//        So opening from the landing cached 251MB under the OCI key, and the Zoom-Across red pill then
+//        MISSED, 404'd, retried OCI, and re-downloaded the whole 251MB — every single time, forever,
+//        writing a SECOND copy under the relative key. One building, two entries, 502MB.
+// RULES (each is a test case in tests/witness_db_cache_key.js):
+//   K1 import:// url                  → verbatim   (IDB-only identity; never rewritten)
+//   K2 production buildings/<file>    → 'buildings/<file>'  (folds ../buildings, buildings, /buildings,
+//                                                            and <prodBase>buildings onto ONE key)
+//   K3 /deploy/ or /modeller/ path    → verbatim   (dev bench serves deploy/dev/buildings/Terminal…
+//                                                   AND deploy/buildings/Hospital… — same filenames,
+//                                                   DIFFERENT bytes. Folding those = wrong geometry.)
+//   K4 anything else                  → verbatim   (../erp/ad_seed.db, non-buildings/ assets)
+// NON-INVENT: the key is built from the url's own filename; no path is fabricated, nothing is guessed.
 (function () {
   'use strict';
 
@@ -39,7 +58,23 @@
     return prodBase + 'buildings/' + file;
   }
 
-  var DbResolve = { ociRetryUrl: ociRetryUrl };
+  // cacheKey(url, prodBase) → string   (W-DB-CACHE-KEY — never null; a key is always returned)
+  function cacheKey(url, prodBase) {
+    if (!url || typeof url !== 'string') return url;
+    if (url.indexOf('import://') === 0) return url;                  // K1
+    // K3 — dev/authoring trees keep their full path: deploy/dev/buildings/Terminal_extracted.db and
+    // deploy/buildings/Terminal_extracted.db are different bytes behind the same filename.
+    if (/\/deploy\/|\/modeller\//.test(url)) return url;             // K3
+    // K2 — the shipped production set, however it was addressed. Strip the query/hash first so a
+    // cache-busted '?v=' link folds onto the same key as the plain one.
+    var bare = url.split('#')[0].split('?')[0];
+    if (!/(^|\/)buildings\//.test(bare)) return url;                 // K4
+    var file = bare.split('/').pop();
+    if (!file) return url;                                           // K4 — 'buildings/' with no file
+    return 'buildings/' + file;                                      // K2
+  }
+
+  var DbResolve = { ociRetryUrl: ociRetryUrl, cacheKey: cacheKey };
   if (typeof window !== 'undefined') window.DbResolve = DbResolve;
   if (typeof module !== 'undefined' && module.exports) module.exports = DbResolve;
 })();
