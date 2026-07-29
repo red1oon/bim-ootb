@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -730,12 +730,20 @@ async function initViewer() {
   // §S287b: SINGLE-OWNER render loop. Every (re)start routes through here; the _rafId guard
   // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
   // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
+  var _idleCycles = 0;   // §LOG_SPAM_THROTTLE — the idle gate's cycle count, logged instead of each cycle
   function _startLoop() {
     if (_rafId) return;                       // already running — never double
     _loopStarts++;
     _needsRender = true;
     _rafId = requestAnimationFrame(animate);
-    console.log('§RENDER_LOOP start total=' + _loopStarts);
+    // §LOG_SPAM_THROTTLE (user, 2026-07-27: "solve the spam too"). This trio — RENDER_LOOP start,
+    // IDLE_GATE park, IDLE_GATE wake — fires once per idle cycle, and the idle gate cycles on every
+    // pointer twitch: their Hospital console ran to `total=189` with hundreds of interleaved
+    // park/wake pairs, burying every §-line that carries information. The COUNT is the signal here,
+    // not each occurrence, so log the first few in full and then only every 25th, carrying the
+    // running total (which is what the §RENDER_LOOP witness asserts on anyway).
+    if (_loopStarts <= 3 || _loopStarts % 25 === 0)
+      console.log('§RENDER_LOOP start total=' + _loopStarts + (_loopStarts > 3 ? ' (throttled: every 25th)' : ''));
   }
   function _ensureLoop() { _tabVisible = true; _startLoop(); }
   document.addEventListener('visibilitychange', function() {
@@ -847,7 +855,13 @@ async function initViewer() {
                  APP.flyActive || _orbiting || _pipelinesCompiling;
     if (!_awake) {
       _rafId = null;
-      if (!_idleLogged) { console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames)'); _idleLogged = true; }
+      if (!_idleLogged) {
+        _idleCycles = (_idleCycles || 0) + 1;
+        if (_idleCycles <= 3 || _idleCycles % 25 === 0)
+          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=' + _idleCycles +
+            (_idleCycles > 3 ? ' (throttled: every 25th)' : ''));
+        _idleLogged = true;
+      }
       return;
     }
     _rafId = requestAnimationFrame(animate);
@@ -897,7 +911,10 @@ async function initViewer() {
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
         _needsRender = false;
-        if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
+        if (_idleLogged) {
+          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake cycles=' + (_idleCycles || 0));
+          _idleLogged = false;
+        }
       } else if (!_idleLogged) {
         console.log('§IDLE_GATE park — desktop loop idle, 0 GPU frames (static scene)');
         _idleLogged = true;

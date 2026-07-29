@@ -170,6 +170,21 @@
   // bind the Find-lens storey index from the LIVE model (rooms→IfcBuildingStorey) so density dots use real
   // storeys — non-invent, honest no-op on a building without spatial_structure. Uses the viewer's A.dbQuery.
   var _storeysBound = false;
+  // §HBA_LAZY — the ONE entry point that wakes HBA. Idempotent (bindStoreysFromModel has its own
+  // _storeysBound guard and _ensureErpGovern its own _erpTried guard; this adds the timing + a single
+  // §-line so the deferred cost is MEASURABLE rather than asserted). Called from every public entry
+  // that reads seeded state, never at load. Witness: W-HBA-LAZY.
+  var _hbaSeedMs = null;
+  function ensureHbaData(A) {
+    if (_hbaSeedMs !== null) return false;              // already awake
+    var t0 = (G.performance && G.performance.now) ? G.performance.now() : Date.now();
+    bindStoreysFromModel(A);
+    _hbaSeedMs = +(((G.performance && G.performance.now) ? G.performance.now() : Date.now()) - t0).toFixed(1);
+    console.log('§HBA_SEED ms=' + _hbaSeedMs + ' rooms=' + ((A && A._hbaRooms) ? A._hbaRooms.length : 0) +
+      ' — this is the work that used to run at page load on every building');
+    return true;
+  }
+
   function bindStoreysFromModel(A) {
     var h = HBA();
     if (_storeysBound || !h.L || !h.L.bindStoreys || !A || typeof A.dbQuery !== 'function') return;
@@ -439,6 +454,10 @@
   // non-matching guid never tints (honest). OFF (or switching mode) → full restore (zero residue).
   function toggle(A, mode) {
     if (!ready()) { if (A && A.status) A.status.textContent = 'HR overlay not loaded'; return false; }
+    // §HBA_LAZY: second wake point. A lens can be driven directly (witness scripts, deep-links,
+    // HBALens.toggle from the console) without the drawer, and every plan below reads the seeded
+    // specs — so wake here too rather than assuming the drawer ran first.
+    ensureHbaData(A);
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
     _clearOutlines(A);                                          // §2026-07-05e — perimeter outlines ride the SAME one-mode-at-a-time rule
     if (G.HBAAvatars && G.HBAAvatars.isActive()) G.HBAAvatars.unmount(A);   // §AVATAR-LOD — avatars ride the presence lens; clear them with it
@@ -519,7 +538,9 @@
     var drawerOpen = (typeof document !== 'undefined') && !!document.getElementById('hba-fm-drawer');
     return availableLenses(G.APP || G.A || {}).some(function (x) { return x.active; }) || drawerOpen;
   }
-  function activateLens(A, entry) { if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
+  // §HBA_LAZY: third wake point — the 'pane' branch calls p.toggle(A) DIRECTLY, bypassing toggle()
+  // above, and every pane (dashboard/payslip/leave/tenancy/bom) reads A._hba* specs.
+  function activateLens(A, entry) { ensureHbaData(A); if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
 
   // remove every child via removeChild/remove (NOT `.innerHTML = ''` — matches the codebase's own convention,
   // see hba_leave.js/hba_payslip.js headers: innerHTML-clearing isn't reliable across the lightweight witness
@@ -998,6 +1019,10 @@
   function openFamilyDrawer(A) {
     if (typeof document === 'undefined') return null;
     var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); _closePresenceDrawer(); return null; }
+    // §HBA_LAZY: the pill IS the wake signal. Seeding here (not at page load) is what makes HBA
+    // opt-in — availableLenses()/familyHasData() below read the specs this call compiles, so it must
+    // precede them. Idempotent: a second open is a no-op.
+    ensureHbaData(A);
     var d = document.createElement('div'); d.id = 'hba-fm-drawer';
     // §FIX 2026-07-06c item B follow-on: this menu's rows are how a user opens a 2nd/3rd pane — it must stay
     // clickable ABOVE any already-open pane (panes are z-index:10050), or opening the first pane hides the
@@ -1063,6 +1088,7 @@
     flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, captureFacingSnapshot: captureFacingSnapshot,
     openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
+    ensureHbaData: ensureHbaData,   // §HBA_LAZY — public wake seam (witnesses + any future entry point)
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
     _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
@@ -1104,17 +1130,18 @@
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
     if (A.streaming) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — still streaming'); } return; }
     clearInterval(_poll);
-    bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
-    _consumeFindGuid(A);       // §2026-07-04c — the reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID)
-    // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
-    // per-lens availability/greying is computed live in the drawer (availableLenses), not on the bar.
-    var acts = G._mainPillActions || [], lenses = availableLenses(A), any = familyHasData(A);
-    for (var i = 0; i < acts.length; i++) {
-      if (acts[i].id === 'hbaFM') { acts[i].pill = any ? undefined : false; }
-    }
-    if (any && A._buildPill) A._buildPill();
-    console.log('§HBA_GATE FM=' + (any ? 'on' : 'off') + ' available=['
-      + lenses.filter(function (x) { return x.available; }).map(function (x) { return x.id; }).join(',')
-      + '] (guidMap=' + Object.keys(A.guidMap).length + ')');
+    // §HBA_LAZY (user directive 2026-07-28: "It should only come on if called from the pill. No early
+    // casting needed."). WAS: this tick ran the ENTIRE HBA compile — bindStoreysFromModel() (IfcSpace
+    // footprints, rel_contained_in_space members, the elements_meta aisle-fallback scan, and seven
+    // demonstrator spec seeds) plus the async ad_seed.db fetch in _ensureErpGovern — and then
+    // auto-promoted the hbaFM pill into the rail by flipping acts[i].pill and calling _buildPill().
+    // Two costs, both unasked-for: (1) the pill CAST ITSELF onto the bar on any building with rooms,
+    // (2) all of that DB work landed on the main thread the instant streaming finished — precisely
+    // when a large building is still settling (BVH build, consolidation, bbox ghost).
+    // NOW: nothing runs here. ensureHbaData() does the same work, once, on first real HBA use.
+    // Deep-link (A.FIND_GUID) is an EXPLICIT request, so it still seeds — but only when actually set.
+    if (A.FIND_GUID) { ensureHbaData(A); _consumeFindGuid(A); }
+    console.log('§HBA_LAZY armed — no seed, no pill promotion until the Human-Asset pill is used' +
+      ' (guidMap=' + Object.keys(A.guidMap).length + ', deep_link=' + (A.FIND_GUID ? 'yes' : 'no') + ')');
   }, 500);
 })();

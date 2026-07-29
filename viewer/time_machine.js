@@ -1843,6 +1843,26 @@
       _sfxPhases = null;
     }
 
+    // Implementing prompts/PHOTOREAL_STILL_RENDER.md §BILLBOARD_NAME_ELEMENT §5 —
+    // Witness: W-BILLBOARD-NAME-ELEMENT V1/V2.
+    // §TM_OVERLAY_SYNC seam — presentation overlays (the billboard artwork quad and the building
+    // name-plate lettering in effects.js) are NOT elements: they carry no userData.guid, so the
+    // traverse above never touches them and they render from frame 0 of a buildup, even at cursors
+    // where the REAL element they sit on is hidden. Handing them the element's guid instead would
+    // make two scene objects answer to one guid for picking/Find/BOM, and would run applyHighlight
+    // (cyan/orange emissive at 0.85 opacity) over the artwork during its install window.
+    // So: one O(1) feature-detected call, same shape and same place as the §SFX seam above. TM
+    // hands over the visibility it has ALREADY computed for this tick — the overlay owner cannot
+    // drift from the element because it is not re-deriving anything. Passing null (see deactivate)
+    // means "TM is off, show your overlays".
+    if (window.__tmOverlaySync) {
+      try {
+        window.__tmOverlaySync(function (g) {
+          return !!placed[g] || !!frontier[g] || recent[g] !== undefined;
+        });
+      } catch (e) { /* an overlay owner must never be able to break the scrub */ }
+    }
+
     applySunCycle(cursorMs);
     if (_ganttVisible) drawGanttMini();
     if (_dashVisible) drawDashboard();
@@ -4373,11 +4393,23 @@
 
   function activate() {
     if (_active) return;
-    // Mobile merged meshes have no guid — re-stream as individual meshes
+    // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
+    // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
+    //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
+    //       Since 68bd9a7 killed the merge routing, `_isMobile` re-streamed the WHOLE building on
+    //       every mobile TM open for nothing; and with merging now capability-gated rather than
+    //       device-gated, a no-multi_draw DESKTOP has merged meshes too and needs the same unmerge.
+    //   (2) _forceNoMerge makes the re-stream stick — flipping _isMobile no longer disables merging
+    //       (the gate is A._hasMultiDraw), so without this flag the re-stream would just re-merge.
+    // ONE-SHOT: if a re-stream somehow still produced merged meshes, activate normally rather than
+    // re-streaming forever. Belt-and-braces against the loop described above — a spinning
+    // clearStreamed/streamBuilding cycle is a far worse failure than TM opening with merged geometry.
     var app = A();
-    if (app && app._isMobile) {
-      app._isMobile = false;
+    if (app && app._mergeActive && !app._tmUnmergeTried) {
+      app._tmUnmergeTried = true;
+      app._forceNoMerge = true;
       var bld = app.activeBuilding;
+      console.log('§TM_UNMERGE re-streaming ' + (bld || '?') + ' without merge (TM needs per-element slots)');
       app.clearStreamed();
       if (bld) { app.streamBuilding(bld); }
       // Wait for re-stream to finish, then activate
@@ -4536,6 +4568,10 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    // §TM_OVERLAY_SYNC (see renderAtTime): null = "TM is off". Same contract as _gspClear above —
+    // nothing TM imposed on a presentation overlay may survive TM being switched off, otherwise a
+    // name plate stays hidden in the finished building because the scrub happened to end early.
+    if (window.__tmOverlaySync) { try { window.__tmOverlaySync(null); } catch (e) {} }
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
     _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
     var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
@@ -4816,6 +4852,349 @@
   // S265 Phase 3: Expose TM state for share URL
   window.tmGetState = function() {
     return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ══ §MAXQ_TIME / §CPE_BUILDUP — drive the construction state from an external baker ═══════════
+  // Spec: bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME (mode D) + prompts/
+  // CINEMA_PATH_EDITOR.md §CPE_BUILDUP. User 2026-07-28: "this construction bit is a checkbox to
+  // animate its buildup as cam goes along... its giving the impression and not chronologically
+  // accurate. But the elements laying on each other according to its part in the 4D is educational."
+  //
+  // ⚠ WORDING, and it is forced by the data, not a hedge: `Terminal_Hi.db` has NO tasks/task_elements
+  // tables and `Hospital_extracted.db` has them EMPTY (tasks=0). What TM synthesises is a DERIVED
+  // BUILD ORDER (Z-band + SEQUENCE_RULES), never a construction programme. Say "derived build order"
+  // — a BIM audience told "the schedule" will ask for the P6/MSP link, and there isn't one.
+  //
+  // renderAtTime() is internal by design; this is the ONE public cursor setter it needs. Note the
+  // §0a lesson from prompts/TM_INCREMENTAL_RENDER_PERF.md: pass the target cursor as a LOCAL value,
+  // never mutate the global `_cursor` first — doing that collapses the delta window to zero width and
+  // the incremental path silently skips the whole scene.
+  window.tmSetCursor = function(ms) {
+    if (!isFinite(ms)) return false;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, ms)));
+    return true;
+  };
+
+  // A bake needs Time Machine's op-log without the user having pressed the button. Same wait shape
+  // as tmJumpToOrder's own whenReady() — activate() is async (it may have to inject the derived
+  // timeline first), so poll for the ops rather than assuming they are there on the next line.
+  window.tmActivateForBake = function() {
+    return new Promise(function(resolve) {
+      if (_active && _ops.length) return resolve(true);
+      if (!_active) { try { activate(); } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); } }
+      var n = 0, iv = setInterval(function() {
+        if (_ops.length || ++n > 60) { clearInterval(iv); resolve(!!_ops.length); }
+      }, 500);
+    });
+  };
+
+  // Mode D: re-key the derived order so the reveal follows the CAMERA PATH instead of the Z-bands.
+  // This adds NO new render path — `renderAtTime` is untouched. It consumes `_ops` purely as "sorted
+  // ascending by start_ts, break past the cursor", so re-keying the timestamps IS the feature.
+  //
+  // The key, and why it is derived rather than tuned:
+  //     revealS = (floor(cameraS · frames) + zRank) / frames
+  // `cameraS` is where along the flight the camera comes closest to the element — the primary order,
+  // which is the user's "construction follows the camera path". `zRank` is the element's place in the
+  // DERIVED 4D order, and dividing by `frames` makes it the tie-break WITHIN one frame of camera
+  // travel — so a region assembles bottom-up in its own 4D order as the camera passes it, which is
+  // the "elements laying on each other according to its part in the 4D" half. The bucket size is the
+  // bake's own frame count, not a chosen constant.
+  //
+  // Install duration is one and a half frames of cursor, deliberately: the playback-derived
+  // `lingerMs = tickMs()*3` is ~2.7h in DAY mode while a film steps DAYS per frame, so inheriting it
+  // would step clean over every frontier state and the film would read as pop-in rather than
+  // assembly (recorded in PHOTOREAL_STILL_RENDER.md §MAXQ_TIME code-read, item 3.2).
+  var _bkSaved = null;
+  window.tmOrderByCameraPath = function(poseAt, frames, opts) {
+    opts = opts || {};
+    var t0 = performance.now();
+    if (typeof poseAt !== 'function') { console.warn('§MAXQ_TIME_ABORT reason=no-poseAt'); return null; }
+    if (!_ops.length) { console.warn('§MAXQ_TIME_ABORT reason=no-ops (Time Machine has no derived order yet)'); return null; }
+    var app = A();
+    if (!app || !app.db || typeof app.three2ifc !== 'function') {
+      console.warn('§MAXQ_TIME_ABORT reason=no-db-or-transform'); return null;
+    }
+    var nF = Math.max(2, frames | 0);
+    // Element positions, in IFC space — the camera path is converted TO ifc rather than every element
+    // to three, because there are ~250 path samples and up to 10^5 elements.
+    var pos = {}, discOf = {}, nPos = 0;
+    try {
+      var rows = app.dbQuery('SELECT t.guid, t.center_x, t.center_y, t.center_z, m.discipline ' +
+                             'FROM element_transforms t LEFT JOIN elements_meta m ON m.guid = t.guid');
+      for (var r = 0; r < rows.length; r++) {
+        pos[rows[r][0]] = [rows[r][1], rows[r][2], rows[r][3]];
+        discOf[rows[r][0]] = rows[r][4] || '?';
+        nPos++;
+      }
+    } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=' + e.message); return null; }
+    if (!nPos) { console.warn('§MAXQ_TIME_ABORT reason=no-element_transforms'); return null; }
+
+    var NS = 256, path = [], k;
+    for (k = 0; k < NS; k++) {
+      var p = poseAt(k / (NS - 1));
+      var q = app.three2ifc(p.x, p.y, p.z);
+      path.push([q.ix, q.iy, q.iz]);
+    }
+    // Save the derived order ONCE so tmRestoreDerivedOrder can put it back exactly, without a
+    // re-query (a re-query would also re-run injectGantt's cost for nothing).
+    if (!_bkSaved) {
+      _bkSaved = { ops: _ops.map(function(o) { return { i: o, s: o.start_ts, e: o.end_ts }; }),
+                   ps: _projectStart, pe: _projectEnd };
+    }
+    var n = _ops.length, span = Math.max(1, _bkSaved.pe - _bkSaved.ps), base = _bkSaved.ps;
+    var hit = 0, miss = 0, arc = 0;
+    for (var i = 0; i < n; i++) {
+      var op = _ops[i];
+      var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var P = guid ? pos[guid] : null;
+      var zRank = n > 1 ? i / (n - 1) : 0;
+      var camS;
+      if (!P) { camS = zRank; miss++; }          // no geometry: keep its derived place, do not invent one
+      else {
+        var bestK = 0, bestD = Infinity;
+        for (k = 0; k < NS; k++) {
+          var dx = path[k][0] - P[0], dy = path[k][1] - P[1], dz = path[k][2] - P[2];
+          var d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < bestD) { bestD = d2; bestK = k; }
+        }
+        camS = bestK / (NS - 1); hit++;
+        if (discOf[guid] === 'ARC') arc++;
+      }
+      var reveal = (Math.floor(camS * nF) + zRank) / nF;
+      if (reveal > 1) reveal = 1;
+      op.start_ts = base + reveal * span;
+      op.end_ts = op.start_ts + (span / nF) * 1.5;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _ops[0].start_ts - 1;
+    _projectEnd = Math.max.apply(null, _ops.map(function(o) { return o.end_ts; }));
+    // The event index is keyed on _ops; it is now stale in every entry. Drop it and require a fresh
+    // full pass before any delta skip can engage again (§PERF_INCR's own invalidation contract).
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    console.log('§MAXQ_TIME mode=D ops=' + n + ' placed=' + hit + ' noGeom=' + miss +
+      ' arc=' + arc + ' frames=' + nF + ' samples=' + NS +
+      ' span=' + Math.round(span) + 'ms installFrames=1.5' +
+      ' ms=' + (performance.now() - t0).toFixed(0) +
+      ' — DERIVED BUILD ORDER re-keyed to the camera path (NOT a construction programme)');
+    return { ops: n, placed: hit, noGeom: miss, arc: arc, source: 'derived',
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.1 — is this building's 4D REAL or DERIVED? ────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.1 — Witness: W-SCHED-COVERAGE
+  // PURE READ. Must not trigger injectGantt and must not mutate anything.
+  //
+  // ⚠ MEASURED CORRECTION — `_capActive` ALONE IS THE WRONG TEST, and the witness caught it before
+  // this shipped. `_capActive` is set by injectGantt's `_cap` overlay, so it is a RUN-SCOPED SIDE
+  // EFFECT, not a property of the data. `activate()` deliberately SKIPS injectGantt when the db
+  // already carries usable ELEMENT_PLACE ops with `_end_ts` (the cached/shipped-timeline fast path,
+  // ~line 4462) — which is exactly the case for a building whose schedule was authored in an earlier
+  // session and persisted. Confirmed on TerminalHi4D.db: all 48,433 ops carry `_captured:1` and
+  // `_task:TASK_*`, timestamps spanning the real 2026-01-01..2026-05-30 window, yet `_capActive` was
+  // false and this verb reported 'derived' — i.e. the real schedule was there and would still have
+  // been thrown away by mode D.
+  // So the source is decided by the OPS THEMSELVES: dated leaf tasks must exist AND the loaded ops
+  // must actually be keyed to them (`parameters._captured`, the marker `_cap` persists), with
+  // `_capActive` accepted as the same-session equivalent. Coverage falls back to the op count for the
+  // same reason — `_coveredCount` is only populated on the run where injectGantt executed.
+  window.tmScheduleSource = function() {
+    var leafTasks = 0, summarySkipped = 0, total = 0;
+    var app = A();
+    var capOps = 0;
+    for (var oi = 0; oi < _ops.length; oi++) {
+      if (_ops[oi].parameters && _ops[oi].parameters._captured) capOps++;
+    }
+    if (app && app.db) {
+      try {
+        var tr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE schedule_start IS NOT NULL " +
+          "AND schedule_finish IS NOT NULL AND (is_summary IS NULL OR is_summary = 0)");
+        if (tr.length && tr[0].values.length) leafTasks = tr[0].values[0][0] | 0;
+        var sr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE is_summary = 1");
+        if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
+      } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
+      try {
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement'");
+        if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
+      } catch (e) { total = 0; }
+    }
+    // Coverage is counted off the LOADED OPS FIRST, not off `_coveredCount`. `_coveredCount` tallies
+    // `_cap`'s UPDATE executions against kernel_ops, so a db carrying duplicate ELEMENT_PLACE rows for
+    // a guid inflates it above the element count (measured: 2238 on a 1119-element Duplex after an
+    // extra injectGantt pass). `capOps` is what the film actually reveals, so it is the honest number;
+    // `_coveredCount` is kept only as the fallback for the window where ops have not been reloaded yet.
+    var covered = capOps || _coveredCount;
+    return {
+      source: (leafTasks > 0 && (_capActive || capOps > 0)) ? 'captured' : 'derived',
+      leafTasks: leafTasks, summarySkipped: summarySkipped,
+      capOps: capOps, capActive: _capActive,
+      covered: covered, total: total, coveredUpdates: _coveredCount,
+      pct: total ? Math.min(100, Math.round(covered / total * 100)) : 0,
+      projectStart: _projectStart, projectEnd: _projectEnd, ops: _ops.length
+    };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.2 — the CAPTURED branch of the buildup ───────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.2
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  //
+  // ⚠ This verb deliberately WRITES NOTHING, and that is the whole design — not an omission.
+  // injectGantt's `_cap` overlay has ALREADY keyed every covered op to its own task's
+  // [schedule_start, schedule_finish] window (leaf tasks only — `is_summary` is filtered there), with
+  // §PLAYBACK-STAGGER distributing each task's guids bottom-up by center_z WITHIN that window.
+  // loadOps() then reads them back ORDER BY timestamp and computeDays() sets _projectStart/_projectEnd
+  // to the real project epoch. So "order the reveal by the real schedule" is already true of `_ops`
+  // the moment the timeline exists; mode D's re-key is what was DESTROYING it (§2).
+  //
+  // Returns the SAME shape tmOrderByCameraPath returns, so cinema_maxq.js's per-frame cursor loop
+  // needs no change. Because nothing was written, _bkSaved stays null and tmRestoreDerivedOrder() is a
+  // genuine no-op — stronger than restoring correctly, since there is nothing to get wrong.
+  window.tmOrderBySchedule = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    var ss = window.tmScheduleSource();
+    if (!ss.leafTasks) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-dated-leaf-tasks'); return null; }
+    if (ss.source !== 'captured') { console.warn('§CPE_BUILDUP_SOURCE reject reason=ops-not-keyed-to-tasks'); return null; }
+    var capOps = ss.capOps;
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE source=captured leafTasks=' + ss.leafTasks +
+      ' summarySkipped=' + ss.summarySkipped + ' covered=' + ss.covered + '/' + ss.total +
+      ' pct=' + ss.pct + '% capOps=' + capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — REAL LINKED SCHEDULE, reveal follows schedule_start (no re-key, no float/logic in this data)');
+    return { ops: _ops.length, placed: capOps, noGeom: _ops.length - capOps, arc: 0, source: 'captured',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_FOLLOW_TM — the film PLAYS the Time Machine; it does not author a build order ──
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_SOURCE_BLIND
+  // User, 2026-07-29: "do not bake anything for TM.. as i said, it is user's own plan" /
+  // "this practices good separation of tasks" — Time Machine owns the build order, Alt+C owns the
+  // camera. The film is a camera over a timeline someone else authored, and nothing about pressing
+  // Alt+C may change WHEN anything is built.
+  //
+  // This is the ONE verb both callers (the bake in cinema_maxq.js and the Preview in
+  // cinema_path_editor.js) now use, which is also the fix for those two having chosen the buildup
+  // source by different rules — the preview called tmOrderByCameraPath unconditionally while the bake
+  // consulted tmScheduleSource(), so on a captured-schedule building the rehearsal and the film could
+  // disagree about what they were showing.
+  //
+  // Like tmOrderBySchedule (which it delegates to for the captured case) it WRITES NOTHING: `_ops`
+  // are already in timeline order the moment the timeline exists — loadOps() reads them ORDER BY
+  // timestamp and computeDays() sets the real project epoch. So "follow the Time Machine" needs no
+  // pass at all, which is why _bkSaved stays null and tmRestoreDerivedOrder() is a genuine no-op.
+  //
+  // mode S = a captured/linked schedule keyed to dated leaf tasks.
+  // mode T = this model's own derived 4D timeline (schedule_gate's geometry-gated, bottom-up order —
+  //          real work, but NOT a construction programme; the wording tiers in §5 still apply).
+  // There is deliberately no mode D here. tmOrderByCameraPath still exists and is still correct at
+  // what it does, but re-keying a timeline to camera proximity is exactly the interference this verb
+  // was written to remove.
+  window.tmFollowTimeline = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    var ss = window.tmScheduleSource();
+    if (ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
+      var cap = window.tmOrderBySchedule();
+      if (cap) return cap;
+      // A degraded captured schedule falls through to the timeline as loaded — still the user's
+      // plan, never a re-key.
+      console.warn('§CPE_BUILDUP_SOURCE fallthrough reason=captured-but-unusable — following the timeline as loaded');
+    }
+    // Count what the reveal can actually show, the same way mode D counted `placed`: an op with no
+    // geometry still holds its place in the order, it just has nothing to appear.
+    var app = A(), placed = 0, noGeom = 0;
+    try {
+      var have = {};
+      var rows = app.dbQuery('SELECT guid FROM element_transforms');
+      for (var r = 0; r < rows.length; r++) have[rows[r][0]] = 1;
+      for (var i = 0; i < _ops.length; i++) {
+        var op = _ops[i];
+        var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+        if (guid && have[guid]) placed++; else noGeom++;
+      }
+    } catch (e) { placed = _ops.length; noGeom = 0; }   // counting failed → do not block the film
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE mode=T reason=generated-timeline ops=' + _ops.length +
+      ' placed=' + placed + ' noGeom=' + noGeom +
+      ' leafTasks=' + ss.leafTasks + ' capOps=' + ss.capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — the reveal FOLLOWS this model\'s own 4D timeline, unmodified (no re-key; not a construction programme)');
+    return { ops: _ops.length, placed: placed, noGeom: noGeom, arc: 0, source: 'timeline',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §4 — the numeric instrument the witnesses read ──────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §4
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  // Read-only, aggregate-only (never 10^5 rows across the bridge). Per dated leaf task it returns the
+  // FIRST and LAST reveal timestamp its bound elements actually get in `_ops` — which is what makes
+  // "the phases do not interleave" a number instead of an opinion. Works in BOTH branches, so the
+  // same instrument reads the captured order and mode D's re-key, and the two can be compared.
+  // `checksum` is the exact-reversibility probe: sums over EVERY op, so any single mutated timestamp
+  // changes it (W-SCHED-REVERSIBLE), without shipping the op list to the caller.
+  window.tmPhaseWindows = function() {
+    var app = A(), out = [], byGuid = {};
+    var chk = { opCount: _ops.length, sumStart: 0, sumEnd: 0 };
+    for (var i = 0; i < _ops.length; i++) { chk.sumStart += _ops[i].start_ts; chk.sumEnd += _ops[i].end_ts; }
+    if (!app || !app.db) return { phases: [], checksum: chk };
+    var rows;
+    try {
+      rows = app.db.exec('SELECT te.guid, te.task_id, t.name, t.schedule_start FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id ' +
+        'WHERE t.schedule_start IS NOT NULL AND t.schedule_finish IS NOT NULL ' +
+        'AND (t.is_summary IS NULL OR t.is_summary = 0)');
+    } catch (e) { return { phases: [], checksum: chk }; }
+    if (!rows.length || !rows[0].values.length) return { phases: [], checksum: chk };
+    var meta = {};
+    rows[0].values.forEach(function(r) {
+      byGuid[r[0]] = r[1];
+      if (!meta[r[1]]) meta[r[1]] = { taskId: r[1], name: r[2], scheduleStart: r[3], n: 0,
+                                      minStart: Infinity, maxStart: -Infinity, bound: 0 };
+      meta[r[1]].bound++;
+    });
+    for (i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var tid = g ? byGuid[g] : null;
+      if (!tid) continue;
+      var m = meta[tid];
+      m.n++;
+      if (op.start_ts < m.minStart) m.minStart = op.start_ts;
+      if (op.start_ts > m.maxStart) m.maxStart = op.start_ts;
+    }
+    for (var k in meta) if (meta[k].n) out.push(meta[k]);
+    out.sort(function(a, b) {
+      return (Date.parse(a.scheduleStart) - Date.parse(b.scheduleStart)) ||
+             (a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0);   // §3.2: stable tie-break only
+    });
+    return { phases: out, checksum: chk };
+  };
+
+  window.tmRestoreDerivedOrder = function() {
+    if (!_bkSaved) return false;
+    for (var i = 0; i < _bkSaved.ops.length; i++) {
+      _bkSaved.ops[i].i.start_ts = _bkSaved.ops[i].s;
+      _bkSaved.ops[i].i.end_ts = _bkSaved.ops[i].e;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _bkSaved.ps; _projectEnd = _bkSaved.pe;
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    _bkSaved = null;
+    console.log('§MAXQ_TIME restored — derived Z-band order back in force');
+    return true;
+  };
+  // W-BUILDUP-SAMPLE reads this: how many ops are placed at the current cursor. Counting ops rather
+  // than meshes keeps the witness independent of the render path it is meant to be checking.
+  window.tmPlacedCount = function(ms) {
+    var c = isFinite(ms) ? ms : _cursor, n = 0;
+    for (var i = 0; i < _ops.length; i++) {
+      if (_ops[i].start_ts > c) break;
+      if (_ops[i].end_ts <= c) n++;
+    }
+    return n;
   };
 
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily

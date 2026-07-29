@@ -246,7 +246,20 @@
             // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
             // collides with a same-named .db resident's own instance either.
             var O = window.Bonsai && window.Bonsai.oplog;
-            var openIt = function () { _openBuffer(dbs.extractedDb, name); };
+            // §IFC-OPEN-SEED-FIX (2026-07-07, W-ARC-SOURCE-PARITY witness finding): openResident() always
+            // follows _openBuffer with _forkEditable(res) → _seedArcEditable, the commit that actually places
+            // GEOM_INSERT ops into window.Bonsai.group() — this path never did, so an IFC-opened building was
+            // WALKABLE (element_transforms queryable) but rendered ZERO ARC geometry (empty 3D scene, nothing
+            // to grab/edit; measured: SampleHouse/Duplex both 0 window.Bonsai.group().children after IFC-open).
+            // Mirror _forkEditable's replay+seed steps directly here (NOT a call to _forkEditable(res) itself
+            // — that re-runs setModelKey('mo_'+res.key), which would stomp the 'mo_ifc_'+name key just set
+            // below and re-collide with a same-named .db resident's instance, exactly what §IFC-OPEN-KEY-FIX
+            // above prevents). No res object exists for an ad-hoc IFC-opened file, so _fetchGeoDb (Terminal's
+            // split-geo-db fetch) is skipped — geoBuf=null, same as every non-Terminal .db resident already.
+            var openIt = function () {
+              var ok = _openBuffer(dbs.extractedDb, name);
+              if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+            };
             if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
             else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }

@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v852';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v884';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -43,6 +43,7 @@ const SHELL_LIBS = [
   'lib/SSAOPass.js',
   'lib/OutlinePass.js',
   'lib/OutputPass.js',
+  'lib/BloomPass.js',
   // §CINEMA_SSAA (2026-07-18) + transitive-import completion: the 6 modules above `import` these
   // 8 (Pass/CopyShader ← everything; ShaderPass/MaskPass ← EffectComposer; SSAARenderPass ←
   // TAARenderPass; SimplexNoise/SSAOShader ← SSAOPass; OutputShader ← OutputPass) — precaching
@@ -113,6 +114,7 @@ const PRECACHE_ASSETS = [
   'loader.js',
   'effects.js',
   'cinema_maxq.js',
+  'cinema_path_editor.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
   'scene.js',
@@ -120,6 +122,7 @@ const PRECACHE_ASSETS = [
   'panels.js',
   'tools.js',
   'picking.js',
+  'hover_name.js',
   'tour.js',
   'clash_matrix.js',
   'measure.js',

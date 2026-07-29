@@ -52,7 +52,15 @@ async function setupScene(A) {
     var _dbg = _capGl.getExtension('WEBGL_debug_renderer_info');
     var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
     console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
-  } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
+    // §MERGED_GUID (MOBILE_PERF.md §SPEC 2026-07-28 Part 4): PERSIST the capability — S280c's
+    // `_hasMultiDraw` was computed and thrown away here, which is why the merged low-draw fallback
+    // has been dead since 68bd9a7 (2026-05-27). streaming.js reads this to decide merge routing.
+    // Default TRUE on probe failure = keep the BatchedMesh path (never merge on unknown caps).
+    A._hasMultiDraw = _md;
+  } catch(_e) {
+    A._hasMultiDraw = true;
+    console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message));
+  }
   // ── Implementing FLY_TOUR_DLOD_SCALE.md §14 (bim-compiler prompts/Viewer/) — GPU capability
   // warning. Witnesses: W-GPU-WARN-FIRSTRUN / -DEGRADED / -RECOVERED / -NONAG.
   // Compares the caps just probed above against the "last known good" signature in localStorage
@@ -100,6 +108,12 @@ async function setupScene(A) {
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
+  // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
+  // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
+  // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
+  // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
+  // how bloom, ember and the 48-light budget are all still-only.
   renderer.toneMappingExposure = 0.45;
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;
@@ -433,6 +447,17 @@ async function setupScene(A) {
   A.ifc2three = function(ix, iy, iz) {
     return { x: ix - A.modelOffset.x, y: iz - A.modelOffset.z, z: -(iy - A.modelOffset.y) };
   };
+  // Exact inverse. Anything PERSISTED must be stored in IFC space, never three.js space:
+  // A.modelOffset is established at load time, so a three.js coordinate written into a .db is only
+  // meaningful to the session that wrote it. This is why staffage_instances stores ifc_* columns,
+  // and §CINEMA_PATH_EDITOR's cinema_path table follows it.
+  A.three2ifc = function(x, y, z) {
+    return { ix: x + A.modelOffset.x, iy: -z + A.modelOffset.y, iz: y + A.modelOffset.z };
+  };
+  // Direction vectors carry NO offset — only the axis swap. Running a direction through the point
+  // converters would add the model offset to it and silently rotate/scale it into nonsense.
+  A.three2ifcDir = function(x, y, z) { return { ix: x, iy: -z, iz: y }; };
+  A.ifc2threeDir = function(ix, iy, iz) { return { x: ix, y: iz, z: -iy }; };
 
   // IndexedDB cache
   A.CACHE_DB_NAME = 'bim_ootb_cache';
@@ -586,11 +611,45 @@ async function setupScene(A) {
       console.log('§STAFFAGE_SAVE rows=' + rows.length);
     } catch (e) { console.warn('§STAFFAGE_SAVE_FAIL ' + e.message); }
   }
+  // §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md, guardrail 5 + §CINEMA_PATH_EDITOR_MODEL):
+  // an edited cinema path is AUTHORED data, so under the prime rule it must be STORED, never
+  // re-guessed. Mirrors staffage_instances exactly — same explicit-action model: "Save this path"
+  // stages the edit into memory, the user's normal Ctrl+S is what writes it to the file. Adjusting
+  // and proceeding stays ephemeral, so a user experimenting with waypoints can walk away without
+  // having changed the building.
+  // Positions only, plus the beat seconds — camera ANGLE is never stored because it is never
+  // authored (it is LOS to the next waypoint, re-derived on load).
+  // §CPE_BANDS rule 6 — store BANDS, not the six loose waypoints they expand to. Rigidity then
+  // survives a save/reload STRUCTURALLY: six free points would just be six points, with nothing
+  // stopping them drifting apart or bending on the next session. One row per band: anchor, unit
+  // direction, length. Both in IFC space, for the same reason staffage_instances is — A.modelOffset
+  // is established at load time, so three.js coordinates are only meaningful to the session that
+  // wrote them.
+  function _writeCinemaPathTable(db) {
+    var ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
+    if (!ov || !ov.bands || ov.bands.length < 2) return;
+    try {
+      db.run("DROP TABLE IF EXISTS cinema_path");
+      db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
+             "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
+             "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      ov.bands.forEach(function(b, i) {
+        var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
+        var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
+        stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
+                  ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec]);
+      });
+      stmt.free();
+      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
+    } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
       _writeStaffageTable(A.db);
+      _writeCinemaPathTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -616,6 +675,7 @@ async function setupScene(A) {
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
     _writeStaffageTable(mono);
+    _writeCinemaPathTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -1315,6 +1375,10 @@ async function setupScene(A) {
       else if (A.status) A.status.textContent = 'UNDER CONSTRUCTION';
     },
     '/':  function() { if (A.quickShare) A.quickShare(); },
+    // §HOVER_NAME (HOVER_NAME.md): verified free against this table 2026-07-29. Checkbox lives in
+    // the Find panel; A.toggleHoverName exists from load (hover_name.js) regardless of whether the
+    // panel was ever opened, so the key works standalone — same lazy-load-then-act shape as 'f'.
+    "'": function() { if (A.toggleHoverName) A.toggleHoverName('key'); },
     '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
       if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
       else if (typeof window.toggleOverflow === 'function') window.toggleOverflow();
@@ -1469,6 +1533,9 @@ async function setupScene(A) {
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
       all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
+      // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
+      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });

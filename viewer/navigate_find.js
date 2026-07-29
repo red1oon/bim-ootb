@@ -175,6 +175,14 @@
       '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Count doors, Total cost…') + '">',
       '</div>',
       '<div id="find-chips"></div>',
+      // §HOVER_NAME (HOVER_NAME.md): hidden on touch — no hover on mobile, don't ship a
+      // control that silently does nothing there.
+      '<div id="find-hover-row" style="display:' + (window._isMobile ? 'none' : 'flex') +
+        ';align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:11px;color:#ccc">',
+      '  <input type="checkbox" id="find-hover-name-cb" style="cursor:pointer;margin:0">',
+      '  <label for="find-hover-name-cb" style="cursor:pointer;user-select:none">' +
+        _t('ui_hover_name', 'Hover name') + ' <span style="opacity:0.5">(&#39;)</span></label>',
+      '</div>',
       // Hidden selects — still used for data binding
       '<select id="find-type" style="display:none"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
       '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
@@ -247,6 +255,13 @@
     var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
+    // §HOVER_NAME: checkbox and the ' key drive ONE state — checkbox side of that contract.
+    var elHoverCb = document.getElementById('find-hover-name-cb');
+    if (elHoverCb) {
+      elHoverCb.addEventListener('change', function() {
+        if (A.toggleHoverName) A.toggleHoverName('checkbox', elHoverCb.checked);
+      });
+    }
     var elMicBtn = document.getElementById('find-mic-btn');
     var elSelected = document.getElementById('find-selected');
     // §RevitParity A1: isolate controls
