@@ -1375,6 +1375,10 @@ async function setupScene(A) {
       else if (A.status) A.status.textContent = 'UNDER CONSTRUCTION';
     },
     '/':  function() { if (A.quickShare) A.quickShare(); },
+    // §HOVER_NAME (HOVER_NAME.md): verified free against this table 2026-07-29. Checkbox lives in
+    // the Find panel; A.toggleHoverName exists from load (hover_name.js) regardless of whether the
+    // panel was ever opened, so the key works standalone — same lazy-load-then-act shape as 'f'.
+    "'": function() { if (A.toggleHoverName) A.toggleHoverName('key'); },
     '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
       if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
       else if (typeof window.toggleOverflow === 'function') window.toggleOverflow();
@@ -1529,6 +1533,9 @@ async function setupScene(A) {
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
       all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
+      // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
+      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
