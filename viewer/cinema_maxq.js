@@ -246,12 +246,19 @@
 
   // One explicit composer render, then SAME-TASK drawImage into a 2D canvas (clash_snag.js's
   // proven capture pattern — the WebGL buffer is only guaranteed valid within the task that drew it).
-  function _captureFrame(w, h) {
+  // §CPE_ROOM_TITLE: titleInfo ({name, opacity}, or null/opacity<=0) is composited onto THIS 2D
+  // context, after the WebGL frame is drawn in but before toBlob — the only point that reaches the
+  // actual exported bytes (RESUME_CPE_ROOM_TITLE.md §2's trap: a DOM caption never would).
+  function _captureFrame(w, h, titleInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
     c.width = w; c.height = h;
-    c.getContext('2d').drawImage(A.renderer.domElement, 0, 0, w, h);
+    var ctx = c.getContext('2d');
+    ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
+      A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
+    }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
 
@@ -507,7 +514,7 @@
     // Set from the editor's override below. `poseAt` is the ONE place the window is applied, so
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
-    var _clip = null, _buildup = false, _bkState = null;
+    var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null;
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
       tNorm = _tFilm(tNorm);
@@ -633,6 +640,7 @@
             ' (poseAt remaps; the film itself is unchanged)');
         }
         _buildup = !!_ov.buildup;
+        _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
         var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
@@ -752,6 +760,14 @@
           }
         }
       }
+      // §CPE_ROOM_TITLE — one coarse pre-pass over the WHOLE (already clip/buildup-resolved) frame
+      // count, not a per-frame room query: nFrames/fps here is the bake's actual, final duration
+      // (§CPE_CLIP has already resized it above), so the timeline never disagrees with what's about
+      // to be captured.
+      if (_roomTitle && plan && A.roomTitleBuildTimeline) {
+        try { _titleSegs = A.roomTitleBuildTimeline(plan, nFrames / fps); }
+        catch (eT) { console.warn('§CPE_ROOM_TITLE_ERR ' + eT.message); _titleSegs = null; }
+      }
       t0 = _etaPrev = performance.now();
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
@@ -794,7 +810,8 @@
         // state its own health at the end instead of leaving a degraded film to look identical to
         // a good one.
         if (!ok) { _unconverged++; console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is (UNCONVERGED, count=' + _unconverged + ')'); }
-        var blob = await _captureFrame(w, h);
+        var _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
+        var blob = await _captureFrame(w, h, _titleInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
