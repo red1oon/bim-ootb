@@ -94,6 +94,7 @@
   "setupClashReporter": "readonly",
   "setupClashSnag": "readonly",
   "setupConfig": "readonly",
+  "setupCpeRoomTitle": "readonly",
   "setupDiff": "readonly",
   "setupDLOD": "readonly",
   "setupEffects": "readonly",

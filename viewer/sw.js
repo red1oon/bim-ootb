@@ -123,6 +123,7 @@ const PRECACHE_ASSETS = [
   'tools.js',
   'picking.js',
   'hover_name.js',
+  'cpe_room_title.js',
   'tour.js',
   'clash_matrix.js',
   'measure.js',

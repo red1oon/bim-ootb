@@ -436,6 +436,7 @@
       // §CPE_CLIP: null means the whole film; the bake remaps poseAt into [in,out] when set.
       clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
       buildup: !!s.buildup,
+      roomTitle: !!s.roomTitle,
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       outSec: nat.outSec * scale, riseSec: s.baseSec.rise * scale,
       _total: total, _naturalTotal: nat.total, _scale: scale, _pathLen: nat.len
@@ -471,6 +472,7 @@
     if (_state.hose.length) return true;
     if (_state.clipIn > 0 || _state.clipOut < 1) return true;
     if (_state.buildup) return true;
+    if (_state.roomTitle) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -557,6 +559,8 @@
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox"> ' +
           'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
+          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span></div>' +
         // §CPE_IDB_PATH_STORE — saved plans for THIS building.
         '<div style="margin-top:6px">saved <select id="cpe-plans" style="max-width:150px;background:#15181c;color:#ddd;' +
           'border:1px solid #3a3f47;border-radius:3px;font-size:10px;padding:1px 2px"></select> ' +
@@ -924,11 +928,13 @@
     _state.clipIn = ov.clip ? ov.clip.in : 0;
     _state.clipOut = ov.clip ? ov.clip.out : 1;
     _state.buildup = !!ov.buildup;
+    _state.roomTitle = !!ov.roomTitle;
     _state.userTotal = ov._total;
     _state.staged = false; _state.held = null;
     console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
       ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
-      ' buildup=' + (_state.buildup ? 1 : 0) + ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
+      ' buildup=' + (_state.buildup ? 1 : 0) + ' roomTitle=' + (_state.roomTitle ? 1 : 0) +
+      ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
       ' — Ctrl+Z restores what you had before loading');
     _markPreviewStale();
     _refreshFlow(); _replanFilm();
@@ -951,6 +957,12 @@
     var save = { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
                  tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z };
     s.flying = true; s.previewedAt = s.edits; _renderWhole();
+
+    // §CPE_ROOM_TITLE — live preview overlay, built ONCE per rehearsal against the film's real
+    // duration in seconds (poseAt's tNorm domain is 0..1 over the WHOLE plan; `dur` above is just
+    // this rehearsal's playback speed, not the film's real length).
+    var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
+    if (s.roomTitle && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
 
     // ══ §CPE_BUILDUP in the PREVIEW — measured before it was assumed expensive ═════════════════
     // User, 2026-07-28: "i dont expect buildup preview can be done as it be heavy engine work...
@@ -977,6 +989,7 @@
         a.camera.position.set(p.x, p.y, p.z);
         a.controls.target.set(p.tx, p.ty, p.tz);
         a.controls.update();
+        if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
         if (bkPrev && window.tmSetCursor) {
           window.tmSetCursor(bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart));
         }
@@ -991,6 +1004,7 @@
         // Hand Time Machine back exactly as it was — the preview must never leave the user's
         // timeline re-ordered, same contract the bake honours on every exit path.
         if (bkPrev && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); bkPrev = null; }
+        if (a.roomTitleLiveStop) a.roomTitleLiveStop();
         _state.flying = false;
         console.log('§CPE_PREVIEW done frames=' + frames + ' msPerFrame=' + msPerFrame.toFixed(1) +
           ' buildup=' + (s.buildup ? 1 : 0) + ' — camera restored to the editing pose');
@@ -1453,6 +1467,9 @@
         // §CPE_BUILDUP: off by default — a film that assembles itself is a deliberate choice, not
         // the default reading of a fly-through.
         buildup: false,
+        // §CPE_ROOM_TITLE: off by default, same reasoning — a captioned film is a deliberate choice
+        // (RESUME_CPE_ROOM_TITLE.md).
+        roomTitle: false,
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
         edits: 0, previewedAt: 0, flying: false,
@@ -1529,6 +1546,17 @@
         // this checkbox.
         console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
           ' — reveal FOLLOWS the Time Machine timeline as-is (no re-key; the camera does not author the build order)');
+        _renderWhole(); _syncButtons();
+      });
+      document.getElementById('cpe-room-title').addEventListener('change', function(e) {
+        _state.roomTitle = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_ROOM_TITLE ' + (_state.roomTitle ? 'ON' : 'off'));
+        // a.friendlyName/a.getRoomGraph live in the lazy Navigate bundle — same load-on-first-use
+        // as §HOVER_NAME (HOVER_NAME.md).
+        var _a = A();
+        if (_state.roomTitle && typeof _a.friendlyName !== 'function' && typeof _a.loadNavigate === 'function') _a.loadNavigate();
+        if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
         _renderWhole(); _syncButtons();
       });
       document.getElementById('cpe-preview').addEventListener('click', _previewFly);
