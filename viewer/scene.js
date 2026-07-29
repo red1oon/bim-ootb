@@ -481,6 +481,21 @@ async function setupScene(A) {
     }).catch(function() {});
   }
 
+  // §PERSIST (W-DB-CACHE-KEY F2 — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1): ask ONCE per
+  // load for durable storage. Until this, persist() was only ever called from the PWA-install overlay
+  // (_ensureBuildingCached), so a normal viewer session ran on best-effort storage — the browser is then
+  // free to silently evict the whole origin's IndexedDB, and a 251MB building blob is the first thing it
+  // drops. Nothing in the log said so; you just saw §CACHE_MISS_READ and a fresh 251MB download next time.
+  // Cheap, idempotent (already-granted resolves true without a prompt), and never blocks the boot.
+  if (navigator.storage && navigator.storage.persisted && navigator.storage.persist) {
+    navigator.storage.persisted().then(function(already) {
+      if (already) { console.log('[S203] §PERSIST already=true'); return; }
+      return navigator.storage.persist().then(function(granted) {
+        console.log('[S203] §PERSIST granted=' + granted + (granted ? '' : ' — cache is best-effort, browser may evict'));
+      });
+    }).catch(function() {});
+  }
+
   // §IDB_VERSION_FALLBACK (2026-07-18): a browser profile whose bim_ootb_cache is ALREADY at a
   // version higher than 2 (another tab/build that bumped it further, dev/test residue — IndexedDB
   // versions only ever increase, never reopen at a LOWER version) makes the explicit
@@ -544,14 +559,18 @@ async function setupScene(A) {
 
   // §S260b: LRU eviction — keep max 80 entries (~25 buildings × 3 files). Evict oldest on write.
   A._MAX_CACHE_ENTRIES = 80;
-  A._evictOldest = async function(cacheDb) {
+  // §CACHE_EVICT_LRU_FORCE (W-DB-CACHE-KEY F3): `forceN` drops the N oldest entries even when the
+  // count is under the cap — the quota-abort path calls it that way. It used to .clear() the WHOLE
+  // store instead, so one over-quota write threw away every other building that was fitting fine.
+  A._evictOldest = async function(cacheDb, forceN) {
     try {
       var tx = cacheDb.transaction('timestamps', 'readonly');
       var store = tx.objectStore('timestamps');
       var allKeys = await new Promise(function(r) {
         var req = store.getAllKeys(); req.onsuccess = function() { r(req.result || []); }; req.onerror = function() { r([]); };
       });
-      if (allKeys.length < A._MAX_CACHE_ENTRIES) return;
+      if (!forceN && allKeys.length < A._MAX_CACHE_ENTRIES) return 0;
+      if (forceN && !allKeys.length) return 0;
       // Get all timestamps, sort by oldest
       var entries = [];
       var tx2 = cacheDb.transaction('timestamps', 'readonly');
@@ -563,31 +582,47 @@ async function setupScene(A) {
         entries.push({ key: allKeys[i], ts: ts });
       }
       entries.sort(function(a, b) { return a.ts - b.ts; });
-      // Remove oldest until we're under limit
-      var toRemove = entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
+      // Remove oldest until we're under limit (or the forced count, for the quota-abort retry).
+      var toRemove = forceN ? entries.slice(0, Math.min(forceN, entries.length))
+                            : entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
       if (toRemove.length > 0) {
-        var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
-        for (var j = 0; j < toRemove.length; j++) {
-          tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
-          tx3.objectStore('timestamps').delete(toRemove[j].key);
-        }
-        console.log('[S203] §CACHE_EVICT_LRU removed=' + toRemove.length + ' keys=' + toRemove.map(function(e){return e.key.split('/').pop();}).join(','));
+        await new Promise(function(done) {
+          var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+          for (var j = 0; j < toRemove.length; j++) {
+            tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
+            tx3.objectStore('timestamps').delete(toRemove[j].key);
+          }
+          tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
+        });
+        console.log('[S203] §CACHE_EVICT_LRU removed=' + toRemove.length + ' forced=' + (forceN ? 'yes' : 'no') +
+          ' keys=' + toRemove.map(function(e){return String(e.key).split('/').pop();}).join(','));
       }
-    } catch(e) { /* eviction is best-effort */ }
+      return toRemove.length;
+    } catch(e) { /* eviction is best-effort */ return 0; }
   };
 
   // §S260b: Check if URL is in cache (returns buffer or null, no network)
+  // §CACHE_KEY (W-DB-CACHE-KEY): must use the SAME canonical key as cachedFetch, and must fall back to
+  // the legacy raw-url key for profiles cached before the fix. Missing this here re-opened the exact
+  // §OFFLINE-GATEWAY-LEAK that streaming.js:2051 warns about: streaming's diagnostic size check calls
+  // _checkCache(A.DB_URL) and, on a miss, fires a HEAD at the network for a building already in IDB —
+  // visible in the field as `§DB_SIZE_CHECK size=0MB src=network` on a cached building.
   A._checkCache = async function(url) {
     try {
       const cacheDb = await A.openCacheDB();
       if (!cacheDb) return null;
-      const cached = await new Promise((resolve) => {
-        const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
-        const req = tx.objectStore(A.CACHE_STORE).get(url);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      });
-      return cached;
+      const key = (window.DbResolve && window.DbResolve.cacheKey) ? window.DbResolve.cacheKey(url, A.PROD_BASE) : url;
+      const get = function(k) {
+        return new Promise((resolve) => {
+          const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
+          const req = tx.objectStore(A.CACHE_STORE).get(k);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      };
+      const cached = await get(key);
+      if (cached) return cached;
+      return (key !== url) ? await get(url) : null;   // legacy raw-url entry, pre-fix profiles
     } catch(e) { return null; }
   };
 
@@ -748,12 +783,19 @@ async function setupScene(A) {
   };
 
   A.cachedFetch = async function(url) {
+    // §CACHE_KEY (W-DB-CACHE-KEY — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1): look the
+    // blob up under the CANONICAL key, not the raw url. The landing opens a building with the absolute
+    // OCI url and the ERP red pill opens the SAME building with '../buildings/<file>' — keyed raw, the
+    // second one missed and re-downloaded 251MB every time. db_resolve.cacheKey folds the production
+    // buildings/ set onto one key and leaves dev/deploy paths verbatim. Network still uses the real url.
+    const key = (window.DbResolve && window.DbResolve.cacheKey) ? window.DbResolve.cacheKey(url, A.PROD_BASE) : url;
+    if (key !== url) console.log(`[S203] §CACHE_KEY url=${url.split('/').pop()} key=${key}`);
     const cacheDb = await A.openCacheDB();
     if (cacheDb) {
       try {
         const cached = await new Promise((resolve, reject) => {
           const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
-          const req = tx.objectStore(A.CACHE_STORE).get(url);
+          const req = tx.objectStore(A.CACHE_STORE).get(key);
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => resolve(null);
         });
@@ -761,13 +803,43 @@ async function setupScene(A) {
           // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
           // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
           A._cacheHitLogged = A._cacheHitLogged || {};
-          if (!A._cacheHitLogged[url]) {
-            A._cacheHitLogged[url] = 1;
+          if (!A._cacheHitLogged[key]) {
+            A._cacheHitLogged[key] = 1;
             console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
           }
           // Update LRU timestamp on hit
-          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), url); } catch(e2) {}
+          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
           return cached;
+        }
+        // §CACHE_KEY_LEGACY (W-DB-CACHE-KEY): profiles that cached BEFORE this fix hold the blob under
+        // the raw url. Adopt it in place rather than making every existing user pay one more 251MB
+        // download for the privilege of the fix. Re-key is best-effort; if it fails the legacy entry
+        // is still found next load.
+        if (key !== url) {
+          var legacy = await new Promise(function(resolve) {
+            try {
+              var txL = cacheDb.transaction(A.CACHE_STORE, 'readonly');
+              var reqL = txL.objectStore(A.CACHE_STORE).get(url);
+              reqL.onsuccess = function() { resolve(reqL.result); };
+              reqL.onerror = function() { resolve(null); };
+            } catch(e3) { resolve(null); }
+          });
+          if (legacy) {
+            console.log(`[S203] §CACHE_KEY_LEGACY_HIT url=${url.split('/').pop()} size=${(legacy.byteLength/1024/1024).toFixed(1)}MB → re-keying to ${key} (no re-download)`);
+            try {
+              await new Promise(function(resolve) {
+                var txR = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+                txR.objectStore(A.CACHE_STORE).put(legacy, key);
+                txR.objectStore('timestamps').put(Date.now(), key);
+                txR.objectStore(A.CACHE_STORE).delete(url);
+                txR.objectStore('timestamps').delete(url);
+                txR.oncomplete = function() { console.log(`[S203] §CACHE_KEY_REKEY_OK key=${key}`); resolve(); };
+                txR.onerror = function() { resolve(); };
+                txR.onabort = function() { console.warn(`[S203] §CACHE_KEY_REKEY_SKIP key=${key} — legacy entry left in place`); resolve(); };
+              });
+            } catch(e4) {}
+            return legacy;
+          }
         }
         console.log(`[S203] §CACHE_MISS_READ url=${url.split('/').pop()} — not in IDB, will fetch`);
       } catch(e) { console.log(`[S203] §CACHE_READ_ERR ${e.message}`); }
@@ -827,36 +899,36 @@ async function setupScene(A) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
-        await new Promise(function(resolve) {
-          var _writeOk = false;
-          const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
-          tx.objectStore('timestamps').put(Date.now(), url);
-          const req = tx.objectStore(A.CACHE_STORE).put(buf, url);
-          req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
-          req.onerror = function(e) {
-            // §S260b: Quota exceeded — let tx abort so onabort evicts+retries
-            console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
-          };
-          tx.oncomplete = function() {
-            if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-            resolve();
-          };
-          tx.onabort = function() {
-            // Evict all entries then retry write
-            console.log(`[S203] §CACHE_EVICT clearing all cached DBs for space`);
-            var tx2 = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-            tx2.objectStore(A.CACHE_STORE).clear();
-            tx2.oncomplete = function() {
-              var tx3 = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-              var req3 = tx3.objectStore(A.CACHE_STORE).put(buf, url);
-              req3.onsuccess = function() { console.log(`[S203] §CACHE_EVICT_WRITE_OK url=${url.split('/').pop()}`); };
-              req3.onerror = function() { console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL — quota too small`); };
-              tx3.oncomplete = resolve;
-              tx3.onerror = function() { resolve(); };
+        // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
+        var _attemptWrite = function() {
+          return new Promise(function(resolve) {
+            var _writeOk = false;
+            const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+            tx.objectStore('timestamps').put(Date.now(), key);
+            const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
+            req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
+            req.onerror = function() {
+              // §S260b: Quota exceeded — let the tx abort so the caller evicts LRU and retries.
+              console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
-            tx2.onerror = function() { resolve(); };
-          };
-        });
+            tx.oncomplete = function() {
+              if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
+              resolve(_writeOk);
+            };
+            tx.onabort = function() { resolve(false); };
+          });
+        };
+        // §CACHE_EVICT_LRU_RETRY (F3): on a quota abort, drop the OLDEST entries and try again —
+        // bounded. The old code .clear()'d the entire store, so one oversized write wiped every
+        // other cached building and turned the next open of ANY of them into a fresh download.
+        var _ok = await _attemptWrite();
+        for (var _try = 0; !_ok && _try < 4; _try++) {
+          var _dropped = await A._evictOldest(cacheDb, 4);
+          if (!_dropped) break;                       // nothing left to give up — stop, don't spin
+          console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
+          _ok = await _attemptWrite();
+        }
+        if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} — quota too small even after LRU eviction`);
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 
