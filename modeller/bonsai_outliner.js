@@ -599,7 +599,9 @@
         const active = window.Bonsai._selId === n.id;      // adjacency-lens degree badge below reads this
         const pad = 16 + depth * 14;
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
-        const walkGlyph = n.disc ? ' <span class="bn-walk" title="Walk this discipline" style="color:#4fc3f7">▶</span>' : '';
+        // MODELLER_MASTER.md row 17: the synthetic disc:'__ALL__' row (modeller.html §DISCWALK-ALL) walks EVERY
+        // discipline — its tooltip must say so; ordinary disc rows keep the singular.
+        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL disciplines' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
         // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a per-EDGE-TYPE badge (⇄ abuts ·
         // ⌂ fills · ⧉ aggregates) + amber tint; the selected element shows its per-kind degree + its element↔
         // datum relations (⊥ anchored · ↕ spans). All read the derived map (window.swXEdges), never a baked table.
