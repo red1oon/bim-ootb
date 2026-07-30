@@ -1054,6 +1054,13 @@ function _paintSel() {                                    // emissive: primary b
 }
 // a re-fold rebuilds meshes (new geometry uuids) — re-sync outlines onto the fresh meshes
 window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) { } });
+// §SEL-TINT-REFOLD (MODELLER_MASTER.md row 16 — Witness: W-E2E-SEL-TINT-REFOLD): the hook above never fires
+// on a scrubTo re-fold (history slider undo/redo, x-ray restore, Connect timeline) because scrubTo
+// deliberately never _emit()s — so the rebuilt mesh of a STILL-selected featureId came back with emissive
+// 000000 while _selSet still held it. foldChainToScene now announces 'bonsai:refold' after the rebuilt
+// meshes land; repaint through _paintSel — the ONE existing tinting path, membership re-resolved by
+// featureId (meshes are NEW objects after a re-fold). Idempotent + cheap on the paths bonsai:oplog covers.
+window.addEventListener('bonsai:refold', () => { try { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); } catch (e) { } });
 // ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
 // zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
 // variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
@@ -1358,6 +1365,11 @@ function _applyShadowFlags() {
 }
 window.Bonsai.setShadows = (v) => { _shadowMode = (v === 'auto') ? 'auto' : !!v; return _applyShadowFlags(); };
 window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } catch (e) { } });
+// §SEL-TINT-REFOLD sibling (same root cause, found by W-E2E-CUT C6's pixel oracle, 2026-07-30): a scrubTo
+// re-fold (history slider, x-ray restore, Connect timeline) rebuilds every mesh with castShadow/receiveShadow
+// FALSE and never fires bonsai:oplog — so the scene renders subtly unshadowed until the next commit. Re-apply
+// at the same 'bonsai:refold' choke point the selection repaint uses (event from foldChainToScene).
+window.addEventListener('bonsai:refold', () => { try { _applyShadowFlags(); } catch (e) { } });
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
@@ -3855,6 +3867,11 @@ function _flashSettleDisc(disc) {
     var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
     var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
     if (proxyMode) {
+      // MODELLER_MASTER.md row 18: the batch-hold downgrade was §-log-only — surface it to the USER once per
+      // walk run via the existing toast (W-BONSAI-TOAST). Guarded by the run-scoped flag discWalkAll resets,
+      // so a run that only ENTERS proxyMode mid-walk (the scene grows as each disc commits) still says it
+      // exactly once. Geometry is identical either way; only the reveal animation is simplified.
+      if (!window.__dwProxyToasted) { window.__dwProxyToasted = true; if (window.toast) toast('Large scene — reveal animation simplified; final geometry unchanged', 'ok'); }
       var HOLD = 150;   // batch hold+settle only — no per-instance stagger above the threshold
       setTimeout(function () {
         idx.forEach(function (e) { e.im.setColorAt(e.i, e.base); });
@@ -3901,6 +3918,11 @@ window.discWalkAll = async function (ctx) {
   var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
   var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
   console.log('§DISCWALK-ALL start disciplines=[' + ds.join(',') + '] n=' + ds.length + ' sceneElements=' + sceneTotal + ' threshold=' + window.DW_ALL_PROXY_THRESHOLD + ' proxyMode=' + proxyMode);
+  // MODELLER_MASTER.md row 18: reset the once-per-run proxy toast flag; if the RUN already starts in
+  // proxyMode, say it up front (the per-disc flash branch in _flashSettleDisc covers a mid-run entry).
+  // The §DISCWALK-ALL log line above stays unchanged.
+  window.__dwProxyToasted = false;
+  if (proxyMode) { window.__dwProxyToasted = true; if (window.toast) toast('Large scene — reveal animation simplified; final geometry unchanged', 'ok'); }
   setStat('Walk ALL — x-ray on, walking ' + ds.length + ' disciplines…');
   var xr = await xrayReveal(true);
   console.log('§DISCWALK-ALL xray-on glass=' + xr.glass + ' glow=' + xr.glow + ' t=' + (Date.now() - t0) + 'ms');

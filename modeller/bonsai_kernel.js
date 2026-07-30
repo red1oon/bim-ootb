@@ -280,6 +280,12 @@
       const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';
       console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st);
       if (window.A && typeof A.requestRender === 'function') A.requestRender();
+      // §SEL-TINT-REFOLD (MODELLER_MASTER.md row 16 — Witness: W-E2E-SEL-TINT-REFOLD): every authoritative
+      // re-fold lands HERE with its rebuilt meshes already in the group — announce it so selection paint
+      // (modeller.html _paintSel) can re-apply the emissive tint to the NEW mesh objects (same featureIds).
+      // Needed because bonsai_oplog.scrubTo (history slider undo/redo, x-ray restore, Connect timeline)
+      // deliberately never _emit()s — the existing bonsai:oplog → _paintSel hook cannot fire on those paths.
+      try { window.dispatchEvent(new CustomEvent('bonsai:refold', { detail: { solids: meshes.length } })); } catch (e) { }
       return { solids: meshes.length, triangleCount: totalTris, meshes };
     },
 
