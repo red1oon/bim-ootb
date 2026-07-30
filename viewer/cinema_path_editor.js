@@ -541,7 +541,7 @@
     d.innerHTML =
       '<div id="cpe-title" title="drag to move this panel" style="padding:10px 12px;border-bottom:1px solid #3a3f47;' +
         'font-size:13px;font-weight:600;color:#4fc3f7;cursor:move;user-select:none">' +
-        'Cinema path <span style="font-weight:400;color:#888;font-size:11px">— 3 bands · drag this bar to move</span></div>' +
+        'Cinema path <span id="cpe-title-count" style="font-weight:400;color:#888;font-size:11px">— 3 bands · drag this bar to move</span></div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path controls, one strip.
@@ -693,6 +693,16 @@
   function _renderRows() {
     var box = document.getElementById('cpe-rows');
     if (!box) return;
+    // §CPE_TITLE_BAND_COUNT (2026-07-31): the title's "N bands" was hardcoded to "3" at panel-build
+    // time and never touched again — so opening a stored path with more bands (§CPE_STICK, or a
+    // loaded plan via §CPE_IDB_PATH_STORE) left the header claiming 3 regardless of the true count.
+    // Live, reflects _state.bands.length every time the row list itself is rebuilt (adds, removes,
+    // loads, re-opens — every path that changes the count already calls _renderRows()).
+    var titleCount = document.getElementById('cpe-title-count');
+    if (titleCount) {
+      titleCount.textContent = '— ' + _state.bands.length + ' band' + (_state.bands.length === 1 ? '' : 's') +
+        ' · drag this bar to move';
+    }
     box.innerHTML = '';
     for (var i = 0; i < _state.bands.length; i++) {
       (function(i) {
