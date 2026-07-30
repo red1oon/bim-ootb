@@ -1,9 +1,21 @@
 {
   "meta": {
     "name": "Default Sequence + Labour Rules",
-    "version": "2024.1",
+    "version": "2024.2",
     "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity) used by Time Machine injectGantt and 4D/5D consumers. Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). Editable via Settings JSON editor; rates.js keeps these as the in-file sync default."
   },
+  "NAME_OVERRIDES": [
+    {
+      "id": "glazed_curtainwall_facade",
+      "classes": ["IfcPlate", "IfcMember"],
+      "pattern": "glaz|glass|verglas|vitrage|vidrio|curtain|mullion",
+      "flags": "i",
+      "phase": "Architecture",
+      "sequence": 7,
+      "resource": "CARPENTER",
+      "reason": "ifc_class alone cannot separate curtain-wall glazing/framing from structural steel plates/members — a Revit curtain-wall panel is IfcPlate and its mullions are IfcMember, same classes as genuinely structural plates/members (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR's CHS/RHS steel framing, LTU_AHouse's timber beams, which must all stay at their structural seq). Name is the only extracted signal that discriminates them. Matched, measured against 8 shipped buildings: Hospital 'System Panel:Glazed' (2211/2211 IfcPlate) + 'Curtain Wall:...Framing'/'Curtain System' (7122/7127 IfcMember), Clinic 'Rectangular/Circular Mullion' (522/534 IfcMember), HHS 'Systemelement:Verglasung' (438/629 IfcPlate, German) — zero false positives on Terminal/JKR/LTU_AHouse/TermRooms. See bim-compiler prompts/RESUME_4D_TRUTH_AND_BE_HERE_WHEN.md §STAGE A A.3/A.4 and prompts/GANTT_ACCURACY.md §4D_HOST_BEFORE_HOSTED. Elements not matching this pattern keep their class-default seq (measured, never guessed) — known remaining blind spot: HHS 'Rechteckiger Pfosten' (German curtain-wall posts, 1450 IfcMember) not matched, deliberately not covered by a generic 'post' pattern (too ambiguous vs real structural posts) — reported, not silently dropped."
+    }
+  ],
   "SEQUENCE_RULES": {
     "IfcFooting": {
       "phase": "Substructure",

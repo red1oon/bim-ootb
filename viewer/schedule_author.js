@@ -25,6 +25,20 @@
     return bestKey ? rules[bestKey] : dflt;
   }
 
+  // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
+  // ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely
+  // structural plates/members. Checked BEFORE matchRule, never replacing it — see rates/sequence_rules.json.
+  function matchNameOverride(cls, name, nameOverrides) {
+    if (!name || !nameOverrides) return null;
+    for (var i = 0; i < nameOverrides.length; i++) {
+      var ov = nameOverrides[i];
+      if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+      if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+      if (ov._re && ov._re.test(name)) return ov;
+    }
+    return null;
+  }
+
   function _slug(name) {
     return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   }
@@ -94,6 +108,7 @@
                                 // them UNDATED so the user originates the schedule (nothing shows in
                                 // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
+    var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
     db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
@@ -115,22 +130,27 @@
     db.run("DELETE FROM tasks WHERE schedule_id='" + schedId + "'");
     db.run("DELETE FROM schedules WHERE schedule_id='" + schedId + "'");
 
-    // Read the raw material: every element + its class.
+    // Read the raw material: every element + its class + name (name feeds matchNameOverride).
     var elems = [];
-    var er = db.exec('SELECT guid, ifc_class FROM elements_meta');
+    var er = db.exec('SELECT guid, ifc_class, COALESCE(element_name,\'\') FROM elements_meta');
     if (er.length && er[0].values.length) {
-      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1] }); });
+      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2] }); });
     }
 
     // Group into phases via the SAME rule the read-path uses.
     var phases = {};   // phaseName -> { name, seq, guids:[] }
+    var nameOverridden = 0;
     elems.forEach(function (e) {
-      var rule = matchRule(e.cls, rules, dflt);
+      var ov = matchNameOverride(e.cls, e.name, nameOverrides);
+      if (ov) nameOverridden++;
+      var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
       if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [] }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
       p.guids.push(e.guid);
     });
+    if (nameOverridden) console.log('§NAME_OVERRIDE ' + nameOverridden + ' elements reclassified by name (' +
+      nameOverrides.map(function (o) { return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
 
     // Order phases by sequence (then name, stable) → contiguous WBS leaves.
     var ordered = Object.keys(phases).map(function (k) { return phases[k]; });

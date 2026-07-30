@@ -216,6 +216,10 @@ var SEQUENCE_RULES = {
   IfcFurnishingElement:{phase:'Finishes',sequence:11,resource:'FINISHER'},
 };
 var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:null};
+// §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
+// tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members.
+// Empty in-file default; populated from rates/sequence_rules.json NAME_OVERRIDES by loadSequenceRules().
+var SEQUENCE_NAME_OVERRIDES = [];
 
 // Helper: get phase for an IFC class
 function getPhase(ifcClass) {
@@ -436,8 +440,12 @@ function loadSequenceRules() {
       SEQUENCE_DEFAULT = json.SEQUENCE_DEFAULT;
       if (typeof window !== 'undefined') window.SEQUENCE_DEFAULT = SEQUENCE_DEFAULT;
     }
+    if (Array.isArray(json.NAME_OVERRIDES)) {
+      SEQUENCE_NAME_OVERRIDES = json.NAME_OVERRIDES;
+      if (typeof window !== 'undefined') window.SEQUENCE_NAME_OVERRIDES = SEQUENCE_NAME_OVERRIDES;
+    }
     console.log('§RATES_JSON loaded=' + src + ' rules=' + Object.keys(SEQUENCE_RULES).length
-      + ' labor=' + Object.keys(LABOR_RATES).length);
+      + ' labor=' + Object.keys(LABOR_RATES).length + ' nameOverrides=' + SEQUENCE_NAME_OVERRIDES.length);
     return true;
   }).catch(function(err) {
     console.warn('§RATES_JSON loaded=fallback rules=' + Object.keys(SEQUENCE_RULES).length
