@@ -130,12 +130,28 @@
       var myTip = _lastSealedTip(db).hash;
       var buf = db.export().buffer;
       return new Promise(function(resolve) {
-        var req = indexedDB.open('bim_ootb_cache', 1);
-        req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
-        req.onerror = function() { console.warn('§KRN_PERSIST_ERR open failed'); resolve(); };
-        req.onsuccess = function() {
+        // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md) — mirrors viewer/kernel_ops.js's proven fix.
+        // The old hardcoded indexedDB.open('bim_ootb_cache', 1) drifted BELOW scene.js's v2 opener →
+        // every open fired onerror (VersionError), onsuccess never ran, and the ERP op-log was
+        // silently never persisted ("survive refresh" was dead). Route through the app's SINGLE
+        // opener (version 2, guards the store) when present; else an unversioned open (whatever
+        // version is actually stored — never throws VersionError) for a standalone ERP page.
+        var openP = (typeof window !== 'undefined' && window.APP && APP.openCacheDB)
+          ? APP.openCacheDB()
+          : new Promise(function(res) {
+              var rq = indexedDB.open('bim_ootb_cache');   // no version → current
+              rq.onupgradeneeded = function() {
+                var d = rq.result;
+                if (!d.objectStoreNames.contains('dbs')) d.createObjectStore('dbs');
+              };
+              rq.onsuccess = function() { res(rq.result); };
+              rq.onerror = function() { console.warn('§KRN_PERSIST_ERR open failed'); res(null); };
+            });
+        openP.then(function(idb) {
+          if (!idb) { resolve(); return; }
           try {
-            var store = req.result.transaction('dbs', 'readwrite').objectStore('dbs');
+            if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); resolve(); return; }
+            var store = idb.transaction('dbs', 'readwrite').objectStore('dbs');
             var tipKey = dbUrl + '::tip';
             var getReq = store.get(tipKey);
             var writeAndDone = function() {
@@ -155,7 +171,7 @@
             };
             getReq.onerror = function() { writeAndDone(); };   // fail-open (no worse than today)
           } catch(e) { console.warn('§KRN_PERSIST_ERR', e); resolve(); }
-        };
+        }).catch(function(e) { console.warn('§KRN_PERSIST_ERR open ' + (e && e.message)); resolve(); });
       });
     }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
   }

@@ -722,8 +722,12 @@ function audit4DSchedule(scheduleData, db, qtoData) {
 async function peekDbCache(url) {
   try {
     const cacheDb = await new Promise(resolve => {
-      const req = indexedDB.open('bim_ootb_cache', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('dbs');
+      // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md): no version arg → opens at whatever version
+      // is actually stored (scene.js's canonical opener is v2+). A hardcoded v1 here throws
+      // VersionError forever once scene.js has run in the profile, so this always fell through to
+      // resolve(null) and forced a full network re-download of the building on every 4D/5D open.
+      const req = indexedDB.open('bim_ootb_cache');
+      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => resolve(null);
     });
@@ -742,8 +746,9 @@ async function peekDbCache(url) {
 async function fetchDbBuffer(url) {
   const _tFetch = performance.now();
   const cacheDb = await new Promise(resolve => {
-    const req = indexedDB.open('bim_ootb_cache', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('dbs');
+    // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md) — same fix as peekDbCache() above.
+    const req = indexedDB.open('bim_ootb_cache');
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
   });
