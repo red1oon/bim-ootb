@@ -5,6 +5,11 @@ const { runE2E } = require('./e2e_harness');
 (async () => {
   await runE2E('W-GLASS-PARITY', async (t) => {
     await t.open('Duplex');
+    // t.open resolves on __dwBuf + a fixed settle; the ARC seed (patch → OCI geo fetch → fold) can
+    // land later on a cold edge cache. Wait on the REAL condition — seeded meshes present — bounded.
+    await t.pg.waitForFunction(
+      () => window.Bonsai && window.Bonsai.group() && window.Bonsai.group().children.some(o => o.isMesh),
+      { timeout: 30000 });
     const info = await t.pg.evaluate(() => {
       var out = { windows: [], total: 0 };
       var g = window.Bonsai.group();
