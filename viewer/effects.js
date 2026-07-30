@@ -5490,10 +5490,29 @@ async function setupEffects(A, renderer, scene, camera) {
                                         // search to the room/corridor scale, not a site-wide reach.
     var _AIM_DEPTH_DENS_FLOOR = 10;     // "surrounded": soft density at CLOSE range above which the
                                         // neighbourhood counts as boxed-in — mirrors _AIM_DENS_FLOOR.
+    // §CPE_AIM_DEPTH_SCALE (2026-07-31, MEASURED live on Hospital, envelope=147m): a pure
+    // envelope-fraction radius is corridor-scale on a small building (Duplex, envelope~15m → 0.75m)
+    // but ~7.4m/44m (close/search) on a large one — big enough that "boxed in" was true almost
+    // everywhere (§CPE_AIM_DEPTH_SERIES active=65/65, maxBlend=1.00 for the WHOLE walk) and the
+    // "furthest facade" search bubble swallowed most of the building, landing near its centroid
+    // instead of a specific nearby wall. Absolute-metre clamps keep both radii at real corridor/room
+    // scale regardless of building size — the envelope fraction still narrows them on SMALL
+    // buildings (where it was already correct), it just can no longer balloon on large ones.
+    var _AIM_DEPTH_CLOSE_MIN_M = 1.5, _AIM_DEPTH_CLOSE_MAX_M = 4.5;
+    var _AIM_DEPTH_SEARCH_MIN_M = 4.0, _AIM_DEPTH_SEARCH_MAX_M = 18.0;
     function _aimDepthWeight(p) {
       if (typeof A.three2ifc !== 'function') return 0;
+      // §CPE_AIM_DEPTH_BUILDUP_GUARD (2026-07-31, user-reported live: "turning when buildup has not
+      // shown any construction yet"): the subject grid (_aimGrid/_densPoints) is the WHOLE finished
+      // building, computed once at edit time — it has no notion of what §CPE_BUILDUP has actually
+      // revealed by a given frame (that cursor only exists inside cinema_maxq.js's bake loop, after
+      // this rule has already run). Rather than face unbuilt geometry, skip the rule entirely while
+      // buildup is on, until subject-selection is restructured to run per-frame with the real cursor
+      // (see prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP — not yet built). Falls back to the
+      // plain look-ahead, exactly as if this rule did not exist for that film.
+      if (A._cinemaPathEdit && A._cinemaPathEdit.buildup) return null;
       var pIfc = A.three2ifc(p.x, p.y, p.z);
-      var Rclose = Math.max(1.5, envelope * _AIM_DEPTH_CLOSE_FRAC);
+      var Rclose = Math.max(_AIM_DEPTH_CLOSE_MIN_M, Math.min(_AIM_DEPTH_CLOSE_MAX_M, envelope * _AIM_DEPTH_CLOSE_FRAC));
       var dens = _aimSoftDensity(p, Rclose);
       var w = _cinemaSmoothstep(Math.min(1, dens / _AIM_DEPTH_DENS_FLOOR));
       return { w: w, dens: dens, R: Rclose, pIfc: pIfc };
@@ -5505,7 +5524,7 @@ async function setupEffects(A, renderer, scene, camera) {
     function _aimDepthSubject(pIfc, Rclose) {
       var cells = _aimGrid();
       if (!cells.length) return null;
-      var Rsearch = Math.max(Rclose * 2, envelope * _AIM_DEPTH_SEARCH_FRAC);
+      var Rsearch = Math.max(Rclose * 2, Math.min(_AIM_DEPTH_SEARCH_MAX_M, Math.max(_AIM_DEPTH_SEARCH_MIN_M, envelope * _AIM_DEPTH_SEARCH_FRAC)));
       // §CPE_AIM_DEPTH_VERTICALITY (2026-07-31, MEASURED — the first cut's own witness caught this):
       // a plain weighted centroid over "everything nearby" blends the FLOOR into the average and the
       // subject lands somewhere between the floor and the wall — not on either. "Face the further
@@ -5573,7 +5592,7 @@ async function setupEffects(A, renderer, scene, camera) {
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
     var _aimDepthLast = { logged: 0 };
-    function _aimDepthApply(p, T, lx, ly, lz, e3) {
+    function _aimDepthApply(p, T, lx, ly, lz, e3, openU) {
       // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
       if (A.__cpeAimOff) return null;
       if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
@@ -5598,7 +5617,19 @@ async function setupEffects(A, renderer, scene, camera) {
       if (e3 != null && e3 > 1 - CINEMA_TURN_OVERLAP) {
         wSeam = 1 - _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP);
       }
-      var w = A0.w * wSeam;
+      // §CPE_AIM_DEPTH_OPEN_TAPER (2026-07-31, user-reported live: "cam turning is too abrupt" —
+      // measured via the caller's own §CPE_SEAM_CONTINUOUS witness, seamGapDeg=94.6-100.2, must be
+      // ~0). §CPE_AIM_DENSITY already had the OUTGOING taper above (gone by walk→orbit); this rule
+      // was missing the INCOMING one — the spin→walk seam (_openU/wOpen, computed by the caller
+      // BEFORE either aim rule runs) eases the gaze from wherever the spin left off, but this rule
+      // then overrode that eased direction at near-full strength from e3=0 (its own trigger
+      // saturates almost everywhere on a dense building), discarding the handoff the instant it
+      // happened. Same smoothstep-over-openU shape as the caller's own wOpen — zero rate at the seam.
+      var wOpen2 = 1;
+      if (e3 != null && openU > 1e-6 && e3 < openU) {
+        wOpen2 = _cinemaSmoothstep(e3 / openU);
+      }
+      var w = A0.w * wSeam * wOpen2;
       if (!(w > 1e-3)) return null;
       var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
       var aL = Math.hypot(ax, ay, az) || 1;
@@ -5609,7 +5640,7 @@ async function setupEffects(A, renderer, scene, camera) {
           ' floor=' + _AIM_DEPTH_DENS_FLOOR + ' subject=(' + A0.x.toFixed(1) + ',' +
           A0.y.toFixed(1) + ',' + A0.z.toFixed(1) + ')' +
           ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
-          ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2));
+          ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + ' openTaper=' + wOpen2.toFixed(2));
       }
       return { x: ax / aL, y: ay / aL, z: az / aL };
     }
@@ -6104,7 +6135,7 @@ async function setupEffects(A, renderer, scene, camera) {
           // the two compose rather than race; their triggers are near-disjoint by construction (one
           // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
           // most one is ever non-zero at a given pose.
-          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3);
+          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
