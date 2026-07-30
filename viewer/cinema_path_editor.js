@@ -27,8 +27,13 @@
   // enough to separate from the seeder's light blue (0x4fc3f7) and the white bar/mid at a glance,
   // and already this file's contrast colour on a light scene (see _contrastColour below).
   var CPE_STICK_BLUE = 0x1565c0;
+  // §CPE_STICK_RED_BAR (user, 2026-07-31, after flying the all-blue v17: "the stick is not well
+  // colored ie if red with blue dots in it will help"). All-dark-blue read as one dim smudge against
+  // the white bars; a RED bar carrying BLUE dots separates the two things a stick is — the segment
+  // you drag and the handles you grab — and reads at a glance on a 63K-element scene.
+  var CPE_STICK_RED = 0xe53935;
   var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
-  var CPE_V = 'v17 (§CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v18 (§CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -112,6 +117,7 @@
     });
     _state.objs = [];
     _state.handles = [];
+    _state.bars = [];
   }
 
   // ══════════════════ band maths ══════════════════
@@ -375,11 +381,14 @@
       // §CPE_REOPEN_NODE (user: "the new nodes has to be darker blue when not selected to stand
       // out"): a band the USER dropped used to be drawn pixel-identically to one the seeder
       // produced — same white bar, same white mid, same light-blue ends — so the only way to find
-      // your own node again was to remember where you put it. An unheld stick now draws its bar and
-      // all three handles in CPE_STICK_BLUE. Radii are untouched, so mid-vs-end still reads by size,
+      // your own node again was to remember where you put it. §CPE_STICK_RED_BAR: an unheld stick
+      // draws a RED bar with BLUE dots — the bar you drag and the handles you grab stay
+      // distinguishable, which all-blue lost. Radii are untouched, so mid-vs-end still reads by size,
       // and held-orange still wins over everything (selection must stay the loudest state).
       var isStick = !!b._stick;
-      _state.objs.push(_mkLine([e[0], e[1]], heldBand ? 0xff8c00 : isStick ? CPE_STICK_BLUE : 0xffffff, 1.0));
+      var bar = _mkLine([e[0], e[1]], heldBand ? 0xff8c00 : isStick ? CPE_STICK_RED : 0xffffff, 1.0);
+      _state.objs.push(bar);
+      _state.bars.push({ b: i, stick: isStick, mesh: bar });
       var zones = [{ p: e[0], z: 'a' }, { p: _drawn(b.c), z: 'mid' }, { p: e[1], z: 'b' }];
       for (var k = 0; k < zones.length; k++) {
         var isHeld = heldBand && _state.held.z === zones[k].z;
@@ -1498,7 +1507,7 @@
       };
       _state = {
         bands: clone(seeded), origBands: clone(seeded), staged: false, undo: [], redo: [],
-        held: null, drag: null, objs: [], handles: [], pulseId: 0, flyId: 0,
+        held: null, drag: null, objs: [], handles: [], bars: [], pulseId: 0, flyId: 0,
         baseSec: { dive: plan.sec.dive, spin: plan.sec.spin, out: plan.sec.out, rise: plan.sec.rise },
         baseOutSec: plan.sec.out, baseTotal: ctx.durationSec, baseLen: plan.pathLen,
         speed: plan.pathLen / Math.max(0.001, plan.sec.out),   // the building's OWN pace, not a constant
@@ -1735,6 +1744,15 @@
                      hex: '0x' + (h.mesh && h.mesh.material ? h.mesh.material.color.getHex() : h.col)
                             .toString(16).padStart(6, '0'),
                      px: s.behind ? null : Math.round(s.x), py: s.behind ? null : Math.round(s.y) };
+          });
+        },
+        // §CPE_STICK_RED_BAR's G-RN-4c: the BAR is a separate mesh from the handles, so it needs its
+        // own read-only probe or "red bar, blue dots" is asserted on half the evidence.
+        _probeBars: function() {
+          if (!_state) return null;
+          return _state.bars.map(function(r) {
+            return { b: r.b, stick: !!r.stick,
+                     hex: '0x' + r.mesh.material.color.getHex().toString(16).padStart(6, '0') };
           });
         }
       };

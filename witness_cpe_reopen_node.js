@@ -163,10 +163,22 @@ async function gates(browser, BLD) {
   const others = h1.filter(h => h.b !== sIdx);
   const okStick = mine.length === 3 && mine.every(h => h.hex === '0x1565c0' && h.stick);
   const okOther = others.every(h => !h.stick && (h.z === 'mid' ? h.hex === '0xffffff' : h.hex === '0x4fc3f7'));
-  P('G-RN-4a an unselected stick is dark blue; seeded bands keep their colours',
+  P('G-RN-4a an unselected stick has BLUE dots; seeded bands keep their colours',
     okStick && okOther,
     `stick handles=[${mine.map(h => h.z + ':' + h.hex).join(' ')}]   ` +
     `seeded=[${others.map(h => h.z + ':' + h.hex).join(' ')}]`);
+
+  // §CPE_STICK_RED_BAR: the bar is its own mesh — "red bar, blue dots" is two claims, so it takes
+  // two probes. User, 2026-07-31: "the stick is not well colored ie if red with blue dots in it
+  // will help" (all-blue read as one dim smudge).
+  const bars = await page.evaluate(() => window.APP.cinemaPathEditor._probeBars());
+  const myBar = bars.filter(r => r.b === sIdx)[0];
+  const otherBars = bars.filter(r => r.b !== sIdx);
+  P('G-RN-4c the stick BAR is red while its dots stay blue; seeded bars stay white',
+    !!myBar && myBar.hex === '0xe53935' && otherBars.every(r => r.hex === '0xffffff'),
+    `stick bar=${myBar ? myBar.hex : 'missing'} (want 0xe53935)   ` +
+    `seeded bars=[${otherBars.map(r => r.hex).join(' ')}]   ` +
+    `stick dots=[${mine.map(h => h.hex).join(' ')}]`);
 
   // grab the stick's middle handle — held-orange must still win over the new blue
   const mid = mine.find(h => h.z === 'mid');
