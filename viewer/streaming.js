@@ -719,6 +719,29 @@ function setupStreaming(A) {
           if (A.CITY_URL && A._cityTagAndBudget) A._cityTagAndBudget(A.activeBuilding);
           // §S285: marquee — stream the next queued building (sequential drain).
           if (A.CITY_URL && A._cityStreamNext) A._cityStreamNext();
+          // §SCENE_MERGE (§SM-7.1 step 7): same sequential drain for buildings folded in by
+          // Open→Merge. A real merged package (Clinic = 5 discipline buildings) has N names and
+          // streamBuilding() handles ONE, so it chains here exactly like City's queue above.
+          if (A._mergePending && A._mergePending.length && A._mergeStreamNext) A._mergeStreamNext();
+          // §MERGE_CONTRACT (W-SCENE-MERGE): §CONTRACT_CHECK is scene-wide and building-blind, so
+          // the merge needs its own per-building split of what is ACTUALLY registered for picking.
+          // guidMap values joined back to elements_meta.building — both sides must be > 0.
+          if (A.cityBuildingDbs && Object.keys(A.buildingCentres || {}).length > 1 && A.db) {
+            try {
+              var _mcOwn = {}, _mcGuids = Object.values(A.guidMap);
+              for (var _mgi in A._mergedIndex) _mcGuids.push(_mgi);
+              var _mcSt = A.db.prepare('SELECT building FROM elements_meta WHERE guid = ?');
+              for (var _mgj = 0; _mgj < _mcGuids.length; _mgj++) {
+                _mcSt.bind([_mcGuids[_mgj]]);
+                if (_mcSt.step()) { var _b = _mcSt.get()[0]; _mcOwn[_b] = (_mcOwn[_b] || 0) + 1; }
+                _mcSt.reset();
+              }
+              _mcSt.free();
+              console.log('§MERGE_CONTRACT buildings=' + Object.keys(_mcOwn).length +
+                ' rendered=' + JSON.stringify(_mcOwn) +
+                ' centres=' + Object.keys(A.buildingCentres).length);
+            } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
+          }
         }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices

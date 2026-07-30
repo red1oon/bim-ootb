@@ -742,9 +742,252 @@ async function setupScene(A) {
     console.log('§SAVE_DONE mode=download name=' + name + ' bytes=' + bytes.byteLength);
   };
 
-  // ── Open Building → native Open… (FSA / file input). Picks a saved .db, replaces the scene. ──
-  // Mirrors the import monolith path: stash bytes in the cache store, navigate viewer with ?db=import://…
+  // ── §SCENE_MERGE — the merge-or-replace prompt ────────────────────────────────────────────────
+  // Implementing prompts/LANDING_MULTIMERGE_SAVEOPEN_RESURRECT.md §SM-3 / §SM-7 — Witness: W-SCENE-MERGE
+  // PORT of archive/gallery.html:1045 showMergeModal(): same two-button shape, same copy, Enter=merge,
+  // Esc=new. Two forced deltas, both because viewer.html has none of gallery's modal elements:
+  //   (a) the DOM is built once here and reused, and
+  //   (b) gallery's ">1 target → <select>" branch is DROPPED — a Viewer scene has exactly one active
+  //       building, so there is never a target list. NO card / NO list surface (HARD CONSTRAINT).
+  A._showMergeModal = function(fileName, targetName) {
+    return new Promise(function(resolve) {
+      var modal = document.getElementById('merge-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'merge-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:100000;display:none;align-items:center;' +
+          'justify-content:center;background:rgba(0,0,0,0.62);font:14px system-ui,sans-serif';
+        modal.innerHTML =
+          '<div style="background:#1b1e24;border:1px solid rgba(255,255,255,0.14);border-radius:10px;' +
+          'padding:22px 24px;max-width:440px;color:#e8e8e8;box-shadow:0 10px 40px rgba(0,0,0,0.6)">' +
+          '<div id="merge-target" style="font-size:15px;line-height:1.45;margin-bottom:6px"></div>' +
+          '<div style="font-size:12px;opacity:0.65;margin-bottom:18px">Merge keeps the current scene and ' +
+          'adds this file alongside it. New replaces the scene with just this file.</div>' +
+          '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+          '<button id="merge-new-btn" style="padding:8px 16px;border-radius:6px;cursor:pointer;' +
+          'background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);color:#ddd">New (Esc)</button>' +
+          '<button id="merge-btn" style="padding:8px 16px;border-radius:6px;cursor:pointer;' +
+          'background:rgba(79,195,247,0.18);border:1px solid rgba(79,195,247,0.5);color:#4fc3f7;' +
+          'font-weight:600">Merge (Enter)</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+      }
+      document.getElementById('merge-target').textContent =
+        'Merge "' + fileName + '" into "' + targetName + '"?';
+      modal.style.display = 'flex';
+      console.log('§MERGE_PROMPT file=' + fileName + ' target=' + targetName);
+
+      function cleanup() { modal.style.display = 'none'; document.removeEventListener('keydown', onKey, true); }
+      function done(action) { cleanup(); resolve({ action: action }); }
+      function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done('merge'); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('new'); }
+      }
+      document.addEventListener('keydown', onKey, true);
+      document.getElementById('merge-btn').onclick = function() { done('merge'); };
+      document.getElementById('merge-new-btn').onclick = function() { done('new'); };
+    });
+  };
+
+  // Which tables get folded in. meta/transforms/instances are the streaming contract; the rest are
+  // what rooms (rel_contained_in_space, spatial_structure) and 4D (tasks*) read. Folded only when the
+  // table exists on BOTH sides. Dedup is INSERT OR IGNORE — the already-proven rule
+  // (import_db_builder.js:45: same GUID twice collapses).
+  A._MERGE_META_TABLES = ['elements_meta', 'element_transforms', 'element_instances',
+    'rel_contained_in_space', 'spatial_structure', 'tasks', 'task_elements', 'task_sequences',
+    'schedules', 'bom_tree'];
+  A._MERGE_GEO_TABLES = ['component_geometries', 'base_geometries'];
+
+  // ⚠ sql.js `exec` returns ONLY statements that produced rows, so `SELECT * … LIMIT 0` yields `[]`
+  // and NOT a columns list — the first cut of this used that and silently merged nothing
+  // (§MERGE_DONE newBuildings=0 with zero §MERGE_ROWS lines). PRAGMA table_info returns real rows.
+  function _mergeCols(db, table) {
+    try {
+      var r = db.exec('PRAGMA table_info("' + table.replace(/"/g, '') + '")');
+      if (!r || !r.length || !r[0].values.length) return null;
+      return r[0].values.map(function(v) { return v[1]; });
+    } catch (e) { return null; }
+  }
+
+  // §SM-7.0 landmine 3: real DBs disagree on columns (Duplex.component_geometries has `normals`,
+  // Clinic's does not). Insert on the INTERSECTION, driven by the DESTINATION's schema so the
+  // destination schema never changes — which is also what keeps the once-probed, cached
+  // A._libHasNormals (streaming.js:868) honest after a merge.
+  function _mergeTable(src, dst, table) {
+    var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
+    if (!sCols || !dCols) return null;
+    var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
+    if (!cols.length) return null;
+    var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
+    var before = 0, after = 0;
+    try { before = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
+    // Stream row-by-row rather than materialising the whole table first — component_geometries is
+    // ~100MB of BLOBs on Clinic and 311MB-class on KUL070 (§SM-5 memory is the real ceiling).
+    var srcRows = 0, errs = 0;
+    try {
+      var st = src.prepare('SELECT ' + q + ' FROM "' + table + '"');
+      var ins = dst.prepare('INSERT OR IGNORE INTO "' + table + '" (' + q + ') VALUES (' +
+        cols.map(function() { return '?'; }).join(',') + ')');
+      while (st.step()) { srcRows++; try { ins.run(st.get()); } catch (e2) { errs++; } }
+      st.free(); ins.free();
+    } catch (e) { console.warn('§MERGE_READ_FAIL table=' + table + ' ' + e.message); return null; }
+    try { after = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
+    var added = after - before, dup = srcRows - added;
+    console.log('§MERGE_ROWS table=' + table + ' src=' + srcRows + ' before=' + before +
+      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
+      ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
+    return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  function _georefPin(db) {
+    if (!db) return null;
+    try {
+      var r = db.exec("SELECT key, value FROM project_metadata WHERE key IN " +
+        "('georef_offset_x','georef_offset_y','georef_offset_z')");
+      if (!r || !r.length) return null;
+      var o = {};
+      r[0].values.forEach(function(v) { o[v[0]] = parseFloat(v[1]); });
+      if (isNaN(o.georef_offset_x) && isNaN(o.georef_offset_y) && isNaN(o.georef_offset_z)) return null;
+      return [o.georef_offset_x || 0, o.georef_offset_y || 0, o.georef_offset_z || 0];
+    } catch (e) { return null; }
+  }
+
+  // Merge an opened .db into the LIVE scene instead of navigating. §SM-7.1.
+  A._mergeDbIntoScene = async function(fileName, bytes) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var SQL = A._SQL || A.citySQL || A._citySQL;
+    if (!SQL) { console.log('§MERGE_FAIL reason=no_sql_factory'); if (A.status) A.status.textContent = 'Merge failed — sql.js not ready'; return false; }
+    if (!A.db) { console.log('§MERGE_FAIL reason=no_live_db'); return false; }
+    var src;
+    try { src = new SQL.Database(new Uint8Array(bytes)); }
+    catch (e) { console.log('§MERGE_FAIL reason=open_src ' + e.message); return false; }
+
+    var before = Object.keys(A.buildingCentres || {});
+    var srcBlds = [];
+    try {
+      var br = src.exec('SELECT DISTINCT building FROM elements_meta');
+      if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
+    } catch (e) {}
+    console.log('§MERGE_START file=' + fileName + ' bytes=' + bytes.byteLength +
+      ' srcBuildings=' + JSON.stringify(srcBlds) + ' sceneBuildings=' + JSON.stringify(before));
+
+    // ── §SM-7.1 step 2: frame rebase. The ALREADY-OPEN building's georef pins the frame; the
+    // incoming DB rebases into it. Same rule as import.js:299-310's sessionGeorefOffset, applied to
+    // a live scene instead of the first file of a drop. A.modelOffset is deliberately NOT touched —
+    // building A's meshes are already placed against it (§SM-7.0 landmine 4).
+    var pin = _georefPin(A.db), inc = _georefPin(src);
+    if (pin && inc) {
+      var dx = inc[0] - pin[0], dy = inc[1] - pin[1], dz = inc[2] - pin[2];
+      if (dx || dy || dz) {
+        try {
+          src.run('UPDATE element_transforms SET center_x = center_x + ?, center_y = center_y + ?, center_z = center_z + ?', [dx, dy, dz]);
+          console.log('§MERGE_GEOREF mode=rebase pin=(' + pin.join(',') + ') inc=(' + inc.join(',') + ') delta=(' + dx + ',' + dy + ',' + dz + ')');
+        } catch (e) { console.log('§MERGE_GEOREF mode=rebase_fail ' + e.message); }
+      } else {
+        console.log('§MERGE_GEOREF mode=same pin=(' + pin.join(',') + ')');
+      }
+    } else {
+      console.log('§MERGE_GEOREF mode=none pin=' + (pin ? '(' + pin.join(',') + ')' : 'absent') +
+        ' inc=' + (inc ? '(' + inc.join(',') + ')' : 'absent') + ' — each DB keeps its own coordinates');
+    }
+
+    // ── §SM-7.1 step 3: fold the tables
+    var stats = {};
+    A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
+    if (A.libDb) {
+      A._MERGE_GEO_TABLES.forEach(function(t) {
+        var s = _mergeTable(src, A.libDb, t);
+        if (s) stats[t] = s;
+        else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
+      });
+    }
+    console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
+      ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
+    if (!stats.elements_meta) {
+      console.error('§MERGE_FAIL reason=elements_meta_not_folded — schema read failed, nothing merged');
+      try { src.close(); } catch (e) {}
+      if (A.status) A.status.textContent = 'Merge failed — could not read ' + fileName;
+      return false;
+    }
+    if (!stats.elements_meta.added) {
+      console.log('§MERGE_WARN elements_meta added=0 — nothing new (all GUIDs already present)');
+    }
+    try { src.close(); } catch (e) {}   // §SM-5 memory: free the source DB immediately
+
+    // ── §SM-7.1 step 5: register in the City shape for API symmetry (one DB now holds both)
+    A.cityBuildingDbs = A.cityBuildingDbs || {};
+    srcBlds.forEach(function(n) { A.cityBuildingDbs[n] = { db: A.db, libDb: A.libDb }; });
+
+    // ── §SM-7.1 step 6: add ONLY the new building names to buildingCentres (same GROUP BY query as
+    // streaming.js:2119). Existing centres are left exactly as they are.
+    var env = null;
+    for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
+    var added = [];
+    try {
+      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      for (var ci = 0; ci < centres.length; ci++) {
+        var row = centres[ci];
+        if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
+        A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
+        if (env) A.buildingCentres[row[0]].envelope = env;
+        added.push(row[0]);
+      }
+    } catch (e) { console.log('§MERGE_CENTRES_FAIL ' + e.message); }
+    console.log('§MERGE_CENTRES before=' + before.length + ' after=' + Object.keys(A.buildingCentres).length +
+      ' added=' + JSON.stringify(added));
+
+    try {
+      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      A.totalElements = er.length ? er[0][0] : A.totalElements;
+      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      A.discCounts = {};
+      for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
+    } catch (e) {}
+    if (A.updateHUD) A.updateHUD();
+    if (A.populateBuildingList) A.populateBuildingList();
+    if (A._updateFogDensity) A._updateFogDensity();
+
+    var ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    console.log('§MERGE_DONE file=' + fileName + ' newBuildings=' + added.length +
+      ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
+    if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
+
+    // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
+    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergeStreamNext();
+    return true;
+  };
+
+  // Sequential drain, mirroring city.js's _cityStreamNext. Chained from the stream-complete hook in
+  // streaming.js (right beside the existing City drain) — streamBuilding() handles ONE building, and
+  // a real merged package (Clinic = 5 discipline buildings) has N.
+  A._mergeStreamNext = function() {
+    if (!A._mergePending || !A._mergePending.length) return;
+    if (A.streaming) return;                     // re-chained at next stream-complete
+    var next = null;
+    while (A._mergePending.length) {
+      var n = A._mergePending.shift();
+      if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
+    }
+    if (!next) { console.log('§MERGE_STREAM_DONE queue=empty'); return; }
+    console.log('§MERGE_STREAM bld=' + next + ' remaining=' + A._mergePending.length);
+    A.streamBuilding(next);
+  };
+
+  // ── Open Building → native Open… (FSA / file input). ──
+  // §SCENE_MERGE: a building already open → ASK (merge into this scene / replace). Replace is
+  // today's path, byte-for-byte: stash bytes in the cache store, navigate with ?db=import://…
   A._openDbBytes = async function(fileName, bytes) {
+    var open = Object.keys(A.buildingCentres || {});
+    if (A.db && open.length) {
+      var target = (A.activeBuilding && A.buildingCentres[A.activeBuilding]) ? A.activeBuilding : open[0];
+      var choice = await A._showMergeModal(fileName, target);
+      console.log('§MERGE_CHOICE file=' + fileName + ' target=' + target + ' action=' + choice.action);
+      if (choice.action === 'merge') { await A._mergeDbIntoScene(fileName, bytes); return; }
+    } else {
+      console.log('§MERGE_SKIP reason=no_building_open — replace path');
+    }
     var key = fileName.replace(/\.(db|sqlite)$/i, '') + '.db';
     var dbUrl = 'import://' + key + '/v0';
     var cacheDb = await A.openCacheDB();
@@ -758,26 +1001,52 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
+  // A.importMultiIFC (import.js:267), take the DB it produced, feed it into the same merge/replace
+  // flow. §SM-5 named the ceiling and it is measured, not theoretical: a single ~1GB+ source file
+  // silently imports PARTIAL against the wasm32 4GB budget (IFC_LARGE_PRIVATE_STRESS_TEST §KUL009),
+  // so say so out loud rather than hiding it behind a merge prompt.
+  A._openIfcFiles = async function(files) {
+    if (!A.importMultiIFC) { console.log('§OPEN_IFC_FAIL reason=no_importMultiIFC'); if (A.status) A.status.textContent = 'IFC import unavailable'; return; }
+    var big = [];
+    for (var i = 0; i < files.length; i++) if (files[i].size > 900 * 1048576) big.push(files[i].name + '=' + (files[i].size / 1048576).toFixed(0) + 'MB');
+    if (big.length) {
+      console.warn('§OPEN_IFC_WASM_RISK files=' + big.join(',') + ' — wasm32 4GB ceiling (§KUL009): this may import PARTIAL');
+      if (A.status) A.status.textContent = 'Large IFC (' + big.join(',') + ') — may import partially (4GB wasm limit)';
+    }
+    console.log('§OPEN_IFC files=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){ return f.name; }).join(','));
+    var out = await A.importMultiIFC(files);
+    if (!out || !out.record) { console.log('§OPEN_IFC_FAIL reason=no_record_returned'); return; }
+    var bytes = out.record.extractedDb || out.record.metaDb;
+    if (!bytes) { console.log('§OPEN_IFC_FAIL reason=no_db_bytes split=' + !!out.record.metaDb); return; }
+    console.log('§OPEN_IFC_DB building=' + out.buildingName + ' bytes=' + bytes.byteLength + ' split=' + !!out.split);
+    await A._openDbBytes(out.buildingName + '.db', new Uint8Array(bytes));
+  };
+
   A.openModelDb = async function() {
     // Native Open… (Chromium FSA). Fallback = hidden <input type=file>.
     if (window.showOpenFilePicker) {
       try {
-        var picks = await window.showOpenFilePicker({ multiple: false,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db', '.sqlite'] } }] });
-        var file = await picks[0].getFile();
-        var buf = await file.arrayBuffer();
-        console.log('§OPEN_PICK mode=fsa name=' + file.name + ' bytes=' + buf.byteLength);
-        await A._openDbBytes(file.name, new Uint8Array(buf));
+        var picks = await window.showOpenFilePicker({ multiple: true,
+          types: [{ description: 'Building database or IFC', accept: { 'application/x-sqlite3': ['.db', '.sqlite'], 'application/x-step': ['.ifc'] } }] });
+        var fsaFiles = [];
+        for (var pi = 0; pi < picks.length; pi++) fsaFiles.push(await picks[pi].getFile());
+        console.log('§OPEN_PICK mode=fsa n=' + fsaFiles.length + ' name=' + fsaFiles[0].name + ' bytes=' + fsaFiles[0].size);
+        if (/\.ifc$/i.test(fsaFiles[0].name)) { await A._openIfcFiles(fsaFiles); return; }
+        var buf = await fsaFiles[0].arrayBuffer();
+        await A._openDbBytes(fsaFiles[0].name, new Uint8Array(buf));
         return;
       } catch (e) { if (e.name === 'AbortError') { console.log('§OPEN_CANCEL user'); return; } /* fall through */ }
     }
-    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite'; input.style.display = 'none';
+    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite,.ifc';
+    input.multiple = true; input.style.display = 'none';
     input.addEventListener('change', async function(){
       if (!input.files.length) return;
-      var file = input.files[0]; var buf = await file.arrayBuffer();
-      console.log('§OPEN_PICK mode=input name=' + file.name + ' bytes=' + buf.byteLength);
-      await A._openDbBytes(file.name, new Uint8Array(buf));
-      document.body.removeChild(input);
+      var file = input.files[0];
+      console.log('§OPEN_PICK mode=input n=' + input.files.length + ' name=' + file.name + ' bytes=' + file.size);
+      if (/\.ifc$/i.test(file.name)) { await A._openIfcFiles(input.files); }
+      else { var buf = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf)); }
+      if (input.parentNode) document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
   };
