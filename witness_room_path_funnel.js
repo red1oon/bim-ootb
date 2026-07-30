@@ -106,8 +106,15 @@ function aperture(d,dir){
   let p,q;
   if(bx>=by){ p={x:d.x-bx/2,y:d.y}; q={x:d.x+bx/2,y:d.y}; }
   else { p={x:d.x,y:d.y-by/2}; q={x:d.x,y:d.y+by/2}; }
+  // §21.18 FIX: the SSF formulation's l/r are defined in a CLOCKWISE frame, so its "left" is the
+  // vertex that is geometrically RIGHT of travel in a standard (y-up, CCW-positive) frame. Verified
+  // by hand-computed unit tests over a valid 3-convex-cell L-channel with a reflex corner
+  // (roompath_diagnostics/funnel_unit.js): B1 assigns true-left to `l`, CONSISTENTLY, and still
+  // returns 5.1167 against an expected 3.7025; B3 assigns true-RIGHT to `l` and returns 3.7025
+  // exactly. So attempt 1's fault was a convention inversion, NOT inconsistent winding and NOT
+  // pocket convexity (§21.16 already ruled that out).
   const cr=dir.x*(p.y-d.y)-dir.y*(p.x-d.x);
-  return cr>0?{l:p,r:q}:{l:q,r:p};
+  return cr>0?{l:q,r:p}:{l:p,r:q};
 }
 function pathStorey(g,p){let s=null;for(const q of p){const n=g.nodesByGuid[q];if(!n||n.storey==null||n.kind==='stairwp')continue;if(s==null)s=n.storey;else if(s!==n.storey)return null}return s}
 
