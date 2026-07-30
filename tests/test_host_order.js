@@ -48,6 +48,7 @@ const path = require('path');
 const ScheduleGate = require('../viewer/schedule_gate.js');          // the REAL deployed gate
 const RATES = JSON.parse(fs.readFileSync(path.join(__dirname, '../viewer/rates/sequence_rules.json'), 'utf8'));
 const SR = RATES.SEQUENCE_RULES, LR = RATES.LABOR_RATES, SD = RATES.SEQUENCE_DEFAULT;
+const NO = RATES.NAME_OVERRIDES || [];        // §4D_FACADE_ORDER — time_machine.js:matchNameOverride, replicated
 
 const DB = process.env.HOST_TEST_DB ||
   path.join(process.env.HOME || '/home/red1', 'bim-ootb/buildings/Hospital_extracted.db');
@@ -59,6 +60,15 @@ const DAY = 86400000;
 const day = ms => ms / DAY;
 
 // ── injectGantt() replica ────────────────────────────────────────────────────
+function matchNameOverride(cls, name) {                                // time_machine.js:matchNameOverride
+  if (!name) return null;
+  for (const ov of NO) {
+    if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+    if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+    if (ov._re && ov._re.test(name)) return ov;
+  }
+  return null;
+}
 function matchRule(cls) {                                             // time_machine.js:3175
   if (!cls) return SD;
   let bestKey = null, bestLen = 0;
@@ -116,15 +126,18 @@ function assignStoreyByZ(storey, cz) {
 // on a bucket that really is wall-less, instead of one §STOREY-Z has already emptied.
 function build(useStoreyZ) {
   reassigned = 0;
+  let nameOverridden = 0;
   const elements = rows.map(r => {
-    const cls = r[1], rawStorey = r[3] || '_UNKNOWN';
+    const cls = r[1], name = r[2] || '', rawStorey = r[3] || '_UNKNOWN';
     const cz = +r[4] || 0, bz = +r[5] || 0, cx = +r[6] || 0, cy = +r[7] || 0, bx = +r[8] || 0, by = +r[9] || 0;
     const storey = useStoreyZ ? assignStoreyByZ(rawStorey, cz) : rawStorey;
-    const rule = matchRule(cls);
+    const ov = matchNameOverride(cls, name);
+    if (ov) nameOverridden++;
+    const rule = ov || matchRule(cls);
     let seq = rule.sequence, phase = rule.phase;
     if (/roof/i.test(storey) && cls === 'IfcSlab' && seq < 8) { seq = 8; phase = 'Architecture'; }
     return {
-      guid: r[0], cls, name: r[2] || '', storey, rawStorey, cz,
+      guid: r[0], cls, name, storey, rawStorey, cz,
       base_z: cz - bz / 2, top_z: cz + bz / 2,
       x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
       seq, phase, resource: rule.resource || '_DEFAULT', installSecs: getInstallSecs(cls)
@@ -136,7 +149,7 @@ function build(useStoreyZ) {
     if (a.seq !== b.seq) return a.seq - b.seq;
     return a.cz - b.cz;
   });
-  return { elements, reassigned };
+  return { elements, reassigned, nameOverridden };
 }
 function schedule(elements) {
   let totalSecs = 0;
@@ -189,6 +202,8 @@ const arms = {};
 });
 console.log('§W-HOST-NO-REGRESSION §STOREY-Z reassigned=' + arms.storeyZ.reassigned +
   ' (rawStorey arm reassigned=' + arms.rawStorey.reassigned + ', projectDays=' + arms.storeyZ.projectDays + ')');
+console.log('§NAME_OVERRIDE nameOverridden=' + arms.storeyZ.nameOverridden +
+  ' (' + (NO.map(o => o.id).join(',') || 'none') + ')');
 Object.keys(arms).forEach(k => {
   const { elements, sched } = arms[k];
   const per = {};

@@ -3171,9 +3171,26 @@
     var SR = window.SEQUENCE_RULES || {};
     var LR = window.LABOR_RATES || {};
     var SD = window.SEQUENCE_DEFAULT || {phase:'Architecture',sequence:6,resource:null};
+    var NO = window.SEQUENCE_NAME_OVERRIDES || [];  // §4D_FACADE_ORDER — see rates/sequence_rules.json
 
-    function matchRule(cls) {
+    // §4D_FACADE_ORDER: ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember)
+    // from genuinely structural plates/members (e.g. Terminal's Metal Deck IfcPlate, seq 4 is correct
+    // there) — name is the only extracted signal. Checked BEFORE the class lookup, never replacing it:
+    // an element that matches no override keeps its plain class-default seq.
+    function matchNameOverride(cls, name) {
+      if (!name) return null;
+      for (var i = 0; i < NO.length; i++) {
+        var ov = NO[i];
+        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+        if (ov._re && ov._re.test(name)) return ov;
+      }
+      return null;
+    }
+    function matchRule(cls, name) {
       if (!cls) return SD;
+      var ov = matchNameOverride(cls, name);
+      if (ov) return ov;
       var bestKey = null, bestLen = 0;
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
@@ -3265,12 +3282,14 @@
     }
 
     // ── Build elements with storey-aware overrides ──
-    var roofOverrides = 0;
+    var roofOverrides = 0, nameOverrides = 0;
     var elements = r[0].values.map(function(row) {
-      var cls = row[1], rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
+      var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
-      var rule = matchRule(cls);
+      var ov = matchNameOverride(cls, elName);
+      if (ov) nameOverrides++;
+      var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
 
       // §A.1 Storey-aware override: slabs on "Roof" storey → Architecture/Roof seq 8
@@ -3280,7 +3299,7 @@
       }
 
       return {
-        guid: row[0], cls: cls, name: row[2] || '', storey: storey,
+        guid: row[0], cls: cls, name: elName, storey: storey,
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
         base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: Z geometry (base = underside, top = where it tops out)
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
@@ -3291,6 +3310,8 @@
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
     if (roofOverrides) console.log('§GANTT_OVERRIDE ' + roofOverrides + ' roof slabs overridden to seq=8');
+    if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
+      NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
     // Real construction: lower Z builds first regardless of storey name.
@@ -3393,7 +3414,7 @@
       if (f20r.length) {
         f20r[0].values.forEach(function(row) {
           var p = JSON.parse(row[1]);
-          _first20.push(p.storey + '|band=' + storeyBand[p.storey || '_UNKNOWN'] + '|seq=' + (matchRule(p.cls).sequence) + '|' + p.cls);
+          _first20.push(p.storey + '|band=' + storeyBand[p.storey || '_UNKNOWN'] + '|seq=' + (matchRule(p.cls, p.name).sequence) + '|' + p.cls);
         });
       }
     } catch(e) {}
@@ -3442,7 +3463,8 @@
           var g = row[0], tid = _cap.guidTask[g];
           if (!tid) return;                         // uncovered → keep generative timing
           if (!_byTask[tid]) _byTask[tid] = [];
-          _byTask[tid].push({ guid: g, params: row[1], cz: _elByGuid[g] ? _elByGuid[g].cz : 0 });
+          _byTask[tid].push({ guid: g, params: row[1],
+            cz: _elByGuid[g] ? _elByGuid[g].cz : 0, seq: _elByGuid[g] ? _elByGuid[g].seq : 999 });
         });
       }
       db.run('BEGIN');
@@ -3451,7 +3473,12 @@
       for (var _tid in _byTask) {
         var w = _cap.win[_tid];
         var _bucket = _byTask[_tid];
-        _bucket.sort(function(a, b) { return a.cz - b.cz; });   // bottom-up, same discipline as generative pass
+        // §4D_FACADE_ORDER (2026-07-31): seq FIRST, cz second — same discipline as schedule_gate.js
+        // PASS B (trade order, then Z). Raw-cz-only staggering put a window/glazed panel (seq 7)
+        // ahead of its own host wall (seq 6) whenever their center_z happened to be close — MEASURED
+        // 662/1445 touching glazed-panel/wall pairs violating on Hospital with cz-only sort, 0/1445
+        // with (seq,cz). Still "bottom-up, same discipline as generative pass" WITHIN a trade.
+        _bucket.sort(function(a, b) { return (a.seq - b.seq) || (a.cz - b.cz); });
         var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
         _bucket.forEach(function(item, i) {
           var s_i = w.s + Math.floor((i / _n) * _span);
