@@ -33,7 +33,7 @@
   // you drag and the handles you grab — and reads at a glance on a 63K-element scene.
   var CPE_STICK_RED = 0xe53935;
   var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
-  var CPE_V = 'v18 (§CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  var CPE_V = 'v19 (§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -427,9 +427,20 @@
   function _stopPulse() { if (_state) { _state.pulseId++; if (A().markDirty) A().markDirty(); } }
 
   // ══════════════════ timing ══════════════════
+  // §CPE_HOSE_LENGTH_BLIND (2026-07-31) — this used to measure `cinemaBandFlow(bands)`, the RAW band
+  // flow with the hose NEVER applied, while the bake measures the DEFORMED curve
+  // (effects.js:4936 `_cinemaHoseApply(_cinemaBandFlow(_cpeBands), _cpeHose)` -> :5004 `totalLen`).
+  // Measured on the user's own saved record: 107.5 m here vs 173.5 m there, +61%, same bands and
+  // same 7 ops. The number was the small half of it — `_naturalDuration()` divides this length by
+  // the walk speed and `_buildOverride` stores it as `_total`, which the bake honours as an
+  // OVERRIDE, so their film ran `natural=145.0s ... override=true running=92.4s`: 1.57x faster than
+  // the 2.3 m/s walk pace it claims to be flying. Every hose pull silently bought SPEED instead of
+  // time. The editor already draws and hit-tests against the deformed curve (§CPE_STICK_ANCHOR,
+  // "what you grab is what you see") — the length maths simply never got the same treatment.
   function _flownLength() {
     var a = A();
-    var pts = a.cinemaBandFlow ? a.cinemaBandFlow(_state.bands) : [];
+    var pts = (_state.flowHosed && _state.flowHosed.length > 1) ? _state.flowHosed
+              : (a.cinemaBandFlow ? _flowHosed(a.cinemaBandFlow(_state.bands)) : []);
     var L = 0;
     for (var i = 1; i < pts.length; i++)
       L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
@@ -1746,6 +1757,23 @@
                      px: s.behind ? null : Math.round(s.x), py: s.behind ? null : Math.round(s.y) };
           });
         },
+        // §CPE_HOSE_LENGTH_BLIND's G-HL gates. Read-only: `_probeLengths` measures the two curves and
+        // reports what the clock actually costed; `_probeOverride` hands the witness the SAME object
+        // the bake receives, so the witness can plan it itself rather than take the editor's word for
+        // what the bake would measure (the module must not grade its own homework here — the whole
+        // defect was two functions disagreeing about which curve is real).
+        _probeLengths: function() {
+          if (!_state) return null;
+          var raw = _flowRaw(), hosed = _flowHosed(raw), len = function(p) {
+            var L = 0; for (var i = 1; i < p.length; i++)
+              L += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y, p[i].z - p[i - 1].z);
+            return L;
+          };
+          return { raw: len(raw), hosed: len(hosed), natural: _naturalDuration().len,
+                   ops: _state.hose.length, total: _naturalDuration().total,
+                   speed: _state.speed, baseTotal: _state.baseTotal, baseOutSec: _state.baseOutSec };
+        },
+        _probeOverride: function() { return _state ? _buildOverride() : null; },
         // §CPE_STICK_RED_BAR's G-RN-4c: the BAR is a separate mesh from the handles, so it needs its
         // own read-only probe or "red bar, blue dots" is asserted on half the evidence.
         _probeBars: function() {
