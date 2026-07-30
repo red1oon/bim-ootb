@@ -434,9 +434,13 @@
       // that can't change the 3D view gets NO eye (never a toggle that silently does nothing).
       {
         const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+        // §ANCHOR (W-E2E-VOID-ANCHOR G2): an invisible ride anchor's guid IS in the bridge (the cascade
+        // needs it) but its Outliner row must stay EXACTLY what it was pre-anchor — a meta-only row with
+        // no eye and no scene action. Without this, 65 rows would suddenly grow act-on-scene affordances.
+        const ancG = (typeof window !== 'undefined' && window.__arcAnchorGuids) || null;
         const mark = (n) => {
           let h = false;
-          if (n.kind === 'element') h = fidByGuid[n.id] != null || !isNaN(+n.id);
+          if (n.kind === 'element') h = (fidByGuid[n.id] != null && !(ancG && ancG.has(n.id))) || !isNaN(+n.id);
           if (n.dwp) h = true;   // §I5 (W-E2E-INSTHIDE): a walked-instance row acts via setPlacementVisible
           if (n.disc) h = true;
           (n.children || []).forEach(c => { if (mark(c)) h = true; });
@@ -668,7 +672,7 @@
       const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
       let applied = 0;
       const hideNode = (n) => {
-        if (n.kind === 'element') {
+        if (n.kind === 'element' && !(window.__arcAnchorGuids && window.__arcAnchorGuids.has(n.id))) {   // §ANCHOR: never in an eye-hide walk (already invisible, must not count as `applied`)
           const fid = fidByGuid[n.id] != null ? fidByGuid[n.id] : (isNaN(+n.id) ? null : +n.id);
           if (fid != null && B.setFeatureVisible && B.setFeatureVisible(fid, false)) applied++;
         }
@@ -719,7 +723,11 @@
             // used as-is — this is what actually drives the 3D emissive highlight for an ARC-seeded pick,
             // not just the Outliner row's own paint (setActive's cross-match, see above, handles the rest).
             let num = +id;
-            if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null) num = window.__arcFidByGuid[id];
+            // §ANCHOR: never resolve an anchor guid to its fid here — a row click must keep its exact
+            // pre-anchor behaviour (frameElementByGuid is anchor-blind ⇒ the honest deadclick toast),
+            // never select/frame an invisible mesh.
+            if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null &&
+                !(window.__arcAnchorGuids && window.__arcAnchorGuids.has(id))) num = window.__arcFidByGuid[id];
             if (!isNaN(num) && this._ctrlToggle(e, num)) return;   // §P4 multi-toggle (resolved fid) wins here too
             // §P5 (W-OL-DEADCLICK) → upgraded by §Q2 (W-E2E-INSTPICK): a non-ARC leaf's GUID never lands in
             // __arcFidByGuid (bridge is ARC-seed-only), but the element's REAL transform is in the open

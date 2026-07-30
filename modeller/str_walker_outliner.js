@@ -150,6 +150,14 @@
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
       window.__dwBuf = buf; window.__dwName = name;
+      // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR — the user's binding condition: anchors excluded from EVERY
+      // count/pick/audit): hide void-anchor transform rows from THIS transient handle — it feeds the STR
+      // walker init, the BOM-graph tree AND the §XEDGE-ALL cross-edge derivation, and every one of those
+      // must see the byte-identical PRE-ANCHOR substrate (abuts/anchored/spans counts unchanged). The
+      // anchors stay in __dwBuf itself — _seedArcEditable (the ONE consumer that needs them) re-opens the
+      // buffer separately. Guarded: only a patched SampleCastle_ARC.db has the column; getRowsModified
+      // makes the exclusion loud instead of silent.
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); var _abn = db.getRowsModified(); if (_abn) console.log(TAG + ' §ANCHOR blind: ' + _abn + ' anchor transform(s) hidden from walker/BOM-tree/cross-edge substrate (ARC seed still sees them)'); } catch (e) { }
       var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
       // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
@@ -644,7 +652,30 @@
       return r.text().then(function (sql) {
         if (!window.SQL) { console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — sql.js not ready'); return buf; }
         var pdb = new window.SQL.Database(new Uint8Array(buf));
-        pdb.run(sql);
+        try {
+          pdb.run(sql);
+        } catch (e) {
+          // §ANCHOR / idempotency hardening (W-E2E-VOID-ANCHOR): a patch may carry
+          // `ALTER TABLE … ADD COLUMN` (SQLite has no IF-NOT-EXISTS form) — normally it runs against the
+          // RAW shipped bytes (which lack the column) and succeeds, but a FUTURE re-shipped db that bakes
+          // the column in would make the whole-run throw here and silently drop EVERY other statement of
+          // the patch (rel_fills_host included). Recover statement-by-statement, tolerating ONLY the
+          // duplicate-column error (patch files are one-statement-per-line by convention — both the
+          // rel_fills_host and void-anchor generators emit exactly that shape). Any OTHER error keeps the
+          // established best-effort contract: log loud, use the db as patched so far.
+          if (!/duplicate column name/i.test(String(e && e.message))) throw e;
+          var tolerated = 0, applied = 0;
+          sql.split('\n').forEach(function (line) {
+            var s = line.trim();
+            if (!s || s.indexOf('--') === 0) return;
+            try { pdb.run(s); applied++; }
+            catch (e2) {
+              if (/duplicate column name/i.test(String(e2 && e2.message))) { tolerated++; }
+              else { console.warn(TAG + ' §PATCH_STMT_FAIL ' + dbFile + ' — ' + (e2 && e2.message) + ' stmt=' + s.slice(0, 80)); }
+            }
+          });
+          console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' statement-mode: applied=' + applied + ' toleratedDuplicateColumn=' + tolerated);
+        }
         var out = pdb.export().buffer;
         pdb.close();
         console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes) from ' + patchUrl);
