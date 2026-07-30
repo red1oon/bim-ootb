@@ -77,6 +77,37 @@
     } catch (e) { return false; }
   }
 
+  // §LAYER-GATE — the Modeller half of §LOD400-ENVELOPE-GATE (bim-compiler
+  // RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §LOD400-ENVELOPE, user directive 2026-07-29: "the NO
+  // FALLBACK rule must never be broken.. simple throws exception and hard fail"). An element whose
+  // source authored N material layers but whose resolved mesh is one undifferentiated envelope solid
+  // is a FALLBACK presented as real geometry — it must be REFUSED (skip + console.error), never
+  // rendered. Runtime schema detection, same pattern as _hasIdColumn/_hasAnchorColumn: the gate only
+  // ARMS when the resident's ARC db actually carries `rel_material_layer_set` rows (shipped by the
+  // patches/<db>.sql self-heal loader — Duplex today) — every other resident (incl. SampleCastle,
+  // whose layer tables are deliberately NOT shipping while its `sporenkap` refusal stands) takes
+  // ZERO new code paths. The per-layer geometry truth lives in the geo store's
+  // `component_geometry_layers` index (rebuilt *_geo.db, scripts/gen_layered_geo_db.py).
+  function _layerGate(db, geoDb) {
+    var gate = { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
+    try {
+      if (!db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rel_material_layer_set'").length) return gate;
+      var r = db.exec("SELECT element_guid, layer_count, layer_set_name FROM rel_material_layer_set WHERE layer_count > 1");
+      if (r.length) r[0].values.forEach(function (v) { gate.multiLayer[v[0]] = { n: v[1], set: v[2] }; gate.nMulti++; });
+      if (geoDb.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='component_geometry_layers'").length) {
+        var lr = geoDb.exec("SELECT DISTINCT geometry_hash FROM component_geometry_layers");
+        if (lr.length) lr[0].values.forEach(function (v) { gate.layeredHashes[v[0]] = true; gate.nHashes++; });
+      }
+      gate.armed = gate.nMulti > 0;
+    } catch (e) {
+      // a failed probe is an infra fault, not evidence about the geometry — stay disarmed but say so
+      // LOUDLY (console.error, not warn: warn is hidden by DevTools' default filter — §GEO-SERVED lesson)
+      console.error(TAG + ' §LAYER-GATE probe failed — gate DISARMED for this seed: ' + (e && e.message));
+      gate.armed = false;
+    }
+    return gate;
+  }
+
   // ── §LOD-300 CATALOG MIRROR (Bug-2 "illegal LOD200 geometry" — honest PARTIAL fix, user-approved scope). This
   // mirrors ONLY hash+ifc_class+bbox (NOT the mesh v/f blobs — no invention/duplication of geometry data) for the
   // exactly-3 REAL-mesh items in bonsai_library.js's CATALOG (Column/Beam/Door). MUST stay byte-identical to that
@@ -159,6 +190,10 @@
     var r = db.exec(sql), ops = [], skipped = [], matched = 0, unmatched = 0, tilted = 0;
     var geomIdx = RealGeometry ? RealGeometry.buildGeometryIndex(db, geoDb || db) : { table: null, byGuid: {}, resolved: {} };
     var geomAssets = [], geomSeen = {}, realResolved = 0, hardfail = 0;
+    // §LAYER-GATE: arm only where the ARC db ships multi-layer edges AND a geometry substrate exists
+    // (a meta-only seed renders honest raw boxes and already logs that degradation loudly upstream).
+    var layerGate = geomIdx.table ? _layerGate(db, geoDb || db) : { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
+    var layerRefused = 0;
     var anchorOps = [];   // §ANCHOR — collected SEPARATELY, appended AFTER the normal ops (see below)
     if (r.length) r[0].values.forEach(function (v) {
       var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0, rgba = v[11], isAnchor = v[12] === 1;
@@ -203,6 +238,17 @@
           hardfail++;
           console.error(TAG + ' §GEOM-HARDFAIL guid=' + guid + ' class=' + cls + ' no real geometry — skipped, not rendered');
           skipped.push({ guid: guid, ifc_class: cls, reason: 'no-real-geometry' }); return;
+        }
+        // §LAYER-GATE refusal (Modeller half of §LOD400-ENVELOPE-GATE): the source authored this
+        // element as N material layers, but its resolved mesh carries NO per-layer slab index —
+        // that mesh is the forbidden envelope fallback. Refuse loudly, mirror §GEOM-HARDFAIL:
+        // console.error + skip, never rendered as real geometry, never softened per-building.
+        if (layerGate.armed && layerGate.multiLayer[guid] && !layerGate.layeredHashes[linkedHash]) {
+          layerRefused++;
+          console.error(TAG + ' §LAYER-ENVELOPE-REFUSE guid=' + guid + ' class=' + cls +
+            ' layers=' + layerGate.multiLayer[guid].n + " set='" + layerGate.multiLayer[guid].set +
+            "' — authored multi-layer element resolved an envelope-only mesh (no component_geometry_layers rows) — skipped, not rendered (§LOD400-ENVELOPE)");
+          skipped.push({ guid: guid, ifc_class: cls, reason: 'envelope-no-layers' }); return;
         }
       }
       // §GEOMAP-VALIDATE (audit-only — see opts.classify contract above): own-class measured-band check on the
@@ -301,9 +347,15 @@
       ops = ops.concat(anchorOps);
       _log(TAG + ' §ANCHOR seeded n=' + anchorOps.length + ' (invisible ride anchors — EXCLUDED from every count/pick/audit; logged separately from the ' + (ops.length - anchorOps.length) + ' seeded elements)');
     }
+    // §LAYER-GATE honesty line — always printed when armed, refused=0 is the expected/GREEN case once
+    // the resident's rebuilt *_geo.db (layer slabs + component_geometry_layers) has actually arrived.
+    if (layerGate.armed) _log(TAG + ' §LAYER-GATE armed multiLayer=' + layerGate.nMulti +
+      ' layeredHashes=' + layerGate.nHashes + ' refused=' + layerRefused +
+      ' (authored multi-layer elements must resolve per-layer slabs — §LOD400-ENVELOPE)');
     return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, geomTable: geomIdx.table, geomap: gmAudit,
-      anchorN: anchorOps.length };
+      anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
+      layerRefused: layerRefused };
   }
 
   // buildBridge(ops, ids) — ops[i] committed as kernel_ops row ids[i] (== its featureId). Build both directions
@@ -379,7 +431,7 @@
       ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + normalN + ')');
     return { committed: committedNormal, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
       matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail,
-      geomap: built.geomap, anchorN: anchorN };
+      geomap: built.geomap, anchorN: anchorN, layerGate: built.layerGate, layerRefused: built.layerRefused };
   }
 
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
