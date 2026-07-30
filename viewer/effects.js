@@ -5253,11 +5253,16 @@ async function setupEffects(A, renderer, scene, camera) {
       for (var i = 0; i < pts.length; i++) {
         var kx = Math.floor(pts[i][0] / cs), ky = Math.floor(pts[i][1] / cs), kz = Math.floor(pts[i][2] / cs);
         var key = kx + ',' + ky + ',' + kz, c = map[key];
-        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0 }; _aimCells.push(c); }
+        // zMin/zMax: purely additive (§CPE_AIM_DENSITY only ever reads n/x/y/z, unaffected). Lets
+        // §CPE_AIM_DEPTH tell a wall-like cell (points spread over height) from a floor/ceiling-like
+        // one (flat, near-zero height spread) without a second data pass — see zSpan below.
+        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; _aimCells.push(c); }
         c.n++; c.x += pts[i][0]; c.y += pts[i][1]; c.z += pts[i][2];
+        if (pts[i][2] < c.zMin) c.zMin = pts[i][2];
+        if (pts[i][2] > c.zMax) c.zMax = pts[i][2];
       }
       for (var j = 0; j < _aimCells.length; j++) {
-        var q = _aimCells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n;
+        var q = _aimCells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n; q.zSpan = q.zMax - q.zMin;
       }
       console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + cs.toFixed(1) +
         'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DENSITY)');
@@ -5453,6 +5458,158 @@ async function setupEffects(A, renderer, scene, camera) {
           subj.y.toFixed(1) + ',' + subj.z.toFixed(1) + ')' +
           ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
           ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
+      }
+      return { x: ax / aL, y: ay / aL, z: az / aL };
+    }
+
+    // ══ §CPE_AIM_DEPTH — surrounded by close surfaces, face the FURTHEST dense one ═══════════════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH. User directive 2026-07-31:
+    //   "if it is flying into area with a floor, a left side wall and front wall, it turns to face
+    //    which is further" ... "must be logical as stated to also X depth distance where if it is
+    //    near a wall along a corridor it wont face dense fleeting but look to a more distance facade."
+    //
+    // WHY: §CPE_AIM_DENSITY (above) fires OUTSIDE the building with nothing near — this is its mirror
+    // case: INSIDE/close, surrounded by near surfaces (a corridor, a corner). The walk's own
+    // look-ahead can aim straight at a close wall a metre away — an ugly "nose against the wall"
+    // frame, and a jerk hazard in its own right: a near subject sweeps across the frame far faster
+    // than a distant one for the same camera translation (angular rate ~ v/d). Favouring the FAR
+    // facade over the near "fleeting" one is not merely aesthetic — it is the same angular-rate
+    // argument §CPE_EVEN_TURN already rests on, applied to WHICH subject is chosen rather than how
+    // fast the camera moves.
+    //
+    // Reuses §CPE_AIM_DENSITY's grid (_aimGrid/_densPoints) — one proximity system, not two — with an
+    // INVERTED distance term: that rule weights n/(1+d)^3 (favour NEAR); this weights n*d (favour
+    // FAR), because the two rules solve opposite problems off the same data. Weighted centroid, not
+    // argmax — same "the subject must move continuously with the camera" lesson §CPE_AIM_DENSITY's
+    // own comment records (measured: an argmax subject bought a 78.5°/frame whip).
+    var _AIM_DEPTH_CLOSE_FRAC = 0.05;   // "adjacent, would be fleeting" radius, a fraction of envelope
+                                        // — deliberately TIGHTER than §CPE_AIM_DENSITY's 0.12 "near":
+                                        // that radius means "nothing substantial", this one means
+                                        // "close enough to whip past", a smaller, stricter scale.
+    var _AIM_DEPTH_SEARCH_FRAC = 0.30;  // how far out still counts as "a nearby facade" — bounds the
+                                        // search to the room/corridor scale, not a site-wide reach.
+    var _AIM_DEPTH_DENS_FLOOR = 10;     // "surrounded": soft density at CLOSE range above which the
+                                        // neighbourhood counts as boxed-in — mirrors _AIM_DENS_FLOOR.
+    function _aimDepthWeight(p) {
+      if (typeof A.three2ifc !== 'function') return 0;
+      var pIfc = A.three2ifc(p.x, p.y, p.z);
+      var Rclose = Math.max(1.5, envelope * _AIM_DEPTH_CLOSE_FRAC);
+      var dens = _aimSoftDensity(p, Rclose);
+      var w = _cinemaSmoothstep(Math.min(1, dens / _AIM_DEPTH_DENS_FLOOR));
+      return { w: w, dens: dens, R: Rclose, pIfc: pIfc };
+    }
+    // Weighted centroid over cells BEYOND the close radius (excludes the very thing that triggered
+    // this — the adjacent, fleeting wall) and within a bounded search bubble, weight = count * distance
+    // — reward mass AND depth jointly, so a distant sparse cell and a near-ish empty direction both
+    // lose to a real facade that is actually further away.
+    function _aimDepthSubject(pIfc, Rclose) {
+      var cells = _aimGrid();
+      if (!cells.length) return null;
+      var Rsearch = Math.max(Rclose * 2, envelope * _AIM_DEPTH_SEARCH_FRAC);
+      // §CPE_AIM_DEPTH_VERTICALITY (2026-07-31, MEASURED — the first cut's own witness caught this):
+      // a plain weighted centroid over "everything nearby" blends the FLOOR into the average and the
+      // subject lands somewhere between the floor and the wall — not on either. "Face the further
+      // wall" means a wall, never the floor underfoot. Same grid cell size §CPE_AIM_GRID already
+      // derives (an eighth of the envelope), so a wall cell (points spread across several metres of
+      // height within one cell) is told from a floor/ceiling cell (all its points at ~one height,
+      // near-zero zSpan) with zero new data — reuses zMin/zMax already tracked on the shared grid.
+      var minZSpan = Math.max(2, envelope / 8) * 0.3;
+      var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        if (c.zSpan < minZSpan) continue;               // floor/ceiling-like — not a facade
+        var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz);
+        if (d <= Rclose || d > Rsearch) continue;      // exclude the fleeting-close AND out-of-bubble
+        var w = c.n * d;
+        sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
+      }
+      if (sw <= 1e-9) return null;
+      return { x: sx / sw, y: sy / sw, z: sz / sw, n: Math.round(sn / sw) };
+    }
+    // Probe-and-smooth over the walk, same idiom as §CPE_AIM_DENSITY's own series — the weight and
+    // the subject are FIELDS along the path, rate-limited here rather than evaluated raw per frame.
+    var _aimDepthSeries = null;
+    function _aimDepthBuild() {
+      var K = 64, i, ws = [], sx = [], sy = [], sz = [];
+      for (i = 0; i <= K; i++) {
+        var p = _outPos(i / K);
+        var A0 = _aimDepthWeight(p);
+        var wv = (A0 && A0.w) ? A0.w : 0;
+        var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R) : null;
+        if (A0 && A0.w > 1e-4 && !sub) wv = 0;   // no candidate facade in the bubble → don't trigger
+        ws.push(wv);
+        var prevN = sx.length - 1;
+        sx.push(sub ? sub.x : (prevN >= 0 ? sx[prevN] : 0));
+        sy.push(sub ? sub.y : (prevN >= 0 ? sy[prevN] : 0));
+        sz.push(sub ? sub.z : (prevN >= 0 ? sz[prevN] : 0));
+      }
+      function smooth(a) {
+        var o = [], k = [1, 4, 6, 4, 1], n = a.length;
+        for (var j = 0; j < n; j++) {
+          var acc = 0, wsum = 0;
+          for (var m = -2; m <= 2; m++) {
+            var idx = j + m;
+            if (idx < 0 || idx >= n) continue;
+            acc += a[idx] * k[m + 2]; wsum += k[m + 2];
+          }
+          o.push(acc / wsum);
+        }
+        return o;
+      }
+      _aimDepthSeries = { K: K, w: smooth(smooth(ws)),
+                          x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
+      var wMax = 0, wN = 0;
+      for (i = 0; i <= K; i++) { if (_aimDepthSeries.w[i] > wMax) wMax = _aimDepthSeries.w[i]; if (_aimDepthSeries.w[i] > 0.01) wN++; }
+      console.log('§CPE_AIM_DEPTH_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
+        ' maxBlend=' + wMax.toFixed(2) + ' — mirror of §CPE_AIM_SERIES, opposite trigger (boxed-in, not empty)');
+    }
+    function _aimDepthAt(e3) {
+      if (!_aimDepthSeries) _aimDepthBuild();
+      var S = _aimDepthSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
+      var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
+      return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
+               x: S.x[j] * (1 - f) + S.x[j + 1] * f,
+               y: S.y[j] * (1 - f) + S.y[j + 1] * f,
+               z: S.z[j] * (1 - f) + S.z[j + 1] * f };
+    }
+    var _aimDepthLast = { logged: 0 };
+    function _aimDepthApply(p, T, lx, ly, lz, e3) {
+      // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
+      if (A.__cpeAimOff) return null;
+      if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
+      var A0 = _aimDepthAt(e3 == null ? 0 : e3);
+      if (!A0 || !(A0.w > 1e-3)) return null;
+      var s3 = A.ifc2three(A0.x, A0.y, A0.z);
+      var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
+      var vL = Math.hypot(vx, vy, vz) || 1;
+      vx /= vL; vy /= vL; vz /= vL;
+      var dot = vx * T.x + vy * T.y + vz * T.z;
+      // Same fading (never switching) perpendicular projection as §CPE_AIM_DENSITY — that rule's own
+      // comment records TWICE measuring that a hard switch here is the actual jerk source, not the
+      // subject choice. Reused verbatim rather than re-risking the same mistake.
+      var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));
+      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
+      var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
+      var pL = Math.hypot(px, py, pz) || 1;
+      px /= pL; py /= pL; pz /= pL;
+      // Same seam taper as §CPE_AIM_DENSITY — gone by the walk→orbit hand-off, never holds the gaze
+      // side-on into Beat 4.
+      var wSeam = 1;
+      if (e3 != null && e3 > 1 - CINEMA_TURN_OVERLAP) {
+        wSeam = 1 - _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP);
+      }
+      var w = A0.w * wSeam;
+      if (!(w > 1e-3)) return null;
+      var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
+      var aL = Math.hypot(ax, ay, az) || 1;
+      var nowA = (typeof performance !== 'undefined') ? performance.now() : 0;
+      if (nowA - _aimDepthLast.logged > 500) {
+        _aimDepthLast.logged = nowA;
+        console.log('§CPE_AIM_DEPTH e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
+          ' floor=' + _AIM_DEPTH_DENS_FLOOR + ' subject=(' + A0.x.toFixed(1) + ',' +
+          A0.y.toFixed(1) + ',' + A0.z.toFixed(1) + ')' +
+          ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
+          ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2));
       }
       return { x: ax / aL, y: ay / aL, z: az / aL };
     }
@@ -5939,8 +6096,16 @@ async function setupEffects(A, renderer, scene, camera) {
         var _tvx = _pB.x - _pA.x, _tvy = _pB.y - _pA.y, _tvz = _pB.z - _pA.z;
         var _tvL = Math.hypot(_tvx, _tvy, _tvz);
         if (_tvL > 1e-6) {
-          var _aim = _aimApply(p3, { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL }, _lx, _ly, _lz, e3);
+          var _travelDir = { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL };
+          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3);
           if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
+          // §CPE_AIM_DEPTH: the mirror rule, opposite trigger (surrounded/close, not outside/empty —
+          // see the block above). Applied on the (possibly already §CPE_AIM_DENSITY-blended) gaze so
+          // the two compose rather than race; their triggers are near-disjoint by construction (one
+          // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
+          // most one is ever non-zero at a given pose.
+          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3);
+          if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
