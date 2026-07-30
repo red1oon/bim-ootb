@@ -49,7 +49,7 @@
   var GEO_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/modeller/';
   var RESIDENTS = [
     { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'SampleHouse_geo.db',    geoV: 3, geoBase: GEO_BASE },
-    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'Duplex_geo.db',         geoV: 4, geoBase: GEO_BASE },   // geoV 4: §LOD400-LAYERS layered slabs + component_geometry_layers (gen_layered_geo_db.py)
+    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'Duplex_geo.db',         geoV: 5, geoBase: GEO_BASE },   // geoV 5: row 33 — the 2 clip-trimmed party walls revert to envelopes (no layer rows) so §LAYER-GATE refuses them loudly; an empty slab is a refusal, not a row
     { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'SampleCastle_geo.db',   geoV: 3, geoBase: GEO_BASE },
     { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'HHS_geo.db',            geoV: 3, geoBase: GEO_BASE },
     { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'Clinic_geo.db',         geoV: 3, geoBase: GEO_BASE },
