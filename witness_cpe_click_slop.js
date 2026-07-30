@@ -49,15 +49,48 @@ async function openEditor(browser, BLD) {
 // A blind canvas sweep is a lottery on a small building — a 42px grid missed Duplex's walk entirely
 // (measured 2026-07-29). Ask the editor for the pixel of a point along the walk instead, then CONFIRM
 // with its own hit test, so the gesture below is known to land on the pipe before anything is claimed.
+// ⚠ HARNESS ROT, found 2026-07-31 by §CPE_REOPEN_NODE's witness and confirmed identically RED on
+// origin/main (1/4 there and here) — this was NEVER a product regression. Two things had drifted:
+//   (a) the editor opens at the pre-dive orbit pose, from which Duplex's whole 15m walk projects
+//       into a ~30px smear, and
+//   (b) every pixel of that smear is inside a band handle's GRAB_PX=18 radius, so `h.down` resolves
+//       the gesture to a HANDLE (a rotate/translate) and never reaches the pipe at all — no stick,
+//       no hose, and the witness read that as "the product does not spawn sticks".
+// Fixed by looking closer first (free: §CPE_PREVIEW_DIVERGENCE pins every re-plan to the pose the
+// editor OPENED at, so moving the camera cannot change the film) and by requiring the chosen pixel
+// to clear every handle. Measured after: 4/4.
+const HANDLE_CLEAR_PX = 26;
+
+async function lookCloser(page) {
+  await page.evaluate(() => {
+    const A = window.APP, hs = A.cinemaPathEditor._probeHandles ? A.cinemaPathEditor._probeHandles() : null;
+    if (!hs || !hs.length) return;
+    const mid = hs[Math.floor(hs.length / 2)];
+    A.controls.target.set(mid.x, mid.y, mid.z3);
+    A.camera.position.set(mid.x + 7, mid.y + 6, mid.z3 + 7);
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+  });
+  await sleep(700);
+}
+
 async function findPipePixel(page) {
   const tried = [];
-  for (let f = 0.10; f <= 0.90; f += 0.02) {
-    const spot = await page.evaluate((f) => {
+  await lookCloser(page);
+  for (let f = 0.02; f <= 0.98; f += 0.01) {
+    const spot = await page.evaluate((f, clear) => {
       const cpe = window.APP.cinemaPathEditor;
       if (!cpe || !cpe._pipePixel || !cpe._probePipe) return { why: 'no hook' };
       const p = cpe._pipePixel(f);
       if (!p) return { why: 'behind camera' };
       if (!cpe._probePipe(p.x, p.y)) return { why: 'hit test missed its own point' };
+      if (cpe._probeHandles) {
+        let near = 1e9;
+        (cpe._probeHandles() || []).forEach(function(h) {
+          if (h.px != null) near = Math.min(near, Math.hypot(h.px - p.x, h.py - p.y));
+        });
+        if (near < clear) return { why: 'handle ' + near.toFixed(0) + 'px (a handle wins the grab)' };
+      }
       // ⚠ The hit test is pure maths and does not know about occlusion. The CPE panel is a DOM
       // element floating over the canvas, so a pixel that is mathematically on the pipe can still
       // deliver its pointerdown to the panel — measured 2026-07-29: every gesture at the walk's
@@ -70,7 +103,7 @@ async function findPipePixel(page) {
         return { why: 'topmost is <' + (el ? el.tagName + (el.id ? '#' + el.id : '') : 'null') + '>, not APP.canvas' };
       }
       return { px: p.x, py: p.y, frac: f };
-    }, f);
+    }, f, HANDLE_CLEAR_PX);
     if (spot && spot.px !== undefined) return spot;
     if (spot && spot.why) tried.push(f.toFixed(2) + ':' + spot.why);
   }
@@ -136,9 +169,13 @@ async function gates(browser, BLD) {
     `§CPE_STICK added=${count(win, /§CPE_STICK added/)}`);
 
   // ── G-CS-4: a 0px press still spawns, and pushes no dead undo step ──────────────────────────
+  // Re-find the pixel: G-CS-2 just BENT the pipe 20px away from `spot`, so re-using it presses on
+  // empty space and the gate reads as a product failure (measured 2026-07-31, the last RED of the
+  // four). The pipe moving is the thing G-CS-2 proves — the coordinate has to move with it.
+  const spot4 = await findPipePixel(page) || spot;
   const n4 = await bandCount(page);
   mark = logs.length;
-  await gesture(page, spot.px, spot.py, 0);
+  await gesture(page, spot4.px, spot4.py, 0);
   win = logs.slice(mark);
   const n5 = await bandCount(page);
   P('G-CS-4 a 0px press spawns the stick too (the original gesture still works)',
