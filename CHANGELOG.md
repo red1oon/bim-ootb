@@ -4,6 +4,24 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.32.0](https://github.com/red1oon/bim-ootb/compare/v1.31.0...v1.32.0) (2026-07-30)
+
+
+### ✨ Features
+
+* **viewer:** §CPE_ROOM_TITLE — the Film-Maker names the room as the camera enters it ([#1089](https://github.com/red1oon/bim-ootb/issues/1089)) ([aefcb1c](https://github.com/red1oon/bim-ootb/commit/aefcb1c7c87bc12efa2017ac1826fabbea2d5626))
+* **viewer:** §HOVER_NAME — hover the model, see friendly name + room ([#1085](https://github.com/red1oon/bim-ootb/issues/1085)) ([609139b](https://github.com/red1oon/bim-ootb/commit/609139b77f4b5017318e2e72d33b875d5a9c6899))
+* **viewer:** §SCENE_MERGE — File Open offers "merge into the current scene" instead of navigating away ([#1093](https://github.com/red1oon/bim-ootb/issues/1093)) ([3f41d18](https://github.com/red1oon/bim-ootb/commit/3f41d1848b5cf1ec366a26f32c797c697a464325))
+
+
+### 🐛 Fixes
+
+* **import:** bbox from vertices without Math.max.apply + bbox-ghost fallback for envelope-less models ([#1086](https://github.com/red1oon/bim-ootb/issues/1086)) ([6299772](https://github.com/red1oon/bim-ootb/commit/6299772345c1a7302c83d99043481989e6f1d894))
+* **modeller:** §GEO-SERVED — the live Modeller never received its mesh file, so it drew bounding boxes ([#1090](https://github.com/red1oon/bim-ootb/issues/1090)) ([84d9878](https://github.com/red1oon/bim-ootb/commit/84d9878b0fdc297fa889319165d699486a4646be))
+* **modeller:** bump service-worker cache v37→v38 so the §GEO-SERVED fix actually reaches a returning browser ([#1091](https://github.com/red1oon/bim-ootb/issues/1091)) ([be88cce](https://github.com/red1oon/bim-ootb/commit/be88cced1716536b89f2ae109fe70d6fb01e8921))
+* **modeller:** Walk-ALL tooltip + proxy-mode toast + §SEL-TINT-REFOLD ([#1094](https://github.com/red1oon/bim-ootb/issues/1094)) ([31206ac](https://github.com/red1oon/bim-ootb/commit/31206ace771691936c96c5990a86125a2cd86ba5))
+* **viewer:** §CACHE_KEY — stop re-downloading a building that's already in IndexedDB ([#1088](https://github.com/red1oon/bim-ootb/issues/1088)) ([b236e9e](https://github.com/red1oon/bim-ootb/commit/b236e9e0bee0a408ab2cdb1058ca0ca3ad743278))
+
 ## [1.31.0](https://github.com/red1oon/bim-ootb/compare/v1.30.0...v1.31.0) (2026-07-28)
 
 
