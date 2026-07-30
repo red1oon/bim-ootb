@@ -23,7 +23,12 @@
   // rather than a drag (a hose bend). 4px is standard click slop; at Hospital's 0.192 m/px that is
   // 0.77m, comfortably below any intentional bend and comfortably above hand tremor.
   var CLICK_SLOP_PX = 4;
-  var CPE_V = 'v16 (§CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  // §CPE_REOPEN_NODE — the colour a user-dropped node is drawn in when it is NOT selected. Dark
+  // enough to separate from the seeder's light blue (0x4fc3f7) and the white bar/mid at a glance,
+  // and already this file's contrast colour on a light scene (see _contrastColour below).
+  var CPE_STICK_BLUE = 0x1565c0;
+  var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
+  var CPE_V = 'v17 (§CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -367,15 +372,22 @@
       // Hit-testing reads these same drawn positions, so what you grab is what you see.
       var e = [_drawn(e0[0]), _drawn(e0[1])];
       var heldBand = _state.held && _state.held.b === i;
-      _state.objs.push(_mkLine([e[0], e[1]], heldBand ? 0xff8c00 : 0xffffff, 1.0));
+      // §CPE_REOPEN_NODE (user: "the new nodes has to be darker blue when not selected to stand
+      // out"): a band the USER dropped used to be drawn pixel-identically to one the seeder
+      // produced — same white bar, same white mid, same light-blue ends — so the only way to find
+      // your own node again was to remember where you put it. An unheld stick now draws its bar and
+      // all three handles in CPE_STICK_BLUE. Radii are untouched, so mid-vs-end still reads by size,
+      // and held-orange still wins over everything (selection must stay the loudest state).
+      var isStick = !!b._stick;
+      _state.objs.push(_mkLine([e[0], e[1]], heldBand ? 0xff8c00 : isStick ? CPE_STICK_BLUE : 0xffffff, 1.0));
       var zones = [{ p: e[0], z: 'a' }, { p: _drawn(b.c), z: 'mid' }, { p: e[1], z: 'b' }];
       for (var k = 0; k < zones.length; k++) {
         var isHeld = heldBand && _state.held.z === zones[k].z;
         var isMid = zones[k].z === 'mid';
-        var o = _mkSphere(zones[k].p, isHeld ? 0xff8c00 : isMid ? 0xffffff : 0x4fc3f7,
-                          isHeld ? 1.2 : isMid ? 0.9 : 0.75, isHeld ? 1.0 : 0.8);
+        var col = isHeld ? 0xff8c00 : isStick ? CPE_STICK_BLUE : isMid ? 0xffffff : 0x4fc3f7;
+        var o = _mkSphere(zones[k].p, col, isHeld ? 1.2 : isMid ? 0.9 : 0.75, isHeld ? 1.0 : 0.8);
         _state.objs.push(o);
-        _state.handles.push({ b: i, z: zones[k].z, p: zones[k].p, mesh: o });
+        _state.handles.push({ b: i, z: zones[k].z, p: zones[k].p, mesh: o, stick: isStick, col: col });
       }
     }
     if (a.markDirty) a.markDirty();
@@ -423,8 +435,13 @@
     var total = s.userTotal != null ? s.userTotal : nat.total;
     var scale = total / Math.max(0.001, nat.total);
     return {
+      // §CPE_REOPEN_NODE: `_stick`/`_s` travel WITH the band. They used to be dropped here, so both
+      // readers (_pathsApply, open()'s clone) had to GUESS provenance from position — "every middle
+      // band is a stick" — which was survivable while the only per-stick affordance was the × button
+      // and is not survivable now that colour depends on it (a dark-blue seeded band is a lie).
       bands: s.bands.map(function(b) {
-        return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
+        return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
+                 _stick: !!b._stick, _s: b._s };
       }),
       // §CPE_HOSE: the ops ride the same override the plan, Save and the bake already consume — a
       // deep copy, same treatment as the bands, so nothing downstream can write back into the holder
@@ -506,11 +523,18 @@
     if (i === 0) return 'settle';
     if (i === _state.bands.length - 1) return 'stop';
     var b = _state.bands[i];
+    // §CPE_REOPEN_NODE: only a band the USER dropped is called a stick. §CPE_STICK's blanket "every
+    // middle is a stick" was true when the count was 3 and a stick was the only way to get a fourth,
+    // but it renamed the DERIVED exit-door anchor too — so a list with one added node read
+    // `settle | stick @ 15% | stick | stop` and the user's own node was one of two identical words.
+    // Provenance is carried now (see _buildOverride), so the label can tell the truth.
+    if (!b._stick) return ROW_LABEL[1];
     return 'stick' + (b._s != null ? ' @ ' + Math.round(b._s * 100) + '%' : '');
   }
   function _helpOf(i) {
     if (i === 0) return ROW_HELP[0];
     if (i === _state.bands.length - 1) return ROW_HELP[2];
+    if (!_state.bands[i]._stick) return ROW_HELP[1];
     return 'a stick you added — drag its middle to move it, an end to twist the curve through it';
   }
   var ROW_LABEL = ['settle', 'exit door', 'stop'];
@@ -709,12 +733,16 @@
         var b = _state.bands[i];
         var sel = _state.held && _state.held.b === i;
         var row = document.createElement('div');
+        // §CPE_REOPEN_NODE: the list carries the SAME cue as the pipe — a node you dropped is blue
+        // in both places, so "which row is my node" and "which bar is my node" are one question.
+        var stickRow = !!b._stick && i > 0 && i < _state.bands.length - 1;
         row.style.cssText = 'padding:5px 12px;font-size:11px;cursor:pointer;' +
-          'border-left:3px solid ' + (sel ? '#ff8c00' : 'transparent') + ';' + (sel ? 'background:rgba(255,140,0,0.09);' : '');
+          'border-left:3px solid ' + (sel ? '#ff8c00' : stickRow ? '#1565c0' : 'transparent') + ';' +
+          (sel ? 'background:rgba(255,140,0,0.09);' : stickRow ? 'background:rgba(21,101,192,0.10);' : '');
         var head = document.createElement('div');
         head.style.cssText = 'display:flex;align-items:center;gap:5px';
         var lbl = document.createElement('span');
-        lbl.style.cssText = 'width:62px;color:#888;flex:none';
+        lbl.style.cssText = 'width:62px;color:' + (stickRow ? CPE_STICK_TEXT : '#888') + ';flex:none';
         lbl.textContent = _labelOf(i);
         lbl.title = _helpOf(i);
         head.appendChild(lbl);
@@ -928,8 +956,10 @@
     if (!ov || !ov.bands || ov.bands.length < 2) { console.warn('§CPE_PATH_LOAD_FAIL empty or malformed record'); return false; }
     _undoPush('load "' + rec.name + '"');
     _state.bands = ov.bands.map(function(b, i) {
+      // §CPE_REOPEN_NODE: prefer the STORED flag; the index rule is the fallback for records saved
+      // before _buildOverride carried it, so an old plan keeps its × affordance.
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-               _stick: i > 0 && i < ov.bands.length - 1, _s: b._s };
+               _stick: b._stick != null ? !!b._stick : (i > 0 && i < ov.bands.length - 1), _s: b._s };
     });
     _state.hose = (ov.hose || []).map(function(o) {
       return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
@@ -1456,9 +1486,13 @@
       var clone = function(bs) {
         return bs.map(function(b, i) {
           var o = { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
-          // Re-flag the middles so a re-opened stick keeps its × remove affordance, exactly as
-          // _pathsApply does when loading a stored plan.
-          if (authored && i > 0 && i < bs.length - 1) o._stick = true;
+          // §CPE_REOPEN_NODE: the plan now carries provenance (OK stages the override, _buildOverride
+          // keeps `_stick`/`_s`), so read it. The index rule stays as the fallback for a plan that
+          // predates that — same reciprocal treatment as _pathsApply.
+          if (authored) {
+            o._stick = b._stick != null ? !!b._stick : (i > 0 && i < bs.length - 1);
+            o._s = b._s;
+          }
           return o;
         });
       };
@@ -1621,6 +1655,21 @@
         a.controls.update();
         if (a.markDirty) a.markDirty();
         console.log('§CPE_CLOSE action=' + action + ' edited=' + edited + ' total=' + total.toFixed(1) + 's');
+        // §CPE_REOPEN_NODE (user: "i can hardly pick out the extra node without been listed") — an
+        // edited OK STAGES the path, so the next Alt+C re-opens what was authored instead of
+        // re-seeding the derived three. Before this line the override was handed to the bake
+        // (cinema_maxq.js:624) and then dropped: the next open planned with no override at all
+        // (:494 -> effects.js:6466 -> A._cinemaPathEdit === null -> plan.bands === null), `authored`
+        // was false, and the user's stick was GONE — the list was not hiding it, it no longer
+        // existed. Guardrail 2 is why this is gated on `edited`: an untouched OK must stage nothing
+        // and stay byte-identical. Cancel stages nothing. In-memory only — the cinema_path TABLE is
+        // still written solely by Ctrl+S Save Building.
+        if (edited && action === 'ok' && typeof a.stageCinemaPath === 'function') {
+          a.stageCinemaPath(ov);
+          console.log('§CPE_OK_STAGED bands=' + ov.bands.length +
+            ' sticks=' + ov.bands.filter(function(b) { return b._stick; }).length +
+            ' — the next Alt+C re-opens THIS path (src=authored), not the derived seed');
+        }
         _state = null;
         // Guardrail 2: an untouched OK hands back NO override, so the bake re-uses the derived plan
         // object verbatim. "One click costs nothing" is enforced here, not merely intended.
@@ -1673,6 +1722,20 @@
           var i = Math.max(0, Math.min(pts.length - 1, Math.round((frac || 0.5) * (pts.length - 1))));
           var s = _screenOf(pts[i]);
           return s.behind ? null : { x: Math.round(s.x), y: Math.round(s.y), i: i };
+        },
+        // §CPE_REOPEN_NODE's G-RN-4. Colour is geometry state, not a look — so it is asserted off the
+        // REAL handle meshes the scene is drawing (CLAUDE.md FUNDAMENTAL LAW: numbers, never a
+        // screenshot). Read-only, mutates nothing, same precedent as _probePipe.
+        _probeHandles: function() {
+          if (!_state) return null;
+          return _state.handles.map(function(h) {
+            var s = _screenOf(h.p);
+            return { b: h.b, z: h.z, stick: !!h.stick,
+                     x: h.p.x, y: h.p.y, z3: h.p.z,
+                     hex: '0x' + (h.mesh && h.mesh.material ? h.mesh.material.color.getHex() : h.col)
+                            .toString(16).padStart(6, '0'),
+                     px: s.behind ? null : Math.round(s.x), py: s.behind ? null : Math.round(s.y) };
+          });
         }
       };
       clearInterval(_attach);

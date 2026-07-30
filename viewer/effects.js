@@ -6339,8 +6339,14 @@ async function setupEffects(A, renderer, scene, camera) {
              // seconds actually in force for this plan so the editor never has to guess them back
              // out of the normalized beat fractions.
              waypoints: outWp.map(function(w) { return { x: w.x, y: w.y, z: w.z }; }),
+             // §CPE_REOPEN_NODE: `_stick`/`_s` ride along. The plan is what the editor RE-OPENS from
+             // (cinema_path_editor.js:1454), so dropping them here made a re-opened path fall back to
+             // "every middle band is a stick" — which mislabels seeded bands and, now that colour
+             // follows provenance, would paint them as nodes the user never added. Measured RED by
+             // witness_cpe_reopen_node.js G-RN-3 with only the editor side of this fix in place.
              bands: _cpeBands ? _cpeBands.map(function(b) {
-               return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len };
+               return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
+                        _stick: b._stick, _s: b._s };
              }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
              sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
