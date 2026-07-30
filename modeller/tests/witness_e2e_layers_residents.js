@@ -2,7 +2,9 @@
 /**
  * W-E2E-LAYERS-RESIDENTS — §LOD400-LAYERS reaches the live Modeller residents + §LAYER-GATE refusal
  * (bim-compiler RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §LOD400-ENVELOPE, Modeller half; updated for
- * ROW 33, 2026-07-31: an empty layer slab is a REFUSAL, not a row).
+ * ROW 33 + the user's exception ruling, 2026-07-31: an empty ROW is banned, but a clipped
+ * whole-layer SUBSET is legit LOD400 — "it is a legit material part of the wall. It is granted
+ * free, it is not a blocky fallback.").
  *
  * ISSUE UNDER TEST: the Duplex party walls are authored as 7 material layers (Plasterboard 16 /
  * Stud 41 / CMU 193 / Air 50 / CMU 193 / Stud 41 / Plasterboard 16 mm). Two of the four
@@ -10,31 +12,29 @@
  * IfcPolygonalBoundedHalfSpace at the layer-4/5 boundary (Revit unit-demising — the neighbour-side
  * stud+plasterboard belong to the neighbour wall's body; ZERO openings involved, measured
  * 2026-07-30). The first ship compiled those two as 5 slabs + 2 face_count=0 index rows — a partial
- * ship whose witness sums were blind by construction (Watchdog, MODELLER_MASTER row 33). Under the
- * row-33 directive the partial ship is withdrawn: the two trimmed walls revert to their original
- * envelope buffers with NO layer rows, and the armed §LAYER-GATE refuses them LOUDLY on seed — the
- * "honestly RED" end-state on the surface the user sees. The layered proof moves to the full-span
- * party wall `2O2Fr$t4X7Zf8NOew3FKRH` (7 real slabs, every row face_count>0).
+ * ship whose witness sums were blind by construction (Watchdog, MODELLER_MASTER row 33). The
+ * exception ruling settles the end-state: the two trimmed walls render as FIVE REAL SLABS (their
+ * own authored material, seqs 0-4, Σ0.493 m) with the clipped layers simply ABSENT from the index
+ * — no empty rows anywhere, nothing invented, nothing refused. The full-span party wall
+ * `2O2Fr$t4X7Zf8NOew3FKRH` remains the 7-slab exemplar.
  *
  * Exercises the REAL user path: the shipped Duplex_ARC.db bytes + the shipped patch SQL (same text
  * _applyPendingPatch feeds sql.js) + the geo file (live object-storage URL by default — the same
  * bytes a browser fetches; DUPLEX_GEO=<path> overrides for pre-upload local runs).
  *
  * Checks (each names what it proves):
- *   L1 trimmed-envelope — trimmed wall's hash resolves its ORIGINAL 14-tri envelope again with ZERO
- *                         layer rows (partial-ship 124-tri buffer + 7 rows is GONE)
+ *   L1 trimmed-subset   — trimmed wall's hash resolves the 124-tri 5-slab buffer with exactly 5
+ *                         rows seqs [0-4] Σ0.493 m, every row face_count>0 (no empty rows ever)
  *   L2 layer-index      — full-span exemplar resolves exactly 7 rows; SUM(thickness_m) == 0.550 m
  *   L3 slab-extents     — exemplar per-slab thin-axis extents 16/41/193/50/193/41/16 mm (±1.5mm),
  *                         ALL SEVEN real — no empty rows
  *   L4 full-coverage    — exemplar rows tile its whole buffer; AND store-wide 0 rows with
  *                         face_count<=0 (row 33: an empty slab is a refusal, not a row)
- *   L5 refusal-live     — buildSeedOps(patched ARC, geo): the 2 trimmed walls are REFUSED BY NAME
- *                         with 2 loud §LAYER-ENVELOPE-REFUSE console.error lines; ops 196→194;
- *                         hardfail=0; gate ARMED (multiLayer=80, layeredHashes=69); all 215
- *                         instances / 155 hashes still resolve — nothing else lost
+ *   L5 all-render       — buildSeedOps(patched ARC, geo): ZERO refusals, 196 ops (the two walls
+ *                         are BACK); hardfail=0; gate ARMED (multiLayer=80, layeredHashes=71);
+ *                         all 215 instances / 155 hashes resolve
  *   L6 refusal-fires    — FALSIFICATION: delete the EXEMPLAR's layer rows from a COPY → the SAME
- *                         seed refuses it too (layerRefused=3, ops=193) — the gate is live per-hash,
- *                         not hardcoded to the two known walls
+ *                         seed refuses it (layerRefused=1, ops=195) — the gate stays live per-hash
  *   L7 unarmed-safe     — UNPATCHED ARC bytes + the same geo db: gate stays DISARMED, 196 ops,
  *                         0 refusals (a resident whose layer tables never shipped is untouched)
  */
@@ -52,9 +52,9 @@ var wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 
 var ARC_PATH = path.join(ROOT, 'Duplex_ARC.db');
 var PATCH_PATH = path.join(ROOT, 'patches', 'Duplex_ARC.db.sql');
-var GEO_URL = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/modeller/Duplex_geo.db?v=5';
-var TRIMMED_GUID = '2O2Fr$t4X7Zf8NOew3FNbT';   // clip-trimmed demising wall — refused (row 33)
-var TRIMMED_GUID2 = '2O2Fr$t4X7Zf8NOew3FKRi';  // its sibling — same authored set, same trim, refused
+var GEO_URL = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/modeller/Duplex_geo.db?v=6';
+var TRIMMED_GUID = '2O2Fr$t4X7Zf8NOew3FNbT';   // clip-trimmed demising wall — 5-slab subset (exception ruling)
+var TRIMMED_GUID2 = '2O2Fr$t4X7Zf8NOew3FKRi';  // its sibling — same authored set, same trim, same subset
 var EXEMPLAR_GUID = '2O2Fr$t4X7Zf8NOew3FKRH';  // full-span 7-layer party wall — the layered proof
 
 var pass = 0, fail = 0;
@@ -95,14 +95,19 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
     adb.run(patchSql);
     var gdb = new SQL.Database(new Uint8Array(geoBuf));
 
-    // L1: the trimmed wall is an ENVELOPE again — its partial layered ship is withdrawn
+    // L1: the trimmed wall renders its own real material — 5 slabs, clipped layers ABSENT
     var tHash = adb.exec("SELECT geometry_hash FROM element_instances WHERE guid='" + TRIMMED_GUID + "'")[0].values[0][0];
     var g = gdb.exec("SELECT length(faces)/12 FROM component_geometries WHERE geometry_hash='" + tHash + "'");
     var tTris = g.length ? g[0].values[0][0] : -1;
-    var tRowsQ = gdb.exec("SELECT count(*) FROM component_geometry_layers WHERE geometry_hash='" + tHash + "'");
-    var tRows = tRowsQ.length ? tRowsQ[0].values[0][0] : -1;
-    chk('L1 trimmed-envelope', tTris === 14 && tRows === 0,
-      'hash=' + tHash + ' tris=' + tTris + ' (original envelope; partial ship was 124) layerRows=' + tRows);
+    var tRowsQ = gdb.exec("SELECT layer_seq, thickness_m, face_count FROM component_geometry_layers WHERE geometry_hash='" + tHash + "' ORDER BY layer_seq");
+    var tRv = tRowsQ.length ? tRowsQ[0].values : [];
+    var tSeqs = tRv.map(function (r) { return r[0]; }).join(',');
+    var tSum = tRv.reduce(function (a, r) { return a + r[1]; }, 0);
+    var tFcOk = tRv.every(function (r) { return r[2] > 0; });
+    var tTile = tRv.reduce(function (a, r) { return a + r[2]; }, 0);
+    chk('L1 trimmed-subset', tTris === 124 && tSeqs === '0,1,2,3,4' && Math.abs(tSum - 0.493) < 1e-9 && tFcOk && tTile === tTris,
+      'hash=' + tHash + ' tris=' + tTris + ' rows seqs=[' + tSeqs + '] Σ=' + tSum.toFixed(3) +
+      'm face_counts>0=' + tFcOk + ' tile=' + tTile);
 
     // L2: the full-span exemplar carries the real 7-slab compile
     var hash = adb.exec("SELECT geometry_hash FROM element_instances WHERE guid='" + EXEMPLAR_GUID + "'")[0].values[0][0];
@@ -144,7 +149,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       'Σface_count=' + totalFc + ' == exemplar tris=' + tris + '; store-wide empty rows=' + nEmptyAll +
       ' (an empty slab is a refusal, not a row)');
 
-    // L5: the armed gate refuses BOTH trimmed walls loudly on the real seed path
+    // L5: zero refusals on the real seed path — the two walls render again
     var errs = [];
     var origErr = console.error;
     console.error = function (m) { errs.push(String(m)); origErr.apply(console, arguments); };
@@ -158,13 +163,13 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       .values.map(function (v) { return "'" + v[0] + "'"; });
     var nHave = gdb.exec("SELECT count(DISTINCT geometry_hash) FROM component_geometries WHERE geometry_hash IN (" +
       hashList.join(',') + ")")[0].values[0][0];
-    chk('L5 refusal-live',
-      built.layerRefused === 2 && refused.indexOf(TRIMMED_GUID) >= 0 && refused.indexOf(TRIMMED_GUID2) >= 0 &&
-      loud.length === 2 && built.ops.length === 194 && built.hardfail === 0 &&
-      !!built.layerGate && built.layerGate.multiLayer === 80 && built.layerGate.layeredHashes === 69 &&
+    chk('L5 all-render',
+      built.layerRefused === 0 && refused.length === 0 &&
+      loud.length === 0 && built.ops.length === 196 && built.hardfail === 0 &&
+      !!built.layerGate && built.layerGate.multiLayer === 80 && built.layerGate.layeredHashes === 71 &&
       nInst === 215 && nHave === hashList.length && hashList.length === 155,
-      'layerRefused=' + built.layerRefused + ' guids=' + JSON.stringify(refused) +
-      ' console.error lines=' + loud.length + ' ops=' + built.ops.length + ' (was 196 pre-row-33)' +
+      'layerRefused=' + built.layerRefused + ' (the two walls are BACK) ops=' + built.ops.length +
+      ' console.error lines=' + loud.length +
       ' gate=' + JSON.stringify(built.layerGate) + ' instances=' + nInst +
       ' hashesResolved=' + nHave + '/' + hashList.length);
 
@@ -179,11 +184,11 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       .map(function (s) { return s.guid; });
     var loud2 = errs.filter(function (m) { return m.indexOf('§LAYER-ENVELOPE-REFUSE') >= 0; });
     chk('L6 refusal-fires',
-      built2.layerRefused === 3 && refused2.indexOf(EXEMPLAR_GUID) >= 0 &&
-      loud2.length === 3 && built2.ops.length === 193,
+      built2.layerRefused === 1 && refused2.indexOf(EXEMPLAR_GUID) >= 0 &&
+      loud2.length === 1 && built2.ops.length === 195,
       'layerRefused=' + built2.layerRefused + ' guids=' + JSON.stringify(refused2) +
       ' console.error lines=' + loud2.length + ' ops=' + built2.ops.length +
-      ' (gate live per-hash, not hardcoded to the trimmed pair)');
+      ' (gate stays live per-hash)');
 
     // L7 unarmed: the UNPATCHED shipped bytes (no rel_material_layer_set) — zero new code paths
     var adb0 = new SQL.Database(new Uint8Array(rawArc));
