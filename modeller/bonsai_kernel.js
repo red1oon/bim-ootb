@@ -178,6 +178,20 @@
       if (d.indices) geo.setIndex(new THREE.BufferAttribute(d.indices, 1));
       if (!d.normals) geo.computeVertexNormals();
       geo.computeBoundingBox();
+      // §ANCHOR (W-E2E-VOID-ANCHOR): an anchorOnly fold becomes a REAL-but-INVISIBLE mesh — a real
+      // m.isMesh in the group is REQUIRED (bonsai_gridmove.js _buildBoxByFid/elementData only see real
+      // meshes; a bare map entry provably does not ride) but it must never render, never pick, never
+      // count. .visible=false (skipped by the renderer AND by every §V1 o.visible pick filter),
+      // userData.anchor=true (the unmistakable tag for every count/audit exclusion), minimal
+      // MeshBasicMaterial (no lighting cost — it never rasterizes anyway).
+      if (d.anchor) {
+        const amesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        amesh.name = 'anchor:' + d.featureId;
+        amesh.visible = false;
+        amesh.userData.featureId = d.featureId;
+        amesh.userData.anchor = true;
+        return amesh;
+      }
       const matOpts = { color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide };
       // §MAT-PARITY (MODELLER_RENDER_MATERIAL_PARITY.md Task 1): mirror viewer/streaming.js A._getMaterial's
       // own opacity gate exactly (`if (parts.length >= 4 && parts[3] < 1.0) { opts.transparent = true; opts.opacity = a; }`)
@@ -244,7 +258,7 @@
       const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
-      let totalTris = 0;
+      let totalTris = 0, anchorN = 0;   // §ANCHOR: anchors are counted SEPARATELY, never in solids/tris
       // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
       // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
       meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity }); totalTris += md.triangleCount; if (g) g.add(m); });
@@ -261,7 +275,8 @@
           const md = window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id));
           meshes.push(md);
           const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity });
-          totalTris += md.triangleCount; if (g) g.add(m);
+          if (md.anchor) anchorN++; else totalTris += md.triangleCount;   // §ANCHOR: excluded from every count
+          if (g) g.add(m);
         };
         if (insertOps.length > CHUNK) {
           for (let i = 0; i < insertOps.length; i += CHUNK) {
@@ -278,9 +293,18 @@
       this._lastRegenStats = d.stats || null;   // {rebuilt, hits, tess, tessHits} — incremental-regen cache witness hook
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';
-      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st);
+      // §ANCHOR: solids/tris count RENDERED geometry only; anchors get their own separate tally.
+      const solidsN = meshes.length - anchorN;
+      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + solidsN + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st +
+        (anchorN ? ' §ANCHOR invisible-anchors=' + anchorN + ' (excluded from solids/tris)' : ''));
       if (window.A && typeof A.requestRender === 'function') A.requestRender();
-      return { solids: meshes.length, triangleCount: totalTris, meshes };
+      // §SEL-TINT-REFOLD (MODELLER_MASTER.md row 16 — Witness: W-E2E-SEL-TINT-REFOLD): every authoritative
+      // re-fold lands HERE with its rebuilt meshes already in the group — announce it so selection paint
+      // (modeller.html _paintSel) can re-apply the emissive tint to the NEW mesh objects (same featureIds).
+      // Needed because bonsai_oplog.scrubTo (history slider undo/redo, x-ray restore, Connect timeline)
+      // deliberately never _emit()s — the existing bonsai:oplog → _paintSel hook cannot fire on those paths.
+      try { window.dispatchEvent(new CustomEvent('bonsai:refold', { detail: { solids: solidsN } })); } catch (e) { }
+      return { solids: solidsN, triangleCount: totalTris, meshes };
     },
 
     // INCREMENTAL REGEN CACHE control: drop the worker's op_hash-keyed shape/mesh cache (a new/cleared model).

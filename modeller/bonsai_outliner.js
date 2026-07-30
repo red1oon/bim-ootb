@@ -434,9 +434,13 @@
       // that can't change the 3D view gets NO eye (never a toggle that silently does nothing).
       {
         const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
+        // §ANCHOR (W-E2E-VOID-ANCHOR G2): an invisible ride anchor's guid IS in the bridge (the cascade
+        // needs it) but its Outliner row must stay EXACTLY what it was pre-anchor — a meta-only row with
+        // no eye and no scene action. Without this, 65 rows would suddenly grow act-on-scene affordances.
+        const ancG = (typeof window !== 'undefined' && window.__arcAnchorGuids) || null;
         const mark = (n) => {
           let h = false;
-          if (n.kind === 'element') h = fidByGuid[n.id] != null || !isNaN(+n.id);
+          if (n.kind === 'element') h = (fidByGuid[n.id] != null && !(ancG && ancG.has(n.id))) || !isNaN(+n.id);
           if (n.dwp) h = true;   // §I5 (W-E2E-INSTHIDE): a walked-instance row acts via setPlacementVisible
           if (n.disc) h = true;
           (n.children || []).forEach(c => { if (mark(c)) h = true; });
@@ -599,7 +603,9 @@
         const active = window.Bonsai._selId === n.id;      // adjacency-lens degree badge below reads this
         const pad = 16 + depth * 14;
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
-        const walkGlyph = n.disc ? ' <span class="bn-walk" title="Walk this discipline" style="color:#4fc3f7">▶</span>' : '';
+        // MODELLER_MASTER.md row 17: the synthetic disc:'__ALL__' row (modeller.html §DISCWALK-ALL) walks EVERY
+        // discipline — its tooltip must say so; ordinary disc rows keep the singular.
+        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL disciplines' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
         // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a per-EDGE-TYPE badge (⇄ abuts ·
         // ⌂ fills · ⧉ aggregates) + amber tint; the selected element shows its per-kind degree + its element↔
         // datum relations (⊥ anchored · ↕ spans). All read the derived map (window.swXEdges), never a baked table.
@@ -666,7 +672,7 @@
       const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
       let applied = 0;
       const hideNode = (n) => {
-        if (n.kind === 'element') {
+        if (n.kind === 'element' && !(window.__arcAnchorGuids && window.__arcAnchorGuids.has(n.id))) {   // §ANCHOR: never in an eye-hide walk (already invisible, must not count as `applied`)
           const fid = fidByGuid[n.id] != null ? fidByGuid[n.id] : (isNaN(+n.id) ? null : +n.id);
           if (fid != null && B.setFeatureVisible && B.setFeatureVisible(fid, false)) applied++;
         }
@@ -717,7 +723,11 @@
             // used as-is — this is what actually drives the 3D emissive highlight for an ARC-seeded pick,
             // not just the Outliner row's own paint (setActive's cross-match, see above, handles the rest).
             let num = +id;
-            if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null) num = window.__arcFidByGuid[id];
+            // §ANCHOR: never resolve an anchor guid to its fid here — a row click must keep its exact
+            // pre-anchor behaviour (frameElementByGuid is anchor-blind ⇒ the honest deadclick toast),
+            // never select/frame an invisible mesh.
+            if (isNaN(num) && window.__arcFidByGuid && window.__arcFidByGuid[id] != null &&
+                !(window.__arcAnchorGuids && window.__arcAnchorGuids.has(id))) num = window.__arcFidByGuid[id];
             if (!isNaN(num) && this._ctrlToggle(e, num)) return;   // §P4 multi-toggle (resolved fid) wins here too
             // §P5 (W-OL-DEADCLICK) → upgraded by §Q2 (W-E2E-INSTPICK): a non-ARC leaf's GUID never lands in
             // __arcFidByGuid (bridge is ARC-seed-only), but the element's REAL transform is in the open

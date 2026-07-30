@@ -377,6 +377,10 @@ function setupImport(A) {
       if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
 
       if (A.renderImportCards) A.renderImportCards();
+      // §SCENE_MERGE (prompts/LANDING_MULTIMERGE_SAVEOPEN_RESURRECT.md §SM-7.1 step 5): hand the
+      // produced DB back so the Viewer's Open door can merge it into the LIVE scene. Purely
+      // additive — every pre-existing caller ignores the return value.
+      return { key: key, record: record, buildingName: buildingName, split: !!_recSplit, meta: mergedData.meta };
     } catch (dbErr) {
       console.log('[S220] §MULTI_DB_ERROR ' + dbErr.message);
       if (status) status.textContent = 'DB merge failed: ' + dbErr.message;

@@ -23,7 +23,11 @@ const { runE2E } = require('./e2e_harness');
 runE2E('W-E2E-CUT', async (t) => {
   await t.open('Duplex');
   await t.shot('01-open');
-  const sel = await t.pick({ prefer: 'wall' });   // §F2-FRAMING: the guide caption says "the wall" — don't grab the biggest slab
+  // §F2-FRAMING: the guide caption says "the wall" — don't grab the biggest slab. cuttable (2026-07-30):
+  // Duplex's front-ranked wallish candidates are now ROTATED inserts (openings-inherit-host-rotation data);
+  // bCut honestly refuses those ("cut needs a box-shaped wall"), so the subject must be one the production
+  // gate (Bonsai._insertCutBox) accepts — otherwise this witness measures the refusal path, not the cut.
+  const sel = await t.pick({ prefer: 'wall', cuttable: true });
   t.assert('C1 SELECT (real click selects element)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   await t.frameElement(sel.fid, 0.42);            // §F2-FRAMING: real close-up BEFORE any pixsum baseline (camera then stays fixed)
@@ -40,15 +44,17 @@ runE2E('W-E2E-CUT', async (t) => {
   t.assert('C4 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
   await t.undoToCursor(before.cur);
   const undo = await t.oplog();
-  // §SEL-TINT-REFOLD (found by this witness's wall subject, PROBE-CUT-FULL): an authoritative re-fold
-  // (the cut, the undo) rebuilds the selected mesh WITHOUT its selection emissive (2b5a8c → 000000) even
-  // though the selection logically persists — so a raw pix compare here would measure lost selection TINT,
-  // not geometry. C6's claim is GEOMETRY reversibility: re-select the same wall with a real click (the tint
-  // re-applies deterministically), THEN compare frames. The tint-loss itself is a separate app-level UX nit,
-  // documented in the resume card — this witness proved the wall's tris/colour/centre restore exactly.
+  // C6 re-select, MEASURED PRECISION (2026-07-30, §SEL-TINT-REFOLD fix session): the old comment here blamed
+  // lost selection TINT — wrong attribution. bCut.onclick ends in an explicit highlight(null) (deselect by
+  // design), so pix0's selection visuals (emissive + §V5 outline) are legitimately absent post-undo; the
+  // re-click restores SELECTION STATE, and the tint on the rebuilt mesh is now guaranteed by §SEL-TINT-REFOLD
+  // (foldChainToScene → 'bonsai:refold' → _paintSel; Witness: W-E2E-SEL-TINT-REFOLD). What HAD broken C6
+  // since §ZOOM-SEL landed: the re-click auto-flies the camera, so the frames could never match again.
+  // Settle the fly, then re-frame with the SAME deterministic frameElement(fid, 0.42) that produced pix0's
+  // camera (same bbox, same view dir = ZOOM_ISO_DIR after either fly) — identical camera, honest compare.
   {
-    const wp = await t.proj(sel.centre[0], sel.centre[1], sel.centre[2]);
-    await t.pg.mouse.click(wp[0], wp[1]); await t.sleep(250);
+    await t.clickOn(sel.fid); await t.flySettle();
+    await t.frameElement(sel.fid, 0.42);
   }
   const pix2 = await t.pixsum();
   await t.shot('04-undone');
