@@ -217,9 +217,23 @@ var SEQUENCE_RULES = {
 };
 var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:null};
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
-// tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members.
-// Empty in-file default; populated from rates/sequence_rules.json NAME_OVERRIDES by loadSequenceRules().
-var SEQUENCE_NAME_OVERRIDES = [];
+// tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members
+// (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR/LTU_AHouse structural steel/timber, which must
+// stay at their structural seq). This is the IN-FILE SYNC DEFAULT — viewer.html does NOT call
+// initRateTemplate()/loadSequenceRules() (only mep_report.html/boq_charts.html do), so this hardcoded
+// copy, not the JSON, is what actually runs in the main viewer/Time Machine/Author wizard. Keep it in
+// sync with rates/sequence_rules.json's NAME_OVERRIDES (same convention as SEQUENCE_RULES above).
+var SEQUENCE_NAME_OVERRIDES = [
+  {
+    id: 'glazed_curtainwall_facade',
+    classes: ['IfcPlate', 'IfcMember'],
+    pattern: 'glaz|glass|verglas|vitrage|vidrio|curtain|mullion',
+    flags: 'i',
+    phase: 'Architecture',
+    sequence: 7,
+    resource: 'CARPENTER'
+  }
+];
 
 // Helper: get phase for an IFC class
 function getPhase(ifcClass) {
