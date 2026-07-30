@@ -582,6 +582,7 @@ async function xrayReveal(on) {
   const DEFAULT_OPACITY = 0.06, TARGET_CUMULATIVE = 0.35;
   const structureMeshes = g.children.filter(mesh => {
     if (!mesh.isMesh || !mesh.material) return false;
+    if (mesh.userData && mesh.userData.anchor) return false;   // §ANCHOR: never in the x-ray set (its stackDepth raycast does NOT skip invisible meshes)
     const fid = mesh.userData && mesh.userData.featureId;
     return !(fid != null && fx[fid] != null);
   });
@@ -1288,7 +1289,9 @@ window.Bonsai.frameInstanceRow = (rowId) => {
 window.Bonsai.setAllVisible = () => {                     // reset before deterministically re-applying every hidden subtree
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(o => {
-    if (o.isMesh && o.userData.featureId != null) o.visible = true;
+    // §ANCHOR: the reset leg must NEVER reveal an invisible ride anchor — its .visible=false is its
+    // identity (W-E2E-VOID-ANCHOR G1), not an Outliner eye-hide to be undone here.
+    if (o.isMesh && o.userData.featureId != null && !o.userData.anchor) o.visible = true;
     if (o.userData && o.userData.dwRoot) o.children.forEach(c => {
       c.visible = true;
       // §I5: the reset leg also restores every per-instance hide (then _applyHidden re-applies the hidden set)
@@ -1317,7 +1320,7 @@ window.Bonsai.dimExcept = (sel) => {
   let dimmed = 0;
   const root = g.children.find(o => o.userData && o.userData.dwRoot);
   g.children.forEach(o => {
-    if (!o.isMesh || o.userData.featureId == null) return;
+    if (!o.isMesh || o.userData.featureId == null || o.userData.anchor) return;   // §ANCHOR: never dimmed, never counted
     const keep = !sel || sel.fids.has(o.userData.featureId);
     _dimMat(o.material, keep); if (!keep) dimmed++;
   });
@@ -1415,6 +1418,10 @@ window.Bonsai.frameElementByGuid = (guid) => {
   let db = null;
   try {
     db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+    // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): hide void-anchor transform rows from this transient copy —
+    // pre-anchor these guids had NO transform row, so framing one must keep returning false (the honest
+    // toast), never fly the camera to an invisible anchor. Guarded: the column exists only on patched dbs.
+    try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
     const r = db.exec("SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
       "FROM element_transforms t WHERE t.guid='" + String(guid).replace(/'/g, "''") + "'");
     if (!r.length || !r[0].values.length) return false;
@@ -1449,7 +1456,9 @@ function pickAt(clientX, clientY, opts) {
   const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   // §V1: o.visible filter — hidden means hidden (unpickable), see _dwPickables note.
-  const list = g.children.filter(o => o.isMesh && o.visible).concat(_dwPickables(opts && opts.hover));
+  // §ANCHOR defense-in-depth (W-E2E-VOID-ANCHOR): userData.anchor is ALSO excluded explicitly — an
+  // invisible ride anchor must never answer a pick even if some future path flips its visibility.
+  const list = g.children.filter(o => o.isMesh && o.visible && !o.userData.anchor).concat(_dwPickables(opts && opts.hover));
   // §I5c (W-E2E-INSTHIDE c): a hidden INSTANCE is unpickable too — skip its hits so the ray falls through to
   // the object behind (or nothing). §V1's bucket-level filter stays in _dwPickables; this is the per-instance
   // leg, and it covers EVERY hover/click/shift-click path (they all raycast through here).
@@ -1473,7 +1482,7 @@ function featuresInRect(x0, y0, x1, y1) {                  // features whose pro
   const lo = { x: Math.min(x0, x1), y: Math.min(y0, y1) }, hi = { x: Math.max(x0, x1), y: Math.max(y0, y1) };
   const out = [];
   g.children.forEach(o => {
-    if (!o.isMesh || o.userData.featureId == null || !o.visible) return;   // §V1: hidden = not marquee-selectable either
+    if (!o.isMesh || o.userData.featureId == null || !o.visible || o.userData.anchor) return;   // §V1: hidden = not marquee-selectable either; §ANCHOR never marquee-selectable
     o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
     const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2).project(camera);
     const sx = r.left + (c.x + 1) / 2 * r.width, sy = r.top + (1 - c.y) / 2 * r.height;
@@ -2481,16 +2490,24 @@ async function commitMoveDrag() {
 canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
 // §GATE-1 helpers (RESUME_MODELLER_CONFORMITY_GATE.md). Snapshot every editable mesh's world AABB → {fid: box}.
 function _gateBoxes() {
+  // §ANCHOR (W-E2E-VOID-ANCHOR G5): invisible ride anchors are EXCLUDED from the conformity/save gate —
+  // the gate audits RENDERED geometry only; anchors' boxes live in gridmove._buildBoxByFid (which
+  // deliberately INCLUDES them — the cascade needs them) but must never enter a clash/clearance audit.
   const g = window.Bonsai && window.Bonsai.group && window.Bonsai.group(); const out = {};
-  if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
+  if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
   return out;
 }
 // rel for the gate: hosted-by (door-in-wall) + abuts (face-touch) are EXPECTED contact (never a clash); hostOf
 // drives the door-out-of-host check. Resolved guid→fid through the §ARC-1 bridge over the recovered edges.
 function _gateRel() {
+  // §ANCHOR (W-E2E-VOID-ANCHOR G5): edges touching an invisible ride anchor are EXCLUDED from the gate
+  // relation — pre-anchor these hosts had no fid at all (h==null skipped them), so this keeps the gate's
+  // inputs byte-identical; without it, a door-out-of-host check would gate against a host box the gate
+  // itself (deliberately) does not carry.
   const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {}, abuts = [];
-  (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
-  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
+  const anc = window.__arcAnchorFids || null, isAnc = (fid) => !!(anc && anc.has(fid));
+  (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null && !isAnc(h) && !isAnc(f)) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
+  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null && !isAnc(a) && !isAnc(b)) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
   return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
@@ -3525,6 +3542,9 @@ async function _discWalkOne(disc, ctx, opts) {
     if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
+    // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): the disc-walkers must see the PRE-ANCHOR substrate — a void-anchor
+    // transform row is ride plumbing for the ARC seed ONLY, never a wall a walk may route along/count.
+    try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); var _abn = bdb.getRowsModified(); if (_abn) console.log('§ANCHOR blind: ' + _abn + ' anchor transform(s) hidden from disc-walk substrate'); } catch (e) { }
     // §LIVEWIRE DEFAULT-FLIP (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE, 2026-07-10): schedule-FIRST.
     // The proven paths engage where their data exists — placeSchedule on real-space buildings (Duplex, 21
     // stamped rooms, W-DX-WALKBACK-RSGT 14/14), placeMeasured on terminal_rules buildings (W-TERM-NOSPACES
@@ -3601,6 +3621,7 @@ async function _discWalkOne(disc, ctx, opts) {
     try {
       if (window.DiscWalker.assemble) {
         var abdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+        try { abdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND — see disc-walk note
         var asm = window.DiscWalker.assemble(disc, abdb);
         abdb.close();
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
@@ -4468,6 +4489,7 @@ window.seedTrunk = async function (disc) {
   if (!fixtures.length) { alert('Walk ' + disc + ' first — there are no placed fixtures to route a trunk through.'); return; }
   if (!window.__dwBuf) { alert('Open a building first.'); return; }
   var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+  try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND — trunk grid derives from REAL walls only, see disc-walk note
   try {
     var seedInfo = window.DiscWalker.defaultSeed(bdb);
     if (seedInfo.refused) { alert('No entry element (door/stair) to seed the trunk from: ' + seedInfo.reason); return; }
