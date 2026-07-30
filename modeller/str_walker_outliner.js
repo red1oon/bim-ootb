@@ -33,17 +33,29 @@
   //     mesh substrate (component_geometries), fetched+cached independently (its own IndexedDB URL key, own
   //     `geoV` cache-bust) ONLY for residents that declare it — Terminal is the sole split-file resident today;
   //     every other entry has no `geoDb` and takes ZERO extra network/IDB path (see openResident/_fetchGeoDb).
-  // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each, ALL sharing ONE mesh.db
-  // (true-dup + rotation-consolidation + orphan-removal applied; see that spec's §-log for the numbers).
+  // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each.
+  // §GEO-SERVED (2026-07-30, live-defect fix): each resident now names its OWN small geo file, served from
+  // object storage, INSTEAD of the one shared 120MB modeller/mesh.db. mesh.db is Git-LFS-tracked
+  // (.gitattributes) and **GitHub Pages does not resolve LFS** — the live page was being handed a 134-byte
+  // text pointer ("version https://git-lfs.github.com/spec/v1") with HTTP 200, so the geometry index came
+  // back empty and EVERY element silently fell back to its measured bounding box. Months of localhost
+  // witnesses passed because the local file is the real 120MB db. Two consequences of the split:
+  //   • correctness — the mesh actually arrives, so real LOD400 geometry renders on the live site;
+  //   • cost — opening Duplex fetched 120MB to draw 0.7MB of meshes; it now fetches 1.2MB.
+  // Per CLAUDE.md's DB policy: extracted/derived mesh/geo DBs are distributed as full binaries via object
+  // storage, NEVER via git/LFS. That policy (2026-07-11) is the authority here and supersedes the older
+  // "modeller takes zero cloud dependency" note above it (2026-06-26) for GEOMETRY files only — resident
+  // METADATA (*_ARC.db, small, non-LFS) still comes from the same-dir GH-Pages folder, unchanged.
+  var GEO_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/modeller/';
   var RESIDENTS = [
-    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 }
+    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'SampleHouse_geo.db',    geoV: 3, geoBase: GEO_BASE },
+    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'Duplex_geo.db',         geoV: 3, geoBase: GEO_BASE },
+    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'SampleCastle_geo.db',   geoV: 3, geoBase: GEO_BASE },
+    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'HHS_geo.db',            geoV: 3, geoBase: GEO_BASE },
+    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'Clinic_geo.db',         geoV: 3, geoBase: GEO_BASE },
+    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'Hospital_geo.db',       geoV: 3, geoBase: GEO_BASE },
+    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'HospitalGarage_geo.db', geoV: 3, geoBase: GEO_BASE },
+    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'Terminal_geo.db',       geoV: 3, geoBase: GEO_BASE }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the
@@ -457,20 +469,46 @@
   // exact same IndexedDB cache pattern (_idbGetDb/_idbPutDb, its own URL key so it caches independently of
   // the meta db) — cache-first, else fetch+persist. Residents with no `geoDb` field resolve null IMMEDIATELY,
   // no network/IDB call at all (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC are untouched).
+  // §GEO-SERVED: the bytes a geo fetch returns must actually BE a SQLite database. This guard exists because
+  // the live site returned HTTP 200 with a 134-byte Git-LFS pointer for months — a "successful" fetch that
+  // carried no geometry, which then degraded silently into bounding-box rendering. A 200 is not evidence.
+  var _SQLITE_MAGIC = 'SQLite format 3';
+  function _assertRealGeoDb(buf, res, url) {
+    var n = buf ? buf.byteLength : 0;
+    var head = '';
+    try {
+      var b = new Uint8Array(buf, 0, Math.min(n, 64));
+      for (var i = 0; i < b.length; i++) head += String.fromCharCode(b[i]);
+    } catch (e) { head = ''; }
+    if (head.indexOf(_SQLITE_MAGIC) === 0) return buf;
+    // console.error, never console.warn — warn is hidden by DevTools' default filter, which is part of why
+    // this defect survived so long unseen.
+    var why = head.indexOf('git-lfs.github.com') >= 0
+      ? 'served a Git-LFS POINTER, not the database — LFS files are not resolved by GitHub Pages'
+      : 'served ' + n + ' bytes that are not a SQLite file';
+    console.error(TAG + ' §GEO-SERVED-FAIL ' + res.key + ' ' + why + ' url=' + url +
+      ' — refusing to seed: real geometry is unavailable and a bounding box must NEVER stand in for it');
+    throw new Error('§GEO-SERVED-FAIL ' + res.key + ': ' + why);
+  }
+
   function _fetchGeoDb(res) {
     if (!res.geoDb) return Promise.resolve(null);
-    var url = _modellerBase() + res.geoDb + ((res.geoV || res.v) ? '?v=' + (res.geoV || res.v) : '');
+    // §GEO-SERVED: geometry files come from res.geoBase (object storage) when declared; resident METADATA
+    // still comes from the same-dir GH-Pages folder via _modellerBase().
+    var url = (res.geoBase || _modellerBase()) + res.geoDb + ((res.geoV || res.v) ? '?v=' + (res.geoV || res.v) : '');
     return _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-HIT (local) ' + (cached.byteLength / 1024 / 1024).toFixed(1) + 'MB');
-        return cached;
+        return _assertRealGeoDb(cached, res, url);
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-MISS → fetch ' + url);
       return fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
         .then(function (buf) {
+          _assertRealGeoDb(buf, res, url);
           _idbPutDb(url, buf).then(function (p) {
             console.log(TAG + ' §STRWALK-CACHE ' + res.geoDb + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
           });
+          console.log(TAG + ' §GEO-SERVED ' + res.key + ' real geometry substrate ' + (buf.byteLength / 1024 / 1024).toFixed(2) + 'MB verified SQLite');
           return buf;
         });
     });
@@ -491,7 +529,11 @@
         window.__dwGeoBuf = geoBuf || null;
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
-        console.warn(TAG + ' §STRWALK-OPEN geoDb fetch failed for ' + res.key + ' — seeding meta-only (no real geometry)', e && e.message);
+        // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the
+        // live LFS-pointer defect stayed invisible for months. What follows is measured bounding boxes, which
+        // are NOT this building's real geometry; say so unmistakably rather than letting it pass for a render.
+        console.error(TAG + ' §GEO-SERVED-DEGRADED ' + res.key + ' — NO real geometry substrate loaded. What you' +
+          ' are seeing is MEASURED BOUNDING BOXES, not the building. Cause: ' + (e && e.message), e);
         window.__dwGeoBuf = null;
         _seedArcEditable(O, res.key, null);
       });
