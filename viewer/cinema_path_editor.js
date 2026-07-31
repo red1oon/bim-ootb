@@ -1055,7 +1055,7 @@
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x.
-          if (a.ghostGroundAt) a.ghostGroundAt(tn, _titleTotalSec || dur / 1000);
+          if (a.ghostGroundAt) a.ghostGroundAt(tn, _titleTotalSec || dur / 1000, bkPrev);
         }
         frames++;
         if (a.markDirty) a.markDirty();
