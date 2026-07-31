@@ -49,12 +49,26 @@
     // visibility check here skipped the whole feature on every real bake (user, 2026-07-31: no
     // §GHOST_GROUND_SCHEDULE line and no `groundOpacity=` in §CPE_BUILDUP anywhere in their log).
     // Setting opacity on a hidden plane costs nothing and is correct the moment staging shows it.
-    if (!A || !A.ground || !A.ground.material) return false;
-    if (!bkState || typeof window.tmGroundSchedule !== 'function') return false;
+    if (!A || !A.ground || !A.ground.material) {
+      console.log('§GHOST_GROUND skip reason=no ground plane/material on APP'); return false;
+    }
+    // ⚠ These two used to `return false` SILENTLY, which cost a live debugging round-trip: the user
+    // ran three full bakes with no §GHOST_GROUND line of any kind and no way to tell whether the
+    // feature was absent, skipped, or broken. A refusal that says nothing is indistinguishable from
+    // code that was never deployed. Every exit names itself now — "make the logs tell u".
+    if (!bkState) { console.log('§GHOST_GROUND skip reason=no buildup state'); return false; }
+    if (typeof window.tmGroundSchedule !== 'function') {
+      console.log('§GHOST_GROUND skip reason=window.tmGroundSchedule is ' + (typeof window.tmGroundSchedule) +
+        ' — time_machine.js is older than this build (mixed service-worker cache); close ALL tabs of the site and reopen');
+      return false;
+    }
     var z = A.groundIfcZ;
     if (!isFinite(z)) { console.log('§GHOST_GROUND skip reason=no groundIfcZ (tools.js §GROUND_Y never ran)'); return false; }
     var span = bkState.projectEnd - bkState.projectStart;
-    if (!(span > 0)) return false;
+    if (!(span > 0)) {
+      console.log('§GHOST_GROUND skip reason=buildup span is ' + span + ' (projectStart=' + bkState.projectStart +
+        ' projectEnd=' + bkState.projectEnd + ')'); return false;
+    }
     var sched = window.tmGroundSchedule(z);
     if (!sched || !sched.aboveTotal) { console.log('§GHOST_GROUND skip reason=no above-ground work in this timeline'); return false; }
     // A model with NOTHING below ground has no substructure to reveal — ghosting it would be a lie
