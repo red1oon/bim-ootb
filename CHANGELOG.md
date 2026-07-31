@@ -4,6 +4,28 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.34.0](https://github.com/red1oon/bim-ootb/compare/v1.33.0...v1.34.0) (2026-07-31)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_BUILDUP_WORK_PACED — the film advances by ELEMENTS PLACED, not calendar days ([#1116](https://github.com/red1oon/bim-ootb/issues/1116)) ([aa84dd9](https://github.com/red1oon/bim-ootb/commit/aa84dd9bbecb1e6dd4a1e157133308befebf0b7d))
+* **cinema:** §CPE_GHOST_GROUND — the foundation is built and BURIED; ghost the ground until it rises ([#1110](https://github.com/red1oon/bim-ootb/issues/1110)) ([ed10bb9](https://github.com/red1oon/bim-ootb/commit/ed10bb92eb2a694a0518463dcc55047dc845a53f))
+* **cinema:** §CPE_GHOST_GROUND_RATIO — the ground solidifies as the building rises, on any building ([#1112](https://github.com/red1oon/bim-ootb/issues/1112)) ([6397e45](https://github.com/red1oon/bim-ootb/commit/6397e457e153063940889df3292aefc1133b6091))
+* **cinema:** §CPE_ROOM_TITLE_GAZE — caption the room the camera is LOOKING INTO (1 -&gt; 15 on Hospital) ([#1119](https://github.com/red1oon/bim-ootb/issues/1119)) ([5677099](https://github.com/red1oon/bim-ootb/commit/5677099b88cac45d8c35f073436679d0b0a34089))
+* **cinema:** §CPE_ROOM_TITLE_HOLD — a caption stays up 3s, unless the next room takes over ([#1117](https://github.com/red1oon/bim-ootb/issues/1117)) ([bfd5971](https://github.com/red1oon/bim-ootb/commit/bfd5971dc0c5e341b8e59749f6d459127fd63fb2))
+* **cinema:** §CPE_ROOM_TITLE_LEAD — name the room you are HEADING INTO, 2s early ([#1118](https://github.com/red1oon/bim-ootb/issues/1118)) ([466f6e8](https://github.com/red1oon/bim-ootb/commit/466f6e8b9d8989327b22bae2f663fc205943cd20))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_ROOF_LOAD_PATH — slab role from load path, not storey name ([#1120](https://github.com/red1oon/bim-ootb/issues/1120)) ([18c68a8](https://github.com/red1oon/bim-ootb/commit/18c68a8c2014d4efa143c71c63ca13820d0fef5b))
+* **cinema:** §CPE_GHOST_GROUND — degrade instead of disable, and arm on the first tick ([#1115](https://github.com/red1oon/bim-ootb/issues/1115)) ([ad2a72a](https://github.com/red1oon/bim-ootb/commit/ad2a72a0c7f1d5b29c413ebaf037c33dec059009))
+* **cinema:** §CPE_GHOST_GROUND — every arm refusal now names itself in the log ([#1114](https://github.com/red1oon/bim-ootb/issues/1114)) ([60488ff](https://github.com/red1oon/bim-ootb/commit/60488ff0618285ce95c171aaab08796dd31e9568))
+* **cinema:** §CPE_GHOST_GROUND armed on a state no real bake is ever in — and the witness said so ([#1113](https://github.com/red1oon/bim-ootb/issues/1113)) ([90845d9](https://github.com/red1oon/bim-ootb/commit/90845d9b5cbd02ab990515dfe882ef46ee1056a7))
+* **cinema:** §CPE_PATH_NOT_PORTABLE — a saved path could not leave the machine, and nothing said so ([#1122](https://github.com/red1oon/bim-ootb/issues/1122)) ([57c52c4](https://github.com/red1oon/bim-ootb/commit/57c52c42a002e11c4d3f49a3853e1a072af3836b))
+* **cinema:** §CPE_WALK_BUDGET_NOISE_BLIND — the walk's SECONDS now obey the noise law ([#1121](https://github.com/red1oon/bim-ootb/issues/1121)) ([2a37cd7](https://github.com/red1oon/bim-ootb/commit/2a37cd7b7799dd5f57df608e901cb7e994777aa0))
+
 ## [1.33.0](https://github.com/red1oon/bim-ootb/compare/v1.32.0...v1.33.0) (2026-07-30)
 
 
