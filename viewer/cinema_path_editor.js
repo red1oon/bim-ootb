@@ -990,12 +990,22 @@
     _state.buildup = !!ov.buildup;
     _state.roomTitle = !!ov.roomTitle;
     _state.userTotal = ov._total;
-    _state.staged = false; _state.held = null;
+    _state.held = null;
+    // §CPE_PATH_NOT_PORTABLE fix, part 1 (prompts/CINEMA_PATH_EDITOR.md): opening a named plan used
+    // to leave `_state.staged = false` and never call `A.stageCinemaPath` — so after any reload,
+    // `A._cinemaPathEdit` stayed null and Ctrl+S's `_writeCinemaPathTable` guard returned silently,
+    // even though the plan is authored data the user explicitly opened. Re-stage HERE, the same call
+    // the "Save this path" button already makes (`_buildOverride()` reads the `_state` just set
+    // above), so the just-opened plan is what Ctrl+S actually writes, and the panel's OK/Save buttons
+    // read `staged=true` immediately rather than implying the open plan is unstaged.
+    var _a = A();
+    if (typeof _a.stageCinemaPath === 'function') _a.stageCinemaPath(_buildOverride());
+    _state.staged = true;
     console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
       ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
       ' buildup=' + (_state.buildup ? 1 : 0) + ' roomTitle=' + (_state.roomTitle ? 1 : 0) +
       ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
-      ' — Ctrl+Z restores what you had before loading');
+      ' — re-staged (§CPE_PATH_NOT_PORTABLE): Ctrl+S now writes this path; Ctrl+Z restores what you had before loading');
     _markPreviewStale();
     _refreshFlow(); _replanFilm();
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
