@@ -3282,7 +3282,7 @@
     }
 
     // ── Build elements with storey-aware overrides ──
-    var roofOverrides = 0, nameOverrides = 0;
+    var nameOverrides = 0;
     var elements = r[0].values.map(function(row) {
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
@@ -3291,12 +3291,6 @@
       if (ov) nameOverrides++;
       var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
-
-      // §A.1 Storey-aware override: slabs on "Roof" storey → Architecture/Roof seq 8
-      if (/roof/i.test(storey) && cls === 'IfcSlab' && seq < 8) {
-        seq = 8; phase = 'Architecture';
-        roofOverrides++;
-      }
 
       return {
         guid: row[0], cls: cls, name: elName, storey: storey,
@@ -3309,9 +3303,52 @@
       };
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
-    if (roofOverrides) console.log('§GANTT_OVERRIDE ' + roofOverrides + ' roof slabs overridden to seq=8');
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
       NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
+
+    // §4D_ROOF_LOAD_PATH M1 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH) — a slab's
+    // ROLE is a load-path fact, not a storey-name label. SUPERSEDES the deleted `/roof/i` override
+    // above: measured 2026-08-01, that regex fired ZERO times on Hospital ("Level 1..7A"/"Unknown")
+    // and LTU_AHouse ("TAKPLAN", Swedish) — the two roof slabs it was meant to catch have storey
+    // "Unknown". For each IfcSlab, take the IfcWall*/IfcWallStandardCase whose XY footprint overlaps
+    // it ("those walls"). Two checks from the SAME paragraph of the spec, both epsilon-free:
+    //   (a) the slab's base_z is above the average midheight of those walls — the walls are BELOW
+    //       and physically carry it.
+    //   (b) NONE of those walls stand ON it (no overlapping wall has base_z >= the slab's own
+    //       top_z) — this is the spec's own stated definition of "the floor case" ("floor slab:
+    //       walls stand ON it ... otherwise it stays a floor slab"), and it is NOT redundant with
+    //       (a): measured on this exact DB, (a) alone is true for nearly every capped-wall slab in
+    //       the building (35 slabs -> 23 "promoted"), including known mid-building intermediate
+    //       floors (base_z 176.81, between Level 2 and Level 3, 5 more levels above) — a slab that
+    //       caps the walls below it satisfies (a) whether or not it ALSO carries walls above, so (a)
+    //       alone cannot tell "top of the load path" from "one more floor in the middle of it". (b)
+    //       is the missing half of the spec's own description and brings Hospital down to the 2
+    //       true roof slabs + a handful of isolated panels with no wall directly overlapping the
+    //       next level up (open corridor/atrium bays) — reported, not silently forced to exactly 2.
+    // Promoted -> roof role -> seq 8, phase 'Architecture'. Otherwise stays whatever seq matchRule
+    // gave it (the floor case). No new numeric constant either way — both checks compare the slab
+    // against its own extracted geometry and the walls' own extracted geometry.
+    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
+    var loadPathOverrides = 0;
+    elements.forEach(function(el) {
+      if (el.cls !== 'IfcSlab') return;
+      var carriers = loadPathWalls.filter(function(w) {
+        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
+      });
+      if (!carriers.length) return;
+      var midSum = 0, hasWallAbove = false;
+      for (var ci = 0; ci < carriers.length; ci++) {
+        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
+        if (carriers[ci].base_z >= el.top_z) hasWallAbove = true;
+      }
+      var wallMidheight = midSum / carriers.length;
+      if (el.base_z > wallMidheight && !hasWallAbove) {
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++;
+      }
+    });
+    if (loadPathOverrides) console.log('§GANTT_OVERRIDE ' + loadPathOverrides +
+      ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
     // Real construction: lower Z builds first regardless of storey name.
@@ -3406,6 +3443,10 @@
     var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
     var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
     console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
+    // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
+    // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
+    // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: _audit };
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     var _first20 = [];
