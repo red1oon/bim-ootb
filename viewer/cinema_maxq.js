@@ -29,66 +29,95 @@
   // themselves: that takes §PHOTO_SHADOW's casters and the sense of a site with it, and the
   // foundation floats in blackness.
   var GHOST_OPACITY = 0.22;      // survey-drawing translucency; low enough to read what is under it
-  var GHOST_FADE_SEC = 3.0;      // seconds of FILM time the return to opaque is eased over
-  var _ggT = null, _ggSaved = null;
+  // §CPE_GHOST_GROUND_RATIO — the ground is fully opaque once this SHARE of the building's own
+  // above-ground work is placed. A fraction, never a count: 5% of a 62,450-element hospital and 5%
+  // of a 961-element house are both "the building is unmistakably out of the ground now". This is
+  // the ONLY presentation constant in the rule — the trigger, the totals and the ordering all come
+  // from the model.
+  var GHOST_REVEAL_FRAC = 0.05;
+  var GHOST_FADE_SEC = 3.0;      // floor on how fast opacity may rise, in FILM seconds — a batch of
+                                 // ops landing in one frame must not snap the ground opaque.
+  var _ggSched = null, _ggSpan = null, _ggSaved = null;
 
   // Called ONCE per preview/bake, after the buildup timeline is in force. Returns true when armed.
   function _ghostGroundArm(bkState) {
     var A = window.APP;
-    _ggT = null;
+    _ggSched = null;
     if (!A || !A.ground || !A.ground.material || !A.ground.visible) return false;
-    if (!bkState || typeof window.tmFirstAboveGroundMs !== 'function') return false;
+    if (!bkState || typeof window.tmGroundSchedule !== 'function') return false;
     var z = A.groundIfcZ;
     if (!isFinite(z)) { console.log('§GHOST_GROUND skip reason=no groundIfcZ (tools.js §GROUND_Y never ran)'); return false; }
     var span = bkState.projectEnd - bkState.projectStart;
     if (!(span > 0)) return false;
-    var ms = window.tmFirstAboveGroundMs(z);
-    if (ms == null) { console.log('§GHOST_GROUND skip reason=nothing is ever placed at or above the ground datum'); return false; }
-    var t = (ms - bkState.projectStart) / span;
-    // A trigger at or before t=0 means the film never opens underground — ghosting would be a lie
-    // about this building, so it stays off rather than ghosting a frame or two for symmetry.
-    if (!(t > 0)) { console.log('§GHOST_GROUND skip reason=first above-ground element is placed at t=' + t.toFixed(3) + ' (film never opens below ground)'); return false; }
+    var sched = window.tmGroundSchedule(z);
+    if (!sched || !sched.aboveTotal) { console.log('§GHOST_GROUND skip reason=no above-ground work in this timeline'); return false; }
+    // A model with NOTHING below ground has no substructure to reveal — ghosting it would be a lie
+    // about that building. Self-disabling, not a special case anyone has to configure.
+    if (!sched.belowTotal) { console.log('§GHOST_GROUND skip reason=this model has no below-ground elements (nothing to reveal)'); return false; }
+    _ggSched = sched;
+    _ggSpan = { start: bkState.projectStart, end: bkState.projectEnd, span: span,
+                firstT: sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span };
     var m = A.ground.material;
     _ggSaved = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
-    _ggT = t;
-    console.log('§GHOST_GROUND armed triggerT=' + t.toFixed(4) + ' ghost=' + GHOST_OPACITY +
-      ' fadeSec=' + GHOST_FADE_SEC + ' — ground is see-through until the first at-or-above-ground element');
+    console.log('§GHOST_GROUND armed aboveOps=' + sched.aboveTotal + ' belowOps=' + sched.belowTotal +
+      ' revealFrac=' + GHOST_REVEAL_FRAC + ' (opaque once ' + Math.ceil(sched.aboveTotal * GHOST_REVEAL_FRAC) +
+      ' above-ground elements are placed) ghost=' + GHOST_OPACITY + ' maxRiseSec=' + GHOST_FADE_SEC);
     return true;
   }
 
-  // Per frame. `tFilm` is the film fraction the BUILDUP is at (the same number that drives the
-  // cursor), `totalSec` the film's own length. Returns the opacity applied, or null when not armed.
+  // How many above-ground ops have COMPLETED by this cursor. Binary search on the sorted end_ts —
+  // the same `end_ts <= cursor` definition tmPlacedCount uses, so the ghost and the visible model
+  // can never disagree about what is built.
+  function _ggPlacedAbove(ms) {
+    var e = _ggSched.ends, lo = 0, hi = e.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (e[mid] <= ms) lo = mid + 1; else hi = mid; }
+    return lo;
+  }
+
+  // Per frame. `tFilm` is the film fraction driving the cursor; `totalSec` the film's length.
+  // Opacity follows the SHARE of above-ground work placed — the ground solidifies as the building
+  // rises — with a rate limit so a batch of ops cannot turn the ramp into a cut.
   function _ghostGroundAt(tFilm, totalSec) {
     var A = window.APP;
-    if (_ggT == null || !A || !A.ground || !A.ground.material) return null;
+    if (!_ggSched || !A || !A.ground || !A.ground.material) return null;
+    var t = Math.max(0, Math.min(1, tFilm));
+    var ms = _ggSpan.start + t * _ggSpan.span;
+    // 1. What the BUILDING says: the share of its own above-ground work that is placed.
+    var frac = _ggPlacedAbove(ms) / _ggSched.aboveTotal;
+    var u = Math.max(0, Math.min(1, frac / GHOST_REVEAL_FRAC));
+    var byWork = GHOST_OPACITY + (1 - GHOST_OPACITY) * (u * u * (3 - 2 * u));
+    // 2. A floor on how FAST that may happen, so a batch of ops landing together cannot snap the
+    //    ground opaque. ⚠ Expressed against the film's own clock, NOT against the previous call:
+    //    a per-call rate limiter makes the curve depend on how densely it is sampled, and the bake
+    //    (2219 frames) and the rehearsal (~600) then trace different curves for the same film.
+    //    Measured 2026-07-31 — G-GG-6 caught exactly that, 0.3653 vs 0.4006 at t=0.02.
     var fadeFrac = (totalSec > 0) ? Math.min(0.5, GHOST_FADE_SEC / totalSec) : 0.05;
-    var u = (tFilm - _ggT) / Math.max(1e-6, fadeFrac), o;
-    if (u <= 0) o = GHOST_OPACITY;
-    else if (u >= 1) o = 1;
-    else o = GHOST_OPACITY + (1 - GHOST_OPACITY) * (u * u * (3 - 2 * u));   // smoothstep, no cut
+    var v = Math.max(0, Math.min(1, (t - _ggSpan.firstT) / Math.max(1e-6, fadeFrac)));
+    var byTime = GHOST_OPACITY + (1 - GHOST_OPACITY) * (v * v * (3 - 2 * v));
+    // Both curves are monotone functions of t alone, so their min is too — and the result is a pure
+    // function of the film fraction: identical in the preview and the bake, at any frame count.
+    var o = Math.min(byWork, byTime);
     var m = A.ground.material, solid = o > 0.999;
     m.opacity = o;
     m.transparent = !solid;
     // A translucent floor that writes depth can occlude other transparent geometry drawn after it;
-    // the opaque substructure is already in the depth buffer either way, so this only affects the
-    // transparent pass. Restored with everything else.
+    // the opaque substructure is already in the depth buffer either way. Restored with the rest.
     m.depthWrite = solid;
     return o;
   }
 
-  // MUST run on every exit path. The ground material is shared with normal viewing — a bake that
-  // leaves it at 0.22 ghosts the ground for the rest of the session.
   function _ghostGroundRestore() {
     var A = window.APP;
+    _ggSched = null;
     if (_ggSaved && A && A.ground && A.ground.material) {
       var m = A.ground.material;
       m.transparent = _ggSaved.transparent; m.opacity = _ggSaved.opacity; m.depthWrite = _ggSaved.depthWrite;
       console.log('§GHOST_GROUND restored opacity=' + m.opacity + ' transparent=' + m.transparent);
     }
-    _ggSaved = null; _ggT = null;
+    _ggSaved = null;
   }
 
-  var MAXQ_V = 'v18 (§CPE_GHOST_GROUND the ground goes see-through while the buildup is entirely below it, then eases back to opaque; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v19 (§CPE_GHOST_GROUND_RATIO the ground solidifies as the SHARE of above-ground work rises — generic to any building, self-disabling where there is no substructure; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next

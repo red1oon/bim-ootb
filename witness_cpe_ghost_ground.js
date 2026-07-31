@@ -69,9 +69,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       if (!bk) return { err: 'no timeline to follow' };
       out.span = { start: bk.projectStart, end: bk.projectEnd, ops: bk.ops };
 
-      const firstMs = window.tmFirstAboveGroundMs(A.groundIfcZ);
-      out.firstMs = firstMs;
-      out.triggerT = firstMs == null ? null : (firstMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
+      const sched = window.tmGroundSchedule(A.groundIfcZ);
+      out.sched = sched ? { aboveTotal: sched.aboveTotal, belowTotal: sched.belowTotal } : null;
+      out.firstMs = sched ? sched.firstAboveMs : null;
+      out.triggerT = out.firstMs == null ? null : (out.firstMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
 
       const m = A.ground.material;
       const before = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
@@ -91,11 +92,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       out.endOpacity = A.ghostGroundAt(1, TOTAL);
 
-      // G-GG-6: the same film fraction through the preview's call signature (a 10 s rehearsal).
-      const previewSamples = [0.02, 0.2, 0.5, 0.9].map(t => ({
-        t, bake: A.ghostGroundAt(t, TOTAL), preview: A.ghostGroundAt(t, TOTAL),
-      }));
-      out.previewSamples = previewSamples;
+      // G-GG-6: the SAME fractions again through a fresh arming, the way the preview drives it.
+      // ⚠ This must re-arm: the rate limiter carries state forward, so sampling t=0.02 after the
+      // sweep has already reached t=1 returns 1 and the gate would pass for the wrong reason
+      // (caught 2026-07-31 — it did exactly that before this re-arm was added).
+      A.ghostGroundRestore();
+      A.ground.visible = true;
+      A.ghostGroundArm(bk);
+      const fracs = [0.02, 0.05, 0.10, 0.20, 0.50, 0.90];
+      const byT = {};
+      out.steps.forEach(s => { byT[s.t] = s.o; });
+      out.previewSamples = [];
+      for (const t of fracs) {   // ascending, exactly as a rehearsal advances
+        const preview = A.ghostGroundAt(t, TOTAL);
+        // the bake sweep sampled every 1/200, so these fractions land on real samples
+        out.previewSamples.push({ t, bake: byT[+t.toFixed(4)], preview: preview == null ? null : +preview.toFixed(4) });
+      }
 
       A.ghostGroundRestore();
       out.after = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
@@ -115,6 +127,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         `groundIfcZ=${res.groundIfcZ}  firstAboveMs=${res.firstMs}  triggerT=${res.triggerT == null ? 'null' : res.triggerT.toFixed(4)}  ` +
         `span=${Math.round(res.span.start)}..${Math.round(res.span.end)} ops=${res.span.ops}`);
 
+      // where the ratio rule actually reaches opaque — the number that says whether the ghost is
+      // long enough to see, and the whole reason the first-element trigger was replaced.
+      const opaqueAt = (res.steps.find(s => s.o != null && s.o > 0.999) || {}).t;
+      res.opaqueAt = opaqueAt;
       const early = res.steps.filter(s => s.t < res.triggerT);
       const ghosted = early.length && early.every(s => s.o != null && s.o < 0.3);
       P('G-GG-2 before the trigger the ground is see-through, so the substructure reads (RED before this change)',
@@ -145,16 +161,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         !leak,
         `before=${JSON.stringify(res.before)}  after=${JSON.stringify(res.after)}`);
 
-      const agree = res.previewSamples.every(s => s.bake === s.preview);
+      const agree = res.previewSamples.length > 0 &&
+        res.previewSamples.every(s => s.bake != null && s.preview != null && Math.abs(s.bake - s.preview) < 1e-6);
       P('G-GG-6 preview and bake trace the identical curve at the same film fraction',
         agree,
-        res.previewSamples.map(s => `t=${s.t}:${s.bake}`).join('  '));
+        res.previewSamples.map(s => `t=${s.t} bake=${s.bake} preview=${s.preview}`).join('   '));
 
-      const trig = logs.filter(l => /§GHOST_GROUND_TRIGGER /.test(l)).slice(-1)[0] || '';
+      // §CPE_GHOST_GROUND_RATIO: the point of replacing the first-element trigger. On Hospital that
+      // trigger fired at t=0.0162 (2.4s of a 147.9s film) — the ghost was over before the camera
+      // landed. The ratio rule must hold the ground open materially longer than that.
+      P('G-GG-8 the ghost outlasts the first above-ground element (the ratio rule, not a trigger)',
+        res.opaqueAt != null && res.opaqueAt > res.triggerT * 2,
+        `first above-ground element at t=${res.triggerT.toFixed(4)}; ground reaches opaque at ` +
+        `t=${res.opaqueAt == null ? 'never' : res.opaqueAt.toFixed(4)}  ` +
+        `(above=${res.sched.aboveTotal} below=${res.sched.belowTotal}, opaque once 5% of above-ground work is placed)`);
+
+      const trig = logs.filter(l => /§GHOST_GROUND_SCHEDULE /.test(l)).slice(-1)[0] || '';
       const armed = logs.filter(l => /§GHOST_GROUND armed/.test(l)).slice(-1)[0] || '';
       P('G-GG-7 the log states the trigger and the arming, so a quiet no-op is visible',
         !!trig && !!armed,
-        `${trig || 'no §GHOST_GROUND_TRIGGER'}\n        ${armed || 'no §GHOST_GROUND armed'}`);
+        `${trig || 'no §GHOST_GROUND_SCHEDULE'}\n        ${armed || 'no §GHOST_GROUND armed'}`);
     }
 
     const pass = checks.filter(c => c.ok).length;

@@ -5274,6 +5274,46 @@
     return firstMs;
   };
 
+  // §CPE_GHOST_GROUND_RATIO — the SCHEDULE of above-ground placement, not just its first moment.
+  // Measured on Hospital: the first at-or-above-ground element lands at t=0.0162 (2.4s of a 147.9s
+  // film) while below-ground work continues to t=0.9947 — that model has no clean "substructure
+  // window" at all, so a first-element trigger lifts the ghost before the camera has even landed.
+  // The generic answer is a RATIO against the model's own above-ground total: the ground solidifies
+  // as the building rises, on every building, with no per-model tuning.
+  //
+  // Returns sorted end_ts for every above-ground op (binary-searchable per frame — never a rescan),
+  // plus the counts a caller needs to decide whether ghosting applies to this model at all.
+  window.tmGroundSchedule = function(ifcZ) {
+    var app = A();
+    if (!app || !app.db || !isFinite(ifcZ) || !_ops.length) return null;
+    var EPS = 0.05, above = Object.create(null), rows;
+    try {
+      rows = app.db.exec('SELECT guid, center_z - COALESCE(bbox_z, 0) / 2.0 AS bottom ' +
+                         'FROM element_transforms WHERE center_z IS NOT NULL');
+    } catch (e) { console.warn('§GHOST_GROUND_TRIGGER_FAIL ' + e.message); return null; }
+    if (!rows.length || !rows[0].values.length) return null;
+    var vals = rows[0].values, i;
+    for (i = 0; i < vals.length; i++) {
+      if (vals[i][1] != null && vals[i][1] >= ifcZ - EPS) above[vals[i][0]] = 1;
+    }
+    var ends = [], belowN = 0;
+    for (i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!g) continue;
+      if (above[g]) ends.push(op.end_ts); else belowN++;
+    }
+    ends.sort(function(a, b) { return a - b; });
+    var out = { ends: ends, aboveTotal: ends.length, belowTotal: belowN,
+                firstAboveMs: ends.length ? ends[0] : null,
+                projectStart: _projectStart, projectEnd: _projectEnd };
+    console.log('§GHOST_GROUND_SCHEDULE groundZ=' + ifcZ.toFixed(2) +
+      ' aboveOps=' + out.aboveTotal + ' belowOps=' + out.belowTotal +
+      ' firstAboveMs=' + (out.firstAboveMs == null ? 'none' : Math.round(out.firstAboveMs)) +
+      ' — opacity follows the SHARE of above-ground work placed, so it scales to any building');
+    return out;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. Returns its boolean (count>0 / false); callers cache.
