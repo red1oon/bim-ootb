@@ -151,10 +151,10 @@ const FPS = 15;
         //     exactly, because raising the path makes the corner fans hit different geometry, so the
         //     rounding radius (and with it the arc-length parameterization) legitimately differs.
         //     Reported as a number rather than hidden inside a loose tolerance on (a).
-        const dyOver = (planBase, planEdit) => {
+        const dyOver = (planBase, planEdit, win) => {
           let mn = 1e9, mx = -1e9;
           for (let s = 0; s <= 100; s++) {
-            const t = beats.spin + (beats.out - beats.spin) * (s / 100);
+            const t = win.spin + (win.out - win.spin) * (s / 100);
             const dy = planEdit.poseAt(t).y - planBase.poseAt(t).y;
             mn = Math.min(mn, dy); mx = Math.max(mx, dy);
           }
@@ -165,11 +165,28 @@ const FPS = 15;
         const straightUp = straight.map(w => ({ x: w.x, y: w.y + 1.5, z: w.z }));
         const pS = A.cinemaPathPlan(DUR, { waypoints: straight });
         const pSU = A.cinemaPathPlan(DUR, { waypoints: straightUp });
-        const iso = dyOver(pS, pSU);
+        // §CPE_WALK_BUDGET_NOISE_BLIND follow-up (2026-08-01): the isolated case used to sample pS/pSU
+        // (a SYNTHETIC straight 20m leg) at `beats` — planA's window, i.e. the REAL building path's
+        // beat fractions. That was always a mismatch (pS has a totally different totalLen/turnDeg from
+        // planA, so its own beat fractions land at a different tNorm), but it stayed hidden while the
+        // walk's seconds were priced by geometry alone, because the two paths' `out`-beat boundaries
+        // happened to sit close together. Once the walk's seconds started depending on CONTENT (this
+        // fix's own change, _walkBusy from §CPE_NOISE_LAW), planA's `out` boundary and pS's own moved
+        // apart — MEASURED on Terminal: planA.beats.out=0.5607 vs pS.beats.out=0.5406, so the sample at
+        // the window's far edge landed ~9% into pS's OWN rise beat, where the override is not held
+        // (dy fell to 0.57 there). Sampling pS/pSU at pS's OWN beat window instead gives dy===1.5 at
+        // every one of 101 samples, on BOTH this branch and unmodified origin/main, for BOTH buildings —
+        // proving the eye-height override itself never regressed; only the instrument's window did.
+        // A 2% inset off each end of that window avoids a second, unrelated artifact: the beat3->rise
+        // handoff is a literal knife-edge in poseAt() (dy steps 1.50000->1.50308 in the very next sample
+        // AT the exact boundary, reproduced on unmodified origin/main too — pre-existing, not this fix).
+        const ownWin = pS.beats, ownSpan = ownWin.out - ownWin.spin;
+        const isoWin = { spin: ownWin.spin + ownSpan * 0.02, out: ownWin.out - ownSpan * 0.02 };
+        const iso = dyOver(pS, pSU, isoWin);
 
         const raised = wp0.map(w => ({ x: w.x, y: w.y + 1.5, z: w.z }));
         const planR = A.cinemaPathPlan(DUR, { waypoints: raised });
-        const situ = dyOver(planA, planR);
+        const situ = dyOver(planA, planR, beats);
         out.g3 = { asked: 1.5, isoMin: iso.mn, isoMax: iso.mx, situMin: situ.mn, situMax: situ.mx };
       }
 

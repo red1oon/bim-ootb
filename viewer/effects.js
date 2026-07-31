@@ -5729,6 +5729,44 @@ async function setupEffects(A, renderer, scene, camera) {
       var c0 = _dvC[lo], c1 = _dvC[hi], f = (c1 - c0 > 1e-12) ? (u - c0) / (c1 - c0) : 0;
       return (lo + Math.max(0, Math.min(1, f))) / _DV_N;
     }
+    // §CPE_WALK_BUDGET_NOISE_BLIND (2026-08-01, user: "it shuld be controlled by that noise-speed
+    // ratio we setup before to govern thruout"). The walk's SECONDS must see the same content-change
+    // signal §CPE_NOISE_LAW already computes for the walk's FRAME SPACING (_evenTurnBuild below) —
+    // not a new probe, the SAME central-difference-of-density measurement _densityAt/_noiseRadius
+    // already give the dive, just evaluated here because _natSec (next block) needs the scalar
+    // before it exists anywhere else.
+    //
+    // ⚠ Cannot call _beat3Pose(e) directly for this, despite it being the primitive named in the
+    // correction — MEASURED by reading, not in the debugger: _beat3Pose reads _openU and _handDir,
+    // and both are assigned INSIDE the block this IIFE runs before (_natSec needs _useSec.out, which
+    // needs _natSec.out, which is what this scalar feeds). Calling it early would run its gaze blend
+    // against two undefined values. It is not needed anyway: _cinemaGazeBlend returns x/y/z UNCHANGED
+    // from the position it was given (see its `return { x: px, y: py, z: pz, ... }`), so
+    // _beat3Pose(e).x/y/z is byte-identical to _outPos(e).x/y/z for every e — _outPos alone gives the
+    // same positions this probe needs, and it has no such dependency (defined at L5005, before any of
+    // this). Radius uses `totalLen` (the walk's own travel, already computed) rather than the 240-
+    // sample arc length _evenTurnBuild measures later — the same choice the dive already makes
+    // (_diveNoiseBuild above uses ITS OWN straight-line travel, not a beat-later refinement of it).
+    var _wnkN = 32, _walkBusy = 0;
+    (function _walkNoiseBuild() {
+      var q, nz = [], nzC = [], nzMax = 0, rad = _noiseRadius(totalLen);
+      for (q = 0; q <= _wnkN; q++) nz.push(_densityAt(_outPos(q / _wnkN), rad));
+      for (q = 0; q <= _wnkN; q++) {
+        var lo = nz[Math.max(0, q - 1)], hi = nz[Math.min(_wnkN, q + 1)];
+        nzC.push(Math.abs(hi - lo));
+        if (nzC[q] > nzMax) nzMax = nzC[q];
+      }
+      if (nzMax > 0) {
+        var sum = 0;
+        for (q = 0; q < nzC.length; q++) sum += nzC[q];
+        _walkBusy = (sum / nzC.length) / nzMax;
+      }
+      console.log('§CPE_NOISE_LAW beat=walk-budget src=bbox probes=' + (_wnkN + 1) +
+        ' radius=' + rad.toFixed(1) + 'm elems=' + _densPoints().length +
+        ' meanBusy=' + _walkBusy.toFixed(3) + ' maxChange=' + nzMax +
+        ' swing=' + CINEMA_PACE_SWING +
+        ' — the walk SECONDS below are bought by this number, the same signal that already spaces its frames');
+    })();
     // ⚠ §CPE_SEAM_CONTINUOUS — DO NOT add a pitch term to _spinDeg. It was tried this session and
     // reverted: pricing the walk's opening pitch into the spin makes the spin's DURATION depend on
     // the authored path, which shifts every beat fraction before it and breaks G2's "an edit
@@ -5745,20 +5783,40 @@ async function setupEffects(A, renderer, scene, camera) {
     // every beat fraction before it and breaks G2's "an edit changes nothing before it".
     var _openDir = { x: (_wkA0.x - _wkP0.x) / _wkL, y: _wkDy / _wkL, z: (_wkA0.z - _wkP0.z) / _wkL };
     var _spinDeg = Math.min(180, Math.abs(dYaw) * 180 / Math.PI);
+    var _walkTurnDegVal = _walkTurnDeg();
     var _natSec = {
       // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
       // ("where sudden diff is adverse noise impact and introduce frames to smoothen", the user's
-      // rule, already applied to the walk in `out` below via _walkTurnDeg). A dive that ends deep
-      // inside a busy building buys up to PACE_SWING times the seconds of one that drops into an
-      // empty yard; redistribution alone could never do this, because with the frame count fixed
-      // the mean speed is fixed whatever the parameterization does.
+      // rule). A dive that ends deep inside a busy building buys up to PACE_SWING times the seconds
+      // of one that drops into an empty yard; redistribution alone could never do this, because with
+      // the frame count fixed the mean speed is fixed whatever the parameterization does.
+      // §CPE_WALK_BUDGET_NOISE_BLIND CORRECTION (2026-08-01) — this used to say the walk already got
+      // this treatment "via _walkTurnDeg". It did not: _walkTurnDeg prices GEOMETRY (degrees turned),
+      // not CONTENT (rate of change), so two equal-length equal-turning walks through empty and dense
+      // areas billed identically. `out` below now carries the same `* (1 + (SWING-1)*busy)` factor
+      // the dive uses, with busy = _walkBusy from _walkNoiseBuild above.
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
-      out:   totalLen / CINEMA_WALK_MPS + _walkTurnDeg() / (CINEMA_TURN_DPS / 3),
+      // §CPE_WALK_BUDGET_NOISE_BLIND — same shape as the dive above, one law every beat. The `/3`
+      // that used to inflate the turn charge as a stand-in for busyness is GONE: a degree now costs
+      // CINEMA_TURN_DPS, exactly as the comment above _walkTurnDeg already claims, and busyness
+      // (measured, not assumed) does the job the `/3` was faking.
+      out:   (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS) *
+             (1 + (CINEMA_PACE_SWING - 1) * _walkBusy),
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
     var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.rise + _natSec.orbit;
+    // Whitebox proof for §CPE_WALK_BUDGET_NOISE_BLIND — every term the formula reads, printed
+    // together so a witness can recompute `out` from this line alone and compare against
+    // _natSec.out, rather than trusting the arithmetic happened as claimed.
+    console.log('§CPE_WALK_BUDGET_NOISE_BLIND totalLen=' + totalLen.toFixed(2) + 'm walkMps=' + CINEMA_WALK_MPS +
+      ' turnDeg=' + _walkTurnDegVal.toFixed(1) + ' turnDps=' + CINEMA_TURN_DPS +
+      ' travelSec=' + (totalLen / CINEMA_WALK_MPS).toFixed(3) + ' turnSec=' + (_walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
+      ' rawSec=' + (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
+      ' busy=' + _walkBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
+      ' busyMult=' + (1 + (CINEMA_PACE_SWING - 1) * _walkBusy).toFixed(4) +
+      ' outSec=' + _natSec.out.toFixed(3));
     // An explicit override (the editor's "set the total") scales the whole film uniformly; the SHAPE
     // is geometric either way, so the beat fractions are derived-seconds over the natural total and
     // do not depend on durationSec at all. That is what makes "key 20s and everything speeds up
