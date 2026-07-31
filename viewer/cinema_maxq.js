@@ -39,6 +39,55 @@
                                  // ops landing in one frame must not snap the ground opaque.
   var _ggSched = null, _ggSpan = null, _ggSaved = null, _ggTried = false;
 
+  // ══ §CPE_BUILDUP_WORK_PACED — the film advances by WORK, not by calendar ══════════════════════
+  // User, after two bakes: "construction came on too fast.. is the path and TM consistent?" — and
+  // their logs said no: 210/63,421 placed at t=0.054 in one run, 15,485/63,416 at t=0.053 in another.
+  // The cursor was stepping linearly in DAYS while the derived 4D order dumps thousands of elements
+  // at nearby timestamps, so a quarter of the model appeared in the first 5% of the film and the
+  // rest of the film had little left to raise.
+  //
+  // Film fraction -> the k-th element PLACED, not the k-th day. 10% of the film is 10% of the
+  // building on any model, and it no longer depends on how the generated timestamps cluster — which
+  // is the consistency the user actually asked for.
+  var _wpSched = null, _wpTried = false;
+
+  function _workPacingArm() {
+    _wpTried = true; _wpSched = null;
+    if (typeof window.tmWorkSchedule !== 'function') {
+      // DEGRADE, DON'T DISABLE — the §CPE_GHOST_GROUND lesson, applied up front. A stale cached
+      // time_machine.js must cost pacing quality, never the film.
+      console.log('§CPE_BUILDUP_PACING mode=calendar reason=tmWorkSchedule unavailable (older time_machine.js) — film advances by DAYS, work may arrive in bursts');
+      return false;
+    }
+    var sch = window.tmWorkSchedule();
+    if (!sch || !sch.total || !(sch.projectEnd > sch.projectStart)) {
+      console.log('§CPE_BUILDUP_PACING mode=calendar reason=no usable work schedule');
+      return false;
+    }
+    _wpSched = sch;
+    console.log('§CPE_BUILDUP_PACING mode=work ops=' + sch.total +
+      ' — t=0.10 now means 10% of the ELEMENTS placed, not 10% of the days elapsed' +
+      ' (this model puts ' + (sch.workInFirstTenthOfCalendar * 100).toFixed(1) + '% of its work in the first 10% of its calendar)');
+    return true;
+  }
+
+  // The cursor this frame should ask for. Pure function of the film fraction, so preview and bake
+  // cannot diverge and two runs of the same film ask for identical cursors.
+  function _workCursorAt(tFilm, bkState) {
+    if (!_wpTried) _workPacingArm();
+    var t = Math.max(0, Math.min(1, tFilm));
+    if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
+    if (t <= 0) return _wpSched.projectStart;
+    if (t >= 1) return _wpSched.projectEnd;
+    // k-th completion. `ends` is sorted, so this is the instant at which exactly k ops are done.
+    var k = Math.round(t * _wpSched.total);
+    if (k < 1) return _wpSched.projectStart;
+    if (k >= _wpSched.total) return _wpSched.projectEnd;
+    return _wpSched.ends[k - 1];
+  }
+
+  function _workPacingReset() { _wpSched = null; _wpTried = false; }
+
   // Called ONCE per preview/bake, after the buildup timeline is in force. Returns true when armed.
   function _ghostGroundArm(bkState) {
     var A = window.APP;
@@ -158,7 +207,7 @@
     _ggSaved = null;
   }
 
-  var MAXQ_V = 'v19 (§CPE_GHOST_GROUND_RATIO the ground solidifies as the SHARE of above-ground work rises — generic to any building, self-disabling where there is no substructure; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v20 (§CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_GHOST_GROUND_RATIO the ground solidifies as the SHARE of above-ground work rises — generic to any building, self-disabling where there is no substructure; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -944,7 +993,10 @@
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
         if (_buildup && _bkState) {
           var _bkT = _tFilm(_tn);
-          var _bkMs = _bkState.projectStart + _bkT * (_bkState.projectEnd - _bkState.projectStart);
+          // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
+          // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
+          // clusters its timestamps.
+          var _bkMs = _workCursorAt(_bkT, _bkState);
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
@@ -1030,6 +1082,7 @@
       // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
       // user into normal navigation for the rest of the session.
       try { _ghostGroundRestore(); } catch (eGG) {}
+      _workPacingReset();
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
@@ -1080,6 +1133,7 @@
       // bake would look like a corrupted schedule to the next person who opens the timeline.
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
       try { _ghostGroundRestore(); } catch (e4) {}
+      try { _workPacingReset(); } catch (e5) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
@@ -1104,6 +1158,10 @@
       window.APP.cancelMaxQualityOrbit = cancel;
       // §CPE_GHOST_GROUND: exported so cinema_path_editor's REHEARSAL drives the identical curve —
       // one implementation, two call sites (the §CPE_ROOM_TITLE precedent).
+      // §CPE_BUILDUP_WORK_PACED: the rehearsal must ask for the same cursor as the bake, or the
+      // preview shows a different construction rate from the film it is previewing.
+      window.APP.buildupCursorAt = _workCursorAt;
+      window.APP.buildupPacingReset = _workPacingReset;
       window.APP.ghostGroundArm = _ghostGroundArm;
       window.APP.ghostGroundAt = _ghostGroundAt;
       window.APP.ghostGroundRestore = _ghostGroundRestore;
