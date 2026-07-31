@@ -4,6 +4,29 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.33.0](https://github.com/red1oon/bim-ootb/compare/v1.32.0...v1.33.0) (2026-07-30)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_AIM_DEPTH — face the furthest facade when boxed in, not the closest fleeting one ([#1101](https://github.com/red1oon/bim-ootb/issues/1101)) ([2bc17d1](https://github.com/red1oon/bim-ootb/commit/2bc17d137d09526e84f625e7fbc39440f8499699))
+* **modeller:** §ANCHOR — void-consumed hosts as invisible ride anchors (user-approved, guardrailed) ([#1095](https://github.com/red1oon/bim-ootb/issues/1095)) ([03891df](https://github.com/red1oon/bim-ootb/commit/03891df275184bed9312ce18ec333fb7713593b5))
+* **modeller:** §LOD400-LAYERS — layered walls reach the live residents + envelope refusal ([#1096](https://github.com/red1oon/bim-ootb/issues/1096)) ([8bf6035](https://github.com/red1oon/bim-ootb/commit/8bf6035e04c0f877ccd2f84227688611b393dd0a))
+
+
+### 🐛 Fixes
+
+* **4D:** §4D_FACADE_ORDER — populate the in-file SEQUENCE_NAME_OVERRIDES default (viewer.html never fetches the JSON) ([#1100](https://github.com/red1oon/bim-ootb/issues/1100)) ([1864c4c](https://github.com/red1oon/bim-ootb/commit/1864c4cb5b7ea7552f849dbfb172e72122be0121))
+* **4D:** glazed curtain-wall panels no longer erect before their host wall ([#1098](https://github.com/red1oon/bim-ootb/issues/1098)) ([c51cfcf](https://github.com/red1oon/bim-ootb/commit/c51cfcf57b54f08befd37ecc763acc664c6a9b9e))
+* **cinema:** §CPE_AIM_DEPTH — incoming-seam taper + buildup guard, radii clamp partial ([#1103](https://github.com/red1oon/bim-ootb/issues/1103)) ([05f39f1](https://github.com/red1oon/bim-ootb/commit/05f39f15ee9dde16e034a5e97deb38b6188e6849))
+* **cinema:** §CPE_HOSE_LENGTH_BLIND — the editor costed a curve that is never flown ([#1107](https://github.com/red1oon/bim-ootb/issues/1107)) ([4d3aa7d](https://github.com/red1oon/bim-ootb/commit/4d3aa7d3d08d4a46467fb03309dfae7ebcf6f146))
+* **cinema:** §CPE_REOPEN_NODE — the added node survives OK, and an unselected stick is dark blue ([#1104](https://github.com/red1oon/bim-ootb/issues/1104)) ([6ed67f8](https://github.com/red1oon/bim-ootb/commit/6ed67f83392caf4b9ea2b32f6f174e7b35eede55))
+* **cinema:** §CPE_ROOM_TITLE_HEIGHT_BLIND — a title named the room you were flying OVER ([#1108](https://github.com/red1oon/bim-ootb/issues/1108)) ([ef7caf3](https://github.com/red1oon/bim-ootb/commit/ef7caf3a34266376045292bb1b5b933f3723b627))
+* **cinema:** §CPE_STICK_RED_BAR — a stick is a RED bar with BLUE dots, not an all-blue smudge ([#1105](https://github.com/red1oon/bim-ootb/issues/1105)) ([d8209ac](https://github.com/red1oon/bim-ootb/commit/d8209acdd0d05662d99d572a141299d9ba62c2d8))
+* **modeller:** row 33 — withdraw the partial layer ship; §LAYER-GATE refuses the 2 clip-trimmed party walls loudly (W-E2E-LAYERS-RESIDENTS 8/8 vs LIVE, RED-first) ([#1099](https://github.com/red1oon/bim-ootb/issues/1099)) ([3f29f15](https://github.com/red1oon/bim-ootb/commit/3f29f159d40f6142c417007c225a021e62db50a4))
+* **modeller:** row 33 exception ruling — the two clipped party walls come back as 5 real slabs (W-E2E-LAYERS-RESIDENTS 8/8 vs LIVE, RED-first) ([#1102](https://github.com/red1oon/bim-ootb/issues/1102)) ([7cfedab](https://github.com/red1oon/bim-ootb/commit/7cfedabf778b9c3fa55b968407dbaae8ea56abd8))
+* **seams:** §F2 IDB cache version drift — 4D/5D re-download + ERP persist loss ([#1106](https://github.com/red1oon/bim-ootb/issues/1106)) ([d2766f5](https://github.com/red1oon/bim-ootb/commit/d2766f51db5d418fc09b43cffedd21c4a94977c5))
+
 ## [1.32.0](https://github.com/red1oon/bim-ootb/compare/v1.31.0...v1.32.0) (2026-07-30)
 
 
