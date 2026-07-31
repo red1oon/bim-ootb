@@ -113,6 +113,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         out.previewSamples.push({ t, bake: byT[+t.toFixed(4)], preview: preview == null ? null : +preview.toFixed(4) });
       }
 
+      // G-GG-10: DEGRADE, DON'T DISABLE. Hide the precise API the way a stale service-worker copy of
+      // time_machine.js would, and the feature must still arm on the coarse proxy rather than vanish.
+      A.ghostGroundRestore();
+      A.ground.visible = false;
+      const realSched = window.tmGroundSchedule;
+      window.tmGroundSchedule = undefined;
+      out.fallbackArmed = A.ghostGroundArm(bk);
+      A.ground.visible = true;
+      out.fallbackOpacityEarly = A.ghostGroundAt(0.001, TOTAL);
+      out.fallbackOpacityLate = A.ghostGroundAt(1, TOTAL);
+      window.tmGroundSchedule = realSched;
+
+      // G-GG-11: LAZY ARM. Never call arm; the first per-frame tick must arm itself, because the
+      // up-front arm runs before photoreal staging exists and that ordering disabled it live.
+      A.ghostGroundRestore();
+      A.ground.visible = false;
+      out.lazyFirstTick = A.ghostGroundAt(0.001, TOTAL, bk);
+      out.lazyArmedWithoutExplicitArm = out.lazyFirstTick != null;
+
       A.ghostGroundRestore();
       out.after = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
       try { window.tmRestoreDerivedOrder(); } catch (e) {}
@@ -179,6 +198,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         `first above-ground element at t=${res.triggerT.toFixed(4)}; ground reaches opaque at ` +
         `t=${res.opaqueAt == null ? 'never' : res.opaqueAt.toFixed(4)}  ` +
         `(above=${res.sched.aboveTotal} below=${res.sched.belowTotal}, opaque once 5% of above-ground work is placed)`);
+
+      P('G-GG-10 a stale time_machine.js DEGRADES to the coarse rule instead of disabling the feature',
+        res.fallbackArmed === true && res.fallbackOpacityEarly != null && res.fallbackOpacityEarly < 0.3 &&
+        res.fallbackOpacityLate === 1,
+        `with tmGroundSchedule hidden: armed=${res.fallbackArmed} early=${res.fallbackOpacityEarly} late=${res.fallbackOpacityLate}  ` +
+        `(this feature spans 3 files; one stale copy must not silently kill it)`);
+
+      P('G-GG-11 the first per-frame tick arms itself — no dependency on WHEN arm is called',
+        res.lazyArmedWithoutExplicitArm === true && res.lazyFirstTick < 0.3,
+        `ghostGroundArm() never called; first ghostGroundAt() returned ${res.lazyFirstTick}`);
 
       const trig = logs.filter(l => /§GHOST_GROUND_SCHEDULE /.test(l)).slice(-1)[0] || '';
       const armed = logs.filter(l => /§GHOST_GROUND armed/.test(l)).slice(-1)[0] || '';

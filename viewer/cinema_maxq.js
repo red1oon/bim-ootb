@@ -37,12 +37,12 @@
   var GHOST_REVEAL_FRAC = 0.05;
   var GHOST_FADE_SEC = 3.0;      // floor on how fast opacity may rise, in FILM seconds — a batch of
                                  // ops landing in one frame must not snap the ground opaque.
-  var _ggSched = null, _ggSpan = null, _ggSaved = null;
+  var _ggSched = null, _ggSpan = null, _ggSaved = null, _ggTried = false;
 
   // Called ONCE per preview/bake, after the buildup timeline is in force. Returns true when armed.
   function _ghostGroundArm(bkState) {
     var A = window.APP;
-    _ggSched = null;
+    _ggSched = null; _ggTried = true;
     // ⚠ NO `A.ground.visible` GUARD. The ground plane is turned on by photoreal STAGING, which runs
     // per frame INSIDE the capture loop (§PHOTO_STAGING on -> §GROUND_MAP key=paved) and off again
     // after each frame. Arming happens once, BEFORE that loop, when the plane is still hidden — so a
@@ -57,9 +57,14 @@
     // feature was absent, skipped, or broken. A refusal that says nothing is indistinguishable from
     // code that was never deployed. Every exit names itself now — "make the logs tell u".
     if (!bkState) { console.log('§GHOST_GROUND skip reason=no buildup state'); return false; }
-    if (typeof window.tmGroundSchedule !== 'function') {
-      console.log('§GHOST_GROUND skip reason=window.tmGroundSchedule is ' + (typeof window.tmGroundSchedule) +
-        ' — time_machine.js is older than this build (mixed service-worker cache); close ALL tabs of the site and reopen');
+    // ⚠ DEGRADE, DO NOT DISABLE. This feature spans three files (cinema_maxq + time_machine + tools),
+    // and a service worker can serve one of them from an older cache — which silently killed it twice
+    // in live testing. The precise rule needs `tmGroundSchedule`; when that is absent we fall back to
+    // `tmPlacedCount`, which has existed since the buildup shipped, and say so in the log. A feature
+    // that spans modules must not have a single point of version failure.
+    var usingFallback = (typeof window.tmGroundSchedule !== 'function');
+    if (usingFallback && typeof window.tmPlacedCount !== 'function') {
+      console.log('§GHOST_GROUND skip reason=neither tmGroundSchedule nor tmPlacedCount is available');
       return false;
     }
     var z = A.groundIfcZ;
@@ -69,17 +74,26 @@
       console.log('§GHOST_GROUND skip reason=buildup span is ' + span + ' (projectStart=' + bkState.projectStart +
         ' projectEnd=' + bkState.projectEnd + ')'); return false;
     }
-    var sched = window.tmGroundSchedule(z);
-    if (!sched || !sched.aboveTotal) { console.log('§GHOST_GROUND skip reason=no above-ground work in this timeline'); return false; }
-    // A model with NOTHING below ground has no substructure to reveal — ghosting it would be a lie
-    // about that building. Self-disabling, not a special case anyone has to configure.
-    if (!sched.belowTotal) { console.log('§GHOST_GROUND skip reason=this model has no below-ground elements (nothing to reveal)'); return false; }
+    var sched = usingFallback ? null : window.tmGroundSchedule(z);
+    if (!usingFallback) {
+      if (!sched || !sched.aboveTotal) { console.log('§GHOST_GROUND skip reason=no above-ground work in this timeline'); return false; }
+      // A model with NOTHING below ground has no substructure to reveal — ghosting it would be a lie
+      // about that building. Self-disabling, not a special case anyone has to configure.
+      if (!sched.belowTotal) { console.log('§GHOST_GROUND skip reason=this model has no below-ground elements (nothing to reveal)'); return false; }
+    } else {
+      // Coarse proxy: the share of ALL placement, not just above-ground. Less faithful (it cannot
+      // tell a pile cap from a parapet) but it moves in the same direction at the same time, and it
+      // is strictly better than the feature vanishing.
+      if (!bkState.ops) { console.log('§GHOST_GROUND skip reason=fallback needs an op count and bkState.ops is ' + bkState.ops); return false; }
+      sched = { fallback: true, aboveTotal: bkState.ops, belowTotal: 0, ends: null, firstAboveMs: bkState.projectStart };
+    }
     _ggSched = sched;
     _ggSpan = { start: bkState.projectStart, end: bkState.projectEnd, span: span,
                 firstT: sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span };
     var m = A.ground.material;
     _ggSaved = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
-    console.log('§GHOST_GROUND armed aboveOps=' + sched.aboveTotal + ' belowOps=' + sched.belowTotal +
+    console.log('§GHOST_GROUND armed rule=' + (sched.fallback ? 'FALLBACK(all-placement proxy — tmGroundSchedule unavailable)' : 'above-ground share') +
+      ' aboveOps=' + sched.aboveTotal + ' belowOps=' + sched.belowTotal +
       ' revealFrac=' + GHOST_REVEAL_FRAC + ' (opaque once ' + Math.ceil(sched.aboveTotal * GHOST_REVEAL_FRAC) +
       ' above-ground elements are placed) ghost=' + GHOST_OPACITY + ' maxRiseSec=' + GHOST_FADE_SEC);
     return true;
@@ -89,6 +103,7 @@
   // the same `end_ts <= cursor` definition tmPlacedCount uses, so the ghost and the visible model
   // can never disagree about what is built.
   function _ggPlacedAbove(ms) {
+    if (_ggSched.fallback) return window.tmPlacedCount(ms);
     var e = _ggSched.ends, lo = 0, hi = e.length;
     while (lo < hi) { var mid = (lo + hi) >> 1; if (e[mid] <= ms) lo = mid + 1; else hi = mid; }
     return lo;
@@ -97,8 +112,14 @@
   // Per frame. `tFilm` is the film fraction driving the cursor; `totalSec` the film's length.
   // Opacity follows the SHARE of above-ground work placed — the ground solidifies as the building
   // rises — with a rate limit so a batch of ops cannot turn the ramp into a cut.
-  function _ghostGroundAt(tFilm, totalSec) {
+  function _ghostGroundAt(tFilm, totalSec, bkState) {
     var A = window.APP;
+    // LAZY ARM. Arming used to happen once, before the frame loop, which made the feature hostage to
+    // state that is only true later (the ground plane is not even visible until photoreal staging
+    // runs INSIDE the loop — that exact ordering disabled it in live testing). Arming on the first
+    // tick removes the ordering dependency entirely; `_ggTried` keeps it a one-shot so a genuine
+    // refusal is not re-logged 1137 times.
+    if (!_ggSched && !_ggTried && bkState) { _ggTried = true; _ghostGroundArm(bkState); }
     if (!_ggSched || !A || !A.ground || !A.ground.material) return null;
     var t = Math.max(0, Math.min(1, tFilm));
     var ms = _ggSpan.start + t * _ggSpan.span;
@@ -128,7 +149,7 @@
 
   function _ghostGroundRestore() {
     var A = window.APP;
-    _ggSched = null;
+    _ggSched = null; _ggTried = false;
     if (_ggSaved && A && A.ground && A.ground.material) {
       var m = A.ground.material;
       m.transparent = _ggSaved.transparent; m.opacity = _ggSaved.opacity; m.depthWrite = _ggSaved.depthWrite;
@@ -927,7 +948,7 @@
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
-          var _ggO = _ghostGroundAt(_bkT, nFrames / fps);
+          var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState);
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             console.log('§CPE_BUILDUP frame=' + i + '/' + nFrames + ' t=' + _bkT.toFixed(3) +
               ' cursor=' + Math.round(_bkMs) + ' placed=' + (window.tmPlacedCount ? window.tmPlacedCount(_bkMs) : '?') +
