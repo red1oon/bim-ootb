@@ -1052,6 +1052,10 @@
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
         if (bkPrev && window.tmSetCursor) {
           window.tmSetCursor(bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart));
+          // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
+          // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
+          // though the wall-clock speeds differ by 15x.
+          if (a.ghostGroundAt) a.ghostGroundAt(tn, _titleTotalSec || dur / 1000);
         }
         frames++;
         if (a.markDirty) a.markDirty();
@@ -1064,6 +1068,9 @@
         // Hand Time Machine back exactly as it was — the preview must never leave the user's
         // timeline re-ordered, same contract the bake honours on every exit path.
         if (bkPrev && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); bkPrev = null; }
+        // §CPE_GHOST_GROUND: same exit contract as the Time Machine restore above — the rehearsal
+        // must not leave the ground see-through for the editing session that follows it.
+        if (a.ghostGroundRestore) a.ghostGroundRestore();
         if (a.roomTitleLiveStop) a.roomTitleLiveStop();
         _state.flying = false;
         console.log('§CPE_PREVIEW done frames=' + frames + ' msPerFrame=' + msPerFrame.toFixed(1) +
@@ -1082,6 +1089,9 @@
         var t0b = performance.now();
         var ok = await window.tmActivateForBake();
         if (ok) bkPrev = window.tmFollowTimeline();
+        // §CPE_GHOST_GROUND: armed from the SAME bkState the bake arms from, right after the
+        // timeline becomes real — the trigger is a cursor timestamp and cannot exist before that.
+        if (bkPrev && a.ghostGroundArm) a.ghostGroundArm(bkPrev);
         console.log('§CPE_PREVIEW_BUILDUP ' + (bkPrev ? 'armed mode=' + (bkPrev.source === 'captured' ? 'S' : 'T') +
             ' ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no timeline to follow)') +
           ' setupMs=' + (performance.now() - t0b).toFixed(0) +
