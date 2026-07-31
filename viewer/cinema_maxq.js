@@ -10,7 +10,85 @@
   // §MAXQ_LOADED: version fingerprint FIRST — a pasted console log must answer "which build is
   // this?" on its own (user feedback 2026-07-19: "u got to make the logs tell u"). Bump MAXQ_V
   // on every behavior change to this module.
-  var MAXQ_V = 'v17 (§CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  // ══ §CPE_GHOST_GROUND (CINEMA_PATH_EDITOR.md) — a buildup film opens on SUBSTRUCTURE, and
+  // substructure sits BELOW the ground plane (§GROUND_Y, the L1 slab datum). Measured on the user's
+  // own Hospital bake: `placed=210/63421` at frame 120, every one of those 210 under an opaque paved
+  // plane with 4,043 shadow casters on it. The opening was not empty — it was OCCLUDED, and no
+  // camera or gaze change could have revealed it.
+  //
+  // While the buildup has placed nothing at or above the ground datum the plane renders at GHOST
+  // opacity — the pile caps and ground beams read through it like a survey drawing. When the first
+  // at-or-above-ground element lands (the L1 slab itself qualifies — user: "until its above slabs
+  // appears") the plane eases back to fully opaque and STAYS there.
+  //
+  // The fade is a smoothstep over FILM time, not a cut (user: "it be cool when they return back to
+  // opaque gradually rather than right away") and not wall time — expressed as a film FRACTION so
+  // the 10 s rehearsal and the 148 s bake show the identical curve.
+  //
+  // Deliberately NOT "switch the ground off", which the user floated first and flagged the risk of
+  // themselves: that takes §PHOTO_SHADOW's casters and the sense of a site with it, and the
+  // foundation floats in blackness.
+  var GHOST_OPACITY = 0.22;      // survey-drawing translucency; low enough to read what is under it
+  var GHOST_FADE_SEC = 3.0;      // seconds of FILM time the return to opaque is eased over
+  var _ggT = null, _ggSaved = null;
+
+  // Called ONCE per preview/bake, after the buildup timeline is in force. Returns true when armed.
+  function _ghostGroundArm(bkState) {
+    var A = window.APP;
+    _ggT = null;
+    if (!A || !A.ground || !A.ground.material || !A.ground.visible) return false;
+    if (!bkState || typeof window.tmFirstAboveGroundMs !== 'function') return false;
+    var z = A.groundIfcZ;
+    if (!isFinite(z)) { console.log('§GHOST_GROUND skip reason=no groundIfcZ (tools.js §GROUND_Y never ran)'); return false; }
+    var span = bkState.projectEnd - bkState.projectStart;
+    if (!(span > 0)) return false;
+    var ms = window.tmFirstAboveGroundMs(z);
+    if (ms == null) { console.log('§GHOST_GROUND skip reason=nothing is ever placed at or above the ground datum'); return false; }
+    var t = (ms - bkState.projectStart) / span;
+    // A trigger at or before t=0 means the film never opens underground — ghosting would be a lie
+    // about this building, so it stays off rather than ghosting a frame or two for symmetry.
+    if (!(t > 0)) { console.log('§GHOST_GROUND skip reason=first above-ground element is placed at t=' + t.toFixed(3) + ' (film never opens below ground)'); return false; }
+    var m = A.ground.material;
+    _ggSaved = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
+    _ggT = t;
+    console.log('§GHOST_GROUND armed triggerT=' + t.toFixed(4) + ' ghost=' + GHOST_OPACITY +
+      ' fadeSec=' + GHOST_FADE_SEC + ' — ground is see-through until the first at-or-above-ground element');
+    return true;
+  }
+
+  // Per frame. `tFilm` is the film fraction the BUILDUP is at (the same number that drives the
+  // cursor), `totalSec` the film's own length. Returns the opacity applied, or null when not armed.
+  function _ghostGroundAt(tFilm, totalSec) {
+    var A = window.APP;
+    if (_ggT == null || !A || !A.ground || !A.ground.material) return null;
+    var fadeFrac = (totalSec > 0) ? Math.min(0.5, GHOST_FADE_SEC / totalSec) : 0.05;
+    var u = (tFilm - _ggT) / Math.max(1e-6, fadeFrac), o;
+    if (u <= 0) o = GHOST_OPACITY;
+    else if (u >= 1) o = 1;
+    else o = GHOST_OPACITY + (1 - GHOST_OPACITY) * (u * u * (3 - 2 * u));   // smoothstep, no cut
+    var m = A.ground.material, solid = o > 0.999;
+    m.opacity = o;
+    m.transparent = !solid;
+    // A translucent floor that writes depth can occlude other transparent geometry drawn after it;
+    // the opaque substructure is already in the depth buffer either way, so this only affects the
+    // transparent pass. Restored with everything else.
+    m.depthWrite = solid;
+    return o;
+  }
+
+  // MUST run on every exit path. The ground material is shared with normal viewing — a bake that
+  // leaves it at 0.22 ghosts the ground for the rest of the session.
+  function _ghostGroundRestore() {
+    var A = window.APP;
+    if (_ggSaved && A && A.ground && A.ground.material) {
+      var m = A.ground.material;
+      m.transparent = _ggSaved.transparent; m.opacity = _ggSaved.opacity; m.depthWrite = _ggSaved.depthWrite;
+      console.log('§GHOST_GROUND restored opacity=' + m.opacity + ' transparent=' + m.transparent);
+    }
+    _ggSaved = null; _ggT = null;
+  }
+
+  var MAXQ_V = 'v18 (§CPE_GHOST_GROUND the ground goes see-through while the buildup is entirely below it, then eases back to opaque; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -758,6 +836,9 @@
             // §5 tier 2 — a real, model-derived 4D. Never "the schedule", never "a programme".
             _status('🎬 Building to this model\'s 4D timeline (' + _bkState.placed + ' elements, as the Time Machine has it)');
           }
+          // §CPE_GHOST_GROUND: armed here because this is where the buildup timeline becomes real —
+          // the trigger is a cursor timestamp, so it cannot be computed before the ops are ordered.
+          if (_bkState) _ghostGroundArm(_bkState);
         }
       }
       // §CPE_ROOM_TITLE — one coarse pre-pass over the WHOLE (already clip/buildup-resolved) frame
@@ -795,10 +876,14 @@
           var _bkT = _tFilm(_tn);
           var _bkMs = _bkState.projectStart + _bkT * (_bkState.projectEnd - _bkState.projectStart);
           window.tmSetCursor(_bkMs);
+          // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
+          // step with what is actually placed.
+          var _ggO = _ghostGroundAt(_bkT, nFrames / fps);
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             console.log('§CPE_BUILDUP frame=' + i + '/' + nFrames + ' t=' + _bkT.toFixed(3) +
               ' cursor=' + Math.round(_bkMs) + ' placed=' + (window.tmPlacedCount ? window.tmPlacedCount(_bkMs) : '?') +
-              '/' + _bkState.ops);
+              '/' + _bkState.ops +
+              (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)));
           }
         }
         A.startStillRefine();
@@ -872,6 +957,9 @@
       if (_bkState && typeof window.tmRestoreDerivedOrder === 'function') {
         window.tmRestoreDerivedOrder(); _bkState = null;
       }
+      // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
+      // user into normal navigation for the rest of the session.
+      try { _ghostGroundRestore(); } catch (eGG) {}
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
@@ -921,6 +1009,7 @@
       // §CPE_BUILDUP: same restore on the THROW path. A re-keyed op-log left behind by a crashed
       // bake would look like a corrupted schedule to the next person who opens the timeline.
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
+      try { _ghostGroundRestore(); } catch (e4) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
@@ -943,6 +1032,11 @@
     if (window.APP) {
       window.APP.startMaxQualityOrbit = start;
       window.APP.cancelMaxQualityOrbit = cancel;
+      // §CPE_GHOST_GROUND: exported so cinema_path_editor's REHEARSAL drives the identical curve —
+      // one implementation, two call sites (the §CPE_ROOM_TITLE precedent).
+      window.APP.ghostGroundArm = _ghostGroundArm;
+      window.APP.ghostGroundAt = _ghostGroundAt;
+      window.APP.ghostGroundRestore = _ghostGroundRestore;
       clearInterval(_attach);
     }
   }, 500);

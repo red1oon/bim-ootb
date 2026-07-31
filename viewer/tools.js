@@ -81,6 +81,11 @@ function setupTools(A) {
       }
       var p = A.ifc2three(0, 0, _gLvl);
       A.ground.position.y = p.y;
+      // §CPE_GHOST_GROUND: the plane's own IFC datum, published so the buildup can ask "is anything
+      // placed at or above the ground yet?" against the SAME number that positioned the plane. A
+      // second, independently-derived ground height would be a way for the ghost to disagree with
+      // what it is ghosting.
+      A.groundIfcZ = _gLvl;
       console.log('§GROUND_Y src=' + _gSrc + ' z=' + _gLvl.toFixed(2) + ' y=' + p.y.toFixed(2));
     } catch(e) { console.warn('§GROUND_Y error', e); }
   };

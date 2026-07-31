@@ -5224,6 +5224,56 @@
     return n;
   };
 
+  // §CPE_GHOST_GROUND (CINEMA_PATH_EDITOR.md) — the cursor time at which the buildup first places
+  // something that is NOT underground. A buildup film opens on substructure, and substructure sits
+  // below the ground plane (§GROUND_Y), so the opening is not empty — it is OCCLUDED. This is the
+  // moment the ghosted plane may start returning to opaque.
+  //
+  // `bottom >= ifcZ - EPS` deliberately COUNTS the ground-floor slab itself (its bottom IS the
+  // ground datum, by construction — tools.js picks the plane's height from that very slab). The
+  // user's own framing was "until its above slabs appears", and the slab appearing is exactly the
+  // moment the ground stops needing to be see-through.
+  //
+  // One DB read, one pass over the ops, called ONCE per bake/preview — never per frame.
+  // Returns null when nothing is ever at or above the datum (a fully-buried model, or no ops), and
+  // the caller must treat null as "never ghost" rather than "ghost forever".
+  window.tmFirstAboveGroundMs = function(ifcZ) {
+    var app = A();
+    if (!app || !app.db || !isFinite(ifcZ) || !_ops.length) return null;
+    var EPS = 0.05, above = Object.create(null), rows;
+    try {
+      rows = app.db.exec('SELECT guid, center_z - COALESCE(bbox_z, 0) / 2.0 AS bottom ' +
+                         'FROM element_transforms WHERE center_z IS NOT NULL');
+    } catch (e) { console.warn('§GHOST_GROUND_TRIGGER_FAIL ' + e.message); return null; }
+    if (!rows.length || !rows[0].values.length) return null;
+    var vals = rows[0].values, nAbove = 0;
+    for (var r = 0; r < vals.length; r++) {
+      if (vals[r][1] != null && vals[r][1] >= ifcZ - EPS) { above[vals[r][0]] = 1; nAbove++; }
+    }
+    // ⚠ MIN over end_ts, NOT the first match in start order. `_ops` is ordered by start_ts, but an
+    // element only BECOMES VISIBLE when its op ends — `tmPlacedCount` counts `end_ts <= cursor`, and
+    // the ghost has to lift on the same definition or it lifts while the ground is still bare.
+    // Measured on Hospital: taking the first start-ordered match gave triggerT=0.0162 while ops with
+    // EARLIER end_ts existed further down the list. One extra pass over 63k ops, once per bake.
+    var firstMs = null, scanned = 0, matched = 0, belowN = 0, lastBelowMs = null;
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      scanned++;
+      if (!g || !above[g]) { if (g) { belowN++; if (lastBelowMs == null || op.end_ts > lastBelowMs) lastBelowMs = op.end_ts; } continue; }
+      matched++;
+      if (firstMs == null || op.end_ts < firstMs) firstMs = op.end_ts;
+    }
+    console.log('§GHOST_GROUND_TRIGGER groundZ=' + ifcZ.toFixed(2) + ' aboveElems=' + nAbove + '/' + vals.length +
+      ' firstAboveMs=' + (firstMs == null ? 'none' : Math.round(firstMs)) +
+      ' aboveOps=' + matched + ' belowOps=' + belowN +
+      ' lastBelowMs=' + (lastBelowMs == null ? 'none' : Math.round(lastBelowMs)) +
+      ' opsScanned=' + scanned + '/' + _ops.length +
+      ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
+      ' — before this the buildup is entirely below the ground plane');
+    return firstMs;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. Returns its boolean (count>0 / false); callers cache.
