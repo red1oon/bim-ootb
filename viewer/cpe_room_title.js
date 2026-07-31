@@ -25,6 +25,14 @@ function setupCpeRoomTitle(A) {
   // legible; it is CUT SHORT only by the next room's caption, because the newer room is what the
   // viewer is actually in.
   var MIN_HOLD = 3.0;     // seconds — floor on how long a caption stays readable
+  // §CPE_ROOM_TITLE_LEAD (user, 2026-08-01: "room labelling ... should not wait to be in the room but
+  // as it is heading towards a room, about 2 secs before will be view point friendly", then "for every
+  // room too... not wait till inside room it can be too late as 3 secs optimum label appearance", then
+  // "even though just left room,.. but when new room appears, it tries to show also up to 3 secs.. and
+  // if misses, then skips"). A caption is a 3-SECOND SLOT THAT OPENS 2s BEFORE THE DOORWAY: the name
+  // arrives as a documentary lower-third does, just before its subject. It is a lead-in — it names the
+  // room being ENTERED, which is why it may never be described as "where the camera is".
+  var LEAD = 2.0;         // seconds — how early a caption appears, ahead of the room it names
 
   // Point-in-room via the shared room graph (A.getRoomGraph — the ONE cache per building every
   // other room consumer already shares, FLY_TOUR_CORRIDOR_GRAPH.md §S2). Only 'room'-kind nodes
@@ -139,16 +147,31 @@ function setupCpeRoomTitle(A) {
     // `suppressed` = rooms crossed too fast (MIN_DWELL), high `rejectedByHeight` = the camera spent
     // its time above the building, `storeyPitch=0.0` = single-storey, height test disabled.
     var g0 = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
-    // §CPE_ROOM_TITLE_HOLD: extend each caption to MIN_HOLD, clipped by the NEXT caption's start.
-    // Exposed (below) so the witness gates this exact function rather than a re-implementation.
-    var held = A.roomTitleApplyHold(kept, totalSec);
-    var extended = 0;
-    for (var h = 0; h < kept.length; h++) if (held[h].tEnd > kept[h].tEnd + 1e-9) extended++;
+    // §CPE_ROOM_TITLE_LEAD: where the dive ends, so the film's FIRST caption is not thrown up over
+    // empty sky. `plan.beats` is the plan's own §CINEMA_BEATS fractions — read, never re-derived.
+    // DEGRADE, DON'T DISABLE (this lane's own lesson from §CPE_GHOST_GROUND): a re-opened authored
+    // path or a stale cached effects.js has no `beats`, and that must cost the dive clip only — the
+    // captions still lead. Silence is what made that bug expensive last time, so it is logged either way.
+    var diveEndSec = 0, diveSrc = 'none(no dive clip)';
+    if (plan && plan.beats && plan.beats.dive > 0) {
+      diveEndSec = plan.beats.dive * totalSec;
+      diveSrc = 'plan.beats';
+    }
+    console.log('§CPE_ROOM_TITLE_DIVE src=' + diveSrc + ' diveEndSec=' + diveEndSec.toFixed(2));
+    // §CPE_ROOM_TITLE_LEAD: open each caption LEAD early, drop the ones that cannot get their full
+    // MIN_HOLD, and let the newer room replace the older. Exposed (below) so the witness gates this
+    // exact function rather than a re-implementation.
+    var held = A.roomTitleApplyLead(kept, totalSec, diveEndSec);
+    var led = 0;
+    for (var h = 0; h < held.length; h++) if (held[h].entry > held[h].tStart + 1e-9) led++;
 
-    console.log('§CPE_ROOM_TITLE_TIMELINE segments=' + kept.length + ' suppressed=' + suppressed +
+    console.log('§CPE_ROOM_TITLE_TIMELINE segments=' + held.length + '/' + kept.length +
+      ' suppressed=' + suppressed +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
-      ' held=' + extended + '/' + kept.length + '@' + MIN_HOLD + 's' +
+      ' lead=' + led + '/' + held.length + '@' + LEAD + 's' +
+      ' held=' + (held._held || 0) + '/' + held.length + '@' + MIN_HOLD + 's' +
+      ' skipped=' + (held._skipped || 0) + '(<' + MIN_HOLD + 's)' +
       ' totalSec=' + totalSec.toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(1));
     return held;
   };
@@ -158,6 +181,54 @@ function setupCpeRoomTitle(A) {
   //   "give it 3 secs"                        -> every caption lasts at least MIN_HOLD
   //   "if another room cuts in ... it replace" -> unless the next caption starts first, which wins
   // A caption is never shortened below what it earned, and never runs past the film.
+  // §CPE_ROOM_TITLE_LEAD — the arbitration, and the ONLY place caption times are decided. Pure, so
+  // the witness gates it at exact times instead of hoping a camera path produces them. Input is the
+  // room-dwell list (tStart = the sample the camera ENTERED on, tEnd = the sample it LEFT on); output
+  // is the captions actually shown, each carrying `entry` so a caller — and the gate — can still see
+  // the doorway the caption is leading into.
+  //
+  // Four rules, all the user's own words:
+  //   "about 2 secs before"                  -> a caption OPENS at tStart - LEAD
+  //   "clipped to dive end" (their ruling)   -> ...but the film's first caption never opens over the dive
+  //   "tries to show up to 3 secs.. if misses, then skips"
+  //                                          -> a caption that cannot get its full MIN_HOLD is DROPPED,
+  //                                             never shown for less. This is what retires the flash.
+  //   "when new room appears" / "it can replace so"
+  //                                          -> the next caption's APPEARANCE ends this one, even
+  //                                             though the camera may still be inside the old room.
+  // Skipped, never DELAYED: pushing a missed caption later would put the name on screen after the
+  // camera is already through the door — the exact failure the lead exists to kill.
+  A.roomTitleApplyLead = function(segs, totalSec, diveEndSec) {
+    if (!segs || !segs.length) return segs || [];
+    var sel = [], skipped = 0, lastShow = -Infinity, i;
+    for (i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      var show = Math.max(0, s.tStart - LEAD);
+      // The first caption of the film only. `Math.min(s.tStart, ...)` is load-bearing: the dive clip
+      // may push a caption LATER, but never past its own doorway — that would be the "too late" the
+      // user is complaining about, reintroduced by the fix for it.
+      if (!sel.length && diveEndSec > 0) show = Math.max(show, Math.min(s.tStart, diveEndSec));
+      if (sel.length && show < lastShow + MIN_HOLD - 1e-9) { skipped++; continue; }
+      sel.push({ guid: s.guid, name: s.name, entry: s.tStart, tStart: show, tEnd: s.tEnd });
+      lastShow = show;
+    }
+    // Pre-clip the earned dwell at the NEXT caption's appearance, then hand the list to the shipped
+    // hold. That composition is deliberate: `roomTitleApplyHold` keeps its own rule ("never shorten
+    // what the camera actually dwelt") intact and stays gated by its own witness, while the user's
+    // replacement ruling — the newer room wins even mid-dwell — is applied HERE, where it belongs.
+    for (i = 0; i < sel.length - 1; i++) {
+      if (sel[i].tEnd > sel[i + 1].tStart) sel[i].tEnd = sel[i + 1].tStart;
+    }
+    var held = A.roomTitleApplyHold(sel, totalSec), extended = 0;
+    for (i = 0; i < held.length; i++) {
+      held[i].entry = sel[i].entry;
+      if (held[i].tEnd > sel[i].tEnd + 1e-9) extended++;   // the hold did real work on this one
+    }
+    held._skipped = skipped;
+    held._held = extended;
+    return held;
+  };
+
   A.roomTitleApplyHold = function(segs, totalSec) {
     if (!segs || !segs.length) return segs || [];
     var out = [], i;

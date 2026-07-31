@@ -52,7 +52,14 @@ const _watchdog = setTimeout(() => { console.log('\n§W-CPE-ROOM-TITLE TIMEOUT �
     const r0 = rooms[0], r1 = rooms[rooms.length - 1];
     const p0 = A.ifc2three(r0.cx, r0.cy, r0.cz), p1 = A.ifc2three(r1.cx, r1.cy, r1.cz);
     const plan = { poseAt: function(tn) { const p = tn < 0.5 ? p0 : p1; return { x: p.x, y: p.y, z: p.z, tx: p.x + 1, ty: p.y, tz: p.z }; } };
-    const segs = A.roomTitleBuildTimeline(plan, 6); // 3s/room — well over MIN_DWELL
+    // 10s/room. FIXTURE CHANGED 2026-08-01 (§CPE_ROOM_TITLE_LEAD), assertion NOT touched — it still
+    // demands exactly 2 segments named through friendlyName, which is the claim this gate exists to
+    // make. The old fixture was 6s (3s/room) and now yields ONE caption, correctly: a caption opens
+    // 2s before its doorway and owns a 3s slot, so two rooms entered 3.0s apart cannot both have one
+    // — the second "misses, then skips", the user's own rule. That is arbitration, not naming, and it
+    // is gated in witness_cpe_room_title_lead.js G-TL-3. Spacing the rooms puts this gate back on its
+    // own subject instead of failing for someone else's reason.
+    const segs = A.roomTitleBuildTimeline(plan, 20); // 10s/room — well over MIN_DWELL and the 3s slot
     return {
       ok: true, segs: segs,
       expected0: A.friendlyName(r0.name, null), expected1: A.friendlyName(r1.name, null),
