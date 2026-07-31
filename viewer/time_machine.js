@@ -5314,6 +5314,33 @@
     return out;
   };
 
+  // §CPE_BUILDUP_WORK_PACED (CINEMA_PATH_EDITOR.md) — the sorted completion times of every op, so a
+  // film can advance by WORK instead of by CALENDAR. Measured on the user's own Hospital bakes: at
+  // the same film fraction one run had 210/63,421 elements placed and another 15,485/63,416, because
+  // the derived 4D order clusters thousands of elements at nearby timestamps and the film was
+  // stepping the cursor linearly in days. Stepping it linearly in ELEMENTS makes "10% of the film"
+  // mean "10% of the building" on any model.
+  //
+  // One pass, called ONCE per bake/preview — never per frame. Read-only: nothing here re-keys or
+  // reorders the op log (§CPE_BUILDUP_FOLLOW_TM — the film plays the timeline, it does not author one).
+  window.tmWorkSchedule = function() {
+    if (!_ops.length) return null;
+    var ends = new Float64Array(_ops.length), i;
+    for (i = 0; i < _ops.length; i++) ends[i] = _ops[i].end_ts;
+    ends.sort();
+    var out = { ends: ends, total: ends.length, projectStart: _projectStart, projectEnd: _projectEnd };
+    // How front-loaded IS this model? The share of work completed in the first 10% of the calendar —
+    // 0.10 would mean evenly spread, and anything far above it is exactly the burst the user saw.
+    var tenPct = _projectStart + 0.10 * (_projectEnd - _projectStart), n10 = 0;
+    for (i = 0; i < ends.length; i++) { if (ends[i] > tenPct) break; n10++; }
+    out.workInFirstTenthOfCalendar = ends.length ? n10 / ends.length : 0;
+    console.log('§CPE_WORK_SCHEDULE ops=' + out.total +
+      ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
+      ' workInFirst10%OfCalendar=' + (out.workInFirstTenthOfCalendar * 100).toFixed(1) + '%' +
+      ' (10.0% would be evenly spread — anything above it is the burst calendar pacing shows)');
+    return out;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. Returns its boolean (count>0 / false); callers cache.

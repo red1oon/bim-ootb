@@ -1051,7 +1051,11 @@
         a.controls.update();
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
         if (bkPrev && window.tmSetCursor) {
-          window.tmSetCursor(bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart));
+          // §CPE_BUILDUP_WORK_PACED: the rehearsal asks for the SAME cursor the bake will ask for at
+          // this film fraction — paced by elements placed, not by days elapsed. Falls back to the
+          // old linear-calendar expression if cinema_maxq is an older cached copy.
+          window.tmSetCursor(a.buildupCursorAt ? a.buildupCursorAt(tn, bkPrev)
+            : (bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart)));
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x.
@@ -1071,6 +1075,7 @@
         // §CPE_GHOST_GROUND: same exit contract as the Time Machine restore above — the rehearsal
         // must not leave the ground see-through for the editing session that follows it.
         if (a.ghostGroundRestore) a.ghostGroundRestore();
+        if (a.buildupPacingReset) a.buildupPacingReset();
         if (a.roomTitleLiveStop) a.roomTitleLiveStop();
         _state.flying = false;
         console.log('§CPE_PREVIEW done frames=' + frames + ' msPerFrame=' + msPerFrame.toFixed(1) +
