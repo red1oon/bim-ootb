@@ -43,7 +43,13 @@
   function _ghostGroundArm(bkState) {
     var A = window.APP;
     _ggSched = null;
-    if (!A || !A.ground || !A.ground.material || !A.ground.visible) return false;
+    // ⚠ NO `A.ground.visible` GUARD. The ground plane is turned on by photoreal STAGING, which runs
+    // per frame INSIDE the capture loop (§PHOTO_STAGING on -> §GROUND_MAP key=paved) and off again
+    // after each frame. Arming happens once, BEFORE that loop, when the plane is still hidden — so a
+    // visibility check here skipped the whole feature on every real bake (user, 2026-07-31: no
+    // §GHOST_GROUND_SCHEDULE line and no `groundOpacity=` in §CPE_BUILDUP anywhere in their log).
+    // Setting opacity on a hidden plane costs nothing and is correct the moment staging shows it.
+    if (!A || !A.ground || !A.ground.material) return false;
     if (!bkState || typeof window.tmGroundSchedule !== 'function') return false;
     var z = A.groundIfcZ;
     if (!isFinite(z)) { console.log('§GHOST_GROUND skip reason=no groundIfcZ (tools.js §GROUND_Y never ran)'); return false; }

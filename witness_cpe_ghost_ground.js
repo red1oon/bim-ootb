@@ -56,10 +56,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const res = await page.evaluate(async () => {
       const A = window.APP;
       const out = { steps: [] };
-      // The ground plane is normally hidden until Shadow/photoreal staging turns it on; the feature
-      // is explicitly a no-op while it is invisible, so make it visible exactly as staging does.
+      // ⚠ DO NOT make the ground visible before arming. This witness used to do exactly that, and
+      // it is why 8/8 green shipped a feature that never armed in a real bake: photoreal staging
+      // turns the plane on INSIDE the per-frame loop, so at arm time it is always hidden. Arming
+      // against a state the browser never has is the harness lying, not the product passing.
       if (!A.ground) return { err: 'no ground plane' };
-      A.ground.visible = true;
+      A.ground.visible = false;
       out.groundIfcZ = A.groundIfcZ;
       if (typeof window.tmGenerateTimeline === 'function') { try { window.tmGenerateTimeline(); } catch (e) {} }
       let ok = false;
@@ -81,7 +83,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // RED reference: what the ground reads at an early cursor with the feature NOT armed.
       out.unarmedEarlyOpacity = m.opacity;
 
+      out.groundVisibleAtArm = A.ground.visible;   // false, exactly as a real bake has it
       out.armed = A.ghostGroundArm(bk);
+      A.ground.visible = true;                     // staging turns it on once the frame loop starts
       const TOTAL = 100;   // a 100 s film, so 1 film-fraction unit == 100 s
       // Sample densely across the whole film; that is the only way to see whether the return to
       // opaque is a ramp or a cut.
@@ -178,6 +182,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
       const trig = logs.filter(l => /§GHOST_GROUND_SCHEDULE /.test(l)).slice(-1)[0] || '';
       const armed = logs.filter(l => /§GHOST_GROUND armed/.test(l)).slice(-1)[0] || '';
+      P('G-GG-9 it arms while the ground is still HIDDEN — the state every real bake arms in',
+        res.groundVisibleAtArm === false && res.armed === true,
+        `ground.visible at arm = ${res.groundVisibleAtArm}, armed = ${res.armed}  ` +
+        `(a visibility guard here silently disabled the feature on every real bake — the witness had ` +
+        `been setting visible=true first, which is a regime the browser never enters at that moment)`);
+
       P('G-GG-7 the log states the trigger and the arming, so a quiet no-op is visible',
         !!trig && !!armed,
         `${trig || 'no §GHOST_GROUND_SCHEDULE'}\n        ${armed || 'no §GHOST_GROUND armed'}`);
