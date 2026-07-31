@@ -662,7 +662,14 @@ async function setupScene(A) {
   // wrote them.
   function _writeCinemaPathTable(db) {
     var ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
-    if (!ov || !ov.bands || ov.bands.length < 2) return;
+    // §CPE_PATH_NOT_PORTABLE fix, part 2 (prompts/CINEMA_PATH_EDITOR.md): this guard used to `return`
+    // silently — the only route that makes an authored path portable, dropping it with no trace. A
+    // save that drops the path must be visible, not silent.
+    if (!ov) { console.log('§CINEMA_PATH_WRITE skipped reason=no-staged-path'); return; }
+    if (!ov.bands || ov.bands.length < 2) {
+      console.log('§CINEMA_PATH_WRITE skipped reason=bands=' + (ov.bands ? ov.bands.length : 0) + '<2');
+      return;
+    }
     try {
       db.run("DROP TABLE IF EXISTS cinema_path");
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
