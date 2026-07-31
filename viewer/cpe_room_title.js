@@ -102,6 +102,97 @@ function setupCpeRoomTitle(A) {
     return best;
   }
 
+  // §CPE_ROOM_TITLE_GAZE (user ruling 2026-08-01, on the measured §CPE_ROOM_TITLE_FLYOVER_BLIND —
+  // "Label what the camera looks at"): a caption names the room the camera is LOOKING INTO, not the
+  // one it is standing in. A 147.9s Hospital flyover produced ONE caption under containment, because
+  // 31% of its samples were over a room's footprint but a full storey above its datum — the camera
+  // is simply never inside anything.
+  //
+  // Ray vs. room AABB, exact, no marching. A step size would be an invented constant that either
+  // skips through small rooms or costs hundreds of steps a sample; the slab test needs none and is
+  // the same O(rooms) per sample the point test already pays. The room's box is the one it already
+  // has: `rects` for x/y, and the SAME storey band `_roomAtIfcPoint` uses for z — reused, never
+  // relaxed, so a ray passing 20 m above a room still misses it and §CPE_ROOM_TITLE_HEIGHT_BLIND
+  // (PR #1108) stays closed. Nearest positive hit wins.
+  var _gazeMissedAll = 0;
+  function _roomAlongGaze(ox, oy, oz, dx, dy, dz) {
+    var g = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
+    if (!g || !g.nodesByGuid) return null;
+    var L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(L > 1e-9)) return null;
+    dx /= L; dy /= L; dz /= L;
+    var pitch = _storeyPitch(g), band = pitch > 0 ? pitch : Infinity;
+    var best = null, bestT = Infinity, bestDz = Infinity;
+    for (var k in g.nodesByGuid) {
+      var n = g.nodesByGuid[k];
+      if (!n || n.kind !== 'room' || !n.rects || !n.rects.length) continue;
+      // An infinite band (single-storey building, no pitch derivable) makes the z slab a no-op —
+      // the same disabling _roomAtIfcPoint already does rather than guess a height.
+      var z0 = (n.cz || 0) - band, z1 = (n.cz || 0) + band;
+      for (var i = 0; i < n.rects.length; i++) {
+        var r = n.rects[i];
+        var tN = -Infinity, tF = Infinity, s;
+        // x slab
+        if (Math.abs(dx) < 1e-12) { if (ox < r.x0 || ox > r.x1) continue; }
+        else {
+          var ax = (r.x0 - ox) / dx, bx = (r.x1 - ox) / dx;
+          if (ax > bx) { s = ax; ax = bx; bx = s; }
+          if (ax > tN) tN = ax; if (bx < tF) tF = bx;
+        }
+        // y slab
+        if (Math.abs(dy) < 1e-12) { if (oy < r.y0 || oy > r.y1) continue; }
+        else {
+          var ay = (r.y0 - oy) / dy, by = (r.y1 - oy) / dy;
+          if (ay > by) { s = ay; ay = by; by = s; }
+          if (ay > tN) tN = ay; if (by < tF) tF = by;
+        }
+        // z slab — the storey band, identical to the point test's
+        if (isFinite(band)) {
+          if (Math.abs(dz) < 1e-12) { if (oz < z0 || oz > z1) continue; }
+          else {
+            var az = (z0 - oz) / dz, bz = (z1 - oz) / dz;
+            if (az > bz) { s = az; az = bz; bz = s; }
+            if (az > tN) tN = az; if (bz < tF) tF = bz;
+          }
+        }
+        if (tF < 0 || tN > tF) continue;          // behind the camera, or no overlap
+        var tHit = tN < 0 ? 0 : tN;               // inside the box already -> hit at the camera
+        // ⚠ Ties are NOT hash order. Stacked storeys share x/y, so a camera standing inside one room
+        // is inside several room BOXES at once and every one of them hits at t=0 — whichever the
+        // `for..in` reached first would win, and witness_cpe_room_title.js caught exactly that
+        // (segment 2 came back as "≈ Level 1 R2" instead of the room the camera was in). The point
+        // test has always broken this tie by NEAREST STOREY DATUM; the ray must do the same, or the
+        // gaze rule silently loses §CPE_ROOM_TITLE's floor disambiguation.
+        var dzHit = Math.abs((n.cz || 0) - (oz + dz * tHit));
+        if (tHit < bestT - 1e-6 || (Math.abs(tHit - bestT) <= 1e-6 && dzHit < bestDz)) {
+          bestT = tHit; bestDz = dzHit; best = n;
+        }
+        break;
+      }
+    }
+    if (!best) _gazeMissedAll++;
+    _lastGazeT = best ? bestT : null;
+    return best;
+  }
+  var _lastGazeT = null;
+
+  // Exposed so witness_cpe_room_title_gaze.js gates THIS ray, not a re-implementation of it, and can
+  // recompute the hit point itself to prove the captioned room really contains it (G-GZ-2).
+  // The rule this REPLACES, exposed so G-GZ-1's baseline is the real previous behaviour rather than a
+  // number copied out of an old log or re-implemented in the gate.
+  A.roomTitleContainProbe = function(ix, iy, iz) {
+    var n = _roomAtIfcPoint(ix, iy, iz);
+    return n ? { guid: n.guid, name: _titleFor(n).name } : null;
+  };
+
+  A.roomTitleGazeProbe = function(ox, oy, oz, dx, dy, dz) {
+    var n = _roomAlongGaze(ox, oy, oz, dx, dy, dz);
+    if (!n) return null;
+    var g = A.getRoomGraph(), pitch = _storeyPitch(g);
+    return { guid: n.guid, name: _titleFor(n).name, t: _lastGazeT, cz: n.cz,
+             band: pitch > 0 ? pitch : null, rects: n.rects };
+  };
+
   // ⚠ HOVER_NAME.md §1 / this feature's own scope note: consume A.friendlyName, never a second
   // naming path. A room's stored name is already human-authored or compiler-synthesized-friendly
   // (e.g. "≈ Roof R1") — friendlyName is a no-op passthrough for those, but running every title
@@ -119,13 +210,27 @@ function setupCpeRoomTitle(A) {
   // per-t lookup as trivial next to a bake's real cost (a full still-refine per frame).
   A.roomTitleBuildTimeline = function(plan, totalSec) {
     var t0 = performance.now();
-    _rejectedByHeight = 0;
-    var samples = [];
+    _rejectedByHeight = 0; _gazeMissedAll = 0;
+    var samples = [], rule = 'gaze', noTarget = 0;
     for (var t = 0; t <= totalSec + 1e-6; t += SAMPLE_DT) {
       var tn = totalSec > 0 ? Math.min(1, t / totalSec) : 0;
       var p = plan.poseAt(tn);
       var ifcP = A.three2ifc ? A.three2ifc(p.x, p.y, p.z) : null;
-      var room = ifcP ? _roomAtIfcPoint(ifcP.ix, ifcP.iy, ifcP.iz) : null;
+      var room = null;
+      // §CPE_ROOM_TITLE_GAZE: the room the LOOK DIRECTION enters. `poseAt` already carries the look
+      // target beside the position, so the gaze needs no new machinery — and because the ray starts
+      // AT the camera, a camera standing inside a room still resolves to that room (nearest hit,
+      // t=0). Walk films therefore do not regress; only the flyover case changes.
+      // DEGRADE, DON'T DISABLE: a plan whose poseAt returns no target (an older cached effects.js)
+      // falls back to the containment test and the log says so, rather than captioning nothing.
+      if (ifcP && p.tx != null) {
+        var ifcT = A.three2ifc(p.tx, p.ty, p.tz);
+        if (ifcT) room = _roomAlongGaze(ifcP.ix, ifcP.iy, ifcP.iz,
+                                        ifcT.ix - ifcP.ix, ifcT.iy - ifcP.iy, ifcT.iz - ifcP.iz);
+      } else if (ifcP) {
+        noTarget++; rule = 'containment(no poseAt target)';
+        room = _roomAtIfcPoint(ifcP.ix, ifcP.iy, ifcP.iz);
+      }
       samples.push({ t: t, guid: room ? room.guid : null, node: room });
     }
     var raw = [];
@@ -165,8 +270,9 @@ function setupCpeRoomTitle(A) {
     var led = 0;
     for (var h = 0; h < held.length; h++) if (held[h].entry > held[h].tStart + 1e-9) led++;
 
-    console.log('§CPE_ROOM_TITLE_TIMELINE segments=' + held.length + '/' + kept.length +
+    console.log('§CPE_ROOM_TITLE_TIMELINE rule=' + rule + ' segments=' + held.length + '/' + kept.length +
       ' suppressed=' + suppressed +
+      ' gazeMissedAll=' + _gazeMissedAll + '/' + samples.length +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
       ' lead=' + led + '/' + held.length + '@' + LEAD + 's' +
