@@ -17,6 +17,14 @@ function setupCpeRoomTitle(A) {
   var MIN_DWELL = 1.4;    // seconds — a room shown for less than this is suppressed (rate limit):
                           // a walk crossing six small rooms in four seconds must not strobe six titles
   var FADE = 0.4;         // seconds — fade in/out
+  // §CPE_ROOM_TITLE_HOLD (user, 2026-08-01: "give it 3 secs, because user will know u just passed
+  // that room, and of course, if another room cuts in by 2 secs, then it can replace so").
+  // A caption used to vanish the instant the camera left the room, so a 1.5s crossing produced a
+  // 1.5s label — measured on their own Hospital film: four of six labels were under 2 seconds and
+  // they could not read them. The label now stays up for at least MIN_HOLD, which is what makes it
+  // legible; it is CUT SHORT only by the next room's caption, because the newer room is what the
+  // viewer is actually in.
+  var MIN_HOLD = 3.0;     // seconds — floor on how long a caption stays readable
 
   // Point-in-room via the shared room graph (A.getRoomGraph — the ONE cache per building every
   // other room consumer already shares, FLY_TOUR_CORRIDOR_GRAPH.md §S2). Only 'room'-kind nodes
@@ -131,11 +139,38 @@ function setupCpeRoomTitle(A) {
     // `suppressed` = rooms crossed too fast (MIN_DWELL), high `rejectedByHeight` = the camera spent
     // its time above the building, `storeyPitch=0.0` = single-storey, height test disabled.
     var g0 = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
+    // §CPE_ROOM_TITLE_HOLD: extend each caption to MIN_HOLD, clipped by the NEXT caption's start.
+    // Exposed (below) so the witness gates this exact function rather than a re-implementation.
+    var held = A.roomTitleApplyHold(kept, totalSec);
+    var extended = 0;
+    for (var h = 0; h < kept.length; h++) if (held[h].tEnd > kept[h].tEnd + 1e-9) extended++;
+
     console.log('§CPE_ROOM_TITLE_TIMELINE segments=' + kept.length + ' suppressed=' + suppressed +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
+      ' held=' + extended + '/' + kept.length + '@' + MIN_HOLD + 's' +
       ' totalSec=' + totalSec.toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(1));
-    return kept;
+    return held;
+  };
+
+  // §CPE_ROOM_TITLE_HOLD — pure, and deliberately separate from the sampling above so it can be
+  // gated on synthetic segment lists with exact durations. Two rules, both the user's own words:
+  //   "give it 3 secs"                        -> every caption lasts at least MIN_HOLD
+  //   "if another room cuts in ... it replace" -> unless the next caption starts first, which wins
+  // A caption is never shortened below what it earned, and never runs past the film.
+  A.roomTitleApplyHold = function(segs, totalSec) {
+    if (!segs || !segs.length) return segs || [];
+    var out = [], i;
+    for (i = 0; i < segs.length; i++) {
+      var s0 = segs[i];
+      var want = s0.tStart + MIN_HOLD;
+      var cap = (i + 1 < segs.length) ? segs[i + 1].tStart : (isFinite(totalSec) ? totalSec : want);
+      var end = Math.max(s0.tEnd, want);
+      if (end > cap) end = cap;
+      if (end < s0.tEnd) end = s0.tEnd;   // never shorten what the camera actually dwelt
+      out.push({ guid: s0.guid, name: s0.name, tStart: s0.tStart, tEnd: end });
+    }
+    return out;
   };
 
   // Opacity/text for whichever segment is active (or fading) at absolute time t. Two segments can
