@@ -133,18 +133,45 @@
   // Independent audit: count elements that start before a TRUE support finishes — structural,
   // XY-overlapping, rising from below (base < base-ε), topping within GAP of the target base.
   // 0 ⇒ nothing floats over its physical support. Works for any class (beams, furniture, MEP…).
+  // §4D_ROOF_LOAD_PATH M3 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH): the support
+  // grid used to be built ONLY from seq<=4 (structure) elements — the SAME trade-number assumption
+  // the scheduler's PASS A/B split makes. A wall (seq 6) can never be a support in that grid, so a
+  // roof slab carried by walls read as floating=0 (nothing to compare against) even while the real
+  // schedule built it before the walls under it — the audit shared the defect's own blind spot
+  // instead of catching it. Fix, MEASURED through two iterations:
+  //   attempt 1 | grid = EVERY element (any class a support for any class) | Hospital floating
+  //     0 -> 3421/10979, almost all "IfcBeam floats over IfcWallStandardCase" (1056), "IfcBeam
+  //     floats over IfcMember" (191) etc — seq<=4 PASS-A structure held to falsely "float" over
+  //     unrelated seq>4 PASS-B trades that finish much later in the crew-capped schedule for reasons
+  //     that have nothing to do with this defect. Walls do not structurally carry beams/members/
+  //     furniture in this DB.
+  //   attempt 2 | grid = structure PLUS walls, offered to every audited IfcSlab | Hospital floating
+  //     0 -> 24/10979 — better, but ALL 24 were ORDINARY (non-promoted, still seq 4) floor slabs
+  //     comparing themselves against a wall from a DIFFERENT storey that happens to sit geometrically
+  //     underneath. An un-promoted floor slab is PASS-A structure; it was never gated on any wall in
+  //     the real schedule (PASS A finishes long before PASS B's crew-capped walls even start), so
+  //     auditing it against a wall manufactures a violation the scheduler itself never claimed to
+  //     avoid.
+  //   correct scope | walls are only EVER a real candidate support for a slab M1 itself promoted to
+  //     seq 8 (roof role) — that is the one case where the real scheduler also moved the slab into
+  //     PASS B and made it wait on walls (§4D_ROOF_LOAD_PATH M2). An ordinary seq<=4 slab keeps its
+  //     original structure-only pool, unchanged from the proven pre-fix behaviour.
   function auditFloating(elements, sched, classFilter) {
-    var grid = {}, i, c, cs, k, arr, S;
+    var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(e); } }
+      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     var v = 0;
     for (i = 0; i < elements.length; i++) { var T = elements[i];
       if (classFilter && !classFilter(T)) continue;
       var se = 0, seen = {}; cs = cellsOf(T);
-      for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
-          if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
-            var en = sched[S.guid].end; if (en > se) se = en; } } }
+      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+      for (var p = 0; p < pools.length; p++) {
+        for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
+              var en = sched[S.guid].end; if (en > se) se = en; } } }
+      }
       if (se > 0 && sched[T.guid].start < se - 1) v++;
     }
     return v;
