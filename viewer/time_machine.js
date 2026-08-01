@@ -4482,7 +4482,11 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 6;   // §4D_WALLS_BEFORE_ROOF (2026-08-01): M4+M5 change generated ordering
+  var _GANTT_CACHE_VERSION = 7;   // §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
+  //                                 changes generated ordering for 35,484 non-structure elements.
+  //                                 MUST bump: #1123 exists because a stale cache once stopped a
+  //                                 sequencing fix reaching a browser, and the user has already been
+  //                                 observed running new code against cached old ops.
 
   function _cacheKey(prefix) {
     var app = A();

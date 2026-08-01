@@ -125,7 +125,13 @@ async function gesture(page, px, py, dx) {
   await sleep(900);
 }
 
-const bandCount = page => page.evaluate(() => document.querySelectorAll('#cpe-rows > div').length);
+// ⚠ #cpe-rows is a MIXED list since §CPE_GHOST_PULL — band rows AND pull rows live in it. Counting
+// bare children would count pulls as bands and turn these gates red for a reason that is not a
+// product defect. Every row declares its kind; ask for the one you mean.
+const bandCount = page => page.evaluate(() =>
+  document.querySelectorAll('#cpe-rows > div[data-cpe-row="band"]').length);
+const pullCount = page => page.evaluate(() =>
+  document.querySelectorAll('#cpe-rows > div[data-cpe-row="pull"]').length);
 
 async function gates(browser, BLD) {
   const checks = [];
@@ -167,6 +173,31 @@ async function gates(browser, BLD) {
     n3 === n2 && count(win, /§CPE_HOSE landed/) === 1 && count(win, /§CPE_STICK added/) === 0,
     `rows ${n2} -> ${n3}   §CPE_HOSE landed=${count(win, /§CPE_HOSE landed/)}   ` +
     `§CPE_STICK added=${count(win, /§CPE_STICK added/)}`);
+
+  // ── G-CS-5: §CPE_GHOST_PULL — the bend G-CS-2 just made is VISIBLE and REMOVABLE ─────────────
+  // The issue this proves or disproves (user, 2026-08-02): "click and drag right away ... ends up as
+  // a working but ghost stick". G-CS-2 above already proves the drag is a PULL, not a stick — that
+  // split is by design. What made it a GHOST is that #cpe-rows listed bands only, so the pull bent
+  // the path for real and appeared nowhere. This gate fails on the old code (pullRows would be 0)
+  // and is the whole point of the fix: nothing a user creates on the pipe is invisible.
+  const pulls = await pullCount(page);
+  P('G-CS-5 the 20px bend has its OWN row — no ghost (§CPE_GHOST_PULL)',
+    pulls >= 1, `pull rows=${pulls} (0 = the ghost is back)`);
+
+  // ...and it can be removed from that row, which Ctrl+Z alone could not do once buried.
+  mark = logs.length;
+  const removed = await page.evaluate(() => {
+    const b = document.querySelector('#cpe-rows > div[data-cpe-row="pull"] button');
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  await sleep(900);
+  win = logs.slice(mark);
+  const pullsAfter = await pullCount(page);
+  P('G-CS-6 the pull row\'s x removes the bend (§CPE_GHOST_PULL removed)',
+    removed && pullsAfter === pulls - 1 && count(win, /§CPE_GHOST_PULL removed/) === 1,
+    `pull rows ${pulls} -> ${pullsAfter}   §CPE_GHOST_PULL removed=${count(win, /§CPE_GHOST_PULL removed/)}`);
 
   // ── G-CS-4: a 0px press still spawns, and pushes no dead undo step ──────────────────────────
   // Re-find the pixel: G-CS-2 just BENT the pipe 20px away from `spot`, so re-using it presses on

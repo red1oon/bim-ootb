@@ -446,7 +446,10 @@
   // §CPE_ROOM_TITLE: titleInfo ({name, opacity}, or null/opacity<=0) is composited onto THIS 2D
   // context, after the WebGL frame is drawn in but before toBlob — the only point that reaches the
   // actual exported bytes (RESUME_CPE_ROOM_TITLE.md §2's trap: a DOM caption never would).
-  function _captureFrame(w, h, titleInfo) {
+  // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
+  // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
+  // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
+  function _captureFrame(w, h, titleInfo, dayInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -455,6 +458,9 @@
     ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
     if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
+    }
+    if (dayInfo && A.dayCounterCompositeOntoCanvas) {
+      A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1);
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
@@ -960,6 +966,10 @@
           if (_bkState) _ghostGroundArm(_bkState);
         }
       }
+      // §CPE_DAY_COUNTER — declared in the bake's scope, reset per frame. Must NOT be an implicit
+      // global: two bakes in one tab would then share it and a film with no buildup would inherit
+      // the previous film's badge.
+      var _dayInfo = null;
       // §CPE_ROOM_TITLE — one coarse pre-pass over the WHOLE (already clip/buildup-resolved) frame
       // count, not a per-frame room query: nFrames/fps here is the bake's actual, final duration
       // (§CPE_CLIP has already resized it above), so the timeline never disagrees with what's about
@@ -991,6 +1001,7 @@
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
+        _dayInfo = null;
         if (_buildup && _bkState) {
           var _bkT = _tFilm(_tn);
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
@@ -1000,8 +1011,14 @@
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.
+          // §CPE_DAY_COUNTER — read off `_bkMs`, the cursor the buildup is ALREADY showing. Any
+          // separate clock would be a second opinion about the schedule and would drift from the
+          // model on exactly the frames the counter exists to explain.
+          if (A.dayCounterAt) _dayInfo = A.dayCounterAt(_bkMs, _bkState.projectStart, _bkState.projectEnd);
           var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState);
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
+            if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
+              ' of=' + _dayInfo.totalDays + ' cursor=' + Math.round(_bkMs));
             console.log('§CPE_BUILDUP frame=' + i + '/' + nFrames + ' t=' + _bkT.toFixed(3) +
               ' cursor=' + Math.round(_bkMs) + ' placed=' + (window.tmPlacedCount ? window.tmPlacedCount(_bkMs) : '?') +
               '/' + _bkState.ops +
@@ -1018,7 +1035,7 @@
         // a good one.
         if (!ok) { _unconverged++; console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is (UNCONVERGED, count=' + _unconverged + ')'); }
         var _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
-        var blob = await _captureFrame(w, h, _titleInfo);
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
