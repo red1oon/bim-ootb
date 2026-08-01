@@ -237,7 +237,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ── G-WB-4 ─────────────────────────────────────────────────────────────────────────────────
     {
       const pacingLine = logs.filter(l => l.startsWith('§CINEMA_PACING')).slice(-1)[0] || '';
-      const mSpin = /spin raw \d+deg capped \d+deg @(\d+)deg\/s/.exec(pacingLine);
+      // §CPE_SPIN_WHIP (2026-08-01) rephrased this clause: it used to read "spin raw 523deg capped
+      // 180deg @45deg/s", and the CAP was the defect that section removed — the spin is now billed
+      // for the angle it actually flies, so the line reads "spin 231deg flown @45deg/s x1.26 busy".
+      // The gate's claim is UNCHANGED (a degree costs the same in the walk as in the spin); only the
+      // sentence it reads the rate out of moved. Prefer the current phrasing, still accept the old
+      // one so this file can be run against an older build for comparison.
+      const mSpin = /spin [\d.]+deg flown @(\d+)deg\/s/.exec(pacingLine) ||
+                    /spin raw \d+deg capped \d+deg @(\d+)deg\/s/.exec(pacingLine);
       const spinRate = mSpin ? +mSpin[1] : null;
       const walkRate = wbBase ? wbBase.turnDps : null;
       P('G-WB-4 a degree of turning costs the same in the walk as in the spin (effects.js:5150-5153\'s own claim)',

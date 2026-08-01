@@ -5079,20 +5079,42 @@ async function setupEffects(A, renderer, scene, camera) {
     // the exit's own approach bearing:
     //   - already facing it (within CINEMA_FACING_SKIP_DEG) → no turn at all, dYaw=0. Beat 2 still
     //     plays for its time budget but with no rotation — a graceful settle, not a forced spin.
-    //   - roughly BEHIND (beyond CINEMA_BEHIND_DEG) → turn the LONG way around (the old "extend to a
-    //     full lap" behaviour survives here specifically, since a longer sweep IS what "helps shows
-    //     around the place" for this case).
+    //   - roughly BEHIND (beyond CINEMA_BEHIND_DEG) → turn the LONG way around, since a longer sweep
+    //     IS what "helps shows around the place" for this case.
     //   - anywhere in between → turn directly, no artificial extension.
+    //
+    // §CPE_SPIN_WHIP (2026-08-01, user: "reduce the spin whip in the end to be not more than 360
+    // degrees") — the behind branch USED to read `dYaw += sign(dYaw) * 2*PI`, i.e. the short way
+    // PLUS a whole extra lap: |raw| + 360, which for this class (|raw| in (120,180]) is 480..540
+    // degrees. That is the measured 523/534 whip, and it is what the DIVE->SPIN seam report ("it was
+    // coming out of the dive towards the edge") localised to. The genuine long way around is the
+    // OPPOSITE DIRECTION, not one more lap: |360 - raw|, which lands in [180,240) for this class.
+    // Three properties, all checked by witness_cpe_spin_whip.js:
+    //   - it ends on the IDENTICAL bearing (yaw0+dYaw === spinTo mod 2PI), so _handYaw/_handDir —
+    //     both of which go through cos/sin — are unchanged and Beat 3 still starts exactly where it
+    //     did. This is a whip fix, NOT a re-aim (G-SW-3).
+    //   - it is still LONGER than the short way for every angle in the class, so
+    //     §CINEMA_SPIN_MOTIVATED's "if the nearest is behind then turn around to it" survives
+    //     intact — the fix must not degrade into the short turn (G-SW-2).
+    //   - the 360 ceiling is now STRUCTURAL, not a clamp: no branch can emit more. `capped` below
+    //     is an assertion that cannot trip, printed so the invariant is visible rather than assumed.
     var CINEMA_FACING_SKIP_DEG = 20, CINEMA_BEHIND_DEG = 120;
+    var _dYawRawSigned = dYaw;                       // the short way, before any class rewrites it
     var dYawAbsDeg = Math.abs(dYaw) * 180 / Math.PI;
     if (dYawAbsDeg < CINEMA_FACING_SKIP_DEG) {
       dYaw = 0;
     } else if (dYawAbsDeg > CINEMA_BEHIND_DEG) {
-      dYaw += (dYaw >= 0 ? 1 : -1) * 2 * Math.PI;
+      dYaw -= (dYaw >= 0 ? 1 : -1) * 2 * Math.PI;
     }
-    console.log('§CINEMA_SPIN dYawRawDeg=' + dYawAbsDeg.toFixed(1) + ' class=' +
-      (dYawAbsDeg < CINEMA_FACING_SKIP_DEG ? 'already-facing(no-spin)' : dYawAbsDeg > CINEMA_BEHIND_DEG ? 'behind(full-lap)' : 'direct-turn') +
-      ' finalSpinDeg=' + (dYaw * 180 / Math.PI).toFixed(1));
+    var _spinCapped = Math.abs(dYaw) > 2 * Math.PI + 1e-9;
+    // The SIGNED short-way angle is logged alongside the unsigned one so "the fix did not move the
+    // end bearing" is directly checkable from the log: (rawSigned - final) must be an exact multiple
+    // of 360 in every class that spins at all (G-SW-3).
+    console.log('§CINEMA_SPIN dYawRawSignedDeg=' + (_dYawRawSigned * 180 / Math.PI).toFixed(1) +
+      ' dYawRawDeg=' + dYawAbsDeg.toFixed(1) + ' class=' +
+      (dYawAbsDeg < CINEMA_FACING_SKIP_DEG ? 'already-facing(no-spin)' : dYawAbsDeg > CINEMA_BEHIND_DEG ? 'behind(long-way)' : 'direct-turn') +
+      ' finalSpinDeg=' + (dYaw * 180 / Math.PI).toFixed(1) +
+      ' ceilingDeg=360 capped=' + _spinCapped);
 
     // ══ The exterior act — SHAPE depends on whether the Sun-crossing falls in the first or second
     // half of the loop (2026-07-20 Phase 3 spec, user): "a different angle outside will determine
@@ -5782,7 +5804,54 @@ async function setupEffects(A, renderer, scene, camera) {
     // for it in the spin would make the spin's DURATION depend on the authored path, which shifts
     // every beat fraction before it and breaks G2's "an edit changes nothing before it".
     var _openDir = { x: (_wkA0.x - _wkP0.x) / _wkL, y: _wkDy / _wkL, z: (_wkA0.z - _wkP0.z) / _wkL };
-    var _spinDeg = Math.min(180, Math.abs(dYaw) * 180 / Math.PI);
+    // §CPE_SPIN_WHIP defect 2 — this used to read `Math.min(180, ...)`. The cap WAS the defect: the
+    // spin flew 523 degrees and was billed for 180, the fourth instance of the budget-on-one-number /
+    // motion-on-another family (§CPE_HOSE_LENGTH_BLIND, §CPE_WALK_BUDGET_NOISE_BLIND, the dive's
+    // envelope cap). Removing it cannot produce a runaway now that defect 1 bounds the motion at 360
+    // structurally: the old worst case was 523/45 = 11.6s, the new one is 240/45 = 5.3s.
+    var _spinDeg = Math.abs(dYaw) * 180 / Math.PI;
+    // §CPE_SPIN_WHIP defect 3 — the spin was the LAST beat with no noise term, in a law the user
+    // settled as "it governs thrughout" (§CPE_NOISE_LAW). The dive and the walk below both carry
+    // `* (1 + (SWING-1)*busy)`; the spin did not.
+    //
+    // The measurement problem this solves: the spin TRANSLATES ZERO METRES, so _densityAt(settle) is
+    // a constant and the dive's line-probe shape cannot be reused as-is — sampling the same point 32
+    // times reads maxChange=0 and the term is inert (the exact failure _noiseRadius' own comment
+    // records for the walk at a fixed 60m radius). What DOES change is the neighbourhood the gaze
+    // sweeps THROUGH. So probe the ARC exactly as the dive probes its line: points on a ring around
+    // `settle` at the bearings the spin actually passes through, same _densityAt, same normalised
+    // mean |central difference|, same CINEMA_PACE_SWING dial. No new constant.
+    //
+    // The radius is the EXISTING rule (_noiseRadius = half the beat's own travel, capped at the fan
+    // horizon) applied to the spin's own travel — the arc the gaze sweeps at the fan horizon,
+    // |dYaw| * CINEMA_FAN_FAR. Derived from the beat, not picked: a 20-degree turn reads a tight
+    // neighbourhood, a 240-degree sweep reads out to the horizon.
+    var _SPN_N = 32, _spinBusy = 0, _spinRad = _noiseRadius(Math.abs(dYaw) * CINEMA_FAN_FAR);
+    (function _spinNoiseBuild() {
+      if (Math.abs(dYaw) < 1e-6) return;   // no-spin class: no arc to probe, busy stays 0
+      var q, nz = [], nzC = [], nzMax = 0;
+      for (q = 0; q <= _SPN_N; q++) {
+        var th = yaw0 + dYaw * (q / _SPN_N);
+        nz.push(_densityAt({ x: settle.x + Math.cos(th) * _spinRad, y: settle.y,
+                             z: settle.z + Math.sin(th) * _spinRad }, _spinRad));
+      }
+      for (q = 0; q <= _SPN_N; q++) {
+        var lo = nz[Math.max(0, q - 1)], hi = nz[Math.min(_SPN_N, q + 1)];
+        nzC.push(Math.abs(hi - lo));
+        if (nzC[q] > nzMax) nzMax = nzC[q];
+      }
+      if (nzMax > 0) {
+        var sum = 0;
+        for (q = 0; q < nzC.length; q++) sum += nzC[q];
+        _spinBusy = (sum / nzC.length) / nzMax;
+      }
+      console.log('§CPE_NOISE_LAW beat=spin-budget src=bbox-arc probes=' + (_SPN_N + 1) +
+        ' radius=' + _spinRad.toFixed(1) + 'm elems=' + _densPoints().length +
+        ' meanBusy=' + _spinBusy.toFixed(3) + ' maxChange=' + nzMax +
+        ' swing=' + CINEMA_PACE_SWING +
+        ' — the spin translates 0m, so its rate-of-change is read along the ARC the gaze sweeps');
+    })();
+    var _spinBusyMult = 1 + (CINEMA_PACE_SWING - 1) * _spinBusy;
     var _walkTurnDegVal = _walkTurnDeg();
     var _natSec = {
       // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
@@ -5796,7 +5865,9 @@ async function setupEffects(A, renderer, scene, camera) {
       // areas billed identically. `out` below now carries the same `* (1 + (SWING-1)*busy)` factor
       // the dive uses, with busy = _walkBusy from _walkNoiseBuild above.
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
-      spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS),
+      // §CPE_SPIN_WHIP — the angle ACTUALLY flown (no 180 cap), at the same rate every other turn in
+      // the film is charged, times the same noise multiplier the dive and walk carry.
+      spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS * _spinBusyMult),
       // §CPE_WALK_BUDGET_NOISE_BLIND — same shape as the dive above, one law every beat. The `/3`
       // that used to inflate the turn charge as a stand-in for busyness is GONE: a degree now costs
       // CINEMA_TURN_DPS, exactly as the comment above _walkTurnDeg already claims, and busyness
@@ -5817,6 +5888,16 @@ async function setupEffects(A, renderer, scene, camera) {
       ' busy=' + _walkBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
       ' busyMult=' + (1 + (CINEMA_PACE_SWING - 1) * _walkBusy).toFixed(4) +
       ' outSec=' + _natSec.out.toFixed(3));
+    // §CPE_SPIN_WHIP — the same whitebox treatment the walk got: every term the spin's budget reads,
+    // printed together, so a witness recomputes spinSec from THIS LINE ALONE and compares against
+    // _natSec.spin rather than trusting the arithmetic happened as claimed. `flownDeg` is the angle
+    // the camera actually turns (was capped at 180 while the motion ran to 523 — the whole defect),
+    // so `flownDeg == |finalSpinDeg| from §CINEMA_SPIN` is itself a checkable invariant.
+    console.log('§CPE_SPIN_WHIP flownDeg=' + _spinDeg.toFixed(1) + ' ceilingDeg=360' +
+      ' turnDps=' + CINEMA_TURN_DPS + ' rawSec=' + (_spinDeg / CINEMA_TURN_DPS).toFixed(3) +
+      ' busy=' + _spinBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
+      ' busyMult=' + _spinBusyMult.toFixed(4) + ' minSec=' + CINEMA_SPIN_MIN_SEC +
+      ' spinSec=' + _natSec.spin.toFixed(3));
     // An explicit override (the editor's "set the total") scales the whole film uniformly; the SHAPE
     // is geometric either way, so the beat fractions are derived-seconds over the natural total and
     // do not depend on durationSec at all. That is what makes "key 20s and everything speeds up
@@ -5849,8 +5930,8 @@ async function setupEffects(A, renderer, scene, camera) {
       '  (walk ' + totalLen.toFixed(1) + 'm @' + CINEMA_WALK_MPS + 'm/s, dive ' + diveDist.toFixed(1) +
       'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + CINEMA_PULLBACK_MPS +
       'm/s, dive raw ' + diveDist.toFixed(0) + 'm capped to envelope ' + _diveEff.toFixed(0) +
-      'm, spin raw ' + Math.abs(dYaw * 180 / Math.PI).toFixed(0) + 'deg capped ' + _spinDeg.toFixed(0) +
-      'deg @' + CINEMA_TURN_DPS + 'deg/s)' +
+      'm, spin ' + _spinDeg.toFixed(0) + 'deg flown @' + CINEMA_TURN_DPS + 'deg/s x' +
+      _spinBusyMult.toFixed(2) + ' busy)' +
       ' override=' + _cpeSecOverride + ' running=' + durationSec.toFixed(1) + 's');
     console.log('§CINEMA_BEATS dive=' + tD.toFixed(3) + ' spin=' + tS.toFixed(3) + ' out=' + tO.toFixed(3) +
       ' rise=' + tR.toFixed(3) + ' turnOverlap=' + CINEMA_TURN_OVERLAP +
