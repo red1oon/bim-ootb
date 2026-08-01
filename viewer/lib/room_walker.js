@@ -577,8 +577,14 @@
     return aspect > SUSPECT_ELONGATED_ASPECT_MIN;
   }
 
-  function floodRooms(walls, stairs, doors, doorWMed) {
+  // opts.keepCells (§DOOR-APERTURE, additive — OFF for every existing caller): retain each
+  // surviving pocket's raster CELL SET on `r._cells`, and stash the grid + dilated wall mask on
+  // `rooms._grid`. The cell set is the pocket's TRUE footprint and it reaches the wall face; the
+  // emitted `rects` are INSCRIBED and stop short of it — that gap is §21.21's root cause. Nothing
+  // about the compile itself changes; this only stops throwing the cells away.
+  function floodRooms(walls, stairs, doors, doorWMed, opts) {
     stairs = stairs || []; doors = doors || []; doorWMed = doorWMed || 0.0;
+    var keepCells = !!(opts && opts.keepCells);
     var ext = _gridExtent(walls);
     var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
     var raw = _rasterizeWalls(walls, ext);
@@ -588,6 +594,7 @@
     var enclosed = _floodExterior(free, nx, ny);
 
     var rooms = [];
+    var drops = [];
     var seen = new Uint8Array(nx * ny);
     var inSet = new Uint8Array(nx * ny);
     var cellArea = RES * RES;
@@ -616,7 +623,14 @@
           });
         }
         var area = comp.length * cellArea;
-        if (area > planArea * MAX_AREA_FRAC) continue;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
+        // §FLOOD-DROPS (keepCells only): every gate below removes a real enclosed free-space
+        // region from the map. A dropped region is invisible to every downstream relation, and
+        // its doors go single-sided. Count and size them so "why is the graph shattered?" is
+        // answerable without re-deriving the compile.
+        if (area > planArea * MAX_AREA_FRAC) {
+          if (keepCells) drops.push({ why: 'MAX_AREA_FRAC', area: area });
+          continue;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
+        }
         var wx0 = xs0 + mni * RES, wx1 = xs0 + (mxi + 1) * RES;
         var wy0 = ys0 + mnj * RES, wy1 = ys0 + (mxj + 1) * RES;
         // §DOOR-RESCUE (abstract test, applies uniformly — not a size band): a pocket is a room if
@@ -630,13 +644,13 @@
           // flip at exact equality with NOISE_FLOOR_DIM; same convention _decomposeRegion uses).
           var minCellsNF = Math.round(NOISE_FLOOR_DIM / RES);
           var dimsOk = (mxi - mni + 1) >= minCellsNF && (mxj - mnj + 1) >= minCellsNF;
-          if (!(dimsOk && hasDoor)) continue;
+          if (!(dimsOk && hasDoor)) { if (keepCells) drops.push({ why: hasDoor ? 'NOISE_FLOOR_DIM' : 'MIN_AREA_no_door', area: area }); continue; }
           doorRescued = true;
         }
         // §STAIR-EXCLUDE: a stair/ramp footprint covering this pocket -> it's a circulation shaft,
         // not a room. Drop it.
         var sf = stairOverlapFrac(wx0, wy0, wx1, wy1, stairs);
-        if (sf >= STAIR_OVERLAP_REJECT) continue;
+        if (sf >= STAIR_OVERLAP_REJECT) { if (keepCells) drops.push({ why: 'STAIR_EXCLUDE', area: area }); continue; }
         // §ROOM-FORM + §RECT-HONESTY + §MULTI-RECT (ROOM_INJECTION_HYBRID.md §7/§8)
         var c2;
         for (c2 = 0; c2 < comp.length; c2++) inSet[comp[c2]] = 1;
@@ -660,15 +674,146 @@
         }
         var r0 = dec.rects[0];
         var cover1 = ((r0[1] - r0[0] + 1) * (r0[3] - r0[2] + 1)) / totalCells;
-        rooms.push({
+        var rec = {
           cx: rects[0].cx, cy: rects[0].cy, cz: cz,
           sx: rects[0].sx, sy: rects[0].sy, sz: Math.max(bz, 2.0), area: area,
           door_rescued: doorRescued, open_m: openM, suspect: suspect,
           rects: rects, cover1: cover1, cover_n: dec.covered / totalCells
-        });
+        };
+        // §DOOR-APERTURE: the raw flood component + the seal-band cells it grew back into. Both
+        // are part of the pocket's real free-space footprint; `_growRegion` already computed the
+        // second set, we just keep it instead of discarding it with `inSet`.
+        if (keepCells) rec._cells = comp.concat(gr.added);
+        rooms.push(rec);
       }
     }
+    if (keepCells) { rooms._grid = { nx: nx, ny: ny, xs0: xs0, ys0: ys0, dil: dil, raw: raw, enclosed: enclosed }; rooms._drops = drops; }
     return rooms;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // §DOOR-APERTURE (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §21.21 fix, 2026-08-01)
+  //
+  // The defect: this lane resolved "which pockets does this door join?" by testing the door bbox
+  // against the pockets' emitted RECTS with a tolerance. Those rects are INSCRIBED — they stop
+  // short of the wall — while a door sits IN the wall. At tol=0 a door touches nothing (Clinic
+  // 2/254 doors found two rooms); at tol=0.4m a third of doors claimed 3-4 rooms, and every extra
+  // claim is a shortcut through a door that does not open into that room. There is no good
+  // threshold because the two things being compared never touch.
+  //
+  // The fix is not a better tolerance, it is a different question asked of a different object. A
+  // door is a GAP IN A WALL. March from the door centre along the wall normal — the door bbox's
+  // SHORT axis — in both directions across the raster, skipping the blocked (wall + seal) band,
+  // and take the first flood COMPONENT each ray clears into. Components are the true free-space
+  // footprint and they do reach the wall face. A door joins the pockets on its two faces: at most
+  // two, by construction, because a ray stops at its first hit. That is a geometric fact read off
+  // the same raster the rooms came from, not a proximity guess reconstructing one.
+  //
+  // Rays: three, offset along the door's LONG axis at -w/4, 0, +w/4, so a door centre that sits
+  // slightly off the wall centreline (or over a jamb) is not decided by a single unlucky sample.
+  // Per side the majority hit wins.
+  var APERTURE_RAYS = [-0.25, 0.0, 0.25];   // fractions of the door's own width, along the wall
+  var APERTURE_MAX_REACH = 1.5;             // m — past this the ray is inside masonry, not a door
+  function _doorApertureAdjacency(rooms, grid, doors) {
+    var nx = grid.nx, ny = grid.ny, xs0 = grid.xs0, ys0 = grid.ys0, dil = grid.dil;
+    var grid_enclosed = grid.enclosed;
+    var miss = [];
+    // cell -> owning room index + 1 (0 = not part of any surviving pocket)
+    var owner = new Int32Array(nx * ny);
+    rooms.forEach(function (r, ri) {
+      var cs = r._cells; if (!cs) return;
+      for (var c = 0; c < cs.length; c++) if (!owner[cs[c]]) owner[cs[c]] = ri + 1;
+    });
+    var steps = Math.ceil(APERTURE_MAX_REACH / RES);
+    function march(px, py, ux, uy) {
+      for (var s = 1; s <= steps; s++) {
+        var x = px + ux * s * RES, y = py + uy * s * RES;
+        var i = Math.floor((x - xs0) / RES), j = Math.floor((y - ys0) / RES);
+        if (i < 0 || i >= nx || j < 0 || j >= ny) return 0;
+        var k = i * ny + j;
+        if (dil[k]) continue;              // still inside the wall + seal band — keep going
+        if (owner[k]) return owner[k];     // first free cell decides
+        // §APERTURE-MISS: free, but no pocket owns it. Which is it — space the exterior flood
+        // reached (the wall extraction leaks, and the far side reads as OUTSIDE), or enclosed
+        // space that no surviving pocket claims (a dropped region)? The two need different fixes.
+        miss.push(grid_enclosed && grid_enclosed[k] ? 'ENCLOSED_UNCLAIMED' : 'EXTERIOR');
+        return 0;
+      }
+      miss.push('MASONRY');
+      return 0;
+    }
+    return doors.map(function (d, di) {
+      var dx = d[0], dy = d[1], bx = d[2], by = d[3];
+      var alongX = bx >= by;                       // door's long axis lies IN the wall plane
+      var w = Math.max(bx, by);
+      // unit vectors: `n` is the wall normal (short axis), `t` runs along the door leaf
+      var nxv = alongX ? 0 : 1, nyv = alongX ? 1 : 0;
+      var txv = alongX ? 1 : 0, tyv = alongX ? 0 : 1;
+      var sides = [[], []];
+      APERTURE_RAYS.forEach(function (fr) {
+        var px = dx + txv * fr * w, py = dy + tyv * fr * w;
+        sides[0].push(march(px, py, nxv, nyv));
+        sides[1].push(march(px, py, -nxv, -nyv));
+      });
+      var picked = sides.map(function (hits) {
+        var tally = {}, best = 0, bestN = 0;
+        hits.forEach(function (h) { if (!h) return; tally[h] = (tally[h] || 0) + 1;
+          if (tally[h] > bestN) { bestN = tally[h]; best = h; } });
+        return best;
+      });
+      var out = [];
+      picked.forEach(function (p) { if (p && out.indexOf(p - 1) < 0) out.push(p - 1); });
+      var why = miss.slice(); miss.length = 0;
+      return { door: di, cx: dx, cy: dy, bx: bx, by: by, rooms: out, miss: why };
+    });
+  }
+
+  // §OPEN-THRESHOLD (2026-08-01) — pockets that are separated by NO REAL WALL.
+  //
+  // `SEAL` dilates the wall raster by 2 cells (0.4m each side) to stop the exterior flood leaking
+  // through hairline corner cracks. That dilation also closes any genuine opening narrower than
+  // ~2*SEAL*RES, so a corridor that continues through a doorless threshold — an archway, a
+  // corridor/lobby junction, a wide cased opening with no IfcDoor element — is split into two
+  // pockets by a wall that does not exist in the model. A door-based relation can never rejoin
+  // them: there is no door there to ask about.
+  //
+  // The test is exact and needs no tolerance. Take the cells that are blocked in the DILATED mask
+  // but free in the RAW one — pure seal band, no masonry. Flood those into groups. Any group
+  // touching two different pockets separates them with nothing but the seal, so those pockets are
+  // one continuous walkable space.
+  function _openThresholdAdjacency(rooms, grid) {
+    var nx = grid.nx, ny = grid.ny, dil = grid.dil, raw = grid.raw;
+    var owner = new Int32Array(nx * ny);
+    rooms.forEach(function (r, ri) {
+      var cs = r._cells; if (!cs) return;
+      for (var c = 0; c < cs.length; c++) if (!owner[cs[c]]) owner[cs[c]] = ri + 1;
+    });
+    var seen = new Uint8Array(nx * ny);
+    var pairs = {};
+    for (var si = 0; si < nx; si++) {
+      for (var sj = 0; sj < ny; sj++) {
+        var sk = si * ny + sj;
+        if (seen[sk] || !dil[sk] || raw[sk]) continue;   // want seal-only cells
+        var stack = [sk]; seen[sk] = 1; var touched = {};
+        while (stack.length) {
+          var k = stack.pop();
+          var i = Math.floor(k / ny), j = k % ny;
+          for (var d = 0; d < 4; d++) {
+            var a = i + (d === 0 ? 1 : d === 1 ? -1 : 0), b = j + (d === 2 ? 1 : d === 3 ? -1 : 0);
+            if (a < 0 || a >= nx || b < 0 || b >= ny) continue;
+            var kk = a * ny + b;
+            if (dil[kk] && !raw[kk]) { if (!seen[kk]) { seen[kk] = 1; stack.push(kk); } }
+            else if (owner[kk]) touched[owner[kk] - 1] = 1;
+          }
+        }
+        var ts = Object.keys(touched);
+        for (var p = 0; p < ts.length; p++) for (var q = p + 1; q < ts.length; q++) {
+          var lo = Math.min(+ts[p], +ts[q]), hi = Math.max(+ts[p], +ts[q]);
+          pairs[lo + ',' + hi] = 1;
+        }
+      }
+    }
+    return Object.keys(pairs).map(function (s) { return s.split(',').map(Number); });
   }
 
   // §DOOR-PARTITION-EXT-EXCLUDE (compile_rooms.py port, 2026-07-13): returns ONLY the ext mask
@@ -1021,6 +1166,13 @@
       merged.door_rescued = members.some(function (m) { return rooms[m].door_rescued; });
       merged.door_partitioned = members.some(function (m) { return rooms[m].door_partitioned; });
       merged.merged_from = members.length;
+      // §DOOR-APERTURE: a merged pocket owns the union of its members' cells (present only when
+      // floodRooms ran with keepCells; absent on every normal compile).
+      if (rooms[rep]._cells) {
+        var mc = [];
+        members.forEach(function (m) { if (rooms[m]._cells) mc = mc.concat(rooms[m]._cells); });
+        merged._cells = mc;
+      }
       out.push(merged);
     });
     return out;
@@ -1092,7 +1244,15 @@
   // { report: [...], rooms: [...] } — report matches ROOM_WALKER_JS_PORT.md Task 3's required table
   // shape (building/count/method/status/total is assembled by the CALLER, which knows the building
   // name; this function reports per-storey).
-  function compileRooms(db) {
+  // opts.doorAdjacency (§DOOR-APERTURE, additive): also return `doorAdj` — the real door↔pocket
+  // relation, per storey, keyed by the door's index in storeyDoors(db,anchors)[storey] and carrying
+  // the door's ABSOLUTE cx/cy (the compile works in §LOCAL-FRAME; callers do not). Off by default:
+  // every existing caller gets a byte-identical result and pays nothing.
+  function compileRooms(db, opts) {
+    var wantDoorAdj = !!(opts && opts.doorAdjacency);
+    var doorAdj = wantDoorAdj ? {} : null;
+    var openAdj = wantDoorAdj ? {} : null;   // §OPEN-THRESHOLD
+    var floodDropsBy = wantDoorAdj ? {} : null;   // §FLOOD-DROPS
     var stGuid = {};
     // compile_rooms.py wraps this in try/except: a never-walked building (fresh import, or this
     // table intentionally dropped) has no spatial_structure table at all yet — that's not an error,
@@ -1159,7 +1319,9 @@
         return;
       }
       var doors = doorsBy[st] || [];
-      var roomsFlood = floodRooms(ws, allStairs, doors, doorWMed);
+      var roomsFlood = floodRooms(ws, allStairs, doors, doorWMed, { keepCells: wantDoorAdj });
+      var floodGrid = roomsFlood._grid;   // merge/reject return fresh arrays; keep the grid here
+      var floodDrops = roomsFlood._drops;
       // §DOOR-PARTITION gate: flood-fill found far fewer rooms than this storey has real doors — it
       // has structurally failed here, fall back to nearest-door partitioning.
       var rooms, method;
@@ -1178,6 +1340,22 @@
       rooms = rejectRooms(rooms, allWallsRawList);
       rooms = rejectStairwell(rooms, allStairsZList);   // §STAIRWELL-STACK, after R-REJECT
       var rejectedN = preRejectN - rooms.length;
+      // §DOOR-APERTURE: compute the real door↔pocket relation HERE — still in §LOCAL-FRAME, where
+      // the cells and the doors share one coordinate system, and after merge/reject so it only
+      // names pockets that actually survive as rooms. Indices now, guids once they are assigned.
+      var adjIdx = null, openIdx = null;
+      if (wantDoorAdj) {
+        if (floodGrid && rooms.length && rooms[0]._cells) {
+          adjIdx = _doorApertureAdjacency(rooms, floodGrid, doors);
+          openIdx = _openThresholdAdjacency(rooms, floodGrid);   // §OPEN-THRESHOLD
+        } else {
+          // door-partition fallback storey (or no rooms): there is no flood raster to read, so
+          // there is no relation to report. Say so — never substitute a proximity guess here.
+          adjIdx = doors.map(function (d, di) {
+            return { door: di, cx: d[0], cy: d[1], bx: d[2], by: d[3], rooms: [], noRaster: true };
+          });
+        }
+      }
       // §LOCAL-FRAME: un-rebase on emit — everything after this point (report, no-overlap guard,
       // writeRooms containment against absolute DB coords) sees the DB's own frame again.
       rooms.forEach(function (r) {
@@ -1204,6 +1382,20 @@
         r.parent = stGuid[st] || ('STC_' + st).replace(/ /g, '_');
         allrooms.push(r);
       });
+      if (wantDoorAdj) {
+        floodDropsBy[st] = { drops: floodDrops || [], kept: rooms.length,
+          rejectedByMergeReject: preRejectN - rooms.length };
+      }
+      if (openIdx) {
+        openAdj[st] = openIdx.map(function (pr) { return [rooms[pr[0]].guid, rooms[pr[1]].guid]; });
+      }
+      if (adjIdx) {
+        doorAdj[st] = adjIdx.map(function (a) {
+          return { door: a.door, cx: a.cx + orgX, cy: a.cy + orgY, bx: a.bx, by: a.by,
+            noRaster: !!a.noRaster, miss: a.miss || [],
+            guids: a.rooms.map(function (ri) { return rooms[ri].guid; }) };
+        });
+      }
     });
     var total = allrooms.length;
     var doorRescuedTotal = allrooms.filter(function (r) { return r.door_rescued; }).length;
@@ -1212,7 +1404,7 @@
     _verifyNoOverlap(allrooms);
     return { report: report, rooms: allrooms, stZ: stZ, total: total, doorRescuedTotal: doorRescuedTotal,
       doorPartitionTotal: doorPartitionTotal, suspectTotal: suspectTotal,
-      mergedTotal: mergedTotal, rejectedTotal: rejectedTotal };
+      mergedTotal: mergedTotal, rejectedTotal: rejectedTotal, doorAdj: doorAdj, openAdj: openAdj, floodDrops: floodDropsBy };
   }
 
   // §NO-OVERLAP (compile_rooms.py port, 2026-07-13 — user request "rooms are stacked to each
@@ -1452,7 +1644,17 @@
     return result;
   }
 
+  // §DOOR-APERTURE convenience: the real pocket connectivity for a whole DB, as
+  //   { doorAdj: { storey: [ {door,cx,cy,bx,by,guids:[0..2],noRaster} ] },
+  //     openAdj:  { storey: [ [guidA,guidB], ... ] } }   ← §OPEN-THRESHOLD, doorless openings
+  // Read-only — it does not write, and does not alter what walk()/compileRooms() produce.
+  function doorRoomAdjacency(db) {
+    var c = compileRooms(db, { doorAdjacency: true });
+    return { doorAdj: c.doorAdj, openAdj: c.openAdj, floodDrops: c.floodDrops };
+  }
+
   var API = {
+    doorRoomAdjacency: doorRoomAdjacency,
     storeyWalls: storeyWalls, storeyStairs: storeyStairs, storeyDoors: storeyDoors,
     doorStats: doorStats, storeyZAnchors: storeyZAnchors,
     doorAdjacent: doorAdjacent, stairOverlapFrac: stairOverlapFrac,
