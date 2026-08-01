@@ -14,8 +14,16 @@
 // through the SAME draw routine, so the preview can never look different from what actually bakes.
 function setupCpeRoomTitle(A) {
   var SAMPLE_DT = 0.15;   // seconds between coarse room-at-time samples when building the timeline
-  var MIN_DWELL = 1.4;    // seconds — a room shown for less than this is suppressed (rate limit):
-                          // a walk crossing six small rooms in four seconds must not strobe six titles
+  // §CPE_ROOM_TITLE_DWELL_FLOOR (2026-08-02) — was 1.4s, "so six small rooms in four seconds must
+  // not strobe six titles". That reasoning predates §CPE_ROOM_TITLE_LEAD, which now enforces the
+  // SAME property downstream and better: `show < lastShow + MIN_HOLD` already guarantees captions
+  // are >= 3s apart no matter how many rooms the walk crosses. Two independent strobe-limiters meant
+  // the first one was silently LOSING rooms the second would have captioned correctly — a room
+  // genuinely visited for 1.2s was binned even though LEAD+HOLD would have given it a readable 3s
+  // caption opening 2s before the doorway. The floor now only rejects a GRAZE (a sample or two of
+  // clipping a corner), which is a data-quality test, not a legibility one — legibility is MIN_HOLD's
+  // job and it is guaranteed there. 3 samples at SAMPLE_DT=0.15.
+  var MIN_DWELL = 0.45;
   var FADE = 0.4;         // seconds — fade in/out
   // §CPE_ROOM_TITLE_HOLD (user, 2026-08-01: "give it 3 secs, because user will know u just passed
   // that room, and of course, if another room cuts in by 2 secs, then it can replace so").
@@ -233,11 +241,22 @@ function setupCpeRoomTitle(A) {
       }
       samples.push({ t: t, guid: room ? room.guid : null, node: room });
     }
-    var raw = [];
+    // §CPE_ROOM_TITLE_HYSTERESIS (2026-08-02) — a run is contiguous same-guid samples, so ONE stray
+    // sample (a gaze clipping a wall, a ray slipping through a doorway) used to split a single 2s
+    // dwell into two ~1s fragments and BOTH died to the dwell floor: the room vanished from the film
+    // entirely, and nothing in the log said why. A single-sample dropout is sensor noise, not the
+    // camera leaving the room, so it is bridged. Two samples in a row is a real departure and is
+    // left alone — the bridge must not be able to glue two genuinely different rooms together.
+    var raw = [], bridged = 0;
     samples.forEach(function(s) {
       var last = raw[raw.length - 1];
-      if (last && last.guid === s.guid) { last.tEnd = s.t; }
-      else raw.push({ guid: s.guid, node: s.node, tStart: s.t, tEnd: s.t });
+      if (last && last.guid === s.guid) { last.tEnd = s.t; return; }
+      // one-sample dropout: ...A, X, A... -> the X is noise, keep the A run going
+      var prev = raw[raw.length - 2];
+      if (last && prev && prev.guid === s.guid && (last.tEnd - last.tStart) < 1e-9) {
+        raw.pop(); prev.tEnd = s.t; bridged++; return;
+      }
+      raw.push({ guid: s.guid, node: s.node, tStart: s.t, tEnd: s.t });
     });
     var kept = [], suppressed = 0;
     raw.forEach(function(seg) {
@@ -270,8 +289,18 @@ function setupCpeRoomTitle(A) {
     var led = 0;
     for (var h = 0; h < held.length; h++) if (held[h].entry > held[h].tStart + 1e-9) led++;
 
+    // §CPE_ROOM_TITLE_LEAD, the FIRST caption only: the dive clamp can truncate its 2s lead to
+    // nothing (show collapses to tStart when the dive ends after the doorway), which is the "too
+    // late" the lead exists to kill, reintroduced for caption #1 alone. NOT silently changed here —
+    // whether that caption should be shown on-the-nose or SKIPPED per the user's own "if misses,
+    // then skips" is their call, not a guess to bury in a constant. Measured and printed so the
+    // next bake says whether it even happens on a real film.
+    var lead0 = held.length ? (held[0].entry - held[0].tStart) : null;
     console.log('§CPE_ROOM_TITLE_TIMELINE rule=' + rule + ' segments=' + held.length + '/' + kept.length +
-      ' suppressed=' + suppressed +
+      ' suppressed=' + suppressed + ' bridged=' + bridged +
+      ' dwellFloor=' + MIN_DWELL + 's' +
+      (lead0 == null ? '' : ' firstLead=' + lead0.toFixed(2) + 's/' + LEAD + 's' +
+        (lead0 < LEAD - 0.01 ? ' (TRUNCATED by the dive clamp)' : '')) +
       ' gazeMissedAll=' + _gazeMissedAll + '/' + samples.length +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
