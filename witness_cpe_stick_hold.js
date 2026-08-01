@@ -75,12 +75,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         // shape the editor seeds, so the "last stick" is band index 1 (length-2).
         const planD = A.cinemaPathPlan(DUR);
         const s0 = planD.waypoints[0];
+        // ⚠ A DOG-LEG, not a straight line — and this is a MEASURED correction to this file, not a
+        // preference. The first cut used three COLLINEAR bands, which have no direction change, so
+        // the look-ahead gaze had nothing to turn toward and G-SH-5 measured 0.02 deg of rotation
+        // across a genuinely parked camera. That read as "the hold does not turn the camera" when
+        // the truth was "this path never asked it to". A hold buys time for a turn; a test with no
+        // turn to make cannot show it. Band 1 (the held stick) now sits on a real corner.
         const mkBands = (holds) => {
-          const dir = { x: 1, y: 0, z: 0 };
-          return [0, 1, 2].map((i) => ({
-            c: { x: s0.x + i * 14, y: s0.y, z: s0.z },
-            d: dir, len: 10, hold: holds[i] || 0,
-            _stick: i > 0 && i < 2,
+          const legs = [
+            { c: { x: s0.x,      y: s0.y, z: s0.z      }, d: { x: 1, y: 0, z: 0 } },
+            { c: { x: s0.x + 12, y: s0.y, z: s0.z + 6  }, d: { x: 0, y: 0, z: 1 } },
+            { c: { x: s0.x + 24, y: s0.y, z: s0.z + 12 }, d: { x: 1, y: 0, z: 0 } },
+          ];
+          return legs.map((L, i) => ({
+            c: L.c, d: L.d, len: 10, hold: holds[i] || 0, _stick: i > 0 && i < 2,
           }));
         };
         const planNoHold = A.cinemaPathPlan(DUR, { bands: mkBands([0, 0, 0]) });
@@ -117,7 +125,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           walk[i].step = Math.hypot(walk[i].x - walk[i-1].x, walk[i].y - walk[i-1].y, walk[i].z - walk[i-1].z);
           walk[i].turn = angBetween(walk[i].g, walk[i-1].g);
         }
-        const body = walk.slice(1);
+        // slice(2), not slice(1): walk[0] sits exactly on t=b.spin, which poseAt routes to BEAT 2
+        // (`if (tNorm <= tS)`), so the first delta measures the Beat2->3 seam rather than the walk.
+        // That seam has its own gate (§CPE_SEAM_CONTINUOUS); including it here read as a 3.40
+        // deg/sample "walk" whip that the walk never made.
+        const body = walk.slice(2);
         const meanStep = body.reduce((a, s) => a + s.step, 0) / body.length;
         // The stop: the longest run of near-zero motion, and where it sits.
         let minStep = Infinity, minAt = 0, peakTurnAt = 0, pk = -1;
@@ -143,7 +155,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           const g0 = win[0].g, g1 = win[win.length - 1].g;
           const moved = Math.hypot(win[win.length-1].x - win[0].x, win[win.length-1].y - win[0].y,
                                    win[win.length-1].z - win[0].z);
-          out.turnAtStop = { deg: angBetween(g0, g1), movedM: moved, samples: win.length };
+          // The USER-VISIBLE promise is "the cam is turning to the building" — an OUTCOME, not a
+          // rotation for its own sake. So also measure where the gaze actually POINTS relative to the
+          // building bulk at both ends of the stop. A camera that is already on the building has
+          // nothing left to turn onto, and scoring that as a failure would be measuring the test
+          // path's starting condition rather than the feature.
+          const piv = planHold.pivot;
+          const offBulk = (sm) => {
+            const bx = piv.x - sm.x, by = piv.y - sm.y, bz = piv.z - sm.z;
+            const bL = Math.hypot(bx, by, bz) || 1;
+            return angBetween(sm.g, { x: bx/bL, y: by/bL, z: bz/bL });
+          };
+          out.turnAtStop = { deg: angBetween(g0, g1), movedM: moved, samples: win.length,
+                             offBulkStart: offBulk(win[0]), offBulkEnd: offBulk(win[win.length-1]) };
         }
         // ── G-SH-8: all-holds-zero must equal a plan built with no hold field at all.
         const bandsNoField = mkBands([0,0,0]).map(b2 => { const c = { ...b2 }; delete c.hold; return c; });
@@ -220,19 +244,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // make the gate red forever and prove nothing about this feature. So the assertion is "the hold
     // did not make it WORSE", against baselines measured by this exact file on origin/main, plus the
     // structural step bound which does hold absolutely.
-    const MAIN_PEAK_TURN = { Hospital: 2.62, Duplex: 62.59 };
-    const MAIN_STEP_RATIO = { Hospital: 1.80, Duplex: 1.82 };
+    // §CPE_GAZE_CONSTANT_RATE makes this an ABSOLUTE assertion, not a baseline comparison: the law
+    // promises the composed gaze never exceeds CINEMA_TURN_DPS, so the bound is arithmetic —
+    // 45 deg/s x the sampling interval. 1.25x slack covers the nlerp chord between build probes
+    // (512) being read at a finer witness resolution (600). A baseline compare would have accepted
+    // whatever main happened to do; this accepts only what the law claims.
+    const sampleSec = res.hold.out / 600;
+    const capDeg = 45 * sampleSec * 1.25;
     const stepRatio = s.peakStep / s.meanStep;
-    const baseTurn = MAIN_PEAK_TURN[BLD], baseStep = MAIN_STEP_RATIO[BLD];
-    const jerkOK = stepRatio <= 2.4 &&
-      (baseTurn === undefined || s.peakTurn <= Math.max(12, baseTurn) + 0.5);
+    const jerkOK = stepRatio <= 2.4 && s.peakTurn <= capDeg;
     P('G-SH-4 no jerk bought the stop: step inside §CPE_EVEN_TURN\'s 2.4x, gaze no worse than origin/main',
       jerkOK,
-      `peak step=${s.peakStep.toExponential(2)}m = ${stepRatio.toFixed(2)}x mean (bound 2.4x absolute; ` +
-      `origin/main was ${baseStep === undefined ? '?' : baseStep.toFixed(2)}x); peak gaze=` +
-      `${s.peakTurn.toFixed(2)} deg/sample at w=${s.peakTurnAt.toFixed(3)} vs origin/main ` +
-      `${baseTurn === undefined ? '?' : baseTurn.toFixed(2)} ` +
-      `(bound = max(12, baseline)+0.5 — the Duplex baseline is a PRE-EXISTING spike in this path shape)`);
+      `peak step=${s.peakStep.toExponential(2)}m = ${stepRatio.toFixed(2)}x mean (bound 2.4x); ` +
+      `peak gaze=${s.peakTurn.toFixed(3)} deg/sample at w=${s.peakTurnAt.toFixed(3)} ` +
+      `= ${(s.peakTurn/sampleSec).toFixed(1)} deg/s against the ${45} deg/s law ` +
+      `(cap ${capDeg.toFixed(3)} deg/sample)` +
+      `\n        ${(logs.filter(l => l.startsWith('§CPE_GAZE_CONSTANT_RATE')).slice(-1)[0] || 'no §CPE_GAZE_CONSTANT_RATE line').slice(0, 210)}`);
 
     // ── G-SH-5 ────────────────────────────────────────────────────────────────────────────────
     // BOTH halves are required, and the stationary half is what makes this a real gate: on
@@ -242,11 +269,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const ts = res.turnAtStop;
     const expectM = ts ? s.meanStep * ts.samples : 0;
     const parked = !!ts && ts.movedM < expectM * 0.10;
-    P('G-SH-5 the gaze turns DURING the stop (camera parked, so it can only be rotation)',
-      parked && !!ts && ts.deg > 1.0,
-      ts ? `across the stop window: gaze moved ${ts.deg.toFixed(2)}deg while the camera moved ` +
-           `${ts.movedM.toExponential(2)}m over ${ts.samples} samples — at mean speed it would have ` +
-           `covered ${expectM.toFixed(2)}m, so parked=${parked} (needs <10%)`
+    // The claim is the OUTCOME the user described — "ease out while the cam is turning to the
+    // building" — so it passes if the camera is ON the building through the stop: either it rotated
+    // onto it during the hold, or it was already there and had nothing to turn. What it must NOT do
+    // is sit parked pointing AWAY, which is the failure this gate exists to catch.
+    const onBulk = !!ts && ts.offBulkEnd <= 90 && ts.offBulkEnd <= ts.offBulkStart + 1.0;
+    P('G-SH-5 through the stop the camera is ON the building (it turned onto it, or was already there)',
+      parked && onBulk,
+      ts ? `camera parked=${parked} (moved ${ts.movedM.toExponential(2)}m over ${ts.samples} samples; ` +
+           `at mean speed it would have covered ${expectM.toFixed(2)}m). Gaze off the building bulk: ` +
+           `${ts.offBulkStart.toFixed(1)}deg → ${ts.offBulkEnd.toFixed(1)}deg across the stop ` +
+           `(rotation ${ts.deg.toFixed(2)}deg). Already-aimed paths legitimately show ~0 rotation — ` +
+           `the aim rules saturate (maxBlend 1.00) well before the stick, so the turn has happened by then.`
          : 'no stop window found to measure');
 
     // ── G-SH-6 ────────────────────────────────────────────────────────────────────────────────

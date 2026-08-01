@@ -6206,7 +6206,14 @@ async function setupEffects(A, renderer, scene, camera) {
         // no hold is set, so this is a no-op on every path that has none.
         var w3 = (tNorm - tS) / Math.max(1e-6, tO - tS);
         var e3 = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3)));
-        return _beat3Pose(e3, w3);
+        var p3f = _beat3Pose(e3, w3);
+        // §CPE_GAZE_CONSTANT_RATE: position is whatever the walk says; the DIRECTION is the
+        // rate-limited one. Splitting them here (rather than inside _beat3Pose) keeps that function
+        // the raw signal the cost table samples, so §CPE_EVEN_TURN still measures turn DEMAND.
+        var g3 = _gazeRateAt(_spanFracOf(tNorm));
+        if (!g3) return p3f;
+        return { x: p3f.x, y: p3f.y, z: p3f.z,
+                 tx: p3f.x + g3.x * 20, ty: p3f.y + g3.y * 20, tz: p3f.z + g3.z * 20 };
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
@@ -6214,6 +6221,19 @@ async function setupEffects(A, renderer, scene, camera) {
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
         var e4 = _cinemaEaseFloored((tNorm - tO) / Math.max(1e-6, tR - tO));
+        var p4f = _beat4Pose(e4);
+        // §CPE_GAZE_CONSTANT_RATE spans Beat 3 AND Beat 4 — see _gazeRateBuild. MEASURED: limiting
+        // only the walk moved the whip rather than removing it (Terminal 4.1 -> 34.9 deg/frame at
+        // u=0.645, which is just past `out` — i.e. INSIDE Beat 4). Beat 4 is where the gaze swings
+        // from wherever the aim left it onto the pivot bearing, so it needs the same bound.
+        var g4 = _gazeRateAt(_spanFracOf(tNorm));
+        if (!g4) return p4f;
+        return { x: p4f.x, y: p4f.y, z: p4f.z,
+                 tx: p4f.x + g4.x * 20, ty: p4f.y + g4.y * 20, tz: p4f.z + g4.z * 20 };
+      }
+      return _tailPose(tNorm);
+    }
+    function _beat4Pose(e4) {
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
         // (odx,odz) IS the direction Beat 3 ends on — its last route leg is the outward push past
         // the doorway — so e4=0 continues Beat 3's final gaze exactly. At e4=1, turnW4=1 yields the
@@ -6226,8 +6246,9 @@ async function setupEffects(A, renderer, scene, camera) {
                                 exitOuter.y + (orbitStart.y - exitOuter.y) * e4,
                                 exitOuter.z + (orbitStart.z - exitOuter.z) * e4,
                                 _beat3EndDir.x, _beat3EndDir.y, _beat3EndDir.z, turnW4);
-      }
-      // ── Beat 5: the standard ending.
+    }
+    // ── Beat 5: the standard ending.
+    function _tailPose(tNorm) {
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
     }
 
@@ -6666,12 +6687,106 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     _holdBuild();
 
+    // ══ §CPE_GAZE_CONSTANT_RATE — the gaze may never turn faster than the film's own turn rate ═══
+    // MEASURED CAUSE (this session, G-SH-4): removing §CPE_AIM_LATCH's outgoing taper exposed a
+    // 29.01 deg/sample gaze whip at w=0.850 on Hospital, against 2.62 there on origin/main. The
+    // taper had been MASKING a fast swing inside the walk — not merely smoothing the Beat 4 hand-off
+    // as its own comment claimed. Re-tapering would undo the user's "the turning should be thruout,
+    // till the end of clip", so the swing is bounded at its cause instead.
+    //
+    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DENSITY and §CPE_AIM_DEPTH, all
+    // of it — is sampled in TIME and rate-limited to CINEMA_TURN_DPS, the rate the spin, the orbit
+    // lap and the walk's own turn charge are ALREADY priced at. Not a new constant, and not a new
+    // opinion about how fast a camera should turn: it is the number this film already uses
+    // everywhere else, finally applied to the thing that actually rotates.
+    //
+    // Sampled in TIME, not in e3 — with §CPE_STICK_HOLD a hold makes travel stop while time runs, so
+    // a limit expressed per unit of travel would be unbounded exactly where the camera is parked and
+    // turning, which is the one place this feature deliberately creates rotation.
+    //
+    // Forward-only, so it LAGS rather than anticipating; that is correct for a camera operator and
+    // it is safe here because §CPE_AIM_LATCH already made Beat 4 open on Beat 3's real final gaze,
+    // so wherever the limiter leaves the gaze, the hand-off follows it. Pure function of w3 — no
+    // per-frame state, so poseAt stays order-independent and replans stay byte-identical.
+    function _rotToward(a, b, maxAng) {
+      var d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+      var ang = Math.acos(d);
+      if (ang <= maxAng || ang < 1e-9) return b;
+      var s = Math.sin(ang);
+      if (Math.abs(s) < 1e-9) return b;             // antipodal/degenerate — no stable arc to walk
+      var t = maxAng / ang, k0 = Math.sin((1 - t) * ang) / s, k1 = Math.sin(t * ang) / s;
+      var x = a.x * k0 + b.x * k1, y = a.y * k0 + b.y * k1, z = a.z * k0 + b.z * k1;
+      var L = Math.hypot(x, y, z) || 1;
+      return { x: x / L, y: y / L, z: z / L };
+    }
+    // The limiter spans Beat 3 AND Beat 4 as ONE continuous stretch of film — [tS, tR]. Limiting
+    // only the walk was measured to MOVE the whip rather than remove it: Terminal went 4.1 -> 34.9
+    // deg/frame at u=0.645, and `out` there is 0.6442, so the peak had simply relocated into Beat 4,
+    // which is exactly where the gaze swings from wherever the aim rule left it onto the pivot
+    // bearing. One span, one bound, no seam for a whip to hide in.
+    function _spanFracOf(tNorm) {
+      return (tNorm - tS) / Math.max(1e-6, tR - tS);
+    }
+    var _gazeLim = null, _gazeLimN = 512;
+    function _gazeRateBuild() {
+      var i, raw = [], sp, tt, e, p, dx, dy, dz, L;
+      for (i = 0; i <= _gazeLimN; i++) {
+        sp = i / _gazeLimN;
+        tt = tS + (tR - tS) * sp;
+        if (tt <= tO) {
+          var w3b = (tt - tS) / Math.max(1e-6, tO - tS);
+          e = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3b)));
+          p = _beat3Pose(e, w3b);
+        } else {
+          p = _beat4Pose(_cinemaEaseFloored((tt - tO) / Math.max(1e-6, tR - tO)));
+        }
+        dx = p.tx - p.x; dy = p.ty - p.y; dz = p.tz - p.z;
+        L = Math.hypot(dx, dy, dz) || 1;
+        raw.push({ x: dx / L, y: dy / L, z: dz / L });
+      }
+      var stepSec = Math.max(1e-6, (tR - tS) * durationSec) / _gazeLimN;
+      var maxAng = CINEMA_TURN_DPS * stepSec * Math.PI / 180;
+      var lim = [raw[0]], cur = raw[0], rawPeak = 0, limPeak = 0;
+      for (i = 1; i <= _gazeLimN; i++) {
+        var rp = Math.acos(Math.max(-1, Math.min(1,
+          raw[i].x * raw[i - 1].x + raw[i].y * raw[i - 1].y + raw[i].z * raw[i - 1].z))) * 180 / Math.PI;
+        if (rp > rawPeak) rawPeak = rp;
+        var nxt = _rotToward(cur, raw[i], maxAng);
+        var lp = Math.acos(Math.max(-1, Math.min(1,
+          nxt.x * cur.x + nxt.y * cur.y + nxt.z * cur.z))) * 180 / Math.PI;
+        if (lp > limPeak) limPeak = lp;
+        cur = nxt; lim.push(cur);
+      }
+      _gazeLim = lim;
+      console.log('§CPE_GAZE_CONSTANT_RATE probes=' + (_gazeLimN + 1) + ' spanSec=' + ((tR - tS) * durationSec).toFixed(2) +
+        ' (beats 3+4) walkSec=' + _useSec.out.toFixed(2) +
+        ' capDps=' + CINEMA_TURN_DPS + ' capPerProbeDeg=' + (maxAng * 180 / Math.PI).toFixed(3) +
+        ' rawPeakDeg=' + rawPeak.toFixed(2) + ' limitedPeakDeg=' + limPeak.toFixed(2) +
+        ' rawPeakDps=' + (rawPeak / stepSec).toFixed(1) + ' limitedPeakDps=' + (limPeak / stepSec).toFixed(1) +
+        ' — the composed gaze, bounded at the rate the spin and orbit already turn at');
+    }
+    function _gazeRateAt(w) {
+      if (!_gazeLim) return null;
+      var t = Math.max(0, Math.min(1, w)) * _gazeLimN;
+      var i = Math.min(_gazeLimN - 1, Math.floor(t)), f = t - i;
+      var a = _gazeLim[i], b = _gazeLim[i + 1];
+      // nlerp: adjacent samples are at most capPerProbeDeg apart by construction, so the chord error
+      // is negligible and slerp would buy nothing but a trig call per frame.
+      var x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f, z = a.z + (b.z - a.z) * f;
+      var L = Math.hypot(x, y, z) || 1;
+      return { x: x / L, y: y / L, z: z / L };
+    }
     // §CPE_AIM_LATCH — Beat 3's REAL final gaze direction, sampled from the pose that actually flies.
     // Beat 4 used to open on the hardcoded (odx,0,odz) outward push, justified by the comment
     // "(odx,odz) IS the direction Beat 3 ends on". That was true only while the aim rules were
     // tapered to zero before e3=1; with the taper gone it is false, and believing it is exactly the
     // 88.4 deg/frame seam snap the taper was introduced to hide. Sampled, never assumed.
-    var _b3e = _beat3Pose(1);
+    // ⚠ This is the RAW Beat 3 ending, and it must be: _gazeRateBuild samples _beat4Pose, which reads
+    // this, so it has to exist BEFORE the limiter is built (an earlier cut read the limited series
+    // here and _beat3EndDir was `undefined` at build time). It is also the right value — its job is
+    // to make Beat 4's RAW signal continuous with Beat 3's RAW signal, and the limiter, which now
+    // spans both beats as one stretch, smooths the composition afterwards.
+    var _b3e = _beat3Pose(1, 1);
     var _b3dx = _b3e.tx - _b3e.x, _b3dy = _b3e.ty - _b3e.y, _b3dz = _b3e.tz - _b3e.z;
     var _b3dL = Math.hypot(_b3dx, _b3dy, _b3dz) || 1;
     var _beat3EndDir = { x: _b3dx / _b3dL, y: _b3dy / _b3dL, z: _b3dz / _b3dL };
@@ -6679,6 +6794,7 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_AIM_LATCH beat3EndDir=(' + _beat3EndDir.x.toFixed(3) + ',' + _beat3EndDir.y.toFixed(3) +
       ',' + _beat3EndDir.z.toFixed(3) + ') offOutwardDeg=' + _b3Off.toFixed(1) +
       ' — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid');
+    _gazeRateBuild();
 
     // Plan cost is dominated by the BVH fans + floor raycasts. Measured on this project's headless
     // ANGLE/SwiftShader rig: Duplex ~20-70ms, Terminal/Hospital ~500-750ms — a one-off cost at the
