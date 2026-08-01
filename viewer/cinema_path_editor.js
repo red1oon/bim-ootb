@@ -242,6 +242,20 @@
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     return true;
   }
+  // §CPE_GHOST_PULL — a hose pull is removable exactly as a stick is. Before this existed a pull
+  // could only be undone (Ctrl+Z, and only while it was still the newest edit); once buried under a
+  // later edit it was permanent AND invisible. That is the whole "ghost" the user reported.
+  function _removeHosePull(hi) {
+    if (!_state || !_state.hose || hi < 0 || hi >= _state.hose.length) return false;
+    _undoPush('remove pull at ' + Math.round((_state.hose[hi].s || 0) * 100) + '%');
+    _state.hose.splice(hi, 1);
+    _state.staged = false;
+    console.log('§CPE_GHOST_PULL removed index=' + hi + ' remaining=' + _state.hose.length);
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return true;
+  }
   function _refreshFlow() {
     if (!_state) return;
     _state.flowRaw = _flowRaw();
@@ -769,6 +783,10 @@
         var b = _state.bands[i];
         var sel = _state.held && _state.held.b === i;
         var row = document.createElement('div');
+        // §CPE_GHOST_PULL made #cpe-rows a MIXED list (band rows + pull rows), so every row now
+        // declares its kind. witness_cpe_click_slop.js counts bands off this attribute — without it
+        // a pull row would silently inflate the band count and turn a green gate red for no reason.
+        row.setAttribute('data-cpe-row', 'band');
         // §CPE_REOPEN_NODE: the list carries the SAME cue as the pipe — a node you dropped is blue
         // in both places, so "which row is my node" and "which bar is my node" are one question.
         var stickRow = !!b._stick && i > 0 && i < _state.bands.length - 1;
@@ -858,6 +876,63 @@
         row.addEventListener('click', function() { _hold(i, 'mid', true); });
         box.appendChild(row);
       })(i);
+    }
+    _renderHoseRows(box);
+  }
+
+  // ══ §CPE_GHOST_PULL — every hose pull gets a ROW ══════════════════════════════════════════════
+  // User, 2026-08-02: "when adding a stick should click on the part and wait till the stick row
+  // appears before dragging. Click and drag right away does not get registered and it ends up as a
+  // working but ghost stick".
+  //
+  // THE DIAGNOSIS, and it is not a race — _spawnStick is fully synchronous, so there is no window to
+  // lose a click in. §CPE_STICK splits ONE grab by what the hand does: release without moving past
+  // CLICK_SLOP_PX and you get a STICK; move first and you get a HOSE PULL (h.up: `if (!d.op)
+  // _spawnStick`). Press-and-drag in one motion is therefore a PULL, by design — the existing
+  // comment defends that split ("one gesture doing two things"), and it is a reasonable rule.
+  //
+  // The actual defect is downstream of it: _renderRows iterated `_state.bands` ONLY, and a pull
+  // lives in `_state.hose`. So the pull bent the path for real, survived to the bake, and had NO
+  // representation in the panel — it could not be seen, selected, or deleted. "Working but ghost"
+  // is an exact description. This is the same family as §CPE_CLICK_SLOP (user, 2026-07-29: "when i
+  // made a new node in the pipe, it does not show up in the alt-c panel list"), which fixed the
+  // accidental case; this fixes the DELIBERATE one.
+  //
+  // Fix is additive and does not touch the gesture: nothing a user creates on the pipe is invisible.
+  function _renderHoseRows(box) {
+    if (!box || !_state || !_state.hose || !_state.hose.length) return;
+    var hd = document.createElement('div');
+    hd.setAttribute('data-cpe-row', 'pull-header');
+    hd.style.cssText = 'padding:4px 12px;margin-top:4px;border-top:1px solid #333;color:#888;font-size:10px';
+    hd.textContent = _state.hose.length + ' pull' + (_state.hose.length === 1 ? '' : 's') +
+      ' — a drag on the pipe bends it without adding a stick';
+    box.appendChild(hd);
+    for (var h = 0; h < _state.hose.length; h++) {
+      (function(h) {
+        var op = _state.hose[h];
+        var mag = Math.hypot(op.d.x, op.d.y, op.d.z);
+        var row = document.createElement('div');
+        row.setAttribute('data-cpe-row', 'pull');
+        row.style.cssText = 'padding:4px 12px;font-size:11px;display:flex;align-items:center;gap:6px;' +
+          'border-left:3px solid #7e57c2;background:rgba(126,87,194,0.10)';
+        var lbl = document.createElement('span');
+        lbl.style.cssText = 'width:62px;color:#b39ddb;flex:none';
+        lbl.textContent = 'pull ' + (h + 1);
+        lbl.title = 'a bend you dragged into the pipe at ' + Math.round((op.s || 0) * 100) + '% along the walk';
+        row.appendChild(lbl);
+        var info = document.createElement('span');
+        info.style.cssText = 'color:#888;font-family:monospace;flex:1';
+        info.textContent = Math.round((op.s || 0) * 100) + '% · ' + mag.toFixed(2) + 'm · reach ' + (op.r || 0).toFixed(1);
+        row.appendChild(info);
+        var del = document.createElement('button');
+        del.textContent = '×';
+        del.title = 'remove this pull — the path springs back';
+        del.style.cssText = 'flex:none;width:16px;height:16px;line-height:1;padding:0;font-size:12px;' +
+          'background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer';
+        del.addEventListener('click', function(e) { e.stopPropagation(); _removeHosePull(h); });
+        row.appendChild(del);
+        box.appendChild(row);
+      })(h);
     }
   }
 
