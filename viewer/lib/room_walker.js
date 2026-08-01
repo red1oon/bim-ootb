@@ -628,7 +628,7 @@
         // its doors go single-sided. Count and size them so "why is the graph shattered?" is
         // answerable without re-deriving the compile.
         if (area > planArea * MAX_AREA_FRAC) {
-          if (keepCells) drops.push({ why: 'MAX_AREA_FRAC', area: area });
+          if (keepCells) drops.push({ why: 'MAX_AREA_FRAC', area: area, _cells: comp });
           continue;   // §SUSPECT-LARGE: MAX_AREA_ABS flags below, never drops
         }
         var wx0 = xs0 + mni * RES, wx1 = xs0 + (mxi + 1) * RES;
@@ -644,13 +644,13 @@
           // flip at exact equality with NOISE_FLOOR_DIM; same convention _decomposeRegion uses).
           var minCellsNF = Math.round(NOISE_FLOOR_DIM / RES);
           var dimsOk = (mxi - mni + 1) >= minCellsNF && (mxj - mnj + 1) >= minCellsNF;
-          if (!(dimsOk && hasDoor)) { if (keepCells) drops.push({ why: hasDoor ? 'NOISE_FLOOR_DIM' : 'MIN_AREA_no_door', area: area }); continue; }
+          if (!(dimsOk && hasDoor)) { if (keepCells) drops.push({ why: hasDoor ? 'NOISE_FLOOR_DIM' : 'MIN_AREA_no_door', area: area, _cells: comp }); continue; }
           doorRescued = true;
         }
         // §STAIR-EXCLUDE: a stair/ramp footprint covering this pocket -> it's a circulation shaft,
         // not a room. Drop it.
         var sf = stairOverlapFrac(wx0, wy0, wx1, wy1, stairs);
-        if (sf >= STAIR_OVERLAP_REJECT) { if (keepCells) drops.push({ why: 'STAIR_EXCLUDE', area: area }); continue; }
+        if (sf >= STAIR_OVERLAP_REJECT) { if (keepCells) drops.push({ why: 'STAIR_EXCLUDE', area: area, _cells: comp }); continue; }
         // §ROOM-FORM + §RECT-HONESTY + §MULTI-RECT (ROOM_INJECTION_HYBRID.md §7/§8)
         var c2;
         for (c2 = 0; c2 < comp.length; c2++) inSet[comp[c2]] = 1;
@@ -714,7 +714,32 @@
   // Per side the majority hit wins.
   var APERTURE_RAYS = [-0.25, 0.0, 0.25];   // fractions of the door's own width, along the wall
   var APERTURE_MAX_REACH = 1.5;             // m — past this the ray is inside masonry, not a door
-  function _doorApertureAdjacency(rooms, grid, doors) {
+
+  // §APERTURE-AXIS (lever A, §21.25): the door bbox's short axis is only a PROXY for the wall
+  // normal, and it is the same proxy §21.15's funnel got burned by — a door whose bbox is near
+  // square, rotated, or drawn with its swing arc has a long axis that is not in the wall plane.
+  // Measure it instead: from the door centre the blocked band is THIN across the wall and LONG
+  // along it, because the wall continues. Take the axis with the shorter total crossing. No
+  // tolerance, no name matching, and it degrades to the bbox answer when the two tie.
+  function _thinBandAxis(grid, dx, dy, fallbackAlongX) {
+    var nx = grid.nx, ny = grid.ny, xs0 = grid.xs0, ys0 = grid.ys0, dil = grid.dil;
+    var cap = Math.ceil(APERTURE_MAX_REACH / RES);
+    function run(ux, uy) {
+      for (var s = 1; s <= cap; s++) {
+        var i = Math.floor((dx + ux * s * RES - xs0) / RES);
+        var j = Math.floor((dy + uy * s * RES - ys0) / RES);
+        if (i < 0 || i >= nx || j < 0 || j >= ny) return s;
+        if (!dil[i * ny + j]) return s;
+      }
+      return cap + 1;
+    }
+    var crossX = run(1, 0) + run(-1, 0);     // crossing the band along x
+    var crossY = run(0, 1) + run(0, -1);     // crossing it along y
+    if (crossX === crossY) return !fallbackAlongX;   // tie -> keep the bbox proxy's answer
+    return crossX < crossY;                  // true = normal is x (door leaf runs along y)
+  }
+  function _doorApertureAdjacency(rooms, grid, doors, mode) {
+    mode = mode || {};
     var nx = grid.nx, ny = grid.ny, xs0 = grid.xs0, ys0 = grid.ys0, dil = grid.dil;
     var grid_enclosed = grid.enclosed;
     var miss = [];
@@ -745,6 +770,7 @@
     return doors.map(function (d, di) {
       var dx = d[0], dy = d[1], bx = d[2], by = d[3];
       var alongX = bx >= by;                       // door's long axis lies IN the wall plane
+      if (mode.axis === 'thinband') alongX = !_thinBandAxis(grid, dx, dy, alongX);
       var w = Math.max(bx, by);
       // unit vectors: `n` is the wall normal (short axis), `t` runs along the door leaf
       var nxv = alongX ? 0 : 1, nyv = alongX ? 1 : 0;
@@ -1253,6 +1279,8 @@
     var doorAdj = wantDoorAdj ? {} : null;
     var openAdj = wantDoorAdj ? {} : null;   // §OPEN-THRESHOLD
     var floodDropsBy = wantDoorAdj ? {} : null;   // §FLOOD-DROPS
+    var wantExp = !!(opts && opts.experiment);
+    var expAdj = wantExp ? {} : null;   // §21.25 lever A+B
     var stGuid = {};
     // compile_rooms.py wraps this in try/except: a never-walked building (fresh import, or this
     // table intentionally dropped) has no spatial_structure table at all yet — that's not an error,
@@ -1343,11 +1371,25 @@
       // §DOOR-APERTURE: compute the real door↔pocket relation HERE — still in §LOCAL-FRAME, where
       // the cells and the doors share one coordinate system, and after merge/reject so it only
       // names pockets that actually survive as rooms. Indices now, guids once they are assigned.
-      var adjIdx = null, openIdx = null;
+      var adjIdx = null, openIdx = null, expIdx = null, expOpenIdx = null, expNames = null, expDropAreas = null;
       if (wantDoorAdj) {
         if (floodGrid && rooms.length && rooms[0]._cells) {
           adjIdx = _doorApertureAdjacency(rooms, floodGrid, doors);
           openIdx = _openThresholdAdjacency(rooms, floodGrid);   // §OPEN-THRESHOLD
+          if (wantExp) {
+            // §21.25 experiment: same march, but (A) the wall normal is MEASURED not assumed, and
+            // (B) the dropped regions are in the owner set, so a door that currently finds only
+            // one side can name the region on the other. Both relations are produced from one
+            // compile so the levers stay separately attributable.
+            var extra = (floodDrops || []).filter(function (d) { return d._cells; });
+            var ext = rooms.concat(extra);
+            expIdx = _doorApertureAdjacency(ext, floodGrid, doors, { axis: 'thinband' });
+            expOpenIdx = _openThresholdAdjacency(ext, floodGrid);
+            expNames = ext.map(function (r, i) {
+              return i < rooms.length ? null : ('DROP_' + i + '_' + (r.why || '?'));
+            });
+            expDropAreas = extra.map(function (d) { return d.area; });
+          }
         } else {
           // door-partition fallback storey (or no rooms): there is no flood raster to read, so
           // there is no relation to report. Say so — never substitute a proximity guess here.
@@ -1389,6 +1431,19 @@
       if (openIdx) {
         openAdj[st] = openIdx.map(function (pr) { return [rooms[pr[0]].guid, rooms[pr[1]].guid]; });
       }
+      if (expIdx) {
+        var nameOf = function (i) { return expNames[i] || rooms[i].guid; };
+        expAdj[st] = {
+          doors: expIdx.map(function (a) {
+            return { door: a.door, cx: a.cx + orgX, cy: a.cy + orgY,
+              ids: a.rooms.map(nameOf), miss: a.miss || [] };
+          }),
+          open: expOpenIdx.map(function (pr) { return [nameOf(pr[0]), nameOf(pr[1])]; }),
+          kept: rooms.map(function (r) { return r.guid; }),
+          dropped: expNames.filter(Boolean),
+          droppedAreas: expDropAreas
+        };
+      }
       if (adjIdx) {
         doorAdj[st] = adjIdx.map(function (a) {
           return { door: a.door, cx: a.cx + orgX, cy: a.cy + orgY, bx: a.bx, by: a.by,
@@ -1404,7 +1459,7 @@
     _verifyNoOverlap(allrooms);
     return { report: report, rooms: allrooms, stZ: stZ, total: total, doorRescuedTotal: doorRescuedTotal,
       doorPartitionTotal: doorPartitionTotal, suspectTotal: suspectTotal,
-      mergedTotal: mergedTotal, rejectedTotal: rejectedTotal, doorAdj: doorAdj, openAdj: openAdj, floodDrops: floodDropsBy };
+      mergedTotal: mergedTotal, rejectedTotal: rejectedTotal, doorAdj: doorAdj, openAdj: openAdj, floodDrops: floodDropsBy, expAdj: expAdj };
   }
 
   // §NO-OVERLAP (compile_rooms.py port, 2026-07-13 — user request "rooms are stacked to each
@@ -1648,9 +1703,9 @@
   //   { doorAdj: { storey: [ {door,cx,cy,bx,by,guids:[0..2],noRaster} ] },
   //     openAdj:  { storey: [ [guidA,guidB], ... ] } }   ← §OPEN-THRESHOLD, doorless openings
   // Read-only — it does not write, and does not alter what walk()/compileRooms() produce.
-  function doorRoomAdjacency(db) {
-    var c = compileRooms(db, { doorAdjacency: true });
-    return { doorAdj: c.doorAdj, openAdj: c.openAdj, floodDrops: c.floodDrops };
+  function doorRoomAdjacency(db, opts) {
+    var c = compileRooms(db, { doorAdjacency: true, experiment: !!(arguments[1] && arguments[1].experiment) });
+    return { doorAdj: c.doorAdj, openAdj: c.openAdj, floodDrops: c.floodDrops, expAdj: c.expAdj };
   }
 
   var API = {
