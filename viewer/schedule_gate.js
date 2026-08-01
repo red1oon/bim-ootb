@@ -159,13 +159,9 @@
     function place(el, start) {
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
       var end = start + dur; out[el.guid] = { start: start, end: end };
-      // §4D_WALL_BORNE_STRUCTURE: a load-bearing wall enters the STRUCTURE grid, so geoGate gates
-      // everything above it exactly as it gates a column or a beam. It ALSO stays in wallGrid below —
-      // the same wall can carry a beam and cap a roof slab, and both gates must keep seeing it.
-      if (el.seq <= 4 || _lbw[el.guid]) {
-        var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, end: end };
+      if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, end: end };
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
-      if (el.seq > 4 && el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
+      else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
         var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
       return end;
@@ -179,81 +175,20 @@
     // seq>4 slabs (structure + walls), so scheduler and auditor now test the same thing. No new pass
     // and no cycle: PASS B sorts by (seq, base_z) and walls are seq 6 vs roof slabs seq 8, so every
     // carrier is already placed when the slab is reached. EPS/GAP are this module's own constants.
-    // §4D_WALL_BORNE_STRUCTURE widened this from `IfcSlab` to EVERY seq>4 class. The slab-only scope
-    // was correct for §4D_WALLS_BEFORE_ROOF's question but left 385 measured violations after the
-    // PASS A promotion above: things resting on walls that carry no structure (so those walls stayed
-    // in PASS B), plus wall-on-wall. Safe and order-preserving by construction — wallGrid holds only
-    // walls ALREADY PLACED in this pass, so a class scheduled before walls (MEP is seq 5, walls are
-    // seq 6) simply finds an empty pool and is unaffected, while doors/coverings/walls above them do
-    // get gated. No new pass, no reordering, so it cannot manufacture a floating element.
     function wallGate(el) {
-      if (el.seq <= 4) return baseMs;
+      if (el.cls !== 'IfcSlab' || el.seq <= 4) return baseMs;
       var g = baseMs; cs = cellsOf(el);
       for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k];
           if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
-    // §4D_WALL_BORNE_STRUCTURE (2026-08-02, prompts/GANTT_ACCURACY.md §SUPPORT_ALL) — A WALL THAT
-    // CARRIES STRUCTURE IS STRUCTURE. User's standing invariant: "as long as the 4D schedule does not
-    // put anything without support first." It did not hold, and for structure it could not:
-    //   place() wrote the support grid only for seq<=4; geoGate reads that grid; walls are seq 6
-    //   (PASS B); beams/columns/members/plates/slabs are seq<=4 (PASS A); PASS A completes before
-    //   PASS B begins. A beam bearing on a wall was therefore NEVER gated on that wall — 6,778
-    //   violations MEASURED on real Hospital (beams 1294, members 708, columns 181, plates 162,
-    //   slabs 34 bearing on walls; worst 100.5 days early), while §SUPPORT_CHECK reported floating=0
-    //   because auditFloating offers its wall pool ONLY to `IfcSlab && seq>4` — the roof case.
-    // This is the SAME defect §4D_ROOF_LOAD_PATH (#1120) and §4D_WALLS_BEFORE_ROOF (#1128) fixed for
-    // roof slabs by moving them across the pass boundary. Generalised here to the whole load path.
-    //   THE RULE: a wall is load-bearing when some seq<=4 element RESTS on it — the wall tops out at
-    //   that element's underside (|top_z - base_z| <= GAP), starts below it, and overlaps in XY.
-    //   "Rests on" not "runs past": `top_z >= base_z - GAP` alone accepts any wall taller than my
-    //   base, which counted pipe risers threading past 3m walls (measured: 29,759 vs 6,778).
-    //   Load-bearing walls JOIN PASS A and are written into the structure grid, so everything above
-    //   them — structure and non-structure alike — is gated on them by the existing geoGate. No new
-    //   gate, no new constant, no cycle: PASS A is sorted by base_z ascending and a carrier's base_z
-    //   is strictly below what it carries, so every carrier is placed before its dependent.
-    //   MEASURED on Hospital: 1243/1468 walls (84.7%) carry structure — but that is only 2.44% of
-    //   PASS B, and PASS A's bottom-up-by-base_z order is itself monotonic in height, so what those
-    //   walls lose in band gating they largely regain in ordering. Both counters are gated below.
-    var _lbw = {}, _lbwN = 0, _borneN = 0;
-    (function deriveLoadBearingWalls() {
-      var wIdx = {}, i, j, cs2, c2, arr2;
-      for (i = 0; i < elements.length; i++) {
-        var W = elements[i];
-        if (!W.cls || W.cls.indexOf('IfcWall') !== 0) continue;
-        cs2 = cellsOf(W);
-        for (c2 = 0; c2 < cs2.length; c2++) (wIdx[cs2[c2]] = wIdx[cs2[c2]] || []).push(W);
-      }
-      for (i = 0; i < elements.length; i++) {
-        var T = elements[i];
-        if (T.seq > 4) continue;
-        var seen2 = {}, borne = false;
-        cs2 = cellsOf(T);
-        for (c2 = 0; c2 < cs2.length; c2++) {
-          arr2 = wIdx[cs2[c2]]; if (!arr2) continue;
-          for (j = 0; j < arr2.length; j++) {
-            var W2 = arr2[j]; if (seen2[W2.guid]) continue; seen2[W2.guid] = 1;
-            if (W2.base_z < T.base_z - EPS && Math.abs(W2.top_z - T.base_z) <= GAP && overlap(W2, T)) {
-              if (!_lbw[W2.guid]) { _lbw[W2.guid] = 1; _lbwN++; }
-              borne = true;
-            }
-          }
-        }
-        if (borne) _borneN++;
-      }
-    })();
-
     // PASS A — structure, bottom-up by base_z (supports scheduled before what rests on them).
     // §CREW-CAP: crew slot is picked PROJECT-WIDE per resource, not per Z-band — lower floors claim
     // the limited crews first (processing order is already bottom-up), higher floors cascade behind.
-    // §4D_WALL_BORNE_STRUCTURE: load-bearing walls join PASS A. base_z-ascending is what makes this
-    // safe — a carrier's base_z is strictly below what it carries, so the wall is always placed
-    // before the beam/column/slab that rests on it, without a second pass or a dependency solve.
-    var struct = elements.filter(function (e) { return e.seq <= 4 || _lbw[e.guid]; })
+    var struct = elements.filter(function (e) { return e.seq <= 4; })
       .sort(function (a, b) { return (a.base_z - b.base_z) || (a.seq - b.seq); });
-    function runPassA() {
-      struct.forEach(function (el) {
+    struct.forEach(function (el) {
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC deliberately does NOT gate PASS A. Both alternatives were measured on
       // real Hospital geometry and both were rejected:
@@ -273,40 +208,11 @@
       // non-structure count was 29,824. A burst of slabs is a RATE — a whole floor plate becomes
       // eligible the moment the columns under it top out, then competes only for CONCRETE_GANG's
       // 3 crews. Fixing that means crew caps / eligibility smoothing, not monotonicity.
-      // §4D_WALL_BORNE_STRUCTURE: the promoted walls — and ONLY them — keep the band gate they had in
-      // PASS B, read from a FROZEN pre-pass ladder (see runPassA below). Reading it LIVE was measured
-      // and is not enough: non-structure inversions 0 -> 1,026, worst only 115d -> 108d, because
-      // PASS A is ordered by base_z so bandTrade[r-1] is still filling when rank r is reached — the
-      // same "gate without re-sorting is a lower bound" this comment already records for structure.
-      var start = Math.max(geoGate(el), slot.time,
-                           (_frozenBand && _lbw[el.guid]) ? frozenBandGate(el) : baseMs);
+      var start = Math.max(geoGate(el), slot.time);
       var end = place(el, start);
       bandCommit(el, end);
       slot.commit(end);
-      });
-    }
-    // §4D_WALL_BORNE_STRUCTURE — TWO-PHASE PASS A. This is `prompts/GANTT_ACCURACY.md` open item 2's
-    // own proposal ("gating on bandTrade[r-1] computed from a PRE-PASS rather than read live"), and
-    // it is what makes the promotion free of the band regression. Phase 1 places PASS A with no band
-    // gate and yields a COMPLETE bandTrade ladder; phase 2 resets and replays the IDENTICAL element
-    // order, now able to read a finished ladder.
-    //   WHY THIS DOES NOT REINTRODUCE FLOATING (Ruling A's prohibition, honoured): the ban is on
-    //   RE-SORTING PASS A — geoGate reads `grid`, which holds only what is already placed, so a new
-    //   ORDER places elements before their own supports. Phase 2 keeps the order byte-for-byte and
-    //   only ever moves a start LATER (every term enters through Math.max). Supports can therefore
-    //   only finish later, never earlier, and `start >= geoGate` still holds for every element.
-    //   Cost: PASS A runs twice — 13.7k elements against PASS B's 50.9k, so a minority of the work.
-    function frozenBandGate(el) {
-      var r = _bandRank[collapsePhase(el.storey)];
-      if (!(r > 0)) return baseMs;
-      var below = _frozenBand[r - 1];
-      return (below && below[el.seq] > baseMs) ? below[el.seq] : baseMs;
-    }
-    var _frozenBand = null;
-    runPassA();                       // phase 1 — provisional, builds the complete ladder
-    _frozenBand = bandTrade;          // freeze it
-    bandTrade = {}; grid = {}; wallGrid = {}; out = {}; crews = {};
-    runPassA();                       // phase 2 — same order, complete ladder
+    });
     // PASS B — non-structure, by trade then base_z, on the COMPLETED structure grid.
     // Per-Level trade gate: trade k waits for all lower trades (s<k) in its Level → MEP late, furniture last.
     // §CREW-CAP: same shared project-wide crew pool as PASS A (a resource like CONCRETE_GANG appears
@@ -316,7 +222,7 @@
     // trade is placed before rank r is reached, and bandTrade[r-1][seq] is complete rather than a
     // partial max. Unlike PASS A this cannot disturb geoGate: PASS B never writes the structure grid
     // it reads (structure is entirely placed by then), so its order cannot create a floating element.
-    var nonst = elements.filter(function (e) { return e.seq > 4 && !_lbw[e.guid]; })
+    var nonst = elements.filter(function (e) { return e.seq > 4; })
       .sort(function (a, b) {
         return (a.seq - b.seq) ||
                ((_bandRank[collapsePhase(a.storey)] || 0) - (_bandRank[collapsePhase(b.storey)] || 0)) ||
@@ -348,13 +254,6 @@
         ' ladder=[' + _rankList.map(function (r) {
           return r.ph + '@' + r.z.toFixed(1) + 'm(' + r.n + ')';
         }).join(', ') + ']');
-      // §4D_WALL_BORNE_STRUCTURE — logged, not trusted. If loadBearingWalls is 0 on a building that
-      // clearly has masonry carrying beams, the rests-on predicate missed and the invariant is NOT
-      // being enforced, whatever auditSupport then reports.
-      console.log('§4D_WALL_BORNE_STRUCTURE loadBearingWalls=' + _lbwN +
-        ' carrying=' + _borneN + ' structural elements — these walls moved from PASS B into PASS A' +
-        ' and into the structure grid, so geoGate now gates everything resting on them' +
-        ' (0 would mean the rests-on test found nothing and the invariant is unenforced)');
     }
     return out;
   }
@@ -414,41 +313,7 @@
     return v;
   }
 
-  // §4D_WALL_BORNE_STRUCTURE audit (2026-08-02) — the instrument for the user's standing invariant,
-  // "the 4D schedule does not put anything without support first". SEPARATE from auditFloating on
-  // purpose: that function's pool and predicate are load-bearing for three shipped witnesses and its
-  // narrow scope is correct FOR WHAT IT ASKS. This asks the wider question, with the predicate that
-  // makes the wider question answerable.
-  //
-  // ⚠ CORRECTS THE CONCLUSION IN auditFloating's HEADER ABOVE. That header records attempt 1 —
-  // "grid = structure PLUS walls, offered to everything" — producing 3,421 false positives, mostly
-  // "IfcBeam floats over IfcWallStandardCase", and concludes "Walls do not structurally carry beams/
-  // members/furniture in this DB." The DATA was right and the CONCLUSION was wrong: attempt 1 used
-  // `S.top_z >= T.base_z - GAP`, which accepts ANY carrier taller than my base, so a beam running
-  // alongside a 3m wall read as carried by it. Re-measured 2026-08-02 with the rests-on predicate
-  // (`|S.top_z - T.base_z| <= GAP`, carrier tops out AT my underside): the same widening gives 6,778,
-  // and 2,379 of them ARE beams/members/columns/plates/slabs genuinely bearing on wall tops. Walls
-  // carry structure in this DB in 1,243 places. The false-positive count was a predicate artifact,
-  // not evidence of absence — which is why "roof before walls" kept returning in a new costume.
-  function auditSupport(elements, sched) {
-    var carrierGrid = {}, i, c, cs, k, arr, S;
-    for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4 || (e.cls && e.cls.indexOf('IfcWall') === 0)) {
-        cs = cellsOf(e); for (c = 0; c < cs.length; c++) (carrierGrid[cs[c]] = carrierGrid[cs[c]] || []).push(e); } }
-    var v = 0, worst = 0;
-    for (i = 0; i < elements.length; i++) { var T = elements[i];
-      var ts = sched[T.guid]; if (!ts) continue;
-      var se = 0, seen = {}; cs = cellsOf(T);
-      for (c = 0; c < cs.length; c++) { arr = carrierGrid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
-          if (S.base_z < T.base_z - EPS && Math.abs(S.top_z - T.base_z) <= GAP && overlap(S, T)) {
-            var sc = sched[S.guid]; if (sc && sc.end > se) se = sc.end; } } }
-      if (se > 0 && ts.start < se - 1000) { v++; if (se - ts.start > worst) worst = se - ts.start; }
-    }
-    return { violations: v, worstLagMs: worst };
-  }
-
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, auditSupport: auditSupport, CELL: CELL };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, CELL: CELL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
