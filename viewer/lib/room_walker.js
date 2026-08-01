@@ -842,6 +842,209 @@
     return Object.keys(pairs).map(function (s) { return s.split(',').map(Number); });
   }
 
+
+  // ===============================================================================================
+  // §SPINE-FIRST (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §21.26, 2026-08-02) — the user's design, built
+  // the way they described it rather than derived from the room graph.
+  //
+  //   "a 2 layer mapping ... the common corridor that stops at first doors and not bother rooms
+  //    whether there are connecting rooms in them ... then an inner room has to route nearest to
+  //    that corridor map."
+  //
+  // Everything this lane tried before compiled ROOMS first and then asked which of them are
+  // corridors — by shape (§21.23), by door alignment (hallway_backbone), or by betweenness
+  // (§21.25). All three inherit the room compile's fragmentation, because `SEAL` closes every gap
+  // under ~0.8 m and a corridor running through a doorless archway is cut in two by a wall that is
+  // not in the model.
+  //
+  // Invert it. The corridor is not a kind of room — it is WHAT YOU CAN WALK WITHOUT OPENING A DOOR.
+  // So: take the interior free space, seal ONLY the door apertures, and flood. The region that
+  // comes back is the circulation spine, connected across the whole storey by construction, and it
+  // stops exactly at the first layer of doors. Rooms fall out as the other regions, and a room
+  // reachable only through another room is layer 2 — "hidden by the first" — resolved by its depth
+  // from the spine, not by any separate rule.
+  //
+  // The interior mask is the delicate part. `_floodExterior` runs on the DILATED walls, so it never
+  // enters the seal band, and the seal band is where every doorway and archway lives. Recover it
+  // honestly: flood the seal-only cells (dilated-blocked, raw-free) into groups, and readmit a
+  // group iff it touches enclosed floor and never touches the exterior. That readmits real openings
+  // and no leaks.
+  // LAYER 1, third construction and the one that holds. Two earlier attempts and why they failed,
+  // so neither gets retried:
+  //   (i) `enclosed + readmitted seal-band groups` — the seal halo is one continuous ribbon around
+  //       the whole wall network, so readmitting a group merges rooms wherever a wall merely ENDS.
+  //       16,594 halo cells came back on Clinic First Floor; spine fell to 7% of the floor.
+  //   (ii) raw walls with no dilation — every real opening is open, which is what the spine wants,
+  //       but the exterior then floods in through gaps in the wall extraction and SWALLOWS the
+  //       corridor. Measured: exterior region 1,094 m² against a 134 m² spine on the same floor.
+  //       That leak is exactly what `SEAL` exists to prevent.
+  //
+  // So: keep the SEALED flood as the base — it is leak-free by construction, and its components are
+  // the same pockets the room compile uses — and reconnect neighbouring pockets across the gaps
+  // that `SEAL` invented. A gap is found LOCALLY, never as a halo group: from each raw-free cell
+  // that no pocket owns, march both ways along x and along y through raw-free cells only; if the
+  // two opposite sides land in DIFFERENT pockets, those pockets are genuinely open to each other at
+  // that point. Then the only question that defines the spine gets asked: IS THERE A DOOR IN THAT
+  // GAP? If yes it is a doorway and the spine stops there. If no, it is an archway or cased opening
+  // and the two pockets are one walkable space.
+  //
+  // Layer 1 is therefore literally "everywhere you can walk without opening a door", and it stops
+  // at the first layer of doors because that is the only thing that stops it.
+  function _pocketComponents(enclosed, nx, ny) {
+    var owner = new Int32Array(nx * ny);
+    var pockets = [];
+    for (var si = 0; si < nx; si++) {
+      for (var sj = 0; sj < ny; sj++) {
+        var sk = si * ny + sj;
+        if (!enclosed[sk] || owner[sk]) continue;
+        var id = pockets.length + 1, n = 0, stack = [sk]; owner[sk] = id;
+        var mni = si, mxi = si, mnj = sj, mxj = sj;
+        while (stack.length) {
+          var k = stack.pop(); n++;
+          var i = Math.floor(k / ny), j = k % ny;
+          if (i < mni) mni = i; if (i > mxi) mxi = i;
+          if (j < mnj) mnj = j; if (j > mxj) mxj = j;
+          for (var d = 0; d < 4; d++) {
+            var a2 = i + (d === 0 ? 1 : d === 1 ? -1 : 0), b2 = j + (d === 2 ? 1 : d === 3 ? -1 : 0);
+            if (a2 < 0 || a2 >= nx || b2 < 0 || b2 >= ny) continue;
+            var kk = a2 * ny + b2;
+            if (enclosed[kk] && !owner[kk]) { owner[kk] = id; stack.push(kk); }
+          }
+        }
+        pockets.push({ id: id, cells: n, area: n * RES * RES, mni: mni, mxi: mxi, mnj: mnj, mxj: mxj });
+      }
+    }
+    return { owner: owner, pockets: pockets };
+  }
+
+  // Every point where two pockets are open to each other, with the gap's centre so a door can be
+  // matched to it. Reach is SEAL+1 cells: that is exactly how far the dilation can have closed.
+  function _openings(owner, raw, enclosed, nx, ny, xs0, ys0) {
+    var reach = SEAL + 1;
+    var found = {};
+    for (var i = 0; i < nx; i++) {
+      for (var j = 0; j < ny; j++) {
+        var k = i * ny + j;
+        if (raw[k] || enclosed[k]) continue;          // want the invented-wall band only
+        for (var ax = 0; ax < 2; ax++) {
+          var hit = [0, 0];
+          for (var side = 0; side < 2; side++) {
+            var step = side ? -1 : 1;
+            for (var s = 1; s <= reach; s++) {
+              var a2 = i + (ax === 0 ? step * s : 0), b2 = j + (ax === 1 ? step * s : 0);
+              if (a2 < 0 || a2 >= nx || b2 < 0 || b2 >= ny) break;
+              var kk = a2 * ny + b2;
+              if (raw[kk]) break;                     // a real wall: not an invented gap
+              if (owner[kk]) { hit[side] = owner[kk]; break; }
+            }
+          }
+          if (hit[0] && hit[1] && hit[0] !== hit[1]) {
+            var lo = Math.min(hit[0], hit[1]), hi = Math.max(hit[0], hit[1]);
+            var key = lo + ',' + hi;
+            var g = found[key] || (found[key] = { a: lo, b: hi, n: 0, sx: 0, sy: 0, cells: [] });
+            g.n++; g.sx += xs0 + (i + 0.5) * RES; g.sy += ys0 + (j + 0.5) * RES;
+            if (g.cells.length < 4096) g.cells.push(k);
+          }
+        }
+      }
+    }
+    return Object.keys(found).map(function (kk) {
+      var g = found[kk]; g.cx = g.sx / g.n; g.cy = g.sy / g.n;
+      g.widthM = g.n * RES * RES / RES;   // gap cell count -> approximate clear width
+      return g;
+    });
+  }
+
+  function storeySpine(walls, doors, stairs) {
+    doors = doors || [];
+    var ext = _gridExtent(walls);
+    var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
+    var raw = _rasterizeWalls(walls, ext);
+    var dil = SEAL > 0 ? _dilate(raw, nx, ny, SEAL) : raw;
+    var free = new Uint8Array(nx * ny), m;
+    for (m = 0; m < nx * ny; m++) free[m] = dil[m] ? 0 : 1;
+    var enclosed = _floodExterior(free, nx, ny);
+    var grid = { nx: nx, ny: ny, xs0: xs0, ys0: ys0, dil: dil, raw: raw, enclosed: enclosed };
+
+    var pc = _pocketComponents(enclosed, nx, ny);
+    var owner = pc.owner, pockets = pc.pockets;
+    var openings = _openings(owner, raw, enclosed, nx, ny, xs0, ys0);
+
+    // Which openings hold a door? Match each door to the openings its own footprint covers, using
+    // the door's measured half-span — no global tolerance, each door answers for its own size.
+    var doorAt = {};
+    doors.forEach(function (d, di) {
+      var w = Math.max(d[2], d[3]) / 2 + 2 * RES;
+      openings.forEach(function (g) {
+        if (Math.abs(g.cx - d[0]) <= w && Math.abs(g.cy - d[1]) <= w) {
+          (doorAt[g.a + ',' + g.b] = doorAt[g.a + ',' + g.b] || []).push(di);
+        }
+      });
+    });
+    openings.forEach(function (g) { g.doors = doorAt[g.a + ',' + g.b] || []; });
+
+    // LAYER 1: pockets fused across DOORLESS openings only.
+    var parent = {}; pockets.forEach(function (p) { parent[p.id] = p.id; });
+    var find = function (x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    openings.forEach(function (g) {
+      if (g.doors.length) return;                    // a doorway: the spine stops here
+      var ra = find(g.a), rb = find(g.b); if (ra !== rb) parent[ra] = rb;
+    });
+    var groupOf = {}, areaOf = {}, membersOf = {};
+    pockets.forEach(function (p) {
+      var r = find(p.id); groupOf[p.id] = r;
+      areaOf[r] = (areaOf[r] || 0) + p.area;
+      (membersOf[r] = membersOf[r] || []).push(p.id);
+    });
+    var spineGroup = 0, best = -1;
+    Object.keys(areaOf).forEach(function (r) { if (areaOf[r] > best) { best = areaOf[r]; spineGroup = +r; } });
+
+    // door links between LAYER-1 GROUPS (not raw pockets) — this is the layer-2 attachment graph
+    var links = [];
+    openings.forEach(function (g) {
+      if (!g.doors.length) return;
+      var ga = groupOf[g.a], gb = groupOf[g.b];
+      if (ga !== gb) links.push({ a: ga, b: gb, doors: g.doors, cx: g.cx, cy: g.cy });
+    });
+    var adj = {};
+    links.forEach(function (l) {
+      (adj[l.a] = adj[l.a] || []).push(l.b);
+      (adj[l.b] = adj[l.b] || []).push(l.a);
+    });
+    var depth = {}; depth[spineGroup] = 0;
+    var q = [spineGroup];
+    while (q.length) {
+      var v = q.shift();
+      (adj[v] || []).forEach(function (w2) { if (depth[w2] === undefined) { depth[w2] = depth[v] + 1; q.push(w2); } });
+    }
+    var groups = Object.keys(areaOf).map(function (r) {
+      return { id: +r, area: areaOf[r], pockets: membersOf[r].length,
+        depth: depth[r] === undefined ? -1 : depth[r] };
+    });
+    var interiorArea = pockets.reduce(function (s2, p) { return s2 + p.area; }, 0);
+    return { groups: groups, links: links, openings: openings, pockets: pockets,
+      spineGroup: spineGroup, spineArea: best, interiorArea: interiorArea, grid: grid,
+      doorlessOpenings: openings.filter(function (g) { return !g.doors.length; }).length,
+      doorOpenings: openings.filter(function (g) { return g.doors.length; }).length,
+      planExtent: { x0: xs0, y0: ys0, x1: ext.xs1, y1: ext.ys1 } };
+  }
+
+  // Public, read-only: the whole-building §SPINE-FIRST map, per storey. Writes nothing, and does
+  // not touch the room compile.
+  function spineMap(db) {
+    var anchors = storeyZAnchors(db);
+    var wallsBy = storeyWalls(db, anchors);
+    var doorsBy = storeyDoors(db, anchors);
+    var stairs = storeyStairs(db, anchors);
+    var out = {};
+    Object.keys(wallsBy).forEach(function (st) {
+      var ws = wallsBy[st];
+      if (!ws || ws.length < 3) return;
+      out[st] = storeySpine(ws, doorsBy[st] || [], stairs);
+    });
+    return out;
+  }
+
   // §DOOR-PARTITION-EXT-EXCLUDE (compile_rooms.py port, 2026-07-13): returns ONLY the ext mask
   // (reachable-from-border), unlike _floodExterior above which returns the final intersected
   // enclosed set — kept separate so partitionByDoors can compute ext on the DILATED footprint but
@@ -1709,7 +1912,7 @@
   }
 
   var API = {
-    doorRoomAdjacency: doorRoomAdjacency,
+    doorRoomAdjacency: doorRoomAdjacency, spineMap: spineMap, storeySpine: storeySpine,
     storeyWalls: storeyWalls, storeyStairs: storeyStairs, storeyDoors: storeyDoors,
     doorStats: doorStats, storeyZAnchors: storeyZAnchors,
     doorAdjacent: doorAdjacent, stairOverlapFrac: stairOverlapFrac,
