@@ -152,7 +152,7 @@ async function run(SQL,label,file){
  const doorRooms={};rooms.forEach(r=>{(roomDoors.get(r.guid)||[]).forEach(d=>{(doorRooms[d.id]=doorRooms[d.id]||[]).push(r.guid)})});
  const seqConvex=(a,b,seq)=>convexRoom[a.guid]&&convexRoom[b.guid]&&
    seq.every(d=>(doorRooms[d.id]||[]).every(gu=>convexRoom[gu]));
- let n=0,sumRef=0,sumCen=0,sumFun=0,funWorse=0,offF=0,totF=0,offR=0,totR=0,skippedNonConvex=0;
+ let n=0,sumRef=0,sumCen=0,sumFun=0,funWorse=0,offF=0,totF=0,offR=0,totR=0,skippedNonConvex=0,nDoorsTot=0,maxDoors=0,maxAperture=0;
  const rCen=[],rFun=[];
  const stride=Math.max(1,Math.floor(rooms.length*rooms.length/2/1200));let k=0;
  const rl2=console.log;console.log=()=>{};
@@ -189,6 +189,9 @@ async function run(SQL,label,file){
   portals.push({l:{x:b.cx,y:b.cy},r:{x:b.cx,y:b.cy}});
   if(CONVEX_ONLY&&!seqConvex(a,b,seq)){skippedNonConvex++;continue}
   const fun=funnel(portals);const LF=len(fun);
+  nDoorsTot+=seq.length; if(seq.length>maxDoors)maxDoors=seq.length;
+  // ceiling on the door-spot effect: half a door width per door crossed
+  maxAperture+=seq.reduce((t,d)=>t+Math.max(d.bw,d.bh)/2,0);
   n++;sumRef+=LR;sumCen+=LC;sumFun+=LF;rCen.push(LC/Math.max(.01,LR));rFun.push(LF/Math.max(.01,LR));
   if(LF>LC*1.001)funWorse++;
   const oF=offMap(F,fun);offF+=oF.bad;totF+=oF.tot;
@@ -200,6 +203,12 @@ async function run(SQL,label,file){
   ' skippedNonConvex='+skippedNonConvex);
  console.log('§FUNNEL_LEN '+label+' pairs='+n+' reference(gridA*+stringPull)='+sumRef.toFixed(0)+'m'+
   ' doorCentres='+sumCen.toFixed(0)+'m funnel='+sumFun.toFixed(0)+'m');
+ console.log('§FUNNEL_BUDGET '+label+' avgDoorsPerRoute='+(nDoorsTot/Math.max(1,n)).toFixed(1)+
+  ' maxDoors='+maxDoors+' | GAP centres-vs-reference='+(sumCen-sumRef).toFixed(0)+'m'+
+  '  MOST the door-spot effect could explain='+maxAperture.toFixed(0)+'m ('+
+  (100*maxAperture/Math.max(1,sumCen-sumRef)).toFixed(0)+'% of the gap)'+
+  '  actually closed by the funnel='+(sumCen-sumFun).toFixed(0)+'m ('+
+  (100*(sumCen-sumFun)/Math.max(1,sumCen-sumRef)).toFixed(0)+'%)');
  console.log('§FUNNEL_RATIO '+label+' vs reference — doorCentres median='+med(rCen).toFixed(3)+'x p90='+qn(rCen,.9).toFixed(3)+
   'x  |  FUNNEL median='+med(rFun).toFixed(3)+'x p90='+qn(rFun,.9).toFixed(3)+'x');
  console.log('§FUNNEL_T1 '+label+' funnelLongerThanCentres='+funWorse+'/'+n+' (must be ~0 — else portal orientation is wrong)');
