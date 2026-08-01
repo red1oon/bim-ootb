@@ -3330,25 +3330,75 @@
     // against its own extracted geometry and the walls' own extracted geometry.
     var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
     var loadPathOverrides = 0;
+    // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
+    // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
+    var lpSlabs = [], lpSeed = [];
     elements.forEach(function(el) {
       if (el.cls !== 'IfcSlab') return;
       var carriers = loadPathWalls.filter(function(w) {
         return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
       });
       if (!carriers.length) return;
-      var midSum = 0, hasWallAbove = false;
+      var midSum = 0, above = [];
       for (var ci = 0; ci < carriers.length; ci++) {
         midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
-        if (carriers[ci].base_z >= el.top_z) hasWallAbove = true;
+        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
       }
       var wallMidheight = midSum / carriers.length;
-      if (el.base_z > wallMidheight && !hasWallAbove) {
+      var clauseA = el.base_z > wallMidheight;
+      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
+      if (clauseA && !above.length) {
         el.seq = 8; el.phase = 'Architecture';
         loadPathOverrides++;
+        lpSeed.push(el);
       }
     });
+
+    // §4D_WALLS_BEFORE_ROOF M4 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) —
+    // user, live on a Hospital MaxQ bake: "The roof before the walls still happening on the roof
+    // top". #1120's clause (b) disqualifies a roof if ANY XY-overlapping wall stands on it. On
+    // Hospital that disqualifies the 2091.5 m² topmost deck (3Csn1z$1v5Q8DXdumWYJUE, base_z 199.66)
+    // because the two helipad boxes — whose OWN roofs #1120 promoted — stand on it. MEASURED on
+    // origin/main: it starts 2022-07-27 as Superstructure while its 14 wall carriers finish
+    // 2023-04-30 — 277 days before its own walls, the identical error #1120 reported fixing for the
+    // boxes. This is #1120's `⚠ LIMIT 2` arriving, and wider than LIMIT 2 predicted: these walls are
+    // 3.05–3.47 m tall and DO carry something, so LIMIT 2's "parapet carries nothing" discriminator
+    // would not have caught it.
+    //   THE RULE: a wall standing on a slab is not "the next storey" if that wall is itself CAPPED
+    //   by a slab already known to be a roof (a helipad box, a plant enclosure, a coped parapet —
+    //   the load path tops out in a roof, it does not continue the building). Capped = a seed roof
+    //   slab XY-overlapping the wall with its base_z between the wall's base_z and top_z + GAP. A
+    //   wall capped by NOTHING does not qualify.
+    //   DEPTH 1, ON THE FROZEN SEED SET, DELIBERATELY. Full recursion was measured and collapses:
+    //   the box walls excuse the 199.66 deck -> the deck excuses 3064w0y0nDv9wdb1cWL_Gu -> Level 6
+    //   promotes -> Level 5 -> Level 4 -> the whole building becomes "roof". Depth-1 terminates.
+    //   MEASURED: Hospital 10 -> 11. The one addition is the user's slab. Level 6 (3 blockers),
+    //   Level 5 (33), Level 4 (514) and #1120's own floor control 1OV06Y3c5D8vODNyxVnSVI (56) all
+    //   stay blocked. A footprint-extent ratio was tried and REJECTED — it does not separate (roof
+    //   0.040 vs intermediate panels 0.024/0.024/0.029/0.044, Level 6 0.170); no threshold exists,
+    //   which is why this is a load-path rule and not an area rule.
+    var LP_GAP = 0.5;  // m — same "tops out at this level" tolerance schedule_gate.js uses (GAP)
+    var m4Promoted = 0;
+    if (lpSeed.length) {
+      lpSlabs.forEach(function(rec) {
+        var el = rec.el;
+        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
+        for (var ai = 0; ai < rec.above.length; ai++) {
+          var w = rec.above[ai], capped = false;
+          for (var si = 0; si < lpSeed.length; si++) {
+            var C = lpSeed[si];
+            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
+                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
+          }
+          if (!capped) return;             // a wall the building genuinely continues through
+        }
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++; m4Promoted++;
+      });
+    }
     if (loadPathOverrides) console.log('§GANTT_OVERRIDE ' + loadPathOverrides +
-      ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls');
+      ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
+      ' (seed=' + lpSeed.length + ' + M4 rooftop-appurtenance=' + m4Promoted + ')');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
     // Real construction: lower Z builds first regardless of storey name.
@@ -3443,6 +3493,55 @@
     var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
     var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
     console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
+
+    // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
+    // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
+    // path rule already promoted (seq>4), so a roof it FAILED to promote reads floating=0 exactly as
+    // if nothing were wrong — that is #1120's `⚠ LIMIT 1`, and it is why "roof before walls" survived
+    // a merge that reported floating=0/10979 on the very run the user was complaining about (24 of
+    // 35 Hospital slabs started ~290 days before the walls carrying them, and the only instrument
+    // said solved). This line is ROLE-BLIND: it counts, for EVERY IfcSlab regardless of seq, whether
+    // it starts before the XY-overlapping walls that carry it finish.
+    //   roofSlabs half  = a GATE. Must be 0. A roof-role slab that starts before its carriers is the
+    //                     defect this section exists to kill.
+    //   otherSlabs half = a MEASUREMENT, NOT a gate. An ordinary intermediate floor legitimately
+    //                     precedes the partitions beneath it in a frame-first concrete schedule —
+    //                     gating on it is #1120's measured-and-rejected "attempt 2" (24 false
+    //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
+    try {
+      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
+      var _rgGrid = {}, _rgSlabs = [];
+      for (var _rgi = 0; _rgi < elements.length; _rgi++) {
+        var _e = elements[_rgi];
+        if (_e.cls === 'IfcSlab') { _rgSlabs.push(_e); continue; }
+        if (_e.cls.indexOf('IfcWall') !== 0) continue;
+        for (var _gx = Math.floor(_e.x0 / _rgCELL); _gx <= Math.floor(_e.x1 / _rgCELL); _gx++)
+          for (var _gy = Math.floor(_e.y0 / _rgCELL); _gy <= Math.floor(_e.y1 / _rgCELL); _gy++)
+            (_rgGrid[_gx + ',' + _gy] = _rgGrid[_gx + ',' + _gy] || []).push(_e);
+      }
+      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0;
+      _rgSlabs.forEach(function(S) {
+        var sc = _sched[S.guid]; if (!sc) return;
+        var maxEnd = 0, seen = {};
+        for (var gx = Math.floor(S.x0 / _rgCELL); gx <= Math.floor(S.x1 / _rgCELL); gx++)
+          for (var gy = Math.floor(S.y0 / _rgCELL); gy <= Math.floor(S.y1 / _rgCELL); gy++) {
+            var arr = _rgGrid[gx + ',' + gy]; if (!arr) continue;
+            for (var wi = 0; wi < arr.length; wi++) {
+              var W = arr[wi]; if (seen[W.guid]) continue; seen[W.guid] = 1;
+              if (W.base_z < S.base_z - _rgEPS && W.top_z >= S.base_z - _rgGAP &&
+                  S.x0 <= W.x1 && S.x1 >= W.x0 && S.y0 <= W.y1 && S.y1 >= W.y0) {
+                var we = _sched[W.guid]; if (we && we.end > maxEnd) maxEnd = we.end;
+              }
+            }
+          }
+        var late = (maxEnd > 0 && sc.start < maxEnd - 1);
+        if (S.seq > 4) { _rgRoofN++; if (late) _rgRoofLate++; }
+        else { _rgOtherN++; if (late) _rgOtherLate++; }
+      });
+      console.log('§ROOF_GATE roofSlabs=' + _rgRoofN + ' lateVsWallCarriers=' + _rgRoofLate +
+        ' (0=required) | otherSlabs=' + _rgOtherN + ' lateVsWallCarriers=' + _rgOtherLate +
+        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)');
+    } catch (e) { console.log('§ROOF_GATE error: ' + e.message); }
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
     // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
@@ -4383,7 +4482,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 5;
+  var _GANTT_CACHE_VERSION = 6;   // §4D_WALLS_BEFORE_ROOF (2026-08-01): M4+M5 change generated ordering
 
   function _cacheKey(prefix) {
     var app = A();

@@ -63,7 +63,7 @@
   // returns { guid: { start, end } } ms.
   function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
-    var grid = {}, out = {}, c, cs, k, arr, S;
+    var grid = {}, wallGrid = {}, out = {}, c, cs, k, arr, S;
     function crewCapFor(resource) {
       if (typeof maxCrews === 'number') return maxCrews;
       if (maxCrews && maxCrews[resource]) return maxCrews[resource];
@@ -89,7 +89,27 @@
       var end = start + dur; out[el.guid] = { start: start, end: end };
       if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, end: end };
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
+      else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
+        var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
+        cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
       return end;
+    }
+    // §4D_WALLS_BEFORE_ROOF M5 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — a
+    // roof-role slab (seq>4, promoted by the load-path rule in time_machine.js) must wait for the
+    // walls that CARRY it, by geometry. Before this, a promoted slab's only dependency on walls was
+    // the per-PHASE trade gate below, keyed on collapsePhase(storey) — and MEASURED on Hospital the
+    // roof deck's key is "Level 7" while 12 of its 14 carriers are key "Level 6", so 12 of 14 were
+    // covered by coincidence, not by a rule. This gate is the SAME pool auditFloating already offers
+    // seq>4 slabs (structure + walls), so scheduler and auditor now test the same thing. No new pass
+    // and no cycle: PASS B sorts by (seq, base_z) and walls are seq 6 vs roof slabs seq 8, so every
+    // carrier is already placed when the slab is reached. EPS/GAP are this module's own constants.
+    function wallGate(el) {
+      if (el.cls !== 'IfcSlab' || el.seq <= 4) return baseMs;
+      var g = baseMs; cs = cellsOf(el);
+      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) { S = arr[k];
+          if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.end > g && overlap(S, el)) g = S.end; } }
+      return g;
     }
     // PASS A — structure, bottom-up by base_z (supports scheduled before what rests on them).
     // §CREW-CAP: crew slot is picked PROJECT-WIDE per resource, not per Z-band — lower floors claim
@@ -113,7 +133,7 @@
       var pt = phaseTrade[ph] || {}, tg = baseMs, s;
       for (s in pt) if (+s < el.seq && pt[s] > tg) tg = pt[s];
       var slot = claimCrew(el.resource);
-      var start = Math.max(geoGate(el), tg, slot.time);
+      var start = Math.max(geoGate(el), wallGate(el), tg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5
       var end = place(el, start);
       slot.commit(end);
       (phaseTrade[ph] = phaseTrade[ph] || {});
