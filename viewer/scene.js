@@ -672,15 +672,21 @@ async function setupScene(A) {
     }
     try {
       db.run("DROP TABLE IF EXISTS cinema_path");
+      // §CPE_STICK_HOLD: hold_sec is APPENDED as the last column, never inserted among the existing
+      // ones — a table written by an older build has 13 columns and the reader selects by NAME with
+      // a fallback, so both directions of the version skew stay readable (§CPE_PATH_NOT_PORTABLE
+      // only just made these files portable at all; do not break that in the next release).
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
              "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
-             "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+             "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
+             "hold_sec REAL)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       ov.bands.forEach(function(b, i) {
         var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
         var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
         stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
-                  ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec]);
+                  ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec,
+                  +(b.hold || 0)]);
       });
       stmt.free();
       console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
