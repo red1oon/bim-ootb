@@ -33,6 +33,9 @@
   // you drag and the handles you grab — and reads at a glance on a 63K-element scene.
   var CPE_STICK_RED = 0xe53935;
   var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
+  // §CPE_STICK_HOLD — the user's own number ("putting hold at 1 sec"), applied to the LAST stick of a
+  // freshly seeded path so the beat teaches itself. Every other stick defaults to 0.
+  var CPE_HOLD_DEFAULT_SEC = 1.0;
   var CPE_V = 'v19 (§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
@@ -448,7 +451,16 @@
   }
   function _naturalDuration() {
     var s = _state, len = _flownLength(), outSec = len / s.speed;
-    return { len: len, outSec: outSec, total: s.baseTotal - s.baseOutSec + outSec };
+    // §CPE_STICK_HOLD — the panel's clock must cost the holds too, or "total" here disagrees with the
+    // film effects.js actually plans (_natSec.out carries + _holdTotal). §CPE_HOSE_LENGTH_BLIND was
+    // exactly this defect in the other direction — the editor costing a curve that is never flown —
+    // so the two numbers are kept in step at the moment the field is introduced, not after a report.
+    // Added AFTER the pace division for the same reason effects.js adds it outside the noise
+    // multiplier: a hold is authored seconds, not distance to be priced.
+    var holdSec = 0;
+    for (var i = 0; i < s.bands.length; i++) holdSec += +(s.bands[i].hold || 0);
+    return { len: len, outSec: outSec + holdSec, holdSec: holdSec,
+             total: s.baseTotal - s.baseOutSec + outSec + holdSec };
   }
   function _buildOverride() {
     var s = _state, nat = _naturalDuration();
@@ -461,7 +473,7 @@
       // and is not survivable now that colour depends on it (a dark-blue seeded band is a lie).
       bands: s.bands.map(function(b) {
         return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-                 _stick: !!b._stick, _s: b._s };
+                 hold: +(b.hold || 0), _stick: !!b._stick, _s: b._s };
       }),
       // §CPE_HOSE: the ops ride the same override the plan, Save and the bake already consume — a
       // deep copy, same treatment as the bands, so nothing downstream can write back into the holder
@@ -475,7 +487,11 @@
       buildup: !!s.buildup,
       roomTitle: !!s.roomTitle,
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
-      outSec: nat.outSec * scale, riseSec: s.baseSec.rise * scale,
+      // §CPE_STICK_HOLD: the TRAVEL part of the walk scales with the user's total, the authored hold
+      // does NOT — a typed "1 s" must stay 1 s whatever the film is re-timed to, or the panel field
+      // lies about itself. This also keeps effects.js's `_holdTravelSec = _useSec.out - _holdTotal`
+      // exactly true, which is what lets the hold's cost identity (∫dip == authored seconds) hold.
+      outSec: (nat.outSec - nat.holdSec) * scale + nat.holdSec, riseSec: s.baseSec.rise * scale,
       _total: total, _naturalTotal: nat.total, _scale: scale, _pathLen: nat.len
     };
   }
@@ -679,7 +695,7 @@
       // dropped rather than seeded) and must survive undo/redo, or a restored stick loses its label
       // and its removability. They are stripped in _buildOverride — the plan never sees them.
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-               _s: b._s, _stick: b._stick };
+               hold: +(b.hold || 0), _s: b._s, _stick: b._stick };
     });
   }
   // §CPE_HOSE/§CPE_CLIP: the snapshot has to carry EVERY authored quantity, not just the bands.
@@ -812,6 +828,26 @@
         });
         len.addEventListener('click', function(ev) { ev.stopPropagation(); });
         head.appendChild(len);
+        // §CPE_STICK_HOLD (2026-08-01, user): "putting hold at 1 sec (put that as default for the
+        // last stick) will teach them 'ah, it slows a sec stop a sec, then ease out while the cam is
+        // turning to the building'". Seconds the camera dwells at this band's midpoint. 0 = no hold.
+        var hold = document.createElement('input');
+        hold.type = 'number'; hold.step = '0.5'; hold.min = '0';
+        hold.value = _num(b.hold || 0);
+        hold.title = 'hold (seconds) — the camera eases to a stop at this band\'s midpoint and away ' +
+                     'again, which is the time the gaze uses to turn onto the building. 0 = no hold.';
+        hold.style.cssText = 'width:44px;color:#ce93d8';
+        hold.addEventListener('change', function() {
+          var v = parseFloat(hold.value);
+          if (!isFinite(v) || v < 0) { hold.value = _num(b.hold || 0); return; }
+          _undoPush('band ' + i + ' hold');
+          b.hold = v;
+          console.log('§CPE_HOLD band=' + i + ' hold=' + v.toFixed(2) + 's');
+          _state.staged = false;
+          _replanFilm(); _redrawScene(); _renderClock(); _syncButtons();
+        });
+        hold.addEventListener('click', function(ev) { ev.stopPropagation(); });
+        head.appendChild(hold);
         row.appendChild(head);
         var sub = document.createElement('div');
         sub.style.cssText = 'padding:2px 0 0 62px;font-size:9px;color:#666;font-family:monospace';
@@ -979,6 +1015,7 @@
       // §CPE_REOPEN_NODE: prefer the STORED flag; the index rule is the fallback for records saved
       // before _buildOverride carried it, so an old plan keeps its × affordance.
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
+               hold: +(b.hold || 0),
                _stick: b._stick != null ? !!b._stick : (i > 0 && i < ov.bands.length - 1), _s: b._s };
     });
     _state.hose = (ov.hose || []).map(function(o) {
@@ -1538,6 +1575,14 @@
             o._stick = b._stick != null ? !!b._stick : (i > 0 && i < bs.length - 1);
             o._s = b._s;
           }
+          // §CPE_STICK_HOLD — the teaching default. User: "put that as default for the last stick",
+          // so the beat (slow → stop → ease out while the gaze turns onto the building) shows itself
+          // on first open instead of waiting to be discovered in a field nobody typed into.
+          // Only on a FRESHLY SEEDED path: an authored one carries whatever the user actually set,
+          // including a deliberate 0, and re-imposing the default would overwrite their edit every
+          // time they re-opened the panel.
+          o.hold = authored ? +(b.hold || 0)
+                            : ((bs.length >= 3 && i === bs.length - 2) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;
         });
       };
@@ -1753,6 +1798,16 @@
     if (window.APP) {
       window.APP.cinemaPathEditor = {
         open: open, version: CPE_V,
+        // §CPE_STICK_HOLD — the teaching default, exposed so the witness asserts against the
+        // constant the seeding actually uses rather than a copy of the number (G-SH-7).
+        holdDefaultSec: CPE_HOLD_DEFAULT_SEC,
+        // The hold each band would be seeded with on a fresh open, so the "last stick only" rule is
+        // checkable without driving the panel UI.
+        _seedHolds: function(n) {
+          var o = [];
+          for (var i = 0; i < n; i++) o.push((n >= 3 && i === n - 2) ? CPE_HOLD_DEFAULT_SEC : 0);
+          return o;
+        },
         _probePipe: function(clientX, clientY) {
           if (!_state) return null;
           var h = _hitTestPath({ clientX: clientX, clientY: clientY });
