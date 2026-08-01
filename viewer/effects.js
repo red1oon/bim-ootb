@@ -5428,7 +5428,7 @@ async function setupEffects(A, renderer, scene, camera) {
                y: S.y[j] * (1 - f) + S.y[j + 1] * f,
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
-    function _aimApply(p, T, lx, ly, lz, e3, boost) {
+    function _aimApply(p, T, lx, ly, lz, e3, boost, dip) {
       // Test-only control switch (same pattern as time_machine's window.__forceFull): the witness
       // needs the SAME plan with the rule suppressed, so that the only difference between the two
       // measurements is the rule itself. No production effect — nothing sets it in the app.
@@ -5462,7 +5462,10 @@ async function setupEffects(A, renderer, scene, camera) {
       // "perpendicular" there), k→1 when it is well off-axis (fully side-on, the directive's
       // "perpendicular"). Nothing vanishing is ever renormalised.
       var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));      // |v - T(v·T)| for unit v, T
-      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
+      // §CPE_HOLD_TURN: the perpendicular projection fades with the camera's own speed. At a dead
+      // stop (dip=1) k=0 and `px` collapses to `vx` — the gaze looks STRAIGHT AT the subject, a
+      // perpDeg-sized turn (measured 62.8-112.9 deg live). Unchanged whenever the camera is moving.
+      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35)) * (1 - (dip || 0));
       var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
       var pL = Math.hypot(px, py, pz) || 1;
       var degenerate = k < 0.05;
@@ -5659,7 +5662,7 @@ async function setupEffects(A, renderer, scene, camera) {
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
     var _aimDepthLast = { logged: 0 };
-    function _aimDepthApply(p, T, lx, ly, lz, e3, openU, boost) {
+    function _aimDepthApply(p, T, lx, ly, lz, e3, openU, boost, dip) {
       // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
       if (A.__cpeAimOff) return null;
       if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
@@ -5675,7 +5678,10 @@ async function setupEffects(A, renderer, scene, camera) {
       // comment records TWICE measuring that a hard switch here is the actual jerk source, not the
       // subject choice. Reused verbatim rather than re-risking the same mistake.
       var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));
-      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
+      // §CPE_HOLD_TURN: the perpendicular projection fades with the camera's own speed. At a dead
+      // stop (dip=1) k=0 and `px` collapses to `vx` — the gaze looks STRAIGHT AT the subject, a
+      // perpDeg-sized turn (measured 62.8-112.9 deg live). Unchanged whenever the camera is moving.
+      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35)) * (1 - (dip || 0));
       var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
       var pL = Math.hypot(px, py, pz) || 1;
       px /= pL; py /= pL; pz /= pL;
@@ -6314,6 +6320,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // it — see _holdBoostAt. Undefined when the cost-table build calls this, which is correct:
         // that build samples geometry, and a hold changes timing, not the curve.
         var _hBoost = (w3 == null) ? 0 : _holdBoostAt(w3);
+        var _hDip   = (w3 == null) ? 0 : _holdDipAt(w3);
         var p3 = _outPos(e3);
         // §CINEMA_TIMING_672 (2026-07-24, user: "no chasing interim targets when exiting building
         // mostly"): 0.06→0.15. Position already moves at constant speed along the route; this
@@ -6364,14 +6371,14 @@ async function setupEffects(A, renderer, scene, camera) {
         var _tvL = Math.hypot(_tvx, _tvy, _tvz);
         if (_tvL > 1e-6) {
           var _travelDir = { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL };
-          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3, _hBoost);
+          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3, _hBoost, _hDip);
           if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
           // §CPE_AIM_DEPTH: the mirror rule, opposite trigger (surrounded/close, not outside/empty —
           // see the block above). Applied on the (possibly already §CPE_AIM_DENSITY-blended) gaze so
           // the two compose rather than race; their triggers are near-disjoint by construction (one
           // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
           // most one is ever non-zero at a given pose.
-          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost);
+          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost, _hDip);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
@@ -6666,6 +6673,41 @@ async function setupEffects(A, renderer, scene, camera) {
     // Monotone by construction (smoothstep up to the dip centre, 1 thereafter), so it can only ever
     // strengthen the aim — it composes with the latch rather than fighting it. Still a pure function
     // of tNorm, so poseAt stays order-independent.
+    // ══ §CPE_HOLD_TURN — the pause exists TO buy a turn, so a turn must happen ═════════════════
+    // User, 2026-08-01, after seeing the hold ship with 0.00 deg of rotation: "the visible turn must
+    // happen independently"; "Otherwise why the pause?!"; "Do apply obvious reasoning."
+    //
+    // The previous build made the turn CONTINGENT on the aim weight having room to grow, so on a real
+    // building — where §CPE_AIM_DEPTH saturates at maxBlend=1.00 long before the stick — the camera
+    // parked and stared. A pause that buys nothing is not a beat, it is a stall.
+    //
+    // THE DERIVATION, and it needs no new constant or new subject. §CPE_AIM_DENSITY/§CPE_AIM_DEPTH aim
+    // PERPENDICULAR TO TRAVEL (the broadside tracking shot the user specified). The user's own live
+    // log records how far that steers the gaze off the direct line to the subject:
+    //     §CPE_AIM_DEPTH … perpDeg=62.8      (derived Hospital path)
+    //     §CPE_AIM_DEPTH … perpDeg=112.9     (authored path)
+    // 60-113 degrees. And **perpendicular-to-travel is UNDEFINED when there is no travel** — at a
+    // dead stop there is no travel direction to project against, so the projection is not merely
+    // optional there, it is meaningless.
+    //
+    // So the projection fades with the camera's OWN SPEED: moving → broadside, stopped → look
+    // straight AT the density×depth subject. That is a 60-113 degree turn, it happens because the
+    // camera stopped rather than because a blend had headroom, and it turns back as the camera eases
+    // out and travel resumes — which is exactly "it slows a sec stop a sec, then ease out while the
+    // cam is turning to the building", and it preserves "at perpendicular angle" for the walk.
+    //
+    // _holdDipAt IS the speed signal, not a proxy for it: it is the same raised-cosine dip that
+    // removes the travel seconds in the first place (1 at a full stop, 0 at full speed).
+    function _holdDipAt(w3) {
+      if (!_holds.length || !_holdBeatSec) return 0;
+      var tau = Math.max(0, Math.min(1, w3)) * _holdBeatSec, dip = 0;
+      for (var i = 0; i < _holds.length; i++) {
+        var h = _holds[i].sec, a = Math.abs(tau - _holds[i].c_beat);
+        if (a <= h / 4) dip += 1;
+        else if (a <= 3 * h / 4) dip += 0.5 * (1 + Math.cos(Math.PI * (a - h / 4) / (h / 2)));
+      }
+      return Math.max(0, Math.min(1, dip));
+    }
     function _holdBoostAt(w3) {
       if (!_holds.length || !_holdBeatSec) return 0;
       var tau = Math.max(0, Math.min(1, w3)) * _holdBeatSec, best = 0;

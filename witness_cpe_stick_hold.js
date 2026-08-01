@@ -273,14 +273,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // building" — so it passes if the camera is ON the building through the stop: either it rotated
     // onto it during the hold, or it was already there and had nothing to turn. What it must NOT do
     // is sit parked pointing AWAY, which is the failure this gate exists to catch.
-    const onBulk = !!ts && ts.offBulkEnd <= 90 && ts.offBulkEnd <= ts.offBulkStart + 1.0;
-    P('G-SH-5 through the stop the camera is ON the building (it turned onto it, or was already there)',
-      parked && onBulk,
+    // §CPE_HOLD_TURN — REWRITTEN. The previous version passed on "already aimed", which let a hold
+    // ship that produced 0.00 deg of rotation. User: "the visible turn must happen independently ...
+    // Otherwise why the pause?!" A pause that buys no turn is a stall, so the gate now demands the
+    // turn ITSELF, and demands it be LARGE — the perpendicular projection is worth 60-113 deg
+    // (perpDeg, measured live), so anything under 10 deg means the projection did not release.
+    const turned = !!ts && ts.deg >= 10;
+    const onBulk = !!ts && ts.offBulkEnd < ts.offBulkStart;      // and it turned TOWARD the building
+    P('G-SH-5 the camera TURNS during the stop, and turns toward the building (the pause buys a turn)',
+      parked && turned && onBulk,
       ts ? `camera parked=${parked} (moved ${ts.movedM.toExponential(2)}m over ${ts.samples} samples; ` +
-           `at mean speed it would have covered ${expectM.toFixed(2)}m). Gaze off the building bulk: ` +
-           `${ts.offBulkStart.toFixed(1)}deg → ${ts.offBulkEnd.toFixed(1)}deg across the stop ` +
-           `(rotation ${ts.deg.toFixed(2)}deg). Already-aimed paths legitimately show ~0 rotation — ` +
-           `the aim rules saturate (maxBlend 1.00) well before the stick, so the turn has happened by then.`
+           `at mean speed it would have covered ${expectM.toFixed(2)}m). ROTATION across the stop = ` +
+           `${ts.deg.toFixed(2)}deg (needs >=10). Gaze off the building bulk: ` +
+           `${ts.offBulkStart.toFixed(1)}deg → ${ts.offBulkEnd.toFixed(1)}deg — closing=${onBulk}. ` +
+           `The turn is the perpendicular projection releasing because travel stopped, so it does NOT ` +
+           `depend on the aim blend having headroom (it saturates at 1.00 on any real building).`
          : 'no stop window found to measure');
 
     // ── G-SH-6 ────────────────────────────────────────────────────────────────────────────────
