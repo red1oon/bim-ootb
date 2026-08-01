@@ -869,6 +869,101 @@
   // honestly: flood the seal-only cells (dilated-blocked, raw-free) into groups, and readmit a
   // group iff it touches enclosed floor and never touches the exterior. That readmits real openings
   // and no leaks.
+  // §SPINE-RASTER (§21.27) — a raster built for CIRCULATION, not for finding rooms. Two things the
+  // room compile's `_rasterizeWalls` does not do, both measured as defects in §21.26:
+  //
+  //  1. CARVE THE VOIDS. `_rasterizeWalls` stamps a wall's bounding box, and a door is a void IN a
+  //     wall that is never subtracted — 99% (Clinic) / 100% (LTU) of door centres land on solid
+  //     masonry. Doorways literally do not exist in the room compile's geometry. Here every IfcDoor
+  //     footprint (and every IfcOpeningElement, where the extraction carries them — LTU has 3,368,
+  //     Clinic has 0) is cleared back out, so an opening is an opening.
+  //  2. HONOUR rotation_z. `bbox_x/bbox_y` are LOCAL dimensions, not a world AABB — proved by LTU's
+  //     2,051 diagonal walls being mostly THIN (aspect>=4), which a world AABB could not be. So the
+  //     room compile stamps those 2,051 walls axis-aligned at the WRONG ORIENTATION. Here the
+  //     rectangle is stamped rotated.
+  //
+  // Deliberately NOT wired into compileRooms: carving doorways would let the room flood-fill leak
+  // straight through them, which is the very thing SEAL exists to stop. The room compile stays
+  // byte-identical; this raster serves the spine map only.
+  function storeyWallsRot(db, anchors) {
+    var cond = WALL_LIKE.map(function (p2) { return "m.ifc_class LIKE '" + p2 + "'"; }).join(' OR ');
+    var rows = _rows(db, "SELECT m.storey, t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, " +
+      "COALESCE(t.rotation_z,0) FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE (" + cond + ") AND m.discipline='ARC' AND t.center_x IS NOT NULL");
+    var anchorNames = Object.keys(anchors || {});
+    var by = {};
+    rows.forEach(function (r) {
+      var st = _assignByZ(r.storey || 'Unknown', r.center_z != null ? r.center_z : 0.0, anchors, anchorNames);
+      (by[st] = by[st] || []).push([r.center_x, r.center_y, r.center_z, r.bbox_x, r.bbox_y, r.bbox_z, r.rotation_z || 0]);
+    });
+    return by;
+  }
+
+  // IfcDoor + IfcOpeningElement footprints, per storey — the voids to carve.
+  function storeyVoids(db, anchors) {
+    var rows = _rows(db, "SELECT m.storey, t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y, " +
+      "COALESCE(t.rotation_z,0), m.ifc_class, COALESCE(t.bbox_z,0) FROM elements_meta m " +
+      "JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE (m.ifc_class LIKE 'IfcDoor%' OR m.ifc_class LIKE 'IfcOpening%') AND m.discipline='ARC' " +
+      "AND t.center_x IS NOT NULL");
+    var anchorNames = Object.keys(anchors || {});
+    var by = {};
+    rows.forEach(function (r) {
+      var st = _assignByZ(r.storey || 'Unknown', r.center_z != null ? r.center_z : 0.0, anchors, anchorNames);
+      var isDoor = (r.ifc_class || '').indexOf('IfcDoor') === 0;
+      // §VOID-AT-FLOOR: only a void you can WALK THROUGH belongs in a circulation raster. A window
+      // is an IfcOpeningElement too — LTU carries 3,368 openings — and carving them punched holes
+      // in the exterior wall, which is why the first gate run lost 99% of the enclosed floor.
+      // Test the void's own sill height against its storey datum; no name matching.
+      var bottom = (r.center_z != null ? r.center_z : 0) - (r.bbox_z || 0) / 2;
+      var datum = anchors && anchors[st] != null ? anchors[st] : null;
+      var atFloor = isDoor || datum === null || (bottom - datum) <= 0.4;
+      (by[st] = by[st] || []).push([r.center_x, r.center_y, r.bbox_x || 0, r.bbox_y || 0,
+        r.rotation_z || 0, isDoor ? 1 : 0, atFloor ? 1 : 0]);
+    });
+    return by;
+  }
+
+  // Stamp (set=1) or carve (set=0) one oriented rectangle.
+  // rot is in RADIANS — element_transforms.rotation_z is stored in radians (measured range ±π on
+  // LTU). An earlier version of this function took degrees and converted, which silently turned a
+  // 180° wall into a 3.14° one and made the whole rotation knob a no-op.
+  function _stampRect(mask, ext, cx, cy, bx, by, rot, set) {
+    var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
+    var th = rot || 0;
+    var ct = Math.cos(th), stt = Math.sin(th);
+    var hx = bx / 2, hy = by / 2;
+    // world AABB of the ORIENTED rect, then test each cell against the rect in its own frame
+    var ax = Math.abs(hx * ct) + Math.abs(hy * stt);
+    var ay = Math.abs(hx * stt) + Math.abs(hy * ct);
+    var i0 = Math.max(0, Math.floor((cx - ax - xs0) / RES)), i1 = Math.min(nx - 1, Math.floor((cx + ax - xs0) / RES));
+    var j0 = Math.max(0, Math.floor((cy - ay - ys0) / RES)), j1 = Math.min(ny - 1, Math.floor((cy + ay - ys0) / RES));
+    var half = RES / 2;
+    for (var i = i0; i <= i1; i++) {
+      for (var j = j0; j <= j1; j++) {
+        var px = xs0 + (i + 0.5) * RES - cx, py = ys0 + (j + 0.5) * RES - cy;
+        var lx = px * ct + py * stt, ly = -px * stt + py * ct;   // into the rect's own frame
+        if (Math.abs(lx) <= hx + half && Math.abs(ly) <= hy + half) mask[i * ny + j] = set;
+      }
+    }
+  }
+
+  function _rasterizeSpine(walls, ext, voids) {
+    var blocked = new Uint8Array(ext.nx * ext.ny);
+    walls.forEach(function (w) { _stampRect(blocked, ext, w[0], w[1], w[3], w[4], w[6] || 0, 1); });
+    // carve after stamping: a void only ever removes wall, never adds floor
+    (voids || []).forEach(function (v) {
+      if (!v[6]) return;                       // §VOID-AT-FLOOR: not walk-through (window etc.)
+      var lng = Math.max(v[2], v[3]), thin = Math.min(v[2], v[3]);
+      // A DOOR is a panel and may be modelled thinner than its host wall, so it has to pierce.
+      // An OPENING already IS the void — cutting it wider removed 55.6% of LTU's wall on the first
+      // gate run, so it gets one cell of slack and no more.
+      var pierce = v[5] ? 6 * RES : RES;
+      _stampRect(blocked, ext, v[0], v[1], lng + 2 * RES, thin + pierce, v[4] || 0, 0);
+    });
+    return blocked;
+  }
+
   // LAYER 1, third construction and the one that holds. Two earlier attempts and why they failed,
   // so neither gets retried:
   //   (i) `enclosed + readmitted seal-band groups` — the seal halo is one continuous ribbon around
@@ -920,7 +1015,11 @@
   // Every point where two pockets are open to each other, with the gap's centre so a door can be
   // matched to it. Reach is SEAL+1 cells: that is exactly how far the dilation can have closed.
   function _openings(owner, raw, enclosed, nx, ny, xs0, ys0) {
-    var reach = SEAL + 1;
+    // Reach has to clear the widest thing that can sit between two pockets in the CARVED raster:
+    // the re-sealed door stamp (pierce depth 6*RES) plus the seal band either side. SEAL+1 was
+    // sized for the uncarved raster and fell short of every doorway once carving landed —
+    // measured as withDoor=0 openings on every storey, i.e. no door links at all.
+    var reach = 6 + SEAL + 2;
     var found = {};
     for (var i = 0; i < nx; i++) {
       for (var j = 0; j < ny; j++) {
@@ -955,16 +1054,30 @@
     });
   }
 
-  function storeySpine(walls, doors, stairs) {
+  function storeySpine(walls, doors, stairs, voids) {
     doors = doors || [];
     var ext = _gridExtent(walls);
     var nx = ext.nx, ny = ext.ny, xs0 = ext.xs0, ys0 = ext.ys0;
-    var raw = _rasterizeWalls(walls, ext);
-    var dil = SEAL > 0 ? _dilate(raw, nx, ny, SEAL) : raw;
+    var raw = voids === undefined ? _rasterizeWalls(walls, ext) : _rasterizeSpine(walls, ext, voids);
+    // §SEAL-DOORS-FIRST: with voids carved, the exterior floods straight in through every external
+    // doorway — measured, 99% of the enclosed floor lost. So the ENCLOSURE is derived from a mask
+    // with all doors closed, while OPENINGS are detected on the carved mask where they are open.
+    // Two masks, one raster, and each question asked of the one that can answer it.
+    var rawSealed = raw;
+    if (voids !== undefined) {
+      rawSealed = new Uint8Array(raw.length);
+      rawSealed.set(raw);
+      (voids || []).forEach(function (v) {
+        if (!v[6] || !v[5]) return;                       // re-close walk-through DOORS only
+        _stampRect(rawSealed, ext, v[0], v[1], Math.max(v[2], v[3]) + 2 * RES,
+          Math.min(v[2], v[3]) + 6 * RES, v[4] || 0, 1);
+      });
+    }
+    var dil = SEAL > 0 ? _dilate(rawSealed, nx, ny, SEAL) : rawSealed;
     var free = new Uint8Array(nx * ny), m;
     for (m = 0; m < nx * ny; m++) free[m] = dil[m] ? 0 : 1;
     var enclosed = _floodExterior(free, nx, ny);
-    var grid = { nx: nx, ny: ny, xs0: xs0, ys0: ys0, dil: dil, raw: raw, enclosed: enclosed };
+    var grid = { nx: nx, ny: ny, xs0: xs0, ys0: ys0, dil: dil, raw: raw, rawSealed: rawSealed, enclosed: enclosed };
 
     var pc = _pocketComponents(enclosed, nx, ny);
     var owner = pc.owner, pockets = pc.pockets;
@@ -1031,16 +1144,24 @@
 
   // Public, read-only: the whole-building §SPINE-FIRST map, per storey. Writes nothing, and does
   // not touch the room compile.
-  function spineMap(db) {
+  function spineMap(db, opts) {
+    opts = opts || {};
     var anchors = storeyZAnchors(db);
-    var wallsBy = storeyWalls(db, anchors);
+    // opts.carve (default ON): the §SPINE-RASTER above — rotated wall stamps and carved voids.
+    // opts.carve === false reproduces §21.26's uncarved measurement for comparison.
+    var carve = opts.carve !== false;
+    // rotation and carving are SEPARATE knobs on purpose: changing both at once makes any measured
+    // difference unattributable, which is what the first LTU gate run did.
+    var rotate = opts.rotate !== undefined ? opts.rotate : carve;
+    var wallsBy = rotate ? storeyWallsRot(db, anchors) : storeyWalls(db, anchors);
+    var voidsBy = carve ? storeyVoids(db, anchors) : null;
     var doorsBy = storeyDoors(db, anchors);
     var stairs = storeyStairs(db, anchors);
     var out = {};
     Object.keys(wallsBy).forEach(function (st) {
       var ws = wallsBy[st];
       if (!ws || ws.length < 3) return;
-      out[st] = storeySpine(ws, doorsBy[st] || [], stairs);
+      out[st] = storeySpine(ws, doorsBy[st] || [], stairs, carve ? (voidsBy[st] || []) : (rotate ? [] : undefined));
     });
     return out;
   }
@@ -1912,7 +2033,7 @@
   }
 
   var API = {
-    doorRoomAdjacency: doorRoomAdjacency, spineMap: spineMap, storeySpine: storeySpine,
+    doorRoomAdjacency: doorRoomAdjacency, spineMap: spineMap, storeySpine: storeySpine, storeyWallsRot: storeyWallsRot, storeyVoids: storeyVoids,
     storeyWalls: storeyWalls, storeyStairs: storeyStairs, storeyDoors: storeyDoors,
     doorStats: doorStats, storeyZAnchors: storeyZAnchors,
     doorAdjacent: doorAdjacent, stairOverlapFrac: stairOverlapFrac,
