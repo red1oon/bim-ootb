@@ -36,6 +36,8 @@
   // §CPE_STICK_HOLD — the user's own number ("putting hold at 1 sec"), applied to the LAST band (the
   // EXIT) of a freshly seeded path so the beat teaches itself. Every other band defaults to 0.
   var CPE_HOLD_DEFAULT_SEC = 1.0;
+  // The ONE row that gets it. -1 = none (a 1-band path has no exit distinct from its start).
+  function _holdSeedRow(n) { return n >= 2 ? n - 1 : -1; }
   var CPE_V = 'v19 (§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
@@ -1586,13 +1588,23 @@
           // since the stop row is not a spawned stick) and put the 1s in the MIDDLE of the walk.
           // The user's intent is the end of the walk, where the camera pauses before the pull-back:
           // "u placed that 1 sec in the middle instead of the last ie exit."
+          // §CPE_HOLD_SEED (user ruling 2026-08-01): the default lands on EXACTLY ONE row — the last
+          // band, the exit — and never on a second. `_holdSeedRow` is the single source of that
+          // decision so no other clone path can disagree with it, and the seed is LOGGED so a hold
+          // appearing on a row nobody typed into is visible instead of being hunted by eye.
           o.hold = authored ? +(b.hold || 0)
-                            : ((bs.length >= 2 && i === bs.length - 1) ? CPE_HOLD_DEFAULT_SEC : 0);
+                            : (i === _holdSeedRow(bs.length) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;
         });
       };
+      var _seedBands = clone(seeded);
+      console.log('§CPE_HOLD_SEED bands=' + _seedBands.length + ' authored=' + authored +
+        ' holdRow=' + (authored ? 'n/a(authored)' : _holdSeedRow(seeded.length)) +
+        ' holds=[' + _seedBands.map(function(b) { return (+(b.hold || 0)).toFixed(1); }).join(',') +
+        '] nonZero=' + _seedBands.filter(function(b) { return +(b.hold || 0) > 0.001; }).length +
+        ' — exactly one row may carry the default (user ruling)');
       _state = {
-        bands: clone(seeded), origBands: clone(seeded), staged: false, undo: [], redo: [],
+        bands: _seedBands, origBands: clone(seeded), staged: false, undo: [], redo: [],
         held: null, drag: null, objs: [], handles: [], bars: [], pulseId: 0, flyId: 0,
         baseSec: { dive: plan.sec.dive, spin: plan.sec.spin, out: plan.sec.out, rise: plan.sec.rise },
         baseOutSec: plan.sec.out, baseTotal: ctx.durationSec, baseLen: plan.pathLen,
@@ -1810,7 +1822,7 @@
         // checkable without driving the panel UI.
         _seedHolds: function(n) {
           var o = [];
-          for (var i = 0; i < n; i++) o.push((n >= 2 && i === n - 1) ? CPE_HOLD_DEFAULT_SEC : 0);
+          for (var i = 0; i < n; i++) o.push(i === _holdSeedRow(n) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;
         },
         _probePipe: function(clientX, clientY) {
