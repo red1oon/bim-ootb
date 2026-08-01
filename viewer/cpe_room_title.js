@@ -289,18 +289,27 @@ function setupCpeRoomTitle(A) {
     var led = 0;
     for (var h = 0; h < held.length; h++) if (held[h].entry > held[h].tStart + 1e-9) led++;
 
-    // §CPE_ROOM_TITLE_LEAD, the FIRST caption only: the dive clamp can truncate its 2s lead to
-    // nothing (show collapses to tStart when the dive ends after the doorway), which is the "too
-    // late" the lead exists to kill, reintroduced for caption #1 alone. NOT silently changed here —
-    // whether that caption should be shown on-the-nose or SKIPPED per the user's own "if misses,
-    // then skips" is their call, not a guess to bury in a constant. Measured and printed so the
-    // next bake says whether it even happens on a real film.
-    var lead0 = held.length ? (held[0].entry - held[0].tStart) : null;
+    // §CPE_ROOM_TITLE_LEAD, the FIRST caption only — and it must NAME ITS CAUSE.
+    // ⚠ The first version of this line printed "TRUNCATED by the dive clamp" for ANY short first
+    // lead, and that was wrong: `show = Math.max(0, tStart - LEAD)` clamps at the FILM START too,
+    // so a film whose first room is entered inside the first 2 seconds reports a short lead with
+    // the dive entirely innocent. It then got quoted as measured proof that the dive clamp was
+    // biting on a real film. An instrument that cannot tell two causes apart manufactures evidence
+    // for whichever one you were already looking at — the same failure this lane has hit eleven
+    // times. It now distinguishes them, and says `full` when there is nothing to explain.
+    var lead0 = null, lead0why = '';
+    if (held.length) {
+      lead0 = held[0].entry - held[0].tStart;
+      var wantOpen = held[0].entry - LEAD;
+      lead0why = (lead0 >= LEAD - 0.01) ? 'full'
+        : (wantOpen < 0) ? 'filmStart'
+        : (diveEndSec > 0 && held[0].tStart <= diveEndSec + 0.01) ? 'diveClamp'
+        : 'other';
+    }
     console.log('§CPE_ROOM_TITLE_TIMELINE rule=' + rule + ' segments=' + held.length + '/' + kept.length +
       ' suppressed=' + suppressed + ' bridged=' + bridged +
       ' dwellFloor=' + MIN_DWELL + 's' +
-      (lead0 == null ? '' : ' firstLead=' + lead0.toFixed(2) + 's/' + LEAD + 's' +
-        (lead0 < LEAD - 0.01 ? ' (TRUNCATED by the dive clamp)' : '')) +
+      (lead0 == null ? '' : ' firstLead=' + lead0.toFixed(2) + 's/' + LEAD + 's(' + lead0why + ')') +
       ' gazeMissedAll=' + _gazeMissedAll + '/' + samples.length +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
@@ -339,9 +348,30 @@ function setupCpeRoomTitle(A) {
     for (i = 0; i < segs.length; i++) {
       var s = segs[i];
       var show = Math.max(0, s.tStart - LEAD);
-      // The first caption of the film only. `Math.min(s.tStart, ...)` is load-bearing: the dive clip
-      // may push a caption LATER, but never past its own doorway — that would be the "too late" the
-      // user is complaining about, reintroduced by the fix for it.
+      // ── §CPE_ROOM_TITLE_DIVE_LEAD (2026-08-02) — TRIED AND REVERTED, kept as a record so it is
+      // not re-attempted. The idea: when `tStart <= diveEndSec` the camera enters that room WHILE
+      // still diving, so the room must be the dive's target and on screen — meaning its name is not
+      // over "empty sky" and could take the full lead. It turned G-TL-2 red, and G-TL-2 encodes the
+      // USER'S OWN RULING that the first caption never opens over the dive. Two reasons it stays
+      // reverted: (a) a witness that encodes a user ruling is not a gate to lower on a hunch, and
+      // (b) the evidence cited for the change did not survive checking — see the attribution note
+      // on `firstLead` below. The original clamp is restored verbatim.
+      // The first caption of the film only.
+      // The clamp was `Math.max(show, Math.min(s.tStart, diveEndSec))`, and working through when it
+      // actually BITES shows it was over-broad. Three cases:
+      //   tStart > diveEndSec + LEAD  -> clamp is a NO-OP (the lead already clears the dive)
+      //   diveEndSec < tStart < +LEAD -> caption opens exactly as the dive ends. Correct, keep.
+      //   tStart <= diveEndSec        -> collapses to `show = tStart`. ZERO lead. Measured live on
+      //                                  Duplex: `firstLead=0.00s/2s (TRUNCATED by the dive clamp)`.
+      // Only the third case is a problem, and in that case the premise behind the clamp is FALSE.
+      // The clamp exists so caption #1 is not "thrown up over empty sky" during the dive — but
+      // `tStart <= diveEndSec` means the camera ENTERS THAT ROOM WHILE STILL DIVING, which can only
+      // happen if the room is what the dive is heading into. The room is therefore on screen, filling
+      // it, for the whole descent. Its name is not over empty sky; it is over its own subject, which
+      // is exactly what a lower-third is for.
+      // So the room being dived INTO gets the normal lead, and the clamp keeps its job everywhere
+      // else. Not "skip it" (the user's "if misses, then skips" governs the 3s HOLD, not the lead —
+      // and a film that opens with an unnamed room is worse than one named a beat early).
       if (!sel.length && diveEndSec > 0) show = Math.max(show, Math.min(s.tStart, diveEndSec));
       if (sel.length && show < lastShow + MIN_HOLD - 1e-9) { skipped++; continue; }
       sel.push({ guid: s.guid, name: s.name, entry: s.tStart, tStart: show, tEnd: s.tEnd });
