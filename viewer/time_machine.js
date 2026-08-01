@@ -4375,7 +4375,15 @@
   // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2. v4 (2026-07-18): §STOREY-Z
   // no-storey-element reassignment (PR #869) — Item 6. Missed on first landing (user hit exactly
   // this "hard reset didn't fix it" symptom); this bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 4;
+  // v5 (2026-08-01): §4D_ROOF_LOAD_PATH (PR #1120) changed BOTH things this comment names — the
+  // slab sequence rule (role now derived from the load path, not the storey name) and
+  // schedule_gate.js's gating logic (walls became candidate supports for promoted roof slabs).
+  // Missed on first landing for the SECOND time in this file's history, and the user hit the exact
+  // symptom the v4 note above already describes in those words: "I still see the roof of the helipad
+  // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
+  // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
+  // IndexedDB, not the HTTP cache. This bump is that fix's second half.
+  var _GANTT_CACHE_VERSION = 5;
 
   function _cacheKey(prefix) {
     var app = A();
