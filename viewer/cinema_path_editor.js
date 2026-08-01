@@ -33,8 +33,8 @@
   // you drag and the handles you grab — and reads at a glance on a 63K-element scene.
   var CPE_STICK_RED = 0xe53935;
   var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
-  // §CPE_STICK_HOLD — the user's own number ("putting hold at 1 sec"), applied to the LAST stick of a
-  // freshly seeded path so the beat teaches itself. Every other stick defaults to 0.
+  // §CPE_STICK_HOLD — the user's own number ("putting hold at 1 sec"), applied to the LAST band (the
+  // EXIT) of a freshly seeded path so the beat teaches itself. Every other band defaults to 0.
   var CPE_HOLD_DEFAULT_SEC = 1.0;
   var CPE_V = 'v19 (§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
@@ -1581,8 +1581,13 @@
           // Only on a FRESHLY SEEDED path: an authored one carries whatever the user actually set,
           // including a deliberate 0, and re-imposing the default would overwrite their edit every
           // time they re-opened the panel.
+          // ⚠ CORRECTED 2026-08-01 (user): the default goes on the LAST band — the EXIT — not on
+          // `length-2`. The first cut read "last stick" as the last SPAWNED band (index length-2,
+          // since the stop row is not a spawned stick) and put the 1s in the MIDDLE of the walk.
+          // The user's intent is the end of the walk, where the camera pauses before the pull-back:
+          // "u placed that 1 sec in the middle instead of the last ie exit."
           o.hold = authored ? +(b.hold || 0)
-                            : ((bs.length >= 3 && i === bs.length - 2) ? CPE_HOLD_DEFAULT_SEC : 0);
+                            : ((bs.length >= 2 && i === bs.length - 1) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;
         });
       };
@@ -1805,7 +1810,7 @@
         // checkable without driving the panel UI.
         _seedHolds: function(n) {
           var o = [];
-          for (var i = 0; i < n; i++) o.push((n >= 3 && i === n - 2) ? CPE_HOLD_DEFAULT_SEC : 0);
+          for (var i = 0; i < n; i++) o.push((n >= 2 && i === n - 1) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;
         },
         _probePipe: function(clientX, clientY) {

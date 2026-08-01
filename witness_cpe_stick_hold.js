@@ -306,11 +306,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return { dflt: E.holdDefaultSec, three: E._seedHolds(3), five: E._seedHolds(5), two: E._seedHolds(2) };
       } catch (e) { return null; }
     });
+    // CORRECTED 2026-08-01 (user): the hold belongs on the LAST band — the EXIT — not on length-2.
     const seedOK = !!seed && seed.dflt === 1.0 &&
-      JSON.stringify(seed.three) === JSON.stringify([0, 1, 0]) &&
-      JSON.stringify(seed.five) === JSON.stringify([0, 0, 0, 1, 0]) &&
-      JSON.stringify(seed.two) === JSON.stringify([0, 0]);
-    P('G-SH-7 the LAST stick of a freshly seeded path defaults to 1.0s, every other band to 0',
+      JSON.stringify(seed.three) === JSON.stringify([0, 0, 1]) &&
+      JSON.stringify(seed.five) === JSON.stringify([0, 0, 0, 0, 1]) &&
+      JSON.stringify(seed.two) === JSON.stringify([0, 1]);
+    P('G-SH-7 the LAST band (the EXIT) of a freshly seeded path defaults to 1.0s, every other band to 0',
       seedOK,
       seed === null ? 'editor exposes no hold seeding — the default does not exist (RED on main)'
                     : `default=${seed.dflt}s; seeding 3 bands → [${seed.three}], 5 → [${seed.five}], ` +
