@@ -5377,13 +5377,14 @@ async function setupEffects(A, renderer, scene, camera) {
     // per-pose cost a lerp instead of a full density scan, which matters at bake rates.
     var _aimSeries = null;
     function _aimBuild() {
-      var K = 64, i, ws = [], sx = [], sy = [], sz = [];
+      var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
       for (i = 0; i <= K; i++) {
         var p = _outPos(i / K);
         var A0 = _aimWeight(p);
         var wv = (A0 && A0.w) ? A0.w : 0;
         var sub = (A0 && A0.w > 1e-4) ? _aimSubject(A0.pIfc) : null;
         ws.push(wv);
+        hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
         // Where the weight is zero the subject is irrelevant but must still be CONTINUOUS through
         // the smoothing pass, so carry the last known one rather than a hole.
         var prevN = sx.length - 1;
@@ -5405,7 +5406,9 @@ async function setupEffects(A, renderer, scene, camera) {
         return o;
       }
       // Two passes: one binomial pass still left a visible step at the trigger edge on Duplex.
-      _aimSeries = { K: K, w: smooth(smooth(ws)),
+      // §CPE_AIM_LATCH — running max, same as the depth rule's series: the aim can strengthen but
+      // never weaken, so leaving the dense pocket no longer slides the gaze back to look-ahead.
+      _aimSeries = { K: K, has: hasS, w: _aimLatch(smooth(smooth(ws))),
                      x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
       var wMax = 0, wN = 0;
       for (i = 0; i <= K; i++) { if (_aimSeries.w[i] > wMax) wMax = _aimSeries.w[i]; if (_aimSeries.w[i] > 0.01) wN++; }
@@ -5418,18 +5421,26 @@ async function setupEffects(A, renderer, scene, camera) {
       var S = _aimSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
       var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
       return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
+               // §CPE_STICK_HOLD: nearest-probe presence, deliberately NOT interpolated — `has` is a
+               // yes/no fact about whether a subject was found, not a quantity to average.
+               has: (f < 0.5 ? S.has[j] : S.has[j + 1]),
                x: S.x[j] * (1 - f) + S.x[j + 1] * f,
                y: S.y[j] * (1 - f) + S.y[j + 1] * f,
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
-    function _aimApply(p, T, lx, ly, lz, e3) {
+    function _aimApply(p, T, lx, ly, lz, e3, boost) {
       // Test-only control switch (same pattern as time_machine's window.__forceFull): the witness
       // needs the SAME plan with the rule suppressed, so that the only difference between the two
       // measurements is the rule itself. No production effect — nothing sets it in the app.
       if (A.__cpeAimOff) return null;
       if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
       var A0 = _aimAt(e3 == null ? 0 : e3);
-      if (!A0 || !(A0.w > 1e-3)) return null;
+      // §CPE_STICK_HOLD: the boost has to be considered HERE, not only at `var w` below — this early
+      // return fired first and silently discarded it (MEASURED: 0.02 deg of turn across a parked
+      // 18-sample stop). `has` gates it so a hold can only ever strengthen an aim that has a REAL
+      // subject at this point on the path; where the series never found one, the boost stays off
+      // rather than aiming the camera at a carried-forward or origin coordinate.
+      if (!A0 || !(Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0)) > 1e-3)) return null;
       var subj = { x: A0.x, y: A0.y, z: A0.z, n: 0 };
       var s3 = A.ifc2three(subj.x, subj.y, subj.z);
       var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
@@ -5464,11 +5475,20 @@ async function setupEffects(A, renderer, scene, camera) {
       // SAME window the orbit hand-off itself uses, so by the time Beat 4 takes over the gaze is
       // exactly what it would have been with no rule at all. Not a new constant: CINEMA_TURN_OVERLAP
       // is the existing hand-off window.
-      var wSeam = 1;
-      if (e3 != null && e3 > 1 - CINEMA_TURN_OVERLAP) {
-        wSeam = 1 - _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP);
-      }
-      var w = A0.w * wSeam;
+      // §CPE_AIM_LATCH (2026-08-01) — THE OUTGOING TAPER IS GONE. It used to force this rule to zero
+      // across the final CINEMA_TURN_OVERLAP of the walk. User: "the turning should be thruout, till
+      // the end of clip as that overwrites the last part forceful turn which we why we introduced
+      // this in the first place" — i.e. the taper was disabling the rule exactly where the rule was
+      // needed, and the reasoning is theirs: "the last spin is all a 'straight circle'", so on the
+      // orbit perpendicular-to-travel IS radially inward and the aim law and Beat 4 AGREE.
+      //
+      // ⚠ The 88.4 deg/frame snap this taper was measured to fix is REAL and is NOT ignored — it is
+      // fixed at its actual cause instead. That snap came from Beat 4 starting its gaze blend at the
+      // hardcoded (odx,0,odz) on the claim that "(odx,odz) IS the direction Beat 3 ends on", which
+      // stops being true the moment this rule still governs at e3=1. Beat 4 now starts from
+      // _beat3EndDir — Beat 3's REAL final gaze, sampled from _beat3Pose(1) — so the hand-off is
+      // continuous by construction rather than by switching this rule off before it.
+      var w = Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0));
       if (!(w > 1e-3)) return null;
       var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
       var aL = Math.hypot(ax, ay, az) || 1;
@@ -5479,7 +5499,7 @@ async function setupEffects(A, renderer, scene, camera) {
           ' floor=' + _AIM_DENS_FLOOR + ' subject=(' + subj.x.toFixed(1) + ',' +
           subj.y.toFixed(1) + ',' + subj.z.toFixed(1) + ')' +
           ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
-          ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
+          ' blend=' + w.toFixed(2) + ' seamTaper=none(§CPE_AIM_LATCH)' + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
       }
       return { x: ax / aL, y: ay / aL, z: az / aL };
     }
@@ -5567,11 +5587,32 @@ async function setupEffects(A, renderer, scene, camera) {
       if (sw <= 1e-9) return null;
       return { x: sx / sw, y: sy / sw, z: sz / sw, n: Math.round(sn / sw) };
     }
+    // ══ §CPE_AIM_LATCH — once aimed, it REMAINS aimed ══════════════════════════════════════════
+    // User, 2026-08-01: "while aimed already at a centre, and when the path continues, it should
+    // remain so ... ie at perpendicular angle", and "the last part should be fine as eventually
+    // coming to perpendicular ... shall remain so as the last spin is all a 'straight circle'".
+    //
+    // WHAT THIS IS NOT: it does not touch the perpendicular projection, and it does not freeze the
+    // subject. The user was explicit that the density×depth "gravity ... kept tugging at it" is
+    // wanted — so the SUBJECT field keeps updating exactly as before. The defect is only that the
+    // WEIGHT decays: `A0.w` is re-derived from local density every frame, so leaving the dense
+    // pocket slides the gaze back to the look-ahead even though the camera had already committed.
+    //
+    // The fix is a RUNNING MAXIMUM over the weight field — the aim can strengthen but never weaken.
+    // Deliberately not "pin to 1 after a threshold": that needs an engage constant and a ramp to
+    // avoid a kink, whereas a running max over an already-smoothed field introduces NO new constant,
+    // is monotone by construction, and stays a pure function of e3 (load-bearing — _beat3Pose is
+    // documented as a pure function of its own progress, and the witnesses sample it out of order).
+    function _aimLatch(w) {
+      var o = [], run = 0;
+      for (var i = 0; i < w.length; i++) { if (w[i] > run) run = w[i]; o.push(run); }
+      return o;
+    }
     // Probe-and-smooth over the walk, same idiom as §CPE_AIM_DENSITY's own series — the weight and
     // the subject are FIELDS along the path, rate-limited here rather than evaluated raw per frame.
     var _aimDepthSeries = null;
     function _aimDepthBuild() {
-      var K = 64, i, ws = [], sx = [], sy = [], sz = [];
+      var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
       for (i = 0; i <= K; i++) {
         var p = _outPos(i / K);
         var A0 = _aimDepthWeight(p);
@@ -5579,6 +5620,7 @@ async function setupEffects(A, renderer, scene, camera) {
         var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R) : null;
         if (A0 && A0.w > 1e-4 && !sub) wv = 0;   // no candidate facade in the bubble → don't trigger
         ws.push(wv);
+        hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
         var prevN = sx.length - 1;
         sx.push(sub ? sub.x : (prevN >= 0 ? sx[prevN] : 0));
         sy.push(sub ? sub.y : (prevN >= 0 ? sy[prevN] : 0));
@@ -5597,7 +5639,7 @@ async function setupEffects(A, renderer, scene, camera) {
         }
         return o;
       }
-      _aimDepthSeries = { K: K, w: smooth(smooth(ws)),
+      _aimDepthSeries = { K: K, has: hasS, w: _aimLatch(smooth(smooth(ws))),
                           x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
       var wMax = 0, wN = 0;
       for (i = 0; i <= K; i++) { if (_aimDepthSeries.w[i] > wMax) wMax = _aimDepthSeries.w[i]; if (_aimDepthSeries.w[i] > 0.01) wN++; }
@@ -5609,17 +5651,21 @@ async function setupEffects(A, renderer, scene, camera) {
       var S = _aimDepthSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
       var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
       return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
+               // §CPE_STICK_HOLD: nearest-probe presence, deliberately NOT interpolated — `has` is a
+               // yes/no fact about whether a subject was found, not a quantity to average.
+               has: (f < 0.5 ? S.has[j] : S.has[j + 1]),
                x: S.x[j] * (1 - f) + S.x[j + 1] * f,
                y: S.y[j] * (1 - f) + S.y[j + 1] * f,
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
     var _aimDepthLast = { logged: 0 };
-    function _aimDepthApply(p, T, lx, ly, lz, e3, openU) {
+    function _aimDepthApply(p, T, lx, ly, lz, e3, openU, boost) {
       // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
       if (A.__cpeAimOff) return null;
       if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
       var A0 = _aimDepthAt(e3 == null ? 0 : e3);
-      if (!A0 || !(A0.w > 1e-3)) return null;
+      // §CPE_STICK_HOLD — same rescue and the same `has` gate as §CPE_AIM_DENSITY above.
+      if (!A0 || !(Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0)) > 1e-3)) return null;
       var s3 = A.ifc2three(A0.x, A0.y, A0.z);
       var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
       var vL = Math.hypot(vx, vy, vz) || 1;
@@ -5633,12 +5679,10 @@ async function setupEffects(A, renderer, scene, camera) {
       var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
       var pL = Math.hypot(px, py, pz) || 1;
       px /= pL; py /= pL; pz /= pL;
-      // Same seam taper as §CPE_AIM_DENSITY — gone by the walk→orbit hand-off, never holds the gaze
-      // side-on into Beat 4.
+      // §CPE_AIM_LATCH — outgoing taper removed here for the same reason and by the same mechanism
+      // as §CPE_AIM_DENSITY's above (Beat 4 now starts from _beat3EndDir). Kept as a named constant
+      // rather than deleted inline so the log line below still reports what it is doing.
       var wSeam = 1;
-      if (e3 != null && e3 > 1 - CINEMA_TURN_OVERLAP) {
-        wSeam = 1 - _cinemaSmoothstep((e3 - (1 - CINEMA_TURN_OVERLAP)) / CINEMA_TURN_OVERLAP);
-      }
       // §CPE_AIM_DEPTH_OPEN_TAPER (2026-07-31, user-reported live: "cam turning is too abrupt" —
       // measured via the caller's own §CPE_SEAM_CONTINUOUS witness, seamGapDeg=94.6-100.2, must be
       // ~0). §CPE_AIM_DENSITY already had the OUTGOING taper above (gone by walk→orbit); this rule
@@ -5651,7 +5695,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (e3 != null && openU > 1e-6 && e3 < openU) {
         wOpen2 = _cinemaSmoothstep(e3 / openU);
       }
-      var w = A0.w * wSeam * wOpen2;
+      var w = Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0)) * wSeam * wOpen2;
       if (!(w > 1e-3)) return null;
       var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
       var aL = Math.hypot(ax, ay, az) || 1;
@@ -5852,6 +5896,24 @@ async function setupEffects(A, renderer, scene, camera) {
         ' — the spin translates 0m, so its rate-of-change is read along the ARC the gaze sweeps');
     })();
     var _spinBusyMult = 1 + (CINEMA_PACE_SWING - 1) * _spinBusy;
+    // ══ §CPE_STICK_HOLD — a per-stick dwell, in seconds ═════════════════════════════════════════
+    // User, 2026-08-01: "putting hold at 1 sec (put that as default for the last stick) will teach
+    // them 'ah, it slows a sec stop a sec, then ease out while the cam is turning to the building'".
+    //
+    // AUTHORED TIME. Collected here, BEFORE the noise multiplier is applied to the walk below, and
+    // added AFTER it — a hold is a number the user typed, so scaling it by measured busyness would
+    // make the panel lie about its own field. This is the §CPE_HOSE_LENGTH_BLIND family's rule
+    // (budget one number, motion another) applied before it can bite a fifth time.
+    var _holds = [], _holdTotal = 0;
+    if (_cpeBands && _cpeBands.length >= 2) {
+      for (var _hb = 0; _hb < _cpeBands.length; _hb++) {
+        var _hv = +(_cpeBands[_hb].hold || 0);
+        if (isFinite(_hv) && _hv > 0.01) {
+          _holds.push({ band: _hb, sec: _hv, c: _cpeBands[_hb].c });
+          _holdTotal += _hv;
+        }
+      }
+    }
     var _walkTurnDegVal = _walkTurnDeg();
     var _natSec = {
       // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
@@ -5872,8 +5934,11 @@ async function setupEffects(A, renderer, scene, camera) {
       // that used to inflate the turn charge as a stand-in for busyness is GONE: a degree now costs
       // CINEMA_TURN_DPS, exactly as the comment above _walkTurnDeg already claims, and busyness
       // (measured, not assumed) does the job the `/3` was faking.
+      // §CPE_STICK_HOLD: `+ _holdTotal` sits OUTSIDE the multiplier on purpose — travel is priced by
+      // the noise law, a typed hold is priced at face value. Amends §CINEMA_PATH_EDITOR_MODEL rule 9
+      // ("constant speed"): speed is constant EXCEPT at authored holds, which is the point of them.
       out:   (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS) *
-             (1 + (CINEMA_PACE_SWING - 1) * _walkBusy),
+             (1 + (CINEMA_PACE_SWING - 1) * _walkBusy) + _holdTotal,
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
@@ -6136,8 +6201,19 @@ async function setupEffects(A, renderer, scene, camera) {
         // §CPE_EVEN_TURN: the frame's progress along the walk is no longer the eased TIME fraction
         // — it is that fraction run through _evenTurnRemap, which spaces frames evenly in the
         // blended distance+turn metric instead of evenly in distance. See the remap's own comment.
-        var e3 = _evenTurnRemap(_cinemaEaseFloored((tNorm - tS) / Math.max(1e-6, tO - tS)));
-        return _beat3Pose(e3);
+        // §CPE_STICK_HOLD: _holdMap converts the beat's own time fraction (which now INCLUDES the
+        // authored dwell) into the travel-time fraction the existing chain expects. Identity when
+        // no hold is set, so this is a no-op on every path that has none.
+        var w3 = (tNorm - tS) / Math.max(1e-6, tO - tS);
+        var e3 = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3)));
+        var p3f = _beat3Pose(e3, w3);
+        // §CPE_GAZE_CONSTANT_RATE: position is whatever the walk says; the DIRECTION is the
+        // rate-limited one. Splitting them here (rather than inside _beat3Pose) keeps that function
+        // the raw signal the cost table samples, so §CPE_EVEN_TURN still measures turn DEMAND.
+        var g3 = _gazeRateAt(_spanFracOf(tNorm));
+        if (!g3) return p3f;
+        return { x: p3f.x, y: p3f.y, z: p3f.z,
+                 tx: p3f.x + g3.x * 20, ty: p3f.y + g3.y * 20, tz: p3f.z + g3.z * 20 };
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
@@ -6145,17 +6221,34 @@ async function setupEffects(A, renderer, scene, camera) {
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
         var e4 = _cinemaEaseFloored((tNorm - tO) / Math.max(1e-6, tR - tO));
+        var p4f = _beat4Pose(e4);
+        // §CPE_GAZE_CONSTANT_RATE spans Beat 3 AND Beat 4 — see _gazeRateBuild. MEASURED: limiting
+        // only the walk moved the whip rather than removing it (Terminal 4.1 -> 34.9 deg/frame at
+        // u=0.645, which is just past `out` — i.e. INSIDE Beat 4). Beat 4 is where the gaze swings
+        // from wherever the aim left it onto the pivot bearing, so it needs the same bound.
+        var g4 = _gazeRateAt(_spanFracOf(tNorm));
+        if (!g4) return p4f;
+        return { x: p4f.x, y: p4f.y, z: p4f.z,
+                 tx: p4f.x + g4.x * 20, ty: p4f.y + g4.y * 20, tz: p4f.z + g4.z * 20 };
+      }
+      return _tailPose(tNorm);
+    }
+    function _beat4Pose(e4) {
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
         // (odx,odz) IS the direction Beat 3 ends on — its last route leg is the outward push past
         // the doorway — so e4=0 continues Beat 3's final gaze exactly. At e4=1, turnW4=1 yields the
         // camera→pivot bearing, which is the same orientation _orbitPose(0) produces by aiming at
         // pivot: both seams are continuous by construction, not by tuning.
+        // §CPE_AIM_LATCH: opens on _beat3EndDir (Beat 3's measured final gaze) rather than the
+        // hardcoded outward push — see that block's comment. At e4=1, turnW4=1 still yields the
+        // camera→pivot bearing, so the Beat 4→5 seam is unchanged.
         return _cinemaGazeBlend(exitOuter.x + (orbitStart.x - exitOuter.x) * e4,
                                 exitOuter.y + (orbitStart.y - exitOuter.y) * e4,
                                 exitOuter.z + (orbitStart.z - exitOuter.z) * e4,
-                                odx, 0, odz, turnW4);
-      }
-      // ── Beat 5: the standard ending.
+                                _beat3EndDir.x, _beat3EndDir.y, _beat3EndDir.z, turnW4);
+    }
+    // ── Beat 5: the standard ending.
+    function _tailPose(tNorm) {
       return _orbitPose((tNorm - tR) / Math.max(1e-6, 1 - tR));
     }
 
@@ -6216,7 +6309,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // The walk-out pose as a pure function of its OWN progress e3 ∈ [0,1]. Extracted verbatim out of
     // poseAt so §CPE_EVEN_TURN's cost table can sample the REAL poses — sampling a re-implementation
     // of the gaze rule would let the table and the film drift apart silently.
-    function _beat3Pose(e3) {
+    function _beat3Pose(e3, w3) {
+        // §CPE_STICK_HOLD: w3 is the beat's TIME fraction (e3 is travel). Only the aim weight uses
+        // it — see _holdBoostAt. Undefined when the cost-table build calls this, which is correct:
+        // that build samples geometry, and a hold changes timing, not the curve.
+        var _hBoost = (w3 == null) ? 0 : _holdBoostAt(w3);
         var p3 = _outPos(e3);
         // §CINEMA_TIMING_672 (2026-07-24, user: "no chasing interim targets when exiting building
         // mostly"): 0.06→0.15. Position already moves at constant speed along the route; this
@@ -6267,14 +6364,14 @@ async function setupEffects(A, renderer, scene, camera) {
         var _tvL = Math.hypot(_tvx, _tvy, _tvz);
         if (_tvL > 1e-6) {
           var _travelDir = { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL };
-          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3);
+          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3, _hBoost);
           if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
           // §CPE_AIM_DEPTH: the mirror rule, opposite trigger (surrounded/close, not outside/empty —
           // see the block above). Applied on the (possibly already §CPE_AIM_DENSITY-blended) gaze so
           // the two compose rather than race; their triggers are near-disjoint by construction (one
           // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
           // most one is ever non-zero at a given pose.
-          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU);
+          var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
@@ -6464,6 +6561,241 @@ async function setupEffects(A, renderer, scene, camera) {
     })();
     _evenTurnBuild();
 
+    // ══ §CPE_STICK_HOLD, motion half — a raised-cosine RATE DIP, never a flat freeze ════════════
+    // A hold must not be a piecewise-flat segment in the time map: that stops the camera with a
+    // velocity STEP, which is precisely the discontinuity §CPE_JERK_DEFINITION and §CPE_EVEN_TURN
+    // exist to kill, and no amount of pacing downstream can smooth a step. Instead the walk's rate
+    // of travel-time consumption r(τ) DIPS smoothly to exactly zero and comes back:
+    //
+    //     plateau  P = h/2   at r = 0        (the genuine "stop a sec")
+    //     ramps    R = h/2   each side, raised cosine
+    //     ∫dip     = P + R   = h  EXACTLY    (the hold costs precisely its authored seconds)
+    //     window   = 1.5h    total           ("slows a sec, stop a sec, then ease out")
+    //
+    // No new constant — the shape is fixed by h alone. Velocity is continuous, reaches zero across
+    // the plateau, and the cost identity is exact rather than tuned, so G-SH-2/G-SH-3 can both be
+    // asserted from the same number.
+    //
+    // Centring, derived not guessed: the dip is symmetric, so half its integral falls before the
+    // centre. For the stop to land ON the stick's midpoint, the centre in BEAT-seconds must be
+    //     c_i = u_i·T + Σ_{j<i} h_j + h_i/2
+    // where u_i is the travel-time fraction at which the walk reaches that stick. That makes
+    // travelElapsed(c_i) = u_i·T identically.
+    var _holdMapTab = null, _holdBeatSec = 0, _holdTravelSec = 0;
+    function _holdBuild() {
+      if (!_holds.length) return;
+      // The editor scales TRAVEL by the user's total and leaves the hold authored (_buildOverride),
+      // so this subtraction is exact on that path. A hand-written override could still ask for a
+      // walk shorter than its own holds; rather than produce negative travel, shrink the holds to
+      // fit and SAY SO — a silently-clamped budget is the failure mode this lane keeps re-learning.
+      if (_holdTotal >= _useSec.out * 0.9) {
+        var _hs = (_useSec.out * 0.9) / _holdTotal;
+        console.warn('§CPE_STICK_HOLD holds ' + _holdTotal.toFixed(2) + 's exceed 90% of the ' +
+          _useSec.out.toFixed(2) + 's walk — scaled by ' + _hs.toFixed(3) + ' to keep travel positive');
+        for (var _hq = 0; _hq < _holds.length; _hq++) _holds[_hq].sec *= _hs;
+        _holdTotal *= _hs;
+      }
+      _holdTravelSec = Math.max(1e-6, _useSec.out - _holdTotal);   // travel only
+      _holdBeatSec = _holdTravelSec + _holdTotal;
+      // u_i: invert the walk's OWN chain. e3(w) = _evenTurnRemap(_cinemaEaseFloored(w)) is the arc
+      // fraction actually flown at time fraction w, and it is monotone — so sample it once and read
+      // the inverse off the same table the film uses. Sampling the real chain (not a re-derivation
+      // of it) is the same discipline _beat3Pose's own comment records for the cost table.
+      var NS = 512, e3s = [], q;
+      for (q = 0; q <= NS; q++) e3s.push(_evenTurnRemap(_cinemaEaseFloored(q / NS)));
+      for (var i = 0; i < _holds.length; i++) {
+        // f: arc fraction of this stick's midpoint, found by search against the flown curve rather
+        // than by index arithmetic over outWp — corner rounding and §CPE_HOSE both mean band index
+        // and arc position are not the same thing.
+        var best = 0, bestD = Infinity;
+        for (q = 0; q <= NS; q++) {
+          var pf = _outPos(q / NS);
+          var dd = Math.hypot(pf.x - _holds[i].c.x, pf.y - _holds[i].c.y, pf.z - _holds[i].c.z);
+          if (dd < bestD) { bestD = dd; best = q / NS; }
+        }
+        _holds[i].f = best; _holds[i].fitM = bestD;
+        // w such that e3(w) = f, off the same sampled chain.
+        var wq = NS;
+        for (q = 0; q <= NS; q++) if (e3s[q] >= best) { wq = q; break; }
+        _holds[i].u = wq / NS;
+      }
+      _holds.sort(function(a, b) { return a.u - b.u; });
+      var acc = 0;
+      for (i = 0; i < _holds.length; i++) {
+        _holds[i].c_beat = _holds[i].u * _holdTravelSec + acc + _holds[i].sec / 2;
+        acc += _holds[i].sec;
+      }
+      // Integrate r = 1 - Σdip over beat-seconds into a monotone table: beat fraction → travel
+      // fraction, which is exactly what the chain below wants as its input.
+      var NT = 2048, tab = [0], travel = 0, dt = _holdBeatSec / NT;
+      for (q = 1; q <= NT; q++) {
+        var tau = (q - 0.5) * dt, dip = 0;
+        for (i = 0; i < _holds.length; i++) {
+          var h = _holds[i].sec, a = Math.abs(tau - _holds[i].c_beat);
+          if (a <= h / 4) dip += 1;
+          else if (a <= 3 * h / 4) dip += 0.5 * (1 + Math.cos(Math.PI * (a - h / 4) / (h / 2)));
+        }
+        travel += Math.max(0, 1 - Math.min(1, dip)) * dt;
+        tab.push(travel);
+      }
+      var span = tab[NT] || 1;
+      for (q = 0; q <= NT; q++) tab[q] /= span;                    // → [0,1] travel fraction
+      _holdMapTab = tab;
+      console.log('§CPE_STICK_HOLD holds=' + _holds.length + ' totalSec=' + _holdTotal.toFixed(2) +
+        ' travelSec=' + _holdTravelSec.toFixed(2) + ' beatSec=' + _holdBeatSec.toFixed(2) +
+        ' stops=[' + _holds.map(function(o) {
+          return 'band' + o.band + '@u=' + o.u.toFixed(3) + '/' + o.sec.toFixed(2) + 's(fit' +
+                 o.fitM.toFixed(2) + 'm)'; }).join(' ') + ']' +
+        ' — plateau h/2 at zero rate, cosine ramps h/2, integral == authored seconds');
+    }
+    // ══ §CPE_STICK_HOLD, the half that makes the hold WORTH buying ══════════════════════════════
+    // MEASURED, and it is the whole point of the feature: with the position frozen the gaze froze
+    // too — 0.02 deg of rotation across a parked 18-sample stop (G-SH-5, first green run of the
+    // motion half). The cause is structural, not a bug in the dip: every gaze rule in Beat 3 is
+    // indexed by e3, the TRAVEL fraction, and travel is exactly what a hold stops. So the camera
+    // stopped and stared, which is not what the user asked for — "it slows a sec stop a sec, then
+    // ease out WHILE THE CAM IS TURNING TO THE BUILDING".
+    //
+    // The fix splits the two indices, which is the §CPE_GAZE_CONSTANT_RATE idea in the small:
+    // the SUBJECT stays indexed by position (e3) — correct, we are parked, the nearby mass has not
+    // changed — while the aim's WEIGHT advances on TIME (w3). Across a hold the weight ramps to 1,
+    // so the gaze rotates from the look-ahead onto the density×depth subject using the seconds the
+    // hold just bought. §CPE_AIM_LATCH's running max then keeps it there once the path resumes,
+    // which is the user's "when the path continues, it should remain so".
+    //
+    // Monotone by construction (smoothstep up to the dip centre, 1 thereafter), so it can only ever
+    // strengthen the aim — it composes with the latch rather than fighting it. Still a pure function
+    // of tNorm, so poseAt stays order-independent.
+    function _holdBoostAt(w3) {
+      if (!_holds.length || !_holdBeatSec) return 0;
+      var tau = Math.max(0, Math.min(1, w3)) * _holdBeatSec, best = 0;
+      for (var i = 0; i < _holds.length; i++) {
+        var h = _holds[i].sec, c = _holds[i].c_beat, start = c - 0.75 * h;
+        if (tau <= start) continue;
+        var v = (tau >= c) ? 1 : _cinemaSmoothstep((tau - start) / Math.max(1e-6, c - start));
+        if (v > best) best = v;
+      }
+      return best;
+    }
+    // Beat-time fraction → travel-time fraction. Identity when nothing is held, so a path with no
+    // holds is byte-identical to before this feature existed (G-SH-8).
+    function _holdMap(w) {
+      if (!_holdMapTab) return w;
+      var t = Math.max(0, Math.min(1, w)) * (_holdMapTab.length - 1);
+      var i = Math.min(_holdMapTab.length - 2, Math.floor(t));
+      return _holdMapTab[i] + (_holdMapTab[i + 1] - _holdMapTab[i]) * (t - i);
+    }
+    _holdBuild();
+
+    // ══ §CPE_GAZE_CONSTANT_RATE — the gaze may never turn faster than the film's own turn rate ═══
+    // MEASURED CAUSE (this session, G-SH-4): removing §CPE_AIM_LATCH's outgoing taper exposed a
+    // 29.01 deg/sample gaze whip at w=0.850 on Hospital, against 2.62 there on origin/main. The
+    // taper had been MASKING a fast swing inside the walk — not merely smoothing the Beat 4 hand-off
+    // as its own comment claimed. Re-tapering would undo the user's "the turning should be thruout,
+    // till the end of clip", so the swing is bounded at its cause instead.
+    //
+    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DENSITY and §CPE_AIM_DEPTH, all
+    // of it — is sampled in TIME and rate-limited to CINEMA_TURN_DPS, the rate the spin, the orbit
+    // lap and the walk's own turn charge are ALREADY priced at. Not a new constant, and not a new
+    // opinion about how fast a camera should turn: it is the number this film already uses
+    // everywhere else, finally applied to the thing that actually rotates.
+    //
+    // Sampled in TIME, not in e3 — with §CPE_STICK_HOLD a hold makes travel stop while time runs, so
+    // a limit expressed per unit of travel would be unbounded exactly where the camera is parked and
+    // turning, which is the one place this feature deliberately creates rotation.
+    //
+    // Forward-only, so it LAGS rather than anticipating; that is correct for a camera operator and
+    // it is safe here because §CPE_AIM_LATCH already made Beat 4 open on Beat 3's real final gaze,
+    // so wherever the limiter leaves the gaze, the hand-off follows it. Pure function of w3 — no
+    // per-frame state, so poseAt stays order-independent and replans stay byte-identical.
+    function _rotToward(a, b, maxAng) {
+      var d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+      var ang = Math.acos(d);
+      if (ang <= maxAng || ang < 1e-9) return b;
+      var s = Math.sin(ang);
+      if (Math.abs(s) < 1e-9) return b;             // antipodal/degenerate — no stable arc to walk
+      var t = maxAng / ang, k0 = Math.sin((1 - t) * ang) / s, k1 = Math.sin(t * ang) / s;
+      var x = a.x * k0 + b.x * k1, y = a.y * k0 + b.y * k1, z = a.z * k0 + b.z * k1;
+      var L = Math.hypot(x, y, z) || 1;
+      return { x: x / L, y: y / L, z: z / L };
+    }
+    // The limiter spans Beat 3 AND Beat 4 as ONE continuous stretch of film — [tS, tR]. Limiting
+    // only the walk was measured to MOVE the whip rather than remove it: Terminal went 4.1 -> 34.9
+    // deg/frame at u=0.645, and `out` there is 0.6442, so the peak had simply relocated into Beat 4,
+    // which is exactly where the gaze swings from wherever the aim rule left it onto the pivot
+    // bearing. One span, one bound, no seam for a whip to hide in.
+    function _spanFracOf(tNorm) {
+      return (tNorm - tS) / Math.max(1e-6, tR - tS);
+    }
+    var _gazeLim = null, _gazeLimN = 512;
+    function _gazeRateBuild() {
+      var i, raw = [], sp, tt, e, p, dx, dy, dz, L;
+      for (i = 0; i <= _gazeLimN; i++) {
+        sp = i / _gazeLimN;
+        tt = tS + (tR - tS) * sp;
+        if (tt <= tO) {
+          var w3b = (tt - tS) / Math.max(1e-6, tO - tS);
+          e = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3b)));
+          p = _beat3Pose(e, w3b);
+        } else {
+          p = _beat4Pose(_cinemaEaseFloored((tt - tO) / Math.max(1e-6, tR - tO)));
+        }
+        dx = p.tx - p.x; dy = p.ty - p.y; dz = p.tz - p.z;
+        L = Math.hypot(dx, dy, dz) || 1;
+        raw.push({ x: dx / L, y: dy / L, z: dz / L });
+      }
+      var stepSec = Math.max(1e-6, (tR - tS) * durationSec) / _gazeLimN;
+      var maxAng = CINEMA_TURN_DPS * stepSec * Math.PI / 180;
+      var lim = [raw[0]], cur = raw[0], rawPeak = 0, limPeak = 0;
+      for (i = 1; i <= _gazeLimN; i++) {
+        var rp = Math.acos(Math.max(-1, Math.min(1,
+          raw[i].x * raw[i - 1].x + raw[i].y * raw[i - 1].y + raw[i].z * raw[i - 1].z))) * 180 / Math.PI;
+        if (rp > rawPeak) rawPeak = rp;
+        var nxt = _rotToward(cur, raw[i], maxAng);
+        var lp = Math.acos(Math.max(-1, Math.min(1,
+          nxt.x * cur.x + nxt.y * cur.y + nxt.z * cur.z))) * 180 / Math.PI;
+        if (lp > limPeak) limPeak = lp;
+        cur = nxt; lim.push(cur);
+      }
+      _gazeLim = lim;
+      console.log('§CPE_GAZE_CONSTANT_RATE probes=' + (_gazeLimN + 1) + ' spanSec=' + ((tR - tS) * durationSec).toFixed(2) +
+        ' (beats 3+4) walkSec=' + _useSec.out.toFixed(2) +
+        ' capDps=' + CINEMA_TURN_DPS + ' capPerProbeDeg=' + (maxAng * 180 / Math.PI).toFixed(3) +
+        ' rawPeakDeg=' + rawPeak.toFixed(2) + ' limitedPeakDeg=' + limPeak.toFixed(2) +
+        ' rawPeakDps=' + (rawPeak / stepSec).toFixed(1) + ' limitedPeakDps=' + (limPeak / stepSec).toFixed(1) +
+        ' — the composed gaze, bounded at the rate the spin and orbit already turn at');
+    }
+    function _gazeRateAt(w) {
+      if (!_gazeLim) return null;
+      var t = Math.max(0, Math.min(1, w)) * _gazeLimN;
+      var i = Math.min(_gazeLimN - 1, Math.floor(t)), f = t - i;
+      var a = _gazeLim[i], b = _gazeLim[i + 1];
+      // nlerp: adjacent samples are at most capPerProbeDeg apart by construction, so the chord error
+      // is negligible and slerp would buy nothing but a trig call per frame.
+      var x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f, z = a.z + (b.z - a.z) * f;
+      var L = Math.hypot(x, y, z) || 1;
+      return { x: x / L, y: y / L, z: z / L };
+    }
+    // §CPE_AIM_LATCH — Beat 3's REAL final gaze direction, sampled from the pose that actually flies.
+    // Beat 4 used to open on the hardcoded (odx,0,odz) outward push, justified by the comment
+    // "(odx,odz) IS the direction Beat 3 ends on". That was true only while the aim rules were
+    // tapered to zero before e3=1; with the taper gone it is false, and believing it is exactly the
+    // 88.4 deg/frame seam snap the taper was introduced to hide. Sampled, never assumed.
+    // ⚠ This is the RAW Beat 3 ending, and it must be: _gazeRateBuild samples _beat4Pose, which reads
+    // this, so it has to exist BEFORE the limiter is built (an earlier cut read the limited series
+    // here and _beat3EndDir was `undefined` at build time). It is also the right value — its job is
+    // to make Beat 4's RAW signal continuous with Beat 3's RAW signal, and the limiter, which now
+    // spans both beats as one stretch, smooths the composition afterwards.
+    var _b3e = _beat3Pose(1, 1);
+    var _b3dx = _b3e.tx - _b3e.x, _b3dy = _b3e.ty - _b3e.y, _b3dz = _b3e.tz - _b3e.z;
+    var _b3dL = Math.hypot(_b3dx, _b3dy, _b3dz) || 1;
+    var _beat3EndDir = { x: _b3dx / _b3dL, y: _b3dy / _b3dL, z: _b3dz / _b3dL };
+    var _b3Off = Math.acos(Math.max(-1, Math.min(1, _beat3EndDir.x * odx + _beat3EndDir.z * odz))) * 180 / Math.PI;
+    console.log('§CPE_AIM_LATCH beat3EndDir=(' + _beat3EndDir.x.toFixed(3) + ',' + _beat3EndDir.y.toFixed(3) +
+      ',' + _beat3EndDir.z.toFixed(3) + ') offOutwardDeg=' + _b3Off.toFixed(1) +
+      ' — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid');
+    _gazeRateBuild();
+
     // Plan cost is dominated by the BVH fans + floor raycasts. Measured on this project's headless
     // ANGLE/SwiftShader rig: Duplex ~20-70ms, Terminal/Hospital ~500-750ms — a one-off cost at the
     // moment Alt+C is pressed, before a 24s recording. Logged so a regression is visible, not guessed.
@@ -6484,8 +6816,11 @@ async function setupEffects(A, renderer, scene, camera) {
              // follows provenance, would paint them as nodes the user never added. Measured RED by
              // witness_cpe_reopen_node.js G-RN-3 with only the editor side of this fix in place.
              bands: _cpeBands ? _cpeBands.map(function(b) {
+               // §CPE_STICK_HOLD rides along for the same reason `_stick`/`_s` do (§CPE_REOPEN_NODE):
+               // the plan is what the editor RE-OPENS from, so a dropped field silently resets the
+               // user's typed hold to 0 on the next OK.
                return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-                        _stick: b._stick, _s: b._s };
+                        hold: +(b.hold || 0), _stick: b._stick, _s: b._s };
              }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
              sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
@@ -6530,8 +6865,18 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!A.dbQuery) return;
       var has = A.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='cinema_path'");
       if (!has || !has.length) { console.log('§CINEMA_PATH_RESTORE none (no cinema_path table) — derived path'); return; }
+      // §CPE_STICK_HOLD: hold_sec was appended after §CPE_PATH_NOT_PORTABLE shipped, so a .db saved
+      // by an older build simply does not have the column and SELECTing it would throw — taking the
+      // WHOLE path down over an optional field. Probe the table's own columns first and only ask for
+      // what is there. Missing column == every hold 0, which is the documented default anyway.
+      var _hasHold = false;
+      try {
+        var ti = A.dbQuery("PRAGMA table_info(cinema_path)");
+        for (var _ti = 0; _ti < (ti || []).length; _ti++) if (ti[_ti][1] === 'hold_sec') _hasHold = true;
+      } catch (eTi) {}
       var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,dir_x,dir_y,dir_z,len," +
-        "total_sec,dive_sec,spin_sec,out_sec,rise_sec FROM cinema_path ORDER BY seq");
+        "total_sec,dive_sec,spin_sec,out_sec,rise_sec," +
+        (_hasHold ? "hold_sec" : "0 AS hold_sec") + " FROM cinema_path ORDER BY seq");
       if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
       // §CPE_BANDS: rebuilt as bands, so the rigid-straight invariant is restored with the data
       // rather than re-imposed by convention.
@@ -6539,12 +6884,14 @@ async function setupEffects(A, renderer, scene, camera) {
         var p = A.ifc2three(r[1], r[2], r[3]);
         var d = A.ifc2threeDir(r[4], r[5], r[6]);
         var L = Math.hypot(d.x, d.y, d.z) || 1;
-        return { c: { x: p.x, y: p.y, z: p.z }, d: { x: d.x / L, y: d.y / L, z: d.z / L }, len: r[7] };
+        return { c: { x: p.x, y: p.y, z: p.z }, d: { x: d.x / L, y: d.y / L, z: d.z / L }, len: r[7],
+                 hold: +(r[13] || 0) };
       });
       A._cinemaPathEdit = { bands: bands, diveSec: rows[0][9], spinSec: rows[0][10],
                             outSec: rows[0][11], riseSec: rows[0][12], _total: rows[0][8] };
       console.log('§CINEMA_PATH_RESTORE bands=' + bands.length + ' total=' + rows[0][8].toFixed(1) +
-        's — authored path in force');
+        's holdCol=' + _hasHold + ' holds=' + bands.filter(function(b) { return b.hold > 0.01; }).length +
+        ' — authored path in force');
     } catch (e) { console.warn('§CINEMA_PATH_RESTORE_FAIL ' + e.message); }
   }
   // Staged by the editor's "Save this path"; read by scene.js `_writeCinemaPathTable` at export.
