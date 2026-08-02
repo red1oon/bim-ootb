@@ -94,7 +94,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return { poseAt: () => ({ x: p.x, y: p.y, z: p.z }) };
       };
       const run = (ifcZ) => {
-        const segs = A.roomTitleBuildTimeline(planAt(ifcZ), 12);
+        // §CPE_ROOM_TITLE_GROUP (2026-08-02): filter the fill — flying over a room now yields an
+        // honest BUILDING/storey fill segment, which is not the #1108 defect (a ROOM named from
+        // above). This gate is about room captions only; the fill has its own witness.
+        const segs = A.roomTitleBuildTimeline(planAt(ifcZ), 12).filter(s => !s.group);
         return { n: segs.length, name: segs.length ? segs[0].name : null };
       };
 

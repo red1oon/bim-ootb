@@ -94,6 +94,10 @@ const HOLD = 3.0;
         const plan = A.cinemaPathPlan(DUR);
         out.planBeats = plan && plan.beats ? plan.beats.dive : null;
         real = A.roomTitleBuildTimeline(plan, DUR) || [];
+        // §CPE_ROOM_TITLE_GROUP (2026-08-02): the fill segments are NOT event captions — they have
+        // no doorway, so "led its doorway by 2s" does not apply to them. Their own gates live in
+        // witness_cpe_room_title_group.js; here only the room captions are lead-gated.
+        real = real.filter(s => !s.group);
       } catch (e) { out.realErr = e.message; }
       out.real = real.map(s => ({ name: s.name, tStart: +s.tStart.toFixed(2), tEnd: +s.tEnd.toFixed(2),
                                  entry: s.entry == null ? null : +s.entry.toFixed(2) }));
