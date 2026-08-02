@@ -500,6 +500,7 @@
       clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
       buildup: !!s.buildup,
       roomTitle: !!s.roomTitle,
+      dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       // §CPE_STICK_HOLD: the TRAVEL part of the walk scales with the user's total, the authored hold
       // does NOT — a typed "1 s" must stay 1 s whatever the film is re-timed to, or the panel field
@@ -635,6 +636,19 @@
           'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
           'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span></div>' +
+        // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
+        // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
+        // Only meaningful with the buildup on (there is no day to show without one), which the hint
+        // says out loud rather than leaving the user to discover by baking.
+        '<div style="margin-top:4px">Day # counter ' +
+          '<select id="cpe-day-counter" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
+            'border-radius:3px;font-size:10px;padding:1px 2px">' +
+            '<option value="tr">top right</option>' +
+            '<option value="tl">top left</option>' +
+            '<option value="br">bottom right</option>' +
+            '<option value="bl">bottom left</option>' +
+            '<option value="off">off</option>' +
+          '</select> <span style="color:#666">(needs the buildup — it counts the days it is showing)</span></div>' +
         // §CPE_IDB_PATH_STORE — saved plans for THIS building.
         '<div style="margin-top:6px">saved <select id="cpe-plans" style="max-width:150px;background:#15181c;color:#ddd;' +
           'border:1px solid #3a3f47;border-radius:3px;font-size:10px;padding:1px 2px"></select> ' +
@@ -1101,6 +1115,7 @@
     _state.clipOut = ov.clip ? ov.clip.out : 1;
     _state.buildup = !!ov.buildup;
     _state.roomTitle = !!ov.roomTitle;
+    _state.dayCounter = ov.dayCounter || 'tr';   // older saved plans predate the choice — top right
     _state.userTotal = ov._total;
     _state.held = null;
     // §CPE_PATH_NOT_PORTABLE fix, part 1 (prompts/CINEMA_PATH_EDITOR.md): opening a named plan used
@@ -1116,6 +1131,7 @@
     console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
       ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
       ' buildup=' + (_state.buildup ? 1 : 0) + ' roomTitle=' + (_state.roomTitle ? 1 : 0) +
+      ' dayCounter=' + (_state.dayCounter || 'tr') +
       ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
       ' — re-staged (§CPE_PATH_NOT_PORTABLE): Ctrl+S now writes this path; Ctrl+Z restores what you had before loading');
     _markPreviewStale();
@@ -1145,6 +1161,11 @@
     // this rehearsal's playback speed, not the film's real length).
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
     if (s.roomTitle && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
+    // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
+    // shipped and NOTHING called them: the counter only ever existed in the exported bytes, so the
+    // user could not see their own choice until a 20-minute bake finished. Wired here so the corner
+    // is checkable in the rehearsal, through the same draw routine the bake uses.
+    var _dayPos = s.dayCounter || 'tr', _dayOn = (_dayPos !== 'off');
 
     // ══ §CPE_BUILDUP in the PREVIEW — measured before it was assumed expensive ═════════════════
     // User, 2026-07-28: "i dont expect buildup preview can be done as it be heavy engine work...
@@ -1182,6 +1203,11 @@
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x.
           if (a.ghostGroundAt) a.ghostGroundAt(tn, _titleTotalSec || dur / 1000, bkPrev);
+          // Same cursor the buildup was just set to — never a second, separately-interpolated clock.
+          if (_dayOn && a.dayCounterLiveTick) {
+            a.dayCounterLiveTick(a.buildupCursorAt ? a.buildupCursorAt(tn, bkPrev)
+              : (bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart)));
+          }
         }
         frames++;
         if (a.markDirty) a.markDirty();
@@ -1199,6 +1225,7 @@
         if (a.ghostGroundRestore) a.ghostGroundRestore();
         if (a.buildupPacingReset) a.buildupPacingReset();
         if (a.roomTitleLiveStop) a.roomTitleLiveStop();
+        if (a.dayCounterLiveStop) a.dayCounterLiveStop();
         _state.flying = false;
         console.log('§CPE_PREVIEW done frames=' + frames + ' msPerFrame=' + msPerFrame.toFixed(1) +
           ' buildup=' + (s.buildup ? 1 : 0) + ' — camera restored to the editing pose');
@@ -1219,6 +1246,9 @@
         // §CPE_GHOST_GROUND: armed from the SAME bkState the bake arms from, right after the
         // timeline becomes real — the trigger is a cursor timestamp and cannot exist before that.
         if (bkPrev && a.ghostGroundArm) a.ghostGroundArm(bkPrev);
+        // §CPE_DAY_COUNTER_POS — armed from the same bkState, for the same reason: the span it
+        // counts over does not exist until the timeline is real.
+        if (bkPrev && _dayOn && a.dayCounterLiveStart) a.dayCounterLiveStart(bkPrev, _dayPos);
         console.log('§CPE_PREVIEW_BUILDUP ' + (bkPrev ? 'armed mode=' + (bkPrev.source === 'captured' ? 'S' : 'T') +
             ' ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no timeline to follow)') +
           ' setupMs=' + (performance.now() - t0b).toFixed(0) +
@@ -1684,6 +1714,7 @@
         // §CPE_ROOM_TITLE: off by default, same reasoning — a captioned film is a deliberate choice
         // (RESUME_CPE_ROOM_TITLE.md).
         roomTitle: false,
+        dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
         edits: 0, previewedAt: 0, flying: false,
@@ -1771,6 +1802,20 @@
         var _a = A();
         if (_state.roomTitle && typeof _a.friendlyName !== 'function' && typeof _a.loadNavigate === 'function') _a.loadNavigate();
         if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
+        _renderWhole(); _syncButtons();
+      });
+      // Seeded from state, not left on the markup's first <option>: a plan re-opened from
+      // §CPE_IDB_PATH_STORE carries its own corner and the control must show it (the sibling
+      // checkboxes do NOT do this — see §CPE_DAY_COUNTER_POS note in prompts/CINEMA_PATH_EDITOR.md).
+      var dayEl = document.getElementById('cpe-day-counter');
+      dayEl.value = _state.dayCounter || 'tr';
+      dayEl.addEventListener('change', function(e) {
+        _state.dayCounter = e.target.value || 'tr';
+        _markPreviewStale();
+        console.log('§CPE_DAY_COUNTER_POS ' + _state.dayCounter +
+          (_state.buildup ? '' : ' — NOTE: buildup is off, so no day is being counted yet'));
+        var _a2 = A();
+        if (_state.dayCounter === 'off' && _a2.dayCounterLiveStop) _a2.dayCounterLiveStop();
         _renderWhole(); _syncButtons();
       });
       document.getElementById('cpe-preview').addEventListener('click', _previewFly);
