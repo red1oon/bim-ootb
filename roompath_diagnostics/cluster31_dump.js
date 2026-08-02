@@ -110,6 +110,27 @@ const quiet = fn => { const rl = console.log; console.log = () => {}; try { retu
   const thick = near.filter(x => x.d <= 1.5).map(x => x.thick).sort((a, b) => a - b);
   if (thick.length) console.log('§C31 wall thickness AT those crossings: median=' + thick[thick.length >> 1].toFixed(2) +
     'm  max=' + thick[thick.length - 1].toFixed(2) + 'm   (door pierce depth = ' + (6 * RW.RES).toFixed(2) + 'm)');
+  // §21.37 item 1 — the histogram that decides (a) deepen the pierce vs (b) lengthen the march.
+  // reach = 6 + SEAL + 2 cells = 2.00 m; pierce = 6*RES = 1.20 m. A crossing is only explained by
+  // the march if it EXCEEDS 2.00 m; one at 1.40 m is inside reach and needs a different explanation.
+  const REACH = (6 + 2 + 2) * RW.RES, PIERCE = 6 * RW.RES;
+  const b = { lePierce: 0, pierceToReach: 0, gtReach: 0 };
+  thick.forEach(t => { if (t <= PIERCE) b.lePierce++; else if (t <= REACH) b.pierceToReach++; else b.gtReach++; });
+  console.log('§C37 door-adjacent crossings by gap width (n=' + thick.length + ')  reach=' + REACH.toFixed(2) +
+    'm  pierce=' + PIERCE.toFixed(2) + 'm');
+  console.log('§C37   <= 1.20m (inside BOTH pierce and reach) = ' + b.lePierce +
+    '  -> neither mechanism explains these');
+  console.log('§C37   1.20-2.00m (beyond pierce, inside reach) = ' + b.pierceToReach +
+    '  -> PIERCE-limited: carve never breaks through');
+  console.log('§C37   > 2.00m (beyond reach too)               = ' + b.gtReach +
+    '  -> MARCH-limited as well');
+  const dom2 = b.pierceToReach >= b.gtReach && b.pierceToReach >= b.lePierce ? 'PIERCE'
+    : (b.gtReach >= b.lePierce ? 'MARCH' : 'NEITHER');
+  console.log('§C37 VERDICT = ' + dom2 + ' -> ' + ({
+    PIERCE: 'FIX (a): deepen the carve to clear wall + 2xSEAL. Lengthening the march alone cannot help — the raster is still solid at these crossings.',
+    MARCH: 'FIX (b): lengthen _openings reach. Safer, cannot over-cut. Do this before touching carve depth.',
+    NEITHER: 'NEITHER — most crossings are inside both limits, so the failure is elsewhere. Instrument one 1.40m crossing cell by cell before changing any constant.'
+  })[dom2]);
   console.log('§C31 MECHANISM = ' + (withDoorNear.length === 0
     ? 'M1 — no door element anywhere on this cluster boundary. Upstream extraction, not this lane.'
     : (thick.length && thick[thick.length >> 1] > 6 * RW.RES
