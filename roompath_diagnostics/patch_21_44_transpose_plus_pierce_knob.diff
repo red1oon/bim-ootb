@@ -1,0 +1,50 @@
+diff --git a/viewer/lib/room_walker.js b/viewer/lib/room_walker.js
+index 604a01b..c6d80f7 100644
+--- a/viewer/lib/room_walker.js
++++ b/viewer/lib/room_walker.js
+@@ -27,6 +27,11 @@
+   var ROOM_WALKER_V = 'v3 (§LOCAL-FRAME + §RASTER-EPS + §CONTAINMENT-ALIAS, post-§SUSPECT-LARGE)';
+ 
+   var RES = 0.20;          // grid cell size (m)
++  // §21.44 SWEEP KNOB — door-void pierce depth in CELLS. Default 10 (= the shipped 10*RES, §21.39);
++  // overridable ONLY via env for the (W, pierce) re-sweep, read once per process. `typeof process`
++  // guard: this lib also loads in the browser, where the knob must not exist and the default holds.
++  var PIERCE_CELLS = (typeof process !== 'undefined' && process.env &&
++                      +process.env.ROOMPATH_PIERCE > 0) ? +process.env.ROOMPATH_PIERCE : 10;
+   var MIN_AREA = 4.0;      // m^2 — drop slivers / wall cavities
+   // §SUSPECT-LARGE (compile_rooms.py port, 2026-07-14): MAX_AREA_ABS used to be a hard drop
+   // threshold, calibrated to residential room sizes. That predates §DOOR-PARTITION-EXT-EXCLUDE,
+@@ -1016,14 +1021,30 @@
+     // carve after stamping: a void only ever removes wall, never adds floor
+     (voids || []).forEach(function (v) {
+       if (!v[6]) return;                       // §VOID-AT-FLOOR: not walk-through (window etc.)
+-      var lng = Math.max(v[2], v[3]), thin = Math.min(v[2], v[3]);
+       // A DOOR is a panel and may be modelled thinner than its host wall, so it has to pierce.
+       // An OPENING already IS the void — cutting it wider removed 55.6% of LTU's wall on the first
+       // gate run, so it gets one cell of slack and no more.
+       // §21.38: 6*RES (1.20m) failed 33 of 51 measured crossings — the gap is wall + 2xSEAL (0.80m
+       // of dilation), so a 0.6m wall needs ~1.40m. 10*RES (2.00m) covers all but one measured crossing.
+-      var pierce = v[5] ? 10 * RES : RES;
+-      _stampRect(blocked, ext, v[0], v[1], lng + 2 * RES, thin + pierce, v[4] || 0, 0);
++      var pierce = v[5] ? PIERCE_CELLS * RES : RES;
++      // §21.43 — PIERCE ALONG THE VOID'S OWN SHORT AXIS. This used to read
++      //     lng = max(bbox_x,bbox_y), thin = min(...)  ->  stamp(lng + 2*RES, thin + pierce)
++      // which discards which axis is which and re-stamps every void LONG-ALONG-WORLD-X. For a door
++      // whose bbox is longer in Y that is a 90° error: it cuts a 2 m slot along the wall FACE and
++      // pierces the wall by one door-width instead of cutting through it. Measured: 118/254 doors on
++      // Clinic, 345/606 on LTU. Output is unchanged wherever bbox_x >= bbox_y, so half the fleet is
++      // untouched by construction.
++      var xLong = v[2] >= v[3];
++      // §21.43 LANDMINE — v[4] is ALWAYS 0 and must stay that way. storeyVoids/storeyWallsRot select
++      // `COALESCE(t.rotation_z,0)` with NO ALIAS, so `r.rotation_z` is undefined and the rotation
++      // never reaches the raster (measured: 0 of 3167 LTU voids, 0 of 4979 walls carry it). That is
++      // HARMLESS ONLY BECAUSE the fixtures store WORLD AABBs, which already carry the orientation:
++      // LTU doors at rot ±90 are y-long 341/341, at 0/180 x-long 261/265. Repairing the alias without
++      // also re-reading bbox as a LOCAL extent would rotate an already-rotated box and shear every
++      // wall in the building. Fix both together or neither.
++      _stampRect(blocked, ext, v[0], v[1],
++        xLong ? v[2] + 2 * RES : v[2] + pierce,
++        xLong ? v[3] + pierce : v[3] + 2 * RES, v[4] || 0, 0);
+     });
+     // §PRECARVE (§21.31 item 2) — hand back the mask as it stood BEFORE any void was cut. The
+     // enclosure question must be asked of the walls as modelled; §SEAL-DOORS-FIRST used to answer it

@@ -29,6 +29,8 @@ path. Fixtures come from `~/bim-ootb/buildings/` (never OCI, never the bim-compi
 | `doorprov5.js` | fleet version, and the probe that **invalidated itself**: `SLACK=2` → "100% of stranded area has no door", `SLACK=8` → 23%. Kept as the worked example for §6 method rule 5 | §21.43 |
 | `doorprov6.js` | the instrument that held — march the door's own NORMAL, reach swept 0.60–2.40 m, plus §DP10 blindness control. Found the transposed carve | §21.43 |
 | `patch_21_43_transpose.diff` | the axis fix itself: CORRECT geometry, every metric worse (§O3 20% PASS → 94% FAIL). Kept unapplied for the joint (W, pierce) re-sweep | §21.43b |
+| `resweep_w_pierce.js` | the §21.44 (W, pierce) re-sweep runner — one process per `ROOMPATH_PIERCE`, both fixtures, 6 W modes + uncarved §T5 denominator, `§SW`/`§SW_O3` + TSV per cell. **Result: stop condition — §O3 PASS in 0/72 cells, no cell ≤ baseline on both fixtures** (`w_sweep_matrix_2026-08-02.tsv`) | RESUME_ROOMPATH_AXIS_RESWEEP.md §6.3 |
+| `patch_21_44_transpose_plus_pierce_knob.diff` | the transpose fix PLUS the `ROOMPATH_PIERCE` env knob (default 10 = byte-identical, proven), exactly as swept. Applies clean to baseline; kept unapplied like its parent | RESUME_ROOMPATH_AXIS_RESWEEP.md §6.1–§6.4 |
 
 **Read `funnel_diag.js` before attempting funnel attempt 2** — A2 is the trap: a straight corridor
 passes with left/right deliberately swapped, so it proves nothing about orientation on its own.
