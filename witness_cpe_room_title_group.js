@@ -16,6 +16,15 @@
 //            containment key resolves to the room the camera is inside.
 //   G-RTG-4  TEMPERED: every group segment holds ≥ MIN_HOLD (3s) — no fast flashing.
 //   G-RTG-5  single line, and the instrument reports (§CPE_ROOM_TITLE_GROUP line with coverage).
+//   G-RTG-6  §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE (fix, 2026-08-02): a shared storey prefix must be
+//            named ONCE in a composed line, never repeated per room. Real defect measured on this
+//            same Hospital film (#1136/#1138 build session witness log): a window whose sighted
+//            rooms all read "Level 4 ..." rendered "Level 4 Hall/Corridor 2, Level 4 Hall/Corridor
+//            1, Level 4 R1, Level 4 R4" — the prefix repeated four times — because the per-room
+//            dedupe only fired when the WINDOW's camera-position storey test (stSame) was
+//            unanimous, a stricter and independent test from "do the sighted rooms themselves
+//            share a level". For every ladder storey name, its "<name> " substring must occur at
+//            most once in any composed line.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8443;
@@ -115,6 +124,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         }
       }
       out.honesty = { checked, bad: bad.slice(0, 4), nBad: bad.length };
+      // G-RTG-6: no ladder storey prefix repeats inside one composed line.
+      const repeats = [];
+      for (const g of groups) {
+        for (const L of ladder) {
+          const token = L.name + ' ';
+          let count = 0, idx = -1;
+          while ((idx = g.name.indexOf(token, idx + 1)) !== -1) count++;
+          if (count > 1) repeats.push({ name: g.name, storey: L.name, count });
+        }
+      }
+      out.levelRepeats = repeats;
     } catch (e) { out.err = String(e && e.message); }
     return out;
   });
@@ -142,6 +162,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     res.multiline === 0 && !!glog,
     `multiline=${res.multiline}; sample: ${JSON.stringify(res.sampleNames.slice(0, 3))}; ` +
     (glog ? glog.slice(0, 160) : 'NO §CPE_ROOM_TITLE_GROUP line'));
+  P('G-RTG-6 a shared storey prefix is named ONCE per composed line, never repeated per room',
+    res.levelRepeats.length === 0,
+    `${res.levelRepeats.length} repeats` +
+    (res.levelRepeats.length ? ' ' + JSON.stringify(res.levelRepeats.slice(0, 4)) : ''));
 
   console.log(all ? 'ALL GATES PASS' : 'GATES FAILED');
   await browser.close();

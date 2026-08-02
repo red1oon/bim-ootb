@@ -22,6 +22,19 @@
 //            compositor paints exactly "text [phase]"; with none it paints bare text. Driven
 //            through the REAL roomTitleCompositeOntoCanvas via a capturing ctx stub — not a
 //            re-implementation. RED before the fix: no bracket ever.
+//   G-RTC-6  §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE (fix, 2026-08-02): same invariant as
+//            witness_cpe_room_title_group.js's G-RTG-6, applied to dwell-caption `.label`s (the
+//            SAME _lineFrom grammar composes both) — a shared storey prefix is named ONCE per
+//            composed line, never repeated per room.
+//   G-RTC-7  THE BAKE PATH, NOT INFERRED: cinema_maxq.js's frame loop is a SEPARATE compositing
+//            call site from the live-display caller (`_captureFrame` at cinema_maxq.js:478-491
+//            calls `A.roomTitleOpacityAt(_titleSegs, i/fps)` at :1082, then passes `.name`
+//            UNMODIFIED into `A.roomTitleCompositeOntoCanvas` at :486 — the exact function this
+//            witness already drives for G-RTC-5). Reproduces that EXACT call chain — same two
+//            functions, same argument shapes — across every segment (dwell AND gap-fill) of the
+//            real 147.9s Hospital film and asserts the text actually painted onto the captured-
+//            frame canvas carries no repeated storey prefix. Proves the bake's EXPORTED bytes, not
+//            just the segment builder.
 // RUN: node witness_cpe_room_title_collective.js
 'use strict';
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -82,17 +95,29 @@ const _watchdog = setTimeout(() => { console.log('\n§W-RTC TIMEOUT — killed a
       // G-RTC-1: every dwell caption composed
       out.labelled = rooms.filter(s => typeof s.label === 'string' && s.label.length > 0).length;
       out.sample = rooms.slice(0, 5).map(s => ({ name: s.name, label: s.label }));
-      // G-RTC-2: own room in its own line — the bare title, or its storey-deduped tail, must
-      // appear in the label (the grammar strips a unanimous storey prefix from room names).
+      // Storey ladder, fetched once — used by G-RTC-2 (own-room presence, mirroring the grammar's
+      // per-room dedupe) and G-RTC-6 (level-consolidate invariant) below.
+      const ladder = A.dbQuery(
+        "SELECT m.storey, AVG(COALESCE(t.center_z,0)) FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.storey IS NOT NULL AND m.storey NOT IN ('','_UNKNOWN','Unknown') GROUP BY m.storey")
+        .map(r => ({ name: String(r[0]), z: +r[1] }));
+      // G-RTC-2: own room in its own line — the bare title, with ANY ladder-matching storey
+      // prefix it carries stripped, must appear in the label. §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE
+      // groups the sight list by each room's OWN embedded prefix (not only the window's announced
+      // top storey — a mixed-storey sight or an unannounced window still strips per-room), so the
+      // check mirrors THAT: try stripping every ladder name the room's own raw text contains,
+      // not just the label's first ' · ' segment.
       out.ownRoomMissing = [];
       for (const s of rooms) {
         if (!s.label) continue;
-        // Mirror the grammar's own dedupe: a unanimous storey (the label's FIRST part) is
-        // stripped from inside room names — "⚠ Level 1 R11" renders as "⚠ R11" under "Level 1".
-        const first = s.label.split(' · ')[0];
-        const dedup = s.name.replace(first + ' ', '');
-        if (s.label.indexOf(s.name) < 0 && s.label.indexOf(dedup) < 0)
-          out.ownRoomMissing.push({ name: s.name, label: s.label });
+        if (s.label.indexOf(s.name) >= 0) continue;
+        let found = false;
+        for (const L of ladder) {
+          const dedup = s.name.replace(L.name + ' ', '');
+          if (dedup !== s.name && s.label.indexOf(dedup) >= 0) { found = true; break; }
+        }
+        if (!found) out.ownRoomMissing.push({ name: s.name, label: s.label });
       }
       // G-RTC-3: bare names survive; deterministic double build agrees on identity+times+name
       out.nameHasDot = rooms.filter(s => s.name.indexOf(' · ') >= 0).length;
@@ -120,6 +145,49 @@ const _watchdog = setTimeout(() => { console.log('\n§W-RTC TIMEOUT — killed a
       A.tmFrontierPhase = prevPhase == null ? null : prevPhase;
       out.painted = painted;
       out.pure = [A.roomTitleFinalText && A.roomTitleFinalText('X') === 'X'];
+      // G-RTC-6: no ladder storey prefix repeats inside one dwell-caption label (ladder fetched above).
+      const repeats = [];
+      for (const s of rooms) {
+        if (!s.label) continue;
+        for (const L of ladder) {
+          const token = L.name + ' ';
+          let count = 0, idx = -1;
+          while ((idx = s.label.indexOf(token, idx + 1)) !== -1) count++;
+          if (count > 1) repeats.push({ label: s.label, storey: L.name, count });
+        }
+      }
+      out.levelRepeats = repeats;
+      // G-RTC-7: THE BAKE PATH — reproduce cinema_maxq.js's exact frame-loop chain (`_captureFrame`
+      // :478-491, driven from :1082/:486) rather than inferring it shares the live path. `segs`
+      // here IS what `_titleSegs = A.roomTitleBuildTimeline(plan, nFrames/fps)` (:1015) holds —
+      // both dwell AND gap-fill segments, unfiltered, same as the bake samples per-frame. For every
+      // segment's midpoint, call `A.roomTitleOpacityAt(segs, t)` (the SAME function+args as :1082)
+      // and feed `.name` into the SAME `A.roomTitleCompositeOntoCanvas` (:486) via a capturing
+      // stub — the exact two-call chain that reaches the exported frame bytes.
+      const bakeStub = { save() {}, restore() {}, fillRect() {}, fillText(t) { bakePainted.push(t); },
+                         set globalAlpha(v) {}, set fillStyle(v) {}, set font(v) {},
+                         set textAlign(v) {}, set textBaseline(v) {} };
+      var bakePainted = [];
+      const bakeRepeats = [];
+      for (const s of segs) {
+        const mid = (s.tStart + s.tEnd) / 2;
+        const info = A.roomTitleOpacityAt(segs, mid);          // exact call cinema_maxq.js:1082 makes
+        if (!info || !(info.opacity > 0)) continue;
+        const before = bakePainted.length;
+        A.roomTitleCompositeOntoCanvas(bakeStub, 1852, 960, info.name, info.opacity); // exact call :486 makes
+        for (let bi = before; bi < bakePainted.length; bi++) {
+          const txt = bakePainted[bi];
+          for (const L of ladder) {
+            const token = L.name + ' ';
+            let count = 0, idx = -1;
+            while ((idx = txt.indexOf(token, idx + 1)) !== -1) count++;
+            if (count > 1) bakeRepeats.push({ segGuid: s.guid, painted: txt, storey: L.name, count });
+          }
+        }
+      }
+      out.bakeFramesChecked = segs.length;
+      out.bakePaintedSample = bakePainted.slice(0, 3);
+      out.bakeLevelRepeats = bakeRepeats;
     } catch (e) { out.err = String(e && e.message) + '\n' + String(e && e.stack).slice(0, 400); }
     return out;
   });
@@ -145,6 +213,16 @@ const _watchdog = setTimeout(() => { console.log('\n§W-RTC TIMEOUT — killed a
     res.painted[0] === 'Level 1 · Corridor · Rooms 2, 3 [MEP Rough in]' &&
     res.painted[1] === 'Level 1 · Corridor · Rooms 2, 3',
     JSON.stringify(res.painted));
+  P('G-RTC-6 a shared storey prefix is named ONCE per dwell-caption label, never repeated per room',
+    res.levelRepeats.length === 0,
+    `${res.levelRepeats.length} repeats` +
+    (res.levelRepeats.length ? ' ' + JSON.stringify(res.levelRepeats.slice(0, 4)) : ''));
+  P('G-RTC-7 THE BAKE PATH: cinema_maxq.js\'s exact roomTitleOpacityAt->roomTitleCompositeOntoCanvas ' +
+    'chain paints no repeated storey prefix onto the captured-frame canvas',
+    res.bakeLevelRepeats.length === 0,
+    `${res.bakeFramesChecked} segments driven through the bake chain, ${res.bakeLevelRepeats.length} repeats; ` +
+    `sample painted: ${JSON.stringify(res.bakePaintedSample)}` +
+    (res.bakeLevelRepeats.length ? ' ' + JSON.stringify(res.bakeLevelRepeats.slice(0, 4)) : ''));
   const cl = logs.find(l => l.includes('§CPE_ROOM_TITLE_COLLECTIVE'));
   console.log('  instrument: ' + (cl || 'NO §CPE_ROOM_TITLE_COLLECTIVE LINE'));
   all = all && !!cl;

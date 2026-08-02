@@ -355,9 +355,34 @@ function setupCpeRoomTitle(A) {
   A.roomTitleSightProbe = function(ox, oy, oz, dx, dy, dz) {
     return _sightRoomsAt(ox, oy, oz, dx, dy, dz).map(function(n) { return n.guid; });
   };
+  // §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE (fix, 2026-08-02): a sighted room's OWN name already carries
+  // its storey as a literal prefix (room names are per-storey, e.g. "Level 4 R1") — that is what
+  // the sight-list dedupe below strips. The window's storey UNANIMITY (stSame/stU) is a separate,
+  // stricter test — the CAMERA'S own position resolved consistently across every sample in the
+  // window — and can read false (a window straddling a storey-band edge, one ambiguous sample)
+  // even when every SIGHTED ROOM in it is unambiguously the same level by its own name. Gating the
+  // per-room strip on stSame meant that whenever stSame was false the composed line fell back to
+  // raw, unstripped names and repeated the level prefix once per room — a real regression measured
+  // on the same Hospital film this lane's own witnesses already drive (#1136/#1138 build-session
+  // log): "Level 4 Hall/Corridor 2, Level 4 Hall/Corridor 1, Level 4 R1, Level 4 R4" instead of one
+  // shared "Level 4" heading the list. G-RTG-6/G-RTC-6 assert the fix: a storey prefix appears at
+  // most once per composed line.
+  // Finds which ladder rung (if any) a name's OWN prefix names — extracted against the same ladder
+  // _storeyLadderForGroups already builds (never invented), independent of the window's stSame.
+  // indexOf(...) >= 0, not startsWith: room names carry a leading confidence marker ("≈ Level 4
+  // R1", "⚠ Level 4 R1" — the same friendlyName-produced glyphs _titleFor passes through), same
+  // permissive match the pre-existing `dedupe` above already used for the stSame-unanimous case.
+  function _storeyPrefixOf(nm) {
+    var lad = _storeyLadderForGroups();
+    for (var i = 0; i < lad.length; i++) {
+      if (nm.indexOf(lad[i].name + ' ') >= 0) return lad[i].name;
+    }
+    return null;
+  }
   // The single-line grammar — "Storey · Containment · Rooms a, b" — extracted verbatim from the
   // gap composer so §CPE_ROOM_TITLE_COLLECTIVE's dwell labels use the SAME rules: storey only if
-  // unanimous, containment only if unanimous, sighted rooms deduped of the storey prefix, first
+  // unanimous, containment only if unanimous, sighted rooms deduped of the storey prefix (grouped
+  // by that prefix, not gated on window unanimity — §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE above), first
   // five named and the rest counted, the building alone as the last resort.
   function _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldName) {
     var parts = [], keyParts = [], srcCat = null;
@@ -370,17 +395,41 @@ function setupCpeRoomTitle(A) {
       keyParts.push('c:' + ctU); srcCat = 'containment';
       delete sightMap[ctU];
     }
-    var sightNames = [];
+    var sightEntries = [];
     for (var gk in sightMap) {
-      sightNames.push(dedupe(_titleFor(sightMap[gk]).name, stSame ? stU : null));
+      sightEntries.push({ guid: gk, raw: _titleFor(sightMap[gk]).name });
       keyParts.push('r:' + gk);
     }
-    if (sightNames.length) {
+    if (sightEntries.length) {
       // single-line cap: a pull-back can sweep a dozen rooms into one window — name the
       // first five and COUNT the rest, so the line stays readable and nothing is hidden.
-      var shown = sightNames.length > 5
-        ? sightNames.slice(0, 5).join(', ') + ' +' + (sightNames.length - 5) + ' more'
-        : sightNames.join(', ');
+      // Grouping (below) applies AFTER the cap, over exactly the rooms that will be shown.
+      var overflow = sightEntries.length > 5 ? sightEntries.length - 5 : 0;
+      var shownEntries = overflow ? sightEntries.slice(0, 5) : sightEntries;
+      // Group the shown rooms by their OWN storey prefix — computed per room, not assumed from the
+      // window's stSame/stU. A room whose own prefix MATCHES the already-announced top storey (or
+      // has no ladder-matching prefix at all) needs no header of its own: it goes in the shared
+      // LOOSE bucket (bare name only — either already covered by the top announcement, or nothing
+      // to announce, never a guessed one). A room whose own prefix DIFFERS from the top announcement
+      // (including when there is no top announcement at all, stSame false) is grouped with every
+      // other shown room sharing that SAME prefix under one header, stated once — this is what
+      // stops "Level 4 A, Level 4 B, Level 4 C" from repeating: A/B/C land in one "Level 4" group.
+      var LOOSE = ' loose';
+      var groupOrder = [], groups = {};
+      shownEntries.forEach(function(e) {
+        var ownPfx = _storeyPrefixOf(e.raw);
+        var covered = !!(stSame && stU && ownPfx === stU);
+        var header = covered ? null : ownPfx;   // null: covered by top announcement, or no prefix at all
+        var bare = dedupe(e.raw, covered ? stU : ownPfx);
+        var key = header || LOOSE;
+        if (!groups[key]) { groups[key] = { header: header, names: [] }; groupOrder.push(key); }
+        groups[key].names.push(bare);
+      });
+      var sightNames = groupOrder.map(function(key) {
+        var grp = groups[key];
+        return grp.header ? grp.header + ' ' + grp.names.join(', ') : grp.names.join(', ');
+      });
+      var shown = sightNames.join(', ') + (overflow ? ' +' + overflow + ' more' : '');
       parts.push(shown);
       if (srcCat !== 'containment') srcCat = 'sight';
     }
