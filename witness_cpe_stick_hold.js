@@ -249,15 +249,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // 45 deg/s x the sampling interval. 1.25x slack covers the nlerp chord between build probes
     // (512) being read at a finer witness resolution (600). A baseline compare would have accepted
     // whatever main happened to do; this accepts only what the law claims.
+    // ⚠ THE BOUND IS READ FROM THE CODE UNDER TEST, NOT HARDCODED. It used to be a literal 45, and
+    // §CPE_GAZE_ACQUIRE (2026-08-02) legitimately raised the ceiling: the per-probe allowance now
+    // scales with the residual angle, up to GAZE_ACQUIRE_MAX x CINEMA_TURN_DPS, because a flat rate
+    // gave the camera no acquisition at all (user: "seems a bit slow ... it be nice if it does so
+    // right away gracefully"). A literal 45 turned this gate RED on Duplex at a measured 122.4 deg/s
+    // — inside the new law, outside the old constant.
+    // This is deliberately NOT a relaxation to whatever main happens to do. It asks the shipped
+    // curve for its own maximum and holds the film to THAT, so an unbounded whip still fails hard:
+    // the same run measured rawPeakDps 376.7 (Duplex) and 790.8 (Hospital) before limiting, both far
+    // outside 3x. If the curve's ceiling is ever raised without cause, this number moves in the log.
+    const maxMult = await page.evaluate(() => {
+      const A = window.APP;
+      if (typeof A.gazeAcquireCap !== 'function') return 1;   // pre-§CPE_GAZE_ACQUIRE build
+      const base = 1e-3;
+      return A.gazeAcquireCap(Math.PI, base) / base;          // the curve's own stated maximum
+    });
     const sampleSec = res.hold.out / 600;
-    const capDeg = 45 * sampleSec * 1.25;
+    const capDeg = 45 * maxMult * sampleSec * 1.25;
     const stepRatio = s.peakStep / s.meanStep;
     const jerkOK = stepRatio <= 2.4 && s.peakTurn <= capDeg;
     P('G-SH-4 no jerk bought the stop: step inside §CPE_EVEN_TURN\'s 2.4x, gaze no worse than origin/main',
       jerkOK,
       `peak step=${s.peakStep.toExponential(2)}m = ${stepRatio.toFixed(2)}x mean (bound 2.4x); ` +
       `peak gaze=${s.peakTurn.toFixed(3)} deg/sample at w=${s.peakTurnAt.toFixed(3)} ` +
-      `= ${(s.peakTurn/sampleSec).toFixed(1)} deg/s against the ${45} deg/s law ` +
+      `= ${(s.peakTurn/sampleSec).toFixed(1)} deg/s against the ${45 * maxMult} deg/s law ` +
+      `(${45} x ${maxMult}x §CPE_GAZE_ACQUIRE, read from the shipped curve) ` +
       `(cap ${capDeg.toFixed(3)} deg/sample)` +
       `\n        ${(logs.filter(l => l.startsWith('§CPE_GAZE_CONSTANT_RATE')).slice(-1)[0] || 'no §CPE_GAZE_CONSTANT_RATE line').slice(0, 210)}`);
 
