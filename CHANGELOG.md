@@ -4,6 +4,22 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.35.0](https://github.com/red1oon/bim-ootb/compare/v1.34.0...v1.35.0) (2026-08-01)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_STICK_HOLD + §CPE_AIM_LATCH + §CPE_GAZE_CONSTANT_RATE — a hold buys the turn its time ([#1126](https://github.com/red1oon/bim-ootb/issues/1126)) ([6ab0092](https://github.com/red1oon/bim-ootb/commit/6ab0092b47926e8f93f9a6dedc654d58ca27dbd4))
+* **cinema+4d:** 2026-08-02 batch — §4D_BAND_MONOTONIC, §CPE_DAY_COUNTER, §CPE_GHOST_PULL, room-title dwell/lead (sw v913, gantt cache 7) ([#1129](https://github.com/red1oon/bim-ootb/issues/1129)) ([fc58210](https://github.com/red1oon/bim-ootb/commit/fc58210e6701c40481ab2d667078f06653a54259))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_WALLS_BEFORE_ROOF — [#1120](https://github.com/red1oon/bim-ootb/issues/1120) promoted the boxes' roofs and left the roof they stand on ([#1128](https://github.com/red1oon/bim-ootb/issues/1128)) ([fcc06a1](https://github.com/red1oon/bim-ootb/commit/fcc06a1317da70b1d3c854247624c282ad4bbb36))
+* **4d:** §GANTT_CACHE_VERSION 4 → 5 — §4D_ROOF_LOAD_PATH could not reach a browser that had already cached ([#1123](https://github.com/red1oon/bim-ootb/issues/1123)) ([28d8214](https://github.com/red1oon/bim-ootb/commit/28d82144b1c3f21ffb8be13a3791d1b5ba2b338a))
+* **cinema:** §CPE_SPIN_WHIP — the spin flew 534°, was billed for 180°, and paid no noise ratio ([#1125](https://github.com/red1oon/bim-ootb/issues/1125)) ([e48dcdc](https://github.com/red1oon/bim-ootb/commit/e48dcdc73baa0dc110e28060872974b64df61b79))
+* **cinema:** §CPE_STICK_HOLD default moves to the LAST band (the exit), not the middle ([#1127](https://github.com/red1oon/bim-ootb/issues/1127)) ([9945364](https://github.com/red1oon/bim-ootb/commit/994536488ae6c08937d70e6f14847fa1b7f57122))
+
 ## [1.34.0](https://github.com/red1oon/bim-ootb/compare/v1.33.0...v1.34.0) (2026-07-31)
 
 
