@@ -204,34 +204,37 @@ function setupCpeRoomTitle(A) {
   // (§CINEMA_DIVE fanMin=60), so anything the fan recovers is still squarely "what the camera is
   // looking at", not something at the screen's edge.
   var FAN_DEG = 10;
-  function _roomAlongGaze(ox, oy, oz, dx, dy, dz) {
-    var L = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (!(L > 1e-9)) { _lastGazeDir = null; return null; }
-    dx /= L; dy /= L; dz /= L;
-    var hit = _roomAlongGazeSingle(ox, oy, oz, dx, dy, dz);
-    if (hit) { _lastGazeDir = { x: dx, y: dy, z: dz, fan: 0 }; return hit; }
-    // basis perpendicular to the gaze: u = dir × up (IFC z-up; y-up fallback for a vertical gaze)
-    var ux = dy * 1 - dz * 0, uy = dz * 0 - dx * 1, uz = dx * 0 - dy * 0;   // dir × (0,0,1)
-    var uL = Math.sqrt(ux * ux + uy * uy + uz * uz);
-    if (uL < 1e-6) { ux = dy * 0 - dz * 0; uy = dz * 1 - dx * 0; uz = dx * 0 - dy * 1; uL = Math.sqrt(ux * ux + uy * uy + uz * uz); }
-    if (uL > 1e-9) {
-      ux /= uL; uy /= uL; uz /= uL;
-      var c = Math.cos(FAN_DEG * Math.PI / 180), s = Math.sin(FAN_DEG * Math.PI / 180);
-      var fan = [[ux, uy, uz], [-ux, -uy, -uz]];
-      var best = null, bestT = Infinity, bestDir = null;
-      for (var f = 0; f < fan.length; f++) {
-        var fx = dx * c + fan[f][0] * s, fy = dy * c + fan[f][1] * s, fz = dz * c + fan[f][2] * s;
-        var n = _roomAlongGazeSingle(ox, oy, oz, fx, fy, fz);
-        if (n && _lastGazeT != null && _lastGazeT < bestT) {
-          best = n; bestT = _lastGazeT; bestDir = { x: fx, y: fy, z: fz, fan: 1 };
+  // ONE pass casts the centre ray and the ±FAN_DEG fan and answers BOTH questions the timeline
+  // asks — "which room is the caption?" (centre hit, else nearest fan hit — the §CPE_ROOM_TITLE_MULTI
+  // rule) and "which rooms are in sight?" (every distinct hit — §CPE_ROOM_TITLE_GROUP). The first
+  // cut cast the fan twice (once per question) and G-GZ-7 measured the pre-pass at 425ms against
+  // its 340ms budget; sharing the casts is what buys it back.
+  function _gazeSight(ox, oy, oz, dx, dy, dz) {
+    var dirs = _fanDirs(dx, dy, dz);
+    if (!dirs) { _lastGazeT = null; _lastGazeDir = null; return { room: null, sight: [] }; }
+    var sight = [], seen = {}, room = null, roomT = null, roomDir = null, bestT = Infinity;
+    for (var i = 0; i < dirs.length; i++) {
+      var n = _roomAlongGazeSingle(ox, oy, oz, dirs[i][0], dirs[i][1], dirs[i][2]);
+      if (!n) continue;
+      if (!seen[n.guid]) { seen[n.guid] = 1; sight.push(n); }
+      if (i === 0) {                                          // centre hit — the caption, untouched
+        room = n; roomT = _lastGazeT;
+        roomDir = { x: dirs[0][0], y: dirs[0][1], z: dirs[0][2], fan: 0 };
+      } else if (!roomDir || roomDir.fan === 1) {             // fan candidates: nearest hit wins
+        if (_lastGazeT != null && _lastGazeT < bestT) {
+          bestT = _lastGazeT; room = n; roomT = _lastGazeT;
+          roomDir = { x: dirs[i][0], y: dirs[i][1], z: dirs[i][2], fan: 1 };
         }
       }
-      if (best) { _gazeFanRecovered++; _lastGazeT = bestT; _lastGazeDir = bestDir; return best; }
     }
-    _gazeMissedAll++;
-    _lastGazeT = null;
-    _lastGazeDir = null;
-    return null;
+    if (room && roomDir.fan === 1) _gazeFanRecovered++;
+    if (!room) _gazeMissedAll++;
+    _lastGazeT = room ? roomT : null;
+    _lastGazeDir = room ? roomDir : null;
+    return { room: room, sight: sight };
+  }
+  function _roomAlongGaze(ox, oy, oz, dx, dy, dz) {
+    return _gazeSight(ox, oy, oz, dx, dy, dz).room;
   }
   // The direction of the ray that actually produced the last hit (unit; fan=1 when an off-axis ray
   // won). G-GZ-2 recomputes the hit point along THIS ray — the truthfulness property is "the
@@ -275,6 +278,84 @@ function setupCpeRoomTitle(A) {
     return { guid: n.guid, name: name };
   }
 
+  // ══ §CPE_ROOM_TITLE_GROUP (user ruling 2026-08-02): "anything that comes within range of path or
+  // sight are pointed out so inaccurate labelling is diminished." Constant labelling: the room
+  // captions above keep every precision rule untouched (dwell floor, 3s-or-skip, lead, hold), and
+  // the GAPS between them are filled with a COMPOSED single-line label — the user's own format,
+  // "Storey 2, Corridor Hall, Rooms 2,3":
+  //   storey        — from elements_meta's own storey column averaged over element z (the ladder is
+  //                   EXTRACTED, never a name list); omitted above/below every storey.
+  //   containment   — the room the camera is physically INSIDE (usually a corridor/hall). Exact.
+  //   rooms in sight — every DISTINCT room the three gaze rays (centre + ±FAN_DEG) resolve.
+  //   building      — alone, when the camera is above every storey with nothing in sight (dive,
+  //                   pull-back, orbit).
+  // Naming the SET of what is in range is precisely how "slight inaccuracy is diminished": an
+  // ambiguous single-ray pick becomes "Rooms 2, 3" instead of a coin-flip between them.
+  var _grpLadder = null, _grpLadderKey = null;
+  function _storeyLadderForGroups() {
+    var key = (A.activeBuilding || A.currentBuilding || 'bld');
+    if (_grpLadder && _grpLadderKey === key) return _grpLadder;
+    _grpLadder = [];
+    try {
+      var rows = A.dbQuery(
+        "SELECT m.storey, AVG(COALESCE(t.center_z,0)) FROM elements_meta m " +
+        "JOIN element_transforms t ON t.guid=m.guid " +
+        "WHERE m.storey IS NOT NULL AND m.storey NOT IN ('','_UNKNOWN','Unknown') GROUP BY m.storey");
+      for (var i = 0; i < rows.length; i++) _grpLadder.push({ name: String(rows[i][0]), z: +rows[i][1] });
+      _grpLadder.sort(function(a, b) { return a.z - b.z; });
+    } catch (e) { _grpLadder = []; }   // meta-split db → storey rung disabled, containment/building still work
+    _grpLadderKey = key;
+    return _grpLadder;
+  }
+  // The three gaze directions (centre + the ±FAN_DEG horizontal fan) — the same geometry the
+  // miss-recovery wrapper above casts, expressed once for the sight-set collector.
+  function _fanDirs(dx, dy, dz) {
+    var L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(L > 1e-9)) return null;
+    dx /= L; dy /= L; dz /= L;
+    var out = [[dx, dy, dz]];
+    var ux = dy, uy = -dx, uz = 0;                                   // dir × (0,0,1)
+    var uL = Math.sqrt(ux * ux + uy * uy);
+    if (uL < 1e-6) { ux = 0; uy = dz; uz = -dy; uL = Math.sqrt(uy * uy + uz * uz); }  // dir × (1,0,0)
+    if (uL > 1e-9) {
+      ux /= uL; uy /= uL; uz /= uL;
+      var c = Math.cos(FAN_DEG * Math.PI / 180), s = Math.sin(FAN_DEG * Math.PI / 180);
+      out.push([dx * c + ux * s, dy * c + uy * s, dz * c + uz * s]);
+      out.push([dx * c - ux * s, dy * c - uy * s, dz * c - uz * s]);
+    }
+    return out;
+  }
+  // §CPE_ROOM_TITLE_GROUP — "Rooms 2,3": every DISTINCT room the three gaze rays resolve (nearest
+  // hit per ray, same storey-band rule), i.e. the rooms genuinely in range of sight right now.
+  function _sightRoomsAt(ox, oy, oz, dx, dy, dz) {
+    var dirs = _fanDirs(dx, dy, dz);
+    if (!dirs) return [];
+    var seen = {}, out = [];
+    for (var i = 0; i < dirs.length; i++) {
+      var n = _roomAlongGazeSingle(ox, oy, oz, dirs[i][0], dirs[i][1], dirs[i][2]);
+      if (n && !seen[n.guid]) { seen[n.guid] = 1; out.push(n); }
+    }
+    return out;
+  }
+  function _storeyAt(iz) {
+    var lad = _storeyLadderForGroups();
+    if (!lad.length) return null;
+    var top = lad[lad.length - 1].z, bot = lad[0].z;
+    var rung = lad.length > 1 ? (top - bot) / (lad.length - 1) : 5;
+    if (iz > top + rung || iz < bot - rung) return null;   // above/below every storey
+    var best = lad[0], bd = Infinity;
+    for (var i = 0; i < lad.length; i++) {
+      var d = Math.abs(lad[i].z - iz);
+      if (d < bd) { bd = d; best = lad[i]; }
+    }
+    return best.name;
+  }
+  // §CPE_ROOM_TITLE_GROUP — the real sight set, exposed so the witness recomputes each displayed
+  // room's membership from THIS function rather than re-implementing the fan geometry.
+  A.roomTitleSightProbe = function(ox, oy, oz, dx, dy, dz) {
+    return _sightRoomsAt(ox, oy, oz, dx, dy, dz).map(function(n) { return n.guid; });
+  };
+
   // Coarse-samples the whole (or clipped) film ONCE, collapses into room-dwell segments, and drops
   // any segment shorter than MIN_DWELL. Cheap: a few hundred samples, each one THREE→IFC conversion
   // plus a linear scan of a few hundred room rects — §CPE_BUILDUP_FOLLOW_TM measured this class of
@@ -294,15 +375,23 @@ function setupCpeRoomTitle(A) {
       // t=0). Walk films therefore do not regress; only the flyover case changes.
       // DEGRADE, DON'T DISABLE: a plan whose poseAt returns no target (an older cached effects.js)
       // falls back to the containment test and the log says so, rather than captioning nothing.
+      // §CPE_ROOM_TITLE_GROUP: ONE 3-ray pass answers both the caption ("which room is the gaze
+      // looking into") and the sight set ("which rooms came within sight") — the composed gap
+      // label is built from the same rays, no re-walk, no second opinion about where the camera was.
+      var sight = [];
       if (ifcP && p.tx != null) {
         var ifcT = A.three2ifc(p.tx, p.ty, p.tz);
-        if (ifcT) room = _roomAlongGaze(ifcP.ix, ifcP.iy, ifcP.iz,
-                                        ifcT.ix - ifcP.ix, ifcT.iy - ifcP.iy, ifcT.iz - ifcP.iz);
+        if (ifcT) {
+          var gs = _gazeSight(ifcP.ix, ifcP.iy, ifcP.iz,
+                              ifcT.ix - ifcP.ix, ifcT.iy - ifcP.iy, ifcT.iz - ifcP.iz);
+          room = gs.room; sight = gs.sight;
+        }
       } else if (ifcP) {
         noTarget++; rule = 'containment(no poseAt target)';
         room = _roomAtIfcPoint(ifcP.ix, ifcP.iy, ifcP.iz);
       }
-      samples.push({ t: t, guid: room ? room.guid : null, node: room });
+      samples.push({ t: t, guid: room ? room.guid : null, node: room, sight: sight,
+                     ix: ifcP ? ifcP.ix : null, iy: ifcP ? ifcP.iy : null, iz: ifcP ? ifcP.iz : null });
     }
     // §CPE_ROOM_TITLE_HYSTERESIS (2026-08-02) — a run is contiguous same-guid samples, so ONE stray
     // sample (a gaze clipping a wall, a ray slipping through a doorway) used to split a single 2s
@@ -381,6 +470,115 @@ function setupCpeRoomTitle(A) {
       ' held=' + (held._held || 0) + '/' + held.length + '@' + MIN_HOLD + 's' +
       ' skipped=' + (held._skipped || 0) + '(<' + MIN_HOLD + 's)' +
       ' totalSec=' + totalSec.toFixed(1) + ' ms=' + (performance.now() - t0).toFixed(1));
+
+    // ── §CPE_ROOM_TITLE_GROUP: fill the gaps between the room captions above. Pure addition —
+    // `held`'s room segments are byte-identical to what the pipeline produced before this block.
+    try {
+      var gT0 = performance.now();
+      // 1. the gaps the room captions leave (a gap under MIN_HOLD stays empty — the same 3s
+      // readability floor the room captions obey, applied to the fill).
+      var roomSegs = held.slice().sort(function(a, b) { return a.tStart - b.tStart; });
+      var gaps = [], cur = 0;
+      roomSegs.forEach(function(h) {
+        if (h.tStart - cur >= MIN_HOLD) gaps.push([cur, h.tStart]);
+        if (h.tEnd > cur) cur = h.tEnd;
+      });
+      if (totalSec - cur >= MIN_HOLD) gaps.push([cur, totalSec]);
+      // 2. WINDOWED COMPOSITION — tempered AND honest at once. The first cut collapsed per-sample
+      // labels into runs and absorbed short runs into their predecessor; measured on Hospital that
+      // let a stale "Level 2" survive a dive to z=295 (nearest rung Level 7) because every run
+      // during fast movement was short and got swallowed. The rule now: a window closes at the
+      // first natural change point AFTER the MIN_HOLD floor (user: "tempered.. not fast flashing
+      // each"), and its single line shows only what is TRUE OF THE WHOLE WINDOW —
+      //   storey       shown only if every sample in the window resolves to the SAME rung (a dive
+      //                that crosses storeys shows no storey rather than a wrong one),
+      //   containment  shown only if the camera stayed inside the SAME room (usually the corridor),
+      //   rooms        the UNION of rooms the gaze rays resolved anywhere in the window — the
+      //                user's rule verbatim: anything that CAME within sight is pointed out.
+      // Nothing unanimous and nothing sighted → the building itself (dive/pull-back/orbit).
+      var gAdded = 0, gSec = 0, byCat = { containment: 0, sight: 0, storey: 0, building: 0 };
+      var bldName = A.activeBuilding || A.currentBuilding || '';
+      gaps.forEach(function(gap) {
+        var ss = samples.filter(function(s) {
+          return s.t >= gap[0] - 1e-9 && s.t <= gap[1] + 1e-9 && s.ix != null;
+        });
+        if (!ss.length) return;
+        var w = 0, prevSeg = null;
+        while (w < ss.length) {
+          var stU, ctU, ctNode, stSame = true, ctSame = true, sightMap = {}, lastKey = null;
+          var t0w = (w === 0) ? gap[0] : ss[w].t;
+          var i;
+          for (i = w; i < ss.length; i++) {
+            var s = ss[i];
+            var st = _storeyAt(s.iz);
+            var ct = _roomAtIfcPoint(s.ix, s.iy, s.iz);
+            var key = (st || '') + '|' + (ct ? ct.guid : '') + '|' +
+                      (s.sight || []).map(function(n) { return n.guid; }).sort().join(',');
+            if (i > w && (s.t - t0w) >= MIN_HOLD && key !== lastKey) break;
+            if (i === w) { stU = st; ctU = ct ? ct.guid : null; ctNode = ct; }
+            else {
+              if (st !== stU) stSame = false;
+              if ((ct ? ct.guid : null) !== ctU) ctSame = false;
+            }
+            (s.sight || []).forEach(function(n) { if (!sightMap[n.guid]) sightMap[n.guid] = n; });
+            lastKey = key;
+          }
+          var t1w = (i >= ss.length) ? gap[1] : ss[i - 1].t;
+          // compose the window's single line
+          var parts = [], keyParts = [], srcCat = null;
+          var dedupe = function(nm, stName) {
+            return stName && nm.indexOf(stName + ' ') >= 0 ? nm.replace(stName + ' ', '') : nm;
+          };
+          if (stSame && stU) { parts.push(stU); keyParts.push('s:' + stU); srcCat = 'storey'; }
+          if (ctSame && ctU) {
+            parts.push(dedupe(_titleFor(ctNode).name, stSame ? stU : null));
+            keyParts.push('c:' + ctU); srcCat = 'containment';
+            delete sightMap[ctU];
+          }
+          var sightNames = [];
+          for (var gk in sightMap) {
+            sightNames.push(dedupe(_titleFor(sightMap[gk]).name, stSame ? stU : null));
+            keyParts.push('r:' + gk);
+          }
+          if (sightNames.length) {
+            // single-line cap: a pull-back can sweep a dozen rooms into one window — name the
+            // first five and COUNT the rest, so the line stays readable and nothing is hidden.
+            var shown = sightNames.length > 5
+              ? sightNames.slice(0, 5).join(', ') + ' +' + (sightNames.length - 5) + ' more'
+              : sightNames.join(', ');
+            parts.push(shown);
+            if (srcCat !== 'containment') srcCat = 'sight';
+          }
+          if (!parts.length && bldName) { parts.push(bldName); keyParts.push('b'); srcCat = 'building'; }
+          if (parts.length && (t1w - t0w) >= MIN_HOLD) {
+            var name = parts.join(' · ');
+            if (prevSeg && prevSeg.name === name) { prevSeg.tEnd = t1w; gSec += t1w - t0w; byCat[srcCat] += t1w - t0w; }
+            else {
+              // key separator is TAB — room-graph guids legitimately contain '|'
+              // (CORRIDOR_ROOM::Level 4|y|12.84), which a '|' join would corrupt.
+              prevSeg = { guid: 'group:' + keyParts.join('\t'), name: name,
+                          tStart: t0w, tEnd: t1w, group: 1, groupSrc: srcCat };
+              held.push(prevSeg);
+              gAdded++; gSec += t1w - t0w; byCat[srcCat] += t1w - t0w;
+            }
+          } else if (prevSeg && (t1w - t0w) < MIN_HOLD) {
+            // trailing sliver — the previous line simply stays up (tempered, never a flash)
+            prevSeg.tEnd = t1w; gSec += t1w - t0w; byCat[prevSeg.groupSrc] += t1w - t0w;
+          }
+          w = Math.max(i, w + 1);
+        }
+      });
+      held.sort(function(a, b) { return a.tStart - b.tStart; });
+      var roomSec = 0;
+      roomSegs.forEach(function(h) { roomSec += h.tEnd - h.tStart; });
+      console.log('§CPE_ROOM_TITLE_GROUP filled=' + gAdded + ' segs ' + gSec.toFixed(1) + 's' +
+        ' (containment=' + byCat.containment.toFixed(1) + 's sight=' + byCat.sight.toFixed(1) +
+        's storey=' + byCat.storey.toFixed(1) + 's building=' + byCat.building.toFixed(1) + 's)' +
+        ' coverage=' + Math.min(100, ((roomSec + gSec) / Math.max(1e-9, totalSec) * 100)).toFixed(0) + '%' +
+        ' (rooms alone=' + Math.min(100, (roomSec / Math.max(1e-9, totalSec) * 100)).toFixed(0) + '%)' +
+        ' ms=' + (performance.now() - gT0).toFixed(1) +
+        ' — anything within range of path or sight is pointed out (user ruling 2026-08-02)');
+    } catch (eG) { console.warn('§CPE_ROOM_TITLE_GROUP failed (room captions unaffected): ' + eG.message); }
     return held;
   };
 
