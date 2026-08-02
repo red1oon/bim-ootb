@@ -35,6 +35,14 @@
   var _anchorHr = null;
   var _savedVisibility = [];
   var _highlightMeshes = [];
+  // §Z_STACK_XRAY_STAGING (2026-08-03, prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING) — guid → ms
+  // the cursor must reach before that guid may render SOLID. Present ONLY for the defect
+  // population (an element whose last support carrier finishes AFTER the element's own reveal) —
+  // built once per TM activation by _buildXraySupportCache(), a pure function of already-extracted
+  // geometry + the current _ops schedule. Never written to kernel_ops/DB — presentation only.
+  var _tmXraySolidifyTs = {};
+  var _tmXrayStagedTotal = 0;   // total guids ever eligible to stage, this activation (the "n=")
+  var _tmXraySolidifiedN = 0;   // guids that have crossed their solidify ms so far (the "solidified=")
   var _ganttVisible = false;
   var _dashVisible = false;
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
@@ -1288,13 +1296,49 @@
             // Cyan flash (first 15%) then orange glow during install
             var fColor = ft < 0.15 ? 0x44ffff : 0xff8c00;
             applyHighlight(obj, fColor, 0.85, 0.4);
+            // §Z_STACK_XRAY_STAGING: a backward scrub can re-enter frontier for an element that was
+            // staged at a later cursor — clear the stale flag so the next placed-tick re-evaluates
+            // the ghost fresh instead of trusting a flag left over from a different cursor position.
+            obj._tm_xrayStaged = false;
           }
         } else if (showReal) {
           obj.visible = true;
-          if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
+          // §Z_STACK_XRAY_STAGING (prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING) — placed at its
+          // scheduled time, but not all support carriers have finished: ghost it instead of solid.
+          // Reuses applyHighlight/restoreMaterial's own clone+restore (grey, 0.3 opacity, 0 emissive
+          // so it reads as plain translucency, not the frontier glow) rather than a new mechanism.
+          // Material is touched ONLY on the entry/exit tick (not every tick) — clearHighlight() at
+          // the top of renderAtTime skips _tm_xrayStaged objects on purpose (see clearHighlight),
+          // so a large sustained staged population does not pay a clone/dispose cost every tick.
+          // Gated on obj.isMesh — same guard the frontier branch above uses before its own
+          // applyHighlight call, since applyHighlight touches obj.material (a plain Object3D with a
+          // guid but no material would crash there, exactly why frontier already gates on it).
+          if (obj.isMesh) {
+            var _xrTs = _tmXraySolidifyTs[g];
+            var _xrStagedNow = (_xrTs !== undefined && cursorMs < _xrTs);
+            if (_xrStagedNow) {
+              if (!obj._tm_xrayStaged) {
+                _wbMat('XRAY_STAGED', obj);
+                applyHighlight(obj, 0x888888, 0.3, 0);
+                obj._tm_xrayStaged = true;
+              }
+            } else {
+              if (obj._tm_xrayStaged) {
+                _tmXraySolidifiedN++;
+                if (_tmXraySolidifiedN % 25 === 0 || _tmXraySolidifiedN === _tmXrayStagedTotal) {
+                  console.log('§XRAY_STAGED n=' + _tmXrayStagedTotal + ' solidified=' + _tmXraySolidifiedN);
+                }
+                obj._tm_xrayStaged = false;
+              }
+              if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
+            }
+          } else if (obj._tm_highlighted) {
+            _wbMat('RESTORE', obj); restoreMaterial(obj);
+          }
         } else {
           obj.visible = false;
           if (obj._tm_highlighted) restoreMaterial(obj);
+          obj._tm_xrayStaged = false;   // §Z_STACK_XRAY_STAGING: scrubbed before its own reveal — not staged
         }
 
         // Shadow + camera (merged — was 3 separate traversals)
@@ -2084,10 +2128,20 @@
   }
 
   function clearHighlight() {
-    for (var i = _highlightMeshes.length - 1; i >= 0; i--) {
-      restoreMaterial(_highlightMeshes[i]);
+    // §Z_STACK_XRAY_STAGING: this runs at the TOP of every renderAtTime tick (§S260c "restore
+    // previously highlighted meshes to solid"), which is correct for the transient frontier glow
+    // (~a handful of elements at a time, per §CREW-CAP) but would be an O(staged-population)
+    // clone+dispose CYCLE every tick if it also swept a large, SUSTAINED staged population — the
+    // exact per-tick cost W-XRAY-4 exists to keep bounded. _tm_xrayStaged objects are left alone
+    // here; renderAtTime's own showReal branch restores them explicitly, exactly once, on the tick
+    // they actually resolve (or scrub behind their own reveal) — see the _tm_xrayStaged checks there.
+    var keep = [];
+    for (var i = 0; i < _highlightMeshes.length; i++) {
+      var hm = _highlightMeshes[i];
+      if (hm._tm_xrayStaged) { keep.push(hm); continue; }
+      restoreMaterial(hm);
     }
-    _highlightMeshes = [];
+    _highlightMeshes = keep;
     clearAllOutlines(); // §S260c: also remove wireframe outlines
   }
 
@@ -3111,6 +3165,223 @@
     }
 
     _playTimer = setTimeout(playTick, TICK_MS());
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // §Z_STACK_XRAY_STAGING — support-edge cache for x-ray staging
+  // ══════════════════════════════════════════════════════════════════
+  // Implementing prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING — Witness: witness_zstack_xray_staging.js
+  // An element revealed at its scheduled time whose support carriers are NOT all placed renders
+  // X-RAY instead of solid, and flips solid the instant its last carrier places. This is a
+  // RENDER-ONLY gate layered on the existing (correct, user-confirmed) reveal timing — it never
+  // writes kernel_ops, never reorders anything (W-XRAY-2: computeSchedule's output is untouched by
+  // this section, byte-identical with or without it).
+  //
+  // _buildXrayElements() is a DELIBERATE COPY of the geometry+seq build inside injectGantt()
+  // (repo convention: audit_support_roleblind.js / witness_stagger_support_order.js both copy the
+  // support predicate rather than importing it — see origin/feat/element-cpm:viewer/schedule_gate.js
+  // §ELEMENT_CPM, parked; only the PREDICATE is reused here, not the reordering engine it lived
+  // in). It is intentionally NEVER called by injectGantt and has no db.run/INSERT capability — it
+  // exists so the xray cache can be (re)built on EVERY TM activation, including the cached-gantt
+  // fast path (§GANTT_CACHE_HIT) where injectGantt() never runs at all.
+  function _buildXrayElements() {
+    var app = A();
+    if (!app || !app.db) return null;
+    var db = app.db;
+    var SR = window.SEQUENCE_RULES || {};
+    var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+    var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+    function matchNameOverride(cls, name) {
+      if (!name) return null;
+      for (var i = 0; i < NO.length; i++) {
+        var ov = NO[i];
+        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+        if (ov._re && ov._re.test(name)) return ov;
+      }
+      return null;
+    }
+    function matchRule(cls, name) {
+      if (!cls) return SD;
+      var ov = matchNameOverride(cls, name);
+      if (ov) return ov;
+      var bestKey = null, bestLen = 0;
+      for (var key in SR) {
+        if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
+      }
+      return bestKey ? SR[bestKey] : SD;
+    }
+    var r;
+    try {
+      r = db.exec(
+        'SELECT m.guid, m.ifc_class, m.element_name, m.storey, ' +
+        'COALESCE(t.center_z, 0) as cz, COALESCE(t.bbox_z, 0) as bz, ' +
+        'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
+        'FROM elements_meta m ' +
+        'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement'"
+      );
+    } catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+
+    var storeyZvals = {};
+    r[0].values.forEach(function(row) {
+      var storey = row[3] || '_UNKNOWN';
+      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
+      var cz = row[4] || 0;
+      (storeyZvals[storey] || (storeyZvals[storey] = [])).push(cz);
+    });
+    var storeyMedianZ = {};
+    for (var sk in storeyZvals) {
+      var vals = storeyZvals[sk].sort(function(a, b) { return a - b; });
+      var mid = Math.floor(vals.length / 2);
+      storeyMedianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    }
+    var storeyNames = Object.keys(storeyMedianZ).sort(function(a, b) { return storeyMedianZ[a] - storeyMedianZ[b]; });
+    function assignStoreyByZ(storey, cz) {
+      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+      if (!storeyNames.length) return storey;
+      var best = storeyNames[0], bd = Infinity;
+      for (var ai = 0; ai < storeyNames.length; ai++) {
+        var d = Math.abs(cz - storeyMedianZ[storeyNames[ai]]);
+        if (d < bd) { bd = d; best = storeyNames[ai]; }
+      }
+      return best;
+    }
+
+    var elements = r[0].values.map(function(row) {
+      var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
+      var cx = row[6] || 0, cy = row[7] || 0, bx = row[8] || 0, by = row[9] || 0;
+      var storey = assignStoreyByZ(rawStorey, cz);
+      var rule = matchRule(cls, elName);
+      return {
+        guid: row[0], cls: cls, storey: storey,
+        base_z: cz - bz / 2, top_z: cz + bz / 2,
+        x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
+        seq: rule.sequence
+      };
+    });
+
+    // §4D_ROOF_LOAD_PATH M1/M4 — same load-path promotion the live scheduler applies (copied, not
+    // shared, per this function's own header) so a promoted roof slab's carrier predicate (the
+    // looser wall-bears check, below) matches what actually got scheduled — the exact scenario
+    // this whole feature exists for ("roof before its walls").
+    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
+    var lpSlabs = [], lpSeed = [];
+    elements.forEach(function(el) {
+      if (el.cls !== 'IfcSlab') return;
+      var carriers = loadPathWalls.filter(function(w) {
+        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
+      });
+      if (!carriers.length) return;
+      var midSum = 0, above = [];
+      for (var ci = 0; ci < carriers.length; ci++) {
+        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
+        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
+      }
+      var wallMidheight = midSum / carriers.length;
+      var clauseA = el.base_z > wallMidheight;
+      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
+      if (clauseA && !above.length) { el.seq = 8; lpSeed.push(el); }
+    });
+    var LP_GAP = 0.5;
+    if (lpSeed.length) {
+      lpSlabs.forEach(function(rec) {
+        var el = rec.el;
+        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
+        for (var ai = 0; ai < rec.above.length; ai++) {
+          var w = rec.above[ai], capped = false;
+          for (var si = 0; si < lpSeed.length; si++) {
+            var C = lpSeed[si];
+            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
+                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
+          }
+          if (!capped) return;
+        }
+        el.seq = 8;
+      });
+    }
+    return elements;
+  }
+
+  // Build _tmXraySolidifyTs from elements + schedMap = { guid: {end: ms}, ... } (derived from the
+  // CURRENT _ops, whatever their source — generated fallback or captured IFC 4D — so captured-path
+  // ghosting works unchanged, same pass, per §Z_STACK_XRAY_STAGING's own out-of-scope note).
+  // Predicate copied verbatim from origin/feat/element-cpm:viewer/schedule_gate.js lines 216-256
+  // (structGrid/wallGrid spatial index, EPS/GAP/CELL constants) — same numbers the shipped
+  // schedule_gate.js's own auditFloating() already uses.
+  function _buildXraySupportCache(elements, schedMap) {
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;
+    if (!elements || !elements.length) return;
+    var t0 = performance.now();
+    var CELL = 4, EPS = 0.05, GAP = 0.5;
+    function cellsOf(e) {
+      var o = [], i, j;
+      for (i = Math.floor(e.x0 / CELL); i <= Math.floor(e.x1 / CELL); i++)
+        for (j = Math.floor(e.y0 / CELL); j <= Math.floor(e.y1 / CELL); j++) o.push(i + ',' + j);
+      return o;
+    }
+    function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+    var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S, T;
+    for (i = 0; i < elements.length; i++) {
+      var e = elements[i];
+      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); }
+    }
+    var eCount = 0;
+    for (i = 0; i < elements.length; i++) {
+      T = elements[i];
+      var sc = schedMap[T.guid]; if (!sc) continue;
+      var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+      cs = cellsOf(T);
+      var mark = {}, maxCarrierEnd = 0, hasCarrier = false;
+      for (c = 0; c < cs.length; c++) {
+        arr = structGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
+          if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
+            var sc1 = schedMap[S.guid]; eCount++;
+            if (sc1) { hasCarrier = true; if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+          }
+        }
+        arr = wallGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
+          if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
+          var bears = promotedSlab ? (S.top_z >= T.base_z - GAP) : (Math.abs(S.top_z - T.base_z) <= GAP);
+          if (bears) {
+            var sc2 = schedMap[S.guid]; eCount++;
+            if (sc2) { hasCarrier = true; if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+          }
+        }
+      }
+      if (hasCarrier && maxCarrierEnd > sc.end) {
+        _tmXraySolidifyTs[T.guid] = maxCarrierEnd;
+        _tmXrayStagedTotal++;
+      }
+    }
+    var msBuild = performance.now() - t0;
+    console.log('§XRAY_EDGES n=' + eCount + ' ms=' + msBuild.toFixed(1) +
+      ' staged=' + _tmXrayStagedTotal + '/' + elements.length +
+      ' (elements whose last support carrier finishes after their own reveal)');
+  }
+
+  // Shared entry point: rebuild the xray cache from whatever _ops currently holds. Called from
+  // _finishActivate (every TM activation) AND from tmRestoreDerivedOrder (MAXQ → back to the real
+  // construction order, where the cache IS valid again and must not stay cleared).
+  function _tmRebuildXrayCache() {
+    var _xt0 = performance.now();
+    var _xrSched = {};
+    for (var _xi = 0; _xi < _ops.length; _xi++) {
+      var _xo = _ops[_xi];
+      var _xg = _xo.output_guid || (_xo.input_guids && _xo.input_guids.length && _xo.input_guids[0]);
+      if (_xg) _xrSched[_xg] = { end: _xo.end_ts };
+    }
+    var _xrElements = _buildXrayElements();
+    if (_xrElements) _buildXraySupportCache(_xrElements, _xrSched);
+    else { _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0; }
+    console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -4766,6 +5037,12 @@
     // User can toggle shadow (H) independently. TM just plays construction.
     console.log('§TM_SUN_INHERIT shadowOn=' + !!app._shadowOn + ' sky=' + !!app._sky + ' sunCycle=user-choice');
     console.log('§TM_SHADOW_INHERIT shadowOn=' + !!app._shadowOn + ' groundVisible=' + (app.ground ? app.ground.visible : 'n/a'));
+    // §Z_STACK_XRAY_STAGING — (re)build the support-edge cache on EVERY activation, not only a
+    // fresh generate: runs on the §GANTT_CACHE_HIT fast path too (injectGantt never executes
+    // there), so this is the ONE place, keyed off the _ops that actually ended up loaded regardless
+    // of source (generated fallback or captured IFC 4D — schedMap is read from _ops, not from
+    // injectGantt's own locals). Read-only: one SELECT + one pass over _ops, no db writes.
+    _tmRebuildXrayCache();
     computeDays();
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
@@ -4799,6 +5076,7 @@
     // name plate stays hidden in the finished building because the scrub happened to end early.
     if (window.__tmOverlaySync) { try { window.__tmOverlaySync(null); } catch (e) {} }
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;  // §Z_STACK_XRAY_STAGING: nothing may survive TM being switched off
     _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
     var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
     restoreSky();
@@ -5198,6 +5476,14 @@
     // The event index is keyed on _ops; it is now stale in every entry. Drop it and require a fresh
     // full pass before any delta skip can engage again (§PERF_INCR's own invalidation contract).
     _evMesh = null; _evSig = ''; _incrPrimed = false;
+    // §Z_STACK_XRAY_STAGING: this re-keys op timestamps to a CAMERA-PATH order ("NOT a construction
+    // programme" — see the log line below), not the construction schedule the staging cache was
+    // built from, so its cached solidify times no longer correspond to when guids actually reach
+    // "placed" under this order. Drop it rather than show a stale/wrong ghost — no rebuild call
+    // exists on this path since "support" isn't a meaningful concept for a camera-driven reveal
+    // order; elements simply go solid the moment they place, same as before this feature, only in
+    // this one non-construction mode.
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;
     console.log('§MAXQ_TIME mode=D ops=' + n + ' placed=' + hit + ' noGeom=' + miss +
       ' arc=' + arc + ' frames=' + nF + ' samples=' + NS +
       ' span=' + Math.round(span) + 'ms installFrames=1.5' +
@@ -5409,6 +5695,8 @@
     _projectStart = _bkSaved.ps; _projectEnd = _bkSaved.pe;
     _evMesh = null; _evSig = ''; _incrPrimed = false;
     _bkSaved = null;
+    _tmRebuildXrayCache();  // §Z_STACK_XRAY_STAGING: back on the real construction order — the
+                              // cache is valid again, rebuild it rather than leave it cleared
     console.log('§MAXQ_TIME restored — derived Z-band order back in force');
     return true;
   };
