@@ -127,15 +127,54 @@ const _watchdog = setTimeout(() => { console.log('\n§W-DAYCOUNT TIMEOUT — kil
       }
       return n;
     }
+    // §CPE_DAY_COUNTER_POS — the SAME probe run once per corner. The claim is not "a badge appears"
+    // but "the badge appears in the corner that was ASKED FOR and in no other", which is the only
+    // thing that makes the panel's choice real rather than decorative.
+    function probe(pos) {
+      ctx.fillStyle = '#123456'; ctx.fillRect(0, 0, w, h);
+      const b2 = ctx.getImageData(0, 0, w, h).data;
+      A.dayCounterCompositeOntoCanvas(ctx, w, h, { day: 137, totalDays: 180 }, 1, pos);
+      const a2 = ctx.getImageData(0, 0, w, h).data;
+      const cnt = (x0, y0, x1, y1) => {
+        let n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+          const i = (y * w + x) * 4;
+          if (b2[i] !== a2[i] || b2[i + 1] !== a2[i + 1] || b2[i + 2] !== a2[i + 2]) n++;
+        }
+        return n;
+      };
+      const midX = Math.floor(w * 0.5), topY = Math.floor(h * 0.25), botY = Math.floor(h * 0.75);
+      return { tr: cnt(midX, 0, w, topY), tl: cnt(0, 0, midX, topY),
+               br: cnt(midX, botY, w, h), bl: cnt(0, botY, midX, h) };
+    }
     return {
       topRight: changedIn(Math.floor(w * 0.5), 0, w, Math.floor(h * 0.25)),
       topLeft: changedIn(0, 0, Math.floor(w * 0.5), Math.floor(h * 0.25)),
-      lowerThird: changedIn(0, Math.floor(h * 0.75), w, h)
+      lowerThird: changedIn(0, Math.floor(h * 0.75), w, h),
+      corners: { tr: probe('tr'), tl: probe('tl'), br: probe('br'), bl: probe('bl'),
+                 dflt: probe(undefined), junk: probe('nonsense') }
     };
   });
   chk('T3a badge writes pixels in the TOP RIGHT (reaches exported bytes)', px.topRight > 500, 'changedPx=' + px.topRight);
   chk('T3b nothing drawn top-LEFT (it is where the user asked, not just "a corner")', px.topLeft === 0, 'changedPx=' + px.topLeft);
   chk('T3c nothing drawn in the lower third (no collision with §CPE_ROOM_TITLE)', px.lowerThird === 0, 'changedPx=' + px.lowerThird);
+
+  // ── §CPE_DAY_COUNTER_POS (user 2026-08-02: "the movie maker panel puts the Day # counter top right
+  // display option"). Each corner must be EXCLUSIVE: pixels in the requested quadrant, zero in the
+  // other three. A test that only asserted "pixels somewhere" would pass on a counter that ignored
+  // the setting entirely, which is the exact defect worth catching.
+  const C = px.corners, quads = ['tr', 'tl', 'br', 'bl'];
+  quads.forEach(q => {
+    const got = C[q];
+    const others = quads.filter(o => o !== q).map(o => o + '=' + got[o]).join(' ');
+    chk('T4' + q + ' pos="' + q + '" draws ONLY in that corner', got[q] > 500 &&
+      quads.every(o => o === q || got[o] === 0), q + '=' + got[q] + ' others: ' + others);
+  });
+  chk('T4d no position argument still means TOP RIGHT (the shipped default is unchanged)',
+    C.dflt.tr > 500 && C.dflt.tl === 0 && C.dflt.br === 0 && C.dflt.bl === 0,
+    'tr=' + C.dflt.tr + ' tl=' + C.dflt.tl + ' br=' + C.dflt.br + ' bl=' + C.dflt.bl);
+  chk('T4e an UNKNOWN position falls back to top right rather than drawing nothing or throwing',
+    C.junk.tr > 500 && C.junk.tl === 0, 'tr=' + C.junk.tr + ' tl=' + C.junk.tl);
 
   clearTimeout(_watchdog);
   await br.close(); server.close();

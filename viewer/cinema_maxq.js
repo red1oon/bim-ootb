@@ -459,8 +459,8 @@
     if (titleInfo && titleInfo.opacity > 0 && A.roomTitleCompositeOntoCanvas) {
       A.roomTitleCompositeOntoCanvas(ctx, w, h, titleInfo.name, titleInfo.opacity);
     }
-    if (dayInfo && A.dayCounterCompositeOntoCanvas) {
-      A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1);
+    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
+      A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1, dayInfo.pos);
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
@@ -718,6 +718,7 @@
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null;
+    var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
       tNorm = _tFilm(tNorm);
@@ -844,6 +845,10 @@
         }
         _buildup = !!_ov.buildup;
         _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
+        // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
+        // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
+        // differently by accident.
+        _dayPos = _ov.dayCounter || 'tr';
         var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
@@ -1014,11 +1019,17 @@
           // §CPE_DAY_COUNTER — read off `_bkMs`, the cursor the buildup is ALREADY showing. Any
           // separate clock would be a second opinion about the schedule and would drift from the
           // model on exactly the frames the counter exists to explain.
-          if (A.dayCounterAt) _dayInfo = A.dayCounterAt(_bkMs, _bkState.projectStart, _bkState.projectEnd);
+          if (A.dayCounterAt && _dayPos !== 'off') {
+            _dayInfo = A.dayCounterAt(_bkMs, _bkState.projectStart, _bkState.projectEnd);
+            // The corner rides ON the info object so _captureFrame needs no second parameter and
+            // cannot be handed a position that belongs to a different frame.
+            if (_dayInfo) _dayInfo.pos = _dayPos;
+          }
           var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState);
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
-              ' of=' + _dayInfo.totalDays + ' cursor=' + Math.round(_bkMs));
+              ' of=' + _dayInfo.totalDays + ' pos=' + _dayInfo.pos + ' cursor=' + Math.round(_bkMs));
+            else if (_dayPos === 'off' && i === 0) console.log('§CPE_DAY_COUNTER off — the editor set it off for this bake');
             console.log('§CPE_BUILDUP frame=' + i + '/' + nFrames + ' t=' + _bkT.toFixed(3) +
               ' cursor=' + Math.round(_bkMs) + ' placed=' + (window.tmPlacedCount ? window.tmPlacedCount(_bkMs) : '?') +
               '/' + _bkState.ops +

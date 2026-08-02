@@ -39,10 +39,18 @@ function setupCpeDayCounter(A) {
   };
 
   // ── Shared draw routine — the ONLY place the counter is ever drawn, so the live preview and the
-  // baked video cannot disagree about how it looks. TOP RIGHT by the user's own instruction, which
-  // also keeps it clear of §CPE_ROOM_TITLE's lower-third band: two overlays, two corners, no
-  // arbitration between them needed.
-  A.dayCounterCompositeOntoCanvas = function(ctx, w, h, info, opacity) {
+  // baked video cannot disagree about how it looks.
+  //
+  // §CPE_DAY_COUNTER_POS (user, 2026-08-02: "the movie maker panel puts the Day # counter top right
+  // display option"). TOP RIGHT stays the DEFAULT — it is what the user asked for originally and what
+  // already shipped, so an existing plan re-bakes identically. The corner is now a panel choice
+  // because the counter and §CPE_ROOM_TITLE's caption are the only two overlays and a user framing a
+  // particular building may want the clock out of a different corner.
+  // ⚠ The two BOTTOM positions sit in the caption's lower-third band. That is the user's call to
+  // make, not ours to forbid — but it is why top right remains the default rather than a mere
+  // first-in-list accident.
+  var POS = { tr: 1, tl: 1, br: 1, bl: 1 };
+  A.dayCounterCompositeOntoCanvas = function(ctx, w, h, info, opacity, pos) {
     if (!ctx || !info || !(opacity > 0)) return;
     var op = Math.min(1, opacity);
     ctx.save();
@@ -70,8 +78,9 @@ function setupCpeDayCounter(A) {
 
     var boxW = padX * 2 + wBig + gap + wSmall;
     var boxH = padY * 2 + fontPx;
-    var x = w - margin - boxW;
-    var y = margin;
+    var at = (pos && POS[pos]) ? pos : 'tr';
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - boxW;
+    var y = (at === 'bl' || at === 'br') ? h - margin - boxH : margin;
 
     // Plate. Same 0.45 black the caption band uses — one visual language across both overlays.
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -95,7 +104,7 @@ function setupCpeDayCounter(A) {
   // ── Live editor preview overlay — its own canvas, drawn through the same routine above. Kept
   // separate from cpe_room_title.js's overlay on purpose: either feature can be on without the
   // other, and sharing one canvas would make each responsible for clearing the other's pixels.
-  var _liveCanvas = null, _liveState = null;
+  var _liveCanvas = null, _liveState = null, _livePos = 'tr';
 
   function _ensureLiveCanvas() {
     if (_liveCanvas && _liveCanvas.isConnected) return _liveCanvas;
@@ -109,9 +118,10 @@ function setupCpeDayCounter(A) {
   }
 
   // Called once when a preview rehearsal starts, with the same buildup state the bake would use.
-  A.dayCounterLiveStart = function(bkState) {
+  A.dayCounterLiveStart = function(bkState, pos) {
     _liveState = (bkState && bkState.projectEnd > bkState.projectStart) ? bkState : null;
-    console.log('§CPE_DAY_COUNTER live ' + (_liveState ? 'armed spanDays=' +
+    _livePos = (pos && POS[pos]) ? pos : 'tr';
+    console.log('§CPE_DAY_COUNTER live ' + (_liveState ? 'armed pos=' + _livePos + ' spanDays=' +
       Math.ceil((_liveState.projectEnd - _liveState.projectStart) / MS_PER_DAY) : 'off (no buildup span)'));
   };
 
@@ -129,7 +139,7 @@ function setupCpeDayCounter(A) {
     ctx.clearRect(0, 0, c.width, c.height);
     if (!_liveState) return;
     var info = A.dayCounterAt(cursorMs, _liveState.projectStart, _liveState.projectEnd);
-    if (info) A.dayCounterCompositeOntoCanvas(ctx, c.width, c.height, info, 1);
+    if (info) A.dayCounterCompositeOntoCanvas(ctx, c.width, c.height, info, 1, _livePos);
   };
 
   A.dayCounterLiveStop = function() {
