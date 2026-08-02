@@ -307,6 +307,17 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
+  // §PHOTO_SKYLINE_SHADOW_FRUSTUM: shared with _enablePhotoShadows()'s frustum sizing below (search
+  // the same name there) so the two can never drift apart again the way they did at introduction —
+  // both the skyline ring's placement radius AND the shadow-camera frustum need the SAME multiplier
+  // applied to the SAME envelope; before this fix each recomputed its own value independently, and
+  // the frustum one never got the 2.2x term at all (see the DONE record in
+  // prompts/PHOTOREAL_STILL_RENDER.md for the measured before/after numbers and the regression check).
+  var PHOTO_SKYLINE_RADIUS_MULT = 2.2;
+  // Half of the skyline box's widest possible footprint (bw = 18 + Math.random()*32, max 50, half
+  // 25) plus a small margin, so a box isn't clipped right at its own edge when its CENTER sits just
+  // inside the frustum bound.
+  var PHOTO_SKYLINE_BOX_MARGIN = 30;
   // §FACADE_WARM_COOL — the two illuminants this scene already declares (PHOTO_SUN_COLOR warm,
   // PHOTO_HEMI_SKY_COLOR cool dusk sky). Warm pair unchanged from what shipped; cool pair chosen
   // LUMINANCE-MATCHED to it (0.728 vs 0.714, 0.825 vs 0.837 — within 2%) so the split is purely
@@ -653,7 +664,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // (envelope*4) put these so far out they subtended almost no visible angle from a normal
     // camera position, reading as tiny specks. Pulled closer + bigger + more of them.
     var envelope = Math.max(w, d, 50);
-    var radius = envelope * 2.2;
+    var radius = envelope * PHOTO_SKYLINE_RADIUS_MULT;
     var group = new THREE.Group();
     var winPos = [], winCol = [];
     var N = 40;
@@ -2622,6 +2633,24 @@ async function setupEffects(A, renderer, scene, camera) {
     var _bc = Object.values(A.buildingCentres || {})[0];
     if (_bc && _bc.envelope) _env = Math.ceil(_bc.envelope);
     _env = Math.max(_env, 50);
+    // §PHOTO_SKYLINE_SHADOW_FRUSTUM (bug: "the silhouette buildings in distance cannot cast shadows
+    // well" — confirmed via real measured numbers, not assumption: HHS_Office_Federated envelope=
+    // 68.17m gave a frustum half-width of 69m, but the skyline ring (built in _buildPhotoProps,
+    // radius = envelope * PHOTO_SKYLINE_RADIUS_MULT) sits at ~150m — all 36/36 skyline boxes fell
+    // entirely outside [-_env,_env] on X and/or Z, so they were clipped from the shadow depth pass
+    // before any render, regardless of castShadow. This has been true since the photo-shadow
+    // feature's OWN introduction (PR #806, 2026-07-16) — the same commit that set the skyline ring
+    // to its current radius multiplier never accounted for it here; not a later drift-apart
+    // regression. Recomputed from the SAME real bbox query _buildPhotoProps() itself uses (not read
+    // off the built skyline group, which may not exist yet — _enablePhotoShadows() runs BEFORE
+    // _buildPhotoProps()/_showPhotoProps(true) in _applyPhotoStaging's call order below, so a
+    // group-based read would miss the very first Alt+S press for a building).
+    var _skyBbox = _buildingBBoxIfc();
+    if (_skyBbox) {
+      var _skyEnvelope = Math.max(_skyBbox.xMax - _skyBbox.xMin, _skyBbox.yMax - _skyBbox.yMin, 50);
+      var _skyRadius = _skyEnvelope * PHOTO_SKYLINE_RADIUS_MULT;
+      _env = Math.max(_env, Math.ceil(_skyRadius + PHOTO_SKYLINE_BOX_MARGIN));
+    }
     // NOTE: computed AFTER A.updateSky() has already positioned A.sun at the dusk direction (see
     // call order in _applyPhotoStaging below) — using the ORIGINAL toggleShadow() order (frustum
     // math before the sun is repositioned) would size this frustum for the wrong sun distance.
@@ -2645,7 +2674,8 @@ async function setupEffects(A, renderer, scene, camera) {
       for (; _si < end; _si++) { var o = _shadowList[_si]; if (o.visible) { o.castShadow = true; o.receiveShadow = true; } }
       A.renderer.shadowMap.needsUpdate = true;
       if (_si < _shadowList.length) setTimeout(_chunk, 0);
-      else console.log('§PHOTO_SHADOW enabled casters=' + _shadowList.length + ' sunDist=' + _sunDist.toFixed(0) + ' env=' + _env);
+      else console.log('§PHOTO_SHADOW enabled casters=' + _shadowList.length + ' sunDist=' + _sunDist.toFixed(0) +
+        ' env=' + _env + ' texelPerM=' + (A.sun.shadow.mapSize.width / (2 * _env)).toFixed(1));
     })();
   }
   function _disablePhotoShadows() {
