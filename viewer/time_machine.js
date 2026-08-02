@@ -5305,6 +5305,120 @@
              projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
+  // ══ §SUPPORT_PREVIEW — the Z-support invariant, measured against the order ACTUALLY BEING REVEALED
+  // User, 2026-08-02: "Z support importance as no fallback fails during Preview will be good so that
+  // faster cycle of pasting console log to u back."
+  //
+  // WHY THIS EXISTS WHEN §SUPPORT_CHECK ALREADY PRINTS A NUMBER — three separate blind spots, each
+  // one measured, and together they are why "roof before walls" survived a green console:
+  //   1. §SUPPORT_CHECK runs inside gantt GENERATION. On a §GANTT_CACHE_HIT it never runs at all, so
+  //      a Preview on a cached schedule reports nothing — not a pass, an absence.
+  //   2. It is ROLE-AWARE: ScheduleGate.auditFloating offers the wall pool only to already-promoted
+  //      roof slabs, so beams/members/columns/MEP bearing on walls are invisible to it. It printed
+  //      floating=0 on a Hospital with 6,778 such elements (1,294 of them IfcBeam).
+  //   3. It audits the GENERATED schedule. When the reveal follows a captured programme
+  //      (§CPE_BUILDUP_SOURCE source=captured), the film plays an order that line never looked at.
+  // This probe fixes all three: it runs at buildup-ARM time, it is role-blind, and it reads the
+  // reveal times the film is about to use.
+  //
+  // ⚠ IT ONLY PRINTS. No schedule, no order, no cursor, no cache is touched — every failure path is
+  // a caught warning, because an instrument must never be able to break the thing it measures.
+  var _spGeo = null, _spGeoKey = null;
+  function _supportProbe(st) {
+    if (!st) return;
+    var app = A();
+    var EPS = 0.05, GAP = 0.5, CELL = 4, DAY = 86400000;
+    // Reveal time per guid, straight off the ops the film will play.
+    var startOf = {}, endOf = {}, nTimed = 0;
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!g) continue;
+      if (startOf[g] == null || op.start_ts < startOf[g]) { startOf[g] = op.start_ts; nTimed++; }
+      if (endOf[g] == null || op.end_ts > endOf[g]) endOf[g] = op.end_ts;
+    }
+    if (!nTimed) { console.log('§SUPPORT_PREVIEW skipped reason=no-timed-ops'); return; }
+    // Geometry, cached per building — the probe must not add a 50k-row query to every rehearsal.
+    var key = (window.APP && window.APP.currentBuilding) || 'bld';
+    if (_spGeo == null || _spGeoKey !== key) {
+      var rows = app.dbQuery(
+        "SELECT m.guid, m.ifc_class, COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
+        "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
+        "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class!='IfcOpeningElement'");
+      _spGeo = rows.map(function (r) {
+        var cx = +r[2], cy = +r[3], cz = +r[4], bx = +r[5], by = +r[6], bz = +r[7];
+        return { guid: r[0], cls: r[1] || '', x0: cx - bx / 2, x1: cx + bx / 2,
+                 y0: cy - by / 2, y1: cy + by / 2, base_z: cz - bz / 2, top_z: cz + bz / 2 };
+      });
+      _spGeoKey = key;
+    }
+    var els = _spGeo;
+    if (els.length > 250000) { console.log('§SUPPORT_PREVIEW skipped reason=too-many-elements n=' + els.length); return; }
+    // THE CARRIER POOL — structure + WALLS, offered to EVERY carried class. Role-blind was measured
+    // first and rejected: with every class eligible it reported 40,754 "violations", top pair
+    // IfcPipeFitting on IfcCovering (5,606). A pipe above a ceiling tile is not held up by it.
+    var STRUCT = /^Ifc(Footing|Pile|ReinforcingBar|Column|Beam|Member|Slab|Plate)/;
+    var isCarrier = function (e) { return STRUCT.test(e.cls) || e.cls.indexOf('IfcWall') === 0; };
+    var cellsOf = function (e) {
+      var o = [], gx, gy;
+      for (gx = Math.floor(e.x0 / CELL); gx <= Math.floor(e.x1 / CELL); gx++)
+        for (gy = Math.floor(e.y0 / CELL); gy <= Math.floor(e.y1 / CELL); gy++) o.push(gx + ',' + gy);
+      return o;
+    };
+    var xy = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+    var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+    var grid = {};
+    els.forEach(function (e) { if (isCarrier(e)) cellsOf(e).forEach(function (c) { (grid[c] = grid[c] || []).push(e); }); });
+    var viol = 0, audited = 0, worst = null, worstLag = 0, byPair = {};
+    els.forEach(function (T) {
+      var ts = startOf[T.guid]; if (ts == null) return;
+      audited++;
+      var seen = {}, lastEnd = 0, lastS = null, cs = cellsOf(T);
+      for (var c = 0; c < cs.length; c++) {
+        var arr = grid[cs[c]]; if (!arr) continue;
+        for (var k = 0; k < arr.length; k++) {
+          var S = arr[k];
+          if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
+          // RESTS ON, not RUNS PAST: the carrier must top out AT my underside. `top_z >= base_z-GAP`
+          // alone accepts any wall taller than my base — a riser threading past a 3m wall then reads
+          // as carried by it (29,759 phantom pairs vs 6,778 real). Bounded both sides.
+          if (S.base_z < T.base_z - EPS && Math.abs(S.top_z - T.base_z) <= GAP && xy(S, T)) {
+            var se = endOf[S.guid];
+            if (se != null && se > lastEnd) { lastEnd = se; lastS = S; }
+          }
+        }
+      }
+      if (lastEnd && ts < lastEnd - 1000) {
+        viol++;
+        var pk = T.cls + ' on ' + lastS.cls;
+        byPair[pk] = (byPair[pk] || 0) + 1;
+        var lag = (lastEnd - ts) / DAY;
+        if (lag > worstLag) { worstLag = lag; worst = { T: T, S: lastS, lag: lag }; }
+      }
+    });
+    var ms = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+    var top = Object.keys(byPair).sort(function (a, b) { return byPair[b] - byPair[a]; }).slice(0, 6)
+      .map(function (k) { return byPair[k] + '× ' + k; }).join(' | ');
+    console.log('§SUPPORT_PREVIEW source=' + st.source + ' audited=' + audited + '/' + els.length +
+      ' violations=' + viol + ' (carriers = structure + walls, offered to EVERY class) ms=' + Math.round(ms) +
+      (viol ? ' worst=' + worstLag.toFixed(1) + 'd (' + worst.T.cls + ' on ' + worst.S.cls + ')' : '') +
+      ' — this is the ORDER THE FILM WILL PLAY, not the generated schedule');
+    if (viol) console.log('§SUPPORT_PREVIEW_PAIRS ' + top);
+    console.log('§SUPPORT_PREVIEW_VERDICT ' + (viol ? 'FAIL' : 'PASS') +
+      ' — nothing is built before what holds it up');
+  }
+  // Wrapped rather than inlined into each return path: tmFollowTimeline has three of them (captured,
+  // fallthrough, timeline) and a probe that only covers some would be its own blind spot.
+  (function () {
+    var _inner = window.tmFollowTimeline;
+    window.tmFollowTimeline = function () {
+      var st = _inner.apply(this, arguments);
+      try { _supportProbe(st); }
+      catch (e) { console.warn('§SUPPORT_PREVIEW skipped reason=' + (e && e.message)); }
+      return st;
+    };
+  })();
+
   // ── §CPE_BUILDUP_REAL_SCHEDULE §4 — the numeric instrument the witnesses read ──────────────────
   // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §4
   // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
