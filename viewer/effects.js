@@ -6872,6 +6872,44 @@ async function setupEffects(A, renderer, scene, camera) {
       ' — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid');
     _gazeRateBuild();
 
+    // ══ §CPE_STICK_APPROACH — "which stick is the camera heading toward", for the MaxQ bake HUD ══
+    // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_STICK_APPROACH. A "stick" is a band the user
+    // explicitly dropped (`_stick===true`, §CPE_REOPEN_NODE's rule — settle/exit-door/stop bands are
+    // never sticks even though they are also entries in `bands`). `_s` is each stick's arc-length
+    // fraction along the WALK (0=settle end, 1=stop end), recorded at spawn time
+    // (cinema_path_editor.js `hit.s`) and already carried through the override → plan round-trip
+    // above — no new authored field, just reading what's already there.
+    //
+    // The position-in-the-walk a given frame is AT is `e3` — exactly the number Beat 3's own poseAt
+    // branch computes at effects.js "var e3 = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3)));"
+    // (the walk's live arc-fraction chain, holds included). Reusing that chain rather than a second
+    // one is deliberate: a stick with a hold on it dwells in TIME without advancing arc, and only the
+    // real chain (via `_holdMap`) knows that — a naive time-fraction estimate would report the camera
+    // "past" a held stick while it is still parked in front of it.
+    var _stickList = [];
+    if (_cpeBands) {
+      for (var _sb = 0; _sb < _cpeBands.length; _sb++) {
+        if (_cpeBands[_sb]._stick) _stickList.push({ index: _stickList.length + 1, s: +(_cpeBands[_sb]._s || 0) });
+      }
+    }
+    function _stickApproachAt(tNorm) {
+      if (!_stickList.length) return null;
+      tNorm = Math.max(0, Math.min(1, tNorm));
+      var e3;
+      if (tNorm <= tS) e3 = 0;          // dive/spin: still heading for the first stick
+      else if (tNorm >= tO) e3 = 1;     // rise/orbit: the walk (and every stick on it) is behind us
+      else {
+        var w3 = (tNorm - tS) / Math.max(1e-6, tO - tS);
+        e3 = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3)));
+      }
+      for (var i = 0; i < _stickList.length; i++) {
+        if (_stickList[i].s >= e3 - 1e-6) return { index: _stickList[i].index, count: _stickList.length, s: _stickList[i].s, e3: e3 };
+      }
+      return null; // past the last stick — nothing left to approach
+    }
+    if (_stickList.length) console.log('§CPE_STICK_APPROACH sticks=' + _stickList.length +
+      ' s=[' + _stickList.map(function(o) { return o.s.toFixed(3); }).join(',') + ']');
+
     // Plan cost is dominated by the BVH fans + floor raycasts. Measured on this project's headless
     // ANGLE/SwiftShader rig: Duplex ~20-70ms, Terminal/Hospital ~500-750ms — a one-off cost at the
     // moment Alt+C is pressed, before a 24s recording. Logged so a regression is visible, not guessed.
@@ -6902,7 +6940,11 @@ async function setupEffects(A, renderer, scene, camera) {
              sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
              naturalSec: _natSec, naturalTotal: _natTotal,
              eyeM: CINEMA_EYE_M, lookdownDeg: CINEMA_LOOKDOWN_DEG, durationSec: durationSec,
-             indoor: true, poseAt: poseAt };
+             indoor: true, poseAt: poseAt,
+             // §CPE_STICK_APPROACH: stickCount=0 (the common case — no editor bands, or bands with no
+             // user-dropped sticks) means the bake HUD adds nothing; stickApproachAt(tNorm) returns
+             // {index, count, s, e3} for the next stick ahead, or null once the walk is past all of them.
+             stickCount: _stickList.length, stickApproachAt: _stickApproachAt };
   }
   // ══ §CINEMA_PATH_EDITOR — the override seam. Deliberately a THIN WRAPPER rather than edits inside
   // _cinemaPathPlan: the plan function is 600+ lines and its §CINEMA_SPACE block is another session's

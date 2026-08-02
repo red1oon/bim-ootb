@@ -753,6 +753,14 @@
       return { x: tgt.x + radius * Math.cos(az), y: tgt.y + height, z: tgt.z + radius * Math.sin(az),
                tx: tgt.x, ty: tgt.y, tz: tgt.z };
     }
+    // §CPE_STICK_APPROACH: same _tFilm remap as poseAt, so the reported stick matches the pose
+    // actually flown THIS frame (a clip window shifts both together). No-op (null) on a circle
+    // fallback plan or a plan/path with no user-dropped sticks (plan.stickCount === 0, the common
+    // case) — the bake HUD then shows nothing extra, same as before this feature.
+    function stickApproachAt(tNorm) {
+      if (!plan || !plan.stickApproachAt) return null;
+      return plan.stickApproachAt(_tFilm(tNorm));
+    }
     var w = A.renderer.domElement.width, h = A.renderer.domElement.height;
     console.log('§MAXQ_START frames=' + nFrames + ' fps=' + fps + ' path=' + (plan ? 'cinema' : 'circle') +
       ' radius=' + radius.toFixed(1) + ' height=' + height.toFixed(1) + ' size=' + w + 'x' + h);
@@ -1032,6 +1040,7 @@
         _freezeRandom();
         var _tn = nFrames > 1 ? i / (nFrames - 1) : 0;
         var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
+        var _stickNow = stickApproachAt(_tn);  // §CPE_STICK_APPROACH — null unless the path has sticks
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
@@ -1124,8 +1133,13 @@
         var _etaTxt = _eta < 0 ? 'estimating'
           : _eta < 90 ? Math.max(1, Math.round(_eta)) + 's left'
           : Math.ceil(_eta / 60) + ' min left';
+        // §CPE_STICK_APPROACH: live path-structure feedback appended to the existing frame/ETA
+        // readout — same per-frame cadence, not a separate slower/faster timer. Omitted entirely
+        // (falls back to the pre-feature text) when the path has no user-dropped sticks or the walk
+        // is already past the last one.
+        var _stickTxt = _stickNow ? ', approaching Stick ' + _stickNow.index + '/' + _stickNow.count : '';
         _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
-          _etaTxt + ' (Alt+C / cinema icon cancels + saves partial)');
+          _etaTxt + _stickTxt + ' (Alt+C / cinema icon cancels + saves partial)');
         if (_etaNow - _logPrev >= MAXQ_LOG_MS || i === 0 || i === nFrames - 1) {
           _logPrev = _etaNow;
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
