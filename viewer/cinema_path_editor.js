@@ -1281,17 +1281,20 @@
           // §CPE_BUILDUP_TOPOUT: the same remap the bake applies — construction completes at the
           // closing-orbit boundary, so the rehearsal's ending shows the finished building too.
           var bkTn = a.buildupTAt ? a.buildupTAt(tn, _state.plan) : tn;
-          window.tmSetCursor(a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
-            : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart)));
+          // §GHOST_GROUND_LIVE_TRIGGER: compute the cursor ONCE and reuse it for tmSetCursor,
+          // ghostGroundAt and dayCounterLiveTick — previously each call re-derived it inline
+          // (harmless when they agreed, but the ghost-ground trigger now needs the EXACT same
+          // cursor value tmSetCursor just used, not a separately-recomputed one).
+          var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
+            : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart));
+          window.tmSetCursor(bkMs);
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
-          // though the wall-clock speeds differ by 15x.
-          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _titleTotalSec || dur / 1000, bkPrev);
+          // though the wall-clock speeds differ by 15x. `bkMs` is the real cursor — §GHOST_GROUND_
+          // LIVE_TRIGGER compares it directly to `firstAboveMs`, never a converted fraction.
+          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _titleTotalSec || dur / 1000, bkPrev, bkMs);
           // Same cursor the buildup was just set to — never a second, separately-interpolated clock.
-          if (_dayOn && a.dayCounterLiveTick) {
-            a.dayCounterLiveTick(a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
-              : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart)));
-          }
+          if (_dayOn && a.dayCounterLiveTick) a.dayCounterLiveTick(bkMs);
         }
         frames++;
         if (a.markDirty) a.markDirty();
