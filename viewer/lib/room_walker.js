@@ -900,17 +900,65 @@
   }
 
   // IfcDoor + IfcOpeningElement footprints, per storey — the voids to carve.
-  function storeyVoids(db, anchors) {
+  //
+  // §APERTURE_TIER (§21.29) — WHERE the doorway hole comes from is not the same question in every
+  // IFC, and pretending it is has already cost this lane one wrong generalisation (§21.26 read
+  // Clinic's *data gap* as a fact about all geometry). Measured over the shipped fleet:
+  //   Clinic 254/0 · Duplex 14/0 · HHS 133/0 · Hospital 440/0 · Hospital_3 440/0 · JKR 65/0
+  //   Terminal 135/0 · TermRooms 135/0 · LTU 606/3368        (IfcDoor / IfcOpeningElement)
+  // 1 of 9 carries opening geometry, so opening-based aperture resolution CANNOT be the method —
+  // it has to be the upgrade. Three provenance tiers, one output shape, best-available wins:
+  //   A  bom_tree VOIDS+FILLS  — exact host wall + exact filling door, straight from IFC. Produced
+  //      by viewer/import_worker.js for any user import; absent from every shipped fixture today.
+  //   B  IfcOpeningElement that is DOOR-HOSTED — the real aperture rect. 601/606 on LTU within
+  //      0.3 m, median 0.93 × 2.11 m. This is tier A's relation approximated by geometry.
+  //   C  IfcDoor bbox (§21.27, shipped) — coarse, needs only IfcDoor, works on 9/9. THE FLOOR:
+  //      never removed, because 8 of 9 buildings have nothing else.
+  // `opts.voidMode` selects: 'cur' (default — byte-identical to §21.27, admits every floor-level
+  // ARC opening), 'B' (doors + door-hosted openings only), 'C' (doors only).
+  // ⚠ UNHOSTED openings are the reason 'cur' is not simply the best mode: LTU has 1,250 of them,
+  // 125 at ≥2.0 m wide and up to 25 m and 55 m across. Those are atrium/stair/facade voids, not
+  // doorways, and carving one along a facade removes a long run of exterior wall — which is exactly
+  // how §21.27's first gate run lost 99% of the enclosed floor. Tier B excludes them by construction
+  // rather than by a width threshold.
+  function storeyVoids(db, anchors, voidMode) {
     var rows = _rows(db, "SELECT m.storey, t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y, " +
       "COALESCE(t.rotation_z,0), m.ifc_class, COALESCE(t.bbox_z,0) FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid=m.guid " +
       "WHERE (m.ifc_class LIKE 'IfcDoor%' OR m.ifc_class LIKE 'IfcOpening%') AND m.discipline='ARC' " +
       "AND t.center_x IS NOT NULL");
     var anchorNames = Object.keys(anchors || {});
+    var mode = voidMode || 'cur';
+    // §TIER-B host test: an opening is admitted only if an IfcDoor sits in it. Same geometric
+    // relation IfcRelFillsElement states outright — which is why tier A supersedes this exactly.
+    var HOST_TOL = 0.6, CELL = 1.0, dgrid = {};
+    if (mode === 'B') {
+      rows.forEach(function (r) {
+        if ((r.ifc_class || '').indexOf('IfcDoor') !== 0) return;
+        var k = Math.floor(r.center_x / CELL) + '|' + Math.floor(r.center_y / CELL) + '|' + Math.floor((r.center_z || 0) / CELL);
+        (dgrid[k] = dgrid[k] || []).push(r);
+      });
+    }
+    function doorHosted(r) {
+      var cx = r.center_x, cy = r.center_y, cz = r.center_z || 0;
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var lst = dgrid[(Math.floor(cx / CELL) + dx) + '|' + (Math.floor(cy / CELL) + dy) + '|' + (Math.floor(cz / CELL) + dz)];
+        if (!lst) continue;
+        for (var i = 0; i < lst.length; i++) {
+          var d = lst[i], ex = d.center_x - cx, ey = d.center_y - cy, ez = (d.center_z || 0) - cz;
+          if (Math.sqrt(ex * ex + ey * ey + ez * ez) <= HOST_TOL) return true;
+        }
+      }
+      return false;
+    }
     var by = {};
     rows.forEach(function (r) {
       var st = _assignByZ(r.storey || 'Unknown', r.center_z != null ? r.center_z : 0.0, anchors, anchorNames);
       var isDoor = (r.ifc_class || '').indexOf('IfcDoor') === 0;
+      if (!isDoor) {
+        if (mode === 'C') return;                       // tier C: doors only
+        if (mode === 'B' && !doorHosted(r)) return;     // tier B: door-hosted openings only
+      }
       // §VOID-AT-FLOOR: only a void you can WALK THROUGH belongs in a circulation raster. A window
       // is an IfcOpeningElement too — LTU carries 3,368 openings — and carving them punched holes
       // in the exterior wall, which is why the first gate run lost 99% of the enclosed floor.
@@ -1154,7 +1202,9 @@
     // difference unattributable, which is what the first LTU gate run did.
     var rotate = opts.rotate !== undefined ? opts.rotate : carve;
     var wallsBy = rotate ? storeyWallsRot(db, anchors) : storeyWalls(db, anchors);
-    var voidsBy = carve ? storeyVoids(db, anchors) : null;
+    // §APERTURE_TIER (§21.29) — opts.voidMode 'cur'|'B'|'C'; default 'cur' is byte-identical to
+    // §21.27, so every number taken before this change reproduces exactly.
+    var voidsBy = carve ? storeyVoids(db, anchors, opts.voidMode) : null;
     var doorsBy = storeyDoors(db, anchors);
     var stairs = storeyStairs(db, anchors);
     var out = {};
