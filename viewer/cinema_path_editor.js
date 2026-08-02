@@ -634,7 +634,7 @@
           '<button id="cpe-mark-in" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark in</button> ' +
           '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox"> ' +
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
           'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
           'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span></div>' +
@@ -1796,9 +1796,12 @@
         hose: [], reach: 0.15, flowRaw: null, flowFrac: null, flowHosed: null,
         // §CPE_CLIP: the whole film until marked.
         clipIn: 0, clipOut: 1,
-        // §CPE_BUILDUP: off by default — a film that assembles itself is a deliberate choice, not
-        // the default reading of a fly-through.
-        buildup: false,
+        // §CPE_BUILDUP_DEFAULT_ON (2026-08-02, user ruling — reverses the original "off by
+        // default" call below): ON by default — build-as-it-plays is the expected reading now,
+        // not a deliberate opt-in. A fresh session's checkbox and _state must agree (HTML
+        // `checked` attribute at the render site above) or the panel would show checked while
+        // the first bake silently ran unbuilt.
+        buildup: true,
         // §CPE_ROOM_TITLE: off by default, same reasoning — a captioned film is a deliberate choice
         // (RESUME_CPE_ROOM_TITLE.md).
         roomTitle: false,
