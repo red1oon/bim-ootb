@@ -19,7 +19,11 @@ if (!Database) { console.error('better-sqlite3 not found in bim-compiler or bim-
 const args = process.argv.slice(2);
 function opt(name, dflt) { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] : dflt; }
 const TARGET = opt('target'), SOURCE = opt('source');
-const PREFIX = opt('prefix', ''), BUILDING = opt('building', ''), DISC = opt('disc', 'ARC');
+// §5.5 lesson: --disc ARC flattened Hospital's attributed 665 ARC + 70 STR opening split and the
+// fleet witness caught it (cur-mode fusion divergence). Default is now COPY the source row's
+// discipline — the extraction pipeline already assigned it deterministically; --disc overrides
+// only when explicitly passed.
+const PREFIX = opt('prefix', ''), BUILDING = opt('building', ''), DISC = opt('disc', '');
 const FIT_ONLY = args.includes('--fit-only');
 if (!TARGET || !SOURCE) { console.error('need --target and --source'); process.exit(1); }
 
@@ -62,7 +66,7 @@ const metaCols = tgt.prepare('PRAGMA table_info(elements_meta)').all().map(c => 
 const hasGeoTable = !!tgt.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='component_geometries'").get();
 const geoCols = hasGeoTable ? tgt.prepare('PRAGMA table_info(component_geometries)').all().map(c => c.name) : [];
 const ops = src.prepare(
-  "SELECT m.guid g, m.ifc_class ic, m.element_name nm, m.storey st, m.material_name mn, m.material_rgba mr, " +
+  "SELECT m.guid g, m.ifc_class ic, m.element_name nm, m.storey st, m.discipline dc, m.material_name mn, m.material_rgba mr, " +
   "t.center_x x, t.center_y y, t.center_z z, t.rotation_x rx, t.rotation_y ry, t.rotation_z rz, " +
   "t.bbox_x bx, t.bbox_y by2, t.bbox_z bz, i.geometry_hash h " +
   "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
@@ -89,7 +93,7 @@ const txn = tgt.transaction(() => {
         case 'element_name': return o.nm;
         case 'element_type': return null;
         case 'storey': return o.st;
-        case 'discipline': return DISC;
+        case 'discipline': return DISC || o.dc;
         case 'material_name': return o.mn;
         case 'material_rgba': return o.mr;
         case 'building': return BUILDING || null;
