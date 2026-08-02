@@ -88,6 +88,32 @@
 
   function _workPacingReset() { _wpSched = null; _wpTried = false; }
 
+  // ══ §CPE_BUILDUP_TOPOUT (2026-08-02) — the ending beats dwell on the FINISHED building ═════════
+  // User, on the 1761-frame Hospital bake: "the top roof solar panels never gets to be shown - it
+  // stops shy of the last task." The log agreed: placed=62700/63421 at frame 1740 (t=0.989),
+  // 63421/63421 only on the final frame — the last 721 elements landed inside the closing orbit's
+  // final ~1.4s, where nothing is on screen long enough to register. The buildup used to ride the
+  // film fraction 1:1, so BY CONSTRUCTION 100% completion coincided with the film's last frame and
+  // the topping-out was unwatchable on every plan.
+  // The rule: the buildup completes at the START of the closing orbit (plan.beats.rise — the same
+  // §CINEMA_BEATS fraction §CPE_ROOM_TITLE_DIVE already reads), so the pull-back shows the roof
+  // topping out and the orbit circles the completed building. Work pacing (§CPE_BUILDUP_WORK_PACED)
+  // is untouched — the same even element rate, compressed onto [0, topoutU] instead of [0, 1].
+  var BUILDUP_TOPOUT_FALLBACK_U = 0.92;  // ≈ the orbit boundary on measured plans (Hospital 0.929),
+                                         // used only when a plan carries no beats (older cache).
+  function _buildupTopoutU(plan) {
+    if (plan && plan.beats && plan.beats.rise > 0 && plan.beats.rise < 1) {
+      return { u: plan.beats.rise, src: 'plan.beats.rise' };
+    }
+    return { u: BUILDUP_TOPOUT_FALLBACK_U, src: 'fallback(no beats on plan)' };
+  }
+  // Pure, exposed below as APP.buildupTAt: film fraction -> buildup fraction. Witnessable without a bake.
+  function _buildupTAt(tFilm, plan) {
+    var top = _buildupTopoutU(plan);
+    var t = Math.max(0, Math.min(1, tFilm));
+    return top.u < 1 ? Math.min(1, t / top.u) : t;
+  }
+
   // Called ONCE per preview/bake, after the buildup timeline is in force. Returns true when armed.
   function _ghostGroundArm(bkState) {
     var A = window.APP;
@@ -957,6 +983,12 @@
           // longer disagree about what they are showing.
           _bkState = (typeof window.tmFollowTimeline === 'function') ? window.tmFollowTimeline() : null;
           if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=no timeline to follow — baking without the buildup'); _buildup = false; }
+          if (_bkState) {
+            var _top = _buildupTopoutU(plan);
+            console.log('§CPE_BUILDUP_TOPOUT topoutU=' + _top.u.toFixed(3) + ' src=' + _top.src +
+              ' — construction completes at the closing-orbit boundary; the pull-back shows the' +
+              ' topping-out and the orbit circles the FINISHED building (solar-panel lesson 2026-08-02)');
+          }
           else if (_bkState.source === 'captured') {
             // §CPE_BUILDUP_REAL_SCHEDULE §5 — the label moves with the data. States scope and
             // coverage; claims NO predecessor logic, float or resources (this data carries none).
@@ -1008,7 +1040,9 @@
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
         _dayInfo = null;
         if (_buildup && _bkState) {
-          var _bkT = _tFilm(_tn);
+          // §CPE_BUILDUP_TOPOUT: the cursor rides the remapped fraction so construction completes
+          // at the orbit boundary; the camera keeps its own film fraction untouched.
+          var _bkT = _buildupTAt(_tFilm(_tn), plan);
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
           // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
           // clusters its timestamps.
@@ -1189,6 +1223,10 @@
       // §CPE_BUILDUP_WORK_PACED: the rehearsal must ask for the same cursor as the bake, or the
       // preview shows a different construction rate from the film it is previewing.
       window.APP.buildupCursorAt = _workCursorAt;
+      // §CPE_BUILDUP_TOPOUT — exposed for the preview (same remap as the bake, one implementation)
+      // and for the witness, which gates the pure mapping instead of sitting through a bake.
+      window.APP.buildupTAt = _buildupTAt;
+      window.APP.buildupTopoutU = _buildupTopoutU;
       window.APP.buildupPacingReset = _workPacingReset;
       window.APP.ghostGroundArm = _ghostGroundArm;
       window.APP.ghostGroundAt = _ghostGroundAt;

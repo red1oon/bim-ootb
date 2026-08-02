@@ -26,7 +26,7 @@
 //           across the hold window (rotation is the only thing it can be). RED: no hold exists.
 //   G-SH-6  IT REMAINS SO: the aim weight is non-decreasing along the walk (the latch) and is still
 //           non-zero at the FINAL walk frame. RED: `wSeam` forces it to 0 across the last 25%.
-//   G-SH-7  the last stick of a freshly seeded path defaults to 1.0s and every other band to 0.
+//   G-SH-7  a freshly seeded path carries hold=0 on EVERY band (2026-08-02: an unset hold is no hold).
 //   G-SH-8  no regression: naturalTotal == sum(naturalSec.*), replan deterministic, and a path with
 //           every hold 0 is BYTE-IDENTICAL to the same path planned with no hold field at all.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
@@ -323,12 +323,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return { dflt: E.holdDefaultSec, three: E._seedHolds(3), five: E._seedHolds(5), two: E._seedHolds(2) };
       } catch (e) { return null; }
     });
-    // CORRECTED 2026-08-01 (user): the hold belongs on the LAST band — the EXIT — not on length-2.
-    const seedOK = !!seed && seed.dflt === 1.0 &&
-      JSON.stringify(seed.three) === JSON.stringify([0, 0, 1]) &&
-      JSON.stringify(seed.five) === JSON.stringify([0, 0, 0, 0, 1]) &&
-      JSON.stringify(seed.two) === JSON.stringify([0, 1]);
-    P('G-SH-7 the LAST band (the EXIT) of a freshly seeded path defaults to 1.0s, every other band to 0',
+    // CORRECTED 2026-08-02 (user): "of course not as default is zero" — an unset hold is NO hold.
+    // A freshly seeded path must carry hold 0 on EVERY band; the 2026-08-01 1.0s exit default was
+    // an over-generalisation of a one-path instruction and produced an unexplained 1s pause at a
+    // settle stick the user never set (observed on the Hospital bake of 2026-08-02).
+    const seedOK = !!seed && seed.dflt === 0 &&
+      JSON.stringify(seed.three) === JSON.stringify([0, 0, 0]) &&
+      JSON.stringify(seed.five) === JSON.stringify([0, 0, 0, 0, 0]) &&
+      JSON.stringify(seed.two) === JSON.stringify([0, 0]);
+    P('G-SH-7 a freshly seeded path carries hold=0 on EVERY band — an unset hold is no hold',
       seedOK,
       seed === null ? 'editor exposes no hold seeding — the default does not exist (RED on main)'
                     : `default=${seed.dflt}s; seeding 3 bands → [${seed.three}], 5 → [${seed.five}], ` +

@@ -33,9 +33,11 @@
   // you drag and the handles you grab — and reads at a glance on a 63K-element scene.
   var CPE_STICK_RED = 0xe53935;
   var CPE_STICK_TEXT = '#64b5f6';   // the same hue, readable as text on the dark panel
-  // §CPE_STICK_HOLD — the user's own number ("putting hold at 1 sec"), applied to the LAST band (the
-  // EXIT) of a freshly seeded path so the beat teaches itself. Every other band defaults to 0.
-  var CPE_HOLD_DEFAULT_SEC = 1.0;
+  // §CPE_STICK_HOLD — CORRECTED 2026-08-02 (user): "of course not as default is zero." The earlier
+  // reading of "putting hold at 1 sec (put that as default)" over-generalised a one-path instruction
+  // into a seeded default, and the user then observed an unexplained 1s pause at a settle stick they
+  // never set. An unset hold means 0 — a hold exists ONLY when the user types one.
+  var CPE_HOLD_DEFAULT_SEC = 0;
   var CPE_V = 'v19 (§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
@@ -1197,16 +1199,19 @@
           // §CPE_BUILDUP_WORK_PACED: the rehearsal asks for the SAME cursor the bake will ask for at
           // this film fraction — paced by elements placed, not by days elapsed. Falls back to the
           // old linear-calendar expression if cinema_maxq is an older cached copy.
-          window.tmSetCursor(a.buildupCursorAt ? a.buildupCursorAt(tn, bkPrev)
-            : (bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart)));
+          // §CPE_BUILDUP_TOPOUT: the same remap the bake applies — construction completes at the
+          // closing-orbit boundary, so the rehearsal's ending shows the finished building too.
+          var bkTn = a.buildupTAt ? a.buildupTAt(tn, _state.plan) : tn;
+          window.tmSetCursor(a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
+            : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart)));
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x.
-          if (a.ghostGroundAt) a.ghostGroundAt(tn, _titleTotalSec || dur / 1000, bkPrev);
+          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _titleTotalSec || dur / 1000, bkPrev);
           // Same cursor the buildup was just set to — never a second, separately-interpolated clock.
           if (_dayOn && a.dayCounterLiveTick) {
-            a.dayCounterLiveTick(a.buildupCursorAt ? a.buildupCursorAt(tn, bkPrev)
-              : (bkPrev.projectStart + tn * (bkPrev.projectEnd - bkPrev.projectStart)));
+            a.dayCounterLiveTick(a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
+              : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart)));
           }
         }
         frames++;
@@ -1253,6 +1258,11 @@
             ' ops=' + bkPrev.ops + ' placed=' + bkPrev.placed : 'UNAVAILABLE (no timeline to follow)') +
           ' setupMs=' + (performance.now() - t0b).toFixed(0) +
           ' — the same cursor Time Machine drives at playback, no new visibility mechanism');
+        if (bkPrev && a.buildupTopoutU) {
+          var _tp = a.buildupTopoutU(_state.plan);
+          console.log('§CPE_BUILDUP_TOPOUT topoutU=' + _tp.u.toFixed(3) + ' src=' + _tp.src +
+            ' (rehearsal, same remap as the bake)');
+        }
       } catch (e) { console.warn('§CPE_PREVIEW_BUILDUP failed ' + e.message); bkPrev = null; }
       startFly();
     })();
@@ -1686,11 +1696,10 @@
           // Only on a FRESHLY SEEDED path: an authored one carries whatever the user actually set,
           // including a deliberate 0, and re-imposing the default would overwrite their edit every
           // time they re-opened the panel.
-          // ⚠ CORRECTED 2026-08-01 (user): the default goes on the LAST band — the EXIT — not on
-          // `length-2`. The first cut read "last stick" as the last SPAWNED band (index length-2,
-          // since the stop row is not a spawned stick) and put the 1s in the MIDDLE of the walk.
-          // The user's intent is the end of the walk, where the camera pauses before the pull-back:
-          // "u placed that 1 sec in the middle instead of the last ie exit."
+          // ⚠ CORRECTED 2026-08-02 (user): CPE_HOLD_DEFAULT_SEC is now 0 — an unset hold is no
+          // hold. The seeding shape is kept (it still applies the constant to the LAST band, per
+          // the 2026-08-01 exit-not-middle correction) so a future non-zero default, if ever ruled
+          // again, lands in the right place — but today it seeds 0 everywhere.
           o.hold = authored ? +(b.hold || 0)
                             : ((bs.length >= 2 && i === bs.length - 1) ? CPE_HOLD_DEFAULT_SEC : 0);
           return o;

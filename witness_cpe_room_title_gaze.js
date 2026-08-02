@@ -87,10 +87,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           const h = A.roomTitleGazeProbe(o.ix, o.iy, o.iz, tg.ix - o.ix, tg.iy - o.iy, tg.iz - o.iz);
           if (!h) continue;
           hits++;
+          // §CPE_ROOM_TITLE_MULTI (2026-08-02): recompute along the ray that actually WON — the fan
+          // may have resolved the hit ±10° off the centre direction, and the truthfulness property
+          // is about the winning ray's hit point. Centre direction kept as the fallback for an older
+          // cached cpe_room_title.js that returns no `dir`.
           const L = Math.hypot(tg.ix - o.ix, tg.iy - o.iy, tg.iz - o.iz) || 1;
-          const hx = o.ix + (tg.ix - o.ix) / L * h.t;
-          const hy = o.iy + (tg.iy - o.iy) / L * h.t;
-          const hz = o.iz + (tg.iz - o.iz) / L * h.t;
+          const d = h.dir || { x: (tg.ix - o.ix) / L, y: (tg.iy - o.iy) / L, z: (tg.iz - o.iz) / L };
+          const hx = o.ix + d.x * h.t;
+          const hy = o.iy + d.y * h.t;
+          const hz = o.iz + d.z * h.t;
           const E = 1e-6;
           const inRect = h.rects.some(r => hx >= r.x0 - E && hx <= r.x1 + E && hy >= r.y0 - E && hy <= r.y1 + E);
           const inBand = h.band == null || Math.abs(hz - h.cz) <= h.band + E;
