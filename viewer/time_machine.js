@@ -1126,7 +1126,7 @@
     var frontier = {};  // guid → {t: 0-1 progress, isSteel: bool}
     var recent = {};    // guid → fade 0-1 (1 = just finished)
     var arrival = {};   // guid → true (just appeared this tick — white flash)
-    var _sfxPhases = null; // §SFX: phase set at the frontier this tick (built only when sfx.js present)
+    var _sfxPhases = null; // phase set at the frontier this tick (§SFX voice + §CPE_ROOM_TITLE_COLLECTIVE bracket)
     var lingerMs = tickMs() * 3; // linger for 3 ticks after completion
     var _isMobileTM = !!(window._isMobile || window._isMobileTM);
 
@@ -1151,9 +1151,11 @@
         frontier[guid] = { t: progress, isSteel: isSteel };
         // Arrival = first 15% of install time (white flash)
         if (progress < 0.15) arrival[guid] = true;
-        // §SFX seam (sfx.js): collect the construction phase(s) at the frontier. No-op
-        // when sfx.js absent or audio OFF — sfx decides whether/what to play (SoC).
-        if (window.__sfxTM && p.phase) { if (!_sfxPhases) _sfxPhases = {}; _sfxPhases[p.phase] = (_sfxPhases[p.phase] || 0) + 1; }
+        // §SFX seam (sfx.js) + §CPE_ROOM_TITLE_COLLECTIVE (cpe_room_title.js): collect the
+        // construction phase(s) at the frontier. Two consumers now — the sfx voice AND the
+        // caption's [phase] bracket — so the collection no longer gates on __sfxTM; each
+        // consumer still decides for itself what to do with it (SoC).
+        if (p.phase) { if (!_sfxPhases) _sfxPhases = {}; _sfxPhases[p.phase] = (_sfxPhases[p.phase] || 0) + 1; }
       }
     }
 
@@ -1828,9 +1830,14 @@
 
     // §SFX seam (sfx.js): report frontier phases + a representative world centroid (→ stereo
     // pan) + progress/activity (→ the cinematic bed's two dials). No-op when audio off/absent.
+    // most-active phase first (by element count) — stable dominant, not alphabetical flicker
+    var _sfxArr = _sfxPhases ? Object.keys(_sfxPhases).sort(function (a, b) { return _sfxPhases[b] - _sfxPhases[a]; }) : [];
+    // §CPE_ROOM_TITLE_COLLECTIVE: the dominant frontier phase, refreshed EVERY tick — null the
+    // moment the frontier empties (construction complete), so the caption bracket can never
+    // outlive the work it names. cpe_room_title.js reads this at draw time.
+    var _appPh = (typeof A === 'function') ? A() : null;
+    if (_appPh) _appPh.tmFrontierPhase = _sfxArr[0] || null;
     if (window.__sfxTM) {
-      // most-active phase first (by element count) — stable dominant, not alphabetical flicker
-      var _sfxArr = _sfxPhases ? Object.keys(_sfxPhases).sort(function (a, b) { return _sfxPhases[b] - _sfxPhases[a]; }) : [];
       var _sfxCen = null;
       if (_frontierPositions.length) {
         var _sx = 0, _sy = 0, _sz = 0;

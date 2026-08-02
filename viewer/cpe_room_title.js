@@ -355,6 +355,38 @@ function setupCpeRoomTitle(A) {
   A.roomTitleSightProbe = function(ox, oy, oz, dx, dy, dz) {
     return _sightRoomsAt(ox, oy, oz, dx, dy, dz).map(function(n) { return n.guid; });
   };
+  // The single-line grammar — "Storey · Containment · Rooms a, b" — extracted verbatim from the
+  // gap composer so §CPE_ROOM_TITLE_COLLECTIVE's dwell labels use the SAME rules: storey only if
+  // unanimous, containment only if unanimous, sighted rooms deduped of the storey prefix, first
+  // five named and the rest counted, the building alone as the last resort.
+  function _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldName) {
+    var parts = [], keyParts = [], srcCat = null;
+    var dedupe = function(nm, stName) {
+      return stName && nm.indexOf(stName + ' ') >= 0 ? nm.replace(stName + ' ', '') : nm;
+    };
+    if (stSame && stU) { parts.push(stU); keyParts.push('s:' + stU); srcCat = 'storey'; }
+    if (ctSame && ctU) {
+      parts.push(dedupe(_titleFor(ctNode).name, stSame ? stU : null));
+      keyParts.push('c:' + ctU); srcCat = 'containment';
+      delete sightMap[ctU];
+    }
+    var sightNames = [];
+    for (var gk in sightMap) {
+      sightNames.push(dedupe(_titleFor(sightMap[gk]).name, stSame ? stU : null));
+      keyParts.push('r:' + gk);
+    }
+    if (sightNames.length) {
+      // single-line cap: a pull-back can sweep a dozen rooms into one window — name the
+      // first five and COUNT the rest, so the line stays readable and nothing is hidden.
+      var shown = sightNames.length > 5
+        ? sightNames.slice(0, 5).join(', ') + ' +' + (sightNames.length - 5) + ' more'
+        : sightNames.join(', ');
+      parts.push(shown);
+      if (srcCat !== 'containment') srcCat = 'sight';
+    }
+    if (!parts.length && bldName) { parts.push(bldName); keyParts.push('b'); srcCat = 'building'; }
+    return { parts: parts, keyParts: keyParts, srcCat: srcCat };
+  }
 
   // Coarse-samples the whole (or clipped) film ONCE, collapses into room-dwell segments, and drops
   // any segment shorter than MIN_DWELL. Cheap: a few hundred samples, each one THREE→IFC conversion
@@ -524,32 +556,11 @@ function setupCpeRoomTitle(A) {
             lastKey = key;
           }
           var t1w = (i >= ss.length) ? gap[1] : ss[i - 1].t;
-          // compose the window's single line
-          var parts = [], keyParts = [], srcCat = null;
-          var dedupe = function(nm, stName) {
-            return stName && nm.indexOf(stName + ' ') >= 0 ? nm.replace(stName + ' ', '') : nm;
-          };
-          if (stSame && stU) { parts.push(stU); keyParts.push('s:' + stU); srcCat = 'storey'; }
-          if (ctSame && ctU) {
-            parts.push(dedupe(_titleFor(ctNode).name, stSame ? stU : null));
-            keyParts.push('c:' + ctU); srcCat = 'containment';
-            delete sightMap[ctU];
-          }
-          var sightNames = [];
-          for (var gk in sightMap) {
-            sightNames.push(dedupe(_titleFor(sightMap[gk]).name, stSame ? stU : null));
-            keyParts.push('r:' + gk);
-          }
-          if (sightNames.length) {
-            // single-line cap: a pull-back can sweep a dozen rooms into one window — name the
-            // first five and COUNT the rest, so the line stays readable and nothing is hidden.
-            var shown = sightNames.length > 5
-              ? sightNames.slice(0, 5).join(', ') + ' +' + (sightNames.length - 5) + ' more'
-              : sightNames.join(', ');
-            parts.push(shown);
-            if (srcCat !== 'containment') srcCat = 'sight';
-          }
-          if (!parts.length && bldName) { parts.push(bldName); keyParts.push('b'); srcCat = 'building'; }
+          // compose the window's single line — ONE composer, two callers (§CPE_ROOM_TITLE_COLLECTIVE:
+          // the room-dwell rename pass below builds its label through THIS same function, so the
+          // gap fill and the dwell captions can never disagree about the grammar).
+          var C = _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldName);
+          var parts = C.parts, keyParts = C.keyParts, srcCat = C.srcCat;
           if (parts.length && (t1w - t0w) >= MIN_HOLD) {
             var name = parts.join(' · ');
             if (prevSeg && prevSeg.name === name) { prevSeg.tEnd = t1w; gSec += t1w - t0w; byCat[srcCat] += t1w - t0w; }
@@ -579,6 +590,50 @@ function setupCpeRoomTitle(A) {
         ' ms=' + (performance.now() - gT0).toFixed(1) +
         ' — anything within range of path or sight is pointed out (user ruling 2026-08-02)');
     } catch (eG) { console.warn('§CPE_ROOM_TITLE_GROUP failed (room captions unaffected): ' + eG.message); }
+    // ══ §CPE_ROOM_TITLE_COLLECTIVE (user, 2026-08-02: "grouped together in single label… it is
+    // caption optics"; format confirmed verbatim "Storey - 1 Corridor Hall Rooms 2,3 [MEP Rough
+    // in]"): every caption window — not just the gap fills — carries the composed line, through
+    // the SAME _lineFrom grammar. The dwell timeline (dwell floor, 3s-or-skip, lead, hold,
+    // hysteresis — all settled, all witnessed) is UNTOUCHED: this pass writes ONLY `label`;
+    // guid/name/times stay exactly what those rules produced, so their witnesses still gate the
+    // same facts. The draw reads label || name — a failure here degrades to the bare room name,
+    // never to silence. The [phase] bracket is NOT composed here: day↔t is nonlinear twice over
+    // (work pacing + topout), so plan time cannot know it — see roomTitleFinalText.
+    try {
+      var lT0 = performance.now(), labelled = 0, dwellN = 0;
+      var bldNm = A.activeBuilding || A.currentBuilding || '';
+      held.forEach(function(seg) {
+        if (seg.group) return;                     // gap fills are already composed lines
+        dwellN++;
+        var ss = samples.filter(function(s) {
+          return s.t >= seg.tStart - 1e-9 && s.t <= seg.tEnd + 1e-9 && s.ix != null;
+        });
+        if (!ss.length) return;
+        var stU = null, ctU = null, ctNode = null, stSame = true, ctSame = true, sightMap = {};
+        // the captioned room itself leads its own collective line — seeded FIRST so the 5-name
+        // cap can never fold the room this window exists for into "+N more" (the composition
+        // diffuses pinpointing, but the dwell room is the one item the window is ABOUT)
+        for (var lj = 0; lj < ss.length; lj++) {
+          if (ss[lj].guid === seg.guid && ss[lj].node) { sightMap[seg.guid] = ss[lj].node; break; }
+        }
+        for (var li = 0; li < ss.length; li++) {
+          var s = ss[li];
+          var st = _storeyAt(s.iz);
+          var ct = _roomAtIfcPoint(s.ix, s.iy, s.iz);
+          if (li === 0) { stU = st; ctU = ct ? ct.guid : null; ctNode = ct; }
+          else {
+            if (st !== stU) stSame = false;
+            if ((ct ? ct.guid : null) !== ctU) ctSame = false;
+          }
+          (s.sight || []).forEach(function(n) { if (!sightMap[n.guid]) sightMap[n.guid] = n; });
+        }
+        var C = _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldNm);
+        if (C.parts.length) { seg.label = C.parts.join(' · '); labelled++; }
+      });
+      console.log('§CPE_ROOM_TITLE_COLLECTIVE labelled=' + labelled + '/' + dwellN +
+        ' dwell captions composed via the group grammar (label only — name/guid/times untouched)' +
+        ' ms=' + (performance.now() - lT0).toFixed(1));
+    } catch (eC) { console.warn('§CPE_ROOM_TITLE_COLLECTIVE failed (bare names shown): ' + eC.message); }
     return held;
   };
 
@@ -680,7 +735,9 @@ function setupCpeRoomTitle(A) {
       if (t < s.tStart - FADE || t > s.tEnd + FADE) return;
       var op = (t < s.tStart) ? (t - (s.tStart - FADE)) / FADE :
                (t > s.tEnd) ? 1 - (t - s.tEnd) / FADE : 1;
-      if (!best || op > best.opacity) best = { name: s.name, guid: s.guid, opacity: op };
+      // §CPE_ROOM_TITLE_COLLECTIVE: the composed label is what the film shows; the bare room
+      // name survives on the segment for the timing/identity witnesses and as the degrade path.
+      if (!best || op > best.opacity) best = { name: s.label || s.name, guid: s.guid, opacity: op };
     });
     return best;
   };
@@ -689,8 +746,27 @@ function setupCpeRoomTitle(A) {
   // baked video can never disagree about how a title looks (same font, size, band, fade). A lower-
   // third caption band, documentary-style — screen POSITION is the one open detail RESUME_CPE_
   // ROOM_TITLE.md left for the user; this is the placeholder until told otherwise.
+  // §CPE_ROOM_TITLE_COLLECTIVE, the [phase] half: the trailing bracket names the collective being
+  // BUILT — the live Time Machine frontier phase, the same per-frame state the bake already drives
+  // (§SFX_PLAY src=tm phase=… is this exact value). Resolved at DRAW time, never at plan time:
+  // day↔t is nonlinear twice over (work pacing + topout), so a plan-time guess would lie. No
+  // frontier in force (no buildup, or construction complete) → no bracket, never a guessed one.
+  // Pure and exposed so the witness gates THIS function, not a re-implementation.
+  var _lastPhaseLogged = null;
+  A.roomTitleFinalText = function(text) {
+    var p = A.tmFrontierPhase;
+    if (p && text) {
+      if (_lastPhaseLogged !== p) {
+        console.log('§CPE_ROOM_TITLE_PHASE phase="' + p + '" — appended to captions (live TM frontier)');
+        _lastPhaseLogged = p;
+      }
+      return text + ' [' + p + ']';
+    }
+    return text;
+  };
   A.roomTitleCompositeOntoCanvas = function(ctx, w, h, text, opacity) {
     if (!ctx || !text || !(opacity > 0)) return;
+    text = A.roomTitleFinalText(text);
     ctx.save();
     var fontPx = Math.max(18, Math.round(h * 0.032));
     var bandH = fontPx * 2.2;
