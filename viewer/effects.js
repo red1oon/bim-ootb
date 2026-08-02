@@ -6769,47 +6769,65 @@ async function setupEffects(A, renderer, scene, camera) {
       return (tNorm - tS) / Math.max(1e-6, tR - tS);
     }
     var _gazeLim = null, _gazeLimN = 512;
+    // ══ §CPE_GAZE_SOC — the composed gaze is built by cinema_gaze.js, not here ═══════════════════
+    // This function's old body (raw sampling + acquire + rate limit) moved to A.cinemaGazeBuild
+    // verbatim; what remains here is the SAMPLER (position code is this file's concern) and the
+    // per-probe provenance for §GAZE_SRC. The module adds §CPE_GAZE_BULK — the empty-gaze
+    // corrector the skyline stare proved missing — between the raw signal and the limiter.
+    function _gazeRawSample(i, sp) {
+      var tt = tS + (tR - tS) * sp, p, src;
+      if (tt <= tO) {
+        var w3b = (tt - tS) / Math.max(1e-6, tO - tS);
+        var e = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3b)));
+        p = _beat3Pose(e, w3b);
+        // Which rule owns the RAW direction here — the same weights _beat3Pose composes with.
+        var wA = _aimAt(e), wD = _aimDepthAt(e), hb = _holdBoostAt(w3b);
+        var aEff = Math.max(wA.w, (wA.has > 0.5 ? hb : 0));
+        src = (wD.w > 0.3) ? 'depth' : (aEff > 0.3) ? 'aim' : 'los';
+      } else {
+        var e4 = _cinemaEaseFloored((tt - tO) / Math.max(1e-6, tR - tO));
+        p = _beat4Pose(e4);
+        src = (CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4) > 0.5)
+          ? 'pivot' : 'latch';
+      }
+      var dx = p.tx - p.x, dy = p.ty - p.y, dz = p.tz - p.z;
+      var L = Math.hypot(dx, dy, dz) || 1;
+      return { x: p.x, y: p.y, z: p.z, dx: dx / L, dy: dy / L, dz: dz / L, src: src };
+    }
     function _gazeRateBuild() {
-      var i, raw = [], sp, tt, e, p, dx, dy, dz, L;
-      for (i = 0; i <= _gazeLimN; i++) {
-        sp = i / _gazeLimN;
-        tt = tS + (tR - tS) * sp;
-        if (tt <= tO) {
-          var w3b = (tt - tS) / Math.max(1e-6, tO - tS);
-          e = _evenTurnRemap(_cinemaEaseFloored(_holdMap(w3b)));
-          p = _beat3Pose(e, w3b);
-        } else {
-          p = _beat4Pose(_cinemaEaseFloored((tt - tO) / Math.max(1e-6, tR - tO)));
+      if (typeof A.cinemaGazeBuild !== 'function') {
+        // cinema_gaze.js failed to load (§LOAD_FAIL fires in viewer.html). An unbounded gaze is a
+        // known whip (29 deg/sample measured) — leave the RAW series unlimited is not an option,
+        // so fall back to the raw signal rate-limited inline with the flat cap. No corrector, no
+        // acquire boost — degraded but bounded, and it says so.
+        console.warn('§GAZE_SRC module missing — §CPE_GAZE_BULK off, flat-cap inline fallback');
+        var i2, rawF = [];
+        for (i2 = 0; i2 <= _gazeLimN; i2++) {
+          var s2 = _gazeRawSample(i2, i2 / _gazeLimN);
+          rawF.push({ x: s2.dx, y: s2.dy, z: s2.dz });
         }
-        dx = p.tx - p.x; dy = p.ty - p.y; dz = p.tz - p.z;
-        L = Math.hypot(dx, dy, dz) || 1;
-        raw.push({ x: dx / L, y: dy / L, z: dz / L });
+        var stepF = Math.max(1e-6, (tR - tS) * durationSec) / _gazeLimN;
+        var maxF = CINEMA_TURN_DPS * stepF * Math.PI / 180;
+        var limF = [rawF[0]], curF = rawF[0];
+        for (i2 = 1; i2 <= _gazeLimN; i2++) { curF = _rotToward(curF, rawF[i2], maxF); limF.push(curF); }
+        _gazeLim = limF;
+        return;
       }
-      var stepSec = Math.max(1e-6, (tR - tS) * durationSec) / _gazeLimN;
-      var maxAng = CINEMA_TURN_DPS * stepSec * Math.PI / 180;
-      var lim = [raw[0]], cur = raw[0], rawPeak = 0, limPeak = 0, acqPeakMult = 1;
-      for (i = 1; i <= _gazeLimN; i++) {
-        var rp = Math.acos(Math.max(-1, Math.min(1,
-          raw[i].x * raw[i - 1].x + raw[i].y * raw[i - 1].y + raw[i].z * raw[i - 1].z))) * 180 / Math.PI;
-        if (rp > rawPeak) rawPeak = rp;
-        var _resid = Math.acos(Math.max(-1, Math.min(1,
-          cur.x * raw[i].x + cur.y * raw[i].y + cur.z * raw[i].z)));
-        var _cap = _gazeAcquireCap(_resid, maxAng);
-        if (_cap / maxAng > acqPeakMult) acqPeakMult = _cap / maxAng;
-        var nxt = _rotToward(cur, raw[i], _cap);
-        var lp = Math.acos(Math.max(-1, Math.min(1,
-          nxt.x * cur.x + nxt.y * cur.y + nxt.z * cur.z))) * 180 / Math.PI;
-        if (lp > limPeak) limPeak = lp;
-        cur = nxt; lim.push(cur);
-      }
-      _gazeLim = lim;
-      console.log('§CPE_GAZE_CONSTANT_RATE probes=' + (_gazeLimN + 1) + ' spanSec=' + ((tR - tS) * durationSec).toFixed(2) +
-        ' (beats 3+4) walkSec=' + _useSec.out.toFixed(2) +
-        ' capDps=' + CINEMA_TURN_DPS + ' capPerProbeDeg=' + (maxAng * 180 / Math.PI).toFixed(3) +
-        ' rawPeakDeg=' + rawPeak.toFixed(2) + ' limitedPeakDeg=' + limPeak.toFixed(2) +
-        ' rawPeakDps=' + (rawPeak / stepSec).toFixed(1) + ' limitedPeakDps=' + (limPeak / stepSec).toFixed(1) +
-        ' acquirePeakMult=' + acqPeakMult.toFixed(2) + 'x (max ' + GAZE_ACQUIRE_MAX + 'x)' +
-        ' — the composed gaze, bounded at the rate the spin and orbit already turn at');
+      var R = A.cinemaGazeBuild({
+        N: _gazeLimN,
+        spanSec: (tR - tS) * durationSec,
+        walkSec: _useSec.out,
+        capDps: CINEMA_TURN_DPS,
+        acquireMax: GAZE_ACQUIRE_MAX,
+        acquireCap: _gazeAcquireCap,
+        rotToward: _rotToward,
+        sampleRaw: _gazeRawSample,
+        densPoints: _densPoints(),
+        three2ifc: A.three2ifc, three2ifcDir: A.three2ifcDir, ifc2threeDir: A.ifc2threeDir,
+        farM: CINEMA_FAN_FAR, bulkM: CINEMA_FAN_FAR,
+        bulkOff: !!A.__cpeGazeBulkOff   // test-only, same pattern as __cpeAimOff
+      });
+      _gazeLim = R.dirs;
     }
     function _gazeRateAt(w) {
       if (!_gazeLim) return null;
