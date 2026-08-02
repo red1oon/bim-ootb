@@ -70,6 +70,22 @@
   var GAP  = 0.5;   // m — a support tops within this of my base (the thing I bear on)
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
 
+  // ── EXPERIMENT KNOBS (Node only; the browser always gets the defaults). Set by the measurement
+  // runner so the four shapes are the SAME code path, not four hand-edited files.
+  //   CPM_PRIO    = 'seq'  (seq-major: trade first, then band)   | 'rank' (band-major: floor first)
+  //   CPM_BARRIER = 'both' (group-barrier preconditions, as measured) | 'none' (time gates only)
+  var _env = (typeof process !== 'undefined' && process.env) ? process.env : {};
+  var PRIO_MODE    = _env.CPM_PRIO === 'rank' ? 'rank' : 'seq';
+  var BARRIER_MODE = _env.CPM_BARRIER === 'none' ? 'none' : 'both';
+  //   CPM_BAND    = 'median' (band starts AT each storey's median z — the shipped ladder's own bounds)
+  //               | 'mid'    (boundary HALFWAY between consecutive medians)
+  // 'median' systematically demotes every element sitting below its own storey's median into the band
+  // beneath it, which is what makes relabelledByZ so large; 'mid' is the same ladder with the boundary
+  // placed where a floor slab actually is.
+  var BAND_MODE    = _env.CPM_BAND === 'mid' ? 'mid' : 'median';
+  //   CPM_ORPHAN  = 'off' (default) | 'on' — §SUPPORT_ORPHAN relaxed-proximity fallback, below.
+  var ORPHAN_MODE  = _env.CPM_ORPHAN === 'on' ? 'on' : 'off';
+
   function cellsOf(e) {
     var o = [], i, j;
     for (i = Math.floor(e.x0 / CELL); i <= Math.floor(e.x1 / CELL); i++)
@@ -190,7 +206,11 @@
     // in rather than to the band of whatever storey string it carries. An element with no storey and
     // an element with a wrong storey both land where gravity puts them.
     var phOf = new Array(N), rkOf = new Int32Array(N), seqOf = new Int32Array(N);
-    var _zBounds = _rankList.map(function (r) { return r.z; }), _relabelled = 0;
+    var _zMedians = _rankList.map(function (r) { return r.z; });
+    var _zBounds = _zMedians, _relabelled = 0;
+    if (BAND_MODE === 'mid' && _zMedians.length) {
+      _zBounds = _zMedians.map(function (z, q) { return q === 0 ? -Infinity : (_zMedians[q - 1] + z) / 2; });
+    }
     function zBandOf(bz) {
       var b = 0;
       for (var q = 0; q < _zBounds.length; q++) if (bz >= _zBounds[q]) b = q;
@@ -272,14 +292,69 @@
         }
       }
     }
+    // ══ §SUPPORT_ORPHAN — the relaxed-proximity FALLBACK for elements with no strict carrier ═══════
+    // User, 2026-08-03: an element with NO valid carrier under the strict rests-on predicate must not
+    // schedule immediately/unconstrained; defer it until "some nearby support" exists.
+    // MEASURED FIRST (audit_orphan_support.js, real Hospital) so the tolerance is read, not guessed:
+    //   zero strict carriers ......... 40,700 (64.2%) — dominated by seq5 MEP (30,808): a pipe at
+    //                                  mid-storey has a slab 2.5m BELOW it, and "rests-on" bounds the
+    //                                  gap on both sides, so suspended services are orphans BY DESIGN.
+    //   XY-overlapping element below . 39,729 of them; drop <=1m 4,621, <=2m 6,530, <=5m 39,309
+    //   nothing below them AT ALL .... 738  <- the only population that is "floating in space"
+    // TOLERANCE = ONE STOREY HEIGHT, taken from the ladder this same function derived (max gap between
+    // consecutive band medians, 6.1m on Hospital). Not a constant: a bungalow gets a bungalow's storey.
+    // ONE edge per orphan (its NEAREST carrier below), never all candidates — the strict graph already
+    // has a max in-degree of 1,101 and fanning every orphan out would dominate the edge count.
+    // ⚠ THIS IS NOT A WIDENING OF THE INVARIANT. `audit_support_roleblind.js` still asks the strict
+    // question; these edges only ever DELAY an element that had no constraint at all, so they cannot
+    // turn a passing element into a failing one.
+    var eOrphan = 0, orphanNoneBelow = 0, orphanTol = 0;
+    if (ORPHAN_MODE === 'on') {
+      for (i = 1; i < _zBounds.length; i++) {
+        var gp = _zMedians[i] - _zMedians[i - 1]; if (gp > orphanTol) orphanTol = gp;
+      }
+      if (!(orphanTol > 0)) orphanTol = 3;
+      for (i = 0; i < N; i++) {
+        if (indeg[i] !== 0) continue;                    // has a strict carrier — the DAG handles it
+        T = elements[i];
+        cs = cellsOf(T);
+        var bestJ = -1, bestDrop = Infinity, seenO = {};
+        for (c = 0; c < cs.length; c++) {
+          var pools = [structGrid[cs[c]], wallGrid[cs[c]]];
+          for (var pz = 0; pz < 2; pz++) {
+            arr = pools[pz]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) {
+              j = arr[k]; if (j === i || seenO[j]) continue; seenO[j] = 1;
+              S = elements[j];
+              if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
+              var drop = T.base_z - S.top_z;
+              if (drop < 0) drop = 0;                    // threads past me — still "nearby support"
+              if (drop < bestDrop) { bestDrop = drop; bestJ = j; }
+            }
+          }
+        }
+        if (bestJ < 0) { orphanNoneBelow++; continue; }  // nothing below at all — cannot be deferred
+        if (bestDrop > orphanTol) { orphanNoneBelow++; continue; }
+        addEdge(bestJ, i); eOrphan++;
+      }
+    }
+
     var msBuild = _now() - tBuild0, tSolve0 = _now();
 
     // ══ THE WALK — topological over support, (seq, rank, base_z) preferred among the ready ═════════
     // The key is packed into one double so the heap stays a plain numeric compare:
     //   seq (<=8) * 1e10  +  rank (<=99) * 1e7  +  (base_z + 5000) * 10   — all well inside 2^53.
     // rank -1 (the unbanded bucket) sorts with the ground floor rather than ahead of everything.
+    // ⚖ BAND-MAJOR IS A VALID TOPOLOGICAL ORDER — this is the whole point of the elevation key.
+    // audit_rank_vs_support.js: keyed on element z, ZERO of 81,722 support edges have the carrier in a
+    // HIGHER band than what it carries. So "finish band r before starting band r+1" never contradicts
+    // "nothing before its carrier", and a (rank, seq, base_z) walk makes the BAND gate exact instead of
+    // a lower bound — without any barrier machinery. The (seq, rank, ...) order does the opposite: it
+    // finishes trade s everywhere before trade s+1 anywhere, so bandTrade[r-1][s] is complete but the
+    // walk is free to run a floor ahead of itself inside one trade.
     function prioOf(idx) {
       var rk = rkOf[idx] < 0 ? 0 : rkOf[idx];
+      if (PRIO_MODE === 'rank') return rk * 1e10 + seqOf[idx] * 1e7 + Math.round((elements[idx].base_z + 5000) * 10);
       return seqOf[idx] * 1e10 + rk * 1e7 + Math.round((elements[idx].base_z + 5000) * 10);
     }
     var earliest = new Float64Array(N), done = new Uint8Array(N);
@@ -347,6 +422,7 @@
         var cand = heap.pop();
         if (done[cand]) continue;
         var cph = phOf[cand], csq = seqOf[cand], crk = rkOf[cand];
+        if (BARRIER_MODE === 'none') { u = cand; break; }   // time gates only — no group precondition
         var lowSeq = waivedT[cand] ? -1 : lowestOutstandingBelow(cph, csq);
         if (lowSeq >= 0) {                              // a lower trade on my own storey is unfinished
           defer(cand, 'T|' + cph + '|' + lowSeq); continue;
@@ -429,9 +505,11 @@
     if (typeof console !== 'undefined' && console.log) {
       var spanEnd = baseMs;
       for (i = 0; i < N; i++) { var o = out[elements[i].guid]; if (o && o.end > spanEnd) spanEnd = o.end; }
-      console.log('§ELEMENT_CPM nodes=' + N + ' supportEdges=' + eSupport + ' placed=' + placed +
+      console.log('§ELEMENT_CPM prio=' + PRIO_MODE + ' barrier=' + BARRIER_MODE +
+        ' nodes=' + N + ' supportEdges=' + eSupport + ' placed=' + placed +
         ' overrideTrade=' + overrideTrade + ' overrideBand=' + overrideBand +
         ' gatedByTrade=' + gatedT + ' gatedByBand=' + gatedB +
+        ' orphanEdges=' + eOrphan + ' orphanTolM=' + orphanTol.toFixed(1) + ' orphanUnconstrained=' + orphanNoneBelow +
         ' buildMs=' + Math.round(msBuild) + ' solveMs=' + Math.round(msSolve) +
         ' spanDays=' + Math.round((spanEnd - baseMs) / 86400000));
       if (placed !== N) console.log('§ELEMENT_CPM_ALARM placed=' + placed + ' of ' + N +
