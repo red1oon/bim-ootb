@@ -21,7 +21,9 @@ const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8403;
 const BUILDINGS = (process.env.BLDS || 'Duplex,Terminal').split(',');
-const FPS = 15, DUR = 24, PACE_SWING = 1.6;
+// §CPE_PACE_SWING_SOFTEN (2026-08-03): mirrors CINEMA_PACE_SWING in viewer/effects.js — keep in sync,
+// this witness has no way to import the source constant and re-derives its tolerance from this copy.
+const FPS = 15, DUR = 24, PACE_SWING = 1.45;
 // 'a sec or two ... is fine in the film' (user). Two seconds plus a frame of slack.
 const STALL_CEIL = parseFloat(process.env.STALL_CEIL || '3.0');
 const sleep = ms => new Promise(r => setTimeout(r, ms));

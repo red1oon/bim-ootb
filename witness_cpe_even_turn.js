@@ -122,10 +122,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       //
       // TWO beats need a different bound, both for stated reasons, neither to make this pass:
       //  - THE WALK is deliberately NOT arc-uniform. §CPE_EVEN_TURN parameterizes it by a blended
-      //    distance+turn cost, so its distance step is bounded by 1/(1-w) = PACE_SWING = 1.6x the
-      //    nominal, and the smoothstep ease multiplies that by 1.5 -> 2.4x. Holding the walk to
-      //    1.5x would gate the FEATURE, not a defect. 2.4x is the same bound the §CPE_EVEN_TURN
-      //    derivation states, so this gate is what checks that derivation against the real film.
+      //    distance+turn cost, so its distance step is bounded by 1/(1-w) = PACE_SWING (mirrored
+      //    below — see §CPE_PACE_SWING_SOFTEN, 1.45 as of 2026-08-03) x the nominal, and the
+      //    smoothstep ease multiplies that by 1.5. Holding the walk to 1.5x would gate the FEATURE,
+      //    not a defect. `1.5 * PACE_SWING` is the same bound the §CPE_EVEN_TURN derivation states,
+      //    so this gate is what checks that derivation against the real film.
       //  - IN-PLACE beats (the spin) barely translate at all: mean steps of 1-3cm make the ratio
       //    pure numerical noise (measured 7.8-13.6x on a 2cm mean). A beat that moves less than a
       //    centimetre per frame on average has no meaningful position bound, so it is reported and
@@ -151,7 +152,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           const mean = steps.reduce((a, s) => a + s.d, 0) / steps.length;
           const top = steps.reduce((a, s) => (s.d > a.d ? s : a), steps[0]);
           const bot = steps.reduce((a, s) => (s.d < a.d ? s : a), steps[0]);
-          const PACE_SWING = 1.6;                       // the user's dial, mirrored from effects.js
+          // §CPE_PACE_SWING_SOFTEN (2026-08-03): mirrored from CINEMA_PACE_SWING in effects.js —
+          // keep in sync, this witness has no way to import the source constant.
+          const PACE_SWING = 1.45;                      // the user's dial, mirrored from effects.js
           const shape = (name === 'walk') ? 1.5 * PACE_SWING : 1.5;
           // The spin is an IN-PLACE turn by definition, not a traverse — it pivots on the settle
           // point. Exempted by name rather than by a magnitude threshold, because a threshold would
@@ -277,7 +280,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // "2 secs pausing there in movie": does the walk ever crawl so slowly it reads as a stall?
     const wk = H.pos.find(p => p.beat === 'walk');
     const sl = wk && wk.slowest;
-    P(`T6 the walk never crawls below 1/${wk ? wk.swing : 1.6} of what its own ease predicts (PACE_SWING is a RANGE, not just a ceiling)`,
+    P(`T6 the walk never crawls below 1/${wk ? wk.swing : 1.45} of what its own ease predicts (PACE_SWING is a RANGE, not just a ceiling)`,
       // Tolerance is the cost table's resolution, not slack for a bad result: the table has 240
       // segments while the film runs 640-1068 frames, so 3-4 frames interpolate inside one segment
       // and a frame can land a fraction under the segment's own bound. 2% covers that; anything
