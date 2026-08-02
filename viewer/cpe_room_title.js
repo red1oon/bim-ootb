@@ -122,8 +122,11 @@ function setupCpeRoomTitle(A) {
   // has: `rects` for x/y, and the SAME storey band `_roomAtIfcPoint` uses for z — reused, never
   // relaxed, so a ray passing 20 m above a room still misses it and §CPE_ROOM_TITLE_HEIGHT_BLIND
   // (PR #1108) stays closed. Nearest positive hit wins.
-  var _gazeMissedAll = 0;
-  function _roomAlongGaze(ox, oy, oz, dx, dy, dz) {
+  var _gazeMissedAll = 0, _gazeFanRecovered = 0;
+  // Single ray, no counters — the §CPE_ROOM_TITLE_GAZE rule exactly as shipped (PR #1119). The
+  // miss/recovery accounting lives in the _roomAlongGaze wrapper below so this stays the pure
+  // geometric test the existing witnesses (G-GZ-1..8) gate.
+  function _roomAlongGazeSingle(ox, oy, oz, dx, dy, dz) {
     var g = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
     if (!g || !g.nodesByGuid) return null;
     var L = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -178,11 +181,63 @@ function setupCpeRoomTitle(A) {
         break;
       }
     }
-    if (!best) _gazeMissedAll++;
     _lastGazeT = best ? bestT : null;
     return best;
   }
   var _lastGazeT = null;
+
+  // §CPE_ROOM_TITLE_MULTI (2026-08-02) — the fan fills MISSES, it never overrides a hit.
+  // Evidence (GANTT_ACCURACY.md session close): gazeMissedAll=257/740 on an LTU film — 35% of
+  // single-ray samples hit no room, because one ray clips a wall edge, slips through a doorway gap,
+  // or grazes past the jamb of the room that plainly dominates the view. User, 2026-08-02, on the
+  // Hospital bake (59/783 missed): "Room labelling poor."
+  // The rule: cast the centre ray first; if and ONLY if it misses, cast two rays FAN_DEG off-axis
+  // HORIZONTALLY (left/right) and take the NEAREST hit among them. A centre hit is returned
+  // untouched, so every settled §CPE_ROOM_TITLE_GAZE property (nearest-hit, storey band, floor
+  // disambiguation) is preserved verbatim on the samples that already worked — the fan can only
+  // convert a "no caption" into a caption, never change which room a working sample names.
+  // ⚠ HORIZONTAL ONLY, deliberately: a vertical fan ray tilted down re-opens the
+  // §CPE_ROOM_TITLE_HEIGHT_BLIND hole (#1108 — captions for rooms a storey below the camera) that
+  // this lane already paid to close. A horizontal offset preserves the ray's vertical geometry, so
+  // the storey-band rule bites identically on the fan rays and #1108 stays closed by construction.
+  // FAN_DEG=10: well inside one quarter of the ~60° view cone the planner itself measures with
+  // (§CINEMA_DIVE fanMin=60), so anything the fan recovers is still squarely "what the camera is
+  // looking at", not something at the screen's edge.
+  var FAN_DEG = 10;
+  function _roomAlongGaze(ox, oy, oz, dx, dy, dz) {
+    var L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(L > 1e-9)) { _lastGazeDir = null; return null; }
+    dx /= L; dy /= L; dz /= L;
+    var hit = _roomAlongGazeSingle(ox, oy, oz, dx, dy, dz);
+    if (hit) { _lastGazeDir = { x: dx, y: dy, z: dz, fan: 0 }; return hit; }
+    // basis perpendicular to the gaze: u = dir × up (IFC z-up; y-up fallback for a vertical gaze)
+    var ux = dy * 1 - dz * 0, uy = dz * 0 - dx * 1, uz = dx * 0 - dy * 0;   // dir × (0,0,1)
+    var uL = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    if (uL < 1e-6) { ux = dy * 0 - dz * 0; uy = dz * 1 - dx * 0; uz = dx * 0 - dy * 1; uL = Math.sqrt(ux * ux + uy * uy + uz * uz); }
+    if (uL > 1e-9) {
+      ux /= uL; uy /= uL; uz /= uL;
+      var c = Math.cos(FAN_DEG * Math.PI / 180), s = Math.sin(FAN_DEG * Math.PI / 180);
+      var fan = [[ux, uy, uz], [-ux, -uy, -uz]];
+      var best = null, bestT = Infinity, bestDir = null;
+      for (var f = 0; f < fan.length; f++) {
+        var fx = dx * c + fan[f][0] * s, fy = dy * c + fan[f][1] * s, fz = dz * c + fan[f][2] * s;
+        var n = _roomAlongGazeSingle(ox, oy, oz, fx, fy, fz);
+        if (n && _lastGazeT != null && _lastGazeT < bestT) {
+          best = n; bestT = _lastGazeT; bestDir = { x: fx, y: fy, z: fz, fan: 1 };
+        }
+      }
+      if (best) { _gazeFanRecovered++; _lastGazeT = bestT; _lastGazeDir = bestDir; return best; }
+    }
+    _gazeMissedAll++;
+    _lastGazeT = null;
+    _lastGazeDir = null;
+    return null;
+  }
+  // The direction of the ray that actually produced the last hit (unit; fan=1 when an off-axis ray
+  // won). G-GZ-2 recomputes the hit point along THIS ray — the truthfulness property is "the
+  // captioned room contains the point the winning ray hits", which the centre direction can no
+  // longer stand in for now that a fan ray may be the winner.
+  var _lastGazeDir = null;
 
   // Exposed so witness_cpe_room_title_gaze.js gates THIS ray, not a re-implementation of it, and can
   // recompute the hit point itself to prove the captioned room really contains it (G-GZ-2).
@@ -198,7 +253,15 @@ function setupCpeRoomTitle(A) {
     if (!n) return null;
     var g = A.getRoomGraph(), pitch = _storeyPitch(g);
     return { guid: n.guid, name: _titleFor(n).name, t: _lastGazeT, cz: n.cz,
-             band: pitch > 0 ? pitch : null, rects: n.rects };
+             band: pitch > 0 ? pitch : null, rects: n.rects,
+             dir: _lastGazeDir };   // §CPE_ROOM_TITLE_MULTI — the ray that won (fan=1 if off-axis)
+  };
+  // §CPE_ROOM_TITLE_MULTI — the CENTRE ray alone, exposed so the fan's witness can measure the RED
+  // baseline (a direction the single ray misses) against the same geometry the fan recovers, rather
+  // than re-implementing the slab test. The timeline itself always uses the fan-wrapped rule above.
+  A.roomTitleGazeSingleProbe = function(ox, oy, oz, dx, dy, dz) {
+    var n = _roomAlongGazeSingle(ox, oy, oz, dx, dy, dz);
+    return n ? { guid: n.guid, name: _titleFor(n).name, t: _lastGazeT } : null;
   };
 
   // ⚠ HOVER_NAME.md §1 / this feature's own scope note: consume A.friendlyName, never a second
@@ -218,7 +281,7 @@ function setupCpeRoomTitle(A) {
   // per-t lookup as trivial next to a bake's real cost (a full still-refine per frame).
   A.roomTitleBuildTimeline = function(plan, totalSec) {
     var t0 = performance.now();
-    _rejectedByHeight = 0; _gazeMissedAll = 0;
+    _rejectedByHeight = 0; _gazeMissedAll = 0; _gazeFanRecovered = 0;
     var samples = [], rule = 'gaze', noTarget = 0;
     for (var t = 0; t <= totalSec + 1e-6; t += SAMPLE_DT) {
       var tn = totalSec > 0 ? Math.min(1, t / totalSec) : 0;
@@ -311,6 +374,7 @@ function setupCpeRoomTitle(A) {
       ' dwellFloor=' + MIN_DWELL + 's' +
       (lead0 == null ? '' : ' firstLead=' + lead0.toFixed(2) + 's/' + LEAD + 's(' + lead0why + ')') +
       ' gazeMissedAll=' + _gazeMissedAll + '/' + samples.length +
+      ' gazeFanRecovered=' + _gazeFanRecovered + ' (§CPE_ROOM_TITLE_MULTI: centre-ray misses saved by the ±' + FAN_DEG + '° horizontal fan)' +
       ' rejectedByHeight=' + _rejectedByHeight +
       ' storeyPitch=' + (g0 ? _storeyPitch(g0).toFixed(1) : '?') + 'm' +
       ' lead=' + led + '/' + held.length + '@' + LEAD + 's' +
