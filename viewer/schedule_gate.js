@@ -2,41 +2,72 @@
 // SPDX-License-Identifier: MIT
 /* schedule_gate.js — §gate (2026-05-30, two-pass: geometry + trade order)
  *                     §CREW-CAP (2026-07-18, real-world crew count)
- * Support-gate FALLBACK scheduler for generated 4D (Time Machine) = "synthetic 4D" organised by
- * phase/task, the same shape a captured MS Project / IFC programme would have. Pure + app-agnostic
- * so the browser (time_machine.js) and the Node witness (tests/test_schedule_gate.js) run identical code.
+ *                     §4D_BAND_MONOTONIC (2026-08-02, cross-storey trade ordering)
+ *                     §ELEMENT_CPM (2026-08-02, THIS ENGINE — one walk of the extracted support DAG)
+ * Support-gate scheduler for generated 4D (Time Machine) = "synthetic 4D" organised by phase/task,
+ * the same shape a captured MS Project / IFC programme would have. Pure + app-agnostic so the browser
+ * (time_machine.js) and the Node witness (tests/test_schedule_gate.js) run identical code.
  *
- * TWO RULES, two passes:
- *   PASS A — STRUCTURE (seq<=4), bottom-up by base_z: an element waits for the structure whose XY
- *            footprint overlaps it and whose base is below ("build from below, at this location").
- *            Eliminates floating beams/members/slabs.
- *   PASS B — NON-STRUCTURE (seq>4), by trade then base_z: each item waits for (1) the structure under
- *            its footprint (no floating furniture/MEP) AND (2) the lower trades in its own Level/phase
- *            (so MEP is late and furniture is last, per Level).
+ * ══ §ELEMENT_CPM — WHY THE TWO-PASS SCHEDULER WAS REPLACED ══════════════════════════════════════
+ * The old engine ran PASS A (structure, sorted by base_z) then PASS B (everything else, sorted by
+ * (seq, rank, base_z)), each gate reading only what was ALREADY PLACED. That works only while the
+ * sort order happens to agree with the constraint being gated, and on real geometry it does not:
+ *   - the SUPPORT gate needs carriers placed first  -> demands a base_z (z-major) order
+ *   - the BAND gate needs lower ranks placed first  -> demands a (seq, rank) (rank-major) order
+ * and because a wall BOTH carries structure AND rests on structure, the two demand CONFLICTING sort
+ * orders of the same elements. Five pass-level repairs were built and measured on real Hospital
+ * geometry on 2026-08-02 and ALL FIVE were rejected — the table and the reason for each is in
+ * prompts/GANTT_ACCURACY.md §ROOT CAUSE. The shipped two-pass engine left 6,778 elements (1,294 of
+ * them IfcBeam) starting before the walls that carry them, which the user saw live as "beams
+ * without support".
+ *
+ * base_z and (seq, rank) are both PROXIES for a topological order. Each encodes one constraint
+ * family and loses the other. So this engine stops using a proxy and uses THE GRAPH:
+ *   1. SUPPORT edges are EXTRACTED FROM GEOMETRY, never authored — S carries T when S starts below T,
+ *      tops out at T's underside, and overlaps T in XY. Acyclic BY CONSTRUCTION: base_z strictly
+ *      increases along every support edge, so no cycle is possible and no cycle-breaking is needed.
+ *   2. ONE pass walks that DAG in topological order (Kahn), and among the nodes whose carriers are
+ *      all finished it takes them in (seq, rank, base_z) priority — trade first, then floor, then
+ *      height. So the walk is support-correct BY CONSTRUCTION and trade-ordered BY PREFERENCE.
+ *   3. The trade gate and the band gate are then evaluated LIVE against that walk, and they are
+ *      EXACT rather than lower bounds: the priority guarantees every lower trade on a storey is
+ *      already placed when a higher one is reached — except where a carrier forces otherwise, which
+ *      is precisely the conflict the ruling below settles, and each one is COUNTED.
+ *
+ * ⚠ SYNC NODES WERE TRIED FIRST AND MEASURED — do not re-attempt them. One milestone node per
+ * (phase, seq), with trade/band as SOFT edges through them, plus a residual cycle-breaker. On real
+ * Hospital it broke 155,170 of 160,726 soft edges: storey z-ranges OVERLAP, so an element on rank r
+ * routinely carries one on rank r-1 with a different trade, and each such pair makes an entire
+ * milestone cyclic. Support and floating both went to 0, but the trade train was destroyed — span
+ * collapsed 176d -> 82d, gatedB=0, walls (seq 6) starting at day 25 while beams (seq 3) started at
+ * day 42. Aggregating a milestone over elements at wildly different z is the error.
+ *
+ * ⚠ THIS IS NOT PHASE-LEVEL CPM AND MUST NOT BECOME IT. User's ruling, 2026-08-02: "Isn't CPM for
+ * Phase level? CPM at element level is what supposed to be granted innately." A planner authoring
+ * activities and logic links stays OUT of scope. Element precedence is a FACT OF THE GEOMETRY — the
+ * edges are read, not invented, and nothing here dates or re-orders anything a human declared.
+ *
+ * ⚖ THE CYCLE RULING (user, 2026-08-02 — do not re-litigate): extracted geometry says wall-before-beam
+ * in ~21.5k pairs where trade convention says structure-before-walls. SUPPORT WINS. Where a carrier
+ * forces an element ahead of its own trade order the trade/band constraint YIELDS, and every such
+ * override is COUNTED in the §ELEMENT_CPM log line — a wildly different count means the predicate
+ * drifted, which is exactly what the number is there to catch.
  *
  * ε = 0.05m: a support need only start just below me — the thin slab a chair/duct sits on (~0.2m
  * below) counts. (ε=0.5 wrongly skipped it → furniture/flow floated.) Scope: GENERATED fallback only;
- * captured IFC 4D is absorbed verbatim by the overlay AFTER this. No CPM/dependency solving (planner's).
+ * captured IFC 4D is absorbed verbatim by the overlay AFTER this.
  *
  * §CREW-CAP: user, live on Hospital — "It is an impossible timed Gantt chart to have all such work
- * at once, and within each the items should have a cascading flow." Root cause: the resource-
- * availability key used to be `resource + '|' + Z-band`, giving EVERY distinct 3m Z-slice (~one per
- * floor) its OWN independent, uncapped crew — a 14-storey building spun up 14+ simultaneous
- * STEEL_ERECTOR crews with no shared labor pool, so every level's Superstructure appeared to build
- * in parallel instead of cascading floor-by-floor like a real site. Fixed: a FIXED, small number of
- * crew "slots" per resource (maxCrews param — default MAX_CREWS_DEFAULT if not supplied, or a
- * per-resource lookup object), shared PROJECT-WIDE (not per-band) and shared ACROSS both passes
- * (a resource like CONCRETE_GANG appears in both — foundations in PASS A, ramps in PASS B — real
- * crews don't duplicate across passes). Elements are already processed bottom-up by base_z (PASS A)
- * / by trade-then-base_z (PASS B), so capping crews naturally produces cascading: lower/earlier
- * elements claim the limited crews first, later ones wait for both their structural dependency
- * (geoGate) AND crew availability — exactly the two waits a real site has.
+ * at once, and within each the items should have a cascading flow." A FIXED, small number of crew
+ * "slots" per resource (maxCrews param), shared PROJECT-WIDE. Elements reach the crew pool in
+ * topological order, so lower/earlier work claims the limited crews first and later work waits for
+ * BOTH its precedence and crew availability — exactly the two waits a real site has.
  */
 (function (global) {
   'use strict';
   var CELL = 4;     // m — XY grid cell for the spatial support index
   var EPS  = 0.05;  // m — a support must start at least this far below me (excludes same-level peers)
-  var GAP  = 0.5;   // m — audit: a support tops within this of my base (the thing I bear on)
+  var GAP  = 0.5;   // m — a support tops within this of my base (the thing I bear on)
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
 
   function cellsOf(e) {
@@ -46,6 +77,9 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+  function _now() {
+    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  }
 
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
   // "Level 3 Ceiling" / "Level 3 TOS" -> "Level 3". Also the JSON phase key + the trade-gate group.
@@ -55,55 +89,74 @@
     return s || String(storey);
   }
 
-  // elements: [{ guid, x0,x1,y0,y1, base_z, top_z, seq, storey, resource, installSecs }] (seq<=4 = structure)
-  // maxCrews: optional — a plain number (uniform cap for every resource) or a { resource: N } lookup
-  //   (e.g. built from LABOR_RATES[resource].max_crews). Falls back to MAX_CREWS_DEFAULT per resource
-  //   when omitted or a resource has no entry. Shared PROJECT-WIDE across both passes (not per-band,
-  //   not per-Level) — see §CREW-CAP header comment.
+  // ── A minimal binary heap over element ids, keyed by the STATIC (seq, rank, base_z) priority.
+  // "Ready" means every carrier is finished; among the ready set this decides who goes next, so the
+  // trade train is a PREFERENCE expressed here rather than a constraint that could fight gravity.
+  // The key never changes, so there is no stale-key problem to handle.
+  function Heap() { this.n = []; this.k = []; }
+  Heap.prototype.push = function (id, key) {
+    var n = this.n, k = this.k, i = n.length;
+    n.push(id); k.push(key);
+    while (i > 0) {
+      var p = (i - 1) >> 1;
+      if (k[p] <= k[i]) break;
+      var t = n[p]; n[p] = n[i]; n[i] = t;
+      var tk = k[p]; k[p] = k[i]; k[i] = tk;
+      i = p;
+    }
+  };
+  Heap.prototype.pop = function () {
+    var n = this.n, k = this.k, top = n[0], last = n.pop(), lastK = k.pop();
+    if (n.length) {
+      n[0] = last; k[0] = lastK;
+      var i = 0, len = n.length;
+      for (;;) {
+        var l = 2 * i + 1, r = l + 1, m = i;
+        if (l < len && k[l] < k[m]) m = l;
+        if (r < len && k[r] < k[m]) m = r;
+        if (m === i) break;
+        var t = n[m]; n[m] = n[i]; n[i] = t;
+        var tk = k[m]; k[m] = k[i]; k[i] = tk;
+        i = m;
+      }
+    }
+    return top;
+  };
+  Heap.prototype.size = function () { return this.n.length; };
+
+  // elements: [{ guid, cls, x0,x1,y0,y1, base_z, top_z, seq, storey, resource, installSecs }] (seq<=4 = structure)
+  // maxCrews: optional — a plain number (uniform cap for every resource) or a { resource: N } lookup.
+  //   Shared PROJECT-WIDE (not per-band, not per-Level) — see §CREW-CAP header comment.
   // returns { guid: { start, end } } ms.
   function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
-    var grid = {}, wallGrid = {}, out = {}, c, cs, k, arr, S;
+    var N = elements.length, out = {}, i, j, c, cs, k, arr, S, T;
+    var tBuild0 = _now();
+
     function crewCapFor(resource) {
       if (typeof maxCrews === 'number') return maxCrews;
       if (maxCrews && maxCrews[resource]) return maxCrews[resource];
       return MAX_CREWS_DEFAULT;
     }
-    var crews = {};  // resource -> [nextFreeMs, nextFreeMs, ...] (length = that resource's crew cap)
+    var crews = {};  // resource -> [nextFreeMs, ...] (length = that resource's crew cap)
     function claimCrew(resource) {                 // earliest-available of this resource's N crew slots
       var cap = crewCapFor(resource);
       var slots = crews[resource] || (crews[resource] = new Array(cap).fill(baseMs));
       var idx = 0;
-      for (var i = 1; i < slots.length; i++) if (slots[i] < slots[idx]) idx = i;
+      for (var q = 1; q < slots.length; q++) if (slots[q] < slots[idx]) idx = q;
       return { time: slots[idx], commit: function (end) { slots[idx] = end; } };
     }
-    // ══ §4D_BAND_MONOTONIC (2026-08-02) — CINEMA_PATH_EDITOR.md, user Design Ruling A ═══════════
-    // User, on a baked film: "upper floors gets walled first.. as seen on last strectch" and "the
-    // floor slabs coming on too fast".
-    //
-    // WHY IT HAPPENED, and it was not a regression. On 2026-05-30 the center-Z band gate ("band N
-    // waits N-1") was REPLACED by the support gate, because the band gate floated beams over
-    // still-building tall columns (Hospital cols avg 6.87m vs 3m bands). That swap took floating
-    // from 1127/1970 to 0/1970 — and in exchange it gave up floor-by-floor progression entirely.
-    // Afterwards a wall was gated by only (1) overlapping structure strictly BELOW it and (2) earlier
-    // trades on ITS OWN collapsed storey (`phaseTrade[ph][seq]`). Neither term mentions another
-    // storey, so Level 3's walls need nothing from Level 2's walls and the model considers running
-    // ahead correct. The user watched exactly that.
-    //
-    // THE RULING, not re-litigated here: band-monotonic WITHIN a phase, with a lag between phases.
-    // A global floor gate would serialize the project and destroy the trade train — the bands carry
-    // Superstructure, MEP Rough-in and Architecture simultaneously on purpose. So the constraint is
-    // per-TRADE: a trade may not run ahead of ITSELF on the floor below. Different trades still
-    // overlap across floors, which is what a trade train IS. "Nothing without support" stays exactly
-    // where it was, as the role-blind geometric gate — this adds sequencing, it removes no safety.
-    //
-    // THE RANK IS EXTRACTED, NEVER INVENTED: storeys are grouped by the same collapsePhase() the
-    // trade gate already keys on, each gets the MEDIAN base_z of its own elements, and ranks are
-    // those medians in ascending order. A bungalow and a hospital each get their own ladder; no
-    // constant, no assumed floor height. ⚠ The grouping is only as good as `el.storey`, and
-    // time_machine.js reassigns ~9457 no-storey elements to a nearest storey by median Z before we
-    // see them — a band rule laid on a wrong grouping enforces a wrong order confidently, so the
-    // §4D_BAND_MONOTONIC log prints the ladder it derived for exactly that audit.
+
+    // ══ THE BAND LADDER — extracted, never invented ═══════════════════════════════════════════════
+    // Storeys are grouped by the same collapsePhase() the trade gate keys on, each gets the MEDIAN
+    // base_z of its own elements, and ranks are those medians in ascending order. A bungalow and a
+    // hospital each get their own ladder; no constant, no assumed floor height.
+    // ⚠ THE UNKNOWN BUCKET IS NOT A FLOOR. Caught by this rule's own ladder line on the first
+    // Hospital run: `Unknown@184.5m(9457)` took a rank BETWEEN Level 3 and Level 4. Those elements
+    // have no storey of their own and are scattered through the whole building, so their median z is
+    // a centroid, not a level. They are excluded from the ladder: they keep every geometric gate
+    // ("nothing without support" is untouched) and simply take no band constraint. Refusing to order
+    // what cannot be placed is the honest degradation; inventing a floor for it is not.
     var _bandRank = {}, _rankList = [], _unbanded = 0;
     (function deriveRanks() {
       var byPhase = {};
@@ -113,146 +166,264 @@
       });
       var rows = [];
       for (var ph in byPhase) {
-        // ⚠ THE UNKNOWN BUCKET IS NOT A FLOOR. Caught by this rule's own ladder line on the very
-        // first Hospital run: `Unknown@184.5m(9457)` took a rank BETWEEN Level 3 and Level 4. Those
-        // 9,457 elements are the ones with no storey of their own (the same population
-        // §GANTT_STOREY_Z reassigns by median Z); they are scattered through the whole building, so
-        // their median z is a centroid, not a level. Ranking them would (a) gate all 9,457 against
-        // Level 3 as if they were one floor and (b) hold every Level 4 trade behind that fiction.
-        // A band rule laid on a wrong grouping enforces a wrong order CONFIDENTLY — which is the
-        // failure mode the ruling explicitly warned about. So the bucket is excluded from the
-        // ladder: its elements keep every geometric gate ("nothing without support" is untouched)
-        // and simply take no band constraint. Refusing to order what cannot be placed is the honest
-        // degradation; inventing a floor for it is not.
         if (ph === '_UNKNOWN' || /^unknown$/i.test(ph)) { _unbanded += byPhase[ph].length; continue; }
         var zs = byPhase[ph].slice().sort(function (a, b) { return a - b; });
         rows.push({ ph: ph, z: zs[Math.floor(zs.length / 2)], n: zs.length });
       }
       rows.sort(function (a, b) { return a.z - b.z; });
-      rows.forEach(function (r, i) { _bandRank[r.ph] = i; });
+      rows.forEach(function (r, idx) { _bandRank[r.ph] = idx; });
       _rankList = rows;
     })();
-    // bandTrade[rank][seq] = latest finish of that trade on that storey. A trade at rank r waits for
-    // the SAME trade at rank r-1 — one floor, not all floors below: the lower floors are already
-    // transitively covered through r-1, and reaching further down would only add slack.
-    var bandTrade = {}, _bmGatedB = 0, _bmMaxLagMs = 0;
-    function bandGate(el) {
-      var r = _bandRank[collapsePhase(el.storey)];
-      if (!(r > 0)) return baseMs;                 // ground floor, or unbanded — nothing beneath it
-      var below = bandTrade[r - 1];
-      var g = (below && below[el.seq] > baseMs) ? below[el.seq] : baseMs;
-      return g;
+
+    // ══ THE BAND IS KEYED ON ELEVATION, NOT ON THE STOREY LABEL ═══════════════════════════════════
+    // MEASURED, audit_rank_vs_support.js on real Hospital (81,722 support edges):
+    //   by STOREY LABEL — 1,735 edges (2.1%) have the carrier's storey ranking ABOVE the storey it
+    //                     carries ("Level 3 carries Level 2" 619 times, "Level 4 carries Level 3" 422)
+    //   by ELEMENT z     — ZERO.
+    // So "a trade may not run ahead of itself on the floor below" and "nothing before its carrier"
+    // are UNSATISFIABLE TOGETHER while the floor is a label, and PERFECTLY COMPATIBLE once the floor
+    // is an elevation. The contradiction was never in the schedule — it was in the key. Three engines
+    // were measured fighting it (sync nodes, priority-only, group-barrier preconditions) before this
+    // audit was written; the ladder itself is the thing that was wrong.
+    // The ladder's median-z rows still DEFINE the bands (extracted, not invented — same rows, same
+    // order, same _UNKNOWN exclusion); an element is simply assigned to the band its OWN base_z falls
+    // in rather than to the band of whatever storey string it carries. An element with no storey and
+    // an element with a wrong storey both land where gravity puts them.
+    var phOf = new Array(N), rkOf = new Int32Array(N), seqOf = new Int32Array(N);
+    var _zBounds = _rankList.map(function (r) { return r.z; }), _relabelled = 0;
+    function zBandOf(bz) {
+      var b = 0;
+      for (var q = 0; q < _zBounds.length; q++) if (bz >= _zBounds[q]) b = q;
+      return b;
     }
-    function bandCommit(el, end) {
-      var r = _bandRank[collapsePhase(el.storey)];
-      if (r == null) return;
-      var b = (bandTrade[r] = bandTrade[r] || {});
-      if (!(b[el.seq] > end)) b[el.seq] = end;
+    for (i = 0; i < N; i++) {
+      var p = collapsePhase(elements[i].storey);
+      phOf[i] = p;
+      seqOf[i] = elements[i].seq;
+      rkOf[i] = _zBounds.length ? zBandOf(elements[i].base_z) : -1;
+      if (_bandRank[p] != null && _bandRank[p] !== rkOf[i]) _relabelled++;
     }
-    function geoGate(el) {                 // latest finish of XY-overlapping structure rising from below
-      var g = baseMs; cs = cellsOf(el);
-      for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
-          if (S.base_z < el.base_z - EPS && S.end > g && overlap(S, el)) g = S.end; } }
-      return g;
+
+    // ── Edge store. The nodes ARE the elements — nothing synthetic. succ[u] = what u carries.
+    // Every edge is a support edge: hard, extracted from geometry, and never dropped.
+    var succ = new Array(N), indeg = new Int32Array(N), eSupport = 0;
+    function addEdge(u, v) { (succ[u] = succ[u] || []).push(v); indeg[v]++; }
+
+    // ══ THE SUPPORT EDGES, EXTRACTED FROM GEOMETRY ════════════════════════════════════════════════
+    // Two predicates, both from this module's own constants, both physical:
+    //  (a) THE FLOAT GATE, structure pool: S carries T when S starts below T and tops AT OR ABOVE T's
+    //      underside (`top_z >= base_z - GAP`). This is exactly what auditFloating tests, so
+    //      floating=0 now holds BY CONSTRUCTION rather than by the old engine's much broader "any
+    //      structure below me at all" wait — which also delayed elements for structure that never
+    //      reaches them. Tighter AND more physical.
+    //  (b) THE SUPPORT INVARIANT, structure + WALLS pool offered to EVERY class: the carrier must top
+    //      out AT my underside (`|S.top_z - T.base_z| <= GAP`). This is the half the shipped engine
+    //      was missing — it offered walls only to promoted roof slabs, so 6,778 elements bore on
+    //      walls scheduled after them.
+    //  ⚠ PREDICATE TRAP, already paid for once: `top_z >= base_z - GAP` alone accepts ANY carrier
+    //  taller than my base, so a riser threading PAST a 3m wall reads as carried by it — 29,759
+    //  phantom pairs vs 6,778 real. "Rests on" is bounded on BOTH sides; "runs past" is not.
+    //  Promoted roof slabs (§4D_ROOF_LOAD_PATH M5) keep the looser wall predicate, unchanged, because
+    //  that is the relation the roof rule was measured against.
+    var structGrid = {}, wallGrid = {};
+    for (i = 0; i < N; i++) {
+      var e = elements[i];
+      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(i); }
+      else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(i); }
     }
-    function place(el, start) {
+    for (i = 0; i < N; i++) {
+      T = elements[i];
+      var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+      cs = cellsOf(T);
+      var mark = {};
+      for (c = 0; c < cs.length; c++) {
+        arr = structGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || mark[j]) continue; mark[j] = 1;
+          S = elements[j];
+          if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) { addEdge(j, i); eSupport++; }
+        }
+        arr = wallGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || mark[j]) continue; mark[j] = 1;
+          S = elements[j];
+          if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
+          var bears = promotedSlab ? (S.top_z >= T.base_z - GAP)
+                                   : (Math.abs(S.top_z - T.base_z) <= GAP);
+          if (bears) { addEdge(j, i); eSupport++; }
+        }
+      }
+    }
+    var msBuild = _now() - tBuild0, tSolve0 = _now();
+
+    // ══ THE WALK — topological over support, (seq, rank, base_z) preferred among the ready ═════════
+    // The key is packed into one double so the heap stays a plain numeric compare:
+    //   seq (<=8) * 1e10  +  rank (<=99) * 1e7  +  (base_z + 5000) * 10   — all well inside 2^53.
+    // rank -1 (the unbanded bucket) sorts with the ground floor rather than ahead of everything.
+    function prioOf(idx) {
+      var rk = rkOf[idx] < 0 ? 0 : rkOf[idx];
+      return seqOf[idx] * 1e10 + rk * 1e7 + Math.round((elements[idx].base_z + 5000) * 10);
+    }
+    var earliest = new Float64Array(N), done = new Uint8Array(N);
+    for (i = 0; i < N; i++) earliest[i] = baseMs;
+
+    // Live gates. phaseTrade[ph][seq] and bandTrade[rank][seq] are the SAME two structures the
+    // shipped engine kept — the difference is that the walk order now makes them complete instead of
+    // partial maxima. `remain[ph][seq]` counts what is still unplaced, which is how an override is
+    // DETECTED rather than assumed: if an element is reached while a lower trade on its own storey
+    // is still outstanding, a carrier pulled it forward and the trade constraint yielded.
+    var phaseTrade = {}, bandTrade = {}, remain = {}, remainRank = {};
+    for (i = 0; i < N; i++) {
+      var rp = remain[phOf[i]] = remain[phOf[i]] || {};
+      rp[seqOf[i]] = (rp[seqOf[i]] || 0) + 1;
+      if (rkOf[i] >= 0) {
+        var rr = remainRank[rkOf[i]] = remainRank[rkOf[i]] || {};
+        rr[seqOf[i]] = (rr[seqOf[i]] || 0) + 1;
+      }
+    }
+    var overrideTrade = 0, overrideBand = 0, gatedB = 0, gatedT = 0, deadlocks = 0;
+
+    // ══ PRECONDITIONS, not merely priority ════════════════════════════════════════════════════════
+    // Preferring (seq, rank, base_z) among the READY set is not enough and the measurement said so:
+    // the heap only ever holds nodes whose carriers are done, so when no low-trade node happens to be
+    // ready a high-trade node pops and the trade/band order is lost anyway (45,241 such pops; band
+    // inversions went 29,824 -> 34,665, WORSE than the engine this replaces). So trade and band are
+    // real preconditions here — a node that fails one is DEFERRED onto the group it is waiting for
+    // and re-armed when that group empties. They yield ONLY on a genuine deadlock (nothing else is
+    // placeable), which is exactly the wall-carries-MEP conflict the ruling settles: support wins,
+    // the yield is counted, and it is a measured number rather than a silent weakening.
+    // TWO separate waivers, deliberately. One flag for both was measured and it is WRONG: releasing a
+    // TRADE deadlock (walls carry the MEP that the trade order puts before them — 51,767 nodes on
+    // Hospital) also waived those nodes' BAND precondition, so their band gate read an incomplete
+    // bandTrade[r-1] and cross-storey inversions went to 39,743. A yield on one constraint must not
+    // silently yield the other.
+    // A node sits in exactly ONE waitList at a time (inWait), and every deferral is ALSO pushed onto
+    // defHeap so a deadlock can find the best-priority blocked node without rescanning the world.
+    var waitList = {}, inWait = new Array(N), deferred = 0;
+    var waivedT = new Uint8Array(N), waivedB = new Uint8Array(N), defHeap = new Heap();
+    function defer(node, key) {
+      (waitList[key] = waitList[key] || []).push(node);
+      inWait[node] = key; deferred++; defHeap.push(node, prioOf(node));
+    }
+    function lowestOutstandingBelow(ph, sq) {          // smallest lower trade on this storey not yet done
+      var rp = remain[ph]; if (!rp) return -1;
+      var best = -1;
+      for (var s in rp) { var n2 = +s; if (n2 < sq && rp[s] > 0 && (best < 0 || n2 < best)) best = n2; }
+      return best;
+    }
+    function release(key) {
+      var w = waitList[key]; if (!w || !w.length) return;
+      for (var q2 = 0; q2 < w.length; q2++) {
+        var n3 = w[q2];
+        if (done[n3] || inWait[n3] !== key) continue;   // already taken by a deadlock release
+        inWait[n3] = null; deferred--; heap.push(n3, prioOf(n3));
+      }
+      waitList[key] = null;
+    }
+
+    var heap = new Heap(), placed = 0;
+    for (i = 0; i < N; i++) if (indeg[i] === 0) heap.push(i, prioOf(i));
+    for (;;) {
+      var u = -1, forced = false;
+      while (heap.size()) {
+        var cand = heap.pop();
+        if (done[cand]) continue;
+        var cph = phOf[cand], csq = seqOf[cand], crk = rkOf[cand];
+        var lowSeq = waivedT[cand] ? -1 : lowestOutstandingBelow(cph, csq);
+        if (lowSeq >= 0) {                              // a lower trade on my own storey is unfinished
+          defer(cand, 'T|' + cph + '|' + lowSeq); continue;
+        }
+        var rrc = (crk > 0 && !waivedB[cand]) ? remainRank[crk - 1] : null;
+        if (rrc && rrc[csq] > 0) {                      // my own trade is unfinished one floor down
+          defer(cand, 'B|' + (crk - 1) + '|' + csq); continue;
+        }
+        u = cand; break;
+      }
+      if (u < 0) {
+        if (!deferred) break;                           // everything placed
+        // DEADLOCK — nothing satisfies its trade/band precondition, so a carrier is holding the whole
+        // set. ⚖ Support wins, but only just barely: release exactly ONE node — the best-priority
+        // blocked one — and let the walk continue. Releasing the whole waiting GROUP was measured
+        // first and it AMPLIFIES: one genuinely stuck element waived thousands of its neighbours'
+        // constraints (35,397 band waivers, inversions 34,595). The minimum release is the honest one.
+        var pick = -1;
+        while (defHeap.size()) {
+          var cd = defHeap.pop();
+          if (done[cd] || inWait[cd] == null) continue;   // stale entry — already released normally
+          pick = cd; break;
+        }
+        if (pick < 0) break;
+        deadlocks++;
+        var wasKey = inWait[pick]; inWait[pick] = null; deferred--;
+        if (wasKey.charAt(0) === 'T') { waivedT[pick] = 1; overrideTrade++; }
+        else { waivedB[pick] = 1; overrideBand++; }
+        heap.push(pick, prioOf(pick));
+        forced = true;
+      }
+      if (forced) continue;
+      done[u] = 1; placed++;
+      var el = elements[u], ph = phOf[u], sq = seqOf[u], rk = rkOf[u];
+
+      // Trade gate — every LOWER trade on this storey, now a COMPLETE maximum (the precondition above
+      // guarantees they are all placed, except on a counted deadlock release).
+      var pt = phaseTrade[ph], tg = baseMs, s;
+      if (pt) for (s in pt) if (+s < sq && pt[s] > tg) tg = pt[s];
+
+      // Band gate — the SAME trade one floor down. Per-trade on purpose: a global floor gate would
+      // serialize the project and destroy the trade train, since the bands carry Superstructure, MEP
+      // rough-in and Architecture simultaneously.
+      var bg = baseMs;
+      if (rk > 0) { var below = bandTrade[rk - 1]; if (below && below[sq] > bg) bg = below[sq]; }
+
+      var slot = claimCrew(el.resource);
+      var geo = earliest[u];                      // max end of every carrier — set by relaxation
+      var start = Math.max(geo, tg, bg, slot.time);
+      if (bg > baseMs && bg >= Math.max(geo, tg)) gatedB++;
+      if (tg > baseMs && tg >= Math.max(geo, bg)) gatedT++;
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
-      var end = start + dur; out[el.guid] = { start: start, end: end };
-      if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, end: end };
-        cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
-      else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
-        var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
-        cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
-      return end;
-    }
-    // §4D_WALLS_BEFORE_ROOF M5 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — a
-    // roof-role slab (seq>4, promoted by the load-path rule in time_machine.js) must wait for the
-    // walls that CARRY it, by geometry. Before this, a promoted slab's only dependency on walls was
-    // the per-PHASE trade gate below, keyed on collapsePhase(storey) — and MEASURED on Hospital the
-    // roof deck's key is "Level 7" while 12 of its 14 carriers are key "Level 6", so 12 of 14 were
-    // covered by coincidence, not by a rule. This gate is the SAME pool auditFloating already offers
-    // seq>4 slabs (structure + walls), so scheduler and auditor now test the same thing. No new pass
-    // and no cycle: PASS B sorts by (seq, base_z) and walls are seq 6 vs roof slabs seq 8, so every
-    // carrier is already placed when the slab is reached. EPS/GAP are this module's own constants.
-    function wallGate(el) {
-      if (el.cls !== 'IfcSlab' || el.seq <= 4) return baseMs;
-      var g = baseMs; cs = cellsOf(el);
-      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
-          if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.end > g && overlap(S, el)) g = S.end; } }
-      return g;
-    }
-    // PASS A — structure, bottom-up by base_z (supports scheduled before what rests on them).
-    // §CREW-CAP: crew slot is picked PROJECT-WIDE per resource, not per Z-band — lower floors claim
-    // the limited crews first (processing order is already bottom-up), higher floors cascade behind.
-    var struct = elements.filter(function (e) { return e.seq <= 4; })
-      .sort(function (a, b) { return (a.base_z - b.base_z) || (a.seq - b.seq); });
-    struct.forEach(function (el) {
-      var slot = claimCrew(el.resource);
-      // §4D_BAND_MONOTONIC deliberately does NOT gate PASS A. Both alternatives were measured on
-      // real Hospital geometry and both were rejected:
-      //   - band-gate WITHOUT re-sorting: structure inversions 551 -> 519 (6%). bandTrade[r-1] gets
-      //     read before that band is fully placed, so the gate is a lower bound and does almost
-      //     nothing. Carrying code that implies structure is handled when it is not is worse than
-      //     not carrying it.
-      //   - band-gate WITH re-sorting by rank: inversions -> 0, but 2,341 elements FLOAT again
-      //     (beams 15/1970, members 2304/7127, slabs 22/35). geoGate reads `grid`, which holds only
-      //     what is already placed, so re-ordering PASS A places elements before their own supports.
-      //     That is the 1127/1970 defect the support gate exists to kill. Ruling A keeps "nothing
-      //     without support" as the hard role-blind gate, so floating WINS.
-      // Structure sequencing therefore stays bottom-up-by-base_z + support gate, unchanged, and
-      // cross-storey structural ordering is a NAMED OPEN ITEM rather than a silently weak gate.
-      // ⚠ The user's other symptom, "the floor slabs coming on too fast", is NOT an ordering defect
-      // and is not addressed here: structure inversions were only 551/2316 to begin with, while the
-      // non-structure count was 29,824. A burst of slabs is a RATE — a whole floor plate becomes
-      // eligible the moment the columns under it top out, then competes only for CONCRETE_GANG's
-      // 3 crews. Fixing that means crew caps / eligibility smoothing, not monotonicity.
-      var start = Math.max(geoGate(el), slot.time);
-      var end = place(el, start);
-      bandCommit(el, end);
+      var end = start + dur;
+      out[el.guid] = { start: start, end: end };
       slot.commit(end);
-    });
-    // PASS B — non-structure, by trade then base_z, on the COMPLETED structure grid.
-    // Per-Level trade gate: trade k waits for all lower trades (s<k) in its Level → MEP late, furniture last.
-    // §CREW-CAP: same shared project-wide crew pool as PASS A (a resource like CONCRETE_GANG appears
-    // in both — foundations here, ramps there — real crews don't duplicate across passes).
-    // §4D_BAND_MONOTONIC: sort is (seq, RANK, base_z) — rank inserted deliberately. PASS B walks one
-    // trade at a time, so ordering by rank inside a trade means every element of rank r-1 for THIS
-    // trade is placed before rank r is reached, and bandTrade[r-1][seq] is complete rather than a
-    // partial max. Unlike PASS A this cannot disturb geoGate: PASS B never writes the structure grid
-    // it reads (structure is entirely placed by then), so its order cannot create a floating element.
-    var nonst = elements.filter(function (e) { return e.seq > 4; })
-      .sort(function (a, b) {
-        return (a.seq - b.seq) ||
-               ((_bandRank[collapsePhase(a.storey)] || 0) - (_bandRank[collapsePhase(b.storey)] || 0)) ||
-               (a.base_z - b.base_z);
-      });
-    var phaseTrade = {};
-    nonst.forEach(function (el) {
-      var ph = collapsePhase(el.storey);
-      var pt = phaseTrade[ph] || {}, tg = baseMs, s;
-      for (s in pt) if (+s < el.seq && pt[s] > tg) tg = pt[s];
-      var slot = claimCrew(el.resource);
-      // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term that
-      // did not exist. Walls are seq 6, so this is a wall waiting for the walls one floor down.
-      var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5
-      if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
-      var end = place(el, start);
-      if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
-      bandCommit(el, end);
-      slot.commit(end);
+
       (phaseTrade[ph] = phaseTrade[ph] || {});
-      if (!(phaseTrade[ph][el.seq] > end)) phaseTrade[ph][el.seq] = end;
-    });
-    // The ladder this rule is standing on, printed so it can be audited rather than trusted — see
-    // the §GANTT_STOREY_Z reassignment warning in the header comment above.
+      if (!(phaseTrade[ph][sq] > end)) phaseTrade[ph][sq] = end;
+      if (rk >= 0) {
+        (bandTrade[rk] = bandTrade[rk] || {});
+        if (!(bandTrade[rk][sq] > end)) bandTrade[rk][sq] = end;
+        if (--remainRank[rk][sq] === 0) release('B|' + rk + '|' + sq);
+      }
+      // A group emptying is the ONLY thing that can satisfy a waiting node, so it is also the only
+      // place a re-arm is needed — no polling, no re-scan of the deferred set per placement.
+      if (--remain[ph][sq] === 0) release('T|' + ph + '|' + sq);
+
+      var sc = succ[u];
+      if (sc) for (var q = 0; q < sc.length; q++) {
+        var v = sc[q];
+        if (end > earliest[v]) earliest[v] = end;
+        if (--indeg[v] === 0) heap.push(v, prioOf(v));
+      }
+    }
+
+    // ── The § lines. The ladder is PRINTED rather than trusted (the §GANTT_STOREY_Z reassignment can
+    // put ~9k elements in a bucket that is not a floor), and every yielded constraint is counted so a
+    // drifted predicate shows up as a wildly different number instead of a silently worse schedule.
+    var msSolve = _now() - tSolve0;
     if (typeof console !== 'undefined' && console.log) {
+      var spanEnd = baseMs;
+      for (i = 0; i < N; i++) { var o = out[elements[i].guid]; if (o && o.end > spanEnd) spanEnd = o.end; }
+      console.log('§ELEMENT_CPM nodes=' + N + ' supportEdges=' + eSupport + ' placed=' + placed +
+        ' overrideTrade=' + overrideTrade + ' overrideBand=' + overrideBand +
+        ' gatedByTrade=' + gatedT + ' gatedByBand=' + gatedB +
+        ' buildMs=' + Math.round(msBuild) + ' solveMs=' + Math.round(msSolve) +
+        ' spanDays=' + Math.round((spanEnd - baseMs) / 86400000));
+      if (placed !== N) console.log('§ELEMENT_CPM_ALARM placed=' + placed + ' of ' + N +
+        ' — the support graph did not fully drain, which means it contained a CYCLE. It is meant to ' +
+        'be acyclic by construction (base_z strictly increases along every edge); this is a real ' +
+        'defect in the extraction predicate, not a tolerance to widen.');
       console.log('§4D_BAND_MONOTONIC ranks=' + _rankList.length +
-        ' gatedB=' + _bmGatedB + ' unbanded=' + _unbanded + ' (passA intentionally ungated)' +
-        ' ladder=[' + _rankList.map(function (r) {
-          return r.ph + '@' + r.z.toFixed(1) + 'm(' + r.n + ')';
+        ' gatedB=' + gatedB + ' unbanded=' + _unbanded + ' relabelledByZ=' + _relabelled + ' (§ELEMENT_CPM: band keyed on ELEVATION)' +
+        ' ladder=[' + _rankList.map(function (rr) {
+          return rr.ph + '@' + rr.z.toFixed(1) + 'm(' + rr.n + ')';
         }).join(', ') + ']');
     }
     return out;
@@ -269,29 +440,13 @@
   // Independent audit: count elements that start before a TRUE support finishes — structural,
   // XY-overlapping, rising from below (base < base-ε), topping within GAP of the target base.
   // 0 ⇒ nothing floats over its physical support. Works for any class (beams, furniture, MEP…).
-  // §4D_ROOF_LOAD_PATH M3 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH): the support
-  // grid used to be built ONLY from seq<=4 (structure) elements — the SAME trade-number assumption
-  // the scheduler's PASS A/B split makes. A wall (seq 6) can never be a support in that grid, so a
-  // roof slab carried by walls read as floating=0 (nothing to compare against) even while the real
-  // schedule built it before the walls under it — the audit shared the defect's own blind spot
-  // instead of catching it. Fix, MEASURED through two iterations:
-  //   attempt 1 | grid = EVERY element (any class a support for any class) | Hospital floating
-  //     0 -> 3421/10979, almost all "IfcBeam floats over IfcWallStandardCase" (1056), "IfcBeam
-  //     floats over IfcMember" (191) etc — seq<=4 PASS-A structure held to falsely "float" over
-  //     unrelated seq>4 PASS-B trades that finish much later in the crew-capped schedule for reasons
-  //     that have nothing to do with this defect. Walls do not structurally carry beams/members/
-  //     furniture in this DB.
-  //   attempt 2 | grid = structure PLUS walls, offered to every audited IfcSlab | Hospital floating
-  //     0 -> 24/10979 — better, but ALL 24 were ORDINARY (non-promoted, still seq 4) floor slabs
-  //     comparing themselves against a wall from a DIFFERENT storey that happens to sit geometrically
-  //     underneath. An un-promoted floor slab is PASS-A structure; it was never gated on any wall in
-  //     the real schedule (PASS A finishes long before PASS B's crew-capped walls even start), so
-  //     auditing it against a wall manufactures a violation the scheduler itself never claimed to
-  //     avoid.
-  //   correct scope | walls are only EVER a real candidate support for a slab M1 itself promoted to
-  //     seq 8 (roof role) — that is the one case where the real scheduler also moved the slab into
-  //     PASS B and made it wait on walls (§4D_ROOF_LOAD_PATH M2). An ordinary seq<=4 slab keeps its
-  //     original structure-only pool, unchanged from the proven pre-fix behaviour.
+  // §4D_ROOF_LOAD_PATH M3: the support grid used to be built ONLY from seq<=4 (structure) — the SAME
+  // trade-number assumption the old PASS A/B split made — so a roof slab carried by walls read as
+  // floating=0 while the schedule built it before those walls. Walls are added to the pool for
+  // promoted (seq>4) roof slabs, which is the one case the real scheduler also gates on walls.
+  // ⚠ This audit is DELIBERATELY NOT the whole invariant. It is role-aware, and the role-blind
+  // question ("does ANYTHING start before what holds it up") is asked by audit_support_roleblind.js.
+  // Keep running both — this one alone reported 0 while 6,778 elements bore on unbuilt walls.
   function auditFloating(elements, sched, classFilter) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
