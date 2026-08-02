@@ -4103,7 +4103,30 @@ async function setupEffects(A, renderer, scene, camera) {
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
   // both read it, and the walk's copy used to be a local declared 400 lines below the dive.
-  var CINEMA_PACE_SWING = 1.6;
+  // §CPE_PACE_SWING_SOFTEN (2026-08-03) — 1.6 was the SETTLED value out of the widen/narrow jerk
+  // trade-off documented above (CINEMA_PATH_EDITOR.md "widen PACE_SWING, accept the stall, or accept
+  // more jerk"), but on a real Hospital bake it reads as a genuine over-correction: user, direct
+  // tuning request, "soften the noise density×depth ratio that slows the camera walk in busy/dense
+  // areas — the slowdown is currently too strict." Measured on Hospital before this change (real
+  // §CPE_WALK_BUDGET_NOISE_BLIND line): busy=0.432, swing=1.6 -> busyMult=1.2591, outSec=18.322 (a
+  // 29.8m walk raw-budgeted at 14.552s stretched to 18.322s by busyness alone).
+  //
+  // The user suggested trying 1.3-1.4x — measured, NOT taken as-is: at 1.35 and again at 1.4,
+  // witness_cpe_even_turn.js's T5 (§CPE_EVEN_TURN's own fast-side jerk cap, `1.5 * PACE_SWING`)
+  // goes RED on Duplex — the walk's real cost-parameterized step hits 3.0x its own mean there, and
+  // shrinking the cap below that turns a legitimate fast turn into a flagged discontinuity. This is
+  // the same "widen or accept jerk" trade-off the constant's own history already names; narrowing it
+  // reopens that trade the other direction. 1.45 is the largest reduction from 1.6 that stays clear
+  // of T5 on both regression buildings (Duplex, Terminal) — verified by direct measurement, not
+  // picked to make a gate green: 1.4 fails T5 on Duplex, 1.45 does not, on repeated runs.
+  // (T6, the SLOW-side floor, is RED at 1.6 too — a pre-existing gap this change did not create and
+  // does not fix; out of scope here, noted for whoever picks up §CPE_PACE_FLOOR next.)
+  // Keeps the SAME mechanism (busy areas still slow the camera, `w = 1-1/PACE_SWING` in
+  // §CPE_EVEN_TURN still derives from this one constant, nothing duplicated) while cutting the
+  // busyness CORRECTION (busyMult - 1) by 25%: the same Hospital walk recomputes to
+  // busyMult=1.1943, outSec=17.380s (was busyMult=1.2591, outSec=18.322s — measured before/after,
+  // prompts/CINEMA_PATH_EDITOR.md 2026-08-03).
+  var CINEMA_PACE_SWING = 1.45;
   var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap
   var CINEMA_DIVE_MIN_SEC = 2.5;   // a floor, so a tiny building still gets an arrival rather than a cut
   var CINEMA_SPIN_MIN_SEC = 0.8;
@@ -4509,7 +4532,7 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
   // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v17 (§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
+  var EFFECTS_V = 'v18 (§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; §CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).

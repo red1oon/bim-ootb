@@ -20,6 +20,16 @@
 //   G-WP-5  degrade, don't disable: with tmWorkSchedule hidden the way a stale cache would, pacing
 //           falls back to calendar and says so in the log — the film still bakes.
 //   G-WP-6  preview and bake ask for the same cursor at the same film fraction.
+//   G-WP-8  2026-08-03 — user report on a REAL Hospital bake: "the buildup reveal starts too FAST,
+//           then the MIDDLE is relatively SLOW." G-WP-1 only proves index-fraction == film-fraction;
+//           it says nothing about FRAME-BY-FRAME evenness, which is what a viewer actually sees.
+//           Replays the real bake's per-frame pipeline (buildupTAt + buildupCursorAt, nFrames=1905 —
+//           the user's own log) and asserts the elements/frame rate has no burst/plateau, plus logs
+//           the end_ts tie-cluster structure (a big tied group would cause exactly that pattern even
+//           with an even element-index rate). See prompts/CINEMA_PATH_EDITOR.md 2026-08-03 for the
+//           real numbers this produced on Hospital and the conclusion (camera-beat-speed illusion,
+//           not a pacing defect — the measured rate came back flat, ~36.2 elements/frame, <0.5% jitter).
+//   G-WP-9  the post-topout dwell (§CPE_BUILDUP_TOPOUT) stays flat, not still climbing.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8442;
@@ -105,6 +115,65 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       out.bakeCursors = FRACS.map(t => A.buildupCursorAt(t, bk));
       out.previewMatchesBake = out.previewCursors.every((ms, i) => ms === out.bakeCursors[i]);
 
+      // ── G-WP-8/9 (2026-08-03) — user bug report on a real Hospital bake: "buildup reveal starts
+      // too FAST, then the MIDDLE is relatively SLOW." §CPE_BUILDUP_WORK_PACED already proved the
+      // ELEMENT-INDEX fraction tracks the film fraction (G-WP-1 above) — but that says nothing about
+      // whether the RENDER actually reveals elements at an even rate FRAME BY FRAME, which is what a
+      // viewer sees. Two separate ways this could still be uneven even with G-WP-1 green:
+      //   (a) end_ts TIES — tmPlacedCount() counts `end_ts <= cursor`, so if many ops share one
+      //       timestamp, the reveal would burst (all of a tied group appears in one frame) then
+      //       plateau (no visible change for the rest of that tied index range) even though the
+      //       INDEX advances evenly every frame.
+      //   (b) §CPE_BUILDUP_TOPOUT's remap (t -> t/topoutU) is linear in FILM FRACTION, which this
+      //       code simulates using the actual real-bake per-frame pipeline (buildupTAt then
+      //       buildupCursorAt), not just the FRACS checkpoints G-WP-1 used.
+      // This replays the exact per-frame sequence cinema_maxq.js's bake loop runs (same two calls,
+      // same nFrames a real Hospital bake used — frame=0/1905 in the user's own log).
+      const nFrames = 1905;
+      const topout = A.buildupTopoutU(null);
+      A.buildupPacingReset();
+      const trace = [];
+      for (let f = 0; f < nFrames; f++) {
+        const tFilm = f / (nFrames - 1);
+        const bkT = A.buildupTAt(tFilm, null);
+        const ms = A.buildupCursorAt(bkT, bk);
+        trace.push(window.tmPlacedCount(ms));
+      }
+      out.topoutU = topout.u;
+      // end_ts tie-cluster structure — the (a) mechanism above, checked directly against real data.
+      const sch = window.tmWorkSchedule();
+      let groups = 0, maxGroup = 1, run = 1;
+      for (let i = 1; i < sch.ends.length; i++) {
+        if (sch.ends[i] === sch.ends[i - 1]) { run++; } else { groups++; if (run > maxGroup) maxGroup = run; run = 1; }
+      }
+      groups++;
+      out.tieGroups = groups; out.tieGroupMax = maxGroup;
+      // Windowed rate (elements per BLOCK of frames), over the pre-topout span only (post-topout is
+      // SUPPOSED to be flat — that is the dwell §CPE_BUILDUP_TOPOUT deliberately introduces). A block
+      // rather than a raw 1-frame diff: on a small building (e.g. Duplex, ~1100 ops/1905 frames) most
+      // single frames place 0 or 1 element, so a per-frame diff is dominated by integer-count
+      // quantization noise that has nothing to do with pacing evenness — the same reason a human
+      // doesn't perceive "fast/slow" frame-to-frame, only over a stretch of the film. Block size
+      // scales with total ops so it always spans a real number of elements (min 5 frames).
+      const topoutFrame = Math.min(nFrames - 1, Math.round(topout.u * (nFrames - 1)) + 1);
+      const block = Math.max(5, Math.round(topoutFrame / Math.max(20, Math.min(100, Math.round(total / 50)))));
+      const rates = [];
+      for (let f = block; f <= topoutFrame; f += block) rates.push((trace[f] - trace[f - block]) / block);
+      const meanRate = rates.length ? rates.reduce((s, x) => s + x, 0) / rates.length : 0;
+      out.rateBlockFrames = block;
+      // Coarse checkpoints for a human-readable summary (start/quarter/half/three-quarter of the FILM).
+      out.checkpoints = [0.10, 0.25, 0.50, 0.75].map(cp => {
+        const f = Math.round(cp * (nFrames - 1));
+        const w = 20; // local rate window, frames
+        const f0 = Math.max(0, f - w), f1 = Math.min(topoutFrame, f + w);
+        return { t: cp, placed: trace[f], ratePerFrame: +((trace[f1] - trace[f0]) / (f1 - f0)).toFixed(2) };
+      });
+      out.meanRatePerFrame = +meanRate.toFixed(2);
+      out.maxRateDeviationFrac = rates.length ?
+        Math.max(...rates.map(r => Math.abs(r - meanRate))) / meanRate : 0;
+      out.postTopoutFlat = trace.slice(topoutFrame).every(p => p === trace[topoutFrame]);
+      out.finalPlaced = trace[nFrames - 1];
+
       try { window.tmRestoreDerivedOrder(); } catch (e) {}
       return out;
     }, FRACS);
@@ -149,6 +218,23 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       P('G-WP-7 the log states the pacing mode and how front-loaded the model is',
         /mode=work/.test(line) && /workInFirst10%OfCalendar/.test(sch),
         `${line || 'no §CPE_BUILDUP_PACING'}\n        ${sch || 'no §CPE_WORK_SCHEDULE'}`);
+
+      // G-WP-8/9 — real per-frame FILM reveal rate (2026-08-03 "fast start, slow middle" report).
+      // Tolerance is loose (25%) on purpose: this proves the reveal isn't BURSTY/PLATEAUING, not
+      // that it is frame-perfect — a model with real duration ties will always have some jitter.
+      const RATE_TOL = 0.25;
+      const cpLine = res.checkpoints.map(c => `t=${c.t}→${c.placed} (${c.ratePerFrame}/frame)`).join('  ');
+      P('G-WP-8 the per-frame reveal rate stays even across the pre-topout film (no burst/plateau)',
+        res.maxRateDeviationFrac <= RATE_TOL,
+        `topoutU=${res.topoutU.toFixed(3)} meanRate=${res.meanRatePerFrame}/frame ` +
+        `worstDeviation=${(res.maxRateDeviationFrac * 100).toFixed(1)}% (tol ${RATE_TOL * 100}%)\n        ` +
+        `checkpoints: ${cpLine}\n        ` +
+        `end_ts tie clusters: ${res.tieGroups} distinct timestamps / ${res.total} ops, largest tied group=${res.tieGroupMax} ` +
+        `(a large group here would explain a burst/plateau reveal even with an even element-index rate)`);
+
+      P('G-WP-9 construction is fully placed and stays flat through the post-topout dwell',
+        res.postTopoutFlat === true && res.finalPlaced === res.total,
+        `finalPlaced=${res.finalPlaced}/${res.total} postTopoutFlat=${res.postTopoutFlat}`);
     }
 
     const pass = checks.filter(c => c.ok).length;
