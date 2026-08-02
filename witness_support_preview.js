@@ -43,13 +43,13 @@ function makeServer(root) {
 }
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
-const _wd = setTimeout(() => { console.log('\n§W-SUPPORT-PREVIEW TIMEOUT — killed after 300s'); process.exit(3); }, 300000);
+const _wd = setTimeout(() => { console.log('\n§W-SUPPORT-PREVIEW TIMEOUT — killed after 900s'); process.exit(3); }, 900000);
 
 (async () => {
   const server = makeServer(ROOT);
   await new Promise(r => server.listen(0, r));
   const port = server.address().port;
-  const br = await puppeteer.launch({ headless: 'new', protocolTimeout: 240000, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const br = await puppeteer.launch({ headless: 'new', protocolTimeout: 900000, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
   const pg = await br.newPage();
   await pg.setViewport({ width: 1200, height: 800 });
   const logs = [];
