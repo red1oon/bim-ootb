@@ -294,6 +294,23 @@
   function _sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
   function _status(t) { var A = window.APP; if (A && A.status) A.status.textContent = t; }
 
+  // §CPE_MAXQ_STATUS_DAY_LABEL (CINEMA_PATH_EDITOR.md) — Day # and current room label, appended
+  // to the same per-frame status line §CPE_STICK_APPROACH already writes to. Pure and exposed on
+  // APP below (same treatment as `A.dayCounterAt`/`A.roomTitleOpacityAt` themselves) so the
+  // witness can gate this exact composition without spinning up a live bake — `dayInfo`/
+  // `titleInfo` are exactly the objects the per-frame loop already computed for the canvas-
+  // compositing path (_captureFrame), this function only formats them into the two extra
+  // status-line segments. Nothing is recomputed: `dayInfo` null means the day-counter is off for
+  // this bake (§CPE_DAY_COUNTER, `_dayPos === 'off'`); `titleInfo`/`titleInfo.name` null/empty
+  // means §CPE_ROOM_TITLE is off or the walk is between rooms (no active caption) — both segments
+  // are omitted entirely rather than ever printing "Day null/null" or empty quotes.
+  function _maxqStatusDayRoomSegs(dayInfo, titleInfo) {
+    var dayTxt = (dayInfo && dayInfo.day != null && dayInfo.totalDays != null)
+      ? ', Day ' + dayInfo.day + '/' + dayInfo.totalDays : '';
+    var roomTxt = (titleInfo && titleInfo.name) ? ', "' + titleInfo.name + '"' : '';
+    return { dayTxt: dayTxt, roomTxt: roomTxt };
+  }
+
   // §CINEMA_DAMPING_BLEED (2026-07-26 — PHOTOREAL_STILL_RENDER.md §CINEMA_DAMPING_BLEED).
   // Both authored loops below (the 10s path preview AND the frame bake) do
   // camera.position.set(pose) → controls.update(). OrbitControls.update() recomputes the position
@@ -1138,8 +1155,13 @@
         // (falls back to the pre-feature text) when the path has no user-dropped sticks or the walk
         // is already past the last one.
         var _stickTxt = _stickNow ? ', approaching Stick ' + _stickNow.index + '/' + _stickNow.count : '';
+        // §CPE_MAXQ_STATUS_DAY_LABEL — Day # and current room label, same per-frame cadence as the
+        // stick-approach text above. `_dayInfo`/`_titleInfo` are already computed earlier THIS
+        // frame for the canvas-compositing path (_captureFrame, above) — this reads the SAME
+        // values through the pure, witnessed formatter, nothing is recomputed here.
+        var _segs = _maxqStatusDayRoomSegs(_dayInfo, _titleInfo);
         _status('🎬 MaxQ frame ' + (i + 1) + '/' + nFrames + ' — ' + Math.round(_el / 1000) + 's, ~' +
-          _etaTxt + _stickTxt + ' (Alt+C / cinema icon cancels + saves partial)');
+          _etaTxt + _segs.dayTxt + _segs.roomTxt + _stickTxt + ' (Alt+C / cinema icon cancels + saves partial)');
         if (_etaNow - _logPrev >= MAXQ_LOG_MS || i === 0 || i === nFrames - 1) {
           _logPrev = _etaNow;
           console.log('§MAXQ_FRAME i=' + i + '/' + nFrames + ' elapsedMs=' + Math.round(_el) +
@@ -1245,6 +1267,9 @@
       window.APP.ghostGroundArm = _ghostGroundArm;
       window.APP.ghostGroundAt = _ghostGroundAt;
       window.APP.ghostGroundRestore = _ghostGroundRestore;
+      // §CPE_MAXQ_STATUS_DAY_LABEL — exposed for the witness (gates the pure formatter directly,
+      // same precedent as the other pure functions on this line, instead of sitting through a bake).
+      window.APP.maxqStatusDayRoomSegs = _maxqStatusDayRoomSegs;
       clearInterval(_attach);
     }
   }, 500);
