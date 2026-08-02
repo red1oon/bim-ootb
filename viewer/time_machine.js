@@ -3603,8 +3603,15 @@
           var g = row[0], tid = _cap.guidTask[g];
           if (!tid) return;                         // uncovered → keep generative timing
           if (!_byTask[tid]) _byTask[tid] = [];
+          var _el = _elByGuid[g];
           _byTask[tid].push({ guid: g, params: row[1],
-            cz: _elByGuid[g] ? _elByGuid[g].cz : 0, seq: _elByGuid[g] ? _elByGuid[g].seq : 999 });
+            cz: _el ? _el.cz : 0, seq: _el ? _el.seq : 999,
+            bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
+            x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
+            y0: _el ? _el.y0 : 0, y1: _el ? _el.y1 : 0,
+            cls: _el ? _el.cls : '',
+            hostable: _el ? (_el.cls === 'IfcWindow' || _el.cls === 'IfcDoor' ||
+              ((_el.cls === 'IfcPlate' || _el.cls === 'IfcMember') && _el.seq === 7)) : false });
         });
       }
       db.run('BEGIN');
@@ -3613,12 +3620,44 @@
       for (var _tid in _byTask) {
         var w = _cap.win[_tid];
         var _bucket = _byTask[_tid];
-        // §4D_FACADE_ORDER (2026-07-31): seq FIRST, cz second — same discipline as schedule_gate.js
-        // PASS B (trade order, then Z). Raw-cz-only staggering put a window/glazed panel (seq 7)
-        // ahead of its own host wall (seq 6) whenever their center_z happened to be close — MEASURED
-        // 662/1445 touching glazed-panel/wall pairs violating on Hospital with cz-only sort, 0/1445
-        // with (seq,cz). Still "bottom-up, same discipline as generative pass" WITHIN a trade.
-        _bucket.sort(function(a, b) { return (a.seq - b.seq) || (a.cz - b.cz); });
+        // §STAGGER_SUPPORT_ORDER (2026-08-02) — Implementing GANTT_ACCURACY.md ▶RESUME 2026-08-02
+        // (late) — Witness: witness_stagger_support_order.js (G-SSO-1..4).
+        // base_z FIRST: the previous (seq, cz) order revealed 6,240 carried elements before their
+        // in-window carriers on Hospital (988 IfcBeam on walls; worst 134d) — cz is a CENTROID, not
+        // a bearing surface, and seq-major put whole trades before the walls that carry them.
+        // base_z is a topological potential of the support DAG (a carrier ALWAYS has
+        // S.base_z < T.base_z - EPS — audit_support_roleblind.js's own predicate), so a base_z walk
+        // cannot place anything before its support. seq then cz break ties WITHIN a bearing level,
+        // keeping §4D_FACADE_ORDER's trade discipline for same-level elements.
+        _bucket.sort(function(a, b) { return (a.bz - b.bz) || (a.seq - b.seq) || (a.cz - b.cz); });
+        // §4D_HOST_BEFORE_HOSTED (same spec file): float-noise near-ties defeat the seq tiebreak —
+        // 101/5,924 host pairs on Hospital have the wall base 0–0.043m ABOVE its hosted glazing's
+        // base (< EPS), so the panel sorts first. Constraint AFTER the sort, never a replacement:
+        // move each hosted element (window/door/glazing) to just after the last XY-touching wall
+        // that z-contains it. The bucket is bz-sorted, so any such wall sorted after the hosted
+        // element lies within [H.bz, H.bz+EPS] — the forward scan is bounded and cheap. Moving an
+        // element LATER cannot create a support violation (hosted classes are never carriers).
+        (function(items) {
+          var HEPS = 0.05, keys = [], moved = 0, i, j;
+          for (i = 0; i < items.length; i++) keys.push(i);
+          for (i = 0; i < items.length; i++) {
+            var H = items[i]; if (!H.hostable) continue;
+            var last = -1;
+            for (j = i + 1; j < items.length && items[j].bz <= H.bz + HEPS; j++) {
+              var W = items[j];
+              if (W.cls.indexOf('IfcWall') === 0 &&
+                  H.x0 <= W.x1 && H.x1 >= W.x0 && H.y0 <= W.y1 && H.y1 >= W.y0 &&
+                  W.bz <= H.bz + HEPS && W.tz >= H.tz - HEPS) last = j;
+            }
+            if (last > i) { keys[i] = last + 0.5; moved++; }
+          }
+          if (moved) {
+            var order = items.map(function(el, k) { return { el: el, k: keys[k], i: k }; });
+            order.sort(function(a, b) { return (a.k - b.k) || (a.i - b.i); });
+            for (i = 0; i < items.length; i++) items[i] = order[i].el;
+            console.log('§STAGGER_HOST movedAfterHost=' + moved + ' (task bucket n=' + items.length + ')');
+          }
+        })(_bucket);
         var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
         _bucket.forEach(function(item, i) {
           var s_i = w.s + Math.floor((i / _n) * _span);
@@ -4482,7 +4521,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 7;   // §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
+  var _GANTT_CACHE_VERSION = 8;   // §STAGGER_SUPPORT_ORDER (2026-08-02): captured stagger is base_z-major + host pass
+                                  // v7 was §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
   //                                 changes generated ordering for 35,484 non-structure elements.
   //                                 MUST bump: #1123 exists because a stale cache once stopped a
   //                                 sequencing fix reaching a browser, and the user has already been
