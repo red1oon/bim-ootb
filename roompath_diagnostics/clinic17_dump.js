@@ -103,7 +103,13 @@ function inRect(cx, cy, bx, by, rot, px, py) {
         const lng = Math.max(v[2], v[3]), thin = Math.min(v[2], v[3]);
         if (inRect(v[0], v[1], lng + 2 * RES, thin + PIERCE, v[4], mx, my)) { covered = true; coverer = v; break; }
       }
-      found.push({ gap, bd, blocked, span: s - 1, covered,
+      // §21.40b — the direct question: did _openings emit ANYTHING here, and if so was it matched
+      // to a door (making it a LINK) or not (making it a FUSION)? A link that lands with both ends
+      // inside the cluster keeps the cluster stranded just as effectively as no opening at all.
+      let op = null;
+      for (const o of m.openings) if (Math.hypot(o.cx - mx, o.cy - my) <= 1.0) { op = o; break; }
+      found.push({ gap, bd, blocked, span: s - 1, covered, op: !!op, opDoors: op ? op.doors.length : -1,
+        opInside: op ? (memSet.has(find(op.a)) && memSet.has(find(op.b))) : false,
         samePocket: owner[k] === owner[kk], doorW: Math.max(bdoor[2], bdoor[3]) });
     }
   }
@@ -118,6 +124,13 @@ function inRect(cx, cy, bx, by, rot, px, py) {
   console.log('§C40 Q2 covered by a door-void carve rect = ' + cov + '/' + n +
     '   NOT covered = ' + (n - cov));
   console.log('§C40    both sides in the SAME pocket = ' + same + '/' + n);
+  const withOp = found.filter(x => x.op).length;
+  const opLink = found.filter(x => x.op && x.opDoors > 0).length;
+  const opFuse = found.filter(x => x.op && x.opDoors === 0).length;
+  const opIn = found.filter(x => x.op && x.opInside).length;
+  console.log('§C40b opening record EXISTS at the crossing = ' + withOp + '/' + n + '   none = ' + (n - withOp));
+  console.log('§C40b    of those: door-matched (LINK) = ' + opLink + '   doorless (FUSION) = ' + opFuse +
+    '   with BOTH ends inside the cluster = ' + opIn);
   const dw = found.map(x => x.doorW).sort((a, b) => a - b);
   const gp = found.map(x => x.gap).sort((a, b) => a - b);
   if (n) console.log('§C40 door width median=' + dw[n >> 1].toFixed(2) + 'm   gap median=' + gp[n >> 1].toFixed(2) +
