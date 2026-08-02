@@ -48,6 +48,12 @@
   var GHOST_FADE_SEC = 3.0;      // floor on how fast opacity may rise, in FILM seconds — a batch of
                                  // ops landing in one frame must not snap the ground opaque.
   var _ggSched = null, _ggSpan = null, _ggSaved = null, _ggTried = false;
+  // §GHOST_GROUND_LIVE_TRIGGER: `_ggFired` is a one-shot flag for the §GHOST_GROUND_TRIGGER_FIRED
+  // log line only — it does NOT gate the opacity math (that stays a stateless, precomputed-threshold
+  // smoothstep so the curve never depends on sampling density — see _ghostGroundAt). `_ggLastLogSec`
+  // paces the periodic §GHOST_GROUND_TICK diagnostic by FILM seconds so bake (2219 frames) and
+  // rehearsal (~600 frames) log at the same real cadence.
+  var _ggFired = false, _ggLastLogSec = -1;
 
   // ══ §CPE_BUILDUP_WORK_PACED — the film advances by WORK, not by calendar ══════════════════════
   // User, after two bakes: "construction came on too fast.. is the path and TM consistent?" — and
@@ -174,23 +180,92 @@
       sched = { fallback: true, aboveTotal: bkState.ops, belowTotal: 0, ends: null, firstAboveMs: bkState.projectStart };
     }
     _ggSched = sched;
+    _ggFired = false; _ggLastLogSec = -1;
+    // §GHOST_GROUND_LIVE_TRIGGER (2026-08-03 fix — was §CPE_GHOST_GROUND_TRIGGER stuck-at-floor bug):
+    // #1148 computed ONE threshold, `calendarFirstT` — a CALENDAR-time fraction — and compared it
+    // against `tFilm` every frame. That was right while the buildup cursor stepped linearly through
+    // the calendar, but §CPE_BUILDUP_WORK_PACED (same day) turned `tFilm` into an ELEMENTS-PLACED
+    // fraction instead (`_workCursorAt`: t=0.10 means the 10th-percentile element by completion
+    // order, not 10% of the calendar) — two different clocks being compared directly, which is why a
+    // real bake sat pinned at the GHOST floor well past the point above-ground elements had visibly
+    // started placing (t=0.035, placed=2238/63418, groundOpacity=0.220 exactly — v=0, never fired).
+    //
+    // FIX: use the SAME clock `tFilm` is actually expressed in. When work-pacing is active, that is
+    // an ELEMENTS-fraction — the fraction of ALL ops (by end_ts order, exactly `_wpSched.ends`'
+    // own order) placed by the time the first above-ground op lands. Binary-searching
+    // `sched.firstAboveMs`'s RANK in that same sorted array gives the identical value
+    // `_workCursorAt` would invert back to `firstAboveMs` at — i.e. `_workCursorAt(elementsFirstT)
+    // === firstAboveMs` by construction. When work-pacing is NOT active, `_workCursorAt` itself
+    // degrades to calendar-linear, so `calendarFirstT` is correct there instead — same branch
+    // `_workCursorAt` takes, mirrored here rather than reasoned about independently.
+    //
+    // ⚠ This MUST stay a single precomputed constant, not something derived from "the first tFilm
+    // this function happens to be called with" — G-GG-6 (witness_cpe_ghost_ground.js) exists
+    // specifically because a per-call/first-observed-sample threshold makes the curve depend on
+    // sampling density: the bake (2219 frames) and a 600-frame rehearsal would then trace DIFFERENT
+    // curves for the identical film (measured 2026-07-31, 0.3653 vs 0.4006 at t=0.02). A live
+    // `cursorMs` value is still read below, but ONLY to log when the real cursor confirms the
+    // precomputed threshold — never to move the threshold itself.
+    var calendarFirstT = sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span;
+    var elementsFirstT = null, elementsFirstTSrc = 'work schedule unavailable';
+    if (!_wpTried) _workPacingArm();  // force-arm early so this bake's OWN schedule is what the
+                                       // threshold is computed from, not a race with frame 0.
+    if (sched.firstAboveMs != null && _wpSched && _wpSched.total) {
+      var _ends = _wpSched.ends, _lo = 0, _hi = _ends.length;
+      while (_lo < _hi) { var _mid = (_lo + _hi) >>> 1; if (_ends[_mid] < sched.firstAboveMs) _lo = _mid + 1; else _hi = _mid; }
+      elementsFirstT = (_lo + 1) / _wpSched.total;
+      elementsFirstTSrc = 'rank ' + (_lo + 1) + '/' + _wpSched.total + ' in the full end_ts order';
+    }
+    // The domain `tFilm` is ACTUALLY in: elements-fraction when work-pacing armed (mirrors
+    // `_workCursorAt`'s own branch), else calendar-fraction (mirrors its degrade branch).
+    var firstT = elementsFirstT != null ? elementsFirstT : calendarFirstT;
     _ggSpan = { start: bkState.projectStart, end: bkState.projectEnd, span: span,
-                firstT: sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span };
+                firstT: firstT, calendarFirstT: calendarFirstT, elementsFirstT: elementsFirstT };
     var m = A.ground.material;
     _ggSaved = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
     console.log('§GHOST_GROUND armed rule=' + (sched.fallback ? 'FALLBACK(immediate proxy — tmGroundSchedule unavailable)' : 'first above-ground element') +
       ' aboveOps=' + sched.aboveTotal + ' belowOps=' + sched.belowTotal +
       ' firstAboveMs=' + (sched.firstAboveMs == null ? 'none' : Math.round(sched.firstAboveMs)) +
-      ' triggerT=' + _ggSpan.firstT.toFixed(4) +
+      ' triggerT=' + firstT.toFixed(4) + ' (domain=' + (elementsFirstT != null ? 'elements-placed' : 'calendar') + ')' +
+      ' calendarFractionT=' + calendarFirstT.toFixed(4) +
+      ' elementsFractionT=' + (elementsFirstT == null ? 'n/a(' + elementsFirstTSrc + ')' : elementsFirstT.toFixed(4) + '(' + elementsFirstTSrc + ')') +
+      ' — #1148 always used calendarFractionT even when tFilm is elements-placed; this is the divergence that pinned opacity at the floor' +
       ' ghost=' + GHOST_OPACITY + ' maxRiseSec=' + GHOST_FADE_SEC);
     return true;
   }
 
-  // Per frame. `tFilm` is the film fraction driving the cursor; `totalSec` the film's length.
-  // Opacity follows a single smoothstep from the first above-ground element's own film fraction
-  // (`_ggSpan.firstT`) to opaque, over at most GHOST_FADE_SEC of FILM time — §CPE_GHOST_GROUND_TRIGGER
-  // above: reverted off the #1112 above-ground-SHARE ratio, back to #1110's first-element trigger.
-  function _ghostGroundAt(tFilm, totalSec, bkState) {
+  // Per frame. `tFilm` is the film fraction driving the cursor; `totalSec` the film's length;
+  // `cursorMs` is the REAL cursor the buildup just set (`window.tmSetCursor`'s argument this frame)
+  // — same value `tmPlacedCount(cursorMs)` in §CPE_BUILDUP's log line is queried against, passed
+  // through ONLY as a confirmatory/diagnostic signal (see §GHOST_GROUND_LIVE_TRIGGER below — the
+  // actual trigger point is the precomputed `_ggSpan.firstT`, never `cursorMs` directly). Opacity
+  // follows a single smoothstep from `_ggSpan.firstT` to opaque, over at most GHOST_FADE_SEC of
+  // FILM time — §CPE_GHOST_GROUND_TRIGGER above: first-above-ground-element trigger (#1110/#1148).
+  //
+  // §GHOST_GROUND_LIVE_TRIGGER (2026-08-03, fixes the stuck-at-floor regression in #1148):
+  // #1148 computed `firstT` ONCE at arm time as a CALENDAR-fraction (`(firstAboveMs - projectStart)
+  // / span`) and compared it against `tFilm` every frame. That was correct while the buildup cursor
+  // stepped linearly through the calendar — but §CPE_BUILDUP_WORK_PACED (landed the same day) turned
+  // `tFilm` into an ELEMENTS-PLACED fraction instead (`_workCursorAt`: t=0.10 means the
+  // 10th-percentile element by completion order, not 10% of the calendar). Real bake evidence:
+  // `t=0.035 placed=2238/63418` (2238/63418=0.0353≈t — proving `tFilm` IS the elements fraction),
+  // while `groundOpacity` sat pinned at the 0.22 floor — the calendar-fraction `firstT` and the
+  // elements-fraction `tFilm` were two different clocks that had drifted apart on this (bursty)
+  // schedule (`§GHOST_GROUND armed` now logs both candidates so the gap is visible without
+  // re-deriving it).
+  //
+  // FIX: `_ghostGroundArm` now precomputes `firstT` in the SAME domain `tFilm` is actually in —
+  // an elements-placed fraction (the RANK of `firstAboveMs` within the full end_ts order,
+  // `_workCursorAt`'s own indexing) whenever work-pacing is armed, else the calendar-fraction
+  // (matching `_workCursorAt`'s own degrade branch). `firstT` stays a SINGLE PRECOMPUTED CONSTANT
+  // per arm — NOT re-derived from whatever `tFilm`/`cursorMs` this function is first called with —
+  // because a per-call/first-observed threshold makes the fade curve depend on sampling density,
+  // which is exactly what G-GG-6 (witness_cpe_ghost_ground.js) was written to catch (measured
+  // 2026-07-31: a 2219-frame bake and a 600-frame rehearsal traced DIFFERENT curves for the
+  // identical film, 0.3653 vs 0.4006 at t=0.02, under an earlier per-call rate limiter design).
+  // `cursorMs` is still read below, but only to log a one-shot CONFIRMATION the moment the real
+  // cursor independently agrees the threshold has been crossed — it never moves the threshold.
+  function _ghostGroundAt(tFilm, totalSec, bkState, cursorMs) {
     var A = window.APP;
     // LAZY ARM. Arming used to happen once, before the frame loop, which made the feature hostage to
     // state that is only true later (the ground plane is not even visible until photoreal staging
@@ -200,6 +275,17 @@
     if (!_ggSched && !_ggTried && bkState) { _ggTried = true; _ghostGroundArm(bkState); }
     if (!_ggSched || !A || !A.ground || !A.ground.material) return null;
     var t = Math.max(0, Math.min(1, tFilm));
+    var haveCursor = isFinite(cursorMs);
+    var fired = t >= _ggSpan.firstT;
+    if (fired && !_ggFired) {
+      _ggFired = true;
+      console.log('§GHOST_GROUND_TRIGGER_FIRED tFilm=' + t.toFixed(4) +
+        ' firstT=' + _ggSpan.firstT.toFixed(4) +
+        ' cursorMs=' + (haveCursor ? Math.round(cursorMs) : 'n/a') +
+        ' firstAboveMs=' + Math.round(_ggSched.firstAboveMs) +
+        ' cursorConfirms=' + (haveCursor ? (cursorMs >= _ggSched.firstAboveMs ? 1 : 0) : 'n/a') +
+        ' — first above-ground element is now placed; ground begins returning to opaque from here');
+    }
     // A floor on how FAST the ramp may happen, so a batch of ops landing together cannot snap the
     // ground opaque. ⚠ Expressed against the film's own clock, NOT against the previous call: a
     // per-call rate limiter makes the curve depend on how densely it is sampled, and the bake
@@ -214,12 +300,27 @@
     // A translucent floor that writes depth can occlude other transparent geometry drawn after it;
     // the opaque substructure is already in the depth buffer either way. Restored with the rest.
     m.depthWrite = solid;
+    // §GHOST_GROUND_TICK: periodic diagnostic (every ~5 FILM seconds, while still ghosted/fading) —
+    // the gap #1148 shipped with no visibility in between "armed" and "restored". Shows the raw
+    // comparison so a future session can see EXACTLY why/when the trigger did or didn't fire,
+    // without re-instrumenting the file first.
+    if (o < 0.999 && totalSec > 0) {
+      var _sec5 = Math.floor(t * totalSec / 5);
+      if (_sec5 !== _ggLastLogSec) {
+        _ggLastLogSec = _sec5;
+        console.log('§GHOST_GROUND_TICK tFilm=' + t.toFixed(4) + ' firstT=' + _ggSpan.firstT.toFixed(4) +
+          ' cursorMs=' + (haveCursor ? Math.round(cursorMs) : 'n/a') +
+          ' firstAboveMs=' + Math.round(_ggSched.firstAboveMs) +
+          ' fired=' + (fired ? 1 : 0) + ' fallback=' + (_ggSched.fallback ? 1 : 0) +
+          ' opacity=' + o.toFixed(3));
+      }
+    }
     return o;
   }
 
   function _ghostGroundRestore() {
     var A = window.APP;
-    _ggSched = null; _ggTried = false;
+    _ggSched = null; _ggTried = false; _ggFired = false; _ggLastLogSec = -1;
     if (_ggSaved && A && A.ground && A.ground.material) {
       var m = A.ground.material;
       m.transparent = _ggSaved.transparent; m.opacity = _ggSaved.opacity; m.depthWrite = _ggSaved.depthWrite;
@@ -228,7 +329,7 @@
     _ggSaved = null;
   }
 
-  var MAXQ_V = 'v21 (§CPE_GHOST_GROUND_TRIGGER reverted off the #1112 above-ground-SHARE ratio (5%, judged too late by direct user testimony) back to the #1110 first-above-ground-element trigger, keeping the #1113-1115 hardening (degrade-not-disable, refusal logging, lazy arm-on-first-tick); §CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v22 (§GHOST_GROUND_LIVE_TRIGGER fixes #1148 stuck-at-floor regression — the trigger now compares the REAL cursor to firstAboveMs directly (same clock, epoch ms) instead of pre-converting firstAboveMs into a calendar-fraction and comparing it against tFilm, which §CPE_BUILDUP_WORK_PACED (same day) had turned into an ELEMENTS-placed fraction — two different clocks; adds §GHOST_GROUND_TRIGGER_FIRED (one-shot, exact frame the trigger fires) and §GHOST_GROUND_TICK (periodic, every ~5 film-seconds while still ghosted) so a future session never has to re-instrument this file blind again; §CPE_GHOST_GROUND_TRIGGER history: #1110 first-above-ground-element, #1112 5% above-ground-SHARE ratio, #1148 reverted to #1110 (still broken live until this fix), keeping the #1113-1115 hardening (degrade-not-disable, refusal logging, lazy arm-on-first-tick); §CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
@@ -1080,7 +1181,7 @@
             // cannot be handed a position that belongs to a different frame.
             if (_dayInfo) _dayInfo.pos = _dayPos;
           }
-          var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState);
+          var _ggO = _ghostGroundAt(_bkT, nFrames / fps, _bkState, _bkMs);
           if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
             if (_dayInfo) console.log('§CPE_DAY_COUNTER frame=' + i + ' day=' + _dayInfo.day +
               ' of=' + _dayInfo.totalDays + ' pos=' + _dayInfo.pos + ' cursor=' + Math.round(_bkMs));
@@ -1262,6 +1363,14 @@
       window.APP.ghostGroundArm = _ghostGroundArm;
       window.APP.ghostGroundAt = _ghostGroundAt;
       window.APP.ghostGroundRestore = _ghostGroundRestore;
+      // §GHOST_GROUND_LIVE_TRIGGER: read-only accessor for the witness — returns the ACTUAL live
+      // `firstT` this arm computed (elements-fraction or calendar-fraction, whichever domain
+      // `tFilm` is really in) alongside both candidates, so a witness/diagnostic can assert against
+      // the real value instead of re-deriving its own guess of which domain won.
+      window.APP.ghostGroundDebugState = function() {
+        return _ggSpan ? { firstT: _ggSpan.firstT, calendarFirstT: _ggSpan.calendarFirstT,
+                            elementsFirstT: _ggSpan.elementsFirstT, fallback: _ggSched && _ggSched.fallback } : null;
+      };
       // §CPE_MAXQ_STATUS_DAY_LABEL — exposed for the witness (gates the pure formatter directly,
       // same precedent as the other pure functions on this line, instead of sitting through a bake).
       window.APP.maxqStatusDayRoomSegs = _maxqStatusDayRoomSegs;

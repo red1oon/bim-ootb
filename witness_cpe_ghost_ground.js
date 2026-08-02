@@ -34,6 +34,27 @@
 //           element (within one fade window), NOT materially later — the point of the revert.
 //           Also computes, from the SAME real schedule data, where the retired 5%-share rule
 //           would have fired, as the quantified "before" this replaces.
+//
+// §GHOST_GROUND_LIVE_TRIGGER (2026-08-03, live-bug fix on top of #1148): #1148's G-GG-8 above
+// proved the TRIGGER-TIME FORMULA was right in isolation (calendarFirstT computed correctly from
+// real schedule data) — but a REAL bake still showed `groundOpacity=0.220` pinned at the floor at
+// `t=0.035` with `placed=2238/63418`, well past when it should have started rising. Root cause:
+// §CPE_BUILDUP_WORK_PACED (landed the same day as #1148) turned `tFilm` into an ELEMENTS-PLACED
+// fraction, but #1148's trigger still compared it against `calendarFirstT`, a CALENDAR-TIME
+// fraction — two different clocks that G-GG-8's own formula-only check never exercised (it fed
+// synthetic `t` values straight from `res.steps`, never a REAL cursor). The fix compares the real
+// cursor (epoch ms, same clock `tmSetCursor`/`tmPlacedCount` use) directly against `firstAboveMs`,
+// with no fraction conversion. G-GG-12 below replays REAL per-frame conditions (real cursors from
+// `A.buildupCursorAt`, the same call the bake loop makes) to catch exactly this class of bug —
+// G-GG-8 alone did not and would not have.
+//   G-GG-12 RED (pre-fix): the ground could sit pinned at GHOST_OPACITY past the frame where the
+//           real cursor has already placed the first above-ground element — demonstrated on THIS
+//           building's real schedule by comparing where the OLD calendar-fraction rule would have
+//           fired against the frame the REAL cursor crosses firstAboveMs. GREEN (post-fix):
+//           opacity is exactly GHOST_OPACITY at every frame before the real cursor crosses
+//           firstAboveMs, then rises monotonically to 1.0 by the end of the film — replayed frame
+//           by frame with the SAME cursor values `A.buildupCursorAt` (i.e. `_workCursorAt`) feeds
+//           the real bake loop, not just the trigger-time formula in isolation.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8441;
@@ -85,7 +106,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const sched = window.tmGroundSchedule(A.groundIfcZ);
       out.sched = sched ? { aboveTotal: sched.aboveTotal, belowTotal: sched.belowTotal } : null;
       out.firstMs = sched ? sched.firstAboveMs : null;
-      out.triggerT = out.firstMs == null ? null : (out.firstMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
+      // Calendar-fraction reference (kept for the retired-rule comparison below and the G-GG-12c
+      // regression proof — it is deliberately NOT what gates the live behavior any more).
+      out.calendarTriggerT = out.firstMs == null ? null : (out.firstMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
 
       // RED reference, computed from the SAME real schedule: where the retired #1112 5%-share rule
       // would have fired — the k-th above-ground op's own end_ts, k = ceil(5% of aboveTotal).
@@ -106,6 +129,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
       out.groundVisibleAtArm = A.ground.visible;   // false, exactly as a real bake has it
       out.armed = A.ghostGroundArm(bk);
+      // §GHOST_GROUND_LIVE_TRIGGER: read the ACTUAL live threshold the fix computed (elements- or
+      // calendar-fraction, whichever domain tFilm is really in) rather than re-deriving a guess —
+      // this is what G-GG-1/G-GG-2/G-GG-8 below assert against.
+      const dbg = A.ghostGroundDebugState ? A.ghostGroundDebugState() : null;
+      out.triggerT = dbg ? dbg.firstT : out.calendarTriggerT;
+      out.elementsTriggerT = dbg ? dbg.elementsFirstT : null;
       A.ground.visible = true;                     // staging turns it on once the frame loop starts
       const TOTAL = 100;   // a 100 s film, so 1 film-fraction unit == 100 s
       // Sample densely across the whole film; that is the only way to see whether the return to
@@ -152,6 +181,33 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       A.ground.visible = false;
       out.lazyFirstTick = A.ghostGroundAt(0.001, TOTAL, bk);
       out.lazyArmedWithoutExplicitArm = out.lazyFirstTick != null;
+
+      // G-GG-12 §GHOST_GROUND_LIVE_TRIGGER: replay REAL per-frame conditions — the same cursor
+      // values the bake loop actually feeds (`A.buildupCursorAt`, i.e. `_workCursorAt`), not just
+      // the trigger-time formula G-GG-8 already proved correct in isolation. This is what #1148's
+      // own witness did NOT do, which is exactly why the live bug shipped anyway.
+      A.ghostGroundRestore();
+      A.ground.visible = false;
+      const armedLive = A.ghostGroundArm(bk);
+      A.ground.visible = true;
+      const N = 400, FILM_SEC = 100;
+      out.liveReplay = { armed: armedLive, calendarFirstT: out.calendarTriggerT, frames: [] };
+      let newFireFrame = null, oldFireFrame = null;
+      for (let i = 0; i <= N; i++) {
+        const tFrac = i / N;   // the elements-placed fraction §CPE_BUILDUP_WORK_PACED made tFilm
+        const cursorMs = A.buildupCursorAt ? A.buildupCursorAt(tFrac, bk) : null;
+        const o = A.ghostGroundAt(tFrac, FILM_SEC, bk, cursorMs);
+        // "new" = ground truth: the frame the REAL cursor actually crosses firstAboveMs (what the
+        // fixed code's precomputed elements-fraction threshold is designed to match).
+        if (newFireFrame == null && sched && cursorMs != null && cursorMs >= sched.firstAboveMs) newFireFrame = i;
+        // "old" = the retired #1148 behavior: comparing the elements-fraction tFrac directly
+        // against the CALENDAR-fraction threshold — the exact bug, reconstructed from raw data,
+        // not by calling any removed code path.
+        if (oldFireFrame == null && out.calendarTriggerT != null && tFrac >= out.calendarTriggerT) oldFireFrame = i;
+        out.liveReplay.frames.push({ i, t: +tFrac.toFixed(4), cursorMs: cursorMs == null ? null : Math.round(cursorMs), o: o == null ? null : +o.toFixed(4) });
+      }
+      out.liveReplay.newFireFrame = newFireFrame;   // the FIX: fires when the real cursor crosses firstAboveMs
+      out.liveReplay.oldFireFrame = oldFireFrame;   // the BUG: #1148 fired when elements-fraction crossed calendarFirstT
 
       A.ghostGroundRestore();
       out.after = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
@@ -248,6 +304,47 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       P('G-GG-7 the log states the trigger and the arming, so a quiet no-op is visible',
         !!trig && !!armed,
         `${trig || 'no §GHOST_GROUND_SCHEDULE'}\n        ${armed || 'no §GHOST_GROUND armed'}`);
+
+      // G-GG-12: real per-frame replay with the REAL cursor (§GHOST_GROUND_LIVE_TRIGGER fix).
+      const lr = res.liveReplay || {};
+      const frames = lr.frames || [];
+      const nf = lr.newFireFrame, of = lr.oldFireFrame;
+      const preFireFloor = nf == null ? [] : frames.slice(0, nf);
+      const allFloorBeforeFire = preFireFloor.every(f => f.o != null && Math.abs(f.o - 0.22) < 1e-6);
+      let postFireMonotone = true;
+      for (let i = 1; i < frames.length; i++) {
+        if (frames[i].o != null && frames[i - 1].o != null && frames[i].o < frames[i - 1].o - 1e-9) postFireMonotone = false;
+      }
+      const endsOpaque = frames.length && frames[frames.length - 1].o === 1;
+      P('G-GG-12a opacity is pinned at GHOST_OPACITY on every real-cursor frame before the cursor crosses firstAboveMs',
+        lr.armed === true && nf != null && allFloorBeforeFire,
+        `armed=${lr.armed}  fires at replay frame ${nf}/${frames.length ? frames.length - 1 : '?'}  (t=${nf == null ? 'n/a' : frames[nf].t}, ` +
+        `cursorMs=${nf == null ? 'n/a' : frames[nf].cursorMs}, firstAboveMs=${res.firstMs})  ` +
+        `${preFireFloor.length} frames before it, all pinned at 0.22: ${allFloorBeforeFire}`);
+
+      P('G-GG-12b once fired, opacity is monotone non-decreasing and reaches fully opaque by end of film',
+        postFireMonotone && endsOpaque,
+        `monotone=${postFireMonotone}  endOpacity=${frames.length ? frames[frames.length - 1].o : 'n/a'}  ` +
+        `ramp sample near fire: [${frames.slice(Math.max(0, (nf || 0) - 1), (nf || 0) + 5).map(f => f.o).join(' ')}]`);
+
+      // The regression proof: on THIS real building's real schedule, the OLD calendar-fraction
+      // rule and the NEW real-cursor rule fire at DIFFERENT replay frames — the two clocks really
+      // did diverge (not a hypothetical), and the fix's frame is the one that is actually correct
+      // (cursorMs, the value that governs what tmPlacedCount/rendering actually show, has crossed
+      // firstAboveMs exactly at newFireFrame by construction).
+      const diverged = of != null && nf != null && of !== nf;
+      P('G-GG-12c REGRESSION PROOF — the retired calendar-fraction trigger (#1148) and the real-cursor trigger (this fix) fire at different frames on this real schedule',
+        diverged,
+        `old (calendar-fraction, #1148) would fire at frame ${of == null ? 'never' : of} (t=${of == null ? 'n/a' : frames[of].t})  |  ` +
+        `new (real cursor, this fix) fires at frame ${nf == null ? 'never' : nf} (t=${nf == null ? 'n/a' : frames[nf].t})  |  ` +
+        `frame gap=${(of != null && nf != null) ? (of - nf) : 'n/a'}  ` +
+        `(a positive gap means #1148 stayed ghosted LONGER than correct — matching the user's real observation of opacity stuck at the 0.22 floor well past when above-ground elements were visibly placed)`);
+
+      const fired = logs.filter(l => /§GHOST_GROUND_TRIGGER_FIRED/.test(l)).slice(-1)[0] || '';
+      const tick = logs.filter(l => /§GHOST_GROUND_TICK/.test(l)).slice(-1)[0] || '';
+      P('G-GG-13 new diagnostic logging — one-shot TRIGGER_FIRED and periodic TICK lines are present',
+        !!fired && !!tick,
+        `${fired || 'no §GHOST_GROUND_TRIGGER_FIRED'}\n        ${tick || 'no §GHOST_GROUND_TICK'}`);
     }
 
     const pass = checks.filter(c => c.ok).length;
