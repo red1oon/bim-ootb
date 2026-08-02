@@ -113,12 +113,47 @@ const sOld = OLD.computeSchedule(elements, base, 1, null);
 console.log('--- AFTER  (scheduler under test)');
 const sNew = NEW.computeSchedule(elements, base, 1, null);
 
+// ⚖ BOTH KEYS, REPORTED SIDE BY SIDE (user, 2026-08-02). `inversions()` above ranks an element by
+// its STOREY LABEL. audit_rank_vs_support.js measured that labels contradict gravity in 1,735 of
+// 81,722 support edges ("Level 3 carries Level 2" x619), so a label-keyed inversion count can mark a
+// physically-correct schedule as wrong. The engine now gates on ELEVATION, so the honest thing is to
+// report BOTH — swapping the metric to elevation alone would be marking my own homework, which is
+// exactly what this lane's standing warning is about.
+const zBounds = rows.map(r => r.z);
+function zBandOf(bz) { let b = 0; for (let i = 0; i < zBounds.length; i++) if (bz >= zBounds[i]) b = i; return b; }
+function inversionsByZ(sched, pred) {
+  const lastStart = {};
+  elements.forEach(e => {
+    if (pred && !pred(e)) return;
+    const s = sched[e.guid]; if (!s) return;
+    const k = e.seq + '|' + zBandOf(e.base_z);
+    if (!(lastStart[k] >= s.start)) lastStart[k] = s.start;
+  });
+  let inv = 0, pairs = 0;
+  elements.forEach(e => {
+    if (pred && !pred(e)) return;
+    const r = zBandOf(e.base_z); if (!(r > 0)) return;
+    const s = sched[e.guid]; if (!s) return;
+    const below = lastStart[e.seq + '|' + (r - 1)];
+    if (below == null) return;
+    pairs++;
+    if (s.start < below) inv++;
+  });
+  return { inv, pairs };
+}
 const a = inversions(sOld), b = inversions(sNew);
 const NONST = e => e.seq > 4, STRUCT = e => e.seq <= 4;
 const aB = inversions(sOld, NONST), bB = inversions(sNew, NONST);
 const aA = inversions(sOld, STRUCT), bA = inversions(sNew, STRUCT);
 const ovA = tradeOverlap(sOld), ovB = tradeOverlap(sNew);
 console.log(`§4D_BAND BEFORE inversions=${a.inv}/${a.pairs} worst=${a.worstDays.toFixed(0)}d (${a.worst}) span=${a.spanDays.toFixed(0)}d tradesAtMidpoint=${ovA}`);
+{
+  const zOld = inversionsByZ(sOld), zNew = inversionsByZ(sNew);
+  const zOldB = inversionsByZ(sOld, NONST), zNewB = inversionsByZ(sNew, NONST);
+  console.log(`§4D_BAND_BY_Z BEFORE inversions=${zOld.inv}/${zOld.pairs} (non-structure ${zOldB.inv}/${zOldB.pairs})`);
+  console.log(`§4D_BAND_BY_Z AFTER  inversions=${zNew.inv}/${zNew.pairs} (non-structure ${zNewB.inv}/${zNewB.pairs})` +
+    ` — ELEVATION key: the one the engine actually gates on, and the one gravity agrees with`);
+}
 console.log(`§4D_BAND AFTER  inversions=${b.inv}/${b.pairs} worst=${b.worstDays.toFixed(0)}d (${b.worst}) span=${b.spanDays.toFixed(0)}d tradesAtMidpoint=${ovB}`);
 
 let pass = 0, fail = 0;

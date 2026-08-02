@@ -196,11 +196,29 @@
       for (var q = 0; q < _zBounds.length; q++) if (bz >= _zBounds[q]) b = q;
       return b;
     }
+    // ⚖ BOTH GATES ON THE SAME ELEVATION KEY (user, 2026-08-02: "solve Z stacking as a construction
+    // maths ... it is all first principles maths"). A carrier is ALWAYS lower than what it carries,
+    // so base_z is a valid topological potential for the whole support relation — walk it in that
+    // order and placing something before its carrier is impossible. The band gate is the same
+    // statement ("lower z happens first"), so once both are keyed on elevation they point the SAME
+    // direction and CANNOT conflict.
+    //
+    // ⚠ THE HALF-MEASURE WAS MEASURED AND FAILED — do not go back to it. Band on elevation with the
+    // TRADE gate still on `collapsePhase(storey)` put 23,121 elements in two different groupings and
+    // deadlocked the barrier across the two keys (33,960 yields, inversions 38,816). One key or the
+    // conflict simply moves.
+    //
+    // The storey LABEL is kept only for reporting (`phLabelOf`), never for gating: labels disagree
+    // with gravity in 1,735 of 81,722 support edges — "Level 3 carries Level 2" 619 times
+    // (audit_rank_vs_support.js). Gating on a label that contradicts the geometry is what made
+    // band-monotonic and nothing-before-its-carrier look mutually exclusive; they never were.
+    var phLabelOf = new Array(N);
     for (i = 0; i < N; i++) {
       var p = collapsePhase(elements[i].storey);
-      phOf[i] = p;
+      phLabelOf[i] = p;
       seqOf[i] = elements[i].seq;
       rkOf[i] = _zBounds.length ? zBandOf(elements[i].base_z) : -1;
+      phOf[i] = 'Z' + (rkOf[i] < 0 ? 0 : rkOf[i]);   // the trade gate's group IS the elevation band
       if (_bandRank[p] != null && _bandRank[p] !== rkOf[i]) _relabelled++;
     }
 
