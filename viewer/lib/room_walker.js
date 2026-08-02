@@ -928,7 +928,12 @@
       "WHERE (m.ifc_class LIKE 'IfcDoor%' OR m.ifc_class LIKE 'IfcOpening%') AND m.discipline='ARC' " +
       "AND t.center_x IS NOT NULL");
     var anchorNames = Object.keys(anchors || {});
-    var mode = voidMode || 'cur';
+    // §21.31 item 1 — 'B' is now the DEFAULT, not an opt-in. 'cur' (admit every floor-level ARC
+    // opening) is a live defect, not a preference: on LTU it admits 1,595 voids that no door fills,
+    // including atrium/stair/facade voids up to 55 m across, and carving one along a facade opens
+    // the envelope so the interior flood escapes — enclosure retention 43% (§21.30 FINDING 2).
+    // 'cur' is retained ONLY to reproduce §21.24–§21.28's superseded numbers.
+    var mode = voidMode || 'B';
     // §TIER-B host test: an opening is admitted only if an IfcDoor sits in it. Same geometric
     // relation IfcRelFillsElement states outright — which is why tier A supersedes this exactly.
     var HOST_TOL = 0.6, CELL = 1.0, dgrid = {};
@@ -999,6 +1004,7 @@
   function _rasterizeSpine(walls, ext, voids) {
     var blocked = new Uint8Array(ext.nx * ext.ny);
     walls.forEach(function (w) { _stampRect(blocked, ext, w[0], w[1], w[3], w[4], w[6] || 0, 1); });
+    var pre = new Uint8Array(blocked.length); pre.set(blocked);   // §PRECARVE, see below
     // carve after stamping: a void only ever removes wall, never adds floor
     (voids || []).forEach(function (v) {
       if (!v[6]) return;                       // §VOID-AT-FLOOR: not walk-through (window etc.)
@@ -1009,6 +1015,14 @@
       var pierce = v[5] ? 6 * RES : RES;
       _stampRect(blocked, ext, v[0], v[1], lng + 2 * RES, thin + pierce, v[4] || 0, 0);
     });
+    // §PRECARVE (§21.31 item 2) — hand back the mask as it stood BEFORE any void was cut. The
+    // enclosure question must be asked of the walls as modelled; §SEAL-DOORS-FIRST used to answer it
+    // by re-STAMPING each door as a `thin + 6*RES` plug, which is +1.2 m of solid across a ~0.2 m
+    // wall — a 0.5 m spur into the room on each side, times 254 doors, then dilated by SEAL. That
+    // cost Clinic 312 m² of its 1,980 m² enclosed floor (§21.30 FINDING 3), and it could never be
+    // tuned out because the plug is thicker than the wall by construction. Returning the pre-carve
+    // mask makes enclosure EXACTLY the uncarved value, with no re-stamp and no threshold at all.
+    blocked.precarve = pre;
     return blocked;
   }
 
@@ -1111,16 +1125,10 @@
     // doorway — measured, 99% of the enclosed floor lost. So the ENCLOSURE is derived from a mask
     // with all doors closed, while OPENINGS are detected on the carved mask where they are open.
     // Two masks, one raster, and each question asked of the one that can answer it.
-    var rawSealed = raw;
-    if (voids !== undefined) {
-      rawSealed = new Uint8Array(raw.length);
-      rawSealed.set(raw);
-      (voids || []).forEach(function (v) {
-        if (!v[6] || !v[5]) return;                       // re-close walk-through DOORS only
-        _stampRect(rawSealed, ext, v[0], v[1], Math.max(v[2], v[3]) + 2 * RES,
-          Math.min(v[2], v[3]) + 6 * RES, v[4] || 0, 1);
-      });
-    }
+    // §PRECARVE supersedes the re-stamp: the pre-carve mask IS "all doors closed", exactly, with no
+    // plug and no slack constant. The old re-stamp is kept in the history, not here — it inflated
+    // every door to 1.2 m of solid and cost Clinic 16% of its enclosed floor (§21.30 FINDING 3).
+    var rawSealed = (voids !== undefined && raw.precarve) ? raw.precarve : raw;
     var dil = SEAL > 0 ? _dilate(rawSealed, nx, ny, SEAL) : rawSealed;
     var free = new Uint8Array(nx * ny), m;
     for (m = 0; m < nx * ny; m++) free[m] = dil[m] ? 0 : 1;
