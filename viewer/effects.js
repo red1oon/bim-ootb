@@ -4588,12 +4588,12 @@ async function setupEffects(A, renderer, scene, camera) {
   // spin, the orbit lap and the walk's own turn charge (see _useSec, ~line 5932) — raising it would
   // silently re-time every film ever baked. This is a gaze-only multiplier for exactly that reason.
   //
-  // 3x = 135 deg/s peak. Chosen against the number that made §CPE_GAZE_CONSTANT_RATE necessary in
-  // the first place: an UNBOUNDED swing measured 29.01 deg/sample at w=0.850 on Hospital and was
-  // judged a whip. At 60 probes/s that is ~1740 deg/s; 135 deg/s is under a thirteenth of it, and
-  // it is the rate a person turns their head to look at something — fast, not violent.
+  // §CPE_GAZE_ACQUIRE_SOFTEN (user, 2026-08-02, on the second Hospital bake): "The cam face turns
+  // rather obvious been more pronounced, still OK, was more graceful before." 3x (135 deg/s peak)
+  // overshot; 2x (90 deg/s) keeps both halves of the original ask — still strictly faster than
+  // the flat 45 deg/s that read as "a bit slow", still decaying to exactly 1.0x on-subject.
   // Pure function of the residual, so poseAt stays order-independent and replans stay identical.
-  var GAZE_ACQUIRE_MAX  = 3;                    // peak multiple of the shared CINEMA_TURN_DPS cap
+  var GAZE_ACQUIRE_MAX  = 2;                    // peak multiple of the shared CINEMA_TURN_DPS cap
   var GAZE_ACQUIRE_FULL = 60 * Math.PI / 180;   // residual at/above which the full multiple applies
   var GAZE_ACQUIRE_DEAD = 2 * Math.PI / 180;    // below this the gaze IS on target — no boost at all
   function _gazeAcquireCap(residRad, baseMaxAng) {
