@@ -1020,7 +1020,9 @@
       // A DOOR is a panel and may be modelled thinner than its host wall, so it has to pierce.
       // An OPENING already IS the void — cutting it wider removed 55.6% of LTU's wall on the first
       // gate run, so it gets one cell of slack and no more.
-      var pierce = v[5] ? 6 * RES : RES;
+      // §21.38: 6*RES (1.20m) failed 33 of 51 measured crossings — the gap is wall + 2xSEAL (0.80m
+      // of dilation), so a 0.6m wall needs ~1.40m. 10*RES (2.00m) covers all but one measured crossing.
+      var pierce = v[5] ? 10 * RES : RES;
       _stampRect(blocked, ext, v[0], v[1], lng + 2 * RES, thin + pierce, v[4] || 0, 0);
     });
     // §PRECARVE (§21.31 item 2) — hand back the mask as it stood BEFORE any void was cut. The
