@@ -108,7 +108,19 @@ function inRect(cx, cy, bx, by, rot, px, py) {
       // inside the cluster keeps the cluster stranded just as effectively as no opening at all.
       let op = null;
       for (const o of m.openings) if (Math.hypot(o.cx - mx, o.cy - my) <= 1.0) { op = o; break; }
-      found.push({ gap, bd, blocked, span: s - 1, covered, op: !!op, opDoors: op ? op.doors.length : -1,
+      // §21.40c — the far end of the link that leaves the cluster. If these are sub-2m2 slivers with
+      // depth -1, the defect is the `area >= 2.0` filter in the ANALYSIS, not anything geometric.
+      let farId = null, farArea = null, farDepth = null;
+      if (op) {
+        const ga = find(op.a), gb = find(op.b);
+        const far = memSet.has(ga) ? gb : (memSet.has(gb) ? ga : null);
+        if (far !== null) {
+          const grp = m.groups.find(x => x.id === far);
+          farId = far; farArea = grp ? grp.area : null; farDepth = grp ? grp.depth : null;
+        }
+      }
+      found.push({ gap, bd, blocked, span: s - 1, covered, farId, farArea, farDepth,
+        op: !!op, opDoors: op ? op.doors.length : -1,
         opInside: op ? (memSet.has(find(op.a)) && memSet.has(find(op.b))) : false,
         samePocket: owner[k] === owner[kk], doorW: Math.max(bdoor[2], bdoor[3]) });
     }
@@ -131,6 +143,20 @@ function inRect(cx, cy, bx, by, rot, px, py) {
   console.log('§C40b opening record EXISTS at the crossing = ' + withOp + '/' + n + '   none = ' + (n - withOp));
   console.log('§C40b    of those: door-matched (LINK) = ' + opLink + '   doorless (FUSION) = ' + opFuse +
     '   with BOTH ends inside the cluster = ' + opIn);
+  const far = found.filter(x => x.farId !== null && x.farArea !== null);
+  const tiny = far.filter(x => x.farArea < 2.0).length;
+  const unreached = far.filter(x => x.farDepth === -1).length;
+  const reached = far.filter(x => x.farDepth >= 0).length;
+  const fa = far.map(x => x.farArea).sort((a, b) => a - b);
+  console.log('§C40c far-end groups of links leaving the cluster = ' + far.length);
+  console.log('§C40c    far-end area < 2.0m2 (SLIVER, invisible to strandedIds) = ' + tiny + '/' + far.length +
+    '   area median=' + (fa.length ? fa[fa.length >> 1].toFixed(2) : 'n/a') + 'm2');
+  console.log('§C40c    far-end depth -1 (also unreachable) = ' + unreached +
+    '   depth >=0 (REACHES THE SPINE) = ' + reached);
+  console.log('§C40c VERDICT = ' + (far.length === 0 ? 'no outward links after all — re-check the boundary test'
+    : reached > 0 ? 'BFS DEFECT — ' + reached + ' link(s) reach a group WITH depth, so the cluster should not be depth -1. The depth propagation is wrong, not the map.'
+    : tiny > far.length / 2 ? 'SLIVER FILTER — most far ends are sub-2m2 groups that are themselves unreachable. Generic fix: slivers must carry links, not be dropped.'
+    : 'CHAINED — far ends are real groups that are themselves stranded; the break is further out, walk one more hop.'));
   const dw = found.map(x => x.doorW).sort((a, b) => a - b);
   const gp = found.map(x => x.gap).sort((a, b) => a - b);
   if (n) console.log('§C40 door width median=' + dw[n >> 1].toFixed(2) + 'm   gap median=' + gp[n >> 1].toFixed(2) +
