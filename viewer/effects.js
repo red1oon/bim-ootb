@@ -4569,6 +4569,58 @@ async function setupEffects(A, renderer, scene, camera) {
   // §CINEMA_PATH: the ONE shared path plan — flown identically by the live Alt+C capture and by
   // the MaxQ exporter (cinema_maxq.js). Everything derives from the CURRENT camera/sun/building at
   // call time; nothing is hardcoded per building.
+  // ══ §CPE_GAZE_ACQUIRE — the cap ACCELERATES when far off-axis and decays onto the subject ═════
+  // USER, 2026-08-02: "the cam head turning to face density*depth ... Seems a bit slow during this
+  // baking. It be nice if it does so right away gracefully."
+  //
+  // The limiter above was a FLAT cap, so a 90 deg acquisition cost a dead-constant 2.00 s at one
+  // unvarying speed. That is not a slow camera, it is a camera with no acquisition: a real operator
+  // whips onto a subject and DECELERATES onto it. "Right away" and "gracefully" are the two halves
+  // of that, and a single flat number can express neither.
+  //
+  // So the allowance is scaled by the RESIDUAL angle — the further off-axis, the more rate it may
+  // spend; as it converges the multiplier smoothsteps back to exactly 1.0, which is the shipped
+  // behaviour. Peak turn rate is therefore still explicitly bounded (GAZE_ACQUIRE_MAX), still
+  // logged every bake, and a gaze already ON its subject moves exactly as it did before — that
+  // last property matters: it means this cannot add motion to a settled shot.
+  //
+  // ⚠ IT MULTIPLIES OVER CINEMA_TURN_DPS, IT DOES NOT REPLACE IT. That constant also prices the
+  // spin, the orbit lap and the walk's own turn charge (see _useSec, ~line 5932) — raising it would
+  // silently re-time every film ever baked. This is a gaze-only multiplier for exactly that reason.
+  //
+  // 3x = 135 deg/s peak. Chosen against the number that made §CPE_GAZE_CONSTANT_RATE necessary in
+  // the first place: an UNBOUNDED swing measured 29.01 deg/sample at w=0.850 on Hospital and was
+  // judged a whip. At 60 probes/s that is ~1740 deg/s; 135 deg/s is under a thirteenth of it, and
+  // it is the rate a person turns their head to look at something — fast, not violent.
+  // Pure function of the residual, so poseAt stays order-independent and replans stay identical.
+  var GAZE_ACQUIRE_MAX  = 3;                    // peak multiple of the shared CINEMA_TURN_DPS cap
+  var GAZE_ACQUIRE_FULL = 60 * Math.PI / 180;   // residual at/above which the full multiple applies
+  var GAZE_ACQUIRE_DEAD = 2 * Math.PI / 180;    // below this the gaze IS on target — no boost at all
+  function _gazeAcquireCap(residRad, baseMaxAng) {
+    var r = Math.abs(residRad);
+    if (!(r > GAZE_ACQUIRE_DEAD)) return baseMaxAng;
+    var u = Math.min(1, (r - GAZE_ACQUIRE_DEAD) / (GAZE_ACQUIRE_FULL - GAZE_ACQUIRE_DEAD));
+    return baseMaxAng * (1 + (GAZE_ACQUIRE_MAX - 1) * _cinemaSmoothstep(u));
+  }
+  // Exposed for witness_cpe_gaze_acquire.js — the witness drives THIS function, not a copy of the
+  // arithmetic, so a change here cannot pass a test that reimplemented the old curve.
+  A.gazeAcquireCap = _gazeAcquireCap;
+  A.gazeAcquireStep = function (cur, tgt, baseMaxAng) {
+    var d = Math.max(-1, Math.min(1, cur.x * tgt.x + cur.y * tgt.y + cur.z * tgt.z));
+    return _rotToward(cur, tgt, _gazeAcquireCap(Math.acos(d), baseMaxAng));
+  };
+  function _rotToward(a, b, maxAng) {
+    var d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+    var ang = Math.acos(d);
+    if (ang <= maxAng || ang < 1e-9) return b;
+    var s = Math.sin(ang);
+    if (Math.abs(s) < 1e-9) return b;             // antipodal/degenerate — no stable arc to walk
+    var t = maxAng / ang, k0 = Math.sin((1 - t) * ang) / s, k1 = Math.sin(t * ang) / s;
+    var x = a.x * k0 + b.x * k1, y = a.y * k0 + b.y * k1, z = a.z * k0 + b.z * k1;
+    var L = Math.hypot(x, y, z) || 1;
+    return { x: x / L, y: y / L, z: z / L };
+  }
+
   function _cinemaPathPlan(durationSec) {
     var _planT0 = (typeof performance !== 'undefined') ? performance.now() : 0;
     var arcBboxRaw = _buildingBBoxArc();
@@ -6708,17 +6760,6 @@ async function setupEffects(A, renderer, scene, camera) {
     // it is safe here because §CPE_AIM_LATCH already made Beat 4 open on Beat 3's real final gaze,
     // so wherever the limiter leaves the gaze, the hand-off follows it. Pure function of w3 — no
     // per-frame state, so poseAt stays order-independent and replans stay byte-identical.
-    function _rotToward(a, b, maxAng) {
-      var d = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
-      var ang = Math.acos(d);
-      if (ang <= maxAng || ang < 1e-9) return b;
-      var s = Math.sin(ang);
-      if (Math.abs(s) < 1e-9) return b;             // antipodal/degenerate — no stable arc to walk
-      var t = maxAng / ang, k0 = Math.sin((1 - t) * ang) / s, k1 = Math.sin(t * ang) / s;
-      var x = a.x * k0 + b.x * k1, y = a.y * k0 + b.y * k1, z = a.z * k0 + b.z * k1;
-      var L = Math.hypot(x, y, z) || 1;
-      return { x: x / L, y: y / L, z: z / L };
-    }
     // The limiter spans Beat 3 AND Beat 4 as ONE continuous stretch of film — [tS, tR]. Limiting
     // only the walk was measured to MOVE the whip rather than remove it: Terminal went 4.1 -> 34.9
     // deg/frame at u=0.645, and `out` there is 0.6442, so the peak had simply relocated into Beat 4,
@@ -6746,12 +6787,16 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       var stepSec = Math.max(1e-6, (tR - tS) * durationSec) / _gazeLimN;
       var maxAng = CINEMA_TURN_DPS * stepSec * Math.PI / 180;
-      var lim = [raw[0]], cur = raw[0], rawPeak = 0, limPeak = 0;
+      var lim = [raw[0]], cur = raw[0], rawPeak = 0, limPeak = 0, acqPeakMult = 1;
       for (i = 1; i <= _gazeLimN; i++) {
         var rp = Math.acos(Math.max(-1, Math.min(1,
           raw[i].x * raw[i - 1].x + raw[i].y * raw[i - 1].y + raw[i].z * raw[i - 1].z))) * 180 / Math.PI;
         if (rp > rawPeak) rawPeak = rp;
-        var nxt = _rotToward(cur, raw[i], maxAng);
+        var _resid = Math.acos(Math.max(-1, Math.min(1,
+          cur.x * raw[i].x + cur.y * raw[i].y + cur.z * raw[i].z)));
+        var _cap = _gazeAcquireCap(_resid, maxAng);
+        if (_cap / maxAng > acqPeakMult) acqPeakMult = _cap / maxAng;
+        var nxt = _rotToward(cur, raw[i], _cap);
         var lp = Math.acos(Math.max(-1, Math.min(1,
           nxt.x * cur.x + nxt.y * cur.y + nxt.z * cur.z))) * 180 / Math.PI;
         if (lp > limPeak) limPeak = lp;
@@ -6763,6 +6808,7 @@ async function setupEffects(A, renderer, scene, camera) {
         ' capDps=' + CINEMA_TURN_DPS + ' capPerProbeDeg=' + (maxAng * 180 / Math.PI).toFixed(3) +
         ' rawPeakDeg=' + rawPeak.toFixed(2) + ' limitedPeakDeg=' + limPeak.toFixed(2) +
         ' rawPeakDps=' + (rawPeak / stepSec).toFixed(1) + ' limitedPeakDps=' + (limPeak / stepSec).toFixed(1) +
+        ' acquirePeakMult=' + acqPeakMult.toFixed(2) + 'x (max ' + GAZE_ACQUIRE_MAX + 'x)' +
         ' — the composed gaze, bounded at the rate the spin and orbit already turn at');
     }
     function _gazeRateAt(w) {
