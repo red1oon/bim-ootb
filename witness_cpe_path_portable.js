@@ -28,6 +28,21 @@
 //           reports a restored path AND the next plan build logs §CINEMA_BEATS route=authored.
 //   G-PP-5  no regression: a save with nothing authored still produces a valid DB (openable, correct
 //           element count) and does NOT create an empty cinema_path table.
+//
+// §CPE_PANEL_STATE gates (added 2026-08-02) — THE ISSUE: "Save this path" persisted only the
+// path/override; the PANEL CONTEXT it was recorded under (checkbox states, Time Machine total span,
+// the day the counter currently shows) was dropped, so reopening a saved plan did not restore the
+// session. RED on pre-fix code proves the drop; GREEN proves restore matches save byte-for-byte.
+//   G-PS-1  the saved IndexedDB record carries `panelState` — checkboxes {buildup, roomTitle}
+//           (the CPE panel's full checkbox census), dayCounter corner, tmCursor / tmSpanMs from
+//           window.tmGetState(). RED: rec.panelState === undefined — the context is dropped at save.
+//   G-PS-2  after reload + open, the PANEL CONTROLS show the saved context (#cpe-buildup.checked,
+//           #cpe-room-title.checked, #cpe-day-counter.value). RED: _state is restored from the
+//           override but the DOM controls are not re-seeded — the panel lies about the plan.
+//   G-PS-3  the day-counter position is restored: with TM active, tmGetState().cursor equals the
+//           saved cursor (restored via the ONE public setter window.tmSetCursor). RED: cursor is
+//           never touched on open — the counter shows whatever day the session happened to be at.
+//   G-PS-4  byte-for-byte: every restored value equals the saved record's panelState exactly.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8461;
@@ -135,6 +150,7 @@ async function clickPipe(page, px, py) {
   console.log(`\n${'='.repeat(78)}\n${BLD} — §CPE_PATH_NOT_PORTABLE\n${'='.repeat(78)}`);
 
   let authoredOv = null, authoredIfc = null;   // stashed at authoring time, read back in later phases
+  let savedTmTruth = null, savedRec = null;    // §CPE_PANEL_STATE ground truth captured at save time
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1200, height: 700 });
@@ -185,11 +201,52 @@ async function clickPipe(page, px, py) {
           });
         }, afterEdit);
 
+        // ── §CPE_PANEL_STATE setup: put the panel into a NON-DEFAULT context before saving, so a
+        // dropped context is distinguishable from a default one. Real controls, real change events.
+        await page.click('#cpe-buildup');       // buildup ON  (default off)
+        await page.click('#cpe-room-title');    // room titles ON (default off)
+        await page.select('#cpe-day-counter', 'bl');  // corner bottom-left (default tr)
+        await sleep(600);
+        // Time Machine context: activate (derived timeline) and park the cursor mid-project —
+        // a value no default lands on — through the same public setter the app itself uses.
+        savedTmTruth = await page.evaluate(async () => {
+          if (typeof window.tmActivateForBake !== 'function' || typeof window.tmGetState !== 'function') return null;
+          const ok = await window.tmActivateForBake();
+          if (!ok) return null;
+          const tm0 = window.tmGetState();
+          const target = tm0.projectStart + Math.round((tm0.projectEnd - tm0.projectStart) * 0.37);
+          window.tmSetCursor(target);
+          const tm = window.tmGetState();
+          return { target, cursor: tm.cursor, projectStart: tm.projectStart, projectEnd: tm.projectEnd,
+                   spanMs: tm.projectEnd - tm.projectStart };
+        });
+        P('SETUP Time Machine context established (active, cursor parked mid-project)',
+          !!savedTmTruth && Math.abs(savedTmTruth.cursor - savedTmTruth.target) < 2,
+          savedTmTruth ? `cursor=${savedTmTruth.cursor} target=${savedTmTruth.target} spanMs=${savedTmTruth.spanMs}` : 'tmActivateForBake unavailable or no ops');
+
         let mark = logs.length;
         await page.click('#cpe-save');
         await sleep(1200);
         const savedLine = logs.slice(mark).filter(l => l.startsWith('§CPE_PATH_SAVED')).pop();
         P('SETUP plan named and saved to IndexedDB', !!savedLine, savedLine || 'no §CPE_PATH_SAVED line');
+
+        // ── G-PS-1: the record itself carries panelState (read straight from IndexedDB) ──
+        savedRec = await page.evaluate((name) => new Promise((res, rej) => {
+          const rq = indexedDB.open('bim_ootb_cinema_paths', 1);
+          rq.onsuccess = () => {
+            const db = rq.result, g = db.transaction('paths', 'readonly').objectStore('paths').getAll();
+            g.onsuccess = () => { db.close(); res((g.result || []).filter(r => r.name === name).pop() || null); };
+            g.onerror = () => { db.close(); rej(g.error); };
+          };
+          rq.onerror = () => rej(rq.error);
+        }), PLAN_NAME);
+        const ps = savedRec && savedRec.panelState;
+        P('G-PS-1 the saved record carries panelState (checkboxes + dayCounter + tmCursor/tmSpanMs) ' +
+          '(THE drop: pre-fix, rec.panelState is undefined — the recording context never reaches the store)',
+          !!ps && ps.checkboxes && ps.checkboxes.buildup === true && ps.checkboxes.roomTitle === true &&
+          ps.dayCounter === 'bl' && savedTmTruth && ps.tmCursor === savedTmTruth.cursor &&
+          ps.tmSpanMs === savedTmTruth.spanMs,
+          ps ? `panelState=${JSON.stringify(ps)}` : `rec keys=${savedRec ? Object.keys(savedRec).join(',') : 'no record'} — panelState MISSING`);
 
         // Close via CANCEL, not OK — an untouched-vs-edited OK has its OWN pre-existing staging path
         // (finish() -> stageCinemaPath on an edited OK); using it here would mask exactly the bug
@@ -225,12 +282,61 @@ async function clickPipe(page, px, py) {
     P('SETUP the saved plan is listed after reload (IndexedDB persisted across it)', optIdx >= 0, `option index=${optIdx}`);
     if (optIdx < 0) { inconclusive = true; }
     else {
+      // §CPE_PANEL_STATE: re-activate TM BEFORE opening the plan — the cursor restore goes through
+      // tmSetCursor and (by design) only writes when TM is active; the witness must be in the state
+      // a buildup user actually is in. The reload wiped _active/_cursor — that is the RED condition.
+      const tmReady = await page.evaluate(async () =>
+        (typeof window.tmActivateForBake === 'function') ? await window.tmActivateForBake() : false);
+      P('SETUP Time Machine re-activated after reload (cursor at whatever the activation left, NOT the saved day)',
+        tmReady === true, `tmActivateForBake=${tmReady}`);
       await page.select('#cpe-plans', String(optIdx));
       let mark = logs.length;
       await page.click('#cpe-plan-open');
       await sleep(800);
       const loadedLine = logs.slice(mark).filter(l => l.startsWith('§CPE_PATH_LOADED')).pop();
       P('SETUP the plan opened successfully from IndexedDB', !!loadedLine, loadedLine || 'no §CPE_PATH_LOADED line');
+
+      // ── §CPE_PANEL_STATE after the reload: does the reopened plan restore the recording context? ──
+      const psLine = logs.slice(mark).filter(l => l.startsWith('§CPE_PANEL_STATE')).pop();
+      const domState = await page.evaluate(() => ({
+        buildup: !!document.getElementById('cpe-buildup').checked,
+        roomTitle: !!document.getElementById('cpe-room-title').checked,
+        dayCounter: document.getElementById('cpe-day-counter').value,
+        tm: (typeof window.tmGetState === 'function') ? window.tmGetState() : null,
+      }));
+      P('G-PS-2 the PANEL CONTROLS show the saved context after reload+open ' +
+        '(THE drop: pre-fix, _state is set from the override but the checkboxes/select are never re-seeded)',
+        domState.buildup === true && domState.roomTitle === true && domState.dayCounter === 'bl',
+        `#cpe-buildup=${domState.buildup} #cpe-room-title=${domState.roomTitle} #cpe-day-counter=${domState.dayCounter}` +
+        `  LOG: ${psLine || 'no §CPE_PANEL_STATE line'}`);
+      P('G-PS-3 the day-counter position (TM cursor) is restored through window.tmSetCursor ' +
+        '(THE drop: pre-fix, opening a plan never touches the cursor)',
+        !!savedTmTruth && !!domState.tm && domState.tm.active === true &&
+        Math.abs(domState.tm.cursor - savedTmTruth.cursor) < 2,
+        savedTmTruth && domState.tm
+          ? `cursor now=${domState.tm.cursor} saved=${savedTmTruth.cursor} diff=${Math.abs(domState.tm.cursor - savedTmTruth.cursor)}ms tmActive=${domState.tm.active}`
+          : 'no TM state to compare');
+      const psSaved = savedRec && savedRec.panelState;
+      // Byte-for-byte on every RESTORABLE value (checkboxes, corner, cursor — the values the feature
+      // writes back). The span has NO setter (derived from the op-log — a reload re-derives it, and
+      // TM's derived synthesis is not ms-identical across loads), so the CONTRACT there is a drift
+      // check: equal spans stay silent, unequal spans are reported by the §CPE_PANEL_STATE span-drift
+      // warn — never silently absorbed.
+      const spanNow = domState.tm ? (domState.tm.projectEnd - domState.tm.projectStart) : null;
+      const spanEqual = !!psSaved && spanNow != null && Math.abs(spanNow - psSaved.tmSpanMs) <= 1;
+      const driftLine = logs.slice(mark).filter(l => l.indexOf('§CPE_PANEL_STATE span drift') >= 0).pop();
+      P('G-PS-4 byte-for-byte: every restored value equals the saved panelState exactly; the ' +
+        'non-settable span either matches or its drift is REPORTED, never silent',
+        !!psSaved && domState.buildup === psSaved.checkboxes.buildup &&
+        domState.roomTitle === psSaved.checkboxes.roomTitle &&
+        domState.dayCounter === psSaved.dayCounter &&
+        !!domState.tm && domState.tm.cursor === psSaved.tmCursor &&
+        (spanEqual || !!driftLine),
+        psSaved && domState.tm
+          ? `saved={buildup:${psSaved.checkboxes.buildup},roomTitle:${psSaved.checkboxes.roomTitle},day:${psSaved.dayCounter},cursor:${psSaved.tmCursor},span:${psSaved.tmSpanMs}} ` +
+            `restored={buildup:${domState.buildup},roomTitle:${domState.roomTitle},day:${domState.dayCounter},cursor:${domState.tm.cursor},span:${spanNow}}` +
+            `  spanEqual=${spanEqual} DRIFT: ${driftLine || 'none logged'}`
+          : `saved panelState=${JSON.stringify(psSaved)} — nothing to compare byte-for-byte`);
 
       // ── G-PP-1a: is the just-opened plan actually staged for Ctrl+S? ──
       stagedAfterOpen = await page.evaluate(() => {
