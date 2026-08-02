@@ -28,13 +28,23 @@
   // Deliberately NOT "switch the ground off", which the user floated first and flagged the risk of
   // themselves: that takes §PHOTO_SHADOW's casters and the sense of a site with it, and the
   // foundation floats in blackness.
+  //
+  // §CPE_GHOST_GROUND_TRIGGER history (read before changing this threshold again):
+  //   #1110 fired at the first at-or-above-ground element (MIN(end_ts) over above-ground ops) —
+  //   measured t=0.0162 on Hospital, 2.4s of a 147.9s film.
+  //   #1112 judged that too early ("over before the camera lands") and replaced it with a RATIO
+  //   against the model's own above-ground total (opaque at 5% of above-ground work placed,
+  //   t=0.050 on Hospital) — a deliberate, reasoned widening, not a bug.
+  //   2026-08-03: the user watched real bakes and said, twice, directly, that even 5% is "quite
+  //   further on" — they want the ground solid essentially the MOMENT the first slab(s) appear,
+  //   not materially later. This reverts the TRIGGER to #1110's first-above-ground-element rule
+  //   (still computed from tmGroundSchedule's `firstAboveMs`, so the §1113-1115 hardening below —
+  //   degrade-not-disable, refusal logging, lazy arm-on-first-tick, arm-while-hidden — is untouched).
+  //   NOTE FOR THE USER: #1112's "too early to be legible" concern was real and measured, not
+  //   invented — reverting does trade back into that risk (a 2.4s-of-148s window is brief). This
+  //   revert is implemented as directly asked, not silently split-the-difference; flagging the
+  //   historical concern here rather than deciding it unilaterally.
   var GHOST_OPACITY = 0.22;      // survey-drawing translucency; low enough to read what is under it
-  // §CPE_GHOST_GROUND_RATIO — the ground is fully opaque once this SHARE of the building's own
-  // above-ground work is placed. A fraction, never a count: 5% of a 62,450-element hospital and 5%
-  // of a 961-element house are both "the building is unmistakably out of the ground now". This is
-  // the ONLY presentation constant in the rule — the trigger, the totals and the ordering all come
-  // from the model.
-  var GHOST_REVEAL_FRAC = 0.05;
   var GHOST_FADE_SEC = 3.0;      // floor on how fast opacity may rise, in FILM seconds — a batch of
                                  // ops landing in one frame must not snap the ground opaque.
   var _ggSched = null, _ggSpan = null, _ggSaved = null, _ggTried = false;
@@ -156,9 +166,10 @@
       // about that building. Self-disabling, not a special case anyone has to configure.
       if (!sched.belowTotal) { console.log('§GHOST_GROUND skip reason=this model has no below-ground elements (nothing to reveal)'); return false; }
     } else {
-      // Coarse proxy: the share of ALL placement, not just above-ground. Less faithful (it cannot
-      // tell a pile cap from a parapet) but it moves in the same direction at the same time, and it
-      // is strictly better than the feature vanishing.
+      // Coarse proxy: without tmGroundSchedule we cannot tell a pile cap from a parapet, so we
+      // cannot locate a precise "first above-ground element" moment either. Arm as if that moment
+      // is essentially the start of the buildup (firstT ~ 0 below) — strictly better than the
+      // feature vanishing, and consistent with the precise rule's own intent (fire immediately).
       if (!bkState.ops) { console.log('§GHOST_GROUND skip reason=fallback needs an op count and bkState.ops is ' + bkState.ops); return false; }
       sched = { fallback: true, aboveTotal: bkState.ops, belowTotal: 0, ends: null, firstAboveMs: bkState.projectStart };
     }
@@ -167,26 +178,18 @@
                 firstT: sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span };
     var m = A.ground.material;
     _ggSaved = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
-    console.log('§GHOST_GROUND armed rule=' + (sched.fallback ? 'FALLBACK(all-placement proxy — tmGroundSchedule unavailable)' : 'above-ground share') +
+    console.log('§GHOST_GROUND armed rule=' + (sched.fallback ? 'FALLBACK(immediate proxy — tmGroundSchedule unavailable)' : 'first above-ground element') +
       ' aboveOps=' + sched.aboveTotal + ' belowOps=' + sched.belowTotal +
-      ' revealFrac=' + GHOST_REVEAL_FRAC + ' (opaque once ' + Math.ceil(sched.aboveTotal * GHOST_REVEAL_FRAC) +
-      ' above-ground elements are placed) ghost=' + GHOST_OPACITY + ' maxRiseSec=' + GHOST_FADE_SEC);
+      ' firstAboveMs=' + (sched.firstAboveMs == null ? 'none' : Math.round(sched.firstAboveMs)) +
+      ' triggerT=' + _ggSpan.firstT.toFixed(4) +
+      ' ghost=' + GHOST_OPACITY + ' maxRiseSec=' + GHOST_FADE_SEC);
     return true;
   }
 
-  // How many above-ground ops have COMPLETED by this cursor. Binary search on the sorted end_ts —
-  // the same `end_ts <= cursor` definition tmPlacedCount uses, so the ghost and the visible model
-  // can never disagree about what is built.
-  function _ggPlacedAbove(ms) {
-    if (_ggSched.fallback) return window.tmPlacedCount(ms);
-    var e = _ggSched.ends, lo = 0, hi = e.length;
-    while (lo < hi) { var mid = (lo + hi) >> 1; if (e[mid] <= ms) lo = mid + 1; else hi = mid; }
-    return lo;
-  }
-
   // Per frame. `tFilm` is the film fraction driving the cursor; `totalSec` the film's length.
-  // Opacity follows the SHARE of above-ground work placed — the ground solidifies as the building
-  // rises — with a rate limit so a batch of ops cannot turn the ramp into a cut.
+  // Opacity follows a single smoothstep from the first above-ground element's own film fraction
+  // (`_ggSpan.firstT`) to opaque, over at most GHOST_FADE_SEC of FILM time — §CPE_GHOST_GROUND_TRIGGER
+  // above: reverted off the #1112 above-ground-SHARE ratio, back to #1110's first-element trigger.
   function _ghostGroundAt(tFilm, totalSec, bkState) {
     var A = window.APP;
     // LAZY ARM. Arming used to happen once, before the frame loop, which made the feature hostage to
@@ -197,22 +200,14 @@
     if (!_ggSched && !_ggTried && bkState) { _ggTried = true; _ghostGroundArm(bkState); }
     if (!_ggSched || !A || !A.ground || !A.ground.material) return null;
     var t = Math.max(0, Math.min(1, tFilm));
-    var ms = _ggSpan.start + t * _ggSpan.span;
-    // 1. What the BUILDING says: the share of its own above-ground work that is placed.
-    var frac = _ggPlacedAbove(ms) / _ggSched.aboveTotal;
-    var u = Math.max(0, Math.min(1, frac / GHOST_REVEAL_FRAC));
-    var byWork = GHOST_OPACITY + (1 - GHOST_OPACITY) * (u * u * (3 - 2 * u));
-    // 2. A floor on how FAST that may happen, so a batch of ops landing together cannot snap the
-    //    ground opaque. ⚠ Expressed against the film's own clock, NOT against the previous call:
-    //    a per-call rate limiter makes the curve depend on how densely it is sampled, and the bake
-    //    (2219 frames) and the rehearsal (~600) then trace different curves for the same film.
-    //    Measured 2026-07-31 — G-GG-6 caught exactly that, 0.3653 vs 0.4006 at t=0.02.
+    // A floor on how FAST the ramp may happen, so a batch of ops landing together cannot snap the
+    // ground opaque. ⚠ Expressed against the film's own clock, NOT against the previous call: a
+    // per-call rate limiter makes the curve depend on how densely it is sampled, and the bake
+    // (2219 frames) and the rehearsal (~600) then trace different curves for the same film.
+    // Measured 2026-07-31 — G-GG-6 caught exactly that, 0.3653 vs 0.4006 at t=0.02.
     var fadeFrac = (totalSec > 0) ? Math.min(0.5, GHOST_FADE_SEC / totalSec) : 0.05;
     var v = Math.max(0, Math.min(1, (t - _ggSpan.firstT) / Math.max(1e-6, fadeFrac)));
-    var byTime = GHOST_OPACITY + (1 - GHOST_OPACITY) * (v * v * (3 - 2 * v));
-    // Both curves are monotone functions of t alone, so their min is too — and the result is a pure
-    // function of the film fraction: identical in the preview and the bake, at any frame count.
-    var o = Math.min(byWork, byTime);
+    var o = GHOST_OPACITY + (1 - GHOST_OPACITY) * (v * v * (3 - 2 * v));   // smoothstep, no cut
     var m = A.ground.material, solid = o > 0.999;
     m.opacity = o;
     m.transparent = !solid;
@@ -233,7 +228,7 @@
     _ggSaved = null;
   }
 
-  var MAXQ_V = 'v20 (§CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_GHOST_GROUND_RATIO the ground solidifies as the SHARE of above-ground work rises — generic to any building, self-disabling where there is no substructure; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  var MAXQ_V = 'v21 (§CPE_GHOST_GROUND_TRIGGER reverted off the #1112 above-ground-SHARE ratio (5%, judged too late by direct user testimony) back to the #1110 first-above-ground-element trigger, keeping the #1113-1115 hardening (degrade-not-disable, refusal logging, lazy arm-on-first-tick); §CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next

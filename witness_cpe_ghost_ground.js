@@ -23,6 +23,17 @@
 //           before arming. A ghosted ground left behind follows the user into normal navigation.
 //   G-GG-6  preview and bake agree — the same film fraction yields the same opacity whichever
 //           call site drives it, because the fade is expressed in film fraction, not wall time.
+//
+// §CPE_GHOST_GROUND_TRIGGER (2026-08-03): #1112 replaced the first-element trigger above with a
+// RATIO against the model's own above-ground total (opaque at 5% of above-ground work placed),
+// reasoning the first-element trigger was too brief to be legible. The user then watched real
+// bakes and said, twice, directly, that even 5% is "quite further on" than they want — this
+// reverts the TRIGGER to first-above-ground-element while keeping every #1113-1115 hardening
+// (degrade-not-disable, refusal logging, lazy arm-on-first-tick, arm-while-hidden) intact.
+//   G-GG-8  RED-vs-GREEN: the ground reaches opaque essentially AT the first above-ground
+//           element (within one fade window), NOT materially later — the point of the revert.
+//           Also computes, from the SAME real schedule data, where the retired 5%-share rule
+//           would have fired, as the quantified "before" this replaces.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8441;
@@ -75,6 +86,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       out.sched = sched ? { aboveTotal: sched.aboveTotal, belowTotal: sched.belowTotal } : null;
       out.firstMs = sched ? sched.firstAboveMs : null;
       out.triggerT = out.firstMs == null ? null : (out.firstMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
+
+      // RED reference, computed from the SAME real schedule: where the retired #1112 5%-share rule
+      // would have fired — the k-th above-ground op's own end_ts, k = ceil(5% of aboveTotal).
+      if (sched && sched.ends && sched.ends.length) {
+        const k = Math.max(1, Math.ceil(sched.aboveTotal * 0.05));
+        const oldMs = sched.ends[Math.min(k, sched.ends.length) - 1];
+        out.oldRuleK = k;
+        out.oldRuleMs = oldMs;
+        out.oldRuleT = (oldMs - bk.projectStart) / (bk.projectEnd - bk.projectStart);
+      }
 
       const m = A.ground.material;
       const before = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
@@ -190,14 +211,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         agree,
         res.previewSamples.map(s => `t=${s.t} bake=${s.bake} preview=${s.preview}`).join('   '));
 
-      // §CPE_GHOST_GROUND_RATIO: the point of replacing the first-element trigger. On Hospital that
-      // trigger fired at t=0.0162 (2.4s of a 147.9s film) — the ghost was over before the camera
-      // landed. The ratio rule must hold the ground open materially longer than that.
-      P('G-GG-8 the ghost outlasts the first above-ground element (the ratio rule, not a trigger)',
-        res.opaqueAt != null && res.opaqueAt > res.triggerT * 2,
+      // §CPE_GHOST_GROUND_TRIGGER (2026-08-03 revert): the ground must go opaque essentially AT the
+      // first above-ground element — within one GHOST_FADE_SEC fade window of it, not materially
+      // later. fadeFrac = min(0.5, 3s / 100s film) = 0.03; allow slack for the 1/200 sample grid.
+      const fadeFrac = 0.03, tol = fadeFrac + 0.015;
+      const gap = res.opaqueAt == null ? null : res.opaqueAt - res.triggerT;
+      P('G-GG-8 GREEN — opaque essentially AT first above-ground element, not materially later (the point of the revert)',
+        gap != null && gap > 0 && gap <= tol,
         `first above-ground element at t=${res.triggerT.toFixed(4)}; ground reaches opaque at ` +
-        `t=${res.opaqueAt == null ? 'never' : res.opaqueAt.toFixed(4)}  ` +
-        `(above=${res.sched.aboveTotal} below=${res.sched.belowTotal}, opaque once 5% of above-ground work is placed)`);
+        `t=${res.opaqueAt == null ? 'never' : res.opaqueAt.toFixed(4)}  gap=${gap == null ? 'n/a' : gap.toFixed(4)} ` +
+        `(tolerance=${tol.toFixed(4)}, above=${res.sched.aboveTotal} below=${res.sched.belowTotal})  |  ` +
+        `RED reference (retired #1112 5%-share rule, same real schedule): would have fired at ` +
+        `t=${res.oldRuleT == null ? 'n/a' : res.oldRuleT.toFixed(4)} (k=${res.oldRuleK}th above-ground element) — ` +
+        `gap this revert closes = ${res.oldRuleT == null ? 'n/a' : (res.oldRuleT - res.triggerT).toFixed(4)} film-fraction ` +
+        `(${res.oldRuleMs == null ? '' : Math.round(res.oldRuleMs - res.firstMs) + 'ms, '}` +
+        `${res.oldRuleK ? (res.oldRuleK - 1) + ' extra above-ground elements waited on' : ''})`);
 
       P('G-GG-10 a stale time_machine.js DEGRADES to the coarse rule instead of disabling the feature',
         res.fallbackArmed === true && res.fallbackOpacityEarly != null && res.fallbackOpacityEarly < 0.3 &&
