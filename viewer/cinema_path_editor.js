@@ -1069,6 +1069,30 @@
         .sort(function(x, y) { return (y.savedAt || 0) - (x.savedAt || 0); });
     });
   }
+  // ══ §CPE_PANEL_STATE — the save carries the PANEL CONTEXT the path was recorded under, so a
+  // reopened plan restores the full session, not just the geometry. Three captured facts:
+  //   • checkboxes — every checkbox the CPE panel has (#cpe-buildup → _state.buildup,
+  //     #cpe-room-title → _state.roomTitle; the panel's full checkbox census, panels.js has none),
+  //     plus the #cpe-day-counter corner select (§CPE_DAY_COUNTER_POS) — name → value.
+  //   • total time — the Time Machine's project span, from its own public accessor
+  //     window.tmGetState() (time_machine.js): projectEnd − projectStart, stored as tmSpanMs with
+  //     both endpoints kept for provenance. There is NO setter for the span (it is derived from the
+  //     op-log), so on restore it is a drift check, never a write.
+  //   • day-counter position — the live cursor (`_cursor` inside time_machine.js, read via
+  //     tmGetState().cursor): "what day the counter currently shows."
+  function _capturePanelState(ov) {
+    var tm = null;
+    try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
+    return {
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle },
+      dayCounter: ov.dayCounter || 'tr',
+      tmActive: tm ? !!tm.active : false,
+      tmCursor: tm ? tm.cursor : null,
+      tmProjectStart: tm ? tm.projectStart : null,
+      tmProjectEnd: tm ? tm.projectEnd : null,
+      tmSpanMs: tm ? (tm.projectEnd - tm.projectStart) : null
+    };
+  }
   function _pathsSave(name) {
     var ov = _buildOverride(), bld = _bldKey();
     var rec = {
@@ -1079,14 +1103,21 @@
       meta: { bands: ov.bands.length, hoseOps: ov.hose.length,
               clip: ov.clip ? [ov.clip.in, ov.clip.out] : null, buildup: !!ov.buildup,
               totalSec: ov._total, pathLen: ov._pathLen, cpe: CPE_V.split(' ')[0] },
-      override: ov
+      override: ov,
+      panelState: _capturePanelState(ov)
     };
     return _pathsTx('readwrite', function(st) { return st.put(rec); }).then(function() {
+      var ps = rec.panelState;
       console.log('§CPE_PATH_SAVED name="' + name + '" building=' + bld +
         ' bands=' + rec.meta.bands + ' hoseOps=' + rec.meta.hoseOps +
         ' clip=' + (rec.meta.clip ? rec.meta.clip[0].toFixed(2) + '→' + rec.meta.clip[1].toFixed(2) : 'whole') +
         ' buildup=' + (rec.meta.buildup ? 1 : 0) + ' total=' + rec.meta.totalSec.toFixed(1) + 's' +
         ' — IndexedDB working store; cinema_path TABLE written separately so it travels with the .db');
+      console.log('§CPE_PANEL_STATE saved buildup=' + (ps.checkboxes.buildup ? 1 : 0) +
+        ' roomTitle=' + (ps.checkboxes.roomTitle ? 1 : 0) + ' dayCounter=' + ps.dayCounter +
+        ' tmActive=' + (ps.tmActive ? 1 : 0) +
+        ' tmCursor=' + (ps.tmCursor != null ? ps.tmCursor : 'n/a') +
+        ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
       return rec;
     });
   }
@@ -1094,6 +1125,51 @@
     return _pathsTx('readwrite', function(st) { return st.delete(key); }).then(function() {
       console.log('§CPE_PATH_DELETED key="' + key + '"');
     });
+  }
+  // §CPE_PANEL_STATE restore — drive the panel's own controls through their OWN change handlers
+  // (the same mechanism a user's click uses: panels.js:552 is the dispatchEvent precedent), never a
+  // bare DOM mutation the rest of the app cannot see. The dayEl seeding at wiring time already did
+  // this for the select; the sibling checkboxes never got it — this closes that gap.
+  function _syncPanelControls() {
+    [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle]].forEach(function(p) {
+      var el = document.getElementById(p[0]);
+      if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
+    });
+    var dayEl = document.getElementById('cpe-day-counter'), want = _state.dayCounter || 'tr';
+    if (dayEl && dayEl.value !== want) { dayEl.value = want; dayEl.dispatchEvent(new Event('change')); }
+  }
+  function _applyPanelState(ps) {
+    if (!ps) {
+      // Old record, saved before panelState existed — skip, exactly today's behaviour, never throw.
+      console.log('§CPE_PANEL_STATE none on record (pre-panelState save) — panel-state restore skipped');
+      return;
+    }
+    if (ps.checkboxes) {
+      _state.buildup = !!ps.checkboxes.buildup;
+      _state.roomTitle = !!ps.checkboxes.roomTitle;
+    }
+    if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
+    _syncPanelControls();
+    // Day-counter position (= Time Machine cursor): restored through the ONE public cursor setter,
+    // window.tmSetCursor (time_machine.js — "renderAtTime() is internal by design; this is the ONE
+    // public cursor setter"). The span has no setter (derived from the op-log), so a saved-vs-now
+    // mismatch is REPORTED, not written.
+    var cursorNote = 'skipped';
+    if (ps.tmCursor != null && typeof window.tmGetState === 'function' && typeof window.tmSetCursor === 'function') {
+      var tm = window.tmGetState();
+      if (tm.active) {
+        var span = tm.projectEnd - tm.projectStart;
+        if (ps.tmSpanMs != null && Math.abs(span - ps.tmSpanMs) > 1)
+          console.warn('§CPE_PANEL_STATE span drift saved=' + ps.tmSpanMs + 'ms now=' + span +
+            'ms — the schedule changed since this plan was saved');
+        cursorNote = window.tmSetCursor(ps.tmCursor) ? 'restored ms=' + ps.tmCursor : 'setter-refused';
+      } else {
+        cursorNote = ps.tmActive ? 'tm-inactive-now (activate Time Machine to see the saved day)' : 'tm-was-inactive';
+      }
+    }
+    console.log('§CPE_PANEL_STATE restored buildup=' + (_state.buildup ? 1 : 0) +
+      ' roomTitle=' + (_state.roomTitle ? 1 : 0) + ' dayCounter=' + (_state.dayCounter || 'tr') +
+      ' tmCursor=' + cursorNote + ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
   }
   // Loading REPLACES the authored state, and only when asked — never on open. The spec left that as
   // an open question; the user's own words answer it: *"open to look back saved hose plans"*. Looking
@@ -1120,6 +1196,9 @@
     _state.dayCounter = ov.dayCounter || 'tr';   // older saved plans predate the choice — top right
     _state.userTotal = ov._total;
     _state.held = null;
+    // §CPE_PANEL_STATE — restore the panel context the plan was recorded under (or skip loudly for
+    // records that predate it). Runs BEFORE staging so the staged override reflects the final state.
+    _applyPanelState(rec.panelState);
     // §CPE_PATH_NOT_PORTABLE fix, part 1 (prompts/CINEMA_PATH_EDITOR.md): opening a named plan used
     // to leave `_state.staged = false` and never call `A.stageCinemaPath` — so after any reload,
     // `A._cinemaPathEdit` stayed null and Ctrl+S's `_writeCinemaPathTable` guard returned silently,
