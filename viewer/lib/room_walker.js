@@ -933,11 +933,11 @@
     // including atrium/stair/facade voids up to 55 m across, and carving one along a facade opens
     // the envelope so the interior flood escapes — enclosure retention 43% (§21.30 FINDING 2).
     // 'cur' is retained ONLY to reproduce §21.24–§21.28's superseded numbers.
-    var mode = voidMode || 'B';
+    var mode = voidMode || 'W:3.0';
     // §TIER-B host test: an opening is admitted only if an IfcDoor sits in it. Same geometric
     // relation IfcRelFillsElement states outright — which is why tier A supersedes this exactly.
     var HOST_TOL = 0.6, CELL = 1.0, dgrid = {};
-    if (mode === 'B') {
+    if (mode === 'B' || mode.indexOf('W:') === 0) {
       rows.forEach(function (r) {
         if ((r.ifc_class || '').indexOf('IfcDoor') !== 0) return;
         var k = Math.floor(r.center_x / CELL) + '|' + Math.floor(r.center_y / CELL) + '|' + Math.floor((r.center_z || 0) / CELL);
@@ -963,6 +963,14 @@
       if (!isDoor) {
         if (mode === 'C') return;                       // tier C: doors only
         if (mode === 'B' && !doorHosted(r)) return;     // tier B: door-hosted openings only
+        // §WIDTH-CAP ('W:<m>', §21.33) — admit an unhosted void only if it is ARCHWAY-SIZED. A
+        // doorless archway is real circulation and must be carved (§OPEN-THRESHOLD, §21.22); a 25 m
+        // or 55 m atrium/facade void is not an aperture at all and fusing across it invents a room
+        // adjacency. Width is the only property that separates them, so the cap is the test.
+        if (mode.indexOf('W:') === 0) {
+          var cap = parseFloat(mode.slice(2));
+          if (!doorHosted(r) && Math.max(r.bbox_x || 0, r.bbox_y || 0) > cap) return;
+        }
       }
       // §VOID-AT-FLOOR: only a void you can WALK THROUGH belongs in a circulation raster. A window
       // is an IfcOpeningElement too — LTU carries 3,368 openings — and carving them punched holes
