@@ -2588,7 +2588,12 @@
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
-        '<button id="tm-author" style="font-size:12px;padding:2px 6px" title="Author 4D schedule — build phases up, assign elements, tune dates">&#9998;</button>' +
+        // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
+        // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
+        // both constraint-aware). The ↗ Editor tab below stays FOR NOW and is consolidated into the
+        // drawer in a later pass. schedule_author_ui.js is left on disk and still loads: this removes
+        // the entry point, not the module, so nothing else that references it breaks. The guarded
+        // handler below is a no-op once the element is gone.
         '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
@@ -2923,8 +2928,13 @@
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
     });
+    // ── §GANTT_DRAG (E1/E2 UI half) — pointerdown starts a bar drag, pointerup either commits the
+    // edit or falls through to the original seek. Registered BEFORE the seek handler so _dragMoved
+    // is already set by the time that one runs.
+    wireGanttDrag();
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
+      if (_dragConsumed) { _dragConsumed = false; return; }   // this pointerup finished an edit, not a seek
       var rect = e.target.getBoundingClientRect();
       var x = (e.clientX - rect.left - 60) / (rect.width - 60);  // account for storey label margin
       if (x < 0) x = 0;
@@ -4728,6 +4738,168 @@
     }
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
+  }
+
+  // ── §GANTT_DRAG (E1/E2) + §GANTT_RETIME (W1) ──────────────────────────────────────────────────
+  // The UI half of the constraint-aware edit. The ENGINE half lives in schedule_author.js
+  // (moveTaskCascade / resizeTask) and is witnessed independently — this layer only translates a
+  // gesture into a date and then re-times the affected elements so the movie cannot disagree with
+  // the chart it was dragged on.
+  var _drag = null;            // { bar, mode:'move'|'resizeL'|'resizeR', x0, dayPx, previewDays }
+  var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
+  var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
+
+  // Which bar (and where on it) is under the pointer? Extends findBarAtClick with an edge zone so a
+  // single gesture can mean either E1 (move) or E2 (edge-pull), the way P6/MSP behave.
+  function ganttHit(e) {
+    var bar = findBarAtClick(e);
+    if (!bar) return null;
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var marginL = 60, barW = rect.width - marginL;
+    var range = Math.max(1, _projectEnd - _projectStart);
+    var bx = marginL + (bar.startTs - _projectStart) / range * barW;
+    var bw = Math.max(2, (bar.endTs - bar.startTs) / range * barW);
+    var mode = 'move';
+    if (x <= bx + EDGE_PX) mode = 'resizeL';
+    else if (x >= bx + bw - EDGE_PX) mode = 'resizeR';
+    return { bar: bar, mode: mode, dayPx: barW / (range / 86400000) };
+  }
+
+  // §GANTT_RETIME (W1) — after an accepted edit, re-time the affected tasks' OWN elements onto their
+  // new window. This is what keeps the drawer and the 3D movie from diverging: the bar's drawn span
+  // is derived from the element ops (§GANTT_BAR_IDENTITY), so moving the elements IS what moves the
+  // bar. Coherence is structural rather than policed afterwards.
+  //
+  // The remap is AFFINE over each element's existing position in its old window, deliberately: a
+  // zone's internal ordering was already computed correctly by the engine (computeSchedule, plus this
+  // session's support fixes), so an edit must PRESERVE that order, not re-derive it. Only the window
+  // the order is stretched across changes.
+  // The remap itself, kept pure and self-contained so witness_gantt_edit_coherence.js can slice it
+  // out of THIS source and test the shipped function rather than a hand-copied duplicate (the copy
+  // problem this codebase already paid for three times with the support predicate).
+  function _retimeSpan(opS, opE, oS, oE, nS, nE) {
+    var oSpan = Math.max(1, oE - oS), nSpan = Math.max(1, nE - nS);
+    var s = Math.round(nS + ((opS - oS) / oSpan) * nSpan);
+    var e = Math.round(nS + ((opE - oS) / oSpan) * nSpan);
+    if (s < nS) s = nS;
+    if (e > nE) e = nE;
+    if (e <= s) e = Math.min(nE, s + 60000);
+    return { s: s, e: e };
+  }
+
+  function retimeTaskElements(db, barsByTask, moved) {
+    var upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+      "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+    var opByGuid = {}, i;
+    for (i = 0; i < _ops.length; i++) if (_ops[i].output_guid) opByGuid[_ops[i].output_guid] = _ops[i];
+    var rows = 0, t0 = (window.performance || Date).now();
+    db.run('BEGIN');
+    moved.forEach(function (m) {
+      var bar = barsByTask[m.id]; if (!bar || !bar.guids || !bar.guids.length) return;
+      var nS = Date.parse(m.start + 'T00:00:00Z'), nE = Date.parse(m.finish + 'T00:00:00Z');
+      if (isNaN(nS) || isNaN(nE) || nE <= nS) return;
+      var oS = bar.startTs, oE = bar.endTs, oSpan = Math.max(1, oE - oS), nSpan = nE - nS;
+      for (var gi = 0; gi < bar.guids.length; gi++) {
+        var g = bar.guids[gi], op = opByGuid[g]; if (!op) continue;
+        var r = _retimeSpan(op.start_ts, op.end_ts, oS, oE, nS, nE);
+        op.start_ts = r.s; op.end_ts = r.e;
+        op.parameters._end_ts = r.e;
+        upd.run([r.s, JSON.stringify(op.parameters), g]);
+        rows++;
+      }
+    });
+    db.run('COMMIT');
+    upd.free();
+    console.log('§GANTT_RETIME tasks=' + moved.length + ' rows=' + rows +
+      ' ms=' + ((window.performance || Date).now() - t0).toFixed(1));
+    return rows;
+  }
+
+  // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
+  function commitGanttDrag(bar, mode, deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.moveTaskCascade) {
+      console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!bar.taskId) {
+      // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
+      console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
+      return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var res;
+    if (mode === 'move') {
+      res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
+    } else if (mode === 'resizeR') {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs),
+        d(bar.endTs + deltaDays * 86400000), {});
+    } else {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000),
+        d(bar.endTs), {});
+    }
+    if (!res || !res.ok) {
+      console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+    // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
+    if (res.clamped) {
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) {
+        tip.textContent = 'Blocked by ' + res.blockedBy + ' — clamped to ' + res.start;
+        tip.style.display = 'block';
+        setTimeout(function () { tip.style.display = 'none'; }, 2600);
+      }
+    }
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    retimeTaskElements(app.db, barsByTask, res.moved || []);
+    console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
+      ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  function wireGanttDrag() {
+    var cv = document.getElementById('tm-gantt-canvas');
+    if (!cv || cv._dragWired) return;
+    cv._dragWired = true;
+    cv.addEventListener('pointerdown', function (e) {
+      if (!_active || !_ganttTasks.length) return;
+      var hit = ganttHit(e);
+      if (!hit || !hit.bar.taskId) return;      // un-authored bars stay non-draggable, by design
+      _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, dayPx: hit.dayPx, days: 0, moved: false };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (!_drag) { cv.style.cursor = (function () { var h = ganttHit(e); return h && h.bar.taskId ? (h.mode === 'move' ? 'grab' : 'ew-resize') : 'pointer'; })(); return; }
+      var days = Math.round((e.clientX - _drag.x0) / Math.max(0.001, _drag.dayPx));
+      if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip && _drag.moved) {
+        tip.textContent = (_drag.mode === 'move' ? 'Move ' : 'Resize ') + _drag.bar.phase + ' — ' +
+          _drag.bar.storey + '  ' + (days >= 0 ? '+' : '') + days + 'd';
+        tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+        tip.style.top = Math.max(2, e.offsetY - 22) + 'px';
+        tip.style.display = 'block';
+      }
+      e.preventDefault();
+    });
+    function endDrag(e) {
+      if (!_drag) return;
+      var d = _drag; _drag = null;
+      try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (!d.moved || !d.days) return;          // a click, not a drag — let the seek handler have it
+      _dragConsumed = true;
+      commitGanttDrag(d.bar, d.mode, d.days);
+    }
+    cv.addEventListener('pointerup', endDrag);
+    cv.addEventListener('pointercancel', endDrag);
   }
 
   function drawGanttMini() {
