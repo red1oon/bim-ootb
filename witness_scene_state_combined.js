@@ -16,6 +16,10 @@
 //           was saved.
 //   G-SS-5  staffage placed before save is STILL restored on first Alt+P after the fresh reload (no
 //           regression to the existing shipped mechanism from adding scene_state alongside it).
+//   G-SS-7  the Alt+C Movie Maker editor, if open at save time, reopens on a fresh reload — via the
+//           new 'cinema' id in panels.js's _actions[] registry, safely wired to ALWAYS pass
+//           {editor:true} to A.startMaxQualityOrbit — and NO §MAXQ_FRAME (bake progress) log ever
+//           fires, proving restore only reopens the editor UI, never triggers the render.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 
 const PORT = process.env.PORT || 8571;
@@ -215,6 +219,61 @@ async function goto(page) {
     .filter(l => l.startsWith('§PHOTO_POPULATE') && /restored=/.test(l)).pop();
   P('G-SS-5 no regression: staffage placed before save is still restored on first Alt+P after reload',
     staffageAfterReload.ok, `${JSON.stringify(staffageAfterReload)}  LOG: ${restoredLine || 'none'}`);
+
+  // ══ G-SS-7 — Alt+C Movie Maker editor: fresh page, open editor SAFELY, save, fresh reload ══════
+  await goto(page); // clean slate — new page, none of the earlier phases' state carried over
+  await page.evaluate(() => { window.APP.startMaxQualityOrbit({ editor: true }); });
+  let editorUp = false;
+  try { await page.waitForSelector('#cpe-panel', { timeout: 20000 }); editorUp = true; } catch (e) {}
+  P('SETUP the Movie Maker editor opened via {editor:true} (the ONLY safe call shape)', editorUp, `editorUp=${editorUp}`);
+
+  if (editorUp) {
+    await sleep(500);
+    const cinemaExport = await page.evaluate(() => {
+      const A = window.APP;
+      const bytes = A._exportBuildingDb();
+      const Database = A.db.constructor;
+      const d = new Database(bytes);
+      const rows = d.exec('SELECT focused_panel FROM scene_state');
+      const panel = rows.length ? rows[0].values[0][0] : null;
+      d.close();
+      return { panel, bytes: Array.from(bytes) };
+    });
+    P('G-SS-7a scene_state captures focused_panel=cinema while the editor is open',
+      cinemaExport.panel === 'cinema', `saved focused_panel=${cinemaExport.panel}`);
+
+    try { await page.click('#cpe-cancel'); } catch (e) {}
+    await sleep(300);
+
+    const cinemaB64 = Buffer.from(cinemaExport.bytes).toString('base64');
+    const dismissCinemaModal = (async () => {
+      try { await page.waitForSelector('#merge-new-btn', { timeout: 8000, visible: true }); await page.click('#merge-new-btn'); }
+      catch (e) { /* fine — no modal if nothing was open */ }
+    })();
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+      page.evaluate(async (b64) => {
+        const bin = atob(b64); const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        await window.APP._openDbBytes('cinema_panel_roundtrip.db', arr);
+      }, cinemaB64),
+      dismissCinemaModal,
+    ]);
+    await waitReady(page);
+    await sleep(2500); // let §SCENE_STATE_RESTORE poll fire
+
+    let editorReopened = false;
+    try { await page.waitForSelector('#cpe-panel', { timeout: 5000 }); editorReopened = true; } catch (e) {}
+    const cinemaPageLogs = await page.evaluate(() => window.__ssLogs || []);
+    const cinemaRestoreLine = cinemaPageLogs.filter(l => l.startsWith('§SCENE_STATE_RESTORE ')).pop();
+    const bakeFrameLine = cinemaPageLogs.filter(l => l.startsWith('§MAXQ_FRAME')).pop();
+    P('G-SS-7 fresh reload reopens the Movie Maker editor, with NO bake ever triggered',
+      editorReopened && !bakeFrameLine,
+      `restoreLine=${cinemaRestoreLine || 'MISSING'} editorReopened=${editorReopened} bakeFrameLine(mustBeNone)=${bakeFrameLine || 'none'}`);
+  } else {
+    P('G-SS-7a scene_state captures focused_panel=cinema', false, 'INCONCLUSIVE — editor never opened');
+    P('G-SS-7 fresh reload reopens the Movie Maker editor, with NO bake ever triggered', false, 'INCONCLUSIVE — depends on G-SS-7a');
+  }
 
   await browser.close();
   const allPass = checks.every(c => c.ok);

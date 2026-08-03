@@ -703,6 +703,12 @@ async function setupScene(A) {
       var p = A.three2ifc(A.camera.position.x, A.camera.position.y, A.camera.position.z);
       var t = A.three2ifc(A.controls.target.x, A.controls.target.y, A.controls.target.z);
       var fp = (window._getFocusedPanel && window._getFocusedPanel()) || null;
+      // §CPE not wired into the _registerPanel/_focusedPanel model (it's a bespoke modal, torn down
+      // by removeChild on close — cinema_path_editor.js `finish()`), so DOM presence of its own root
+      // is the only "is it open" signal available. A modal on top of everything wins over whatever
+      // the background panel-focus model reports.
+      var cpeOpen = !!document.getElementById('cpe-panel');
+      var focusedPanelId = cpeOpen ? 'cinema' : (fp ? fp.id : null);
       var findGuids = (A.activeGuidFilter && A.activeGuidFilter.size) ? Array.from(A.activeGuidFilter).join(',') : '';
       // tm_cursor/tm_span (2026-08-03 follow-up): the CURRENT Time Machine position, distinct from
       // the Movie Maker's own per-plan panelState (cinema_path_editor.js _capturePanelState, still
@@ -719,12 +725,12 @@ async function setupScene(A) {
              "tm_cursor REAL, tm_span REAL)");
       var stmt = db.prepare("INSERT INTO scene_state VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       stmt.run([p.ix, p.iy, p.iz, t.ix, t.iy, t.iz, A.xrayOn ? 1 : 0, A._dlodEnabled ? 1 : 0,
-                A.walkModeActive ? 1 : 0, fp ? fp.id : null, findGuids, A._tmOn ? 1 : 0,
+                A.walkModeActive ? 1 : 0, focusedPanelId, findGuids, A._tmOn ? 1 : 0,
                 tmCursor, tmSpan]);
       stmt.free();
       console.log('§SCENE_STATE_SAVE cam=' + p.ix.toFixed(1) + ',' + p.iy.toFixed(1) + ',' + p.iz.toFixed(1) +
         ' xray=' + (A.xrayOn ? 1 : 0) + ' dlod=' + (A._dlodEnabled ? 1 : 0) + ' walk=' + (A.walkModeActive ? 1 : 0) +
-        ' panel=' + (fp ? fp.id : 'none') + ' findGuids=' + (findGuids ? findGuids.split(',').length : 0) +
+        ' panel=' + (focusedPanelId || 'none') + ' findGuids=' + (findGuids ? findGuids.split(',').length : 0) +
         ' tm=' + (A._tmOn ? 1 : 0) + ' tmCursor=' + (tmCursor != null ? tmCursor : 'n/a') +
         ' tmSpan=' + (tmSpan != null ? tmSpan : 'n/a'));
     } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }

@@ -1318,6 +1318,13 @@ function setupPanels(A) {
       // source of truth — the Navigate drawer rows call these SAME entries by id).
       { id: 'find',       name: 'Find / Navigate', key: 'f', pill: false, icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
+      // prompts/Viewer/SAVE_DB_SCENE_STATE.md follow-up — Alt+C's own button (cinemaRow above) is a
+      // bespoke onClick, not registered here, so it was invisible to A.runPanelAction/scene_state
+      // restore. This id exists ONLY so the editor UI can be reopened safely: startMaxQualityOrbit
+      // called WITHOUT {editor:true} starts an ~8-minute render bake — fn here ALWAYS passes
+      // {editor:true}, so restoring "the panel was open" can never auto-trigger a render.
+      { id: 'cinema',     name: 'Movie Maker (Alt+C)', key: null, pill: false, icon: I.video.svg,
+        fn: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit({ editor: true }); } },
       // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b: Eye icon freed by the bone/X-Ray swap, repurposed
       // as the Role/Profession view filter — cycles All -> Plumber -> Electrician -> ACMV Tech ->
       // Structural -> Cleaner -> All, each tap calling A.filterDiscs (§NAV_FIND_002), the ONLY
