@@ -3874,13 +3874,24 @@
     window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: _audit };
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
+    // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
+    // genuinely tie at the same millisecond (each trade's crew queue starts independently at t=0 —
+    // by design, real parallel trades, MEASURED: footings/proxies/walls/columns all start at exactly
+    // 0ms on Hospital). ORDER BY timestamp alone leaves ties in arbitrary DB order, which read as
+    // "wrong sequence" even though nothing about the real schedule/movie/support-check is wrong.
+    // Fetch a wider window, stable-sort by (timestamp, seq) in JS, THEN take 20 — so ties display
+    // Substructure-first without touching a single real computed date anywhere else in the app.
     var _first20 = [];
     try {
-      var f20r = db.exec('SELECT timestamp, parameters FROM kernel_ops WHERE undone=0 ORDER BY timestamp LIMIT 20');
+      var f20r = db.exec('SELECT timestamp, parameters FROM kernel_ops WHERE undone=0 ORDER BY timestamp LIMIT 500');
       if (f20r.length) {
-        f20r[0].values.forEach(function(row) {
+        var _f20rows = f20r[0].values.map(function (row) {
           var p = JSON.parse(row[1]);
-          _first20.push(p.storey + '|band=' + storeyBand[p.storey || '_UNKNOWN'] + '|seq=' + (matchRule(p.cls, p.name).sequence) + '|' + p.cls);
+          return { ts: row[0], p: p, seq: matchRule(p.cls, p.name).sequence };
+        });
+        _f20rows.sort(function (a, b) { return (a.ts - b.ts) || (a.seq - b.seq); });
+        _f20rows.slice(0, 20).forEach(function (r) {
+          _first20.push(r.p.storey + '|band=' + storeyBand[r.p.storey || '_UNKNOWN'] + '|seq=' + r.seq + '|' + r.p.cls);
         });
       }
     } catch(e) {}
