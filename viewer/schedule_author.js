@@ -50,7 +50,11 @@
   // `realQty` (optional) — §LABOR_QUANTITY_WEIGHT below: when a class is geometrically
   // over-fragmented, the caller passes this element's REAL bbox area instead of leaving it null,
   // and the same per-unit rate (28800/prod) is charged per m² instead of once per element.
-  function _installSecs(cls, rule, laborRates, realQty) {
+  // `lengthRatio` (optional) — §HEAVY_MEMBER_SPEED_LIMIT below: this element's real length divided
+  // by its class's real average length. A flat per-unit rate assumes every element is "typical
+  // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
+  // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
+  function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
     var resource = rule && rule.resource;
     if (!resource || !laborRates[resource]) return 120;
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
@@ -60,7 +64,9 @@
     var prod = bestPk ? labor.productivity[bestPk] : 0;
     if (prod <= 0) return 120;
     var secsPerUnit = 28800 / prod;
-    return Math.round(realQty != null ? secsPerUnit * realQty : secsPerUnit);
+    if (realQty != null) return Math.round(secsPerUnit * realQty);
+    if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
+    return Math.round(secsPerUnit);
   }
 
   // _classFragmentation(db, rates) — §LABOR_QUANTITY_WEIGHT (GANTT_ACCURACY.md "RESUME 2026-08-04,
@@ -122,6 +128,55 @@
         'm2 (<' + FRAGMENT_M2_FLOOR + 'm2 floor) totalRealArea=' + f.total.toFixed(1) +
         'm2 — real AREA used as labor quantity, not element count');
     });
+    return out;
+  }
+
+  // _linearWeighting(db, rates) — §HEAVY_MEMBER_SPEED_LIMIT (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md
+  // "20 piling beams erected right away" complaint). Root cause, MEASURED: a flat per-unit labor rate
+  // (28800/prod) charges every element of a class the SAME install time regardless of its real size —
+  // fine when a class IS uniform, wrong when it isn't. Terminal IfcBeam: 0.91m to 60.00m (8.2x spread).
+  // LTU_AHouse IfcBeam: 0.09m to 118.20m (17.4x spread). A 60m span truss and a 0.9m stub both took the
+  // identical "1 crew-hour" — no size-based speed limit for heavy/long members, so many same-day
+  // placements read as an "impossible" bunched Gantt regardless of real size.
+  // Same shape as §LABOR_QUANTITY_WEIGHT (_classFragmentation) above, generalized from AREA (M2) to
+  // LENGTH (M) — every RATES class already priced per linear metre (IfcBeam, IfcColumn, IfcMember,
+  // IfcDuct/IfcPipe/IfcCableCarrier runs, …) is a candidate, non-invented: RATES[cls].unit==='M' is
+  // already-shipped data, real length is the same MAX(bbox_x,bbox_y,bbox_z) expression used
+  // elsewhere in this file. UNLIKE the M2 fix, this does not gate on a "fragmented" threshold and
+  // does not change the class's TOTAL labor-time — it REDISTRIBUTES the existing flat total
+  // proportionally to each element's real length vs. its class's real average length (ratio≈1 when a
+  // class is already uniform, e.g. Clinic's IfcBeam at 1.5x spread — no distortion there; ratio grows
+  // exactly where the spread is real, e.g. LTU_AHouse). Generic: applies to any 'M'-unit class on any
+  // building, nothing named here.
+  function _linearWeighting(db, qsRates) {
+    var out = { avgLength: {}, length: {} };
+    qsRates = qsRates || {};
+    var mClasses = [];
+    for (var cls in qsRates) if (qsRates[cls] && qsRates[cls].unit === 'M') mClasses.push(cls);
+    if (!mClasses.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var LEN_EXPR = 'MAX(t.bbox_x,t.bbox_y,t.bbox_z)';
+    var r;
+    try {
+      r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + LEN_EXPR + ") FROM elements_meta m " +
+        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "AND m.ifc_class IN (" + q(mClasses) + ") GROUP BY m.ifc_class");
+    } catch (e) { return out; }   // no element_transforms table — degrade to flat (no weighting)
+    var haveClasses = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgLength[cls] = avg; haveClasses.push(cls); }
+      });
+    }
+    if (!haveClasses.length) return out;
+    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(haveClasses) + ")");
+    if (lr.length && lr[0].values.length) lr[0].values.forEach(function (row) { out.length[row[0]] = row[1] || 0; });
+    console.log('§HEAVY_MEMBER_SPEED_LIMIT classes=' + haveClasses.length + ' [' +
+      haveClasses.map(function (c) { return c + ':avg=' + out.avgLength[c].toFixed(2) + 'm'; }).join(', ') +
+      '] — real LENGTH redistributes each class\'s existing flat total, per-element speed now scales with real size');
     return out;
   }
 
@@ -192,6 +247,7 @@
     var qsRates = opts.rates || (global.RATES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
     var _frag = _classFragmentation(db, qsRates);
+    var _lin = _linearWeighting(db, qsRates);
 
     // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
     // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
@@ -237,12 +293,19 @@
       var ov = matchNameOverride(cls, name, nameOverrides);
       var rule = ov || matchRule(cls, rules, dflt);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
+      // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
+      // same honest-degrade as realQty above (never divide by a fabricated average).
+      var hasGeom = bx > 0 || by > 0 || bz > 0;
+      var clsAvgLen = _lin.avgLength[cls];
+      var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0)
+        ? Math.max(bx, by, bz) / clsAvgLen : null;
       return {
         guid: guid, cls: cls, name: name, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
         seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
-        installSecs: _installSecs(cls, rule, laborRates, realQty)
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio)
       };
     });
   }

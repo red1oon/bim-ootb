@@ -3345,15 +3345,29 @@
             if (sc1) { hasCarrier = true; if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
           }
         }
+        // §XRAY_WALL_SCOPE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md "Z-stack" chase): a wall is
+        // only EVER a real candidate carrier for a slab ITSELF promoted to the roof role (seq>4) —
+        // schedule_gate.js's auditFloating() already restricts wallGrid this way (§4D_ROOF_LOAD_PATH
+        // M3: "walls do not structurally carry beams/members/furniture in this DB", MEASURED 2026-08-01
+        // — the unrestricted version false-"floated" 0->3421/10979 on Hospital). This sibling
+        // implementation never got that same restriction, so wallGrid was checked for EVERY element,
+        // not just promoted slabs — a beam/column/ordinary-slab sitting near a wall's top height (a
+        // wall's top and a beam's base are naturally close at any floor-to-floor transition) got
+        // flagged as "carried by" a wall it never structurally depends on. MEASURED: 1,217 false-
+        // positive xray-staged elements on Hospital (93% of them beams/columns/ordinary-slabs vs.
+        // walls), all cleared to 0 by adding the SAME `promotedSlab` guard auditFloating() already
+        // uses. Only reachable for a promotedSlab T (see var promotedSlab above), never for beams/
+        // columns/furniture/MEP.
+        if (promotedSlab) {
         arr = wallGrid[cs[c]];
         if (arr) for (k = 0; k < arr.length; k++) {
           S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
           if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
-          var bears = promotedSlab ? (S.top_z >= T.base_z - GAP) : (Math.abs(S.top_z - T.base_z) <= GAP);
-          if (bears) {
+          if (S.top_z >= T.base_z - GAP) {
             var sc2 = schedMap[S.guid]; eCount++;
             if (sc2) { hasCarrier = true; if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
           }
+        }
         }
       }
       if (hasCarrier && maxCarrierEnd > sc.end) {
