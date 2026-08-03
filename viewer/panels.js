@@ -1478,6 +1478,14 @@ function setupPanels(A) {
       for (var i = 0; i < _actions.length; i++) { if (_actions[i].id === id) return _actions[i]; }
       return null;
     }
+    // prompts/Viewer/SAVE_DB_SCENE_STATE.md — the one generic hook the combined scene-state restore
+    // needs: fire an action's own fn() by id, the same call its pill/drawer row already makes on tap.
+    // No new open logic — reuses the single source of truth (_actions) this whole module already is.
+    A.runPanelAction = function(id) {
+      var act = _actionById(id);
+      if (act && act.fn) { act.fn(); return true; }
+      return false;
+    };
 
     // One row = icon + label, reusing act.fn/isActive/hold verbatim. hold (Measure→Clash,
     // X-Ray→Bbox, World History→Z-drawer) replays the SAME long-press-then-tap mechanics as

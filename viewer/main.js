@@ -1118,6 +1118,58 @@ async function initViewer() {
         }
       }, 1500);
     }
+
+    // §SCENE_STATE_RESTORE (prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4) — restore the SAVED DEFAULT
+    // view for a plain DB open, no share link. Runs on every load (unlike the S265 block above, which
+    // only fires when a hash is present); a hash field wins over the DB's saved default per-field —
+    // an explicit shared link is a more deliberate ask than the reopener's own last-saved view.
+    if (APP.db) {
+      var hasSceneState = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='scene_state'");
+      if (hasSceneState && hasSceneState.length) {
+        var ssChecks = 0;
+        var ssTimer = setInterval(function() {
+          ssChecks++;
+          if (APP.streamedCount > 10 || ssChecks > 20) {
+            clearInterval(ssTimer);
+            try {
+              var ssRows = APP.dbQuery("SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z," +
+                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
+              if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
+              var sr = ssRows[0], ssApplied = [];
+              if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
+                var scp = APP.ifc2three(sr[0], sr[1], sr[2]), sct = APP.ifc2three(sr[3], sr[4], sr[5]);
+                APP.camera.position.set(scp.x, scp.y, scp.z);
+                APP.controls.target.set(sct.x, sct.y, sct.z);
+                APP.controls.update();
+                ssApplied.push('camera');
+              }
+              if (!hashParams.xray && sr[6] && typeof APP.toggleXray === 'function' && !APP.xrayOn) {
+                APP.toggleXray(); ssApplied.push('xray');
+              }
+              if (sr[7] && typeof APP.dlodEnable === 'function' && !APP._dlodEnabled) {
+                APP.dlodEnable(); ssApplied.push('dlod');
+              }
+              if (sr[8] && typeof APP.startDriveThru === 'function' && !APP.walkModeActive) {
+                APP.startDriveThru(); ssApplied.push('walk');
+              }
+              if (sr[9] && typeof APP.runPanelAction === 'function') {
+                if (APP.runPanelAction(sr[9])) ssApplied.push('panel=' + sr[9]);
+              }
+              if (!hashParams.pick && sr[10] && typeof APP.filterByGuids === 'function') {
+                var ssGuids = String(sr[10]).split(',').filter(Boolean);
+                if (ssGuids.length) { APP.filterByGuids(new Set(ssGuids)); ssApplied.push('find=' + ssGuids.length); }
+              }
+              if (!hashParams.tm && sr[11] && typeof window.toggleTimeMachine === 'function') {
+                window.toggleTimeMachine(); ssApplied.push('tm');
+              }
+              console.log('§SCENE_STATE_RESTORE ' + (ssApplied.length ? ssApplied.join(' ') : 'none'));
+            } catch (e) { console.warn('§SCENE_STATE_RESTORE_FAIL ' + e.message); }
+          }
+        }, 1500);
+      } else {
+        console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
+      }
+    }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;
     console.error(`[S192] §INIT_ERROR`, e);
