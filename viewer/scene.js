@@ -692,12 +692,39 @@ async function setupScene(A) {
       console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }
+  // prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4 — camera/display/nav/panel/Find-selection/Time-Machine
+  // state, one row per building, same choke point as staffage_instances/cinema_path above so a single
+  // Ctrl+S carries all three together. Camera stored in IFC space (A.three2ifc) for the same reason
+  // cinema_path is: A.modelOffset is only meaningful to the session that wrote it, not a reopen on a
+  // different machine. Every field below reads a real, already-public flag — none invented for this.
+  function _writeSceneStateTable(db) {
+    if (!A.camera || !A.controls) return;
+    try {
+      var p = A.three2ifc(A.camera.position.x, A.camera.position.y, A.camera.position.z);
+      var t = A.three2ifc(A.controls.target.x, A.controls.target.y, A.controls.target.z);
+      var fp = (window._getFocusedPanel && window._getFocusedPanel()) || null;
+      var findGuids = (A.activeGuidFilter && A.activeGuidFilter.size) ? Array.from(A.activeGuidFilter).join(',') : '';
+      db.run("DROP TABLE IF EXISTS scene_state");
+      db.run("CREATE TABLE scene_state (cam_ifc_x REAL, cam_ifc_y REAL, cam_ifc_z REAL, " +
+             "tgt_ifc_x REAL, tgt_ifc_y REAL, tgt_ifc_z REAL, xray_on INTEGER, dlod_on INTEGER, " +
+             "walk_mode INTEGER, focused_panel TEXT, find_guids TEXT, tm_on INTEGER)");
+      var stmt = db.prepare("INSERT INTO scene_state VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+      stmt.run([p.ix, p.iy, p.iz, t.ix, t.iy, t.iz, A.xrayOn ? 1 : 0, A._dlodEnabled ? 1 : 0,
+                A.walkModeActive ? 1 : 0, fp ? fp.id : null, findGuids, A._tmOn ? 1 : 0]);
+      stmt.free();
+      console.log('§SCENE_STATE_SAVE cam=' + p.ix.toFixed(1) + ',' + p.iy.toFixed(1) + ',' + p.iz.toFixed(1) +
+        ' xray=' + (A.xrayOn ? 1 : 0) + ' dlod=' + (A._dlodEnabled ? 1 : 0) + ' walk=' + (A.walkModeActive ? 1 : 0) +
+        ' panel=' + (fp ? fp.id : 'none') + ' findGuids=' + (findGuids ? findGuids.split(',').length : 0) +
+        ' tm=' + (A._tmOn ? 1 : 0));
+    } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
+      _writeSceneStateTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -724,6 +751,7 @@ async function setupScene(A) {
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
+    _writeSceneStateTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
