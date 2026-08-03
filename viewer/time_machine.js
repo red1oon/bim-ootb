@@ -4055,6 +4055,10 @@
       if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
         ' elements later than their §PHASE_OVERLAP_BAND window to stay after their real structural support');
 
+      // §WRITE_LOOP_TIMING (2026-08-04) — a user report of the browser tab freezing traced to
+      // console output stopping right at this point, on a 63,415-element building. No fix here —
+      // just precise measurement, so the NEXT report says a real number instead of "it stopped".
+      var _wlT0 = performance.now();
       _allScheduled.forEach(function (item) {
         item.params._end_ts = item.e;
         item.params._captured = 1;
@@ -4062,6 +4066,7 @@
         _upd.run([item.s, JSON.stringify(item.params), item.guid]);
       });
       _upd.free();
+      console.log('§WRITE_LOOP_TIMING rows=' + _allScheduled.length + ' ms=' + (performance.now() - _wlT0).toFixed(1));
       db.run('COMMIT');
       _capActive = true;
       _coveredCount = _covered;
