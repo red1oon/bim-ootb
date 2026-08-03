@@ -4575,8 +4575,52 @@
       _ganttTasks.push(g);
     }
 
-    // Sort by start time
-    _ganttTasks.sort(function(a, b) { return a.startTs - b.startTs; });
+    // §GANTT_ROW_ORDER (K1, 2026-08-04) — user report: "are you using any 4D convention used by P6 on
+    // gantt phase/task ordering? Last session was a mess putting substructure which has above ground
+    // appearing first." Correct answer at the time: we followed NO convention. Rows were sorted purely
+    // by `a.startTs - b.startTs`, so whichever zone happened to compute earliest floated to the top and
+    // a phase's floors appeared interleaved with other phases' — arbitrary, and unreadable as a
+    // construction programme.
+    //
+    // P6/MSP order rows by WBS path, THEN by early start. Our WBS is (phase → floor): the zone
+    // decomposition materializeZones already persists. So: phase in real construction sequence first,
+    // then start time within the phase (which tracks bottom-up floor order, because the engine builds
+    // floors bottom-up). Falls back to alphabetical for any phase outside the canonical list rather
+    // than silently bucketing it at position 0.
+    //
+    // ⚠ DERIVED FROM SEQUENCE_RULES, NEVER HARDCODED — and this matters, it is not tidiness.
+    // The first draft of this fix copied the order out of _VAR_ORDER (~:4238) and was WRONG: that
+    // array still reads Substructure/Superstructure/MEP Rough-in/Architecture/…, i.e. MEP rough-in
+    // BEFORE the building envelope — the exact backwards discipline PR #1165 fixed in SEQUENCE_RULES
+    // and across all 18 rate-template sources. _VAR_ORDER is a THIRD stale copy that #1165 missed
+    // (the two known-stale PHASE_ORDER arrays in this file are the other two). The real engine order,
+    // read from SEQUENCE_RULES' own sequence numbers, is:
+    //   Substructure(1) → Superstructure(2) → Architecture(5) → MEP Rough-in(7) → MEP Final(9) → Finishes(10)
+    // Deriving it kills this whole class of drift: the drawer cannot disagree with the engine again.
+    var _ROW_PHASE_ORDER = (function () {
+      var SR = (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null;
+      if (SR) {
+        var minSeq = {};
+        for (var k in SR) {
+          var r = SR[k]; if (!r || !r.phase || r.sequence == null) continue;
+          if (minSeq[r.phase] == null || r.sequence < minSeq[r.phase]) minSeq[r.phase] = r.sequence;
+        }
+        var ks = Object.keys(minSeq);
+        if (ks.length) return ks.sort(function (a, b) { return minSeq[a] - minSeq[b]; });
+      }
+      // Fallback only when SEQUENCE_RULES has not loaded — matches the derived order above.
+      return ['Substructure', 'Superstructure', 'Architecture', 'MEP Rough-in', 'MEP Final', 'Finishes'];
+    })();
+    function _phaseRank(p) {
+      var i = _ROW_PHASE_ORDER.indexOf(p);
+      return i < 0 ? _ROW_PHASE_ORDER.length : i;      // unknown phases sort after the known ones
+    }
+    _ganttTasks.sort(function (a, b) {
+      var pa = _phaseRank(a.phase), pb = _phaseRank(b.phase);
+      if (pa !== pb) return pa - pb;
+      if (pa === _ROW_PHASE_ORDER.length && a.phase !== b.phase) return a.phase < b.phase ? -1 : 1;
+      return (a.startTs - b.startTs) || (a.storey < b.storey ? -1 : a.storey > b.storey ? 1 : 0);
+    });
 
     if (!_ganttTasksComputed) {
       var _idBars = 0;
@@ -4585,6 +4629,10 @@
       // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
       // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
       // authored schedule exists for this building, NOT that the join failed.
+      // K1 proof line: the row order actually drawn, so "is substructure first" is checkable from the
+      // log instead of from a screenshot.
+      console.log('§GANTT_ROW_ORDER phases=' + JSON.stringify(_ganttTasks.map(function (t) { return t.phase; })
+        .filter(function (p, i, arr) { return i === 0 || arr[i - 1] !== p; })));
       console.log('§GANTT_BAR_IDENTITY schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
         ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
         ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
