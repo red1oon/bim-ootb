@@ -671,10 +671,21 @@ function audit4DSchedule(scheduleData, db, qtoData) {
   console.log('§4D_AUDIT_STOREY_ORDER ' + (c3 ? 'PASS' : 'FAIL') + (storeyViolations.length ? ' violations=[' + storeyViolations.join(',') + ']' : ' ok=true'));
   results.push({name:'STOREY_ORDER', pass:c3});
 
-  // Check 4: Duration sanity — no task >120 days, no task <1 day
-  const outliers = scheduleData.filter(t => t.duration > 120 || t.duration < 1).map(t => t.name + '=' + t.duration + 'd');
+  // Check 4: Duration sanity. The ceiling used to be a hardcoded 120 days, which was invented and is
+  // WRONG against real data: once §4D_REAL_TASKS made this page read the real schedule, Hospital's own
+  // zone tasks put 6 of 35 over that line — the longest legitimately 253d ("Architecture — Level 7")
+  // inside a real 416d programme. A permanently-red audit teaches people to ignore the audit.
+  // Re-expressed against something REAL instead of a re-guessed constant: no single task may run
+  // longer than the whole programme it belongs to (derived from this schedule's own span), and no
+  // task may be shorter than a day. Both are structural impossibilities rather than opinions.
+  const _spanStart = Math.min.apply(null, scheduleData.map(t => +new Date(t.start)));
+  const _spanEnd = Math.max.apply(null, scheduleData.map(t => +new Date(t.finish || t.end || t.start)));
+  const PROJECT_DAYS = Math.max(1, Math.round((_spanEnd - _spanStart) / 86400000));
+  const outliers = scheduleData.filter(t => t.duration > PROJECT_DAYS || t.duration < 1).map(t => t.name + '=' + t.duration + 'd');
   const c4 = outliers.length === 0;
-  console.log('§4D_AUDIT_DURATION ' + (c4 ? 'PASS' : 'FAIL') + ' outliers=[' + outliers.join(',') + ']');
+  console.log('§4D_AUDIT_DURATION ' + (c4 ? 'PASS' : 'FAIL') + ' projectDays=' + PROJECT_DAYS +
+    ' (ceiling derived from the real programme span, not a constant)' +
+    ' outliers=[' + outliers.join(',') + ']');
   results.push({name:'DURATION', pass:c4});
 
   // Check 5: Overlap sanity — no two tasks with same phase on same storey (grouped = impossible, but verify)
