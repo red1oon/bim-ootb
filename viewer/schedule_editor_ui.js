@@ -274,12 +274,17 @@
       host.appendChild(todayLine);
     }
 
-    leaves.forEach(function (n) {
+    // geometry per task, filled in below — the dependency-arrow overlay draws from this afterward
+    // (needs every bar's final on-screen position, so it has to run after the row loop, not during it).
+    var AXIS_H = 16, ROW_H = 26;   // must match .g-axis/.g-row in schedule_editor.html
+    var geom = {};
+    leaves.forEach(function (n, idx) {
       var dur = daysBetween(n.start, n.finish);
       var off = daysBetween(min, n.start);
       var row = el('div', 'g-row');
       row.appendChild(el('div', 'g-label', n.name));
       var track = el('div', 'g-track');
+      var yCenter = AXIS_H + idx * ROW_H + ROW_H / 2;
       // §SE-5b milestone — a 0-day task (start===finish) renders as a diamond, not a bar.
       if (dur === 0) {
         var ms = el('div', 'g-milestone' + (n.critical ? ' crit' : ''));
@@ -287,10 +292,12 @@
         ms.dataset.task = n.id;
         ms.title = n.name + '  ' + n.start + ' (milestone)';
         track.appendChild(ms);
+        geom[n.id] = { x: labelW + off * pxPerDay, xEnd: labelW + off * pxPerDay, y: yCenter };
       } else {
         var bar = el('div', 'g-bar' + (n.critical ? ' crit' : ''), dur + 'd');
-        bar.style.left = (off * pxPerDay) + 'px';
-        bar.style.width = Math.max(8, dur * pxPerDay) + 'px';
+        var barX = off * pxPerDay, barW = Math.max(8, dur * pxPerDay);
+        bar.style.left = barX + 'px';
+        bar.style.width = barW + 'px';
         bar.dataset.task = n.id;
         bar.title = n.name + '  ' + n.start + ' → ' + n.finish + (n.totalFloat != null ? '  (float ' + n.totalFloat + 'd)' : '');
         _wireBarDrag(bar, n, off, pxPerDay);
@@ -299,10 +306,59 @@
         _wireLinkDrag(handle, n);
         bar.appendChild(handle);
         track.appendChild(bar);
+        geom[n.id] = { x: labelW + barX, xEnd: labelW + barX + barW, y: yCenter };
       }
       row.appendChild(track);
       host.appendChild(row);
     });
+
+    // §SE-5c dependency arrows — traditional Gantt connector lines between linked bars, the visual
+    // counterpart to the text-only §SE list (renderDeps' predName→succName rows). Drawn from
+    // task_sequences via the SAME read SA().listDependencies already uses, honouring FS/SS/FF/SF
+    // (endpoint = start or finish per type, matching schedule_author.js SEQ_TYPES/computeCpm — not
+    // always drawn finish→start). An SVG overlay sits on top of the rows (host is position:relative);
+    // z-index keeps it above bars for visibility but pointer-events:none so drag/click still hit bars.
+    var deps = SA().listDependencies ? SA().listDependencies(db, schedId) : [];
+    var drawable = deps.filter(function (dep) { return geom[dep.predId] && geom[dep.succId]; });
+    if (drawable.length) {
+      var svgH = AXIS_H + leaves.length * ROW_H;
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'g-deps-svg');
+      svg.setAttribute('width', labelW + chartW);
+      svg.setAttribute('height', svgH);
+      svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0';
+      svg.style.pointerEvents = 'none'; svg.style.zIndex = '2';
+      var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      [['g-arrowhead', '#6f89ac'], ['g-arrowhead-crit', '#d2475c']].forEach(function (m) {
+        var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        marker.setAttribute('id', m[0]);
+        marker.setAttribute('viewBox', '0 0 8 8'); marker.setAttribute('refX', '7'); marker.setAttribute('refY', '4');
+        marker.setAttribute('markerWidth', '7'); marker.setAttribute('markerHeight', '7'); marker.setAttribute('orient', 'auto-start-reverse');
+        var tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        tri.setAttribute('d', 'M0,0 L8,4 L0,8 z'); tri.setAttribute('fill', m[1]);
+        marker.appendChild(tri); defs.appendChild(marker);
+      });
+      svg.appendChild(defs);
+      drawable.forEach(function (dep) {
+        var pg = geom[dep.predId], sg = geom[dep.succId];
+        var crit = critSet[dep.predId] && critSet[dep.succId];
+        // endpoint per link type — SS/FF/SF connect at START, not always predecessor's finish.
+        var x1 = (dep.type === 'SS' || dep.type === 'SF') ? pg.x : pg.xEnd;
+        var x2 = (dep.type === 'FF' || dep.type === 'SF') ? sg.xEnd : sg.x;
+        var y1 = pg.y, y2 = sg.y;
+        var midX = x1 + Math.max(6, (x2 - x1) / 2 * (x2 >= x1 ? 1 : -1));
+        var d3 = 'M ' + x1 + ' ' + y1 + ' L ' + midX + ' ' + y1 + ' L ' + midX + ' ' + y2 + ' L ' + x2 + ' ' + y2;
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d3);
+        path.setAttribute('class', 'g-dep-line' + (crit ? ' crit' : ''));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('marker-end', 'url(#' + (crit ? 'g-arrowhead-crit' : 'g-arrowhead') + ')');
+        path.setAttribute('title', dep.predName + ' → ' + dep.succName + ' (' + dep.type + (dep.lag ? ', lag ' + dep.lag + 'd' : '') + ')');
+        svg.appendChild(path);
+      });
+      host.appendChild(svg);
+      console.log('§SE_GANTT_ARROWS drawn=' + drawable.length + '/' + deps.length + ' (skipped=' + (deps.length - drawable.length) + ' undated/off-chart endpoints)');
+    }
     console.log('§SE_GANTT bars=' + leaves.length + ' span=' + min + '..' + max + ' days=' + totalDays + ' zoom=' + _zoom);
   }
 

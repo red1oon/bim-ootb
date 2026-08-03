@@ -323,6 +323,7 @@
     var outPhases = [], assignN = 0;
     ordered.forEach(function (p) {
       var tid = 'TASK_' + _slug(p.name);
+      p.taskId = tid;   // CPM_FLOAT_GAP.md Gap 1 — kept on p so the task_sequences pass below can use it
       var s = blank ? null : _addDays(start, p.startCursor);
       var f = blank ? null : _addDays(start, p.startCursor + p.widthDays);
       // Leaf, is_summary=0. Dated → _cap.win picks it up; blank/undated → _cap skips it (the user
@@ -333,6 +334,26 @@
     });
     stmtTk.free();
     stmtTe.free();
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — §PHASE_OVERLAP_BAND already computed the real
+    // leading-trade/follow-on-trade relationship between consecutive phases (p.lagDays = days for
+    // the leading phase to clear one band before the next phase can start behind it) but only ever
+    // wrote it into schedule_start/schedule_finish, never into task_sequences — so computeCpm was
+    // blind to a generated (no-plan) schedule: zero predecessor/successor rows, every phase trivially
+    // ES=0, float meaningless. This exposes the SAME already-derived number as an explicit
+    // CPM-solvable SS edge — not a new/invented relationship, just the one already computed above,
+    // made readable by computeCpm/listDependencies/the Gantt dependency view.
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    db.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [schedId, schedId]);
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < ordered.length; i++) {
+      var pred = ordered[i - 1], succ = ordered[i];
+      stmtSeq.run([pred.taskId, succ.taskId, 'SS', pred.lagDays]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_SEQUENCES schedule=' + schedId + ' edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
 
     db.run('COMMIT');   // §SE-5a — single commit for the whole rebuild
 
@@ -440,11 +461,12 @@
       bandCount[tid] = Math.max(1, Object.keys(storeys).length);
     });
 
-    var cursor = 0, totalDays = 0;
+    var cursor = 0, totalDays = 0, lagByTid = {};
     db.run('BEGIN TRANSACTION');   // §SE-5a — same per-statement-overhead fix as materializeDefault
     ids.forEach(function (tid) {
       var w = widthDays[tid];
       var lag = Math.max(1, Math.ceil(w / bandCount[tid]));
+      lagByTid[tid] = lag;
       var s = _addDays(start, cursor), f = _addDays(start, cursor + w);
       db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
         [s, f, 'P' + w + 'D', tid]);
@@ -454,6 +476,22 @@
     });
     db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
       [start, _addDays(start, totalDays), scheduleId]);
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — same edge-exposure as materializeDefault (see its
+    // comment above the identical block): this function re-dates a previously-blank schedule, so it
+    // must (re)write the SAME SS edges here too, using the just-recomputed per-task lag — otherwise a
+    // schedule authored blank-then-dated would keep the STALE edges (or none) from before dating.
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    db.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [scheduleId, scheduleId]);
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < ids.length; i++) {
+      stmtSeq.run([ids[i - 1], ids[i], 'SS', lagByTid[ids[i - 1]]]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_SEQUENCES schedule=' + scheduleId + ' edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
+
     db.run('COMMIT');
     console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + totalDays + 'd');
     return { scheduled: ids.length, start: start, span: totalDays };
@@ -759,11 +797,19 @@
       t.es = Math.max(0, es); t.ef = t.es + t.dur;
     });
     var PF = 0; ids.forEach(function (id) { PF = Math.max(PF, T[id].ef); });
-    // BACKWARD: LF/LS in reverse topo order.
+    // BACKWARD: LF/LS in reverse topo order. A task's late finish can never legitimately exceed the
+    // project's own finish PF — that IS the definition of "project finish." The un-clamped succs-loop
+    // result can overshoot PF for a task whose only successor edge is SS/SF (constrains the
+    // SUCCESSOR's START, never THIS task's finish) — e.g. a §PHASE_OVERLAP_BAND-style SS chain where
+    // an early, long-duration phase (its EF ends up defining PF itself) is followed by a short-lag
+    // successor: nothing in the graph consumes that predecessor's FINISH, so the naive backward pass
+    // (mirroring only its successor's late START) can compute an LF hundreds of days past PF — a
+    // provably-impossible float that silently zeroed the critical path on any SS-only chain (this
+    // was never exercised before task_sequences carried real SS edges — CPM_FLOAT_GAP.md Gap 1).
     for (var i = topo.length - 1; i >= 0; i--) {
       var t = T[topo[i]];
       if (!t.succs.length) t.lf = PF;
-      else { var lf = Infinity; t.succs.forEach(function (e) { lf = Math.min(lf, _bwdLF(T[e.succ], e.lag, e.type, t.dur)); }); t.lf = lf; }
+      else { var lf = Infinity; t.succs.forEach(function (e) { lf = Math.min(lf, _bwdLF(T[e.succ], e.lag, e.type, t.dur)); }); t.lf = Math.min(lf, PF); }
       t.ls = t.lf - t.dur;
     }
     // float + critical + free float + write-back

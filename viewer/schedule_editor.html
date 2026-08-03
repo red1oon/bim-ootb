@@ -102,6 +102,10 @@
   /* §SE-5b today marker — vertical line across the whole Gantt body */
   .g-today-line { position: absolute; top: -16px; bottom: 0; width: 1px; background: #4fc3f7;
                   z-index: 1; opacity: .6; pointer-events: none; }
+  /* §SE-5c dependency-arrow overlay (traditional Gantt connector lines) */
+  .g-deps-svg { overflow: visible; }
+  .g-dep-line { stroke: #6f89ac; stroke-width: 1.4; opacity: .8; }
+  .g-dep-line.crit { stroke: #d2475c; stroke-width: 1.8; opacity: .95; }
   .g-today-line::before { content: 'today'; position: absolute; top: -14px; left: 3px; font-size: 9px;
                            color: #4fc3f7; opacity: 1; }
   /* dependency rows */

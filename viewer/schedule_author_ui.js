@@ -194,7 +194,7 @@
   }
   function applyDates() {
     var d = db(); if (!d || !_state) return;
-    var cursor = 0, totalDays = 0, start = _state.start || '2026-01-01';
+    var cursor = 0, totalDays = 0, start = _state.start || '2026-01-01', lagByTid = {};
     _state.order.forEach(function (tid) {
       var dur = _state.dur[tid] || 30;
       var s = addDays(start, cursor), f = addDays(start, cursor + dur);
@@ -202,11 +202,28 @@
         [s, f, 'P' + dur + 'D', tid]);
       totalDays = Math.max(totalDays, cursor + dur);
       var lag = Math.max(1, Math.ceil(dur / _bandCount(d, tid)));
+      lagByTid[tid] = lag;
       cursor += lag;
     });
     // root span
     d.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
       [start, addDays(start, totalDays), _state.schedId]);
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — same fix, same reasoning as the "THIRD independent
+    // lay-out implementation" note above: materializeDefault and scheduleContiguous both now write
+    // task_sequences SS edges from this exact lag; this UI-only re-apply path must too, or hitting
+    // "Apply" would silently leave stale/absent edges the same way it used to silently revert dates.
+    d.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    d.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [_state.schedId, _state.schedId]);
+    var stmtSeq = d.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < _state.order.length; i++) {
+      stmtSeq.run([_state.order[i - 1], _state.order[i], 'SS', lagByTid[_state.order[i - 1]]]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_UI_SEQUENCES edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
+
     console.log('§AUTHOR_UI_DATES start=' + start + ' span=' + totalDays + 'd phases=' + _state.order.length);
   }
 
