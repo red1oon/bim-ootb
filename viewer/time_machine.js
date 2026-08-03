@@ -2621,7 +2621,8 @@
         '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
-        '<div id="tm-gantt-legend" style="display:flex;flex-wrap:wrap;gap:2px 8px;padding:2px 4px 2px 64px;font-size:10px;color:#ccc;min-height:14px"></div>' +
+        // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
+        // storey, phase, element count, day range and source, so the legend was pure duplication.
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
@@ -4172,13 +4173,49 @@
   // Invalidate the cached index + bar rollup (call after any write that re-dates or re-authors).
   function invalidateGanttModel() { _taskIndex = null; _taskIndexFor = null; _ganttDirty = true; }
 
+  // §GANTT_PALETTE (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT VIS) — user report:
+  // "not clear enough which is which". Three real collisions in the previous palette, not taste:
+  //  1. Substructure #7a8a8e and Superstructure #5b7fa5 were both desaturated blue-greys — the least
+  //     distinguishable pair sat on the two ADJACENT structural phases.
+  //  2. Architecture #c07a4a (orange-brown) competed with two RESERVED STATUS colours: #ff8c00 is the
+  //     active-bar outline + cursor hairline, #ffeb3b is the captured-IFC-4D frame. A phase fill must
+  //     never occupy a status hue.
+  //  3. The palette encoded no trade family: the two MEP phases (#8bc34a green / #ab47bc purple)
+  //     looked unrelated, while MEP Rough-in and Finishes (#26a69a teal) looked related.
+  // Now: three trade families by HUE (structure blue / MEP green / architecture purple), dark→light
+  // WITHIN each family following build order, and orange+yellow left free for status only.
+  //
+  // MEASURED, not eyeballed (CIE76 dE + WCAG, scratchpad/palette_tune.js — the FUNDAMENTAL LAW
+  // applies to colour too: numbers, not "looks better"):
+  //   min pairwise dE      20.8 → 34.7   (worst old pair was Substructure/Superstructure, as reported)
+  //   min dE to a status hue 42.5 → 60.9
+  //   worst label contrast  2.10:1 → 5.92:1   (the OLD palette failed a 3.0 floor on every light bar —
+  //                                            white-on-#8bc34a was 2.10:1, effectively unreadable)
   var PHASE_COLORS = {
-    'Substructure': '#7a8a8e',
-    'Superstructure': '#5b7fa5',
-    'MEP Rough-in': '#8bc34a',
-    'Architecture': '#c07a4a',
-    'MEP Final': '#ab47bc',
-    'Finishes': '#26a69a'
+    'Substructure':   '#37516b',   // structure, deep
+    'Superstructure': '#79b4e8',   // structure, light
+    'MEP Rough-in':   '#27714a',   // MEP, deep
+    'MEP Final':      '#7ccb80',   // MEP, light
+    'Architecture':   '#5e3f87',   // architecture, deep
+    'Finishes':       '#c096e0'    // architecture, light
+  };
+
+  // Adaptive label ink — white on the deep family members, near-black on the light ones. Forcing
+  // white onto every bar is what drove the old 2.10:1 contrast; picked per fill, all six clear 5.9:1.
+  var PHASE_INK = {
+    'Substructure':   '#ffffff',
+    'Superstructure': '#10141a',
+    'MEP Rough-in':   '#ffffff',
+    'MEP Final':      '#10141a',
+    'Architecture':   '#ffffff',
+    'Finishes':       '#10141a'
+  };
+
+  // The in-bar text label used to be phase.substring(0,3), which collided on exactly the same pair
+  // the colours did: "Sub" vs "Sup", one character apart at 9px. Explicit short codes instead.
+  var PHASE_SHORT = {
+    'Substructure': 'SUB', 'Superstructure': 'SUPER', 'MEP Rough-in': 'MEP-R',
+    'MEP Final': 'MEP-F', 'Architecture': 'ARCH', 'Finishes': 'FIN'
   };
 
   // ── §TM-VARIANCE — budget-vs-actual from the STORED twin (TM_4D5D_VARIANCE_LANE §S1) ──
@@ -4554,22 +4591,10 @@
     buildGanttTasks();
     if (!_ganttTasks.length) return;
 
-    // Phase legend strip
-    var legend = document.getElementById('tm-gantt-legend');
-    if (legend && !legend.childElementCount) {
-      var seenPhases = {};
-      for (var li = 0; li < _ganttTasks.length; li++) {
-        var lp = _ganttTasks[li].phase;
-        if (!seenPhases[lp]) {
-          seenPhases[lp] = true;
-          var sp = document.createElement('span');
-          sp.style.cssText = 'display:inline-flex;align-items:center;gap:2px';
-          sp.innerHTML = '<span style="width:8px;height:8px;border-radius:1px;background:' +
-            (PHASE_COLORS[lp] || '#888') + ';display:inline-block"></span>' + lp;
-          legend.appendChild(sp);
-        }
-      }
-    }
+    // §GANTT_PALETTE: the phase legend strip is GONE (user: "the legend is redundant, just hover
+    // labelling is sufficient"). The hover tooltip already reports strictly more than the legend did
+    // — storey, phase, element count, day range AND the generated-vs-IFC-4D source — so the legend
+    // carried no information of its own. Removing it returns its row of vertical space to the bars.
 
     // Canvas sizing
     var barH = 12, gapH = 2, rowH = barH + gapH;
@@ -4613,7 +4638,9 @@
       // Active highlight: cursor is within this task's time range
       var isActive = (_cursor >= task.startTs && _cursor <= task.endTs);
 
-      ctx.globalAlpha = 0.8;
+      // §GANTT_PALETTE: fills at full opacity — 0.8 flattened what little contrast the old palette
+      // had. The families carry the distinction now, so the bars can be read at a glance.
+      ctx.globalAlpha = 1;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
 
@@ -4633,14 +4660,15 @@
         ctx.strokeRect(x, y, w, barH);
       }
 
-      // Label: first 3 chars of phase, only if bar wide enough
+      // Label: explicit phase short-code (§GANTT_PALETTE). substring(0,3) used to yield "Sub" vs
+      // "Sup" — one character apart at 9px, colliding on the very pair the colours also collided on.
       if (w > 40) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = PHASE_INK[task.phase] || '#fff';
         ctx.font = '9px sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(task.phase.substring(0, 3), x + w - 3, y + barH / 2);
+        ctx.fillText(PHASE_SHORT[task.phase] || task.phase.substring(0, 3), x + w - 3, y + barH / 2);
       }
     }
 
