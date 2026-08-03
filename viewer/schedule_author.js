@@ -1250,6 +1250,7 @@
     // (commit d35366a). Single source of truth — do not fork these again.
     _installSecs: _installSecs,
     _classFragmentation: _classFragmentation,
+    _linearWeighting: _linearWeighting,
     FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,

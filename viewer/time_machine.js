@@ -3504,11 +3504,25 @@
       console.warn('§TM_DURATION_SYNC_FALLBACK ScheduleAuthor not loaded — install-secs NOT area-weighted for fragmented classes');
       return { fragmented: {}, area: {} };
     })();
-    function getInstallSecs(cls, rule, guid) {
+    // §HEAVY_MEMBER_SPEED_LIMIT sync (2026-08-04) — same gap as §TM_DURATION_SYNC above, found live:
+    // this wrapper never passed the real-length weighting fix (schedule_author.js _installSecs 5th
+    // arg) through, so the default/initial Time Machine timeline still charged every beam/column the
+    // SAME flat duration regardless of real size, even though the "Generate first draft" wizard path
+    // (schedule_author.js) already had it. Same single-source-of-truth call, just the missing param.
+    var _lin = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._linearWeighting) {
+        return window.ScheduleAuthor._linearWeighting(db, window.RATES || {});
+      }
+      return { avgLength: {}, length: {} };
+    })();
+    function getInstallSecs(cls, rule, guid, bx, by, bz) {
       rule = rule || matchRule(cls);
       var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      var hasGeom = bx > 0 || by > 0 || bz > 0;
+      var clsAvgLen = _lin.avgLength[cls];
+      var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0) ? Math.max(bx, by, bz) / clsAvgLen : null;
       if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
-        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty);
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       var resource = rule.resource;
@@ -3611,7 +3625,7 @@
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
-        installSecs: getInstallSecs(cls, rule, row[0])
+        installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz)
       };
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
