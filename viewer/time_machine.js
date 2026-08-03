@@ -2623,6 +2623,16 @@
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
         // storey, phase, element count, day range and source, so the legend was pure duplication.
+        // §GANTT_RULER (E5) + §GANTT_RESIZE (E6), 2026-08-04. The drawer had NO time axis at all —
+        // the only temporal reference was the cursor hairline, so a bar's absolute dates were only
+        // discoverable by hovering it. position:sticky keeps the header pinned while the bar rows
+        // scroll underneath, so the axis is always on screen. The grip above it drags the drawer
+        // taller than the CSS 220px cap (a 22-storey building renders ~130 bars into that box).
+        '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
+          '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
+            'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block"></canvas>' +
+        '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
@@ -4583,6 +4593,95 @@
     }
   }
 
+  // §GANTT_RULER (E5) — the drawer's time axis. Ticks are chosen so labels land roughly every 80px
+  // and always on a "nice" day interval, so the axis stays readable from a 30-day Duplex to a
+  // 1000-day Terminal without any per-building tuning. Returns the tick times so the bar canvas can
+  // draw matching gridlines — one source of truth for where a date sits horizontally.
+  var _RULER_STEPS = [1, 2, 5, 7, 14, 30, 60, 90, 180, 365, 730];
+  function ganttRulerTicks(barW) {
+    var range = Math.max(1, _projectEnd - _projectStart);
+    var totalDays = range / 86400000;
+    var pxPerDay = barW / totalDays;
+    var step = _RULER_STEPS[_RULER_STEPS.length - 1];
+    for (var i = 0; i < _RULER_STEPS.length; i++) {
+      if (_RULER_STEPS[i] * pxPerDay >= 80) { step = _RULER_STEPS[i]; break; }
+    }
+    var ticks = [];
+    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: _projectStart + d * 86400000 });
+    return { ticks: ticks, step: step, totalDays: totalDays };
+  }
+
+  function drawGanttRuler(cW, marginL, barW) {
+    var rc = document.getElementById('tm-gantt-ruler');
+    if (!rc) return null;
+    var H = 18, dpr = window.devicePixelRatio || 1;
+    rc.width = cW * dpr; rc.height = H * dpr; rc.style.height = H + 'px';
+    var ctx = rc.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cW, H);
+    var R = ganttRulerTicks(barW);
+    var range = Math.max(1, _projectEnd - _projectStart);
+    // "Day N" origin label in the storey-label gutter, so the axis reads as project days too.
+    ctx.fillStyle = '#8a97a5'; ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('Day', 4, H / 2);
+    var longSpan = R.step >= 30;
+    ctx.strokeStyle = 'rgba(120,140,160,0.35)'; ctx.lineWidth = 1;
+    R.ticks.forEach(function (t) {
+      var x = marginL + (t.ts - _projectStart) / range * barW;
+      if (x < marginL - 0.5 || x > marginL + barW + 0.5) return;
+      ctx.beginPath(); ctx.moveTo(x + 0.5, H - 5); ctx.lineTo(x + 0.5, H); ctx.stroke();
+      var dt = new Date(t.ts);
+      // Real calendar date, plus the project-day number the rest of the drawer already speaks in.
+      var lbl = longSpan
+        ? dt.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+        : dt.getDate() + ' ' + dt.toLocaleDateString(undefined, { month: 'short' });
+      ctx.fillStyle = '#aab6c2'; ctx.textAlign = 'center';
+      ctx.fillText(lbl, x, 5);
+      ctx.fillStyle = '#68758a';
+      ctx.fillText('d' + t.day, x, 13);
+    });
+    // Cursor marker on the axis, same orange as the hairline.
+    var hx = marginL + (_cursor - _projectStart) / range * barW;
+    if (hx >= marginL && hx <= marginL + barW) {
+      ctx.fillStyle = '#ff8c00';
+      ctx.beginPath(); ctx.moveTo(hx, H - 6); ctx.lineTo(hx - 4, H); ctx.lineTo(hx + 4, H); ctx.closePath(); ctx.fill();
+    }
+    return R;
+  }
+
+  // §GANTT_RESIZE (E6) — drag the grip to make the drawer taller than the CSS 220px cap. Inline
+  // max-height wins over the .tm-drawer-bottom.open rule, so the class keeps owning open/close and
+  // this only owns the height. Reuses the same pointer-capture idiom as makeDraggable.
+  var _ganttBoxH = 0;   // 0 = follow the stylesheet default
+  function wireGanttResize() {
+    var grip = document.getElementById('tm-gantt-grip');
+    var box = document.getElementById('tm-gantt-box');
+    if (!grip || !box || grip._wired) return;
+    grip._wired = true;
+    var startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = box.clientHeight;
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      // Grip sits at the drawer's TOP edge, so dragging UP (negative dy) grows it.
+      var h = Math.max(80, Math.min(Math.round(window.innerHeight * 0.75), startH + (startY - e.clientY)));
+      _ganttBoxH = h;
+      box.style.maxHeight = h + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§GANTT_RESIZE height=' + _ganttBoxH + 'px rows=' + _ganttTasks.length);
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
   function drawGanttMini() {
     if (!_ops.length) return;
     var canvas = document.getElementById('tm-gantt-canvas');
@@ -4590,6 +4689,8 @@
     if (!canvas || !box) return;
     buildGanttTasks();
     if (!_ganttTasks.length) return;
+    wireGanttResize();
+    if (_ganttBoxH) box.style.maxHeight = _ganttBoxH + 'px';
 
     // §GANTT_PALETTE: the phase legend strip is GONE (user: "the legend is redundant, just hover
     // labelling is sufficient"). The hover tooltip already reports strictly more than the legend did
@@ -4614,6 +4715,20 @@
 
     var range = Math.max(1, _projectEnd - _projectStart);
     var prevStorey = '';
+
+    // §GANTT_RULER (E5): draw the sticky axis header, then lay its ticks down the bar canvas as
+    // gridlines. Same tick set for both, so a bar's edge can be read against a real date instead of
+    // being eyeballed against nothing. Drawn BEFORE the bars so it never sits on top of them.
+    var R = drawGanttRuler(cW, marginL, barW);
+    if (R) {
+      ctx.strokeStyle = 'rgba(120,140,160,0.13)';
+      ctx.lineWidth = 1;
+      R.ticks.forEach(function (t) {
+        var gx = Math.round(marginL + (t.ts - _projectStart) / range * barW) + 0.5;
+        if (gx < marginL || gx > marginL + barW) return;
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cH); ctx.stroke();
+      });
+    }
 
     // Draw bars
     for (var ti = 0; ti < numTasks; ti++) {
