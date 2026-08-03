@@ -81,10 +81,41 @@
       return false;
     }
     _wpSched = sch;
-    console.log('§CPE_BUILDUP_PACING mode=work ops=' + sch.total +
-      ' — t=0.10 now means 10% of the ELEMENTS placed, not 10% of the days elapsed' +
+    var phaseMode = sch.phases && sch.phases.length > 1;
+    console.log('§CPE_BUILDUP_PACING mode=' + (phaseMode ? 'even-phase' : 'work') + ' ops=' + sch.total +
+      (phaseMode ? ' phases=' + sch.phases.length + ' — each phase gets an EQUAL film segment, work-paced within it'
+                 : ' — t=0.10 now means 10% of the ELEMENTS placed, not 10% of the days elapsed') +
       ' (this model puts ' + (sch.workInFirstTenthOfCalendar * 100).toFixed(1) + '% of its work in the first 10% of its calendar)');
     return true;
+  }
+
+  // §CPE_PHASE_STAGGER (2026-08-04): a visually homogeneous phase (Terminal's Superstructure is
+  // 72.4% one thing — 33,324 near-identical "Metal Deck" IfcPlate) reads as monotonous tiling when
+  // played in total isolation for its own equal segment, even though §CPE_EVEN_PHASE_PACING already
+  // gives it a fair (not dominant) share of the film. Real construction overlaps trades too (this
+  // file's own "true parallel trades" principle) — so phase i's window is allowed to START
+  // STAGGER_OVERLAP/N EARLY, borrowed from phase i-1's tail, while its END stays at its nominal
+  // boundary (unchanged share of the film, just entered from an earlier point). `_phaseWindow` is
+  // the SINGLE SOURCE for this window shape — `_workCursorAt` and `_ghostGroundArm`'s inverse
+  // lookup both call it, so they cannot drift into the two-different-clocks bug class that shipped
+  // twice already this file (§GHOST_GROUND_LIVE_TRIGGER, then its 2026-08-04 recurrence when
+  // §CPE_EVEN_PHASE_PACING first landed).
+  var STAGGER_OVERLAP = 0.20;
+
+  function _phaseWindow(i, N) {
+    return { lo: Math.max(0, i - STAGGER_OVERLAP) / N, hi: (i + 1) / N };
+  }
+
+  // One phase's own monotonic cursor contribution at film-fraction t, or null before its window
+  // opens. Monotonic non-decreasing in t by construction (linear ramp into a sorted-array lookup,
+  // saturating at the phase's own max) — this is what makes `max` over every phase's contribution
+  // (below) monotonic too, with no boundary special-casing required.
+  function _phaseCursorAt(t, ph, win) {
+    if (!ph.total || t < win.lo) return null;
+    var localT = win.hi > win.lo ? Math.min(1, (t - win.lo) / (win.hi - win.lo)) : 1;
+    var k = Math.round(localT * ph.total);
+    if (k < 1) return null;
+    return ph.ends[Math.min(ph.total, k) - 1];
   }
 
   // The cursor this frame should ask for. Pure function of the film fraction, so preview and bake
@@ -95,7 +126,24 @@
     if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
     if (t <= 0) return _wpSched.projectStart;
     if (t >= 1) return _wpSched.projectEnd;
-    // k-th completion. `ends` is sorted, so this is the instant at which exactly k ops are done.
+    // §CPE_EVEN_PHASE_PACING: split the film into one EQUAL segment per phase (in the phase's own
+    // schedule order), and work-pace (k-th completion) WITHIN that phase's own segment. A
+    // population-dominant phase no longer eats the film in proportion to its element count — it
+    // gets the same screen time as every other phase, same as this file's within-phase pacing
+    // already gives every ELEMENT an even share of its own phase's time. §CPE_PHASE_STAGGER above
+    // widens each phase's window on its LEADING edge only, so cursor(t) = max over every phase's
+    // own (individually monotonic) contribution — the max of monotonic functions is monotonic.
+    var phases = _wpSched.phases;
+    if (phases && phases.length) {
+      var N = phases.length, best = -Infinity;
+      for (var i = 0; i < N; i++) {
+        var val = _phaseCursorAt(t, phases[i], _phaseWindow(i, N));
+        if (val != null && val > best) best = val;
+      }
+      return best > -Infinity ? best : _wpSched.projectStart;
+    }
+    // Fallback (no phase grouping available — e.g. every op landed in one phase): the original
+    // global k-th completion. `ends` is sorted, so this is the instant at which exactly k ops are done.
     var k = Math.round(t * _wpSched.total);
     if (k < 1) return _wpSched.projectStart;
     if (k >= _wpSched.total) return _wpSched.projectEnd;
@@ -210,11 +258,38 @@
     var elementsFirstT = null, elementsFirstTSrc = 'work schedule unavailable';
     if (!_wpTried) _workPacingArm();  // force-arm early so this bake's OWN schedule is what the
                                        // threshold is computed from, not a race with frame 0.
+    // §CPE_EVEN_PHASE_PACING / §CPE_PHASE_STAGGER (2026-08-04): `tFilm` maps through `_phaseWindow`
+    // now, not a flat global-rank fraction or even N equal un-overlapping segments — inverting
+    // `_workCursorAt`'s mapping via a rank in the flat `_wpSched.ends` array (the ORIGINAL fix
+    // below) reproduces the exact §GHOST_GROUND_LIVE_TRIGGER bug class: a precomputed threshold
+    // computed in a domain `_workCursorAt` no longer uses. Find which phase `firstAboveMs` belongs
+    // to and its rank WITHIN that phase, then invert via THAT SAME phase's `_phaseWindow(i, N)` —
+    // the identical window `_workCursorAt`/`_phaseCursorAt` use — guaranteeing
+    // `_workCursorAt(firstT) === firstAboveMs` again, by construction. Only phase j itself (the one
+    // containing firstAboveMs) can produce that exact value: an earlier phase i<j saturates below
+    // it (its whole calendar range precedes phase j's), and a later phase i>j cannot produce a
+    // value AS SMALL as firstAboveMs (its own smallest end_ts is already >= phase j's largest) — so
+    // the single-phase inversion is exact, the overlap window doesn't need to be searched globally.
     if (sched.firstAboveMs != null && _wpSched && _wpSched.total) {
-      var _ends = _wpSched.ends, _lo = 0, _hi = _ends.length;
-      while (_lo < _hi) { var _mid = (_lo + _hi) >>> 1; if (_ends[_mid] < sched.firstAboveMs) _lo = _mid + 1; else _hi = _mid; }
-      elementsFirstT = (_lo + 1) / _wpSched.total;
-      elementsFirstTSrc = 'rank ' + (_lo + 1) + '/' + _wpSched.total + ' in the full end_ts order';
+      if (_wpSched.phases && _wpSched.phases.length) {
+        var _phs = _wpSched.phases, _Nph = _phs.length, _segFound = -1, _rankFound = -1;
+        for (var _pi = 0; _pi < _Nph; _pi++) {
+          var _pends = _phs[_pi].ends, _plo = 0, _phi = _pends.length;
+          while (_plo < _phi) { var _pmid = (_plo + _phi) >>> 1; if (_pends[_pmid] < sched.firstAboveMs) _plo = _pmid + 1; else _phi = _pmid; }
+          if (_plo < _pends.length) { _segFound = _pi; _rankFound = _plo; break; }
+        }
+        if (_segFound < 0) { _segFound = _Nph - 1; _rankFound = _phs[_Nph - 1].total - 1; }   // past the last op
+        var _win = _phaseWindow(_segFound, _Nph);
+        var _localT = (_rankFound + 1) / _phs[_segFound].total;
+        elementsFirstT = _win.lo + _localT * (_win.hi - _win.lo);
+        elementsFirstTSrc = 'phase ' + _phs[_segFound].name + ' rank ' + (_rankFound + 1) + '/' + _phs[_segFound].total +
+          ' (segment ' + (_segFound + 1) + '/' + _Nph + ', window ' + _win.lo.toFixed(4) + '-' + _win.hi.toFixed(4) + ')';
+      } else {
+        var _ends = _wpSched.ends, _lo = 0, _hi = _ends.length;
+        while (_lo < _hi) { var _mid = (_lo + _hi) >>> 1; if (_ends[_mid] < sched.firstAboveMs) _lo = _mid + 1; else _hi = _mid; }
+        elementsFirstT = (_lo + 1) / _wpSched.total;
+        elementsFirstTSrc = 'rank ' + (_lo + 1) + '/' + _wpSched.total + ' in the full end_ts order';
+      }
     }
     // The domain `tFilm` is ACTUALLY in: elements-fraction when work-pacing armed (mirrors
     // `_workCursorAt`'s own branch), else calendar-fraction (mirrors its degrade branch).
@@ -1360,6 +1435,9 @@
       window.APP.buildupTAt = _buildupTAt;
       window.APP.buildupTopoutU = _buildupTopoutU;
       window.APP.buildupPacingReset = _workPacingReset;
+      // §CPE_PHASE_STAGGER: exposed so a witness gates the REAL constant, not a hand-copied guess
+      // that can drift from the shipped value.
+      window.APP.buildupStaggerOverlap = STAGGER_OVERLAP;
       window.APP.ghostGroundArm = _ghostGroundArm;
       window.APP.ghostGroundAt = _ghostGroundAt;
       window.APP.ghostGroundRestore = _ghostGroundRestore;

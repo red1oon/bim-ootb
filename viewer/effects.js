@@ -4129,7 +4129,14 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_PACE_SWING = 1.45;
   var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap
   var CINEMA_DIVE_MIN_SEC = 2.5;   // a floor, so a tiny building still gets an arrival rather than a cut
-  var CINEMA_SPIN_MIN_SEC = 0.8;
+  // §CPE_SETTLE_HOLD (2026-08-04): CINEMA_SPIN_MIN_SEC used to floor EVERY settle at ~1s regardless
+  // of whether there was anything to turn toward or any hold configured — an imposed pause the
+  // user's own Settle Hold field had no way to remove. CINEMA_MIN_TURN_SEC is a purely technical
+  // floor (avoids a literal zero-length beat when _spinDeg is ~0 and no hold is set), not a
+  // deliberate pause — see `spin:` below, where the user's Settle hold (band 0) now buys the
+  // actual dwell instead.
+  var CINEMA_MIN_TURN_SEC = 0.05;
+  var CINEMA_SPIN_MIN_SEC = 0.8;   // kept only as a named historical reference in comments/logs
   // Set by the wrapper when the editor supplies explicit beat seconds; then those win over the
   // derived ones. Nothing else may set it.
   var _cpeSecOverride = false;
@@ -6009,9 +6016,16 @@ async function setupEffects(A, renderer, scene, camera) {
     // added AFTER it — a hold is a number the user typed, so scaling it by measured busyness would
     // make the panel lie about its own field. This is the §CPE_HOSE_LENGTH_BLIND family's rule
     // (budget one number, motion another) applied before it can bite a fifth time.
+    // §CPE_SETTLE_HOLD (2026-08-04): band 0 ("settle" — where the dive lands, before the walk
+    // begins) is excluded here and read separately below for the SPIN beat instead. It used to be
+    // swept into this loop like every other band, which put its typed seconds into `out` (the
+    // WALK's duration) — a number added somewhere the camera never visibly pauses, while the
+    // ACTUAL settle pause was a fixed, unconfigurable floor (CINEMA_SPIN_MIN_SEC) the user's Hold
+    // field had no effect on at all. `_holds`/`_holdTotal` now cover only the interior walk
+    // (bands 1..N-1, including "stop" — the walk's own end point, unlike "settle").
     var _holds = [], _holdTotal = 0;
     if (_cpeBands && _cpeBands.length >= 2) {
-      for (var _hb = 0; _hb < _cpeBands.length; _hb++) {
+      for (var _hb = 1; _hb < _cpeBands.length; _hb++) {
         var _hv = +(_cpeBands[_hb].hold || 0);
         if (isFinite(_hv) && _hv > 0.01) {
           _holds.push({ band: _hb, sec: _hv, c: _cpeBands[_hb].c });
@@ -6019,6 +6033,7 @@ async function setupEffects(A, renderer, scene, camera) {
         }
       }
     }
+    var _settleHoldSec = (_cpeBands && _cpeBands.length && isFinite(+_cpeBands[0].hold)) ? Math.max(0, +_cpeBands[0].hold) : 0;
     var _walkTurnDegVal = _walkTurnDeg();
     var _natSec = {
       // §CPE_NOISE_LAW, second half — the same ratio that spaces the frames also BUYS the seconds
@@ -6034,7 +6049,12 @@ async function setupEffects(A, renderer, scene, camera) {
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       // §CPE_SPIN_WHIP — the angle ACTUALLY flown (no 180 cap), at the same rate every other turn in
       // the film is charged, times the same noise multiplier the dive and walk carry.
-      spin:  Math.max(CINEMA_SPIN_MIN_SEC, _spinDeg / CINEMA_TURN_DPS * _spinBusyMult),
+      // §CPE_SETTLE_HOLD (2026-08-04): the old `Math.max(CINEMA_SPIN_MIN_SEC, ...)` imposed an
+      // UNCONFIGURABLE ~1s pause at the settle point even when there was nothing to turn toward
+      // (user: "it still paused for a second when nothing is set for it"). CINEMA_MIN_TURN_SEC below
+      // is a technical floor only (avoids a literal zero-length beat), not a deliberate pause — the
+      // user's own Settle Hold field (band 0, `_settleHoldSec` above) is now what buys a real pause.
+      spin:  Math.max(CINEMA_MIN_TURN_SEC, _spinDeg / CINEMA_TURN_DPS * _spinBusyMult) + _settleHoldSec,
       // §CPE_WALK_BUDGET_NOISE_BLIND — same shape as the dive above, one law every beat. The `/3`
       // that used to inflate the turn charge as a stand-in for busyness is GONE: a degree now costs
       // CINEMA_TURN_DPS, exactly as the comment above _walkTurnDeg already claims, and busyness
@@ -6066,7 +6086,8 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_SPIN_WHIP flownDeg=' + _spinDeg.toFixed(1) + ' ceilingDeg=360' +
       ' turnDps=' + CINEMA_TURN_DPS + ' rawSec=' + (_spinDeg / CINEMA_TURN_DPS).toFixed(3) +
       ' busy=' + _spinBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
-      ' busyMult=' + _spinBusyMult.toFixed(4) + ' minSec=' + CINEMA_SPIN_MIN_SEC +
+      ' busyMult=' + _spinBusyMult.toFixed(4) + ' minSec=' + CINEMA_MIN_TURN_SEC +
+      ' settleHoldSec=' + _settleHoldSec.toFixed(3) +
       ' spinSec=' + _natSec.spin.toFixed(3));
     // An explicit override (the editor's "set the total") scales the whole film uniformly; the SHAPE
     // is geometric either way, so the beat fractions are derived-seconds over the natural total and
