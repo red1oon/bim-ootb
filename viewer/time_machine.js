@@ -3895,6 +3895,17 @@
       db.run('BEGIN');
       var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
         "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+      // §PHASE_OVERLAP_SUPPORT_GUARD (GANTT_ACCURACY.md §PHASE_OVERLAP_BAND): schedule_author.js's
+      // task windows can now OVERLAP (a later phase starts once the leading trade clears ONE band,
+      // not the whole building — see materializeDefault). The per-task stagger below still only
+      // orders elements WITHIN their own task; it has no way to know a DIFFERENT (now-overlapping)
+      // task's elements. Measured before shipping: this creates real cross-task support violations
+      // (Terminal 447, Hospital 1,929 — e.g. a beam scheduled before the wall it bears on, because
+      // Architecture's window now starts inside Superstructure's tail). Collect every element's
+      // provisional (s_i, e_i) here instead of writing immediately, then run ONE global correction
+      // pass below — same "push after, never re-key" mechanism §4D_HOST_BEFORE_HOSTED already uses,
+      // just applied across tasks instead of within one.
+      var _allScheduled = [];
       for (var _tid in _byTask) {
         var w = _cap.win[_tid];
         var _bucket = _byTask[_tid];
@@ -3943,13 +3954,60 @@
           if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
           var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
           p.phase = w.name;                         // real task name → shows in mini-Gantt
-          p._end_ts = e_i;
-          p._captured = 1;                          // visual distinction + coverage flag
-          p._task = _tid;
-          _upd.run([s_i, JSON.stringify(p), item.guid]);
+          _allScheduled.push({ guid: item.guid, s: s_i, e: e_i, params: p, task: _tid,
+            bz: item.bz, tz: item.tz, x0: item.x0, x1: item.x1, y0: item.y0, y1: item.y1,
+            cls: item.cls, seq: item.seq });
           _covered++;
         });
       }
+
+      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
+      // SAME role-blind support predicate this file already uses for the generative path
+      // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
+      // ascending base_z order is safe in ONE pass: a carrier's base_z is always below what it
+      // carries (the support DAG's own topological potential, established by §STAGGER_SUPPORT_ORDER
+      // above), so every true carrier of T has already been visited — and any correction already
+      // applied to it — by the time T is processed.
+      var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+      var _ogEPS = 0.05, _ogGAP = 0.5;
+      var _ogIsCarrier = function (e) { return e.seq <= 4 || e.cls.indexOf('IfcWall') === 0; };
+      var _ogCells = function (e) {
+        var out = [];
+        for (var cx = Math.floor(e.x0 / _ogCELL); cx <= Math.floor(e.x1 / _ogCELL); cx++)
+          for (var cy = Math.floor(e.y0 / _ogCELL); cy <= Math.floor(e.y1 / _ogCELL); cy++) out.push(cx + '|' + cy);
+        return out;
+      };
+      var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+      var _ogGrid = {};
+      _allScheduled.forEach(function (e) { if (_ogIsCarrier(e)) _ogCells(e).forEach(function (c) { (_ogGrid[c] = _ogGrid[c] || []).push(e); }); });
+      _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
+      var _ogPushed = 0;
+      _allScheduled.forEach(function (T) {
+        var cells = _ogCells(T), seen = {}, lastEnd = 0;
+        for (var ci = 0; ci < cells.length; ci++) {
+          var arr = _ogGrid[cells[ci]]; if (!arr) continue;
+          for (var si = 0; si < arr.length; si++) {
+            var S = arr[si];
+            if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
+            if (S.bz < T.bz - _ogEPS && Math.abs(S.tz - T.bz) <= _ogGAP && _ogXY(S, T) && S.e > lastEnd) lastEnd = S.e;
+          }
+        }
+        if (lastEnd && T.s < lastEnd) {
+          var dur = Math.max(60000, T.e - T.s);
+          T.s = lastEnd + 1;
+          T.e = T.s + dur;
+          _ogPushed++;
+        }
+      });
+      if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
+        ' elements later than their §PHASE_OVERLAP_BAND window to stay after their real structural support');
+
+      _allScheduled.forEach(function (item) {
+        item.params._end_ts = item.e;
+        item.params._captured = 1;
+        item.params._task = item.task;
+        _upd.run([item.s, JSON.stringify(item.params), item.guid]);
+      });
       _upd.free();
       db.run('COMMIT');
       _capActive = true;
@@ -5825,46 +5883,6 @@
       ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
       ' workInFirst10%OfCalendar=' + (out.workInFirstTenthOfCalendar * 100).toFixed(1) + '%' +
       ' (10.0% would be evenly spread — anything above it is the burst calendar pacing shows)');
-
-    // §CPE_EVEN_PHASE_PACING (GANTT_ACCURACY.md, 2026-08-04): global element-rank pacing makes
-    // "10% of the film is 10% of the building" TRUE, but a population-dominant phase (Terminal's
-    // Superstructure, 72.4% of 48,428 elements) still eats 72.4% of the FILM, leaving the smaller
-    // phases (Architecture 2.6%, Finishes 0.5%) a blink of screen time regardless of how their
-    // CALENDAR duration is set (§PHASE_DURATION only fixes calendar dates, not film pacing — the
-    // work-paced cursor never reads them). Each op already carries its own phase name
-    // (`parameters.phase`, set by the §PLAYBACK-STAGGER overlay) — group by it, in the phase's own
-    // schedule order (earliest `start_ts` first, i.e. the same order §PHASE_DURATION laid the
-    // phases out in), so the film can give each phase an EQUAL segment of screen time while still
-    // work-pacing (element-rank) WITHIN each phase — the within-phase evenness that made
-    // §CPE_BUILDUP_WORK_PACED necessary in the first place is untouched.
-    var byPhase = {}, order = [];
-    for (i = 0; i < _ops.length; i++) {
-      var ph = (_ops[i].parameters || {}).phase || 'Architecture';
-      var bucket = byPhase[ph];
-      if (!bucket) { bucket = byPhase[ph] = { name: ph, endsArr: [], minStart: Infinity }; order.push(bucket); }
-      bucket.endsArr.push(_ops[i].end_ts);
-      if (_ops[i].start_ts < bucket.minStart) bucket.minStart = _ops[i].start_ts;
-    }
-    order.sort(function(a, b) { return a.minStart - b.minStart; });
-    // Monotonic clamp: real (captured) schedules can have phases that overlap in calendar time.
-    // A running max keeps phase-to-phase cursor values non-decreasing across the whole film, the
-    // same guarantee a single globally-sorted `ends` array gives by construction — without it, a
-    // reveal could jump backward in calendar time at a phase boundary and un-place elements
-    // (renderAtTime's placed test is `end_ts <= cursor`, evaluated fresh every frame).
-    var running = -Infinity;
-    order.forEach(function(p) {
-      p.endsArr.sort(function(a, b) { return a - b; });
-      for (var j = 0; j < p.endsArr.length; j++) {
-        if (p.endsArr[j] < running) p.endsArr[j] = running;
-        running = p.endsArr[j];
-      }
-      p.ends = new Float64Array(p.endsArr);
-      p.total = p.ends.length;
-      delete p.endsArr;
-    });
-    out.phases = order;
-    console.log('§CPE_PHASE_PACING phases=' + order.length + ' ' +
-      order.map(function(p) { return p.name + '=' + p.total; }).join(' '));
     return out;
   };
 
