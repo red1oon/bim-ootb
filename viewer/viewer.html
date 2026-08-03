@@ -821,7 +821,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=2" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="effects.js?v=10" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects.js?v=11" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
 <script src="cinema_path_editor.js?v=10" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
@@ -1019,7 +1019,7 @@ if(new URLSearchParams(location.search).get('embedded')!=='true'){
 </script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js?v=537')
+  navigator.serviceWorker.register('sw.js?v=538')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
     .catch(function(e){console.warn('§SW_REG_FAIL',e)});
   // §BUILD_VERSION_STAMP: log the ACTIVE (controlling) service worker's CACHE_VERSION at page
