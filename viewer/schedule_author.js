@@ -1006,6 +1006,15 @@
 
   var API = {
     matchRule: matchRule,
+    matchNameOverride: matchNameOverride,
+    // §TM_DURATION_SYNC — exported so time_machine.js's playback-clock duration engine
+    // (getInstallSecs, viewer/time_machine.js ~3478) can call the SAME fragmentation-aware
+    // install-seconds formula the WBS/Gantt authoring path uses, instead of carrying its own
+    // hand-duplicated copy that silently lost the §LABOR_QUANTITY_WEIGHT area-weighting fix
+    // (commit d35366a). Single source of truth — do not fork these again.
+    _installSecs: _installSecs,
+    _classFragmentation: _classFragmentation,
+    FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,

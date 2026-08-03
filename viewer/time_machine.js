@@ -3475,8 +3475,28 @@
       }
       return bestKey ? SR[bestKey] : SD;
     }
-    function getInstallSecs(cls) {
-      var rule = matchRule(cls);
+    // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
+    // to be a hand-duplicated copy of the per-unit-rate formula with NO fragmentation/area-weighting —
+    // Terminal's 33,324 "Metal Deck" IfcPlate fragments (avg 0.074 m² each) each got a full per-element
+    // labor charge, inflating the REAL-TIME PLAYBACK clock (via schedule_gate.js place()'s
+    // installSecs*scaleFactor) even after schedule_author.js's WBS/Gantt dates were fixed to the
+    // correct 111-day Superstructure. Now calls schedule_author.js's ScheduleAuthor._installSecs
+    // (the SAME function materializeDefault/scheduleContiguous use) with the SAME realQty area-weight
+    // (`_frag`, computed once per injectGantt() call below) — single source of truth, no second copy.
+    var _frag = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._classFragmentation) {
+        return window.ScheduleAuthor._classFragmentation(db, window.RATES || {});
+      }
+      console.warn('§TM_DURATION_SYNC_FALLBACK ScheduleAuthor not loaded — install-secs NOT area-weighted for fragmented classes');
+      return { fragmented: {}, area: {} };
+    })();
+    function getInstallSecs(cls, rule, guid) {
+      rule = rule || matchRule(cls);
+      var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty);
+      }
+      // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       var resource = rule.resource;
       if (!resource || !LR[resource]) return 120;
       var labor = LR[resource], bestPk = null, bestLen = 0;
@@ -3577,7 +3597,7 @@
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
-        installSecs: getInstallSecs(cls)
+        installSecs: getInstallSecs(cls, rule, row[0])
       };
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
