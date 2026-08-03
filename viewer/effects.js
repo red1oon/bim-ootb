@@ -4129,13 +4129,16 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_PACE_SWING = 1.45;
   var CINEMA_TURN_DPS     = 45;    // one rate for BOTH in-place turns: the spin and the orbit lap
   var CINEMA_DIVE_MIN_SEC = 2.5;   // a floor, so a tiny building still gets an arrival rather than a cut
-  // §CPE_SETTLE_HOLD (2026-08-04): CINEMA_SPIN_MIN_SEC used to floor EVERY settle at ~1s regardless
-  // of whether there was anything to turn toward or any hold configured — an imposed pause the
-  // user's own Settle Hold field had no way to remove. CINEMA_MIN_TURN_SEC is a purely technical
-  // floor (avoids a literal zero-length beat when _spinDeg is ~0 and no hold is set), not a
-  // deliberate pause — see `spin:` below, where the user's Settle hold (band 0) now buys the
-  // actual dwell instead.
-  var CINEMA_MIN_TURN_SEC = 0.05;
+  // §CPE_SETTLE_HOLD (2026-08-04, CORRECTED same day — user: "i never asked for that as it is a
+  // user setting in hold field.. so no hard coded"): CINEMA_SPIN_MIN_SEC used to floor EVERY settle
+  // at ~1s regardless of whether there was anything to turn toward or any hold configured. The
+  // first fix replaced that floor with a small technical minimum (CINEMA_MIN_TURN_SEC, 0.05s) "to
+  // avoid a literal zero-length beat" — but that is STILL a hardcoded pause the user never asked
+  // for. There is nothing to avoid: `_natTotal` below sums dive+spin+out+rise+orbit, and dive
+  // (>=CINEMA_DIVE_MIN_SEC), rise (>=0.5s) and orbit (a fixed 8s) are never zero, so a zero-length
+  // spin beat cannot produce a zero-length film or a divide-by-zero anywhere downstream. The spin
+  // beat is now PURELY derived: the real time to turn through `_spinDeg` at `CINEMA_TURN_DPS`, plus
+  // whatever the user actually typed into the Settle band's Hold field — zero of both is zero.
   var CINEMA_SPIN_MIN_SEC = 0.8;   // kept only as a named historical reference in comments/logs
   // Set by the wrapper when the editor supplies explicit beat seconds; then those win over the
   // derived ones. Nothing else may set it.
@@ -6049,12 +6052,9 @@ async function setupEffects(A, renderer, scene, camera) {
       dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       // §CPE_SPIN_WHIP — the angle ACTUALLY flown (no 180 cap), at the same rate every other turn in
       // the film is charged, times the same noise multiplier the dive and walk carry.
-      // §CPE_SETTLE_HOLD (2026-08-04): the old `Math.max(CINEMA_SPIN_MIN_SEC, ...)` imposed an
-      // UNCONFIGURABLE ~1s pause at the settle point even when there was nothing to turn toward
-      // (user: "it still paused for a second when nothing is set for it"). CINEMA_MIN_TURN_SEC below
-      // is a technical floor only (avoids a literal zero-length beat), not a deliberate pause — the
-      // user's own Settle Hold field (band 0, `_settleHoldSec` above) is now what buys a real pause.
-      spin:  Math.max(CINEMA_MIN_TURN_SEC, _spinDeg / CINEMA_TURN_DPS * _spinBusyMult) + _settleHoldSec,
+      // §CPE_SETTLE_HOLD (2026-08-04, corrected): no floor at all — real turn time plus whatever the
+      // user typed into the Settle band's Hold field (`_settleHoldSec` above). Both zero -> 0s beat.
+      spin:  (_spinDeg / CINEMA_TURN_DPS * _spinBusyMult) + _settleHoldSec,
       // §CPE_WALK_BUDGET_NOISE_BLIND — same shape as the dive above, one law every beat. The `/3`
       // that used to inflate the turn charge as a stand-in for busyness is GONE: a degree now costs
       // CINEMA_TURN_DPS, exactly as the comment above _walkTurnDeg already claims, and busyness
@@ -6086,8 +6086,7 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_SPIN_WHIP flownDeg=' + _spinDeg.toFixed(1) + ' ceilingDeg=360' +
       ' turnDps=' + CINEMA_TURN_DPS + ' rawSec=' + (_spinDeg / CINEMA_TURN_DPS).toFixed(3) +
       ' busy=' + _spinBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
-      ' busyMult=' + _spinBusyMult.toFixed(4) + ' minSec=' + CINEMA_MIN_TURN_SEC +
-      ' settleHoldSec=' + _settleHoldSec.toFixed(3) +
+      ' busyMult=' + _spinBusyMult.toFixed(4) + ' minSec=0(no-floor) settleHoldSec=' + _settleHoldSec.toFixed(3) +
       ' spinSec=' + _natSec.spin.toFixed(3));
     // An explicit override (the editor's "set the total") scales the whole film uniformly; the SHAPE
     // is geometric either way, so the beat fractions are derived-seconds over the natural total and
