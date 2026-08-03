@@ -86,6 +86,22 @@ async function goto(page) {
     groundTruth.xrayOn === true && groundTruth.guids.length === 2,
     `xrayOn=${groundTruth.xrayOn} guids=${JSON.stringify(groundTruth.guids)} camThree=${JSON.stringify(groundTruth.camThree)}`);
 
+  // Time Machine: activate + park the cursor mid-project, same public setters the app itself uses
+  // (window.tmActivateForBake / window.tmSetCursor — same as witness_cpe_path_portable.js's setup).
+  const tmGroundTruth = await page.evaluate(async () => {
+    if (typeof window.tmActivateForBake !== 'function' || typeof window.tmGetState !== 'function') return null;
+    const ok = await window.tmActivateForBake();
+    if (!ok) return null;
+    const tm0 = window.tmGetState();
+    const target = tm0.projectStart + Math.round((tm0.projectEnd - tm0.projectStart) * 0.42);
+    window.tmSetCursor(target);
+    const tm = window.tmGetState();
+    return { target, cursor: tm.cursor, span: tm.projectEnd - tm.projectStart };
+  });
+  P('SETUP Time Machine activated and cursor parked mid-project',
+    !!tmGroundTruth && Math.abs(tmGroundTruth.cursor - tmGroundTruth.target) < 2,
+    tmGroundTruth ? `cursor=${tmGroundTruth.cursor} target=${tmGroundTruth.target} span=${tmGroundTruth.span}` : 'tmActivateForBake unavailable or no ops');
+
   // Place one staffage instance too, via the real Alt+P route — reuses the SAME shipped mechanism
   // §SCENE_STATE must not regress. togglePopulate is A.togglePopulate (effects.js).
   const staffagePlaced = await page.evaluate(async () => {
@@ -110,7 +126,7 @@ async function goto(page) {
     const hasTable = has.length > 0 && has[0].values.length > 0;
     let row = null;
     if (hasTable) {
-      const r = d.exec('SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z,xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state');
+      const r = d.exec('SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z,xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on,tm_cursor,tm_span FROM scene_state');
       row = r.length ? r[0].values[0] : null;
     }
     const hasStaffage = d.exec("SELECT COUNT(*) FROM staffage_instances");
@@ -122,7 +138,7 @@ async function goto(page) {
     exportRes.hasTable && !!exportRes.row, `hasTable=${exportRes.hasTable} row=${JSON.stringify(exportRes.row)}  LOG: ${saveLine || 'none'}`);
 
   if (exportRes.row) {
-    const [cx, cy, cz, tx, ty, tz, xray, , , , findGuids] = exportRes.row;
+    const [cx, cy, cz, tx, ty, tz, xray, , , , findGuids, , tmCursor, tmSpan] = exportRes.row;
     const maxErr = Math.max(
       Math.abs(cx - groundTruth.camIfc.ix), Math.abs(cy - groundTruth.camIfc.iy), Math.abs(cz - groundTruth.camIfc.iz),
       Math.abs(tx - groundTruth.tgtIfc.ix), Math.abs(ty - groundTruth.tgtIfc.iy), Math.abs(tz - groundTruth.tgtIfc.iz));
@@ -131,8 +147,12 @@ async function goto(page) {
     P('G-SS-2 written scene_state matches ground truth (camera IFC coords, xray, find_guids)',
       maxErr < 1e-6 && xray === 1 && JSON.stringify(savedGuids) === JSON.stringify(wantGuids),
       `maxCamErr=${maxErr.toExponential(2)} xray=${xray} savedGuids=${JSON.stringify(savedGuids)} wantGuids=${JSON.stringify(wantGuids)}`);
+    P('G-SS-2b written scene_state carries tm_cursor/tm_span matching the parked TM position',
+      !!tmGroundTruth && tmCursor === tmGroundTruth.cursor && tmSpan === tmGroundTruth.span,
+      tmGroundTruth ? `saved tmCursor=${tmCursor} tmSpan=${tmSpan}  want cursor=${tmGroundTruth.cursor} span=${tmGroundTruth.span}` : 'no TM ground truth to compare');
   } else {
     P('G-SS-2 written scene_state matches ground truth', false, 'no row to compare — depends on G-SS-1');
+    P('G-SS-2b written scene_state carries tm_cursor/tm_span', false, 'no row to compare — depends on G-SS-1');
   }
   P('SETUP staffage_instances also present in the same export (no regression from adding scene_state)',
     exportRes.staffageCount > 0, `staffageCount=${exportRes.staffageCount}`);
@@ -152,10 +172,10 @@ async function goto(page) {
     dismissModal,
   ]);
   await waitReady(page);
-  await sleep(2000); // let the §SCENE_STATE_RESTORE poll timer (1500ms cadence) fire at least once
+  await sleep(3000); // §SCENE_STATE_RESTORE poll (1500ms cadence) + the tm_cursor 600ms follow-up delay
 
   const pageLogs = await page.evaluate(() => window.__ssLogs || []);
-  const restoreLine = pageLogs.filter(l => l.startsWith('§SCENE_STATE_RESTORE')).pop();
+  const restoreLine = pageLogs.filter(l => l.startsWith('§SCENE_STATE_RESTORE ')).pop();
   const postState = await page.evaluate(() => {
     const A = window.APP;
     return {
@@ -173,6 +193,15 @@ async function goto(page) {
   P('G-SS-4 fresh load restores xray_on and the Find selection',
     postState.xrayOn === true && JSON.stringify(postState.findGuids) === JSON.stringify(groundTruth.guids.slice().sort()),
     `xrayOn=${postState.xrayOn} findGuids=${JSON.stringify(postState.findGuids)} want=${JSON.stringify(groundTruth.guids.slice().sort())}`);
+
+  const tmRestoreLine = pageLogs.filter(l => l.startsWith('§SCENE_STATE_RESTORE_TM')).pop();
+  const postTm = await page.evaluate(() => (typeof window.tmGetState === 'function') ? window.tmGetState() : null);
+  P('G-SS-6 fresh load restores the Time Machine cursor to the saved position',
+    !!tmGroundTruth && !!tmRestoreLine && !!postTm && postTm.active === true &&
+    Math.abs(postTm.cursor - tmGroundTruth.cursor) < 2,
+    tmGroundTruth
+      ? `restoreLine=${tmRestoreLine || 'MISSING'}  cursorNow=${postTm ? postTm.cursor : 'n/a'} cursorWant=${tmGroundTruth.cursor} tmActive=${postTm ? postTm.active : 'n/a'}`
+      : 'no TM ground truth to compare');
 
   const staffageAfterReload = await page.evaluate(async (wantCount) => {
     const A = window.APP;

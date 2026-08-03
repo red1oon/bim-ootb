@@ -704,18 +704,29 @@ async function setupScene(A) {
       var t = A.three2ifc(A.controls.target.x, A.controls.target.y, A.controls.target.z);
       var fp = (window._getFocusedPanel && window._getFocusedPanel()) || null;
       var findGuids = (A.activeGuidFilter && A.activeGuidFilter.size) ? Array.from(A.activeGuidFilter).join(',') : '';
+      // tm_cursor/tm_span (2026-08-03 follow-up): the CURRENT Time Machine position, distinct from
+      // the Movie Maker's own per-plan panelState (cinema_path_editor.js _capturePanelState, still
+      // IndexedDB-only — a separate, un-ported gap named in prompts/Viewer/SAVE_DB_SCENE_STATE.md).
+      // tm_span is drift-detection only (TM re-derives its project span from kernel_ops on every
+      // load, so it is NOT restored, only compared — same convention as §CPE_PANEL_STATE's span check).
+      var tmState = (typeof window.tmGetState === 'function') ? window.tmGetState() : null;
+      var tmCursor = (tmState && tmState.active) ? tmState.cursor : null;
+      var tmSpan = (tmState && tmState.active) ? (tmState.projectEnd - tmState.projectStart) : null;
       db.run("DROP TABLE IF EXISTS scene_state");
       db.run("CREATE TABLE scene_state (cam_ifc_x REAL, cam_ifc_y REAL, cam_ifc_z REAL, " +
              "tgt_ifc_x REAL, tgt_ifc_y REAL, tgt_ifc_z REAL, xray_on INTEGER, dlod_on INTEGER, " +
-             "walk_mode INTEGER, focused_panel TEXT, find_guids TEXT, tm_on INTEGER)");
-      var stmt = db.prepare("INSERT INTO scene_state VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+             "walk_mode INTEGER, focused_panel TEXT, find_guids TEXT, tm_on INTEGER, " +
+             "tm_cursor REAL, tm_span REAL)");
+      var stmt = db.prepare("INSERT INTO scene_state VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       stmt.run([p.ix, p.iy, p.iz, t.ix, t.iy, t.iz, A.xrayOn ? 1 : 0, A._dlodEnabled ? 1 : 0,
-                A.walkModeActive ? 1 : 0, fp ? fp.id : null, findGuids, A._tmOn ? 1 : 0]);
+                A.walkModeActive ? 1 : 0, fp ? fp.id : null, findGuids, A._tmOn ? 1 : 0,
+                tmCursor, tmSpan]);
       stmt.free();
       console.log('§SCENE_STATE_SAVE cam=' + p.ix.toFixed(1) + ',' + p.iy.toFixed(1) + ',' + p.iz.toFixed(1) +
         ' xray=' + (A.xrayOn ? 1 : 0) + ' dlod=' + (A._dlodEnabled ? 1 : 0) + ' walk=' + (A.walkModeActive ? 1 : 0) +
         ' panel=' + (fp ? fp.id : 'none') + ' findGuids=' + (findGuids ? findGuids.split(',').length : 0) +
-        ' tm=' + (A._tmOn ? 1 : 0));
+        ' tm=' + (A._tmOn ? 1 : 0) + ' tmCursor=' + (tmCursor != null ? tmCursor : 'n/a') +
+        ' tmSpan=' + (tmSpan != null ? tmSpan : 'n/a'));
     } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }
   }
   A._exportBuildingDb = function() {

@@ -1133,7 +1133,7 @@ async function initViewer() {
             clearInterval(ssTimer);
             try {
               var ssRows = APP.dbQuery("SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z," +
-                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
+                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on,tm_cursor,tm_span FROM scene_state LIMIT 1");
               if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
               var sr = ssRows[0], ssApplied = [];
               if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
@@ -1161,6 +1161,23 @@ async function initViewer() {
               }
               if (!hashParams.tm && sr[11] && typeof window.toggleTimeMachine === 'function') {
                 window.toggleTimeMachine(); ssApplied.push('tm');
+                // tm_cursor restore (2026-08-03 follow-up) — activate() may inject the derived
+                // timeline asynchronously (same reason tmActivateForBake polls, see time_machine.js),
+                // so give it one tick before reading tmGetState()/calling the cursor setter.
+                if (sr[12] != null && typeof window.tmSetCursor === 'function' && typeof window.tmGetState === 'function') {
+                  setTimeout(function() {
+                    var tm = window.tmGetState();
+                    if (!tm || !tm.active) { console.log('§SCENE_STATE_RESTORE_TM skipped reason=not-active'); return; }
+                    window.tmSetCursor(sr[12]);
+                    var spanNow = tm.projectEnd - tm.projectStart;
+                    var spanSaved = sr[13];
+                    var drift = (spanSaved != null) ? Math.abs(spanNow - spanSaved) : 0;
+                    if (spanSaved != null && drift > 1) {
+                      console.warn('§SCENE_STATE_RESTORE_TM span drift saved=' + spanSaved + 'ms now=' + spanNow + 'ms — cursor set anyway (clamped to current project range)');
+                    }
+                    console.log('§SCENE_STATE_RESTORE_TM cursor=' + sr[12] + ' spanSaved=' + spanSaved + ' spanNow=' + spanNow);
+                  }, 600);
+                }
               }
               console.log('§SCENE_STATE_RESTORE ' + (ssApplied.length ? ssApplied.join(' ') : 'none'));
             } catch (e) { console.warn('§SCENE_STATE_RESTORE_FAIL ' + e.message); }
