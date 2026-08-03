@@ -500,7 +500,7 @@
     }
     status('Materializing default schedule — please wait…');
     setTimeout(function () {
-      var res = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+      var res = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', laborRates: global.LABOR_RATES });
       schedId = res.scheduleId;
       collapsed = {}; critSet = {};
       renderWbs(); renderDeps(); renderGantt(); fillAddForm();
@@ -650,7 +650,7 @@
         status('Materializing default schedule for ' + url.split('/').pop() + ' — please wait…');
         return new Promise(function (resolve) {
           setTimeout(function () {
-            var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+            var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', laborRates: global.LABOR_RATES });
             schedId = 'SCH_AUTHORED';
             status('Seeded default schedule (' + resM.phases.length + ' phases) — ' + url.split('/').pop());
             persist();   // §SE-6 — the freshly-seeded schedule is itself an edit worth saving
