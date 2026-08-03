@@ -153,6 +153,41 @@ initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } }).the
   check('G-CON-13 resize-left-zero-violations', violations(T6, E5).length === 0,
     'violations=' + violations(T6, E5).length);
 
+  // ---------- E3/E4: the link path. Drag-to-link creates a real FS edge; the cycle guard must refuse
+  // the reverse of an edge that already exists, because a cyclic schedule is invalid and "fixing" it
+  // silently would be worse than refusing.
+  var db5 = new SQL.Database(bytes());
+  ScheduleAuthor.materializeZones(db5, rules.SEQUENCE_RULES, opts);
+  var E5b = readEdges(db5);
+  var anEdge = E5b[0];
+  check('G-CON-14 fixture-has-an-edge-to-invert', !!anEdge, anEdge ? anEdge.pred + '->' + anEdge.succ : 'none');
+  if (anEdge) {
+    // Reversing an existing edge closes a 2-cycle — must be refused by wouldCycle.
+    check('G-CON-15 wouldCycle-detects-the-inverse-edge',
+      ScheduleAuthor.wouldCycle(db5, anEdge.succ, anEdge.pred) === true,
+      'inverting ' + anEdge.pred + '->' + anEdge.succ);
+    var before = readEdges(db5).length;
+    // A genuinely new, acyclic edge must be accepted — otherwise the guard is just refusing everything.
+    var leaves = Object.keys(readTasks(db5)).filter(function (id) {
+      return !E5b.some(function (e) { return e.pred === id; });
+    });
+    var roots = Object.keys(readTasks(db5)).filter(function (id) {
+      return !E5b.some(function (e) { return e.succ === id; });
+    });
+    var p = roots[0], s = leaves[0];
+    if (p && s && p !== s && !ScheduleAuthor.wouldCycle(db5, p, s)) {
+      var addRes = ScheduleAuthor.addDependency(db5, p, s, 'FS', 0);
+      check('G-CON-16 acyclic-link-is-accepted', addRes && addRes.ok !== false,
+        p + '->' + s + ' edges ' + before + '->' + readEdges(db5).length);
+      // E4 unlink must remove exactly that edge and leave the rest alone.
+      ScheduleAuthor.removeDependency(db5, p, s);
+      check('G-CON-17 unlink-removes-exactly-that-edge', readEdges(db5).length === before,
+        'edges back to ' + readEdges(db5).length + ' (was ' + before + ')');
+    } else {
+      check('G-CON-16 acyclic-link-is-accepted', false, 'could not find an acyclic pair to link');
+    }
+  }
+
   console.log('§W-CON RESULT pass=' + pass + ' fail=' + fail);
   process.exit(fail ? 1 : 0);
 });

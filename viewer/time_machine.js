@@ -4873,7 +4873,7 @@
       if (!_active || !_ganttTasks.length) return;
       var hit = ganttHit(e);
       if (!hit || !hit.bar.taskId) return;      // un-authored bars stay non-draggable, by design
-      _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, dayPx: hit.dayPx, days: 0, moved: false };
+      _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
       try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     });
     cv.addEventListener('pointermove', function (e) {
@@ -4894,12 +4894,130 @@
       if (!_drag) return;
       var d = _drag; _drag = null;
       try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+      // §GANTT_LINK (E3): a drag that ENDS on a different bar, at least one row away, means "link
+      // these two", not "move this one". Requiring a full row of vertical travel keeps incidental
+      // drift during a horizontal move from silently creating a dependency.
+      var drop = ganttHit(e);
+      if (drop && drop.bar !== d.bar && drop.bar.taskId && d.bar.taskId &&
+          Math.abs(e.clientY - d.y0) >= 14) {
+        _dragConsumed = true;
+        linkGanttBars(d.bar, drop.bar);
+        return;
+      }
       if (!d.moved || !d.days) return;          // a click, not a drag — let the seek handler have it
       _dragConsumed = true;
       commitGanttDrag(d.bar, d.mode, d.days);
     }
     cv.addEventListener('pointerup', endDrag);
     cv.addEventListener('pointercancel', endDrag);
+    // §GANTT_PROPS (E7): double-click opens the keyed-entry panel. Drag is for speed, typing is for
+    // accuracy — on a 400-day project one pixel is ~2 days, so drag alone can never be the precise path.
+    cv.addEventListener('dblclick', function (e) {
+      var hit = ganttHit(e);
+      if (hit && hit.bar.taskId) { _dragConsumed = true; openGanttProps(hit.bar); }
+    });
+  }
+
+  // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
+  // schedule is invalid, so the guard refuses rather than "fixing" it silently.
+  function linkGanttBars(predBar, succBar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); return; }
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
+    if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
+      console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
+      say('Refused — that link would create a cycle');
+      return;
+    }
+    var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
+    console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
+      ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
+    say('Linked: ' + predBar.phase + ' — ' + predBar.storey + '  →  ' + succBar.phase + ' — ' + succBar.storey);
+    // The new edge may make the successor illegal where it currently sits. Re-apply it through the
+    // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
+    // freshly-created violation on screen.
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    if (SA.moveTaskCascade) {
+      var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId,
+        new Date(succBar.startTs).toISOString().slice(0, 10), {});
+      if (res && res.ok && res.moved && res.moved.length) {
+        var byTask = {};
+        for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+        retimeTaskElements(app.db, byTask, res.moved);
+      }
+    }
+    invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+  }
+
+  // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
+  // 1px arrow hit-target: same verbs, same C1/C2 checks, just a precise input surface).
+  function openGanttProps(bar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA) return;
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var box = document.getElementById('tm-gantt-props') || (function () {
+      var el = document.createElement('div');
+      el.id = 'tm-gantt-props';
+      el.style.cssText = 'position:absolute;right:8px;bottom:8px;z-index:20;background:rgba(20,20,40,0.97);' +
+        'border:1px solid rgba(79,195,247,0.35);border-radius:8px;padding:8px 10px;font-size:11px;' +
+        'color:#e0e0e0;min-width:250px;max-width:330px;max-height:60vh;overflow:auto';
+      (document.getElementById('time-machine-panel') || document.body).appendChild(el);
+      return el;
+    })();
+    var deps = (SA.listDependencies ? SA.listDependencies(app.db, schedId) : [])
+      .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
+    var depHtml = deps.length ? deps.map(function (x, i) {
+      var dir = x.succId === bar.taskId ? '← after' : '→ before';
+      var other = x.succId === bar.taskId ? x.predName : x.succName;
+      return '<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0">' +
+        '<span>' + dir + ' <b>' + other + '</b> <span style="color:#8a97a5">' + x.type +
+        (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</span></span>' +
+        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">unlink</button></div>';
+    }).join('') : '<div style="color:#8a97a5">no dependencies</div>';
+    box.innerHTML =
+      '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
+      '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
+        '<input id="tmp-s" type="date" value="' + d(bar.startTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
+        '<input id="tmp-f" type="date" value="' + d(bar.endTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
+      '<div style="display:flex;gap:6px;margin-top:8px">' +
+        '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
+        '<button id="tmp-close" style="font-size:11px">Close</button></div>' +
+      '<div id="tmp-msg" style="color:#ff8c00;margin-top:4px;min-height:12px"></div>';
+    box.style.display = 'block';
+    console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
+    document.getElementById('tmp-close').onclick = function () { box.style.display = 'none'; };
+    box.querySelectorAll('[data-unlink]').forEach(function (btn) {
+      btn.onclick = function () {
+        var x = deps[parseInt(btn.getAttribute('data-unlink'), 10)];
+        if (!x || !SA.removeDependency) return;
+        SA.removeDependency(app.db, x.predId, x.succId);
+        console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
+        invalidateGanttModel(); computeDays(); drawGanttMini(); openGanttProps(bar);
+      };
+    });
+    document.getElementById('tmp-apply').onclick = function () {
+      var s = document.getElementById('tmp-s').value, f = document.getElementById('tmp-f').value;
+      var msg = document.getElementById('tmp-msg');
+      // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
+      // surface onto one model, never a bypass around C1/C2.
+      var res = (s !== d(bar.startTs) && f === d(bar.endTs) && SA.moveTaskCascade)
+        ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
+        : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
+      if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
+      if (msg) msg.textContent = res.clamped ? ('Clamped to ' + res.start + ' by ' + res.blockedBy) :
+        ('Applied · ' + res.cascaded + ' successor(s) cascaded');
+      var byTask = {};
+      for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+      retimeTaskElements(app.db, byTask, res.moved || []);
+      console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
+        ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+      invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+    };
   }
 
   function drawGanttMini() {
