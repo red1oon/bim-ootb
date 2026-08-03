@@ -4,6 +4,34 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.36.0](https://github.com/red1oon/bim-ootb/compare/v1.35.0...v1.36.0) (2026-08-02)
+
+
+### ✨ Features
+
+* **4d:** §Z_STACK_XRAY_STAGING — x-ray unsupported elements until carriers land, sw v921 ([#1139](https://github.com/red1oon/bim-ootb/issues/1139)) ([bd59228](https://github.com/red1oon/bim-ootb/commit/bd59228f59e9d55f26af991a40fe64c8f4047ec6))
+* **cpe:** §CPE_DAY_COUNTER_POS — Day # counter corner is a movie-maker panel option ([#1130](https://github.com/red1oon/bim-ootb/issues/1130)) ([97569fb](https://github.com/red1oon/bim-ootb/commit/97569fb847003fe488e938f7b0290797fe0c9505))
+* **cpe:** §CPE_GAZE_ACQUIRE — the gaze acquires its subject fast and settles onto it ([#1131](https://github.com/red1oon/bim-ootb/issues/1131)) ([1fa1906](https://github.com/red1oon/bim-ootb/commit/1fa1906a6ec05d6ef03f8a65ede6127b2b800d3b))
+* **cpe:** §CPE_MAXQ_STATUS_DAY_LABEL — MaxQ bake HUD shows live Day # and room label, sw v926 ([#1145](https://github.com/red1oon/bim-ootb/issues/1145)) ([d128648](https://github.com/red1oon/bim-ootb/commit/d128648af4397aacf6722cf25d34a547af79eed8))
+* **cpe:** §CPE_PANEL_STATE — saved paths carry the panel context they were recorded under, sw v922 ([#1140](https://github.com/red1oon/bim-ootb/issues/1140)) ([23ad01f](https://github.com/red1oon/bim-ootb/commit/23ad01f7b566bc9a7da83fa27c90d1871ad9c500))
+* **cpe:** §CPE_ROOM_TITLE_COLLECTIVE — one composed caption everywhere + live [phase], sw v920 ([#1138](https://github.com/red1oon/bim-ootb/issues/1138)) ([3bfbbb4](https://github.com/red1oon/bim-ootb/commit/3bfbbb4b025140cf36c4c0c61487fba045ddc4db))
+* **cpe:** §CPE_ROOM_TITLE_GROUP — constant, composed, tempered labelling ([#1136](https://github.com/red1oon/bim-ootb/issues/1136)) ([628aaef](https://github.com/red1oon/bim-ootb/commit/628aaefcceb9ea7ff9c393ecec2a546f2622e6ad))
+* **cpe:** §CPE_STICK_APPROACH — MaxQ bake HUD shows "approaching Stick k/N" ([#1143](https://github.com/red1oon/bim-ootb/issues/1143)) ([1768db4](https://github.com/red1oon/bim-ootb/commit/1768db4dda712cd03475a0e309c719d1fdcf5c5b))
+
+
+### 🐛 Fixes
+
+* **4d:** §STAGGER_SUPPORT_ORDER — captured stagger orders by bearing surface, not centroid ([#1133](https://github.com/red1oon/bim-ootb/issues/1133)) ([72c362e](https://github.com/red1oon/bim-ootb/commit/72c362e972263111ce4471dfbb1329ea0fbcab70))
+* **cinema:** §CPE_GHOST_GROUND_TRIGGER — revert to first-above-ground-element, not 5% share ([#1148](https://github.com/red1oon/bim-ootb/issues/1148)) ([06a6c79](https://github.com/red1oon/bim-ootb/commit/06a6c79df3e6f6aa1b0e94d918edf1a4c0431aeb))
+* **cinema:** §GHOST_GROUND_LIVE_TRIGGER — opacity stuck at floor past trigger point ([#1148](https://github.com/red1oon/bim-ootb/issues/1148) regression) ([#1149](https://github.com/red1oon/bim-ootb/issues/1149)) ([4f6e9a9](https://github.com/red1oon/bim-ootb/commit/4f6e9a9f4fb3bcfbb15abf139949dc35563c94bd))
+* **cpe:** §CPE_BUILDUP investigation (no defect found) + §CPE_PACE_SWING_SOFTEN 1.6-&gt;1.45, sw v927 ([#1147](https://github.com/red1oon/bim-ootb/issues/1147)) ([4d617b9](https://github.com/red1oon/bim-ootb/commit/4d617b9559ab108bafbf1d52f456cd635547bc04))
+* **cpe:** §CPE_BUILDUP_DEFAULT_ON — build-as-it-plays checkbox defaults ON, sw v925 ([#1144](https://github.com/red1oon/bim-ootb/issues/1144)) ([cf84202](https://github.com/red1oon/bim-ootb/commit/cf8420290ef78678deb49afd8f2e4ee8e19fff4e))
+* **cpe:** §CPE_GAZE_ACQUIRE_SOFTEN — peak 3x→2x (135→90 deg/s), sw v919 ([#1137](https://github.com/red1oon/bim-ootb/issues/1137)) ([37d280c](https://github.com/red1oon/bim-ootb/commit/37d280cc70330360ef4ee08428aac4d6d55a1c06))
+* **cpe:** §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE — group sight list by storey, not window unanimity ([#1142](https://github.com/red1oon/bim-ootb/issues/1142)) ([8f31606](https://github.com/red1oon/bim-ootb/commit/8f31606207289e427fafb58c691c9167e83ee32f))
+* **cpe:** hold default 0 + §CPE_BUILDUP_TOPOUT + §CPE_ROOM_TITLE_MULTI — three user reports off the 2026-08-02 Hospital bake ([#1135](https://github.com/red1oon/bim-ootb/issues/1135)) ([d264a16](https://github.com/red1oon/bim-ootb/commit/d264a161a2cfe54c065879131ff4d56c0fd7a1f5))
+* **photoreal:** §PHOTO_SKYLINE_SHADOW_FRUSTUM — skyline silhouette buildings now cast shadows ([#1141](https://github.com/red1oon/bim-ootb/issues/1141)) ([ac437dc](https://github.com/red1oon/bim-ootb/commit/ac437dce6998cf8aa7fccb8aa352f7a4cc45b81b))
+* **witness:** G-SH-4 reads its gaze bound from the shipped curve, not a literal 45 ([#1132](https://github.com/red1oon/bim-ootb/issues/1132)) ([0e77c9f](https://github.com/red1oon/bim-ootb/commit/0e77c9f5cb99f7a4fbc5ee01186776e57a7122ce))
+
 ## [1.35.0](https://github.com/red1oon/bim-ootb/compare/v1.34.0...v1.35.0) (2026-08-01)
 
 
