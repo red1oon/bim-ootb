@@ -5825,6 +5825,46 @@
       ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
       ' workInFirst10%OfCalendar=' + (out.workInFirstTenthOfCalendar * 100).toFixed(1) + '%' +
       ' (10.0% would be evenly spread — anything above it is the burst calendar pacing shows)');
+
+    // §CPE_EVEN_PHASE_PACING (GANTT_ACCURACY.md, 2026-08-04): global element-rank pacing makes
+    // "10% of the film is 10% of the building" TRUE, but a population-dominant phase (Terminal's
+    // Superstructure, 72.4% of 48,428 elements) still eats 72.4% of the FILM, leaving the smaller
+    // phases (Architecture 2.6%, Finishes 0.5%) a blink of screen time regardless of how their
+    // CALENDAR duration is set (§PHASE_DURATION only fixes calendar dates, not film pacing — the
+    // work-paced cursor never reads them). Each op already carries its own phase name
+    // (`parameters.phase`, set by the §PLAYBACK-STAGGER overlay) — group by it, in the phase's own
+    // schedule order (earliest `start_ts` first, i.e. the same order §PHASE_DURATION laid the
+    // phases out in), so the film can give each phase an EQUAL segment of screen time while still
+    // work-pacing (element-rank) WITHIN each phase — the within-phase evenness that made
+    // §CPE_BUILDUP_WORK_PACED necessary in the first place is untouched.
+    var byPhase = {}, order = [];
+    for (i = 0; i < _ops.length; i++) {
+      var ph = (_ops[i].parameters || {}).phase || 'Architecture';
+      var bucket = byPhase[ph];
+      if (!bucket) { bucket = byPhase[ph] = { name: ph, endsArr: [], minStart: Infinity }; order.push(bucket); }
+      bucket.endsArr.push(_ops[i].end_ts);
+      if (_ops[i].start_ts < bucket.minStart) bucket.minStart = _ops[i].start_ts;
+    }
+    order.sort(function(a, b) { return a.minStart - b.minStart; });
+    // Monotonic clamp: real (captured) schedules can have phases that overlap in calendar time.
+    // A running max keeps phase-to-phase cursor values non-decreasing across the whole film, the
+    // same guarantee a single globally-sorted `ends` array gives by construction — without it, a
+    // reveal could jump backward in calendar time at a phase boundary and un-place elements
+    // (renderAtTime's placed test is `end_ts <= cursor`, evaluated fresh every frame).
+    var running = -Infinity;
+    order.forEach(function(p) {
+      p.endsArr.sort(function(a, b) { return a - b; });
+      for (var j = 0; j < p.endsArr.length; j++) {
+        if (p.endsArr[j] < running) p.endsArr[j] = running;
+        running = p.endsArr[j];
+      }
+      p.ends = new Float64Array(p.endsArr);
+      p.total = p.ends.length;
+      delete p.endsArr;
+    });
+    out.phases = order;
+    console.log('§CPE_PHASE_PACING phases=' + order.length + ' ' +
+      order.map(function(p) { return p.name + '=' + p.total; }).join(' '));
     return out;
   };
 
