@@ -895,6 +895,23 @@
   }
 
   // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
+  // fixedDates opt (§ZONE_CPM_COHERENCE): computeCpm's forward pass normally DERIVES each task's
+  // early start from the graph (max over predecessors' EF+lag) — correct when the dates themselves
+  // are the thing being solved for (a captured P6 schedule re-solving after an edit, or the
+  // phase-level chain, which is a simple ≤1-parent-per-node list where derivation and the real dates
+  // always agree). It stops being correct once a node can have MULTIPLE real parents, as
+  // materializeZones' zone graph does (a zone can be gated by both its own-phase floor-below AND a
+  // same-floor earlier trade): each incoming edge's lag was computed independently from ONE real
+  // observed pair, so taking the graph max over several independently-derived lags can compound past
+  // what the real, jointly-crew-constrained computation (ScheduleGate.computeSchedule — the same
+  // engine driving the live movie) actually produced. MEASURED on Terminal's 71-zone graph: derived
+  // PF=138d vs the real movie's 93d (+48%, CPM_FLOAT_GAP.md session note, 2026-08-03).
+  // Fix: when opts.fixedDates is set, es/ef come DIRECTLY from the already-real, already-movie-
+  // coherent schedule_start/schedule_finish this task was persisted with — never re-derived through
+  // the graph. The backward pass (LS/LF/float/critical) is UNCHANGED and still runs over real edges,
+  // so float/criticality stay meaningful; only the (previously-compounding) forward derivation is
+  // skipped. Opt-in, not the default — existing callers (phase-level, captured P6) get byte-identical
+  // behavior; only a caller that already trusts its own persisted dates as ground truth sets this.
   function computeCpm(db, scheduleId, opts) {
     opts = opts || {};
     var tr;
@@ -903,11 +920,15 @@
         'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [scheduleId]);
     } catch (e) { return { error: 'no_tasks' }; }
     if (!tr.length || !tr[0].values.length) return { error: 'no_tasks', tasks: [], projectDuration: 0, criticalIds: [] };
-    var T = {}, ids = [], minStart = null;
+    var minStart = null;
+    tr[0].values.forEach(function (row) { var s = row[1]; if (s && (!minStart || s < minStart)) minStart = s; });
+    var projStart = opts.start || minStart || '2026-01-01';
+    var T = {}, ids = [];
     tr[0].values.forEach(function (row) {
       var id = row[0], s = row[1], f = row[2];
-      if (s && (!minStart || s < minStart)) minStart = s;
-      T[id] = { id: id, dur: _durDays(row[3], s, f), es: 0, ef: 0, ls: 0, lf: 0, preds: [], succs: [] };
+      var dur = _durDays(row[3], s, f);
+      var fixedEs = opts.fixedDates && s ? _durDays(null, projStart, s) : 0;
+      T[id] = { id: id, dur: dur, es: fixedEs, ef: fixedEs + dur, ls: 0, lf: 0, preds: [], succs: [] };
       ids.push(id);
     });
     // edges among these leaf tasks only
@@ -918,7 +939,8 @@
       var edge = { pred: p, succ: s, type: (row[2] || 'FS').toUpperCase(), lag: (row[3] != null ? row[3] : 0) };
       T[s].preds.push(edge); T[p].succs.push(edge);
     });
-    // Kahn topo sort (DAG guaranteed by the §SE-1 cycle guard; bail defensively if not).
+    // Kahn topo sort (DAG guaranteed by the §SE-1 cycle guard; bail defensively if not) — still run
+    // under fixedDates too: it's the cycle/orphan integrity check, independent of the ES derivation.
     var indeg = {}, queue = [], topo = [];
     ids.forEach(function (id) { indeg[id] = T[id].preds.length; if (indeg[id] === 0) queue.push(id); });
     while (queue.length) {
@@ -929,12 +951,15 @@
       console.log('§SE_CPM_BAIL cycle-or-orphan topo=' + topo.length + ' tasks=' + ids.length);
       return { error: 'cycle', tasks: [], projectDuration: 0, criticalIds: [] };
     }
-    // FORWARD: ES/EF in topo order.
-    topo.forEach(function (id) {
-      var t = T[id], es = 0;
-      t.preds.forEach(function (e) { es = Math.max(es, _fwdES(T[e.pred], e.lag, e.type, t.dur)); });
-      t.es = Math.max(0, es); t.ef = t.es + t.dur;
-    });
+    // FORWARD: ES/EF in topo order — SKIPPED under fixedDates (see header); es/ef already set above
+    // from the real persisted dates.
+    if (!opts.fixedDates) {
+      topo.forEach(function (id) {
+        var t = T[id], es = 0;
+        t.preds.forEach(function (e) { es = Math.max(es, _fwdES(T[e.pred], e.lag, e.type, t.dur)); });
+        t.es = Math.max(0, es); t.ef = t.es + t.dur;
+      });
+    }
     var PF = 0; ids.forEach(function (id) { PF = Math.max(PF, T[id].ef); });
     // BACKWARD: LF/LS in reverse topo order. A task's late finish can never legitimately exceed the
     // project's own finish PF — that IS the definition of "project finish." The un-clamped succs-loop
