@@ -193,10 +193,19 @@
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
     var _frag = _classFragmentation(db, qsRates);
 
+    // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
+    // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
+    // header says "REPLICATES ... EXACTLY") — that query excludes IfcOpeningElement (time_machine.js
+    // WHERE m.ifc_class != 'IfcOpeningElement', 3x). This one didn't, so materializeDefault/
+    // materializeZones scheduled wall/window VOIDS as if they were physical installable work — up to
+    // 4.5% of elements on a real building (JKR: 425/9410). Silent: doesn't break DAG/support-order
+    // (openings rarely collide with anything), just inflates phase/zone element+crew-time counts and
+    // breaks the "movie-coherent, can never tell a different story" guarantee those functions claim.
     var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
-      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid");
+      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE m.ifc_class != 'IfcOpeningElement'");
     if (!r.length || !r[0].values.length) return [];
 
     var storeyZs = {};
