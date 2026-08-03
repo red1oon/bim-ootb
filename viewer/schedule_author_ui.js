@@ -12,6 +12,7 @@
   function A() { return global.APP || global.A; }
   function db() { var a = A(); return a && a.db; }
   function rules() { return global.SEQUENCE_RULES || {}; }
+  function laborRates() { return global.LABOR_RATES || {}; }
   var SA = function () { return global.ScheduleAuthor; };
 
   // §SE-6: the wizard edits APP.db directly (shares it with the whole viewer) — but kernel_ops.js's
@@ -230,7 +231,7 @@
     }
     var blankEl = document.getElementById('sa-blank');
     var blank = !!(blankEl && blankEl.checked);
-    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', phaseDays: 30, blank: blank });
+    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: blank });
     _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
     refreshState();
     console.log('§AUTHOR_UI_DRAFT mode=' + (blank ? 'blank' : 'dated') + ' phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
@@ -243,7 +244,7 @@
   // The user's deliberate "originate the dates" act (blank mode) — lay phases out from the start date.
   function scheduleNow() {
     var d = db(); if (!d || !SA() || !_state) return;
-    SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', phaseDays: 30 });
+    SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', laborRates: global.LABOR_RATES });
     refreshState(); render();
     status('Scheduled — phases now carry dates and appear in the timeline.');
     _syncWhatIf();   // dates just originated → mirror into C_ProjectPhase for the What-if panel

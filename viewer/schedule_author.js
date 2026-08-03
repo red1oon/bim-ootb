@@ -43,6 +43,21 @@
     return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   }
 
+  // _installSecs — REPLICATES time_machine.js getInstallSecs EXACTLY (same 28800s/day, same 120s
+  // no-data default, same longest-substring productivity match), parameterized instead of reading
+  // window globals so it is node-testable. `rule` is the phase rule already resolved for this
+  // element (matchNameOverride/matchRule) — not re-derived, to keep the classification a single pass.
+  function _installSecs(cls, rule, laborRates) {
+    var resource = rule && rule.resource;
+    if (!resource || !laborRates[resource]) return 120;
+    var labor = laborRates[resource], bestPk = null, bestLen = 0;
+    for (var pk in labor.productivity) {
+      if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
+    }
+    var prod = bestPk ? labor.productivity[bestPk] : 0;
+    return prod > 0 ? Math.round(28800 / prod) : 120;
+  }
+
   // YYYY-MM-DD a given number of whole days after a base date string. Pure UTC arithmetic so
   // it is deterministic regardless of host timezone (no Date.now / locale dependence).
   function _addDays(baseStr, days) {
@@ -109,6 +124,11 @@
                                 // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §PHASE_DURATION: labor rates for workload-proportional phase width (see below). Falls back to
+    // {} when unavailable (blank-model bootstrap, older tests) — every element then gets the SAME
+    // 120s default weight, which degrades gracefully to plain element-count proportionality, never
+    // to the old flat-phaseDays-per-phase behaviour.
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
     db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
@@ -145,9 +165,15 @@
       if (ov) nameOverridden++;
       var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
-      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [] }; }
+      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
       p.guids.push(e.guid);
+      // Bucket by resource (trade), not summed flat — see the width computation below: different
+      // trades within a phase run in PARALLEL (this file's own "true parallel trades" principle,
+      // §Current Problems item 3 / resourceCursor in time_machine.js), so a phase's duration is set
+      // by its slowest trade, not the sum of all trades' work.
+      var resKey = rule.resource || '__NONE__';
+      p.resourceSecs[resKey] = (p.resourceSecs[resKey] || 0) + _installSecs(e.cls, rule, laborRates);
     });
     if (nameOverridden) console.log('§NAME_OVERRIDE ' + nameOverridden + ' elements reclassified by name (' +
       nameOverrides.map(function (o) { return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
@@ -156,14 +182,42 @@
     var ordered = Object.keys(phases).map(function (k) { return phases[k]; });
     ordered.sort(function (a, b) { return (a.seq - b.seq) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
 
+    // §PHASE_DURATION (GANTT_ACCURACY.md "RESUME 2026-08-04+"): each phase's calendar-window width
+    // is workload-proportional, NOT the old flat `phaseDays` constant — that made Superstructure's
+    // 72.4%-of-building bucket occupy the SAME width as Finishes' smallest bucket, so the building
+    // looked visually complete within the first hours of a 4D film (workInFirst10%=51.7%, measured).
+    // Per-trade labor-seconds (Σ getInstallSecs, already-extracted LABOR_RATES productivity) is
+    // divided by that trade's `max_crews` (also already-extracted, not invented — how many
+    // independent crews of a trade work the site simultaneously) to get realistic elapsed days, and
+    // a phase's duration is the SLOWEST trade (max, not sum) — trades within a phase already run in
+    // parallel per this file's own principle, so the bottleneck trade sets the phase's real length.
+    // User-confirmed 2026-08-04: max_crews applied, bottleneck (not summed) — plain Σ-seconds/1-crew
+    // gave Terminal a 10.2y total (Superstructure alone 2,922d); this gives ~3.5y, Superstructure
+    // ~968d (still ~75% of the project, correctly dominant, but no longer absurd).
+    var totalDays = 0;
+    ordered.forEach(function (p) {
+      var maxTradeDays = 0, laborSecsTotal = 0;
+      for (var resKey in p.resourceSecs) {
+        var secs = p.resourceSecs[resKey];
+        laborSecsTotal += secs;
+        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || 1;
+        var tradeDays = secs / (28800 * maxCrews);
+        if (tradeDays > maxTradeDays) maxTradeDays = tradeDays;
+      }
+      p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
+      p.laborSecs = laborSecsTotal;   // kept for the log line only
+      totalDays += p.widthDays;
+      console.log('§PHASE_DURATION phase=' + p.name + ' elements=' + p.guids.length +
+        ' laborSecs=' + p.laborSecs + ' trades=' + Object.keys(p.resourceSecs).length + ' days=' + p.widthDays);
+    });
+
     db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start]);
 
     // ROOT summary task (is_summary=1 → excluded from _cap leaf window; spans the whole project).
     // In blank mode dates are NULL (the user originates them via scheduleDefault/the wizard).
     var rootId = 'TASK_ROOT';
-    var totalDays = Math.max(phaseDays, ordered.length * phaseDays);
     var rootStart = blank ? null : start;
-    var rootFinish = blank ? null : _addDays(start, ordered.length * phaseDays);
+    var rootFinish = blank ? null : _addDays(start, totalDays);
     db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, rootStart, rootFinish, blank ? null : 'P' + totalDays + 'D', null, 'PLANNED']);
 
@@ -172,14 +226,14 @@
     var outPhases = [], cursor = 0, assignN = 0;
     ordered.forEach(function (p) {
       var tid = 'TASK_' + _slug(p.name);
-      var s = blank ? null : _addDays(start, cursor * phaseDays);
-      var f = blank ? null : _addDays(start, (cursor + 1) * phaseDays);
-      cursor++;
+      var s = blank ? null : _addDays(start, cursor);
+      var f = blank ? null : _addDays(start, cursor + p.widthDays);
+      cursor += p.widthDays;
       // Leaf, is_summary=0. Dated → _cap.win picks it up; blank/undated → _cap skips it (the user
       // originates the dates, then it appears in the timeline). Assignments are made either way.
-      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + phaseDays + 'D', null, 'PLANNED']);
+      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + p.widthDays + 'D', null, 'PLANNED']);
       p.guids.forEach(function (g) { stmtTe.run([tid, g]); assignN++; });
-      outPhases.push({ taskId: tid, name: p.name, sequence: p.seq, start: s, finish: f, count: p.guids.length });
+      outPhases.push({ taskId: tid, name: p.name, sequence: p.seq, start: s, finish: f, count: p.guids.length, durationDays: p.widthDays });
     });
     stmtTk.free();
     stmtTe.free();
@@ -188,8 +242,8 @@
 
     console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
       ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
-      ' assignments=' + assignN + ' elements=' + elems.length);
-    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN, blank: blank };
+      ' assignments=' + assignN + ' elements=' + elems.length + ' totalDays=' + totalDays);
+    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN, blank: blank, totalDays: totalDays };
   }
 
   // assignElement(db, guid, taskId) — the CRAFT verb. Re-home one element to a different phase task.
@@ -247,17 +301,50 @@
     scheduleId = scheduleId || 'SCH_AUTHORED';
     opts = opts || {};
     var start = opts.start || '2026-01-01';
-    var phaseDays = opts.phaseDays || 30;
+    var phaseDays = opts.phaseDays || 30;   // still the floor/no-data fallback width (see below)
+    var rules = opts.rules || (global.SEQUENCE_RULES) || {};
+    var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
+
+    // §PHASE_DURATION — same bug, same fix as materializeDefault (GANTT_ACCURACY.md "RESUME
+    // 2026-08-04+"): a blank-materialized schedule reaches this function with dates not yet
+    // assigned, so `phaseDays` was the ONLY width ever used here too. Re-derive each task's
+    // workload from task_elements/elements_meta (materializeDefault's own phase objects aren't
+    // persisted) and apply the identical bottleneck-trade, max_crews-adjusted width. A task with
+    // no resolvable elements/labor data falls back to opts.phaseDays (matches materializeDefault's
+    // own no-laborRates degrade-to-count behaviour when there's nothing to weight by).
+    var widthDays = {};
+    ids.forEach(function (tid) {
+      var er = db.exec("SELECT m.ifc_class FROM task_elements te JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
+      var resourceSecs = {};
+      if (er.length && er[0].values.length) {
+        er[0].values.forEach(function (row) {
+          var cls = row[0];
+          var rule = matchRule(cls, rules, dflt);
+          var resKey = rule.resource || '__NONE__';
+          resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates);
+        });
+      }
+      var maxTradeDays = 0;
+      for (var resKey2 in resourceSecs) {
+        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || 1;
+        var d = resourceSecs[resKey2] / (28800 * maxCrews);
+        if (d > maxTradeDays) maxTradeDays = d;
+      }
+      widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;
+    });
+
     var cursor = 0;
     db.run('BEGIN TRANSACTION');   // §SE-5a — same per-statement-overhead fix as materializeDefault
     ids.forEach(function (tid) {
-      var s = _addDays(start, cursor), f = _addDays(start, cursor + phaseDays);
+      var w = widthDays[tid];
+      var s = _addDays(start, cursor), f = _addDays(start, cursor + w);
       db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
-        [s, f, 'P' + phaseDays + 'D', tid]);
-      cursor += phaseDays;
+        [s, f, 'P' + w + 'D', tid]);
+      cursor += w;
     });
     db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
       [start, _addDays(start, cursor), scheduleId]);
