@@ -4002,9 +4002,17 @@
       // carries (the support DAG's own topological potential, established by §STAGGER_SUPPORT_ORDER
       // above), so every true carrier of T has already been visited — and any correction already
       // applied to it — by the time T is processed.
+      // §XRAY_WALL_SCOPE (found 2026-08-04, live in a real Hospital session — user report: proxy/
+      // misc elements chronologically before columns, "2 trucks came on first! Then walls!"): this
+      // predicate was even more permissive than the two sibling copies already fixed this session
+      // (schedule_gate.js auditFloating(), time_machine.js _buildXraySupportCache) — ANY wall was a
+      // candidate carrier for ANY element, no promoted-roof-slab restriction at all. A wall is only
+      // ever a real candidate carrier for a slab itself promoted to the roof role (seq>4) — same
+      // §4D_ROOF_LOAD_PATH M3 restriction, applied here for the third time this session. Structure
+      // (seq<=4) stays an unconditional carrier candidate for everything — only the wall branch is
+      // now gated on the TARGET being a promoted slab.
       var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
       var _ogEPS = 0.05, _ogGAP = 0.5;
-      var _ogIsCarrier = function (e) { return e.seq <= 4 || e.cls.indexOf('IfcWall') === 0; };
       var _ogCells = function (e) {
         var out = [];
         for (var cx = Math.floor(e.x0 / _ogCELL); cx <= Math.floor(e.x1 / _ogCELL); cx++)
@@ -4012,18 +4020,29 @@
         return out;
       };
       var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
-      var _ogGrid = {};
-      _allScheduled.forEach(function (e) { if (_ogIsCarrier(e)) _ogCells(e).forEach(function (c) { (_ogGrid[c] = _ogGrid[c] || []).push(e); }); });
+      var _ogStructGrid = {}, _ogWallGrid = {};
+      _allScheduled.forEach(function (e) {
+        if (e.seq <= 4) _ogCells(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        else if (e.cls.indexOf('IfcWall') === 0) _ogCells(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+      });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
       var _ogPushed = 0;
       _allScheduled.forEach(function (T) {
+        var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
         var cells = _ogCells(T), seen = {}, lastEnd = 0;
         for (var ci = 0; ci < cells.length; ci++) {
-          var arr = _ogGrid[cells[ci]]; if (!arr) continue;
-          for (var si = 0; si < arr.length; si++) {
+          var arr = _ogStructGrid[cells[ci]];
+          if (arr) for (var si = 0; si < arr.length; si++) {
             var S = arr[si];
             if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
             if (S.bz < T.bz - _ogEPS && Math.abs(S.tz - T.bz) <= _ogGAP && _ogXY(S, T) && S.e > lastEnd) lastEnd = S.e;
+          }
+          if (!promotedSlab) continue;
+          arr = _ogWallGrid[cells[ci]];
+          if (arr) for (var wi = 0; wi < arr.length; wi++) {
+            var W = arr[wi];
+            if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
+            if (W.bz < T.bz - _ogEPS && Math.abs(W.tz - T.bz) <= _ogGAP && _ogXY(W, T) && W.e > lastEnd) lastEnd = W.e;
           }
         }
         if (lastEnd && T.s < lastEnd) {
