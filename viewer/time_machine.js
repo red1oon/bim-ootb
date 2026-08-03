@@ -50,6 +50,12 @@
   var _varVisible = false;
   var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
+  // §GANTT_BAR_IDENTITY (K0): the storey|phase rollup below used to be recomputed from scratch on
+  // EVERY drawGanttMini() call — i.e. once per playback frame, walking all 63,415 ops on Hospital.
+  // The rollup only changes when _ops changes, so it is now cached behind this flag and the draw
+  // path is pure drawing.
+  var _ganttDirty = true;
+  var _ganttIdentified = 0, _ganttUnidentified = 0;   // §GANTT_BAR_IDENTITY counters
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
   var _coveredCount = 0;    // elements driven by real captured task dates
@@ -4110,6 +4116,62 @@
   // ── Mini Gantt chart ──
   var _ganttTasksComputed = false; // log once flag
 
+  // ── §GANTT_BAR_IDENTITY (K0 — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
+  // The drawer used to derive its bars purely by grouping raw kernel_ops on storey|phase, yielding
+  // bar objects with NO task_id — which is precisely why no bar was ever draggable: moveTask(db,
+  // taskId, …) had nothing to be handed. schedule_author.js materializeZones() already writes the
+  // SAME phase×floor decomposition into the real model (tasks + task_elements + task_sequences).
+  // Two code paths derived one decomposition independently and were never connected. This joins them.
+  //
+  // The join is by GUID through task_elements, deliberately NOT by matching storey/phase strings:
+  // deriveZones() keys a zone on collapsePhase(e.storey) while the drawer reads the raw p.storey off
+  // the op params, so those two names legitimately differ and string-matching would silently
+  // mis-associate bars. GUID identity is exact.
+  //
+  // Bars whose ops carry no task (a generated schedule with nothing authored) keep their old
+  // storey|phase identity and simply stay non-editable — honest, and reported as a coverage ratio by
+  // §GANTT_BAR_IDENTITY rather than hidden.
+  var _taskIndex = null;      // { guidTask:{guid→tid}, tasks:{tid→{id,name,start,finish}}, scheduleId }
+  var _taskIndexFor = null;   // building key the index was built for (invalidation)
+
+  function buildTaskIndex() {
+    var app = A();
+    var key = (app && app.activeBuilding) || '';
+    if (_taskIndex !== null && _taskIndexFor === key) return _taskIndex.ok ? _taskIndex : null;
+    _taskIndexFor = key;
+    _taskIndex = { ok: false, guidTask: {}, tasks: {}, scheduleId: null, n: 0 };
+    if (!app || !app.db) return null;
+    var db = app.db, sched = null;
+    try {
+      var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+      if (SA && SA.activeSchedule) sched = SA.activeSchedule(db);
+    } catch (e) { sched = null; }
+    if (!sched || !sched.id) {
+      console.log('§GANTT_BAR_IDENTITY schedule=none bars stay non-editable (no authored schedule)');
+      return null;
+    }
+    try {
+      var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish FROM tasks ' +
+        'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [sched.id]);
+      if (tr.length) tr[0].values.forEach(function (row) {
+        _taskIndex.tasks[row[0]] = { id: row[0], name: row[1], start: row[2], finish: row[3] };
+        _taskIndex.n++;
+      });
+      var er = db.exec('SELECT te.guid, te.task_id FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id WHERE t.schedule_id=?', [sched.id]);
+      if (er.length) er[0].values.forEach(function (row) { _taskIndex.guidTask[row[0]] = row[1]; });
+    } catch (e) {
+      console.log('§GANTT_BAR_IDENTITY schedule=' + sched.id + ' error=' + e.message);
+      return null;
+    }
+    _taskIndex.scheduleId = sched.id;
+    _taskIndex.ok = _taskIndex.n > 0;
+    return _taskIndex.ok ? _taskIndex : null;
+  }
+
+  // Invalidate the cached index + bar rollup (call after any write that re-dates or re-authors).
+  function invalidateGanttModel() { _taskIndex = null; _taskIndexFor = null; _ganttDirty = true; }
+
   var PHASE_COLORS = {
     'Substructure': '#7a8a8e',
     'Superstructure': '#5b7fa5',
@@ -4401,27 +4463,36 @@
       ' AC=' + EVM.AC + ' CPI=' + EVM.CPI.toFixed(3) + ' CV=' + EVM.CV + ' BAC=' + EVM.BAC + ' EAC=' + EVM.EAC + ' VAC=' + EVM.VAC);
   }
 
-  function drawGanttMini() {
-    if (!_ops.length) return;
-    var canvas = document.getElementById('tm-gantt-canvas');
-    var box = document.getElementById('tm-gantt-box');
-    if (!canvas || !box) return;
-
-    // Group ops by storey|phase
+  // buildGanttTasks() — the storey|phase rollup, now cached and task-identity-aware (K0).
+  // Grouping key is the REAL task_id whenever the op's guid resolves through task_elements, so each
+  // resulting bar carries `taskId` and is addressable by moveTask/resizeTask/addDependency. Ops with
+  // no task fall back to the original storey|phase key and stay non-editable.
+  function buildGanttTasks() {
+    if (!_ganttDirty) return;
+    _ganttDirty = false;
+    var idx = buildTaskIndex();
     var groups = {};
+    var _idN = 0, _noIdN = 0;
     for (var i = 0; i < _ops.length; i++) {
       var op = _ops[i];
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
-      var key = storey + '|' + phase;
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, starts: [], ends: [], count: 0, cap: 0 };
+      // Real task identity first (exact, by guid); storey|phase only as the un-authored fallback.
+      var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
+      if (tid) _idN++; else _noIdN++;
+      var key = tid ? ('T:' + tid) : (storey + '|' + phase);
+      if (!groups[key]) groups[key] = { storey: storey, phase: phase, taskId: tid || null,
+        taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
+        starts: [], ends: [], count: 0, cap: 0, guids: [] };
       var g = groups[key];
       g.starts.push(op.start_ts);
       g.ends.push(op.end_ts);
+      g.guids.push(op.output_guid);   // W1 needs the member set to re-time an edited bar
       g.count++;
       if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
     }
+    _ganttIdentified = _idN; _ganttUnidentified = _noIdN;
 
     // §GANTT_MINI_TRIM (2026-07-18, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6
     // postscript 2): the bar's displayed span used to be the true min/max of every element in the
@@ -4461,9 +4532,27 @@
     _ganttTasks.sort(function(a, b) { return a.startTs - b.startTs; });
 
     if (!_ganttTasksComputed) {
+      var _idBars = 0;
+      for (var bi = 0; bi < _ganttTasks.length; bi++) if (_ganttTasks[bi].taskId) _idBars++;
       console.log('§GANTT_MINI tasks=' + _ganttTasks.length);
+      // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
+      // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
+      // authored schedule exists for this building, NOT that the join failed.
+      console.log('§GANTT_BAR_IDENTITY schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
+        ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
+        ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
+        ' modelTasks=' + ((_taskIndex && _taskIndex.n) || 0));
       _ganttTasksComputed = true;
     }
+  }
+
+  function drawGanttMini() {
+    if (!_ops.length) return;
+    var canvas = document.getElementById('tm-gantt-canvas');
+    var box = document.getElementById('tm-gantt-box');
+    if (!canvas || !box) return;
+    buildGanttTasks();
+    if (!_ganttTasks.length) return;
 
     // Phase legend strip
     var legend = document.getElementById('tm-gantt-legend');
@@ -5097,7 +5186,7 @@
         }
         stmt.free();
         db.run('COMMIT');
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (st) st.textContent = '';
         viewerStatus('Time Machine: ' + _ops.length + ' elements (cached)');
         _finishActivate(app);
@@ -5106,7 +5195,7 @@
       }
 
       // No cache — try loading existing kernel_ops
-      _ops = loadOps();
+      _ops = loadOps(); _ganttDirty = true;
       // §S260e: Only count ELEMENT_PLACE ops — ignore picks/other ops
       var _placeOps = _ops.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
       if (_placeOps.length && !_placeOps[0].parameters._end_ts) {
@@ -5114,7 +5203,7 @@
         _placeOps = [];
         console.log('§TIME_MACHINE cleared stale unweighted ops — will re-inject');
       }
-      if (_placeOps.length) { _ops = _placeOps; }
+      if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
 
       if (!_placeOps.length) {
@@ -5127,7 +5216,7 @@
           resolve(false);
           return;
         }
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (!_ops.length) { resolve(false); return; }
         // §S260c: Cache the newly computed schedule to IDB
         cachePut('gantt', _ops);
@@ -5140,8 +5229,8 @@
     }).catch(function(e) {
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
-      _ops = loadOps();
-      if (!_ops.length) { injectGantt(); _ops = loadOps(); }
+      _ops = loadOps(); _ganttDirty = true;
+      if (!_ops.length) { injectGantt(); _ops = loadOps(); _ganttDirty = true; }
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
@@ -5240,6 +5329,7 @@
     _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false;
+    invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');
