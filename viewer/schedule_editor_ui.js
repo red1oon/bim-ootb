@@ -452,6 +452,38 @@
     persist();
   }
 
+  // ── §4D_SCHEDULE_DIFF: grade an IMPORTED P6/MSP schedule against OUR own real-quantity/labor-rate
+  // estimate for THIS building (CPM_FLOAT_GAP.md — user's own words: "our 4D schedule diff and show
+  // them their variance - ie correcting theirs!"). Only meaningful on a CAPTURED (imported) schedule —
+  // diffing our own generated estimate against itself is a no-op, same guard doGenerate already uses.
+  function onDiffVsModel() {
+    var DFx = global.ScheduleDiff;
+    var out = $('se-diff-out');
+    if (!DFx) { status('⚠ schedule_diff.js not loaded'); return; }
+    if (!db || !schedId) { status('⚠ no schedule loaded'); return; }
+    var act = SA().activeSchedule(db);
+    if (!act || !act.captured) {
+      status('⚖ Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first (⤓ P6).');
+      return;
+    }
+    if (out) out.textContent = 'computing…';
+    setTimeout(function () {
+      var res = DFx.computeScheduleDiff(db, null, { importedScheduleId: schedId, start: '2026-01-01' });
+      if (res.error) { if (out) out.textContent = '⚠ ' + res.error; return; }
+      var lines = res.phases.map(function (r) {
+        var icon = r.flag === 'optimistic' ? '⚡' : r.flag === 'slow' ? '🐢' : '✓';
+        return icon + ' ' + r.phase + ': theirs ' + r.theirDays + 'd vs ours ' + r.ourDays + 'd (' +
+          (r.deltaPct > 0 ? '+' : '') + r.deltaPct + '%) — ' + r.flagMsg;
+      });
+      if (res.unmatchedActivities.length) lines.push(res.unmatchedActivities.length + ' activity(ies) unmatched — see console §4D_DIFF_UNMATCHED');
+      if (out) out.textContent = lines.join('   ');
+      status('4D Schedule Diff: ' + res.summary.matchedPhases + '/' + res.summary.ourPhases + ' phases compared, ' +
+        res.summary.matchedActivities + '/' + res.summary.theirActivities + ' activities matched.');
+      console.log('§SE_DIFF schedule=' + schedId + ' matchedPhases=' + res.summary.matchedPhases +
+        ' matchedActivities=' + res.summary.matchedActivities + ' unmatched=' + res.summary.unmatchedActivities);
+    }, 30);
+  }
+
   // §SE-6: debounced write-back to the SAME IndexedDB cache slot the building was loaded from — the
   // gap that made every schedule edit vanish on tab close (see schedule_author.js persistDb doc).
   // Called from BOTH mutation choke points below (refreshFold covers WBS/dep/date/reparent edits;
@@ -721,6 +753,7 @@
         renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
+        var diffBtn = $('se-diff-btn'); if (diffBtn) diffBtn.onclick = onDiffVsModel;
         var genBtn = $('se-generate-btn'); if (genBtn) genBtn.onclick = doGenerate;
         var expBtn = $('se-export-msp-btn'); if (expBtn) expBtn.onclick = exportMSProject;
         var expPmxmlBtn = $('se-export-pmxml-btn'); if (expPmxmlBtn) expPmxmlBtn.onclick = exportPMXML;
@@ -746,7 +779,7 @@
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, setZoom: setZoom, exportMSProject: exportMSProject, exportPMXML: exportPMXML, exportXER: exportXER };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, diffVsModel: onDiffVsModel, setZoom: setZoom, exportMSProject: exportMSProject, exportPMXML: exportPMXML, exportXER: exportXER };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);
