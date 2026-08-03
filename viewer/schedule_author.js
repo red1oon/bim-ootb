@@ -47,7 +47,10 @@
   // no-data default, same longest-substring productivity match), parameterized instead of reading
   // window globals so it is node-testable. `rule` is the phase rule already resolved for this
   // element (matchNameOverride/matchRule) — not re-derived, to keep the classification a single pass.
-  function _installSecs(cls, rule, laborRates) {
+  // `realQty` (optional) — §LABOR_QUANTITY_WEIGHT below: when a class is geometrically
+  // over-fragmented, the caller passes this element's REAL bbox area instead of leaving it null,
+  // and the same per-unit rate (28800/prod) is charged per m² instead of once per element.
+  function _installSecs(cls, rule, laborRates, realQty) {
     var resource = rule && rule.resource;
     if (!resource || !laborRates[resource]) return 120;
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
@@ -55,7 +58,71 @@
       if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
     }
     var prod = bestPk ? labor.productivity[bestPk] : 0;
-    return prod > 0 ? Math.round(28800 / prod) : 120;
+    if (prod <= 0) return 120;
+    var secsPerUnit = 28800 / prod;
+    return Math.round(realQty != null ? secsPerUnit * realQty : secsPerUnit);
+  }
+
+  // _classFragmentation(db, rates) — §LABOR_QUANTITY_WEIGHT (GANTT_ACCURACY.md "RESUME 2026-08-04,
+  // root cause found"): 33,324 Terminal "Metal Deck" IfcPlate fragments average 0.074 m² each —
+  // smaller than a floor tile — so charging LABOR_RATES.STEEL_ERECTOR.productivity.IfcPlate=12/day
+  // once PER FRAGMENT (33,324 "elements") inflated Superstructure to 968 days. The formula itself
+  // was never wrong; its INPUT (element count as a proxy for real installable quantity) was wrong
+  // for this one over-fragmented class.
+  //
+  // The fix is NOT "always use RATES[cls].unit='M2' as area" — measured on Terminal, every OTHER
+  // M2-priced class already has a normal, real-panel-sized average (IfcSlab 22.7 m², IfcWall 40.6
+  // m², IfcCovering 65.6 m², IfcRoof 91.4 m²) — their per-element counts already ARE real
+  // installable units, and area-weighting them anyway would invent a NEW regression with zero
+  // evidence behind it (measured: IfcWall would jump from ~14 days to 563 days). So this is a
+  // DATA-DRIVEN per-class test, not a per-unit-type blanket rule: an M2-priced class is
+  // fragmented only when its OWN measured average bbox area is smaller than a floor tile
+  // (FRAGMENT_M2_FLOOR) — the same yardstick this file's own investigation already used in
+  // prose ("0.074 m² is smaller than a floor tile"), now the actual test. Any building where some
+  // OTHER M2 class is the fragmented one (curtain-wall glazing, brick coursing) is caught the same
+  // way, generically — nothing here names "Metal Deck" or "IfcPlate".
+  //
+  // Non-invented: uses RATES[cls].unit (already shipped, rates.js) to find candidate classes, and
+  // the EXACT analysis_sidecar.js compute5D dominant-face-area SQL expression (already shipped) to
+  // measure them. No conversion factor, no assumed "real plate size" — the measured average IS the
+  // test, and the real per-element area IS the weight.
+  var FRAGMENT_M2_FLOOR = 1.0;   // m² — "smaller than a floor tile"
+  var _AREA_EXPR = "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+    "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+    "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+    "ELSE MAX(t.bbox_x,t.bbox_y) END";
+  function _classFragmentation(db, qsRates) {
+    var out = { fragmented: {}, area: {} };
+    qsRates = qsRates || {};
+    var m2Classes = [];
+    for (var cls in qsRates) if (qsRates[cls] && qsRates[cls].unit === 'M2') m2Classes.push(cls);
+    if (!m2Classes.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + _AREA_EXPR + ") FROM elements_meta m " +
+        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "AND m.ifc_class IN (" + q(m2Classes) + ") GROUP BY m.ifc_class");
+    } catch (e) { return out; }   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
+    var fragClasses = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0 && avg < FRAGMENT_M2_FLOOR) { out.fragmented[cls] = { avg: avg, total: total, count: cnt }; fragClasses.push(cls); }
+      });
+    }
+    if (!fragClasses.length) return out;
+    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(fragClasses) + ")");
+    if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
+    fragClasses.forEach(function (cls) {
+      var f = out.fragmented[cls];
+      console.log('§LABOR_QUANTITY_WEIGHT class=' + cls + ' count=' + f.count + ' avgArea=' + f.avg.toFixed(4) +
+        'm2 (<' + FRAGMENT_M2_FLOOR + 'm2 floor) totalRealArea=' + f.total.toFixed(1) +
+        'm2 — real AREA used as labor quantity, not element count');
+    });
+    return out;
   }
 
   // YYYY-MM-DD a given number of whole days after a base date string. Pure UTC arithmetic so
@@ -129,11 +196,17 @@
     // 120s default weight, which degrades gracefully to plain element-count proportionality, never
     // to the old flat-phaseDays-per-phase behaviour.
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    // §LABOR_QUANTITY_WEIGHT: RATES (rates.js, the QS/BOQ cost table — separate from LABOR_RATES)
+    // gives each class's real physical measure via `unit`. Used ONLY to detect and re-weight
+    // classes whose geometry is over-fragmented relative to real installable units — see
+    // _classFragmentation's header for why this cannot be a blanket per-unit-type rule.
+    var qsRates = opts.rates || (global.RATES) || {};
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
     db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
     _ensureWideTasks(db);   // migrate any legacy-thin tasks table → the widened DDL `_cap` reads
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    var _frag = _classFragmentation(db, qsRates);
 
     // §SE-5a: one transaction around the whole rebuild (delete + insert). Without this, sql.js pays
     // per-statement implicit-commit overhead on EVERY row — for a large building (tens of thousands of
@@ -150,11 +223,12 @@
     db.run("DELETE FROM tasks WHERE schedule_id='" + schedId + "'");
     db.run("DELETE FROM schedules WHERE schedule_id='" + schedId + "'");
 
-    // Read the raw material: every element + its class + name (name feeds matchNameOverride).
+    // Read the raw material: every element + its class + name (name feeds matchNameOverride) +
+    // storey (§PHASE_OVERLAP_BAND below — real band count for the overlap fix).
     var elems = [];
-    var er = db.exec('SELECT guid, ifc_class, COALESCE(element_name,\'\') FROM elements_meta');
+    var er = db.exec('SELECT guid, ifc_class, COALESCE(element_name,\'\'), COALESCE(storey,\'\') FROM elements_meta');
     if (er.length && er[0].values.length) {
-      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2] }); });
+      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2], storey: r[3] }); });
     }
 
     // Group into phases via the SAME rule the read-path uses.
@@ -165,15 +239,17 @@
       if (ov) nameOverridden++;
       var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
-      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {} }; }
+      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
       p.guids.push(e.guid);
+      p.storeys[e.storey] = true;   // §PHASE_OVERLAP_BAND below — real storey count, not invented
       // Bucket by resource (trade), not summed flat — see the width computation below: different
       // trades within a phase run in PARALLEL (this file's own "true parallel trades" principle,
       // §Current Problems item 3 / resourceCursor in time_machine.js), so a phase's duration is set
       // by its slowest trade, not the sum of all trades' work.
       var resKey = rule.resource || '__NONE__';
-      p.resourceSecs[resKey] = (p.resourceSecs[resKey] || 0) + _installSecs(e.cls, rule, laborRates);
+      var realQty = (_frag.fragmented[e.cls] && _frag.area[e.guid] != null) ? _frag.area[e.guid] : null;
+      p.resourceSecs[resKey] = (p.resourceSecs[resKey] || 0) + _installSecs(e.cls, rule, laborRates, realQty);
     });
     if (nameOverridden) console.log('§NAME_OVERRIDE ' + nameOverridden + ' elements reclassified by name (' +
       nameOverrides.map(function (o) { return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
@@ -194,7 +270,21 @@
     // User-confirmed 2026-08-04: max_crews applied, bottleneck (not summed) — plain Σ-seconds/1-crew
     // gave Terminal a 10.2y total (Superstructure alone 2,922d); this gives ~3.5y, Superstructure
     // ~968d (still ~75% of the project, correctly dominant, but no longer absurd).
-    var totalDays = 0;
+    // §PHASE_OVERLAP_BAND (GANTT_ACCURACY.md "GENERIC RULE" item 3, conventional construction
+    // scheduling — Line of Balance / flowline): `materializeDefault` used to place phase i+1 only
+    // after phase i was 100% done PROJECT-WIDE (plain Σ cursor below), so a phase that legitimately
+    // dominates the workload (e.g. Superstructure) pushed every later phase's start out to nearly
+    // the project's end — measured on Terminal pre-fix: Architecture started at day 1,189 of 1,264
+    // (94%). Real construction does not wait for a trade to leave the WHOLE building before the
+    // next trade starts — it follows the leading trade band-by-band (floor-by-floor), starting once
+    // the leading trade has cleared ONE band, same as any flowline/repetitive-work schedule.
+    //
+    // `p.storeys` (built above from `elements_meta.storey`, real extracted data, no name-matching)
+    // gives each phase's real band count. lagDays = the time to clear ONE band (widthDays/numBands)
+    // — not an invented overlap fraction (contrast §CPE_PHASE_STAGGER's fixed 20%, a FILM-layer
+    // hack, now removed). A phase touching only 1 band (numBands=1, e.g. a single-storey building)
+    // degrades to the old fully-contiguous behaviour automatically — no special-casing needed.
+    var totalDays = 0, _cursor = 0;
     ordered.forEach(function (p) {
       var maxTradeDays = 0, laborSecsTotal = 0;
       for (var resKey in p.resourceSecs) {
@@ -206,9 +296,16 @@
       }
       p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
       p.laborSecs = laborSecsTotal;   // kept for the log line only
-      totalDays += p.widthDays;
+      var numBands = Math.max(1, Object.keys(p.storeys).length);
+      p.lagDays = Math.max(1, Math.ceil(p.widthDays / numBands));
+      p.startCursor = _cursor;
+      _cursor += p.lagDays;
+      totalDays = Math.max(totalDays, p.startCursor + p.widthDays);
       console.log('§PHASE_DURATION phase=' + p.name + ' elements=' + p.guids.length +
         ' laborSecs=' + p.laborSecs + ' trades=' + Object.keys(p.resourceSecs).length + ' days=' + p.widthDays);
+      console.log('§PHASE_OVERLAP_BAND phase=' + p.name + ' bands=' + numBands +
+        ' lagDays=' + p.lagDays + ' startsAtDay=' + p.startCursor +
+        ' (overlaps ' + Math.max(0, p.widthDays - p.lagDays) + 'd of the PREVIOUS phase\'s tail)');
     });
 
     db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start]);
@@ -223,12 +320,11 @@
 
     var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
-    var outPhases = [], cursor = 0, assignN = 0;
+    var outPhases = [], assignN = 0;
     ordered.forEach(function (p) {
       var tid = 'TASK_' + _slug(p.name);
-      var s = blank ? null : _addDays(start, cursor);
-      var f = blank ? null : _addDays(start, cursor + p.widthDays);
-      cursor += p.widthDays;
+      var s = blank ? null : _addDays(start, p.startCursor);
+      var f = blank ? null : _addDays(start, p.startCursor + p.widthDays);
       // Leaf, is_summary=0. Dated → _cap.win picks it up; blank/undated → _cap skips it (the user
       // originates the dates, then it appears in the timeline). Assignments are made either way.
       stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + p.widthDays + 'D', null, 'PLANNED']);
@@ -305,9 +401,11 @@
     var rules = opts.rules || (global.SEQUENCE_RULES) || {};
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var qsRates = opts.rates || (global.RATES) || {};   // §LABOR_QUANTITY_WEIGHT — see materializeDefault
     var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
+    var _frag = _classFragmentation(db, qsRates);
 
     // §PHASE_DURATION — same bug, same fix as materializeDefault (GANTT_ACCURACY.md "RESUME
     // 2026-08-04+"): a blank-materialized schedule reaches this function with dates not yet
@@ -316,16 +414,20 @@
     // persisted) and apply the identical bottleneck-trade, max_crews-adjusted width. A task with
     // no resolvable elements/labor data falls back to opts.phaseDays (matches materializeDefault's
     // own no-laborRates degrade-to-count behaviour when there's nothing to weight by).
-    var widthDays = {};
+    // §PHASE_OVERLAP_BAND — same fix, same reasoning as materializeDefault (see its header comment):
+    // real storey count per task (from elements_meta.storey) instead of a project-wide contiguous cursor.
+    var widthDays = {}, bandCount = {};
     ids.forEach(function (tid) {
-      var er = db.exec("SELECT m.ifc_class FROM task_elements te JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
-      var resourceSecs = {};
+      var er = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.storey,'') FROM task_elements te JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
+      var resourceSecs = {}, storeys = {};
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
-          var cls = row[0];
+          var guid = row[0], cls = row[1], storey = row[2];
           var rule = matchRule(cls, rules, dflt);
           var resKey = rule.resource || '__NONE__';
-          resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates);
+          var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
+          resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
+          storeys[storey] = true;
         });
       }
       var maxTradeDays = 0;
@@ -335,22 +437,26 @@
         if (d > maxTradeDays) maxTradeDays = d;
       }
       widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;
+      bandCount[tid] = Math.max(1, Object.keys(storeys).length);
     });
 
-    var cursor = 0;
+    var cursor = 0, totalDays = 0;
     db.run('BEGIN TRANSACTION');   // §SE-5a — same per-statement-overhead fix as materializeDefault
     ids.forEach(function (tid) {
       var w = widthDays[tid];
+      var lag = Math.max(1, Math.ceil(w / bandCount[tid]));
       var s = _addDays(start, cursor), f = _addDays(start, cursor + w);
       db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
         [s, f, 'P' + w + 'D', tid]);
-      cursor += w;
+      console.log('§PHASE_OVERLAP_BAND task=' + tid + ' bands=' + bandCount[tid] + ' lagDays=' + lag + ' startsAtDay=' + cursor);
+      totalDays = Math.max(totalDays, cursor + w);
+      cursor += lag;
     });
     db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
-      [start, _addDays(start, cursor), scheduleId]);
+      [start, _addDays(start, totalDays), scheduleId]);
     db.run('COMMIT');
-    console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + cursor + 'd');
-    return { scheduled: ids.length, start: start, span: cursor };
+    console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + totalDays + 'd');
+    return { scheduled: ids.length, start: start, span: totalDays };
   }
 
   // foldCost(db, scheduleId, RATES, ratesDefault, currency) — §AUTHOR-1 step ④ (5D).
