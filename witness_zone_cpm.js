@@ -53,17 +53,22 @@ initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } }).the
   check('idempotent-rebuild', zr2[0].values[0][0] === res.zoneCount && er2[0].values[0][0] === res.edgeCount,
     'zones=' + zr2[0].values[0][0] + ' edges=' + er2[0].values[0][0]);
 
-  // Real CPM over the zone graph.
-  var cpm = ScheduleAuthor.computeCpm(db, 'SCH_AUTHORED', { start: '2026-01-01' });
-  check('cpm-no-error', !cpm.error, JSON.stringify(cpm.error || null));
-  // KNOWN, DOCUMENTED divergence (not asserted equal — see CPM_FLOAT_GAP.md session note): CPM's
-  // forward pass idealizes unlimited resources per edge; the real movie (zones' own start/end,
-  // ScheduleGate.computeSchedule) shares a capped crew pool across ALL zones simultaneously. Through
-  // a graph this deep (22 real floor-ranks on Terminal), that idealization compounds and CPM's
-  // implied total can run meaningfully longer than what actually happens — report it, don't hide it.
-  var durationDivergencePct = Math.round(Math.abs(cpm.projectDuration - res.totalDays) / res.totalDays * 100);
-  console.log('§W-ZONE KNOWN-LIMIT cpm-projectDuration=' + cpm.projectDuration + ' real-movie-totalDays=' + res.totalDays +
-    ' divergence=' + durationDivergencePct + '% (CPM forward-pass is resource-unaware; tier-2 derived, not exact — see spec)');
+  // Real CPM over the zone graph — DERIVED forward pass (previous behavior, kept as a live
+  // regression proof of the divergence this fixedDates opt exists to close, not just a historical note).
+  var cpmDerived = ScheduleAuthor.computeCpm(db, 'SCH_AUTHORED', { start: '2026-01-01' });
+  check('cpm-derived-no-error', !cpmDerived.error, JSON.stringify(cpmDerived.error || null));
+  var derivedDivergencePct = Math.round(Math.abs(cpmDerived.projectDuration - res.totalDays) / res.totalDays * 100);
+  console.log('§W-ZONE DERIVED cpm-projectDuration=' + cpmDerived.projectDuration + ' real-movie-totalDays=' + res.totalDays +
+    ' divergence=' + derivedDivergencePct + '% (expected: still diverges — this call does NOT use fixedDates)');
+
+  // fixedDates:true — trusts the zone's real, movie-coherent persisted dates directly (see
+  // computeCpm's header comment). Must reproduce the real movie's total EXACTLY, not approximately.
+  var cpm = ScheduleAuthor.computeCpm(db, 'SCH_AUTHORED', { start: '2026-01-01', fixedDates: true });
+  check('cpm-fixed-no-error', !cpm.error, JSON.stringify(cpm.error || null));
+  check('cpm-fixed-matches-real-movie-exactly', cpm.projectDuration === res.totalDays,
+    'cpm(fixedDates)=' + cpm.projectDuration + ' real-movie-totalDays=' + res.totalDays);
+  console.log('§W-ZONE FIXED cpm-projectDuration=' + cpm.projectDuration + ' real-movie-totalDays=' + res.totalDays +
+    ' (fixedDates:true — should be an EXACT match, coherence restored)');
   check('cpm-has-critical-path', (cpm.criticalIds || []).length > 0, 'critical=' + (cpm.criticalIds || []).length);
   check('cpm-critical-path-plausible-share', (cpm.criticalIds || []).length < res.zoneCount,
     'critical=' + (cpm.criticalIds || []).length + '/' + res.zoneCount);
