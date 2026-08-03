@@ -897,6 +897,11 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER: an OPT-IN second-camera scissor sub-render, installed only while the
+        // cinema path editor's B panel is toggled on (cinema_path_editor.js). undefined/absent the
+        // rest of the time, so this is a single property check when off — never touched by the
+        // MaxQ bake, which does not run through this loop and never sets the hook.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
       }
     } else {
@@ -910,6 +915,8 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER — see the mobile branch above for the full comment.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
         if (_idleLogged) {
           if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake cycles=' + (_idleCycles || 0));
