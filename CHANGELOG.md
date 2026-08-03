@@ -4,6 +4,27 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.37.0](https://github.com/red1oon/bim-ootb/compare/v1.36.0...v1.37.0) (2026-08-03)
+
+
+### ✨ Features
+
+* **4d:** §4D_SCHEDULE_DIFF — grade an imported P6/MSP schedule against our real-quantity estimate ([#1161](https://github.com/red1oon/bim-ootb/issues/1161)) ([466cc69](https://github.com/red1oon/bim-ootb/commit/466cc69b490939ad97a865d2c4f69ed20e16cdaa))
+* **4d:** CPM Gap 1 (element-level, rolled up) — zone-granularity detail schedule ([#1160](https://github.com/red1oon/bim-ootb/issues/1160)) ([cea58e7](https://github.com/red1oon/bim-ootb/commit/cea58e7b20f70c94ecc5a607472e0b0c6eb6bb99))
+* **4d:** CPM Gap 1 (phase-level) — task_sequences edges + Gantt dependency arrows ([#1159](https://github.com/red1oon/bim-ootb/issues/1159)) ([e5d5b73](https://github.com/red1oon/bim-ootb/commit/e5d5b7380901c05ca45d02cb1bd8cd2bd99f304d))
+* **scene:** combined save/restore — camera, panel, xray, find-selection ride with staffage/cinema_path ([#1152](https://github.com/red1oon/bim-ootb/issues/1152)) ([738b19a](https://github.com/red1oon/bim-ootb/commit/738b19afc28c265f84d1ddffa506b416cbf06970))
+
+
+### 🐛 Fixes
+
+* **4d:** §PHASE_OVERLAP_BAND + §LABOR_QUANTITY_WEIGHT — real cause fixed, film hack removed ([#1154](https://github.com/red1oon/bim-ootb/issues/1154)) ([d35366a](https://github.com/red1oon/bim-ootb/commit/d35366ac2ccbdd6121ee8e8f0db97111753291ae))
+* **4d:** §TM_DURATION_SYNC — wire time_machine.js playback clock to the same area-weighted install-secs formula as schedule_author.js ([#1158](https://github.com/red1oon/bim-ootb/issues/1158)) ([e039443](https://github.com/red1oon/bim-ootb/commit/e0394434fec8464839ab6e584dc3d68cd0b0d307))
+* **4d:** applyDates() was a third un-fixed contiguous-cursor site, reverting §PHASE_OVERLAP_BAND ([#1155](https://github.com/red1oon/bim-ootb/issues/1155)) ([47e61dc](https://github.com/red1oon/bim-ootb/commit/47e61dc93a73fd196123a40515f6681929ef7bea))
+* **4d:** computeCpm fixedDates opt — close the zone-graph/movie duration divergence ([#1162](https://github.com/red1oon/bim-ootb/issues/1162)) ([5d489c7](https://github.com/red1oon/bim-ootb/commit/5d489c7e9abc45acd1cd250be7cca31bf21f4351))
+* **4d:** phase calendar width is workload-proportional, not flat phaseDays ([#1150](https://github.com/red1oon/bim-ootb/issues/1150)) ([93acd0d](https://github.com/red1oon/bim-ootb/commit/93acd0d1a837146201c6fce5c0c9d8f830bf74a0))
+* **cinema:** §CPE_EVEN_PHASE_PACING + §CPE_PHASE_STAGGER + §CPE_SETTLE_HOLD ([#1153](https://github.com/red1oon/bim-ootb/issues/1153)) ([a27d978](https://github.com/red1oon/bim-ootb/commit/a27d97895c0527e38f1884b26a7c6111c14bd668))
+* **cpe:** §CPE_SETTLE_HOLD had a residual 0.05s hardcoded floor, remove it entirely ([#1156](https://github.com/red1oon/bim-ootb/issues/1156)) ([8592b33](https://github.com/red1oon/bim-ootb/commit/8592b33bd9f62912ee66c1a43f4533a00e4dde31))
+
 ## [1.36.0](https://github.com/red1oon/bim-ootb/compare/v1.35.0...v1.36.0) (2026-08-02)
 
 
