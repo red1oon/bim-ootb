@@ -245,9 +245,18 @@
     console.log('§AUTHOR_UI_FOCUS ' + guid);
   }
 
-  // ── First draft: materialize the smart default from rules (the prebaked start) ──
-  // §MI-FLOW: a "Start blank" toggle organizes phases+assignments but leaves them UNDATED, so the
-  // user originates the schedule (the auto-dates become an optional "suggest a start" — scheduleNow).
+  // ── First draft: the DEFAULT generated output is now fine-detail zone-level (phase × real floor),
+  // not the old coarse 5-phase rollup. §PERFECT_FIRST (2026-08-04 user ruling, 4D_SCHEDULE_PERFECTION.md
+  // session): "the 4D schedule has to be perfect first, nothing to skip" — the persisted, editable
+  // schedule is its own correctness target, not a lesser artifact that gets to stay coarse because the
+  // live movie (schedule_gate.js's own instant computeSchedule fallback) already looks right. That
+  // movie path is untouched by this change — a SEPARATE concern, deliberately left alone.
+  // materializeZones uses the SAME movie-coherent per-element times as before (CPM_FLOAT_GAP.md /
+  // 4D_SCHEDULE_PERFECTION.md), just made the default instead of a second opt-in button.
+  // §MI-FLOW still applies to "Start blank": organizes coarse phases+assignments but leaves them
+  // UNDATED so the user originates the schedule by hand — zone detail has no undated form (it's
+  // derived directly from the real crew-capped placement engine, which needs real dates to run), so
+  // blank mode keeps the coarse materializeDefault path, unchanged.
   function generateDraft() {
     var d = db(); if (!d) { status('No model loaded'); return; }
     if (!SA()) { status('Author engine not loaded'); return; }
@@ -263,13 +272,31 @@
     }
     var blankEl = document.getElementById('sa-blank');
     var blank = !!(blankEl && blankEl.checked);
-    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: blank });
+    if (blank) {
+      var resB = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: true });
+      _state = { schedId: resB.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
+      refreshState();
+      console.log('§AUTHOR_UI_DRAFT mode=blank phases=' + resB.phases.length + ' assignments=' + resB.assignmentCount);
+      status('Blank: ' + resB.phases.length + ' phases organized, ' + resB.assignmentCount + ' elements assigned — now set the dates');
+      render();
+      return;
+    }
+    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates() }) : { ok: false, reason: 'no_materializeZones' };
+    if (!res.ok) {
+      // Honest degrade — no ScheduleGate loaded, or genuinely no elements. Not invented.
+      console.log('§AUTHOR_UI_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
+      res = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: false });
+      _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
+      refreshState();
+      console.log('§AUTHOR_UI_DRAFT mode=dated-fallback phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
+      status('Zone detail unavailable (' + (res.reason || 'unknown') + ') — fell back to coarse phases');
+      render();
+      return;
+    }
     _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
     refreshState();
-    console.log('§AUTHOR_UI_DRAFT mode=' + (blank ? 'blank' : 'dated') + ' phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
-    status(blank
-      ? 'Blank: ' + res.phases.length + ' phases organized, ' + res.assignmentCount + ' elements assigned — now set the dates'
-      : 'Draft: ' + res.phases.length + ' phases, ' + res.assignmentCount + ' elements assigned');
+    console.log('§AUTHOR_UI_DRAFT mode=zone-detail zones=' + res.zoneCount + ' edges=' + res.edgeCount + ' totalDays=' + res.totalDays);
+    status('Draft: ' + res.zoneCount + ' zones (phase × floor), ' + res.totalDays + 'd — movie-coherent detail schedule');
     render();
   }
 
