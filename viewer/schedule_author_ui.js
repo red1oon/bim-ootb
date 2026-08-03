@@ -179,20 +179,35 @@
   }
 
   // ── Authoring writes (each = an in-place edit of the IFC-native tables) ────────
+  // §PHASE_OVERLAP_BAND (GANTT_ACCURACY.md): this was a THIRD independent "lay phases out from a
+  // start date" implementation — materializeDefault and scheduleContiguous (schedule_author.js) both
+  // got the real-band overlap fix, this UI-only re-apply path did not, so hitting "Apply" in the
+  // wizard silently reverted an overlapping schedule back to strictly-contiguous (measured live:
+  // Terminal's real 229-day materialized schedule read back as span=407d — the plain Σ of the 5
+  // phase durations — after Apply). Same fix, same reasoning: a phase starts once the leading trade
+  // clears ONE real band (elements_meta.storey via task_elements), not the whole building.
+  function _bandCount(d, tid) {
+    var r = d.exec("SELECT DISTINCT COALESCE(m.storey,'') FROM task_elements te " +
+      "JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
+    var n = (r.length && r[0].values.length) ? r[0].values.length : 1;
+    return Math.max(1, n);
+  }
   function applyDates() {
     var d = db(); if (!d || !_state) return;
-    var cursor = 0, start = _state.start || '2026-01-01';
+    var cursor = 0, totalDays = 0, start = _state.start || '2026-01-01';
     _state.order.forEach(function (tid) {
       var dur = _state.dur[tid] || 30;
       var s = addDays(start, cursor), f = addDays(start, cursor + dur);
       d.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
         [s, f, 'P' + dur + 'D', tid]);
-      cursor += dur;
+      totalDays = Math.max(totalDays, cursor + dur);
+      var lag = Math.max(1, Math.ceil(dur / _bandCount(d, tid)));
+      cursor += lag;
     });
     // root span
     d.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
-      [start, addDays(start, cursor), _state.schedId]);
-    console.log('§AUTHOR_UI_DATES start=' + start + ' span=' + cursor + 'd phases=' + _state.order.length);
+      [start, addDays(start, totalDays), _state.schedId]);
+    console.log('§AUTHOR_UI_DATES start=' + start + ' span=' + totalDays + 'd phases=' + _state.order.length);
   }
 
   function renamePhase(tid, name) {
