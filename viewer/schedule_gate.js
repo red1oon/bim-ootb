@@ -47,6 +47,32 @@
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
 
+  // deriveBandRanks(elements) — the §4D_BAND_MONOTONIC ladder (see computeSchedule's header for the
+  // full ruling): storeys grouped by collapsePhase(), each ranked by the MEDIAN base_z of its own
+  // elements, ascending. Extracted verbatim from computeSchedule's own `deriveRanks` IIFE (pure
+  // refactor, zero behavior change — computeSchedule below now calls this instead of inlining it) so
+  // a second consumer (schedule_author.js's zone-level CPM rollup) can get the SAME real floor order
+  // without a duplicate copy of this math to drift out of sync with the live scheduler.
+  // Returns { bandRank: {collapsedStorey: rank}, rankList: [{ph,z,n}, ...], unbanded: N }.
+  function deriveBandRanks(elements) {
+    var byPhase = {};
+    elements.forEach(function (e) {
+      var ph = collapsePhase(e.storey);
+      (byPhase[ph] = byPhase[ph] || []).push(e.base_z);
+    });
+    var rows = [], bandRank = {}, unbanded = 0;
+    for (var ph in byPhase) {
+      // ⚠ THE UNKNOWN BUCKET IS NOT A FLOOR — see computeSchedule's header comment for the measured
+      // Hospital regression this guards against. Excluded from the ladder, not ranked.
+      if (ph === '_UNKNOWN' || /^unknown$/i.test(ph)) { unbanded += byPhase[ph].length; continue; }
+      var zs = byPhase[ph].slice().sort(function (a, b) { return a - b; });
+      rows.push({ ph: ph, z: zs[Math.floor(zs.length / 2)], n: zs.length });
+    }
+    rows.sort(function (a, b) { return a.z - b.z; });
+    rows.forEach(function (r, i) { bandRank[r.ph] = i; });
+    return { bandRank: bandRank, rankList: rows, unbanded: unbanded };
+  }
+
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
   // "Level 3 Ceiling" / "Level 3 TOS" -> "Level 3". Also the JSON phase key + the trade-gate group.
   function collapsePhase(storey) {
@@ -104,34 +130,8 @@
     // time_machine.js reassigns ~9457 no-storey elements to a nearest storey by median Z before we
     // see them — a band rule laid on a wrong grouping enforces a wrong order confidently, so the
     // §4D_BAND_MONOTONIC log prints the ladder it derived for exactly that audit.
-    var _bandRank = {}, _rankList = [], _unbanded = 0;
-    (function deriveRanks() {
-      var byPhase = {};
-      elements.forEach(function (e) {
-        var ph = collapsePhase(e.storey);
-        (byPhase[ph] = byPhase[ph] || []).push(e.base_z);
-      });
-      var rows = [];
-      for (var ph in byPhase) {
-        // ⚠ THE UNKNOWN BUCKET IS NOT A FLOOR. Caught by this rule's own ladder line on the very
-        // first Hospital run: `Unknown@184.5m(9457)` took a rank BETWEEN Level 3 and Level 4. Those
-        // 9,457 elements are the ones with no storey of their own (the same population
-        // §GANTT_STOREY_Z reassigns by median Z); they are scattered through the whole building, so
-        // their median z is a centroid, not a level. Ranking them would (a) gate all 9,457 against
-        // Level 3 as if they were one floor and (b) hold every Level 4 trade behind that fiction.
-        // A band rule laid on a wrong grouping enforces a wrong order CONFIDENTLY — which is the
-        // failure mode the ruling explicitly warned about. So the bucket is excluded from the
-        // ladder: its elements keep every geometric gate ("nothing without support" is untouched)
-        // and simply take no band constraint. Refusing to order what cannot be placed is the honest
-        // degradation; inventing a floor for it is not.
-        if (ph === '_UNKNOWN' || /^unknown$/i.test(ph)) { _unbanded += byPhase[ph].length; continue; }
-        var zs = byPhase[ph].slice().sort(function (a, b) { return a - b; });
-        rows.push({ ph: ph, z: zs[Math.floor(zs.length / 2)], n: zs.length });
-      }
-      rows.sort(function (a, b) { return a.z - b.z; });
-      rows.forEach(function (r, i) { _bandRank[r.ph] = i; });
-      _rankList = rows;
-    })();
+    var _ranks = deriveBandRanks(elements);
+    var _bandRank = _ranks.bandRank, _rankList = _ranks.rankList, _unbanded = _ranks.unbanded;
     // bandTrade[rank][seq] = latest finish of that trade on that storey. A trade at rank r waits for
     // the SAME trade at rank r-1 — one floor, not all floors below: the lower floors are already
     // transitively covered through r-1, and reaching further down would only add slack.
@@ -313,7 +313,67 @@
     return v;
   }
 
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, CELL: CELL };
+  // deriveZones(elements, schedule) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up). Rolls the
+  // ALREADY-COMPUTED, ALREADY-PROVEN per-element real start/end times (from computeSchedule — the
+  // same numbers the live Time Machine movie plays) up into readable (phase × real floor) zones, and
+  // derives real CPM-solvable edges between them — WITHOUT re-deriving or duplicating any of
+  // computeSchedule's own gating math. Every edge here traces to an OBSERVED pair of real start
+  // times already produced by the proven scheduler, not a re-simulation of its rules:
+  //   (a) within-phase, across adjacent real floors (the §4D_BAND_MONOTONIC relationship, rolled up)
+  //   (b) same real floor, across phases in the order they actually started (the PASS-B per-storey
+  //       trade-order gate, rolled up)
+  // DAG-safety is structural, not asserted: every edge is only added pred→succ when
+  // zone[pred].start <= zone[succ].start (ties broken by phase sequence, then zone id) — so the
+  // whole graph is consistent with one global "real start time" ordering and cannot cycle by
+  // construction; computeCpm's cycle guard is defence-in-depth, not the primary safeguard here.
+  // Returns { zones: [{id,phase,storey,rank,start,end,guids,count}], edges: [{predId,succId,lagMs}] }.
+  function deriveZones(elements, schedule) {
+    var ranks = deriveBandRanks(elements).bandRank;
+    var byZone = {};   // zoneId -> { phase, storey, rank, seq, guids:[], start:Infinity, end:-Infinity }
+    elements.forEach(function (e) {
+      var st = schedule[e.guid]; if (!st) return;   // unscheduled (e.g. a class computeSchedule skipped)
+      var storey = collapsePhase(e.storey);
+      var zid = (e.phase || '_UNPHASED') + '||' + storey;
+      var z = byZone[zid] || (byZone[zid] = {
+        id: zid, phase: e.phase || '_UNPHASED', storey: storey, rank: ranks[storey],
+        seq: e.seq, guids: [], start: Infinity, end: -Infinity
+      });
+      if (e.seq < z.seq) z.seq = e.seq;   // representative sequence = the zone's earliest trade
+      z.guids.push(e.guid);
+      if (st.start < z.start) z.start = st.start;
+      if (st.end > z.end) z.end = st.end;
+    });
+    var zones = Object.keys(byZone).map(function (k) { var z = byZone[k]; z.count = z.guids.length; return z; });
+
+    var edges = [], edgeSeen = {};
+    function addEdge(pred, succ) {
+      if (!pred || !succ || pred.id === succ.id) return;
+      if (pred.start > succ.start) return;                    // structural DAG guard — see header
+      var key = pred.id + '->' + succ.id; if (edgeSeen[key]) return; edgeSeen[key] = 1;
+      edges.push({ predId: pred.id, succId: succ.id, lagMs: Math.max(0, succ.start - pred.end) });
+    }
+    // (a) within-phase, adjacent REAL floor (rank) — the rolled-up band-monotonic relationship.
+    var byPhase = {};
+    zones.forEach(function (z) { if (z.rank != null) (byPhase[z.phase] = byPhase[z.phase] || []).push(z); });
+    Object.keys(byPhase).forEach(function (ph) {
+      var list = byPhase[ph].sort(function (a, b) { return a.rank - b.rank; });
+      for (var i = 1; i < list.length; i++) addEdge(list[i - 1], list[i]);
+    });
+    // (b) same REAL floor, across phases in the order they actually started — the rolled-up
+    // per-storey trade-order relationship (PASS B's phaseTrade[ph][seq] gate).
+    var byStorey = {};
+    zones.forEach(function (z) { (byStorey[z.storey] = byStorey[z.storey] || []).push(z); });
+    Object.keys(byStorey).forEach(function (st) {
+      var list = byStorey[st].sort(function (a, b) { return (a.start - b.start) || (a.seq - b.seq); });
+      for (var i = 1; i < list.length; i++) addEdge(list[i - 1], list[i]);
+    });
+    console.log('§ZONE_CPM zones=' + zones.length + ' edges=' + edges.length +
+      ' (within-phase-band=' + Object.keys(byPhase).reduce(function (s, k) { return s + Math.max(0, byPhase[k].length - 1); }, 0) +
+      ', same-floor-cross-phase≈' + (edges.length - Object.keys(byPhase).reduce(function (s, k) { return s + Math.max(0, byPhase[k].length - 1); }, 0)) + ')');
+    return { zones: zones, edges: edges };
+  }
+
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
