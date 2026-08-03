@@ -177,6 +177,145 @@
     return true;
   }
 
+  // _buildScheduleElements(db, rules, opts) — REPLICATES time_machine.js's element-building recipe
+  // EXACTLY (storey-Z reassignment for elements with no real storey + matchRule/matchNameOverride +
+  // installSecs), off the DB directly so materializeZones is node-testable and can feed
+  // ScheduleGate.computeSchedule the SAME element shape the live movie already uses. The one piece
+  // not already replicated elsewhere in this file is the §STOREY-Z reassignment (time_machine.js
+  // assignStoreyByZ) — ported verbatim, same reasoning: an element with no real storey containment
+  // (a literal "Unknown" IFC storey label — 69.9% of Terminal) is reassigned to the nearest REAL
+  // storey by median center-Z, deterministic, nothing invented.
+  function _buildScheduleElements(db, rules, opts) {
+    opts = opts || {};
+    var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var qsRates = opts.rates || (global.RATES) || {};
+    var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    var _frag = _classFragmentation(db, qsRates);
+
+    var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
+      "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
+      "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
+      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid");
+    if (!r.length || !r[0].values.length) return [];
+
+    var storeyZs = {};
+    r[0].values.forEach(function (row) {
+      var storey = row[3], cz = row[6];
+      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
+      (storeyZs[storey] = storeyZs[storey] || []).push(cz);
+    });
+    var storeyNames = Object.keys(storeyZs), storeyMedianZ = {};
+    storeyNames.forEach(function (s) {
+      var zs = storeyZs[s].slice().sort(function (a, b) { return a - b; });
+      storeyMedianZ[s] = zs[Math.floor(zs.length / 2)];
+    });
+    function assignStoreyByZ(storey, cz) {
+      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+      if (!storeyNames.length) return storey;
+      var best = storeyNames[0], bd = Infinity;
+      for (var i = 0; i < storeyNames.length; i++) {
+        var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
+        if (d < bd) { bd = d; best = storeyNames[i]; }
+      }
+      return best;
+    }
+
+    return r[0].values.map(function (row) {
+      var guid = row[0], cls = row[1], name = row[2], rawStorey = row[3];
+      var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
+      var storey = assignStoreyByZ(rawStorey, cz);
+      var ov = matchNameOverride(cls, name, nameOverrides);
+      var rule = ov || matchRule(cls, rules, dflt);
+      var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      return {
+        guid: guid, cls: cls, name: name, storey: storey,
+        base_z: cz - bz / 2, top_z: cz + bz / 2,
+        x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
+        seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
+        installSecs: _installSecs(cls, rule, laborRates, realQty)
+      };
+    });
+  }
+
+  // materializeZones(db, rules, opts) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up): the
+  // DETAIL-granularity sibling of materializeDefault. Where materializeDefault gives 5 coarse phase
+  // tasks, this persists one task per (phase × real floor) ZONE — built from
+  // ScheduleGate.computeSchedule's already-proven per-element real start/end times (the SAME numbers
+  // the live Time Machine movie plays, so the detail Gantt/CPM view and the movie can never tell a
+  // different story) and ScheduleGate.deriveZones' structurally-DAG-safe edges (see that function's
+  // header — every edge traces to an OBSERVED pair of real start times, nothing re-simulated or
+  // invented). Writes to the SAME SCH_AUTHORED schedule_id as materializeDefault (idempotent
+  // rebuild) — this is an ALTERNATIVE detail view of the one generated schedule, not a second,
+  // competing one. Movie stays instant/zero-friction (schedule_gate.js's live fallback, untouched);
+  // this is the on-demand "for the minority who want to drill in" detail path.
+  function materializeZones(db, rules, opts) {
+    opts = opts || {};
+    var schedId = opts.scheduleId || 'SCH_AUTHORED';
+    var start = opts.start || '2026-01-01';
+    var SG = opts.scheduleGate || global.ScheduleGate;
+    if (!SG || !SG.computeSchedule || !SG.deriveZones) {
+      console.log('§AUTHOR_ZONES_FAIL reason=ScheduleGate_not_loaded');
+      return { ok: false, reason: 'no_schedule_gate' };
+    }
+    var elements = _buildScheduleElements(db, rules, opts);
+    if (!elements.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_elements'); return { ok: false, reason: 'no_elements' }; }
+
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var maxCrews = {};
+    for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
+    var schedule = SG.computeSchedule(elements, 0, 1, maxCrews);
+    var rolled = SG.deriveZones(elements, schedule);
+    if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
+
+    db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+    _ensureWideTasks(db);
+    db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+
+    db.run('BEGIN TRANSACTION');
+    db.run('DELETE FROM task_elements WHERE task_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId]);
+    db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
+    db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
+    db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
+    db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start]);
+
+    var rootId = 'TASK_ROOT';
+    var minStart = Math.min.apply(null, rolled.zones.map(function (z) { return z.start; }));
+    var maxEnd = Math.max.apply(null, rolled.zones.map(function (z) { return z.end; }));
+    var totalDays = Math.max(1, Math.round((maxEnd - minStart) / 86400000));
+    db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, start, _addDays(start, totalDays), 'P' + totalDays + 'D', null, 'PLANNED']);
+
+    var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    var zoneTaskId = {};
+    rolled.zones.forEach(function (z) {
+      var tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
+      zoneTaskId[z.id] = tid;
+      var sDays = Math.round((z.start - minStart) / 86400000), eDays = Math.round((z.end - minStart) / 86400000);
+      if (eDays <= sDays) eDays = sDays + 1;
+      var s = _addDays(start, sDays), f = _addDays(start, eDays);
+      stmtTk.run([tid, schedId, rootId, z.phase + ' — ' + z.storey, 'CONSTRUCTION', 0, s, f, 'P' + (eDays - sDays) + 'D', null, 'PLANNED']);
+      z.guids.forEach(function (g) { stmtTe.run([tid, g]); });
+    });
+    stmtTk.free(); stmtTe.free();
+
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var edgeN = 0;
+    rolled.edges.forEach(function (e) {
+      var p = zoneTaskId[e.predId], s = zoneTaskId[e.succId]; if (!p || !s || p === s) return;
+      stmtSeq.run([p, s, 'FS', Math.round(e.lagMs / 86400000)]);
+      edgeN++;
+    });
+    stmtSeq.free();
+    db.run('COMMIT');
+
+    console.log('§AUTHOR_ZONES schedule=' + schedId + ' zones=' + rolled.zones.length + ' edges=' + edgeN +
+      ' elements=' + elements.length + ' totalDays=' + totalDays);
+    return { ok: true, scheduleId: schedId, zoneCount: rolled.zones.length, edgeCount: edgeN, totalDays: totalDays };
+  }
+
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
   // db: a sql.js Database with `elements_meta`. rules: SEQUENCE_RULES map. opts: {start, phaseDays,
   // scheduleId, defaultRule}. Idempotent — rebuilds the SCH_AUTHORED schedule from scratch.
@@ -1016,6 +1155,8 @@
     _classFragmentation: _classFragmentation,
     FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
+    materializeZones: materializeZones,
+    _buildScheduleElements: _buildScheduleElements,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
