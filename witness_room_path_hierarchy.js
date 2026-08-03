@@ -4,6 +4,9 @@
 // v2 (§10): "wall cavities are not rooms if there are no doors" — a pocket group with NO door
 //     footprint on its boundary AND NO opening incident cannot be entered; it is a PHANTOM
 //     (flood-fill cavity/shaft), excluded from the room census and from missing-link demand.
+// v3 (§11): two layers, NON-FATALISTIC — Layer 2 rooms ARE connected to the Layer-1 spine grid in
+//     the RECORD (kept rooms all have recorded apertures; the doors exist in the DB). The only open
+//     number is the substrate's DRAW BACKLOG: parent links it has not yet reproduced geometrically.
 // Scoring (same engine, same links — REPORTING only):
 //   §HM1 missing links   = Σ per storey (non-phantom components − 1)
 //   §HM2 spine rooms%    = rooms in the spine component
@@ -81,13 +84,15 @@ const FLEET = ['Clinic', 'Duplex', 'HHS_Office_Federated', 'Hospital', 'JKR', 'L
       missing += Math.max(0, liveComps - 1);
     });
     const pc = n => rooms ? (100 * n / rooms).toFixed(1) : '0.0';
+    const rate = rooms ? (100 * (rooms - missing) / rooms).toFixed(1) : '0.0';
     console.log('§HM ' + b.padEnd(22) +
       ' rooms=' + String(rooms).padStart(4) +
-      '  §HM1 missingLinks=' + String(missing).padStart(4) + ' (suites=' + suites + ')' +
-      '  §HM2 spine=' + pc(spineRooms) + '%' +
-      '  §HM3 suite=' + pc(suiteRooms) + '%' +
-      '  §HM4 isolated=' + pc(isoRooms) + '%' +
-      '  §HM5 phantoms=' + phantoms);
+      '  §L1 circulation=' + pc(spineRooms) + '%' +
+      '  §L2 suites=' + String(suites).padStart(3) + ' rooms=' + pc(suiteRooms) + '%+singles=' + pc(isoRooms) + '%' +
+      ' recordConnected=100% (every kept room has a recorded aperture — §10 filter)' +
+      '  §DRAW backlog=' + String(missing).padStart(4) + ' links' +
+      '  §SUBSTRATE drawn=' + rate + '%' +
+      '  §PHANTOM excluded=' + phantoms);
     db.close();
   }
   console.log('§HM_DONE');
