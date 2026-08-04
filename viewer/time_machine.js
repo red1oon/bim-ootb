@@ -151,6 +151,19 @@
     } else {
       _ganttAxisEnd = _projectEnd;
     }
+    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
+    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
+    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
+    // threshold, never a new invented one.
+    var ends = _ops.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
+    var n = ends.length;
+    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
+    if (n > 20) {
+      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+      _ganttAxisEnd = ends[hiI];
+    } else {
+      _ganttAxisEnd = _projectEnd;
+    }
   }
 
   // ── Scene: emerge from nothing ──
@@ -2682,14 +2695,18 @@
         '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
           '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
             'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
-          // §GANTT_AUTHOR_ENTRY — removing the ✎ toolbar icon took out the ONLY caller of
-          // ScheduleAuthorUI.toggle() (this file, ~:2704), which would have left a user with no way to
-          // author a schedule at all — and with no schedule, no bar carries a task_id and the whole
-          // editable drawer is inert. The entry point belongs in the drawer now that the drawer is the
-          // 4D surface. Shown ONLY when nothing is authored, so it disappears once it has been used.
-          '<div id="tm-gantt-noauthor" style="display:none;padding:3px 6px;font-size:10px;color:#ffb74d;' +
-            'border-bottom:1px solid rgba(79,195,247,0.15)">Estimated schedule — bars are not editable. ' +
-            '<button id="tm-gantt-authorbtn" style="font-size:10px;padding:1px 6px;margin-left:4px">Generate 4D schedule</button></div>' +
+          // §GANTT_EDIT_LOCK (user ruling 2026-08-05, supersedes §GANTT_AUTHOR_ENTRY's button): no
+          // button opens a side panel any more, native or otherwise — the drawer materializes its own
+          // schedule automatically (see drawGanttMini's auto-generate call) the first time it has
+          // nothing to show, same native ScheduleAuthor.materializeZones/materializeDefault path,
+          // still guarded against clobbering a real imported schedule. What the user DOES need a
+          // manual control for is whether the bars are draggable right now — that's this lock toggle,
+          // not a generate trigger.
+          '<div id="tm-gantt-lockbar" style="display:flex;align-items:center;gap:6px;padding:3px 6px;' +
+            'font-size:10px;color:#8a97a5;border-bottom:1px solid rgba(79,195,247,0.15)">' +
+            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
+            'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
+            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span></div>' +
           '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block"></canvas>' +
         '</div>' +
         '<div style="position:relative">' +
@@ -4845,6 +4862,19 @@
   var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
   var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
 
+  // §GANTT_EDIT_LOCK (user ruling 2026-08-05): the drawer is the ONLY editing surface now — no more
+  // side-panel button. Default LOCKED so an accidental drag can never move a date; the user flips it
+  // ON deliberately to edit. Gates drag/resize (wireGanttDrag pointerdown, which also gates the E3
+  // drag-to-link since endDrag never runs without a live _drag) and the E7 props dblclick (typed
+  // retime + unlink). Playback/scrub/seek/render are NEVER gated — the canvas stays live feedback
+  // regardless of lock state (user: "if canvas is runtime responsive, it gives the user feedback
+  // which is desirable"). Persistence model is UNCHANGED: every accepted edit still writes straight
+  // to the tasks/kernel_ops tables the instant it's committed (same as before this toggle existed,
+  // §GANTT_EDIT_UNDO already covers the single-level undo of that immediate write) — the toggle is a
+  // UI lock only, not a new draft/commit layer.
+  var _ganttEditable = false;
+  var _ganttAutoGenAttempted = false;  // reset per activate() — one auto-generate attempt per open
+
   // §GANTT_EDIT_UNDO — single-level (not a stack): a drag can cascade N successors with no way back
   // except regenerating the whole schedule (real gap, this session's own edit UI made it possible).
   // Scope is deliberately narrow: only commitGanttDrag (E1/E2 move/resize) sets this, not link/unlink
@@ -5079,11 +5109,10 @@
     say('Baseline set — ' + res.taskCount + ' tasks');
   }
 
-  // §GANTT_AUTHOR_ENTRY (native) — the drawer's "Generate 4D schedule" button used to just call
-  // ScheduleAuthorUI.toggle(), reopening the old side panel — a hidden dependency, not the "native
-  // to the drawer" generation this was supposed to be (4D_SCHEDULE_PERFECTION.md, user ruling
-  // 2026-08-05). Calls the real engine verb directly, same as the panel's own generateDraft() zone-
-  // detail path (schedule_author_ui.js), not a reimplementation of it.
+  // §GANTT_AUTHOR_ENTRY (native, §GANTT_EDIT_LOCK 2026-08-05 dropped the last old-panel fallback) —
+  // called automatically by drawGanttMini when the drawer has nothing editable to show, no button,
+  // no side panel involved at all any more. Calls the real engine verb directly, same as the panel's
+  // own generateDraft() zone-detail path (schedule_author_ui.js), not a reimplementation of it.
   function generateGanttSchedule() {
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -5099,15 +5128,14 @@
     }
     // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
     // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
-    // anything. The drawer doesn't offer fine-grained editing for a captured schedule's own
-    // structure yet, so THIS is the one legitimate remaining reason to fall back to that panel —
-    // not a general re-opening of it.
+    // anything. Previously this fell back to opening the old ScheduleAuthorUI side panel to edit a
+    // captured schedule's structure — user ruling 2026-08-05 removed that too ("prefer to edit right
+    // in the gantt chart itself"): a captured schedule is left exactly as imported (never
+    // regenerated) and is edited through the SAME drawer lock/drag/link/props surface as any other
+    // schedule, once its bars carry real task_ids via the normal cap/injectGantt load path.
     var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
     if (act && act.captured) {
-      console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — opening the schedule author panel to edit it in place, not regenerating');
-      say('Imported schedule "' + act.name + '" — opening its editor');
-      if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
-      else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded_for_captured_schedule');
+      console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — leaving it as imported, not regenerating');
       return;
     }
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
@@ -5143,12 +5171,26 @@
       // tell "handler never fired" apart from "handler correctly refused". Silence is not a refusal.
       if (!hit.bar.taskId) {
         console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + hit.bar.storey +
-          '" phase="' + hit.bar.phase + '" — generate a 4D schedule to make bars editable');
+          '" phase="' + hit.bar.phase + '"');
         var t0 = document.getElementById('tm-gantt-tip');
         if (t0) {
-          t0.textContent = 'Not editable — generate a 4D schedule first';
+          t0.textContent = 'Not editable — no schedule task on this bar';
           t0.style.display = 'block';
           setTimeout(function () { t0.style.display = 'none'; }, 2200);
+        }
+        return;
+      }
+      // §GANTT_EDIT_LOCK — drag/resize AND the drag-to-link path (endDrag never runs without a live
+      // _drag) are both gated here, at the single point of entry. Seek/scrub/hover are untouched —
+      // those are wired on tm-gantt-canvas's OWN pointerup/pointermove listeners registered earlier
+      // in activate(), not in this function.
+      if (!_ganttEditable) {
+        console.log('§GANTT_DRAG_REJECT reason=locked');
+        var t1 = document.getElementById('tm-gantt-tip');
+        if (t1) {
+          t1.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t1.style.display = 'block';
+          setTimeout(function () { t1.style.display = 'none'; }, 2200);
         }
         return;
       }
@@ -5193,7 +5235,12 @@
     // accuracy — on a 400-day project one pixel is ~2 days, so drag alone can never be the precise path.
     cv.addEventListener('dblclick', function (e) {
       var hit = ganttHit(e);
-      if (hit && hit.bar.taskId) { _dragConsumed = true; openGanttProps(hit.bar); }
+      if (!hit || !hit.bar.taskId) return;
+      if (!_ganttEditable) {  // §GANTT_EDIT_LOCK — same gate as drag, props panel also edits (typed retime + unlink)
+        console.log('§GANTT_PROPS_REJECT reason=locked');
+        return;
+      }
+      _dragConsumed = true; openGanttProps(hit.bar);
     });
   }
 
@@ -5307,21 +5354,32 @@
     buildGanttTasks();
     if (!_ganttTasks.length) return;
     wireGanttResize();
-    // §GANTT_AUTHOR_ENTRY: surface the authoring path exactly when it is needed — no authored
-    // schedule means no editable bars, and the user must have a way out of that state.
+    // §GANTT_EDIT_LOCK: wire the lock toggle once, and auto-materialize a schedule the first time
+    // this drawer has nothing editable to show (replaces the old §GANTT_AUTHOR_ENTRY button — no
+    // click required, no side panel involved). One attempt per activate() (_ganttAutoGenAttempted),
+    // so a genuine materialize failure doesn't retry every redraw.
     (function () {
-      var na = document.getElementById('tm-gantt-noauthor');
-      if (!na) return;
       var editable = 0;
       for (var q = 0; q < _ganttTasks.length; q++) if (_ganttTasks[q].taskId) editable++;
-      na.style.display = editable ? 'none' : 'block';
-      var ab = document.getElementById('tm-gantt-authorbtn');
-      if (ab && !ab._wired) {
-        ab._wired = true;
-        ab.addEventListener('pointerup', function (e) {
+      var lockBtn = document.getElementById('tm-gantt-editlock');
+      if (lockBtn && !lockBtn._wired) {
+        lockBtn._wired = true;
+        lockBtn.addEventListener('pointerup', function (e) {
           e.stopPropagation();
-          generateGanttSchedule();
+          _ganttEditable = !_ganttEditable;
+          lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+          lockBtn.title = _ganttEditable
+            ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
+            : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+          console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
         });
+      }
+      var lockMsg = document.getElementById('tm-gantt-lockmsg');
+      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? 'No schedule available' : '');
+      if (!editable && !_ganttAutoGenAttempted) {
+        _ganttAutoGenAttempted = true;
+        console.log('§GANTT_AUTO_GENERATE no editable bars — materializing a schedule natively');
+        generateGanttSchedule();
       }
     })();
     if (_ganttBoxH) box.style.maxHeight = _ganttBoxH + 'px';
@@ -5921,6 +5979,7 @@
   function activate() {
     if (_active) return;
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
+    _ganttAutoGenAttempted = false;   // §GANTT_EDIT_LOCK — allow one fresh auto-generate attempt
     // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
     // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
     //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.

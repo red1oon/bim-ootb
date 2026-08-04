@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// witness_gantt_native_generate.js — §GANTT_AUTHOR_ENTRY native (2026-08-05). Proves the drawer's
-// "Generate 4D schedule" button now calls the real engine directly instead of reopening the old
-// ScheduleAuthorUI side panel, AND proves the captured-schedule guard actually prevents a synthetic
-// schedule from being generated on top of a real imported (Bonsai/Revit/IFC-native) one. Sliced by
-// balanced braces from the real shipped function — same convention as commitGanttDrag/
-// undoLastGanttEdit's witnesses, never reimplemented.
+// witness_gantt_native_generate.js — §GANTT_AUTHOR_ENTRY native (2026-08-05), updated for
+// §GANTT_EDIT_LOCK (2026-08-05, same day): the drawer auto-materializes via the real engine
+// directly, with NO button and NO ScheduleAuthorUI side panel left reachable at all any more — not
+// even for a captured schedule (that fallback was removed on user ruling, "prefer to edit right in
+// the gantt chart itself"). Proves the captured-schedule guard still prevents a synthetic schedule
+// from being generated on top of a real imported (Bonsai/Revit/IFC-native) one, and that doing so
+// never touches the old panel. Sliced by balanced braces from the real shipped function — same
+// convention as commitGanttDrag/undoLastGanttEdit's witnesses, never reimplemented.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -101,7 +103,7 @@ const BUILDING = process.argv[2] || 'Duplex';
     const tr = db.exec("SELECT COUNT(*) FROM tasks WHERE schedule_id='SCH_AUTHORED'");
     const authoredCount = tr.length ? tr[0].values[0][0] : 0;
     assert(authoredCount === 0, 'Scenario B (captured schedule exists): materializeZones was NOT run — no SCH_AUTHORED tasks were created — count=' + authoredCount);
-    assert(toggleCalled === 1, 'Scenario B: the old panel WAS opened exactly once — the one legitimate remaining fallback, for editing the real imported schedule');
+    assert(toggleCalled === 0, 'Scenario B: the old panel is NEVER opened any more (§GANTT_EDIT_LOCK, 2026-08-05) — a captured schedule is left as imported and edited via the drawer itself');
     const importedStillThere = db.exec("SELECT COUNT(*) FROM tasks WHERE schedule_id='IMPORTED_1'")[0].values[0][0];
     const expected = seed.zoneCount + 1;   // + TASK_ROOT
     assert(importedStillThere === expected, 'Scenario B: the real imported schedule is completely untouched — expected=' + expected + ' actual=' + importedStillThere);
