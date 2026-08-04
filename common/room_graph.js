@@ -1422,6 +1422,12 @@
         if (mid && mid.length) {
           var laterAnchors = {};
           for (var k = i + 2; k < path.length; k++) laterAnchors[path[k]] = 1;
+          // §DETOUR-NO-BACKTRACK (2026-08-04): the forward-only check above misses a waypoint an
+          // EARLIER chord's own detour already spliced into `out` this same pass — that guid never
+          // appears in the original `path` array, only in `out`, so it slipped through. Widening the
+          // same veto-candidate set to also cover everything already placed reuses the existing
+          // chainLen-guarded "only replace if not longer" acceptance below unchanged — no new logic.
+          for (var eo = 0; eo < out.length; eo++) laterAnchors[out[eo]] = 1;
           var revisits = mid.filter(function (g) { return laterAnchors[g]; });
           if (revisits.length) {
             var veto = {};
