@@ -2669,7 +2669,7 @@
         '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
         '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
         '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
-        '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
+        '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
@@ -2800,8 +2800,8 @@
     document.getElementById('tm-undo').addEventListener('pointerup', function(e) {
       e.stopPropagation(); undoLastGanttEdit();
     });
-    document.getElementById('tm-new').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(true);
+    document.getElementById('tm-baseline').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); setGanttBaseline();
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -5035,6 +5035,31 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
+  }
+
+  // ⚑ Set Baseline — replaces the dead Copy New slot. Definition user-confirmed 2026-08-05
+  // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"): a deliberate snapshot of the
+  // schedule's own dates, a DIFFERENT axis from §TM-VARIANCE's existing ERP cost variance. Manual
+  // button today because MOB's auto-trigger-at-ERP-push (M2) doesn't exist yet — once it does, the
+  // SAME ScheduleAuthor.setBaseline verb gets called there too; this button does not become obsolete,
+  // it becomes the "re-baseline for an approved change order" case named in the spec.
+  function setGanttBaseline() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2600);
+    }
+    if (!app || !app.db || !SA || !SA.setBaseline) {
+      console.log('§GANTT_SET_BASELINE_REJECT reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var res = SA.setBaseline(app.db, schedId);
+    if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
+    say('Baseline set — ' + res.taskCount + ' tasks');
   }
 
   function wireGanttDrag() {
