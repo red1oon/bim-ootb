@@ -3297,6 +3297,8 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
       return bestKey ? SR[bestKey] : SD;
     }
     var r;
@@ -3308,7 +3310,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement'"
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'"
       );
     } catch (e) { return null; }
     if (!r.length || !r[0].values.length) return null;
@@ -3575,6 +3577,8 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
       return bestKey ? SR[bestKey] : SD;
     }
     // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
@@ -3633,7 +3637,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' " +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace' " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
@@ -6371,7 +6375,7 @@
         if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
       } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
       try {
-        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement'");
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
         if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
       } catch (e) { total = 0; }
     }
