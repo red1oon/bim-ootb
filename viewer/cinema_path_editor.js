@@ -785,7 +785,12 @@
       '<div style="padding:8px 12px;border-top:1px solid #3a3f47;font-size:11px" id="cpe-clock"></div>' +
       '<div id="cpe-state" style="padding:0 12px 6px;font-size:10px;color:#666"></div>' +
       '<div style="padding:10px 12px;border-top:1px solid #3a3f47;display:flex;gap:8px;justify-content:flex-end">' +
-        '<button id="cpe-preview" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer;margin-right:auto">Preview</button>' +
+        // §CPE_SCRUB_PLAY (user, 2026-08-05, one-time named exception to the protect-#cpe-panel
+        // rule): "the Preview button" is redundant now that the scrub panel's own play/pause
+        // covers it via the POV box. Hidden, not deleted — witness_cpe_room_title_live.js and
+        // witness_cpe_room_title_timing.js (pre-existing, not this lane's) still click it by id;
+        // removing the element would regress them for a purely visual redundancy fix.
+        '<button id="cpe-preview" style="display:none" aria-hidden="true">Preview</button>' +
         '<button id="cpe-cancel" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Cancel</button>' +
         '<button id="cpe-save" style="padding:6px 12px;font-size:12px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:4px;cursor:pointer">Save this path</button>' +
         '<button id="cpe-ok" style="padding:6px 14px;font-size:12px;background:#4fc3f7;color:#0b0d10;border:none;border-radius:4px;font-weight:600;cursor:pointer">OK</button>' +
@@ -1425,6 +1430,22 @@
     var yTop = Math.round((panelR.top - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
+    // §CPE_VF_ALIGN_DIAG (2026-08-05, user-reported: rendered content sits right of the panel
+    // border) — one-shot per toggle-on, not every frame. Prints every number the scissor math
+    // depends on PLUS the renderer's actual backing-buffer size (ground truth — canvasR.width*pr
+    // is an ASSUMPTION this log can disprove) and the panel's own box-sizing/border, so the next
+    // repro gives real numbers instead of a screenshot guess. See CLAUDE.md FUNDAMENTAL LAW.
+    if (!_state._vfDiagLogged) {
+      _state._vfDiagLogged = true;
+      var cs = window.getComputedStyle(panel);
+      console.log('§CPE_VF_ALIGN_DIAG panelR=' + JSON.stringify({left:panelR.left,top:panelR.top,width:panelR.width,height:panelR.height}) +
+        ' canvasR=' + JSON.stringify({left:canvasR.left,top:canvasR.top,width:canvasR.width,height:canvasR.height}) +
+        ' pr=' + pr + ' computed_x=' + x + ' computed_y=' + y + ' computed_w=' + w + ' computed_h=' + h +
+        ' canvasBackingBuffer=' + a.renderer.domElement.width + 'x' + a.renderer.domElement.height +
+        ' rendererGetSize=' + JSON.stringify((function(){var s=new THREE.Vector2();a.renderer.getSize(s);return {w:s.x,h:s.y};})()) +
+        ' boxSizing=' + cs.boxSizing + ' borderWidth=' + cs.borderLeftWidth + '/' + cs.borderTopWidth +
+        ' xPlusW=' + (x+w) + ' backingBufferW=' + a.renderer.domElement.width + ' overflowRight=' + ((x+w) - a.renderer.domElement.width));
+    }
     if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
     _state.vfCam.aspect = w / h;
     _state.vfCam.updateProjectionMatrix();
@@ -2818,7 +2839,11 @@
         // §CPE_SCRUB_PLAY (task #8) witness hooks — real pause/resume, not a re-implementation.
         _flyPause: function() { return _state && _state._flyPauseAt ? (_state._flyPauseAt(), true) : false; },
         _flyResume: function() { return _state && _state._flyResume ? (_state._flyResume(), true) : false; },
-        _flyState: function() { return _state ? { flying: _state.flying, paused: _state.flyPaused, u: _state.flyPausedU } : null; },
+        // `hasHooks` — true only once startFly() has actually run (myFly/t0 established, so
+        // _flyPauseAt/_flyResume are real, not a stale reference). `flying` alone goes true at
+        // the TOP of _previewFly(), before the buildup async arm even starts — pausing before
+        // hasHooks is true would call a not-yet-existent hook.
+        _flyState: function() { return _state ? { flying: _state.flying, paused: _state.flyPaused, u: _state.flyPausedU, hasHooks: !!_state._flyPauseAt } : null; },
         // Ground truth for G-SCRUB-1/G-VF-1 — the SAME `_state.plan.poseAt` every render (tube,
         // scrub, B) samples, called directly and read-only (mutates nothing), same precedent as
         // `_probeOverride`/`_probeLengths` above.
