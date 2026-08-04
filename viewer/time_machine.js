@@ -573,6 +573,21 @@
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
+  // §DLOD_VF_CAMGUARD (2026-08-05, cross-session finding — independently root-caused in both
+  // 4D_SCHEDULE_PERFECTION.md and CINEMA_PATH_EDITOR.md's own SESSION HANDOFF). The buildup-
+  // visibility gate used to be hardcoded to the main camera always, even while CPE's POV panel
+  // scrubs its own `vfCam` independently (main camera stays parked during a scrub) — so the POV
+  // inset could show buildup-hidden geometry gated by the WRONG camera's frustum. Pulled out as its
+  // own pure function (same precedent as `_retimeSpan`'s own header: kept self-contained so a
+  // witness can slice the real decision out of `renderAtTime` instead of re-implementing it).
+  // Returns the POV camera while CPE's viewfinder is genuinely on, else the main camera — never
+  // guesses, reads CPE's own exposed `activePOVCamera()` accessor.
+  function _dlodResolveCamera(app) {
+    var povCam = (typeof window !== 'undefined' && window.APP && window.APP.cinemaPathEditor &&
+      window.APP.cinemaPathEditor.activePOVCamera) ? window.APP.cinemaPathEditor.activePOVCamera() : null;
+    return povCam || app.camera;
+  }
+
   // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
   // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
   function _dlodInView(g) {
@@ -1285,8 +1300,10 @@
       _dlodBuildBoxes(app);
       if (_dlodBoxIndex && app.camera) {
         if (!_dlodFrustum) { _dlodFrustum = new THREE.Frustum(); _dlodPSM = new THREE.Matrix4(); _dlodSphere = new THREE.Sphere(); }
-        _dlodCamPos = app.camera.position;
-        _dlodPSM.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+        // §DLOD_VF_CAMGUARD — gate against whichever camera the user is actually looking through.
+        var _dlodActiveCam = _dlodResolveCamera(app);
+        _dlodCamPos = _dlodActiveCam.position;
+        _dlodPSM.multiplyMatrices(_dlodActiveCam.projectionMatrix, _dlodActiveCam.matrixWorldInverse);
         _dlodFrustum.setFromProjectionMatrix(_dlodPSM);
       } else {
         _dlodOn = false; // box build failed (deps/query) — fall back to legacy behavior this tick
