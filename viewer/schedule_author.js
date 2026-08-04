@@ -1183,6 +1183,55 @@
     return moveTaskCascade(db, scheduleId, taskId, _dayStr(s), opts);
   }
 
+  // setBaseline(db, scheduleId) — §GANTT_EDIT_UNDO's transport-row sibling, ⚑ Set Baseline
+  // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"). P6 baseline = a frozen snapshot
+  // of every task's dates, taken at a deliberate moment, compared against the live (possibly
+  // since-edited) schedule — SCHEDULE variance, a different axis from §TM-VARIANCE's existing
+  // C_Project PlannedAmt/CommittedAmt COST variance, which this does not touch.
+  // Single baseline (not P6's multi-baseline numbering) — MVP scope, matches the definition the
+  // user confirmed 2026-08-05: re-running this OVERWRITES the prior baseline, it does not version it.
+  // Snapshots EVERY task row for the schedule (including summaries) so project-level rollup variance
+  // is available too, not just leaf tasks.
+  function setBaseline(db, scheduleId) {
+    db.run('CREATE TABLE IF NOT EXISTS task_baseline (task_id TEXT PRIMARY KEY, schedule_id TEXT, ' +
+      'baseline_start TEXT, baseline_finish TEXT, baseline_duration TEXT, set_at TEXT)');
+    var tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [scheduleId]);
+    if (!tr.length || !tr[0].values.length) { console.log('§GANTT_SET_BASELINE_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    var setAt = new Date().toISOString();
+    db.run('BEGIN');
+    db.run('DELETE FROM task_baseline WHERE schedule_id=?', [scheduleId]);
+    var st = db.prepare('INSERT INTO task_baseline VALUES (?,?,?,?,?,?)');
+    tr[0].values.forEach(function (row) { st.run([row[0], scheduleId, row[1], row[2], row[3], setAt]); });
+    st.free();
+    db.run('COMMIT');
+    console.log('§GANTT_SET_BASELINE schedule=' + scheduleId + ' tasks=' + tr[0].values.length + ' setAt=' + setAt);
+    return { ok: true, taskCount: tr[0].values.length, setAt: setAt };
+  }
+
+  // getBaselineVariance(db, scheduleId) — reads BOTH tables, computes nothing that isn't a direct
+  // date subtraction of two already-real, already-persisted values. varianceDays > 0 = the task now
+  // finishes LATER than its baseline (slip); < 0 = earlier. `projectVarianceDays` is TASK_ROOT's own
+  // row if present (its schedule_finish is already the whole project's real end, same convention
+  // moveTaskCascade/materializeZones use elsewhere in this file — never re-derived by scanning leaves).
+  function getBaselineVariance(db, scheduleId) {
+    var br;
+    try { br = db.exec('SELECT task_id, baseline_start, baseline_finish FROM task_baseline WHERE schedule_id=?', [scheduleId]); }
+    catch (e) { return { ok: false, reason: 'no_baseline' }; }
+    if (!br.length || !br[0].values.length) return { ok: false, reason: 'no_baseline' };
+    var baseline = {};
+    br[0].values.forEach(function (row) { baseline[row[0]] = { start: row[1], finish: row[2] }; });
+    var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish, is_summary FROM tasks WHERE schedule_id=?', [scheduleId]);
+    var tasks = [], projectVarianceDays = null;
+    (tr.length ? tr[0].values : []).forEach(function (row) {
+      var tid = row[0], b = baseline[tid]; if (!b) return;   // a task added after baseline was set — no variance to report
+      var varianceDays = _dayNum(row[3]) - _dayNum(b.finish);
+      tasks.push({ taskId: tid, name: row[1], baselineStart: b.start, baselineFinish: b.finish,
+        currentStart: row[2], currentFinish: row[3], varianceDays: varianceDays });
+      if (tid === 'TASK_ROOT') projectVarianceDays = varianceDays;
+    });
+    return { ok: true, tasks: tasks, projectVarianceDays: projectVarianceDays };
+  }
+
   // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
   // fixedDates opt (§ZONE_CPM_COHERENCE): computeCpm's forward pass normally DERIVES each task's
   // early start from the graph (max over predecessors' EF+lag) — correct when the dates themselves
@@ -1487,6 +1536,8 @@
     moveTask: moveTask,
     moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
+    setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
+    getBaselineVariance: getBaselineVariance,
     addTask: addTask,
     reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute,
@@ -1497,5 +1548,5 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v7');
+  console.log('§SCHEDULE_AUTHOR_LOADED v8');
 })(typeof self !== 'undefined' ? self : this);
