@@ -2889,7 +2889,13 @@
       if (btn) btn.classList.toggle('tm-active', _ganttVisible);
       var box = document.getElementById('tm-gantt-box');
       if (box) box.classList.toggle('open', _ganttVisible);
-      if (_ganttVisible) drawGanttMini();
+      // §GANTT_AUTHOR_REPROBE (2/2, found in a real browser 2026-08-04): re-probing inside
+      // buildTaskIndex() was not enough on its own — buildGanttTasks() is gated on _ganttDirty, and
+      // authoring a schedule does not set it, so the re-probe never ran and freshly authored bars
+      // stayed non-editable. PROVEN live: materializeZones returned ok:true with 18 zones while the
+      // drawer still showed the "not editable" banner. Opening the drawer is exactly the moment the
+      // user expects it to reflect reality, so mark it dirty here.
+      if (_ganttVisible) { _ganttDirty = true; drawGanttMini(); }
     });
     document.getElementById('tm-dash').addEventListener('pointerup', function(e) {
       e.stopPropagation();
