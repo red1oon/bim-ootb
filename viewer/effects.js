@@ -4541,8 +4541,19 @@ async function setupEffects(A, renderer, scene, camera) {
     return a * Math.max(0, Math.min(1, t)) + (1 - a) * _cinemaSmoothstep(t);
   }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
-  // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v18 (§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; §CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
+  // live?" by itself. Bump on EVERY behaviour change in this file. Reorganized to one clause per
+  // line 2026-08-04 for readability (no §TAG dropped) — also CAUGHT UP a real gap found while doing
+  // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
+  // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
+  // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
+  var EFFECTS_V = 'v19 (' +
+    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides LOS/§CPE_AIM_DENSITY outright ' +
+      '(_buildPinZones/_pinLookAtAt inside _beat3Pose) — was live in v18\'s shipped code, this ' +
+      'string just never said so; ' +
+    '§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; ' +
+    '§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; ' +
+    '§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; ' +
+    '§STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).

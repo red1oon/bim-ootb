@@ -329,7 +329,22 @@
     _ggSaved = null;
   }
 
-  var MAXQ_V = 'v22 (§GHOST_GROUND_LIVE_TRIGGER fixes #1148 stuck-at-floor regression — the trigger now compares the REAL cursor to firstAboveMs directly (same clock, epoch ms) instead of pre-converting firstAboveMs into a calendar-fraction and comparing it against tFilm, which §CPE_BUILDUP_WORK_PACED (same day) had turned into an ELEMENTS-placed fraction — two different clocks; adds §GHOST_GROUND_TRIGGER_FIRED (one-shot, exact frame the trigger fires) and §GHOST_GROUND_TICK (periodic, every ~5 film-seconds while still ghosted) so a future session never has to re-instrument this file blind again; §CPE_GHOST_GROUND_TRIGGER history: #1110 first-above-ground-element, #1112 5% above-ground-SHARE ratio, #1148 reverted to #1110 (still broken live until this fix), keeping the #1113-1115 hardening (degrade-not-disable, refusal logging, lazy arm-on-first-tick); §CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; §CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; §CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; §CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; §CPE_CLIP in/out window remaps poseAt + scales frames; §MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; §MAXQ_QUALITY health line)';
+  // Reorganized 2026-08-04 into one clause per line for readability — no §TAG dropped, content
+  // byte-verified against the pre-reorg single-line blob before this landed. Version NOT bumped:
+  // this is a formatting-only change, zero behaviour touched (cinema_maxq.js's bake loop is
+  // deliberately untouched by the whole §CPE_SCRUB/§CPE_VIEWFINDER/§CPE_AIM_PIN lane — see those
+  // features' own witness gates that grep this file for zero references to their hooks).
+  var MAXQ_V = 'v22 (' +
+    '§GHOST_GROUND_LIVE_TRIGGER fixes #1148 stuck-at-floor regression — the trigger now compares the REAL cursor to firstAboveMs directly (same clock, epoch ms) instead of pre-converting firstAboveMs into a calendar-fraction and comparing it against tFilm, which §CPE_BUILDUP_WORK_PACED (same day) had turned into an ELEMENTS-placed fraction — two different clocks; ' +
+    'adds §GHOST_GROUND_TRIGGER_FIRED (one-shot, exact frame the trigger fires) and §GHOST_GROUND_TICK (periodic, every ~5 film-seconds while still ghosted) so a future session never has to re-instrument this file blind again; ' +
+    '§CPE_GHOST_GROUND_TRIGGER history: #1110 first-above-ground-element, #1112 5% above-ground-SHARE ratio, #1148 reverted to #1110 (still broken live until this fix), keeping the #1113-1115 hardening (degrade-not-disable, refusal logging, lazy arm-on-first-tick); ' +
+    '§CPE_BUILDUP_WORK_PACED the film advances by ELEMENTS PLACED, not by calendar days — 10% of the film is 10% of the building on any model; ' +
+    '§CPE_BUILDUP_FOLLOW_TM — the buildup PLAYS the Time Machine timeline, it does not author one; ' +
+    '§CPE_PREVIEW_AFTER_RETIRED — OK records, no rehearsal either side of the editor; ' +
+    '§CPE_PREVIEW_REDUNDANT pre-editor rehearsal removed; ' +
+    '§CPE_CLIP in/out window remaps poseAt + scales frames; ' +
+    '§MAXQ_HIDDEN_PAUSE — a hidden tab parks the bake instead of ruining it; ' +
+    '§MAXQ_QUALITY health line)';
   console.log('§MAXQ_LOADED ' + MAXQ_V);
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next

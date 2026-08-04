@@ -1,15 +1,32 @@
 // WITNESS — §CPE_SCRUB / §CPE_VIEWFINDER (Parts A and B).
 // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part A §CPE_SCRUB, Part B §CPE_VIEWFINDER.
 //
+// §CPE_SCRUB gates REWRITTEN 2026-08-04 — a real regression, caught live by the user in their own
+// browser: scrubbing the timeline used to move the MAIN canvas camera (`A.camera`/`A.controls`),
+// which is wrong — the main canvas is the user's traditional editing view and must stay exactly
+// where they left it, always. The fix was then simplified further, past "route scrub into B's
+// camera instead": scrubbing is now VISUAL-ONLY (playhead + tNorm readout), touching NO camera at
+// all, and the scrub bar itself only exists while B is open (a provisional pairing, not settled
+// architecture — see the spec doc's DONE block). The OLD G-SCRUB-1 (scrub reproduces poseAt on the
+// LIVE camera) asserted exactly the behaviour that was the bug — it is GONE, replaced below.
+//
 // ISSUE EACH GATE PROVES OR DISPROVES:
-//   G-SCRUB-1  dragging the playhead to tNorm=X reproduces the exact pose _previewFly() would show
-//              at that instant — no second pose pipeline. Proven by comparing what _scrubTo(X) left
-//              on the LIVE camera against a direct, independent plan.poseAt(X) read.
-//   G-SCRUB-2  clicking empty bar at tNorm=X spawns a band at the same world point the pipe's own
-//              arc-length placement (plan.poseAt(X)) gives for X. A REAL pointer click on the DOM
-//              track, not a synthetic call — exercises the actual click-vs-drag slop split too.
-//   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant — one pose
-//              source, both fed by the same _applyCameraPose call.
+//   G-SCRUB-GATED  the scrub bar does not exist in the DOM while B is off (fresh editor open), and
+//                  does exist once B is toggled on — the bar's existence is gated to B, not a
+//                  permanent fixture (2026-08-04 provisional simplification).
+//   G-SCRUB-VISUAL a scrub drag still updates the playhead position and the "timeline NN.N%"
+//                  readout text — the feature has a real effect, it just isn't a camera move.
+//   G-SCRUB-NOCAM  THE regression gate: the main camera's position AND orbit target, and B's inset
+//                  camera's position, are all byte-identical before and after a scrub drag. Proves
+//                  the bug (scrub moving the main canvas) cannot recur silently.
+//   G-SCRUB-SPAWN  clicking the (now B-gated) bar at tNorm=X still spawns a band at the same world
+//                  point the pipe's own arc-length placement (plan.poseAt(X)) gives for X — a REAL
+//                  pointer click on the DOM track, exercising the actual click-vs-drag slop split.
+//   G-SCRUB-TEARDOWN  toggling B back off removes the scrub bar from the DOM too.
+//   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
+//              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call. This
+//              path is unaffected by the scrub fix (`_previewFly()` still legitimately flies the
+//              main camera; B still legitimately tracks it 1:1 while that happens).
 //   G-VF-2     B's Time Machine readout is a READ of the cursor step() already set that frame, never
 //              a second tmSetCursor call — proven both statically (source has tmGetState, not
 //              tmSetCursor, inside the vf functions) and live (readout agrees with tmGetState() at
@@ -51,25 +68,52 @@ async function gates(browser, BLD, repoDir) {
   const P = (n, ok, d) => checks.push({ n, ok, d });
   const { page, logs } = await openEditor(browser, BLD);
 
-  // ── G-SCRUB-1 ──────────────────────────────────────────────────────────────────────────────────
-  const scrub1 = await page.evaluate(() => {
-    const cpe = window.APP.cinemaPathEditor;
-    const A = window.APP;
-    const tn = 0.42;
-    const ground = cpe._probePoseAt(tn);            // direct, independent poseAt(tn) read
-    const applied = cpe._scrubTo(tn);                // the real drag-handler function
-    const cam = { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z };
-    const tgt = { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z };
-    return { ground, applied, cam, tgt };
-  });
-  const dCam = Math.hypot(scrub1.ground.x - scrub1.cam.x, scrub1.ground.y - scrub1.cam.y, scrub1.ground.z - scrub1.cam.z);
-  const dTgt = Math.hypot(scrub1.ground.tx - scrub1.tgt.x, scrub1.ground.ty - scrub1.tgt.y, scrub1.ground.tz - scrub1.tgt.z);
-  P('G-SCRUB-1 scrubbing to tn=0.42 leaves the live camera at plan.poseAt(0.42), position AND target',
-    dCam < 1e-6 && dTgt < 1e-6,
-    `camDelta=${dCam.toExponential(2)}m targetDelta=${dTgt.toExponential(2)}m ` +
-    `(ground pos=(${scrub1.ground.x.toFixed(2)},${scrub1.ground.y.toFixed(2)},${scrub1.ground.z.toFixed(2)}))`);
+  // ── G-SCRUB-GATED: the bar does not exist before B is toggled on ────────────────────────────────
+  const beforeVF = await page.evaluate(() => !!document.getElementById('cpe-scrub-track'));
+  P('G-SCRUB-GATED the scrub bar does not exist in the DOM while B is off',
+    beforeVF === false, `trackPresent=${beforeVF}`);
 
-  // ── G-SCRUB-2: a REAL pointer click on the scrub track, inside the walk window ────────────────
+  // ── toggle B on — shared setup for every gate below (bar existence, no-cam, spawn, and G-VF-1) ──
+  const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
+  await sleep(300);
+  const afterVF = await page.evaluate(() => !!document.getElementById('cpe-scrub-track'));
+  P('G-SCRUB-GATED the scrub bar DOES exist once B is toggled on',
+    vfOnState === true && afterVF === true, `vfOn=${vfOnState} trackPresent=${afterVF}`);
+
+  // ── G-SCRUB-NOCAM: THE regression gate — no camera moves during a scrub drag ────────────────────
+  const before = await page.evaluate(() => {
+    const A = window.APP, cpe = window.APP.cinemaPathEditor;
+    const vf = cpe._probeVF();
+    return {
+      mainPos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+      mainTgt: { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z },
+      vfPos: vf.camPose, scrubLabel: document.getElementById('cpe-scrub-tn').textContent
+    };
+  });
+  const scrubResult = await page.evaluate(() => window.APP.cinemaPathEditor._scrubTo(0.42));
+  await sleep(50);
+  const after = await page.evaluate(() => {
+    const A = window.APP, cpe = window.APP.cinemaPathEditor;
+    const vf = cpe._probeVF();
+    return {
+      mainPos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+      mainTgt: { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z },
+      vfPos: vf.camPose, scrubLabel: document.getElementById('cpe-scrub-tn').textContent
+    };
+  });
+  const dMainPos = Math.hypot(after.mainPos.x - before.mainPos.x, after.mainPos.y - before.mainPos.y, after.mainPos.z - before.mainPos.z);
+  const dMainTgt = Math.hypot(after.mainTgt.x - before.mainTgt.x, after.mainTgt.y - before.mainTgt.y, after.mainTgt.z - before.mainTgt.z);
+  const dVfPos = (before.vfPos && after.vfPos)
+    ? Math.hypot(after.vfPos.x - before.vfPos.x, after.vfPos.y - before.vfPos.y, after.vfPos.z - before.vfPos.z) : null;
+  P('G-SCRUB-NOCAM the main camera (position AND target) and B\'s inset camera are byte-identical before/after a scrub drag',
+    dMainPos < 1e-9 && dMainTgt < 1e-9 && (dVfPos == null || dVfPos < 1e-9),
+    `mainPosDelta=${dMainPos.toExponential(2)}m mainTargetDelta=${dMainTgt.toExponential(2)}m vfPosDelta=${dVfPos == null ? 'n/a' : dVfPos.toExponential(2) + 'm'} ` +
+    `scrubResult.x=${scrubResult ? scrubResult.x.toFixed(2) : 'null'} (poseAt(0.42) IS sampled and returned — just never written to any camera)`);
+  P('G-SCRUB-VISUAL the playhead/readout DID change (the feature still has a real, visible effect)',
+    before.scrubLabel !== after.scrubLabel,
+    `before="${before.scrubLabel}" after="${after.scrubLabel}"`);
+
+  // ── G-SCRUB-SPAWN: a REAL pointer click on the (B-gated) scrub track, inside the walk window ────
   const setup2 = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
     const win = cpe._probeScrub().walkWindow;
@@ -89,35 +133,36 @@ async function gates(browser, BLD, repoDir) {
     await sleep(30);
     await page.mouse.up();          // a 0px press == a click, same doctrine as §CPE_CLICK_SLOP
     await sleep(700);
-    const after = await page.evaluate(() => {
+    const afterSpawn = await page.evaluate(() => {
       const cpe = window.APP.cinemaPathEditor;
       const n = document.querySelectorAll('#cpe-rows > div[data-cpe-row="band"]').length;
       // Find the newly-added stick's drawn centre via the bars/handles probe (mid handle, z==='mid').
       const handles = cpe._probeHandles() || [];
       return { n, handles };
     });
-    const stickHandle = after.handles.filter(h => h.z === 'mid' && h.stick).pop();
+    const stickHandle = afterSpawn.handles.filter(h => h.z === 'mid' && h.stick).pop();
     const dSpawn = stickHandle
       ? Math.hypot(stickHandle.x - setup2.ground.x, stickHandle.y - setup2.ground.y, stickHandle.z3 - setup2.ground.z)
       : null;
     // Seeding resolution is bounded by the flow polyline's own sample density, not by the film's
     // FILM_SAMPLES — a few tens of cm is the real bound, measured below rather than asserted blind.
-    g2ok = after.n === setup2.nBefore + 1 && stickHandle != null && dSpawn != null && dSpawn < 2.0;
-    g2detail = `rows ${setup2.nBefore}->${after.n} spawnDist=${dSpawn == null ? 'n/a' : dSpawn.toFixed(3) + 'm'} ` +
+    g2ok = afterSpawn.n === setup2.nBefore + 1 && stickHandle != null && dSpawn != null && dSpawn < 2.0;
+    g2detail = `rows ${setup2.nBefore}->${afterSpawn.n} spawnDist=${dSpawn == null ? 'n/a' : dSpawn.toFixed(3) + 'm'} ` +
       `(clicked tn=${setup2.tn.toFixed(3)}, target=(${setup2.ground.x.toFixed(2)},${setup2.ground.y.toFixed(2)},${setup2.ground.z.toFixed(2)}))`;
   }
-  P('G-SCRUB-2 a click on the shaded bar spawns a stick at the pipe\'s own placement for that tNorm', g2ok, g2detail);
+  P('G-SCRUB-SPAWN a click on the shaded bar spawns a stick at the pipe\'s own placement for that tNorm', g2ok, g2detail);
 
-  // ── G-VF-1 ─────────────────────────────────────────────────────────────────────────────────────
-  const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
-  await sleep(300);
+  // ── G-VF-1 (B already on from the shared setup above): rehearsal-style pose application only —
+  // NOT `_scrubTo` (that no longer touches any camera, per the 2026-08-04 correction/simplification
+  // above). `_applyCameraPoseForTest` calls the real `_applyCameraPose`, the one function
+  // `_previewFly()`'s step() still legitimately uses to fly the main camera and sync B to it.
   const vf1 = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
-    cpe._scrubTo(0.65);
+    cpe._applyCameraPoseForTest(0.65);
     return cpe._probeVF();
   });
   const dVF = vf1.camPose ? Math.hypot(vf1.camPose.x - vf1.mainPose.x, vf1.camPose.y - vf1.mainPose.y, vf1.camPose.z - vf1.mainPose.z) : null;
-  P('G-VF-1 B\'s camera pose at tn=0.65 matches the main camera exactly (same plan.poseAt sample)',
+  P('G-VF-1 B\'s camera pose at tn=0.65 matches the main camera exactly (same plan.poseAt sample, rehearsal-style application)',
     vfOnState === true && dVF != null && dVF < 1e-6,
     `vfOn=${vfOnState} hookInstalled=${vf1.hookInstalled} delta=${dVF == null ? 'n/a' : dVF.toExponential(2)}m ` +
     `rect=${vf1.rect ? JSON.stringify(vf1.rect) : 'null'}`);
@@ -198,11 +243,16 @@ async function gates(browser, BLD, repoDir) {
   const off = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
     const on = cpe._vfToggle();
-    return { on: on, panelGone: !document.getElementById('cpe-vf-panel'), hookGone: !window.APP._cpeViewfinderRender };
+    return {
+      on: on, panelGone: !document.getElementById('cpe-vf-panel'), hookGone: !window.APP._cpeViewfinderRender,
+      scrubGone: !document.getElementById('cpe-scrub-track')
+    };
   });
   P('G-VF-off toggling off removes the DOM panel and clears the render hook (zero cost when off)',
     off.on === false && off.panelGone && off.hookGone,
     `vfOn=${off.on} panelGone=${off.panelGone} hookGone=${off.hookGone}`);
+  P('G-SCRUB-TEARDOWN toggling B off also removes the scrub bar (its existence is gated to B)',
+    off.scrubGone, `trackGoneAfterVfOff=${off.scrubGone}`);
 
   await page.close();
   return checks;
