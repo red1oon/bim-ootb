@@ -167,6 +167,31 @@
       "sequence": 9,
       "resource": "ELECTRICIAN"
     },
+    "IfcActuator": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcSensor": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowInstrument": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcProtectiveDeviceTrippingUnit": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcUnitaryControlElement": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
     "IfcWall": {
       "phase": "Architecture",
       "sequence": 5,
