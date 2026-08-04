@@ -51,7 +51,10 @@
   var VF_MIN_W = 160, VF_MIN_H = 100;           // px — floor a resize cannot cross
   var VF_MARGIN = 16;                            // px from the viewport edge for the first-open position
   var VF_RESIZE_HANDLE_PX = 16;                  // px — the corner grab square's hit size
-  var CPE_V = 'v20 (§CPE_SCRUB timeline scrub bar with stick tick-marks, drag drives plan.poseAt through the ' +
+  var CPE_V = 'v21 (§CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look ' +
+    'direction there (rotation only, never position); the pin wins outright inside its own band\'s Voronoi ' +
+    'zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in neighbouring ' +
+    'bands with no bleed; §CPE_SCRUB timeline scrub bar with stick tick-marks, drag drives plan.poseAt through the ' +
     'same camera-move code _previewFly() uses per frame; §CPE_VIEWFINDER a synced second-camera POV sub-panel, ' +
     'one renderer via setScissorTest, eye-icon toggle OFF by default, scoped to rehearsal only, never wired ' +
     'into the MaxQ bake loop; §CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
@@ -515,8 +518,11 @@
       // band is a stick" — which was survivable while the only per-stick affordance was the × button
       // and is not survivable now that colour depends on it (a dark-blue seeded band is a lie).
       bands: s.bands.map(function(b) {
+        // §CPE_AIM_PIN: `lookAt` rides the same seam `_stick`/`_s`/`hold` already do — no second
+        // table (guardrail 4), and the plan/Save/bake all read this one override.
         return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-                 hold: +(b.hold || 0), _stick: !!b._stick, _s: b._s };
+                 hold: +(b.hold || 0), _stick: !!b._stick, _s: b._s,
+                 lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
       }),
       // §CPE_HOSE: the ops ride the same override the plan, Save and the bake already consume — a
       // deep copy, same treatment as the bands, so nothing downstream can write back into the holder
@@ -758,7 +764,10 @@
       // dropped rather than seeded) and must survive undo/redo, or a restored stick loses its label
       // and its removability. They are stripped in _buildOverride — the plan never sees them.
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-               hold: +(b.hold || 0), _s: b._s, _stick: b._stick };
+               hold: +(b.hold || 0), _s: b._s, _stick: b._stick,
+               // §CPE_AIM_PIN: must survive undo/redo the same way, or Ctrl+Z after a pin click
+               // silently un-pins whatever the pointer landed on next.
+               lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
     });
   }
   // §CPE_HOSE/§CPE_CLIP: the snapshot has to carry EVERY authored quantity, not just the bands.
@@ -915,12 +924,27 @@
         });
         hold.addEventListener('click', function(ev) { ev.stopPropagation(); });
         head.appendChild(hold);
+        // §CPE_AIM_PIN: a small removable badge — "an affordance you cannot see is not an
+        // affordance" (§CPE_STICK's own doctrine). Click-to-pin has no other UI surface, so this is
+        // the only place a pin is visible or removable outside re-clicking on top of it.
+        if (b.lookAt) {
+          var pin = document.createElement('button');
+          pin.textContent = '📌×';
+          pin.title = 'pinned — click to unpin (rotation reverts to LOS/§CPE_AIM_DENSITY here)';
+          pin.style.cssText = 'flex:none;padding:0 4px;height:16px;line-height:16px;font-size:10px;' +
+            'background:#2a2e34;color:#ffd54f;border:1px solid #4a4f57;border-radius:3px;cursor:pointer';
+          pin.addEventListener('click', function(e) { e.stopPropagation(); _unpinBand(i); });
+          head.appendChild(pin);
+        }
         row.appendChild(head);
         var sub = document.createElement('div');
         sub.style.cssText = 'padding:2px 0 0 62px;font-size:9px;color:#666;font-family:monospace';
         var yaw = Math.atan2(b.d.z, b.d.x) * 180 / Math.PI;
         var pitch = Math.atan2(b.d.y, Math.hypot(b.d.x, b.d.z)) * 180 / Math.PI;
-        sub.textContent = 'aim ' + Math.round(yaw) + '° / ' + Math.round(pitch) + '°  ·  ' + _helpOf(i);
+        sub.textContent = b.lookAt
+          ? 'pinned → (' + _num(b.lookAt.x) + ',' + _num(b.lookAt.y) + ',' + _num(b.lookAt.z) + ')  ·  ' + _helpOf(i)
+          : 'aim ' + Math.round(yaw) + '° / ' + Math.round(pitch) + '°  ·  ' + _helpOf(i);
+        if (b.lookAt) sub.style.color = '#ffd54f';
         row.appendChild(sub);
         row.addEventListener('click', function() { _hold(i, 'mid', true); });
         box.appendChild(row);
@@ -1533,7 +1557,10 @@
       // before _buildOverride carried it, so an old plan keeps its × affordance.
       return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
                hold: +(b.hold || 0),
-               _stick: b._stick != null ? !!b._stick : (i > 0 && i < ov.bands.length - 1), _s: b._s };
+               _stick: b._stick != null ? !!b._stick : (i > 0 && i < ov.bands.length - 1), _s: b._s,
+               // §CPE_AIM_PIN: `null`/missing on any record saved before this shipped — same
+               // graceful-old-record treatment as `_stick`'s own fallback above.
+               lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
     });
     _state.hose = (ov.hose || []).map(function(o) {
       return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
@@ -1791,6 +1818,70 @@
     _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
   }
 
+  // ══ §CPE_AIM_PIN — click-to-pin explicit look-target (Part C) ═══════════════════════════════════
+  // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part C. "With a stick selected, clicking an
+  // object/room in the canvas sets that stick's lookAt; B updates live." Read as: whichever band is
+  // currently SELECTED (`_state.held.b`) — settle/exit-door/stop included, not only a user-dropped
+  // `_stick` — since the mechanism (rotation-only override) is identical for every band and nothing
+  // in the spec's own wording restricts it further; flagged in the DONE block as an interpretation,
+  // not a re-litigation of §CPE_STICK's own narrower "stick" vocabulary.
+  //
+  // Position is NEVER touched here (spec point 1: "sets ROTATION only") — this writes `lookAt` on
+  // the band and nothing else; the existing end/mid drag handles remain the only way to move a band.
+  //
+  // Reuses the SAME raycast pattern measure.js's own click-to-pick already uses (`A.raycaster`/
+  // `A.mouse`, canvas-rect-relative NDC, scene meshes minus ground) — not a second picking system.
+  // The editor's OWN overlay meshes (`_state.objs` — the tube, bars, handle spheres) are excluded,
+  // or a pin click could hit the pipe/handle geometry instead of the building it draws over.
+  function _tryPinClick(bi, ev) {
+    var a = A();
+    if (!a.raycaster || !a.camera || !a.scene || !a.canvas || !_state || bi == null || !_state.bands[bi]) return;
+    var rect = a.canvas.getBoundingClientRect();
+    a.mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    a.mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    a.raycaster.setFromCamera(a.mouse, a.camera);
+    var meshes = [];
+    a.scene.traverse(function(o) {
+      if (o.isMesh && o.visible && o !== a.ground && _state.objs.indexOf(o) === -1) meshes.push(o);
+    });
+    var hits = a.raycaster.intersectObjects(meshes, false);
+    if (!hits.length) {
+      console.log('§CPE_AIM_PIN click band=' + bi + ' — no mesh under the pointer, nothing pinned');
+      return;
+    }
+    var mesh = hits[0].object;
+    _setPin(bi, hits[0].point, 'class=' + (mesh.userData && mesh.userData.ifcClass || mesh.type));
+  }
+  // The actual mutation, factored out of the raycast above so a witness can drive it with a KNOWN
+  // world point (deterministic — no dependency on a screen pixel happening to land on real
+  // geometry, same reasoning §CPE_SCRUB's `_scrubTo` probe already established) while still
+  // exercising the real undo/replan/redraw pipeline, not a re-implementation of it.
+  function _setPin(bi, p, srcNote) {
+    if (!_state || !_state.bands[bi]) return false;
+    _undoPush('pin band ' + bi);
+    _state.bands[bi].lookAt = { x: p.x, y: p.y, z: p.z };
+    _state.staged = false;
+    console.log('§CPE_AIM_PIN band=' + bi + ' lookAt=(' + p.x.toFixed(2) + ',' + p.y.toFixed(2) + ',' + p.z.toFixed(2) + ')' +
+      (srcNote ? ' ' + srcNote : '') +
+      ' — rotation only, position untouched; wins locally at this band, LOS/density resume at the next one');
+    _markPreviewStale();
+    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
+    return true;
+  }
+  // The reciprocal — spec names no removal gesture, but a pin with no way off it is a trap (same
+  // "an affordance you cannot see is not an affordance" doctrine §CPE_STICK's own history records).
+  // Wired to a small × next to the row's pin indicator, same convention as a stick's own × (_renderRows).
+  function _unpinBand(bi) {
+    if (!_state || !_state.bands[bi] || !_state.bands[bi].lookAt) return false;
+    _undoPush('unpin band ' + bi);
+    _state.bands[bi].lookAt = null;
+    _state.staged = false;
+    console.log('§CPE_AIM_PIN unpin band=' + bi + ' — reverts to LOS/§CPE_AIM_DENSITY at this band');
+    _markPreviewStale();
+    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
+    return true;
+  }
+
   function _frameBand(bi) {
     var a = A(), p = _state.bands[bi].c, clear = 6;
     try { var f = a.cinemaFan ? a.cinemaFan({ x: p.x, y: p.y, z: p.z }, 8) : null; if (f && isFinite(f.min) && f.min < 59.9) clear = f.min; } catch (e) {}
@@ -1971,6 +2062,15 @@
           console.log('§CPE_HOSE grab s=' + ph.s.toFixed(3) + ' reach=' + (_state.reach * 100).toFixed(0) +
             '% point=' + ph.i + '/' + _state.flowHosed.length +
             ' rate=' + _bh.mpp.toFixed(3) + ' m/px — falloff is ARC-LENGTH, the return leg of an out-and-back cannot move');
+          return;
+        }
+        // ══ §CPE_AIM_PIN (Part C) — neither a handle nor the pipe. If a band is currently
+        // selected, this MIGHT be a click-to-pin (confirmed on release, see h.up, only if the
+        // pointer barely moved AND a real building mesh is under it). Recorded WITHOUT preventDefault
+        // or stopPropagation, and WITHOUT touching `_state.drag` — OrbitControls still owns this
+        // gesture exactly as it does today, so orbiting the scene with a band selected is unchanged.
+        if (_state.held) {
+          _state._pinCandidate = { sx0: ev.clientX, sy0: ev.clientY, b: _state.held.b };
         }
         return;
       }
@@ -2083,8 +2183,17 @@
       // tune, and no plan can change mid-gesture because none runs mid-gesture.
       if (_state._replanTimer) { clearTimeout(_state._replanTimer); _state._replanTimer = null; }
     };
-    h.up = function() {
-      if (!_state || !_state.drag) return;
+    h.up = function(ev) {
+      if (!_state) return;
+      // §CPE_AIM_PIN: resolved independently of `_state.drag` (which stays untouched by the
+      // candidate above) — a genuine click-to-pin never claimed the gesture, so it must not be
+      // gated behind "was something being dragged".
+      var pc = _state._pinCandidate;
+      if (pc) {
+        _state._pinCandidate = null;
+        if (ev && Math.hypot(ev.clientX - pc.sx0, ev.clientY - pc.sy0) < CLICK_SLOP_PX) _tryPinClick(pc.b, ev);
+      }
+      if (!_state.drag) return;
       var d = _state.drag;
       if (d.hose) {
         _state.drag = null;
@@ -2168,6 +2277,9 @@
           if (authored) {
             o._stick = b._stick != null ? !!b._stick : (i > 0 && i < bs.length - 1);
             o._s = b._s;
+            // §CPE_AIM_PIN: a freshly-seeded band never has a pin (there is nothing to pin YET) —
+            // only an authored reopen can carry one forward.
+            o.lookAt = b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null;
           }
           // §CPE_STICK_HOLD — the teaching default. User: "put that as default for the last stick",
           // so the beat (slow → stop → ease out while the gaze turns onto the building) shows itself
@@ -2529,7 +2641,12 @@
             rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null,
             tmCursorReadout: document.getElementById('cpe-vf-clock') ? document.getElementById('cpe-vf-clock').textContent : null
           };
-        }
+        },
+        // ══ §CPE_AIM_PIN witness hooks — G-PIN-1. `_setPin`/`_unpinBand` drive the REAL mutation
+        // function a canvas click resolves to (the raycast itself is UI-only and not what G-PIN-1 is
+        // about) — deterministic against a known world point, same precedent as `_scrubTo`.
+        _setPin: function(bi, p) { return _setPin(bi, p, 'src=witness'); },
+        _unpinBand: function(bi) { return _unpinBand(bi); }
       };
       clearInterval(_attach);
     }
