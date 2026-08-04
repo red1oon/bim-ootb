@@ -14,7 +14,33 @@
 
   // matchRule — REPLICATES time_machine.js matchRule EXACTLY (longest-substring containment),
   // so authored phases are identical to what injectGantt would group elements into.
-  function matchRule(cls, rules, dflt) {
+  //
+  // Implementing BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md §PROPOSED MECHANISM — Witness:
+  // witness_schema_exhaustive_fallback.js. Three-tier resolution, tier 1 UNCHANGED (still wins,
+  // zero risk to PRs #1186/#1187's shipped explicit entries):
+  //   1. Explicit SEQUENCE_RULES entry (today's substring-containment lookup, below) — unchanged.
+  //   2. NEW: `hierarchy` (optional 4th param — the class -> [ancestor1, ..., IfcRoot] map from
+  //      tools/dump_ifc_schema_hierarchy.py / viewer/rates/ifc_schema_hierarchy.json, a REAL
+  //      buildingSMART IFC2X3/IFC4/IFC4X3 schema fact, never guessed). Walk cls's real ancestor
+  //      chain, nearest first, until one IS an explicit `rules` key (exact match — ancestor names
+  //      are canonical schema class names, not fragments; substring matching stays tier 1's job for
+  //      real element ifc_class strings only). Type-suffixed classes (IfcSensorType) walk their own
+  //      Type-suffixed ancestor chain (IfcDistributionControlElementType, ...) automatically — the
+  //      JSON already encodes that as a real schema fact, nothing stripped/guessed here. Logs
+  //      `§CLASS_UNMATCHED_INHERITED`, a DISTINCT tag from tier 3's `§CLASS_UNMATCHED` so an
+  //      inherited classification is visibly different from a genuinely-unclassified one.
+  //      Omitted `hierarchy` (existing 3-arg callers, incl. witness_class_fallback_blackbox.js) ==
+  //      tier 2 never fires, behavior identical to before this change.
+  //   3. Generic `dflt` default — only reached if the ENTIRE chain to IfcRoot has no classified
+  //      member (or no hierarchy was supplied at all). Still logs today's `§CLASS_UNMATCHED`
+  //      unchanged (same message, same trigger condition relative to tier 1+2 combined).
+  //   §OPEN QUESTION resolved: a Type class's Occurrence counterpart being classified does NOT by
+  //   itself classify the Type class — IsTypedBy is a peer association, not a SUBTYPE OF ancestor
+  //   relationship, and the hierarchy JSON (real schema fact) never encodes it as one. A Type class
+  //   with no explicit entry and no classified Type-ancestor genuinely falls to tier 3, same as any
+  //   other truly-unclassified family — inventing an Occurrence<->Type inheritance edge that the
+  //   schema itself does not have would violate PRIME RULE (extract, don't invent).
+  function matchRule(cls, rules, dflt, hierarchy) {
     rules = rules || {};
     dflt = dflt || { phase: 'Architecture', sequence: 6, resource: null };
     if (!cls) return dflt;
@@ -22,12 +48,26 @@
     for (var key in rules) {
       if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
     }
-    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key at all used to
-    // land on `dflt` silently — found live on real Hospital data (861 IfcDistributionControlElement,
-    // 113 IfcSwitchingDevice). Loud, not silent: whoever imports a new IFC set with a genuinely
-    // unclassified class sees it in the log instead of it vanishing into the generic default.
-    if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
-    return bestKey ? rules[bestKey] : dflt;
+    if (bestKey) return rules[bestKey];   // tier 1 — explicit entry, always wins
+
+    var chain = hierarchy && hierarchy[cls];
+    if (chain && chain.length) {
+      for (var i = 0; i < chain.length; i++) {
+        var anc = chain[i];
+        if (Object.prototype.hasOwnProperty.call(rules, anc)) {
+          console.warn('§CLASS_UNMATCHED_INHERITED cls=' + cls + ' via=' + anc + ' phase=' + rules[anc].phase);
+          return rules[anc];   // tier 2 — inherited from a classified real schema ancestor
+        }
+      }
+    }
+
+    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key anywhere in its
+    // own name OR its real ancestor chain used to land on `dflt` silently — found live on real
+    // Hospital data (861 IfcDistributionControlElement, 113 IfcSwitchingDevice). Loud, not silent:
+    // whoever imports a new IFC set with a genuinely unclassified class family sees it in the log
+    // instead of it vanishing into the generic default.
+    console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
+    return dflt;   // tier 3 — generic default
   }
 
   // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
@@ -251,6 +291,8 @@
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var qsRates = opts.rates || (global.RATES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     var _frag = _classFragmentation(db, qsRates);
     var _lin = _linearWeighting(db, qsRates);
 
@@ -299,7 +341,7 @@
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
       var storey = assignStoreyByZ(rawStorey, cz);
       var ov = matchNameOverride(cls, name, nameOverrides);
-      var rule = ov || matchRule(cls, rules, dflt);
+      var rule = ov || matchRule(cls, rules, dflt, hierarchy);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
       // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
@@ -420,6 +462,8 @@
                                 // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     // §PHASE_DURATION: labor rates for workload-proportional phase width (see below). Falls back to
     // {} when unavailable (blank-model bootstrap, older tests) — every element then gets the SAME
     // 120s default weight, which degrades gracefully to plain element-count proportionality, never
@@ -466,7 +510,7 @@
     elems.forEach(function (e) {
       var ov = matchNameOverride(e.cls, e.name, nameOverrides);
       if (ov) nameOverridden++;
-      var rule = ov || matchRule(e.cls, rules, dflt);
+      var rule = ov || matchRule(e.cls, rules, dflt, hierarchy);
       var p = phases[rule.phase];
       if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
@@ -652,6 +696,8 @@
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var qsRates = opts.rates || (global.RATES) || {};   // §LABOR_QUANTITY_WEIGHT — see materializeDefault
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
@@ -673,7 +719,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = matchRule(cls, rules, dflt);
+          var rule = matchRule(cls, rules, dflt, hierarchy);
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);

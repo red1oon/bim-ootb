@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v946';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v947';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -230,6 +230,10 @@ const PRECACHE_ASSETS = [
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
   // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
   'rates/sequence_rules.json',
+  // §CLASS_UNMATCHED_INHERITED (BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md §P1/§P2): real IFC schema
+  // ancestor chains for matchRule()'s tier-2 fallback. Precached so loadIfcSchemaHierarchy() resolves
+  // offline (else tier 2 simply never fires — tier 1/tier 3 unaffected, never a hard dependency).
+  'rates/ifc_schema_hierarchy.json',
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',
