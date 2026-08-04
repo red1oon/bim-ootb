@@ -1189,14 +1189,20 @@
   function _buildScrubPanel() {
     var a = A();
     var vfDefaultTop = (a.canvas ? a.canvas.clientHeight : window.innerHeight) - VF_DEFAULT_H - VF_MARGIN - 40;
+    // §CPE_PANEL_CLEAR (2026-08-05, user: "place those new panels away from present alt-c panel
+    // so not hidden by each other") — #cpe-panel defaults to top:60,RIGHT:12,width:412 (near
+    // full-height, right-anchored). B's old default (canvasWidth-VF_DEFAULT_W-MARGIN) landed
+    // inside that same right-hand column. Anchored to the LEFT edge instead — clear of it.
     var rect = _scrubRect || {
-      left: Math.max(VF_MARGIN, (a.canvas ? a.canvas.clientWidth : window.innerWidth) - SCRUB_PANEL_W - VF_MARGIN),
+      left: VF_MARGIN,
       top: vfDefaultTop + VF_DEFAULT_H + SCRUB_PANEL_GAP
     };
     var d = document.createElement('div');
     d.id = 'cpe-scrub-panel';
+    // z-index above #cpe-panel's 10000 (user: "the scrub timeline should be above all as it got
+    // tucked in bottom right") — was 9997, the most-buried of the three CPE panels.
     d.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;width:' + SCRUB_PANEL_W + 'px;' +
-      'z-index:9997;background:rgba(20,22,26,0.96);border:1px solid #3a3f47;border-radius:6px;' +
+      'z-index:10001;background:rgba(20,22,26,0.96);border:1px solid #3a3f47;border-radius:6px;' +
       'box-shadow:0 4px 20px rgba(0,0,0,0.5);font-family:system-ui,sans-serif';
     d.innerHTML =
       '<div id="cpe-scrub-title" title="drag to move the timeline" style="padding:4px 8px;cursor:move;' +
