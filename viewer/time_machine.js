@@ -4130,23 +4130,40 @@
       // now gated on the TARGET being a promoted slab.
       var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
       var _ogEPS = 0.05, _ogGAP = 0.5;
-      var _ogCells = function (e) {
+      // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
+      // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
+      // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
+      // measured 4636ms on Terminal's 48,428 elements (22 stacked storeys, small footprint, worst
+      // cell 379 members) vs 1695ms on Hospital's 63,415 (more elements, but a bigger footprint means
+      // less Z-stacking per cell) — element COUNT alone doesn't predict the cost, per-cell Z-density
+      // does. Bucketing Z too prunes each query to the target's own real vertical neighborhood — the
+      // ONLY z-range `S.bz<T.bz-EPS && |S.tz-T.bz|<=GAP` can ever match — with the identical predicate
+      // inside the loop unchanged, so results are provably identical, only the scan is smaller.
+      var _ogCellsFor = function (x0, x1, y0, y1, z0, z1) {
         var out = [];
-        for (var cx = Math.floor(e.x0 / _ogCELL); cx <= Math.floor(e.x1 / _ogCELL); cx++)
-          for (var cy = Math.floor(e.y0 / _ogCELL); cy <= Math.floor(e.y1 / _ogCELL); cy++) out.push(cx + '|' + cy);
+        for (var cx = Math.floor(x0 / _ogCELL); cx <= Math.floor(x1 / _ogCELL); cx++)
+          for (var cy = Math.floor(y0 / _ogCELL); cy <= Math.floor(y1 / _ogCELL); cy++)
+            for (var cz = Math.floor(z0 / _ogCELL); cz <= Math.floor(z1 / _ogCELL); cz++)
+              out.push(cx + '|' + cy + '|' + cz);
         return out;
       };
+      // Build-time: bucket a candidate under its OWN full vertical extent, so it registers in every
+      // z-cell it actually occupies (a tall candidate can span more than one).
+      var _ogCellsBuild = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz, e.tz); };
+      // Query-time: only a target's real z-neighborhood [T.bz-GAP, T.bz+GAP] can ever satisfy the
+      // |S.tz-T.bz|<=GAP predicate — querying anything wider would waste the pruning this exists for.
+      var _ogCellsQuery = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz - _ogGAP, e.bz + _ogGAP); };
       var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
       var _ogStructGrid = {}, _ogWallGrid = {};
       _allScheduled.forEach(function (e) {
-        if (e.seq <= 4) _ogCells(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
-        else if (e.cls.indexOf('IfcWall') === 0) _ogCells(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
       var _ogPushed = 0;
       _allScheduled.forEach(function (T) {
         var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
-        var cells = _ogCells(T), seen = {}, lastEnd = 0;
+        var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0;
         for (var ci = 0; ci < cells.length; ci++) {
           var arr = _ogStructGrid[cells[ci]];
           if (arr) for (var si = 0; si < arr.length; si++) {
