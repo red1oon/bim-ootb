@@ -51,7 +51,8 @@
   var VF_MIN_W = 160, VF_MIN_H = 100;           // px — floor a resize cannot cross
   var VF_MARGIN = 16;                            // px from the viewport edge for the first-open position
   var VF_RESIZE_HANDLE_PX = 16;                  // px — the corner grab square's hit size
-  var CPE_V = 'v21 (§CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look ' +
+  var CPE_V = 'v22 (§CPE_VIEWFINDER eye icon now swaps open/slashed with vfOn, reading panels.js ICONS.' +
+    'eyeOpen/eyeOff — not ICONS.eye, which is actually scan-eye; §CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look ' +
     'direction there (rotation only, never position); the pin wins outright inside its own band\'s Voronoi ' +
     'zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in neighbouring ' +
     'bands with no bleed; §CPE_SCRUB timeline scrub bar with stick tick-marks, drag drives plan.poseAt through the ' +
@@ -655,9 +656,11 @@
         // §CPE_VIEWFINDER launcher (spec Part B point 7, user 2026-08-04 correction: eye icon, not
         // binoculars) — icon-only, OFF by default, so it does not clutter the header. Matches the
         // action-row button convention (~L664-667) at a smaller icon-only footprint.
-        '<button id="cpe-vf-toggle" title="toggle the POV viewfinder (B) — shows the exact camera pose the rehearsal is at" ' +
+        // OFF by default (spec) — the slashed eye is the correct starting icon; _toggleViewfinder
+        // swaps it in place, never rebuilding the button.
+        '<button id="cpe-vf-toggle" title="turn on the POV viewfinder (B) — shows the exact camera pose the rehearsal is at" ' +
           'style="flex:none;padding:3px 8px;font-size:13px;line-height:1;background:#2a2e34;color:#888;' +
-          'border:1px solid #4a4f57;border-radius:4px;cursor:pointer">👁️</button></div>' +
+          'border:1px solid #4a4f57;border-radius:4px;cursor:pointer;display:flex;align-items:center">' + _eyeIconSvg(false) + '</button></div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path controls, one strip.
@@ -1333,10 +1336,29 @@
     var ms = performance.now() - t0;
     _vfPerf.n++; _vfPerf.sum += ms; if (ms > _vfPerf.max) _vfPerf.max = ms;
   }
+  // §CPE_VIEWFINDER on/off icon — open eye = ON/visible, slashed eye = OFF/hidden (user, 2026-08-04:
+  // "find another eye icon that is closed eye to reflect it is OFF"). Reads `panels.js`'s shared
+  // `ICONS` registry (`eyeOpen`/`eyeOff`, added alongside this fix — NOT `ICONS.eye`, which is
+  // actually Lucide's "scan-eye", a different shape, repurposed there for an unrelated Role View
+  // toggle). `ICONS` is a plain top-level `var` in panels.js, so it is a real global by the time this
+  // runs (the editor only opens on Alt+C, long after every script has loaded) — same cross-file
+  // reliance `A.icon()`'s own callers already have, not a new pattern.
+  function _eyeIconSvg(on) {
+    var ic = (typeof ICONS !== 'undefined') && ICONS[on ? 'eyeOpen' : 'eyeOff'];
+    if (!ic) return on ? '👁️' : '🚫';   // ICONS not loaded (§LOAD_FAIL panels.js) — degrade, don't break
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>';
+  }
   function _toggleViewfinder(btn) {
     if (!_state) return;
     _state.vfOn = !_state.vfOn;
     var a = A();
+    if (btn) {
+      btn.innerHTML = _eyeIconSvg(_state.vfOn);
+      btn.title = _state.vfOn
+        ? 'turn off the POV viewfinder (B) — shows the exact camera pose the rehearsal is at'
+        : 'turn on the POV viewfinder (B) — shows the exact camera pose the rehearsal is at';
+    }
     if (_state.vfOn) {
       _vfEnsureCam();
       _buildVFPanel();
