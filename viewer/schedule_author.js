@@ -455,7 +455,13 @@
     // Read the raw material: every element + its class + name (name feeds matchNameOverride) +
     // storey (§PHASE_OVERLAP_BAND below — real band count for the overlap fix).
     var elems = [];
-    var er = db.exec('SELECT guid, ifc_class, COALESCE(element_name,\'\'), COALESCE(storey,\'\') FROM elements_meta');
+    // §CLASS_UNMATCHED_FALLBACK follow-up (2026-08-05, named in 4D_SCHEDULE_PERFECTION.md): the
+    // _buildScheduleElements/materializeZones path already excludes IfcOpeningElement (ghost/position-
+    // only, never real work) and IfcSpace (spatial zone, not physical work) — this query was the one
+    // materialize path that still read every row unfiltered. Same exclusion, same two classes, so a
+    // blank-model default schedule can't invent labor for a room volume or a doorway either.
+    var er = db.exec("SELECT guid, ifc_class, COALESCE(element_name,''), COALESCE(storey,'') FROM elements_meta " +
+      "WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
     if (er.length && er[0].values.length) {
       er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2], storey: r[3] }); });
     }
