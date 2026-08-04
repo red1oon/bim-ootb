@@ -2668,7 +2668,7 @@
         '<button id="tm-stop-btn" style="width:30px;font-size:14px" title="Stop">&#x25A0;</button>' +
         '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
         '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
-        '<button id="tm-touched" style="flex:1;font-size:9px">Copy Touched</button>' +
+        '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
         '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
@@ -2797,8 +2797,8 @@
       e.stopPropagation(); stopPlayback();
     });
 
-    document.getElementById('tm-touched').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(false);
+    document.getElementById('tm-undo').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); undoLastGanttEdit();
     });
     document.getElementById('tm-new').addEventListener('pointerup', function(e) {
       e.stopPropagation(); copyGuids(true);
@@ -4828,6 +4828,14 @@
   var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
   var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
 
+  // §GANTT_EDIT_UNDO — single-level (not a stack): a drag can cascade N successors with no way back
+  // except regenerating the whole schedule (real gap, this session's own edit UI made it possible).
+  // Scope is deliberately narrow: only commitGanttDrag (E1/E2 move/resize) sets this, not link/unlink
+  // or the property panel — matching exactly the need named in 4D_SCHEDULE_PERFECTION.md, not a
+  // speculative general undo system. { schedId, tasksBefore:{taskId:{start,finish,duration}},
+  // opsBefore:{guid:{start_ts,end_ts,parameters}}, taskId, mode } — cleared on every fresh TM activate().
+  var _lastEdit = null;
+
   // Which bar (and where on it) is under the pointer? Extends findBarAtClick with an edge zone so a
   // single gesture can mean either E1 (move) or E2 (edge-pull), the way P6/MSP behave.
   function ganttHit(e) {
@@ -4911,6 +4919,19 @@
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+
+    // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. Cascade scope isn't known
+    // until the verb returns, so this captures every leaf task in the active schedule (cheap — a
+    // handful to a few hundred rows), not just the dragged one.
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
+        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
     var res;
     if (mode === 'move') {
       res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
@@ -4936,9 +4957,80 @@
     }
     var barsByTask = {};
     for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+
+    // §GANTT_EDIT_UNDO — the element-op "before" state, captured from the in-memory _ops (still the
+    // pre-retime values at this point) for exactly the guids retimeTaskElements is about to touch.
+    // Hash the guid->op lookup ONCE (same shape as retimeTaskElements's own opByGuid below) — a
+    // linear scan per guid here was O(cascadeGuids * totalOps): measured 92s wall-clock on Terminal
+    // (3,519 guids * 48,428 ops) before this fix, unusable for an interactive drag.
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi2 = 0; oi2 < _ops.length; oi2++) if (_ops[oi2].output_guid) _opByGuidForUndo[_ops[oi2].output_guid] = _ops[oi2];
+    (res.moved || []).forEach(function (m) {
+      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
+      bar2.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
     retimeTaskElements(app.db, barsByTask, res.moved || []);
+    _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
+  // that edit changed: the task dates (moveTaskCascade/resizeTask's write to `tasks`) and the
+  // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
+  // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
+  function undoLastGanttEdit() {
+    var app = A();
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2200);
+    }
+    if (!_lastEdit || !app || !app.db) {
+      console.log('§GANTT_EDIT_UNDO_REJECT reason=nothing_to_undo');
+      say('Nothing to undo');
+      return;
+    }
+    var edit = _lastEdit;
+    _lastEdit = null;   // single-level — commit even if a write below throws, never retry the same edit
+    var db = app.db;
+    db.run('BEGIN');
+    var stT = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+    var tRestored = 0;
+    for (var tid in edit.tasksBefore) {
+      var t = edit.tasksBefore[tid];
+      stT.run([t.start, t.finish, t.duration, tid]);
+      tRestored++;
+    }
+    stT.free();
+    var stO = db.prepare('UPDATE kernel_ops SET timestamp=?, parameters=? WHERE op_type=\'ELEMENT_PLACE\' AND output_guid=?');
+    var oRestored = 0;
+    // Same O(1)-per-guid hash, same reason as commitGanttDrag's opsBefore capture — a linear scan
+    // per guid here is O(cascadeGuids * totalOps), unusable on a large building's cascade.
+    var _opByGuidForRestore = {};
+    for (var oi3 = 0; oi3 < _ops.length; oi3++) if (_ops[oi3].output_guid) _opByGuidForRestore[_ops[oi3].output_guid] = _ops[oi3];
+    for (var guid in edit.opsBefore) {
+      var o = edit.opsBefore[guid];
+      stO.run([o.start_ts, o.parameters, guid]);
+      var opR = _opByGuidForRestore[guid];
+      if (opR) { opR.start_ts = o.start_ts; opR.end_ts = o.end_ts; opR.parameters = JSON.parse(o.parameters); }
+      oRestored++;
+    }
+    stO.free();
+    db.run('COMMIT');
+    console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
+      ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
+    say('Undone: ' + edit.mode + ' ' + edit.taskId);
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5738,6 +5830,7 @@
 
   function activate() {
     if (_active) return;
+    _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
     // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
     // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
     //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
