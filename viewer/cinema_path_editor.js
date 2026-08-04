@@ -1287,12 +1287,10 @@
   // QUESTION named this "deliberately DEFERRED future work", not dropped. Restoring it now: the
   // #1177 regression's actual invariant (main camera/controls untouched by any scrub) is preserved —
   // this only ever writes `_state.vfCam`, which #1177 never touched in the first place.
-  function _scrubTo(tn) {
-    if (!_state) return null;
-    tn = Math.max(0, Math.min(1, tn));
-    _state.scrubTn = tn;
-    _renderScrub();
-    var p = (_state.plan && typeof _state.plan.poseAt === 'function') ? _state.plan.poseAt(tn) : null;
+  // §CPE_SCRUB_POV_ONLY — extracted from _scrubTo so the scrub-play button can drive ONLY B
+  // (never the main camera), same invariant _scrubTo's own drag path already honours.
+  function _applyVFPose(tn) {
+    var p = (_state && _state.plan && typeof _state.plan.poseAt === 'function') ? _state.plan.poseAt(tn) : null;
     if (p && _state.vfOn && _state.vfCam) {
       _state.vfCam.position.set(p.x, p.y, p.z);
       _state.vfCam.lookAt(p.tx, p.ty, p.tz);
@@ -1300,6 +1298,14 @@
       if (a.markDirty) a.markDirty();
     }
     return p;
+  }
+
+  function _scrubTo(tn) {
+    if (!_state) return null;
+    tn = Math.max(0, Math.min(1, tn));
+    _state.scrubTn = tn;
+    _renderScrub();
+    return _applyVFPose(tn);
   }
 
   function _wireScrub(track) {
@@ -1571,7 +1577,7 @@
         console.log('§CPE_SCRUB_PLAY resumed');
       } else {
         console.log('§CPE_SCRUB_PLAY started');
-        _previewFly();
+        _previewFly(true);   // §CPE_SCRUB_POV_ONLY — B only, main canvas stays parked
         return;   // _previewFly's own _renderWhole() calls already sync the button
       }
       _renderWhole();
@@ -1821,15 +1827,18 @@
   // Driven by `_state.plan.poseAt`: the same plan object the tube is sampled from and the same one
   // finish() hands the bake, so this cannot become a second notion of the path (§CPE_PREVIEW_DIVERGENCE).
   // Honours the clip window — previewing a clip should show the clip, not the film it was cut from.
-  function _previewFly() {
+  // §CPE_SCRUB_POV_ONLY (2026-08-05) — povOnly: true drives ONLY B (vfCam), leaving the main
+  // canvas camera/controls untouched throughout, same invariant §CPE_SCRUB_VF_LIVE's drag path
+  // already honours. #cpe-preview's own wiring calls this with no argument — unaffected.
+  function _previewFly(povOnly) {
     if (!_state || _state.flying || !_state.plan || typeof _state.plan.poseAt !== 'function') return;
     var a = A(), s = _state;
     var t0N = s.clipIn, t1N = s.clipOut;
     var dur = Math.max(1000, (t1N - t0N) * 10000);   // 10s for the whole film, pro-rata for a clip
     console.log('§CPE_PREVIEW click stale=' + (s.edits !== s.previewedAt ? 1 : 0) + ' edits=' + s.edits +
       ' window=' + t0N.toFixed(2) + '→' + t1N.toFixed(2) + ' durMs=' + dur.toFixed(0) +
-      ' hoseOps=' + s.hose.length + ' buildup=' + (s.buildup ? 1 : 0));
-    var save = { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
+      ' hoseOps=' + s.hose.length + ' buildup=' + (s.buildup ? 1 : 0) + ' povOnly=' + (povOnly ? 1 : 0));
+    var save = povOnly ? null : { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
                  tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z };
     s.flying = true; s.previewedAt = s.edits; _renderWhole();
 
@@ -1891,7 +1900,8 @@
         var tn = t0N + (t1N - t0N) * u;
         // §CPE_SCRUB/§CPE_VIEWFINDER: the ONE place a pose is applied to the live camera — see
         // _applyCameraPose above. Was inlined here; extracted so scrubbing and B share it exactly.
-        _applyCameraPose(tn);
+        // §CPE_SCRUB_POV_ONLY: povOnly skips the main camera entirely, applying to B alone.
+        if (povOnly) { _applyVFPose(tn); } else { _applyCameraPose(tn); }
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
         if (bkPrev && window.tmSetCursor) {
           // §CPE_BUILDUP_WORK_PACED: the rehearsal asks for the SAME cursor the bake will ask for at
@@ -1923,10 +1933,12 @@
         if (a.markDirty) a.markDirty();
         if (u < 1) return requestAnimationFrame(step);
         var msPerFrame = (performance.now() - t0) / Math.max(1, frames);
-        a.camera.position.set(save.px, save.py, save.pz);
-        a.controls.target.set(save.tx, save.ty, save.tz);
-        a.controls.update();
-        if (a.markDirty) a.markDirty();
+        if (!povOnly) {
+          a.camera.position.set(save.px, save.py, save.pz);
+          a.controls.target.set(save.tx, save.ty, save.tz);
+          a.controls.update();
+          if (a.markDirty) a.markDirty();
+        }
         // Hand Time Machine back exactly as it was — the preview must never leave the user's
         // timeline re-ordered, same contract the bake honours on every exit path.
         if (bkPrev && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); bkPrev = null; }
