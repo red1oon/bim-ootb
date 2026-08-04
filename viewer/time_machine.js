@@ -5178,6 +5178,20 @@
       }
     }
 
+    // §GANTT_BAR_RECTS — read-only debug hook, same double-underscore convention as __tmScheduleDebug
+    // above. Exposes the ACTUAL drawn rect of every bar so a browser wiring test can aim a synthetic
+    // pointer at measured geometry instead of guessing at it. The first attempt at proving the drag
+    // aimed at marginL+40px and hit empty canvas past the end of a short bar, which is
+    // indistinguishable from "the handler never fired" — this removes that ambiguity for good.
+    try {
+      window.__tmGanttBars = _ganttTasks.map(function (t, i) {
+        var bx = marginL + (t.startTs - _projectStart) / range * barW;
+        var bw = Math.max(2, (t.endTs - t.startTs) / range * barW);
+        return { i: i, taskId: t.taskId || null, phase: t.phase, storey: t.storey,
+          x: bx, w: bw, y: i * rowH + 2, h: barH, midX: bx + bw / 2, midY: i * rowH + 2 + barH / 2 };
+      });
+    } catch (e) {}
+
     // Hairline cursor
     ctx.globalAlpha = 1;
     var hx = marginL + (_cursor - _projectStart) / range * barW;
