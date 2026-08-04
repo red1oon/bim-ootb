@@ -5079,6 +5079,57 @@
     say('Baseline set — ' + res.taskCount + ' tasks');
   }
 
+  // §GANTT_AUTHOR_ENTRY (native) — the drawer's "Generate 4D schedule" button used to just call
+  // ScheduleAuthorUI.toggle(), reopening the old side panel — a hidden dependency, not the "native
+  // to the drawer" generation this was supposed to be (4D_SCHEDULE_PERFECTION.md, user ruling
+  // 2026-08-05). Calls the real engine verb directly, same as the panel's own generateDraft() zone-
+  // detail path (schedule_author_ui.js), not a reimplementation of it.
+  function generateGanttSchedule() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 3200);
+    }
+    if (!app || !app.db || !SA || !SA.materializeZones) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
+    // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
+    // anything. The drawer doesn't offer fine-grained editing for a captured schedule's own
+    // structure yet, so THIS is the one legitimate remaining reason to fall back to that panel —
+    // not a general re-opening of it.
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act && act.captured) {
+      console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — opening the schedule author panel to edit it in place, not regenerating');
+      say('Imported schedule "' + act.name + '" — opening its editor');
+      if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
+      else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded_for_captured_schedule');
+      return;
+    }
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: '2026-01-01', laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
+      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: '2026-01-01', laborRates: LR, blank: false }) : { ok: false };
+    }
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
+      say('Could not generate a schedule'); return;
+    }
+    console.log('§GANTT_AUTHOR_ENTRY native generate zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') +
+      ' phases=' + (res.phases ? res.phases.length : 'n/a'));
+    say('Schedule generated — refreshing…');
+    // Reuse the SAME refresh path applyTo4D() already uses for this exact situation (a fresh/edited
+    // schedule needs the drawer's overlay re-run) — real, already-working machinery, not a second
+    // lighter-weight refresh path whose correctness would need its own separate proof.
+    if (typeof window.tmRefoldSchedule === 'function') window.tmRefoldSchedule();
+    else { invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor); }
+  }
+
   function wireGanttDrag() {
     var cv = document.getElementById('tm-gantt-canvas');
     if (!cv || cv._dragWired) return;
@@ -5269,10 +5320,7 @@
         ab._wired = true;
         ab.addEventListener('pointerup', function (e) {
           e.stopPropagation();
-          console.log('§GANTT_AUTHOR_ENTRY opening the schedule author from the drawer');
-          if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
-          else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
-          else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded');
+          generateGanttSchedule();
         });
       }
     })();
