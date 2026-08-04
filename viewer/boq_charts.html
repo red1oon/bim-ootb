@@ -458,9 +458,17 @@ function generateSchedule(activities, startDateStr) {
   }
 
   const PHASE_ORDER = phaseOrder();   // §BOQ4D B0 — derived from SEQUENCE_RULES, was hardcoded+stale
-  const INTER_PHASE_LAG = 5;   // working days between phases on same storey
-  const INTER_STOREY_LAG = 2;  // working days between storeys in same phase
-  const MAX_TASK_DAYS = 20;    // cap before adding parallel crews
+  // §BOQ4D_FALLBACK_ASSUMPTIONS — this function only runs when NO real schedule is authored, so it is
+  // an estimate by construction. These two lags have no real data source: they are declared coarse
+  // planning assumptions, not measurements, and they are logged below so a reader can see exactly
+  // which numbers in this chart were assumed rather than derived. They are deliberately NOT replaced
+  // with different guesses — substituting one invented constant for another proves nothing.
+  // (MAX_TASK_DAYS is gone — crew parallelism now comes from the real LABOR_RATES max_crews.)
+  const INTER_PHASE_LAG = 5;   // ASSUMED working days between phases on same storey — no data source
+  const INTER_STOREY_LAG = 2;  // ASSUMED working days between storeys in same phase — no data source
+  console.log('§BOQ4D_FALLBACK_ASSUMPTIONS interPhaseLag=' + INTER_PHASE_LAG + 'd interStoreyLag=' +
+    INTER_STOREY_LAG + 'd (ASSUMED, no data source) — crews now from real LABOR_RATES.max_crews. ' +
+    'This path runs only because no real schedule is authored for this building.');
 
   // Group activities by phase -> storey
   const grouped = {};  // phase|||storey -> [act, ...]
@@ -536,13 +544,16 @@ function generateSchedule(activities, startDateStr) {
       const equipments = new Set();
 
       for (const act of acts) {
+        // §BOQ4D_REAL_CREWS: parallelism used to come from MAX_TASK_DAYS=20 — an invented threshold
+        // that then invented a crew count to get under it (crews = ceil(duration/20)). Both are now
+        // taken from the SAME real per-trade cap the actual engine uses: LABOR_RATES[trade].max_crews,
+        // which schedule_gate.js computeSchedule() is crew-capped on via materializeZones' maxCrews.
+        // All 10 trades carry a real value (ROOFER/LABORER 1 … STEEL_ERECTOR/CONCRETE_GANG 3), so
+        // nothing here is guessed. Falls back to 1 crew — never to a fabricated number — if absent.
         const prod = act.labor.prod || 10;
         let duration = Math.max(1, act.qty / prod);
-        let crews = 1;
-        if (duration > MAX_TASK_DAYS) {
-          crews = Math.ceil(duration / MAX_TASK_DAYS);
-          duration = Math.ceil(duration / crews);
-        }
+        let crews = Math.max(1, act.labor.max_crews || 1);
+        duration = Math.max(1, Math.ceil(duration / crews));
         if (duration > maxDuration) maxDuration = duration;
         totalQtyGroup += act.qty;
         totalCrew = Math.max(totalCrew, (act.labor.crew || 2) * crews);
