@@ -103,7 +103,7 @@ var LABOR_RATES = {
   },
   ELECTRICIAN: {
     rate_per_day: 175, crew_size: 2, max_crews: 2, trade: 'Electrician (Skilled)',
-    productivity: {IfcCableCarrier:30,IfcCableCarrierSegment:30,IfcLightFixture:20,IfcOutlet:25,IfcElectricAppliance:15,IfcFlowController:10,IfcAlarm:25,IfcController:10}
+    productivity: {IfcCableCarrier:30,IfcCableCarrierSegment:30,IfcLightFixture:20,IfcOutlet:25,IfcElectricAppliance:15,IfcFlowController:10,IfcSwitchingDevice:10,IfcAlarm:25,IfcController:10,IfcDistributionControlElement:10,IfcActuator:10,IfcSensor:10,IfcFlowInstrument:10,IfcProtectiveDeviceTrippingUnit:10,IfcUnitaryControlElement:10}
   },
   STEEL_ERECTOR: {
     rate_per_day: 195, crew_size: 4, max_crews: 3, trade: 'Steel Erector (Skilled)',
@@ -179,6 +179,7 @@ var SEQUENCE_RULES = {
   IfcFlowSegment:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcFlowFitting:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcFlowController:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},
+  IfcSwitchingDevice:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},
   IfcFlowMovingDevice:{phase:'MEP Rough-in',sequence:7,resource:'HVAC_TECH'},
   IfcFlowStorageDevice:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcFlowTreatmentDevice:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
@@ -190,10 +191,17 @@ var SEQUENCE_RULES = {
   IfcAirTerminal:{phase:'MEP Final',sequence:9,resource:'HVAC_TECH'},
   IfcAlarm:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   IfcController:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcDistributionControlElement:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcActuator:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcSensor:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcFlowInstrument:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcProtectiveDeviceTrippingUnit:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
+  IfcUnitaryControlElement:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   // Architecture
   IfcWall:{phase:'Architecture',sequence:5,resource:'MASON'},
   IfcWallStandardCase:{phase:'Architecture',sequence:5,resource:'MASON'},
   IfcOpeningElement:{phase:'Architecture',sequence:5,resource:'MASON'},
+  IfcSpace:{phase:'Architecture',sequence:5,resource:null},
   IfcBuildingElementPart:{phase:'Architecture',sequence:5,resource:'MASON'},
   IfcDoor:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
   IfcWindow:{phase:'Architecture',sequence:6,resource:'CARPENTER'},

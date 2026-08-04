@@ -110,18 +110,46 @@
     } catch(e) { return []; }
   }
 
+  // §GANTT_OPS_BOOKKEEPING_LEAK (2026-08-04): _ops (loadOps()) intentionally carries EVERY kernel_ops
+  // row, not just construction ops — copyGuids(false) and other consumers legitimately want the full
+  // mixed history (picks, GRID_*, etc.), so the fix does NOT belong in loadOps()'s query. But a
+  // bookkeeping op like BUILDING_OPEN (streaming.js, commitOp with no ts -> Date.now(), real
+  // wall-clock, no storey/phase, no real output_guid) has no business defining the PROJECT'S OWN
+  // timeline bounds — traced live as the "_UNKNOWN/Architecture outlier" behind §GANTT_AXIS_OUTLIER
+  // (#1175, which qualified the DISPLAY axis but left _projectStart/_projectEnd — the real playback
+  // bounds scrubbing/renderAtTime use — still polluted, unmeasured until now). Scoped to exactly the
+  // two places that build the construction TIMELINE from _ops: this function's bounds, and
+  // buildGanttTasks()'s bar grouping.
+  function _placeOps() { return _ops.filter(function (o) { return o.op_type === 'ELEMENT_PLACE'; }); }
+
   function computeDays() {
+    var cOps = _placeOps();
     var seen = {};
-    _ops.forEach(function(op) {
+    cOps.forEach(function(op) {
       var d = new Date(op.start_ts);
       var key = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
       if (!seen[key]) seen[key] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     });
     _days = Object.values(seen).sort(function(a,b){ return a - b; });
-    if (_ops.length) {
+    if (cOps.length) {
       // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
-      _projectStart = _ops[0].start_ts - 1;
-      _projectEnd = Math.max.apply(null, _ops.map(function(o){ return o.end_ts; }));
+      _projectStart = cOps[0].start_ts - 1;
+      _projectEnd = Math.max.apply(null, cOps.map(function(o){ return o.end_ts; }));
+    }
+    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
+    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
+    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
+    // threshold, never a new invented one. Kept as real, independent defense against genuinely
+    // mistagged construction data even now that cOps excludes bookkeeping ops (§GANTT_MINI_TRIM's own
+    // proven case — a handful of real elements DO carry a real-but-wrong storey tag).
+    var ends = cOps.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
+    var n = ends.length;
+    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
+    if (n > 20) {
+      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+      _ganttAxisEnd = ends[hiI];
+    } else {
+      _ganttAxisEnd = _projectEnd;
     }
     // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
     // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
@@ -2159,7 +2187,7 @@
     obj._tm_highlighted = false;
   }
 
-  function clearHighlight() {
+  function clearHighlight(force) {
     // §Z_STACK_XRAY_STAGING: this runs at the TOP of every renderAtTime tick (§S260c "restore
     // previously highlighted meshes to solid"), which is correct for the transient frontier glow
     // (~a handful of elements at a time, per §CREW-CAP) but would be an O(staged-population)
@@ -2167,10 +2195,15 @@
     // exact per-tick cost W-XRAY-4 exists to keep bounded. _tm_xrayStaged objects are left alone
     // here; renderAtTime's own showReal branch restores them explicitly, exactly once, on the tick
     // they actually resolve (or scrub behind their own reveal) — see the _tm_xrayStaged checks there.
+    // §TM_CLOSE_RESTORE (2026-08-04): that per-tick skip must NOT apply when TM itself is being
+    // switched off — deactivate()'s restoreVisibility() passes force=true so a still-staged (ghosted,
+    // grey/0.3-opacity) element does not survive TM closing. Same "nothing may survive TM being
+    // switched off" convention this file already applies to _gspClear/_tmXraySolidifyTs/etc.
     var keep = [];
     for (var i = 0; i < _highlightMeshes.length; i++) {
       var hm = _highlightMeshes[i];
-      if (hm._tm_xrayStaged) { keep.push(hm); continue; }
+      if (!force && hm._tm_xrayStaged) { keep.push(hm); continue; }
+      hm._tm_xrayStaged = false;
       restoreMaterial(hm);
     }
     _highlightMeshes = keep;
@@ -2543,8 +2576,8 @@
     });
   }
 
-  function restoreVisibility() {
-    clearHighlight();
+  function restoreVisibility(force) {
+    clearHighlight(force);
     var app = A();
     // §SE-7: matrices come from `_savedInstanceMatrices` (renderAtTime's lazy per-tick cache), not a
     // private clone saveVisibility() no longer makes. `activate()` always calls `renderAtTime()` at
@@ -2648,8 +2681,8 @@
         '<button id="tm-stop-btn" style="width:30px;font-size:14px" title="Stop">&#x25A0;</button>' +
         '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
         '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
-        '<button id="tm-touched" style="flex:1;font-size:9px">Copy Touched</button>' +
-        '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
+        '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
+        '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
@@ -2777,11 +2810,11 @@
       e.stopPropagation(); stopPlayback();
     });
 
-    document.getElementById('tm-touched').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(false);
+    document.getElementById('tm-undo').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); undoLastGanttEdit();
     });
-    document.getElementById('tm-new').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(true);
+    document.getElementById('tm-baseline').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); setGanttBaseline();
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -3277,6 +3310,8 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
       return bestKey ? SR[bestKey] : SD;
     }
     var r;
@@ -3288,7 +3323,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement'"
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'"
       );
     } catch (e) { return null; }
     if (!r.length || !r[0].values.length) return null;
@@ -3555,6 +3590,8 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
       return bestKey ? SR[bestKey] : SD;
     }
     // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
@@ -3613,7 +3650,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' " +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace' " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
@@ -4106,23 +4143,40 @@
       // now gated on the TARGET being a promoted slab.
       var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
       var _ogEPS = 0.05, _ogGAP = 0.5;
-      var _ogCells = function (e) {
+      // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
+      // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
+      // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
+      // measured 4636ms on Terminal's 48,428 elements (22 stacked storeys, small footprint, worst
+      // cell 379 members) vs 1695ms on Hospital's 63,415 (more elements, but a bigger footprint means
+      // less Z-stacking per cell) — element COUNT alone doesn't predict the cost, per-cell Z-density
+      // does. Bucketing Z too prunes each query to the target's own real vertical neighborhood — the
+      // ONLY z-range `S.bz<T.bz-EPS && |S.tz-T.bz|<=GAP` can ever match — with the identical predicate
+      // inside the loop unchanged, so results are provably identical, only the scan is smaller.
+      var _ogCellsFor = function (x0, x1, y0, y1, z0, z1) {
         var out = [];
-        for (var cx = Math.floor(e.x0 / _ogCELL); cx <= Math.floor(e.x1 / _ogCELL); cx++)
-          for (var cy = Math.floor(e.y0 / _ogCELL); cy <= Math.floor(e.y1 / _ogCELL); cy++) out.push(cx + '|' + cy);
+        for (var cx = Math.floor(x0 / _ogCELL); cx <= Math.floor(x1 / _ogCELL); cx++)
+          for (var cy = Math.floor(y0 / _ogCELL); cy <= Math.floor(y1 / _ogCELL); cy++)
+            for (var cz = Math.floor(z0 / _ogCELL); cz <= Math.floor(z1 / _ogCELL); cz++)
+              out.push(cx + '|' + cy + '|' + cz);
         return out;
       };
+      // Build-time: bucket a candidate under its OWN full vertical extent, so it registers in every
+      // z-cell it actually occupies (a tall candidate can span more than one).
+      var _ogCellsBuild = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz, e.tz); };
+      // Query-time: only a target's real z-neighborhood [T.bz-GAP, T.bz+GAP] can ever satisfy the
+      // |S.tz-T.bz|<=GAP predicate — querying anything wider would waste the pruning this exists for.
+      var _ogCellsQuery = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz - _ogGAP, e.bz + _ogGAP); };
       var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
       var _ogStructGrid = {}, _ogWallGrid = {};
       _allScheduled.forEach(function (e) {
-        if (e.seq <= 4) _ogCells(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
-        else if (e.cls.indexOf('IfcWall') === 0) _ogCells(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
       var _ogPushed = 0;
       _allScheduled.forEach(function (T) {
         var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
-        var cells = _ogCells(T), seen = {}, lastEnd = 0;
+        var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0;
         for (var ci = 0; ci < cells.length; ci++) {
           var arr = _ogStructGrid[cells[ci]];
           if (arr) for (var si = 0; si < arr.length; si++) {
@@ -4578,6 +4632,10 @@
     var _idN = 0, _noIdN = 0;
     for (var i = 0; i < _ops.length; i++) {
       var op = _ops[i];
+      // §GANTT_OPS_BOOKKEEPING_LEAK: a non-construction op (BUILDING_OPEN, ELEMENT_PICK, GRID_*, ...)
+      // is not a task and must not become a bar — see computeDays()'s own header comment for the
+      // traced mechanism. _ops itself stays the full mixed history for other consumers (copyGuids).
+      if (op.op_type !== 'ELEMENT_PLACE') continue;
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
@@ -4800,6 +4858,14 @@
   var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
   var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
 
+  // §GANTT_EDIT_UNDO — single-level (not a stack): a drag can cascade N successors with no way back
+  // except regenerating the whole schedule (real gap, this session's own edit UI made it possible).
+  // Scope is deliberately narrow: only commitGanttDrag (E1/E2 move/resize) sets this, not link/unlink
+  // or the property panel — matching exactly the need named in 4D_SCHEDULE_PERFECTION.md, not a
+  // speculative general undo system. { schedId, tasksBefore:{taskId:{start,finish,duration}},
+  // opsBefore:{guid:{start_ts,end_ts,parameters}}, taskId, mode } — cleared on every fresh TM activate().
+  var _lastEdit = null;
+
   // Which bar (and where on it) is under the pointer? Extends findBarAtClick with an edge zone so a
   // single gesture can mean either E1 (move) or E2 (edge-pull), the way P6/MSP behave.
   function ganttHit(e) {
@@ -4883,6 +4949,19 @@
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+
+    // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. Cascade scope isn't known
+    // until the verb returns, so this captures every leaf task in the active schedule (cheap — a
+    // handful to a few hundred rows), not just the dragged one.
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
+        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
     var res;
     if (mode === 'move') {
       res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
@@ -4908,13 +4987,160 @@
     }
     var barsByTask = {};
     for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+
+    // §GANTT_EDIT_UNDO — the element-op "before" state, captured from the in-memory _ops (still the
+    // pre-retime values at this point) for exactly the guids retimeTaskElements is about to touch.
+    // Hash the guid->op lookup ONCE (same shape as retimeTaskElements's own opByGuid below) — a
+    // linear scan per guid here was O(cascadeGuids * totalOps): measured 92s wall-clock on Terminal
+    // (3,519 guids * 48,428 ops) before this fix, unusable for an interactive drag.
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi2 = 0; oi2 < _ops.length; oi2++) if (_ops[oi2].output_guid) _opByGuidForUndo[_ops[oi2].output_guid] = _ops[oi2];
+    (res.moved || []).forEach(function (m) {
+      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
+      bar2.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
     retimeTaskElements(app.db, barsByTask, res.moved || []);
+    _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
+  }
+
+  // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
+  // that edit changed: the task dates (moveTaskCascade/resizeTask's write to `tasks`) and the
+  // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
+  // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
+  function undoLastGanttEdit() {
+    var app = A();
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2200);
+    }
+    if (!_lastEdit || !app || !app.db) {
+      console.log('§GANTT_EDIT_UNDO_REJECT reason=nothing_to_undo');
+      say('Nothing to undo');
+      return;
+    }
+    var edit = _lastEdit;
+    _lastEdit = null;   // single-level — commit even if a write below throws, never retry the same edit
+    var db = app.db;
+    db.run('BEGIN');
+    var stT = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+    var tRestored = 0;
+    for (var tid in edit.tasksBefore) {
+      var t = edit.tasksBefore[tid];
+      stT.run([t.start, t.finish, t.duration, tid]);
+      tRestored++;
+    }
+    stT.free();
+    var stO = db.prepare('UPDATE kernel_ops SET timestamp=?, parameters=? WHERE op_type=\'ELEMENT_PLACE\' AND output_guid=?');
+    var oRestored = 0;
+    // Same O(1)-per-guid hash, same reason as commitGanttDrag's opsBefore capture — a linear scan
+    // per guid here is O(cascadeGuids * totalOps), unusable on a large building's cascade.
+    var _opByGuidForRestore = {};
+    for (var oi3 = 0; oi3 < _ops.length; oi3++) if (_ops[oi3].output_guid) _opByGuidForRestore[_ops[oi3].output_guid] = _ops[oi3];
+    for (var guid in edit.opsBefore) {
+      var o = edit.opsBefore[guid];
+      stO.run([o.start_ts, o.parameters, guid]);
+      var opR = _opByGuidForRestore[guid];
+      if (opR) { opR.start_ts = o.start_ts; opR.end_ts = o.end_ts; opR.parameters = JSON.parse(o.parameters); }
+      oRestored++;
+    }
+    stO.free();
+    db.run('COMMIT');
+    console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
+      ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
+    say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // ⚑ Set Baseline — replaces the dead Copy New slot. Definition user-confirmed 2026-08-05
+  // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"): a deliberate snapshot of the
+  // schedule's own dates, a DIFFERENT axis from §TM-VARIANCE's existing ERP cost variance. Manual
+  // button today because MOB's auto-trigger-at-ERP-push (M2) doesn't exist yet — once it does, the
+  // SAME ScheduleAuthor.setBaseline verb gets called there too; this button does not become obsolete,
+  // it becomes the "re-baseline for an approved change order" case named in the spec.
+  function setGanttBaseline() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2600);
+    }
+    if (!app || !app.db || !SA || !SA.setBaseline) {
+      console.log('§GANTT_SET_BASELINE_REJECT reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var res = SA.setBaseline(app.db, schedId);
+    if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
+    say('Baseline set — ' + res.taskCount + ' tasks');
+  }
+
+  // §GANTT_AUTHOR_ENTRY (native) — the drawer's "Generate 4D schedule" button used to just call
+  // ScheduleAuthorUI.toggle(), reopening the old side panel — a hidden dependency, not the "native
+  // to the drawer" generation this was supposed to be (4D_SCHEDULE_PERFECTION.md, user ruling
+  // 2026-08-05). Calls the real engine verb directly, same as the panel's own generateDraft() zone-
+  // detail path (schedule_author_ui.js), not a reimplementation of it.
+  function generateGanttSchedule() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 3200);
+    }
+    if (!app || !app.db || !SA || !SA.materializeZones) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
+    // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
+    // anything. The drawer doesn't offer fine-grained editing for a captured schedule's own
+    // structure yet, so THIS is the one legitimate remaining reason to fall back to that panel —
+    // not a general re-opening of it.
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act && act.captured) {
+      console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — opening the schedule author panel to edit it in place, not regenerating');
+      say('Imported schedule "' + act.name + '" — opening its editor');
+      if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
+      else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded_for_captured_schedule');
+      return;
+    }
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: '2026-01-01', laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
+      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: '2026-01-01', laborRates: LR, blank: false }) : { ok: false };
+    }
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
+      say('Could not generate a schedule'); return;
+    }
+    console.log('§GANTT_AUTHOR_ENTRY native generate zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') +
+      ' phases=' + (res.phases ? res.phases.length : 'n/a'));
+    say('Schedule generated — refreshing…');
+    // Reuse the SAME refresh path applyTo4D() already uses for this exact situation (a fresh/edited
+    // schedule needs the drawer's overlay re-run) — real, already-working machinery, not a second
+    // lighter-weight refresh path whose correctness would need its own separate proof.
+    if (typeof window.tmRefoldSchedule === 'function') window.tmRefoldSchedule();
+    else { invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor); }
   }
 
   function wireGanttDrag() {
@@ -5107,10 +5333,7 @@
         ab._wired = true;
         ab.addEventListener('pointerup', function (e) {
           e.stopPropagation();
-          console.log('§GANTT_AUTHOR_ENTRY opening the schedule author from the drawer');
-          if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
-          else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
-          else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded');
+          generateGanttSchedule();
         });
       }
     })();
@@ -5710,6 +5933,7 @@
 
   function activate() {
     if (_active) return;
+    _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
     // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
     // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
     //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
@@ -5947,7 +6171,7 @@
     if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
     setToolbarHighlight(false);
-    restoreVisibility();
+    restoreVisibility(true);  // §TM_CLOSE_RESTORE: force — nothing (incl. xray-staged ghosts) may survive TM going off
     // §S262: DLOD runs independently — no pause/resume needed
     viewerStatus('');
     console.log('§TIME_MACHINE OFF — restored');
@@ -6347,7 +6571,7 @@
         if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
       } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
       try {
-        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement'");
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
         if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
       } catch (e) { total = 0; }
     }

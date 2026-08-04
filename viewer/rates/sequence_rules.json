@@ -107,6 +107,11 @@
       "sequence": 7,
       "resource": "ELECTRICIAN"
     },
+    "IfcSwitchingDevice": {
+      "phase": "MEP Rough-in",
+      "sequence": 7,
+      "resource": "ELECTRICIAN"
+    },
     "IfcFlowMovingDevice": {
       "phase": "MEP Rough-in",
       "sequence": 7,
@@ -157,6 +162,36 @@
       "sequence": 9,
       "resource": "ELECTRICIAN"
     },
+    "IfcDistributionControlElement": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcActuator": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcSensor": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcFlowInstrument": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcProtectiveDeviceTrippingUnit": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
+    "IfcUnitaryControlElement": {
+      "phase": "MEP Final",
+      "sequence": 9,
+      "resource": "ELECTRICIAN"
+    },
     "IfcWall": {
       "phase": "Architecture",
       "sequence": 5,
@@ -171,6 +206,11 @@
       "phase": "Architecture",
       "sequence": 5,
       "resource": "MASON"
+    },
+    "IfcSpace": {
+      "phase": "Architecture",
+      "sequence": 5,
+      "resource": null
     },
     "IfcBuildingElementPart": {
       "phase": "Architecture",
