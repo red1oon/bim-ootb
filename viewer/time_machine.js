@@ -2636,6 +2636,14 @@
         '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
           '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
             'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+          // §GANTT_AUTHOR_ENTRY — removing the ✎ toolbar icon took out the ONLY caller of
+          // ScheduleAuthorUI.toggle() (this file, ~:2704), which would have left a user with no way to
+          // author a schedule at all — and with no schedule, no bar carries a task_id and the whole
+          // editable drawer is inert. The entry point belongs in the drawer now that the drawer is the
+          // 4D surface. Shown ONLY when nothing is authored, so it disappears once it has been used.
+          '<div id="tm-gantt-noauthor" style="display:none;padding:3px 6px;font-size:10px;color:#ffb74d;' +
+            'border-bottom:1px solid rgba(79,195,247,0.15)">Estimated schedule — bars are not editable. ' +
+            '<button id="tm-gantt-authorbtn" style="font-size:10px;padding:1px 6px;margin-left:4px">Generate 4D schedule</button></div>' +
           '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block"></canvas>' +
         '</div>' +
         '<div style="position:relative">' +
@@ -5028,6 +5036,26 @@
     buildGanttTasks();
     if (!_ganttTasks.length) return;
     wireGanttResize();
+    // §GANTT_AUTHOR_ENTRY: surface the authoring path exactly when it is needed — no authored
+    // schedule means no editable bars, and the user must have a way out of that state.
+    (function () {
+      var na = document.getElementById('tm-gantt-noauthor');
+      if (!na) return;
+      var editable = 0;
+      for (var q = 0; q < _ganttTasks.length; q++) if (_ganttTasks[q].taskId) editable++;
+      na.style.display = editable ? 'none' : 'block';
+      var ab = document.getElementById('tm-gantt-authorbtn');
+      if (ab && !ab._wired) {
+        ab._wired = true;
+        ab.addEventListener('pointerup', function (e) {
+          e.stopPropagation();
+          console.log('§GANTT_AUTHOR_ENTRY opening the schedule author from the drawer');
+          if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
+          else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
+          else console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthorUI_not_loaded');
+        });
+      }
+    })();
     if (_ganttBoxH) box.style.maxHeight = _ganttBoxH + 'px';
 
     // §GANTT_PALETTE: the phase legend strip is GONE (user: "the legend is redundant, just hover
