@@ -4166,7 +4166,12 @@
   function buildTaskIndex() {
     var app = A();
     var key = (app && app.activeBuilding) || '';
-    if (_taskIndex !== null && _taskIndexFor === key) return _taskIndex.ok ? _taskIndex : null;
+    // §GANTT_AUTHOR_REPROBE (found by the browser wiring test, 2026-08-04): only a POSITIVE result is
+    // cached. Caching the negative meant that once the drawer had been opened on an un-authored
+    // building, authoring a schedule afterwards never took effect — the bars stayed non-editable
+    // until a building change, because nothing invalidated the "no schedule" answer. Re-probing costs
+    // one activeSchedule() query per rebuild, and rebuilds only happen when _ganttDirty is set.
+    if (_taskIndex !== null && _taskIndex.ok && _taskIndexFor === key) return _taskIndex;
     _taskIndexFor = key;
     _taskIndex = { ok: false, guidTask: {}, tasks: {}, scheduleId: null, n: 0 };
     if (!app || !app.db) return null;
@@ -4880,7 +4885,21 @@
     cv.addEventListener('pointerdown', function (e) {
       if (!_active || !_ganttTasks.length) return;
       var hit = ganttHit(e);
-      if (!hit || !hit.bar.taskId) return;      // un-authored bars stay non-draggable, by design
+      if (!hit) return;
+      // §GANTT_DRAG_REJECT at the point of refusal. This used to be a bare `return`: a user dragging
+      // a non-editable bar got NO feedback and NO log line, and the browser wiring test could not
+      // tell "handler never fired" apart from "handler correctly refused". Silence is not a refusal.
+      if (!hit.bar.taskId) {
+        console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + hit.bar.storey +
+          '" phase="' + hit.bar.phase + '" — generate a 4D schedule to make bars editable');
+        var t0 = document.getElementById('tm-gantt-tip');
+        if (t0) {
+          t0.textContent = 'Not editable — generate a 4D schedule first';
+          t0.style.display = 'block';
+          setTimeout(function () { t0.style.display = 'none'; }, 2200);
+        }
+        return;
+      }
       _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
       try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     });
