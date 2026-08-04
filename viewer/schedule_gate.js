@@ -149,17 +149,32 @@
       var b = (bandTrade[r] = bandTrade[r] || {});
       if (!(b[el.seq] > end)) b[el.seq] = end;
     }
+    // §GEO_SUPPORT_LEAK (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md): `S.base_z < el.base_z` alone
+    // assumes MY OWN base_z is a reliable "where I actually rest" point. Measured false on 10/34,102
+    // real elements across 6 buildings (2 classes: IfcWallStandardCase, IfcBuildingElementProxy) — a
+    // large element's own computed base can sit BELOW every real structural base in its footprint even
+    // though real structure (confirmed live: an IfcSlab ramp + retaining walls) plainly sits there.
+    // `witness_geo_support_leak.js` proved this is a general geometric gap, not item/class-specific —
+    // no name or class check is added here, only geometry.
+    // Second clause is a STRICT ADDITION, never a removal: it only fires when the first clause (S
+    // below me) doesn't already match, and only counts S whose ENTIRE vertical span sits inside MY
+    // OWN [base_z,top_z] — real structure genuinely occupying part of my own bounding volume, at this
+    // XY location. It can only make a gate MORE conservative (a later `g`), never weaker — the
+    // existing "nothing without support" invariant (§SUPPORT_CHECK, 0 floating) cannot regress from
+    // this; it can only catch support this test previously missed.
     function geoGate(el) {                 // latest finish of XY-overlapping structure rising from below
       var g = baseMs; cs = cellsOf(el);
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k];
-          if (S.base_z < el.base_z - EPS && S.end > g && overlap(S, el)) g = S.end; } }
+          var below = S.base_z < el.base_z - EPS;
+          var contained = !below && S.base_z > el.base_z - EPS && S.top_z < el.top_z + EPS;
+          if ((below || contained) && S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
     function place(el, start) {
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
       var end = start + dur; out[el.guid] = { start: start, end: end };
-      if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, end: end };
+      if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
       else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
         var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
