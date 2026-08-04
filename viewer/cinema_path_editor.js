@@ -51,14 +51,71 @@
   var VF_MIN_W = 160, VF_MIN_H = 100;           // px — floor a resize cannot cross
   var VF_MARGIN = 16;                            // px from the viewport edge for the first-open position
   var VF_RESIZE_HANDLE_PX = 16;                  // px — the corner grab square's hit size
-  var CPE_V = 'v22 (§CPE_VIEWFINDER eye icon now swaps open/slashed with vfOn, reading panels.js ICONS.' +
-    'eyeOpen/eyeOff — not ICONS.eye, which is actually scan-eye; §CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look ' +
-    'direction there (rotation only, never position); the pin wins outright inside its own band\'s Voronoi ' +
-    'zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in neighbouring ' +
-    'bands with no bleed; §CPE_SCRUB timeline scrub bar with stick tick-marks, drag drives plan.poseAt through the ' +
-    'same camera-move code _previewFly() uses per frame; §CPE_VIEWFINDER a synced second-camera POV sub-panel, ' +
-    'one renderer via setScissorTest, eye-icon toggle OFF by default, scoped to rehearsal only, never wired ' +
-    'into the MaxQ bake loop; §CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead of time (user record: 107.55m costed, 173.53m flown); §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the added node survives; provenance travels in the override instead of being guessed from the index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer doubles; §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; §CPE_HOSE_REANCHOR pulls re-project by world anchor; §CPE_IDB_PATH_STORE named plans save/open/delete; §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the authorable stretch; §CPE_PREVIEW drives the buildup; §CPE_HOSE whole-path arc-length falloff drag; §CPE_CLIP in/out markers; §CPE_BUILDUP checkbox; §CPE_PREVIEW_BUTTON with stale marker; §CPE_AIM_DENSITY in effects.js; §CPE_DRAG_LAND_FIRST no re-plan during a drag; §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); §CPE_WALK 2.3m/s; §CPE_PREVIEW_DIVERGENCE plan pinned to open pose; §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // CPE_V — the pasted-console-answers-"which build is this?" string (comment at file top explains
+  // why this exists and must be bumped on every behaviour change). Reorganized 2026-08-04 into one
+  // clause per line, NEWEST FIRST, purely for human readability — every §TAG below is preserved
+  // verbatim from the pre-reorg blob, nothing dropped. A NEW SESSION: read the newest few lines
+  // here for a fast fix on current behaviour, then `prompts/CINEMA_PATH_EDITOR.md`'s own DONE
+  // blocks (search `§CPE_SCRUB`, `§CPE_VIEWFINDER`, `§CPE_AIM_PIN`) for the full history/reasoning —
+  // this string is a manifest, not a substitute for the spec doc.
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  var CPE_V = 'v23 (' +
+    // ── 2026-08-04, same day, three changes in sequence — read together ──
+    '§CPE_SCRUB_MAIN_CAM_REGRESSION FIXED: scrubbing the timeline used to move the MAIN canvas ' +
+      'camera (a.camera/a.controls) — wrong, caught live by the user in their own browser. Scrubbing ' +
+      'is now VISUAL-ONLY (playhead + "timeline NN.N%" readout) and touches NO camera at all, main ' +
+      'or B\'s inset — an in-between fix that routed scrub into B\'s camera only was written and then ' +
+      'reverted before landing, simplified further at the user\'s own request; ' +
+    '§CPE_SCRUB_BAR_GATED the scrub bar\'s existence is now gated to B (built/torn down inside ' +
+      '_toggleViewfinder, alongside the vf panel) instead of always present from editor-open — ' +
+      'PROVISIONAL, not settled architecture: the bar\'s permanent home (standalone widget vs docked ' +
+      'under B) is an OPEN QUESTION left for a future session, since it needs to carry more later ' +
+      '(pin-drop, Find/Clash drag) per the user\'s own words — see the spec doc\'s DONE block; ' +
+    '§CPE_VIEWFINDER_EYE_ICON the #cpe-vf-toggle icon now swaps open/slashed with vfOn, reading ' +
+      'panels.js ICONS.eyeOpen/eyeOff — NOT ICONS.eye, which is actually Lucide\'s "scan-eye", a ' +
+      'different shape repurposed elsewhere for an unrelated Role View toggle; ' +
+    // ── 2026-08-04, Part C ──
+    '§CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look direction ' +
+      'there (rotation only, never position); the pin wins outright inside its own band\'s Voronoi ' +
+      'zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in ' +
+      'neighbouring bands with no bleed; ' +
+    // ── 2026-08-04, Parts A/B (original ship — the scrub-driving claim below is HISTORICAL, see ' +
+    //    the FIXED entry at the top of this string for what changed) ──
+    '§CPE_SCRUB timeline scrub bar with stick tick-marks (original ship note — since corrected: see ' +
+      '§CPE_SCRUB_MAIN_CAM_REGRESSION above, scrub no longer drives any camera-move code); ' +
+    '§CPE_VIEWFINDER a synced second-camera POV sub-panel, one renderer via setScissorTest, ' +
+      'eye-icon toggle OFF by default, scoped to rehearsal only, never wired into the MaxQ bake loop; ' +
+    // ── 2026-07-31 and earlier — unchanged, kept verbatim ──
+    '§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead ' +
+      'of time (user record: 107.55m costed, 173.53m flown); ' +
+    '§CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; ' +
+    '§CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the ' +
+      'added node survives; provenance travels in the override instead of being guessed from the ' +
+      'index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; ' +
+    '§CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; ' +
+    '§CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; ' +
+    '§CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; ' +
+    '§CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer ' +
+      'doubles; ' +
+    '§CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; ' +
+    '§CPE_HOSE_REANCHOR pulls re-project by world anchor; ' +
+    '§CPE_IDB_PATH_STORE named plans save/open/delete; ' +
+    '§CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the ' +
+      'authorable stretch; ' +
+    '§CPE_PREVIEW drives the buildup; ' +
+    '§CPE_HOSE whole-path arc-length falloff drag; ' +
+    '§CPE_CLIP in/out markers; ' +
+    '§CPE_BUILDUP checkbox; ' +
+    '§CPE_PREVIEW_BUTTON with stale marker; ' +
+    '§CPE_AIM_DENSITY in effects.js; ' +
+    '§CPE_DRAG_LAND_FIRST no re-plan during a drag; ' +
+    '§CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; ' +
+    '§CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; ' +
+    '§CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); ' +
+    '§CPE_WALK 2.3m/s; ' +
+    '§CPE_PREVIEW_DIVERGENCE plan pinned to open pose; ' +
+    '§CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
   console.log('§CPE_LOADED ' + CPE_V);
 
   var HANDLE_R = 0.30;             // metres
@@ -1107,6 +1164,9 @@
     return { i: best, s: frac[best], p: { x: pts[best].x, y: pts[best].y, z: pts[best].z } };
   }
 
+  // Called from `_toggleViewfinder`'s ON branch only (2026-08-04 provisional simplification — see
+  // that function's own comment and this file's DONE block: the scrub bar's permanent place is an
+  // OPEN QUESTION for a future session, not settled by nesting it under B here).
   function _buildScrub(panel) {
     var wrap = document.createElement('div');
     wrap.id = 'cpe-scrub-wrap';
@@ -1168,19 +1228,20 @@
     if (lbl) lbl.textContent = (tnP * 100).toFixed(1) + '%';
   }
 
-  // Manual single step of the SAME per-frame update `_previewFly()`'s step() runs — see
-  // _applyCameraPose above. Called once per pointermove, never a rAF loop of its own (spec point 2:
-  // "scrubbing is a manual single step of that existing function, never a second pose path").
+  // §CPE_SCRUB — simplified 2026-08-04 (caught live in the browser, then simplified further by the
+  // user rather than perfected in place): scrubbing is VISUAL-ONLY. It moves NO camera, main or B's
+  // inset — only the playhead position and the "timeline NN.N%" readout update. An in-between fix
+  // that routed scrub into B's camera only was written and then reverted before landing: the user
+  // asked for the simpler cut now, and left "scrub drives B's camera" as deliberately DEFERRED
+  // future work — see this file's own DONE block in the spec doc — not something to rebuild here.
+  // `plan.poseAt` is still sampled — read-only, informational, useful to a witness or a future
+  // session — but nothing in this function writes to any camera.
   function _scrubTo(tn) {
-    if (!_state || !_state.plan) return null;
+    if (!_state) return null;
     tn = Math.max(0, Math.min(1, tn));
     _state.scrubTn = tn;
-    var p = _applyCameraPose(tn);
-    // Scrubbing never touches Time Machine (no buildup cursor tick outside a rehearsal), so there is
-    // no "this frame's cursor is not final yet" race here — safe to read straight back.
-    if (_state.vfOn) _vfUpdateReadout();
     _renderScrub();
-    return p;
+    return (_state.plan && typeof _state.plan.poseAt === 'function') ? _state.plan.poseAt(tn) : null;
   }
 
   function _wireScrub(track) {
@@ -1369,14 +1430,31 @@
       var p = _state.plan ? _state.plan.poseAt(_state.scrubTn || 0) : null;
       if (p) { _state.vfCam.position.set(p.x, p.y, p.z); _state.vfCam.lookAt(p.tx, p.ty, p.tz); }
       if (a.markDirty) a.markDirty();
-      console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples');
+      // §CPE_SCRUB (2026-08-04 provisional simplification, NOT settled — see this file's DONE block
+      // in the spec doc): the scrub bar is built here, alongside B, rather than existing on its own
+      // at editor-open time. The user's own words on this NOT being final: "that timeline was
+      // supposed to be standalone widget panel... independent because it is supposed to do more
+      // next ie pin point drop, Find / Clash drop... let's have the next prompts/# session figure
+      // that out — as now just get the canvas part to be its true self." Shipped this way only to
+      // get the main-canvas regression fixed today; a future session may need to un-nest this.
+      var cpePanel = document.getElementById('cpe-panel');
+      if (cpePanel && !document.getElementById('cpe-scrub-track')) {
+        _buildScrub(cpePanel);
+        var scrubTrack = document.getElementById('cpe-scrub-track');
+        if (scrubTrack) _wireScrub(scrubTrack);
+        _renderScrub();
+      }
+      console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; scrub bar shown (provisional: nested under B, see DONE block)');
     } else {
       var panel = document.getElementById('cpe-vf-panel');
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
       if (btn) { btn.style.color = '#888'; btn.style.borderColor = '#4a4f57'; }
+      // The scrub bar goes with B — see the ON branch's comment on why this pairing is provisional.
+      var scrubWrap = document.getElementById('cpe-scrub-wrap');
+      if (scrubWrap && scrubWrap.parentNode) scrubWrap.parentNode.removeChild(scrubWrap);
       if (a.markDirty) a.markDirty();
-      console.log('§CPE_VF off — panel removed, render hook cleared, zero per-frame cost');
+      console.log('§CPE_VF off — panel removed, render hook cleared, scrub bar removed, zero per-frame cost');
     }
   }
   function _vfTeardown() {
@@ -1384,6 +1462,8 @@
     var panel = document.getElementById('cpe-vf-panel');
     if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
     if (a && a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
+    // The scrub bar is a child of #cpe-panel (removed by finish() itself right after this call), so
+    // no separate removal is needed here — listed for the reader, not left implicit.
   }
   function _wireViewfinderToggle() {
     var btn = document.getElementById('cpe-vf-toggle');
@@ -1620,17 +1700,19 @@
     return true;
   }
 
-  // ══ §CPE_SCRUB / §CPE_VIEWFINDER — THE ONE PLACE A POSE IS APPLIED TO THE LIVE CAMERA ══════════
-  // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_PREVIEW_DIVERGENCE doctrine, restated for
-  // this build — "cannot become a second notion of the path". `_previewFly()`'s per-frame step used
-  // to inline `plan.poseAt(tn)` -> camera.position/controls.target -> controls.update() -> markDirty
-  // directly inside its rAF closure, which meant the ONLY way to move the live camera along the
-  // plan was to run a full rehearsal. §CPE_SCRUB needs the identical four lines for a manual
-  // single-step drag, and §CPE_VIEWFINDER needs the SAME `tn` fed to a second camera in the same
-  // call — so both now go through this one function instead of a second, parallel implementation.
-  // Extracted verbatim: nothing about what it does to `a.camera`/`a.controls` changed, only that
-  // it is now callable from three places (rehearsal step, scrub drag, and — via the return value —
-  // the witness) instead of being buried in one.
+  // ══ §CPE_VIEWFINDER — THE ONE PLACE A POSE IS APPLIED TO THE LIVE MAIN CAMERA ══════════════════
+  // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_PREVIEW_DIVERGENCE doctrine — "cannot
+  // become a second notion of the path". Used by `_previewFly()`'s rehearsal step() ONLY.
+  //
+  // §CPE_SCRUB correction (2026-08-04, caught live by the user in their own browser, NOT the same
+  // claude-in-chrome instability seen elsewhere this session — a genuine behavioural defect, then
+  // simplified further rather than fixed in place): this function used to ALSO be called by the
+  // scrub-bar drag handler, which meant dragging the Part A timeline moved the MAIN canvas — wrong,
+  // per the user: "the main canvas... supposed to remain as was where user still does traditional
+  // editing dragging the pipe etc." The scrub-driving call was removed outright (see `_scrubTo`,
+  // now visual-only) rather than rerouted to drive `_state.vfCam` instead — "scrub drives B's
+  // camera" is DEFERRED, explicitly left for a future session (see this file's own DONE block in
+  // the spec doc), not rebuilt here.
   function _applyCameraPose(tn) {
     var a = A();
     if (!_state || !_state.plan || typeof _state.plan.poseAt !== 'function') return null;
@@ -1640,18 +1722,16 @@
     a.controls.update();
     // §CPE_VIEWFINDER point 2: "B's camera pose is set from the SAME plan.poseAt(tn) the main
     // rehearsal camera uses at that instant" — literally the same sample just taken above, not a
-    // second poseAt call. Runs whether this frame came from a rehearsal step or a scrub drag, which
-    // is what keeps B in sync with BOTH (spec: "the scrub playhead and the B viewfinder camera must
-    // sample this SAME function").
+    // second poseAt call. B tracking the main camera 1:1 while `_previewFly()` flies it is exactly
+    // the "exact POV" ask; this path is unaffected by the 2026-08-04 scrub correction.
     if (_state.vfOn && _state.vfCam) {
       _state.vfCam.position.set(p.x, p.y, p.z);
       _state.vfCam.lookAt(p.tx, p.ty, p.tz);
       // §CPE_VIEWFINDER point 4: the readout is NOT refreshed here. Inside a rehearsal step, this
       // function runs BEFORE that frame's `window.tmSetCursor` call (see step() below) — reading the
       // clock here would show LAST frame's cursor for one frame every frame, a small but real
-      // staleness the "no second clock" doctrine exists to catch. Callers refresh it themselves once
-      // they know the frame's cursor is final: step() calls it AFTER its own tmSetCursor block,
-      // _scrubTo calls it right here since scrubbing never touches Time Machine at all.
+      // staleness the "no second clock" doctrine exists to catch. step() refreshes it AFTER its own
+      // tmSetCursor block instead.
     }
     if (a.markDirty) a.markDirty();
     return p;
@@ -2357,12 +2437,11 @@
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
       var panel = _buildPanel();
-      // §CPE_SCRUB: built right after the panel, before the first _redrawScene() call below — the
-      // scrub track must exist for _renderScrub() (called from inside _redrawScene) to find it.
+      // §CPE_SCRUB (2026-08-04 provisional simplification — see this file's DONE block in the spec
+      // doc for why, and that it is NOT settled architecture): the scrub bar is built/torn down
+      // alongside B, inside _toggleViewfinder — not unconditionally here. `scrubTn` still gets a
+      // default so _renderScrub (a no-op until the track exists) has something sane to read later.
       _state.scrubTn = 0;
-      _buildScrub(panel);
-      var scrubTrack = document.getElementById('cpe-scrub-track');
-      if (scrubTrack) _wireScrub(scrubTrack);
       // §CPE_VIEWFINDER: the eye-icon toggle button lives in the panel's title row (_buildPanel).
       _wireViewfinderToggle();
       // §CPE_PREVIEW_DIVERGENCE: state the basis every re-plan below is pinned to, once. If a pasted
@@ -2628,10 +2707,19 @@
                      hex: '0x' + r.mesh.material.color.getHex().toString(16).padStart(6, '0') };
           });
         },
-        // ══ §CPE_SCRUB witness hooks — G-SCRUB-1/2. Read-only where possible; `_scrubTo` drives the
-        // real camera exactly as a drag would (it IS the drag handler's own function), so a witness
-        // exercises the product path rather than asserting against a re-implementation.
+        // ══ §CPE_SCRUB witness hooks. Read-only where possible; `_scrubTo` IS the real drag
+        // handler's own function (a witness exercises the product path, not a re-implementation) —
+        // simplified 2026-08-04 (caught live in the browser, then simplified further rather than
+        // fixed in place — see `_scrubTo`'s own comment): it is VISUAL-ONLY now, touching no camera
+        // at all, main or B's. `_probeVF().mainPose`/`mainTarget` below is the ground truth for
+        // proving the main camera stays untouched across a scrub drag.
         _scrubTo: function(tn) { return _scrubTo(tn); },
+        // G-VF-1's witness hook: the real rehearsal-only pose function `_previewFly()`'s step() uses
+        // — the ONE remaining caller of `_applyCameraPose` after the 2026-08-04 scrub correction.
+        // Exposed the same way `_scrubTo` is (the real internal function, not a re-implementation),
+        // so G-VF-1 can prove B tracks the main camera during a REHEARSAL-style pose application
+        // without needing to run and wait out a full real Preview flight.
+        _applyCameraPoseForTest: function(tn) { return _applyCameraPose(tn); },
         _scrubHitAt: function(tn) { return _tnormToStickHit(tn); },
         _bandTNorm: function(bi) { return _state ? _bandTNorm(bi) : null; },
         // Ground truth for G-SCRUB-1/G-VF-1 — the SAME `_state.plan.poseAt` every render (tube,
@@ -2660,6 +2748,10 @@
             hookInstalled: a._cpeViewfinderRender === _vfRender,
             camPose: _state.vfCam ? { x: _state.vfCam.position.x, y: _state.vfCam.position.y, z: _state.vfCam.position.z } : null,
             mainPose: { x: a.camera.position.x, y: a.camera.position.y, z: a.camera.position.z },
+            // §CPE_SCRUB correction ground truth: the main canvas's ORBIT TARGET, not just its
+            // position — a scrub-caused main-camera move could show up as a target drift alone
+            // (e.g. controls.update() re-deriving something) even with position untouched.
+            mainTarget: { x: a.controls.target.x, y: a.controls.target.y, z: a.controls.target.z },
             rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null,
             tmCursorReadout: document.getElementById('cpe-vf-clock') ? document.getElementById('cpe-vf-clock').textContent : null
           };
