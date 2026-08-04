@@ -22,6 +22,11 @@
     for (var key in rules) {
       if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
     }
+    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key at all used to
+    // land on `dflt` silently — found live on real Hospital data (861 IfcDistributionControlElement,
+    // 113 IfcSwitchingDevice). Loud, not silent: whoever imports a new IFC set with a genuinely
+    // unclassified class sees it in the log instead of it vanishing into the generic default.
+    if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
     return bestKey ? rules[bestKey] : dflt;
   }
 
@@ -257,11 +262,14 @@
     // 4.5% of elements on a real building (JKR: 425/9410). Silent: doesn't break DAG/support-order
     // (openings rarely collide with anything), just inflates phase/zone element+crew-time counts and
     // breaks the "movie-coherent, can never tell a different story" guarantee those functions claim.
+    // §CLASS_UNMATCHED_FALLBACK (found 2026-08-04, witness_class_fallback_blackbox.js): IfcSpace is a
+    // spatial-zone entity, not a physical installable element — same non-physical category as
+    // IfcOpeningElement, excluded the same way (never invented labor for a room volume).
     var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
       "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
-      "WHERE m.ifc_class != 'IfcOpeningElement'");
+      "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
     if (!r.length || !r[0].values.length) return [];
 
     var storeyZs = {};
