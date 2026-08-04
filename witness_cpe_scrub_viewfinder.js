@@ -248,7 +248,18 @@ async function gates(browser, BLD, repoDir) {
   const vf2mark = logs.length;
   await page.evaluate(() => { const el = document.getElementById('cpe-vf-clock'); if (el) el.textContent = ''; });
   page.evaluate(() => document.getElementById('cpe-scrub-play').click());   // starts via the NEW transport button
-  await sleep(1500);   // let it fly for a bit before pausing
+  // §CPE_PREVIEW_BUILDUP arms ASYNCHRONOUSLY (awaits tmActivateForBake before startFly() even
+  // runs — same fact G-VF-2's own comment below already names, 513ms-3.2s depending on building
+  // size). `flying` alone goes true at the TOP of _previewFly(), before that arm even starts —
+  // poll for `hasHooks` (startFly() has actually run, myFly/t0 established) instead of a fixed
+  // sleep or a live `u` read (_flyState().u only updates AT pause time, not continuously).
+  let flyingT0 = Date.now(), sawFlying = null;
+  while (Date.now() - flyingT0 < 15000) {
+    sawFlying = await page.evaluate(() => window.APP.cinemaPathEditor._flyState());
+    if (sawFlying && sawFlying.flying && sawFlying.hasHooks) break;
+    await sleep(100);
+  }
+  await sleep(500);   // let real progress accumulate past hasHooks before capturing pausedU
   const pausedAt = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
     const ok = cpe._flyPause();
