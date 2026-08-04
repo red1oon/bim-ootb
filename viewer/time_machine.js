@@ -110,24 +110,39 @@
     } catch(e) { return []; }
   }
 
+  // §GANTT_OPS_BOOKKEEPING_LEAK (2026-08-04): _ops (loadOps()) intentionally carries EVERY kernel_ops
+  // row, not just construction ops — copyGuids(false) and other consumers legitimately want the full
+  // mixed history (picks, GRID_*, etc.), so the fix does NOT belong in loadOps()'s query. But a
+  // bookkeeping op like BUILDING_OPEN (streaming.js, commitOp with no ts -> Date.now(), real
+  // wall-clock, no storey/phase, no real output_guid) has no business defining the PROJECT'S OWN
+  // timeline bounds — traced live as the "_UNKNOWN/Architecture outlier" behind §GANTT_AXIS_OUTLIER
+  // (#1175, which qualified the DISPLAY axis but left _projectStart/_projectEnd — the real playback
+  // bounds scrubbing/renderAtTime use — still polluted, unmeasured until now). Scoped to exactly the
+  // two places that build the construction TIMELINE from _ops: this function's bounds, and
+  // buildGanttTasks()'s bar grouping.
+  function _placeOps() { return _ops.filter(function (o) { return o.op_type === 'ELEMENT_PLACE'; }); }
+
   function computeDays() {
+    var cOps = _placeOps();
     var seen = {};
-    _ops.forEach(function(op) {
+    cOps.forEach(function(op) {
       var d = new Date(op.start_ts);
       var key = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
       if (!seen[key]) seen[key] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     });
     _days = Object.values(seen).sort(function(a,b){ return a - b; });
-    if (_ops.length) {
+    if (cOps.length) {
       // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
-      _projectStart = _ops[0].start_ts - 1;
-      _projectEnd = Math.max.apply(null, _ops.map(function(o){ return o.end_ts; }));
+      _projectStart = cOps[0].start_ts - 1;
+      _projectEnd = Math.max.apply(null, cOps.map(function(o){ return o.end_ts; }));
     }
     // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
     // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
     // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
-    // threshold, never a new invented one.
-    var ends = _ops.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
+    // threshold, never a new invented one. Kept as real, independent defense against genuinely
+    // mistagged construction data even now that cOps excludes bookkeeping ops (§GANTT_MINI_TRIM's own
+    // proven case — a handful of real elements DO carry a real-but-wrong storey tag).
+    var ends = cOps.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
     var n = ends.length;
     _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
     if (n > 20) {
@@ -4578,6 +4593,10 @@
     var _idN = 0, _noIdN = 0;
     for (var i = 0; i < _ops.length; i++) {
       var op = _ops[i];
+      // §GANTT_OPS_BOOKKEEPING_LEAK: a non-construction op (BUILDING_OPEN, ELEMENT_PICK, GRID_*, ...)
+      // is not a task and must not become a bar — see computeDays()'s own header comment for the
+      // traced mechanism. _ops itself stays the full mixed history for other consumers (copyGuids).
+      if (op.op_type !== 'ELEMENT_PLACE') continue;
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
