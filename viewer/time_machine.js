@@ -30,6 +30,19 @@
   var _cursor = 0;        // current time (ms) in the project timeline
   var _projectStart = 0;
   var _projectEnd = 0;
+  // §GANTT_AXIS_OUTLIER (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md) — SEPARATE from _projectStart/
+  // _projectEnd on purpose: those two remain the real, unqualified playback bounds (renderAtTime,
+  // scrubbing, "every element must eventually build" — Prime Rule, do not touch). These are the DISPLAY
+  // axis for the Gantt drawer only. Live-confirmed via __tmGanttBars on Hospital: one storey='_UNKNOWN'
+  // op alone defined _projectEnd (1049d), while every real, storey-tagged bar finished by ~325d (31% of
+  // that span) — the SAME '_UNKNOWN' bucket deriveBandRanks() (schedule_gate.js) already excludes from
+  // its ladder ("the unknown bucket is not a floor"), just not yet from this axis. A single malformed
+  // event should not be able to rescale the whole chart; it still gets built by the real timeline above.
+  // User ruling: don't special-case '_UNKNOWN' as the label — refer back to the pattern already proven
+  // correct in this file for exactly this problem (§GANTT_MINI_TRIM's 2nd-98th percentile bar trim),
+  // root-cause-agnostic so it catches any wild outlier, not just the one already found.
+  var _ganttAxisStart = 0;
+  var _ganttAxisEnd = 0;
   var _days = [];          // distinct day start timestamps
   var _anchorDay = null;
   var _anchorHr = null;
@@ -109,6 +122,19 @@
       // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
       _projectStart = _ops[0].start_ts - 1;
       _projectEnd = Math.max.apply(null, _ops.map(function(o){ return o.end_ts; }));
+    }
+    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
+    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
+    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
+    // threshold, never a new invented one.
+    var ends = _ops.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
+    var n = ends.length;
+    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
+    if (n > 20) {
+      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+      _ganttAxisEnd = ends[hiI];
+    } else {
+      _ganttAxisEnd = _projectEnd;
     }
   }
 
@@ -2953,7 +2979,8 @@
       var x = (e.clientX - rect.left - 60) / (rect.width - 60);  // account for storey label margin
       if (x < 0) x = 0;
       var pct = Math.min(1, Math.max(0, x));
-      var ts = _projectStart + pct * (_projectEnd - _projectStart);
+      // §GANTT_AXIS_OUTLIER: invert against the SAME qualified axis the bars/ruler are drawn against.
+      var ts = _ganttAxisStart + pct * Math.max(1, _ganttAxisEnd - _ganttAxisStart);
       var bar = findBarAtClick(e);
       renderAtTime(ts);
       anchorFromCursor();
@@ -4675,8 +4702,10 @@
   // 1000-day Terminal without any per-building tuning. Returns the tick times so the bar canvas can
   // draw matching gridlines — one source of truth for where a date sits horizontally.
   var _RULER_STEPS = [1, 2, 5, 7, 14, 30, 60, 90, 180, 365, 730];
+  // §GANTT_AXIS_OUTLIER: ruler geometry is DISPLAY — uses the qualified axis (_ganttAxisStart/End),
+  // never the real playback _projectStart/_projectEnd. See the var declarations for why.
   function ganttRulerTicks(barW) {
-    var range = Math.max(1, _projectEnd - _projectStart);
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     var totalDays = range / 86400000;
     var pxPerDay = barW / totalDays;
     var step = _RULER_STEPS[_RULER_STEPS.length - 1];
@@ -4684,7 +4713,7 @@
       if (_RULER_STEPS[i] * pxPerDay >= 80) { step = _RULER_STEPS[i]; break; }
     }
     var ticks = [];
-    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: _projectStart + d * 86400000 });
+    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: _ganttAxisStart + d * 86400000 });
     return { ticks: ticks, step: step, totalDays: totalDays };
   }
 
@@ -4697,7 +4726,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cW, H);
     var R = ganttRulerTicks(barW);
-    var range = Math.max(1, _projectEnd - _projectStart);
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     // "Day N" origin label in the storey-label gutter, so the axis reads as project days too.
     ctx.fillStyle = '#8a97a5'; ctx.font = '9px sans-serif';
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -4705,7 +4734,7 @@
     var longSpan = R.step >= 30;
     ctx.strokeStyle = 'rgba(120,140,160,0.35)'; ctx.lineWidth = 1;
     R.ticks.forEach(function (t) {
-      var x = marginL + (t.ts - _projectStart) / range * barW;
+      var x = marginL + (t.ts - _ganttAxisStart) / range * barW;
       if (x < marginL - 0.5 || x > marginL + barW + 0.5) return;
       ctx.beginPath(); ctx.moveTo(x + 0.5, H - 5); ctx.lineTo(x + 0.5, H); ctx.stroke();
       var dt = new Date(t.ts);
@@ -4718,8 +4747,11 @@
       ctx.fillStyle = '#68758a';
       ctx.fillText('d' + t.day, x, 13);
     });
-    // Cursor marker on the axis, same orange as the hairline.
-    var hx = marginL + (_cursor - _projectStart) / range * barW;
+    // Cursor marker on the axis, same orange as the hairline. Clamped into [0,1] — the real _cursor
+    // can legitimately sit past the qualified axis (e.g. scrubbed to the outlier op itself); off the
+    // qualified ruler is the correct place for that, not a reason to hide the marker entirely.
+    var hxFrac = Math.max(0, Math.min(1, (_cursor - _ganttAxisStart) / range));
+    var hx = marginL + hxFrac * barW;
     if (hx >= marginL && hx <= marginL + barW) {
       ctx.fillStyle = '#ff8c00';
       ctx.beginPath(); ctx.moveTo(hx, H - 6); ctx.lineTo(hx - 4, H); ctx.lineTo(hx + 4, H); ctx.closePath(); ctx.fill();
@@ -4776,8 +4808,9 @@
     var rect = e.target.getBoundingClientRect();
     var x = e.clientX - rect.left;
     var marginL = 60, barW = rect.width - marginL;
-    var range = Math.max(1, _projectEnd - _projectStart);
-    var bx = marginL + (bar.startTs - _projectStart) / range * barW;
+    // §GANTT_AXIS_OUTLIER: must match the qualified axis findBarAtClick/drawGanttMini now use.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    var bx = marginL + (bar.startTs - _ganttAxisStart) / range * barW;
     var bw = Math.max(2, (bar.endTs - bar.startTs) / range * barW);
     var mode = 'move';
     if (x <= bx + EDGE_PX) mode = 'resizeL';
@@ -5104,7 +5137,9 @@
 
     ctx.clearRect(0, 0, cW, cH);
 
-    var range = Math.max(1, _projectEnd - _projectStart);
+    // §GANTT_AXIS_OUTLIER: qualified DISPLAY axis (see var declarations) — bars/ruler/gridlines/hairline
+    // all draw against this, never the real playback _projectStart/_projectEnd.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     var prevStorey = '';
 
     // §GANTT_RULER (E5): draw the sticky axis header, then lay its ticks down the bar canvas as
@@ -5115,7 +5150,7 @@
       ctx.strokeStyle = 'rgba(120,140,160,0.13)';
       ctx.lineWidth = 1;
       R.ticks.forEach(function (t) {
-        var gx = Math.round(marginL + (t.ts - _projectStart) / range * barW) + 0.5;
+        var gx = Math.round(marginL + (t.ts - _ganttAxisStart) / range * barW) + 0.5;
         if (gx < marginL || gx > marginL + barW) return;
         ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cH); ctx.stroke();
       });
@@ -5124,7 +5159,7 @@
     // Draw bars
     for (var ti = 0; ti < numTasks; ti++) {
       var task = _ganttTasks[ti];
-      var x = marginL + (task.startTs - _projectStart) / range * barW;
+      var x = marginL + (task.startTs - _ganttAxisStart) / range * barW;
       var w = (task.endTs - task.startTs) / range * barW;
       if (w < 2) w = 2;
       var y = ti * rowH + 2;
@@ -5183,18 +5218,23 @@
     // pointer at measured geometry instead of guessing at it. The first attempt at proving the drag
     // aimed at marginL+40px and hit empty canvas past the end of a short bar, which is
     // indistinguishable from "the handler never fired" — this removes that ambiguity for good.
+    // §GANTT_AXIS_OUTLIER: hook reads back the qualified axis too, so a live probe sees exactly
+    // what's drawn, not the pre-fix unqualified math.
     try {
       window.__tmGanttBars = _ganttTasks.map(function (t, i) {
-        var bx = marginL + (t.startTs - _projectStart) / range * barW;
+        var bx = marginL + (t.startTs - _ganttAxisStart) / range * barW;
         var bw = Math.max(2, (t.endTs - t.startTs) / range * barW);
         return { i: i, taskId: t.taskId || null, phase: t.phase, storey: t.storey,
           x: bx, w: bw, y: i * rowH + 2, h: barH, midX: bx + bw / 2, midY: i * rowH + 2 + barH / 2 };
       });
     } catch (e) {}
 
-    // Hairline cursor
+    // Hairline cursor. §GANTT_AXIS_OUTLIER: clamp into the qualified axis — the real _cursor can
+    // legitimately run past it (e.g. once playback reaches the outlier op itself), and an unclamped
+    // hairline would draw far outside the canvas instead of pinning to the visible edge.
     ctx.globalAlpha = 1;
-    var hx = marginL + (_cursor - _projectStart) / range * barW;
+    var hxFrac2 = Math.max(0, Math.min(1, (_cursor - _ganttAxisStart) / range));
+    var hx = marginL + hxFrac2 * barW;
     ctx.strokeStyle = '#ff8c00';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -5242,12 +5282,14 @@
     var y = e.clientY - rect.top;
     var barH = 12, gapH = 2, rowH = barH + gapH;
     var cW = rect.width;
-    var range = Math.max(1, _projectEnd - _projectStart);
+    // §GANTT_AXIS_OUTLIER: must match drawGanttMini's own bar geometry, which draws against the
+    // qualified axis — hit-testing against the unqualified one would silently miss bars.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     var marginL = 60;
     var barW = cW - marginL;
     for (var i = 0; i < _ganttTasks.length; i++) {
       var task = _ganttTasks[i];
-      var bx = marginL + (task.startTs - _projectStart) / range * barW;
+      var bx = marginL + (task.startTs - _ganttAxisStart) / range * barW;
       var bw = (task.endTs - task.startTs) / range * barW;
       if (bw < 2) bw = 2;
       var by = i * rowH + 2;
