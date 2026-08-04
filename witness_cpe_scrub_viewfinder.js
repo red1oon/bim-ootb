@@ -28,6 +28,9 @@
 //   G-SCRUB-PLAY        pressing play starts a rehearsal; pause freezes the flight fraction (no
 //                       advance over a real wait); resume continues it — real pause/resume, not a
 //                       screenshot-verified "looks paused".
+//   G-SCRUB-PLAY-POVONLY  the SAME button-driven flight leaves the main camera byte-identical
+//                       throughout (start/pause/resume) — §CPE_SCRUB_POV_ONLY: the scrub-play
+//                       button now calls _previewFly(true), driving B alone, never the main canvas.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
 //   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
 //              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call.
@@ -247,6 +250,14 @@ async function gates(browser, BLD, repoDir) {
   await sleep(200);
   const vf2mark = logs.length;
   await page.evaluate(() => { const el = document.getElementById('cpe-vf-clock'); if (el) el.textContent = ''; });
+  // ── G-SCRUB-PLAY-POVONLY setup: main camera pose captured BEFORE the transport-button flight
+  // starts — the scrub-play button now calls _previewFly(true) (§CPE_SCRUB_POV_ONLY), so this same
+  // flight doubles as the regression gate: main canvas must stay parked throughout a POV-only play.
+  const mainBefore = await page.evaluate(() => {
+    const A = window.APP;
+    return { pos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+             tgt: { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z } };
+  });
   page.evaluate(() => document.getElementById('cpe-scrub-play').click());   // starts via the NEW transport button
   // §CPE_PREVIEW_BUILDUP arms ASYNCHRONOUSLY (awaits tmActivateForBake before startFly() even
   // runs — same fact G-VF-2's own comment below already names, 513ms-3.2s depending on building
@@ -276,6 +287,20 @@ async function gates(browser, BLD, repoDir) {
   P('G-SCRUB-PLAY resume continues the flight (still flying, no longer paused)',
     resumedOk && resumedState && resumedState.flying && !resumedState.paused,
     `resumeOk=${resumedOk} flying=${resumedState ? resumedState.flying : 'n/a'} paused=${resumedState ? resumedState.paused : 'n/a'}`);
+
+  // ── G-SCRUB-PLAY-POVONLY: the main camera stayed byte-identical across the whole button-driven ──
+  // flight above (start, mid-flight pause, resume) — proves _previewFly(true) never touches it,
+  // same invariant class as G-SCRUB-NOCAM/G-SCRUB-VF-LIVE but for the play button, not the drag.
+  const mainMid = await page.evaluate(() => {
+    const A = window.APP;
+    return { pos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+             tgt: { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z } };
+  });
+  const dPovPos = Math.hypot(mainMid.pos.x - mainBefore.pos.x, mainMid.pos.y - mainBefore.pos.y, mainMid.pos.z - mainBefore.pos.z);
+  const dPovTgt = Math.hypot(mainMid.tgt.x - mainBefore.tgt.x, mainMid.tgt.y - mainBefore.tgt.y, mainMid.tgt.z - mainBefore.tgt.z);
+  P('G-SCRUB-PLAY-POVONLY main camera untouched by the scrub-play button (start/pause/resume)',
+    dPovPos < 1e-9 && dPovTgt < 1e-9,
+    `mainPosDelta=${dPovPos.toExponential(2)}m mainTargetDelta=${dPovTgt.toExponential(2)}m`);
 
   // Poll for a non-empty readout the same way the original gate did (post-resume).
   let vf2 = null;
