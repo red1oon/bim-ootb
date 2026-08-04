@@ -361,12 +361,17 @@
 
     var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
-    var zoneTaskId = {};
+    var zoneTaskId = {}, zoneDays = {};
     rolled.zones.forEach(function (z) {
       var tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
       zoneTaskId[z.id] = tid;
       var sDays = Math.round((z.start - minStart) / 86400000), eDays = Math.round((z.end - minStart) / 86400000);
       if (eDays <= sDays) eDays = sDays + 1;
+      // §ZONE_EDGE_LEAD: remember the ROUNDED day numbers actually written. The edge lags below are
+      // derived from these, not re-rounded independently from raw ms — rounding dates and lags
+      // separately let the two disagree by a day, which showed up as 53 self-violated edges on
+      // Terminal even once the negative-lag fix was in.
+      zoneDays[z.id] = { s: sDays, e: eDays };
       var s = _addDays(start, sDays), f = _addDays(start, eDays);
       stmtTk.run([tid, schedId, rootId, z.phase + ' — ' + z.storey, 'CONSTRUCTION', 0, s, f, 'P' + (eDays - sDays) + 'D', null, 'PLANNED']);
       z.guids.forEach(function (g) { stmtTe.run([tid, g]); });
@@ -377,7 +382,12 @@
     var edgeN = 0;
     rolled.edges.forEach(function (e) {
       var p = zoneTaskId[e.predId], s = zoneTaskId[e.succId]; if (!p || !s || p === s) return;
-      stmtSeq.run([p, s, 'FS', Math.round(e.lagMs / 86400000)]);
+      // FS lag straight off the persisted day numbers → succ.start = pred.finish + lag EXACTLY.
+      // Negative values are real leads (P6's "FS-5d"), not errors: overlapping zones are how real
+      // crews work, and clamping them to 0 is what made the graph contradict its own dates.
+      var pd = zoneDays[e.predId], sd = zoneDays[e.succId];
+      var lagDays = (pd && sd) ? (sd.s - pd.e) : Math.round(e.lagMs / 86400000);
+      stmtSeq.run([p, s, 'FS', lagDays]);
       edgeN++;
     });
     stmtSeq.free();
@@ -966,6 +976,159 @@
     return { ok: true, start: newStart, finish: finish, days: days };
   }
 
+  // ── §GANTT_EDIT C1/C2 — constraint-aware move (prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
+  // moveTask() above deliberately writes dates and nothing else ("CPM invalidation is the caller's
+  // concern"). That is the right primitive but the WRONG thing to put under a user's finger: a drag
+  // with no constraint checking lets a user "fix" a real schedule violation by dragging it out of
+  // sight instead of fixing its cause — directly against the Prime Rule. This is the caller that
+  // supplies the missing half: clamp on the way back, cascade on the way forward.
+  //
+  // SEMANTICS — push-only, deliberately:
+  //   C2 CLAMP   a move EARLIER than the task's predecessors permit is refused and clamped to the
+  //              earliest legal date, reporting which predecessor bound it. Never silently accepted.
+  //   C1 CASCADE a move LATER drags every real task_sequences successor that would otherwise start
+  //              before its constraint, transitively.
+  //   Successors are only ever pushed LATER, never pulled earlier. This follows the idiom this file
+  //   and time_machine.js already use everywhere (§4D_HOST_BEFORE_HOSTED, §PHASE_OVERLAP_SUPPORT_GUARD
+  //   — "push after, never re-key"), and it avoids silently re-optimising a schedule the user did not
+  //   ask us to touch: they moved ONE bar. Pulling successors earlier could also violate their OTHER
+  //   predecessors, turning one drag into an unbounded re-solve.
+  function _dayNum(s) { var t = Date.parse(s + 'T00:00:00Z'); return isNaN(t) ? null : Math.round(t / 86400000); }
+  function _dayStr(n) { return new Date(n * 86400000).toISOString().slice(0, 10); }
+
+  // Earliest legal start (in day numbers) for `id` given its predecessors' CURRENT dates.
+  // IfcSequenceEnum semantics, the same four this file's computeCpm already solves.
+  function _earliestStart(id, T, preds) {
+    var list = preds[id]; if (!list || !list.length) return null;
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i], P = T[e.pred]; if (!P) continue;
+      var dur = T[id] ? T[id].dur : 1, lag = e.lag || 0, c;
+      switch (e.type) {
+        case 'SS': c = P.start + lag; break;
+        case 'FF': c = P.finish + lag - dur; break;
+        case 'SF': c = P.start + lag - dur; break;
+        default:   c = P.finish + lag;          // FS
+      }
+      if (best === null || c > best) { best = c; e._binding = true; }
+    }
+    return best;
+  }
+
+  function _bindingPred(id, T, preds, at) {
+    var list = preds[id] || [];
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i], P = T[e.pred]; if (!P) continue;
+      var dur = T[id] ? T[id].dur : 1, lag = e.lag || 0, c;
+      switch (e.type) {
+        case 'SS': c = P.start + lag; break;
+        case 'FF': c = P.finish + lag - dur; break;
+        case 'SF': c = P.start + lag - dur; break;
+        default:   c = P.finish + lag;
+      }
+      if (c === at) return e.pred + '(' + e.type + (lag ? (lag > 0 ? '+' : '') + lag + 'd' : '') + ')';
+    }
+    return null;
+  }
+
+  // moveTaskCascade(db, scheduleId, taskId, newStart, opts) →
+  //   { ok, start, finish, clamped, clampedFrom, blockedBy, moved:[{id,start,finish}], cascaded }
+  // opts.dryRun — compute and report without writing (used by the drag preview and by the witness).
+  function moveTaskCascade(db, scheduleId, taskId, newStart, opts) {
+    opts = opts || {};
+    var T = {}, ids = [], preds = {}, succs = {};
+    var tr;
+    try {
+      tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration, is_summary ' +
+        'FROM tasks WHERE schedule_id=?', [scheduleId]);
+    } catch (e) { return { ok: false, reason: 'no_tasks' }; }
+    if (!tr.length || !tr[0].values.length) return { ok: false, reason: 'no_tasks' };
+    tr[0].values.forEach(function (row) {
+      if (row[4] === 1) return;                       // summaries are rolled up, never moved directly
+      var s = _dayNum(row[1]); if (s === null) return;
+      var dur = _durDays(row[3], row[1], row[2]);
+      T[row[0]] = { id: row[0], start: s, finish: s + dur, dur: dur };
+      ids.push(row[0]);
+    });
+    if (!T[taskId]) { console.log('§GANTT_EDIT_MOVE_FAIL task=' + taskId + ' reason=no_such_task'); return { ok: false, reason: 'no_such_task' }; }
+    try {
+      var er = db.exec('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences');
+      if (er.length && er[0].values.length) er[0].values.forEach(function (row) {
+        if (!T[row[0]] || !T[row[1]]) return;          // edge leaving this schedule's leaf set
+        var e = { pred: row[0], succ: row[1], type: row[2] || 'FS', lag: row[3] != null ? row[3] : 0 };
+        (preds[row[1]] = preds[row[1]] || []).push(e);
+        (succs[row[0]] = succs[row[0]] || []).push(e);
+      });
+    } catch (e) {}
+
+    // ---- C2: clamp against this task's own predecessors.
+    var want = _dayNum(newStart);
+    if (want === null) return { ok: false, reason: 'bad_date' };
+    var floor = _earliestStart(taskId, T, preds);
+    var clamped = false, clampedFrom = null, blockedBy = null;
+    if (floor !== null && want < floor) {
+      clamped = true; clampedFrom = newStart;
+      blockedBy = _bindingPred(taskId, T, preds, floor);
+      want = floor;
+      console.log('§GANTT_EDIT_CLAMP task=' + taskId + ' requested=' + clampedFrom +
+        ' clampedTo=' + _dayStr(want) + ' blockedBy=' + blockedBy);
+    }
+
+    // ---- Apply to the in-memory model, then C1: cascade forward, push-only.
+    T[taskId].start = want; T[taskId].finish = want + T[taskId].dur;
+    var moved = {}; moved[taskId] = true;
+    var queue = [taskId], guard = 0, limit = ids.length * 4 + 16;
+    while (queue.length) {
+      if (++guard > limit) { console.log('§GANTT_EDIT_CASCADE_ABORT task=' + taskId + ' reason=iteration_limit'); break; }
+      var cur = queue.shift(), out = succs[cur] || [];
+      for (var i = 0; i < out.length; i++) {
+        var sid = out[i].succ, S = T[sid]; if (!S) continue;
+        var es = _earliestStart(sid, T, preds);
+        if (es !== null && S.start < es) {           // push-only: never pull a successor earlier
+          S.start = es; S.finish = es + S.dur;
+          moved[sid] = true;
+          queue.push(sid);
+        }
+      }
+    }
+
+    var movedList = Object.keys(moved).map(function (id) {
+      return { id: id, start: _dayStr(T[id].start), finish: _dayStr(T[id].finish), days: T[id].dur };
+    });
+    if (!opts.dryRun) {
+      db.run('BEGIN');
+      var st = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+      movedList.forEach(function (m) { st.run([m.start, m.finish, 'P' + m.days + 'D', m.id]); });
+      st.free();
+      db.run('COMMIT');
+    }
+    console.log('§GANTT_EDIT_MOVE task=' + taskId + ' start=' + _dayStr(T[taskId].start) +
+      ' finish=' + _dayStr(T[taskId].finish) + ' clamped=' + clamped +
+      ' cascaded=' + (movedList.length - 1) + (opts.dryRun ? ' (dryRun)' : ''));
+    return { ok: true, start: _dayStr(T[taskId].start), finish: _dayStr(T[taskId].finish),
+      clamped: clamped, clampedFrom: clampedFrom, blockedBy: blockedBy,
+      moved: movedList, cascaded: movedList.length - 1 };
+  }
+
+  // resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) — §GANTT_EDIT E2, the edge-pull.
+  // moveTask/moveTaskCascade preserve duration by design, so resize needs its own verb rather than
+  // overloading them. Writes the new duration, then re-runs the SAME clamp+cascade so a lengthened
+  // bar pushes its successors exactly as a moved one does.
+  function resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) {
+    opts = opts || {};
+    var s = _dayNum(newStart), f = _dayNum(newFinish);
+    if (s === null || f === null) return { ok: false, reason: 'bad_date' };
+    if (f <= s) f = s + 1;                              // never zero/negative duration
+    var r = db.exec('SELECT is_summary FROM tasks WHERE task_id=?', [taskId]);
+    if (!r.length || !r[0].values.length) return { ok: false, reason: 'no_such_task' };
+    if (r[0].values[0][0] === 1) return { ok: false, reason: 'is_summary' };
+    db.run('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?',
+      [_dayStr(s), _dayStr(f), 'P' + (f - s) + 'D', taskId]);
+    console.log('§GANTT_EDIT_RESIZE task=' + taskId + ' start=' + _dayStr(s) + ' finish=' + _dayStr(f) +
+      ' days=' + (f - s));
+    return moveTaskCascade(db, scheduleId, taskId, _dayStr(s), opts);
+  }
+
   // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
   // fixedDates opt (§ZONE_CPM_COHERENCE): computeCpm's forward pass normally DERIVES each task's
   // early start from the graph (max over predecessors' EF+lag) — correct when the dates themselves
@@ -1268,6 +1431,8 @@
     updateDependency: updateDependency,
     computeCpm: computeCpm,
     moveTask: moveTask,
+    moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
+    resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
     addTask: addTask,
     reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute,

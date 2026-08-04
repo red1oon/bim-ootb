@@ -50,6 +50,12 @@
   var _varVisible = false;
   var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
+  // §GANTT_BAR_IDENTITY (K0): the storey|phase rollup below used to be recomputed from scratch on
+  // EVERY drawGanttMini() call — i.e. once per playback frame, walking all 63,415 ops on Hospital.
+  // The rollup only changes when _ops changes, so it is now cached behind this flag and the draw
+  // path is pure drawing.
+  var _ganttDirty = true;
+  var _ganttIdentified = 0, _ganttUnidentified = 0;   // §GANTT_BAR_IDENTITY counters
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
   var _coveredCount = 0;    // elements driven by real captured task dates
@@ -2582,7 +2588,12 @@
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
-        '<button id="tm-author" style="font-size:12px;padding:2px 6px" title="Author 4D schedule — build phases up, assign elements, tune dates">&#9998;</button>' +
+        // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
+        // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
+        // both constraint-aware). The ↗ Editor tab below stays FOR NOW and is consolidated into the
+        // drawer in a later pass. schedule_author_ui.js is left on disk and still loads: this removes
+        // the entry point, not the module, so nothing else that references it breaks. The guarded
+        // handler below is a no-op once the element is gone.
         '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
@@ -2615,7 +2626,18 @@
         '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
-        '<div id="tm-gantt-legend" style="display:flex;flex-wrap:wrap;gap:2px 8px;padding:2px 4px 2px 64px;font-size:10px;color:#ccc;min-height:14px"></div>' +
+        // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
+        // storey, phase, element count, day range and source, so the legend was pure duplication.
+        // §GANTT_RULER (E5) + §GANTT_RESIZE (E6), 2026-08-04. The drawer had NO time axis at all —
+        // the only temporal reference was the cursor hairline, so a bar's absolute dates were only
+        // discoverable by hovering it. position:sticky keeps the header pinned while the bar rows
+        // scroll underneath, so the axis is always on screen. The grip above it drags the drawer
+        // taller than the CSS 220px cap (a 22-storey building renders ~130 bars into that box).
+        '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
+          '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
+            'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block"></canvas>' +
+        '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
@@ -2906,8 +2928,13 @@
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
     });
+    // ── §GANTT_DRAG (E1/E2 UI half) — pointerdown starts a bar drag, pointerup either commits the
+    // edit or falls through to the original seek. Registered BEFORE the seek handler so _dragMoved
+    // is already set by the time that one runs.
+    wireGanttDrag();
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
+      if (_dragConsumed) { _dragConsumed = false; return; }   // this pointerup finished an edit, not a seek
       var rect = e.target.getBoundingClientRect();
       var x = (e.clientX - rect.left - 60) / (rect.width - 60);  // account for storey label margin
       if (x < 0) x = 0;
@@ -4110,13 +4137,105 @@
   // ── Mini Gantt chart ──
   var _ganttTasksComputed = false; // log once flag
 
+  // ── §GANTT_BAR_IDENTITY (K0 — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
+  // The drawer used to derive its bars purely by grouping raw kernel_ops on storey|phase, yielding
+  // bar objects with NO task_id — which is precisely why no bar was ever draggable: moveTask(db,
+  // taskId, …) had nothing to be handed. schedule_author.js materializeZones() already writes the
+  // SAME phase×floor decomposition into the real model (tasks + task_elements + task_sequences).
+  // Two code paths derived one decomposition independently and were never connected. This joins them.
+  //
+  // The join is by GUID through task_elements, deliberately NOT by matching storey/phase strings:
+  // deriveZones() keys a zone on collapsePhase(e.storey) while the drawer reads the raw p.storey off
+  // the op params, so those two names legitimately differ and string-matching would silently
+  // mis-associate bars. GUID identity is exact.
+  //
+  // Bars whose ops carry no task (a generated schedule with nothing authored) keep their old
+  // storey|phase identity and simply stay non-editable — honest, and reported as a coverage ratio by
+  // §GANTT_BAR_IDENTITY rather than hidden.
+  var _taskIndex = null;      // { guidTask:{guid→tid}, tasks:{tid→{id,name,start,finish}}, scheduleId }
+  var _taskIndexFor = null;   // building key the index was built for (invalidation)
+
+  function buildTaskIndex() {
+    var app = A();
+    var key = (app && app.activeBuilding) || '';
+    if (_taskIndex !== null && _taskIndexFor === key) return _taskIndex.ok ? _taskIndex : null;
+    _taskIndexFor = key;
+    _taskIndex = { ok: false, guidTask: {}, tasks: {}, scheduleId: null, n: 0 };
+    if (!app || !app.db) return null;
+    var db = app.db, sched = null;
+    try {
+      var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+      if (SA && SA.activeSchedule) sched = SA.activeSchedule(db);
+    } catch (e) { sched = null; }
+    if (!sched || !sched.id) {
+      console.log('§GANTT_BAR_IDENTITY schedule=none bars stay non-editable (no authored schedule)');
+      return null;
+    }
+    try {
+      var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish FROM tasks ' +
+        'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [sched.id]);
+      if (tr.length) tr[0].values.forEach(function (row) {
+        _taskIndex.tasks[row[0]] = { id: row[0], name: row[1], start: row[2], finish: row[3] };
+        _taskIndex.n++;
+      });
+      var er = db.exec('SELECT te.guid, te.task_id FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id WHERE t.schedule_id=?', [sched.id]);
+      if (er.length) er[0].values.forEach(function (row) { _taskIndex.guidTask[row[0]] = row[1]; });
+    } catch (e) {
+      console.log('§GANTT_BAR_IDENTITY schedule=' + sched.id + ' error=' + e.message);
+      return null;
+    }
+    _taskIndex.scheduleId = sched.id;
+    _taskIndex.ok = _taskIndex.n > 0;
+    return _taskIndex.ok ? _taskIndex : null;
+  }
+
+  // Invalidate the cached index + bar rollup (call after any write that re-dates or re-authors).
+  function invalidateGanttModel() { _taskIndex = null; _taskIndexFor = null; _ganttDirty = true; }
+
+  // §GANTT_PALETTE (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT VIS) — user report:
+  // "not clear enough which is which". Three real collisions in the previous palette, not taste:
+  //  1. Substructure #7a8a8e and Superstructure #5b7fa5 were both desaturated blue-greys — the least
+  //     distinguishable pair sat on the two ADJACENT structural phases.
+  //  2. Architecture #c07a4a (orange-brown) competed with two RESERVED STATUS colours: #ff8c00 is the
+  //     active-bar outline + cursor hairline, #ffeb3b is the captured-IFC-4D frame. A phase fill must
+  //     never occupy a status hue.
+  //  3. The palette encoded no trade family: the two MEP phases (#8bc34a green / #ab47bc purple)
+  //     looked unrelated, while MEP Rough-in and Finishes (#26a69a teal) looked related.
+  // Now: three trade families by HUE (structure blue / MEP green / architecture purple), dark→light
+  // WITHIN each family following build order, and orange+yellow left free for status only.
+  //
+  // MEASURED, not eyeballed (CIE76 dE + WCAG, scratchpad/palette_tune.js — the FUNDAMENTAL LAW
+  // applies to colour too: numbers, not "looks better"):
+  //   min pairwise dE      20.8 → 34.7   (worst old pair was Substructure/Superstructure, as reported)
+  //   min dE to a status hue 42.5 → 60.9
+  //   worst label contrast  2.10:1 → 5.92:1   (the OLD palette failed a 3.0 floor on every light bar —
+  //                                            white-on-#8bc34a was 2.10:1, effectively unreadable)
   var PHASE_COLORS = {
-    'Substructure': '#7a8a8e',
-    'Superstructure': '#5b7fa5',
-    'MEP Rough-in': '#8bc34a',
-    'Architecture': '#c07a4a',
-    'MEP Final': '#ab47bc',
-    'Finishes': '#26a69a'
+    'Substructure':   '#37516b',   // structure, deep
+    'Superstructure': '#79b4e8',   // structure, light
+    'MEP Rough-in':   '#27714a',   // MEP, deep
+    'MEP Final':      '#7ccb80',   // MEP, light
+    'Architecture':   '#5e3f87',   // architecture, deep
+    'Finishes':       '#c096e0'    // architecture, light
+  };
+
+  // Adaptive label ink — white on the deep family members, near-black on the light ones. Forcing
+  // white onto every bar is what drove the old 2.10:1 contrast; picked per fill, all six clear 5.9:1.
+  var PHASE_INK = {
+    'Substructure':   '#ffffff',
+    'Superstructure': '#10141a',
+    'MEP Rough-in':   '#ffffff',
+    'MEP Final':      '#10141a',
+    'Architecture':   '#ffffff',
+    'Finishes':       '#10141a'
+  };
+
+  // The in-bar text label used to be phase.substring(0,3), which collided on exactly the same pair
+  // the colours did: "Sub" vs "Sup", one character apart at 9px. Explicit short codes instead.
+  var PHASE_SHORT = {
+    'Substructure': 'SUB', 'Superstructure': 'SUPER', 'MEP Rough-in': 'MEP-R',
+    'MEP Final': 'MEP-F', 'Architecture': 'ARCH', 'Finishes': 'FIN'
   };
 
   // ── §TM-VARIANCE — budget-vs-actual from the STORED twin (TM_4D5D_VARIANCE_LANE §S1) ──
@@ -4401,27 +4520,36 @@
       ' AC=' + EVM.AC + ' CPI=' + EVM.CPI.toFixed(3) + ' CV=' + EVM.CV + ' BAC=' + EVM.BAC + ' EAC=' + EVM.EAC + ' VAC=' + EVM.VAC);
   }
 
-  function drawGanttMini() {
-    if (!_ops.length) return;
-    var canvas = document.getElementById('tm-gantt-canvas');
-    var box = document.getElementById('tm-gantt-box');
-    if (!canvas || !box) return;
-
-    // Group ops by storey|phase
+  // buildGanttTasks() — the storey|phase rollup, now cached and task-identity-aware (K0).
+  // Grouping key is the REAL task_id whenever the op's guid resolves through task_elements, so each
+  // resulting bar carries `taskId` and is addressable by moveTask/resizeTask/addDependency. Ops with
+  // no task fall back to the original storey|phase key and stay non-editable.
+  function buildGanttTasks() {
+    if (!_ganttDirty) return;
+    _ganttDirty = false;
+    var idx = buildTaskIndex();
     var groups = {};
+    var _idN = 0, _noIdN = 0;
     for (var i = 0; i < _ops.length; i++) {
       var op = _ops[i];
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
-      var key = storey + '|' + phase;
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, starts: [], ends: [], count: 0, cap: 0 };
+      // Real task identity first (exact, by guid); storey|phase only as the un-authored fallback.
+      var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
+      if (tid) _idN++; else _noIdN++;
+      var key = tid ? ('T:' + tid) : (storey + '|' + phase);
+      if (!groups[key]) groups[key] = { storey: storey, phase: phase, taskId: tid || null,
+        taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
+        starts: [], ends: [], count: 0, cap: 0, guids: [] };
       var g = groups[key];
       g.starts.push(op.start_ts);
       g.ends.push(op.end_ts);
+      g.guids.push(op.output_guid);   // W1 needs the member set to re-time an edited bar
       g.count++;
       if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
     }
+    _ganttIdentified = _idN; _ganttUnidentified = _noIdN;
 
     // §GANTT_MINI_TRIM (2026-07-18, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6
     // postscript 2): the bar's displayed span used to be the true min/max of every element in the
@@ -4457,30 +4585,455 @@
       _ganttTasks.push(g);
     }
 
-    // Sort by start time
-    _ganttTasks.sort(function(a, b) { return a.startTs - b.startTs; });
+    // §GANTT_ROW_ORDER (K1, 2026-08-04) — user report: "are you using any 4D convention used by P6 on
+    // gantt phase/task ordering? Last session was a mess putting substructure which has above ground
+    // appearing first." Correct answer at the time: we followed NO convention. Rows were sorted purely
+    // by `a.startTs - b.startTs`, so whichever zone happened to compute earliest floated to the top and
+    // a phase's floors appeared interleaved with other phases' — arbitrary, and unreadable as a
+    // construction programme.
+    //
+    // P6/MSP order rows by WBS path, THEN by early start. Our WBS is (phase → floor): the zone
+    // decomposition materializeZones already persists. So: phase in real construction sequence first,
+    // then start time within the phase (which tracks bottom-up floor order, because the engine builds
+    // floors bottom-up). Falls back to alphabetical for any phase outside the canonical list rather
+    // than silently bucketing it at position 0.
+    //
+    // ⚠ DERIVED FROM SEQUENCE_RULES, NEVER HARDCODED — and this matters, it is not tidiness.
+    // The first draft of this fix copied the order out of _VAR_ORDER (~:4238) and was WRONG: that
+    // array still reads Substructure/Superstructure/MEP Rough-in/Architecture/…, i.e. MEP rough-in
+    // BEFORE the building envelope — the exact backwards discipline PR #1165 fixed in SEQUENCE_RULES
+    // and across all 18 rate-template sources. _VAR_ORDER is a THIRD stale copy that #1165 missed
+    // (the two known-stale PHASE_ORDER arrays in this file are the other two). The real engine order,
+    // read from SEQUENCE_RULES' own sequence numbers, is:
+    //   Substructure(1) → Superstructure(2) → Architecture(5) → MEP Rough-in(7) → MEP Final(9) → Finishes(10)
+    // Deriving it kills this whole class of drift: the drawer cannot disagree with the engine again.
+    var _ROW_PHASE_ORDER = (function () {
+      var SR = (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null;
+      if (SR) {
+        var minSeq = {};
+        for (var k in SR) {
+          var r = SR[k]; if (!r || !r.phase || r.sequence == null) continue;
+          if (minSeq[r.phase] == null || r.sequence < minSeq[r.phase]) minSeq[r.phase] = r.sequence;
+        }
+        var ks = Object.keys(minSeq);
+        if (ks.length) return ks.sort(function (a, b) { return minSeq[a] - minSeq[b]; });
+      }
+      // Fallback only when SEQUENCE_RULES has not loaded — matches the derived order above.
+      return ['Substructure', 'Superstructure', 'Architecture', 'MEP Rough-in', 'MEP Final', 'Finishes'];
+    })();
+    function _phaseRank(p) {
+      var i = _ROW_PHASE_ORDER.indexOf(p);
+      return i < 0 ? _ROW_PHASE_ORDER.length : i;      // unknown phases sort after the known ones
+    }
+    _ganttTasks.sort(function (a, b) {
+      var pa = _phaseRank(a.phase), pb = _phaseRank(b.phase);
+      if (pa !== pb) return pa - pb;
+      if (pa === _ROW_PHASE_ORDER.length && a.phase !== b.phase) return a.phase < b.phase ? -1 : 1;
+      return (a.startTs - b.startTs) || (a.storey < b.storey ? -1 : a.storey > b.storey ? 1 : 0);
+    });
 
     if (!_ganttTasksComputed) {
+      var _idBars = 0;
+      for (var bi = 0; bi < _ganttTasks.length; bi++) if (_ganttTasks[bi].taskId) _idBars++;
       console.log('§GANTT_MINI tasks=' + _ganttTasks.length);
+      // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
+      // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
+      // authored schedule exists for this building, NOT that the join failed.
+      // K1 proof line: the row order actually drawn, so "is substructure first" is checkable from the
+      // log instead of from a screenshot.
+      console.log('§GANTT_ROW_ORDER phases=' + JSON.stringify(_ganttTasks.map(function (t) { return t.phase; })
+        .filter(function (p, i, arr) { return i === 0 || arr[i - 1] !== p; })));
+      console.log('§GANTT_BAR_IDENTITY schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
+        ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
+        ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
+        ' modelTasks=' + ((_taskIndex && _taskIndex.n) || 0));
       _ganttTasksComputed = true;
     }
+  }
 
-    // Phase legend strip
-    var legend = document.getElementById('tm-gantt-legend');
-    if (legend && !legend.childElementCount) {
-      var seenPhases = {};
-      for (var li = 0; li < _ganttTasks.length; li++) {
-        var lp = _ganttTasks[li].phase;
-        if (!seenPhases[lp]) {
-          seenPhases[lp] = true;
-          var sp = document.createElement('span');
-          sp.style.cssText = 'display:inline-flex;align-items:center;gap:2px';
-          sp.innerHTML = '<span style="width:8px;height:8px;border-radius:1px;background:' +
-            (PHASE_COLORS[lp] || '#888') + ';display:inline-block"></span>' + lp;
-          legend.appendChild(sp);
-        }
+  // §GANTT_RULER (E5) — the drawer's time axis. Ticks are chosen so labels land roughly every 80px
+  // and always on a "nice" day interval, so the axis stays readable from a 30-day Duplex to a
+  // 1000-day Terminal without any per-building tuning. Returns the tick times so the bar canvas can
+  // draw matching gridlines — one source of truth for where a date sits horizontally.
+  var _RULER_STEPS = [1, 2, 5, 7, 14, 30, 60, 90, 180, 365, 730];
+  function ganttRulerTicks(barW) {
+    var range = Math.max(1, _projectEnd - _projectStart);
+    var totalDays = range / 86400000;
+    var pxPerDay = barW / totalDays;
+    var step = _RULER_STEPS[_RULER_STEPS.length - 1];
+    for (var i = 0; i < _RULER_STEPS.length; i++) {
+      if (_RULER_STEPS[i] * pxPerDay >= 80) { step = _RULER_STEPS[i]; break; }
+    }
+    var ticks = [];
+    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: _projectStart + d * 86400000 });
+    return { ticks: ticks, step: step, totalDays: totalDays };
+  }
+
+  function drawGanttRuler(cW, marginL, barW) {
+    var rc = document.getElementById('tm-gantt-ruler');
+    if (!rc) return null;
+    var H = 18, dpr = window.devicePixelRatio || 1;
+    rc.width = cW * dpr; rc.height = H * dpr; rc.style.height = H + 'px';
+    var ctx = rc.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cW, H);
+    var R = ganttRulerTicks(barW);
+    var range = Math.max(1, _projectEnd - _projectStart);
+    // "Day N" origin label in the storey-label gutter, so the axis reads as project days too.
+    ctx.fillStyle = '#8a97a5'; ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('Day', 4, H / 2);
+    var longSpan = R.step >= 30;
+    ctx.strokeStyle = 'rgba(120,140,160,0.35)'; ctx.lineWidth = 1;
+    R.ticks.forEach(function (t) {
+      var x = marginL + (t.ts - _projectStart) / range * barW;
+      if (x < marginL - 0.5 || x > marginL + barW + 0.5) return;
+      ctx.beginPath(); ctx.moveTo(x + 0.5, H - 5); ctx.lineTo(x + 0.5, H); ctx.stroke();
+      var dt = new Date(t.ts);
+      // Real calendar date, plus the project-day number the rest of the drawer already speaks in.
+      var lbl = longSpan
+        ? dt.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+        : dt.getDate() + ' ' + dt.toLocaleDateString(undefined, { month: 'short' });
+      ctx.fillStyle = '#aab6c2'; ctx.textAlign = 'center';
+      ctx.fillText(lbl, x, 5);
+      ctx.fillStyle = '#68758a';
+      ctx.fillText('d' + t.day, x, 13);
+    });
+    // Cursor marker on the axis, same orange as the hairline.
+    var hx = marginL + (_cursor - _projectStart) / range * barW;
+    if (hx >= marginL && hx <= marginL + barW) {
+      ctx.fillStyle = '#ff8c00';
+      ctx.beginPath(); ctx.moveTo(hx, H - 6); ctx.lineTo(hx - 4, H); ctx.lineTo(hx + 4, H); ctx.closePath(); ctx.fill();
+    }
+    return R;
+  }
+
+  // §GANTT_RESIZE (E6) — drag the grip to make the drawer taller than the CSS 220px cap. Inline
+  // max-height wins over the .tm-drawer-bottom.open rule, so the class keeps owning open/close and
+  // this only owns the height. Reuses the same pointer-capture idiom as makeDraggable.
+  var _ganttBoxH = 0;   // 0 = follow the stylesheet default
+  function wireGanttResize() {
+    var grip = document.getElementById('tm-gantt-grip');
+    var box = document.getElementById('tm-gantt-box');
+    if (!grip || !box || grip._wired) return;
+    grip._wired = true;
+    var startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = box.clientHeight;
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      // Grip sits at the drawer's TOP edge, so dragging UP (negative dy) grows it.
+      var h = Math.max(80, Math.min(Math.round(window.innerHeight * 0.75), startH + (startY - e.clientY)));
+      _ganttBoxH = h;
+      box.style.maxHeight = h + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§GANTT_RESIZE height=' + _ganttBoxH + 'px rows=' + _ganttTasks.length);
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
+  // ── §GANTT_DRAG (E1/E2) + §GANTT_RETIME (W1) ──────────────────────────────────────────────────
+  // The UI half of the constraint-aware edit. The ENGINE half lives in schedule_author.js
+  // (moveTaskCascade / resizeTask) and is witnessed independently — this layer only translates a
+  // gesture into a date and then re-times the affected elements so the movie cannot disagree with
+  // the chart it was dragged on.
+  var _drag = null;            // { bar, mode:'move'|'resizeL'|'resizeR', x0, dayPx, previewDays }
+  var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
+  var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
+
+  // Which bar (and where on it) is under the pointer? Extends findBarAtClick with an edge zone so a
+  // single gesture can mean either E1 (move) or E2 (edge-pull), the way P6/MSP behave.
+  function ganttHit(e) {
+    var bar = findBarAtClick(e);
+    if (!bar) return null;
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var marginL = 60, barW = rect.width - marginL;
+    var range = Math.max(1, _projectEnd - _projectStart);
+    var bx = marginL + (bar.startTs - _projectStart) / range * barW;
+    var bw = Math.max(2, (bar.endTs - bar.startTs) / range * barW);
+    var mode = 'move';
+    if (x <= bx + EDGE_PX) mode = 'resizeL';
+    else if (x >= bx + bw - EDGE_PX) mode = 'resizeR';
+    return { bar: bar, mode: mode, dayPx: barW / (range / 86400000) };
+  }
+
+  // §GANTT_RETIME (W1) — after an accepted edit, re-time the affected tasks' OWN elements onto their
+  // new window. This is what keeps the drawer and the 3D movie from diverging: the bar's drawn span
+  // is derived from the element ops (§GANTT_BAR_IDENTITY), so moving the elements IS what moves the
+  // bar. Coherence is structural rather than policed afterwards.
+  //
+  // The remap is AFFINE over each element's existing position in its old window, deliberately: a
+  // zone's internal ordering was already computed correctly by the engine (computeSchedule, plus this
+  // session's support fixes), so an edit must PRESERVE that order, not re-derive it. Only the window
+  // the order is stretched across changes.
+  // The remap itself, kept pure and self-contained so witness_gantt_edit_coherence.js can slice it
+  // out of THIS source and test the shipped function rather than a hand-copied duplicate (the copy
+  // problem this codebase already paid for three times with the support predicate).
+  function _retimeSpan(opS, opE, oS, oE, nS, nE) {
+    var oSpan = Math.max(1, oE - oS), nSpan = Math.max(1, nE - nS);
+    var s = Math.round(nS + ((opS - oS) / oSpan) * nSpan);
+    var e = Math.round(nS + ((opE - oS) / oSpan) * nSpan);
+    if (s < nS) s = nS;
+    if (e > nE) e = nE;
+    if (e <= s) e = Math.min(nE, s + 60000);
+    return { s: s, e: e };
+  }
+
+  function retimeTaskElements(db, barsByTask, moved) {
+    var upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+      "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+    var opByGuid = {}, i;
+    for (i = 0; i < _ops.length; i++) if (_ops[i].output_guid) opByGuid[_ops[i].output_guid] = _ops[i];
+    var rows = 0, t0 = (window.performance || Date).now();
+    db.run('BEGIN');
+    moved.forEach(function (m) {
+      var bar = barsByTask[m.id]; if (!bar || !bar.guids || !bar.guids.length) return;
+      var nS = Date.parse(m.start + 'T00:00:00Z'), nE = Date.parse(m.finish + 'T00:00:00Z');
+      if (isNaN(nS) || isNaN(nE) || nE <= nS) return;
+      var oS = bar.startTs, oE = bar.endTs, oSpan = Math.max(1, oE - oS), nSpan = nE - nS;
+      for (var gi = 0; gi < bar.guids.length; gi++) {
+        var g = bar.guids[gi], op = opByGuid[g]; if (!op) continue;
+        var r = _retimeSpan(op.start_ts, op.end_ts, oS, oE, nS, nE);
+        op.start_ts = r.s; op.end_ts = r.e;
+        op.parameters._end_ts = r.e;
+        upd.run([r.s, JSON.stringify(op.parameters), g]);
+        rows++;
+      }
+    });
+    db.run('COMMIT');
+    upd.free();
+    console.log('§GANTT_RETIME tasks=' + moved.length + ' rows=' + rows +
+      ' ms=' + ((window.performance || Date).now() - t0).toFixed(1));
+    return rows;
+  }
+
+  // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
+  function commitGanttDrag(bar, mode, deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.moveTaskCascade) {
+      console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!bar.taskId) {
+      // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
+      console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
+      return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var res;
+    if (mode === 'move') {
+      res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
+    } else if (mode === 'resizeR') {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs),
+        d(bar.endTs + deltaDays * 86400000), {});
+    } else {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000),
+        d(bar.endTs), {});
+    }
+    if (!res || !res.ok) {
+      console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+    // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
+    if (res.clamped) {
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) {
+        tip.textContent = 'Blocked by ' + res.blockedBy + ' — clamped to ' + res.start;
+        tip.style.display = 'block';
+        setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
     }
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    retimeTaskElements(app.db, barsByTask, res.moved || []);
+    console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
+      ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  function wireGanttDrag() {
+    var cv = document.getElementById('tm-gantt-canvas');
+    if (!cv || cv._dragWired) return;
+    cv._dragWired = true;
+    cv.addEventListener('pointerdown', function (e) {
+      if (!_active || !_ganttTasks.length) return;
+      var hit = ganttHit(e);
+      if (!hit || !hit.bar.taskId) return;      // un-authored bars stay non-draggable, by design
+      _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (!_drag) { cv.style.cursor = (function () { var h = ganttHit(e); return h && h.bar.taskId ? (h.mode === 'move' ? 'grab' : 'ew-resize') : 'pointer'; })(); return; }
+      var days = Math.round((e.clientX - _drag.x0) / Math.max(0.001, _drag.dayPx));
+      if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip && _drag.moved) {
+        tip.textContent = (_drag.mode === 'move' ? 'Move ' : 'Resize ') + _drag.bar.phase + ' — ' +
+          _drag.bar.storey + '  ' + (days >= 0 ? '+' : '') + days + 'd';
+        tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+        tip.style.top = Math.max(2, e.offsetY - 22) + 'px';
+        tip.style.display = 'block';
+      }
+      e.preventDefault();
+    });
+    function endDrag(e) {
+      if (!_drag) return;
+      var d = _drag; _drag = null;
+      try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+      // §GANTT_LINK (E3): a drag that ENDS on a different bar, at least one row away, means "link
+      // these two", not "move this one". Requiring a full row of vertical travel keeps incidental
+      // drift during a horizontal move from silently creating a dependency.
+      var drop = ganttHit(e);
+      if (drop && drop.bar !== d.bar && drop.bar.taskId && d.bar.taskId &&
+          Math.abs(e.clientY - d.y0) >= 14) {
+        _dragConsumed = true;
+        linkGanttBars(d.bar, drop.bar);
+        return;
+      }
+      if (!d.moved || !d.days) return;          // a click, not a drag — let the seek handler have it
+      _dragConsumed = true;
+      commitGanttDrag(d.bar, d.mode, d.days);
+    }
+    cv.addEventListener('pointerup', endDrag);
+    cv.addEventListener('pointercancel', endDrag);
+    // §GANTT_PROPS (E7): double-click opens the keyed-entry panel. Drag is for speed, typing is for
+    // accuracy — on a 400-day project one pixel is ~2 days, so drag alone can never be the precise path.
+    cv.addEventListener('dblclick', function (e) {
+      var hit = ganttHit(e);
+      if (hit && hit.bar.taskId) { _dragConsumed = true; openGanttProps(hit.bar); }
+    });
+  }
+
+  // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
+  // schedule is invalid, so the guard refuses rather than "fixing" it silently.
+  function linkGanttBars(predBar, succBar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); return; }
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
+    if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
+      console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
+      say('Refused — that link would create a cycle');
+      return;
+    }
+    var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
+    console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
+      ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
+    say('Linked: ' + predBar.phase + ' — ' + predBar.storey + '  →  ' + succBar.phase + ' — ' + succBar.storey);
+    // The new edge may make the successor illegal where it currently sits. Re-apply it through the
+    // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
+    // freshly-created violation on screen.
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    if (SA.moveTaskCascade) {
+      var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId,
+        new Date(succBar.startTs).toISOString().slice(0, 10), {});
+      if (res && res.ok && res.moved && res.moved.length) {
+        var byTask = {};
+        for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+        retimeTaskElements(app.db, byTask, res.moved);
+      }
+    }
+    invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+  }
+
+  // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
+  // 1px arrow hit-target: same verbs, same C1/C2 checks, just a precise input surface).
+  function openGanttProps(bar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA) return;
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var box = document.getElementById('tm-gantt-props') || (function () {
+      var el = document.createElement('div');
+      el.id = 'tm-gantt-props';
+      el.style.cssText = 'position:absolute;right:8px;bottom:8px;z-index:20;background:rgba(20,20,40,0.97);' +
+        'border:1px solid rgba(79,195,247,0.35);border-radius:8px;padding:8px 10px;font-size:11px;' +
+        'color:#e0e0e0;min-width:250px;max-width:330px;max-height:60vh;overflow:auto';
+      (document.getElementById('time-machine-panel') || document.body).appendChild(el);
+      return el;
+    })();
+    var deps = (SA.listDependencies ? SA.listDependencies(app.db, schedId) : [])
+      .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
+    var depHtml = deps.length ? deps.map(function (x, i) {
+      var dir = x.succId === bar.taskId ? '← after' : '→ before';
+      var other = x.succId === bar.taskId ? x.predName : x.succName;
+      return '<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0">' +
+        '<span>' + dir + ' <b>' + other + '</b> <span style="color:#8a97a5">' + x.type +
+        (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</span></span>' +
+        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">unlink</button></div>';
+    }).join('') : '<div style="color:#8a97a5">no dependencies</div>';
+    box.innerHTML =
+      '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
+      '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
+        '<input id="tmp-s" type="date" value="' + d(bar.startTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
+        '<input id="tmp-f" type="date" value="' + d(bar.endTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
+      '<div style="display:flex;gap:6px;margin-top:8px">' +
+        '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
+        '<button id="tmp-close" style="font-size:11px">Close</button></div>' +
+      '<div id="tmp-msg" style="color:#ff8c00;margin-top:4px;min-height:12px"></div>';
+    box.style.display = 'block';
+    console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
+    document.getElementById('tmp-close').onclick = function () { box.style.display = 'none'; };
+    box.querySelectorAll('[data-unlink]').forEach(function (btn) {
+      btn.onclick = function () {
+        var x = deps[parseInt(btn.getAttribute('data-unlink'), 10)];
+        if (!x || !SA.removeDependency) return;
+        SA.removeDependency(app.db, x.predId, x.succId);
+        console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
+        invalidateGanttModel(); computeDays(); drawGanttMini(); openGanttProps(bar);
+      };
+    });
+    document.getElementById('tmp-apply').onclick = function () {
+      var s = document.getElementById('tmp-s').value, f = document.getElementById('tmp-f').value;
+      var msg = document.getElementById('tmp-msg');
+      // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
+      // surface onto one model, never a bypass around C1/C2.
+      var res = (s !== d(bar.startTs) && f === d(bar.endTs) && SA.moveTaskCascade)
+        ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
+        : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
+      if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
+      if (msg) msg.textContent = res.clamped ? ('Clamped to ' + res.start + ' by ' + res.blockedBy) :
+        ('Applied · ' + res.cascaded + ' successor(s) cascaded');
+      var byTask = {};
+      for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+      retimeTaskElements(app.db, byTask, res.moved || []);
+      console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
+        ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+      invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+    };
+  }
+
+  function drawGanttMini() {
+    if (!_ops.length) return;
+    var canvas = document.getElementById('tm-gantt-canvas');
+    var box = document.getElementById('tm-gantt-box');
+    if (!canvas || !box) return;
+    buildGanttTasks();
+    if (!_ganttTasks.length) return;
+    wireGanttResize();
+    if (_ganttBoxH) box.style.maxHeight = _ganttBoxH + 'px';
+
+    // §GANTT_PALETTE: the phase legend strip is GONE (user: "the legend is redundant, just hover
+    // labelling is sufficient"). The hover tooltip already reports strictly more than the legend did
+    // — storey, phase, element count, day range AND the generated-vs-IFC-4D source — so the legend
+    // carried no information of its own. Removing it returns its row of vertical space to the bars.
 
     // Canvas sizing
     var barH = 12, gapH = 2, rowH = barH + gapH;
@@ -4500,6 +5053,20 @@
 
     var range = Math.max(1, _projectEnd - _projectStart);
     var prevStorey = '';
+
+    // §GANTT_RULER (E5): draw the sticky axis header, then lay its ticks down the bar canvas as
+    // gridlines. Same tick set for both, so a bar's edge can be read against a real date instead of
+    // being eyeballed against nothing. Drawn BEFORE the bars so it never sits on top of them.
+    var R = drawGanttRuler(cW, marginL, barW);
+    if (R) {
+      ctx.strokeStyle = 'rgba(120,140,160,0.13)';
+      ctx.lineWidth = 1;
+      R.ticks.forEach(function (t) {
+        var gx = Math.round(marginL + (t.ts - _projectStart) / range * barW) + 0.5;
+        if (gx < marginL || gx > marginL + barW) return;
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cH); ctx.stroke();
+      });
+    }
 
     // Draw bars
     for (var ti = 0; ti < numTasks; ti++) {
@@ -4524,7 +5091,9 @@
       // Active highlight: cursor is within this task's time range
       var isActive = (_cursor >= task.startTs && _cursor <= task.endTs);
 
-      ctx.globalAlpha = 0.8;
+      // §GANTT_PALETTE: fills at full opacity — 0.8 flattened what little contrast the old palette
+      // had. The families carry the distinction now, so the bars can be read at a glance.
+      ctx.globalAlpha = 1;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
 
@@ -4544,14 +5113,15 @@
         ctx.strokeRect(x, y, w, barH);
       }
 
-      // Label: first 3 chars of phase, only if bar wide enough
+      // Label: explicit phase short-code (§GANTT_PALETTE). substring(0,3) used to yield "Sub" vs
+      // "Sup" — one character apart at 9px, colliding on the very pair the colours also collided on.
       if (w > 40) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = PHASE_INK[task.phase] || '#fff';
         ctx.font = '9px sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(task.phase.substring(0, 3), x + w - 3, y + barH / 2);
+        ctx.fillText(PHASE_SHORT[task.phase] || task.phase.substring(0, 3), x + w - 3, y + barH / 2);
       }
     }
 
@@ -5097,7 +5667,7 @@
         }
         stmt.free();
         db.run('COMMIT');
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (st) st.textContent = '';
         viewerStatus('Time Machine: ' + _ops.length + ' elements (cached)');
         _finishActivate(app);
@@ -5106,7 +5676,7 @@
       }
 
       // No cache — try loading existing kernel_ops
-      _ops = loadOps();
+      _ops = loadOps(); _ganttDirty = true;
       // §S260e: Only count ELEMENT_PLACE ops — ignore picks/other ops
       var _placeOps = _ops.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
       if (_placeOps.length && !_placeOps[0].parameters._end_ts) {
@@ -5114,7 +5684,7 @@
         _placeOps = [];
         console.log('§TIME_MACHINE cleared stale unweighted ops — will re-inject');
       }
-      if (_placeOps.length) { _ops = _placeOps; }
+      if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
 
       if (!_placeOps.length) {
@@ -5127,7 +5697,7 @@
           resolve(false);
           return;
         }
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (!_ops.length) { resolve(false); return; }
         // §S260c: Cache the newly computed schedule to IDB
         cachePut('gantt', _ops);
@@ -5140,8 +5710,8 @@
     }).catch(function(e) {
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
-      _ops = loadOps();
-      if (!_ops.length) { injectGantt(); _ops = loadOps(); }
+      _ops = loadOps(); _ganttDirty = true;
+      if (!_ops.length) { injectGantt(); _ops = loadOps(); _ganttDirty = true; }
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
@@ -5240,6 +5810,7 @@
     _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false;
+    invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');

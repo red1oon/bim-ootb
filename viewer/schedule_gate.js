@@ -350,7 +350,20 @@
       if (!pred || !succ || pred.id === succ.id) return;
       if (pred.start > succ.start) return;                    // structural DAG guard — see header
       var key = pred.id + '->' + succ.id; if (edgeSeen[key]) return; edgeSeen[key] = 1;
-      edges.push({ predId: pred.id, succId: succ.id, lagMs: Math.max(0, succ.start - pred.end) });
+      // §ZONE_EDGE_LEAD (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT):
+      // the lag used to be Math.max(0, succ.start - pred.end), which CLAMPED AWAY every real overlap.
+      // Zones genuinely run in parallel (crews work floor N+1 while floor N finishes), so whenever
+      // succ.start < pred.end the true relationship is a NEGATIVE lag — a "lead" in P6/MSP terms,
+      // written FS-5d. Clamping it to 0 persisted an FS+0 edge asserting "successor starts at or
+      // after predecessor finishes", which the zone's OWN dates then contradicted.
+      // MEASURED before the fix (witness_gantt_edit_constraints.js G-CON-1, Terminal): 53 of 105
+      // persisted edges were violated by the very dates materializeZones wrote alongside them.
+      // This was invisible to computeCpm(fixedDates:true) — that path trusts the real dates and only
+      // derives float — but it is load-bearing the moment the edges become drag CONSTRAINTS: a clamp
+      // built on FS+0 refuses legal moves, and a cascade pushes bars that never needed to move.
+      // Negative lag is standard scheduling semantics, not an invention, and it reproduces the real
+      // observed element times exactly instead of approximating them.
+      edges.push({ predId: pred.id, succId: succ.id, lagMs: succ.start - pred.end });
     }
     // (a) within-phase, adjacent REAL floor (rank) — the rolled-up band-monotonic relationship.
     var byPhase = {};
