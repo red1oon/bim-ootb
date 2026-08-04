@@ -4541,8 +4541,19 @@ async function setupEffects(A, renderer, scene, camera) {
     return a * Math.max(0, Math.min(1, t)) + (1 - a) * _cinemaSmoothstep(t);
   }
   // §EFFECTS_LOADED — effects.js's build fingerprint, so a pasted console can answer "is this
-  // live?" by itself. Bump on EVERY behaviour change in this file.
-  var EFFECTS_V = 'v18 (§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; §CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
+  // live?" by itself. Bump on EVERY behaviour change in this file. Reorganized to one clause per
+  // line 2026-08-04 for readability (no §TAG dropped) — also CAUGHT UP a real gap found while doing
+  // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
+  // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
+  // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
+  var EFFECTS_V = 'v19 (' +
+    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides LOS/§CPE_AIM_DENSITY outright ' +
+      '(_buildPinZones/_pinLookAtAt inside _beat3Pose) — was live in v18\'s shipped code, this ' +
+      'string just never said so; ' +
+    '§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; ' +
+    '§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; ' +
+    '§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; ' +
+    '§STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)';
   console.log('§EFFECTS_LOADED ' + EFFECTS_V);
 
   // Inverse of scene.js's A.ifc2three (IFC X=east,Y=north,Z=up → three X=east,Y=up,Z=south).
@@ -5130,6 +5141,53 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return flowWp[flowWp.length - 1];
     }
+
+    // ══ §CPE_AIM_PIN — click-to-pin explicit look-target ═══════════════════════════════════════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part C. A band can now carry `lookAt:
+    // {x,y,z}|null`. `_cpeBands` (module scope, set by the A.cinemaPathPlan wrapper above) is
+    // fully flattened into `flowWp` by `_cinemaBandFlow` before it ever reaches this closure — no
+    // band identity survives that flattening (comment at _cinemaBandFlow's own header) — so there
+    // is no existing "which band is e3 in" mapping to reuse. Built once per plan, lazily, the same
+    // nearest-point technique `_bandArcS`/`_hitTestPath` already use client-side (cinema_path_
+    // editor.js) for the identical question, just run here against the SAME `flowWp` the walk is
+    // actually sampled from (so a pin's zone is defined on the exact curve `_outPos` reads, hose
+    // pulls and all — not a second, unhosed notion of "where band i is").
+    //
+    // Zone = the arc-fraction stretch nearer to band i's own centre than to any neighbour's — i.e.
+    // the Voronoi partition of the walk by band-centre arc-fraction. This is what makes "the pin
+    // always wins locally at its own band, with LOS/density resuming immediately after, no bleed
+    // into neighbours" (spec's own recommendation, Part C open question 1) true by CONSTRUCTION:
+    // every e3 belongs to exactly one zone, and a zone's aim is decided ONLY by its own band.
+    var _pinZones = null;
+    function _buildPinZones() {
+      _pinZones = [];
+      if (!_cpeBands || !_cpeBands.length) return;
+      var fracs = _cpeBands.map(function(b) {
+        var best = 0, bd = Infinity;
+        for (var pi = 0; pi < flowWp.length; pi++) {
+          var dx = flowWp[pi].x - b.c.x, dy = flowWp[pi].y - b.c.y, dz = flowWp[pi].z - b.c.z;
+          var d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) { bd = d; best = pi; }
+        }
+        return segLen[best] / totalLen;
+      });
+      for (var bi = 0; bi < _cpeBands.length; bi++) {
+        var lo = bi === 0 ? 0 : (fracs[bi - 1] + fracs[bi]) / 2;
+        var hi = bi === _cpeBands.length - 1 ? 1 : (fracs[bi] + fracs[bi + 1]) / 2;
+        _pinZones.push({ lo: lo, hi: hi, lookAt: _cpeBands[bi].lookAt || null, b: bi });
+      }
+    }
+    // Read-only: the world point a pinned band at this e3 wants looked at, or null when e3 falls in
+    // an unpinned band's zone (or there are no bands at all — the derived/loose-waypoint route).
+    function _pinLookAtAt(e3) {
+      if (_pinZones === null) _buildPinZones();
+      for (var zi = 0; zi < _pinZones.length; zi++) {
+        var z = _pinZones[zi];
+        if (e3 >= z.lo && e3 <= z.hi) return z.lookAt;
+      }
+      return null;
+    }
+    A._cpePinZonesDebug = function() { if (_pinZones === null) _buildPinZones(); return _pinZones; };   // witness hook, read-only
     // ══ §CINEMA_GAZE_SENSE (2026-07-27) — decide the look-back's turn DIRECTION ONCE per plan.
     // _cinemaGazeBlend used to make this choice PER FRAME: if |dYaw| crossed CINEMA_TURN_ANTIPODAL_RAD
     // it switched from the short way to the +2π way. That test is a step function of the walk
@@ -6468,6 +6526,19 @@ async function setupEffects(A, renderer, scene, camera) {
           var _ll = Math.hypot(_lx, _ly, _lz) || 1;
           _lx /= _ll; _ly /= _ll; _lz /= _ll;
         }
+        // §CPE_AIM_PIN: a pin at THIS e3's band wins outright — no LOS, no density, no depth. Spec
+        // Part C open question 1's own recommendation, built as the default (flagged in the DONE
+        // block as not explicitly user-confirmed, same treatment §CPE_VIEWFINDER's fps question
+        // got): "the pin always wins locally at its own band, with LOS/density resuming immediately
+        // after, no bleed into neighbours." Checked BEFORE §CPE_AIM_DENSITY/DEPTH below so a pinned
+        // zone never even calls them — the "no bleed" guarantee comes from `_pinLookAtAt` itself
+        // (a Voronoi partition by band, see its own comment), not from a blend weight here.
+        var _pin = _pinLookAtAt(e3);
+        if (_pin) {
+          var _pdx = _pin.x - p3.x, _pdy = _pin.y - p3.y, _pdz = _pin.z - p3.z;
+          var _pdL = Math.hypot(_pdx, _pdy, _pdz) || 1;
+          _lx = _pdx / _pdL; _ly = _pdy / _pdL; _lz = _pdz / _pdL;
+        } else {
         // §CPE_AIM_DENSITY: applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS
         // at e3=0, where its own weight is 0 anyway — the settle is inside the building) and BEFORE
         // the orbit hand-off below, which must stay the last word on the gaze at the end of the walk.
@@ -6498,6 +6569,7 @@ async function setupEffects(A, renderer, scene, camera) {
           // most one is ever non-zero at a given pose.
           var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
+        }
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
@@ -6976,8 +7048,11 @@ async function setupEffects(A, renderer, scene, camera) {
                // §CPE_STICK_HOLD rides along for the same reason `_stick`/`_s` do (§CPE_REOPEN_NODE):
                // the plan is what the editor RE-OPENS from, so a dropped field silently resets the
                // user's typed hold to 0 on the next OK.
+               // §CPE_AIM_PIN rides along for the same reason: the plan is what the editor
+               // RE-OPENS from, so a dropped field would silently un-pin every band on the next OK.
                return { c: { x: b.c.x, y: b.c.y, z: b.c.z }, d: { x: b.d.x, y: b.d.y, z: b.d.z }, len: b.len,
-                        hold: +(b.hold || 0), _stick: b._stick, _s: b._s };
+                        hold: +(b.hold || 0), _stick: b._stick, _s: b._s,
+                        lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
              }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
              sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, rise: _useSec.rise },
