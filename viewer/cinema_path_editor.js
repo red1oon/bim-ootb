@@ -713,7 +713,7 @@
         // §CPE_VIEWFINDER launcher (spec Part B point 7, user 2026-08-04 correction: eye icon, not
         // binoculars) — icon-only, OFF by default, so it does not clutter the header. Matches the
         // action-row button convention (~L664-667) at a smaller icon-only footprint.
-        // OFF by default (spec) — the slashed eye is the correct starting icon; _toggleViewfinder
+        // OFF by default (spec) — the shut eye is the correct starting icon; _toggleViewfinder
         // swaps it in place, never rebuilding the button.
         '<button id="cpe-vf-toggle" title="turn on the POV viewfinder (B) — shows the exact camera pose the rehearsal is at" ' +
           'style="flex:none;padding:3px 8px;font-size:13px;line-height:1;background:#2a2e34;color:#888;' +
@@ -1397,18 +1397,12 @@
     var ms = performance.now() - t0;
     _vfPerf.n++; _vfPerf.sum += ms; if (ms > _vfPerf.max) _vfPerf.max = ms;
   }
-  // §CPE_VIEWFINDER on/off icon — open eye = ON/visible, slashed eye = OFF/hidden (user, 2026-08-04:
-  // "find another eye icon that is closed eye to reflect it is OFF"). Reads `panels.js`'s shared
-  // `ICONS` registry (`eyeOpen`/`eyeOff`, added alongside this fix — NOT `ICONS.eye`, which is
-  // actually Lucide's "scan-eye", a different shape, repurposed there for an unrelated Role View
-  // toggle). `ICONS` is a plain top-level `var` in panels.js, so it is a real global by the time this
-  // runs (the editor only opens on Alt+C, long after every script has loaded) — same cross-file
-  // reliance `A.icon()`'s own callers already have, not a new pattern.
+  // §CPE_VIEWFINDER on/off icon — open eye = ON/visible, shut eye = OFF/hidden (user, 2026-08-04: the
+  // Lucide slashed-eye glyph read as "eye with a line through it", not an actual shut eyelid — swapped
+  // for the user's own sprites, viewer/icons/eye_open.png / eye_closed.png, white-on-transparent so
+  // they read against the panel's dark header).
   function _eyeIconSvg(on) {
-    var ic = (typeof ICONS !== 'undefined') && ICONS[on ? 'eyeOpen' : 'eyeOff'];
-    if (!ic) return on ? '👁️' : '🚫';   // ICONS not loaded (§LOAD_FAIL panels.js) — degrade, don't break
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
-      'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ic.svg + '</svg>';
+    return '<img src="icons/eye_' + (on ? 'open' : 'closed') + '.png" width="14" height="14" alt="">';
   }
   function _toggleViewfinder(btn) {
     if (!_state) return;
