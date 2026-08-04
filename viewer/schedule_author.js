@@ -70,6 +70,22 @@
     return dflt;   // tier 3 — generic default
   }
 
+  // classify — thin convenience wrapper around matchRule for the exact-lookup consumers named in
+  // CLASSIFICATION_EXACT_LOOKUP_BLINDSPOT.md §PROPOSED FIX: callers that used to do a raw
+  // `SEQUENCE_RULES[cls]` dictionary lookup (bypassing tier 1's substring match, tier 2's schema-
+  // hierarchy walk, and tier 3's `§CLASS_UNMATCHED` visibility entirely) call this instead. Real
+  // browser call sites only ever need `classify(cls)` or `classify(cls, hierarchy)` — rules/dflt
+  // default from the same window globals matchRule's own callers already default from (rates.js).
+  // `rules`/`dflt` are accepted as trailing overrides so a Node witness can drive this against real
+  // fixture data without a window global to read (module-scope `global` here is `this`, not
+  // `globalThis` — see witness_schema_exhaustive_classify.js).
+  function classify(cls, hierarchy, rules, dflt) {
+    rules = rules || global.SEQUENCE_RULES || {};
+    dflt = dflt || global.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+    hierarchy = hierarchy || global.IFC_SCHEMA_HIERARCHY || {};
+    return matchRule(cls, rules, dflt, hierarchy);
+  }
+
   // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
   // ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely
   // structural plates/members. Checked BEFORE matchRule, never replacing it — see rates/sequence_rules.json.
@@ -1508,6 +1524,7 @@
 
   var API = {
     matchRule: matchRule,
+    classify: classify,
     matchNameOverride: matchNameOverride,
     // §TM_DURATION_SYNC — exported so time_machine.js's playback-clock duration engine
     // (getInstallSecs, viewer/time_machine.js ~3478) can call the SAME fragmentation-aware
