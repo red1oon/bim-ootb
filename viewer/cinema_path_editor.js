@@ -2763,6 +2763,13 @@
     if (window.APP) {
       window.APP.cinemaPathEditor = {
         open: open, version: CPE_V,
+        // §DLOD_VF_CAMGUARD (2026-08-05, cross-session finding — see 4D_SCHEDULE_PERFECTION.md and
+        // this file's own SESSION HANDOFF): time_machine.js's buildup-visibility DLOD gate was
+        // hardcoded to the main camera even while the POV panel scrubs `vfCam` independently. This
+        // is the clean read surface for that fix — returns the live POV camera object ONLY while
+        // the viewfinder is actually on, else null, so a caller elsewhere never needs to know about
+        // `_state` at all.
+        activePOVCamera: function() { return (_state && _state.vfOn && _state.vfCam) ? _state.vfCam : null; },
         // §CPE_STICK_HOLD — the teaching default, exposed so the witness asserts against the
         // constant the seeding actually uses rather than a copy of the number (G-SH-7).
         holdDefaultSec: CPE_HOLD_DEFAULT_SEC,
