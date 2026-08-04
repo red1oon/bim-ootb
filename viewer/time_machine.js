@@ -2174,7 +2174,7 @@
     obj._tm_highlighted = false;
   }
 
-  function clearHighlight() {
+  function clearHighlight(force) {
     // §Z_STACK_XRAY_STAGING: this runs at the TOP of every renderAtTime tick (§S260c "restore
     // previously highlighted meshes to solid"), which is correct for the transient frontier glow
     // (~a handful of elements at a time, per §CREW-CAP) but would be an O(staged-population)
@@ -2182,10 +2182,15 @@
     // exact per-tick cost W-XRAY-4 exists to keep bounded. _tm_xrayStaged objects are left alone
     // here; renderAtTime's own showReal branch restores them explicitly, exactly once, on the tick
     // they actually resolve (or scrub behind their own reveal) — see the _tm_xrayStaged checks there.
+    // §TM_CLOSE_RESTORE (2026-08-04): that per-tick skip must NOT apply when TM itself is being
+    // switched off — deactivate()'s restoreVisibility() passes force=true so a still-staged (ghosted,
+    // grey/0.3-opacity) element does not survive TM closing. Same "nothing may survive TM being
+    // switched off" convention this file already applies to _gspClear/_tmXraySolidifyTs/etc.
     var keep = [];
     for (var i = 0; i < _highlightMeshes.length; i++) {
       var hm = _highlightMeshes[i];
-      if (hm._tm_xrayStaged) { keep.push(hm); continue; }
+      if (!force && hm._tm_xrayStaged) { keep.push(hm); continue; }
+      hm._tm_xrayStaged = false;
       restoreMaterial(hm);
     }
     _highlightMeshes = keep;
@@ -2558,8 +2563,8 @@
     });
   }
 
-  function restoreVisibility() {
-    clearHighlight();
+  function restoreVisibility(force) {
+    clearHighlight(force);
     var app = A();
     // §SE-7: matrices come from `_savedInstanceMatrices` (renderAtTime's lazy per-tick cache), not a
     // private clone saveVisibility() no longer makes. `activate()` always calls `renderAtTime()` at
@@ -5966,7 +5971,7 @@
     if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
     setToolbarHighlight(false);
-    restoreVisibility();
+    restoreVisibility(true);  // §TM_CLOSE_RESTORE: force — nothing (incl. xray-staged ghosts) may survive TM going off
     // §S262: DLOD runs independently — no pause/resume needed
     viewerStatus('');
     console.log('§TIME_MACHINE OFF — restored');
