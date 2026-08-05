@@ -1491,6 +1491,17 @@
             } else if (alt && alt.length) {
               _log('§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=' + a.storey + ' the only revisit-free detour is ' +
                 'longer (' + chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm) — keeping the shorter line');
+            } else {
+              // §PATH_LEGAL_DETOUR_REVISIT_FORCED (2026-08-05, real gap caught in review): the two
+              // branches above only fire when a revisit-free ALTERNATIVE exists (chosen either
+              // because it's shorter, or kept-anyway because it's longer). When no such alternative
+              // exists at all (`alt` null/empty — the revisit is the ONLY legal route), neither branch
+              // fired and the revisit was kept with ZERO log line — indistinguishable in the log from
+              // a clean detour with no revisit at all. Detecting the revisit was already correct; this
+              // just makes the "kept because it's the only option" case as visible as the "kept
+              // because shorter" case above, per this project's no-silent-fallback Log Mandate.
+              _log('§PATH_LEGAL_DETOUR_REVISIT_FORCED storey=' + a.storey + ' no revisit-free detour exists ' +
+                'at all (' + revisits.length + ' unavoidable waypoint(s): ' + revisits.join(',') + ') — keeping the only route');
             }
           }
         }
