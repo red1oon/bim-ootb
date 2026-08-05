@@ -37,6 +37,11 @@
 //   G-SCRUB-PLAY-POVONLY  the SAME button-driven flight leaves the main camera byte-identical
 //                       throughout (start/pause/resume) — §CPE_SCRUB_POV_ONLY: the scrub-play
 //                       button now calls _previewFly(true), driving B alone, never the main canvas.
+//   G-VF-DRAG-WAKES-RENDER  dragging/resizing B's panel calls markDirty() on every move, not just on
+//                       release (§CPE_VF_DRAG_MARKDIRTY) — the real staleness cause behind OPEN 3.
+//   G-BUILDUP-GATES-TM  the timeline panel needs BOTH the eye ON and buildup checked
+//                       (§CPE_BUILDUP_GATES_TM) — cycling the eye while buildup is off must NOT
+//                       resurrect it, the actual bug this gate exists to catch.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
 //   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
 //              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call.
@@ -512,6 +517,65 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
+
+  // ── G-VF-DRAG-WAKES-RENDER: §CPE_VF_DRAG_MARKDIRTY (2026-08-05, OPEN 3 root cause) — dragging or
+  // resizing B's panel must call markDirty() on EVERY move, not just on release. Before this fix,
+  // neither _makeDraggable's shared drag handler nor the resize handle's pointermove ever woke the
+  // (self-parking, §IDLE-PARK) render loop — on a static scene the CSS border moved live under the
+  // cursor while _vfRender()'s scissor rect stayed frozen at the pre-drag position/size the whole
+  // drag, only catching up whenever something UNRELATED happened to wake the loop. This is the
+  // structural cause behind "dragging repositions correctly but releasing snaps it back" / "inset
+  // not fitting the box, bigger a bit and off" — a staleness bug, not a coordinate-math bug.
+  const dragWake = await page.evaluate(async () => {
+    const A = window.APP;
+    let calls = 0;
+    const orig = A.markDirty;
+    A.markDirty = function() { calls++; return orig.apply(A, arguments); };
+    const title = document.getElementById('cpe-vf-title');
+    const r0 = title.getBoundingClientRect();
+    const sx = r0.left + 20, sy = r0.top + 10;
+    const fire = (type, x, y, buttons) => title.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, buttons, pointerId: 1 }));
+    fire('pointerdown', sx, sy, 1);
+    await new Promise(r => setTimeout(r, 20));
+    for (let i = 1; i <= 5; i++) { fire('pointermove', sx + i * 15, sy + i * 5, 1); await new Promise(r => setTimeout(r, 20)); }
+    fire('pointerup', sx + 75, sy + 25, 0);
+    A.markDirty = orig;
+    return { calls };
+  });
+  P('G-VF-DRAG-WAKES-RENDER dragging B\'s panel calls markDirty() on every move (not just on release)',
+    dragWake.calls >= 5, `markDirtyCallsDuring5Moves=${dragWake.calls}`);
+
+  // ── G-BUILDUP-GATES-TM: §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2) — the timeline panel needs
+  // BOTH the eye ON and buildup checked (an AND-gate, user: "it follows the Eye" AND "buildUp told u
+  // also, when it is unchecked it should not remain because it was called by buildup"). B's eye is
+  // ON at this point (earlier gates left it on). B's own panel/hookInstalled state must be untouched
+  // by any of this — only the TIMELINE panel is gated by buildup, never B itself.
+  const gate = await page.evaluate(() => {
+    const cb = document.getElementById('cpe-buildup');
+    const vfBefore = window.APP.cinemaPathEditor._probeVF();
+    // 1) Uncheck buildup (eye still ON) — timeline must go away.
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    const step1 = { scrubGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
+    // 2) Toggle the eye OFF then back ON while buildup is STILL unchecked — timeline must NOT
+    // reappear (this is the actual bug the AND-gate exists to prevent: eye-alone used to resurrect it).
+    window.APP.cinemaPathEditor._vfToggle();   // eye off
+    window.APP.cinemaPathEditor._vfToggle();   // eye back on
+    const step2 = { scrubStillGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
+    // 3) Re-check buildup (eye is on from step 2) — timeline must come back.
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change'));
+    const step3 = { scrubBack: !!document.getElementById('cpe-scrub-track') };
+    return { vfBefore, step1, step2, step3 };
+  });
+  P('G-BUILDUP-GATES-TM unchecking buildup hides the timeline panel, B itself untouched',
+    gate.step1.scrubGone && gate.step1.vf.on === gate.vfBefore.on && gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled,
+    `scrubGoneOnUncheck=${gate.step1.scrubGone} vfOnUnchanged=${gate.step1.vf.on === gate.vfBefore.on} vfHookUnchanged=${gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled}`);
+  P('G-BUILDUP-GATES-TM cycling the eye while buildup is OFF does NOT resurrect the timeline (the actual AND-gate)',
+    gate.step2.scrubStillGone && gate.step2.vf.on === true,
+    `scrubStillGoneAfterEyeCycle=${gate.step2.scrubStillGone} vfOnAfterCycle=${gate.step2.vf.on}`);
+  P('G-BUILDUP-GATES-TM re-checking buildup (eye already on) restores the timeline panel',
+    gate.step3.scrubBack, `scrubTrackPresent=${gate.step3.scrubBack}`);
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());

@@ -1466,6 +1466,18 @@
     document.body.appendChild(d);
     d._dragStrip = 22;
     if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
+    // §CPE_VF_DRAG_MARKDIRTY (2026-08-05) — the ACTUAL root cause behind "dragging repositions
+    // correctly, but releasing snaps it back" / "inset not fitting the box, bigger a bit and off"
+    // (OPEN 3): neither `_makeDraggable`'s shared drag handler nor the resize handle's own
+    // pointermove below ever call `markDirty()`. On an idle/parked render loop (§IDLE-PARK, main.js)
+    // — the common case while just dragging a UI panel with no camera motion — `_vfRender()` only
+    // runs INSIDE that loop's render-gated block, so it never re-fires mid-drag: the CSS border
+    // moves live under the cursor while the scissor-rendered CONTENT stays frozen at the pre-drag
+    // rect, catching up only whenever something UNRELATED happens to wake the loop. Fixed by waking
+    // it explicitly on every drag/resize move (both bubble through this parent — `#cpe-vf-title`
+    // drives `_makeDraggable`'s drag, `#cpe-vf-resize` drives the corner resize below — neither
+    // stops propagation on pointermove), gated to `e.buttons` so a mere hover never wastes a frame.
+    d.addEventListener('pointermove', function(e) { if (e.buttons && a.markDirty) a.markDirty(); });
     _clampPanelToViewport(d, !_vfRect);
     // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation/drag logging (unlike #cpe-panel's
     // own §CPE_PANEL_DRAGGABLE/§CPE_PANEL_MOVED pair), so the console during a live repro carried no
@@ -1648,7 +1660,10 @@
       // §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it similar to opening
       // eye") — the eye toggle is the ONE control for both now, same button, no second widget.
       // Opening the eye brings the timeline back if a prior close removed it.
-      if (!document.getElementById('cpe-scrub-panel')) {
+      // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
+      // remain because it was called by buildup") — the timeline panel needs BOTH the eye ON AND
+      // buildup checked, an AND-gate, not eye-alone. Don't resurrect it here if buildup is off.
+      if (_state.buildup && !document.getElementById('cpe-scrub-panel')) {
         _buildScrubPanel();
         _wireScrub(document.getElementById('cpe-scrub-track'));
         _wireScrubPlay();
@@ -2810,6 +2825,19 @@
         // this checkbox.
         console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
           ' — reveal FOLLOWS the Time Machine timeline as-is (no re-key; the camera does not author the build order)');
+        // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
+        // remain because it was called by buildup" / "it follows the Eye ... buildUp told u also")
+        // — the timeline panel needs BOTH the eye ON AND buildup checked (AND-gate, see the mirror
+        // of this in _toggleViewfinder's ON branch). Unchecking buildup tears it down regardless of
+        // the eye; re-checking it only rebuilds if the eye is ALSO already on.
+        if (!_state.buildup) {
+          _scrubPanelTeardown();
+        } else if (_state.vfOn && !document.getElementById('cpe-scrub-panel')) {
+          _buildScrubPanel();
+          _wireScrub(document.getElementById('cpe-scrub-track'));
+          _wireScrubPlay();
+          _renderScrub();
+        }
         _renderWhole(); _syncButtons();
       });
       document.getElementById('cpe-room-title').addEventListener('change', function(e) {
