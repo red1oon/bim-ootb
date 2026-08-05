@@ -13,6 +13,10 @@
 // ISSUE EACH GATE PROVES OR DISPROVES:
 //   G-SCRUB-STANDALONE  the scrub panel exists in the DOM as soon as the editor opens, BEFORE B is
 //                       ever toggled on — proves the panel is independent of B, not nested/gated.
+//   G-SCRUB-PANEL-LOG   the scrub panel logs its own creation (was completely silent before) —
+//                       left-anchored, no viewport-bottom overflow, clear of #cpe-panel.
+//   G-VF-PANEL-CLEAR    B's panel logs its own creation (also previously silent) — left-anchored,
+//                       NOT the old right-anchor-into-#cpe-panel's-column bug, z-index above it.
 //   G-SCRUB-NOCAM       the main camera's position AND orbit target are byte-identical before/after
 //                       a scrub drag (B off) — the regression gate, unchanged in spirit since #1177.
 //   G-SCRUB-VISUAL      a scrub drag still updates the playhead and the "mm:ss / mm:ss" readout text.
@@ -83,6 +87,22 @@ async function gates(browser, BLD, repoDir) {
     standalone.track && standalone.panel && standalone.vfOn === false,
     `trackPresent=${standalone.track} panelPresent=${standalone.panel} vfOnAtOpen=${standalone.vfOn}`);
 
+  // ── G-SCRUB-PANEL-LOG: the scrub panel logs its own creation (was completely silent before —
+  // no console evidence existed for a "scrubber is missing" report). Real numbers, not a screenshot:
+  // left-anchored (not off past the viewport bottom), clear of #cpe-panel.
+  const scrubCreated = logs.find(l => l.startsWith('§CPE_SCRUB_PANEL_CREATED'));
+  let scrubLogOk = false, scrubLogDetail = 'no §CPE_SCRUB_PANEL_CREATED line seen';
+  if (scrubCreated) {
+    const m = /left=(-?\d+).*bottomOverflowPx=(\d+).*cpePanel=(\S+)/.exec(scrubCreated);
+    if (m) {
+      const left = +m[1], overflow = +m[2], cpePanel = m[3];
+      scrubLogOk = left < 100 && overflow === 0 && cpePanel !== 'OVERLAP';
+      scrubLogDetail = `left=${left} bottomOverflowPx=${overflow} cpePanel=${cpePanel}`;
+    }
+  }
+  P('G-SCRUB-PANEL-LOG scrub panel logs its own creation: left-anchored, no viewport overflow, clear of #cpe-panel',
+    scrubLogOk, scrubLogDetail);
+
   // ── G-SCRUB-NOCAM: the regression gate — no MAIN camera move during a scrub drag, B still off ───
   const before1 = await page.evaluate(() => {
     const A = window.APP;
@@ -115,6 +135,24 @@ async function gates(browser, BLD, repoDir) {
   // ── toggle B on — shared setup for G-SCRUB-VF-LIVE, G-SCRUB-PERSISTS, G-VF-1, G-VF-2, G-PERF-1 ──
   const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
   await sleep(300);
+
+  // ── G-VF-PANEL-CLEAR: B's default position was NEVER actually fixed by the earlier "clear of
+  // #cpe-panel" commit (only the scrub panel's was, despite that commit's own message claiming
+  // both) — confirmed by direct code read, fixed in this same edit. B's own creation log (also
+  // previously silent) now proves it live: left-anchored (not the old canvasWidth-derived right
+  // anchor), z-index above #cpe-panel's, no overlap.
+  const vfCreated = logs.find(l => l.startsWith('§CPE_VF_PANEL_CREATED'));
+  let vfLogOk = false, vfLogDetail = 'no §CPE_VF_PANEL_CREATED line seen';
+  if (vfCreated) {
+    const m = /left=(-?\d+).*zIndex=(\d+).*cpePanel=(\S+)/.exec(vfCreated);
+    if (m) {
+      const left = +m[1], zIndex = +m[2], cpePanel = m[3];
+      vfLogOk = left < 100 && zIndex >= 10001 && cpePanel !== 'OVERLAP';
+      vfLogDetail = `left=${left} zIndex=${zIndex} cpePanel=${cpePanel}`;
+    }
+  }
+  P('G-VF-PANEL-CLEAR B\'s panel logs its own creation: left-anchored (not the old right-anchor bug), z-index above #cpe-panel, clear of it',
+    vfLogOk, vfLogDetail);
 
   // ── G-SCRUB-VF-LIVE: with B on, scrub drives B's camera to plan.poseAt(tn); main stays untouched ─
   const before2 = await page.evaluate(() => {

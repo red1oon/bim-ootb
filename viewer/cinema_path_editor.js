@@ -158,6 +158,15 @@
   // `_vfRender()` calls a single rehearsal makes; reset by `_vfPerfReset()` at the top of each
   // `_previewFly()` run.
   var _vfPerf = { n: 0, sum: 0, max: 0 };
+  // §CPE_VF_RENDER_TRACE (2026-08-05) — user-reported: clicking INSIDE B's box (passes through, its
+  // background is pointer-events:none — confirmed by the user's own log showing [RP-TB] §FOCUS_ELEM_
+  // CLEAR firing on that click, i.e. the main scene received it) makes misaligned content "jump into
+  // correctly", then it reverts on release. Logged on CHANGE only (not every frame — would flood) so
+  // the next live paste shows the exact timeline of every real scissor-rect recompute, each tagged
+  // with ms-since-last-call — a large gap right before a "jump" would confirm the idle-park/stale-
+  // frame theory (§IDLE_GATE self-parks the render loop; nothing in the drag path calls markDirty()
+  // except a repositioning save()) without needing to guess from a screenshot.
+  var _lastVfRenderRect = null, _lastVfRenderT = null;
   // §CPE_SCRUB_STANDALONE (2026-08-04) — where the user last dragged the standalone scrub panel,
   // same session-only scope as `_panelPos`/`_vfRect` above.
   var _scrubRect = null;
@@ -1222,9 +1231,26 @@
     document.body.appendChild(d);
     d._dragStrip = 26;
     if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
+    _clampPanelToViewport(d, !_scrubRect);
+    // §CPE_SCRUB_PANEL_LOG (2026-08-05) — this panel had ZERO creation/drag logging at all (silent
+    // build, silent save()), so a "scrubber is missing" report had no console evidence to confirm
+    // even DOM existence, let alone position — mirrors #cpe-panel's own §CPE_PANEL_DRAGGABLE/
+    // §CPE_PANEL_MOVED log shape. `bottomOverflowPx` catches the panel's default vertical anchor
+    // (computed off B's default top, off-viewport-bottom by construction if B's own H/margins ever
+    // change) running past window.innerHeight — would read as "gone" without ever logging why.
+    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
+    var _cr0 = d.getBoundingClientRect();
+    console.log('§CPE_SCRUB_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
+      ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
+      ' zIndex=' + getComputedStyle(d).zIndex + ' viewport=' + window.innerWidth + 'x' + window.innerHeight +
+      ' bottomOverflowPx=' + Math.max(0, Math.round(_cr0.bottom - window.innerHeight)) +
+      ' cpePanel=' + _overlapWithCpePanel(_cr0) + (_scrubRect ? ' (restored)' : ' (default)'));
     var save = function() {
       var r = d.getBoundingClientRect();
       _scrubRect = { left: Math.round(r.left), top: Math.round(r.top) };
+      console.log('§CPE_SCRUB_PANEL_MOVED left=' + _scrubRect.left + ' top=' + _scrubRect.top +
+        ' bottomOverflowPx=' + Math.max(0, Math.round(r.bottom - window.innerHeight)) +
+        ' cpePanel=' + _overlapWithCpePanel(r) + ' (remembered for this session)');
     };
     d.addEventListener('pointerup', save);
     return d;
@@ -1371,17 +1397,50 @@
     try { if (typeof window.tmGetState === 'function') { var tm = window.tmGetState(); if (tm && tm.active) ms = tm.cursor; } } catch (e) {}
     el.textContent = ms != null ? new Date(ms).toISOString().slice(0, 10) : '';
   }
+  // §CPE_PANEL_CLEAR_VF (2026-08-05, follow-on to the scrub panel's own §CPE_PANEL_CLEAR fix) —
+  // B's default was NEVER actually moved off the right-anchored formula the scrub panel's fix
+  // replaced; a4c24da/PR#1195 only touched _buildScrubPanel's default despite its own commit
+  // message claiming both. Confirmed by direct code read, not a screenshot: this function's old
+  // default was `canvasWidth - VF_DEFAULT_W - VF_MARGIN` (right edge) at z-index:9998 — BELOW
+  // #cpe-panel's z-index:10000 (top:60,right:12,width:412) — so B could land inside that same
+  // right-hand column AND render behind it. Left-anchored now, matching the scrub panel's own
+  // fix exactly, z-index raised to 10001 (same as the scrub panel, above #cpe-panel).
+  function _overlapWithCpePanel(r) {
+    var cp = document.getElementById('cpe-panel');
+    if (!cp) return 'n/a (#cpe-panel not open)';
+    var c = cp.getBoundingClientRect();
+    var ox = Math.max(0, Math.min(r.left + r.width, c.left + c.width) - Math.max(r.left, c.left));
+    var oy = Math.max(0, Math.min(r.top + r.height, c.top + c.height) - Math.max(r.top, c.top));
+    return (ox > 0 && oy > 0) ? ('OVERLAP ' + Math.round(ox) + 'x' + Math.round(oy) + 'px') : 'clear';
+  }
+  // §CPE_PANEL_CLAMP (2026-08-05) — the scrub panel's default top was computed from B's DEFAULT_H
+  // constant plus a fixed gap, assuming a fixed total panel height that was never actually measured
+  // against the real rendered height (font metrics, border, padding) — confirmed 17px past the
+  // viewport bottom by witness_dlod... no, witness_cpe_scrub_viewfinder.js's own new G-SCRUB-PANEL-LOG
+  // gate (bottomOverflowPx=17). Rather than hand-tune the estimate again (same class of bug), measure
+  // the REAL rect after append and clamp against the actual viewport — robust to content changes.
+  // ONLY clamps the default-position path — a user's own explicit drag (_vfRect/_scrubRect already
+  // set) is left alone even if it now overflows (e.g. after a window resize), matching this
+  // codebase's existing "remembered position" convention elsewhere.
+  function _clampPanelToViewport(d, isDefaultPos) {
+    if (!isDefaultPos) return;
+    var r = d.getBoundingClientRect();
+    var overflowBottom = r.bottom - (window.innerHeight - VF_MARGIN);
+    if (overflowBottom > 0) d.style.top = (r.top - overflowBottom) + 'px';
+    var overflowRight = r.right - (window.innerWidth - VF_MARGIN);
+    if (overflowRight > 0) d.style.left = (r.left - overflowRight) + 'px';
+  }
   function _buildVFPanel() {
     var a = A();
     var rect = _vfRect || {
-      left: Math.max(VF_MARGIN, (a.canvas ? a.canvas.clientWidth : window.innerWidth) - VF_DEFAULT_W - VF_MARGIN),
+      left: VF_MARGIN,
       top: (a.canvas ? a.canvas.clientHeight : window.innerHeight) - VF_DEFAULT_H - VF_MARGIN - 40,
       width: VF_DEFAULT_W, height: VF_DEFAULT_H
     };
     var d = document.createElement('div');
     d.id = 'cpe-vf-panel';
     d.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
-      'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:9998;' +
+      'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:10001;' +
       'border:2px solid #4fc3f7;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
       'background:transparent;pointer-events:none';
     d.innerHTML =
@@ -1396,9 +1455,24 @@
     document.body.appendChild(d);
     d._dragStrip = 22;
     if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
+    _clampPanelToViewport(d, !_vfRect);
+    // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation/drag logging (unlike #cpe-panel's
+    // own §CPE_PANEL_DRAGGABLE/§CPE_PANEL_MOVED pair), so the console during a live repro carried no
+    // evidence at all for either the wrong-default-position bug this same edit fixes, or a reported
+    // "snaps back after drag release" symptom. Mirrors #cpe-panel's exact log shape, plus the
+    // overlap-with-#cpe-panel check computed directly rather than guessed from screenshots.
+    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
+    var _cr0 = d.getBoundingClientRect();
+    console.log('§CPE_VF_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
+      ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
+      ' zIndex=' + getComputedStyle(d).zIndex + ' cpePanel=' + _overlapWithCpePanel(_cr0) +
+      (_vfRect ? ' (restored)' : ' (default)'));
     var save = function() {
       var r = d.getBoundingClientRect();
       _vfRect = { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+      console.log('§CPE_VF_PANEL_MOVED left=' + _vfRect.left + ' top=' + _vfRect.top +
+        ' w=' + _vfRect.width + ' h=' + _vfRect.height + ' cpePanel=' + _overlapWithCpePanel(r) +
+        ' (remembered for this session)');
       // §CPE_VF_ALIGN_DIAG_V2: re-arm the one-shot diagnostic so the NEXT _vfRender() frame logs
       // fresh numbers for this new drag/resize pose — a misalignment report is more likely to
       // follow a reposition than the untouched default.
@@ -1446,6 +1520,17 @@
     var yTop = Math.round((panelR.top - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
+    // §CPE_VF_RENDER_TRACE — see the var declaration's comment for why. Fires on ANY change to the
+    // computed scissor rect, every call (not gated by _vfDiagLogged's one-shot).
+    var _t0trace = performance.now();
+    if (!_lastVfRenderRect || _lastVfRenderRect.x !== x || _lastVfRenderRect.y !== y ||
+        _lastVfRenderRect.w !== w || _lastVfRenderRect.h !== h) {
+      var _gapMs = _lastVfRenderT == null ? -1 : Math.round(_t0trace - _lastVfRenderT);
+      console.log('§CPE_VF_RENDER_TRACE x=' + x + ' y=' + y + ' w=' + w + ' h=' + h +
+        ' panelR={' + Math.round(panelR.left) + ',' + Math.round(panelR.top) + '} gapSinceLastCallMs=' + _gapMs);
+      _lastVfRenderRect = { x: x, y: y, w: w, h: h };
+    }
+    _lastVfRenderT = _t0trace;
     // §CPE_VF_ALIGN_DIAG (2026-08-05, user-reported: rendered content sits right of the panel
     // border) — one-shot per toggle-on, not every frame. Prints every number the scissor math
     // depends on PLUS the renderer's actual backing-buffer size (ground truth — canvasR.width*pr
