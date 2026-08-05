@@ -710,7 +710,15 @@ async function initViewer() {
     // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
     if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
-    if (!_orbiting && APP.streamedCount > 5000) {
+    // §CPE_VF_DPR_GUARD (2026-08-05): skip the perf-DPR drop while the cinema path editor's POV
+    // inset (B) is open. B's own scissor render (cinema_path_editor.js _vfRender) reads
+    // renderer.getPixelRatio() fresh every frame, so a mid-drag pr flip between _fullDPR and
+    // _orbitDPR — invisible on the main view (browser upscales the whole canvas uniformly) —
+    // shows up as B's small inset box visibly resizing/rescaling frame to frame (§CPE_VF_RENDER_TRACE
+    // logged x/y/w/h changing while panelR stayed fixed). This LOD trick exists purely for main-canvas
+    // orbit smoothness on large buildings; B is a tiny sub-render, not worth degrading, and coupling
+    // it to a main-canvas-only heuristic is exactly the entanglement the user flagged — separate them.
+    if (!_orbiting && APP.streamedCount > 5000 && !APP._cpeViewfinderRender) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
     }

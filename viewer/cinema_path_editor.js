@@ -1549,7 +1549,13 @@
     // untouched default pose, and the v1-only one-shot could have logged an entirely different
     // instant than the one in the reported screenshot.
     if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
-    _state.vfCam.aspect = w / h;
+    // §CPE_VF_ASPECT_ROUND (2026-08-05): aspect from the TRUE CSS box (panelR, unrounded), not from
+    // w/h — those are two INDEPENDENTLY Math.round()-ed backing-buffer pixel counts, so their ratio
+    // drifts off the real box aspect (e.g. panelR 300x190 at pr=1.25 -> w=375, h=Math.round(237.5)=238,
+    // aspect 1.5756 vs true 1.5789 — a real, provable distortion, worse at fractional pr). Small on
+    // its own, but stacked with §CPE_VF_DPR_GUARD's pr no longer flip-flopping mid-drag, this keeps
+    // the frustum matching the box exactly instead of drifting by a different amount per pr value.
+    _state.vfCam.aspect = panelR.width / panelR.height;
     _state.vfCam.updateProjectionMatrix();
     // §CPE_VF_ALIGN_DIAG / _V2 diagnostics moved to AFTER the aspect fix-up above (a real bug in
     // the diagnostic itself, caught by re-running it: logging vfCam.aspect BEFORE this line reads
@@ -2146,7 +2152,18 @@
     // wiring §CPE_SCRUB_VF_LIVE already established, no second path.
     if (!same && _state.bands[bi] && _state.bands[bi]._stick) {
       var bearTn = _bandTNorm(bi);
-      if (bearTn != null) _scrubTo(bearTn);
+      if (bearTn != null) {
+        // §CPE_SCRUB_BEARING_FLY_PAUSE (2026-08-05) — a real click landed here fine (this branch
+        // ran, _scrubTo did move vfCam) but a REHEARSAL IN PROGRESS overwrote it within one rAF
+        // frame: _previewFly's step() applies plan.poseAt(elapsedTimeFraction) to vfCam every
+        // frame regardless of _state.scrubTn, so a click-driven pose lasted <16ms before the
+        // flight's own tick silently replaced it — invisible to the user, no error, exactly
+        // "clicking a stick does not move B's inset" while playing. Pause the rehearsal at the
+        // click, same as the transport's own pause button (line ~1696) — the bearing then sticks
+        // where the user actually clicked, instead of racing the flight's own clock.
+        if (_state.flying && !_state.flyPaused && _state._flyPauseAt) _state._flyPauseAt();
+        _scrubTo(bearTn);
+      }
     }
     _redrawScene(); _renderRows(); _renderHint(); _syncButtons();
     _pulse();
@@ -3011,6 +3028,7 @@
             on: !!_state.vfOn,
             hookInstalled: a._cpeViewfinderRender === _vfRender,
             camPose: _state.vfCam ? { x: _state.vfCam.position.x, y: _state.vfCam.position.y, z: _state.vfCam.position.z } : null,
+            vfCamAspect: _state.vfCam ? _state.vfCam.aspect : null,
             mainPose: { x: a.camera.position.x, y: a.camera.position.y, z: a.camera.position.z },
             // §CPE_SCRUB correction ground truth: the main canvas's ORBIT TARGET, not just its
             // position — a scrub-caused main-camera move could show up as a target drift alone

@@ -340,6 +340,42 @@ async function gates(browser, BLD, repoDir) {
     dPovPos < 1e-9 && dPovTgt < 1e-9,
     `mainPosDelta=${dPovPos.toExponential(2)}m mainTargetDelta=${dPovTgt.toExponential(2)}m`);
 
+  // ── G-SCRUB-BEARING-FLY-PAUSE: §CPE_SCRUB_BEARING_FLY_PAUSE (2026-08-05) — the flight from
+  // G-SCRUB-PLAY-POVONLY above is STILL ACTIVELY PLAYING at this point (resumed, not re-paused).
+  // Clicking a stick while flying used to be silently overwritten within one rAF frame: _hold's
+  // _scrubTo(bearTn) moved vfCam once, but _previewFly's own step() applies plan.poseAt(elapsed-
+  // time-fraction) to vfCam EVERY frame regardless of _state.scrubTn, so the click-driven pose
+  // never survived to the next paint — reproduces the user's "clicking a stick does not move B's
+  // inset" report exactly, and explains why the earlier G-SCRUB-BEARING gate (flight NOT running)
+  // passed while the same code failed live. Fix: selecting a stick now pauses an in-progress flight
+  // (same _flyPauseAt hook the transport's own pause button uses), so the bearing sticks.
+  const flyBearing = stickCount ? await page.evaluate(() => {
+    const cpe = window.APP.cinemaPathEditor;
+    const beforeFly = cpe._flyState();
+    const target = cpe._probeScrub().sticks[0];
+    cpe._holdForTest(target.i, 'lo');   // different zone than G-SCRUB-BEARING's 'mid' -> !same, re-fires
+    const afterHold = cpe._flyState();
+    return { beforeFly, afterHold, targetTn: target.tNorm, p: cpe._probePoseAt(target.tNorm) };
+  }) : null;
+  await sleep(400);   // real wait — if the click didn't actually pause it, step() would move vfCam again
+  const flyBearingAfterWait = flyBearing ? await page.evaluate(() => window.APP.cinemaPathEditor._probeVF().camPose) : null;
+  let flyBearOk = false, flyBearDetail = 'no sticks on this building — inconclusive';
+  if (flyBearing) {
+    const dVfBear = (flyBearingAfterWait && flyBearing.p)
+      ? Math.hypot(flyBearingAfterWait.x - flyBearing.p.x, flyBearingAfterWait.y - flyBearing.p.y, flyBearingAfterWait.z - flyBearing.p.z) : null;
+    flyBearOk = flyBearing.beforeFly.flying && !flyBearing.beforeFly.paused &&
+      flyBearing.afterHold.flying && flyBearing.afterHold.paused &&
+      dVfBear != null && dVfBear < 1e-6;
+    flyBearDetail = `wasFlying=${flyBearing.beforeFly.flying} wasPaused=${flyBearing.beforeFly.paused} ` +
+      `pausedByClick=${flyBearing.afterHold.paused} vfCamDeltaAfter400msWait=${dVfBear == null ? 'n/a' : dVfBear.toExponential(2) + 'm'} (must stay ~0 — step() must not overwrite it)`;
+  }
+  P('G-SCRUB-BEARING-FLY-PAUSE clicking a stick DURING an active flight pauses it and the bearing survives (not overwritten next frame)',
+    flyBearOk, flyBearDetail);
+  // Clean up: the click above paused the flight (that's the fix under test) — resume it so the
+  // G-VF-2b/G-PERF-1a gates below, which wait for this SAME flight to reach its natural
+  // §CPE_PREVIEW done completion, still see it finish rather than time out.
+  await page.evaluate(() => { const cpe = window.APP.cinemaPathEditor; if (cpe._flyState().paused) cpe._flyResume(); });
+
   // Poll for a non-empty readout the same way the original gate did (post-resume).
   let vf2 = null;
   const vfT0 = Date.now();
@@ -382,6 +418,53 @@ async function gates(browser, BLD, repoDir) {
   const bakeClean = !maxqSrc.includes('_cpeViewfinderRender');
   P('G-PERF-1b static: cinema_maxq.js (the MaxQ bake loop) has zero references to the viewfinder render hook',
     bakeClean, `occurrences=${(maxqSrc.match(/_cpeViewfinderRender/g) || []).length}`);
+
+  // ── G-VF-DPR-GUARD: §CPE_VF_DPR_GUARD (2026-08-05) — the orbit-drag perf-DPR drop (§S260b, only
+  // engages once APP.streamedCount>5000) must NOT fire while B is open, since it flips
+  // renderer.getPixelRatio() mid-drag with B's own panel position unchanged — exactly the
+  // frame-to-frame scale churn §CPE_VF_RENDER_TRACE caught live ("much nearer not fully inside").
+  // Probe with a pr value (9.99) neither _fullDPR nor _orbitDPR can ever naturally equal, so the
+  // assertion doesn't depend on this headless page's real devicePixelRatio.
+  const dprGuard = await page.evaluate(() => {
+    const savedCount = window.APP.streamedCount;
+    window.APP.streamedCount = 6000;
+    window.APP.renderer.setPixelRatio(9.99);
+    window.APP.controls.dispatchEvent({ type: 'start' });
+    const duringVfOn = window.APP.renderer.getPixelRatio();
+    window.APP.controls.dispatchEvent({ type: 'end' });
+    window.APP.cinemaPathEditor._vfToggle();   // B off
+    window.APP.renderer.setPixelRatio(9.99);
+    window.APP.controls.dispatchEvent({ type: 'start' });
+    const duringVfOff = window.APP.renderer.getPixelRatio();
+    window.APP.controls.dispatchEvent({ type: 'end' });
+    window.APP.cinemaPathEditor._vfToggle();   // B back on — restore state for any later gate
+    window.APP.streamedCount = savedCount;
+    return { duringVfOn, duringVfOff };
+  });
+  P('G-VF-DPR-GUARD B open skips the orbit-drag DPR drop (pr unchanged); B closed still applies it',
+    dprGuard.duringVfOn === 9.99 && dprGuard.duringVfOff !== 9.99,
+    `duringVfOn(pr)=${dprGuard.duringVfOn} (expect unchanged=9.99) duringVfOff(pr)=${dprGuard.duringVfOff} (expect changed, proves the guard — not devicePixelRatio coincidence — is what held it at 9.99 above)`);
+
+  // ── G-VF-ASPECT: §CPE_VF_ASPECT_ROUND (2026-08-05) — vfCam.aspect must come from the TRUE CSS
+  // panelR.width/height, not from two independently-rounded backing-buffer pixel counts (w/h),
+  // whose ratio drifts off the real box aspect at fractional pixel ratios.
+  const aspectCheck = await page.evaluate(() => {
+    const panel = document.getElementById('cpe-vf-panel');
+    const r = panel.getBoundingClientRect();
+    window.APP.renderer.setPixelRatio(1.37);   // deliberately fractional, to expose rounding drift
+    window.APP.markDirty();
+    return new Promise(resolve => {
+      setTimeout(() => {
+        const trueAspect = r.width / r.height;
+        const vfAspect = window.APP.cinemaPathEditor._probeVF().vfCamAspect;
+        resolve({ trueAspect, vfAspect });
+      }, 200);
+    });
+  });
+  const aspectDiff = aspectCheck.vfAspect != null ? Math.abs(aspectCheck.vfAspect - aspectCheck.trueAspect) : null;
+  P('G-VF-ASPECT vfCam.aspect matches the box\'s true (unrounded) CSS aspect, even at a fractional pixel ratio',
+    aspectDiff != null && aspectDiff < 1e-6,
+    `trueAspect=${aspectCheck.trueAspect} vfCamAspect=${aspectCheck.vfAspect} diff=${aspectDiff}`);
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());
