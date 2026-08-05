@@ -1466,6 +1466,18 @@
     document.body.appendChild(d);
     d._dragStrip = 22;
     if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
+    // §CPE_VF_DRAG_MARKDIRTY (2026-08-05) — the ACTUAL root cause behind "dragging repositions
+    // correctly, but releasing snaps it back" / "inset not fitting the box, bigger a bit and off"
+    // (OPEN 3): neither `_makeDraggable`'s shared drag handler nor the resize handle's own
+    // pointermove below ever call `markDirty()`. On an idle/parked render loop (§IDLE-PARK, main.js)
+    // — the common case while just dragging a UI panel with no camera motion — `_vfRender()` only
+    // runs INSIDE that loop's render-gated block, so it never re-fires mid-drag: the CSS border
+    // moves live under the cursor while the scissor-rendered CONTENT stays frozen at the pre-drag
+    // rect, catching up only whenever something UNRELATED happens to wake the loop. Fixed by waking
+    // it explicitly on every drag/resize move (both bubble through this parent — `#cpe-vf-title`
+    // drives `_makeDraggable`'s drag, `#cpe-vf-resize` drives the corner resize below — neither
+    // stops propagation on pointermove), gated to `e.buttons` so a mere hover never wastes a frame.
+    d.addEventListener('pointermove', function(e) { if (e.buttons && a.markDirty) a.markDirty(); });
     _clampPanelToViewport(d, !_vfRect);
     // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation/drag logging (unlike #cpe-panel's
     // own §CPE_PANEL_DRAGGABLE/§CPE_PANEL_MOVED pair), so the console during a live repro carried no

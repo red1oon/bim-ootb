@@ -37,6 +37,8 @@
 //   G-SCRUB-PLAY-POVONLY  the SAME button-driven flight leaves the main camera byte-identical
 //                       throughout (start/pause/resume) — §CPE_SCRUB_POV_ONLY: the scrub-play
 //                       button now calls _previewFly(true), driving B alone, never the main canvas.
+//   G-VF-DRAG-WAKES-RENDER  dragging/resizing B's panel calls markDirty() on every move, not just on
+//                       release (§CPE_VF_DRAG_MARKDIRTY) — the real staleness cause behind OPEN 3.
 //   G-BUILDUP-GATES-TM  the timeline panel needs BOTH the eye ON and buildup checked
 //                       (§CPE_BUILDUP_GATES_TM) — cycling the eye while buildup is off must NOT
 //                       resurrect it, the actual bug this gate exists to catch.
@@ -515,6 +517,33 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
+
+  // ── G-VF-DRAG-WAKES-RENDER: §CPE_VF_DRAG_MARKDIRTY (2026-08-05, OPEN 3 root cause) — dragging or
+  // resizing B's panel must call markDirty() on EVERY move, not just on release. Before this fix,
+  // neither _makeDraggable's shared drag handler nor the resize handle's pointermove ever woke the
+  // (self-parking, §IDLE-PARK) render loop — on a static scene the CSS border moved live under the
+  // cursor while _vfRender()'s scissor rect stayed frozen at the pre-drag position/size the whole
+  // drag, only catching up whenever something UNRELATED happened to wake the loop. This is the
+  // structural cause behind "dragging repositions correctly but releasing snaps it back" / "inset
+  // not fitting the box, bigger a bit and off" — a staleness bug, not a coordinate-math bug.
+  const dragWake = await page.evaluate(async () => {
+    const A = window.APP;
+    let calls = 0;
+    const orig = A.markDirty;
+    A.markDirty = function() { calls++; return orig.apply(A, arguments); };
+    const title = document.getElementById('cpe-vf-title');
+    const r0 = title.getBoundingClientRect();
+    const sx = r0.left + 20, sy = r0.top + 10;
+    const fire = (type, x, y, buttons) => title.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, buttons, pointerId: 1 }));
+    fire('pointerdown', sx, sy, 1);
+    await new Promise(r => setTimeout(r, 20));
+    for (let i = 1; i <= 5; i++) { fire('pointermove', sx + i * 15, sy + i * 5, 1); await new Promise(r => setTimeout(r, 20)); }
+    fire('pointerup', sx + 75, sy + 25, 0);
+    A.markDirty = orig;
+    return { calls };
+  });
+  P('G-VF-DRAG-WAKES-RENDER dragging B\'s panel calls markDirty() on every move (not just on release)',
+    dragWake.calls >= 5, `markDirtyCallsDuring5Moves=${dragWake.calls}`);
 
   // ── G-BUILDUP-GATES-TM: §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2) — the timeline panel needs
   // BOTH the eye ON and buildup checked (an AND-gate, user: "it follows the Eye" AND "buildUp told u
