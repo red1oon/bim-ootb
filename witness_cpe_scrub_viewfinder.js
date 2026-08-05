@@ -45,8 +45,9 @@
 //   G-SCRUB-PLAY-POVONLY  the SAME button-driven flight leaves the main camera byte-identical
 //                       throughout (start/pause/resume) — §CPE_SCRUB_POV_ONLY: the scrub-play
 //                       button now calls _previewFly(true), driving B alone, never the main canvas.
-//   G-VF-DRAG-WAKES-RENDER  dragging/resizing B's panel calls markDirty() on every move, not just on
-//                       release (§CPE_VF_DRAG_MARKDIRTY) — the real staleness cause behind OPEN 3.
+//   G-CPE-FIXED-PANELS  retires G-VF-DRAG-WAKES-RENDER (§CPE_VF_DRAG_MARKDIRTY workaround for a
+//                       staleness bug) — §CPE_FIXED_PANELS (2026-08-06) removed drag/resize on B and
+//                       the scrub panel entirely, closing that whole bug class by construction.
 //   G-CPE-SOLE-OWNER    retires G-BUILDUP-GATES-TM's AND-gate (§CPE_SOLE_OWNER/§CPE_BUILDUP_OWNS_TM,
 //                       2026-08-06) — single owner per widget: Eye alone controls B + the scrub
 //                       panel regardless of buildup state; BuildUp alone controls Time Machine,
@@ -274,7 +275,13 @@ async function gates(browser, BLD, repoDir) {
   });
   let g2ok = false, g2detail = 'walk window unavailable — inconclusive';
   if (setup2) {
-    const before3 = await page.evaluate(() => document.getElementById('cpe-scrub-tn').textContent);
+    // §CPE_SCRUB_NOSPAWN_FLAKE (2026-08-06) — was comparing the DISPLAYED mm:ss label, which rounds
+    // to whole seconds: the immediately-preceding G-SCRUB-BEARING gate can leave the playhead at a
+    // tn whose label collides with this gate's own target tn (both land in the same second-bucket of
+    // a short film), making `label !== before` spuriously false even though the click correctly
+    // scrubbed. Confirmed live: reproduced deterministically on UNMODIFIED origin/main too (not a
+    // regression from this session's other changes) — fixed by asserting the real number
+    // (`_state.scrubTn`, ground truth) landed at the target `tn`, not a proxy string comparison.
     await page.mouse.move(setup2.px, setup2.py);
     await page.mouse.down();
     await sleep(30);
@@ -282,18 +289,24 @@ async function gates(browser, BLD, repoDir) {
     await sleep(300);
     const after3 = await page.evaluate(() => ({
       n: document.querySelectorAll('#cpe-rows > div[data-cpe-row="band"]').length,
-      label: document.getElementById('cpe-scrub-tn').textContent
+      scrubTn: window.APP.cinemaPathEditor._probeScrub().scrubTn
     }));
-    g2ok = after3.n === setup2.nBefore && after3.label !== before3;
-    g2detail = `rows ${setup2.nBefore}->${after3.n} (unchanged) label "${before3}"->"${after3.label}" (scrubbed instead of spawning)`;
+    const dTn = Math.abs(after3.scrubTn - setup2.tn);
+    // Tolerance covers the tn<->pixel round-trip (track ~250-300px wide over the full 0-1 range, so
+    // a single integer pixel is already ~0.003-0.004 tn) — 0.01 comfortably covers a couple of
+    // rounding pixels while still proving "landed at the target", not "landed anywhere on the bar".
+    g2ok = after3.n === setup2.nBefore && dTn < 0.01;
+    g2detail = `rows ${setup2.nBefore}->${after3.n} (unchanged) targetTn=${setup2.tn.toFixed(4)} scrubTnAfter=${after3.scrubTn.toFixed(4)} delta=${dTn.toExponential(2)} (scrubbed instead of spawning)`;
   }
   P('G-SCRUB-NOSPAWN a click on the bar scrubs to that point, never spawns a stick', g2ok, g2detail);
 
   // ── G-EYE-DRIVES-SCRUB: §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it
   // similar to opening eye" — ONE control for both, not a second widget) — toggling B off now
-  // removes the timeline panel too, and toggling B back on restores it at its remembered position.
-  // Retires the old G-SCRUB-PERSISTS gate, which asserted the OPPOSITE (independent of B's toggle) —
-  // superseded by this direct, explicit user instruction.
+  // removes the timeline panel too, and toggling B back on restores it at the same spot. Since
+  // §CPE_FIXED_PANELS (2026-08-06) retired dragging, "same spot" is now trivially the fixed default
+  // rather than a remembered drag position — still worth asserting directly, not by construction
+  // alone. Retires the old G-SCRUB-PERSISTS gate, which asserted the OPPOSITE (independent of B's
+  // toggle) — superseded by this direct, explicit user instruction.
   const rectBefore = await page.evaluate(() => {
     const r = document.getElementById('cpe-scrub-panel').getBoundingClientRect();
     return { left: Math.round(r.left), top: Math.round(r.top) };
@@ -571,32 +584,33 @@ async function gates(browser, BLD, repoDir) {
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
 
-  // ── G-VF-DRAG-WAKES-RENDER: §CPE_VF_DRAG_MARKDIRTY (2026-08-05, OPEN 3 root cause) — dragging or
-  // resizing B's panel must call markDirty() on EVERY move, not just on release. Before this fix,
-  // neither _makeDraggable's shared drag handler nor the resize handle's pointermove ever woke the
-  // (self-parking, §IDLE-PARK) render loop — on a static scene the CSS border moved live under the
-  // cursor while _vfRender()'s scissor rect stayed frozen at the pre-drag position/size the whole
-  // drag, only catching up whenever something UNRELATED happened to wake the loop. This is the
-  // structural cause behind "dragging repositions correctly but releasing snaps it back" / "inset
-  // not fitting the box, bigger a bit and off" — a staleness bug, not a coordinate-math bug.
-  const dragWake = await page.evaluate(async () => {
-    const A = window.APP;
-    let calls = 0;
-    const orig = A.markDirty;
-    A.markDirty = function() { calls++; return orig.apply(A, arguments); };
-    const title = document.getElementById('cpe-vf-title');
-    const r0 = title.getBoundingClientRect();
-    const sx = r0.left + 20, sy = r0.top + 10;
-    const fire = (type, x, y, buttons) => title.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, buttons, pointerId: 1 }));
-    fire('pointerdown', sx, sy, 1);
-    await new Promise(r => setTimeout(r, 20));
-    for (let i = 1; i <= 5; i++) { fire('pointermove', sx + i * 15, sy + i * 5, 1); await new Promise(r => setTimeout(r, 20)); }
-    fire('pointerup', sx + 75, sy + 25, 0);
-    A.markDirty = orig;
-    return { calls };
+  // ── G-CPE-FIXED-PANELS: §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont
+  // make it movable... both can simply be removed by the eye icon") — retires G-VF-DRAG-WAKES-RENDER,
+  // which tested a drag/resize markDirty fix for a feature that no longer exists. B and the scrub
+  // panel are now fixed at their default rect with no drag affordance (no #cpe-vf-resize handle, no
+  // cursor:move on the title strips) — this whole class of staleness/off-canvas-clip bugs is gone by
+  // construction, not patched. Asserts the removal directly: no resize handle, no move cursor, and
+  // the panel rect is IDENTICAL across a toggle-off/on cycle (nothing to remember, nothing drifts).
+  const fixedPanels = await page.evaluate(() => {
+    const cpe = window.APP.cinemaPathEditor;
+    const before = document.getElementById('cpe-vf-panel').getBoundingClientRect();
+    const vfCursor = getComputedStyle(document.getElementById('cpe-vf-title')).cursor;
+    const scrubCursor = getComputedStyle(document.getElementById('cpe-scrub-title')).cursor;
+    const hasResizeHandle = !!document.getElementById('cpe-vf-resize');
+    cpe._vfToggle(); cpe._vfToggle();   // off, back on
+    const after = document.getElementById('cpe-vf-panel').getBoundingClientRect();
+    return {
+      before: { left: before.left, top: before.top, width: before.width, height: before.height },
+      after: { left: after.left, top: after.top, width: after.width, height: after.height },
+      vfCursor, scrubCursor, hasResizeHandle
+    };
   });
-  P('G-VF-DRAG-WAKES-RENDER dragging B\'s panel calls markDirty() on every move (not just on release)',
-    dragWake.calls >= 5, `markDirtyCallsDuring5Moves=${dragWake.calls}`);
+  P('G-CPE-FIXED-PANELS no resize handle, no move cursor on either title strip',
+    !fixedPanels.hasResizeHandle && fixedPanels.vfCursor !== 'move' && fixedPanels.scrubCursor !== 'move',
+    `hasResizeHandle=${fixedPanels.hasResizeHandle} vfCursor=${fixedPanels.vfCursor} scrubCursor=${fixedPanels.scrubCursor}`);
+  P('G-CPE-FIXED-PANELS B\'s rect is identical across an eye off/on cycle — nothing to remember, nothing drifts',
+    JSON.stringify(fixedPanels.before) === JSON.stringify(fixedPanels.after),
+    `before=${JSON.stringify(fixedPanels.before)} after=${JSON.stringify(fixedPanels.after)}`);
 
   // ── G-CPE-SOLE-OWNER: §CPE_SOLE_OWNER / §CPE_BUILDUP_OWNS_TM (2026-08-06) — retires
   // G-BUILDUP-GATES-TM's AND-gate, which let BuildUp reach into the Eye's own widget (the scrub
