@@ -1932,6 +1932,7 @@
         if (!db) { _pushReject('ERP db unavailable for push'); console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
         var opts = {
           seqRules: window.SEQUENCE_RULES || {}, laborRates: window.LABOR_RATES || {},
+          hierarchy: window.IFC_SCHEMA_HIERARCHY || {},
           packCurrencyISO: _cur(), now: (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })()
         };
         var r = window.ProjFold.foldProjectOrder(db, building, priced.rows, opts);

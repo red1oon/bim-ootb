@@ -1805,12 +1805,14 @@ function renderCharts() {
     var resKey = '';
     if (t.ifcClasses && t.ifcClasses.length) {
       for (const cls of t.ifcClasses) {
-        var sr = SEQUENCE_RULES[cls];
+        // §EXACT_LOOKUP_BLINDSPOT P2 — was a raw SEQUENCE_RULES[cls] dict lookup, missing tier
+        // 2 (schema-hierarchy inheritance) and tier 3's §CLASS_UNMATCHED visibility entirely.
+        var sr = window.ScheduleAuthor.classify(cls, window.IFC_SCHEMA_HIERARCHY);
         if (sr && sr.resource) { resKey = sr.resource; break; }
       }
     }
     if (!resKey && t.ifcClass) {
-      var sr2 = SEQUENCE_RULES[t.ifcClass];
+      var sr2 = window.ScheduleAuthor.classify(t.ifcClass, window.IFC_SCHEMA_HIERARCHY);
       if (sr2) resKey = sr2.resource;
     }
     if (!resKey) resKey = 'LABORER';
