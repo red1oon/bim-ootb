@@ -27,8 +27,10 @@
 //                       spawn a new band — retires the old G-SCRUB-SPAWN gate, which asserted the
 //                       opposite (§CPE_SCRUB_READONLY: creation only via canvas/row list now).
 //   G-SCRUB-TICK-BLUE   a stick's tick mark on the bar renders in CPE_STICK_BLUE, not the old red.
-//   G-SCRUB-PERSISTS    toggling B off does NOT remove the scrub panel (opposite of the old
-//                       gated-to-B behaviour) — it only disappears when the EDITOR closes.
+//   G-EYE-DRIVES-SCRUB  toggling B off REMOVES the scrub panel too, toggling back on restores it at
+//                       its remembered position (§CPE_VF_EYE_DRIVES_SCRUB, 2026-08-05 — direct user
+//                       instruction, one control for both, not a second widget) — retires the older
+//                       G-SCRUB-PERSISTS gate, which asserted the opposite (independent of B).
 //   G-SCRUB-PLAY        pressing play starts a rehearsal; pause freezes the flight fraction (no
 //                       advance over a real wait); resume continues it — real pause/resume, not a
 //                       screenshot-verified "looks paused".
@@ -132,7 +134,7 @@ async function gates(browser, BLD, repoDir) {
     before1.scrubLabel !== after1.scrubLabel,
     `before="${before1.scrubLabel}" after="${after1.scrubLabel}"`);
 
-  // ── toggle B on — shared setup for G-SCRUB-VF-LIVE, G-SCRUB-PERSISTS, G-VF-1, G-VF-2, G-PERF-1 ──
+  // ── toggle B on — shared setup for G-SCRUB-VF-LIVE, G-EYE-DRIVES-SCRUB, G-VF-1, G-VF-2, G-PERF-1 ──
   const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
   await sleep(300);
 
@@ -251,15 +253,31 @@ async function gates(browser, BLD, repoDir) {
   }
   P('G-SCRUB-NOSPAWN a click on the bar scrubs to that point, never spawns a stick', g2ok, g2detail);
 
-  // ── G-SCRUB-PERSISTS: toggling B off leaves the scrub panel in place ────────────────────────────
+  // ── G-EYE-DRIVES-SCRUB: §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it
+  // similar to opening eye" — ONE control for both, not a second widget) — toggling B off now
+  // removes the timeline panel too, and toggling B back on restores it at its remembered position.
+  // Retires the old G-SCRUB-PERSISTS gate, which asserted the OPPOSITE (independent of B's toggle) —
+  // superseded by this direct, explicit user instruction.
+  const rectBefore = await page.evaluate(() => {
+    const r = document.getElementById('cpe-scrub-panel').getBoundingClientRect();
+    return { left: Math.round(r.left), top: Math.round(r.top) };
+  });
   const offState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
   await sleep(200);
-  const persists = await page.evaluate(() => !!document.getElementById('cpe-scrub-track'));
-  P('G-SCRUB-PERSISTS toggling B off does NOT remove the scrub panel (only editor-close does)',
-    offState === false && persists === true, `vfOn=${offState} scrubStillPresent=${persists}`);
-  // Toggle B back on — the rest of this run (G-VF-1/2, G-PERF-1) needs it on.
-  await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
+  const goneOnOff = await page.evaluate(() => !document.getElementById('cpe-scrub-track'));
+  const onState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
   await sleep(200);
+  const rectAfter = await page.evaluate(() => {
+    const el = document.getElementById('cpe-scrub-panel');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: Math.round(r.left), top: Math.round(r.top) };
+  });
+  const backOnOn = rectAfter != null;
+  const samePos = backOnOn && rectAfter.left === rectBefore.left && rectAfter.top === rectBefore.top;
+  P('G-EYE-DRIVES-SCRUB toggling B off removes the timeline panel; toggling B back on restores it at the same spot',
+    offState === false && goneOnOff && onState === true && backOnOn && samePos,
+    `vfOff removed=${goneOnOff} vfOn restored=${backOnOn} samePos=${samePos} before=${JSON.stringify(rectBefore)} after=${JSON.stringify(rectAfter)}`);
 
   // ── G-VF-1 (B on): rehearsal-style pose application — same mechanism as before, unaffected ──────
   const vf1 = await page.evaluate(() => {
