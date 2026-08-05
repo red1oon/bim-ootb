@@ -244,7 +244,15 @@ var SEQUENCE_NAME_OVERRIDES = [
 ];
 
 // Helper: get phase for an IFC class
+// §EXACT_LOOKUP_BLINDSPOT P3 — was a raw SEQUENCE_RULES[ifcClass] exact-key lookup (missed tier 1
+// substring matches like IfcDoorType, and tier 2 schema-hierarchy inheritance like IfcTank). Routes
+// through the real classify() when it's loaded (schedule_author.js); the raw lookup stays as a
+// fallback for the rare page that never loads schedule_author.js at all, same 3-tier-never-fires
+// degrade-safe convention the rest of this lane already uses.
 function getPhase(ifcClass) {
+  if (typeof window !== 'undefined' && window.ScheduleAuthor) {
+    return window.ScheduleAuthor.classify(ifcClass, window.IFC_SCHEMA_HIERARCHY).phase;
+  }
   var r = SEQUENCE_RULES[ifcClass];
   return r ? r.phase : SEQUENCE_DEFAULT.phase;
 }
@@ -262,21 +270,24 @@ function getProductivity(ifcClass) {
 }
 
 // ============================================================================
-// WORK PACKAGES — IFC class → construction phase mapping
+// WORK PACKAGES — construction phase grouping, for export_5d.js's Work Package sheets
+// §EXACT_LOOKUP_BLINDSPOT P3 §PROPOSED FIX: this used to carry its own hand-maintained
+// `classes: [...]` membership array per package — a 4th, fully separate hardcoded classification,
+// not even keyed off SEQUENCE_RULES, matched by .includes() (so e.g. IfcDoorType, IfcFooting's own
+// Type variant, or any of the ~950 real IFC classes never named here, all silently fell to
+// "PACKAGE 6: OTHER" regardless of what SEQUENCE_RULES actually says about them). `phase` below is
+// SEQUENCE_RULES' own field — the SAME 6 values every real entry uses (confirmed exhaustively:
+// Substructure/Superstructure/MEP Rough-in/Architecture/Finishes/MEP Final, nothing else) — so
+// export_5d.js derives membership from the real classify() tier 1->2->3 result instead of a 5th
+// place that could drift from it.
 // ============================================================================
 var WORK_PACKAGES = [
-  { id: 'PACKAGE 1', name: 'SUBSTRUCTURE', color: '8E44AD',
-    classes: ['IfcFooting','IfcPile','IfcReinforcingBar'] },
-  { id: 'PACKAGE 2', name: 'SUPERSTRUCTURE', color: '2980B9',
-    classes: ['IfcColumn','IfcBeam','IfcSlab','IfcPlate','IfcMember'] },
-  { id: 'PACKAGE 3', name: 'MEP ROUGH-IN', color: 'D35400',
-    classes: ['IfcDuct','IfcDuctSegment','IfcDuctFitting','IfcPipe','IfcPipeSegment','IfcPipeFitting','IfcCableCarrier','IfcCableCarrierSegment','IfcFlowSegment','IfcFlowFitting','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcFlowTreatmentDevice','IfcEnergyConversionDevice','IfcDistributionElement','IfcValve'] },
-  { id: 'PACKAGE 4', name: 'ARCHITECTURE', color: 'ED7D31',
-    classes: ['IfcWall','IfcWallStandardCase','IfcCurtainWall','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcRoof','IfcRamp','IfcRampFlight'] },
-  { id: 'PACKAGE 5', name: 'FINISHES', color: '27AE60',
-    classes: ['IfcCovering','IfcFurniture','IfcFurnishingElement'] },
-  { id: 'PACKAGE 6', name: 'MEP FINAL FIX', color: 'C0392B',
-    classes: ['IfcFlowTerminal','IfcLightFixture','IfcOutlet','IfcElectricAppliance','IfcFireSuppressionTerminal','IfcAirTerminal','IfcAlarm','IfcController'] },
+  { id: 'PACKAGE 1', name: 'SUBSTRUCTURE', color: '8E44AD', phase: 'Substructure' },
+  { id: 'PACKAGE 2', name: 'SUPERSTRUCTURE', color: '2980B9', phase: 'Superstructure' },
+  { id: 'PACKAGE 3', name: 'MEP ROUGH-IN', color: 'D35400', phase: 'MEP Rough-in' },
+  { id: 'PACKAGE 4', name: 'ARCHITECTURE', color: 'ED7D31', phase: 'Architecture' },
+  { id: 'PACKAGE 5', name: 'FINISHES', color: '27AE60', phase: 'Finishes' },
+  { id: 'PACKAGE 6', name: 'MEP FINAL FIX', color: 'C0392B', phase: 'MEP Final' },
 ];
 
 // ============================================================================

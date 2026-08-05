@@ -17,6 +17,11 @@
     ? require('../erp/bigdecimal.js')
     : (global.BigDecimal);
   var HALF_UP = BD.RoundingMode.HALF_UP;
+  // §EXACT_LOOKUP_BLINDSPOT P2 — resolved LAZILY (called only inside foldProjectOrder, never at
+  // module-load time): viewer.html loads proj_fold.js (:868) BEFORE schedule_author.js (:932), so
+  // capturing global.ScheduleAuthor at top-level `var` time would freeze it at undefined forever.
+  var SA_NODE = (typeof module !== 'undefined' && module.exports) ? require('./schedule_author.js') : null;
+  function _SA() { return SA_NODE || global.ScheduleAuthor; }
 
   // BIM-folded rows live in a high PK band so they never collide with seed / real iDempiere IDs.
   var BIM_BASE = 990000;
@@ -107,6 +112,26 @@
   function foldProjectOrder(db, building, priced, opts) {
     opts = opts || {};
     var SR = opts.seqRules || {}, LR = opts.laborRates || {};
+    var HIER = opts.hierarchy || (typeof window !== 'undefined' ? window.IFC_SCHEMA_HIERARCHY : null) || {};
+    // §EXACT_LOOKUP_BLINDSPOT P2 — was a raw SR[cls] dict lookup, missing tier 2 (schema-hierarchy
+    // inheritance) and tier 3's §CLASS_UNMATCHED visibility. classify() always returns a rule object
+    // (tier 1/2/3), never undefined, so callers below no longer need `|| {}`.
+    // Tier 3 (genuinely unclassified — no own-name match, no classified ancestor) is remapped back
+    // to phase='Unsequenced' here, NOT classify()'s own 'Architecture' default: time_machine.js:4376
+    // and poc_dashboard_variance.js:31 both filter `WHERE Name<>'Unsequenced'` on this exact table to
+    // keep un-grounded costs out of the phase dashboard total — collapsing tier 3 into 'Architecture'
+    // would silently fold those costs into a real phase's committed amount. Tier 1/2 (the actual P2
+    // fix) pass through unchanged; only the pre-existing "truly unclassified" bucket is preserved.
+    function classifyCls(c) {
+      var warned = null, orig = console.warn;
+      console.warn = function (m) { warned = m; orig(m); };
+      var rule = _SA().classify(c, HIER, SR);
+      console.warn = orig;
+      if (warned && warned.indexOf('§CLASS_UNMATCHED_INHERITED') !== 0 && warned.indexOf('§CLASS_UNMATCHED') === 0) {
+        return { phase: 'Unsequenced', sequence: rule.sequence, resource: rule.resource };
+      }
+      return rule;
+    }
     var CL = opts.clientId != null ? opts.clientId : 11;
     var OG = opts.orgId != null ? opts.orgId : 11;
     var U = opts.user != null ? opts.user : 100;
@@ -147,7 +172,7 @@
     // group priced rows by 4D phase (sequence_rules), seqno = the canonical phase sequence
     var phases = {};   // phaseName → { seqno, resources:{res:[rows]}, rows:[] }
     priced.forEach(function (r) {
-      var sr = SR[r.cls] || {};
+      var sr = classifyCls(r.cls);
       var ph = sr.phase || 'Unsequenced';
       var res = sr.resource || 'GENERAL';
       var p = phases[ph] || (phases[ph] = { seqno: (phaseSeq[ph] != null ? phaseSeq[ph] : (sr.sequence != null ? sr.sequence : 99)), resources: {}, rows: [] });
@@ -169,7 +194,7 @@
       // duration
       var days = 0;
       P.rows.forEach(function (r) {
-        var lr = LR[(SR[r.cls] || {}).resource];
+        var lr = LR[classifyCls(r.cls).resource];
         var prod = lr && lr.productivity && lr.productivity[r.cls];
         days += prod ? Math.ceil(r.count / prod) : Math.max(1, Math.ceil(r.count / 20));
       });
@@ -212,7 +237,7 @@
       var lineNo = 10;
       Object.keys(byCls).forEach(function (cls) {
         var rows = byCls[cls];
-        var unit = rows[0].unit, rate = rows[0].rate, disc = rows[0].disc, res = (SR[cls] || {}).resource || 'GENERAL';
+        var unit = rows[0].unit, rate = rows[0].rate, disc = rows[0].disc, res = classifyCls(cls).resource || 'GENERAL';
         var qty = 0, amt = BD.ZERO, cnt = 0;
         rows.forEach(function (r) {
           qty += r.qty; cnt += r.count;

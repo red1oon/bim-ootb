@@ -474,7 +474,12 @@ function generateSchedule(activities, startDateStr) {
   const grouped = {};  // phase|||storey -> [act, ...]
   const phaseSets = {};
   for (const act of activities) {
-    const rules = SEQUENCE_RULES[act.cls] || DEFAULT_RULE;
+    // §EXACT_LOOKUP_BLINDSPOT P4 — was a raw SEQUENCE_RULES[act.cls] exact-key lookup, missing tier
+    // 1 substring matches and tier 2 schema-hierarchy inheritance. DEFAULT_RULE was already the same
+    // generic fallback classify()'s tier 3 returns, so no genuine-vs-generic distinction to preserve
+    // here (unlike buildScheduleFromOps below, whose discipline SET must stay untouched by a truly
+    // unclassified class the way it is today).
+    const rules = window.ScheduleAuthor.classify(act.cls, window.IFC_SCHEMA_HIERARCHY);
     const phase = rules.phase;
     const storey = act.storey || 'Unknown';
     const key = `${phase}|||${storey}`;
@@ -882,6 +887,21 @@ async function _tryScheduleRelay(timeoutMs) {
 function buildScheduleFromOps(ops) {
   const PHASE_ORDER = phaseOrder();   // §BOQ4D B0 — third hardcoded stale copy, now derived
 
+  // §EXACT_LOOKUP_BLINDSPOT P4 — was a raw SEQUENCE_RULES[op.cls] exact-key lookup below. Routes
+  // through the real matchRule tier 1->2->3; genuine tier 3 (no own/substring match, no classified
+  // ancestor) returns null, NOT the generic default — so a truly unclassified class still doesn't
+  // contribute a spurious discipline to g.disciplines, exactly like today when SEQUENCE_RULES[cls]
+  // is undefined (op.phase itself is unaffected either way — it's read from the persisted kernel_op,
+  // never derived from this lookup).
+  function classifyOp(cls) {
+    var warned = null, orig = console.warn;
+    console.warn = function (m) { warned = m; orig(m); };
+    var rule = window.ScheduleAuthor.classify(cls, window.IFC_SCHEMA_HIERARCHY);
+    console.warn = orig;
+    var isTier3 = warned && warned.indexOf('§CLASS_UNMATCHED_INHERITED') !== 0 && warned.indexOf('§CLASS_UNMATCHED') === 0;
+    return isTier3 ? null : rule;
+  }
+
   // Group ops by phase+storey (same grouping as generateSchedule)
   var groups = {};  // "phase|||storey" → { ops[], minTs, maxTs, ... }
   for (var i = 0; i < ops.length; i++) {
@@ -904,8 +924,8 @@ function buildScheduleFromOps(ops) {
     if (op.guid) g.guids.push(op.guid);
     if (op.cls) g.classes.add(op.cls);
     if (op.resource) g.resources.add(op.resource);
-    // Derive discipline from SEQUENCE_RULES
-    var rule = SEQUENCE_RULES[op.cls];
+    // Derive discipline from the real classify() tier 1->2->3 result
+    var rule = classifyOp(op.cls);
     if (rule && rule.resource) {
       // §BOQ4D — one shared mapping (schedule_read_4d.js), so an authored task and a kernel_ops
       // task never disagree about what discipline the same resource belongs to.
@@ -1805,12 +1825,14 @@ function renderCharts() {
     var resKey = '';
     if (t.ifcClasses && t.ifcClasses.length) {
       for (const cls of t.ifcClasses) {
-        var sr = SEQUENCE_RULES[cls];
+        // §EXACT_LOOKUP_BLINDSPOT P2 — was a raw SEQUENCE_RULES[cls] dict lookup, missing tier
+        // 2 (schema-hierarchy inheritance) and tier 3's §CLASS_UNMATCHED visibility entirely.
+        var sr = window.ScheduleAuthor.classify(cls, window.IFC_SCHEMA_HIERARCHY);
         if (sr && sr.resource) { resKey = sr.resource; break; }
       }
     }
     if (!resKey && t.ifcClass) {
-      var sr2 = SEQUENCE_RULES[t.ifcClass];
+      var sr2 = window.ScheduleAuthor.classify(t.ifcClass, window.IFC_SCHEMA_HIERARCHY);
       if (sr2) resKey = sr2.resource;
     }
     if (!resKey) resKey = 'LABORER';
