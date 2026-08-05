@@ -48,9 +48,7 @@
   // open); picked to be small enough not to swallow the main viewport and clear of the cpe-panel's
   // own default top-right anchor. Unconfirmed defaults — see the spec DONE block.
   var VF_DEFAULT_W = 300, VF_DEFAULT_H = 190;   // px
-  var VF_MIN_W = 160, VF_MIN_H = 100;           // px — floor a resize cannot cross
-  var VF_MARGIN = 16;                            // px from the viewport edge for the first-open position
-  var VF_RESIZE_HANDLE_PX = 16;                  // px — the corner grab square's hit size
+  var VF_MARGIN = 16;                            // px from the viewport edge, fixed — B is not draggable
   // §CPE_SCRUB_STANDALONE (2026-08-04) — the scrub bar's own panel, no longer nested under B. Default
   // width matches B's so the two stack cleanly; default position is directly below B's own default
   // rect (user: "outside on its own or below the POV") — independent of whether B is actually open.
@@ -150,10 +148,6 @@
   // §CPE_PANEL_DRAG: where the user last dragged the panel, remembered for the session only (see
   // the spec's "scope note"). Module scope, not _state — _state dies with each editor session.
   var _panelPos = null;
-  // §CPE_VIEWFINDER: where the user last dragged/resized B, remembered for the session only — same
-  // scope note as `_panelPos` above (module scope, not `_state`; a fresh Alt+C still opens B at the
-  // default rect if the browser tab reloads).
-  var _vfRect = null;
   // §CPE_VIEWFINDER G-PERF-1 accumulator — module scope so it survives across the several
   // `_vfRender()` calls a single rehearsal makes; reset by `_vfPerfReset()` at the top of each
   // `_previewFly()` run.
@@ -168,9 +162,6 @@
   // except a repositioning save()) without needing to guess from a screenshot.
   var _lastVfRenderRect = null, _lastVfRenderT = null;
   var _lastFrameDiagT = null;   // §CPE_VF_FRAME_DIAG throttle — see _vfRender
-  // §CPE_SCRUB_STANDALONE (2026-08-04) — where the user last dragged the standalone scrub panel,
-  // same session-only scope as `_panelPos`/`_vfRect` above.
-  var _scrubRect = null;
   function A() { return window.APP; }
 
   // ══════════════════ scene objects ══════════════════
@@ -1203,10 +1194,10 @@
     // so not hidden by each other") — #cpe-panel defaults to top:60,RIGHT:12,width:412 (near
     // full-height, right-anchored). B's old default (canvasWidth-VF_DEFAULT_W-MARGIN) landed
     // inside that same right-hand column. Anchored to the LEFT edge instead — clear of it.
-    var rect = _scrubRect || {
-      left: VF_MARGIN,
-      top: vfDefaultTop + VF_DEFAULT_H + SCRUB_PANEL_GAP
-    };
+    // §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont make it movable...
+    // both can simply be removed by the eye icon for better canvas") — dragging retired entirely.
+    // Always the same default rect; the eye icon is the one and only way to clear the canvas of it.
+    var rect = { left: VF_MARGIN, top: vfDefaultTop + VF_DEFAULT_H + SCRUB_PANEL_GAP };
     var d = document.createElement('div');
     d.id = 'cpe-scrub-panel';
     // z-index above #cpe-panel's 10000 (user: "the scrub timeline should be above all as it got
@@ -1215,9 +1206,8 @@
       'z-index:10001;background:rgba(20,22,26,0.96);border:1px solid #3a3f47;border-radius:6px;' +
       'box-shadow:0 4px 20px rgba(0,0,0,0.5);font-family:system-ui,sans-serif';
     d.innerHTML =
-      '<div id="cpe-scrub-title" title="drag to move the timeline" style="padding:4px 8px;cursor:move;' +
-        'user-select:none;display:flex;align-items:center;justify-content:space-between;' +
-        'border-bottom:1px solid #3a3f47">' +
+      '<div id="cpe-scrub-title" style="padding:4px 8px;user-select:none;display:flex;align-items:center;' +
+        'justify-content:space-between;border-bottom:1px solid #3a3f47">' +
         '<span style="font:600 10px system-ui,sans-serif;color:#4fc3f7">Timeline</span>' +
         '<span id="cpe-scrub-tn" style="color:#888;font:400 10px monospace"></span></div>' +
       '<div style="padding:6px 8px 8px;display:flex;align-items:center;gap:6px">' +
@@ -1230,30 +1220,19 @@
           'border:1px solid #3a3f47;border-radius:3px;cursor:pointer;user-select:none"></div>' +
       '</div>';
     document.body.appendChild(d);
-    d._dragStrip = 26;
-    if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
-    _clampPanelToViewport(d, !_scrubRect);
-    // §CPE_SCRUB_PANEL_LOG (2026-08-05) — this panel had ZERO creation/drag logging at all (silent
-    // build, silent save()), so a "scrubber is missing" report had no console evidence to confirm
-    // even DOM existence, let alone position — mirrors #cpe-panel's own §CPE_PANEL_DRAGGABLE/
-    // §CPE_PANEL_MOVED log shape. `bottomOverflowPx` catches the panel's default vertical anchor
-    // (computed off B's default top, off-viewport-bottom by construction if B's own H/margins ever
-    // change) running past window.innerHeight — would read as "gone" without ever logging why.
+    _clampPanelToViewport(d);
+    // §CPE_SCRUB_PANEL_LOG (2026-08-05) — this panel had ZERO creation logging at all (silent
+    // build), so a "scrubber is missing" report had no console evidence to confirm even DOM
+    // existence, let alone position — mirrors #cpe-panel's own §CPE_PANEL_DRAGGABLE log shape.
+    // `bottomOverflowPx` catches the panel's default vertical anchor (computed off B's default top)
+    // running past window.innerHeight — would read as "gone" without ever logging why.
     // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
     var _cr0 = d.getBoundingClientRect();
     console.log('§CPE_SCRUB_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
       ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
       ' zIndex=' + getComputedStyle(d).zIndex + ' viewport=' + window.innerWidth + 'x' + window.innerHeight +
       ' bottomOverflowPx=' + Math.max(0, Math.round(_cr0.bottom - window.innerHeight)) +
-      ' cpePanel=' + _overlapWithCpePanel(_cr0) + (_scrubRect ? ' (restored)' : ' (default)'));
-    var save = function() {
-      var r = d.getBoundingClientRect();
-      _scrubRect = { left: Math.round(r.left), top: Math.round(r.top) };
-      console.log('§CPE_SCRUB_PANEL_MOVED left=' + _scrubRect.left + ' top=' + _scrubRect.top +
-        ' bottomOverflowPx=' + Math.max(0, Math.round(r.bottom - window.innerHeight)) +
-        ' cpePanel=' + _overlapWithCpePanel(r) + ' (remembered for this session)');
-    };
-    d.addEventListener('pointerup', save);
+      ' cpePanel=' + _overlapWithCpePanel(_cr0));
     return d;
   }
 
@@ -1384,8 +1363,9 @@
   // one renderer (`A().renderer`), a second `THREE.PerspectiveCamera` sharing the same scene graph,
   // drawn into a sub-rectangle of the SAME canvas via the standard three.js multi-viewport technique
   // (setScissorTest + per-pane setViewport/setScissor). B's on-screen "panel" is therefore an HTML
-  // frame (draggable via the shared A._makeDraggable, resizable via a new corner handle) that marks
-  // WHERE on the main canvas the scissor rect sits — it does not itself contain a <canvas>.
+  // frame, fixed at a default bottom-left rect (§CPE_FIXED_PANELS, 2026-08-06 — no longer draggable
+  // or resizable), that marks WHERE on the main canvas the scissor rect sits — it does not itself
+  // contain a <canvas>.
   function _vfPerfReset() { _vfPerf.n = 0; _vfPerf.sum = 0; _vfPerf.max = 0; }
   function _vfPerfLog() {
     var avg = _vfPerf.n ? _vfPerf.sum / _vfPerf.n : 0;
@@ -1428,14 +1408,11 @@
   // §CPE_PANEL_CLAMP (2026-08-05) — the scrub panel's default top was computed from B's DEFAULT_H
   // constant plus a fixed gap, assuming a fixed total panel height that was never actually measured
   // against the real rendered height (font metrics, border, padding) — confirmed 17px past the
-  // viewport bottom by witness_dlod... no, witness_cpe_scrub_viewfinder.js's own new G-SCRUB-PANEL-LOG
-  // gate (bottomOverflowPx=17). Rather than hand-tune the estimate again (same class of bug), measure
-  // the REAL rect after append and clamp against the actual viewport — robust to content changes.
-  // ONLY clamps the default-position path — a user's own explicit drag (_vfRect/_scrubRect already
-  // set) is left alone even if it now overflows (e.g. after a window resize), matching this
-  // codebase's existing "remembered position" convention elsewhere.
-  function _clampPanelToViewport(d, isDefaultPos) {
-    if (!isDefaultPos) return;
+  // viewport bottom by witness_cpe_scrub_viewfinder.js's own G-SCRUB-PANEL-LOG gate. Rather than
+  // hand-tune the estimate again (same class of bug), measure the REAL rect after append and clamp
+  // against the actual viewport — robust to content changes. §CPE_FIXED_PANELS (2026-08-06) removed
+  // dragging entirely, so this now runs unconditionally — every open uses the default rect.
+  function _clampPanelToViewport(d) {
     var r = d.getBoundingClientRect();
     var overflowBottom = r.bottom - (window.innerHeight - VF_MARGIN);
     if (overflowBottom > 0) d.style.top = (r.top - overflowBottom) + 'px';
@@ -1444,7 +1421,12 @@
   }
   function _buildVFPanel() {
     var a = A();
-    var rect = _vfRect || {
+    // §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont make it movable... it
+    // need not be dragged around... both can simply be removed by the eye icon for better canvas")
+    // — dragging and resizing retired entirely. Always the same default rect; the eye icon is the
+    // one and only way to clear the canvas of it. This also removes a whole class of prior bugs tied
+    // to drag/resize (staleness, off-canvas clipping, the aspect residual moving with position).
+    var rect = {
       left: VF_MARGIN,
       top: (a.canvas ? a.canvas.clientHeight : window.innerHeight) - VF_DEFAULT_H - VF_MARGIN - 40,
       width: VF_DEFAULT_W, height: VF_DEFAULT_H
@@ -1456,75 +1438,22 @@
       'border:2px solid #4fc3f7;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
       'background:transparent;pointer-events:none';
     d.innerHTML =
-      '<div id="cpe-vf-title" title="drag to move the viewfinder" style="pointer-events:auto;position:absolute;top:0;left:0;right:0;' +
+      '<div id="cpe-vf-title" style="pointer-events:none;position:absolute;top:0;left:0;right:0;' +
         'height:22px;background:rgba(20,22,26,0.85);color:#4fc3f7;font:600 10px system-ui,sans-serif;' +
-        'padding:2px 6px;cursor:move;display:flex;align-items:center;justify-content:space-between;' +
+        'padding:2px 6px;display:flex;align-items:center;justify-content:space-between;' +
         'border-bottom:1px solid #4fc3f7;user-select:none">' +
-        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>' +
-      '<div id="cpe-vf-resize" title="drag to resize" style="pointer-events:auto;position:absolute;right:0;bottom:0;' +
-        'width:' + VF_RESIZE_HANDLE_PX + 'px;height:' + VF_RESIZE_HANDLE_PX + 'px;cursor:nwse-resize;' +
-        'background:linear-gradient(135deg,transparent 50%,#4fc3f7 50%);border-bottom-right-radius:2px"></div>';
+        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
     document.body.appendChild(d);
-    d._dragStrip = 22;
-    if (a && typeof a._makeDraggable === 'function') a._makeDraggable(d);
-    // §CPE_VF_DRAG_MARKDIRTY (2026-08-05) — the ACTUAL root cause behind "dragging repositions
-    // correctly, but releasing snaps it back" / "inset not fitting the box, bigger a bit and off"
-    // (OPEN 3): neither `_makeDraggable`'s shared drag handler nor the resize handle's own
-    // pointermove below ever call `markDirty()`. On an idle/parked render loop (§IDLE-PARK, main.js)
-    // — the common case while just dragging a UI panel with no camera motion — `_vfRender()` only
-    // runs INSIDE that loop's render-gated block, so it never re-fires mid-drag: the CSS border
-    // moves live under the cursor while the scissor-rendered CONTENT stays frozen at the pre-drag
-    // rect, catching up only whenever something UNRELATED happens to wake the loop. Fixed by waking
-    // it explicitly on every drag/resize move (both bubble through this parent — `#cpe-vf-title`
-    // drives `_makeDraggable`'s drag, `#cpe-vf-resize` drives the corner resize below — neither
-    // stops propagation on pointermove), gated to `e.buttons` so a mere hover never wastes a frame.
-    d.addEventListener('pointermove', function(e) { if (e.buttons && a.markDirty) a.markDirty(); });
-    _clampPanelToViewport(d, !_vfRect);
-    // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation/drag logging (unlike #cpe-panel's
-    // own §CPE_PANEL_DRAGGABLE/§CPE_PANEL_MOVED pair), so the console during a live repro carried no
-    // evidence at all for either the wrong-default-position bug this same edit fixes, or a reported
-    // "snaps back after drag release" symptom. Mirrors #cpe-panel's exact log shape, plus the
+    _clampPanelToViewport(d);
+    // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation logging (unlike #cpe-panel's own
+    // §CPE_PANEL_DRAGGABLE), so the console during a live repro carried no evidence at all for the
+    // wrong-default-position bug this same edit fixed. Mirrors #cpe-panel's log shape, plus the
     // overlap-with-#cpe-panel check computed directly rather than guessed from screenshots.
     // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
     var _cr0 = d.getBoundingClientRect();
     console.log('§CPE_VF_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
       ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
-      ' zIndex=' + getComputedStyle(d).zIndex + ' cpePanel=' + _overlapWithCpePanel(_cr0) +
-      (_vfRect ? ' (restored)' : ' (default)'));
-    var save = function() {
-      var r = d.getBoundingClientRect();
-      _vfRect = { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
-      console.log('§CPE_VF_PANEL_MOVED left=' + _vfRect.left + ' top=' + _vfRect.top +
-        ' w=' + _vfRect.width + ' h=' + _vfRect.height + ' cpePanel=' + _overlapWithCpePanel(r) +
-        ' (remembered for this session)');
-      // §CPE_VF_ALIGN_DIAG_V2: re-arm the one-shot diagnostic so the NEXT _vfRender() frame logs
-      // fresh numbers for this new drag/resize pose — a misalignment report is more likely to
-      // follow a reposition than the untouched default.
-      if (_state) _state._vfDiagLogged = false;
-    };
-    d.addEventListener('pointerup', save);
-    // Corner resize — new (spec point 5: "Resize does NOT exist on any panel yet — net-new, small: a
-    // corner handle resizing the scissor rect's pixel size, no relayout of scene geometry involved").
-    var rh = document.getElementById('cpe-vf-resize'), rdrag = null;
-    rh.addEventListener('pointerdown', function(ev) {
-      ev.preventDefault(); ev.stopPropagation();
-      var r = d.getBoundingClientRect();
-      rdrag = { sx0: ev.clientX, sy0: ev.clientY, w0: r.width, h0: r.height };
-      try { rh.setPointerCapture(ev.pointerId); } catch (e) {}
-    });
-    rh.addEventListener('pointermove', function(ev) {
-      if (!rdrag) return;
-      var w = Math.max(VF_MIN_W, rdrag.w0 + (ev.clientX - rdrag.sx0));
-      var h = Math.max(VF_MIN_H, rdrag.h0 + (ev.clientY - rdrag.sy0));
-      d.style.width = w + 'px'; d.style.height = h + 'px';
-    });
-    rh.addEventListener('pointerup', function(ev) {
-      if (!rdrag) return;
-      rdrag = null;
-      try { rh.releasePointerCapture(ev.pointerId); } catch (e) {}
-      save();
-      console.log('§CPE_VF_RESIZE w=' + Math.round(d.getBoundingClientRect().width) + ' h=' + Math.round(d.getBoundingClientRect().height));
-    });
+      ' zIndex=' + getComputedStyle(d).zIndex + ' cpePanel=' + _overlapWithCpePanel(_cr0));
     return d;
   }
   // The scissor render pass — installed as `A()._cpeViewfinderRender` and called by main.js's own
@@ -1576,11 +1505,10 @@
     // off-center, i.e. vfCam's own orientation state has drifted from what plan.poseAt(tn) intends
     // or from the main camera's — not a coordinate bug in this function at all. Compares vfCam
     // against a FRESH poseAt sample and against the main camera at the SAME instant.
-    // Re-armed on every drag/resize `save()` (search _vfDiagLogged in _buildVFPanel), not just
-    // toggle-on — a misalignment report is more likely to follow a user reposition than the
-    // untouched default pose, and the v1-only one-shot could have logged an entirely different
-    // instant than the one in the reported screenshot.
-    if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
+    // One-shot per toggle-on (`_state._vfDiagLogged`, set false at _state creation) — §CPE_FIXED_PANELS
+    // (2026-08-06) retired drag/resize, so there is no longer a reposition event to re-arm this on;
+    // the panel's rect is now the same known default every time B is on.
+    if (w < 2 || h < 2) return;   // degenerate rect (should not happen at a fixed, clamped default)
     // §CPE_VF_ASPECT_ROUND (2026-08-05) + §CPE_VF_RECT_ASPECT correction (same day, OPEN 3): aspect
     // from w/h — the ACTUAL rounded pixel rect this frame renders into (computed above, single-
     // rounding: h from the box, w derived from h so it tracks the true box aspect as closely as an
@@ -1725,8 +1653,8 @@
       if (a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
       if (btn) { btn.style.color = '#888'; btn.style.borderColor = '#4a4f57'; }
       // §CPE_VF_EYE_DRIVES_SCRUB — closing the eye removes the timeline panel too, symmetric with
-      // opening it above. Position is remembered via `_scrubRect` (see _buildScrubPanel's save()),
-      // so re-opening the eye restores it where the user left it, not back at the default.
+      // opening it above. §CPE_FIXED_PANELS (2026-08-06): both panels are fixed now, so re-opening
+      // the eye always lands back at the same default rect — there is no position left to restore.
       _scrubPanelTeardown();
       if (a.markDirty) a.markDirty();
       console.log('§CPE_VF off — panel and timeline removed, render hook cleared, zero per-frame cost (§CPE_VF_EYE_DRIVES_SCRUB)');
