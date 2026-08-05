@@ -275,7 +275,13 @@ async function gates(browser, BLD, repoDir) {
   });
   let g2ok = false, g2detail = 'walk window unavailable — inconclusive';
   if (setup2) {
-    const before3 = await page.evaluate(() => document.getElementById('cpe-scrub-tn').textContent);
+    // §CPE_SCRUB_NOSPAWN_FLAKE (2026-08-06) — was comparing the DISPLAYED mm:ss label, which rounds
+    // to whole seconds: the immediately-preceding G-SCRUB-BEARING gate can leave the playhead at a
+    // tn whose label collides with this gate's own target tn (both land in the same second-bucket of
+    // a short film), making `label !== before` spuriously false even though the click correctly
+    // scrubbed. Confirmed live: reproduced deterministically on UNMODIFIED origin/main too (not a
+    // regression from this session's other changes) — fixed by asserting the real number
+    // (`_state.scrubTn`, ground truth) landed at the target `tn`, not a proxy string comparison.
     await page.mouse.move(setup2.px, setup2.py);
     await page.mouse.down();
     await sleep(30);
@@ -283,10 +289,14 @@ async function gates(browser, BLD, repoDir) {
     await sleep(300);
     const after3 = await page.evaluate(() => ({
       n: document.querySelectorAll('#cpe-rows > div[data-cpe-row="band"]').length,
-      label: document.getElementById('cpe-scrub-tn').textContent
+      scrubTn: window.APP.cinemaPathEditor._probeScrub().scrubTn
     }));
-    g2ok = after3.n === setup2.nBefore && after3.label !== before3;
-    g2detail = `rows ${setup2.nBefore}->${after3.n} (unchanged) label "${before3}"->"${after3.label}" (scrubbed instead of spawning)`;
+    const dTn = Math.abs(after3.scrubTn - setup2.tn);
+    // Tolerance covers the tn<->pixel round-trip (track ~250-300px wide over the full 0-1 range, so
+    // a single integer pixel is already ~0.003-0.004 tn) — 0.01 comfortably covers a couple of
+    // rounding pixels while still proving "landed at the target", not "landed anywhere on the bar".
+    g2ok = after3.n === setup2.nBefore && dTn < 0.01;
+    g2detail = `rows ${setup2.nBefore}->${after3.n} (unchanged) targetTn=${setup2.tn.toFixed(4)} scrubTnAfter=${after3.scrubTn.toFixed(4)} delta=${dTn.toExponential(2)} (scrubbed instead of spawning)`;
   }
   P('G-SCRUB-NOSPAWN a click on the bar scrubs to that point, never spawns a stick', g2ok, g2detail);
 
