@@ -1705,10 +1705,13 @@
       // §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it similar to opening
       // eye") — the eye toggle is the ONE control for both now, same button, no second widget.
       // Opening the eye brings the timeline back if a prior close removed it.
-      // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
-      // remain because it was called by buildup") — the timeline panel needs BOTH the eye ON AND
-      // buildup checked, an AND-gate, not eye-alone. Don't resurrect it here if buildup is off.
-      if (_state.buildup && !document.getElementById('cpe-scrub-panel')) {
+      // §CPE_SOLE_OWNER (2026-08-06, retires §CPE_BUILDUP_GATES_TM's AND-gate — user: "only
+      // respective owner owns its toggling. Eye toggles preview scrubber and POV... no one else
+      // can. BuildUp opens TimeMachine when preview is played and thus must close when BuildUp is
+      // unchecked" — confirmed live: the AND-gate let BuildUp reach into the Eye's widget, closing
+      // the scrub panel instead of TM, and blocked the Eye from re-opening it once buildup was off.
+      // The scrub panel is the Eye's alone now — buildup is never consulted here.
+      if (!document.getElementById('cpe-scrub-panel')) {
         _buildScrubPanel();
         _wireScrub(document.getElementById('cpe-scrub-track'));
         _wireScrubPlay();
@@ -2134,7 +2137,11 @@
         _state.scrubTn = tn;
         _renderScrub();
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
-        if (bkPrev && window.tmSetCursor) {
+        // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
+        // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
+        // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
+        // own toggleTimeMachine() close (see the change handler) every ~16ms until the flight ends.
+        if (bkPrev && s.buildup && window.tmSetCursor) {
           // §CPE_BUILDUP_WORK_PACED: the rehearsal asks for the SAME cursor the bake will ask for at
           // this film fraction — paced by elements placed, not by days elapsed. Falls back to the
           // old linear-calendar expression if cinema_maxq is an older cached copy.
@@ -2882,18 +2889,19 @@
         // this checkbox.
         console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
           ' — reveal FOLLOWS the Time Machine timeline as-is (no re-key; the camera does not author the build order)');
-        // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
-        // remain because it was called by buildup" / "it follows the Eye ... buildUp told u also")
-        // — the timeline panel needs BOTH the eye ON AND buildup checked (AND-gate, see the mirror
-        // of this in _toggleViewfinder's ON branch). Unchecking buildup tears it down regardless of
-        // the eye; re-checking it only rebuilds if the eye is ALSO already on.
-        if (!_state.buildup) {
-          _scrubPanelTeardown();
-        } else if (_state.vfOn && !document.getElementById('cpe-scrub-panel')) {
-          _buildScrubPanel();
-          _wireScrub(document.getElementById('cpe-scrub-track'));
-          _wireScrubPlay();
-          _renderScrub();
+        // §CPE_BUILDUP_OWNS_TM (2026-08-06, retires §CPE_BUILDUP_GATES_TM — user: "BuildUp opens
+        // TimeMachine when preview is played and thus must close when BuildUp is unchecked" /
+        // "closing buildUp can consistently just close TM if it is free... because buildup is
+        // coupled with TM construction process, no reason to meddle separately, this is for
+        // convention and user education"). BuildUp's ONLY territory is Time Machine now — the
+        // scrub/timeline panel is the Eye's alone (see _toggleViewfinder, no longer consulted here).
+        // "If it is free" — close it if it's actually on; a Time Machine the user has open for an
+        // unrelated reason and never touched via this checkbox is simply left alone by the `_tmOn`
+        // check below (nothing here forces it on either — that still only happens via a real Play,
+        // through tmActivateForBake in _previewFly, unchanged).
+        if (!_state.buildup && A()._tmOn && typeof window.toggleTimeMachine === 'function') {
+          window.toggleTimeMachine();
+          console.log('§CPE_BUILDUP_OWNS_TM closed Time Machine (was on, buildup just unchecked)');
         }
         _renderWhole(); _syncButtons();
       });
