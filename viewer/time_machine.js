@@ -1312,6 +1312,20 @@
         if (!_dlodFrustum) { _dlodFrustum = new THREE.Frustum(); _dlodPSM = new THREE.Matrix4(); _dlodSphere = new THREE.Sphere(); }
         // §DLOD_VF_CAMGUARD — gate against whichever camera the user is actually looking through.
         var _dlodActiveCam = _dlodResolveCamera(app);
+        // §DLOD_VF_MATRIX_STALE (2026-08-05) — this function runs off Time Machine's OWN setTimeout
+        // ticker (_playTimer, see playTick), never synchronized with the rAF-driven animate() loop.
+        // app.camera's matrixWorld/matrixWorldInverse get refreshed every rAF frame because
+        // renderer.render(scene, app.camera) runs there unconditionally. vfCam's ONLY gets refreshed
+        // by cinema_path_editor.js's own _vfRender(), itself gated behind the SAME rAF loop's
+        // needsRender check — so on a POV-only rehearsal, whichever of these two independent timers
+        // (TM's setTimeout vs. rAF) happens to fire first in a given moment can read vfCam's matrix
+        // BEFORE this tick's _applyVFPose() move has actually reached it, i.e. the frustum below is
+        // built from the WRONG pose. updateMatrixWorld() recomputes both matrixWorld and
+        // matrixWorldInverse from whatever position/quaternion _applyVFPose already set — cheap
+        // (single camera, not a scene traverse) and makes this tick's frustum correct regardless of
+        // which timer got here first. This is exactly the vfCam-goes-blank mechanism named in the
+        // prior session's handoff ("vfCam ends up looking at nothing").
+        _dlodActiveCam.updateMatrixWorld();
         _dlodCamPos = _dlodActiveCam.position;
         _dlodPSM.multiplyMatrices(_dlodActiveCam.projectionMatrix, _dlodActiveCam.matrixWorldInverse);
         _dlodFrustum.setFromProjectionMatrix(_dlodPSM);
@@ -1360,7 +1374,7 @@
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
     _lastShadowOn = _shadowNow;
 
-    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
+    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
       if (!obj.userData) return;
@@ -1374,6 +1388,7 @@
         // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
         // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
         var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !_dlodInView(g);
+        if (hideForProxy) _perfHideForProxy++;
         var showReal = (isRecent || isPlaced) && !hideForProxy;
 
         // Visibility + highlighting
@@ -1588,6 +1603,19 @@
     // on the throttled log. Read via window.__tmTrav in a probe.
     window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
                         mode: _incrOK ? 'delta' : 'full' };
+    // §DLOD_VF_VISCOUNT (2026-08-05) — every tick while DLOD is engaged AND a POV camera (not main)
+    // is the active gate, per the prior session's ask: "add a log of visible-element-count from
+    // vfCam's perspective... at the moment _vfRender()'s box goes visually blank". Not throttled
+    // like §PERF_TRAVERSE — only fires while B is on, so volume is bounded by rehearsal length, not
+    // general use. hideForProxy climbing toward objs (few/no real meshes left near the camera) at
+    // the SAME tick the user reports "blank" would confirm the DLOD-culling theory directly; staying
+    // low would point elsewhere (e.g. scissor/viewport, see §CPE_VF_RENDER_TRACE).
+    if (_dlodOn && _dlodActiveCam !== app.camera) {
+      window.__tmDlodVf = { hideForProxy: _perfHideForProxy, objs: _perfObjs,
+        camPos: { x: +_dlodCamPos.x.toFixed(2), y: +_dlodCamPos.y.toFixed(2), z: +_dlodCamPos.z.toFixed(2) } };
+      console.log('§DLOD_VF_VISCOUNT hideForProxy=' + _perfHideForProxy + ' objs=' + _perfObjs +
+        ' camPos=' + JSON.stringify(window.__tmDlodVf.camPos));
+    }
     _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.

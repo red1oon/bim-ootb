@@ -118,5 +118,22 @@ const app = { camera: mainCam };
   assert(callSiteRe.test(tmSrc), 'renderAtTime\'s _dlodCamMoved edge-detector calls _giHoldCamSig(app, _dlodActiveCam), not _giHoldCamSig(app) alone');
 }
 
+// ── Case 8: §DLOD_VF_MATRIX_STALE (2026-08-05, follow-on) — static: renderAtTime must force
+// _dlodActiveCam.updateMatrixWorld() BEFORE reading matrixWorldInverse for the frustum. renderAtTime
+// runs off Time Machine's OWN setTimeout ticker, never synchronized with the rAF loop that normally
+// refreshes a camera's matrix via renderer.render() — app.camera gets refreshed every rAF frame
+// regardless, but vfCam ONLY via cinema_path_editor.js's _vfRender(), itself gated behind the same
+// rAF loop. Without the explicit update, a POV rehearsal can build the DLOD frustum from a stale
+// vfCam pose one or more _applyVFPose() moves behind — user-reported as the inset "ends up looking
+// at nothing" mid-rehearsal.
+{
+  const psmIdx = tmSrc.indexOf('_dlodPSM.multiplyMatrices(_dlodActiveCam.projectionMatrix');
+  const resolveIdx = tmSrc.indexOf('var _dlodActiveCam = _dlodResolveCamera(app);');
+  const updateIdx = tmSrc.indexOf('_dlodActiveCam.updateMatrixWorld();');
+  assert(resolveIdx > 0 && updateIdx > resolveIdx && psmIdx > updateIdx,
+    '_dlodActiveCam.updateMatrixWorld() is called after resolving the camera and before the PSM/frustum build ' +
+    `(resolveIdx=${resolveIdx} updateIdx=${updateIdx} psmIdx=${psmIdx})`);
+}
+
 console.log('\n§DLOD_VF_CAMGUARD SUMMARY pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);
