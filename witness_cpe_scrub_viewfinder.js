@@ -47,9 +47,10 @@
 //                       button now calls _previewFly(true), driving B alone, never the main canvas.
 //   G-VF-DRAG-WAKES-RENDER  dragging/resizing B's panel calls markDirty() on every move, not just on
 //                       release (§CPE_VF_DRAG_MARKDIRTY) — the real staleness cause behind OPEN 3.
-//   G-BUILDUP-GATES-TM  the timeline panel needs BOTH the eye ON and buildup checked
-//                       (§CPE_BUILDUP_GATES_TM) — cycling the eye while buildup is off must NOT
-//                       resurrect it, the actual bug this gate exists to catch.
+//   G-CPE-SOLE-OWNER    retires G-BUILDUP-GATES-TM's AND-gate (§CPE_SOLE_OWNER/§CPE_BUILDUP_OWNS_TM,
+//                       2026-08-06) — single owner per widget: Eye alone controls B + the scrub
+//                       panel regardless of buildup state; BuildUp alone controls Time Machine,
+//                       closing it (if on) when unchecked, never touching the scrub panel.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
 //   G-VF-FRAME-DIAG  (informational, not pass/fail) §CPE_VF_FRAME_DIAG diagnostic for the "not well
 //                       framed" composition/zoom complaint — logs real nearest-surface-distance and
@@ -597,37 +598,58 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-DRAG-WAKES-RENDER dragging B\'s panel calls markDirty() on every move (not just on release)',
     dragWake.calls >= 5, `markDirtyCallsDuring5Moves=${dragWake.calls}`);
 
-  // ── G-BUILDUP-GATES-TM: §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2) — the timeline panel needs
-  // BOTH the eye ON and buildup checked (an AND-gate, user: "it follows the Eye" AND "buildUp told u
-  // also, when it is unchecked it should not remain because it was called by buildup"). B's eye is
-  // ON at this point (earlier gates left it on). B's own panel/hookInstalled state must be untouched
-  // by any of this — only the TIMELINE panel is gated by buildup, never B itself.
-  const gate = await page.evaluate(() => {
+  // ── G-CPE-SOLE-OWNER: §CPE_SOLE_OWNER / §CPE_BUILDUP_OWNS_TM (2026-08-06) — retires
+  // G-BUILDUP-GATES-TM's AND-gate, which let BuildUp reach into the Eye's own widget (the scrub
+  // panel) and blocked the Eye from restoring it once buildup was off — confirmed live by the user
+  // as the actual bug ("closing buildUp... closes the preview scrubber [instead of TM]... Eye icon
+  // no longer controls the preview scrubber... ownership is not tight"). New rule, single owner per
+  // widget: Eye alone owns B + the scrub/timeline panel; BuildUp alone owns Time Machine (close it
+  // if it's on when unchecked — "if it is free", never force it ON independently of a real Play).
+  // Time Machine is ALREADY on at this point in the suite (the G-VF-2/G-SCRUB-PLAY flight above
+  // armed it via tmActivateForBake and nothing has closed it since, by design until now) — this
+  // reuses that real state instead of re-arming a fresh flight.
+  const ownerBefore = await page.evaluate(() => ({
+    tmOn: !!window.APP._tmOn, vf: window.APP.cinemaPathEditor._probeVF(),
+    scrub: !!document.getElementById('cpe-scrub-panel')
+  }));
+  const ownerAfterUncheck = await page.evaluate(() => {
     const cb = document.getElementById('cpe-buildup');
-    const vfBefore = window.APP.cinemaPathEditor._probeVF();
-    // 1) Uncheck buildup (eye still ON) — timeline must go away.
     cb.checked = false;
     cb.dispatchEvent(new Event('change'));
-    const step1 = { scrubGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
-    // 2) Toggle the eye OFF then back ON while buildup is STILL unchecked — timeline must NOT
-    // reappear (this is the actual bug the AND-gate exists to prevent: eye-alone used to resurrect it).
-    window.APP.cinemaPathEditor._vfToggle();   // eye off
-    window.APP.cinemaPathEditor._vfToggle();   // eye back on
-    const step2 = { scrubStillGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
-    // 3) Re-check buildup (eye is on from step 2) — timeline must come back.
+    return { tmOn: !!window.APP._tmOn, vf: window.APP.cinemaPathEditor._probeVF(),
+             scrub: !!document.getElementById('cpe-scrub-panel') };
+  });
+  P('G-CPE-SOLE-OWNER unchecking buildup (TM currently on) closes Time Machine, B/scrub panel untouched',
+    ownerBefore.tmOn === true && ownerAfterUncheck.tmOn === false &&
+    ownerAfterUncheck.vf.on === ownerBefore.vf.on && ownerAfterUncheck.scrub === ownerBefore.scrub,
+    `tmBefore=${ownerBefore.tmOn} tmAfterUncheck=${ownerAfterUncheck.tmOn} vfOnBefore=${ownerBefore.vf.on} vfOnAfter=${ownerAfterUncheck.vf.on} scrubBefore=${ownerBefore.scrub} scrubAfter=${ownerAfterUncheck.scrub}`);
+
+  // Eye cycling while buildup is OFF must still fully control both panels (sole owner, no AND-gate)
+  // — the exact opposite of the retired G-BUILDUP-GATES-TM step2 assertion.
+  const eyeCycle = await page.evaluate(() => {
+    const cpe = window.APP.cinemaPathEditor;
+    cpe._vfToggle();   // eye off -> both panels must go
+    const off = { vf: !!document.getElementById('cpe-vf-panel'), scrub: !!document.getElementById('cpe-scrub-panel') };
+    cpe._vfToggle();   // eye on -> both panels must return, even though buildup is still unchecked
+    const on = { vf: !!document.getElementById('cpe-vf-panel'), scrub: !!document.getElementById('cpe-scrub-panel'),
+                 buildupChecked: document.getElementById('cpe-buildup').checked };
+    return { off, on };
+  });
+  P('G-CPE-SOLE-OWNER eye alone controls both B and the scrub panel, independent of buildup state',
+    !eyeCycle.off.vf && !eyeCycle.off.scrub && eyeCycle.on.vf && eyeCycle.on.scrub && eyeCycle.on.buildupChecked === false,
+    `offState=${JSON.stringify(eyeCycle.off)} onState=${JSON.stringify(eyeCycle.on)}`);
+
+  // Re-check buildup: TM is left OFF (correct — "opens TimeMachine when preview is PLAYED", not on
+  // checkbox-check alone; only a real Play through tmActivateForBake turns it on).
+  const recheck = await page.evaluate(() => {
+    const cb = document.getElementById('cpe-buildup');
     cb.checked = true;
     cb.dispatchEvent(new Event('change'));
-    const step3 = { scrubBack: !!document.getElementById('cpe-scrub-track') };
-    return { vfBefore, step1, step2, step3 };
+    return { tmOn: !!window.APP._tmOn, scrub: !!document.getElementById('cpe-scrub-panel') };
   });
-  P('G-BUILDUP-GATES-TM unchecking buildup hides the timeline panel, B itself untouched',
-    gate.step1.scrubGone && gate.step1.vf.on === gate.vfBefore.on && gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled,
-    `scrubGoneOnUncheck=${gate.step1.scrubGone} vfOnUnchanged=${gate.step1.vf.on === gate.vfBefore.on} vfHookUnchanged=${gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled}`);
-  P('G-BUILDUP-GATES-TM cycling the eye while buildup is OFF does NOT resurrect the timeline (the actual AND-gate)',
-    gate.step2.scrubStillGone && gate.step2.vf.on === true,
-    `scrubStillGoneAfterEyeCycle=${gate.step2.scrubStillGone} vfOnAfterCycle=${gate.step2.vf.on}`);
-  P('G-BUILDUP-GATES-TM re-checking buildup (eye already on) restores the timeline panel',
-    gate.step3.scrubBack, `scrubTrackPresent=${gate.step3.scrubBack}`);
+  P('G-CPE-SOLE-OWNER re-checking buildup does not itself open Time Machine (only a real Play does)',
+    recheck.tmOn === false && recheck.scrub === true,
+    `tmOnAfterRecheck=${recheck.tmOn} scrubStillPresent=${recheck.scrub}`);
 
   // ── G-VF-FRAME-DIAG: informational only (Issue 2, "not well framed") — summarize every
   // §CPE_VF_FRAME_DIAG line logged during this whole run (scrubbing + the real rehearsal above
