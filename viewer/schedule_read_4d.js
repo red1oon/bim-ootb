@@ -94,9 +94,27 @@
     var laborRates = opts.laborRates || global.LABOR_RATES || {};
     var equipAlloc = opts.equipmentAllocation || global.EQUIPMENT_ALLOCATION || {};
     var equipRates = opts.equipmentRates || global.EQUIPMENT_RATES || {};
+    var hierarchy = opts.hierarchy || global.IFC_SCHEMA_HIERARCHY || {};
+    var dflt = opts.defaultRule || global.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
     var order = phaseOrder(rules);
     var knownPhase = {};
     order.forEach(function (p) { knownPhase[p] = true; });
+
+    // §EXACT_LOOKUP_BLINDSPOT P4 — was a raw rules[cls] exact-key lookup below (missed tier 1
+    // substring matches like IfcDoorType, tier 2 schema-hierarchy inheritance like IfcTank). Routes
+    // through the real matchRule tier 1->2->3; genuine tier 3 (no own/substring match, no classified
+    // ancestor) returns null here, NOT the generic default — so callers below keep today's exact
+    // "skip, don't count toward this tally" behavior for truly unclassified classes, the same
+    // distinction P2 preserved for proj_fold.js's 'Unsequenced' bucket and P3 for export_5d.js's
+    // OTHER package.
+    function classifyCls(cls) {
+      var warned = null, orig = console.warn;
+      console.warn = function (m) { warned = m; orig(m); };
+      var rule = SA.classify(cls, hierarchy, rules, dflt);
+      console.warn = orig;
+      var isTier3 = warned && warned.indexOf('§CLASS_UNMATCHED_INHERITED') !== 0 && warned.indexOf('§CLASS_UNMATCHED') === 0;
+      return isTier3 ? null : rule;
+    }
 
     // ---- leaf tasks of the active schedule (summaries are WBS containers, not work) -------------
     var trows = execRows(db,
@@ -137,7 +155,7 @@
       if (!cls) { noMeta++; }
       else {
         t.classes[cls] = (t.classes[cls] || 0) + 1;
-        var rule = rules[cls];
+        var rule = classifyCls(cls);
         if (rule) {
           if (rule.resource) t.resources[rule.resource] = 1;
           t.disciplines[discOfResource(rule.resource)] = 1;
@@ -183,7 +201,7 @@
       }
       var maj = null, best = 0;
       for (var cls in t.classes) {
-        var rule = rules[cls]; if (!rule || !rule.phase) continue;
+        var rule = classifyCls(cls); if (!rule || !rule.phase) continue;
         if (t.classes[cls] > best) { best = t.classes[cls]; maj = rule.phase; }
       }
       if (maj) { fromElements++; return { phase: maj, storey: majority(t.storeys) || 'Unknown' }; }
