@@ -1648,7 +1648,10 @@
       // §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it similar to opening
       // eye") — the eye toggle is the ONE control for both now, same button, no second widget.
       // Opening the eye brings the timeline back if a prior close removed it.
-      if (!document.getElementById('cpe-scrub-panel')) {
+      // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
+      // remain because it was called by buildup") — the timeline panel needs BOTH the eye ON AND
+      // buildup checked, an AND-gate, not eye-alone. Don't resurrect it here if buildup is off.
+      if (_state.buildup && !document.getElementById('cpe-scrub-panel')) {
         _buildScrubPanel();
         _wireScrub(document.getElementById('cpe-scrub-track'));
         _wireScrubPlay();
@@ -2810,6 +2813,19 @@
         // this checkbox.
         console.log('§CPE_BUILDUP ' + (_state.buildup ? 'ON' : 'off') +
           ' — reveal FOLLOWS the Time Machine timeline as-is (no re-key; the camera does not author the build order)');
+        // §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2, user: "when buildup is unchecked it should not
+        // remain because it was called by buildup" / "it follows the Eye ... buildUp told u also")
+        // — the timeline panel needs BOTH the eye ON AND buildup checked (AND-gate, see the mirror
+        // of this in _toggleViewfinder's ON branch). Unchecking buildup tears it down regardless of
+        // the eye; re-checking it only rebuilds if the eye is ALSO already on.
+        if (!_state.buildup) {
+          _scrubPanelTeardown();
+        } else if (_state.vfOn && !document.getElementById('cpe-scrub-panel')) {
+          _buildScrubPanel();
+          _wireScrub(document.getElementById('cpe-scrub-track'));
+          _wireScrubPlay();
+          _renderScrub();
+        }
         _renderWhole(); _syncButtons();
       });
       document.getElementById('cpe-room-title').addEventListener('change', function(e) {

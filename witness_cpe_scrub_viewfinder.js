@@ -37,6 +37,9 @@
 //   G-SCRUB-PLAY-POVONLY  the SAME button-driven flight leaves the main camera byte-identical
 //                       throughout (start/pause/resume) — §CPE_SCRUB_POV_ONLY: the scrub-play
 //                       button now calls _previewFly(true), driving B alone, never the main canvas.
+//   G-BUILDUP-GATES-TM  the timeline panel needs BOTH the eye ON and buildup checked
+//                       (§CPE_BUILDUP_GATES_TM) — cycling the eye while buildup is off must NOT
+//                       resurrect it, the actual bug this gate exists to catch.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
 //   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
 //              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call.
@@ -512,6 +515,38 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
+
+  // ── G-BUILDUP-GATES-TM: §CPE_BUILDUP_GATES_TM (2026-08-05, OPEN 2) — the timeline panel needs
+  // BOTH the eye ON and buildup checked (an AND-gate, user: "it follows the Eye" AND "buildUp told u
+  // also, when it is unchecked it should not remain because it was called by buildup"). B's eye is
+  // ON at this point (earlier gates left it on). B's own panel/hookInstalled state must be untouched
+  // by any of this — only the TIMELINE panel is gated by buildup, never B itself.
+  const gate = await page.evaluate(() => {
+    const cb = document.getElementById('cpe-buildup');
+    const vfBefore = window.APP.cinemaPathEditor._probeVF();
+    // 1) Uncheck buildup (eye still ON) — timeline must go away.
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    const step1 = { scrubGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
+    // 2) Toggle the eye OFF then back ON while buildup is STILL unchecked — timeline must NOT
+    // reappear (this is the actual bug the AND-gate exists to prevent: eye-alone used to resurrect it).
+    window.APP.cinemaPathEditor._vfToggle();   // eye off
+    window.APP.cinemaPathEditor._vfToggle();   // eye back on
+    const step2 = { scrubStillGone: !document.getElementById('cpe-scrub-panel'), vf: window.APP.cinemaPathEditor._probeVF() };
+    // 3) Re-check buildup (eye is on from step 2) — timeline must come back.
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change'));
+    const step3 = { scrubBack: !!document.getElementById('cpe-scrub-track') };
+    return { vfBefore, step1, step2, step3 };
+  });
+  P('G-BUILDUP-GATES-TM unchecking buildup hides the timeline panel, B itself untouched',
+    gate.step1.scrubGone && gate.step1.vf.on === gate.vfBefore.on && gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled,
+    `scrubGoneOnUncheck=${gate.step1.scrubGone} vfOnUnchanged=${gate.step1.vf.on === gate.vfBefore.on} vfHookUnchanged=${gate.step1.vf.hookInstalled === gate.vfBefore.hookInstalled}`);
+  P('G-BUILDUP-GATES-TM cycling the eye while buildup is OFF does NOT resurrect the timeline (the actual AND-gate)',
+    gate.step2.scrubStillGone && gate.step2.vf.on === true,
+    `scrubStillGoneAfterEyeCycle=${gate.step2.scrubStillGone} vfOnAfterCycle=${gate.step2.vf.on}`);
+  P('G-BUILDUP-GATES-TM re-checking buildup (eye already on) restores the timeline panel',
+    gate.step3.scrubBack, `scrubTrackPresent=${gate.step3.scrubBack}`);
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());
