@@ -7,6 +7,15 @@
 // viewfinder is genuinely on, and falls back to the main camera in every other case (viewfinder
 // off, CPE module not loaded at all, or loaded with no cinemaPathEditor exposed) — sliced by
 // balanced braces from the real shipped function, never reimplemented.
+//
+// §DLOD_VF_CAMGUARD_SIG (2026-08-05, follow-on): the resolver fix above was a real fix but left a
+// gap — _dlodCamMoved (the "did the camera move, force a full DLOD pass" edge-detector) still hard-
+// coded app.camera in _giHoldCamSig, so during a POV-only scrub/play (main parked, §CPE_SCRUB_
+// POV_ONLY) it never saw vfCam moving and could let the incremental-delta path skip re-evaluating
+// visibility for geometry entering/leaving vfCam's own moving frustum — stale buildup in the POV
+// inset. Cases 5-7 prove _giHoldCamSig now takes an explicit camera override (main-camera default
+// unchanged, so the two pre-existing GI hold-converge call sites are untouched) and that the DLOD
+// call site inside renderAtTime passes the SAME resolved camera the frustum was built from.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -67,6 +76,46 @@ const app = { camera: mainCam };
   const r = resolve(app);
   assert(r === povCam, 'viewfinder on: resolves to the POV camera, not the parked main camera');
   assert(r !== mainCam, 'RED CONTROL: without this fix, resolve(app) === mainCam always — proves the branch is live');
+}
+
+// ── Case 5: _giHoldCamSig(app) with NO override — byte-identical to before, reads app.camera ──
+{
+  const sliced = sliceFn(tmSrc, '_giHoldCamSig');
+  const sandbox = { console: console };
+  vm.createContext(sandbox);
+  vm.runInContext(sliced + '\nglobalThis.__sig = _giHoldCamSig;', sandbox);
+  const sig = sandbox.__sig;
+  const mc5 = { position: { x: 1, y: 2, z: 3 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
+  const mainOnly = { camera: mc5 };
+  const r = sig(mainOnly);
+  const expected = '1.0000,2.0000,3.0000,';
+  assert(typeof r === 'string' && r.indexOf(expected) === 0, 'no override: signature is built from app.camera (GI call sites unaffected) got=' + r);
+}
+
+// ── Case 6: _giHoldCamSig(app, cam) WITH an explicit camera — signature reflects THAT camera, ──
+// not app.camera, and a signature built from vfCam differs from one built from main.
+{
+  const sliced = sliceFn(tmSrc, '_giHoldCamSig');
+  const sandbox = { console: console };
+  vm.createContext(sandbox);
+  vm.runInContext(sliced + '\nglobalThis.__sig = _giHoldCamSig;', sandbox);
+  const sig = sandbox.__sig;
+  const mainQ = { x: 0, y: 0, z: 0, w: 1 };
+  const povQ = { x: 0.1, y: 0.2, z: 0.3, w: 0.9 };
+  const mc = { position: { x: 0, y: 0, z: 0 }, quaternion: mainQ };
+  const pc = { position: { x: 9, y: 9, z: 9 }, quaternion: povQ };
+  const app2 = { camera: mc };
+  const sigMain = sig(app2);
+  const sigPov = sig(app2, pc);
+  assert(sigMain !== sigPov, 'explicit cam override: vfCam signature differs from main-camera signature');
+  assert(sigPov.indexOf('9.0000,9.0000,9.0000,') === 0, 'explicit cam override: signature is built from the passed camera, not app.camera got=' + sigPov);
+}
+
+// ── Case 7: static — the renderAtTime call site passes the resolved active camera, not bare app ──
+// (the real bug: main parked + vfCam moving during a POV scrub was invisible to the OLD call).
+{
+  const callSiteRe = /_dlodCamSigNow\s*=\s*_giHoldCamSig\(app,\s*_dlodActiveCam\)/;
+  assert(callSiteRe.test(tmSrc), 'renderAtTime\'s _dlodCamMoved edge-detector calls _giHoldCamSig(app, _dlodActiveCam), not _giHoldCamSig(app) alone');
 }
 
 console.log('\n§DLOD_VF_CAMGUARD SUMMARY pass=' + pass + ' fail=' + fail);

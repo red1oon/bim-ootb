@@ -831,9 +831,19 @@
   // do) — so a drag starting while the 24-frame accumulate is in flight blends N8AO across the
   // moving view, exactly the reported "ghosting when moving the scene." Fix: same pose-signature
   // restart discipline, ported directly — position+quaternion string, checked every frame.
-  function _giHoldCamSig(app) {
-    if (!app || !app.camera) return '';
-    var p = app.camera.position, q = app.camera.quaternion;
+  // §DLOD_VF_CAMGUARD_SIG (2026-08-05) — optional `cam` override, defaulting to app.camera so both
+  // existing GI hold-converge call sites below (main-viewport-only, unaffected) are byte-identical.
+  // The DLOD call site passes the SAME resolved camera _dlodInView's frustum was built from
+  // (_dlodResolveCamera's result — vfCam when POV is active) instead of always app.camera: without
+  // this, _dlodCamMoved never sees vfCam moving during a POV-only scrub/play (main stays parked,
+  // §CPE_SCRUB_POV_ONLY), so the incremental-delta path could skip re-evaluating DLOD visibility
+  // for geometry newly entering/leaving vfCam's OWN moving frustum — stale buildup in the POV inset
+  // that a fresh full pass (triggered by anything else, e.g. a big cursor jump) would silently fix,
+  // masking the gap. Same camera basis end-to-end: resolve → frustum → moved-detection.
+  function _giHoldCamSig(app, cam) {
+    cam = cam || (app && app.camera);
+    if (!cam) return '';
+    var p = cam.position, q = cam.quaternion;
     return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
            q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
   }
@@ -1333,7 +1343,10 @@
     // behavioural change (W-DLOD-EQUIV).
     var _dlodCamMoved = false;
     if (_dlodOn) {
-      var _dlodCamSigNow = _giHoldCamSig(app);
+      // §DLOD_VF_CAMGUARD_SIG: same camera _dlodCamPos/frustum were just built from above
+      // (_dlodActiveCam — vfCam when POV is active, main otherwise), not always app.camera — see
+      // that function's own comment for why using the wrong one here goes stale silently.
+      var _dlodCamSigNow = _giHoldCamSig(app, _dlodActiveCam);
       _dlodCamMoved = (_dlodLastCamSig !== null && _dlodLastCamSig !== _dlodCamSigNow);
       _dlodLastCamSig = _dlodCamSigNow;
     } else {
