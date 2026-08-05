@@ -1622,15 +1622,28 @@
       // ON shows the current pose right away.
       var p = _state.plan ? _state.plan.poseAt(_state.scrubTn || 0) : null;
       if (p) { _state.vfCam.position.set(p.x, p.y, p.z); _state.vfCam.lookAt(p.tx, p.ty, p.tz); }
+      // §CPE_VF_EYE_DRIVES_SCRUB (2026-08-05, user: "closing eye to act on it similar to opening
+      // eye") — the eye toggle is the ONE control for both now, same button, no second widget.
+      // Opening the eye brings the timeline back if a prior close removed it.
+      if (!document.getElementById('cpe-scrub-panel')) {
+        _buildScrubPanel();
+        _wireScrub(document.getElementById('cpe-scrub-track'));
+        _wireScrubPlay();
+        _renderScrub();
+      }
       if (a.markDirty) a.markDirty();
-      console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — see §CPE_SCRUB_STANDALONE for the interactive timeline');
+      console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — timeline panel shown alongside it (§CPE_VF_EYE_DRIVES_SCRUB)');
     } else {
       var panel = document.getElementById('cpe-vf-panel');
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
       if (btn) { btn.style.color = '#888'; btn.style.borderColor = '#4a4f57'; }
+      // §CPE_VF_EYE_DRIVES_SCRUB — closing the eye removes the timeline panel too, symmetric with
+      // opening it above. Position is remembered via `_scrubRect` (see _buildScrubPanel's save()),
+      // so re-opening the eye restores it where the user left it, not back at the default.
+      _scrubPanelTeardown();
       if (a.markDirty) a.markDirty();
-      console.log('§CPE_VF off — panel removed, render hook cleared, zero per-frame cost (timeline stays open — see §CPE_SCRUB_STANDALONE)');
+      console.log('§CPE_VF off — panel and timeline removed, render hook cleared, zero per-frame cost (§CPE_VF_EYE_DRIVES_SCRUB)');
     }
   }
   function _vfTeardown() {
