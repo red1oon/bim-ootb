@@ -2749,12 +2749,23 @@
         '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">S-Curve</div>' +
         '<canvas id="tm-dash-scurve" width="200" height="60" style="width:100%;height:60px"></canvas>' +
         '<div id="tm-dash-daycnt" style="font-size:10px;color:#999;margin-top:2px;text-align:center"></div>' +
-      '</div>';
+      '</div>' +
+      // §TM_PANEL_RESIZE (2026-08-05, user ruling: "panel borders supposed to be draggable so we
+      // can see more"). The whole drawer was hardcoded 376px with a resize handle for the internal
+      // Gantt box's HEIGHT (tm-gantt-grip) but nothing for the drawer's own WIDTH — exactly what the
+      // screenshot showed: the props panel overlapping the storey labels and ruler with nowhere to
+      // grow into. `_panel` is centered via left:50%/translateX(-50%), so a single edge handle grows
+      // the box symmetrically for free — no left-edge math needed.
+      '<div id="tm-panel-resize-grip" title="Drag to resize the drawer" style="position:absolute;' +
+        'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>';
     document.body.appendChild(_panel);
+    wirePanelResize();
 
     var style = document.createElement('style');
     style.textContent =
       '#time-machine-panel{transition:width 200ms ease-out}' +
+      '#time-machine-panel.tm-panel-resizing{transition:none}' +
+      '#tm-panel-resize-grip:hover,#tm-panel-resize-grip.tm-gripping{background:rgba(79,195,247,0.35)}' +
       '#time-machine-panel button{background:rgba(255,255,255,0.1);color:#e0e0e0;border:1px solid rgba(79,195,247,0.3);' +
       'border-radius:4px;padding:4px 4px;cursor:pointer;font-size:10px}' +
       '#time-machine-panel button:hover{background:rgba(79,195,247,0.2)}' +
@@ -4838,6 +4849,45 @@
     return R;
   }
 
+  // §TM_PANEL_RESIZE — drag tm-panel-resize-grip to widen the WHOLE drawer past its 376px default.
+  // _panel is centered (left:50%/translateX(-50%)), so dragging the right edge by dx pixels must
+  // grow width by 2*dx for the edge to actually track the cursor 1:1 (the invisible left edge moves
+  // -dx to keep centered) — see wirePanelResize's pointermove for the derivation.
+  var _panelW = 0;            // 0 = follow the stylesheet default (376px); set once the user drags
+  var _panelWPreEdit = null;  // width to restore to when Editing turns back off (auto-expand undo)
+  var PANEL_W_DEFAULT = 376, PANEL_W_EDIT = 560, PANEL_W_MIN = 320;
+
+  function wirePanelResize() {
+    var grip = document.getElementById('tm-panel-resize-grip');
+    if (!grip || !_panel || grip._wired) return;
+    grip._wired = true;
+    var startX = 0, startW = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startX = e.clientX; startW = _panel.getBoundingClientRect().width;
+      _panel.classList.add('tm-panel-resizing');
+      grip.classList.add('tm-gripping');
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var maxW = Math.min(Math.round(window.innerWidth * 0.92), 900);
+      var w = Math.max(PANEL_W_MIN, Math.min(maxW, Math.round(startW + 2 * (e.clientX - startX))));
+      _panelW = w;
+      _panel.style.width = w + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      _panel.classList.remove('tm-panel-resizing');
+      grip.classList.remove('tm-gripping');
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§TM_PANEL_RESIZE width=' + _panelW + 'px');
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
   // §GANTT_RESIZE (E6) — drag the grip to make the drawer taller than the CSS 220px cap. Inline
   // max-height wins over the .tm-drawer-bottom.open rule, so the class keeps owning open/close and
   // this only owns the height. Reuses the same pointer-capture idiom as makeDraggable.
@@ -5389,6 +5439,20 @@
             ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
             : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
           console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
+          // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
+          // props panel alone is ~330px wide) — widen automatically rather than making the user find
+          // the new resize grip every time. Only expands if narrower than the edit width already (a
+          // user who manually widened past it keeps their own choice); restores to whatever width was
+          // active the moment editing turned on, so a manual resize DURING editing is not fought.
+          if (_panel) {
+            var curW = _panel.getBoundingClientRect().width;
+            if (_ganttEditable) {
+              _panelWPreEdit = curW;
+              if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
+            } else if (_panelWPreEdit != null) {
+              _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+            }
+          }
         });
       }
       var lockMsg = document.getElementById('tm-gantt-lockmsg');
