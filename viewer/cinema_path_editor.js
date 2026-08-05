@@ -1399,6 +1399,10 @@
     var save = function() {
       var r = d.getBoundingClientRect();
       _vfRect = { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+      // §CPE_VF_ALIGN_DIAG_V2: re-arm the one-shot diagnostic so the NEXT _vfRender() frame logs
+      // fresh numbers for this new drag/resize pose — a misalignment report is more likely to
+      // follow a reposition than the untouched default.
+      if (_state) _state._vfDiagLogged = false;
     };
     d.addEventListener('pointerup', save);
     // Corner resize — new (spec point 5: "Resize does NOT exist on any panel yet — net-new, small: a
@@ -1447,9 +1451,33 @@
     // depends on PLUS the renderer's actual backing-buffer size (ground truth — canvasR.width*pr
     // is an ASSUMPTION this log can disprove) and the panel's own box-sizing/border, so the next
     // repro gives real numbers instead of a screenshot guess. See CLAUDE.md FUNDAMENTAL LAW.
+    // §CPE_VF_ALIGN_DIAG_V2 (2026-08-05) — the v1 numbers above (still logged) already proved the
+    // scissor rect ITSELF is correctly placed within the real backing buffer (renderer.domElement,
+    // ground truth — not derived), canvas===renderer.domElement (no aliasing), no CSS transform on
+    // the canvas, box-sizing:border-box confirmed. That rules out hypothesis (b) — the BOX is not
+    // misplaced. What's left is hypothesis (a): the CONTENT inside a correctly-placed box is framed
+    // off-center, i.e. vfCam's own orientation state has drifted from what plan.poseAt(tn) intends
+    // or from the main camera's — not a coordinate bug in this function at all. Compares vfCam
+    // against a FRESH poseAt sample and against the main camera at the SAME instant.
+    // Re-armed on every drag/resize `save()` (search _vfDiagLogged in _buildVFPanel), not just
+    // toggle-on — a misalignment report is more likely to follow a user reposition than the
+    // untouched default pose, and the v1-only one-shot could have logged an entirely different
+    // instant than the one in the reported screenshot.
+    if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
+    _state.vfCam.aspect = w / h;
+    _state.vfCam.updateProjectionMatrix();
+    // §CPE_VF_ALIGN_DIAG / _V2 diagnostics moved to AFTER the aspect fix-up above (a real bug in
+    // the diagnostic itself, caught by re-running it: logging vfCam.aspect BEFORE this line reads
+    // the STALE value from _vfEnsureCam()'s creation-time aspect=1, not what this frame actually
+    // renders with — e.g. one live capture showed vfCam_aspect=1.0000 vs box_aspect=1.5789 purely
+    // from that ordering, not a real per-frame distortion). Logging here reports the exact values
+    // used for THIS frame's renderer.render() call below, not a pre-fixup snapshot.
     if (!_state._vfDiagLogged) {
       _state._vfDiagLogged = true;
       var cs = window.getComputedStyle(panel);
+      var mc = a.camera;
+      var freshP = (_state.plan && typeof _state.plan.poseAt === 'function' && _state.scrubTn != null)
+        ? _state.plan.poseAt(_state.scrubTn) : null;
       console.log('§CPE_VF_ALIGN_DIAG panelR=' + JSON.stringify({left:panelR.left,top:panelR.top,width:panelR.width,height:panelR.height}) +
         ' canvasR=' + JSON.stringify({left:canvasR.left,top:canvasR.top,width:canvasR.width,height:canvasR.height}) +
         ' pr=' + pr + ' computed_x=' + x + ' computed_y=' + y + ' computed_w=' + w + ' computed_h=' + h +
@@ -1457,10 +1485,14 @@
         ' rendererGetSize=' + JSON.stringify((function(){var s=new THREE.Vector2();a.renderer.getSize(s);return {w:s.x,h:s.y};})()) +
         ' boxSizing=' + cs.boxSizing + ' borderWidth=' + cs.borderLeftWidth + '/' + cs.borderTopWidth +
         ' xPlusW=' + (x+w) + ' backingBufferW=' + a.renderer.domElement.width + ' overflowRight=' + ((x+w) - a.renderer.domElement.width));
+      console.log('§CPE_VF_ALIGN_DIAG_V2 vfCam_fov=' + _state.vfCam.fov + ' main_fov=' + mc.fov +
+        ' vfCam_aspect=' + _state.vfCam.aspect.toFixed(4) + ' box_aspect=' + (w / h).toFixed(4) +
+        ' vfCam_up=' + JSON.stringify({x:+_state.vfCam.up.x.toFixed(4), y:+_state.vfCam.up.y.toFixed(4), z:+_state.vfCam.up.z.toFixed(4)}) +
+        ' main_up=' + JSON.stringify({x:+mc.up.x.toFixed(4), y:+mc.up.y.toFixed(4), z:+mc.up.z.toFixed(4)}) +
+        ' vfCam_pos=' + JSON.stringify({x:+_state.vfCam.position.x.toFixed(3), y:+_state.vfCam.position.y.toFixed(3), z:+_state.vfCam.position.z.toFixed(3)}) +
+        ' freshPose_pos=' + (freshP ? JSON.stringify({x:+freshP.x.toFixed(3), y:+freshP.y.toFixed(3), z:+freshP.z.toFixed(3)}) : 'n/a') +
+        ' scrubTn=' + _state.scrubTn);
     }
-    if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
-    _state.vfCam.aspect = w / h;
-    _state.vfCam.updateProjectionMatrix();
     a.renderer.setScissorTest(true);
     a.renderer.setViewport(x, y, w, h);
     a.renderer.setScissor(x, y, w, h);
