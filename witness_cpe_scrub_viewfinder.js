@@ -1,25 +1,33 @@
 // WITNESS — §CPE_SCRUB / §CPE_VIEWFINDER (Parts A and B).
 // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part A §CPE_SCRUB, Part B §CPE_VIEWFINDER.
 //
-// REWRITTEN 2026-08-05 — the scrub bar became its own standalone panel (§CPE_SCRUB_STANDALONE),
-// independent of B's toggle, and a scrub drag now legitimately drives B's inset camera again
-// (§CPE_SCRUB_VF_LIVE — the mid-fix cut from the #1177 session, restored). The v23-era gates that
-// asserted the OPPOSITE of both (bar gated to B; B's camera never moves on scrub) are GONE, replaced
-// below — see CPE_V's v24 entry in cinema_path_editor.js for the full change list this witness
-// re-verifies. The one invariant that has NEVER changed across any of these revisions — the MAIN
-// canvas camera/controls must stay byte-identical across any scrub, drag or click — is still the
-// single most important gate here (G-SCRUB-NOCAM), unmodified in spirit from the original #1177 fix.
+// REWRITTEN 2026-08-06 — §CPE_SCRUB_EYE_GATED retires §CPE_SCRUB_STANDALONE's "exists unconditionally
+// at open" behaviour: the scrub/timeline panel now only exists while B's eye is on (user: "Scrubber
+// is new, is only to be ON under the Eye toggle"). This ripples through the whole suite — every gate
+// that reads `#cpe-scrub-*` now needs B toggled on FIRST, so "toggle B on" moved to the TOP of the
+// run instead of happening midway. The v23-era gates that asserted the OPPOSITE of §CPE_SCRUB_VF_LIVE
+// (bar gated to B; B's camera never moves on scrub) are GONE, replaced below — see CPE_V's v24 entry
+// in cinema_path_editor.js for the full change list this witness re-verifies. The one invariant that
+// has NEVER changed across any of these revisions — the MAIN canvas camera/controls must stay
+// byte-identical across any scrub, drag or click — is still the single most important gate here
+// (G-SCRUB-NOCAM), unmodified in spirit from the original #1177 fix.
 //
 // ISSUE EACH GATE PROVES OR DISPROVES:
-//   G-SCRUB-STANDALONE  the scrub panel exists in the DOM as soon as the editor opens, BEFORE B is
-//                       ever toggled on — proves the panel is independent of B, not nested/gated.
+//   G-SCRUB-EYE-GATED   the scrub/timeline panel does NOT exist at editor-open (before the eye is
+//                       ever toggled), and DOES appear once the eye toggles on (§CPE_SCRUB_EYE_GATED,
+//                       2026-08-06) — retires G-SCRUB-STANDALONE, which asserted the opposite.
 //   G-SCRUB-PANEL-LOG   the scrub panel logs its own creation (was completely silent before) —
 //                       left-anchored, no viewport-bottom overflow, clear of #cpe-panel.
 //   G-VF-PANEL-CLEAR    B's panel logs its own creation (also previously silent) — left-anchored,
 //                       NOT the old right-anchor-into-#cpe-panel's-column bug, z-index above it.
 //   G-SCRUB-NOCAM       the main camera's position AND orbit target are byte-identical before/after
-//                       a scrub drag (B off) — the regression gate, unchanged in spirit since #1177.
+//                       a scrub drag — the regression gate, unchanged in spirit since #1177 (now run
+//                       with B on, the only way a scrub can happen at all post-§CPE_SCRUB_EYE_GATED).
 //   G-SCRUB-VISUAL      a scrub drag still updates the playhead and the "mm:ss / mm:ss" readout text.
+//   G-SCRUB-PLAYHEAD-TICK  the SAME playhead also advances during _previewFly() PLAYBACK, not just a
+//                       manual drag (§CPE_SCRUB_PLAYHEAD_TICK, 2026-08-06) — step() previously moved
+//                       the camera every frame but never wrote `_state.scrubTn`/called `_renderScrub`,
+//                       so the blue progress line never moved even though play/pause/resume worked.
 //   G-SCRUB-VF-LIVE     with B ON, a scrub drag drives B's inset camera (vfCam) to plan.poseAt(tn) —
 //                       while the main camera stays untouched in the SAME drag. Proves the restored
 //                       §CPE_SCRUB_VF_LIVE feature without reopening the #1177 regression.
@@ -43,6 +51,11 @@
 //                       (§CPE_BUILDUP_GATES_TM) — cycling the eye while buildup is off must NOT
 //                       resurrect it, the actual bug this gate exists to catch.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
+//   G-VF-FRAME-DIAG  (informational, not pass/fail) §CPE_VF_FRAME_DIAG diagnostic for the "not well
+//                       framed" composition/zoom complaint — logs real nearest-surface-distance and
+//                       frame-fill-fraction numbers across a rehearsal; see CINEMA_PATH_EDITOR.md's
+//                       session writeup for the honest diagnosis (position/fov/aspect all proven
+//                       correct elsewhere in this suite; composition genuinely varies by beat).
 //   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
 //              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call.
 //              Unaffected by any of this session's changes — same mechanism as before.
@@ -84,15 +97,34 @@ async function gates(browser, BLD, repoDir) {
   const P = (n, ok, d) => checks.push({ n, ok, d });
   const { page, logs } = await openEditor(browser, BLD);
 
-  // ── G-SCRUB-STANDALONE: the panel exists BEFORE B is ever toggled on ────────────────────────────
-  const standalone = await page.evaluate(() => ({
+  // ── G-SCRUB-EYE-GATED: §CPE_SCRUB_EYE_GATED (2026-08-06) — retires G-SCRUB-STANDALONE, which
+  // asserted the OPPOSITE (panel exists unconditionally at open, independent of B). User, this
+  // session: "Been minimalist, user is asked to just bake on the fly. The eye is only for path
+  // edit... Scrubber is new, is only to be ON under the Eye toggle." Confirmed live before this fix:
+  // the panel appeared immediately on Alt+C, before the eye was ever touched — §CPE_SCRUB_STANDALONE
+  // (2026-08-05) deliberately decoupled the bar from B's toggle, but for a DIFFERENT reason (making
+  // B's own render display-only), and that decoupling had this unintended side effect.
+  const atOpen = await page.evaluate(() => ({
     track: !!document.getElementById('cpe-scrub-track'),
     panel: !!document.getElementById('cpe-scrub-panel'),
     vfOn: window.APP.cinemaPathEditor._probeVF().on
   }));
-  P('G-SCRUB-STANDALONE the scrub panel exists at editor-open, independent of B',
-    standalone.track && standalone.panel && standalone.vfOn === false,
-    `trackPresent=${standalone.track} panelPresent=${standalone.panel} vfOnAtOpen=${standalone.vfOn}`);
+  P('G-SCRUB-EYE-GATED the scrub/timeline panel does NOT exist at editor-open, before the eye is ever toggled',
+    !atOpen.track && !atOpen.panel && atOpen.vfOn === false,
+    `trackPresent=${atOpen.track} panelPresent=${atOpen.panel} vfOnAtOpen=${atOpen.vfOn}`);
+
+  // ── toggle B on — moved to the TOP of the suite (was previously after G-SCRUB-NOCAM/VISUAL): now
+  // that the scrub panel only exists while the eye is on (§CPE_SCRUB_EYE_GATED above), every gate
+  // below needs the panel/track present in the DOM, so B goes on once, here, for the rest of the run.
+  const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
+  await sleep(300);
+  const afterEyeOn = await page.evaluate(() => ({
+    track: !!document.getElementById('cpe-scrub-track'),
+    panel: !!document.getElementById('cpe-scrub-panel')
+  }));
+  P('G-SCRUB-EYE-GATED toggling the eye ON builds the scrub/timeline panel',
+    vfOnState === true && afterEyeOn.track && afterEyeOn.panel,
+    `vfOnState=${vfOnState} trackPresent=${afterEyeOn.track} panelPresent=${afterEyeOn.panel}`);
 
   // ── G-SCRUB-PANEL-LOG: the scrub panel logs its own creation (was completely silent before —
   // no console evidence existed for a "scrubber is missing" report). Real numbers, not a screenshot:
@@ -110,7 +142,27 @@ async function gates(browser, BLD, repoDir) {
   P('G-SCRUB-PANEL-LOG scrub panel logs its own creation: left-anchored, no viewport overflow, clear of #cpe-panel',
     scrubLogOk, scrubLogDetail);
 
-  // ── G-SCRUB-NOCAM: the regression gate — no MAIN camera move during a scrub drag, B still off ───
+  // ── G-VF-PANEL-CLEAR: B's default position was NEVER actually fixed by the earlier "clear of
+  // #cpe-panel" commit (only the scrub panel's was, despite that commit's own message claiming
+  // both) — confirmed by direct code read, fixed in this same edit. B's own creation log (also
+  // previously silent) now proves it live: left-anchored (not the old canvasWidth-derived right
+  // anchor), z-index above #cpe-panel's, no overlap.
+  const vfCreated = logs.find(l => l.startsWith('§CPE_VF_PANEL_CREATED'));
+  let vfLogOk = false, vfLogDetail = 'no §CPE_VF_PANEL_CREATED line seen';
+  if (vfCreated) {
+    const m = /left=(-?\d+).*zIndex=(\d+).*cpePanel=(\S+)/.exec(vfCreated);
+    if (m) {
+      const left = +m[1], zIndex = +m[2], cpePanel = m[3];
+      vfLogOk = left < 100 && zIndex >= 10001 && cpePanel !== 'OVERLAP';
+      vfLogDetail = `left=${left} zIndex=${zIndex} cpePanel=${cpePanel}`;
+    }
+  }
+  P('G-VF-PANEL-CLEAR B\'s panel logs its own creation: left-anchored (not the old right-anchor bug), z-index above #cpe-panel, clear of it',
+    vfLogOk, vfLogDetail);
+
+  // ── G-SCRUB-NOCAM: the regression gate — no MAIN camera move during a scrub (B is ON — since
+  // §CPE_SCRUB_EYE_GATED, the bar cannot exist at all with B off, so a scrub with B off is no longer
+  // a real-world path; the invariant is tested here, the only way a user can actually scrub now) ───
   const before1 = await page.evaluate(() => {
     const A = window.APP;
     return {
@@ -131,35 +183,13 @@ async function gates(browser, BLD, repoDir) {
   });
   const dMainPos1 = Math.hypot(after1.mainPos.x - before1.mainPos.x, after1.mainPos.y - before1.mainPos.y, after1.mainPos.z - before1.mainPos.z);
   const dMainTgt1 = Math.hypot(after1.mainTgt.x - before1.mainTgt.x, after1.mainTgt.y - before1.mainTgt.y, after1.mainTgt.z - before1.mainTgt.z);
-  P('G-SCRUB-NOCAM the main camera (position AND target) is byte-identical before/after a scrub drag (B off)',
+  P('G-SCRUB-NOCAM the main camera (position AND target) is byte-identical before/after a scrub drag',
     dMainPos1 < 1e-9 && dMainTgt1 < 1e-9,
     `mainPosDelta=${dMainPos1.toExponential(2)}m mainTargetDelta=${dMainTgt1.toExponential(2)}m ` +
     `scrubResult.x=${scrubResult ? scrubResult.x.toFixed(2) : 'null'} (poseAt(0.42) IS sampled and returned — just never written to the main camera)`);
   P('G-SCRUB-VISUAL the playhead/readout DID change (mm:ss / mm:ss, not the old %)',
     before1.scrubLabel !== after1.scrubLabel,
     `before="${before1.scrubLabel}" after="${after1.scrubLabel}"`);
-
-  // ── toggle B on — shared setup for G-SCRUB-VF-LIVE, G-EYE-DRIVES-SCRUB, G-VF-1, G-VF-2, G-PERF-1 ──
-  const vfOnState = await page.evaluate(() => window.APP.cinemaPathEditor._vfToggle());
-  await sleep(300);
-
-  // ── G-VF-PANEL-CLEAR: B's default position was NEVER actually fixed by the earlier "clear of
-  // #cpe-panel" commit (only the scrub panel's was, despite that commit's own message claiming
-  // both) — confirmed by direct code read, fixed in this same edit. B's own creation log (also
-  // previously silent) now proves it live: left-anchored (not the old canvasWidth-derived right
-  // anchor), z-index above #cpe-panel's, no overlap.
-  const vfCreated = logs.find(l => l.startsWith('§CPE_VF_PANEL_CREATED'));
-  let vfLogOk = false, vfLogDetail = 'no §CPE_VF_PANEL_CREATED line seen';
-  if (vfCreated) {
-    const m = /left=(-?\d+).*zIndex=(\d+).*cpePanel=(\S+)/.exec(vfCreated);
-    if (m) {
-      const left = +m[1], zIndex = +m[2], cpePanel = m[3];
-      vfLogOk = left < 100 && zIndex >= 10001 && cpePanel !== 'OVERLAP';
-      vfLogDetail = `left=${left} zIndex=${zIndex} cpePanel=${cpePanel}`;
-    }
-  }
-  P('G-VF-PANEL-CLEAR B\'s panel logs its own creation: left-anchored (not the old right-anchor bug), z-index above #cpe-panel, clear of it',
-    vfLogOk, vfLogDetail);
 
   // ── G-SCRUB-VF-LIVE: with B on, scrub drives B's camera to plan.poseAt(tn); main stays untouched ─
   const before2 = await page.evaluate(() => {
@@ -348,6 +378,28 @@ async function gates(browser, BLD, repoDir) {
   P('G-SCRUB-PLAY resume continues the flight (still flying, no longer paused)',
     resumedOk && resumedState && resumedState.flying && !resumedState.paused,
     `resumeOk=${resumedOk} flying=${resumedState ? resumedState.flying : 'n/a'} paused=${resumedState ? resumedState.paused : 'n/a'}`);
+
+  // ── G-SCRUB-PLAYHEAD-TICK: §CPE_SCRUB_PLAYHEAD_TICK (2026-08-06, Issue 3) — the flight resumed
+  // above is STILL ACTIVELY PLAYING; sample the playhead (`_state.scrubTn`, what drives
+  // `#cpe-scrub-head`'s CSS left%) and poll for a strict increase over a real wait. Before this fix,
+  // step() moved the CAMERA every frame via `_applyVFPose(tn)`/`_applyCameraPose(tn)` but never wrote
+  // `tn` back to `_state.scrubTn` nor called `_renderScrub()` — play/pause/resume worked (proven
+  // above) while the visual progress indicator stayed frozen the whole flight, exactly the user's
+  // report. Polls rather than a single fixed gap: this exact point in the suite is deep into an
+  // already-heavy run (SwiftShader software rendering under cumulative load from every gate above),
+  // and a live isolated repro of this identical pause/resume sequence measured msPerFrame=662.7 —
+  // a single frame can genuinely take longer than a short fixed sleep here, which is an environment
+  // artifact, not a claim about the fix; polling up to 5s absorbs that without weakening what's
+  // actually being proven (the value must still strictly increase from its own first reading).
+  const tickA = await page.evaluate(() => window.APP.cinemaPathEditor._probeScrub().scrubTn);
+  let tickB = tickA, tickT0 = Date.now();
+  while (Date.now() - tickT0 < 5000) {
+    await sleep(200);
+    tickB = await page.evaluate(() => window.APP.cinemaPathEditor._probeScrub().scrubTn);
+    if (tickB > tickA) break;
+  }
+  P('G-SCRUB-PLAYHEAD-TICK the playhead (scrubTn) advances during ACTIVE playback, not just on a manual drag',
+    tickB > tickA, `scrubTn_t0=${tickA.toFixed(4)} scrubTn_later=${tickB.toFixed(4)} delta=${(tickB - tickA).toFixed(4)} waitedMs=${Date.now() - tickT0}`);
 
   // ── G-SCRUB-PLAY-POVONLY: the main camera stayed byte-identical across the whole button-driven ──
   // flight above (start, mid-flight pause, resume) — proves _previewFly(true) never touches it,
@@ -576,6 +628,16 @@ async function gates(browser, BLD, repoDir) {
     `scrubStillGoneAfterEyeCycle=${gate.step2.scrubStillGone} vfOnAfterCycle=${gate.step2.vf.on}`);
   P('G-BUILDUP-GATES-TM re-checking buildup (eye already on) restores the timeline panel',
     gate.step3.scrubBack, `scrubTrackPresent=${gate.step3.scrubBack}`);
+
+  // ── G-VF-FRAME-DIAG: informational only (Issue 2, "not well framed") — summarize every
+  // §CPE_VF_FRAME_DIAG line logged during this whole run (scrubbing + the real rehearsal above
+  // already sampled several tn values). Not pass/fail: position/fov/aspect are ALREADY proven
+  // correct by G-VF-1/G-VF-ASPECT/G-VF-RECT-ASPECT, so there is no known-correct "frame fraction" to
+  // assert against yet — this just puts the real numbers on record for the doc/next live repro.
+  const frameDiagLines = logs.filter(l => l.startsWith('§CPE_VF_FRAME_DIAG'));
+  P('G-VF-FRAME-DIAG (informational) composition samples logged across the run, zero crashes',
+    !logs.some(l => l.startsWith('§CPE_VF_FRAME_DIAG_ERR')),
+    `samples=${frameDiagLines.length} ` + frameDiagLines.map(l => l.replace('§CPE_VF_FRAME_DIAG ', '')).join(' | '));
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());
