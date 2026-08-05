@@ -2730,6 +2730,8 @@
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
+          '<div id="tm-gantt-marquee" style="position:absolute;border:1px dashed #4fc3f7;' +
+            'background:rgba(79,195,247,0.12);pointer-events:none;z-index:1;display:none"></div>' +
           '<div id="tm-gantt-tip" style="position:absolute;top:4px;left:0;background:rgba(20,20,40,0.92);color:#ff8c00;font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid rgba(255,140,0,0.3);pointer-events:none;z-index:2;display:none;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis"></div>' +
         '</div>' +
       '</div>' +
@@ -4992,6 +4994,17 @@
   var _ganttEditable = false;
   var _ganttAutoGenAttempted = false;  // reset per activate() — one auto-generate attempt per open
 
+  // §GANTT_GROUP_MOVE (user ruling 2026-08-05): marquee-select a cluster of bars (MS-Word-style —
+  // drag from EMPTY canvas space, sweep into the bars you want), then dragging any SELECTED bar
+  // moves the whole group together (same uniform-shift primitive as §TM_RULER_SHIFT, scoped to the
+  // selection instead of the whole project). Ephemeral, never persisted — same convention as
+  // selecting files in a file manager: it exists between "marquee" and "click away," nothing more.
+  // Click any empty canvas space (a marquee drag that ends up ~zero-size) clears it — same gesture
+  // starts a NEW marquee and dissolves the OLD selection in one motion, no separate "ungroup" verb.
+  var _ganttSelected = {};   // taskId -> true
+  var _marquee = null;       // { x0, y0, x1, y1 } in canvas-local px while a marquee drag is live
+  var _groupDrag = null;     // { taskIds, x0, y0, dayPx, days, moved } while dragging a selected bar
+
   // §GANTT_EDIT_UNDO — single-level (not a stack): a drag can cascade N successors with no way back
   // except regenerating the whole schedule (real gap, this session's own edit UI made it possible).
   // Scope is deliberately narrow: only commitGanttDrag (E1/E2 move/resize) sets this, not link/unlink
@@ -5201,6 +5214,57 @@
     renderAtTime(_cursor);
   }
 
+  // §GANTT_GROUP_MOVE — same shape as shiftGanttSchedule, scoped to an explicit marquee-selected
+  // task_id list instead of the whole schedule. Reuses the SAME _lastEdit single-level undo — its
+  // restore loop doesn't care whether tasksBefore/opsBefore covers a cascade, the whole schedule,
+  // or a selection, it just restores whatever's in there.
+  function commitGanttGroupShift(taskIds, deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.shiftTasks) {
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!deltaDays || !taskIds || !taskIds.length) return;
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+
+    var tasksBefore = {};
+    try {
+      var placeholders = taskIds.map(function () { return '?'; }).join(',');
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id IN (' + placeholders + ')', taskIds);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res = SA.shiftTasks(app.db, taskIds, deltaDays);
+    if (!res || !res.ok) {
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi3 = 0; oi3 < _ops.length; oi3++) if (_ops[oi3].output_guid) _opByGuidForUndo[_ops[oi3].output_guid] = _ops[oi3];
+    res.moved.forEach(function (m) {
+      var bar3 = barsByTask[m.id]; if (!bar3 || !bar3.guids) return;
+      bar3.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved);
+    _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
   // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
   // that edit changed: the task dates (moveTaskCascade/resizeTask's write to `tasks`) and the
   // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
@@ -5340,7 +5404,16 @@
     cv.addEventListener('pointerdown', function (e) {
       if (!_active || !_ganttTasks.length) return;
       var hit = ganttHit(e);
-      if (!hit) return;
+      if (!hit) {
+        // §GANTT_GROUP_MOVE — empty canvas starts a marquee-select (MS-Word-style: drag from empty
+        // space, sweep into the bars you want). Same lock gate as everything else — selecting is
+        // UI-only, but its only purpose here is to enable a group move, which IS an edit.
+        if (!_ganttEditable) return;
+        var mrect = e.target.getBoundingClientRect();
+        _marquee = { x0: e.clientX - mrect.left, y0: e.clientY - mrect.top, x1: e.clientX - mrect.left, y1: e.clientY - mrect.top };
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
       // §GANTT_DRAG_REJECT at the point of refusal. This used to be a bare `return`: a user dragging
       // a non-editable bar got NO feedback and NO log line, and the browser wiring test could not
       // tell "handler never fired" apart from "handler correctly refused". Silence is not a refusal.
@@ -5369,10 +5442,46 @@
         }
         return;
       }
+      // §GANTT_GROUP_MOVE — dragging a bar that's part of the current multi-selection moves the
+      // WHOLE group together. Dragging a bar OUTSIDE the current selection clears it first (same
+      // convention as every other selection UI: clicking an unselected object deselects the group).
+      if (_ganttSelected[hit.bar.taskId] && Object.keys(_ganttSelected).length > 1) {
+        _groupDrag = { taskIds: Object.keys(_ganttSelected), x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+      if (Object.keys(_ganttSelected).length) { _ganttSelected = {}; drawGanttMini(); }
       _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
       try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     });
     cv.addEventListener('pointermove', function (e) {
+      if (_marquee) {
+        var mrect2 = e.target.getBoundingClientRect();
+        _marquee.x1 = e.clientX - mrect2.left; _marquee.y1 = e.clientY - mrect2.top;
+        var mel = document.getElementById('tm-gantt-marquee');
+        if (mel) {
+          var lo = Math.min(_marquee.x0, _marquee.x1), hi = Math.max(_marquee.x0, _marquee.x1);
+          var top = Math.min(_marquee.y0, _marquee.y1), bot = Math.max(_marquee.y0, _marquee.y1);
+          mel.style.left = lo + 'px'; mel.style.top = top + 'px';
+          mel.style.width = (hi - lo) + 'px'; mel.style.height = (bot - top) + 'px';
+          mel.style.display = 'block';
+        }
+        e.preventDefault();
+        return;
+      }
+      if (_groupDrag) {
+        var days2 = Math.round((e.clientX - _groupDrag.x0) / Math.max(0.001, _groupDrag.dayPx));
+        if (days2 !== _groupDrag.days) { _groupDrag.days = days2; _groupDrag.moved = _groupDrag.moved || days2 !== 0; }
+        var tip2 = document.getElementById('tm-gantt-tip');
+        if (tip2 && _groupDrag.moved) {
+          tip2.textContent = 'Move ' + _groupDrag.taskIds.length + ' bars  ' + (days2 >= 0 ? '+' : '') + days2 + 'd';
+          tip2.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+          tip2.style.top = Math.max(2, e.offsetY - 22) + 'px';
+          tip2.style.display = 'block';
+        }
+        e.preventDefault();
+        return;
+      }
       if (!_drag) { cv.style.cursor = (function () { var h = ganttHit(e); return h && h.bar.taskId ? (h.mode === 'move' ? 'grab' : 'ew-resize') : 'pointer'; })(); return; }
       var days = Math.round((e.clientX - _drag.x0) / Math.max(0.001, _drag.dayPx));
       if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
@@ -5387,6 +5496,38 @@
       e.preventDefault();
     });
     function endDrag(e) {
+      if (_marquee) {
+        var m = _marquee; _marquee = null;
+        try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+        var mel2 = document.getElementById('tm-gantt-marquee');
+        if (mel2) mel2.style.display = 'none';
+        // A near-zero marquee is a CLICK, not a drag — click-away-to-deselect, the same gesture
+        // that starts a new marquee also dissolves the old selection (no separate "ungroup" verb).
+        if (Math.abs(m.x1 - m.x0) + Math.abs(m.y1 - m.y0) < 4) {
+          if (Object.keys(_ganttSelected).length) {
+            _ganttSelected = {};
+            console.log('§GANTT_GROUP_SELECT count=0 (cleared)');
+            drawGanttMini();
+          }
+          return;
+        }
+        var hitBars = barsInRect(cv.clientWidth, m.x0, m.y0, m.x1, m.y1);
+        _ganttSelected = {};
+        hitBars.forEach(function (t) { _ganttSelected[t.taskId] = true; });
+        console.log('§GANTT_GROUP_SELECT count=' + hitBars.length);
+        drawGanttMini();
+        return;
+      }
+      if (_groupDrag) {
+        var gd = _groupDrag; _groupDrag = null;
+        try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+        var tip3 = document.getElementById('tm-gantt-tip');
+        if (tip3) tip3.style.display = 'none';
+        if (!gd.moved || !gd.days) return;   // a click, not a drag
+        _dragConsumed = true;
+        commitGanttGroupShift(gd.taskIds, gd.days);
+        return;
+      }
       if (!_drag) return;
       var d = _drag; _drag = null;
       try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
@@ -5659,6 +5800,17 @@
         ctx.strokeRect(x, y, w, barH);
       }
 
+      // §GANTT_GROUP_MOVE — marquee-selected bars get a bright cyan frame, same idea as the
+      // captured-schedule yellow frame above (a different concern, so a different colour, drawn
+      // last so it always reads on top). Selection is ephemeral UI state (_ganttSelected), not
+      // persisted — this is the only place it's visible.
+      if (task.taskId && _ganttSelected[task.taskId]) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#4fc3f7';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, barH + 2);
+      }
+
       // Label: explicit phase short-code (§GANTT_PALETTE). substring(0,3) used to yield "Sub" vs
       // "Sup" — one character apart at 9px, colliding on the very pair the colours also collided on.
       if (w > 40) {
@@ -5754,6 +5906,28 @@
       if (x >= bx && x <= bx + bw && y >= by && y <= by + barH) return task;
     }
     return null;
+  }
+
+  // §GANTT_GROUP_MOVE — every task whose drawn rect intersects the given canvas-local marquee
+  // rectangle. SAME geometry as findBarAtClick (marginL=60, rowH=14) — a marquee that misses a bar
+  // findBarAtClick would also miss is a bug, not a feature, so this deliberately shares the exact
+  // constants rather than a second copy of them. Only bars with a real taskId are selectable — an
+  // un-authored bar has nothing to shift.
+  function barsInRect(cW, rx0, ry0, rx1, ry1) {
+    var barH = 12, gapH = 2, rowH = barH + gapH;
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    var marginL = 60;
+    var barW = cW - marginL;
+    var lo = Math.min(rx0, rx1), hi = Math.max(rx0, rx1), top = Math.min(ry0, ry1), bot = Math.max(ry0, ry1);
+    var out = [];
+    for (var i = 0; i < _ganttTasks.length; i++) {
+      var task = _ganttTasks[i]; if (!task.taskId) continue;
+      var bx = marginL + (task.startTs - _ganttAxisStart) / range * barW;
+      var bw = (task.endTs - task.startTs) / range * barW; if (bw < 2) bw = 2;
+      var by = i * rowH + 2;
+      if (bx <= hi && bx + bw >= lo && by <= bot && by + barH >= top) out.push(task);
+    }
+    return out;
   }
 
   // ── RES_ICONS (reused from boq_charts) ──
@@ -6170,6 +6344,7 @@
     if (_active) return;
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
     _ganttAutoGenAttempted = false;   // §GANTT_EDIT_LOCK — allow one fresh auto-generate attempt
+    _ganttSelected = {}; _marquee = null; _groupDrag = null;   // §GANTT_GROUP_MOVE — stale selection from a prior building must never apply here
     // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
     // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
     //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
