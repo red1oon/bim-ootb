@@ -2724,7 +2724,8 @@
             '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
             'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
             '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span></div>' +
-          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block"></canvas>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" ' +
+            'title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
         '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
@@ -4888,6 +4889,55 @@
     grip.addEventListener('pointercancel', end);
   }
 
+  // §TM_RULER_SHIFT UI — drag the day ruler to move the whole project's start/finish (user ruling
+  // 2026-08-05). Same lock gate as bar drag/resize/link (this is the biggest possible edit, not a
+  // reason to exempt it from the lock). Uses the SAME axis math as ganttHit's dayPx so a drag of N
+  // pixels always means the same N days everywhere in the drawer, ruler included.
+  function wireGanttRulerShift() {
+    var rc = document.getElementById('tm-gantt-ruler');
+    if (!rc || rc._shiftWired) return;
+    rc._shiftWired = true;
+    var startX = 0, dragDays = 0, dragging = false;
+    rc.addEventListener('pointerdown', function (e) {
+      if (!_ganttEditable) {
+        console.log('§TM_RULER_SHIFT_REJECT reason=locked');
+        var t0 = document.getElementById('tm-gantt-tip');
+        if (t0) {
+          t0.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t0.style.display = 'block';
+          setTimeout(function () { t0.style.display = 'none'; }, 2200);
+        }
+        return;
+      }
+      dragging = true; startX = e.clientX; dragDays = 0;
+      try { rc.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault(); e.stopPropagation();
+    });
+    rc.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+      var barW = Math.max(1, rc.clientWidth - 60);   // 60 = the storey-label gutter, same as ganttHit/drawGanttMini
+      var dayPx = barW / (range / 86400000);
+      dragDays = Math.round((e.clientX - startX) / Math.max(0.001, dayPx));
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) {
+        tip.textContent = 'Shift whole schedule ' + (dragDays >= 0 ? '+' : '') + dragDays + 'd';
+        tip.style.left = '4px'; tip.style.top = '20px'; tip.style.display = 'block';
+      }
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { rc.releasePointerCapture(e.pointerId); } catch (err) {}
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) tip.style.display = 'none';
+      if (dragDays) shiftGanttSchedule(dragDays);
+    }
+    rc.addEventListener('pointerup', end);
+    rc.addEventListener('pointercancel', end);
+  }
+
   // §GANTT_RESIZE (E6) — drag the grip to make the drawer taller than the CSS 220px cap. Inline
   // max-height wins over the .tm-drawer-bottom.open rule, so the class keeps owning open/close and
   // this only owns the height. Reuses the same pointer-capture idiom as makeDraggable.
@@ -5098,6 +5148,59 @@
     renderAtTime(_cursor);
   }
 
+  // §TM_RULER_SHIFT — drag the day ruler to move the WHOLE project's start/finish. Same shape as
+  // commitGanttDrag (snapshot every leaf task's before-state + every touched guid's before-state
+  // into the SAME _lastEdit single-level undo, call the real engine verb, retimeTaskElements to
+  // resync playback), just against SA.shiftSchedule instead of moveTaskCascade/resizeTask and
+  // against EVERY task instead of one cascade. mode:'shift' in _lastEdit is cosmetic (log/tip text
+  // only) — undoLastGanttEdit's restore loop doesn't branch on it, so no other change was needed
+  // there at all.
+  function shiftGanttSchedule(deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.shiftSchedule) {
+      console.log('§TM_RULER_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!deltaDays) return;   // a click, not a drag — nothing to shift
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res = SA.shiftSchedule(app.db, schedId, deltaDays);
+    if (!res || !res.ok) {
+      console.log('§TM_RULER_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi2 = 0; oi2 < _ops.length; oi2++) if (_ops[oi2].output_guid) _opByGuidForUndo[_ops[oi2].output_guid] = _ops[oi2];
+    res.moved.forEach(function (m) {
+      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
+      bar2.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved);
+    _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
   // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
   // that edit changed: the task dates (moveTaskCascade/resizeTask's write to `tasks`) and the
   // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
@@ -5205,11 +5308,16 @@
       console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — leaving it as imported, not regenerating');
       return;
     }
+    // §TM_RULER_SHIFT (2026-08-05, user ruling): "defaulted to today if the JSON is silent" — the
+    // native auto-generate path has no imported schedule to take a start date from, so it starts
+    // TODAY (real wall-clock date), not a hardcoded placeholder. Once materialized the user can drag
+    // the ruler to shift the whole project to a different start, same as any other edit.
+    var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
-    var res = SA.materializeZones(app.db, SR, { start: '2026-01-01', laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
-      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: '2026-01-01', laborRates: LR, blank: false }) : { ok: false };
+      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false }) : { ok: false };
     }
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
@@ -5421,6 +5529,7 @@
     buildGanttTasks();
     if (!_ganttTasks.length) return;
     wireGanttResize();
+    wireGanttRulerShift();
     // §GANTT_EDIT_LOCK: wire the lock toggle once, and auto-materialize a schedule the first time
     // this drawer has nothing editable to show (replaces the old §GANTT_AUTHOR_ENTRY button — no
     // click required, no side panel involved). One attempt per activate() (_ganttAutoGenAttempted),

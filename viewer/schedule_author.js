@@ -990,6 +990,33 @@
     return { ok: true, start: newStart, finish: finish, days: days };
   }
 
+  // §TM_RULER_SHIFT (2026-08-05, user ruling: dragging the Gantt drawer's day ruler adjusts the
+  // whole project's start/finish, "updated of course along with any other edit"). Translate EVERY
+  // task in the schedule — leaf AND summary alike — by a constant number of days. Deliberately no
+  // constraint checking, unlike moveTaskCascade/resizeTask: a uniform shift preserves every
+  // task_sequences edge and every task's relative position to every other task by construction, so
+  // there is nothing for C1/C2 to clamp or cascade. duration is untouched (start and finish move by
+  // the identical amount).
+  function shiftSchedule(db, scheduleId, deltaDays) {
+    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE schedule_id=?', [scheduleId]);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_SHIFT_FAIL schedule=' + scheduleId + ' reason=no_tasks');
+      return { ok: false, reason: 'no_tasks' };
+    }
+    var upd = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE task_id=?');
+    var moved = [];
+    db.run('BEGIN');
+    r[0].values.forEach(function (row) {
+      var taskId = row[0], newStart = _addDays(row[1], deltaDays), newFinish = _addDays(row[2], deltaDays);
+      upd.run([newStart, newFinish, taskId]);
+      moved.push({ id: taskId, start: newStart, finish: newFinish });
+    });
+    upd.free();
+    db.run('COMMIT');
+    console.log('§SE_SHIFT schedule=' + scheduleId + ' deltaDays=' + deltaDays + ' tasks=' + moved.length);
+    return { ok: true, moved: moved, deltaDays: deltaDays };
+  }
+
   // ── §GANTT_EDIT C1/C2 — constraint-aware move (prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
   // moveTask() above deliberately writes dates and nothing else ("CPM invalidation is the caller's
   // concern"). That is the right primitive but the WRONG thing to put under a user's finger: a drag
@@ -1495,6 +1522,7 @@
     computeCpm: computeCpm,
     moveTask: moveTask,
     moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
+    shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
     setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
     getBaselineVariance: getBaselineVariance,
