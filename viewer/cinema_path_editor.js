@@ -1337,6 +1337,13 @@
   function _wireScrub(track) {
     var drag = null;
     track.addEventListener('pointerdown', function(ev) {
+      // §CPE_SCRUB_INPUT_TRACE (2026-08-05, OPEN 5 — "play button and track stop responding after
+      // a stick-click pause") — static reading of this handler, _wireScrubPlay, _flyPauseAt/
+      // _flyResume found no structural block. Logs on EVERY pointerdown so a repro shows whether the
+      // handler runs at all (0 lines = a DOM/listener issue, something rebuilt the track) or runs but
+      // has no visible effect (bug is downstream, in the render loop / _scrubTo / _flyResume's rAF).
+      console.log('§CPE_SCRUB_INPUT_TRACE track pointerdown flying=' + (_state ? _state.flying : 'n/a') +
+        ' flyPaused=' + (_state ? _state.flyPaused : 'n/a'));
       ev.preventDefault();
       var r = track.getBoundingClientRect();
       drag = { sx0: ev.clientX, sy0: ev.clientY, moved: false, r: r };
@@ -1350,6 +1357,10 @@
       _scrubTo(tn);
     });
     track.addEventListener('pointerup', function(ev) {
+      // §CPE_SCRUB_INPUT_TRACE — see pointerdown above. `drag` null here means pointerdown never ran
+      // for this gesture (capture lost / element swapped) — that alone would explain "stops responding".
+      console.log('§CPE_SCRUB_INPUT_TRACE track pointerup hadDrag=' + !!drag + ' flying=' +
+        (_state ? _state.flying : 'n/a') + ' flyPaused=' + (_state ? _state.flyPaused : 'n/a'));
       if (!drag) return;
       var d = drag; drag = null;
       try { track.releasePointerCapture(ev.pointerId); } catch (e) {}
@@ -1515,7 +1526,15 @@
     var t0 = performance.now();
     var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
     var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
-    var w = Math.max(1, Math.round(panelR.width * pr)), h = Math.max(1, Math.round(panelR.height * pr));
+    // §CPE_VF_RECT_ASPECT (2026-08-05): h from the box, w DERIVED from h*trueAspect — NOT two
+    // independently-rounded values. Two independent Math.round()s (old: w=round(300*1.25)=375,
+    // h=round(190*1.25)=238) leave the RECT's own aspect (375/238=1.5756) slightly off the box's
+    // true aspect (300/190=1.5789) even after §CPE_VF_ASPECT_ROUND fixed vfCam.aspect to the true
+    // value — so the camera's projection matrix and the viewport it's rendered into disagreed by
+    // ~0.2%, a small vertical squish. Deriving w from h makes the rect's aspect match vfCam.aspect
+    // by construction, not by coincidence.
+    var h = Math.max(1, Math.round(panelR.height * pr));
+    var w = Math.max(1, Math.round(h * (panelR.width / panelR.height)));
     var x = Math.round((panelR.left - canvasR.left) * pr);
     var yTop = Math.round((panelR.top - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
@@ -1549,13 +1568,17 @@
     // untouched default pose, and the v1-only one-shot could have logged an entirely different
     // instant than the one in the reported screenshot.
     if (w < 2 || h < 2) return;   // panel dragged fully off-canvas — nothing to draw
-    // §CPE_VF_ASPECT_ROUND (2026-08-05): aspect from the TRUE CSS box (panelR, unrounded), not from
-    // w/h — those are two INDEPENDENTLY Math.round()-ed backing-buffer pixel counts, so their ratio
-    // drifts off the real box aspect (e.g. panelR 300x190 at pr=1.25 -> w=375, h=Math.round(237.5)=238,
-    // aspect 1.5756 vs true 1.5789 — a real, provable distortion, worse at fractional pr). Small on
-    // its own, but stacked with §CPE_VF_DPR_GUARD's pr no longer flip-flopping mid-drag, this keeps
-    // the frustum matching the box exactly instead of drifting by a different amount per pr value.
-    _state.vfCam.aspect = panelR.width / panelR.height;
+    // §CPE_VF_ASPECT_ROUND (2026-08-05) + §CPE_VF_RECT_ASPECT correction (same day, OPEN 3): aspect
+    // from w/h — the ACTUAL rounded pixel rect this frame renders into (computed above, single-
+    // rounding: h from the box, w derived from h so it tracks the true box aspect as closely as an
+    // integer pixel rect can) — not from the raw unrounded panelR.width/height. Using panelR directly
+    // (the original §CPE_VF_ASPECT_ROUND fix) matched the IDEAL box aspect but left a ~0.2% mismatch
+    // against the necessarily-integer rendered rect (w/h can never hit an irrational-ish ratio
+    // exactly) — a real, measured stretch. Setting aspect = w/h instead makes the camera's projection
+    // and the rect it's drawn into IDENTICAL by definition (same JS value), zero stretch, while w/h
+    // themselves still track the true box aspect far more closely than the old two-independently-
+    // rounded scheme did.
+    _state.vfCam.aspect = w / h;
     _state.vfCam.updateProjectionMatrix();
     // §CPE_VF_ALIGN_DIAG / _V2 diagnostics moved to AFTER the aspect fix-up above (a real bug in
     // the diagnostic itself, caught by re-running it: logging vfCam.aspect BEFORE this line reads
@@ -1704,6 +1727,10 @@
     var btn = document.getElementById('cpe-scrub-play');
     if (!btn) return;
     btn.addEventListener('click', function() {
+      // §CPE_SCRUB_INPUT_TRACE — see _wireScrub's pointerdown for why. 0 lines on a repro click
+      // means the click never reached this handler at all (DOM/listener issue).
+      console.log('§CPE_SCRUB_INPUT_TRACE play click flying=' + (_state ? _state.flying : 'n/a') +
+        ' flyPaused=' + (_state ? _state.flyPaused : 'n/a'));
       if (!_state) return;
       if (_state.flying && !_state.flyPaused) {
         if (_state._flyPauseAt) _state._flyPauseAt();

@@ -463,9 +463,12 @@ async function gates(browser, BLD, repoDir) {
     dprGuard.duringVfOn === 9.99 && dprGuard.duringVfOff !== 9.99,
     `duringVfOn(pr)=${dprGuard.duringVfOn} (expect unchanged=9.99) duringVfOff(pr)=${dprGuard.duringVfOff} (expect changed, proves the guard — not devicePixelRatio coincidence — is what held it at 9.99 above)`);
 
-  // ── G-VF-ASPECT: §CPE_VF_ASPECT_ROUND (2026-08-05) — vfCam.aspect must come from the TRUE CSS
-  // panelR.width/height, not from two independently-rounded backing-buffer pixel counts (w/h),
-  // whose ratio drifts off the real box aspect at fractional pixel ratios.
+  // ── G-VF-ASPECT: §CPE_VF_ASPECT_ROUND (2026-08-05) + §CPE_VF_RECT_ASPECT correction (OPEN 3,
+  // same day) — vfCam.aspect tracks the true CSS box aspect CLOSELY (within the rounding tolerance
+  // an integer-pixel viewport rect can achieve — see G-VF-RECT-ASPECT below for why it can no longer
+  // be bit-exact to the raw CSS box), a real improvement over the OLD two-independently-rounded w/h
+  // scheme (which could drift further, e.g. the OPEN 3 write-up's own repro: box_aspect=1.5756 vs
+  // true=1.5789, diff=0.0033).
   const aspectCheck = await page.evaluate(() => {
     const panel = document.getElementById('cpe-vf-panel');
     const r = panel.getBoundingClientRect();
@@ -480,9 +483,35 @@ async function gates(browser, BLD, repoDir) {
     });
   });
   const aspectDiff = aspectCheck.vfAspect != null ? Math.abs(aspectCheck.vfAspect - aspectCheck.trueAspect) : null;
-  P('G-VF-ASPECT vfCam.aspect matches the box\'s true (unrounded) CSS aspect, even at a fractional pixel ratio',
-    aspectDiff != null && aspectDiff < 1e-6,
-    `trueAspect=${aspectCheck.trueAspect} vfCamAspect=${aspectCheck.vfAspect} diff=${aspectDiff}`);
+  P('G-VF-ASPECT vfCam.aspect tracks the box\'s true (unrounded) CSS aspect within integer-pixel-rect tolerance',
+    aspectDiff != null && aspectDiff < 0.005,
+    `trueAspect=${aspectCheck.trueAspect} vfCamAspect=${aspectCheck.vfAspect} diff=${aspectDiff} (tolerance 0.005 — an integer w/h rect can never hit an arbitrary CSS ratio bit-exactly; G-VF-RECT-ASPECT below is the bit-exact gate)`);
+
+  // ── G-VF-RECT-ASPECT: §CPE_VF_RECT_ASPECT (2026-08-05, OPEN 3) — the ACTUAL viewport/scissor
+  // rectangle _vfRender() passes to setViewport/setScissor must have the EXACT SAME aspect as
+  // vfCam.aspect — not "close", bit-identical, since a real user-visible STRETCH is any non-zero gap
+  // between what the camera projects and what pixel rect it's drawn into. §CPE_VF_ASPECT_ROUND
+  // (PR #1209) set vfCam.aspect from the raw unrounded CSS box, which fixed the camera's OWN
+  // accuracy but left it disagreeing with the still-independently-rounded w/h rect (measured: box_
+  // aspect=1.5756 vs vfCam_aspect=1.5789, diff=0.0033 — a real stretch). Fixed by deriving
+  // vfCam.aspect = w/h (the SAME rounded rect this frame renders into, computed via a single
+  // rounding pass — h from the box, w derived from h — so it still tracks the true box far more
+  // closely than the old two-independent-roundings), making the two values identical by definition.
+  await page.evaluate(() => { window.APP.renderer.setPixelRatio(1.37); window.APP.markDirty(); });
+  await sleep(300);
+  const traceLine = logs.filter(l => l.includes('§CPE_VF_RENDER_TRACE')).pop();
+  const vfAspectNow = (await page.evaluate(() => window.APP.cinemaPathEditor._probeVF())).vfCamAspect;
+  let rectAspectDiff = null, rectW = null, rectH = null;
+  if (traceLine) {
+    const mw = traceLine.match(/\bw=(-?\d+(?:\.\d+)?)/), mh = traceLine.match(/\bh=(-?\d+(?:\.\d+)?)/);
+    if (mw && mh) {
+      rectW = parseFloat(mw[1]); rectH = parseFloat(mh[1]);
+      rectAspectDiff = Math.abs((rectW / rectH) - vfAspectNow);
+    }
+  }
+  P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
+    rectAspectDiff != null && rectAspectDiff < 1e-9,
+    `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());
