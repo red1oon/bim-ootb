@@ -2773,15 +2773,22 @@
       // grow into. `_panel` is centered via left:50%/translateX(-50%), so a single edge handle grows
       // the box symmetrically for free — no left-edge math needed.
       '<div id="tm-panel-resize-grip" title="Drag to resize the drawer" style="position:absolute;' +
-        'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>';
+        'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>' +
+      // §TM_PANEL_RESIZE_H (2026-08-05, user: "make the lower border pullable expandable too, not
+      // just the right border") — same edge-grip pattern as the width handle above, mirrored onto
+      // the panel's bottom edge so both resizable dimensions are reachable the same way.
+      '<div id="tm-panel-resize-grip-b" title="Drag to resize the drawer" style="position:absolute;' +
+        'left:0;right:0;bottom:-3px;height:8px;cursor:ns-resize;z-index:6"></div>';
     document.body.appendChild(_panel);
     wirePanelResize();
+    wirePanelResizeHeight();
 
     var style = document.createElement('style');
     style.textContent =
       '#time-machine-panel{transition:width 200ms ease-out}' +
       '#time-machine-panel.tm-panel-resizing{transition:none}' +
       '#tm-panel-resize-grip:hover,#tm-panel-resize-grip.tm-gripping{background:rgba(79,195,247,0.35)}' +
+      '#tm-panel-resize-grip-b:hover,#tm-panel-resize-grip-b.tm-gripping{background:rgba(79,195,247,0.35)}' +
       '#time-machine-panel button{background:rgba(255,255,255,0.1);color:#e0e0e0;border:1px solid rgba(79,195,247,0.3);' +
       'border-radius:4px;padding:4px 4px;cursor:pointer;font-size:10px}' +
       '#time-machine-panel button:hover{background:rgba(79,195,247,0.2)}' +
@@ -4899,6 +4906,45 @@
       grip.classList.remove('tm-gripping');
       try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
       console.log('§TM_PANEL_RESIZE width=' + _panelW + 'px');
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
+  // §TM_PANEL_RESIZE_H — companion to wirePanelResize() above, same grip/pointer-capture pattern,
+  // mirrored onto the panel's bottom edge. _panel has no height cap of its own (it grows to fit
+  // content, anchored bottom:80px), so growing it means giving it an explicit max-height + scroll
+  // once the user has dragged at least once; until then it stays at its natural intrinsic height.
+  var _panelH = 0;
+  var PANEL_H_MIN = 160;
+
+  function wirePanelResizeHeight() {
+    var grip = document.getElementById('tm-panel-resize-grip-b');
+    if (!grip || !_panel || grip._wired) return;
+    grip._wired = true;
+    var startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = _panel.getBoundingClientRect().height;
+      _panel.classList.add('tm-panel-resizing');
+      grip.classList.add('tm-gripping');
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var maxH = Math.round(window.innerHeight * 0.85);
+      var h = Math.max(PANEL_H_MIN, Math.min(maxH, Math.round(startH + (e.clientY - startY))));
+      _panelH = h;
+      _panel.style.maxHeight = h + 'px';
+      _panel.style.overflowY = 'auto';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      _panel.classList.remove('tm-panel-resizing');
+      grip.classList.remove('tm-gripping');
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§TM_PANEL_RESIZE_H height=' + _panelH + 'px');
     }
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
