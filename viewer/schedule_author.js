@@ -990,30 +990,52 @@
     return { ok: true, start: newStart, finish: finish, days: days };
   }
 
-  // §TM_RULER_SHIFT (2026-08-05, user ruling: dragging the Gantt drawer's day ruler adjusts the
-  // whole project's start/finish, "updated of course along with any other edit"). Translate EVERY
-  // task in the schedule — leaf AND summary alike — by a constant number of days. Deliberately no
-  // constraint checking, unlike moveTaskCascade/resizeTask: a uniform shift preserves every
-  // task_sequences edge and every task's relative position to every other task by construction, so
-  // there is nothing for C1/C2 to clamp or cascade. duration is untouched (start and finish move by
-  // the identical amount).
-  function shiftSchedule(db, scheduleId, deltaDays) {
-    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE schedule_id=?', [scheduleId]);
-    if (!r.length || !r[0].values.length) {
-      console.log('§SE_SHIFT_FAIL schedule=' + scheduleId + ' reason=no_tasks');
-      return { ok: false, reason: 'no_tasks' };
-    }
+  // Shared core: translate an explicit list of task rows by a constant number of days. No
+  // constraint checking — a uniform translation of a fixed row set can never create or resolve a
+  // task_sequences violation, by construction. duration is untouched.
+  function _shiftRows(db, rows, deltaDays) {
     var upd = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE task_id=?');
     var moved = [];
     db.run('BEGIN');
-    r[0].values.forEach(function (row) {
+    rows.forEach(function (row) {
       var taskId = row[0], newStart = _addDays(row[1], deltaDays), newFinish = _addDays(row[2], deltaDays);
       upd.run([newStart, newFinish, taskId]);
       moved.push({ id: taskId, start: newStart, finish: newFinish });
     });
     upd.free();
     db.run('COMMIT');
+    return moved;
+  }
+
+  // §TM_RULER_SHIFT (2026-08-05, user ruling: dragging the Gantt drawer's day ruler adjusts the
+  // whole project's start/finish, "updated of course along with any other edit"). Translate EVERY
+  // task in the schedule — leaf AND summary alike.
+  function shiftSchedule(db, scheduleId, deltaDays) {
+    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE schedule_id=?', [scheduleId]);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_SHIFT_FAIL schedule=' + scheduleId + ' reason=no_tasks');
+      return { ok: false, reason: 'no_tasks' };
+    }
+    var moved = _shiftRows(db, r[0].values, deltaDays);
     console.log('§SE_SHIFT schedule=' + scheduleId + ' deltaDays=' + deltaDays + ' tasks=' + moved.length);
+    return { ok: true, moved: moved, deltaDays: deltaDays };
+  }
+
+  // §GANTT_GROUP_MOVE (2026-08-05, user ruling: marquee-select a cluster of bars, MS-Word-style —
+  // "when dragging a bar, it drags along its group"). Same uniform-translate primitive as
+  // shiftSchedule, scoped to an explicit task_id list (the marquee selection) instead of a whole
+  // schedule. The selection itself is ephemeral UI state, never persisted — only the resulting date
+  // change is a real edit.
+  function shiftTasks(db, taskIds, deltaDays) {
+    if (!taskIds || !taskIds.length) return { ok: false, reason: 'no_tasks' };
+    var placeholders = taskIds.map(function () { return '?'; }).join(',');
+    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE task_id IN (' + placeholders + ')', taskIds);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_GROUP_SHIFT_FAIL reason=no_matching_tasks');
+      return { ok: false, reason: 'no_tasks' };
+    }
+    var moved = _shiftRows(db, r[0].values, deltaDays);
+    console.log('§SE_GROUP_SHIFT tasks=' + moved.length + ' deltaDays=' + deltaDays);
     return { ok: true, moved: moved, deltaDays: deltaDays };
   }
 
@@ -1523,6 +1545,7 @@
     moveTask: moveTask,
     moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
     shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
+    shiftTasks: shiftTasks,             // §GANTT_GROUP_MOVE — uniform date shift over an explicit task_id list
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
     setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
     getBaselineVariance: getBaselineVariance,

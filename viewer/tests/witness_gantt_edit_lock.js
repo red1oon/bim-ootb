@@ -45,9 +45,14 @@ function makeSandbox() {
   let openGanttPropsCalls = 0;
   const fakeBar = { taskId: 'T1', storey: 'Level 1', phase: 'Superstructure' };
   const sandbox = {
-    console: console, Math: Math, setTimeout: setTimeout,
+    console: console, Math: Math, Object: Object, setTimeout: setTimeout,
     document: { getElementById: function (id) { return id === 'tm-gantt-canvas' ? canvas : (id === 'tm-gantt-tip' ? tip : null); } },
     _active: true, _ganttTasks: [fakeBar], _ganttEditable: false, _drag: null, _dragConsumed: false,
+    // §GANTT_GROUP_MOVE additions to wireGanttDrag — not this witness's concern (that's
+    // witness_gantt_group_move.js), just enough state for the sliced function to run without
+    // throwing on a reference it now makes.
+    _ganttSelected: {}, _marquee: null, _groupDrag: null,
+    barsInRect: function () { return []; }, commitGanttGroupShift: function () {},
     ganttHit: function () { return { bar: fakeBar, mode: 'move', dayPx: 10 }; },
     openGanttProps: function () { openGanttPropsCalls++; },
     linkGanttBars: function () {}, commitGanttDrag: function () {}
