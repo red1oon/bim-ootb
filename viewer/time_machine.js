@@ -4940,39 +4940,43 @@
   }
 
   // §TM_PANEL_RESIZE_H — companion to wirePanelResize() above, same grip/pointer-capture pattern,
-  // mirrored onto the panel's bottom edge. _panel has no height cap of its own (it grows to fit
-  // content, anchored bottom:80px), so growing it means giving it an explicit max-height + scroll
-  // once the user has dragged at least once; until then it stays at its natural intrinsic height.
-  var _panelH = 0;
-  var PANEL_H_MIN = 160;
-
+  // mirrored onto the panel's bottom edge. FIX (2026-08-06, user: "it seems there is an inner frame
+  // for the gantt chart panel... it does not be max" — confirmed live): this used to grow the OUTER
+  // _panel shell only, leaving the actual content (#tm-gantt-box, the Gantt canvas) clipped at its
+  // own separate height cap — so the drag looked like it worked but never uncrammed any content.
+  // Now it drives the SAME #tm-gantt-box / _ganttBoxH that the internal top-strip grip
+  // (wireGanttResize, §GANTT_RESIZE E6) already owns — this is just a second, more discoverable
+  // entry point to that one real resize, not a second independent mechanism. _panel itself has no
+  // height cap of its own (flex column, grows to fit content) so it naturally follows the box taller
+  // — no outer-panel style needed at all, exactly like the top-strip grip already proves works.
   function wirePanelResizeHeight() {
     var grip = document.getElementById('tm-panel-resize-grip-b');
-    if (!grip || !_panel || grip._wired) return;
+    var box = document.getElementById('tm-gantt-box');
+    if (!grip || !box || grip._wired) return;
     grip._wired = true;
     var startY = 0, startH = 0, dragging = false;
     grip.addEventListener('pointerdown', function (e) {
-      dragging = true; startY = e.clientY; startH = _panel.getBoundingClientRect().height;
-      _panel.classList.add('tm-panel-resizing');
+      dragging = true; startY = e.clientY; startH = box.clientHeight;
+      if (_panel) _panel.classList.add('tm-panel-resizing');
       grip.classList.add('tm-gripping');
       grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
     });
     grip.addEventListener('pointermove', function (e) {
       if (!dragging) return;
-      var maxH = Math.round(window.innerHeight * 0.85);
-      var h = Math.max(PANEL_H_MIN, Math.min(maxH, Math.round(startH + (e.clientY - startY))));
-      _panelH = h;
-      _panel.style.maxHeight = h + 'px';
-      _panel.style.overflowY = 'auto';
+      // Grip sits at the drawer's BOTTOM edge (opposite of tm-gantt-grip's top-edge placement), so
+      // dragging DOWN (positive dy) grows it — same clamp bounds as wireGanttResize for consistency.
+      var h = Math.max(80, Math.min(Math.round(window.innerHeight * 0.75), startH + (e.clientY - startY)));
+      _ganttBoxH = h;
+      box.style.maxHeight = h + 'px';
       e.preventDefault(); e.stopPropagation();
     });
     function end(e) {
       if (!dragging) return;
       dragging = false;
-      _panel.classList.remove('tm-panel-resizing');
+      if (_panel) _panel.classList.remove('tm-panel-resizing');
       grip.classList.remove('tm-gripping');
       try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
-      console.log('§TM_PANEL_RESIZE_H height=' + _panelH + 'px');
+      console.log('§TM_PANEL_RESIZE_H height=' + _ganttBoxH + 'px rows=' + _ganttTasks.length);
     }
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
