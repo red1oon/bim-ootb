@@ -167,6 +167,7 @@
   // frame theory (§IDLE_GATE self-parks the render loop; nothing in the drag path calls markDirty()
   // except a repositioning save()) without needing to guess from a screenshot.
   var _lastVfRenderRect = null, _lastVfRenderT = null;
+  var _lastFrameDiagT = null;   // §CPE_VF_FRAME_DIAG throttle — see _vfRender
   // §CPE_SCRUB_STANDALONE (2026-08-04) — where the user last dragged the standalone scrub panel,
   // same session-only scope as `_panelPos`/`_vfRect` above.
   var _scrubRect = null;
@@ -1619,6 +1620,50 @@
         ' freshPose_pos=' + (freshP ? JSON.stringify({x:+freshP.x.toFixed(3), y:+freshP.y.toFixed(3), z:+freshP.z.toFixed(3)}) : 'n/a') +
         ' scrubTn=' + _state.scrubTn);
     }
+    // §CPE_VF_FRAME_DIAG (2026-08-06, Issue 2 — "working, but not well framed") — position, fov and
+    // aspect are ALL already proven correct above and by G-VF-1/G-VF-ASPECT/G-VF-RECT-ASPECT (pose
+    // bit-identical to the main camera's, fov a hardcoded constant — 60, `scene.js:139` — copied
+    // once at vfCam creation and NEVER reassigned afterward so it cannot drift, rect aspect
+    // bit-identical to vfCam.aspect by construction). So none of those numbers can be the cause of a
+    // composition/zoom complaint. This logs the one thing that COULD be: how close the nearest real
+    // surface is along vfCam's own look direction, and what fraction of the box's height a 1m
+    // reference object at that distance would fill. A wide 60° FOV pointed at a DISTANT subject
+    // reads as "small/not well framed" with zero coordinate error anywhere — this is the honest way
+    // to tell "genuinely too wide/zoomed-out" from "actually fine, only looked off in a screenshot."
+    // Throttled to ~500ms (tn changes every frame during playback; a handful of samples across a
+    // real scrub/rehearsal is enough to characterize composition without flooding the console).
+    var _fdNow = performance.now();
+    if (typeof a.collectMeshes === 'function' && (_lastFrameDiagT == null || _fdNow - _lastFrameDiagT >= 500)) {
+      _lastFrameDiagT = _fdNow;
+      // §CPE_VF_FRAME_DIAG safety: mirrors effects.js's own `_cinemaFan` raycast pattern exactly —
+      // `A.collectMeshes(...)` (a curated, safe-to-raycast list — NOT raw a.scene.children, which
+      // includes helper/staffage/sprite objects some of this app's custom BatchedMesh/BVH raycast
+      // overrides cannot handle and will throw on) plus a try/catch, since `_cinemaFan` ITSELF
+      // wraps every `intersectObjects` call the same way — this is not a new pattern, just reused.
+      // A raw a.scene.children raycast (the first version of this diagnostic) threw
+      // "Cannot read properties of null (reading 'matrixWorld')" and — because it ran BEFORE the
+      // real a.renderer.render() call below — would have silently killed B's actual render on every
+      // frame it hit. Diagnostic code must never be able to break the feature it's diagnosing.
+      try {
+        var _fdMeshes = a.collectMeshes(function(o) {
+          return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !o.isSprite;
+        });
+        var _fdDir = new THREE.Vector3();
+        _state.vfCam.getWorldDirection(_fdDir);
+        var _fdRay = new THREE.Raycaster(_state.vfCam.position, _fdDir, 0.01, 200);
+        _fdRay.firstHitOnly = true;
+        var _fdHits = _fdMeshes.length ? _fdRay.intersectObjects(_fdMeshes, true) : [];
+        var _fdDist = _fdHits.length ? _fdHits[0].distance : null;
+        var _fdFrac = _fdDist ? (1 / (2 * _fdDist * Math.tan(_state.vfCam.fov * Math.PI / 360))) : null;
+        console.log('§CPE_VF_FRAME_DIAG scrubTn=' + _state.scrubTn +
+          ' nearestSurfaceDist=' + (_fdDist != null ? _fdDist.toFixed(2) + 'm' : 'none-within-200m') +
+          ' fov=' + _state.vfCam.fov +
+          ' refObj1mVerticalFrameFraction=' + (_fdFrac != null ? _fdFrac.toFixed(3) : 'n/a') +
+          ' — low fraction = subject reads small/distant in the box even with zero coordinate error');
+      } catch (_fdErr) {
+        console.log('§CPE_VF_FRAME_DIAG_ERR ' + _fdErr.message);
+      }
+    }
     a.renderer.setScissorTest(true);
     a.renderer.setViewport(x, y, w, h);
     a.renderer.setScissor(x, y, w, h);
@@ -2080,6 +2125,14 @@
         // _applyCameraPose above. Was inlined here; extracted so scrubbing and B share it exactly.
         // §CPE_SCRUB_POV_ONLY: povOnly skips the main camera entirely, applying to B alone.
         if (povOnly) { _applyVFPose(tn); } else { _applyCameraPose(tn); }
+        // §CPE_SCRUB_PLAYHEAD_TICK (2026-08-06) — mirrors _scrubTo's own `_state.scrubTn = tn;
+        // _renderScrub();` pair exactly. Without this the camera pose advances correctly every
+        // frame but the playhead (`#cpe-scrub-head`, driven by `_state.scrubTn`) never does — the
+        // same "second state update never wired into the real tick" shape §CPE_SCRUB_BEARING_
+        // FLY_PAUSE hit: the pose write and the UI-state write are two separate lines, and this one
+        // was missing from step() even though _scrubTo (the drag path) always had both.
+        _state.scrubTn = tn;
+        _renderScrub();
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
         if (bkPrev && window.tmSetCursor) {
           // §CPE_BUILDUP_WORK_PACED: the rehearsal asks for the SAME cursor the bake will ask for at
@@ -2753,14 +2806,18 @@
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
       var panel = _buildPanel();
-      // §CPE_SCRUB_STANDALONE — built unconditionally alongside #cpe-panel, independent of B's
-      // toggle (resolves the OPEN QUESTION the #1177 fix left open). _renderScrub() itself is
-      // already invoked from every mutation path via _redrawScene() (see that function's own
-      // §CPE_SCRUB comment) — nothing extra to wire for refresh, only initial build.
+      // §CPE_SCRUB_EYE_GATED (2026-08-06, retires §CPE_SCRUB_STANDALONE's "built unconditionally"
+      // behaviour) — user, this session: "Been minimalist, user is asked to just bake on the fly.
+      // The eye is only for path edit... Scrubber is new, is only to be ON under the Eye toggle."
+      // §CPE_SCRUB_STANDALONE (2026-08-05) deliberately decoupled the bar from B's toggle for a
+      // DIFFERENT reason (making B's own render display-only, no drop/raycast interaction on the
+      // bar) — but its side effect was that the panel appeared immediately on Alt+C, before the eye
+      // is ever touched, confirmed live. `vfOn` starts false (2 lines above), so simply do NOT build
+      // the bar here — `_toggleViewfinder`'s ON branch (§CPE_VF_EYE_DRIVES_SCRUB /
+      // §CPE_BUILDUP_GATES_TM) already builds it, guarded, the first time the eye turns on; nothing
+      // else to wire here. _renderScrub() stays safe to call from every mutation path regardless
+      // (already null-guards on a missing track).
       _state.scrubTn = 0;
-      _buildScrubPanel();
-      _wireScrub(document.getElementById('cpe-scrub-track'));
-      _wireScrubPlay();
       // §CPE_VIEWFINDER: the eye-icon toggle button lives in the panel's title row (_buildPanel).
       _wireViewfinderToggle();
       // §CPE_PREVIEW_DIVERGENCE: state the basis every re-plan below is pinned to, once. If a pasted
