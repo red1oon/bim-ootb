@@ -211,7 +211,7 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 
 ## Contributors
 
-- **Redhuan D. Oon** (*red1*) — architecture, compiler, viewer, ERP engine, everything
+- **Redhuan D. Oon** (*red1*) ([red1org@gmail.com](mailto:red1org@gmail.com)) — architecture, compiler, viewer, ERP engine, everything
 
 ## License
 
