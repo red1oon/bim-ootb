@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.39.1](https://github.com/red1oon/bim-ootb/compare/v1.39.0...v1.39.1) (2026-08-06)
+
+
+### 🐛 Fixes
+
+* **cpe:** craft B's frame FROM the actual scissor rect, not an independent CSS box ([#1218](https://github.com/red1oon/bim-ootb/issues/1218)) ([51c7624](https://github.com/red1oon/bim-ootb/commit/51c7624c9cfa9e7d4d5facd4e78f347cad3254cf))
+* **cpe:** explicit box-sizing:border-box on B's panel (Fable review follow-up) ([#1220](https://github.com/red1oon/bim-ootb/issues/1220)) ([985d177](https://github.com/red1oon/bim-ootb/commit/985d17754ec634ee6be4554402e688c84bc808b3))
+
 ## [1.39.0](https://github.com/red1oon/bim-ootb/compare/v1.38.0...v1.39.0) (2026-08-05)
 
 
