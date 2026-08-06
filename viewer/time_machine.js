@@ -2058,6 +2058,22 @@
     } else if (app.renderer && app.scene && app.camera) {
       app.renderer.render(app.scene, app.camera);
     }
+    // §CPE_VF_BUILDUP_BLANK (2026-08-06) — user report: "B blank during BuildUp playback, only
+    // shows when paused" (HANDOFF 2026-08-06 LATE, Item 1). renderAtTime() just painted the FULL
+    // canvas with the MAIN camera, wiping out whatever B's own scissor sub-render
+    // (cinema_path_editor.js _vfRender, installed as app._cpeViewfinderRender) drew on a prior
+    // frame. B only got repainted afterward if main.js's animate() rAF loop happened to run again
+    // and see _needsRender still true — during a povOnly BuildUp rehearsal that is a race against
+    // cinema_path_editor.js's OWN independent rAF chain (_previewFly's step(), which calls
+    // tmSetCursor -> renderAtTime every frame and so re-wins the race almost every tick). Confirmed
+    // live: witness_cpe_vf_buildup_blank.js (scratchpad, not yet committed) measured B's render
+    // count against §PERF_TRAVERSE tick count during a 5s povOnly+buildup rehearsal — HHS_Office_
+    // Federated, ~75% coverage before this fix (occasional flicker of real content between long
+    // stale/frozen stretches — matches the earlier HANDOFF's inconclusive pixel-readback samples),
+    // 100%+ after. Calling the hook here — same call main.js's animate() already makes at both its
+    // own render branches — repaints B immediately after every tick, unconditionally, removing the
+    // race instead of hoping to win it. No-op (single property check) when B is off.
+    if (app._cpeViewfinderRender) app._cpeViewfinderRender();
     updateStatus();
     _broadcastTimeline();   // §S3 — realtime cross-tab scrub + pinpoint the item the data is addressing
   }
