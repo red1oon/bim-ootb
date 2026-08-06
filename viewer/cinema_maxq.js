@@ -65,6 +65,31 @@
   // Film fraction -> the k-th element PLACED, not the k-th day. 10% of the film is 10% of the
   // building on any model, and it no longer depends on how the generated timestamps cluster — which
   // is the consistency the user actually asked for.
+  //
+  // ══ §CPE_BUILDUP_EVEN_TEMPO (2026-08-06) — RETIRES the above as the default ═══════════════════
+  // User: "why does the movie baking makes the first few seconds or during the dive in jumps days
+  // too fast tempo? Should be even throughout - separation of concern. Let the user plays with the
+  // sticks and timings to catch this linear buildup."
+  //
+  // Even ELEMENT rate is uneven DAY rate, by construction — the two cannot both be constant unless
+  // the schedule places elements uniformly in time, which no real 4D schedule does. Measured on
+  // Duplex (witness_cpe_buildup_tempo.js, pre-fix): the per-step calendar advance ranged 0.01d to
+  // 0.29d, a 57.21x swing across one 10-day buildup, and the cursor departed the straight line by
+  // 9.47% of the whole span. That swing IS the reported symptom; work pacing was working exactly as
+  // written.
+  //
+  // ⚠ THIS IS A REVERSAL OF A PRIOR USER DECISION, AND IT TRADES BACK INTO THE PROBLEM THAT
+  // MOTIVATED WORK PACING — the burst the §CPE_BUILDUP_WORK_PACED note above records (a quarter of
+  // the Hospital model appearing in the first 5% of the film) returns wherever a schedule clusters
+  // its elements. That is the deliberate trade, made on the user's stated grounds: SEPARATION OF
+  // CONCERN. The buildup engine does one predictable thing — linear days — and dramatic pacing
+  // belongs to the path editor, where the user places sticks and sets their timings and can see what
+  // they are doing. Two mechanisms silently competing to set tempo is what produced a pacing nobody
+  // asked for and nobody could steer.
+  //
+  // Work pacing is kept intact behind this one flag rather than deleted, so the revert is one line
+  // and the measured history above stays runnable.
+  var BUILDUP_EVEN_TEMPO = true;   // false restores §CPE_BUILDUP_WORK_PACED
   var _wpSched = null, _wpTried = false;
 
   function _workPacingArm() {
@@ -90,8 +115,20 @@
   // The cursor this frame should ask for. Pure function of the film fraction, so preview and bake
   // cannot diverge and two runs of the same film ask for identical cursors.
   function _workCursorAt(tFilm, bkState) {
-    if (!_wpTried) _workPacingArm();
     var t = Math.max(0, Math.min(1, tFilm));
+    // §CPE_BUILDUP_EVEN_TEMPO — the straight line, before any schedule is consulted. Gated ahead of
+    // _workPacingArm() so an even-tempo film never even arms work pacing: arming logs a mode line
+    // that would then describe a pacing that is not in force, which is exactly the kind of log that
+    // costs a live debugging round-trip.
+    if (BUILDUP_EVEN_TEMPO) {
+      if (!_wpTried) {
+        _wpTried = true;
+        console.log('§CPE_BUILDUP_PACING mode=even-calendar (§CPE_BUILDUP_EVEN_TEMPO) — every film ' +
+          'second advances the SAME number of days; dwell/tempo is the path editor\'s job (sticks + timings)');
+      }
+      return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
+    }
+    if (!_wpTried) _workPacingArm();
     if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
     if (t <= 0) return _wpSched.projectStart;
     if (t >= 1) return _wpSched.projectEnd;
@@ -208,9 +245,22 @@
     // precomputed threshold — never to move the threshold itself.
     var calendarFirstT = sched.firstAboveMs == null ? 1 : (sched.firstAboveMs - bkState.projectStart) / span;
     var elementsFirstT = null, elementsFirstTSrc = 'work schedule unavailable';
-    if (!_wpTried) _workPacingArm();  // force-arm early so this bake's OWN schedule is what the
-                                       // threshold is computed from, not a race with frame 0.
-    if (sched.firstAboveMs != null && _wpSched && _wpSched.total) {
+    // §CPE_BUILDUP_EVEN_TEMPO (2026-08-06) — the elements domain only exists when WORK PACING is
+    // what maps tFilm to a cursor. With even tempo in force `_workCursorAt` is calendar-linear, so
+    // computing the threshold in elements-fraction puts it in a domain `tFilm` is not in — which is
+    // precisely the #1148 defect the block above was written to kill, reintroduced from the other
+    // side. Measured when this was missed: threshold firstT=0.0027 (elements) against a real cursor
+    // crossing at t=0.0083 (calendar), so the ground began un-ghosting ~2 frames of 400 BEFORE the
+    // first above-ground element was placed, and witness_cpe_ghost_ground.js G-GG-12a went red.
+    // Skipping the force-arm entirely also keeps a §CPE_BUILDUP_PACING mode=work line out of an
+    // even-tempo log, where it would describe a pacing that is not in force.
+    if (!BUILDUP_EVEN_TEMPO) {
+      if (!_wpTried) _workPacingArm();  // force-arm early so this bake's OWN schedule is what the
+                                        // threshold is computed from, not a race with frame 0.
+    } else {
+      elementsFirstTSrc = 'n/a — even tempo, tFilm is in the calendar domain (§CPE_BUILDUP_EVEN_TEMPO)';
+    }
+    if (!BUILDUP_EVEN_TEMPO && sched.firstAboveMs != null && _wpSched && _wpSched.total) {
       var _ends = _wpSched.ends, _lo = 0, _hi = _ends.length;
       while (_lo < _hi) { var _mid = (_lo + _hi) >>> 1; if (_ends[_mid] < sched.firstAboveMs) _lo = _mid + 1; else _hi = _mid; }
       elementsFirstT = (_lo + 1) / _wpSched.total;
