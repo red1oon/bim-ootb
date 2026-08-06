@@ -210,6 +210,11 @@ function makeOverlay(guid) {
   const logs = [];
   const mk = new Function('MESH', 'GUID', 'LOGS', `
     var _billboardNameMesh = MESH, _billboardNameGuid = GUID, _nameVisLast = null;
+    // §GLOW_BUILDUP_GATE (2026-08-07) extended this setter to fan out to other §TM_OVERLAY_SYNC
+    // consumers (glow sprites) via _tmVisListeners — a real closure var declared alongside this
+    // setter in the shipped file, outside FX_SRC's own extracted span (same as _billboardNameMesh
+    // above). Empty here: this witness only exercises the billboard-nameplate half.
+    var _tmVisListeners = [];
     var A = { markDirty: function(){} };
     var console = { log: function(s){ LOGS.push(s); } };
     var window = {};

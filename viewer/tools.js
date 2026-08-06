@@ -1002,7 +1002,8 @@ function setupTools(A) {
           // §GLOW_LENS_QUAD (2026-08-07): bbox_x/bbox_y/rotation_z added so the still-render lens
           // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
           // round halo. Still-only consumer — the live round sprite ignores these three columns.
-          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z FROM elements_meta m " +
+          // m.guid (glow-buildup-gate, merged in) kept alongside for that feature's own consumer.
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
           // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
           // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
@@ -1072,7 +1073,7 @@ function setupTools(A) {
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
             A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0,
-              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0 });
+              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0, guid: row[8] || null });
           });
           source = 'IFC';
         }
@@ -1310,6 +1311,10 @@ function setupTools(A) {
         p.__drop = (f.h || 0) / 2 + 0.12;
         // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
+        // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
+        // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
+        // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
+        p.__guid = f.guid || null;
         return p;
       });
     }
