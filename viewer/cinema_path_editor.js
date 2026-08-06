@@ -1489,7 +1489,9 @@
     // so the scissor math's panelR read is the outer rect regardless of viewer.html's global reset.
     d.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
       'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:10001;box-sizing:border-box;' +
-      'border:1px solid rgba(255,255,255,0.85);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
+      // §CPE_VF_GRIP: radius 12px -> 0. A rounded frame over a TRANSPARENT hole cannot grip a square
+      // scissor rect — see _vfComputeRect's comment for the full measurement.
+      'border:1px solid rgba(255,255,255,0.85);border-radius:0;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
       'background:transparent;pointer-events:none';
     d.innerHTML =
       '<div id="cpe-vf-title" style="pointer-events:none;position:absolute;top:0;left:0;right:0;' +
@@ -1516,18 +1518,56 @@
   // was never fully achieved — root cause on record: B shares the main renderer's full-canvas post
   // pass). That write-back is retired; the border is now a plain fixed picture frame and this
   // function only computes the rect `_vfRender` renders into.
-  function _vfComputeRect(canvasR, panelR, pr) {
-    // §CPE_VF_RECT_ASPECT (2026-08-05): h from the box, w DERIVED from h*trueAspect — NOT two
-    // independently-rounded values. Two independent Math.round()s (old: w=round(300*1.25)=375,
-    // h=round(190*1.25)=238) leave the RECT's own aspect (375/238=1.5756) slightly off the box's
-    // true aspect (300/190=1.5789) even after §CPE_VF_ASPECT_ROUND fixed vfCam.aspect to the true
-    // value — so the camera's projection matrix and the viewport it's rendered into disagreed by
-    // ~0.2%, a small vertical squish. Deriving w from h makes the rect's aspect match vfCam.aspect
-    // by construction, not by coincidence.
-    var h = Math.max(1, Math.round(panelR.height * pr));
-    var w = Math.max(1, Math.round(h * (panelR.width / panelR.height)));
-    var x = Math.round((panelR.left - canvasR.left) * pr);
-    var yTop = Math.round((panelR.top - canvasR.top) * pr);
+  // ══ §CPE_VF_GRIP (2026-08-06) — the frame must hold the picture, not sit inside it ═════════════
+  // User: "The pov original frame size has always been wrong. Now it tries to redraw its borders
+  // rather flimsy and not aware of the bit larger inset screen... why it is not gripping." Measured
+  // pre-fix (witness_cpe_vf_grip.js, Duplex, 4/4 FAIL): render rect 300x190 at (16,454) against a
+  // VISIBLE picture box of 298x166 at (17,477). The rect came straight off
+  // `panel.getBoundingClientRect()` — the OUTER BORDER BOX — so it covered three things it does not
+  // own:
+  //   • the 1px border ring on all four sides (the frame painted ON the picture, never around it),
+  //   • the 23px opaque #cpe-vf-title header, which hid 12.11% of the framed image outright,
+  //   • the four 12px-radius rounded corners, which a square rect pokes through by r*(1-1/sqrt2)
+  //     = 3.51px each.
+  // And vfCam.aspect followed the same outer box (1.5789) while the picture the user actually sees
+  // is 1.7952 — 12.05% out, so the composition was centred on a box 24px taller than exists and the
+  // subject rode high, under the header.
+  // The fix is the CONTENT box, not the border box: inset by the real computed border widths and by
+  // the header's own height. `border-radius` goes to 0 in `_mkVFPanel` at the same time — the panel
+  // is a TRANSPARENT hole punched over the main canvas (an opaque background would cover the very
+  // render it frames), so an inset that dodged the corner arc would show the MAIN scene through the
+  // gap, not a mat. A square frame is the only shape that grips this architecture exactly. One-line
+  // revert if rounded is wanted back, at the cost of a 3.51px poke per corner.
+  // NOTE this is NOT the deferred §CPE_VF_PLAIN_FRAME root cause (B sharing the main renderer's
+  // full-canvas post pass, which still needs B's own WebGLRenderer). That one is about how the
+  // picture is SHADED; this one is about WHERE it lands. They were conflated for several sessions.
+  function _vfPanelInset(panel) {
+    var cs = getComputedStyle(panel);
+    var title = document.getElementById('cpe-vf-title');
+    // offsetHeight, not the 22px literal: the header carries its own 1px bottom border, and reading
+    // the element means a later style change cannot silently desync the two.
+    var th = title ? title.offsetHeight : 0;
+    return {
+      l: parseFloat(cs.borderLeftWidth) || 0,
+      r: parseFloat(cs.borderRightWidth) || 0,
+      t: (parseFloat(cs.borderTopWidth) || 0) + th,
+      b: parseFloat(cs.borderBottomWidth) || 0
+    };
+  }
+  function _vfComputeRect(canvasR, panelR, pr, inset) {
+    var ins = inset || { l: 0, r: 0, t: 0, b: 0 };
+    var cw = Math.max(1, panelR.width - ins.l - ins.r);
+    var ch = Math.max(1, panelR.height - ins.t - ins.b);
+    // §CPE_VF_RECT_ASPECT (2026-08-05) derived w from h*trueAspect rather than rounding both, to
+    // stop the rect's own aspect drifting ~0.2% from vfCam.aspect. That reason is GONE: `_vfRender`
+    // now sets `vfCam.aspect = w / h` from this very rect, so the two agree by definition whatever
+    // the rounding. Deriving w from h now does active harm — it lets w miss the content box by up
+    // to a pixel, which is exactly the sub-pixel bleed this fix exists to remove. Round both
+    // independently against the box each one belongs to.
+    var w = Math.max(1, Math.round(cw * pr));
+    var h = Math.max(1, Math.round(ch * pr));
+    var x = Math.round((panelR.left + ins.l - canvasR.left) * pr);
+    var yTop = Math.round((panelR.top + ins.t - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
     return { x: x, y: y, w: w, h: h, canvasH: canvasH };
@@ -1544,8 +1584,9 @@
     var t0 = performance.now();
     var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
     var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
-    // Scissor-rect geometry — see `_vfComputeRect`'s own comment for the aspect-rounding rationale.
-    var geo = _vfComputeRect(canvasR, panelR, pr);
+    // Scissor-rect geometry — see `_vfComputeRect`/§CPE_VF_GRIP for why the rect is the panel's
+    // CONTENT box (inside the border, below the header), never its outer border box.
+    var geo = _vfComputeRect(canvasR, panelR, pr, _vfPanelInset(panel));
     var x = geo.x, y = geo.y, w = geo.w, h = geo.h, canvasH = geo.canvasH;
     if (w < 2 || h < 2) return;   // degenerate rect (should not happen at a fixed, clamped default)
     // §CPE_VF_ASPECT_ROUND (2026-08-05) + §CPE_VF_RECT_ASPECT correction (same day, OPEN 3): aspect
@@ -3078,7 +3119,8 @@
           var a = A(), panel = document.getElementById('cpe-vf-panel');
           if (!a.renderer || !a.canvas || !panel) return null;
           var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
-          return _vfComputeRect(a.canvas.getBoundingClientRect(), panel.getBoundingClientRect(), pr);
+          return _vfComputeRect(a.canvas.getBoundingClientRect(), panel.getBoundingClientRect(), pr,
+                                _vfPanelInset(panel));
         },
         _probeVF: function() {
           var a = A();

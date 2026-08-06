@@ -1,6 +1,18 @@
 // WITNESS — §CPE_BUILDUP_WORK_PACED: the film must advance by WORK, not by calendar.
 // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_WORK_PACED.
 //
+// ⚠ PARTLY RETIRED 2026-08-06 by §CPE_BUILDUP_EVEN_TEMPO (user: "why does the movie baking makes the
+// first few seconds or during the dive in jumps days too fast tempo? Should be even throughout -
+// separation of concern. Let the user plays with the sticks and timings to catch this linear
+// buildup"). Work pacing is OFF by default — `BUILDUP_EVEN_TEMPO` in cinema_maxq.js — so the four
+// gates that asserted its CONTRACT (G-WP-1/2/7/8) now assert the opposite of live behaviour and are
+// retired IN PLACE below, each with the number it last measured, rather than deleted: the decision
+// they encode was real, was the user's, and was reversed on the record. The replacement contract is
+// witness_cpe_buildup_tempo.js (G-TEMPO-EVEN/DIVEIN/LINEAR).
+// The five gates that are ORTHOGONAL to which pacing is in force — monotonicity, determinism,
+// degrade-not-disable, preview==bake, full placement — stay LIVE and still gate the film. Flip
+// BUILDUP_EVEN_TEMPO to false and the retired four go green again unchanged.
+//
 // THE DEFECT THIS PROVES OR DISPROVES (user, after two Hospital buildup bakes: "but construction
 // came on too fast.. is the path and TM consistent?" -> "as long it is consistent as i find this
 // seems to be at random"):
@@ -189,13 +201,19 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       const calDev = res.calendar.map(c => Math.abs(c.placedFrac - c.t));
       const worstWork = Math.max(...workDev), worstCal = Math.max(...calDev);
 
-      P('G-WP-1 k% of the film is k% of the building',
-        worstWork <= TOL,
+      // RETIRED (§CPE_BUILDUP_EVEN_TEMPO) — "k% of the film is k% of the building" IS work pacing;
+      // asserting it would re-assert the behaviour the user asked to be removed. Last measured
+      // live: worst deviation 5.48pp against a 3pp tolerance, i.e. the calendar-paced reality.
+      P('G-WP-1 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] k% of the film is k% of the building — work pacing is off by default; witness_cpe_buildup_tempo.js gates the live contract',
+        true,
         res.work.map((w, i) => `t=${w.t}→placed ${(w.placedFrac * 100).toFixed(1)}%`).join('  ') +
         `   worst deviation ${(worstWork * 100).toFixed(2)}pp (tol ${TOL * 100}pp)`);
 
-      P('G-WP-2 calendar pacing is measurably worse on this model (the RED this replaces)',
-        worstCal > worstWork,
+      // RETIRED with G-WP-1 — this was its RED control (calendar must be worse than work-paced).
+      // With even tempo in force both branches ARE calendar, so the two deviations are now equal by
+      // construction (5.48pp vs 5.48pp measured), which is the correct new state, not a failure.
+      P('G-WP-2 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] calendar pacing is measurably worse on this model (the RED G-WP-1 replaced)',
+        true,
         res.calendar.map(c => `t=${c.t}→placed ${(c.placedFrac * 100).toFixed(1)}%`).join('  ') +
         `   worst ${(worstCal * 100).toFixed(2)}pp vs work-paced ${(worstWork * 100).toFixed(2)}pp`);
 
@@ -215,8 +233,11 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
 
       const line = logs.filter(l => /§CPE_BUILDUP_PACING/.test(l)).slice(-1)[0] || '';
       const sch = logs.filter(l => /§CPE_WORK_SCHEDULE/.test(l)).slice(-1)[0] || '';
-      P('G-WP-7 the log states the pacing mode and how front-loaded the model is',
-        /mode=work/.test(line) && /workInFirst10%OfCalendar/.test(sch),
+      // AMENDED, not retired: the log must still NAME the pacing in force — that requirement never
+      // depended on WHICH pacing it is. Now expects mode=even-calendar (§CPE_BUILDUP_EVEN_TEMPO);
+      // mode=work is still accepted so this gate keeps working with BUILDUP_EVEN_TEMPO flipped off.
+      P('G-WP-7 the log states the pacing mode in force',
+        /mode=even-calendar|mode=work/.test(line),
         `${line || 'no §CPE_BUILDUP_PACING'}\n        ${sch || 'no §CPE_WORK_SCHEDULE'}`);
 
       // G-WP-8/9 — real per-frame FILM reveal rate (2026-08-03 "fast start, slow middle" report).
@@ -224,8 +245,13 @@ const FRACS = [0.10, 0.25, 0.50, 0.75];
       // that it is frame-perfect — a model with real duration ties will always have some jitter.
       const RATE_TOL = 0.25;
       const cpLine = res.checkpoints.map(c => `t=${c.t}→${c.placed} (${c.ratePerFrame}/frame)`).join('  ');
-      P('G-WP-8 the per-frame reveal rate stays even across the pre-topout film (no burst/plateau)',
-        res.maxRateDeviationFrac <= RATE_TOL,
+      // RETIRED (§CPE_BUILDUP_EVEN_TEMPO) — an even ELEMENT-per-frame rate and an even DAY-per-frame
+      // rate cannot both hold unless the schedule spreads elements uniformly in time. The user chose
+      // even DAYS. So elements now arrive as the real schedule delivers them (last measured: 81.0%
+      // worst deviation against a 25% tolerance), and dwelling on a busy phase is the path editor's
+      // job via sticks + timings. The evenness that IS still gated: witness_cpe_buildup_tempo.js.
+      P('G-WP-8 [RETIRED §CPE_BUILDUP_EVEN_TEMPO] the per-frame ELEMENT reveal rate stays even — superseded by even CALENDAR rate',
+        true,
         `topoutU=${res.topoutU.toFixed(3)} meanRate=${res.meanRatePerFrame}/frame ` +
         `worstDeviation=${(res.maxRateDeviationFrac * 100).toFixed(1)}% (tol ${RATE_TOL * 100}%)\n        ` +
         `checkpoints: ${cpLine}\n        ` +

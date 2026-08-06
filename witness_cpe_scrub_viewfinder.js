@@ -51,7 +51,8 @@
 //   G-VF-PLAIN-FRAME   §CPE_VF_PLAIN_FRAME (2026-08-06) — retires G-VF-FRAME-CRAFT (the pixel-fit
 //                       chase it verified is abandoned by user decision; root cause on record: B
 //                       shares the main renderer's full-canvas post pass). Proves the new reality:
-//                       the border is a plain thin white rounded picture frame (1px / radius 12px)
+//                       the border is a plain thin white picture frame (1px, square corners since
+//                       §CPE_VF_GRIP — see witness_cpe_vf_grip.js G-GRIP-CORNER)
 //                       and NOTHING writes the panel's own left/top/width/height after creation —
 //                       the inline style stays at the fixed default across a rendered frame.
 //   G-CPE-SOLE-OWNER    retires G-BUILDUP-GATES-TM's AND-gate (§CPE_SOLE_OWNER/§CPE_BUILDUP_OWNS_TM,
@@ -613,21 +614,32 @@ async function gates(browser, BLD, repoDir) {
   // be bit-exact to the raw CSS box), a real improvement over the OLD two-independently-rounded w/h
   // scheme (which could drift further, e.g. the OPEN 3 write-up's own repro: box_aspect=1.5756 vs
   // true=1.5789, diff=0.0033).
+  // AMENDED 2026-08-06 by §CPE_VF_GRIP: "the box" is the panel's CONTENT box — inside the border,
+  // below the #cpe-vf-title header — NOT its outer border box. This gate read the outer box and so
+  // passed while the camera was composing for an area 24px taller than the user could see (the very
+  // bug §CPE_VF_GRIP fixes: 1.5789 asserted vs 1.7952 visible, 12% out). Reading the outer box here
+  // was itself part of why that went unnoticed for several sessions.
   const aspectCheck = await page.evaluate(() => {
     const panel = document.getElementById('cpe-vf-panel');
+    const title = document.getElementById('cpe-vf-title');
     const r = panel.getBoundingClientRect();
+    const cs = getComputedStyle(panel);
+    const bl = parseFloat(cs.borderLeftWidth) || 0, br = parseFloat(cs.borderRightWidth) || 0;
+    const bt = parseFloat(cs.borderTopWidth) || 0, bb = parseFloat(cs.borderBottomWidth) || 0;
+    const th = title ? title.offsetHeight : 0;
+    const contentW = r.width - bl - br, contentH = r.height - bt - bb - th;
     window.APP.renderer.setPixelRatio(1.37);   // deliberately fractional, to expose rounding drift
     window.APP.markDirty();
     return new Promise(resolve => {
       setTimeout(() => {
-        const trueAspect = r.width / r.height;
+        const trueAspect = contentW / contentH;
         const vfAspect = window.APP.cinemaPathEditor._probeVF().vfCamAspect;
         resolve({ trueAspect, vfAspect });
       }, 200);
     });
   });
   const aspectDiff = aspectCheck.vfAspect != null ? Math.abs(aspectCheck.vfAspect - aspectCheck.trueAspect) : null;
-  P('G-VF-ASPECT vfCam.aspect tracks the box\'s true (unrounded) CSS aspect within integer-pixel-rect tolerance',
+  P('G-VF-ASPECT vfCam.aspect tracks the CONTENT box\'s true (unrounded) CSS aspect within integer-pixel-rect tolerance',
     aspectDiff != null && aspectDiff < 0.005,
     `trueAspect=${aspectCheck.trueAspect} vfCamAspect=${aspectCheck.vfAspect} diff=${aspectDiff} (tolerance 0.005 — an integer w/h rect can never hit an arbitrary CSS ratio bit-exactly; G-VF-RECT-ASPECT below is the bit-exact gate)`);
 
@@ -660,8 +672,13 @@ async function gates(browser, BLD, repoDir) {
   // ── G-VF-PLAIN-FRAME: §CPE_VF_PLAIN_FRAME (2026-08-06) — retires G-VF-FRAME-CRAFT. The user
   // decided to STOP chasing a pixel-exact border-to-content fit (root cause on record: B shares the
   // main renderer's full-canvas post pass — a real fix needs B's own WebGLRenderer, out of scope);
-  // the border is now a deliberate plain picture frame. ISSUE THIS PROVES: (a) the plain styling is
-  // live (thin 1px white border, 12px rounded corners — not the old 2px #4fc3f7 / 4px), and (b) the
+  // the border is now a deliberate plain picture frame. AMENDED 2026-08-06 by §CPE_VF_GRIP: the
+  // radius went 12px -> 0px, because a rounded frame over a TRANSPARENT hole cannot grip a square
+  // scissor rect (measured 3.51px of picture poking through each corner — witness_cpe_vf_grip.js
+  // G-GRIP-CORNER). Everything else about the plain frame is unchanged, so this gate keeps its
+  // colour/width/no-write-back assertions and only moves the radius it expects.
+  // ISSUE THIS PROVES: (a) the plain styling is
+  // live (thin 1px white border, square corners — not the old 2px #4fc3f7 / 4px), and (b) the
   // §CPE_VF_FRAME_CRAFT write-back is really gone: the panel's INLINE style width/height still read
   // exactly the fixed default after real rendered frames (crafting used to overwrite them with
   // full-precision floats — e.g. "299.27007299270077px" — on the first frame the rect disagreed).
@@ -671,8 +688,8 @@ async function gates(browser, BLD, repoDir) {
     return { borderW: cs.borderTopWidth, borderColor: cs.borderTopColor, radius: cs.borderTopLeftRadius,
              inlineW: panel.style.width, inlineH: panel.style.height };
   });
-  P('G-VF-PLAIN-FRAME plain thin white rounded border, and no frame-craft write-back to the panel\'s inline size',
-    plainFrame.borderW === '1px' && plainFrame.radius === '12px' &&
+  P('G-VF-PLAIN-FRAME plain thin white square-cornered border (§CPE_VF_GRIP), and no frame-craft write-back to the panel\'s inline size',
+    plainFrame.borderW === '1px' && plainFrame.radius === '0px' &&
     plainFrame.borderColor === 'rgba(255, 255, 255, 0.85)' &&
     plainFrame.inlineW === '300px' && plainFrame.inlineH === '190px',
     `borderW=${plainFrame.borderW} radius=${plainFrame.radius} color=${plainFrame.borderColor} inlineW=${plainFrame.inlineW} inlineH=${plainFrame.inlineH} (inline size at the fixed default proves nothing wrote it back after creation)`);
