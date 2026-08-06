@@ -1433,8 +1433,14 @@
     };
     var d = document.createElement('div');
     d.id = 'cpe-vf-panel';
+    // box-sizing:border-box set explicitly (2026-08-06, Fable review of §CPE_VF_FRAME_CRAFT) — the
+    // craft function's fixed-point convergence relies on the outer CSS width/height it writes
+    // ALREADY including the 2px border, which only holds under border-box. Currently true only
+    // because of viewer.html's global `* { box-sizing: border-box }` reset; stated here explicitly
+    // so this panel can never silently regress into a per-frame growth loop (content-box would make
+    // each readback 4px larger than written) if that global reset ever changes.
     d.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
-      'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:10001;' +
+      'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:10001;box-sizing:border-box;' +
       'border:2px solid #4fc3f7;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
       'background:transparent;pointer-events:none';
     d.innerHTML =
