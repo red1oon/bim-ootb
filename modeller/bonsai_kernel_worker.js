@@ -537,6 +537,24 @@ function buildSolids(kernel, ops, seedBoxes) {
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }
+    } else if (op.op_type === 'GEOM_ROOM_MOVE') {     // §ROOMMOVE — one op rigidly translates N members (W-ROOM-MOVE)
+      // Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.4. Structurally the GEOM_GRID_MOVE branch
+      // above, minus everything that cannot occur here: a room move is a PURE RIGID TRANSLATION by ONE (dx,dy,dz)
+      // shared by every member — no SCALE ever happens, so none of the anchored-min / §SCALE-YAW-GUARD /
+      // §ROTATION-GUARD-3AXIS machinery applies (a translation is yaw- and tilt-safe by construction). Same
+      // cache-per-(op_hash, featureId) discipline. TOLERANT like GEOM_MOVE/GRID_MOVE (NOT CUT's throw): a member
+      // that is a HOST-folded GEOM_INSERT is not in this worker's solids map and is a silent no-op here — it is
+      // re-placed host-side via library.foldInsert's `mv` path (PATH B, see bonsai_kernel.js §ROOMMOVE).
+      const dx = P.dx || 0, dy = P.dy || 0, dz = P.dz || 0;
+      for (const m of (P.members || [])) {
+        if (!m || m.featureId == null) continue;
+        const pe = solids.get(m.featureId); if (!pe) continue;
+        const ckey = key + ':' + m.featureId;
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(m.featureId, { shape: shapeCache.get(ckey), hash: ckey }); continue; }
+        _stats.rebuilt++;
+        const out = kernel.translate(pe.shape, dx, dy, dz);   // SAME primitive as GEOM_MOVE / GRID_MOVE TRANSLATE
+        shapeCache.set(ckey, out); solids.set(m.featureId, { shape: out, hash: ckey });
+      }
     } else if (op.op_type === 'GEOM_ARRAY') {          // N real independent solids from ONE signed op (W-BONSAI-ARRAY).
       // Unlike GEOM_CUT/FILLET/MOVE/ROTATE (which mutate the parent's SINGLE solid in place), an array REPLACES
       // the one referenced template with N clones — so the template's own map entry is deleted and N fresh

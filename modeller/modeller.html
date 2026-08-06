@@ -278,6 +278,13 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
 <script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
+<!-- ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2/§3 — two INDEPENDENT capabilities that share the op-log commit discipline
+     and the refuse-not-fabricate placement gate, but keep separate ops, tools and witnesses (spec §0).
+     bonsai_roommove.js CALLS sdg_cascade.js (loaded above) for its second hop; bonsai_itemdrag.js CALLS
+     real_placement_resolver.js (loaded immediately above) as its up-front gate — both load AFTER their
+     dependencies, and both are additive: neither modifies the grid, BOM or walker modules. -->
+<script src="bonsai_roommove.js?v=1" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
+<script src="bonsai_itemdrag.js?v=1" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
 <script src="routewalker.js?v=6" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>

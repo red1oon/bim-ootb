@@ -247,6 +247,21 @@
         else { a.fx *= P.fx != null ? P.fx : 1; a.fy *= P.fy != null ? P.fy : 1; a.fz *= P.fz != null ? P.fz : 1; }   // GEOM_SCALE: net multiplicative scale (W-BONSAI-SCALE PATH B)
         moveBy.set(P.parent, a);
       }
+      // §ROOMMOVE — Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.4 — Witness: W-ROOM-MOVE.
+      // ONE signed GEOM_ROOM_MOVE row carries the whole resolved member list plus ONE rigid (dx,dy,dz): the spec's
+      // own words, "semantically N GEOM_MOVEs, folded from one row". It accumulates into the SAME net-per-feature
+      // delta map the GEOM_MOVE loop above fills, so bonsai_library.js foldInsert applies it through its EXISTING
+      // `mv` path — that file needs (and gets) ZERO change. The accumulation itself lives in bonsai_roommove.js so
+      // the production fold and the pure-node witnesses share exactly ONE definition of what the op means; it is
+      // resolved LAZILY at call time (this codebase's own "check window.X fresh at call time" pattern —
+      // cross_edges.js:52 documents why a load-time capture would freeze a null). Module absent ⇒ REFUSE to
+      // half-apply: warn loudly and fold nothing, never a partial room move.
+      for (const op of ops) {
+        if (op.op_type !== 'GEOM_ROOM_MOVE') continue;
+        const RM = (typeof window !== 'undefined' && window.Bonsai) ? window.Bonsai.roommove : null;
+        if (!RM || !RM.accumulate) { console.warn(TAG + ' §ROOMMOVE bonsai_roommove.js not loaded — GEOM_ROOM_MOVE rows NOT folded (refusing to half-apply)'); break; }
+        RM.accumulate(typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters, moveBy);
+      }
       // §STRETCH-1: GEOM_GRID_MOVE makes inserts grid-STRETCHABLE host-side. Collect each op's per-feature commands
       // IN OP ORDER (the worker folds B-rep solids; inserts are skipped there → host-side here, NO double-apply).
       const gridBy = new Map();                                          // featureId -> [command,…] (ordered)
