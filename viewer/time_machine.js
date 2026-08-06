@@ -3391,6 +3391,11 @@
     var SR = window.SEQUENCE_RULES || {};
     var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
     var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map (BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md
+    // §P2), see schedule_author.js's matchRule for the full 3-tier header comment (not repeated per
+    // closure — same mechanism, same tags, this is copy #2 of 3, replicated on purpose per this file's
+    // own "N independent copies" convention).
+    var HIER = window.IFC_SCHEMA_HIERARCHY || {};
     function matchNameOverride(cls, name) {
       if (!name) return null;
       for (var i = 0; i < NO.length; i++) {
@@ -3409,9 +3414,22 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      if (bestKey) return SR[bestKey];   // tier 1
+
+      var chain = HIER[cls];
+      if (chain && chain.length) {
+        for (var i = 0; i < chain.length; i++) {
+          var anc = chain[i];
+          if (Object.prototype.hasOwnProperty.call(SR, anc)) {
+            console.warn('§CLASS_UNMATCHED_INHERITED cls=' + cls + ' via=' + anc + ' phase=' + SR[anc].phase);
+            return SR[anc];   // tier 2
+          }
+        }
+      }
+
       // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
-      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
-      return bestKey ? SR[bestKey] : SD;
+      console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
+      return SD;   // tier 3
     }
     var r;
     try {
@@ -3666,6 +3684,11 @@
     var LR = window.LABOR_RATES || {};
     var SD = window.SEQUENCE_DEFAULT || {phase:'Architecture',sequence:6,resource:null};
     var NO = window.SEQUENCE_NAME_OVERRIDES || [];  // §4D_FACADE_ORDER — see rates/sequence_rules.json
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map (BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md
+    // §P2), see schedule_author.js's matchRule for the full 3-tier header comment (not repeated per
+    // closure — same mechanism, same tags, this is copy #3 of 3, replicated on purpose per this file's
+    // own "N independent copies" convention).
+    var HIER = window.IFC_SCHEMA_HIERARCHY || {};
 
     // §4D_FACADE_ORDER: ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember)
     // from genuinely structural plates/members (e.g. Terminal's Metal Deck IfcPlate, seq 4 is correct
@@ -3689,9 +3712,22 @@
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      if (bestKey) return SR[bestKey];   // tier 1
+
+      var chain = HIER[cls];
+      if (chain && chain.length) {
+        for (var i = 0; i < chain.length; i++) {
+          var anc = chain[i];
+          if (Object.prototype.hasOwnProperty.call(SR, anc)) {
+            console.warn('§CLASS_UNMATCHED_INHERITED cls=' + cls + ' via=' + anc + ' phase=' + SR[anc].phase);
+            return SR[anc];   // tier 2
+          }
+        }
+      }
+
       // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
-      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
-      return bestKey ? SR[bestKey] : SD;
+      console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
+      return SD;   // tier 3
     }
     // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
     // to be a hand-duplicated copy of the per-unit-rate formula with NO fragmentation/area-weighting —

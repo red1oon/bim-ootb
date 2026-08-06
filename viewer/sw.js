@@ -230,6 +230,10 @@ const PRECACHE_ASSETS = [
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
   // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
   'rates/sequence_rules.json',
+  // §CLASS_UNMATCHED_INHERITED (BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md §P1/§P2): real IFC schema
+  // ancestor chains for matchRule()'s tier-2 fallback. Precached so loadIfcSchemaHierarchy() resolves
+  // offline (else tier 2 simply never fires — tier 1/tier 3 unaffected, never a hard dependency).
+  'rates/ifc_schema_hierarchy.json',
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',

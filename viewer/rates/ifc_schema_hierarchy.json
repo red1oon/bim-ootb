@@ -1,0 +1,5968 @@
+{
+ "Ifc2DCompositeCurve": [
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcActionRequest": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcActor": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcActorRole": [],
+ "IfcActuator": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcActuatorType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAddress": [],
+ "IfcAdvancedBrep": [
+  "IfcManifoldSolidBrep",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAdvancedBrepWithVoids": [
+  "IfcAdvancedBrep",
+  "IfcManifoldSolidBrep",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAdvancedFace": [
+  "IfcFaceSurface",
+  "IfcFace",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAirTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAirTerminalBox": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAirTerminalBoxType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAirTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAirToAirHeatRecovery": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAirToAirHeatRecoveryType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlarm": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlarmType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignment": [
+  "IfcLinearPositioningElement",
+  "IfcPositioningElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignmentCant": [
+  "IfcLinearElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignmentCantSegment": [
+  "IfcAlignmentParameterSegment"
+ ],
+ "IfcAlignmentHorizontal": [
+  "IfcLinearElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignmentHorizontalSegment": [
+  "IfcAlignmentParameterSegment"
+ ],
+ "IfcAlignmentParameterSegment": [],
+ "IfcAlignmentSegment": [
+  "IfcLinearElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignmentVertical": [
+  "IfcLinearElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAlignmentVerticalSegment": [
+  "IfcAlignmentParameterSegment"
+ ],
+ "IfcAngularDimension": [
+  "IfcDimensionCurveDirectedCallout",
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotation": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAnnotationCurveOccurrence": [
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationFillArea": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationFillAreaOccurrence": [
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationOccurrence": [
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationSurface": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationSurfaceOccurrence": [
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationSymbolOccurrence": [
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAnnotationTextOccurrence": [
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcApplication": [],
+ "IfcAppliedValue": [],
+ "IfcAppliedValueRelationship": [],
+ "IfcApproval": [],
+ "IfcApprovalActorRelationship": [],
+ "IfcApprovalPropertyRelationship": [],
+ "IfcApprovalRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcArbitraryClosedProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcArbitraryOpenProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcArbitraryProfileDefWithVoids": [
+  "IfcArbitraryClosedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcAsset": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAsymmetricIShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcAudioVisualAppliance": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAudioVisualApplianceType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcAxis1Placement": [
+  "IfcPlacement",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAxis2Placement2D": [
+  "IfcPlacement",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAxis2Placement3D": [
+  "IfcPlacement",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcAxis2PlacementLinear": [
+  "IfcPlacement",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBSplineCurve": [
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBSplineCurveWithKnots": [
+  "IfcBSplineCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBSplineSurface": [
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBSplineSurfaceWithKnots": [
+  "IfcBSplineSurface",
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBeam": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBeamStandardCase": [
+  "IfcBeam",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBeamType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBearing": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBearingType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBezierCurve": [
+  "IfcBSplineCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBlobTexture": [
+  "IfcSurfaceTexture",
+  "IfcPresentationItem"
+ ],
+ "IfcBlock": [
+  "IfcCsgPrimitive3D",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBoiler": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBoilerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBooleanClippingResult": [
+  "IfcBooleanResult",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBooleanResult": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBorehole": [
+  "IfcGeotechnicalAssembly",
+  "IfcGeotechnicalElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBoundaryCondition": [],
+ "IfcBoundaryCurve": [
+  "IfcCompositeCurveOnSurface",
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBoundaryEdgeCondition": [
+  "IfcBoundaryCondition"
+ ],
+ "IfcBoundaryFaceCondition": [
+  "IfcBoundaryCondition"
+ ],
+ "IfcBoundaryNodeCondition": [
+  "IfcBoundaryCondition"
+ ],
+ "IfcBoundaryNodeConditionWarping": [
+  "IfcBoundaryNodeCondition",
+  "IfcBoundaryCondition"
+ ],
+ "IfcBoundedCurve": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBoundedSurface": [
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBoundingBox": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBoxedHalfSpace": [
+  "IfcHalfSpaceSolid",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcBridge": [
+  "IfcFacility",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBridgePart": [
+  "IfcFacilityPart",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuilding": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementComponent": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementPart": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementPartType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementProxy": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementProxyType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingStorey": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuildingSystem": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuiltElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuiltElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBuiltSystem": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBurner": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcBurnerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcCableCarrierFitting": [
+  "IfcFlowFitting",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableCarrierFittingType": [
+  "IfcFlowFittingType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableCarrierSegment": [
+  "IfcFlowSegment",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableCarrierSegmentType": [
+  "IfcFlowSegmentType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableFitting": [
+  "IfcFlowFitting",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableFittingType": [
+  "IfcFlowFittingType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableSegment": [
+  "IfcFlowSegment",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCableSegmentType": [
+  "IfcFlowSegmentType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCaissonFoundation": [
+  "IfcDeepFoundation",
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCaissonFoundationType": [
+  "IfcDeepFoundationType",
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCalendarDate": [],
+ "IfcCartesianPoint": [
+  "IfcPoint",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianPointList": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianPointList2D": [
+  "IfcCartesianPointList",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianPointList3D": [
+  "IfcCartesianPointList",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianTransformationOperator": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianTransformationOperator2D": [
+  "IfcCartesianTransformationOperator",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianTransformationOperator2DnonUniform": [
+  "IfcCartesianTransformationOperator2D",
+  "IfcCartesianTransformationOperator",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianTransformationOperator3D": [
+  "IfcCartesianTransformationOperator",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCartesianTransformationOperator3DnonUniform": [
+  "IfcCartesianTransformationOperator3D",
+  "IfcCartesianTransformationOperator",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCenterLineProfileDef": [
+  "IfcArbitraryOpenProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcChamferEdgeFeature": [
+  "IfcEdgeFeature",
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcChiller": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcChillerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcChimney": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcChimneyType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCircle": [
+  "IfcConic",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCircleHollowProfileDef": [
+  "IfcCircleProfileDef",
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcCircleProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcCivilElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCivilElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcClassification": [
+  "IfcExternalInformation"
+ ],
+ "IfcClassificationItem": [],
+ "IfcClassificationItemRelationship": [],
+ "IfcClassificationNotation": [],
+ "IfcClassificationNotationFacet": [],
+ "IfcClassificationReference": [
+  "IfcExternalReference"
+ ],
+ "IfcClosedShell": [
+  "IfcConnectedFaceSet",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcClothoid": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCoil": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCoilType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcColourRgb": [
+  "IfcColourSpecification",
+  "IfcPresentationItem"
+ ],
+ "IfcColourRgbList": [
+  "IfcPresentationItem"
+ ],
+ "IfcColourSpecification": [
+  "IfcPresentationItem"
+ ],
+ "IfcColumn": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcColumnStandardCase": [
+  "IfcColumn",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcColumnType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCommunicationsAppliance": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCommunicationsApplianceType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcComplexProperty": [
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcComplexPropertyTemplate": [
+  "IfcPropertyTemplate",
+  "IfcPropertyTemplateDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcCompositeCurve": [
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCompositeCurveOnSurface": [
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCompositeCurveSegment": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCompositeProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcCompressor": [
+  "IfcFlowMovingDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCompressorType": [
+  "IfcFlowMovingDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCondenser": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCondenserType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCondition": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConditionCriterion": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConic": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcConnectedFaceSet": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcConnectionCurveGeometry": [
+  "IfcConnectionGeometry"
+ ],
+ "IfcConnectionGeometry": [],
+ "IfcConnectionPointEccentricity": [
+  "IfcConnectionPointGeometry",
+  "IfcConnectionGeometry"
+ ],
+ "IfcConnectionPointGeometry": [
+  "IfcConnectionGeometry"
+ ],
+ "IfcConnectionPortGeometry": [
+  "IfcConnectionGeometry"
+ ],
+ "IfcConnectionSurfaceGeometry": [
+  "IfcConnectionGeometry"
+ ],
+ "IfcConnectionVolumeGeometry": [
+  "IfcConnectionGeometry"
+ ],
+ "IfcConstraint": [],
+ "IfcConstraintAggregationRelationship": [],
+ "IfcConstraintClassificationRelationship": [],
+ "IfcConstraintRelationship": [],
+ "IfcConstructionEquipmentResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionEquipmentResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionMaterialResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionMaterialResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionProductResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionProductResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionResource": [
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConstructionResourceType": [
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcContext": [
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcContextDependentUnit": [
+  "IfcNamedUnit"
+ ],
+ "IfcControl": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcController": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcControllerType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConversionBasedUnit": [
+  "IfcNamedUnit"
+ ],
+ "IfcConversionBasedUnitWithOffset": [
+  "IfcConversionBasedUnit",
+  "IfcNamedUnit"
+ ],
+ "IfcConveyorSegment": [
+  "IfcFlowSegment",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcConveyorSegmentType": [
+  "IfcFlowSegmentType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCooledBeam": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCooledBeamType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCoolingTower": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCoolingTowerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCoordinateOperation": [],
+ "IfcCoordinateReferenceSystem": [],
+ "IfcCoordinatedUniversalTimeOffset": [],
+ "IfcCosineSpiral": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCostItem": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCostSchedule": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCostValue": [
+  "IfcAppliedValue"
+ ],
+ "IfcCourse": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCourseType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCovering": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCoveringType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCraneRailAShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcCraneRailFShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcCrewResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCrewResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCsgPrimitive3D": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCsgSolid": [
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCurrencyRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcCurtainWall": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCurtainWallType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcCurve": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCurveBoundedPlane": [
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCurveBoundedSurface": [
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCurveSegment": [
+  "IfcSegment",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcCurveStyle": [
+  "IfcPresentationStyle"
+ ],
+ "IfcCurveStyleFont": [
+  "IfcPresentationItem"
+ ],
+ "IfcCurveStyleFontAndScaling": [
+  "IfcPresentationItem"
+ ],
+ "IfcCurveStyleFontPattern": [
+  "IfcPresentationItem"
+ ],
+ "IfcCylindricalSurface": [
+  "IfcElementarySurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDamper": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDamperType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDateAndTime": [],
+ "IfcDeepFoundation": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDeepFoundationType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDefinedSymbol": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDerivedProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcDerivedUnit": [],
+ "IfcDerivedUnitElement": [],
+ "IfcDiameterDimension": [
+  "IfcDimensionCurveDirectedCallout",
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDimensionCalloutRelationship": [
+  "IfcDraughtingCalloutRelationship"
+ ],
+ "IfcDimensionCurve": [
+  "IfcAnnotationCurveOccurrence",
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDimensionCurveDirectedCallout": [
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDimensionCurveTerminator": [
+  "IfcTerminatorSymbol",
+  "IfcAnnotationSymbolOccurrence",
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDimensionPair": [
+  "IfcDraughtingCalloutRelationship"
+ ],
+ "IfcDimensionalExponents": [],
+ "IfcDirection": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDirectrixCurveSweptAreaSolid": [
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDirectrixDerivedReferenceSweptAreaSolid": [
+  "IfcFixedReferenceSweptAreaSolid",
+  "IfcDirectrixCurveSweptAreaSolid",
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDiscreteAccessory": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDiscreteAccessoryType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionBoard": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionBoardType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionChamberElement": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionChamberElementType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionCircuit": [
+  "IfcDistributionSystem",
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionControlElement": [
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionControlElementType": [
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionFlowElement": [
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionFlowElementType": [
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionPort": [
+  "IfcPort",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDistributionSystem": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDocumentElectronicFormat": [],
+ "IfcDocumentInformation": [
+  "IfcExternalInformation"
+ ],
+ "IfcDocumentInformationRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcDocumentReference": [
+  "IfcExternalReference"
+ ],
+ "IfcDoor": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDoorLiningProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcDoorPanelProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcDoorStandardCase": [
+  "IfcDoor",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDoorStyle": [
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDoorType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDraughtingCallout": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcDraughtingCalloutRelationship": [],
+ "IfcDraughtingPreDefinedColour": [
+  "IfcPreDefinedColour",
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcDraughtingPreDefinedCurveFont": [
+  "IfcPreDefinedCurveFont",
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcDraughtingPreDefinedTextFont": [
+  "IfcPreDefinedTextFont",
+  "IfcPreDefinedItem"
+ ],
+ "IfcDuctFitting": [
+  "IfcFlowFitting",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDuctFittingType": [
+  "IfcFlowFittingType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDuctSegment": [
+  "IfcFlowSegment",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDuctSegmentType": [
+  "IfcFlowSegmentType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDuctSilencer": [
+  "IfcFlowTreatmentDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcDuctSilencerType": [
+  "IfcFlowTreatmentDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEarthworksCut": [
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEarthworksElement": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEarthworksFill": [
+  "IfcEarthworksElement",
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEdge": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcEdgeCurve": [
+  "IfcEdge",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcEdgeFeature": [
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEdgeLoop": [
+  "IfcLoop",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcElectricAppliance": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricApplianceType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricDistributionBoard": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricDistributionBoardType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricDistributionPoint": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricFlowStorageDevice": [
+  "IfcFlowStorageDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricFlowStorageDeviceType": [
+  "IfcFlowStorageDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricFlowTreatmentDevice": [
+  "IfcFlowTreatmentDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricFlowTreatmentDeviceType": [
+  "IfcFlowTreatmentDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricGenerator": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricGeneratorType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricHeaterType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricMotor": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricMotorType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricTimeControl": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricTimeControlType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricalBaseProperties": [
+  "IfcEnergyProperties",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricalCircuit": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElectricalElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElement": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementAssembly": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementAssemblyType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementComponent": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementComponentType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementQuantity": [
+  "IfcQuantitySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementType": [
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcElementarySurface": [
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcEllipse": [
+  "IfcConic",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcEllipseProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcEnergyConversionDevice": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEnergyConversionDeviceType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEnergyProperties": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcEngine": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEngineType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEnvironmentalImpactValue": [
+  "IfcAppliedValue"
+ ],
+ "IfcEquipmentElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEquipmentStandard": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEvaporativeCooler": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEvaporativeCoolerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEvaporator": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEvaporatorType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEvent": [
+  "IfcProcess",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcEventTime": [
+  "IfcSchedulingTime"
+ ],
+ "IfcEventType": [
+  "IfcTypeProcess",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcExtendedMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcExtendedProperties": [
+  "IfcPropertyAbstraction"
+ ],
+ "IfcExternalInformation": [],
+ "IfcExternalReference": [],
+ "IfcExternalReferenceRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcExternalSpatialElement": [
+  "IfcExternalSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcExternalSpatialStructureElement": [
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcExternallyDefinedHatchStyle": [
+  "IfcExternalReference"
+ ],
+ "IfcExternallyDefinedSurfaceStyle": [
+  "IfcExternalReference"
+ ],
+ "IfcExternallyDefinedSymbol": [
+  "IfcExternalReference"
+ ],
+ "IfcExternallyDefinedTextFont": [
+  "IfcExternalReference"
+ ],
+ "IfcExtrudedAreaSolid": [
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcExtrudedAreaSolidTapered": [
+  "IfcExtrudedAreaSolid",
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFace": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFaceBasedSurfaceModel": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFaceBound": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFaceOuterBound": [
+  "IfcFaceBound",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFaceSurface": [
+  "IfcFace",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFacetedBrep": [
+  "IfcManifoldSolidBrep",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFacetedBrepWithVoids": [
+  "IfcFacetedBrep",
+  "IfcManifoldSolidBrep",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFacility": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFacilityPart": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFacilityPartCommon": [
+  "IfcFacilityPart",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFailureConnectionCondition": [
+  "IfcStructuralConnectionCondition"
+ ],
+ "IfcFan": [
+  "IfcFlowMovingDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFanType": [
+  "IfcFlowMovingDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFastener": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFastenerType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFeatureElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFeatureElementAddition": [
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFeatureElementSubtraction": [
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFillAreaStyle": [
+  "IfcPresentationStyle"
+ ],
+ "IfcFillAreaStyleHatching": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFillAreaStyleTileSymbolWithStyle": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFillAreaStyleTiles": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFilter": [
+  "IfcFlowTreatmentDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFilterType": [
+  "IfcFlowTreatmentDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFireSuppressionTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFireSuppressionTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFixedReferenceSweptAreaSolid": [
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcFlowController": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowControllerType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowFitting": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowFittingType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowInstrument": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowInstrumentType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowMeter": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowMeterType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowMovingDevice": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowMovingDeviceType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowSegment": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowSegmentType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowStorageDevice": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowStorageDeviceType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowTerminal": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowTerminalType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowTreatmentDevice": [
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFlowTreatmentDeviceType": [
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFluidFlowProperties": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcFooting": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFootingType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFuelProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcFurnishingElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFurnishingElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFurniture": [
+  "IfcFurnishingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFurnitureStandard": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcFurnitureType": [
+  "IfcFurnishingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGasTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeneralMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcGeneralProfileProperties": [
+  "IfcProfileProperties"
+ ],
+ "IfcGeographicCRS": [
+  "IfcCoordinateReferenceSystem"
+ ],
+ "IfcGeographicElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeographicElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeometricCurveSet": [
+  "IfcGeometricSet",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcGeometricRepresentationContext": [
+  "IfcRepresentationContext"
+ ],
+ "IfcGeometricRepresentationItem": [
+  "IfcRepresentationItem"
+ ],
+ "IfcGeometricRepresentationSubContext": [
+  "IfcGeometricRepresentationContext",
+  "IfcRepresentationContext"
+ ],
+ "IfcGeometricSet": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcGeomodel": [
+  "IfcGeotechnicalAssembly",
+  "IfcGeotechnicalElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeoslice": [
+  "IfcGeotechnicalAssembly",
+  "IfcGeotechnicalElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeotechnicalAssembly": [
+  "IfcGeotechnicalElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeotechnicalElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGeotechnicalStratum": [
+  "IfcGeotechnicalElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGradientCurve": [
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcGrid": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcGridAxis": [],
+ "IfcGridPlacement": [
+  "IfcObjectPlacement"
+ ],
+ "IfcGroup": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcHalfSpaceSolid": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcHeatExchanger": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcHeatExchangerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcHumidifier": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcHumidifierType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcHygroscopicMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcIShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcImageTexture": [
+  "IfcSurfaceTexture",
+  "IfcPresentationItem"
+ ],
+ "IfcImpactProtectionDevice": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcImpactProtectionDeviceType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcIndexedColourMap": [
+  "IfcPresentationItem"
+ ],
+ "IfcIndexedPolyCurve": [
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcIndexedPolygonalFace": [
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcIndexedPolygonalFaceWithVoids": [
+  "IfcIndexedPolygonalFace",
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcIndexedPolygonalTextureMap": [
+  "IfcIndexedTextureMap",
+  "IfcTextureCoordinate",
+  "IfcPresentationItem"
+ ],
+ "IfcIndexedTextureMap": [
+  "IfcTextureCoordinate",
+  "IfcPresentationItem"
+ ],
+ "IfcIndexedTriangleTextureMap": [
+  "IfcIndexedTextureMap",
+  "IfcTextureCoordinate",
+  "IfcPresentationItem"
+ ],
+ "IfcInterceptor": [
+  "IfcFlowTreatmentDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcInterceptorType": [
+  "IfcFlowTreatmentDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcIntersectionCurve": [
+  "IfcSurfaceCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcInventory": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcIrregularTimeSeries": [
+  "IfcTimeSeries"
+ ],
+ "IfcIrregularTimeSeriesValue": [],
+ "IfcJunctionBox": [
+  "IfcFlowFitting",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcJunctionBoxType": [
+  "IfcFlowFittingType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcKerb": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcKerbType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcLaborResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLaborResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLagTime": [
+  "IfcSchedulingTime"
+ ],
+ "IfcLamp": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLampType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLibraryInformation": [
+  "IfcExternalInformation"
+ ],
+ "IfcLibraryReference": [
+  "IfcExternalReference"
+ ],
+ "IfcLightDistributionData": [],
+ "IfcLightFixture": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLightFixtureType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLightIntensityDistribution": [],
+ "IfcLightSource": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLightSourceAmbient": [
+  "IfcLightSource",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLightSourceDirectional": [
+  "IfcLightSource",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLightSourceGoniometric": [
+  "IfcLightSource",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLightSourcePositional": [
+  "IfcLightSource",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLightSourceSpot": [
+  "IfcLightSourcePositional",
+  "IfcLightSource",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLine": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLinearDimension": [
+  "IfcDimensionCurveDirectedCallout",
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcLinearElement": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLinearPlacement": [
+  "IfcObjectPlacement"
+ ],
+ "IfcLinearPositioningElement": [
+  "IfcPositioningElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLiquidTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLiquidTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcLocalPlacement": [
+  "IfcObjectPlacement"
+ ],
+ "IfcLocalTime": [],
+ "IfcLoop": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcManifoldSolidBrep": [
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcMapConversion": [
+  "IfcCoordinateOperation"
+ ],
+ "IfcMapConversionScaled": [
+  "IfcMapConversion",
+  "IfcCoordinateOperation"
+ ],
+ "IfcMappedItem": [
+  "IfcRepresentationItem"
+ ],
+ "IfcMarineFacility": [
+  "IfcFacility",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMarinePart": [
+  "IfcFacilityPart",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMaterial": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialClassificationRelationship": [],
+ "IfcMaterialConstituent": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialConstituentSet": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialDefinition": [],
+ "IfcMaterialDefinitionRepresentation": [
+  "IfcProductRepresentation"
+ ],
+ "IfcMaterialLayer": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialLayerSet": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialLayerSetUsage": [
+  "IfcMaterialUsageDefinition"
+ ],
+ "IfcMaterialLayerWithOffsets": [
+  "IfcMaterialLayer",
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialList": [],
+ "IfcMaterialProfile": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialProfileSet": [
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialProfileSetUsage": [
+  "IfcMaterialUsageDefinition"
+ ],
+ "IfcMaterialProfileSetUsageTapering": [
+  "IfcMaterialProfileSetUsage",
+  "IfcMaterialUsageDefinition"
+ ],
+ "IfcMaterialProfileWithOffsets": [
+  "IfcMaterialProfile",
+  "IfcMaterialDefinition"
+ ],
+ "IfcMaterialProperties": [
+  "IfcExtendedProperties",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcMaterialRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcMaterialUsageDefinition": [],
+ "IfcMeasureWithUnit": [],
+ "IfcMechanicalConcreteMaterialProperties": [
+  "IfcMechanicalMaterialProperties",
+  "IfcMaterialProperties"
+ ],
+ "IfcMechanicalFastener": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMechanicalFastenerType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMechanicalMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcMechanicalSteelMaterialProperties": [
+  "IfcMechanicalMaterialProperties",
+  "IfcMaterialProperties"
+ ],
+ "IfcMedicalDevice": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMedicalDeviceType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMember": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMemberStandardCase": [
+  "IfcMember",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMemberType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMetric": [
+  "IfcConstraint"
+ ],
+ "IfcMirroredProfileDef": [
+  "IfcDerivedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcMobileTelecommunicationsAppliance": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMobileTelecommunicationsApplianceType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMonetaryUnit": [],
+ "IfcMooringDevice": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMooringDeviceType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMotorConnection": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMotorConnectionType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcMove": [
+  "IfcTask",
+  "IfcProcess",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcNamedUnit": [],
+ "IfcNavigationElement": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcNavigationElementType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcObject": [
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcObjectDefinition": [
+  "IfcRoot"
+ ],
+ "IfcObjectPlacement": [],
+ "IfcObjective": [
+  "IfcConstraint"
+ ],
+ "IfcOccupant": [
+  "IfcActor",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOffsetCurve": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOffsetCurve2D": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOffsetCurve3D": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOffsetCurveByDistances": [
+  "IfcOffsetCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOneDirectionRepeatFactor": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOpenCrossProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcOpenShell": [
+  "IfcConnectedFaceSet",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOpeningElement": [
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOpeningStandardCase": [
+  "IfcOpeningElement",
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOpticalMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcOrderAction": [
+  "IfcTask",
+  "IfcProcess",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOrganization": [],
+ "IfcOrganizationRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcOrientedEdge": [
+  "IfcEdge",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOuterBoundaryCurve": [
+  "IfcBoundaryCurve",
+  "IfcCompositeCurveOnSurface",
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcOutlet": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOutletType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcOwnerHistory": [],
+ "IfcParameterizedProfileDef": [
+  "IfcProfileDef"
+ ],
+ "IfcPath": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPavement": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPavementType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPcurve": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPerformanceHistory": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPermeableCoveringProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPermit": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPerson": [],
+ "IfcPersonAndOrganization": [],
+ "IfcPhysicalComplexQuantity": [
+  "IfcPhysicalQuantity"
+ ],
+ "IfcPhysicalQuantity": [],
+ "IfcPhysicalSimpleQuantity": [
+  "IfcPhysicalQuantity"
+ ],
+ "IfcPile": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPileType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPipeFitting": [
+  "IfcFlowFitting",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPipeFittingType": [
+  "IfcFlowFittingType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPipeSegment": [
+  "IfcFlowSegment",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPipeSegmentType": [
+  "IfcFlowSegmentType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPixelTexture": [
+  "IfcSurfaceTexture",
+  "IfcPresentationItem"
+ ],
+ "IfcPlacement": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPlanarBox": [
+  "IfcPlanarExtent",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPlanarExtent": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPlane": [
+  "IfcElementarySurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPlate": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPlateStandardCase": [
+  "IfcPlate",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPlateType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPoint": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPointByDistanceExpression": [
+  "IfcPoint",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPointOnCurve": [
+  "IfcPoint",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPointOnSurface": [
+  "IfcPoint",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPolyLoop": [
+  "IfcLoop",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPolygonalBoundedHalfSpace": [
+  "IfcHalfSpaceSolid",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPolygonalFaceSet": [
+  "IfcTessellatedFaceSet",
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPolyline": [
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPolynomialCurve": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcPort": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPositioningElement": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPostalAddress": [
+  "IfcAddress"
+ ],
+ "IfcPreDefinedColour": [
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcPreDefinedCurveFont": [
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcPreDefinedDimensionSymbol": [
+  "IfcPreDefinedSymbol",
+  "IfcPreDefinedItem"
+ ],
+ "IfcPreDefinedItem": [
+  "IfcPresentationItem"
+ ],
+ "IfcPreDefinedPointMarkerSymbol": [
+  "IfcPreDefinedSymbol",
+  "IfcPreDefinedItem"
+ ],
+ "IfcPreDefinedProperties": [
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPreDefinedPropertySet": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPreDefinedSymbol": [
+  "IfcPreDefinedItem"
+ ],
+ "IfcPreDefinedTerminatorSymbol": [
+  "IfcPreDefinedSymbol",
+  "IfcPreDefinedItem"
+ ],
+ "IfcPreDefinedTextFont": [
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcPresentationItem": [],
+ "IfcPresentationLayerAssignment": [],
+ "IfcPresentationLayerWithStyle": [
+  "IfcPresentationLayerAssignment"
+ ],
+ "IfcPresentationStyle": [],
+ "IfcPresentationStyleAssignment": [],
+ "IfcProcedure": [
+  "IfcProcess",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProcedureType": [
+  "IfcTypeProcess",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProcess": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProduct": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProductDefinitionShape": [
+  "IfcProductRepresentation"
+ ],
+ "IfcProductRepresentation": [],
+ "IfcProductsOfCombustionProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcProfileDef": [],
+ "IfcProfileProperties": [
+  "IfcExtendedProperties",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcProject": [
+  "IfcContext",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProjectLibrary": [
+  "IfcContext",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProjectOrder": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProjectOrderRecord": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProjectedCRS": [
+  "IfcCoordinateReferenceSystem"
+ ],
+ "IfcProjectionCurve": [
+  "IfcAnnotationCurveOccurrence",
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcProjectionElement": [
+  "IfcFeatureElementAddition",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProperty": [
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyAbstraction": [],
+ "IfcPropertyBoundedValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyConstraintRelationship": [],
+ "IfcPropertyDefinition": [
+  "IfcRoot"
+ ],
+ "IfcPropertyDependencyRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcPropertyEnumeratedValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyEnumeration": [
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyListValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyReferenceValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertySet": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPropertySetDefinition": [
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPropertySetTemplate": [
+  "IfcPropertyTemplateDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPropertySingleValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyTableValue": [
+  "IfcSimpleProperty",
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcPropertyTemplate": [
+  "IfcPropertyTemplateDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcPropertyTemplateDefinition": [
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcProtectiveDevice": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProtectiveDeviceTrippingUnit": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProtectiveDeviceTrippingUnitType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProtectiveDeviceType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcProxy": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPump": [
+  "IfcFlowMovingDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcPumpType": [
+  "IfcFlowMovingDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcQuantityArea": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantityCount": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantityLength": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantityNumber": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantitySet": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcQuantityTime": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantityVolume": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcQuantityWeight": [
+  "IfcPhysicalSimpleQuantity",
+  "IfcPhysicalQuantity"
+ ],
+ "IfcRadiusDimension": [
+  "IfcDimensionCurveDirectedCallout",
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRail": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRailType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRailing": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRailingType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRailway": [
+  "IfcFacility",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRailwayPart": [
+  "IfcFacilityPart",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRamp": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRampFlight": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRampFlightType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRampType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRationalBSplineCurveWithKnots": [
+  "IfcBSplineCurveWithKnots",
+  "IfcBSplineCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRationalBSplineSurfaceWithKnots": [
+  "IfcBSplineSurfaceWithKnots",
+  "IfcBSplineSurface",
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRationalBezierCurve": [
+  "IfcBezierCurve",
+  "IfcBSplineCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRectangleHollowProfileDef": [
+  "IfcRectangleProfileDef",
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcRectangleProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcRectangularPyramid": [
+  "IfcCsgPrimitive3D",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRectangularTrimmedSurface": [
+  "IfcBoundedSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRecurrencePattern": [],
+ "IfcReference": [],
+ "IfcReferencesValueDocument": [],
+ "IfcReferent": [
+  "IfcPositioningElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRegularTimeSeries": [
+  "IfcTimeSeries"
+ ],
+ "IfcReinforcedSoil": [
+  "IfcEarthworksElement",
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcementBarProperties": [
+  "IfcPreDefinedProperties",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcReinforcementDefinitionProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingBar": [
+  "IfcReinforcingElement",
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingBarType": [
+  "IfcReinforcingElementType",
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingElement": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingElementType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingMesh": [
+  "IfcReinforcingElement",
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcReinforcingMeshType": [
+  "IfcReinforcingElementType",
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRelAdheresToElement": [
+  "IfcRelDecomposes",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAggregates": [
+  "IfcRelDecomposes",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssigns": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsTasks": [
+  "IfcRelAssignsToControl",
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToActor": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToControl": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToGroup": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToGroupByFactor": [
+  "IfcRelAssignsToGroup",
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToProcess": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToProduct": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToProjectOrder": [
+  "IfcRelAssignsToControl",
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssignsToResource": [
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociates": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesAppliedValue": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesApproval": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesClassification": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesConstraint": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesDocument": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesLibrary": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesMaterial": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesProfileDef": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelAssociatesProfileProperties": [
+  "IfcRelAssociates",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnects": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsElements": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsPathElements": [
+  "IfcRelConnectsElements",
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsPortToElement": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsPorts": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsStructuralActivity": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsStructuralElement": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsStructuralMember": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsWithEccentricity": [
+  "IfcRelConnectsStructuralMember",
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelConnectsWithRealizingElements": [
+  "IfcRelConnectsElements",
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelContainedInSpatialStructure": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelCoversBldgElements": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelCoversSpaces": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDeclares": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDecomposes": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDefines": [
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDefinesByObject": [
+  "IfcRelDefines",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDefinesByProperties": [
+  "IfcRelDefines",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDefinesByTemplate": [
+  "IfcRelDefines",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelDefinesByType": [
+  "IfcRelDefines",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelFillsElement": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelFlowControlElements": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelInteractionRequirements": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelInterferesElements": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelNests": [
+  "IfcRelDecomposes",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelOccupiesSpaces": [
+  "IfcRelAssignsToActor",
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelOverridesProperties": [
+  "IfcRelDefinesByProperties",
+  "IfcRelDefines",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelPositions": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelProjectsElement": [
+  "IfcRelDecomposes",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelReferencedInSpatialStructure": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelSchedulesCostItems": [
+  "IfcRelAssignsToControl",
+  "IfcRelAssigns",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelSequence": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelServicesBuildings": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelSpaceBoundary": [
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelSpaceBoundary1stLevel": [
+  "IfcRelSpaceBoundary",
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelSpaceBoundary2ndLevel": [
+  "IfcRelSpaceBoundary1stLevel",
+  "IfcRelSpaceBoundary",
+  "IfcRelConnects",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelVoidsElement": [
+  "IfcRelDecomposes",
+  "IfcRelationship",
+  "IfcRoot"
+ ],
+ "IfcRelationship": [
+  "IfcRoot"
+ ],
+ "IfcRelaxation": [],
+ "IfcReparametrisedCompositeCurveSegment": [
+  "IfcCompositeCurveSegment",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRepresentation": [],
+ "IfcRepresentationContext": [],
+ "IfcRepresentationItem": [],
+ "IfcRepresentationMap": [],
+ "IfcResource": [
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcResourceApprovalRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcResourceConstraintRelationship": [
+  "IfcResourceLevelRelationship"
+ ],
+ "IfcResourceLevelRelationship": [],
+ "IfcResourceTime": [
+  "IfcSchedulingTime"
+ ],
+ "IfcRevolvedAreaSolid": [
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRevolvedAreaSolidTapered": [
+  "IfcRevolvedAreaSolid",
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRibPlateProfileProperties": [
+  "IfcProfileProperties"
+ ],
+ "IfcRightCircularCone": [
+  "IfcCsgPrimitive3D",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRightCircularCylinder": [
+  "IfcCsgPrimitive3D",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcRigidOperation": [
+  "IfcCoordinateOperation"
+ ],
+ "IfcRoad": [
+  "IfcFacility",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRoadPart": [
+  "IfcFacilityPart",
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRoof": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRoofType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRoot": [],
+ "IfcRoundedEdgeFeature": [
+  "IfcEdgeFeature",
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcRoundedRectangleProfileDef": [
+  "IfcRectangleProfileDef",
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcSIUnit": [
+  "IfcNamedUnit"
+ ],
+ "IfcSanitaryTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSanitaryTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcScheduleTimeControl": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSchedulingTime": [],
+ "IfcSeamCurve": [
+  "IfcSurfaceCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSecondOrderPolynomialSpiral": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSectionProperties": [
+  "IfcPreDefinedProperties",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcSectionReinforcementProperties": [
+  "IfcPreDefinedProperties",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcSectionedSolid": [
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSectionedSolidHorizontal": [
+  "IfcSectionedSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSectionedSpine": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSectionedSurface": [
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSegment": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSegmentedReferenceCurve": [
+  "IfcCompositeCurve",
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSensor": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSensorType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcServiceLife": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcServiceLifeFactor": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcSeventhOrderPolynomialSpiral": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcShadingDevice": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcShadingDeviceType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcShapeAspect": [],
+ "IfcShapeModel": [
+  "IfcRepresentation"
+ ],
+ "IfcShapeRepresentation": [
+  "IfcShapeModel",
+  "IfcRepresentation"
+ ],
+ "IfcShellBasedSurfaceModel": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSign": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSignType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSignal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSignalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSimpleProperty": [
+  "IfcProperty",
+  "IfcPropertyAbstraction"
+ ],
+ "IfcSimplePropertyTemplate": [
+  "IfcPropertyTemplate",
+  "IfcPropertyTemplateDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcSineSpiral": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSite": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSlab": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSlabElementedCase": [
+  "IfcSlab",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSlabStandardCase": [
+  "IfcSlab",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSlabType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSlippageConnectionCondition": [
+  "IfcStructuralConnectionCondition"
+ ],
+ "IfcSolarDevice": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSolarDeviceType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSolidModel": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSoundProperties": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcSoundValue": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpace": [
+  "IfcSpatialStructureElement",
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpaceHeater": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpaceHeaterType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpaceProgram": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpaceThermalLoadProperties": [
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpaceType": [
+  "IfcSpatialStructureElementType",
+  "IfcSpatialElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialElement": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialElementType": [
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialStructureElement": [
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialStructureElementType": [
+  "IfcSpatialElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialZone": [
+  "IfcSpatialElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSpatialZoneType": [
+  "IfcSpatialElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSphere": [
+  "IfcCsgPrimitive3D",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSphericalSurface": [
+  "IfcElementarySurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSpiral": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcStackTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStackTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStair": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStairFlight": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStairFlightType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStairType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralAction": [
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralActivity": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralAnalysisModel": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralConnection": [
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralConnectionCondition": [],
+ "IfcStructuralCurveAction": [
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralCurveConnection": [
+  "IfcStructuralConnection",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralCurveMember": [
+  "IfcStructuralMember",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralCurveMemberVarying": [
+  "IfcStructuralCurveMember",
+  "IfcStructuralMember",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralCurveReaction": [
+  "IfcStructuralReaction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralItem": [
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralLinearAction": [
+  "IfcStructuralCurveAction",
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralLinearActionVarying": [
+  "IfcStructuralLinearAction",
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralLoad": [],
+ "IfcStructuralLoadCase": [
+  "IfcStructuralLoadGroup",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralLoadConfiguration": [
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadGroup": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralLoadLinearForce": [
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadOrResult": [
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadPlanarForce": [
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadSingleDisplacement": [
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadSingleDisplacementDistortion": [
+  "IfcStructuralLoadSingleDisplacement",
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadSingleForce": [
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadSingleForceWarping": [
+  "IfcStructuralLoadSingleForce",
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadStatic": [
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralLoadTemperature": [
+  "IfcStructuralLoadStatic",
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcStructuralMember": [
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralPlanarAction": [
+  "IfcStructuralSurfaceAction",
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralPlanarActionVarying": [
+  "IfcStructuralPlanarAction",
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralPointAction": [
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralPointConnection": [
+  "IfcStructuralConnection",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralPointReaction": [
+  "IfcStructuralReaction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralProfileProperties": [
+  "IfcGeneralProfileProperties",
+  "IfcProfileProperties"
+ ],
+ "IfcStructuralReaction": [
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralResultGroup": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralSteelProfileProperties": [
+  "IfcStructuralProfileProperties",
+  "IfcGeneralProfileProperties",
+  "IfcProfileProperties"
+ ],
+ "IfcStructuralSurfaceAction": [
+  "IfcStructuralAction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralSurfaceConnection": [
+  "IfcStructuralConnection",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralSurfaceMember": [
+  "IfcStructuralMember",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralSurfaceMemberVarying": [
+  "IfcStructuralSurfaceMember",
+  "IfcStructuralMember",
+  "IfcStructuralItem",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuralSurfaceReaction": [
+  "IfcStructuralReaction",
+  "IfcStructuralActivity",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcStructuredDimensionCallout": [
+  "IfcDraughtingCallout",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcStyleModel": [
+  "IfcRepresentation"
+ ],
+ "IfcStyledItem": [
+  "IfcRepresentationItem"
+ ],
+ "IfcStyledRepresentation": [
+  "IfcStyleModel",
+  "IfcRepresentation"
+ ],
+ "IfcSubContractResource": [
+  "IfcConstructionResource",
+  "IfcResource",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSubContractResourceType": [
+  "IfcConstructionResourceType",
+  "IfcTypeResource",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSubedge": [
+  "IfcEdge",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurface": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurfaceCurve": [
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurfaceCurveSweptAreaSolid": [
+  "IfcSweptAreaSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurfaceFeature": [
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSurfaceOfLinearExtrusion": [
+  "IfcSweptSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurfaceOfRevolution": [
+  "IfcSweptSurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSurfaceReinforcementArea": [
+  "IfcStructuralLoadOrResult",
+  "IfcStructuralLoad"
+ ],
+ "IfcSurfaceStyle": [
+  "IfcPresentationStyle"
+ ],
+ "IfcSurfaceStyleLighting": [
+  "IfcPresentationItem"
+ ],
+ "IfcSurfaceStyleRefraction": [
+  "IfcPresentationItem"
+ ],
+ "IfcSurfaceStyleRendering": [
+  "IfcSurfaceStyleShading",
+  "IfcPresentationItem"
+ ],
+ "IfcSurfaceStyleShading": [
+  "IfcPresentationItem"
+ ],
+ "IfcSurfaceStyleWithTextures": [
+  "IfcPresentationItem"
+ ],
+ "IfcSurfaceTexture": [
+  "IfcPresentationItem"
+ ],
+ "IfcSweptAreaSolid": [
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSweptDiskSolid": [
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSweptDiskSolidPolygonal": [
+  "IfcSweptDiskSolid",
+  "IfcSolidModel",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSweptSurface": [
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcSwitchingDevice": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSwitchingDeviceType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSymbolStyle": [
+  "IfcPresentationStyle"
+ ],
+ "IfcSystem": [
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSystemFurnitureElement": [
+  "IfcFurnishingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcSystemFurnitureElementType": [
+  "IfcFurnishingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcTable": [],
+ "IfcTableColumn": [],
+ "IfcTableRow": [],
+ "IfcTank": [
+  "IfcFlowStorageDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTankType": [
+  "IfcFlowStorageDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTask": [
+  "IfcProcess",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTaskTime": [
+  "IfcSchedulingTime"
+ ],
+ "IfcTaskTimeRecurring": [
+  "IfcTaskTime",
+  "IfcSchedulingTime"
+ ],
+ "IfcTaskType": [
+  "IfcTypeProcess",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTelecomAddress": [
+  "IfcAddress"
+ ],
+ "IfcTendon": [
+  "IfcReinforcingElement",
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTendonAnchor": [
+  "IfcReinforcingElement",
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTendonAnchorType": [
+  "IfcReinforcingElementType",
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTendonConduit": [
+  "IfcReinforcingElement",
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTendonConduitType": [
+  "IfcReinforcingElementType",
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTendonType": [
+  "IfcReinforcingElementType",
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTerminatorSymbol": [
+  "IfcAnnotationSymbolOccurrence",
+  "IfcAnnotationOccurrence",
+  "IfcStyledItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTessellatedFaceSet": [
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTessellatedItem": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTextLiteral": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTextLiteralWithExtent": [
+  "IfcTextLiteral",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTextStyle": [
+  "IfcPresentationStyle"
+ ],
+ "IfcTextStyleFontModel": [
+  "IfcPreDefinedTextFont",
+  "IfcPreDefinedItem",
+  "IfcPresentationItem"
+ ],
+ "IfcTextStyleForDefinedFont": [
+  "IfcPresentationItem"
+ ],
+ "IfcTextStyleTextModel": [
+  "IfcPresentationItem"
+ ],
+ "IfcTextStyleWithBoxCharacteristics": [],
+ "IfcTextureCoordinate": [
+  "IfcPresentationItem"
+ ],
+ "IfcTextureCoordinateGenerator": [
+  "IfcTextureCoordinate",
+  "IfcPresentationItem"
+ ],
+ "IfcTextureCoordinateIndices": [],
+ "IfcTextureCoordinateIndicesWithVoids": [
+  "IfcTextureCoordinateIndices"
+ ],
+ "IfcTextureMap": [
+  "IfcTextureCoordinate",
+  "IfcPresentationItem"
+ ],
+ "IfcTextureVertex": [
+  "IfcPresentationItem"
+ ],
+ "IfcTextureVertexList": [
+  "IfcPresentationItem"
+ ],
+ "IfcThermalMaterialProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcThirdOrderPolynomialSpiral": [
+  "IfcSpiral",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTimePeriod": [],
+ "IfcTimeSeries": [],
+ "IfcTimeSeriesReferenceRelationship": [],
+ "IfcTimeSeriesSchedule": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTimeSeriesValue": [],
+ "IfcTopologicalRepresentationItem": [
+  "IfcRepresentationItem"
+ ],
+ "IfcTopologyRepresentation": [
+  "IfcShapeModel",
+  "IfcRepresentation"
+ ],
+ "IfcToroidalSurface": [
+  "IfcElementarySurface",
+  "IfcSurface",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTrackElement": [
+  "IfcBuiltElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTrackElementType": [
+  "IfcBuiltElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransformer": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransformerType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransportElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransportElementType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransportationDevice": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTransportationDeviceType": [
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTrapeziumProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcTriangulatedFaceSet": [
+  "IfcTessellatedFaceSet",
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTriangulatedIrregularNetwork": [
+  "IfcTriangulatedFaceSet",
+  "IfcTessellatedFaceSet",
+  "IfcTessellatedItem",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTrimmedCurve": [
+  "IfcBoundedCurve",
+  "IfcCurve",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTubeBundle": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTubeBundleType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTwoDirectionRepeatFactor": [
+  "IfcOneDirectionRepeatFactor",
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcTypeObject": [
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTypeProcess": [
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTypeProduct": [
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcTypeResource": [
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcUShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcUnitAssignment": [],
+ "IfcUnitaryControlElement": [
+  "IfcDistributionControlElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcUnitaryControlElementType": [
+  "IfcDistributionControlElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcUnitaryEquipment": [
+  "IfcEnergyConversionDevice",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcUnitaryEquipmentType": [
+  "IfcEnergyConversionDeviceType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcValve": [
+  "IfcFlowController",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcValveType": [
+  "IfcFlowControllerType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVector": [
+  "IfcGeometricRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcVehicle": [
+  "IfcTransportationDevice",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVehicleType": [
+  "IfcTransportationDeviceType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVertex": [
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcVertexBasedTextureMap": [],
+ "IfcVertexLoop": [
+  "IfcLoop",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcVertexPoint": [
+  "IfcVertex",
+  "IfcTopologicalRepresentationItem",
+  "IfcRepresentationItem"
+ ],
+ "IfcVibrationDamper": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVibrationDamperType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVibrationIsolator": [
+  "IfcElementComponent",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVibrationIsolatorType": [
+  "IfcElementComponentType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVirtualElement": [
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcVirtualGridIntersection": [],
+ "IfcVoidingFeature": [
+  "IfcFeatureElementSubtraction",
+  "IfcFeatureElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWall": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWallElementedCase": [
+  "IfcWall",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWallStandardCase": [
+  "IfcWall",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWallType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWasteTerminal": [
+  "IfcFlowTerminal",
+  "IfcDistributionFlowElement",
+  "IfcDistributionElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWasteTerminalType": [
+  "IfcFlowTerminalType",
+  "IfcDistributionFlowElementType",
+  "IfcDistributionElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWaterProperties": [
+  "IfcMaterialProperties"
+ ],
+ "IfcWellKnownText": [],
+ "IfcWindow": [
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWindowLiningProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcWindowPanelProperties": [
+  "IfcPreDefinedPropertySet",
+  "IfcPropertySetDefinition",
+  "IfcPropertyDefinition",
+  "IfcRoot"
+ ],
+ "IfcWindowStandardCase": [
+  "IfcWindow",
+  "IfcBuildingElement",
+  "IfcElement",
+  "IfcProduct",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWindowStyle": [
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWindowType": [
+  "IfcBuildingElementType",
+  "IfcElementType",
+  "IfcTypeProduct",
+  "IfcTypeObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWorkCalendar": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWorkControl": [
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWorkPlan": [
+  "IfcWorkControl",
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWorkSchedule": [
+  "IfcWorkControl",
+  "IfcControl",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "IfcWorkTime": [
+  "IfcSchedulingTime"
+ ],
+ "IfcZShapeProfileDef": [
+  "IfcParameterizedProfileDef",
+  "IfcProfileDef"
+ ],
+ "IfcZone": [
+  "IfcSystem",
+  "IfcGroup",
+  "IfcObject",
+  "IfcObjectDefinition",
+  "IfcRoot"
+ ],
+ "_meta": {
+  "generated_by": "tools/dump_ifc_schema_hierarchy.py",
+  "merge_priority": [
+   "IFC4",
+   "IFC2X3",
+   "IFC4X3_ADD2"
+  ],
+  "note": "class -> [ImmediateParent, ..., IfcRoot]. Merged across IFC2X3+IFC4+IFC4X3_ADD2 (IFC4-priority; a class absent from IFC4 uses IFC2X3 then IFC4X3_ADD2). Regenerate via: python3 tools/dump_ifc_schema_hierarchy.py",
+  "schema_versions": [
+   "IFC4",
+   "IFC2X3",
+   "IFC4X3_ADD2"
+  ],
+  "total_classes": 1006
+ }
+}
