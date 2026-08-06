@@ -55,6 +55,44 @@ turned out to be a **false positive**:
 ALSO a real dead shortcut hiding in the noise that got dismissed along with these nine? Nobody has checked.
 That is the actual job here — not silencing the log.
 
+## ▶ PHASE 0 — bounded pattern-shape sweep (do this FIRST, before Issue 1/2's tasks)
+Scoped to exactly two subsystems — the input/shortcut wiring and the DB-query-gate wiring — NOT a general
+codebase read-through. The leaf-level code read carefully this session (dated `§`-tag rationale, defensive
+guards, witness discipline throughout `scene.js`/`tour.js`/`wh_walk.js`) — this is not a "vibe-coded mess"
+in the usual sense. The two findings below are narrower: organic-growth drift where a session solved
+something locally instead of reusing a shared mechanism already on hand. Sweep for exactly these three
+SHAPES (a proxy for "is there more lurking," bounded and falsifiable — not "read everything for quality"):
+
+**Shape A — self-auditing code that never checks itself against real state.** `checkShortcuts()`
+(`input_registry.js:124-164`) is the found instance: it verifies shortcuts by string-matching a function's
+own source text, never by observing a real effect. Grep for other self-referential "audit"/"check"/"verify"
+functions in `viewer/*.js` that grade against static text/config rather than live app state, and note them —
+don't fix them here, just confirm whether this project has more than the one instance.
+
+**Shape B — catch-and-swallow masking an expected-but-noisy failure.** `wh_walk.js:50-57`'s `gateNow()` is
+the found instance (already scoped as Issue 2 Task 1's grep sweep — don't duplicate the work, just confirm
+Issue 2 Task 1 covers this shape fully).
+
+**Shape C — a mechanism reinvented locally where a shared one already exists.** 11+ files each own an
+independent `keydown` listener (`precision_cam.js`, `grid_drag.js`, `doc_canvas.js`, `navigate_controls.js`,
+`navigate_engine.js`, `cinema_path_editor.js`, `print_sheet.js`, `nlp.js`, `main.js`, `sfx.js`,
+`navigate_find.js` — re-grep, this list drifts) instead of extending `input_registry.js`, which reads as the
+intended canonical registry. For each of those 11+ files: is the local listener there because the shared
+registry genuinely can't serve that case (e.g. `precision_cam.js`'s `e.code==='CapsLock'` needs raw
+`KeyboardEvent.code`, which `_shortcuts`'s string-key map may not support), or is it just historical —
+written before `input_registry.js` existed, or before whoever wrote it knew it existed? That distinction
+matters for Issue 1 Task 4's architecture choice: a shared registry (option b) is only the right call if
+most of these 11+ cases could ACTUALLY move into it. Also grep briefly for this same "reinvented locally"
+shape in one or two OTHER small subsystems (e.g. panel-close handling, given `_scrubHide`-style teardown
+functions have appeared ad hoc in at least one other recent session) — a couple of data points, not a full
+survey — just enough to say whether Shape C is confined to keydown-handling or is a wider habit worth its
+own future prompt.
+
+Output of Phase 0: a short table (shape × file × verdict: confirmed-instance / false-alarm / not-applicable)
+appended to this doc before Issue 1/2's tasks proceed. If Phase 0 surfaces a NEW confirmed instance of any
+shape outside the two issues already scoped here, note it and decide then whether it's in-scope for this
+same session or belongs in its own future prompt — don't silently fold in unbounded new scope mid-session.
+
 ## ▶ ISSUE 1 — checkShortcuts() self-audit is architecturally too shallow to trust
 `input_registry.js:124-164` (`InputReg.checkShortcuts`) resolves a shortcut function's body via regex
 (`/(?:\b(?:window|A|APP)\.)?([a-zA-Z_$][\w$]*)\s*\(/g`) and checks each called name against `window[n]`,
