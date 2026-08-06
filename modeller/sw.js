@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v43';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v44';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -65,6 +65,8 @@ const PRECACHE_ASSETS = [
   'grid_kinematics.js',
   'kernel_ops.js',
   'real_placement_resolver.js',   // WalkerDoctrine.md §10 — shared real-placement gate (routewalker.js's first call site)
+  'bonsai_roommove.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2 — whole-room move (GEOM_ROOM_MOVE)
+  'bonsai_itemdrag.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3 — free single-item drag (gated by the line above)
   'routewalker.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
