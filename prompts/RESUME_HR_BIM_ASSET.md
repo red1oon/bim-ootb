@@ -264,21 +264,23 @@ showcasing").
 ## ▶ §P10b — IoT sensor mockup + CCTV mockup + ERP C_Order billing link + draggable panels (user 2026-07-02)
 
 User, mid-§P10a build: clicking **Assets/IoT** should pop a 24h sensor-reading mockup (temperature, boiler
-pressure, sound, dust, solar-panel output, electrical) — reference cited: the RiverIoT/Federation pattern in
-IfcOpenShell/Bonsai (an external inspiration for the SHAPE of the idea, not a library dependency here) — plus a
+pressure, sound, dust, solar-panel output, electrical) — reference cited: the RiverIoT/Federation pattern,
+**the user's own prior work** (see 2026-08-06 correction below) — plus a
 6-camera CCTV mockup panel, an ERP link projecting each sensor reading as a **billable `C_Order`/`C_OrderLine`**
 row (product=sensor, qty+UOM=the reading), and **every HBA pane becomes draggable**. Explicitly labeled a
 **mockup** by the user — no real IoT hardware, no real video feed; the discipline that still applies is
 **non-invent on the SHAPE**: reuse the REAL native AD tables for the ERP-link half, and be honest that the
 sensor readings themselves are synthetic/demo (same CONTOH/SAMPLE watermark as every other HBA demo record).
 
-**Credit (2026-08-06, formalized):** the RiverIoT/Federation panel pattern above was read from a real local
-clone of `IfcOpenShell/Bonsai` (LGPL-3.0) — `~/IfcOpenShell/src/bonsai/bonsai/bim/module/federation/river/
-equipment_operators.py` — at the time this feature was scoped. No code was copied; nothing in this codebase
-depends on IfcOpenShell/Bonsai or links against it. What was taken is the *shape* of the idea (a federated
-per-zone live-sensor panel), reimplemented here from scratch against our own signed op-log / mockup-watermark
-discipline. Same standing as the `pascalorg/editor` credit in `bim-ootb` PR #1224 and
-`docs/internal/BIM_OOTB_ASSESSMENT_2026-08-06.md` §7: claim inheritance, never endorsement, name the departure.
+**CORRECTION (2026-08-06):** the original entry above cited this pattern as read from a specific
+IfcOpenShell/Bonsai file (`bonsai/bim/module/federation/river/equipment_operators.py`). That path does not
+exist in the real IfcOpenShell/Bonsai repository — checked directly against the full tree at its current
+tagged release (`v0.8.0`, 4,275 files, zero matches for `federation/river` or `equipment_operators`). The
+citation was wrong. **RiverIoT is the user's own prior work, not something borrowed from IfcOpenShell/Bonsai.**
+No credit to that project is warranted here. Left this note rather than silently deleting the original
+line, per this project's own "revise on record" convention (see
+`docs/internal/BIM_OOTB_ASSESSMENT_2026-08-06.md`'s stated method) — a future reader should see that the
+claim was made, checked, and found false, not just see it vanish.
 
 ### §P10b-CHECK — native shapes verified (`build/erp/ad_full.db` PRAGMA table_info, falsifiable)
 - `c_orderline`: `c_order_id · line · c_bpartner_id · m_product_id · c_uom_id · qtyordered · priceactual ·
