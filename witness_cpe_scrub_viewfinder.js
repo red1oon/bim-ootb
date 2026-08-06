@@ -682,17 +682,38 @@ async function gates(browser, BLD, repoDir) {
   // §CPE_VF_FRAME_CRAFT write-back is really gone: the panel's INLINE style width/height still read
   // exactly the fixed default after real rendered frames (crafting used to overwrite them with
   // full-precision floats — e.g. "299.27007299270077px" — on the first frame the rect disagreed).
+  // AMENDED 2026-08-06 by §CPE_VF_STACK: the inline size is no longer the literal 300x190 default.
+  // The panel's box is snapped to the device-pixel grid so the scissor rect can be EXACT (the user:
+  // "Why can't a calculation be made accurately - it is just geometry"), which makes its size a
+  // function of devicePixelRatio — 300x190 at pr=1, 302x192 at pr=1.25. Asserting the literal
+  // default would forbid the exactness. The property that actually matters is unchanged and still
+  // gated: the size is written at LAYOUT time only (creation, and a pixel-ratio change), never
+  // per-frame — which is exactly what retired §CPE_VF_FRAME_CRAFT did. So: hold the pixel ratio
+  // still, render real frames, and require the inline size not to move.
   const plainFrame = await page.evaluate(() => {
     const panel = document.getElementById('cpe-vf-panel');
     const cs = getComputedStyle(panel);
-    return { borderW: cs.borderTopWidth, borderColor: cs.borderTopColor, radius: cs.borderTopLeftRadius,
-             inlineW: panel.style.width, inlineH: panel.style.height };
+    const before = { w: panel.style.width, h: panel.style.height };
+    return new Promise(resolve => {
+      let n = 0;
+      (function tick() {
+        window.APP.markDirty();
+        if (++n < 30) return requestAnimationFrame(tick);
+        resolve({ borderW: cs.borderTopWidth, borderColor: cs.borderTopColor, radius: cs.borderTopLeftRadius,
+                  inlineW: panel.style.width, inlineH: panel.style.height,
+                  beforeW: before.w, beforeH: before.h, frames: n });
+      })();
+    });
   });
   P('G-VF-PLAIN-FRAME plain thin white square-cornered border (§CPE_VF_GRIP), and no frame-craft write-back to the panel\'s inline size',
     plainFrame.borderW === '1px' && plainFrame.radius === '0px' &&
     plainFrame.borderColor === 'rgba(255, 255, 255, 0.85)' &&
-    plainFrame.inlineW === '300px' && plainFrame.inlineH === '190px',
-    `borderW=${plainFrame.borderW} radius=${plainFrame.radius} color=${plainFrame.borderColor} inlineW=${plainFrame.inlineW} inlineH=${plainFrame.inlineH} (inline size at the fixed default proves nothing wrote it back after creation)`);
+    plainFrame.inlineW === plainFrame.beforeW && plainFrame.inlineH === plainFrame.beforeH &&
+    !!plainFrame.inlineW && !!plainFrame.inlineH,
+    `borderW=${plainFrame.borderW} radius=${plainFrame.radius} color=${plainFrame.borderColor} | ` +
+    `inline size across ${plainFrame.frames} rendered frames at a held pixel ratio: ` +
+    `${plainFrame.beforeW}x${plainFrame.beforeH} -> ${plainFrame.inlineW}x${plainFrame.inlineH} ` +
+    `(unchanged = no per-frame write-back; §CPE_VF_STACK sets it at layout only)`);
 
   // ── G-CPE-FIXED-PANELS: §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont
   // make it movable... both can simply be removed by the eye icon") — retires G-VF-DRAG-WAKES-RENDER,
@@ -703,6 +724,15 @@ async function gates(browser, BLD, repoDir) {
   // the panel rect is IDENTICAL across a toggle-off/on cycle (nothing to remember, nothing drifts).
   const fixedPanels = await page.evaluate(() => {
     const cpe = window.APP.cinemaPathEditor;
+    // §CPE_VF_STACK (2026-08-06): settle the panel at the CURRENT devicePixelRatio before sampling.
+    // B's rect is now a pure function of (viewport, pixelRatio, bar height) — it is snapped to the
+    // device-pixel grid so the scissor rect can be exact — and G-VF-ASPECT/G-VF-DPR-GUARD earlier in
+    // this same run deliberately change the renderer's pixel ratio. Sampling `before` from a layout
+    // done at the OLD ratio and `after` from one done at the new ratio compared two different
+    // inputs and read as drift (measured: 300x190 @1.0 vs 299.797x189.688 @1.37). This gate is about
+    // REMEMBERED POSITION — same inputs must give the same rect — not about the rect being
+    // pixel-ratio-invariant, which it must NOT be.
+    cpe._vfToggle(); cpe._vfToggle();
     const before = document.getElementById('cpe-vf-panel').getBoundingClientRect();
     const vfCursor = getComputedStyle(document.getElementById('cpe-vf-title')).cursor;
     const scrubCursor = getComputedStyle(document.getElementById('cpe-scrub-title')).cursor;
