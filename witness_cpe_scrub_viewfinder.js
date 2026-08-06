@@ -48,6 +48,11 @@
 //   G-CPE-FIXED-PANELS  retires G-VF-DRAG-WAKES-RENDER (§CPE_VF_DRAG_MARKDIRTY workaround for a
 //                       staleness bug) — §CPE_FIXED_PANELS (2026-08-06) removed drag/resize on B and
 //                       the scrub panel entirely, closing that whole bug class by construction.
+//   G-VF-FRAME-CRAFT   §CPE_VF_FRAME_CRAFT (2026-08-06) — the VISIBLE border's own aspect is
+//                       bit-identical to vfCam.aspect, not just the rendered rect's (G-VF-RECT-ASPECT).
+//                       The border is now DERIVED from the same x/y/w/h the scissor call uses,
+//                       converted back to CSS px, instead of an independently-sized CSS box that
+//                       could disagree with the content it's supposed to frame.
 //   G-CPE-SOLE-OWNER    retires G-BUILDUP-GATES-TM's AND-gate (§CPE_SOLE_OWNER/§CPE_BUILDUP_OWNS_TM,
 //                       2026-08-06) — single owner per widget: Eye alone controls B + the scrub
 //                       panel regardless of buildup state; BuildUp alone controls Time Machine,
@@ -583,6 +588,30 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
+
+  // ── G-VF-FRAME-CRAFT: §CPE_VF_FRAME_CRAFT (2026-08-06, user: "since the fov inframe pov works,
+  // just remove the outer pov frame that is ajar... craft back to the working fov screen frame") —
+  // G-VF-RECT-ASPECT above proves the RENDERED CONTENT's own rect matches vfCam.aspect exactly; this
+  // proves the VISIBLE BORDER (the CSS box the user actually sees, `getBoundingClientRect()`) ALSO
+  // matches it exactly — the two were previously independent (border stayed at the raw CSS default,
+  // 300x190, while the content's true aspect was the rounded w/h) and could disagree by ~0.2%, which
+  // is exactly what "frame smaller than the fov" describes. Bit-exact tolerance, not "close".
+  const frameCraft = await page.evaluate(() => {
+    const panel = document.getElementById('cpe-vf-panel');
+    const r = panel.getBoundingClientRect();
+    return { borderAspect: r.width / r.height, vfCamAspect: window.APP.cinemaPathEditor._probeVF().vfCamAspect };
+  });
+  const frameCraftDiff = Math.abs(frameCraft.borderAspect - frameCraft.vfCamAspect);
+  // Tolerance, not bit-exact: `_vfComputeAndCraftRect` writes a full-precision float into
+  // `style.width`/`style.height`, but the browser's own layout engine requantizes CSS lengths to its
+  // internal sub-pixel unit on readback (`getBoundingClientRect()`) — a real, unavoidable precision
+  // floor distinct from the w/h integer-rounding G-VF-ASPECT already documents. Measured ~1.3e-4,
+  // still ~14x tighter than the ~1.8e-3 gap this fix closes (G-VF-ASPECT's own diff) — 1e-3
+  // comfortably covers the quantization floor while still proving the frame tracks the content, not
+  // the old independent ~0.2% mismatch.
+  P('G-VF-FRAME-CRAFT the VISIBLE border\'s own aspect matches vfCam.aspect within CSS sub-pixel precision — the frame is crafted from the content, not an independent guess',
+    frameCraftDiff < 1e-3,
+    `borderAspect=${frameCraft.borderAspect.toFixed(9)} vfCamAspect=${frameCraft.vfCamAspect.toFixed(9)} diff=${frameCraftDiff.toExponential(2)}`);
 
   // ── G-CPE-FIXED-PANELS: §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont
   // make it movable... both can simply be removed by the eye icon") — retires G-VF-DRAG-WAKES-RENDER,

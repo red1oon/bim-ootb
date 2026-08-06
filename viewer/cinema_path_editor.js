@@ -1445,29 +1445,38 @@
         '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
     document.body.appendChild(d);
     _clampPanelToViewport(d);
+    // §CPE_VF_FRAME_CRAFT: craft the border to the actual scissor rect NOW, at creation, not just
+    // lazily on the first `_vfRender()` tick — so it's correct from the very first paint, never a
+    // one-frame flash of the raw (slightly-off) default box.
+    if (a.renderer && a.canvas) {
+      var _pr0 = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+      _vfComputeAndCraftRect(d, a.canvas.getBoundingClientRect(), d.getBoundingClientRect(), _pr0);
+    }
     // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation logging (unlike #cpe-panel's own
     // §CPE_PANEL_DRAGGABLE), so the console during a live repro carried no evidence at all for the
     // wrong-default-position bug this same edit fixed. Mirrors #cpe-panel's log shape, plus the
     // overlap-with-#cpe-panel check computed directly rather than guessed from screenshots.
-    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
+    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED (and now
+    // frame-crafted) rect.
     var _cr0 = d.getBoundingClientRect();
     console.log('§CPE_VF_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
       ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
       ' zIndex=' + getComputedStyle(d).zIndex + ' cpePanel=' + _overlapWithCpePanel(_cr0));
     return d;
   }
-  // The scissor render pass — installed as `A()._cpeViewfinderRender` and called by main.js's own
-  // animate() loop right after the main scene render (spec point 1: one renderer). Guarded so it is
-  // a single property check when B is off, and it is UNSET entirely on close — see finish()/
-  // _vfTeardown — so the MaxQ bake, which never sets this hook, can never reach this function
-  // (statically verifiable: cinema_maxq.js has zero references to `_cpeViewfinderRender`).
-  function _vfRender() {
-    if (!_state || !_state.vfOn || !_state.vfCam) return;
-    var a = A(), panel = document.getElementById('cpe-vf-panel');
-    if (!a.renderer || !a.scene || !a.canvas || !panel) return;
-    var t0 = performance.now();
-    var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
-    var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+  // §CPE_VF_FRAME_CRAFT (2026-08-06, user: "since the fov inframe pov works, just remove the outer
+  // pov frame that is ajar... craft back to the working fov screen frame" — the CSS border was an
+  // INDEPENDENT box (VF_DEFAULT_W/H) that merely approximated where the scissor rect landed;
+  // §CPE_FIXED_PANELS only stopped it being DRAGGED off that approximation, it never closed the
+  // approximation itself). Computes the scissor rect's x/y/w/h EXACTLY as before, then DERIVES the
+  // border's CSS left/top/width/height FROM those same integers (converted back to CSS px) instead
+  // of trusting the box's own independently-set size — the border and the rendered content can no
+  // longer disagree, by construction. Self-stabilizing: once written, the next read of panelR already
+  // equals these values, so the write is skipped (no per-frame layout thrash) until pr/canvasR
+  // genuinely change (DPR/zoom/first paint). Shared by `_buildVFPanel` (so the border is correct from
+  // the very first paint, not just once the render loop gets a first tick) and `_vfRender` (every
+  // frame, cheap due to the idempotent skip).
+  function _vfComputeAndCraftRect(panel, canvasR, panelR, pr) {
     // §CPE_VF_RECT_ASPECT (2026-08-05): h from the box, w DERIVED from h*trueAspect — NOT two
     // independently-rounded values. Two independent Math.round()s (old: w=round(300*1.25)=375,
     // h=round(190*1.25)=238) leave the RECT's own aspect (375/238=1.5756) slightly off the box's
@@ -1481,6 +1490,37 @@
     var yTop = Math.round((panelR.top - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
+    var backLeft = canvasR.left + x / pr, backTop = canvasR.top + yTop / pr;
+    var backW = w / pr, backH = h / pr;
+    if (Math.abs(panelR.left - backLeft) > 0.05 || Math.abs(panelR.top - backTop) > 0.05 ||
+        Math.abs(panelR.width - backW) > 0.05 || Math.abs(panelR.height - backH) > 0.05) {
+      panel.style.left = backLeft + 'px';
+      panel.style.top = backTop + 'px';
+      panel.style.width = backW + 'px';
+      panel.style.height = backH + 'px';
+      console.log('§CPE_VF_FRAME_CRAFT border snapped to the actual scissor rect left=' +
+        backLeft.toFixed(2) + ' top=' + backTop.toFixed(2) + ' w=' + backW.toFixed(2) + ' h=' + backH.toFixed(2) +
+        ' (was left=' + panelR.left.toFixed(2) + ' top=' + panelR.top.toFixed(2) +
+        ' w=' + panelR.width.toFixed(2) + ' h=' + panelR.height.toFixed(2) + ')');
+    }
+    return { x: x, y: y, w: w, h: h, canvasH: canvasH };
+  }
+  // The scissor render pass — installed as `A()._cpeViewfinderRender` and called by main.js's own
+  // animate() loop right after the main scene render (spec point 1: one renderer). Guarded so it is
+  // a single property check when B is off, and it is UNSET entirely on close — see finish()/
+  // _vfTeardown — so the MaxQ bake, which never sets this hook, can never reach this function
+  // (statically verifiable: cinema_maxq.js has zero references to `_cpeViewfinderRender`).
+  function _vfRender() {
+    if (!_state || !_state.vfOn || !_state.vfCam) return;
+    var a = A(), panel = document.getElementById('cpe-vf-panel');
+    if (!a.renderer || !a.scene || !a.canvas || !panel) return;
+    var t0 = performance.now();
+    var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
+    var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+    // Geometry + border-crafting — see `_vfComputeAndCraftRect`'s own comment for the aspect-rounding
+    // and frame-crafting rationale.
+    var geo = _vfComputeAndCraftRect(panel, canvasR, panelR, pr);
+    var x = geo.x, y = geo.y, w = geo.w, h = geo.h, canvasH = geo.canvasH;
     // §CPE_VF_RENDER_TRACE — see the var declaration's comment for why. Fires on ANY change to the
     // computed scissor rect, every call (not gated by _vfDiagLogged's one-shot).
     var _t0trace = performance.now();
