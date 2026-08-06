@@ -48,21 +48,20 @@
 //   G-CPE-FIXED-PANELS  retires G-VF-DRAG-WAKES-RENDER (§CPE_VF_DRAG_MARKDIRTY workaround for a
 //                       staleness bug) — §CPE_FIXED_PANELS (2026-08-06) removed drag/resize on B and
 //                       the scrub panel entirely, closing that whole bug class by construction.
-//   G-VF-FRAME-CRAFT   §CPE_VF_FRAME_CRAFT (2026-08-06) — the VISIBLE border's own aspect is
-//                       bit-identical to vfCam.aspect, not just the rendered rect's (G-VF-RECT-ASPECT).
-//                       The border is now DERIVED from the same x/y/w/h the scissor call uses,
-//                       converted back to CSS px, instead of an independently-sized CSS box that
-//                       could disagree with the content it's supposed to frame.
+//   G-VF-PLAIN-FRAME   §CPE_VF_PLAIN_FRAME (2026-08-06) — retires G-VF-FRAME-CRAFT (the pixel-fit
+//                       chase it verified is abandoned by user decision; root cause on record: B
+//                       shares the main renderer's full-canvas post pass). Proves the new reality:
+//                       the border is a plain thin white rounded picture frame (1px / radius 12px)
+//                       and NOTHING writes the panel's own left/top/width/height after creation —
+//                       the inline style stays at the fixed default across a rendered frame.
 //   G-CPE-SOLE-OWNER    retires G-BUILDUP-GATES-TM's AND-gate (§CPE_SOLE_OWNER/§CPE_BUILDUP_OWNS_TM,
 //                       2026-08-06) — single owner per widget: Eye alone controls B + the scrub
 //                       panel regardless of buildup state; BuildUp alone controls Time Machine,
 //                       closing it (if on) when unchecked, never touching the scrub panel.
 //   G-SCRUB-CLOSE-TEARDOWN  closing the editor (Cancel) removes the scrub panel too.
-//   G-VF-FRAME-DIAG  (informational, not pass/fail) §CPE_VF_FRAME_DIAG diagnostic for the "not well
-//                       framed" composition/zoom complaint — logs real nearest-surface-distance and
-//                       frame-fill-fraction numbers across a rehearsal; see CINEMA_PATH_EDITOR.md's
-//                       session writeup for the honest diagnosis (position/fov/aspect all proven
-//                       correct elsewhere in this suite; composition genuinely varies by beat).
+//   (G-VF-FRAME-DIAG retired 2026-08-06 with §CPE_VF_PLAIN_FRAME — the §CPE_VF_FRAME_DIAG
+//                       diagnostic it summarized is removed from the product along with the rest of
+//                       the fit-chase instrumentation.)
 //   G-SCRUB-BK-NOARM  (§CPE_SCRUB_BUILDUP_SYNC, 2026-08-06, conservative half) with BuildUp checked
 //                       but Time Machine NEVER yet activated (no Play this session), a scrub stays
 //                       pose-only: tmGetState().active remains false — a drag must not become a
@@ -644,43 +643,39 @@ async function gates(browser, BLD, repoDir) {
   // closely than the old two-independent-roundings), making the two values identical by definition.
   await page.evaluate(() => { window.APP.renderer.setPixelRatio(1.37); window.APP.markDirty(); });
   await sleep(300);
-  const traceLine = logs.filter(l => l.includes('§CPE_VF_RENDER_TRACE')).pop();
+  // §CPE_VF_PLAIN_FRAME (2026-08-06): the §CPE_VF_RENDER_TRACE console line this gate used to parse
+  // is retired with the rest of the fit diagnostics — read the rect from the REAL `_vfComputeRect`
+  // via the `_vfRectForTest` hook instead (same function, same live inputs `_vfRender` uses).
+  const rectNow = await page.evaluate(() => window.APP.cinemaPathEditor._vfRectForTest());
   const vfAspectNow = (await page.evaluate(() => window.APP.cinemaPathEditor._probeVF())).vfCamAspect;
   let rectAspectDiff = null, rectW = null, rectH = null;
-  if (traceLine) {
-    const mw = traceLine.match(/\bw=(-?\d+(?:\.\d+)?)/), mh = traceLine.match(/\bh=(-?\d+(?:\.\d+)?)/);
-    if (mw && mh) {
-      rectW = parseFloat(mw[1]); rectH = parseFloat(mh[1]);
-      rectAspectDiff = Math.abs((rectW / rectH) - vfAspectNow);
-    }
+  if (rectNow) {
+    rectW = rectNow.w; rectH = rectNow.h;
+    rectAspectDiff = Math.abs((rectW / rectH) - vfAspectNow);
   }
   P('G-VF-RECT-ASPECT the scissor/viewport rect\'s own aspect is bit-identical to vfCam.aspect — zero stretch',
     rectAspectDiff != null && rectAspectDiff < 1e-9,
     `rectW=${rectW} rectH=${rectH} rectAspect=${rectW != null ? (rectW / rectH).toFixed(6) : 'n/a'} vfCamAspect=${vfAspectNow} diff=${rectAspectDiff}`);
 
-  // ── G-VF-FRAME-CRAFT: §CPE_VF_FRAME_CRAFT (2026-08-06, user: "since the fov inframe pov works,
-  // just remove the outer pov frame that is ajar... craft back to the working fov screen frame") —
-  // G-VF-RECT-ASPECT above proves the RENDERED CONTENT's own rect matches vfCam.aspect exactly; this
-  // proves the VISIBLE BORDER (the CSS box the user actually sees, `getBoundingClientRect()`) ALSO
-  // matches it exactly — the two were previously independent (border stayed at the raw CSS default,
-  // 300x190, while the content's true aspect was the rounded w/h) and could disagree by ~0.2%, which
-  // is exactly what "frame smaller than the fov" describes. Bit-exact tolerance, not "close".
-  const frameCraft = await page.evaluate(() => {
+  // ── G-VF-PLAIN-FRAME: §CPE_VF_PLAIN_FRAME (2026-08-06) — retires G-VF-FRAME-CRAFT. The user
+  // decided to STOP chasing a pixel-exact border-to-content fit (root cause on record: B shares the
+  // main renderer's full-canvas post pass — a real fix needs B's own WebGLRenderer, out of scope);
+  // the border is now a deliberate plain picture frame. ISSUE THIS PROVES: (a) the plain styling is
+  // live (thin 1px white border, 12px rounded corners — not the old 2px #4fc3f7 / 4px), and (b) the
+  // §CPE_VF_FRAME_CRAFT write-back is really gone: the panel's INLINE style width/height still read
+  // exactly the fixed default after real rendered frames (crafting used to overwrite them with
+  // full-precision floats — e.g. "299.27007299270077px" — on the first frame the rect disagreed).
+  const plainFrame = await page.evaluate(() => {
     const panel = document.getElementById('cpe-vf-panel');
-    const r = panel.getBoundingClientRect();
-    return { borderAspect: r.width / r.height, vfCamAspect: window.APP.cinemaPathEditor._probeVF().vfCamAspect };
+    const cs = getComputedStyle(panel);
+    return { borderW: cs.borderTopWidth, borderColor: cs.borderTopColor, radius: cs.borderTopLeftRadius,
+             inlineW: panel.style.width, inlineH: panel.style.height };
   });
-  const frameCraftDiff = Math.abs(frameCraft.borderAspect - frameCraft.vfCamAspect);
-  // Tolerance, not bit-exact: `_vfComputeAndCraftRect` writes a full-precision float into
-  // `style.width`/`style.height`, but the browser's own layout engine requantizes CSS lengths to its
-  // internal sub-pixel unit on readback (`getBoundingClientRect()`) — a real, unavoidable precision
-  // floor distinct from the w/h integer-rounding G-VF-ASPECT already documents. Measured ~1.3e-4,
-  // still ~14x tighter than the ~1.8e-3 gap this fix closes (G-VF-ASPECT's own diff) — 1e-3
-  // comfortably covers the quantization floor while still proving the frame tracks the content, not
-  // the old independent ~0.2% mismatch.
-  P('G-VF-FRAME-CRAFT the VISIBLE border\'s own aspect matches vfCam.aspect within CSS sub-pixel precision — the frame is crafted from the content, not an independent guess',
-    frameCraftDiff < 1e-3,
-    `borderAspect=${frameCraft.borderAspect.toFixed(9)} vfCamAspect=${frameCraft.vfCamAspect.toFixed(9)} diff=${frameCraftDiff.toExponential(2)}`);
+  P('G-VF-PLAIN-FRAME plain thin white rounded border, and no frame-craft write-back to the panel\'s inline size',
+    plainFrame.borderW === '1px' && plainFrame.radius === '12px' &&
+    plainFrame.borderColor === 'rgba(255, 255, 255, 0.85)' &&
+    plainFrame.inlineW === '300px' && plainFrame.inlineH === '190px',
+    `borderW=${plainFrame.borderW} radius=${plainFrame.radius} color=${plainFrame.borderColor} inlineW=${plainFrame.inlineW} inlineH=${plainFrame.inlineH} (inline size at the fixed default proves nothing wrote it back after creation)`);
 
   // ── G-CPE-FIXED-PANELS: §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont
   // make it movable... both can simply be removed by the eye icon") — retires G-VF-DRAG-WAKES-RENDER,
@@ -763,15 +758,9 @@ async function gates(browser, BLD, repoDir) {
     recheck.tmOn === false && recheck.scrub === true,
     `tmOnAfterRecheck=${recheck.tmOn} scrubStillPresent=${recheck.scrub}`);
 
-  // ── G-VF-FRAME-DIAG: informational only (Issue 2, "not well framed") — summarize every
-  // §CPE_VF_FRAME_DIAG line logged during this whole run (scrubbing + the real rehearsal above
-  // already sampled several tn values). Not pass/fail: position/fov/aspect are ALREADY proven
-  // correct by G-VF-1/G-VF-ASPECT/G-VF-RECT-ASPECT, so there is no known-correct "frame fraction" to
-  // assert against yet — this just puts the real numbers on record for the doc/next live repro.
-  const frameDiagLines = logs.filter(l => l.startsWith('§CPE_VF_FRAME_DIAG'));
-  P('G-VF-FRAME-DIAG (informational) composition samples logged across the run, zero crashes',
-    !logs.some(l => l.startsWith('§CPE_VF_FRAME_DIAG_ERR')),
-    `samples=${frameDiagLines.length} ` + frameDiagLines.map(l => l.replace('§CPE_VF_FRAME_DIAG ', '')).join(' | '));
+  // (G-VF-FRAME-DIAG retired 2026-08-06 — the §CPE_VF_FRAME_DIAG raycast diagnostic it summarized
+  // was removed from _vfRender with §CPE_VF_PLAIN_FRAME, along with §CPE_VF_ALIGN_DIAG(_V2) and
+  // §CPE_VF_RENDER_TRACE: the fit/framing chase those instrumented is abandoned by user decision.)
 
   // ── G-SCRUB-CLOSE-TEARDOWN: closing the editor (Cancel) removes the scrub panel ─────────────────
   await page.evaluate(() => document.getElementById('cpe-cancel').click());
