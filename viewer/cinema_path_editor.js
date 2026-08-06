@@ -2461,13 +2461,49 @@
   }
   // Screen-space proximity, not a mesh raycast: the handles draw with depthTest:false so they are
   // clickable through walls, and a depth-sorted raycast would disagree with what is actually visible.
+  //
+  // ══ §CPE_GRAB_WYSIWYG (2026-08-06) — the grab zone is the DRAWN sphere, never smaller than
+  // GRAB_PX. Implementing CINEMA_PATH_EDITOR.md's own §CPE_STICK_ANCHOR doctrine ("what you grab is
+  // what you see") — Witness: witness_cpe_stick_after_preview.js.
+  //
+  // THE DEFECT: GRAB_PX alone is a FIXED 18px around the handle's CENTRE, while the sphere itself
+  // renders HANDLE_R x drawScale METRES — a screen size that grows as the camera closes in. At real
+  // editing range (user's own §PICK d=11.89 proves ~12m; measured 57.7 px/m there) a HELD handle
+  // paints 21px of radius, 37px at the selection pulse's 1.8x peak — so MOST of the visible blob
+  // was a dead zone. A click landing 19-37px off-centre — ON the sphere the user sees — returned
+  // no handle, fell through h.down unclaimed, and the viewer's model picker consumed the gesture
+  // (§PICK/§BATCHED_PICK/§FOCUS_ELEM stealing the drag; §CPE_AIM_PIN used to swallow these near
+  // misses until #1228 disabled it, which is what made the fall-through visible). The sequence
+  // "drag works, preview, drag falls to the picker" is this: the FIRST grab is on an unheld
+  // 15.6px blob (≈ inside GRAB_PX), the drag leaves the band HELD+pulsing (up to 2.4x bigger on
+  // screen, same 18px zone), and the next grab attempt — after the rehearsal, in the user's
+  // workflow — aims at blob pixels that were never grabbable. Far away nothing changes: the
+  // projected radius shrinks below 18px and GRAB_PX stays the floor.
+  function _handleGrabPx(h) {
+    var a = A(), r = a.canvas.getBoundingClientRect();
+    var D = Math.hypot(h.p.x - a.camera.position.x, h.p.y - a.camera.position.y, h.p.z - a.camera.position.z);
+    if (!(D > 1e-3)) return GRAB_PX;
+    var pxPerM = r.height / (2 * D * Math.tan(a.camera.fov * Math.PI / 360));
+    // The mesh's own geometry radius IS the drawn radius (HANDLE_R x the draw scale _redrawScene
+    // chose — held/mid/end differ), read back rather than re-derived so draw and grab cannot drift.
+    var geoR = (h.mesh && h.mesh.geometry && h.mesh.geometry.parameters &&
+                isFinite(h.mesh.geometry.parameters.radius)) ? h.mesh.geometry.parameters.radius : HANDLE_R;
+    // The held handle BREATHES (mesh.scale 1..1.8 at PULSE_HZ, see _pulse). The user aims at the
+    // breathing blob as a whole, so its OUTER envelope is the honest target — and a constant, so
+    // the zone never depends on which pulse phase a pointerdown happens to sample.
+    var held = _state.held && _state.held.b === h.b && _state.held.z === h.z;
+    return Math.max(GRAB_PX, geoR * (held ? 1.8 : 1) * pxPerM + 2);
+  }
   function _hitTest(ev) {
-    var best = null, bestD = GRAB_PX;
+    // Nearness is scored relative to each handle's OWN grab radius (score < 1 = inside it), so a
+    // big near blob cannot shadow a small far one that the cursor is actually inside.
+    var best = null, bestScore = 1;
     for (var i = 0; i < _state.handles.length; i++) {
       var h = _state.handles[i], s = _screenOf(h.p);
       if (s.behind) continue;
       var d = Math.hypot(ev.clientX - s.x, ev.clientY - s.y);
-      if (d < bestD) { bestD = d; best = h; }
+      var score = d / _handleGrabPx(h);
+      if (score < bestScore) { bestScore = score; best = h; }
     }
     return best;
   }
