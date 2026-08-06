@@ -33,7 +33,12 @@ const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8460;
 const BUILDINGS = (process.env.BLDS || 'Duplex').split(',');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const TOL = 0.51;   // sub-pixel slack: the rect is integer device-px, the boxes are fractional CSS px
+// §CPE_VF_STACK (2026-08-06) — the tolerance is GONE. It existed because the panel's content box was
+// authored off the device-pixel grid, so an integer scissor rect could only ever approximate it (the
+// user, rightly: "Why can't a calculation be made accurately - it is just geometry"). The box is now
+// snapped to multiples of 1/devicePixelRatio at creation, so the rect is exact BY CONSTRUCTION at any
+// ratio. EXACT is the gate; a residual of even a fifth of a pixel is a regression, not rounding.
+const TOL = 1e-6;
 
 async function openEditor(browser, BLD) {
   const page = await browser.newPage();
@@ -45,7 +50,13 @@ async function openEditor(browser, BLD) {
   const cdp = await page.createCDPSession();
   await cdp.send('Network.enable');
   await cdp.send('Network.setBypassServiceWorker', { bypass: true });
-  await page.setViewport({ width: 1200, height: 700 });
+  // §CPE_VF_GRIP: the user's own live geometry is reproducible — their log gives canvas 1483x769 and
+  // a 1853x961 bake, i.e. devicePixelRatio 1.25. Rounding error in the rect is a FUNCTION of pr, so a
+  // witness that only ever runs at pr=1 cannot see a defect that only bites at 1.25.
+  await page.setViewport({
+    width: +(process.env.VW || 1200), height: +(process.env.VH || 700),
+    deviceScaleFactor: +(process.env.DPR || 1)
+  });
   const logs = [];
   page.on('console', m => logs.push(m.text()));
   page.on('pageerror', e => logs.push('PAGEERROR ' + e.message));
@@ -164,6 +175,34 @@ async function gates(browser, BLD) {
     gotInset + TOL >= needInset,
     `radius=${f(m.radius)}px needInset=${f(needInset)}px gotInset=${f(gotInset)}px ` +
     `(max radial poke pre-fix = ${f(Math.max(0, needInset - gotInset))}px per corner)`);
+
+  // ── G-GRIP-GRID: the content box lands on WHOLE device pixels. This is the property that makes
+  // the rect exact; without it the four gates above can only ever be "close".
+  const dev = { w: m.visible.width * m.pr, h: m.visible.height * m.pr };
+  const offGrid = Math.max(Math.abs(dev.w - Math.round(dev.w)), Math.abs(dev.h - Math.round(dev.h)));
+  P('G-GRIP-GRID the visible picture box measures a WHOLE number of device pixels — the precondition for an exact scissor rect',
+    offGrid <= 1e-6,
+    `contentDevicePx=${dev.w.toFixed(4)}x${dev.h.toFixed(4)} worstFraction=${offGrid.toFixed(4)} | ` +
+    `contentCssPx=${f(m.visible.width)}x${f(m.visible.height)} pr=${m.pr} grid=${(1 / m.pr).toFixed(3)}px`);
+
+  // ── G-GRIP-FUSED: §CPE_VF_STACK — the timeline bar is flush against B's bottom border, same left
+  // and width, sharing that border as the divider. Pre-fix the two panels computed their own tops
+  // and were clamped independently, which on the user's live layout OVERLAPPED B's picture by 22px.
+  const fuse = await page.evaluate(() => {
+    const p = document.getElementById('cpe-vf-panel'), s = document.getElementById('cpe-scrub-panel');
+    if (!p || !s) return { err: !p ? 'no vf panel' : 'no scrub panel' };
+    const pr = p.getBoundingClientRect(), sr = s.getBoundingClientRect();
+    const cs = getComputedStyle(s);
+    return { gap: sr.top - pr.bottom, dLeft: sr.left - pr.left, dWidth: sr.width - pr.width,
+             borderTop: cs.borderTopWidth, stackBottom: sr.bottom, vh: window.innerHeight };
+  });
+  P('G-GRIP-FUSED the timeline bar is fused to B\'s bottom border — zero gap, zero overlap, same left and width',
+    !fuse.err && Math.abs(fuse.gap) <= 0.01 && Math.abs(fuse.dLeft) <= 0.01 &&
+      Math.abs(fuse.dWidth) <= 0.01 && parseFloat(fuse.borderTop) === 0,
+    fuse.err ? `err=${fuse.err}` :
+    `gap=${f(fuse.gap)}px (0 = fused; NEGATIVE = the bar is overlapping the picture, the pre-fix bug) ` +
+    `dLeft=${f(fuse.dLeft)} dWidth=${f(fuse.dWidth)} barBorderTop=${fuse.borderTop} | ` +
+    `stackBottom=${f(fuse.stackBottom)} of viewport ${fuse.vh} (must sit inside it, not clamp over B)`);
 
   await page.close();
   return checks;
