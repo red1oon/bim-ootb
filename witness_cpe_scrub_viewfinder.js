@@ -63,6 +63,19 @@
 //                       frame-fill-fraction numbers across a rehearsal; see CINEMA_PATH_EDITOR.md's
 //                       session writeup for the honest diagnosis (position/fov/aspect all proven
 //                       correct elsewhere in this suite; composition genuinely varies by beat).
+//   G-SCRUB-BK-NOARM  (§CPE_SCRUB_BUILDUP_SYNC, 2026-08-06, conservative half) with BuildUp checked
+//                       but Time Machine NEVER yet activated (no Play this session), a scrub stays
+//                       pose-only: tmGetState().active remains false — a drag must not become a
+//                       second, silent TM opener (same doctrine as G-CPE-SOLE-OWNER's "only a real
+//                       Play opens Time Machine").
+//   G-SCRUB-BK-CURSOR (§CPE_SCRUB_BUILDUP_SYNC, 2026-08-06, the fix half) user: "During scrub while
+//                       BuildUp is ON, it does not show build up construction process in the small
+//                       pov screen. Only preview play from start does." With TM active (armed by the
+//                       real rehearsal above) and BuildUp on, _scrubTo(tn) now advances
+//                       tmGetState().cursor to the SAME bkMs step() computes for that tn
+//                       (buildupTAt -> buildupCursorAt), and two scrubs at increasing tn produce
+//                       strictly increasing cursors. Before the fix the cursor was byte-identical
+//                       across any scrub — the frozen-reveal bug, numerically.
 //   G-VF-1     B's camera pose at tn matches the main camera's exact pose at that instant DURING A
 //              REAL REHEARSAL — one pose source, both fed by the same _applyCameraPose call.
 //              Unaffected by any of this session's changes — same mechanism as before.
@@ -358,6 +371,22 @@ async function gates(browser, BLD, repoDir) {
     if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
   });
   await sleep(200);
+
+  // ── G-SCRUB-BK-NOARM: §CPE_SCRUB_BUILDUP_SYNC conservative half — BuildUp is now CHECKED (just
+  // above) but no Play has run yet this session, so Time Machine has never been activated
+  // (G-CPE-SOLE-OWNER's recheck gate proves the checkbox alone never opens it). A scrub here must
+  // stay pose-only: no TM auto-arm from a drag. Asserted BEFORE the flight below arms TM for real.
+  const noArm = await page.evaluate(() => {
+    const before = window.tmGetState();
+    window.APP.cinemaPathEditor._scrubTo(0.33);
+    const after = window.tmGetState();
+    return { activeBefore: before.active, activeAfter: after.active,
+             cursorBefore: before.cursor, cursorAfter: after.cursor };
+  });
+  P('G-SCRUB-BK-NOARM a scrub with BuildUp on but TM never activated does NOT arm Time Machine (pose-only, pre-fix behaviour preserved)',
+    noArm.activeBefore === false && noArm.activeAfter === false && noArm.cursorBefore === noArm.cursorAfter,
+    `tmActiveBefore=${noArm.activeBefore} tmActiveAfter=${noArm.activeAfter} cursorBefore=${noArm.cursorBefore} cursorAfter=${noArm.cursorAfter}`);
+
   const vf2mark = logs.length;
   await page.evaluate(() => { const el = document.getElementById('cpe-vf-clock'); if (el) el.textContent = ''; });
   // ── G-SCRUB-PLAY-POVONLY setup: main camera pose captured BEFORE the transport-button flight
@@ -493,6 +522,46 @@ async function gates(browser, BLD, repoDir) {
   P('G-VF-2b live: B\'s readout equals Time Machine\'s own cursor at the same instant (no drift)',
     vf2.tmMs == null ? true : readoutDay === tmDay,
     `readout="${readoutDay}" tmGetState().cursor day="${tmDay}" tmMs=${vf2.tmMs}`);
+
+  // ── G-SCRUB-BK-CURSOR: §CPE_SCRUB_BUILDUP_SYNC, the fix half. TM is ACTIVE here (the real
+  // rehearsal above armed it via tmActivateForBake, and nothing closes it until G-CPE-SOLE-OWNER
+  // below) and BuildUp is still checked; the flight has COMPLETED (§CPE_PREVIEW done awaited above),
+  // so no step() races the cursor writes. Before the fix, _scrubTo moved only vfCam and
+  // tmGetState().cursor stayed byte-identical across any scrub — the user's "does not show build up
+  // construction process, only preview play from start does", numerically. Expected values are
+  // computed with the SAME shared pure helpers step() calls (APP.buildupTAt -> APP.buildupCursorAt,
+  // plan via the read-only _probePlanRef hook), independent of _scrubTo's own internals — pre-fix,
+  // this comparison fails because the cursor never moves at all.
+  const bkScrub = await page.evaluate(() => {
+    const cpe = window.APP.cinemaPathEditor, APP = window.APP;
+    const plan = cpe._probePlanRef();
+    const exp = tn => {
+      const bkTn = APP.buildupTAt ? APP.buildupTAt(tn, plan) : tn;
+      const ts = window.tmGetState();
+      const raw = APP.buildupCursorAt ? APP.buildupCursorAt(bkTn, ts)
+        : (ts.projectStart + bkTn * (ts.projectEnd - ts.projectStart));
+      return Math.max(ts.projectStart, Math.min(ts.projectEnd, raw));   // tmSetCursor's own clamp
+    };
+    const active = window.tmGetState().active;
+    const cursor0 = window.tmGetState().cursor;
+    const expA = exp(0.25);
+    cpe._scrubTo(0.25);
+    const cursorA = window.tmGetState().cursor;
+    const expB = exp(0.75);
+    cpe._scrubTo(0.75);
+    const cursorB = window.tmGetState().cursor;
+    return { active, cursor0, expA, cursorA, expB, cursorB };
+  });
+  const bkDiffA = Math.abs(bkScrub.cursorA - bkScrub.expA);
+  const bkDiffB = Math.abs(bkScrub.cursorB - bkScrub.expB);
+  const bkOrderOk = bkScrub.expB > bkScrub.expA ? bkScrub.cursorB > bkScrub.cursorA
+                                                : bkScrub.cursorB >= bkScrub.cursorA;
+  P('G-SCRUB-BK-CURSOR a scrub with BuildUp on + TM active advances the construction cursor to the SAME bkMs step() computes for that tn',
+    bkScrub.active === true && bkDiffA <= 1 && bkDiffB <= 1 && bkOrderOk,
+    `tmActive=${bkScrub.active} cursorBeforeAnyScrub=${Math.round(bkScrub.cursor0)} | ` +
+    `scrub(0.25): expected=${Math.round(bkScrub.expA)} got=${Math.round(bkScrub.cursorA)} diffMs=${bkDiffA} | ` +
+    `scrub(0.75): expected=${Math.round(bkScrub.expB)} got=${Math.round(bkScrub.cursorB)} diffMs=${bkDiffB} | ` +
+    `orderOk=${bkOrderOk} (cursor tracks tn, not frozen)`);
 
   // ── G-PERF-1a: measured ms/frame ─────────────────────────────────────────────────────────────
   const perfLine = logs.slice(vf2mark).filter(l => l.startsWith('§CPE_VF_PERF')).pop();

@@ -1306,12 +1306,58 @@
     return p;
   }
 
+  // §CPE_SCRUB_BUILDUP_SYNC (2026-08-06) — Implementing CINEMA_PATH_EDITOR.md §CPE_BUILDUP scrub gap
+  // — Witness: G-SCRUB-BK-CURSOR / G-SCRUB-BK-NOARM. User: "During scrub while BuildUp is ON, it does
+  // not show build up construction process in the small pov screen. Only preview play from start
+  // does." Root cause: the cursor-driving triple (buildupTAt -> buildupCursorAt -> tmSetCursor) lived
+  // ONLY inside _previewFly()'s step() closure, gated on its private `bkPrev` — _scrubTo moved vfCam
+  // and nothing else, so a drag flew B through space while the construction reveal stayed frozen.
+  // This derives the SAME cursor step() computes for the same tn and sets it through the same ONE
+  // public setter (`window.tmSetCursor` — "renderAtTime() is internal by design").
+  //
+  // Deliberately gated on Time Machine being ALREADY ACTIVE (`tmGetState().active`): a scrub does NOT
+  // auto-arm TM (no async tmActivateForBake here) — before the first real Play this session, a drag
+  // stays pose-only, exactly the pre-fix behaviour. Same ownership doctrine as §CPE_BUILDUP_OWNS_TM /
+  // G-CPE-SOLE-OWNER's "only a real Play opens Time Machine" — a drag must not become a second,
+  // silent TM opener racing the checkbox handler.
+  //
+  // bkState arg: `window.tmGetState()` — its projectStart/projectEnd are the same real playback
+  // bounds tmFollowTimeline() reports (time_machine.js `_projectStart`/`_projectEnd`), and
+  // buildupCursorAt (`_workCursorAt`) only reads them on its non-work-paced degrade branch anyway
+  // (the work-paced branch indexes its own `_wpSched`, ignoring bkState entirely).
+  function _scrubBuildupSync(tn) {
+    var s = _state;
+    if (!s || !s.buildup) return null;
+    if (typeof window.tmGetState !== 'function' || typeof window.tmSetCursor !== 'function') return null;
+    var ts = window.tmGetState();
+    if (!ts.active) return null;   // conservative: never arm TM from a scrub — see block comment
+    var a = A();
+    var bkTn = a.buildupTAt ? a.buildupTAt(tn, s.plan) : tn;
+    var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, ts)
+      : (ts.projectStart + bkTn * (ts.projectEnd - ts.projectStart));
+    window.tmSetCursor(bkMs);
+    // Same order as step(): readout refreshed AFTER this call's tmSetCursor, reading the cursor this
+    // very call just set (G-VF-2's "a READ of the cursor already set, never a second clock") — without
+    // this, a scrub/stick-click leaves B's day readout showing the PREVIOUS frame's cursor until the
+    // next rehearsal frame happens to run (caught live by G-VF-2b on the first fix run: readout
+    // 2026-07-10 vs cursor 2026-07-13 right after a stick-click's _scrubTo moved the cursor).
+    if (s.vfOn) _vfUpdateReadout();
+    console.log('§CPE_SCRUB_BUILDUP tn=' + tn.toFixed(3) + ' bkTn=' + bkTn.toFixed(3) +
+      ' bkMs=' + Math.round(bkMs) + ' cursorNow=' + Math.round(window.tmGetState().cursor) +
+      ' — scrub drives the SAME cursor step() drives, not a second clock');
+    return bkMs;
+  }
+
   function _scrubTo(tn) {
     if (!_state) return null;
     tn = Math.max(0, Math.min(1, tn));
     _state.scrubTn = tn;
     _renderScrub();
-    return _applyVFPose(tn);
+    var p = _applyVFPose(tn);
+    // §CPE_SCRUB_BUILDUP_SYNC — AFTER the pose, mirroring step()'s own order (pose first, cursor
+    // second; §CPE_VIEWFINDER's readout reads the cursor set this same call).
+    _scrubBuildupSync(tn);
+    return p;
   }
 
   function _wireScrub(track) {
@@ -3114,6 +3160,10 @@
         // scrub, B) samples, called directly and read-only (mutates nothing), same precedent as
         // `_probeOverride`/`_probeLengths` above.
         _probePoseAt: function(tn) { return (_state && _state.plan) ? _state.plan.poseAt(tn) : null; },
+        // §CPE_SCRUB_BUILDUP_SYNC's G-SCRUB-BK-CURSOR: read-only reference to the live plan, so the
+        // witness can compute the EXPECTED cursor via the same shared pure helpers step() calls
+        // (APP.buildupTAt needs the plan for the topout remap) — in-page use only, never serialized.
+        _probePlanRef: function() { return _state ? _state.plan : null; },
         _probeScrub: function() {
           if (!_state) return null;
           return {
