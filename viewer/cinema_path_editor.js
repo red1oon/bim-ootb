@@ -53,7 +53,8 @@
   // width matches B's so the two stack cleanly; default position is directly below B's own default
   // rect (user: "outside on its own or below the POV") — independent of whether B is actually open.
   var SCRUB_PANEL_W = VF_DEFAULT_W;              // px
-  var SCRUB_PANEL_GAP = 8;                       // px between B's default rect and the scrub panel
+  // SCRUB_PANEL_GAP retired 2026-08-06 (§CPE_VF_STACK) — the bar is FUSED to B's bottom border,
+  // sharing it as the divider, so there is no gap left to size.
   // ══════════════════════════════════════════════════════════════════════════════════════════════
   // CPE_V changelog (2026-08-06: moved out of the console.log — the full history was printing on
   // every page load, ~4KB of text nobody was reading; kept here verbatim, nothing dropped, still
@@ -1200,7 +1201,12 @@
     // §CPE_FIXED_PANELS (2026-08-06, user: "fixed on the bottom left... dont make it movable...
     // both can simply be removed by the eye icon for better canvas") — dragging retired entirely.
     // Always the same default rect; the eye icon is the one and only way to clear the canvas of it.
-    var rect = { left: VF_MARGIN, top: vfDefaultTop + VF_DEFAULT_H + SCRUB_PANEL_GAP };
+    // §CPE_VF_STACK (2026-08-06): this is a PROVISIONAL rect only — _vfLayoutStack() overwrites
+    // left/top/width the moment both panels exist, fusing this bar to B's bottom border. It used to
+    // be the real position, computed from its OWN copy of vfDefaultTop and then clamped
+    // independently, which is exactly how it ended up overlapping B's picture by 22px on the user's
+    // layout. SCRUB_PANEL_GAP is retired with it — a fused bar has no gap to size.
+    var rect = { left: VF_MARGIN, top: vfDefaultTop + VF_DEFAULT_H };
     var d = document.createElement('div');
     d.id = 'cpe-scrub-panel';
     // z-index above #cpe-panel's 10000 (user: "the scrub timeline should be above all as it got
@@ -1223,13 +1229,21 @@
           'border:1px solid #3a3f47;border-radius:3px;cursor:pointer;user-select:none"></div>' +
       '</div>';
     document.body.appendChild(d);
-    _clampPanelToViewport(d);
+    // §CPE_VF_STACK owns final geometry (and bottom-anchors the fused stack inside the viewport),
+    // so the independent per-panel clamp that used to run here is retired — two panels clamped
+    // separately is what let them collide.
     // §CPE_SCRUB_PANEL_LOG (2026-08-05) — this panel had ZERO creation logging at all (silent
     // build), so a "scrubber is missing" report had no console evidence to confirm even DOM
     // existence, let alone position — mirrors #cpe-panel's own §CPE_PANEL_DRAGGABLE log shape.
     // `bottomOverflowPx` catches the panel's default vertical anchor (computed off B's default top)
     // running past window.innerHeight — would read as "gone" without ever logging why.
-    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED rect.
+    // §CPE_VF_STACK (2026-08-06): the rect this logs must be the FINAL one. The position set during
+    // the build above is provisional — the fused stack cannot be laid out until this bar exists and
+    // its content-driven height can be measured — so logging here without laying out first reported
+    // the provisional rect and its `bottomOverflowPx=9`, describing a position the user never sees.
+    // A log that reports a state the code has already moved past is worse than no log. Lay out, then
+    // measure, then report. (B's panel is always built before this one, so the stack is complete.)
+    _vfLayoutStack();
     var _cr0 = d.getBoundingClientRect();
     console.log('§CPE_SCRUB_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
       ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
@@ -1461,12 +1475,102 @@
   // hand-tune the estimate again (same class of bug), measure the REAL rect after append and clamp
   // against the actual viewport — robust to content changes. §CPE_FIXED_PANELS (2026-08-06) removed
   // dragging entirely, so this now runs unconditionally — every open uses the default rect.
-  function _clampPanelToViewport(d) {
-    var r = d.getBoundingClientRect();
-    var overflowBottom = r.bottom - (window.innerHeight - VF_MARGIN);
-    if (overflowBottom > 0) d.style.top = (r.top - overflowBottom) + 'px';
-    var overflowRight = r.right - (window.innerWidth - VF_MARGIN);
-    if (overflowRight > 0) d.style.left = (r.left - overflowRight) + 'px';
+  // ══ §CPE_VF_STACK (2026-08-06) — ONE owner for both panels' geometry ═══════════════════════════
+  // User: "the preview bar should be fused to the bottom border of the pov rect for smart look" and
+  // "Why can't a calculation be made accurately - it is just geometry".
+  //
+  // Both answers live here, because both problems had the same cause: the two panels each computed
+  // their own `vfDefaultTop` from the same duplicated expression (was at _buildScrubPanel and
+  // _buildVFPanel), then each got clamped to the viewport INDEPENDENTLY. On the user's own live
+  // layout that produced an OVERLAP, not a gap — their log: B at top=523 h=190 (bottom 713) with
+  // the scrub panel clamped up to top=691, so the bar sat over the bottom 22px of the picture.
+  // Two panels cannot be kept adjacent by two separate calculations; one calculation owns both.
+  //
+  // AND the geometry is now EXACT, not rounded. A WebGL scissor rect must be whole DEVICE pixels,
+  // but the panel's content box was authored in CSS px (298x166 at 17,546) which at the user's
+  // devicePixelRatio of 1.25 lands on 372.5x207.5 device px at 21.25,682.5 — off the pixel grid, so
+  // no integer rect can equal it and rounding was the only thing left (measured residual: 0.20px
+  // even after rounding the edges rather than origin+size). The fix is to stop authoring an
+  // off-grid box: SNAP the content box to multiples of 1/devicePixelRatio, once, here. Then
+  // `_vfComputeRect`'s multiply-and-round is exact by construction at any ratio — zero error, no
+  // rounding involved. The picture cannot be "slightly larger than the frame" because the two are
+  // the same rectangle.
+  //
+  // This writes the panels' inline geometry ONCE, at creation. That is NOT a return of the retired
+  // §CPE_VF_FRAME_CRAFT write-back, which recomputed and rewrote full-precision floats on EVERY
+  // rendered frame while chasing a fit it never reached — see G-VF-PLAIN-FRAME, which still gates
+  // that the size is stable across rendered frames.
+  function _vfLayoutStack() {
+    var a = A();
+    var panel = document.getElementById('cpe-vf-panel');
+    if (!panel || !a.canvas || !a.renderer) return null;
+    var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+    if (!(pr > 0)) pr = 1;
+    // §CPE_VF_GRID_STEP — the snap step is NOT simply one device pixel (1/pr). CSS lengths are
+    // quantised by the engine to 1/64 px (Blink's LayoutUnit), so a box can only land on whole
+    // device pixels if its edges are ALSO expressible in 64ths. At pr=1.25 one device pixel is
+    // 0.8 CSS px = 51.2/64 — not an integer number of 64ths, so snapping to 0.8 is silently
+    // re-quantised by layout and the box comes back 298.39 CSS px = 372.988 device px, still off
+    // the grid (measured, witness_cpe_vf_grip.js G-GRIP-GRID). The correct step is the SMALLEST
+    // length that is both a whole number of device px and a whole number of 64ths: n/pr for the
+    // least integer n making 64n/pr integral. That is 4px at pr=1.25, 2px at 1.5, 1px at 1,
+    // 0.5px at 2. Derived, not tabulated — any future ratio resolves itself.
+    var q = 1 / pr;
+    for (var _n = 1; _n <= 64; _n++) {
+      var _u = 64 * _n / pr;
+      if (Math.abs(_u - Math.round(_u)) < 1e-9) { q = _n / pr; break; }
+    }
+    var snap = function (v) { return Math.round(v / q) * q; };
+    var cR = a.canvas.getBoundingClientRect();
+    var cs = getComputedStyle(panel);
+    var bl = parseFloat(cs.borderLeftWidth) || 0, br = parseFloat(cs.borderRightWidth) || 0;
+    var bt = parseFloat(cs.borderTopWidth) || 0, bb = parseFloat(cs.borderBottomWidth) || 0;
+    var title = document.getElementById('cpe-vf-title');
+    var titleH = title ? title.offsetHeight : 0;
+    var scrub = document.getElementById('cpe-scrub-panel');
+    // The scrub panel has no authored height — it is content-sized, so it must be MEASURED before
+    // the stack can be bottom-anchored. Zero when the eye is on but the bar has not been built yet.
+    var scrubH = scrub ? scrub.getBoundingClientRect().height : 0;
+
+    // Content box, snapped to the device grid. Size first: both are grid multiples, so the far
+    // edges land on the grid as soon as the near edges do.
+    var cw = Math.max(q, snap(VF_DEFAULT_W - bl - br));
+    var ch = Math.max(q, snap(VF_DEFAULT_H - bt - bb - titleH));
+    var panelW = cw + bl + br, panelH = ch + bt + bb + titleH;
+    // The whole fused stack sits VF_MARGIN above the bottom of the viewport — B on top, the bar
+    // flush beneath it. Anchoring the STACK (not each panel) is what removes the clamp collision.
+    var wantTop = (window.innerHeight || cR.height) - VF_MARGIN - scrubH - panelH;
+    // Grid-snap relative to the CANVAS origin, because that is the origin `_vfComputeRect` measures
+    // from — snapping against the viewport instead would leave a fractional canvas offset in.
+    var cx = snap(VF_MARGIN + bl - cR.left), cy = snap(wantTop + bt + titleH - cR.top);
+    var panelL = cR.left + cx - bl, panelT = cR.top + cy - bt - titleH;
+    if (panelT < VF_MARGIN) panelT = cR.top + snap(VF_MARGIN - cR.top);   // tiny viewport: never off-screen
+
+    panel.style.left = panelL + 'px';
+    panel.style.top = panelT + 'px';
+    panel.style.width = panelW + 'px';
+    panel.style.height = panelH + 'px';
+    if (scrub) {
+      // FUSED: flush against B's bottom border, same left and width. The bar drops its own top
+      // border and top corner radii so B's bottom border IS the divider between them — one object
+      // with one outline, rather than two rectangles that happen to be near each other.
+      scrub.style.left = panelL + 'px';
+      scrub.style.top = (panelT + panelH) + 'px';
+      scrub.style.width = panelW + 'px';
+      scrub.style.borderTop = 'none';
+      scrub.style.borderTopLeftRadius = '0';
+      scrub.style.borderTopRightRadius = '0';
+      scrub.style.borderBottomLeftRadius = '0';
+      scrub.style.borderBottomRightRadius = '0';
+      scrub.style.borderColor = 'rgba(255,255,255,0.85)';
+    }
+    console.log('§CPE_VF_STACK pr=' + pr + ' grid=' + q.toFixed(3) + 'px  panel=' + panelL.toFixed(2) + ',' +
+      panelT.toFixed(2) + ' ' + panelW.toFixed(2) + 'x' + panelH.toFixed(2) +
+      '  content=' + cw.toFixed(2) + 'x' + ch.toFixed(2) +
+      ' (device ' + (cw * pr).toFixed(3) + 'x' + (ch * pr).toFixed(3) + ' — whole numbers = exact scissor rect)' +
+      '  scrubH=' + scrubH.toFixed(1) + ' fused=' + !!scrub +
+      '  stackBottom=' + (panelT + panelH + scrubH).toFixed(1) + '/' + (window.innerHeight || 0));
+    return { panelL: panelL, panelT: panelT, panelW: panelW, panelH: panelH, scrubH: scrubH, pr: pr };
   }
   function _buildVFPanel() {
     var a = A();
@@ -1500,7 +1604,9 @@
         'border-bottom:1px solid #4fc3f7;user-select:none">' +
         '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
     document.body.appendChild(d);
-    _clampPanelToViewport(d);
+    // §CPE_VF_STACK owns final geometry (see _vfLayoutStack) and bottom-anchors B + the fused bar
+    // as ONE object, so B's own independent viewport clamp is retired here too. Clamping each panel
+    // separately is precisely what let the bar ride up over B's picture.
     // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation logging (unlike #cpe-panel's own
     // §CPE_PANEL_DRAGGABLE), so the console during a live repro carried no evidence at all for the
     // wrong-default-position bug this same edit fixed. Mirrors #cpe-panel's log shape, plus the
@@ -1556,18 +1662,29 @@
   }
   function _vfComputeRect(canvasR, panelR, pr, inset) {
     var ins = inset || { l: 0, r: 0, t: 0, b: 0 };
-    var cw = Math.max(1, panelR.width - ins.l - ins.r);
-    var ch = Math.max(1, panelR.height - ins.t - ins.b);
     // §CPE_VF_RECT_ASPECT (2026-08-05) derived w from h*trueAspect rather than rounding both, to
     // stop the rect's own aspect drifting ~0.2% from vfCam.aspect. That reason is GONE: `_vfRender`
     // now sets `vfCam.aspect = w / h` from this very rect, so the two agree by definition whatever
-    // the rounding. Deriving w from h now does active harm — it lets w miss the content box by up
-    // to a pixel, which is exactly the sub-pixel bleed this fix exists to remove. Round both
-    // independently against the box each one belongs to.
-    var w = Math.max(1, Math.round(cw * pr));
-    var h = Math.max(1, Math.round(ch * pr));
+    // the rounding.
+    //
+    // §CPE_VF_GRIP_DPR (2026-08-06) — round the four EDGES, never an origin plus a size. Rounding
+    // `x` and `w` independently lets their errors COMPOUND: each is within half a device pixel of
+    // truth on its own, but `x + w` can then land a FULL device pixel past the box's right edge.
+    // Measured live at the user's own devicePixelRatio of 1.25 (their log: canvas 1483x769, bake
+    // 1853x961), content box 298x166 at (17,546):
+    //     round(546*1.25)=683 -> top  546.40   (0.40px low)
+    //     round(166*1.25)=208 -> bottom 712.80 (0.80px past the box, > the 1px border can cover)
+    // and the picture visibly sat proud of its frame — "screen slightly larger then the frame
+    // itself". It passed at pr 1, 1.5 and 2, which is why the first fix looked complete: those
+    // ratios happen to divide the box exactly. Rounding each edge to the device-pixel grid caps the
+    // error at 0.5 device px per edge — provably the best an integer rect can do, and always inside
+    // the 1px border, so any residual is covered by the frame rather than showing past it.
     var x = Math.round((panelR.left + ins.l - canvasR.left) * pr);
+    var x1 = Math.round((panelR.right - ins.r - canvasR.left) * pr);
     var yTop = Math.round((panelR.top + ins.t - canvasR.top) * pr);
+    var y1 = Math.round((panelR.bottom - ins.b - canvasR.top) * pr);
+    var w = Math.max(1, x1 - x);
+    var h = Math.max(1, y1 - yTop);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
     return { x: x, y: y, w: w, h: h, canvasH: canvasH };
@@ -1584,6 +1701,17 @@
     var t0 = performance.now();
     var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
     var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+    // §CPE_VF_STACK — the panel's box is snapped to a grid DERIVED FROM the pixel ratio, so a ratio
+    // that changes after layout silently un-snaps it and exactness is lost until the next relayout.
+    // This is not hypothetical: the renderer drops its pixel ratio on orbit-drag (§CPE_VF_DPR_GUARD),
+    // and a window moved between monitors, or a browser zoom, changes it too. Caught by G-VF-ASPECT,
+    // which sets 1.37 mid-run and measured the box drifting to 1.8018 against a true 1.7952.
+    // Relayout on change only — a plain equality check on a number, per frame, when nothing changed.
+    if (_state._vfPr !== pr) {
+      _state._vfPr = pr;
+      _vfLayoutStack();
+      panelR = panel.getBoundingClientRect();
+    }
     // Scissor-rect geometry — see `_vfComputeRect`/§CPE_VF_GRIP for why the rect is the panel's
     // CONTENT box (inside the border, below the header), never its outer border box.
     var geo = _vfComputeRect(canvasR, panelR, pr, _vfPanelInset(panel));
@@ -1654,6 +1782,9 @@
         _wireScrubPlay();
         _renderScrub();
       }
+      // §CPE_VF_STACK — AFTER both panels exist and the bar has real content (its height is
+      // content-driven and must be measured, not assumed), lay the fused stack out as one object.
+      _vfLayoutStack();
       if (a.markDirty) a.markDirty();
       console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — timeline panel shown alongside it (§CPE_VF_EYE_DRIVES_SCRUB)');
     } else {
