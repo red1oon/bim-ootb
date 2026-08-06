@@ -1641,6 +1641,7 @@ function setupTour(A) {
     if (_scrubPanel) return;
     _scrubPanel = document.createElement('div');
     _scrubPanel.id = 'tour-scrub-panel';
+    _scrubPanel.className = 'glass-panel'; // §S280 universal Esc-panel-close + toggleAllPanels/focusOnlyLatest sweeps
     var tmp = document.getElementById('time-machine-panel');
     var bottom = (tmp && tmp.style.display && tmp.style.display !== 'none') ? '260px' : '80px';
     _scrubPanel.style.cssText =
@@ -1654,6 +1655,7 @@ function setupTour(A) {
       '<div style="display:flex;align-items:center;gap:6px;width:100%">' +
         '<span id="tour-scrub-label" style="flex:1;color:#4fc3f7;font-weight:bold;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Fly Tour</span>' +
         '<span id="tour-scrub-time" style="font-size:13px;color:#ccc;font-variant-numeric:tabular-nums">0:00 / 0:00</span>' +
+        '<button id="tour-scrub-close" title="Stop tour and close" style="width:20px;height:20px;line-height:18px;padding:0;font-size:13px;color:#ccc;background:transparent;border:none;cursor:pointer">&#x2715;</button>' +
       '</div>' +
       '<div id="tour-scrub-ticks" style="position:relative;width:100%;height:10px"></div>' +
       '<input id="tour-scrub-slider" type="range" min="0" max="' + SCRUB_RES + '" step="1" value="0" style="width:100%;accent-color:#4fc3f7">' +
@@ -1705,9 +1707,23 @@ function setupTour(A) {
     document.getElementById('tour-scrub-prev').onclick = function() { A.tourStepBeat(-1); };
     document.getElementById('tour-scrub-next').onclick = function() { A.tourStepBeat(1); };
     document.getElementById('tour-scrub-play').onclick = function() { A.tourTogglePause(); };
+    document.getElementById('tour-scrub-close').onclick = function() { A._scrubStop('close-button'); };
     var spds = _scrubPanel.querySelectorAll('.tour-scrub-spd');
     for (var i = 0; i < spds.length; i++) {
       spds[i].onclick = function() { A.tourSetSpeed(parseFloat(this.getAttribute('data-spd'))); };
+    }
+
+    // §SCRUB_PANEL_TAB — join the same Tab-cycle/focus registry every other floating panel uses
+    // (scene.js _registerPanel/_cyclePanel). While focused: space/Enter = pause toggle, left/right
+    // arrows = step one beat, Escape = full stop (routes to A._scrubStop as the panel's closeFn).
+    if (typeof window._registerPanel === 'function') {
+      window._registerPanel('tourscrub', _scrubPanel, {
+        onKey: function(e) {
+          if (e.key === ' ' || e.key === 'Enter') { A.tourTogglePause(); return; }
+          if (e.key === 'ArrowLeft') { A.tourStepBeat(-1); return; }
+          if (e.key === 'ArrowRight') { A.tourStepBeat(1); return; }
+        }
+      }, A._scrubStop);
     }
   }
 
@@ -1891,6 +1907,29 @@ function setupTour(A) {
   A._scrubHide = function() {
     if (_scrubPanel) _scrubPanel.style.display = 'none';
     A._tourPaused = false;
+  };
+
+  // §SCRUB_BAR_LIFECYCLE — the missing "stop" (D3, 2026-07-25, kept L as pause/resume-only on
+  // purpose; this fills the gap it left: nothing previously reset walkActions/walkActionIdx once
+  // a graph tour had started, so the bar could never close except on natural tour completion
+  // (walkTick above) or a canvas-tap abort — both of which leave walkActionIdx intact, so the next
+  // L just resumes. This is a real, full stop: same reset walkTick does on natural completion,
+  // callable from the scrub panel's close button and its Tab-focused Escape (closeFn below).
+  A._scrubStop = function(why) {
+    A.walkMode = false;
+    A.flyActive = false;
+    A.walkActionIdx = 0;
+    A.walkActionT = 0;
+    A.walkPanAngle = 0;
+    A.walkLastTime = 0;
+    var btnE = document.getElementById('fly-btn');
+    if (btnE) btnE.classList.remove('active');
+    var spdBtn = document.getElementById('walk-speed-btn');
+    if (spdBtn) spdBtn.style.display = 'none';
+    A.status.textContent = 'Tour stopped.';
+    A.wlog('Tour stopped (' + (why || 'manual') + ')');
+    if (A._scrubHide) A._scrubHide();
+    console.log('[TOUR] §SCRUB_STOP why=' + (why || 'manual'));
   };
 
   // ── Legacy path builders (kept for fallback) ──
