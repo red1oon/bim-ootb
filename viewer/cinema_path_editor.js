@@ -55,88 +55,92 @@
   var SCRUB_PANEL_W = VF_DEFAULT_W;              // px
   var SCRUB_PANEL_GAP = 8;                       // px between B's default rect and the scrub panel
   // ══════════════════════════════════════════════════════════════════════════════════════════════
-  // CPE_V — the pasted-console-answers-"which build is this?" string (comment at file top explains
-  // why this exists and must be bumped on every behaviour change). Reorganized 2026-08-04 into one
-  // clause per line, NEWEST FIRST, purely for human readability — every §TAG below is preserved
-  // verbatim from the pre-reorg blob, nothing dropped. A NEW SESSION: read the newest few lines
-  // here for a fast fix on current behaviour, then `prompts/CINEMA_PATH_EDITOR.md`'s own DONE
-  // blocks (search `§CPE_SCRUB`, `§CPE_VIEWFINDER`, `§CPE_AIM_PIN`) for the full history/reasoning —
-  // this string is a manifest, not a substitute for the spec doc.
+  // CPE_V changelog (2026-08-06: moved out of the console.log — the full history was printing on
+  // every page load, ~4KB of text nobody was reading; kept here verbatim, nothing dropped, still
+  // the first place a new session should read for "what changed and why" before the spec doc's own
+  // DONE blocks, search `§CPE_SCRUB`, `§CPE_VIEWFINDER`, `§CPE_AIM_PIN`). NEWEST FIRST.
+  //
+  // ── 2026-08-06 ──
+  // §CPE_VF_PLAIN_FRAME the pixel-fit chase (§CPE_VF_FRAME_CRAFT/§CPE_VF_ALIGN_DIAG(_V2)/
+  //   §CPE_VF_FRAME_DIAG/§CPE_VF_RENDER_TRACE) is retired — B is a plain fixed panel with a thin
+  //   white rounded border, a deliberate picture frame; content framing is NOT guaranteed
+  //   pixel-exact (root cause on record: B shares the main renderer's full-canvas post pass).
+  // ── 2026-08-05, same day, one connected batch — read together, supersedes the v23 entries below ──
+  // §CPE_SCRUB_STANDALONE the timeline is now its own draggable panel (#cpe-scrub-panel), default
+  //   position directly below B's default rect — resolves the v23 §CPE_SCRUB_BAR_GATED OPEN
+  //   QUESTION ("standalone widget vs docked under B"); built/torn down with the editor itself,
+  //   no longer coupled to B's toggle; B stays display-only (user: "pov box is purely display for
+  //   user bearing" — no drop/raycast interaction on it, this panel is the interactive one).
+  // §CPE_SCRUB_VF_LIVE a scrub drag drives B's inset camera (vfCam) again — this is the mid-fix cut
+  //   that was written+witnessed then reverted before the v23 #1177 landing; restored now that B is
+  //   a stable, separate concern from the main-canvas invariant #1177 actually protects (main camera/
+  //   controls are still NEVER touched by any scrub, drag or click).
+  // §CPE_SCRUB_READONLY the bar no longer spawns or selects sticks on click (retires the old click-
+  //   to-spawn path) — sticks show as read-only BLUE tick lines only; editing (add/select/move/
+  //   remove) happens the original way, via the canvas pipe or the row list, never the scrub bar.
+  // §CPE_STICK_TIME_SYNC_F1 the readout is mm:ss / total film length, not a bare percentage.
+  // §CPE_SCRUB_PLAY a play/pause transport button in the scrub panel, reusing _previewFly()'s own
+  //   pose source with new pause/resume support (_state._flyPauseAt/_flyResume) — additive only,
+  //   the existing #cpe-preview button in #cpe-panel is untouched.
+  // §CPE_VF_EYE_SPRITES (PR bim-ootb#1179, undocumented here until now) the #cpe-vf-toggle icon uses
+  //   real open/shut eyelid PNG sprites (viewer/icons/eye_open.png, eye_closed.png) — NOT the Lucide
+  //   slashed-eye pair, which read as "eye with a line through it" rather than an actual shut eyelid;
+  //   ICONS.eyeOpen/eyeOff were removed from panels.js as dead code once this landed.
+  // ── 2026-08-04, v23 — HISTORICAL, superseded by the entries above; kept for the reader tracing
+  //    how this evolved, not current behaviour ──
+  // §CPE_SCRUB_MAIN_CAM_REGRESSION (v23) scrubbing the timeline used to move the MAIN canvas
+  //   camera (a.camera/a.controls) — wrong, caught live by the user. Scrubbing was made VISUAL-ONLY,
+  //   touching no camera at all — since refined by §CPE_SCRUB_VF_LIVE above: B's inset camera is
+  //   driven again, the main canvas invariant this entry actually protects still holds.
+  // §CPE_SCRUB_BAR_GATED (v23) the scrub bar's existence was gated to B — superseded by
+  //   §CPE_SCRUB_STANDALONE above.
+  // §CPE_VIEWFINDER_EYE_ICON (v23) the #cpe-vf-toggle icon swapped open/slashed with vfOn, reading
+  //   panels.js ICONS.eyeOpen/eyeOff — superseded by §CPE_VF_EYE_SPRITES above.
+  // ── 2026-08-04, Part C ──
+  // §CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look direction
+  //   there (rotation only, never position); the pin wins outright inside its own band's Voronoi
+  //   zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in
+  //   neighbouring bands with no bleed. DISABLED 2026-08-06 at its one trigger site — see
+  //   §CPE_AIM_PIN_DISABLED near `h.up` — not retired from this changelog since it's a one-line revert.
+  // ── 2026-08-04, Parts A/B (original ship — the scrub-driving claim below is HISTORICAL, see
+  //    the §CPE_VF_PLAIN_FRAME/§CPE_SCRUB_VF_LIVE entries above for what changed) ──
+  // §CPE_SCRUB timeline scrub bar with stick tick-marks (original ship note — since corrected: see
+  //   §CPE_SCRUB_MAIN_CAM_REGRESSION above, scrub no longer drives any camera-move code).
+  // §CPE_VIEWFINDER a synced second-camera POV sub-panel, one renderer via setScissorTest,
+  //   eye-icon toggle OFF by default, scoped to rehearsal only, never wired into the MaxQ bake loop.
+  // ── 2026-07-31 and earlier — unchanged, kept verbatim ──
+  // §CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead
+  //   of time (user record: 107.55m costed, 173.53m flown).
+  // §CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge.
+  // §CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the
+  //   added node survives; provenance travels in the override instead of being guessed from the
+  //   index; an unselected stick draws dark blue in the pipe and blue-tinted in the list.
+  // §CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed.
+  // §CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key.
+  // §CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal.
+  // §CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer
+  //   doubles.
+  // §CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line.
+  // §CPE_HOSE_REANCHOR pulls re-project by world anchor.
+  // §CPE_IDB_PATH_STORE named plans save/open/delete.
+  // §CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the
+  //   authorable stretch.
+  // §CPE_PREVIEW drives the buildup.
+  // §CPE_HOSE whole-path arc-length falloff drag.
+  // §CPE_CLIP in/out markers.
+  // §CPE_BUILDUP checkbox.
+  // §CPE_PREVIEW_BUTTON with stale marker.
+  // §CPE_AIM_DENSITY in effects.js.
+  // §CPE_DRAG_LAND_FIRST no re-plan during a drag.
+  // §CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag.
+  // §CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event.
+  // §CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3).
+  // §CPE_WALK 2.3m/s.
+  // §CPE_PREVIEW_DIVERGENCE plan pinned to open pose.
+  // §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG.
   // ══════════════════════════════════════════════════════════════════════════════════════════════
-  var CPE_V = 'v24 (' +
-    // ── 2026-08-05, same day, one connected batch — read together, supersedes the v23 entries below ──
-    '§CPE_SCRUB_STANDALONE the timeline is now its own draggable panel (#cpe-scrub-panel), default ' +
-      'position directly below B\'s default rect — resolves the v23 §CPE_SCRUB_BAR_GATED OPEN ' +
-      'QUESTION ("standalone widget vs docked under B"); built/torn down with the editor itself, ' +
-      'no longer coupled to B\'s toggle; B stays display-only (user: "pov box is purely display for ' +
-      'user bearing" — no drop/raycast interaction on it, this panel is the interactive one); ' +
-    '§CPE_SCRUB_VF_LIVE a scrub drag drives B\'s inset camera (vfCam) again — this is the mid-fix cut ' +
-      'that was written+witnessed then reverted before the v23 #1177 landing; restored now that B is ' +
-      'a stable, separate concern from the main-canvas invariant #1177 actually protects (main camera/ ' +
-      'controls are still NEVER touched by any scrub, drag or click); ' +
-    '§CPE_SCRUB_READONLY the bar no longer spawns or selects sticks on click (retires the old click- ' +
-      'to-spawn path) — sticks show as read-only BLUE tick lines only; editing (add/select/move/ ' +
-      'remove) happens the original way, via the canvas pipe or the row list, never the scrub bar; ' +
-    '§CPE_STICK_TIME_SYNC_F1 the readout is mm:ss / total film length, not a bare percentage; ' +
-    '§CPE_SCRUB_PLAY a play/pause transport button in the scrub panel, reusing _previewFly()\'s own ' +
-      'pose source with new pause/resume support (_state._flyPauseAt/_flyResume) — additive only, ' +
-      'the existing #cpe-preview button in #cpe-panel is untouched; ' +
-    '§CPE_VF_EYE_SPRITES (PR bim-ootb#1179, undocumented here until now) the #cpe-vf-toggle icon uses ' +
-      'real open/shut eyelid PNG sprites (viewer/icons/eye_open.png, eye_closed.png) — NOT the Lucide ' +
-      'slashed-eye pair, which read as "eye with a line through it" rather than an actual shut eyelid; ' +
-      'ICONS.eyeOpen/eyeOff were removed from panels.js as dead code once this landed; ' +
-    // ── 2026-08-04, v23 — HISTORICAL, superseded by the entries above; kept for the reader tracing ' +
-    //    how this evolved, not current behaviour ──
-    '§CPE_SCRUB_MAIN_CAM_REGRESSION (v23) scrubbing the timeline used to move the MAIN canvas ' +
-      'camera (a.camera/a.controls) — wrong, caught live by the user. Scrubbing was made VISUAL-ONLY, ' +
-      'touching no camera at all — since refined by §CPE_SCRUB_VF_LIVE above: B\'s inset camera is ' +
-      'driven again, the main canvas invariant this entry actually protects still holds; ' +
-    '§CPE_SCRUB_BAR_GATED (v23) the scrub bar\'s existence was gated to B — superseded by ' +
-      '§CPE_SCRUB_STANDALONE above; ' +
-    '§CPE_VIEWFINDER_EYE_ICON (v23) the #cpe-vf-toggle icon swapped open/slashed with vfOn, reading ' +
-      'panels.js ICONS.eyeOpen/eyeOff — superseded by §CPE_VF_EYE_SPRITES above; ' +
-    // ── 2026-08-04, Part C ──
-    '§CPE_AIM_PIN click an object/room in the canvas with a band selected to pin its look direction ' +
-      'there (rotation only, never position); the pin wins outright inside its own band\'s Voronoi ' +
-      'zone of the walk (by band-centre arc-fraction), LOS/§CPE_AIM_DENSITY resume immediately in ' +
-      'neighbouring bands with no bleed; ' +
-    // ── 2026-08-04, Parts A/B (original ship — the scrub-driving claim below is HISTORICAL, see ' +
-    //    the FIXED entry at the top of this string for what changed) ──
-    '§CPE_SCRUB timeline scrub bar with stick tick-marks (original ship note — since corrected: see ' +
-      '§CPE_SCRUB_MAIN_CAM_REGRESSION above, scrub no longer drives any camera-move code); ' +
-    '§CPE_VIEWFINDER a synced second-camera POV sub-panel, one renderer via setScissorTest, ' +
-      'eye-icon toggle OFF by default, scoped to rehearsal only, never wired into the MaxQ bake loop; ' +
-    // ── 2026-07-31 and earlier — unchanged, kept verbatim ──
-    '§CPE_HOSE_LENGTH_BLIND the clock costs the HOSED curve — a hose pull used to buy speed instead ' +
-      'of time (user record: 107.55m costed, 173.53m flown); ' +
-    '§CPE_STICK_RED_BAR an unselected stick is a RED bar with BLUE dots, not an all-blue smudge; ' +
-    '§CPE_REOPEN_NODE an edited OK STAGES the path so the next Alt+C re-opens it authored — the ' +
-      'added node survives; provenance travels in the override instead of being guessed from the ' +
-      'index; an unselected stick draws dark blue in the pipe and blue-tinted in the list; ' +
-    '§CPE_CLICK_SLOP a 4px click on the pipe spawns a stick again, no threshold existed; ' +
-    '§CPE_BUILDUP_FOLLOW_TM the reveal follows the Time Machine as-is, no camera-path re-key; ' +
-    '§CPE_PREVIEW_AFTER_RETIRED OK records without a rehearsal; ' +
-    '§CPE_REOPEN_DOUBLE re-open ADOPTS the authored bands instead of re-seeding them, N no longer ' +
-      'doubles; ' +
-    '§CPE_STICK_ANCHOR author raw + draw through the hose so a bar stays on the line; ' +
-    '§CPE_HOSE_REANCHOR pulls re-project by world anchor; ' +
-    '§CPE_IDB_PATH_STORE named plans save/open/delete; ' +
-    '§CPE_STICK click the pipe to spawn a band, N bands not 3, removable; walk drawn fat = the ' +
-      'authorable stretch; ' +
-    '§CPE_PREVIEW drives the buildup; ' +
-    '§CPE_HOSE whole-path arc-length falloff drag; ' +
-    '§CPE_CLIP in/out markers; ' +
-    '§CPE_BUILDUP checkbox; ' +
-    '§CPE_PREVIEW_BUTTON with stale marker; ' +
-    '§CPE_AIM_DENSITY in effects.js; ' +
-    '§CPE_DRAG_LAND_FIRST no re-plan during a drag; ' +
-    '§CPE_DRAG_SCALE building-derived m/px, camera distance no longer gears the drag; ' +
-    '§CPE_UNDO Ctrl+Z/Ctrl+Shift+Z + history-line event; ' +
-    '§CPE_DRAG_TELEPORT delta (reach cap removed, G-DRAG-3); ' +
-    '§CPE_WALK 2.3m/s; ' +
-    '§CPE_PREVIEW_DIVERGENCE plan pinned to open pose; ' +
-    '§CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG)';
-  console.log('§CPE_LOADED ' + CPE_V);
+  var CPE_V = 'v24';
+  console.log('§CPE_LOADED ' + CPE_V + ' — full changelog moved to this file\'s own comment above (search any §TAG)');
 
   var HANDLE_R = 0.30;             // metres
   var GRAB_PX = 18;                // screen-space grab tolerance
@@ -152,16 +156,6 @@
   // `_vfRender()` calls a single rehearsal makes; reset by `_vfPerfReset()` at the top of each
   // `_previewFly()` run.
   var _vfPerf = { n: 0, sum: 0, max: 0 };
-  // §CPE_VF_RENDER_TRACE (2026-08-05) — user-reported: clicking INSIDE B's box (passes through, its
-  // background is pointer-events:none — confirmed by the user's own log showing [RP-TB] §FOCUS_ELEM_
-  // CLEAR firing on that click, i.e. the main scene received it) makes misaligned content "jump into
-  // correctly", then it reverts on release. Logged on CHANGE only (not every frame — would flood) so
-  // the next live paste shows the exact timeline of every real scissor-rect recompute, each tagged
-  // with ms-since-last-call — a large gap right before a "jump" would confirm the idle-park/stale-
-  // frame theory (§IDLE_GATE self-parks the render loop; nothing in the drag path calls markDirty()
-  // except a repositioning save()) without needing to guess from a screenshot.
-  var _lastVfRenderRect = null, _lastVfRenderT = null;
-  var _lastFrameDiagT = null;   // §CPE_VF_FRAME_DIAG throttle — see _vfRender
   function A() { return window.APP; }
 
   // ══════════════════ scene objects ══════════════════
@@ -658,8 +652,17 @@
     // nothing" would silently discard the whole edit.
     if (_state.hose.length) return true;
     if (_state.clipIn > 0 || _state.clipOut < 1) return true;
+    // buildup/roomTitle: `if (current) return true` is one-way on purpose — cinema_maxq.js defaults
+    // both false when no override reaches it at all (§CPE_EDIT_BASELINE), so a currently-ON checkbox
+    // must ALWAYS produce an override even if nothing else changed, or the default-on baseline would
+    // silently fail to bake. The second line catches the missing direction: turning one OFF from an
+    // ON baseline is also a real edit, even though it happens to produce the same bake result either
+    // way (no override -> defaults false) — this is purely so the OK button/note stop claiming
+    // "unedited" when the user visibly changed something (bug: RECORD label vanished on uncheck).
     if (_state.buildup) return true;
+    if (_state.buildup !== _state.origBuildup) return true;
     if (_state.roomTitle) return true;
+    if (_state.roomTitle !== _state.origRoomTitle) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -1479,15 +1482,14 @@
     };
     var d = document.createElement('div');
     d.id = 'cpe-vf-panel';
-    // box-sizing:border-box set explicitly (2026-08-06, Fable review of §CPE_VF_FRAME_CRAFT) — the
-    // craft function's fixed-point convergence relies on the outer CSS width/height it writes
-    // ALREADY including the 2px border, which only holds under border-box. Currently true only
-    // because of viewer.html's global `* { box-sizing: border-box }` reset; stated here explicitly
-    // so this panel can never silently regress into a per-frame growth loop (content-box would make
-    // each readback 4px larger than written) if that global reset ever changes.
+    // §CPE_VF_PLAIN_FRAME (2026-08-06) — a thin white rounded "picture frame", deliberately NOT
+    // pretending to trace the scissor rect pixel-for-pixel (the §CPE_VF_FRAME_CRAFT chase is
+    // retired; root cause on record: B shares the main renderer's full-canvas post pass, so a
+    // perfect fit needs B's own WebGLRenderer — out of scope). box-sizing:border-box kept explicit
+    // so the scissor math's panelR read is the outer rect regardless of viewer.html's global reset.
     d.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
       'width:' + rect.width + 'px;height:' + rect.height + 'px;z-index:10001;box-sizing:border-box;' +
-      'border:2px solid #4fc3f7;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
+      'border:1px solid rgba(255,255,255,0.85);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
       'background:transparent;pointer-events:none';
     d.innerHTML =
       '<div id="cpe-vf-title" style="pointer-events:none;position:absolute;top:0;left:0;right:0;' +
@@ -1497,38 +1499,24 @@
         '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
     document.body.appendChild(d);
     _clampPanelToViewport(d);
-    // §CPE_VF_FRAME_CRAFT: craft the border to the actual scissor rect NOW, at creation, not just
-    // lazily on the first `_vfRender()` tick — so it's correct from the very first paint, never a
-    // one-frame flash of the raw (slightly-off) default box.
-    if (a.renderer && a.canvas) {
-      var _pr0 = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
-      _vfComputeAndCraftRect(d, a.canvas.getBoundingClientRect(), d.getBoundingClientRect(), _pr0);
-    }
     // §CPE_VF_PANEL_LOG (2026-08-05) — B's panel had ZERO creation logging (unlike #cpe-panel's own
     // §CPE_PANEL_DRAGGABLE), so the console during a live repro carried no evidence at all for the
     // wrong-default-position bug this same edit fixed. Mirrors #cpe-panel's log shape, plus the
     // overlap-with-#cpe-panel check computed directly rather than guessed from screenshots.
-    // §CPE_PANEL_CLAMP measures+corrects this above; the log now reports the CLAMPED (and now
-    // frame-crafted) rect.
+    // §CPE_PANEL_CLAMP measures+corrects this above; the log reports the CLAMPED rect.
     var _cr0 = d.getBoundingClientRect();
     console.log('§CPE_VF_PANEL_CREATED left=' + Math.round(_cr0.left) + ' top=' + Math.round(_cr0.top) +
       ' w=' + Math.round(_cr0.width) + ' h=' + Math.round(_cr0.height) +
       ' zIndex=' + getComputedStyle(d).zIndex + ' cpePanel=' + _overlapWithCpePanel(_cr0));
     return d;
   }
-  // §CPE_VF_FRAME_CRAFT (2026-08-06, user: "since the fov inframe pov works, just remove the outer
-  // pov frame that is ajar... craft back to the working fov screen frame" — the CSS border was an
-  // INDEPENDENT box (VF_DEFAULT_W/H) that merely approximated where the scissor rect landed;
-  // §CPE_FIXED_PANELS only stopped it being DRAGGED off that approximation, it never closed the
-  // approximation itself). Computes the scissor rect's x/y/w/h EXACTLY as before, then DERIVES the
-  // border's CSS left/top/width/height FROM those same integers (converted back to CSS px) instead
-  // of trusting the box's own independently-set size — the border and the rendered content can no
-  // longer disagree, by construction. Self-stabilizing: once written, the next read of panelR already
-  // equals these values, so the write is skipped (no per-frame layout thrash) until pr/canvasR
-  // genuinely change (DPR/zoom/first paint). Shared by `_buildVFPanel` (so the border is correct from
-  // the very first paint, not just once the render loop gets a first tick) and `_vfRender` (every
-  // frame, cheap due to the idempotent skip).
-  function _vfComputeAndCraftRect(panel, canvasR, panelR, pr) {
+  // §CPE_VF_PLAIN_FRAME (2026-08-06) — pure scissor-rect math, no side effects. The former
+  // `_vfComputeAndCraftRect` ALSO wrote the computed rect back to the panel's own CSS
+  // left/top/width/height (§CPE_VF_FRAME_CRAFT, chasing a pixel-exact border-to-content fit that
+  // was never fully achieved — root cause on record: B shares the main renderer's full-canvas post
+  // pass). That write-back is retired; the border is now a plain fixed picture frame and this
+  // function only computes the rect `_vfRender` renders into.
+  function _vfComputeRect(canvasR, panelR, pr) {
     // §CPE_VF_RECT_ASPECT (2026-08-05): h from the box, w DERIVED from h*trueAspect — NOT two
     // independently-rounded values. Two independent Math.round()s (old: w=round(300*1.25)=375,
     // h=round(190*1.25)=238) leave the RECT's own aspect (375/238=1.5756) slightly off the box's
@@ -1542,19 +1530,6 @@
     var yTop = Math.round((panelR.top - canvasR.top) * pr);
     var canvasH = Math.round(canvasR.height * pr);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
-    var backLeft = canvasR.left + x / pr, backTop = canvasR.top + yTop / pr;
-    var backW = w / pr, backH = h / pr;
-    if (Math.abs(panelR.left - backLeft) > 0.05 || Math.abs(panelR.top - backTop) > 0.05 ||
-        Math.abs(panelR.width - backW) > 0.05 || Math.abs(panelR.height - backH) > 0.05) {
-      panel.style.left = backLeft + 'px';
-      panel.style.top = backTop + 'px';
-      panel.style.width = backW + 'px';
-      panel.style.height = backH + 'px';
-      console.log('§CPE_VF_FRAME_CRAFT border snapped to the actual scissor rect left=' +
-        backLeft.toFixed(2) + ' top=' + backTop.toFixed(2) + ' w=' + backW.toFixed(2) + ' h=' + backH.toFixed(2) +
-        ' (was left=' + panelR.left.toFixed(2) + ' top=' + panelR.top.toFixed(2) +
-        ' w=' + panelR.width.toFixed(2) + ' h=' + panelR.height.toFixed(2) + ')');
-    }
     return { x: x, y: y, w: w, h: h, canvasH: canvasH };
   }
   // The scissor render pass — installed as `A()._cpeViewfinderRender` and called by main.js's own
@@ -1569,37 +1544,9 @@
     var t0 = performance.now();
     var canvasR = a.canvas.getBoundingClientRect(), panelR = panel.getBoundingClientRect();
     var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
-    // Geometry + border-crafting — see `_vfComputeAndCraftRect`'s own comment for the aspect-rounding
-    // and frame-crafting rationale.
-    var geo = _vfComputeAndCraftRect(panel, canvasR, panelR, pr);
+    // Scissor-rect geometry — see `_vfComputeRect`'s own comment for the aspect-rounding rationale.
+    var geo = _vfComputeRect(canvasR, panelR, pr);
     var x = geo.x, y = geo.y, w = geo.w, h = geo.h, canvasH = geo.canvasH;
-    // §CPE_VF_RENDER_TRACE — see the var declaration's comment for why. Fires on ANY change to the
-    // computed scissor rect, every call (not gated by _vfDiagLogged's one-shot).
-    var _t0trace = performance.now();
-    if (!_lastVfRenderRect || _lastVfRenderRect.x !== x || _lastVfRenderRect.y !== y ||
-        _lastVfRenderRect.w !== w || _lastVfRenderRect.h !== h) {
-      var _gapMs = _lastVfRenderT == null ? -1 : Math.round(_t0trace - _lastVfRenderT);
-      console.log('§CPE_VF_RENDER_TRACE x=' + x + ' y=' + y + ' w=' + w + ' h=' + h +
-        ' panelR={' + Math.round(panelR.left) + ',' + Math.round(panelR.top) + '} gapSinceLastCallMs=' + _gapMs);
-      _lastVfRenderRect = { x: x, y: y, w: w, h: h };
-    }
-    _lastVfRenderT = _t0trace;
-    // §CPE_VF_ALIGN_DIAG (2026-08-05, user-reported: rendered content sits right of the panel
-    // border) — one-shot per toggle-on, not every frame. Prints every number the scissor math
-    // depends on PLUS the renderer's actual backing-buffer size (ground truth — canvasR.width*pr
-    // is an ASSUMPTION this log can disprove) and the panel's own box-sizing/border, so the next
-    // repro gives real numbers instead of a screenshot guess. See CLAUDE.md FUNDAMENTAL LAW.
-    // §CPE_VF_ALIGN_DIAG_V2 (2026-08-05) — the v1 numbers above (still logged) already proved the
-    // scissor rect ITSELF is correctly placed within the real backing buffer (renderer.domElement,
-    // ground truth — not derived), canvas===renderer.domElement (no aliasing), no CSS transform on
-    // the canvas, box-sizing:border-box confirmed. That rules out hypothesis (b) — the BOX is not
-    // misplaced. What's left is hypothesis (a): the CONTENT inside a correctly-placed box is framed
-    // off-center, i.e. vfCam's own orientation state has drifted from what plan.poseAt(tn) intends
-    // or from the main camera's — not a coordinate bug in this function at all. Compares vfCam
-    // against a FRESH poseAt sample and against the main camera at the SAME instant.
-    // One-shot per toggle-on (`_state._vfDiagLogged`, set false at _state creation) — §CPE_FIXED_PANELS
-    // (2026-08-06) retired drag/resize, so there is no longer a reposition event to re-arm this on;
-    // the panel's rect is now the same known default every time B is on.
     if (w < 2 || h < 2) return;   // degenerate rect (should not happen at a fixed, clamped default)
     // §CPE_VF_ASPECT_ROUND (2026-08-05) + §CPE_VF_RECT_ASPECT correction (same day, OPEN 3): aspect
     // from w/h — the ACTUAL rounded pixel rect this frame renders into (computed above, single-
@@ -1613,77 +1560,6 @@
     // rounded scheme did.
     _state.vfCam.aspect = w / h;
     _state.vfCam.updateProjectionMatrix();
-    // §CPE_VF_ALIGN_DIAG / _V2 diagnostics moved to AFTER the aspect fix-up above (a real bug in
-    // the diagnostic itself, caught by re-running it: logging vfCam.aspect BEFORE this line reads
-    // the STALE value from _vfEnsureCam()'s creation-time aspect=1, not what this frame actually
-    // renders with — e.g. one live capture showed vfCam_aspect=1.0000 vs box_aspect=1.5789 purely
-    // from that ordering, not a real per-frame distortion). Logging here reports the exact values
-    // used for THIS frame's renderer.render() call below, not a pre-fixup snapshot.
-    if (!_state._vfDiagLogged) {
-      _state._vfDiagLogged = true;
-      var cs = window.getComputedStyle(panel);
-      var mc = a.camera;
-      var freshP = (_state.plan && typeof _state.plan.poseAt === 'function' && _state.scrubTn != null)
-        ? _state.plan.poseAt(_state.scrubTn) : null;
-      console.log('§CPE_VF_ALIGN_DIAG panelR=' + JSON.stringify({left:panelR.left,top:panelR.top,width:panelR.width,height:panelR.height}) +
-        ' canvasR=' + JSON.stringify({left:canvasR.left,top:canvasR.top,width:canvasR.width,height:canvasR.height}) +
-        ' pr=' + pr + ' computed_x=' + x + ' computed_y=' + y + ' computed_w=' + w + ' computed_h=' + h +
-        ' canvasBackingBuffer=' + a.renderer.domElement.width + 'x' + a.renderer.domElement.height +
-        ' rendererGetSize=' + JSON.stringify((function(){var s=new THREE.Vector2();a.renderer.getSize(s);return {w:s.x,h:s.y};})()) +
-        ' boxSizing=' + cs.boxSizing + ' borderWidth=' + cs.borderLeftWidth + '/' + cs.borderTopWidth +
-        ' xPlusW=' + (x+w) + ' backingBufferW=' + a.renderer.domElement.width + ' overflowRight=' + ((x+w) - a.renderer.domElement.width));
-      console.log('§CPE_VF_ALIGN_DIAG_V2 vfCam_fov=' + _state.vfCam.fov + ' main_fov=' + mc.fov +
-        ' vfCam_aspect=' + _state.vfCam.aspect.toFixed(4) + ' box_aspect=' + (w / h).toFixed(4) +
-        ' vfCam_up=' + JSON.stringify({x:+_state.vfCam.up.x.toFixed(4), y:+_state.vfCam.up.y.toFixed(4), z:+_state.vfCam.up.z.toFixed(4)}) +
-        ' main_up=' + JSON.stringify({x:+mc.up.x.toFixed(4), y:+mc.up.y.toFixed(4), z:+mc.up.z.toFixed(4)}) +
-        ' vfCam_pos=' + JSON.stringify({x:+_state.vfCam.position.x.toFixed(3), y:+_state.vfCam.position.y.toFixed(3), z:+_state.vfCam.position.z.toFixed(3)}) +
-        ' freshPose_pos=' + (freshP ? JSON.stringify({x:+freshP.x.toFixed(3), y:+freshP.y.toFixed(3), z:+freshP.z.toFixed(3)}) : 'n/a') +
-        ' scrubTn=' + _state.scrubTn);
-    }
-    // §CPE_VF_FRAME_DIAG (2026-08-06, Issue 2 — "working, but not well framed") — position, fov and
-    // aspect are ALL already proven correct above and by G-VF-1/G-VF-ASPECT/G-VF-RECT-ASPECT (pose
-    // bit-identical to the main camera's, fov a hardcoded constant — 60, `scene.js:139` — copied
-    // once at vfCam creation and NEVER reassigned afterward so it cannot drift, rect aspect
-    // bit-identical to vfCam.aspect by construction). So none of those numbers can be the cause of a
-    // composition/zoom complaint. This logs the one thing that COULD be: how close the nearest real
-    // surface is along vfCam's own look direction, and what fraction of the box's height a 1m
-    // reference object at that distance would fill. A wide 60° FOV pointed at a DISTANT subject
-    // reads as "small/not well framed" with zero coordinate error anywhere — this is the honest way
-    // to tell "genuinely too wide/zoomed-out" from "actually fine, only looked off in a screenshot."
-    // Throttled to ~500ms (tn changes every frame during playback; a handful of samples across a
-    // real scrub/rehearsal is enough to characterize composition without flooding the console).
-    var _fdNow = performance.now();
-    if (typeof a.collectMeshes === 'function' && (_lastFrameDiagT == null || _fdNow - _lastFrameDiagT >= 500)) {
-      _lastFrameDiagT = _fdNow;
-      // §CPE_VF_FRAME_DIAG safety: mirrors effects.js's own `_cinemaFan` raycast pattern exactly —
-      // `A.collectMeshes(...)` (a curated, safe-to-raycast list — NOT raw a.scene.children, which
-      // includes helper/staffage/sprite objects some of this app's custom BatchedMesh/BVH raycast
-      // overrides cannot handle and will throw on) plus a try/catch, since `_cinemaFan` ITSELF
-      // wraps every `intersectObjects` call the same way — this is not a new pattern, just reused.
-      // A raw a.scene.children raycast (the first version of this diagnostic) threw
-      // "Cannot read properties of null (reading 'matrixWorld')" and — because it ran BEFORE the
-      // real a.renderer.render() call below — would have silently killed B's actual render on every
-      // frame it hit. Diagnostic code must never be able to break the feature it's diagnosing.
-      try {
-        var _fdMeshes = a.collectMeshes(function(o) {
-          return (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !o.isSprite;
-        });
-        var _fdDir = new THREE.Vector3();
-        _state.vfCam.getWorldDirection(_fdDir);
-        var _fdRay = new THREE.Raycaster(_state.vfCam.position, _fdDir, 0.01, 200);
-        _fdRay.firstHitOnly = true;
-        var _fdHits = _fdMeshes.length ? _fdRay.intersectObjects(_fdMeshes, true) : [];
-        var _fdDist = _fdHits.length ? _fdHits[0].distance : null;
-        var _fdFrac = _fdDist ? (1 / (2 * _fdDist * Math.tan(_state.vfCam.fov * Math.PI / 360))) : null;
-        console.log('§CPE_VF_FRAME_DIAG scrubTn=' + _state.scrubTn +
-          ' nearestSurfaceDist=' + (_fdDist != null ? _fdDist.toFixed(2) + 'm' : 'none-within-200m') +
-          ' fov=' + _state.vfCam.fov +
-          ' refObj1mVerticalFrameFraction=' + (_fdFrac != null ? _fdFrac.toFixed(3) : 'n/a') +
-          ' — low fraction = subject reads small/distant in the box even with zero coordinate error');
-      } catch (_fdErr) {
-        console.log('§CPE_VF_FRAME_DIAG_ERR ' + _fdErr.message);
-      }
-    }
     a.renderer.setScissorTest(true);
     a.renderer.setViewport(x, y, w, h);
     a.renderer.setScissor(x, y, w, h);
@@ -1955,6 +1831,10 @@
     if (ps.checkboxes) {
       _state.buildup = !!ps.checkboxes.buildup;
       _state.roomTitle = !!ps.checkboxes.roomTitle;
+      // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
+      // reopening a saved buildup=on plan and touching nothing else must not read as edited.
+      _state.origBuildup = _state.buildup;
+      _state.origRoomTitle = _state.roomTitle;
     }
     if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
     _syncPanelControls();
@@ -2687,7 +2567,16 @@
       var pc = _state._pinCandidate;
       if (pc) {
         _state._pinCandidate = null;
-        if (ev && Math.hypot(ev.clientX - pc.sx0, ev.clientY - pc.sy0) < CLICK_SLOP_PX) _tryPinClick(pc.b, ev);
+        // §CPE_AIM_PIN_DISABLED (2026-08-06, user: sticks became hard to grab once a band was
+        // selected — any near-miss click near it was landing here instead, and _setPin's
+        // _replanFilm() re-ran the ENTIRE path planner on every one (confirmed live: user's
+        // console showed a full CINEMA_PIVOT/SPACE/DIVE/BANDS cascade on a plain click, plus
+        // CPE_SEAM_CONTINUOUS seamGapDeg=57-93 where the comment says "must be ~0" — a second,
+        // separate bug riding on the same replan). Disabled at the one call site rather than
+        // gutting _tryPinClick/_setPin/_unpinBand themselves, so this is a one-line revert once
+        // root-caused properly — "too much too soon to debug" alongside everything else in
+        // flight this session, not a verdict that the feature is wrong.
+        // if (ev && Math.hypot(ev.clientX - pc.sx0, ev.clientY - pc.sy0) < CLICK_SLOP_PX) _tryPinClick(pc.b, ev);
       }
       if (!_state.drag) return;
       var d = _state.drag;
@@ -2810,9 +2699,14 @@
         // `checked` attribute at the render site above) or the panel would show checked while
         // the first bake silently ran unbuilt.
         buildup: true,
+        // §CPE_EDIT_BASELINE (2026-08-06) — the checkbox value at open/restore time, so _isEdited()
+        // can detect "turned OFF from an on baseline" too, not just "is currently on". See
+        // _isEdited()'s own comment for why both directions are needed.
+        origBuildup: true,
         // §CPE_ROOM_TITLE: off by default, same reasoning — a captioned film is a deliberate choice
         // (RESUME_CPE_ROOM_TITLE.md).
         roomTitle: false,
+        origRoomTitle: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
@@ -3176,6 +3070,16 @@
         // ══ §CPE_VIEWFINDER witness hooks — G-VF-1/2, G-PERF-1.
         _vfToggle: function() { var btn = document.getElementById('cpe-vf-toggle'); _toggleViewfinder(btn); return _state ? _state.vfOn : null; },
         _vfPerf: function() { return { n: _vfPerf.n, avgMs: _vfPerf.n ? _vfPerf.sum / _vfPerf.n : 0, maxMs: _vfPerf.max }; },
+        // §CPE_VF_PLAIN_FRAME (2026-08-06) — G-VF-RECT-ASPECT's rect source. The §CPE_VF_RENDER_TRACE
+        // console log the witness used to parse is retired with the rest of the fit diagnostics; this
+        // calls the REAL `_vfComputeRect` with the same live inputs `_vfRender` uses (not a
+        // re-implementation), same precedent as `_scrubTo`.
+        _vfRectForTest: function() {
+          var a = A(), panel = document.getElementById('cpe-vf-panel');
+          if (!a.renderer || !a.canvas || !panel) return null;
+          var pr = (a.renderer.getPixelRatio && a.renderer.getPixelRatio()) || 1;
+          return _vfComputeRect(a.canvas.getBoundingClientRect(), panel.getBoundingClientRect(), pr);
+        },
         _probeVF: function() {
           var a = A();
           if (!_state) return null;
