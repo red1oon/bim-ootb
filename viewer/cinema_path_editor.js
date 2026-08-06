@@ -1679,13 +1679,24 @@
     // ratios happen to divide the box exactly. Rounding each edge to the device-pixel grid caps the
     // error at 0.5 device px per edge — provably the best an integer rect can do, and always inside
     // the 1px border, so any residual is covered by the frame rather than showing past it.
-    var x = Math.round((panelR.left + ins.l - canvasR.left) * pr);
-    var x1 = Math.round((panelR.right - ins.r - canvasR.left) * pr);
-    var yTop = Math.round((panelR.top + ins.t - canvasR.top) * pr);
-    var y1 = Math.round((panelR.bottom - ins.b - canvasR.top) * pr);
+    // §CPE_VF_DPR_DOUBLE (2026-08-07) — the rect is in CSS PIXELS, NOT device pixels.
+    // three.js's setViewport/setScissor apply the renderer's pixelRatio THEMSELVES. Measured
+    // directly rather than assumed (viewer/lib/three.module.min.js, live probe): passing
+    // (0,0,100,80) at pixelRatio 1.25 produced gl.VIEWPORT = [0,0,125,100]. This code was
+    // multiplying by `pr` as well, so the ratio landed TWICE and B rendered 1.25x oversized —
+    // spilling past its own frame to the right and above it. That is the "screen slightly larger
+    // then the frame" the user reported for days, and it is why every witness passed: they all
+    // compared this rect against the CSS box times pr, which is self-consistent and never looked at
+    // what three.js actually did with the numbers. At dpr 1.0 the bug is invisible (x1 = x1).
+    // Confirmed against the user's own screenshot: frame 376px, picture 475px, 475/376 = 1.263.
+    // `pr` is still read — the snap grid in _vfLayoutStack needs it — but the RECT must not use it.
+    var x = Math.round(panelR.left + ins.l - canvasR.left);
+    var x1 = Math.round(panelR.right - ins.r - canvasR.left);
+    var yTop = Math.round(panelR.top + ins.t - canvasR.top);
+    var y1 = Math.round(panelR.bottom - ins.b - canvasR.top);
     var w = Math.max(1, x1 - x);
     var h = Math.max(1, y1 - yTop);
-    var canvasH = Math.round(canvasR.height * pr);
+    var canvasH = Math.round(canvasR.height);
     var y = canvasH - yTop - h;   // three.js scissor/viewport origin is bottom-left
     return { x: x, y: y, w: w, h: h, canvasH: canvasH };
   }
@@ -1737,7 +1748,7 @@
     // every other renderer.render() call in this codebase (clash_snag.js, print_sheet.js, tools.js,
     // sitecam.js…) assumes a full viewport.
     a.renderer.setScissorTest(false);
-    a.renderer.setViewport(0, 0, Math.round(canvasR.width * pr), canvasH);
+    a.renderer.setViewport(0, 0, Math.round(canvasR.width), canvasH);   // §CPE_VF_DPR_DOUBLE: CSS px
     var ms = performance.now() - t0;
     _vfPerf.n++; _vfPerf.sum += ms; if (ms > _vfPerf.max) _vfPerf.max = ms;
   }
