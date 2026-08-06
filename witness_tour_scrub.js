@@ -434,6 +434,67 @@ function claim(name, pass, detail) {
       `| ✈-PAUSE bar=${life.barOnFlyPause} paused=${life.pausedOnFlyPause} ` +
       `| REVEAL bar=${life.revealBar} walkModeStillRunning=${life.revealWalkStillOn} (discovery not broken)`);
 
+    // ── W-SCRUB-PANEL-TAB — the bar must join the same _registerPanel/_focusPanel registry every
+    // other floating panel uses (scene.js), so it's Tab-reachable; while focused, space pauses/
+    // resumes (real onKey routing). Runs on the tour STILL RUNNING from W-SCRUB-RESUME-BAR above —
+    // deliberately not a fresh restart: a second cold toggleFlyAround() re-triggers a genuine
+    // multi-minute full-building re-stream (observed live, not a hang — 122k elements from 0%),
+    // unrelated to this fix and not worth paying for twice in one run. Escape's "call the focused
+    // panel's closeFn" routing is scene.js's existing shared mechanism (every other panel already
+    // depends on it, unmodified here) — proven structurally (closeFn === A._scrubStop) rather than
+    // by re-triggering a second expensive stop+restart; W-SCRUB-STOP-CLOSE below already proves
+    // A._scrubStop performs a REAL full stop behaviorally.
+    const tabTest = await page.evaluate(async () => {
+      const A = window.APP;
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const p = document.getElementById('tour-scrub-panel');
+      const entry = window._panels ? window._panels.find(x => x.id === 'tourscrub') : null;
+      const registered = !!entry;
+      const closeIsScrubStop = !!(entry && entry.close === A._scrubStop);
+
+      window._focusPanel('tourscrub');       // same call _cyclePanel(Tab) lands on internally
+      await sleep(20);
+      // _focusPanel sets style.boxShadow='inset 3px 0 0 #4fc3f7', but the browser normalizes hex
+      // to rgb(...) on readback — match on non-empty (default/blurred state is '') not the hex text.
+      const focused = p.style.boxShadow.length > 0;
+
+      const pausedBefore = A._tourPaused;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+      await sleep(20);
+      const pausedAfterSpace = A._tourPaused;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+      await sleep(20);
+      const pausedAfterSpace2 = A._tourPaused;
+
+      return { registered, closeIsScrubStop, focused, pausedBefore, pausedAfterSpace, pausedAfterSpace2 };
+    });
+    claim('W-SCRUB-PANEL-TAB',
+      tabTest.registered && tabTest.closeIsScrubStop && tabTest.focused &&
+      !tabTest.pausedBefore && tabTest.pausedAfterSpace && !tabTest.pausedAfterSpace2,
+      `registered=${tabTest.registered} closeFn=A._scrubStop:${tabTest.closeIsScrubStop} focusedGlow=${tabTest.focused} ` +
+      `| space-pause ${tabTest.pausedBefore}→${tabTest.pausedAfterSpace}→${tabTest.pausedAfterSpace2}`);
+
+    // ── W-SCRUB-STOP-CLOSE — the new × button must be a REAL stop, not a re-hideable pause: L
+    // never had a path back to this branch once a graph tour started (only pause/resume), so
+    // walkActionIdx must reset to 0 here — proof a later L can't silently resume a dead tour.
+    const stopClick = await page.evaluate(() => {
+      const A = window.APP;
+      const p = document.getElementById('tour-scrub-panel');
+      const closeBtn = document.getElementById('tour-scrub-close');
+      const hasCloseBtn = !!closeBtn;
+      const shownBefore = p && p.style.display === 'flex';
+      const idxBefore = A.walkActionIdx, walkBefore = A.walkMode;
+      if (closeBtn) closeBtn.click();
+      return { hasCloseBtn, shownBefore, idxBefore, walkBefore,
+               shownAfter: p && p.style.display === 'flex',
+               idxAfter: A.walkActionIdx, walkAfter: A.walkMode, flyAfter: A.flyActive };
+    });
+    claim('W-SCRUB-STOP-CLOSE',
+      stopClick.hasCloseBtn && stopClick.shownBefore && stopClick.idxBefore > 0 && stopClick.walkBefore &&
+      !stopClick.shownAfter && stopClick.idxAfter === 0 && !stopClick.walkAfter && !stopClick.flyAfter,
+      `before ×: bar=${stopClick.shownBefore} idx=${stopClick.idxBefore} walkMode=${stopClick.walkBefore} | ` +
+      `after ×: bar=${stopClick.shownAfter} idx=${stopClick.idxAfter} walkMode=${stopClick.walkAfter} flyActive=${stopClick.flyAfter}`);
+
   } catch (e) {
     claim('WITNESS-RUN', false, 'threw: ' + e.message);
   }
