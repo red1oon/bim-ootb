@@ -999,7 +999,7 @@ function setupTools(A) {
         // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
         // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
         var r = A.db.exec(
-          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z FROM elements_meta m " +
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, m.guid FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
           // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
           // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
@@ -1068,7 +1068,7 @@ function setupTools(A) {
           "  'IfcStair','IfcStairFlight','IfcMember','IfcBeam','IfcColumn','IfcRailing')");
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
-            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0 });
+            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0, guid: row[5] || null });
           });
           source = 'IFC';
         }
@@ -1304,6 +1304,10 @@ function setupTools(A) {
         // troffer 0.07m, downlight 0.10m, plain recessed 0.075m, pendant-linear 0.77m (Clinic) —
         // the pendant number is the drop rod, and dropping by it lands the glow on the lamp.
         p.__drop = (f.h || 0) / 2 + 0.12;
+        // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
+        // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
+        // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
+        p.__guid = f.guid || null;
         return p;
       });
     }
