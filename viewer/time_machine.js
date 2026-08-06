@@ -4014,15 +4014,16 @@
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
-    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING (beam/member/slab/furniture/MEP/wall)
-    // may start before the structure UNDER its XY footprint finishes. 0 ⇒ nothing floats. Pre-fix
-    // (Hospital): 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls
-    // (ε=0.5 skipped the slab they sit on). Two-pass + ε=0.05 → 0.
-    var _audit = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab' ||
-      e.cls.indexOf('Furni') >= 0 || e.cls.indexOf('Wall') >= 0; };
-    var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
-    var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
-    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
+    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING may start before its physical support
+    // (bearing-below OR the carrier it hangs from) finishes. 0 ⇒ nothing floats. Pre-fix (Hospital):
+    // 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls (ε=0.5
+    // skipped the slab they sit on). Two-pass + ε=0.05 → 0.
+    // §DEQ_V1 (2026-08-07, 4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #5): filter is ALL classes now —
+    // the old hand-picked list (Beam/Member/Slab/'Furni'/'Wall') silently excluded every MEP/flow
+    // class, so this line printed floating=0 while fans hung mid-air unaudited.
+    var _auditN = elements.length;
+    var _float = ScheduleGate.auditFloating(elements, _sched, null);
+    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
 
     // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
     // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
