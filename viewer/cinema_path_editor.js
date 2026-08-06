@@ -1879,6 +1879,16 @@
         console.log('§CPE_SCRUB_PLAY paused u=' + (_state.flyPausedU || 0).toFixed(3));
       } else if (_state.flying && _state.flyPaused) {
         if (_state._flyResume) _state._flyResume();
+        if (_state.flyPaused) {
+          // §CPE_FLY_WEDGE self-heal: resume left the machine paused = the flight is DEAD (stale
+          // generation — _flyResume's guard no-opped). Clear the corpse and start fresh instead of
+          // letting the transport click at a wall until the user refreshes the page.
+          console.log('§CPE_FLY_WEDGE stale paused flight — restarting rehearsal');
+          _state.flying = false; _state.flyPaused = false;
+          _state._flyPauseAt = null; _state._flyResume = null;
+          _previewFly(true);
+          return;
+        }
         console.log('§CPE_SCRUB_PLAY resumed');
       } else {
         console.log('§CPE_SCRUB_PLAY started');
@@ -2150,6 +2160,8 @@
     var save = povOnly ? null : { px: a.camera.position.x, py: a.camera.position.y, pz: a.camera.position.z,
                  tx: a.controls.target.x, ty: a.controls.target.y, tz: a.controls.target.z };
     s.flying = true; s.previewedAt = s.edits; _renderWhole();
+    // §CPE_FLY_WEDGE: cancel any in-flight _frameBand ease — the rehearsal owns the camera now.
+    s.frameFly = (s.frameFly || 0) + 1;
 
     // §CPE_ROOM_TITLE — live preview overlay, built ONCE per rehearsal against the film's real
     // duration in seconds (poseAt's tNorm domain is 0..1 over the WHOLE plan; `dur` above is just
@@ -2451,9 +2463,15 @@
     var to = { x: p.x - dir.x * dist, y: p.y - dir.y * dist + dist * 0.35, z: p.z - dir.z * dist };
     var from = { x: a.camera.position.x, y: a.camera.position.y, z: a.camera.position.z };
     var tf = { x: a.controls.target.x, y: a.controls.target.y, z: a.controls.target.z };
-    var gen = ++_state.flyId, t0 = performance.now();
+    // §CPE_FLY_WEDGE (2026-08-07) — this used `++_state.flyId`, the REHEARSAL's generation counter.
+    // A paused rehearsal was killed dead by any band-row click (its resume no-opped on the stale id
+    // while flying/flyPaused stayed true), wedging the transport until a page refresh — the user's
+    // "after round 2 of setting stick... preview does not play". The frame-fly cancels only a
+    // PREVIOUS frame-fly now; _previewFly cancels an in-flight frame-fly (the one direction that
+    // was ever correct).
+    var gen = _state.frameFly = (_state.frameFly || 0) + 1, t0 = performance.now();
     (function step() {
-      if (!_state || gen !== _state.flyId) return;
+      if (!_state || gen !== _state.frameFly) return;
       var u = Math.min(1, (performance.now() - t0) / 420), e = 1 - Math.pow(1 - u, 3);
       a.camera.position.set(from.x + (to.x - from.x) * e, from.y + (to.y - from.y) * e, from.z + (to.z - from.z) * e);
       a.controls.target.set(tf.x + (p.x - tf.x) * e, tf.y + (p.y - tf.y) * e, tf.z + (p.z - tf.z) * e);
