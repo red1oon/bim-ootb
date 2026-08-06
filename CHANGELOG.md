@@ -4,6 +4,30 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.39.0](https://github.com/red1oon/bim-ootb/compare/v1.38.0...v1.39.0) (2026-08-05)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_GROUP_MOVE — MS-Word-style marquee-select drags a whole bar cluster together ([#1204](https://github.com/red1oon/bim-ootb/issues/1204)) ([16cc192](https://github.com/red1oon/bim-ootb/commit/16cc19239a7ba25c8686140df469f48ab31eb940))
+* **4d:** §TM_PANEL_RESIZE_H — Gantt drawer bottom edge is now draggable too ([#1208](https://github.com/red1oon/bim-ootb/issues/1208)) ([42bae02](https://github.com/red1oon/bim-ootb/commit/42bae02dc0171636b02a71be2ba7354652c37ab0))
+
+
+### 🐛 Fixes
+
+* **4d:** §TM_PANEL_RESIZE_H targets the inner Gantt box, not the outer panel shell ([#1216](https://github.com/red1oon/bim-ootb/issues/1216)) ([db77a72](https://github.com/red1oon/bim-ootb/commit/db77a72fe6e3be1c882175de64e118bd8447b341))
+* **4d+cinema:** §DLOD_VF_CAMGUARD_SIG — camera-moved edge-detector follows the resolved DLOD camera ([#1206](https://github.com/red1oon/bim-ootb/issues/1206)) ([b2e7915](https://github.com/red1oon/bim-ootb/commit/b2e7915f23d3ab819d8ec36fc6d4cd00e398cde2))
+* **cpe:** 3 issues — scrub panel eye-gating, playhead tick, POV frame diagnostic ([#1214](https://github.com/red1oon/bim-ootb/issues/1214)) ([c6098aa](https://github.com/red1oon/bim-ootb/commit/c6098aa210e48f75f3310f19f5778df2be864bde))
+* **cpe:** B's panel default position/z-index, scrub panel viewport overflow, both silent-before ([#1207](https://github.com/red1oon/bim-ootb/issues/1207)) ([d4ad43d](https://github.com/red1oon/bim-ootb/commit/d4ad43d640d89d6646e5de2dfee31210faad497e))
+* **cpe:** eye toggle now drives the timeline panel too, one control not two ([#1211](https://github.com/red1oon/bim-ootb/issues/1211)) ([7b0ee10](https://github.com/red1oon/bim-ootb/commit/7b0ee102f3c1c6c80c41c16f4273c6cdb3062119))
+* **cpe:** OPEN 2 AND-gate + OPEN 3 real root cause (drag never woke render loop) ([#1213](https://github.com/red1oon/bim-ootb/issues/1213)) ([e8a0c77](https://github.com/red1oon/bim-ootb/commit/e8a0c77897be963bfb02ddd332318d26cfc4e302))
+* **cpe:** OPEN 3 inset stretch, OPEN 4 DLOD/vfCam union, OPEN 5 scrub input trace ([#1212](https://github.com/red1oon/bim-ootb/issues/1212)) ([a497a67](https://github.com/red1oon/bim-ootb/commit/a497a674ff6d9d5f2b2489c7c1898b8ecae8b3e5))
+* **cpe:** POV alignment diagnostic — code-correlated instrumentation, not screenshot guessing ([#1203](https://github.com/red1oon/bim-ootb/issues/1203)) ([14a93ef](https://github.com/red1oon/bim-ootb/commit/14a93ef752174690311f73d0e7039579cb097a63))
+* **cpe:** retire drag/resize on B and the scrub panel — fixed bottom-left, eye-only ([#1217](https://github.com/red1oon/bim-ootb/issues/1217)) ([3216b38](https://github.com/red1oon/bim-ootb/commit/3216b38b67d29fd35b48ac1cc1554dc587ea31f3))
+* **cpe:** separate B's viewfinder from main-canvas perf/DLOD state — 3 real bugs ([#1209](https://github.com/red1oon/bim-ootb/issues/1209)) ([e62f1eb](https://github.com/red1oon/bim-ootb/commit/e62f1eb637f985077fd3b5f988f02b07b7402994))
+* **cpe:** single-owner toggling — Eye owns B+scrub panel, BuildUp owns Time Machine ([#1215](https://github.com/red1oon/bim-ootb/issues/1215)) ([ebaebd3](https://github.com/red1oon/bim-ootb/commit/ebaebd39d0f699b52f11381f39cc8d385ed47d54))
+* **room-graph:** log the silent no-alternative revisit fallback ([#1210](https://github.com/red1oon/bim-ootb/issues/1210)) ([8574e51](https://github.com/red1oon/bim-ootb/commit/8574e513136ac720730b141b0b779a09ee5545c8))
+
 ## [1.38.0](https://github.com/red1oon/bim-ootb/compare/v1.37.0...v1.38.0) (2026-08-05)
 
 
