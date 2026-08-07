@@ -3767,6 +3767,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
+    var cam = A.camera.position;
     var geo = new THREE.PlaneGeometry(1, 1);
     var mat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
@@ -3785,16 +3786,11 @@ async function setupEffects(A, renderer, scene, camera) {
     for (var i = 0; i < pos.length; i++) {
       var p = pos[i];
       if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
-      // §GLOW_LENS_ALIGN_FIX (2026-08-07, user: "not the fake lights per se, but misalignment" —
-      // Hospital hallway screenshot showed the quad floating off to the side of its real pendant).
-      // The round sprite nudges TOWARD THE CAMERA to clear the depth test against the fixture's own
-      // geometry — direction-agnostic for a symmetric dot, but it visibly shifts an ORIENTED
-      // rectangle sideways whenever the camera isn't looking straight up at it (exactly a corridor
-      // view). Nudge straight down instead (along the emitting direction __drop already uses) — X/Z
-      // now always matches the real fixture regardless of where the camera is; only Y moves, which
-      // is imperceptible and still clears the depth test.
-      var py = p.y - (p.__drop || 0.12) - GLOW_EYE_OFFSET;
-      pVec.set(p.x, py, p.z);
+      var py = p.y - (p.__drop || 0.12);
+      var dx = cam.x - p.x, dy = cam.y - py, dz = cam.z - p.z;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var k = GLOW_EYE_OFFSET / d;
+      pVec.set(p.x + dx * k, py + dy * k, p.z + dz * k);
       qYaw.setFromEuler(new THREE.Euler(0, p.__rz || 0, 0));
       q.copy(qFace); q.premultiply(qYaw);   // face down, THEN yaw to the fixture's real rotation_z
       var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
