@@ -1088,30 +1088,55 @@ function setupTools(A) {
           source = 'IFC';
         }
       } catch(e) {}
-      // §S259: Fallback — generate synthetic lights from storey centroids
-      if (A._nightFixtures.length === 0) {
-        try {
-          var sr = A.db.exec("SELECT m.storey, AVG(t.center_x), AVG(t.center_y), AVG(t.center_z), MIN(t.center_x), MAX(t.center_x), MIN(t.center_y), MAX(t.center_y) FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid GROUP BY m.storey");
-          if (sr.length) {
-            sr[0].values.forEach(function(row) {
-              var cx = row[1], cy = row[2], cz = row[3];
-              var xMin = row[4], xMax = row[5], yMin = row[6], yMax = row[7];
-              var dx = (xMax - xMin) || 10, dy = (yMax - yMin) || 10;
-              // Place a grid of lights per storey — one every ~15m
-              var nx = Math.max(1, Math.ceil(dx / 15));
-              var ny = Math.max(1, Math.ceil(dy / 15));
-              for (var ix = 0; ix < nx; ix++) {
-                for (var iy = 0; iy < ny; iy++) {
-                  var fx = xMin + (ix + 0.5) * (dx / nx);
-                  var fy = yMin + (iy + 0.5) * (dy / ny);
-                  A._nightFixtures.push({ x: fx, y: fy, z: cz + 1.5 });
-                }
-              }
-            });
-            source = 'synthetic (' + sr[0].values.length + ' storeys)';
+      // §NIGHT_ROOM_FALLBACK (2026-08-07, user cascade: "1. fixtures on ceiling 2. any fixtures
+      // 3. just per square empty per PL" — for a ROOM with no real named/classed luminaire above,
+      // don't leave it dark and don't fabricate a position. Uses REAL room-containment data
+      // (rel_contained_in_space, already extracted — 181 real rooms on LTU_AHouse) to pick, per
+      // empty room, the single HIGHEST real element actually inside it — "on the ceiling" if one
+      // exists there (a sprinkler, a diffuser, a beam — whatever the topmost real object is),
+      // otherwise simply the topmost real object present. A REAL element's own position, not a
+      // computed room-centroid average — user preferred a real fixture's position over an invented
+      // one. Tier 3 ("per square empty") turns out to be moot for this data shape: every room that
+      // appears in rel_contained_in_space has >=1 real member by construction of the join, so there
+      // is no room left with zero real elements to fall further back from.
+      try {
+        var litGuids = {};
+        A._nightFixtures.forEach(function(f) { if (f.guid) litGuids[f.guid] = 1; });
+        var rm = A.db.exec(
+          "SELECT r.space_guid, r.element_guid, t.center_x, t.center_y, t.center_z, t.bbox_z " +
+          "FROM rel_contained_in_space r JOIN element_transforms t ON r.element_guid = t.guid"
+        );
+        var byRoom = {};
+        if (rm.length) {
+          rm[0].values.forEach(function(row) {
+            (byRoom[row[0]] = byRoom[row[0]] || []).push(
+              { guid: row[1], x: row[2], y: row[3], z: row[4], bz: row[5] || 0 });
+          });
+        }
+        var roomsLit = 0;
+        for (var room in byRoom) {
+          var members = byRoom[room];
+          if (members.some(function(m) { return litGuids[m.guid]; })) continue;
+          var top = members[0];
+          for (var mi = 1; mi < members.length; mi++) {
+            if (members[mi].z + members[mi].bz / 2 > top.z + top.bz / 2) top = members[mi];
           }
-        } catch(e) { console.warn('§NIGHT fallback query failed', e); }
-      }
+          A._nightFixtures.push({ x: top.x, y: top.y, z: top.z, name: 'room-proxy ' + room,
+            h: top.bz || 0.2, guid: null });
+          roomsLit++;
+        }
+        if (roomsLit) {
+          source = (source === 'IFC' ? 'IFC+room-proxy(' : 'room-proxy(') + roomsLit + ')';
+        }
+      } catch(e) { console.warn('§NIGHT_ROOM_FALLBACK query failed', e); }
+      // §S259_REMOVED (2026-08-07, user: "i want those fake lights removed in the code" — LTU_AHouse
+      // confirmed 0 real luminaires by direct query, and the synthetic grid this used to generate
+      // here (one fake position every ~15m across each storey's WHOLE bounding box, indoors or not)
+      // was exactly what scattered fabricated lights across LTU's outdoor courtyard — both as real
+      // A._nightLights point lights and, before that fix, as still-render lens quads. A position
+      // with no real element behind it is invention, not extraction (project Prime Rule) — a
+      // building with no real named/classed luminaires now simply has none. Night Mode still works
+      // (moonlight ambient), it just has no per-fixture lights to place.
     }
     A._nightFixtureSource = source;
     return source;
