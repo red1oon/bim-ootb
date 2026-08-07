@@ -397,9 +397,8 @@ function setupStreaming(A) {
       IfcSlab: _TRI_CONCRETE,
       IfcColumn: _TRI_CONCRETE,
       IfcFooting: _TRI_CONCRETE,
-      IfcPile: _TRI_CONCRETE,
       IfcStair: _TRI_CONCRETE,
-      IfcRamp: _TRI_CONCRETE,
+      IfcStairFlight: _TRI_CONCRETE,
       // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
       IfcWallStandardCase: _TRI_PLASTER,
       IfcCovering: _TRI_PLASTER,
@@ -408,13 +407,16 @@ function setupStreaming(A) {
       IfcMember: _TRI_METAL,
       IfcPlate: _TRI_METAL,
       IfcRailing: _TRI_METAL,
-      IfcPipe: _TRI_METAL,
       IfcPipeFitting: _TRI_METAL,
       IfcPipeSegment: _TRI_METAL,
-      IfcDuct: _TRI_METAL,
       IfcDuctFitting: _TRI_METAL,
       IfcDuctSegment: _TRI_METAL,
-      IfcCableCarrier: _TRI_METAL
+      IfcCableCarrierSegment: _TRI_METAL,
+      IfcCableCarrierFitting: _TRI_METAL,
+      // ── IFC2x3 generic-MEP convention (Clinic/LTU/HHS export these instead of the above) ──
+      IfcFlowSegment: _TRI_METAL,
+      IfcFlowTerminal: _TRI_METAL,
+      IfcFlowFitting: _TRI_METAL
     };
 
     const key = rgbaStr || '_default';
