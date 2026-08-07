@@ -165,21 +165,65 @@
     function geoGate(el) {                 // latest finish of XY-overlapping structure rising from below
       var g = baseMs; cs = cellsOf(el);
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
+        for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           var below = S.base_z < el.base_z - EPS;
-          var contained = !below && S.base_z > el.base_z - EPS && S.top_z < el.top_z + EPS;
+          // §DEQ_V1: containment is STRICT (S.base_z > el.base_z + EPS, was > el.base_z - EPS) so the
+          // relation is antisymmetric — with the old bound two same-z sibling slabs each counted the
+          // other as contained support, a cycle the repair loop below can never satisfy (measured:
+          // Hospital promoted roof slabs re-shifting every sweep, 30/sweep, no fixpoint). The
+          // §GEO_SUPPORT_LEAK cases this clause exists for all had S strictly above el's base.
+          // …and never a PROMOTED slab: a roof nested at the top of a tall wall's span is what BEARS
+          // ON the wall, not structure the wall rests within — counting it here is a wallGate cycle
+          // (measured: Hospital roof@199.66..199.81 inside wall@191.81..199.81, both re-shifting
+          // every repair sweep). Promoted slabs support others via bearing-below and hangGate only.
+          var contained = !below && !S.promoted && S.base_z > el.base_z + EPS && S.top_z < el.top_z + EPS;
           if ((below || contained) && S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
+    // §DEQ_V1 (2026-08-07, 4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL): a slab the load-path rule promoted
+    // to roof role (seq>4) is REAL STRUCTURE — the ceiling everything beneath it hangs from — so it
+    // joins the same support grid as PASS-A structure. As a support it sits ABOVE what it carries, so
+    // the bearing-below predicate almost never matches it; only hangGate reads it upward.
+    function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }
     function place(el, start) {
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
       var end = start + dur; out[el.guid] = { start: start, end: end };
-      if (el.seq <= 4) { var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
+      if (el.seq <= 4 || isPromotedSlab(el)) {
+        var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid,
+                    promoted: isPromotedSlab(el) };
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec);
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
       else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
-        var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end };
+        var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec);
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
       return end;
+    }
+    var recsByGuid = {};   // §DEQ_V1 repair loop: guid -> its support-grid recs, so a shift updates them
+    // §DEQ_V1 hang support — the physics the gates were missing: support is bearing-below OR
+    // carrier-above. A ceiling fan/duct/terminal has NOTHING bearing under its base (the floor slab
+    // tops metres below it) — it is MOUNTED to the structure whose underside meets its top. Scoped
+    // hard: only an element with NO bearing-below support is treated as hanging (a wall/chair resting
+    // on its slab is never hang-gated on the ceiling above it), which is also what keeps the audit
+    // free of attempt-1-style mutual-wait false positives (a beam under a slab bears on its columns,
+    // so it is excluded here even though the slab's underside meets its top).
+    function hasBearingBelow(el) {
+      cs = cellsOf(el);
+      for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
+          if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && overlap(S, el)) return true; } }
+      return false;
+    }
+    function hangGate(el) {                // latest finish of the structure this element hangs from
+      if (el.seq <= 4 || hasBearingBelow(el)) return baseMs;
+      var g = baseMs; cs = cellsOf(el);
+      for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
+          // carrier's TOP strictly above mine (antisymmetric — same-z sibling slabs otherwise carry
+          // each other, an unsatisfiable cycle for the repair loop; an embedding slab still tops me)
+          if (S.base_z >= el.top_z - GAP && S.base_z <= el.top_z + GAP && S.top_z > el.top_z + EPS &&
+              S.end > g && overlap(S, el)) g = S.end; } }
+      return g;
     }
     // §4D_WALLS_BEFORE_ROOF M5 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — a
     // roof-role slab (seq>4, promoted by the load-path rule in time_machine.js) must wait for the
@@ -194,7 +238,7 @@
       if (el.cls !== 'IfcSlab' || el.seq <= 4) return baseMs;
       var g = baseMs; cs = cellsOf(el);
       for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
+        for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
@@ -237,9 +281,17 @@
     // trade is placed before rank r is reached, and bandTrade[r-1][seq] is complete rather than a
     // partial max. Unlike PASS A this cannot disturb geoGate: PASS B never writes the structure grid
     // it reads (structure is entirely placed by then), so its order cannot create a floating element.
+    // §DEQ_V1 ordering: a promoted roof slab must be PLACED before anything that hangs from it, or
+    // hangGate reads a grid the roof isn't in yet. Its carriers are walls (wallGate), so it sorts at
+    // wallSeqMax+0.5 — after every wall, before MEP rough-in under the live sequence_rules.json.
+    // `el.seq` itself stays untouched (8 = the promotion identity phaseTrade/bandTrade key on).
+    var _wallSeqMax = 0;
+    elements.forEach(function (e) {
+      if (e.seq > 4 && e.cls && e.cls.indexOf('IfcWall') === 0 && e.seq > _wallSeqMax) _wallSeqMax = e.seq; });
+    function sortSeq(e) { return (isPromotedSlab(e) && _wallSeqMax) ? _wallSeqMax + 0.5 : e.seq; }
     var nonst = elements.filter(function (e) { return e.seq > 4; })
       .sort(function (a, b) {
-        return (a.seq - b.seq) ||
+        return (sortSeq(a) - sortSeq(b)) ||
                ((_bandRank[collapsePhase(a.storey)] || 0) - (_bandRank[collapsePhase(b.storey)] || 0)) ||
                (a.base_z - b.base_z);
       });
@@ -252,7 +304,7 @@
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term that
       // did not exist. Walls are seq 6, so this is a wall waiting for the walls one floor down.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5
+      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1
       if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
@@ -261,6 +313,34 @@
       (phaseTrade[ph] = phaseTrade[ph] || {});
       if (!(phaseTrade[ph][el.seq] > end)) phaseTrade[ph][el.seq] = end;
     });
+    // §DEQ_V1 repair loop — the zero-contradiction guarantee. The gates above are only as good as
+    // placement ORDER (a gate can't wait on a support that isn't in the grid yet), and seq metadata
+    // can order a carrier after its dependent (legacy rule sets put MEP below walls; walls STANDING ON
+    // a promoted roof sort before it). So: re-check every PASS-B element against the FINAL grids and
+    // push violators later until fixpoint (≤16 sweeps — shifts are monotone and the support relation
+    // is acyclic by its physics scoping, so a fixpoint exists; each sweep walks elements in current
+    // start order so support chains settle in few sweeps, measured 8 residual at cap=4 on Hospital
+    // from a wall-on-roof chain deeper than the cap). Crew slots are NOT re-solved for shifted
+    // elements — counted and logged, accepted v1 tradeoff (4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #4).
+    var _rIter = 0, _rMovedTot = 0;
+    for (; _rIter < 16; _rIter++) {
+      var _moved = 0;
+      nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
+        .forEach(function (el) {
+        var need = Math.max(geoGate(el), wallGate(el), hangGate(el));
+        var o = out[el.guid];
+        if (o.start < need) {
+          var dur = o.end - o.start; o.start = need; o.end = need + dur;
+          var rl = recsByGuid[el.guid];
+          if (rl) for (var q = 0; q < rl.length; q++) rl[q].end = o.end;
+          _moved++;
+        }
+      });
+      _rMovedTot += _moved;
+      if (!_moved) break;
+    }
+    if (typeof console !== 'undefined' && console.log)
+      console.log('§DEQ_REPAIR sweeps=' + _rIter + ' shifted=' + _rMovedTot + ' (0=order already dependency-consistent)');
     // The ladder this rule is standing on, printed so it can be audited rather than trusted — see
     // the §GANTT_STOREY_Z reassignment warning in the header comment above.
     if (typeof console !== 'undefined' && console.log) {
@@ -307,21 +387,36 @@
   //     seq 8 (roof role) — that is the one case where the real scheduler also moved the slab into
   //     PASS B and made it wait on walls (§4D_ROOF_LOAD_PATH M2). An ordinary seq<=4 slab keeps its
   //     original structure-only pool, unchanged from the proven pre-fix behaviour.
+  // §DEQ_V1 (2026-08-07, 4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #5): the audit mirrors the scheduler's
+  // upgraded physics — support is bearing-below OR carrier-above. structGrid now includes promoted
+  // roof slabs (seq>4 IfcSlab), and an audited seq>4 element with NO bearing-below support is checked
+  // against what it HANGS from (structure whose underside is within ±GAP of its top) — the fan-over-
+  // roof case §SUPPORT_CHECK was blind to by construction. The hang check is scoped exactly like the
+  // scheduler's hangGate (no bearing-below only), which is what keeps attempt-1's mutual-wait false
+  // positives out: a beam bearing on its columns is never audited against the slab resting on it.
   function auditFloating(elements, sched, classFilter) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     var v = 0;
     for (i = 0; i < elements.length; i++) { var T = elements[i];
       if (classFilter && !classFilter(T)) continue;
-      var se = 0, seen = {}; cs = cellsOf(T);
+      var se = 0, hasBearing = false, seen = {}; cs = cellsOf(T);
       var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
             if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
+              hasBearing = true;
               var en = sched[S.guid].end; if (en > se) se = en; } } }
+      }
+      if (!hasBearing && T.seq > 4) {      // hangs — audit against its carrier above instead
+        var seenH = {};
+        for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
+            if (S.base_z >= T.top_z - GAP && S.base_z <= T.top_z + GAP && S.top_z > T.top_z + EPS && overlap(S, T)) {
+              var eh = sched[S.guid].end; if (eh > se) se = eh; } } }
       }
       if (se > 0 && sched[T.guid].start < se - 1) v++;
     }
