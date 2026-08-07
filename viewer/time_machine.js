@@ -5260,6 +5260,20 @@
     return rows;
   }
 
+  // §GANTT_RETIME_RESYNC (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH follow-on — user
+  // report: "foundation piling nor others does not come onto canvas anymore, though i dragged to
+  // certain bars passing", witnessed as §PERF_TRAVERSE cand=0 on every scrub after §GANTT_RETIME):
+  // retimeTaskElements moves the ops' timestamps, but THREE derived structures kept the old times —
+  // (1) the §PERF_INCR event index (_evMesh), so the incremental reveal skipped meshes straight
+  // across their new transitions (the blackout); (2) _ops' sort order (consumers binary-search it);
+  // (3) the §XRAY solidify cache (stale carrier ends). One resync, called by every retime commit
+  // path (drag, ruler shift, group shift, undo) — same drop-pattern deactivate() already uses.
+  function _tmResyncAfterRetime() {
+    _ops.sort(function (a, b) { return a.start_ts - b.start_ts; });
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: force full rebuild next tick
+    _tmRebuildXrayCache();
+  }
+
   // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
   function commitGanttDrag(bar, mode, deltaDays) {
     var app = A();
@@ -5334,6 +5348,7 @@
     _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5387,6 +5402,7 @@
     retimeTaskElements(app.db, barsByTask, res.moved);
     _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5438,6 +5454,7 @@
     retimeTaskElements(app.db, barsByTask, res.moved);
     _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5491,6 +5508,7 @@
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
     say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6873,6 +6891,9 @@
     return wasActive;
   }
   window.tmRefoldSchedule = refoldSchedule;
+  // §GANTT_RETIME_RESYNC witness hook (double-underscore debug convention, read-only intent):
+  // lets witness_gantt_retime_resync.js drive the REAL ruler-shift commit path headlessly.
+  window.__tmGanttShift = shiftGanttSchedule;
 
   // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
   // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase
