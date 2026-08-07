@@ -3752,22 +3752,8 @@ async function setupEffects(A, renderer, scene, camera) {
   function _glowLensOn() {
     if (_glowLensMesh) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
-    // §GLOW_LENS_NO_SYNTH (2026-08-07, user: "misfiring night lights... have to remove those false
-    // lights"). A building with zero real named/classed luminaires falls back to A._loadNightFixtures'
-    // §S259 synthetic grid — fake positions spread every ~15m across the WHOLE storey footprint,
-    // indoors or not (confirmed on LTU_AHouse: 0 real matches, so the scattered rectangles over its
-    // outdoor courtyard were 100% fabricated positions). Sizing/orienting a quad to a position that
-    // corresponds to no real fixture is exactly the kind of invention this project's rules forbid —
-    // skip the lens entirely when the source is synthetic. The round nav sprite is untouched by this
-    // guard (out of the scope the user set — "night fly thru is OK").
-    if (A._nightFixtureSource && A._nightFixtureSource.indexOf('synthetic') === 0) {
-      console.log('§GLOW_LENS_QUAD skipped — fixture source is synthetic (no real luminaires in this ' +
-        'building), a lens would be sized/oriented to a fabricated position');
-      return;
-    }
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
-    var cam = A.camera.position;
     var geo = new THREE.PlaneGeometry(1, 1);
     var mat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
@@ -3782,15 +3768,23 @@ async function setupEffects(A, renderer, scene, camera) {
     // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
     // matches §GLOW_EMIT_DOWN, the direction the fixture actually emits and the direction __drop nudges).
     qFace.setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
-    var exits = 0, quads = 0;
+    // §GLOW_LENS_CLEARANCE_FIX (2026-08-07): the round sprite's old GLOW_EYE_OFFSET (0.3m TOWARD
+    // THE CAMERA) is direction-agnostic for a symmetric dot but visibly shifts an ORIENTED
+    // rectangle sideways at any angled view (the Hospital hallway misalignment). A small STRAIGHT
+    // DOWN clearance (same axis __drop already uses) clears the depth test against the fixture's
+    // own geometry without moving X/Z off the real fixture at all, from any angle.
+    var GLOW_LENS_CLEARANCE = 0.03;
+    var exits = 0, quads = 0, skippedTier2 = 0;
     for (var i = 0; i < pos.length; i++) {
       var p = pos[i];
       if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
-      var py = p.y - (p.__drop || 0.12);
-      var dx = cam.x - p.x, dy = cam.y - py, dz = cam.z - p.z;
-      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      var k = GLOW_EYE_OFFSET / d;
-      pVec.set(p.x + dx * k, py + dy * k, p.z + dz * k);
+      // §NIGHT_TIER_GATE (2026-08-07, user cascade) — the lens quad only draws for a real named
+      // fixture (p.__guid set) or the explicitly-sanctioned presentation-only ceiling plant
+      // (p.__presentation) — NOT tier 2's "any overhead element in the room" pick, which the user
+      // scoped as light-only ("as source of lite", no quad mentioned for that tier).
+      if (p.__guid == null && !p.__presentation) { skippedTier2++; continue; }
+      var py = p.y - (p.__drop || 0.12) - GLOW_LENS_CLEARANCE;
+      pVec.set(p.x, py, p.z);
       qYaw.setFromEuler(new THREE.Euler(0, p.__rz || 0, 0));
       q.copy(qFace); q.premultiply(qYaw);   // face down, THEN yaw to the fixture's real rotation_z
       var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
@@ -3807,7 +3801,8 @@ async function setupEffects(A, renderer, scene, camera) {
     A.scene.add(mesh);
     _glowLensMesh = mesh;
     console.log('§GLOW_LENS_QUAD staged ' + quads + ' lens quads (' + exits +
-      ' exit signs left on the round sprite), 1 draw call, 0 scene materials touched');
+      ' exit signs left on the round sprite, ' + skippedTier2 +
+      ' tier-2 overhead-picks skipped — PL only, no quad), 1 draw call, 0 scene materials touched');
   }
   function _glowLensOff() {
     if (!_glowLensMesh) return;
@@ -3850,11 +3845,14 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._bloomOff === undefined) A._bloomOff = true;
     if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
-    // §GLOW_ALL_REMOVED (2026-08-07, user: "remove all them, return to PL days... just increase
-    // them" — both the round sprite and the lens quad are OFF, still and nav. Real point lights
-    // only (A._nightLights, budget raised below). _glowOff() kept as a safety no-op in case
-    // anything is somehow still staged from before this change.
+    // §GLOW_STILL_RESTORED (2026-08-07): live nav stays PL-only (round sprite stopped staging
+    // there earlier, §GLOW_SPRITE_NAV_OFF — unchanged). The still gets the lens quad back, fixed
+    // (§GLOW_LENS_CLEARANCE_FIX) + the real point lights it was always getting, now frustum-cased
+    // instead of a flat 50-cap (§NIGHT_STILL_FRUSTUM in tools.js). Exit signs keep the round
+    // soft-glow subset alongside the quad (§GLOW_EXIT_SOFT — a backlit panel is not a lens).
     _glowOff();
+    _glowOn(function(p) { return p.__exit; });
+    _glowLensOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The

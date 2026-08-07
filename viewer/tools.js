@@ -1089,54 +1089,89 @@ function setupTools(A) {
         }
       } catch(e) {}
       // §NIGHT_ROOM_FALLBACK (2026-08-07, user cascade: "1. fixtures on ceiling 2. any fixtures
-      // 3. just per square empty per PL" — for a ROOM with no real named/classed luminaire above,
-      // don't leave it dark and don't fabricate a position. Uses REAL room-containment data
-      // (rel_contained_in_space, already extracted — 181 real rooms on LTU_AHouse) to pick, per
-      // empty room, the single HIGHEST real element actually inside it — "on the ceiling" if one
-      // exists there (a sprinkler, a diffuser, a beam — whatever the topmost real object is),
-      // otherwise simply the topmost real object present. A REAL element's own position, not a
-      // computed room-centroid average — user preferred a real fixture's position over an invented
-      // one. Tier 3 ("per square empty") turns out to be moot for this data shape: every room that
-      // appears in rel_contained_in_space has >=1 real member by construction of the join, so there
-      // is no room left with zero real elements to fall further back from.
+      // 3. just per square empty per PL", refined same session after LTU corridors still read too
+      // dark: "in rooms u can use flow terminal as been the only fixture around"). Uses REAL
+      // room-containment data (rel_contained_in_space, already extracted — 181 real rooms on
+      // LTU_AHouse) — for a ROOM with no real named/classed luminaire:
+      //   a) if the room contains any IfcFlowTerminal (vents/diffusers/sprinklers — a plausible
+      //      ceiling fixture class, and LTU has thousands: 4090 VENT + 1431 PLB), light EVERY ONE
+      //      of them, not just one per room — a long corridor has several spaced along its
+      //      ceiling, and one light for the whole corridor was exactly why it stayed dark at both
+      //      ends. A._nightMaxLights culling (nearest-N to camera) already handles the resulting
+      //      larger candidate pool, same as it does for real luminaires.
+      //   b) otherwise, the single HIGHEST real element in the room (any class) — unchanged from
+      //      before.
+      // Tier 3 ("per square empty") stays moot: every room here has >=1 real member by construction.
       try {
         var litGuids = {};
         A._nightFixtures.forEach(function(f) { if (f.guid) litGuids[f.guid] = 1; });
         var rm = A.db.exec(
-          "SELECT r.space_guid, r.element_guid, t.center_x, t.center_y, t.center_z, t.bbox_z " +
-          "FROM rel_contained_in_space r JOIN element_transforms t ON r.element_guid = t.guid"
+          "SELECT r.space_guid, r.element_guid, t.center_x, t.center_y, t.center_z, t.bbox_z, m.ifc_class " +
+          "FROM rel_contained_in_space r JOIN element_transforms t ON r.element_guid = t.guid " +
+          "JOIN elements_meta m ON r.element_guid = m.guid"
         );
         var byRoom = {};
         if (rm.length) {
           rm[0].values.forEach(function(row) {
             (byRoom[row[0]] = byRoom[row[0]] || []).push(
-              { guid: row[1], x: row[2], y: row[3], z: row[4], bz: row[5] || 0 });
+              { guid: row[1], x: row[2], y: row[3], z: row[4], bz: row[5] || 0, cls: row[6] || '' });
           });
         }
-        var roomsLit = 0;
+        var roomsLit = 0, ftLit = 0;
         for (var room in byRoom) {
           var members = byRoom[room];
           if (members.some(function(m) { return litGuids[m.guid]; })) continue;
-          var top = members[0];
-          for (var mi = 1; mi < members.length; mi++) {
-            if (members[mi].z + members[mi].bz / 2 > top.z + top.bz / 2) top = members[mi];
+          var flowTerms = members.filter(function(m) { return m.cls === 'IfcFlowTerminal'; });
+          if (flowTerms.length) {
+            flowTerms.forEach(function(ft) {
+              A._nightFixtures.push({ x: ft.x, y: ft.y, z: ft.z, name: 'room-flowterm ' + room,
+                h: ft.bz || 0.2, guid: null });
+              ftLit++;
+            });
+          } else {
+            var top = members[0];
+            for (var mi = 1; mi < members.length; mi++) {
+              if (members[mi].z + members[mi].bz / 2 > top.z + top.bz / 2) top = members[mi];
+            }
+            A._nightFixtures.push({ x: top.x, y: top.y, z: top.z, name: 'room-proxy ' + room,
+              h: top.bz || 0.2, guid: null });
           }
-          A._nightFixtures.push({ x: top.x, y: top.y, z: top.z, name: 'room-proxy ' + room,
-            h: top.bz || 0.2, guid: null });
           roomsLit++;
         }
         if (roomsLit) {
-          source = (source === 'IFC' ? 'IFC+room-proxy(' : 'room-proxy(') + roomsLit + ')';
+          source = (source === 'IFC' ? 'IFC+room-fallback(' : 'room-fallback(') +
+            roomsLit + ' rooms, ' + ftLit + ' via flow-terminal)';
         }
       } catch(e) { console.warn('§NIGHT_ROOM_FALLBACK query failed', e); }
-      // §S259_REMOVED (2026-08-07, user: "i want those fake lights removed in the code" — LTU_AHouse
-      // confirmed 0 real luminaires by direct query, and the synthetic grid this used to generate
-      // here (one fake position every ~15m across each storey's WHOLE bounding box, indoors or not)
-      // was exactly what scattered fabricated lights across LTU's outdoor courtyard — both as real
-      // A._nightLights point lights and, before that fix, as still-render lens quads. A position
-      // with no real element behind it is invention, not extraction (project Prime Rule) — a
-      // building with no real named/classed luminaires now simply has none. Night Mode still works
-      // (moonlight ambient), it just has no per-fixture lights to place.
+      // §NIGHT_CEILING_PLANT (2026-08-07, user: "if completely no fixture. then plant a quad and
+      // PL on ceiling. This is not hurting IFC integrity but effect same as having night or sky or
+      // ground mode" — explicitly sanctioned as PRESENTATION layer, same category as the ground
+      // plane / procedural sky, not asserted as real extracted IFC data. Fires only when tiers 1+2
+      // above found LITERALLY NOTHING — no real named luminaire anywhere, no room-containment data
+      // (or a building with rooms but somehow zero elements in any of them, which tier 2 above
+      // already can't produce given rel_contained_in_space's construction). One point per STOREY —
+      // its centroid + near-top Z, not the old removed 15m grid — explicitly tagged
+      // `presentation: true` so it's the ONLY tier besides real named fixtures that also gets a
+      // still-render lens quad (effects.js checks this flag) — tier 2 above stays PL-only, per
+      // user's own tiering ("take any overhead fixture... as source of lite" — light only, no quad).
+      if (A._nightFixtures.length === 0) {
+        try {
+          var sr2 = A.db.exec(
+            "SELECT m.storey, AVG(t.center_x), AVG(t.center_y), MAX(t.center_z + t.bbox_z/2) " +
+            "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+            "WHERE m.storey IS NOT NULL GROUP BY m.storey"
+          );
+          var storeysLit = 0;
+          if (sr2.length) {
+            sr2[0].values.forEach(function(row) {
+              A._nightFixtures.push({ x: row[1], y: row[2], z: row[3] - 0.3, name: 'ceiling-plant ' + row[0],
+                h: 0.2, guid: null, presentation: true });
+              storeysLit++;
+            });
+          }
+          if (storeysLit) source = 'ceiling-plant(' + storeysLit + ' storeys)';
+        } catch(e) { console.warn('§NIGHT_CEILING_PLANT query failed', e); }
+      }
     }
     A._nightFixtureSource = source;
     return source;
@@ -1350,6 +1385,10 @@ function setupTools(A) {
         // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
         // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
         p.__guid = f.guid || null;
+        // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
+        // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
+        // any-overhead-element pick (guid null, presentation unset) stays PL-only.
+        p.__presentation = !!f.presentation;
         return p;
       });
     }
@@ -1361,7 +1400,20 @@ function setupTools(A) {
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
     var needed;
-    if (allPos.length <= A._nightMaxLights) {
+    if (A._nightStillBoost) {
+      // §NIGHT_STILL_FRUSTUM (2026-08-07, user: "during Alt-S and movie baking, place quads and
+      // PLs on every noticeable source in the frame") — frustum-cull to what's actually in view
+      // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
+      // sanity ceiling against a pathological wide aerial shot with hundreds in frame at once —
+      // not a deliberate creative limit.
+      var frustum = new THREE.Frustum();
+      var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(vpMatrix);
+      var inView = allPos.filter(function(p) {
+        return frustum.containsPoint(new THREE.Vector3(p.x, p.y, p.z));
+      });
+      needed = inView.slice(0, 200).map(function(p) { return { pos: p }; });
+    } else if (allPos.length <= A._nightMaxLights) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
@@ -1380,7 +1432,28 @@ function setupTools(A) {
         var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      needed = sorted.slice(0, A._nightMaxLights);
+      // §NIGHT_SPREAD (2026-08-07, user: "not in dense area, if two sources nearby spread out to
+      // cover further line of sight") — greedy nearest-first, but skip a candidate within
+      // NIGHT_SPREAD_MIN_M of one already picked, so the 24-light budget reaches further down a
+      // corridor instead of bunching on one dense cluster right at the camera. If spacing can't
+      // fill the budget (not enough distant candidates), a second pass fills the rest ignoring
+      // spacing — the budget is always fully used, spacing is a preference, not a hard cutoff.
+      var NIGHT_SPREAD_MIN_M = 4;
+      var picked = [];
+      for (var si = 0; si < sorted.length && picked.length < A._nightMaxLights; si++) {
+        var cand = sorted[si].pos;
+        var tooClose = picked.some(function(pk) {
+          var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
+          return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
+        });
+        if (!tooClose) picked.push(cand);
+      }
+      if (picked.length < A._nightMaxLights) {
+        for (var si2 = 0; si2 < sorted.length && picked.length < A._nightMaxLights; si2++) {
+          if (picked.indexOf(sorted[si2].pos) === -1) picked.push(sorted[si2].pos);
+        }
+      }
+      needed = picked.map(function(p) { return { pos: p }; });
     }
     // Remove old lights
     A._nightLights.forEach(function(l) {
