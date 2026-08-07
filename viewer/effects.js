@@ -2366,18 +2366,37 @@ async function setupEffects(A, renderer, scene, camera) {
   // it rendered from frame 0 of a buildup. The predicate TM hands over is the SAME placed/frontier/
   // recent state it just applied to the real element, so the overlay cannot drift from it.
   // isVisible === null means TM is off → overlays visible (the sign exists in the finished building).
+  //
+  // §GLOW_BUILDUP_GATE (2026-08-07): a second consumer — §PHOTO_GLOW_SPRITE below — needs this same
+  // per-tick predicate for ~1000 fixture guids, not one billboard guid. window.__tmOverlaySync is a
+  // single global slot (TM calls exactly one function), so this is now a tiny fan-out: the raw
+  // isVisible fn is cached for on-demand reads (A._tmIsVisible) and broadcast to subscribers
+  // (A._tmVisSubscribe) so a buildup bake can withhold a fixture's glow until TM has actually placed
+  // it, without effects.js re-deriving placed/frontier/recent itself.
   var _nameVisLast = null;
+  var _tmVisListeners = [];
+  var _lastTmIsVisible = null;   // latest predicate TM handed over; null when TM isn't driving the scene
+  A._tmVisSubscribe = function(fn) { _tmVisListeners.push(fn); };
+  // Same default as the billboard branch below: no active TM predicate → everything is visible
+  // (Night Mode used outside a buildup bake, or after the buildup has fully completed).
+  A._tmIsVisible = function(guid) { return _lastTmIsVisible ? !!_lastTmIsVisible(guid) : true; };
   A._tmOverlayRegister = function() {
     if (window.__tmOverlaySync) return;   // idempotent
     window.__tmOverlaySync = function(isVisible) {
-      if (!_billboardNameMesh || !_billboardNameGuid) return;
-      var v = isVisible ? !!isVisible(_billboardNameGuid) : true;
-      if (v === _nameVisLast) return;     // log + write on CHANGE only, never per tick
-      _nameVisLast = v;
-      _billboardNameMesh.visible = v;
-      console.log('§BILLBOARD_NAME_VIS guid=' + _billboardNameGuid + ' visible=' + v +
-        ' tmActive=' + !!isVisible);
-      if (A.markDirty) A.markDirty();
+      _lastTmIsVisible = isVisible;
+      if (_billboardNameMesh && _billboardNameGuid) {
+        var v = isVisible ? !!isVisible(_billboardNameGuid) : true;
+        if (v !== _nameVisLast) {     // log + write on CHANGE only, never per tick
+          _nameVisLast = v;
+          _billboardNameMesh.visible = v;
+          console.log('§BILLBOARD_NAME_VIS guid=' + _billboardNameGuid + ' visible=' + v +
+            ' tmActive=' + !!isVisible);
+          if (A.markDirty) A.markDirty();
+        }
+      }
+      for (var _tvi = 0; _tvi < _tmVisListeners.length; _tvi++) {
+        try { _tmVisListeners[_tvi](isVisible); } catch (e) { /* one bad subscriber must not break TM's tick */ }
+      }
     };
     // Read-only probe for the witness: what the overlay currently believes.
     A._billboardNameState = function() {
@@ -3559,6 +3578,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var GLOW_EXIT_GAIN   = 0.9;
   var GLOW_EXIT_SIZE   = 0.40;
   var _glowPoints = null, _glowTex = null;
+  var _glowStagedCount = -1;   // §GLOW_BUILDUP_GATE — fixture count the CURRENT cloud was built with
 
   function _glowTexture() {
     if (_glowTex) return _glowTex;
@@ -3579,8 +3599,21 @@ async function setupEffects(A, renderer, scene, camera) {
   function _glowOn() {
     if (!A._glowSpriteEnabled || _glowPoints) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
-    var pos = A._nightFixtureWorldPositions();
-    if (!pos || !pos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    if (A._tmOverlayRegister) A._tmOverlayRegister();   // idempotent — ensures window.__tmOverlaySync exists even without a billboard nameplate
+    var allPos = A._nightFixtureWorldPositions();
+    if (!allPos || !allPos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    // §GLOW_BUILDUP_GATE (2026-08-07, user: MaxQ buildup bakes showed every fixture lit from
+    // Day 1 — "all the lights are lighted and not following the buildup schedule"). A fixture with
+    // no guid (the synthetic per-storey fallback — no real element to gate against) always glows;
+    // a real fixture only glows once Time Machine has actually placed it. A._tmIsVisible defaults
+    // to true when TM isn't driving the scene at all, so plain Night Mode (no buildup in progress)
+    // is completely unchanged.
+    var pos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    _glowStagedCount = pos.length;
+    if (!pos.length) {
+      console.log('§PHOTO_GLOW_SPRITE_GATE 0/' + allPos.length + ' fixtures placed yet — nothing to light');
+      return;
+    }
     // Offset toward the eye, computed ONCE: for a still the camera is frozen, so once is exact; in
     // navigation a 0.15m staleness as the camera moves is below the size of the halo it positions.
     var cam = A.camera.position;
@@ -3645,7 +3678,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowPoints.renderOrder = 999;       // after opaque geometry, so additive lands on a finished frame
     _glowPoints.name = '__glowSprites';
     A.scene.add(_glowPoints);
-    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + ' sprites (' + (pos.length - exits) +
+    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
       ' luminaires gain ' + GLOW_GAIN + ', ' + exits + ' exit signs gain ' + GLOW_EXIT_GAIN +
       ' x' + GLOW_EXIT_SIZE + ' size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose)' +
       ', 1 draw call, 0 scene materials touched' +
@@ -3673,6 +3706,23 @@ async function setupEffects(A, renderer, scene, camera) {
   // Bloom stays still-only — it is 7 extra full-screen draws and that DOES have a 60fps cost.
   A._glowStage   = function() { _glowOn(); };
   A._glowUnstage = function() { _glowOff(); };
+  // §GLOW_BUILDUP_GATE restage: while sprites are staged during an active TM buildup, the set of
+  // placed fixtures grows tick by tick — rebuild the (small, ≤~1200-point) cloud only when that
+  // count actually changes, not on every tick. isVisible === null (TM inactive) always matches
+  // "everything" and is a no-op restage the first time it's seen after a buildup ends.
+  if (typeof A._tmVisSubscribe === 'function') {
+    A._tmVisSubscribe(function(isVisible) {
+      if (!_glowPoints || !A._nightMode) return;
+      var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
+      var n = 0;
+      for (var _gi = 0; _gi < allPos.length; _gi++) {
+        if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
+      }
+      if (n === _glowStagedCount) return;
+      _glowOff();
+      _glowOn();
+    });
+  }
 
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;

@@ -95,11 +95,15 @@ async function measure(page) {
       t: parseFloat(cs.borderTopWidth) || 0, b: parseFloat(cs.borderBottomWidth) || 0
     };
     // The scissor rect back in CSS px, page coordinates — the same space the DOM boxes live in.
+    // §CPE_VF_DPR_DOUBLE (2026-08-07): the rect is CSS px now — three.js applies the pixel ratio
+    // itself (probed live: setViewport(0,0,100,80) at pr 1.25 -> gl.VIEWPORT [0,0,125,100]). This
+    // witness used to divide by pr, which made it self-consistent with the OLD double-multiplying
+    // code and blind to the very bug the user could see. No conversion now.
     const render = {
-      left: canvasR.left + rect.x / pr,
-      top: canvasR.top + (rect.canvasH - rect.y - rect.h) / pr,
-      width: rect.w / pr,
-      height: rect.h / pr
+      left: canvasR.left + rect.x,
+      top: canvasR.top + (rect.canvasH - rect.y - rect.h),
+      width: rect.w,
+      height: rect.h
     };
     render.right = render.left + render.width;
     render.bottom = render.top + render.height;
