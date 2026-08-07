@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v957';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v958';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -115,6 +115,7 @@ const PRECACHE_ASSETS = [
   'effects.js',
   'cinema_maxq.js',
   'cinema_path_editor.js',
+  'cpe_walk.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
   'scene.js',
