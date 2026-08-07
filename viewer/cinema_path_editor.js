@@ -3449,22 +3449,30 @@
           return true;
         },
         _walkSnap: function(pos, fwd) { return _walkSnap(pos, fwd); },
-        // §CPE_WALK_SPAWN (2026-08-07, user: "SCRUB BAR IS NOT TO BE USED! WALK!!!") — the walk is
-        // self-sufficient: first shoes press spawns at the WALK STRETCH's eye-level start (the fat
-        // authorable tube, where sticks live), computed from the plan itself. The old behaviour —
-        // start wherever B's camera happened to be — meant the aerial dive start on a fresh open,
-        // and the user's Hospital bug report shows the consequence: a snap there clamps to s=0.000
-        // and plants a sky stick. Positions the vfCam directly; returns the pose for logging.
+        // §CPE_WALK_SPAWN (2026-08-07, user rulings, two rounds): the walk is self-sufficient —
+        // a fresh shoes press spawns at the WALK STRETCH's start (the fat authorable tube), never
+        // the aerial dive pose (the user's Hospital sky-stick report, s=0.000 260m up).
+        // §CPE_WALK_SCRUB_SPAWN refinement (same day, user: "user can bring further along the path,
+        // then began the stick planting... that is alternative to speed things up, but in essence
+        // the walk finder mode is also it"): a scrub already sitting INSIDE the walk stretch is an
+        // optional accelerator — spawn THERE instead of the walk head. Outside the stretch (e.g.
+        // the untouched 0 = the dive) still falls back to the walk head. Positions vfCam directly.
         _walkSpawnPose: function() {
           if (!_state || !_state.plan || typeof _state.plan.poseAt !== 'function') return null;
           var bts = _state.plan.beats || {};
           var lo = isFinite(bts.spin) ? bts.spin : 0, hi = isFinite(bts.out) ? bts.out : 1;
-          var tn = lo + (hi - lo) * 0.02;   // just inside the walk stretch, clear of the beat seam
+          var st = _state.scrubTn || 0;
+          var scrubbed = (st > lo && st < hi);
+          var tn = scrubbed ? st : lo + (hi - lo) * 0.02;   // head nudge stays clear of the beat seam
           var p = _state.plan.poseAt(tn);
           if (!p) return null;
           if (_state.vfCam) { _state.vfCam.position.set(p.x, p.y, p.z); _state.vfCam.lookAt(p.tx, p.ty, p.tz); }
-          return { tn: tn, x: p.x, y: p.y, z: p.z, tx: p.tx, ty: p.ty, tz: p.tz };
+          return { tn: tn, scrubbed: scrubbed, x: p.x, y: p.y, z: p.z, tx: p.tx, ty: p.ty, tz: p.tz };
         },
+        // §CPE_WALK_SCRUB_SPAWN — cpe_walk.js compares this against the value it saw at the last
+        // stop(): a scrub MOVED since the last walk means the user chose a new start (scrub beats
+        // resume); an untouched scrub keeps the resume pose (continue where they stood).
+        _walkScrubTn: function() { return _state ? (_state.scrubTn || 0) : 0; },
         // Read-only proof for G-WALK-ISOLATE: whether the stick editor's OWN drag gesture is live
         // right now. `_state.drag` is only ever non-null while a real pointerdown->pointermove
         // sequence, dispatched through the `_wire()`-installed capture-phase listeners, is in

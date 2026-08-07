@@ -306,17 +306,25 @@
     if (!canvas) { console.warn('§CPE_WALK_START_FAIL no canvas'); return false; }
 
     _cpe = cpe; _vfCam = vfCam; _canvas = canvas;
-    // §CPE_WALK_SPAWN — walk-centric, ZERO scrub involvement (user ruling; the old "start wherever
-    // B's camera happens to be" spawned at the aerial dive start and their Hospital snap planted a
-    // sky stick at s=0.000). Resume the last walked pose if this B session walked before; otherwise
-    // spawn at the walk stretch's eye-level start via the editor's own plan.
+    // §CPE_WALK_SPAWN / §CPE_WALK_SCRUB_SPAWN — spawn priority:
+    //   1. resume pose, IF the scrub has not moved since the last walk stopped (continue in place);
+    //   2. a scrub sitting inside the walk stretch (user's optional accelerator: "bring further
+    //      along the path, then began the stick planting");
+    //   3. the walk stretch's start (the self-sufficient default — never the aerial dive pose).
+    var _scrubNow = cpe._walkScrubTn ? cpe._walkScrubTn() : 0;
+    if (_resumePose && _resumePose.scrubTn !== undefined && _scrubNow !== _resumePose.scrubTn) {
+      console.log('§CPE_WALK_SPAWN scrub moved since last walk (' + _resumePose.scrubTn.toFixed(3) +
+        ' -> ' + _scrubNow.toFixed(3) + ') — user chose a new start, resume dropped');
+      _resumePose = null;
+    }
     if (_resumePose) {
       _vfCam.position.set(_resumePose.x, _resumePose.y, _resumePose.z);
     } else if (cpe._walkSpawnPose) {
       var sp = cpe._walkSpawnPose();
-      if (sp) console.log('§CPE_WALK_SPAWN walk-start tn=' + sp.tn.toFixed(3) +
+      if (sp) console.log('§CPE_WALK_SPAWN ' + (sp.scrubbed ? 'scrubbed' : 'walk-start') + ' tn=' + sp.tn.toFixed(3) +
         ' pos=(' + sp.x.toFixed(2) + ',' + sp.y.toFixed(2) + ',' + sp.z.toFixed(2) +
-        ') — eye-level start of the authorable stretch, scrub not consulted');
+        (sp.scrubbed ? ') — spawning at the scrubbed path point (accelerator)' :
+                       ') — start of the authorable stretch (self-sufficient default)'));
     }
     _vfCam.rotation.reorder && _vfCam.rotation.reorder('XYZ');
     _yaw = _vfCam.rotation.y; _pitch = _vfCam.rotation.x;
@@ -368,7 +376,11 @@
     // (snap → Esc review → shoes → next stick, no re-navigation). Cleared only by forceStop
     // (eye-off / editor close), where the path context that made this pose meaningful is gone.
     if (_vfCam) _resumePose = { x: _vfCam.position.x, y: _vfCam.position.y, z: _vfCam.position.z,
-                                yaw: _yaw, pitch: _pitch };
+                                yaw: _yaw, pitch: _pitch,
+                                // §CPE_WALK_SCRUB_SPAWN — the scrub value at stop time; a DIFFERENT
+                                // value at the next start means the user scrubbed meanwhile = chose
+                                // a new spawn (scrub beats resume, untouched scrub keeps resume).
+                                scrubTn: (_cpe && _cpe._walkScrubTn) ? _cpe._walkScrubTn() : 0 };
     if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
     if (_handlers) {
       document.removeEventListener('mousemove', _handlers.mousemove, true);
