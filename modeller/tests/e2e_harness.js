@@ -163,6 +163,15 @@ async function runE2E(NAME, body, opts) {
           }
         }; return true;
       });
+      // §OPEN-SETTLE (2026-08-07, guide-recapture hardening): on a loaded machine the fixed 2200/600ms
+      // sleeps above aren't always enough — candidates() (on-screen-projected, camera-dependent) has been
+      // observed returning 0 immediately post-fit, then 40 ~1-1.5s later once the fit/damping settles. This
+      // is camera-timing flake, not an app bug (mesh/candidate DATA is present throughout — see diag capture
+      // in RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md 2026-08-07). Poll instead of trusting the fixed sleep so
+      // t.pick() never starts its scan against a transiently-empty candidate list.
+      { const t0 = Date.now(); let n = 0;
+        while (Date.now() - t0 < 6000) { n = await pg.evaluate(() => window.__e2e.candidates().length); if (n > 0) break; await sleep(200); }
+        console.log('  §OPEN-SETTLE candidates=' + n + ' waitedMs=' + (Date.now() - t0)); }
     },
     proj(x, y, z) { return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
@@ -247,7 +256,35 @@ async function runE2E(NAME, body, opts) {
         }, list.map(c => c.fid));
         return list.filter(c => ok[c.fid]);
       };
-      let cands = await filterCuttable(await pg.evaluate(() => window.__e2e.candidates()));
+      // opts.axisSafe (2026-08-07, guide-recapture card, W-E2E-MOVE finding): a Move/Scale gizmo's per-axis
+      // handle is LOCAL to the insert (§F2-FRAMING precedent in witness_e2e_scale.js: "the scaleX cube sits
+      // on the insert's LOCAL x"). The size-only `wallish` heuristic can't tell a real wall from a genuinely
+      // TILTED insert with the same world-AABB proportions — found live: fid=69 in Duplex is an IfcWindow
+      // with placement.rotY=90° (a real pitch, not a wall) that "wallish" happily matched, and a world-+X
+      // drag on it produced a 1.2m world-Z shift the op-log never recorded (local-X ≠ world-X once rotY≠0).
+      // Filter to inserts whose OWN placement has near-zero rotX/rotY — world axes == local axes, so a
+      // world-X drag and the op's dx/dy/dz mean the same thing (the assumption every axis-drag witness makes).
+      const filterAxisSafe = async (list) => {
+        if (!opts.axisSafe) return list;
+        const ok = await pg.evaluate(fids => {
+          const ops = window.Bonsai.oplog._geomOps(); const byId = new Map(ops.map(o => [o.id, o]));
+          const out = {};
+          fids.forEach(f => { const op = byId.get(f); if (!op) { out[f] = false; return; }
+            if (op.op_type !== 'GEOM_INSERT') { out[f] = true; return; }
+            const pl = op.parameters && op.parameters.placement;
+            out[f] = !pl || (Math.abs(pl.rotX || 0) < 1e-6 && Math.abs(pl.rotY || 0) < 1e-6); });
+          return out;
+        }, list.map(c => c.fid));
+        return list.filter(c => ok[c.fid]);
+      };
+      let cands = await filterAxisSafe(await filterCuttable(await pg.evaluate(() => window.__e2e.candidates())));
+      // opts.maxVol (2026-08-07, W-E2E-MOVE finding): headless-swiftshader crashed reproducibly (3/3 runs,
+      // "Target closed") capturing a close-up right after dragging Duplex's single BIGGEST panel (fid=112,
+      // vol=11.38 — an 8.8m exterior wall with 2 hosted fillings; re-fold retessellates the whole span). Not
+      // chased further (a real GPU-driver/software-rasterizer resource limit, not app logic — out of a
+      // guide-screenshot lane's scope) — cap candidate volume so witnesses needing a legible single-element
+      // close-up don't land on the pathological largest mesh in the building.
+      if (opts.maxVol != null) cands = cands.filter(c => c.vol <= opts.maxVol);
       if (opts.prefer === 'wall') {
         cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
       }
@@ -276,7 +313,8 @@ async function runE2E(NAME, body, opts) {
             const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
           }
         }
-        cands = await filterCuttable(await pg.evaluate(() => window.__e2e.candidates()));
+        cands = await filterAxisSafe(await filterCuttable(await pg.evaluate(() => window.__e2e.candidates())));
+        if (opts.maxVol != null) cands = cands.filter(c => c.vol <= opts.maxVol);
         if (opts.prefer === 'wall') cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
       }
       return null;
