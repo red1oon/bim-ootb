@@ -3578,10 +3578,11 @@ async function setupEffects(A, renderer, scene, camera) {
     return _glowTex;
   }
 
-  function _glowOn() {
+  function _glowOn(filterFn) {
     if (!A._glowSpriteEnabled || _glowPoints) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     var pos = A._nightFixtureWorldPositions();
+    if (filterFn) pos = pos.filter(filterFn);
     if (!pos || !pos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
     // Offset toward the eye, computed ONCE: for a still the camera is frozen, so once is exact; in
     // navigation a 0.15m staleness as the camera moves is below the size of the halo it positions.
@@ -3697,6 +3698,19 @@ async function setupEffects(A, renderer, scene, camera) {
   function _glowLensOn() {
     if (_glowLensMesh) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
+    // §GLOW_LENS_NO_SYNTH (2026-08-07, user: "misfiring night lights... have to remove those false
+    // lights"). A building with zero real named/classed luminaires falls back to A._loadNightFixtures'
+    // §S259 synthetic grid — fake positions spread every ~15m across the WHOLE storey footprint,
+    // indoors or not (confirmed on LTU_AHouse: 0 real matches, so the scattered rectangles over its
+    // outdoor courtyard were 100% fabricated positions). Sizing/orienting a quad to a position that
+    // corresponds to no real fixture is exactly the kind of invention this project's rules forbid —
+    // skip the lens entirely when the source is synthetic. The round nav sprite is untouched by this
+    // guard (out of the scope the user set — "night fly thru is OK").
+    if (A._nightFixtureSource && A._nightFixtureSource.indexOf('synthetic') === 0) {
+      console.log('§GLOW_LENS_QUAD skipped — fixture source is synthetic (no real luminaires in this ' +
+        'building), a lens would be sized/oriented to a fabricated position');
+      return;
+    }
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
     var cam = A.camera.position;
@@ -3785,7 +3799,13 @@ async function setupEffects(A, renderer, scene, camera) {
     // §GLOW_LENS_QUAD (2026-08-07): the still gets the fitted lens quad, not the round nav sprite —
     // "only for the render" (user directive). Night mode may already have staged the round sprite;
     // swap it for the quad rather than stacking both.
-    _glowOff(); _glowLensOn();
+    // §GLOW_LENS_EXIT_FIX: the quad deliberately skips exit signs (§GLOW_EXIT_SOFT — a backlit panel,
+    // not a lens), so a plain swap left them with NO glow at all during the still, a regression from
+    // before this change (found on the Clinic screenshot). Stage the round sprite for the exit-sign
+    // SUBSET only, alongside the quad for everything else, so exits keep their soft glow.
+    _glowOff();
+    _glowOn(function(p) { return p.__exit; });
+    _glowLensOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
