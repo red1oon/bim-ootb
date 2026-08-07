@@ -942,7 +942,7 @@ function setupTools(A) {
     return NIGHT_AMBER;
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
-  var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
+  var NIGHT_LIGHT_INTENSITY = 4.5; // §S277d, reduced 8.0->6.5->4.5 2026-08-07 (user: still too bright after first cut)
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
@@ -975,7 +975,7 @@ function setupTools(A) {
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
       A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
-      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.8; _glowCount++; }
+      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.45; _glowCount++; } // reduced 0.8->0.65->0.45 2026-08-07
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
       m.needsUpdate = true;
     }
@@ -1013,8 +1013,12 @@ function setupTools(A) {
           // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
           // round halo. Still-only consumer — the live round sprite ignores these three columns.
           // m.guid (glow-buildup-gate, merged in) kept alongside for that feature's own consumer.
-          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid FROM elements_meta m " +
+          // §GLOW_TRUE_BOTTOM (2026-08-07): i.geometry_hash lets the drop calc below use the
+          // fixture's REAL mesh bounding box instead of assuming center_z sits at the bbox
+          // midpoint — see the drop comment further down for why that assumption was wrong.
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid, i.geometry_hash FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
+          "LEFT JOIN element_instances i ON m.guid=i.guid " +
           // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
           // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
           //     m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') AND ...
@@ -1083,7 +1087,7 @@ function setupTools(A) {
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
             A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0,
-              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0, guid: row[8] || null });
+              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0, guid: row[8] || null, ghash: row[9] || null });
           });
           source = 'IFC';
         }
@@ -1336,6 +1340,7 @@ function setupTools(A) {
         l.dispose();
       });
       A._nightLights = [];
+      A._nightLightByPos = null;   // stale pos-object keys otherwise survive the next toggle-on
       A._nightFixturePositions = null;
       // §PHOTO_GLOW_SPRITE: night's sprites must not survive night mode
       if (typeof A._glowUnstage === 'function') A._glowUnstage();
@@ -1372,13 +1377,33 @@ function setupTools(A) {
         // Key the ratio on name+position so it is stable per fixture and independent of row order.
         p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
         p.__exit = A.nightIsExitSign(f.name);   // §GLOW_EXIT_SOFT — a sign is not a troffer
-        // §GLOW_EMIT_DOWN — how far BELOW the stored centre the fitting actually emits. The DB gives
-        // a bounding-box centre; a RECESSED fitting's centre is level with (or above) the ceiling
-        // face, and a suspended one's centre is up in its drop rod. Half the bbox height plus a
-        // clearance puts the glow on the emitting face in both cases. Measured half-heights:
-        // troffer 0.07m, downlight 0.10m, plain recessed 0.075m, pendant-linear 0.77m (Clinic) —
-        // the pendant number is the drop rod, and dropping by it lands the glow on the lamp.
-        p.__drop = (f.h || 0) / 2 + 0.12;
+        // §GLOW_TRUE_BOTTOM (2026-08-07, replaces §GLOW_EMIT_DOWN's half-bbox-height guess — see
+        // NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_TRUE_BOTTOM for the numeric witness). The OLD formula
+        // `bbox_z/2 + 0.12` assumed center_z sits at the bbox MIDPOINT. It doesn't: extractIFCtoDB.py
+        // stores center_z as the IFC PLACEMENT ORIGIN translation, and bbox_z as the full world AABB
+        // height — the two only coincide when a fixture's mesh happens to be symmetric about its own
+        // origin. Measured on Hospital: a recessed troffer (symmetric mesh) was off by 4mm — noise.
+        // A suspended linear pendant (origin at the ceiling attach point, mesh mostly BELOW it) was
+        // off by 196mm — the pendant hangs from the origin, so almost none of its height is above it.
+        // Real fix: read the ACTUAL local bounding box of the fixture's own mesh (already loaded for
+        // rendering, same Y-axis convention as A.blobToGeometry — local Y === IFC Z, no extra math)
+        // instead of guessing from a symmetric assumption. GLOW_LENS_CLEARANCE below is the same
+        // small physical clearance effects.js already uses to clear the fixture's own depth-test —
+        // reused here, not reinvented, for the same reason.
+        var GLOW_LENS_CLEARANCE = 0.03;
+        p.__drop = null;
+        if (f.ghash && A.meshCache && A.meshCache[f.ghash]) {
+          var _geo = A.meshCache[f.ghash];
+          if (!_geo.boundingBox) _geo.computeBoundingBox();
+          if (_geo.boundingBox && isFinite(_geo.boundingBox.min.y)) {
+            p.__drop = -_geo.boundingBox.min.y + GLOW_LENS_CLEARANCE;
+          }
+        }
+        if (p.__drop === null) {
+          // Fallback only — mesh not streamed in yet, or a synthetic/room-fallback fixture with no
+          // geometry_hash. Old heuristic, kept as a documented approximation, not a silent guess.
+          p.__drop = (f.h || 0) / 2 + 0.12;
+        }
         // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
         // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
@@ -1455,13 +1480,17 @@ function setupTools(A) {
       }
       needed = picked.map(function(p) { return { pos: p }; });
     }
-    // Remove old lights
-    A._nightLights.forEach(function(l) {
-      A.scene.remove(l);
-      if (l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
-      l.dispose();
-    });
-    A._nightLights = [];
+    // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
+    // set from scratch on every call — called on every 5m of camera travel while night mode is on,
+    // so a normal orbit/fly repeatedly churned three.js's per-material light-uniform list (the
+    // exact "shader recompile on light count change" cost this doc's own §RAM section already
+    // named as the expensive part). Root cause of the "hiccups when lighting is on, smooth when
+    // off" report — see §NIGHT_LIGHT_CHURN. Fix: `allPos` entries are stable object references
+    // (memoized by A._nightFixtureWorldPositions), so a Map keyed on that reference tracks which
+    // light belongs to which fixture across calls — reuse the light (just refresh its distance-fade
+    // intensity) when a fixture is still wanted, only dispose/create the delta.
+    if (!A._nightLightByPos) A._nightLightByPos = new Map();
+    var stillWanted = new Set();
     // §S277d: camera-distance fade — lights near the eye (you're inside, next to them) dim to
     // 30%; lights far away (you're outside looking in) stay full strength for façade throw.
     // Fixes "inside too bright" without losing the exterior overhang/doorway spillover.
@@ -1477,11 +1506,25 @@ function setupTools(A) {
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
       var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
-      var light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
-      light.position.copy(f.pos);
-      A.scene.add(light);
-      A._nightLights.push(light);
+      stillWanted.add(f.pos);
+      var light = A._nightLightByPos.get(f.pos);
+      if (light) {
+        light.intensity = intensity;   // position/colour are fixed per fixture — only fade moves
+      } else {
+        light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+        light.position.copy(f.pos);
+        A.scene.add(light);
+        A._nightLightByPos.set(f.pos, light);
+      }
     });
+    A._nightLightByPos.forEach(function(light, pos) {
+      if (stillWanted.has(pos)) return;
+      A.scene.remove(light);
+      if (light.shadow && light.shadow.map) { light.shadow.map.dispose(); light.shadow.map = null; }
+      light.dispose();
+      A._nightLightByPos.delete(pos);
+    });
+    A._nightLights = Array.from(A._nightLightByPos.values());
     if (A.markDirty) A.markDirty();
   };
 

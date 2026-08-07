@@ -3763,7 +3763,7 @@ async function setupEffects(A, renderer, scene, camera) {
     mesh.frustumCulled = false;
     mesh.renderOrder = 999;
     mesh.name = '__glowLensQuads';
-    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion();
     var pVec = new THREE.Vector3(), sVec = new THREE.Vector3(), col = new THREE.Color();
     // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
     // matches §GLOW_EMIT_DOWN, the direction the fixture actually emits and the direction __drop nudges).
@@ -3785,8 +3785,15 @@ async function setupEffects(A, renderer, scene, camera) {
       if (p.__guid == null && !p.__presentation) { skippedTier2++; continue; }
       var py = p.y - (p.__drop || 0.12) - GLOW_LENS_CLEARANCE;
       pVec.set(p.x, py, p.z);
-      qYaw.setFromEuler(new THREE.Euler(0, p.__rz || 0, 0));
-      q.copy(qFace); q.premultiply(qYaw);   // face down, THEN yaw to the fixture's real rotation_z
+      // §GLOW_LENS_NO_DOUBLE_YAW (2026-08-07, next session, numeric witness not visual — see
+      // NIGHT_AND_FIXTURE_LIGHTING.md §SESSION HANDOFF "second cause" item): bbox_x/bbox_y from
+      // element_transforms are the WORLD-frame AABB, rotation_z ALREADY baked in — proven by
+      // Terminal_extracted.db's EmergencyLight_EL3 rows, same fixture reporting bbox swapped
+      // (0.168x0.419 at rz=+pi/2 vs 0.419x0.168 at rz=pi). The old code treated (bbox_x,bbox_y) as
+      // LOCAL dims and yawed them AGAIN by rotation_z — a no-op at rz=0/pi (why upstairs looked
+      // fine) but a 90 deg swap of the quad's world footprint at rz=+-pi/2 (why downstairs didn't
+      // fit: FitUpstairs.png). No yaw needed — q stays face-down only.
+      q.copy(qFace);
       var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
       sVec.set(w, h, 1);
       m4.compose(pVec, q, sVec);
