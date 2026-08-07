@@ -3600,6 +3600,43 @@
     console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
   }
 
+  // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
+  // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
+  // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
+  // the user dragged — with ScheduleGate.auditFloating, ALL classes, no filter (the §DEQ_V1 bar).
+  // The check IS auditFloating: when §GEOMETRIC_SUPPORT_ORDER-class upgrades land in the gate
+  // module, this hook strengthens automatically, no separate integration.
+  // Returns { ok, floating, total, guids, ms, skipped? }. A state with nothing auditable (no
+  // geometry / gate not loaded) verifies ok WITH the skip named — logged by the caller, never a
+  // silent false pass.
+  function verifyGanttIntegrity() {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    function ms() { return Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0); }
+    if (typeof ScheduleGate === 'undefined' || !ScheduleGate.auditFloating)
+      return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
+    var els = _buildXrayElements();
+    if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var sched = {};
+    for (var i = 0; i < _ops.length; i++) {
+      var o = _ops[i];
+      var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
+      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
+    }
+    // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
+    // (zero bbox at origin) can neither bear nor hang and sit at project end by design
+    var audited = [];
+    for (var j = 0; j < els.length; j++) {
+      var e = els[j];
+      if (!sched[e.guid]) continue;
+      if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
+      audited.push(e);
+    }
+    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var guids = [];
+    var n = ScheduleGate.auditFloating(audited, sched, null, guids);
+    return { ok: n === 0, floating: n, total: audited.length, guids: guids, ms: ms() };
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Z-DRIVEN CONSTRUCTION SCHEDULE
   // ══════════════════════════════════════════════════════════════════
@@ -5901,26 +5938,57 @@
         lockBtn._wired = true;
         lockBtn.addEventListener('pointerup', function (e) {
           e.stopPropagation();
-          _ganttEditable = !_ganttEditable;
-          lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
-          lockBtn.title = _ganttEditable
-            ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
-            : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
-          console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
-          // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
-          // props panel alone is ~330px wide) — widen automatically rather than making the user find
-          // the new resize grip every time. Only expands if narrower than the edit width already (a
-          // user who manually widened past it keeps their own choice); restores to whatever width was
-          // active the moment editing turned on, so a manual resize DURING editing is not fought.
-          if (_panel) {
-            var curW = _panel.getBoundingClientRect().width;
-            if (_ganttEditable) {
-              _panelWPreEdit = curW;
-              if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
-            } else if (_panelWPreEdit != null) {
-              _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+          function applyLockUi() {
+            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+            lockBtn.title = _ganttEditable
+              ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
+              : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+            console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
+            // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
+            // props panel alone is ~330px wide) — widen automatically rather than making the user find
+            // the new resize grip every time. Only expands if narrower than the edit width already (a
+            // user who manually widened past it keeps their own choice); restores to whatever width was
+            // active the moment editing turned on, so a manual resize DURING editing is not fought.
+            if (_panel) {
+              var curW = _panel.getBoundingClientRect().width;
+              if (_ganttEditable) {
+                _panelWPreEdit = curW;
+                if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
+              } else if (_panelWPreEdit != null) {
+                _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+              }
             }
           }
+          if (_ganttEditable) {
+            // §GANTT_LOCK_INTEGRITY: 🔓→🔒 verifies the EDITED schedule still holds physical
+            // integrity before the lock is accepted. Breach ⇒ the lock is REFUSED (stays Editing),
+            // the flag names the floaters, and ↺ Undo (or further corrective edits) is the way out —
+            // the gate is stateless, every lock attempt re-audits, so undo depth vs breach depth
+            // (spec open-question 1) needs no edit-history tracing. Only THIS transition is gated
+            // (spec Q2); unlock below never verifies.
+            var lm = document.getElementById('tm-gantt-lockmsg');
+            if (lm) { lm.textContent = 'Verifying integrity…'; lm.style.color = ''; }
+            setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
+              var v = verifyGanttIntegrity();
+              if (!v.ok) {
+                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '/' + v.total + ' ms=' + v.ms +
+                  ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
+                if (lm) {
+                  lm.textContent = '⚠ Integrity Breach: ' + v.floating + ' floating — press ↺ Undo edit (or fix), then lock again';
+                  lm.style.color = '#f66';
+                }
+                return;   // REFUSED — _ganttEditable stays true, nothing hidden
+              }
+              console.log('§GANTT_LOCK_VERIFY ok floating=0/' + v.total + ' ms=' + v.ms +
+                (v.skipped ? ' skipped=' + v.skipped : ''));
+              if (lm) { lm.textContent = ''; lm.style.color = ''; }
+              _ganttEditable = false;
+              applyLockUi();
+            }, 0);
+            return;
+          }
+          _ganttEditable = true;
+          applyLockUi();
         });
       }
       var lockMsg = document.getElementById('tm-gantt-lockmsg');

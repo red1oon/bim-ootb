@@ -91,7 +91,10 @@ const BUILDING = process.argv[2] || 'Duplex';
     window: { ScheduleAuthor: ScheduleAuthor, performance: null },
     A: function () { return { db: db }; },
     document: { getElementById: function () { return null; } },
-    invalidateGanttModel: function () {}, computeDays: function () {}, drawGanttMini: function () {}, renderAtTime: function () {}
+    invalidateGanttModel: function () {}, computeDays: function () {}, drawGanttMini: function () {}, renderAtTime: function () {},
+    // §GANTT_RETIME_RESYNC (PR #1240) added this call to every retime commit path; a cache/index
+    // rebuild is a no-op here (the witness asserts on the DB rows, not the render caches)
+    _tmResyncAfterRetime: function () {}
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nglobalThis.__ops = _ops = loadOps(); ' +

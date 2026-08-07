@@ -232,8 +232,16 @@
           // each other, an unsatisfiable cycle for the repair loop; an embedding slab still tops me)
           // …and a pool member never hangs from what it sits BELOW of (S resting on el is not el's
           // carrier — the reverse below edge already orders the pair; same rule as geoGate's).
+          // …and a WALL never hangs from a promoted slab IT BEARS (wallGate's own relation, reversed:
+          // the slab waits for the wall whose top reaches its base — measured livelock on Duplex,
+          // §DEQ_REPAIR 16 sweeps/379 shifts, seq-5 upper walls vs the load-path roof at bz 6.00).
+          // A fan/duct in the same geometric relation keeps its hang: it is not wall-pool material,
+          // and class-scoped carrier pools are this module's established, measured practice
+          // (§4D_ROOF_LOAD_PATH attempt-1: class-blind widening = 3421 false positives).
           if (S.base_z >= el.top_z - GAP && S.base_z <= el.top_z + GAP && S.top_z > el.top_z + EPS &&
               !(elPool && el.base_z < S.base_z - EPS) &&
+              !(S.promoted && el.cls && el.cls.indexOf('IfcWall') === 0 &&
+                el.base_z < S.base_z - EPS && el.top_z >= S.base_z - GAP) &&
               S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
@@ -313,7 +321,8 @@
       // is acyclic for any real geometry; §SUPPORT_CYCLE below reports whatever remains, never hides it.
       for (nc = 0; nc < cands.length; nc++) { si = cands[nc]; S = elements[si];
         if (edgeBelow(S, E) || (!isPoolE && edgeContained(S, E)) ||
-            (hangs[t] && edgeCarrier(S, E) && !(isPoolE && E.base_z < S.base_z - EPS))) {
+            (hangs[t] && edgeCarrier(S, E) && !(isPoolE && E.base_z < S.base_z - EPS) &&
+             !(isPromotedSlab(S) && E.cls && E.cls.indexOf('IfcWall') === 0 && edgeBearing(E, S)))) {
           (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } }
       if (isPromotedSlab(E)) {                                       // wallGate's relation
         _gen++;
@@ -478,7 +487,10 @@
   // roof case §SUPPORT_CHECK was blind to by construction. The hang check is scoped exactly like the
   // scheduler's hangGate (no bearing-below only), which is what keeps attempt-1's mutual-wait false
   // positives out: a beam bearing on its columns is never audited against the slab resting on it.
-  function auditFloating(elements, sched, classFilter) {
+  // collectGuids (optional, §GANTT_LOCK_INTEGRITY): an array to receive the offending GUIDs so a
+  // caller can NAME what floats (the lock-back "Integrity Breach" flag), not just count it. The
+  // count return is unchanged for every existing caller.
+  function auditFloating(elements, sched, classFilter, collectGuids) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
       if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
@@ -499,14 +511,18 @@
         // §GEOMETRIC_SUPPORT_ORDER: a pool member (promoted slab) never hangs from what it sits
         // BELOW of — mirrors the scheduler's hangGate pool rule, so audit and scheduler agree
         var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        var tWall = T.cls.indexOf('IfcWall') === 0;
         var seenH = {};
         for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
             if (S.base_z >= T.top_z - GAP && S.base_z <= T.top_z + GAP && S.top_z > T.top_z + EPS &&
-                !(tPool && T.base_z < S.base_z - EPS) && overlap(S, T)) {
+                !(tPool && T.base_z < S.base_z - EPS) &&
+                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                  T.base_z < S.base_z - EPS && T.top_z >= S.base_z - GAP) &&
+                overlap(S, T)) {
               var eh = sched[S.guid].end; if (eh > se) se = eh; } } }
       }
-      if (se > 0 && sched[T.guid].start < se - 1) v++;
+      if (se > 0 && sched[T.guid].start < se - 1) { v++; if (collectGuids) collectGuids.push(T.guid); }
     }
     return v;
   }
