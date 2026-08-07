@@ -36,6 +36,10 @@ function treeNodes(tree) {
       children: isLeaf ? [] : ch.map(build).sort(byLabel) };
     // W-UX-4: tag a DISCIPLINE node so the Outliner can make it a WALKER entry point (click → walk that disc).
     if (n.kind === 'disc') node.disc = n.label;
+    // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1/§2.5 — tag a ROOM node with its real IfcSpace guid so the Outliner
+    // can render a grab affordance (Feature A's grab target). Absent guid (pre-fix seed / no bom_tree.js update
+    // on the reader's side) → no affordance, never a fabricated guid.
+    if (n.kind === 'room' && n.guid != null) node.room = n.guid;
     return node;
   }
   return tree.roots.map(build);
@@ -88,7 +92,11 @@ if (typeof window !== 'undefined' && window.document) {
       // W-UX-4: a discipline node is a WALKER entry point — click it → walk that disc. The cross-engine
       // dispatch (STR=swbInit walk, already done at Open; MEP/etc=RouteWalker or an honest refusal) lives in
       // window.discWalk (modeller.html UX glue) so this category stays a pure BOM-graph view.
-      onWalk: function (disc) { if (window.discWalk) window.discWalk(disc, { building: State.building }); }
+      onWalk: function (disc) { if (window.discWalk) window.discWalk(disc, { building: State.building }); },
+      // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1 — a room node's grab glyph dispatches here. Mirrors onWalk's own
+      // shape: this category stays a pure BOM-graph view, the actual drag-session/canvas glue lives in
+      // modeller.html (window.__armRoomMove), same separation onWalk already uses for window.discWalk.
+      onRoomGrab: function (guid) { if (window.__armRoomMove) window.__armRoomMove(guid); }
     };
   }
 
