@@ -4076,7 +4076,7 @@
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
     // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
-    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: _audit };
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: null };  // §DEQ_V1: audit is unfiltered now (was the hand-picked _audit predicate)
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
