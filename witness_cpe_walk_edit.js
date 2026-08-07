@@ -300,6 +300,40 @@ async function gates(browser, BLD) {
   P('G-WALK-ENTER-LOCK Enter plants a stick (+1 band) AND exits the walk in one stroke',
     enterRes.nAfter === enterRes.nBefore + 1 && enterRes.active === false, JSON.stringify(enterRes));
 
+  // ══ §CPE_WALK_SCRUB_SPAWN — a scrub INSIDE the walk stretch is an optional accelerator: shoes
+  // spawns at the scrubbed path point, and a scrub moved since the last walk beats the resume pose.
+  // The walk-stretch bounds come from the plan's own §CINEMA_BEATS log (spin..out), so the click
+  // fraction is derived, not guessed. ══
+  const beatsLine = [...logs].reverse().find(l => l.startsWith('§CINEMA_BEATS'));
+  const beatsM = beatsLine && beatsLine.match(/spin=([\d.]+) out=([\d.]+)/);
+  const midTn = beatsM ? (+beatsM[1] + +beatsM[2]) / 2 : null;
+  let scrubSpawn = { skipped: true };
+  if (midTn !== null) {
+    const mark3 = logs.length;
+    scrubSpawn = await page.evaluate((tn) => {
+      const track = document.getElementById('cpe-scrub-track');
+      if (!track) return { noTrack: true };
+      const r = track.getBoundingClientRect();
+      const x = r.left + r.width * tn, y = r.top + r.height / 2;
+      track.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, pointerId: 9, bubbles: true, cancelable: true }));
+      track.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y, pointerId: 9, bubbles: true, cancelable: true }));
+      window.CpeWalk.toggle();
+      const p = window.CpeWalk._poseForTest();
+      const active = window.CpeWalk.isActive();
+      window.CpeWalk.toggle();   // leave unmounted for the gates below
+      return { p, active };
+    }, midTn);
+    await sleep(100);
+    const win3 = logs.slice(mark3);
+    const scrubbedLog = win3.find(l => l.startsWith('§CPE_WALK_SPAWN scrubbed'));
+    const tnM = scrubbedLog && scrubbedLog.match(/tn=([\d.]+)/);
+    P('G-WALK-SCRUB-SPAWN a scrub inside the walk stretch pre-positions the spawn (log says scrubbed, tn == clicked fraction ±0.05, resume overridden)',
+      !!scrubbedLog && !!tnM && Math.abs(+tnM[1] - midTn) < 0.05 && scrubSpawn.active === true,
+      `wanted tn≈${midTn.toFixed(3)} log=${scrubbedLog || 'MISSING (spawn logs: ' + win3.filter(l => l.startsWith('§CPE_WALK_SPAWN')).join(' | ') + ')'}`);
+  } else {
+    P('G-WALK-SCRUB-SPAWN precondition', false, 'no §CINEMA_BEATS line found to derive the walk stretch');
+  }
+
   // ══ G-WALK-TEARDOWN: mount again, then close the editor via Cancel — finish() must force-stop it ══
   await page.evaluate(() => window.CpeWalk.toggle());
   await sleep(100);
