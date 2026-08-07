@@ -67,6 +67,16 @@
   // stops the browser's page-zoom.
   var WHEEL_GLIDE_M = 1.2;         // metres per wheel notch
   var WHEEL_SPRINT_X = 4;          // Shift multiplier
+  // §CPE_WALK_GAMEPAD_NAV (prompts/CPE_WALK_GAMEPAD_NAV.md) — standard-mapping controller as a THIRD
+  // input device alongside WASD+mouse and wheel/pinch-glide, not a replacement for either. Right
+  // stick is a RATE (deflection -> turn-rate, held constant while pushed), unlike MOUSE_SENSITIVITY
+  // which is a per-pixel DELTA gain — different units, so this needs its own constant. Tuned to
+  // "full deflection ≈ 120deg/sec" (2.0944 rad/sec) — fast enough to spin around in ~3s at full
+  // push, slow enough at partial deflection (dead-zone .. 1.0) to still frame a shot precisely;
+  // no real controller in this environment to feel-tune against (spec §VERIFY Q2 open item, deferred
+  // to a live-controller pass), so this is a considered starting value, not a measured one.
+  var GAMEPAD_LOOK_RATE = Math.PI * (120 / 180);   // rad/sec at full stick deflection
+  var GAMEPAD_DEADZONE = 0.15;     // spec's own value — avoids drift from worn/imprecise sticks
 
   var _active = false;
   var _cpe = null;          // window.APP.cinemaPathEditor, cached at mount
@@ -89,6 +99,14 @@
   // continue). Only closing B / the editor (forceStop) clears it.
   var _resumePose = null;    // { x,y,z, yaw, pitch } from the last stop(); null = spawn fresh
   var _glideLogged = false;
+  // §CPE_WALK_GAMEPAD_NAV — connect-gated, per the spec's "zero cost when unused": _tick() only
+  // calls navigator.getGamepads() when this flag is true (set by a real gamepadconnected event),
+  // never speculatively every frame on the chance a pad exists.
+  var _gpConnected = false;
+  var _gpIndex = null;
+  var _gpFirstInputLogged = false;
+  var _gpSnapWasDown = false;   // edge-detect so A button plants one stick per press, not per frame held
+  var _gpStopWasDown = false;   // edge-detect so B/Start stops once per press
 
   // ══════════════════ §CPE_WALK_CANVAS_FREEZE — capture / recapture ══════════════════
   function _renderMainOnce() {
@@ -239,6 +257,59 @@
     }
   }
 
+  // ══════════════════ §CPE_WALK_GAMEPAD_NAV — pure axis/button -> motion mapping ══════════════════
+  // Takes a PLAIN {axes, buttons}-shaped object, never calls navigator.getGamepads() itself — per
+  // the spec's architecture note, this is what makes the maths unit-testable with synthetic data in
+  // an environment with no physical controller attached (getGamepads() can't be faked from JS).
+  // `mapping` is checked by the caller (gamepadconnected handler), NOT here, so this function stays
+  // a pure number-in/number-out transform with no DOM/global dependency at all.
+  function _gamepadMap(pad, dt) {
+    var axes = (pad && pad.axes) || [];
+    var buttons = (pad && pad.buttons) || [];
+    var dz = GAMEPAD_DEADZONE;
+    var az = function(v) { v = v || 0; return Math.abs(v) < dz ? 0 : v; };
+    var lx = az(axes[0]), ly = az(axes[1]);   // left stick: move
+    var rx = az(axes[2]), ry = az(axes[3]);   // right stick: look
+    // move: right*axes[0] + fwd*-axes[1] — same convention as WASD's `move.add(right)`/`move.add(fwd)`
+    // in _tick(), scaled by the SAME WALK_SPEED_MPS so keyboard/gamepad feel identical (spec's own
+    // "no new speed constant" requirement).
+    var moveRight = lx, moveFwd = -ly;
+    var moveLen = Math.sqrt(moveRight * moveRight + moveFwd * moveFwd);
+    if (moveLen > 1) { moveRight /= moveLen; moveFwd /= moveLen; moveLen = 1; }   // clamp diagonal to unit circle
+    var moveMag = moveLen * WALK_SPEED_MPS * dt;
+    var yawDelta = -rx * GAMEPAD_LOOK_RATE * dt;
+    var pitchDelta = -ry * GAMEPAD_LOOK_RATE * dt;
+    var btn = function(i) { var b = buttons[i]; return !!(b && (b.pressed || b === true)); };
+    return {
+      moveRight: moveRight * moveMag, moveFwd: moveFwd * moveMag,   // metres this frame, world-relative-to-facing
+      yawDelta: yawDelta, pitchDelta: pitchDelta,                   // radians this frame
+      snap: btn(0),                                                 // A button -> _doSnap()
+      stop: btn(1) || btn(9),                                       // B or Start -> stop()
+      active: moveLen > 0 || rx !== 0 || ry !== 0 || btn(0) || btn(1) || btn(9)
+    };
+  }
+  function _onGamepadConnected(e) {
+    var gp = e.gamepad;
+    if (!gp) return;
+    if (gp.mapping !== 'standard') {
+      console.log('§CPE_WALK_GAMEPAD_IGNORED id="' + gp.id + '" mapping="' + (gp.mapping || '(none)') +
+        '" — v1 only supports standard-mapping controllers (spec CPE_WALK_GAMEPAD_NAV.md §Scope), skipping');
+      return;
+    }
+    _gpConnected = true;
+    _gpIndex = gp.index;
+    _gpFirstInputLogged = false;
+    console.log('§CPE_WALK_GAMEPAD_CONNECT id="' + gp.id + '" mapping="' + gp.mapping + '" index=' + gp.index +
+      ' axes=' + gp.axes.length + ' buttons=' + gp.buttons.length);
+  }
+  function _onGamepadDisconnected(e) {
+    var gp = e.gamepad;
+    if (!gp || gp.index !== _gpIndex) return;
+    _gpConnected = false;
+    _gpIndex = null;
+    console.log('§CPE_WALK_GAMEPAD_DISCONNECT id="' + gp.id + '" index=' + gp.index);
+  }
+
   // ══════════════════ the per-frame walk loop — see §CPE_WALK_CANVAS_FREEZE header comment for
   // why this NEVER calls A.markDirty() ══════════════════
   function _tick(tNow) {
@@ -256,6 +327,35 @@
     if (move.lengthSq() > 0 && dt > 0) {
       move.normalize().multiplyScalar(WALK_SPEED_MPS * dt);
       _vfCam.position.add(move);
+    }
+    // §CPE_WALK_GAMEPAD_NAV — alternate input, applied additively to the SAME right/fwd/_yaw/_pitch
+    // state WASD+mouse-look already drive (no separate camera path). Only polls getGamepads() when a
+    // gamepadconnected event has actually fired (_gpConnected) — see file-header cost note.
+    if (_gpConnected && dt > 0 && navigator.getGamepads) {
+      var pad = navigator.getGamepads()[_gpIndex];
+      if (pad) {
+        var gm = _gamepadMap(pad, dt);
+        if (gm.moveRight || gm.moveFwd) {
+          _vfCam.position.addScaledVector(right, gm.moveRight);
+          _vfCam.position.addScaledVector(fwd, gm.moveFwd);
+        }
+        if (gm.yawDelta || gm.pitchDelta) {
+          _yaw += gm.yawDelta;
+          _pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, _pitch + gm.pitchDelta));
+          _vfCam.rotation.set(_pitch, _yaw, 0);
+        }
+        if (gm.active && !_gpFirstInputLogged) {
+          _gpFirstInputLogged = true;
+          console.log('§CPE_WALK_GAMEPAD_FIRST_INPUT moveRight=' + gm.moveRight.toFixed(3) + ' moveFwd=' + gm.moveFwd.toFixed(3) +
+            ' yawDelta=' + gm.yawDelta.toFixed(4) + ' pitchDelta=' + gm.pitchDelta.toFixed(4) +
+            ' snap=' + gm.snap + ' stop=' + gm.stop);
+        }
+        // Edge-triggered: _doSnap()/stop() fire once per press, not once per frame held.
+        if (gm.snap && !_gpSnapWasDown) { _gpSnapWasDown = true; _doSnap(); }
+        else if (!gm.snap) { _gpSnapWasDown = false; }
+        if (gm.stop && !_gpStopWasDown) { _gpStopWasDown = true; stop(); return; }
+        else if (!gm.stop) { _gpStopWasDown = false; }
+      }
     }
     _vfCam.updateMatrixWorld(true);
     var a = A();
@@ -337,6 +437,15 @@
     }
     _keys = { w: false, a: false, s: false, d: false };
     _frame = 0; _snapCount = 0; _lastT = 0;
+    // §CPE_WALK_GAMEPAD_NAV — a pad already connected BEFORE this mount (event fired while walk mode
+    // was closed) still needs picking up: gamepadconnected only fires once, at physical connect time.
+    _gpFirstInputLogged = false; _gpSnapWasDown = false; _gpStopWasDown = false;
+    if (!_gpConnected && navigator.getGamepads) {
+      var _existing = navigator.getGamepads();
+      for (var _gi = 0; _existing && _gi < _existing.length; _gi++) {
+        if (_existing[_gi]) { _onGamepadConnected({ gamepad: _existing[_gi] }); break; }
+      }
+    }
 
     // Seam 2 — the ONLY caller of _wire()/_unwire() this feature needed.
     cpe._walkMount();
@@ -348,7 +457,8 @@
 
     _handlers = {
       mousemove: _onMouseMove, lockchange: _onLockChange, keydown: _onKeyDown, keyup: _onKeyUp,
-      mousedown: _onMouseDown, click: _onCanvasClick, wheel: _onWheel
+      mousedown: _onMouseDown, click: _onCanvasClick, wheel: _onWheel,
+      gamepadconnected: _onGamepadConnected, gamepaddisconnected: _onGamepadDisconnected
     };
     document.addEventListener('mousemove', _handlers.mousemove, true);
     document.addEventListener('pointerlockchange', _handlers.lockchange, true);
@@ -358,6 +468,11 @@
     canvas.addEventListener('click', _handlers.click, true);
     // §CPE_WALK_GLIDE — passive:false so preventDefault can stop ctrl+wheel page-zoom (trackpad pinch)
     window.addEventListener('wheel', _handlers.wheel, { capture: true, passive: false });
+    // §CPE_WALK_GAMEPAD_NAV — mount/unmount scoped like every other listener here (spec: "gated the
+    // same way _tick() already gates on _active"); _tick()'s own getGamepads() poll additionally
+    // gates on _gpConnected, so this costs nothing until a real pad both connects AND walk is open.
+    window.addEventListener('gamepadconnected', _handlers.gamepadconnected, true);
+    window.addEventListener('gamepaddisconnected', _handlers.gamepaddisconnected, true);
 
     _active = true;
     _syncButton();
@@ -392,8 +507,11 @@
         _canvas.removeEventListener('click', _handlers.click, true);
       }
       window.removeEventListener('wheel', _handlers.wheel, { capture: true });
+      window.removeEventListener('gamepadconnected', _handlers.gamepadconnected, true);
+      window.removeEventListener('gamepaddisconnected', _handlers.gamepaddisconnected, true);
       _handlers = null;
     }
+    _gpConnected = false; _gpIndex = null;
     if (document.pointerLockElement === _canvas && document.exitPointerLock) document.exitPointerLock();
     _dropFreeze();
     _tmUnlock(_tm); _tm = null;
@@ -445,7 +563,17 @@
       return true;
     },
     _tmLockState: function() { return _tm ? { locked: true, lockedBtn: _tm.lockedBtn ? _tm.lockedBtn.id : null, prevPointerEvents: _tm.prevPointerEvents } : { locked: false }; },
-    _freezeElId: function() { return _freezeEl ? _freezeEl.id : null; }
+    _freezeElId: function() { return _freezeEl ? _freezeEl.id : null; },
+    // §CPE_WALK_GAMEPAD_NAV — exercises the REAL pure mapping function with a SYNTHETIC {axes,
+    // buttons} pad, same precedent as _snapForTest above. This is the ONLY witnessable numeric
+    // surface for gamepad input in an environment with no physical controller (navigator.getGamepads()
+    // cannot be faked from JS — spec's own architecture note).
+    _gamepadMapForTest: function(pad, dt) { return _gamepadMap(pad, dt); },
+    _gamepadStateForTest: function() { return { connected: _gpConnected, index: _gpIndex }; },
+    // Drives the connect/disconnect handlers directly with a synthetic Gamepad-shaped object — lets a
+    // witness prove the mapping-gate (ignore non-standard) and the connect log without real hardware.
+    _gamepadConnectForTest: function(gp) { _onGamepadConnected({ gamepad: gp }); },
+    _gamepadDisconnectForTest: function(gp) { _onGamepadDisconnected({ gamepad: gp }); }
   };
   console.log('§CPE_WALK_MODULE_LOADED');
 })();
