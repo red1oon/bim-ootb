@@ -132,9 +132,33 @@ async function gates(browser, BLD) {
   P('G-WALK-ISOLATE-2 mounted: the SAME pointerdown/up is NOT claimed (_unwire actually removed the listeners)',
     claimedDuring === false || claimedDuring === null, `_probeDrag()=${claimedDuring}`);
 
+  // ══ §CPE_WALK_SPAWN gates FIRST — they must read the PRISTINE plan (the sky-snap below re-snakes
+  // the path and would shift every arc-fraction) ══
+  const spawnLog = win1.find(l => l.startsWith('§CPE_WALK_SPAWN walk-start'));
+  const spawnM = spawnLog && spawnLog.match(/pos=\((-?[\d.]+),(-?[\d.]+),(-?[\d.]+)\)/);
+  const poseNow = await page.evaluate(() => window.CpeWalk._poseForTest());
+  P('G-WALK-SPAWN first mount logged a walk-start spawn whose pose IS the live vfCam pose (not the aerial seed)',
+    !!spawnM && !!poseNow && Math.abs(poseNow.x - +spawnM[1]) < 0.01 &&
+    Math.abs(poseNow.y - +spawnM[2]) < 0.01 && Math.abs(poseNow.z - +spawnM[3]) < 0.01,
+    `log=${spawnLog || 'MISSING'} live=(${poseNow ? [poseNow.x.toFixed(2), poseNow.y.toFixed(2), poseNow.z.toFixed(2)] : 'null'})`);
+  const spawnSnap = await page.evaluate(() => {
+    const p = window.CpeWalk._poseForTest();
+    const n0 = window.APP.cinemaPathEditor._probeOverride().bands.length;
+    const r = window.CpeWalk._snapForTest({ x: p.x, y: p.y, z: p.z }, { x: 0, y: 0, z: -1 });
+    return { p, n0, r, n1: window.APP.cinemaPathEditor._probeOverride().bands.length };
+  });
+  // s≈0 is CORRECT here — the spawn IS the walk head. The Hospital regression was s=0.000 with a
+  // 260m-away AERIAL centre; the spawn move kills the aerial pose itself, and centre==pose (at the
+  // logged eye-level walk start, proven above) is what distinguishes the two.
+  P('G-WALK-SPAWN-SNAP a snap at the spawn pose lands ON the walk head (s in [0,0.6], centre==spawn pose, +1 band)',
+    !!spawnSnap.r && spawnSnap.r.s >= 0 && spawnSnap.r.s < 0.6 && spawnSnap.n1 === spawnSnap.n0 + 1 &&
+    spawnSnap.r.centre.x === spawnSnap.p.x && spawnSnap.r.centre.y === spawnSnap.p.y && spawnSnap.r.centre.z === spawnSnap.p.z,
+    `s=${spawnSnap.r ? spawnSnap.r.s.toFixed(4) : 'null'} bands ${spawnSnap.n0}->${spawnSnap.n1}`);
+
   // ══ G-WALK-SNAP-1/2: synthetic snap far from the building — guaranteed raycast miss ══
   const snapPos = { x: setup.mainPose.x + 500, y: setup.mainPose.y + 500, z: setup.mainPose.z };
   const snapFwd = { x: 1, y: 0, z: 0 };
+  const nBeforeSky = await page.evaluate(() => window.APP.cinemaPathEditor._probeOverride().bands.length);
   const mark2 = logs.length;
   const snapRes = await page.evaluate((pos, fwd) => window.CpeWalk._snapForTest(pos, fwd), snapPos, snapFwd);
   await sleep(50);
@@ -151,17 +175,55 @@ async function gates(browser, BLD) {
     lookAtOk, `lookAt=${snapRes ? JSON.stringify(snapRes.lookAt) : 'null'} want=${JSON.stringify(wantLookAt)}`);
   const sOk = !!snapRes && typeof snapRes.s === 'number' && snapRes.s >= 0 && snapRes.s <= 1;
   P('G-WALK-SNAP-1c insertion fraction s is a valid [0,1] arc-fraction', sOk, `s=${snapRes ? snapRes.s : 'null'}`);
-  const bandOk = !!ovAfterSnap && ovAfterSnap.bands.length === setup.nBands + 1 &&
+  const bandOk = !!ovAfterSnap && ovAfterSnap.bands.length === nBeforeSky + 1 &&
     ovAfterSnap.bands[snapRes.bandIndex] && ovAfterSnap.bands[snapRes.bandIndex]._stick === true;
   P('G-WALK-SNAP-2a a real band was inserted (_stick:true, bands.length +1) — reuses §CPE_STICK, not a stub',
-    bandOk, `nBandsBefore=${setup.nBands} nBandsAfter=${ovAfterSnap ? ovAfterSnap.bands.length : 'null'} bandIndex=${snapRes ? snapRes.bandIndex : 'null'} _stick=${ovAfterSnap && snapRes ? ovAfterSnap.bands[snapRes.bandIndex]._stick : 'null'}`);
+    bandOk, `nBandsBefore=${nBeforeSky} nBandsAfter=${ovAfterSnap ? ovAfterSnap.bands.length : 'null'} bandIndex=${snapRes ? snapRes.bandIndex : 'null'} _stick=${ovAfterSnap && snapRes ? ovAfterSnap.bands[snapRes.bandIndex]._stick : 'null'}`);
   P('G-WALK-SNAP-2b the real replan pipeline ran (replanMs present, §CPE_WALK_SNAP logged)',
     !!snapRes && typeof snapRes.replanMs === 'number' && win2.some(l => l.startsWith('§CPE_WALK_SNAP pos=')),
     `replanMs=${snapRes ? snapRes.replanMs : 'null'} logged=${win2.filter(l => l.startsWith('§CPE_WALK_SNAP')).join(' | ')}`);
 
+  // ══ §CPE_WALK_GLIDE — wheel/pinch is locomotion: 3 notches out = 3×1.2m along the facing,
+  // 3 notches back returns to the exact start (reversibility proves the along-facing line). ══
+  const glide = await page.evaluate(() => {
+    const p0 = window.CpeWalk._poseForTest();
+    for (let i = 0; i < 3; i++) window.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    const p1 = window.CpeWalk._poseForTest();
+    for (let i = 0; i < 3; i++) window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
+    const p2 = window.CpeWalk._poseForTest();
+    return { p0, p1, p2 };
+  });
+  const glideOut = Math.hypot(glide.p1.x - glide.p0.x, glide.p1.y - glide.p0.y, glide.p1.z - glide.p0.z);
+  const glideBack = Math.hypot(glide.p2.x - glide.p0.x, glide.p2.y - glide.p0.y, glide.p2.z - glide.p0.z);
+  P('G-WALK-GLIDE 3 wheel notches glide 3.60m along the facing; 3 reverse notches return bit-exactly',
+    Math.abs(glideOut - 3.6) < 0.01 && glideBack < 1e-9,
+    `out=${glideOut.toFixed(3)}m back=${glideBack.toExponential(2)}`);
+
+  // ══ §CPE_WALK_SPAWN resume — shoes off/on continues at the identical pose (Esc keeps it;
+  // only eye-off/editor-close forceStop clears it — proven by the later EYE-OFF gate's fresh spawn). ══
+  const resume = await page.evaluate(() => {
+    const before = window.CpeWalk._poseForTest();
+    window.CpeWalk.toggle();
+    const stopped = !window.CpeWalk.isActive();
+    window.CpeWalk.toggle();
+    const after = window.CpeWalk._poseForTest();
+    return { before, stopped, after, active: window.CpeWalk.isActive() };
+  });
+  const resumeOk = resume.stopped && resume.active &&
+    resume.before.x === resume.after.x && resume.before.y === resume.after.y && resume.before.z === resume.after.z &&
+    resume.before.yaw === resume.after.yaw && resume.before.pitch === resume.after.pitch;
+  P('G-WALK-RESUME shoes off/on resumes at the bit-identical pose+facing (no respawn mid-session)',
+    resumeOk, JSON.stringify(resume));
+
   // ══ G-WALK-EYE-OFF-STOP (§CPE_WALK_SHOES_BTN / §CPE_SOLE_OWNER): closing B (the eye, walk's
   // owner surface) while a walk is active must force-stop the walk — freeze dropped, no orphaned
   // session. This doubles as the reset to the unmounted baseline the gates below assume. ══
+  // Precondition: the RESUME gate's same-tick stop/start can be trailed by a deferred
+  // pointerlockchange that auto-stops the walk (a race only a synthetic same-tick toggle hits —
+  // real shoes clicks are separated by human time). Let it land, then ensure a mounted walk.
+  await sleep(200);
+  await page.evaluate(() => { if (!window.CpeWalk.isActive()) window.CpeWalk.toggle(); });
+  await sleep(100);
   const eyeOff = await page.evaluate(() => {
     const activeBefore = window.CpeWalk.isActive();
     window.APP.cinemaPathEditor._vfToggle();   // eye OFF (same call cpe_walk's own start() uses for ON)
@@ -223,6 +285,54 @@ async function gates(browser, BLD) {
   const freezeGoneAfterUnmount = await page.evaluate(() => document.getElementById('cpe-walk-freeze'));
   P('G-WALK-FREEZE-DROP the overlay is removed from the DOM after unmount',
     freezeGoneAfterUnmount === null, `element=${freezeGoneAfterUnmount}`);
+
+  // ══ §CPE_WALK_ENTER_LOCK — Enter plants the stick AND exits to review in ONE stroke (user ask);
+  // click remains snap-and-keep-walking. ══
+  await page.evaluate(() => window.CpeWalk.toggle());
+  await sleep(100);
+  const enterRes = await page.evaluate(() => {
+    const nBefore = window.APP.cinemaPathEditor._probeOverride().bands.length;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    return { nBefore, nAfter: window.APP.cinemaPathEditor._probeOverride().bands.length,
+             active: window.CpeWalk.isActive() };
+  });
+  await sleep(100);
+  P('G-WALK-ENTER-LOCK Enter plants a stick (+1 band) AND exits the walk in one stroke',
+    enterRes.nAfter === enterRes.nBefore + 1 && enterRes.active === false, JSON.stringify(enterRes));
+
+  // ══ §CPE_WALK_SCRUB_SPAWN — a scrub INSIDE the walk stretch is an optional accelerator: shoes
+  // spawns at the scrubbed path point, and a scrub moved since the last walk beats the resume pose.
+  // The walk-stretch bounds come from the plan's own §CINEMA_BEATS log (spin..out), so the click
+  // fraction is derived, not guessed. ══
+  const beatsLine = [...logs].reverse().find(l => l.startsWith('§CINEMA_BEATS'));
+  const beatsM = beatsLine && beatsLine.match(/spin=([\d.]+) out=([\d.]+)/);
+  const midTn = beatsM ? (+beatsM[1] + +beatsM[2]) / 2 : null;
+  let scrubSpawn = { skipped: true };
+  if (midTn !== null) {
+    const mark3 = logs.length;
+    scrubSpawn = await page.evaluate((tn) => {
+      const track = document.getElementById('cpe-scrub-track');
+      if (!track) return { noTrack: true };
+      const r = track.getBoundingClientRect();
+      const x = r.left + r.width * tn, y = r.top + r.height / 2;
+      track.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, pointerId: 9, bubbles: true, cancelable: true }));
+      track.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y, pointerId: 9, bubbles: true, cancelable: true }));
+      window.CpeWalk.toggle();
+      const p = window.CpeWalk._poseForTest();
+      const active = window.CpeWalk.isActive();
+      window.CpeWalk.toggle();   // leave unmounted for the gates below
+      return { p, active };
+    }, midTn);
+    await sleep(100);
+    const win3 = logs.slice(mark3);
+    const scrubbedLog = win3.find(l => l.startsWith('§CPE_WALK_SPAWN scrubbed'));
+    const tnM = scrubbedLog && scrubbedLog.match(/tn=([\d.]+)/);
+    P('G-WALK-SCRUB-SPAWN a scrub inside the walk stretch pre-positions the spawn (log says scrubbed, tn == clicked fraction ±0.05, resume overridden)',
+      !!scrubbedLog && !!tnM && Math.abs(+tnM[1] - midTn) < 0.05 && scrubSpawn.active === true,
+      `wanted tn≈${midTn.toFixed(3)} log=${scrubbedLog || 'MISSING (spawn logs: ' + win3.filter(l => l.startsWith('§CPE_WALK_SPAWN')).join(' | ') + ')'}`);
+  } else {
+    P('G-WALK-SCRUB-SPAWN precondition', false, 'no §CINEMA_BEATS line found to derive the walk stretch');
+  }
 
   // ══ G-WALK-TEARDOWN: mount again, then close the editor via Cancel — finish() must force-stop it ══
   await page.evaluate(() => window.CpeWalk.toggle());

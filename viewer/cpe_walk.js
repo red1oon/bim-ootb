@@ -61,6 +61,12 @@
   var LOOK_RAY_FALLBACK_M = 10;    // §CPE_WALK_EDIT_V1 spec's own fallback when the forward ray hits nothing
   var LOG_EVERY_N_FRAMES = 30;     // ~0.5s at 60fps — enough numeric truth without flooding the console
   var MAX_DT = 0.1;                // clamp a long stall (tab switch) so one frame cannot teleport the walker
+  // §CPE_WALK_GLIDE (2026-08-07, user on Hospital: "only able to turn cam but not zoom in (via pinch
+  // out)") — wheel / trackpad-pinch is locomotion: pinch-out / wheel-up glides forward along the
+  // facing, Shift multiplies. Trackpad pinch arrives as ctrl+wheel — same handler, preventDefault
+  // stops the browser's page-zoom.
+  var WHEEL_GLIDE_M = 1.2;         // metres per wheel notch
+  var WHEEL_SPRINT_X = 4;          // Shift multiplier
 
   var _active = false;
   var _cpe = null;          // window.APP.cinemaPathEditor, cached at mount
@@ -76,6 +82,13 @@
   var _freezeEl = null;
   var _tm = null;            // { panel, prevPointerEvents, lockedBtn } or null if TM was not touched
   var _handlers = null;      // DOM listeners installed at mount, removed at unmount
+  // §CPE_WALK_SPAWN (2026-08-07, user: "SCRUB BAR IS NOT TO BE USED! WALK!!!" — after their Hospital
+  // bug report proved a shoes press at the aerial pose plants a sky stick at s=0.000): the walk is
+  // self-sufficient. First shoes press spawns at the WALK STRETCH's eye-level start; Esc keeps this
+  // resume pose so the next shoes press continues exactly where the user stood (snap → review →
+  // continue). Only closing B / the editor (forceStop) clears it.
+  var _resumePose = null;    // { x,y,z, yaw, pitch } from the last stop(); null = spawn fresh
+  var _glideLogged = false;
 
   // ══════════════════ §CPE_WALK_CANVAS_FREEZE — capture / recapture ══════════════════
   function _renderMainOnce() {
@@ -179,7 +192,19 @@
     if (!_active) return;
     var k = (e.key || '').toLowerCase();
     if (k === 'w' || k === 'a' || k === 's' || k === 'd') { _keys[k] = true; e.preventDefault(); e.stopPropagation(); return; }
-    if (k === 'enter') { e.preventDefault(); e.stopPropagation(); _doSnap(); return; }
+    // §CPE_WALK_ENTER_LOCK (2026-08-07, user: "besides ESC, perhaps Enter can be used to lock -
+    // plant stick and set cam pov"): Enter = snap the stick (facing becomes its lookAt pin) AND
+    // exit to review, one stroke. stop() runs after the snap so the resume pose IS the snapped
+    // spot — the next shoes press continues exactly there. Click (mousedown while locked) stays
+    // the snap-and-keep-walking gesture.
+    // Spacebar is Enter's twin (user: "for finger dexterity") — same one-stroke plant+release.
+    if (k === 'enter' || k === ' ') {
+      e.preventDefault(); e.stopPropagation();
+      var r = _doSnap();
+      if (r) console.log('§CPE_WALK_ENTER_LOCK stick planted + walk released for review (resume pose kept) key=' + (k === ' ' ? 'space' : 'enter'));
+      stop();
+      return;
+    }
     if (k === 'escape') { e.preventDefault(); e.stopPropagation(); stop(); return; }
   }
   function _onKeyUp(e) {
@@ -194,6 +219,24 @@
   }
   function _onCanvasClick() {
     if (_active && !document.pointerLockElement) _canvas.requestPointerLock();
+  }
+  // §CPE_WALK_GLIDE — trackpad-first locomotion (user: "it is all mousepad movement... pivot, zoom
+  // in/out"): two-finger scroll and pinch (which browsers deliver as ctrl+wheel) glide the walker
+  // along the facing. Pinch-out / scroll-up (deltaY<0) = forward, Shift = ×WHEEL_SPRINT_X.
+  // preventDefault matters twice: ctrl+wheel would otherwise page-zoom, plain wheel would scroll.
+  function _onWheel(e) {
+    if (!_active || !_vfCam) return;
+    e.preventDefault(); e.stopPropagation();
+    var fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(_vfCam.quaternion);
+    var notches = -e.deltaY / 100;   // wheel notch ≈ 100; trackpads deliver finer-grained deltas
+    var step = notches * WHEEL_GLIDE_M * (e.shiftKey ? WHEEL_SPRINT_X : 1);
+    if (!step) return;
+    _vfCam.position.addScaledVector(fwd, step);
+    if (!_glideLogged) {
+      _glideLogged = true;
+      console.log('§CPE_WALK_GLIDE first glide step=' + step.toFixed(2) + 'm ctrl=' + !!e.ctrlKey +
+        ' (pinch/scroll drives forward-back along facing; ' + WHEEL_GLIDE_M + 'm/notch, Shift ×' + WHEEL_SPRINT_X + ')');
+    }
   }
 
   // ══════════════════ the per-frame walk loop — see §CPE_WALK_CANVAS_FREEZE header comment for
@@ -263,10 +306,35 @@
     if (!canvas) { console.warn('§CPE_WALK_START_FAIL no canvas'); return false; }
 
     _cpe = cpe; _vfCam = vfCam; _canvas = canvas;
-    // Start facing where B already faces (whatever pose the eye/scrub last set), not a hard reset —
-    // continuing the walk from what the user was already looking at.
+    // §CPE_WALK_SPAWN / §CPE_WALK_SCRUB_SPAWN — spawn priority:
+    //   1. resume pose, IF the scrub has not moved since the last walk stopped (continue in place);
+    //   2. a scrub sitting inside the walk stretch (user's optional accelerator: "bring further
+    //      along the path, then began the stick planting");
+    //   3. the walk stretch's start (the self-sufficient default — never the aerial dive pose).
+    var _scrubNow = cpe._walkScrubTn ? cpe._walkScrubTn() : 0;
+    if (_resumePose && _resumePose.scrubTn !== undefined && _scrubNow !== _resumePose.scrubTn) {
+      console.log('§CPE_WALK_SPAWN scrub moved since last walk (' + _resumePose.scrubTn.toFixed(3) +
+        ' -> ' + _scrubNow.toFixed(3) + ') — user chose a new start, resume dropped');
+      _resumePose = null;
+    }
+    if (_resumePose) {
+      _vfCam.position.set(_resumePose.x, _resumePose.y, _resumePose.z);
+    } else if (cpe._walkSpawnPose) {
+      var sp = cpe._walkSpawnPose();
+      if (sp) console.log('§CPE_WALK_SPAWN ' + (sp.scrubbed ? 'scrubbed' : 'walk-start') + ' tn=' + sp.tn.toFixed(3) +
+        ' pos=(' + sp.x.toFixed(2) + ',' + sp.y.toFixed(2) + ',' + sp.z.toFixed(2) +
+        (sp.scrubbed ? ') — spawning at the scrubbed path point (accelerator)' :
+                       ') — start of the authorable stretch (self-sufficient default)'));
+    }
     _vfCam.rotation.reorder && _vfCam.rotation.reorder('XYZ');
     _yaw = _vfCam.rotation.y; _pitch = _vfCam.rotation.x;
+    if (_resumePose) {
+      _yaw = _resumePose.yaw; _pitch = _resumePose.pitch;
+      _vfCam.rotation.set(_pitch, _yaw, 0);
+      console.log('§CPE_WALK_SPAWN resume pos=(' + _resumePose.x.toFixed(2) + ',' + _resumePose.y.toFixed(2) +
+        ',' + _resumePose.z.toFixed(2) + ') yaw=' + (_yaw * 180 / Math.PI).toFixed(1) +
+        'deg pitch=' + (_pitch * 180 / Math.PI).toFixed(1) + 'deg — continuing where the last walk stopped');
+    }
     _keys = { w: false, a: false, s: false, d: false };
     _frame = 0; _snapCount = 0; _lastT = 0;
 
@@ -280,7 +348,7 @@
 
     _handlers = {
       mousemove: _onMouseMove, lockchange: _onLockChange, keydown: _onKeyDown, keyup: _onKeyUp,
-      mousedown: _onMouseDown, click: _onCanvasClick
+      mousedown: _onMouseDown, click: _onCanvasClick, wheel: _onWheel
     };
     document.addEventListener('mousemove', _handlers.mousemove, true);
     document.addEventListener('pointerlockchange', _handlers.lockchange, true);
@@ -288,6 +356,8 @@
     window.addEventListener('keyup', _handlers.keyup, true);
     canvas.addEventListener('mousedown', _handlers.mousedown, true);
     canvas.addEventListener('click', _handlers.click, true);
+    // §CPE_WALK_GLIDE — passive:false so preventDefault can stop ctrl+wheel page-zoom (trackpad pinch)
+    window.addEventListener('wheel', _handlers.wheel, { capture: true, passive: false });
 
     _active = true;
     _syncButton();
@@ -302,6 +372,15 @@
   function stop() {
     if (!_active) return true;
     _active = false;
+    // §CPE_WALK_SPAWN — remember where the walk stopped so the next shoes press CONTINUES here
+    // (snap → Esc review → shoes → next stick, no re-navigation). Cleared only by forceStop
+    // (eye-off / editor close), where the path context that made this pose meaningful is gone.
+    if (_vfCam) _resumePose = { x: _vfCam.position.x, y: _vfCam.position.y, z: _vfCam.position.z,
+                                yaw: _yaw, pitch: _pitch,
+                                // §CPE_WALK_SCRUB_SPAWN — the scrub value at stop time; a DIFFERENT
+                                // value at the next start means the user scrubbed meanwhile = chose
+                                // a new spawn (scrub beats resume, untouched scrub keeps resume).
+                                scrubTn: (_cpe && _cpe._walkScrubTn) ? _cpe._walkScrubTn() : 0 };
     if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
     if (_handlers) {
       document.removeEventListener('mousemove', _handlers.mousemove, true);
@@ -312,6 +391,7 @@
         _canvas.removeEventListener('mousedown', _handlers.mousedown, true);
         _canvas.removeEventListener('click', _handlers.click, true);
       }
+      window.removeEventListener('wheel', _handlers.wheel, { capture: true });
       _handlers = null;
     }
     if (document.pointerLockElement === _canvas && document.exitPointerLock) document.exitPointerLock();
@@ -343,7 +423,9 @@
   window.CpeWalk = {
     toggle: toggle,
     isActive: function() { return _active; },
-    forceStop: stop,
+    // §CPE_WALK_SPAWN — external stops (eye-off, editor close) also clear the resume pose: the
+    // walk context is gone, the next session must spawn fresh at the walk stretch's start.
+    forceStop: function() { _resumePose = null; return stop(); },
     // ══ witness hooks — read-only or exercising the REAL internal function, same precedent
     // cinema_path_editor.js's own `_probe*`/`_*ForTest` hooks already use (e.g. `_setPin`,
     // `_spawnStickForTest`) — never a re-implementation of the maths under test.
