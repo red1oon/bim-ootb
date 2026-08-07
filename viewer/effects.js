@@ -3366,15 +3366,16 @@ async function setupEffects(A, renderer, scene, camera) {
     _emberOff();
     // §GLOW_LENS_QUAD: the fitted lens quad is still-only — always tear it down here.
     _glowLensOff();
-    // §PHOTO_GLOW_SPRITE: restage rather than remove when night mode is still on — the sprites
-    // belong to NIGHT, not to the still; only their bloom was still-only. Restaging also refreshes
-    // the eye offset against wherever the camera ended up.
+    // §GLOW_SPRITE_NAV_OFF (2026-08-07): the round sprite no longer restages for nav — live
+    // navigation runs on the real point lights only now (see tools.js toggleNightMode). Still
+    // torn down unconditionally so it can never survive into navigation.
     _glowOff();
-    if (A._nightMode) _glowOn();
-    // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the 4x set follows the user into
-    // their next orbit and the frame rate goes with it.
-    if (A._nightMaxLights !== 12 && typeof A._nightUpdateLights === 'function') {
-      A._nightMaxLights = 12;
+    // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the still's raised set follows the
+    // user into their next orbit and the frame rate goes with it. Compares against the CURRENT nav
+    // default (A._nightMaxLightsNav), not a stale literal, so §NIGHT_LIGHT_BUDGET_UP-style tuning
+    // never silently breaks this reset.
+    if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
+      A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
       if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
     }
@@ -3870,10 +3871,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // budget. Re-arming it made Alt+S measurably heavier (user: "alt-s also getting heavy";
     // §STILL_REFINE elapsedMs 4496 -> 6560 on Hospital), which is exactly what 4x the point lights
     // costs: per-fragment lighting on every lit material, plus a shader recompile when the count
-    // changes. So it stays OFF — opt in with A._nightStillBoost = true.
-    // It also buys little now: §PHOTO_GLOW_SPRITE already makes all 1272 fixtures READ as lit for
-    // one draw call, and the point lights only add throw onto nearby surfaces. The finding stands
-    // recorded; the cost is not paid by default.
+    // changes. It shipped OFF by default for that reason.
+    // §NIGHT_LIGHT_BUDGET_UP (2026-08-07): RE-ARMED — user directive explicitly accepts this cost
+    // ("we got speed... throw all in, up to 50 as it is baking"), see tools.js A._nightStillBoost.
     if (A._nightStillBoost &&
         A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;

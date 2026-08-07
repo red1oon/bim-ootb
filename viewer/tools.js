@@ -855,8 +855,18 @@ function setupTools(A) {
   // renders once and then sits there. So the cap is a variable the still can raise, not a constant.
   // Read through A._nightMaxLights everywhere below so raising it and re-running _nightUpdateLights
   // is all that is needed.
-  A._nightMaxLights = 12;          // navigation budget
-  A._nightMaxLightsStill = 48;     // frozen-still budget — 4x, paid once
+  // §NIGHT_LIGHT_BUDGET_UP (2026-08-07, user: "can we increase them since we got speed? 24 be
+  // good" / "during alt-s throw all in, up to 50 as it is baking") — raised from 12/48. Also
+  // RE-ARMS A._nightStillBoost, which shipped OFF by default (§NIGHT_STILL_LIGHTS below in
+  // effects.js — measured +2064ms on Hospital, judged not worth it at the time). User directive
+  // this session explicitly accepts that cost ("we got speed... without DLOD we can scale with
+  // some more cost") — so the still budget bump below is only real if this is also true.
+  A._nightMaxLightsNav = 24;       // navigation budget — the RESET target (effects.js reads this,
+                                    // not a literal, so tuning this one number can't silently break
+                                    // the still's nav-budget handback)
+  A._nightMaxLights = A._nightMaxLightsNav;  // CURRENT budget — swapped to the still value during Alt+S
+  A._nightMaxLightsStill = 50;     // frozen-still budget — paid once, no 60fps constraint
+  A._nightStillBoost = true;       // re-armed 2026-08-07 — see effects.js §NIGHT_STILL_LIGHTS
   A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
   A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
   // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
@@ -1208,11 +1218,11 @@ function setupTools(A) {
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
-      // §PHOTO_GLOW_SPRITE: the fixtures themselves read as lit, not just the surfaces near them.
-      // Staged here rather than in Alt+S because it is ONE additive draw call for every fixture in
-      // the building — there is no per-light budget for it to blow, so a user turning night mode on
-      // should see the luminaires on without pressing anything else.
-      if (typeof A._glowStage === 'function') A._glowStage();
+      // §GLOW_SPRITE_NAV_OFF (2026-08-07, user: "remove the others, no more those flimsy night
+      // lights" — the round decorative sprite, not A._nightLights). Live nav now runs on the real
+      // point lights ONLY (A._nightLights, bumped to 24 below) — no more static round dots. The
+      // sprite mechanism itself stays (still-render exit-sign glow still uses it, see effects.js
+      // startStillRefine), this just stops staging it for navigation.
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
         A._nightControlsListener = function() {
