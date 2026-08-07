@@ -5455,6 +5455,27 @@
   // called automatically by drawGanttMini when the drawer has nothing editable to show, no button,
   // no side panel involved at all any more. Calls the real engine verb directly, same as the panel's
   // own generateDraft() zone-detail path (schedule_author_ui.js), not a reimplementation of it.
+  // §GANTT_SINGLE_LOAD (2026-08-07, 4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD) — the materialize
+  // core, callable BEFORE activation: no UI tip, no refold. Returns true iff a fresh native schedule
+  // was written. Scoped to the truly-cold case only (NO schedule row at all) — an existing schedule,
+  // authored or captured, is left for injectGantt to absorb as-is; generateGanttSchedule() below keeps
+  // its own wider semantics (regenerates over a non-captured schedule) for the drawer's auto-gen
+  // fallback. Same materializeZones call/opts as generateGanttSchedule — keep them in sync.
+  function _materializeNativeSchedule(app) {
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.materializeZones) return false;
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act) return false;                       // schedule exists — injectGantt absorbs it, one pass
+    var todayStart = new Date().toISOString().slice(0, 10);
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false });
+    console.log('§GANTT_PREMATERIALIZE ' + (res.ok
+      ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
+      : 'failed reason=' + (res.reason || 'unknown') + ' — legacy auto-generate fallback will handle it'));
+    return !!res.ok;
+  }
+
   function generateGanttSchedule() {
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -6542,6 +6563,14 @@
       if (!_placeOps.length) {
         if (st) st.textContent = 'Setting up 4D construction timeline...';
         viewerStatus('Time Machine: generating construction schedule...');
+        // §GANTT_SINGLE_LOAD (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD): a cold open used to run
+        // injectGantt TWICE — pass 1 with no schedule (placeholder dates, task_id-less ops), then
+        // drawGanttMini's §GANTT_EDIT_LOCK auto-materialize called tmRefoldSchedule(), which threw
+        // pass 1 away (deactivate + cacheDel + re-activate) and ran the ENTIRE chain again. Now the
+        // native schedule is materialized FIRST, so the single injectGantt run absorbs it, bars carry
+        // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
+        // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
+        _materializeNativeSchedule(app);
         if (!injectGantt()) {
           if (st) st.textContent = 'No elements found in database';
           viewerStatus('Time Machine: no elements found');
@@ -6563,7 +6592,7 @@
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
-      if (!_ops.length) { injectGantt(); _ops = loadOps(); _ganttDirty = true; }
+      if (!_ops.length) { _materializeNativeSchedule(A()); injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
