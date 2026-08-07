@@ -4,6 +4,31 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.40.0](https://github.com/red1oon/bim-ootb/compare/v1.39.1...v1.40.0) (2026-08-07)
+
+
+### ✨ Features
+
+* **4d:** §DEQ_V1 — default engine zero physics violations (fans-over-roof fixed, all-class audit) ([#1236](https://github.com/red1oon/bim-ootb/issues/1236)) ([e67d4f5](https://github.com/red1oon/bim-ootb/commit/e67d4f57684b5350f815a07e3d967ec4d6906e02))
+* **modeller:** whole-room move (GEOM_ROOM_MOVE) + gated free item drag ([#1224](https://github.com/red1oon/bim-ootb/issues/1224)) ([1b157f4](https://github.com/red1oon/bim-ootb/commit/1b157f4f9ca992ac0823950d61bc5bdcfe6693e9))
+
+
+### 🐛 Fixes
+
+* **cpe:** checkbox edit-detection, disable pin-click regression, plain POV frame, quiet version banners ([#1228](https://github.com/red1oon/bim-ootb/issues/1228)) ([db8a693](https://github.com/red1oon/bim-ootb/commit/db8a6936dfa2186836c145ac38902c9006beb2e3))
+* **cpe:** POV frame grips its picture (§CPE_VF_GRIP) + even buildup day tempo (§CPE_BUILDUP_EVEN_TEMPO) ([#1231](https://github.com/red1oon/bim-ootb/issues/1231)) ([4bc5bee](https://github.com/red1oon/bim-ootb/commit/4bc5bee512d08a8e4edd034ab164e18dff5c80ec))
+* **cpe:** POV rect is EXACT at any devicePixelRatio, and the timeline bar is fused to it (§CPE_VF_STACK) ([#1232](https://github.com/red1oon/bim-ootb/issues/1232)) ([b803c00](https://github.com/red1oon/bim-ootb/commit/b803c00140ace92eada8de086fdc7036efdaee6f))
+* **cpe:** scrub with BuildUp ON now drives the construction cursor (§CPE_SCRUB_BUILDUP_SYNC) ([#1226](https://github.com/red1oon/bim-ootb/issues/1226)) ([27f90a2](https://github.com/red1oon/bim-ootb/commit/27f90a25bc5e2633666dcfe7bc1648cfe290236d))
+* **cpe:** the grab zone is the DRAWN handle, not a fixed 18px (§CPE_GRAB_WYSIWYG) ([#1233](https://github.com/red1oon/bim-ootb/issues/1233)) ([c46a602](https://github.com/red1oon/bim-ootb/commit/c46a602f94effd3a10a43a10470993cb7494aa6f))
+* **tour:** add scrub-bar close button + Tab/space panel controls ([#1229](https://github.com/red1oon/bim-ootb/issues/1229)) ([751eab0](https://github.com/red1oon/bim-ootb/commit/751eab02dd41775ae1cd4608a2a218a03f2ab41a))
+
+
+### 📝 Documentation
+
+* **internal:** add PDF Terrain sample reference pair (source image + extraction output) ([#1227](https://github.com/red1oon/bim-ootb/issues/1227)) ([fdec1cc](https://github.com/red1oon/bim-ootb/commit/fdec1cc0ab9828f905ba67284a0b4afdbc60bcd0))
+* **prompts:** formalize the IfcOpenShell/Bonsai credit for the RiverIoT/Federation pattern ([#1225](https://github.com/red1oon/bim-ootb/issues/1225)) ([4e3b320](https://github.com/red1oon/bim-ootb/commit/4e3b3201105fe6cc63b95e2920adb4af5c6fc541))
+* **prompts:** spec a thorough shortcut-audit + WH-gate noise study (Fable dispatch) ([#1230](https://github.com/red1oon/bim-ootb/issues/1230)) ([d04cb5c](https://github.com/red1oon/bim-ootb/commit/d04cb5c11e207cc99ad73f14995af06d83351f02))
+
 ## [1.39.1](https://github.com/red1oon/bim-ootb/compare/v1.39.0...v1.39.1) (2026-08-06)
 
 
