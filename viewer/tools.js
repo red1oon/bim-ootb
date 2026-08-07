@@ -855,8 +855,18 @@ function setupTools(A) {
   // renders once and then sits there. So the cap is a variable the still can raise, not a constant.
   // Read through A._nightMaxLights everywhere below so raising it and re-running _nightUpdateLights
   // is all that is needed.
-  A._nightMaxLights = 12;          // navigation budget
-  A._nightMaxLightsStill = 48;     // frozen-still budget — 4x, paid once
+  // §NIGHT_LIGHT_BUDGET_UP (2026-08-07, user: "can we increase them since we got speed? 24 be
+  // good" / "during alt-s throw all in, up to 50 as it is baking") — raised from 12/48. Also
+  // RE-ARMS A._nightStillBoost, which shipped OFF by default (§NIGHT_STILL_LIGHTS below in
+  // effects.js — measured +2064ms on Hospital, judged not worth it at the time). User directive
+  // this session explicitly accepts that cost ("we got speed... without DLOD we can scale with
+  // some more cost") — so the still budget bump below is only real if this is also true.
+  A._nightMaxLightsNav = 24;       // navigation budget — the RESET target (effects.js reads this,
+                                    // not a literal, so tuning this one number can't silently break
+                                    // the still's nav-budget handback)
+  A._nightMaxLights = A._nightMaxLightsNav;  // CURRENT budget — swapped to the still value during Alt+S
+  A._nightMaxLightsStill = 50;     // frozen-still budget — paid once, no 60fps constraint
+  A._nightStillBoost = true;       // re-armed 2026-08-07 — see effects.js §NIGHT_STILL_LIGHTS
   A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
   A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
   // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
@@ -932,7 +942,7 @@ function setupTools(A) {
     return NIGHT_AMBER;
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
-  var NIGHT_LIGHT_INTENSITY = 8.0; // §S277d: high intensity — inverse-square decay handles falloff naturally
+  var NIGHT_LIGHT_INTENSITY = 4.5; // §S277d, reduced 8.0->6.5->4.5 2026-08-07 (user: still too bright after first cut)
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
@@ -965,7 +975,7 @@ function setupTools(A) {
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
       A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
-      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.8; _glowCount++; }
+      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.45; _glowCount++; } // reduced 0.8->0.65->0.45 2026-08-07
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
       m.needsUpdate = true;
     }
@@ -999,8 +1009,16 @@ function setupTools(A) {
         // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
         // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
         var r = A.db.exec(
-          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z FROM elements_meta m " +
+          // §GLOW_LENS_QUAD (2026-08-07): bbox_x/bbox_y/rotation_z added so the still-render lens
+          // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
+          // round halo. Still-only consumer — the live round sprite ignores these three columns.
+          // m.guid (glow-buildup-gate, merged in) kept alongside for that feature's own consumer.
+          // §GLOW_TRUE_BOTTOM (2026-08-07): i.geometry_hash lets the drop calc below use the
+          // fixture's REAL mesh bounding box instead of assuming center_z sits at the bbox
+          // midpoint — see the drop comment further down for why that assumption was wrong.
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z, m.guid, i.geometry_hash FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
+          "LEFT JOIN element_instances i ON m.guid=i.guid " +
           // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
           // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
           //     m.ifc_class IN ('IfcLightFixture','IfcFlowTerminal','IfcElectricAppliance') AND ...
@@ -1068,34 +1086,95 @@ function setupTools(A) {
           "  'IfcStair','IfcStairFlight','IfcMember','IfcBeam','IfcColumn','IfcRailing')");
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
-            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0 });
+            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0,
+              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0, guid: row[8] || null, ghash: row[9] || null });
           });
           source = 'IFC';
         }
       } catch(e) {}
-      // §S259: Fallback — generate synthetic lights from storey centroids
+      // §NIGHT_ROOM_FALLBACK (2026-08-07, user cascade: "1. fixtures on ceiling 2. any fixtures
+      // 3. just per square empty per PL", refined same session after LTU corridors still read too
+      // dark: "in rooms u can use flow terminal as been the only fixture around"). Uses REAL
+      // room-containment data (rel_contained_in_space, already extracted — 181 real rooms on
+      // LTU_AHouse) — for a ROOM with no real named/classed luminaire:
+      //   a) if the room contains any IfcFlowTerminal (vents/diffusers/sprinklers — a plausible
+      //      ceiling fixture class, and LTU has thousands: 4090 VENT + 1431 PLB), light EVERY ONE
+      //      of them, not just one per room — a long corridor has several spaced along its
+      //      ceiling, and one light for the whole corridor was exactly why it stayed dark at both
+      //      ends. A._nightMaxLights culling (nearest-N to camera) already handles the resulting
+      //      larger candidate pool, same as it does for real luminaires.
+      //   b) otherwise, the single HIGHEST real element in the room (any class) — unchanged from
+      //      before.
+      // Tier 3 ("per square empty") stays moot: every room here has >=1 real member by construction.
+      try {
+        var litGuids = {};
+        A._nightFixtures.forEach(function(f) { if (f.guid) litGuids[f.guid] = 1; });
+        var rm = A.db.exec(
+          "SELECT r.space_guid, r.element_guid, t.center_x, t.center_y, t.center_z, t.bbox_z, m.ifc_class " +
+          "FROM rel_contained_in_space r JOIN element_transforms t ON r.element_guid = t.guid " +
+          "JOIN elements_meta m ON r.element_guid = m.guid"
+        );
+        var byRoom = {};
+        if (rm.length) {
+          rm[0].values.forEach(function(row) {
+            (byRoom[row[0]] = byRoom[row[0]] || []).push(
+              { guid: row[1], x: row[2], y: row[3], z: row[4], bz: row[5] || 0, cls: row[6] || '' });
+          });
+        }
+        var roomsLit = 0, ftLit = 0;
+        for (var room in byRoom) {
+          var members = byRoom[room];
+          if (members.some(function(m) { return litGuids[m.guid]; })) continue;
+          var flowTerms = members.filter(function(m) { return m.cls === 'IfcFlowTerminal'; });
+          if (flowTerms.length) {
+            flowTerms.forEach(function(ft) {
+              A._nightFixtures.push({ x: ft.x, y: ft.y, z: ft.z, name: 'room-flowterm ' + room,
+                h: ft.bz || 0.2, guid: null });
+              ftLit++;
+            });
+          } else {
+            var top = members[0];
+            for (var mi = 1; mi < members.length; mi++) {
+              if (members[mi].z + members[mi].bz / 2 > top.z + top.bz / 2) top = members[mi];
+            }
+            A._nightFixtures.push({ x: top.x, y: top.y, z: top.z, name: 'room-proxy ' + room,
+              h: top.bz || 0.2, guid: null });
+          }
+          roomsLit++;
+        }
+        if (roomsLit) {
+          source = (source === 'IFC' ? 'IFC+room-fallback(' : 'room-fallback(') +
+            roomsLit + ' rooms, ' + ftLit + ' via flow-terminal)';
+        }
+      } catch(e) { console.warn('§NIGHT_ROOM_FALLBACK query failed', e); }
+      // §NIGHT_CEILING_PLANT (2026-08-07, user: "if completely no fixture. then plant a quad and
+      // PL on ceiling. This is not hurting IFC integrity but effect same as having night or sky or
+      // ground mode" — explicitly sanctioned as PRESENTATION layer, same category as the ground
+      // plane / procedural sky, not asserted as real extracted IFC data. Fires only when tiers 1+2
+      // above found LITERALLY NOTHING — no real named luminaire anywhere, no room-containment data
+      // (or a building with rooms but somehow zero elements in any of them, which tier 2 above
+      // already can't produce given rel_contained_in_space's construction). One point per STOREY —
+      // its centroid + near-top Z, not the old removed 15m grid — explicitly tagged
+      // `presentation: true` so it's the ONLY tier besides real named fixtures that also gets a
+      // still-render lens quad (effects.js checks this flag) — tier 2 above stays PL-only, per
+      // user's own tiering ("take any overhead fixture... as source of lite" — light only, no quad).
       if (A._nightFixtures.length === 0) {
         try {
-          var sr = A.db.exec("SELECT m.storey, AVG(t.center_x), AVG(t.center_y), AVG(t.center_z), MIN(t.center_x), MAX(t.center_x), MIN(t.center_y), MAX(t.center_y) FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid GROUP BY m.storey");
-          if (sr.length) {
-            sr[0].values.forEach(function(row) {
-              var cx = row[1], cy = row[2], cz = row[3];
-              var xMin = row[4], xMax = row[5], yMin = row[6], yMax = row[7];
-              var dx = (xMax - xMin) || 10, dy = (yMax - yMin) || 10;
-              // Place a grid of lights per storey — one every ~15m
-              var nx = Math.max(1, Math.ceil(dx / 15));
-              var ny = Math.max(1, Math.ceil(dy / 15));
-              for (var ix = 0; ix < nx; ix++) {
-                for (var iy = 0; iy < ny; iy++) {
-                  var fx = xMin + (ix + 0.5) * (dx / nx);
-                  var fy = yMin + (iy + 0.5) * (dy / ny);
-                  A._nightFixtures.push({ x: fx, y: fy, z: cz + 1.5 });
-                }
-              }
+          var sr2 = A.db.exec(
+            "SELECT m.storey, AVG(t.center_x), AVG(t.center_y), MAX(t.center_z + t.bbox_z/2) " +
+            "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+            "WHERE m.storey IS NOT NULL GROUP BY m.storey"
+          );
+          var storeysLit = 0;
+          if (sr2.length) {
+            sr2[0].values.forEach(function(row) {
+              A._nightFixtures.push({ x: row[1], y: row[2], z: row[3] - 0.3, name: 'ceiling-plant ' + row[0],
+                h: 0.2, guid: null, presentation: true });
+              storeysLit++;
             });
-            source = 'synthetic (' + sr[0].values.length + ' storeys)';
           }
-        } catch(e) { console.warn('§NIGHT fallback query failed', e); }
+          if (storeysLit) source = 'ceiling-plant(' + storeysLit + ' storeys)';
+        } catch(e) { console.warn('§NIGHT_CEILING_PLANT query failed', e); }
       }
     }
     A._nightFixtureSource = source;
@@ -1203,11 +1282,11 @@ function setupTools(A) {
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
-      // §PHOTO_GLOW_SPRITE: the fixtures themselves read as lit, not just the surfaces near them.
-      // Staged here rather than in Alt+S because it is ONE additive draw call for every fixture in
-      // the building — there is no per-light budget for it to blow, so a user turning night mode on
-      // should see the luminaires on without pressing anything else.
-      if (typeof A._glowStage === 'function') A._glowStage();
+      // §GLOW_SPRITE_NAV_OFF (2026-08-07, user: "remove the others, no more those flimsy night
+      // lights" — the round decorative sprite, not A._nightLights). Live nav now runs on the real
+      // point lights ONLY (A._nightLights, bumped to 24 below) — no more static round dots. The
+      // sprite mechanism itself stays (still-render exit-sign glow still uses it, see effects.js
+      // startStillRefine), this just stops staging it for navigation.
       if (A.controls && !A._nightControlsListener) {
         var _nightLastCamPos = A.camera.position.clone();
         A._nightControlsListener = function() {
@@ -1261,6 +1340,7 @@ function setupTools(A) {
         l.dispose();
       });
       A._nightLights = [];
+      A._nightLightByPos = null;   // stale pos-object keys otherwise survive the next toggle-on
       A._nightFixturePositions = null;
       // §PHOTO_GLOW_SPRITE: night's sprites must not survive night mode
       if (typeof A._glowUnstage === 'function') A._glowUnstage();
@@ -1297,13 +1377,43 @@ function setupTools(A) {
         // Key the ratio on name+position so it is stable per fixture and independent of row order.
         p.__color = A.nightLightColor(f.name, f.name + '|' + f.x.toFixed(2) + ',' + f.y.toFixed(2) + ',' + f.z.toFixed(2));
         p.__exit = A.nightIsExitSign(f.name);   // §GLOW_EXIT_SOFT — a sign is not a troffer
-        // §GLOW_EMIT_DOWN — how far BELOW the stored centre the fitting actually emits. The DB gives
-        // a bounding-box centre; a RECESSED fitting's centre is level with (or above) the ceiling
-        // face, and a suspended one's centre is up in its drop rod. Half the bbox height plus a
-        // clearance puts the glow on the emitting face in both cases. Measured half-heights:
-        // troffer 0.07m, downlight 0.10m, plain recessed 0.075m, pendant-linear 0.77m (Clinic) —
-        // the pendant number is the drop rod, and dropping by it lands the glow on the lamp.
-        p.__drop = (f.h || 0) / 2 + 0.12;
+        // §GLOW_TRUE_BOTTOM (2026-08-07, replaces §GLOW_EMIT_DOWN's half-bbox-height guess — see
+        // NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_TRUE_BOTTOM for the numeric witness). The OLD formula
+        // `bbox_z/2 + 0.12` assumed center_z sits at the bbox MIDPOINT. It doesn't: extractIFCtoDB.py
+        // stores center_z as the IFC PLACEMENT ORIGIN translation, and bbox_z as the full world AABB
+        // height — the two only coincide when a fixture's mesh happens to be symmetric about its own
+        // origin. Measured on Hospital: a recessed troffer (symmetric mesh) was off by 4mm — noise.
+        // A suspended linear pendant (origin at the ceiling attach point, mesh mostly BELOW it) was
+        // off by 196mm — the pendant hangs from the origin, so almost none of its height is above it.
+        // Real fix: read the ACTUAL local bounding box of the fixture's own mesh (already loaded for
+        // rendering, same Y-axis convention as A.blobToGeometry — local Y === IFC Z, no extra math)
+        // instead of guessing from a symmetric assumption. GLOW_LENS_CLEARANCE below is the same
+        // small physical clearance effects.js already uses to clear the fixture's own depth-test —
+        // reused here, not reinvented, for the same reason.
+        var GLOW_LENS_CLEARANCE = 0.03;
+        p.__drop = null;
+        if (f.ghash && A.meshCache && A.meshCache[f.ghash]) {
+          var _geo = A.meshCache[f.ghash];
+          if (!_geo.boundingBox) _geo.computeBoundingBox();
+          if (_geo.boundingBox && isFinite(_geo.boundingBox.min.y)) {
+            p.__drop = -_geo.boundingBox.min.y + GLOW_LENS_CLEARANCE;
+          }
+        }
+        if (p.__drop === null) {
+          // Fallback only — mesh not streamed in yet, or a synthetic/room-fallback fixture with no
+          // geometry_hash. Old heuristic, kept as a documented approximation, not a silent guess.
+          p.__drop = (f.h || 0) / 2 + 0.12;
+        }
+        // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
+        p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
+        // §GLOW_BUILDUP_GATE — null for synthetic per-storey fallback fixtures (no real element to
+        // gate against); real IFC rows carry the guid so a buildup bake can withhold the glow until
+        // Time Machine has actually placed that fixture (see effects.js A._tmIsVisible).
+        p.__guid = f.guid || null;
+        // §NIGHT_CEILING_PLANT — true only for the last-resort synthetic tier; gates the
+        // still-render lens quad IN alongside real named fixtures (guid set), while tier-2's
+        // any-overhead-element pick (guid null, presentation unset) stays PL-only.
+        p.__presentation = !!f.presentation;
         return p;
       });
     }
@@ -1315,7 +1425,20 @@ function setupTools(A) {
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
     var needed;
-    if (allPos.length <= A._nightMaxLights) {
+    if (A._nightStillBoost) {
+      // §NIGHT_STILL_FRUSTUM (2026-08-07, user: "during Alt-S and movie baking, place quads and
+      // PLs on every noticeable source in the frame") — frustum-cull to what's actually in view
+      // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
+      // sanity ceiling against a pathological wide aerial shot with hundreds in frame at once —
+      // not a deliberate creative limit.
+      var frustum = new THREE.Frustum();
+      var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(vpMatrix);
+      var inView = allPos.filter(function(p) {
+        return frustum.containsPoint(new THREE.Vector3(p.x, p.y, p.z));
+      });
+      needed = inView.slice(0, 200).map(function(p) { return { pos: p }; });
+    } else if (allPos.length <= A._nightMaxLights) {
       // Small building — place ALL fixtures, no culling
       needed = allPos.map(function(p) { return { pos: p }; });
     } else {
@@ -1334,15 +1457,40 @@ function setupTools(A) {
         var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
         return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
       }).sort(function(a, b) { return a.dist2 - b.dist2; });
-      needed = sorted.slice(0, A._nightMaxLights);
+      // §NIGHT_SPREAD (2026-08-07, user: "not in dense area, if two sources nearby spread out to
+      // cover further line of sight") — greedy nearest-first, but skip a candidate within
+      // NIGHT_SPREAD_MIN_M of one already picked, so the 24-light budget reaches further down a
+      // corridor instead of bunching on one dense cluster right at the camera. If spacing can't
+      // fill the budget (not enough distant candidates), a second pass fills the rest ignoring
+      // spacing — the budget is always fully used, spacing is a preference, not a hard cutoff.
+      var NIGHT_SPREAD_MIN_M = 4;
+      var picked = [];
+      for (var si = 0; si < sorted.length && picked.length < A._nightMaxLights; si++) {
+        var cand = sorted[si].pos;
+        var tooClose = picked.some(function(pk) {
+          var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
+          return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
+        });
+        if (!tooClose) picked.push(cand);
+      }
+      if (picked.length < A._nightMaxLights) {
+        for (var si2 = 0; si2 < sorted.length && picked.length < A._nightMaxLights; si2++) {
+          if (picked.indexOf(sorted[si2].pos) === -1) picked.push(sorted[si2].pos);
+        }
+      }
+      needed = picked.map(function(p) { return { pos: p }; });
     }
-    // Remove old lights
-    A._nightLights.forEach(function(l) {
-      A.scene.remove(l);
-      if (l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
-      l.dispose();
-    });
-    A._nightLights = [];
+    // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
+    // set from scratch on every call — called on every 5m of camera travel while night mode is on,
+    // so a normal orbit/fly repeatedly churned three.js's per-material light-uniform list (the
+    // exact "shader recompile on light count change" cost this doc's own §RAM section already
+    // named as the expensive part). Root cause of the "hiccups when lighting is on, smooth when
+    // off" report — see §NIGHT_LIGHT_CHURN. Fix: `allPos` entries are stable object references
+    // (memoized by A._nightFixtureWorldPositions), so a Map keyed on that reference tracks which
+    // light belongs to which fixture across calls — reuse the light (just refresh its distance-fade
+    // intensity) when a fixture is still wanted, only dispose/create the delta.
+    if (!A._nightLightByPos) A._nightLightByPos = new Map();
+    var stillWanted = new Set();
     // §S277d: camera-distance fade — lights near the eye (you're inside, next to them) dim to
     // 30%; lights far away (you're outside looking in) stay full strength for façade throw.
     // Fixes "inside too bright" without losing the exterior overhang/doorway spillover.
@@ -1358,11 +1506,25 @@ function setupTools(A) {
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
       var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
-      var light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
-      light.position.copy(f.pos);
-      A.scene.add(light);
-      A._nightLights.push(light);
+      stillWanted.add(f.pos);
+      var light = A._nightLightByPos.get(f.pos);
+      if (light) {
+        light.intensity = intensity;   // position/colour are fixed per fixture — only fade moves
+      } else {
+        light = new THREE.PointLight(f.pos.__color || 0xffe4b5, intensity, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+        light.position.copy(f.pos);
+        A.scene.add(light);
+        A._nightLightByPos.set(f.pos, light);
+      }
     });
+    A._nightLightByPos.forEach(function(light, pos) {
+      if (stillWanted.has(pos)) return;
+      A.scene.remove(light);
+      if (light.shadow && light.shadow.map) { light.shadow.map.dispose(); light.shadow.map = null; }
+      light.dispose();
+      A._nightLightByPos.delete(pos);
+    });
+    A._nightLights = Array.from(A._nightLightByPos.values());
     if (A.markDirty) A.markDirty();
   };
 

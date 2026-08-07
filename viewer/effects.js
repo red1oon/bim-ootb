@@ -2366,18 +2366,37 @@ async function setupEffects(A, renderer, scene, camera) {
   // it rendered from frame 0 of a buildup. The predicate TM hands over is the SAME placed/frontier/
   // recent state it just applied to the real element, so the overlay cannot drift from it.
   // isVisible === null means TM is off → overlays visible (the sign exists in the finished building).
+  //
+  // §GLOW_BUILDUP_GATE (2026-08-07): a second consumer — §PHOTO_GLOW_SPRITE below — needs this same
+  // per-tick predicate for ~1000 fixture guids, not one billboard guid. window.__tmOverlaySync is a
+  // single global slot (TM calls exactly one function), so this is now a tiny fan-out: the raw
+  // isVisible fn is cached for on-demand reads (A._tmIsVisible) and broadcast to subscribers
+  // (A._tmVisSubscribe) so a buildup bake can withhold a fixture's glow until TM has actually placed
+  // it, without effects.js re-deriving placed/frontier/recent itself.
   var _nameVisLast = null;
+  var _tmVisListeners = [];
+  var _lastTmIsVisible = null;   // latest predicate TM handed over; null when TM isn't driving the scene
+  A._tmVisSubscribe = function(fn) { _tmVisListeners.push(fn); };
+  // Same default as the billboard branch below: no active TM predicate → everything is visible
+  // (Night Mode used outside a buildup bake, or after the buildup has fully completed).
+  A._tmIsVisible = function(guid) { return _lastTmIsVisible ? !!_lastTmIsVisible(guid) : true; };
   A._tmOverlayRegister = function() {
     if (window.__tmOverlaySync) return;   // idempotent
     window.__tmOverlaySync = function(isVisible) {
-      if (!_billboardNameMesh || !_billboardNameGuid) return;
-      var v = isVisible ? !!isVisible(_billboardNameGuid) : true;
-      if (v === _nameVisLast) return;     // log + write on CHANGE only, never per tick
-      _nameVisLast = v;
-      _billboardNameMesh.visible = v;
-      console.log('§BILLBOARD_NAME_VIS guid=' + _billboardNameGuid + ' visible=' + v +
-        ' tmActive=' + !!isVisible);
-      if (A.markDirty) A.markDirty();
+      _lastTmIsVisible = isVisible;
+      if (_billboardNameMesh && _billboardNameGuid) {
+        var v = isVisible ? !!isVisible(_billboardNameGuid) : true;
+        if (v !== _nameVisLast) {     // log + write on CHANGE only, never per tick
+          _nameVisLast = v;
+          _billboardNameMesh.visible = v;
+          console.log('§BILLBOARD_NAME_VIS guid=' + _billboardNameGuid + ' visible=' + v +
+            ' tmActive=' + !!isVisible);
+          if (A.markDirty) A.markDirty();
+        }
+      }
+      for (var _tvi = 0; _tvi < _tmVisListeners.length; _tvi++) {
+        try { _tmVisListeners[_tvi](isVisible); } catch (e) { /* one bad subscriber must not break TM's tick */ }
+      }
     };
     // Read-only probe for the witness: what the overlay currently believes.
     A._billboardNameState = function() {
@@ -3345,15 +3364,18 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
-    // §PHOTO_GLOW_SPRITE: restage rather than remove when night mode is still on — the sprites
-    // belong to NIGHT, not to the still; only their bloom was still-only. Restaging also refreshes
-    // the eye offset against wherever the camera ended up.
+    // §GLOW_LENS_QUAD: the fitted lens quad is still-only — always tear it down here.
+    _glowLensOff();
+    // §GLOW_SPRITE_NAV_OFF (2026-08-07): the round sprite no longer restages for nav — live
+    // navigation runs on the real point lights only now (see tools.js toggleNightMode). Still
+    // torn down unconditionally so it can never survive into navigation.
     _glowOff();
-    if (A._nightMode) _glowOn();
-    // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the 4x set follows the user into
-    // their next orbit and the frame rate goes with it.
-    if (A._nightMaxLights !== 12 && typeof A._nightUpdateLights === 'function') {
-      A._nightMaxLights = 12;
+    // §NIGHT_STILL_LIGHTS: hand the navigation budget back, or the still's raised set follows the
+    // user into their next orbit and the frame rate goes with it. Compares against the CURRENT nav
+    // default (A._nightMaxLightsNav), not a stale literal, so §NIGHT_LIGHT_BUDGET_UP-style tuning
+    // never silently breaks this reset.
+    if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
+      A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
       if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
     }
@@ -3559,6 +3581,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var GLOW_EXIT_GAIN   = 0.9;
   var GLOW_EXIT_SIZE   = 0.40;
   var _glowPoints = null, _glowTex = null;
+  var _glowStagedCount = -1;   // §GLOW_BUILDUP_GATE — fixture count the CURRENT cloud was built with
 
   function _glowTexture() {
     if (_glowTex) return _glowTex;
@@ -3576,11 +3599,28 @@ async function setupEffects(A, renderer, scene, camera) {
     return _glowTex;
   }
 
-  function _glowOn() {
+  function _glowOn(filterFn) {
     if (!A._glowSpriteEnabled || _glowPoints) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
-    var pos = A._nightFixtureWorldPositions();
-    if (!pos || !pos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    if (A._tmOverlayRegister) A._tmOverlayRegister();   // idempotent — ensures window.__tmOverlaySync exists even without a billboard nameplate
+    var allPos = A._nightFixtureWorldPositions();
+    if (!allPos || !allPos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    // §GLOW_BUILDUP_GATE (2026-08-07, user: MaxQ buildup bakes showed every fixture lit from
+    // Day 1 — "all the lights are lighted and not following the buildup schedule"). A fixture with
+    // no guid (the synthetic per-storey fallback — no real element to gate against) always glows;
+    // a real fixture only glows once Time Machine has actually placed it. A._tmIsVisible defaults
+    // to true when TM isn't driving the scene at all, so plain Night Mode (no buildup in progress)
+    // is completely unchanged.
+    var pos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    // §GLOW_LENS_QUAD (this session's own merge) — optional extra filter, e.g. the still stages
+    // ONLY the exit-sign subset here (the quad handles everything else). Applied on TOP of the
+    // buildup gate above, not instead of it.
+    if (filterFn) pos = pos.filter(filterFn);
+    _glowStagedCount = pos.length;
+    if (!pos.length) {
+      console.log('§PHOTO_GLOW_SPRITE_GATE 0/' + allPos.length + ' fixtures placed yet — nothing to light');
+      return;
+    }
     // Offset toward the eye, computed ONCE: for a still the camera is frozen, so once is exact; in
     // navigation a 0.15m staleness as the camera moves is below the size of the halo it positions.
     var cam = A.camera.position;
@@ -3645,7 +3685,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowPoints.renderOrder = 999;       // after opaque geometry, so additive lands on a finished frame
     _glowPoints.name = '__glowSprites';
     A.scene.add(_glowPoints);
-    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + ' sprites (' + (pos.length - exits) +
+    console.log('§PHOTO_GLOW_SPRITE staged ' + pos.length + '/' + allPos.length + ' sprites (' + (pos.length - exits) +
       ' luminaires gain ' + GLOW_GAIN + ', ' + exits + ' exit signs gain ' + GLOW_EXIT_GAIN +
       ' x' + GLOW_EXIT_SIZE + ' size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose)' +
       ', 1 draw call, 0 scene materials touched' +
@@ -3673,6 +3713,112 @@ async function setupEffects(A, renderer, scene, camera) {
   // Bloom stays still-only — it is 7 extra full-screen draws and that DOES have a 60fps cost.
   A._glowStage   = function() { _glowOn(); };
   A._glowUnstage = function() { _glowOff(); };
+  // §GLOW_BUILDUP_GATE restage: while sprites are staged during an active TM buildup, the set of
+  // placed fixtures grows tick by tick — rebuild the (small, ≤~1200-point) cloud only when that
+  // count actually changes, not on every tick. isVisible === null (TM inactive) always matches
+  // "everything" and is a no-op restage the first time it's seen after a buildup ends.
+  if (typeof A._tmVisSubscribe === 'function') {
+    A._tmVisSubscribe(function(isVisible) {
+      if (!_glowPoints || !A._nightMode) return;
+      var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
+      var n = 0;
+      for (var _gi = 0; _gi < allPos.length; _gi++) {
+        if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
+      }
+      if (n === _glowStagedCount) return;
+      _glowOff();
+      _glowOn();
+    });
+  }
+
+  // ══ §GLOW_LENS_QUAD (NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_LENS_QUAD verdict, 2026-08-07) ══
+  // STILL-RENDER ONLY. User directive 2026-08-07: "only for the render, such realism will be a
+  // wow. while night fly thru it is OK" — live navigation/night-mode keeps the round
+  // §PHOTO_GLOW_SPRITE halo exactly as it is; this function is never called from there.
+  //
+  // Replaces the round Points sprite (one fixed size, always a circle) with an InstancedMesh of
+  // quads, each sized to ITS OWN fixture's bbox_x x bbox_y and yawed by its own rotation_z, sitting
+  // at the emitting face — a 0.6x1.2m troffer seen from below reads as a 0.6x1.2m rectangle of
+  // light, not a generic dot floating near it. Same position/colour/eye-offset source as the round
+  // sprite (A._nightFixtureWorldPositions) so the two mechanisms never disagree.
+  //
+  // §GLOW_EXIT_SOFT is deliberately NOT ported here — an exit sign is a small backlit panel, not a
+  // lit lens, and stays on the round soft-glow treatment even during the still (skipped below).
+  //
+  // Simplification, stated not hidden: only rotation_z (yaw about vertical) is applied. Fixtures in
+  // the five shipped buildings are ceiling/wall-mounted flat panels — rotation_x/y would matter for
+  // a tilted spotlight, which none of the current luminaire vocabulary matches.
+  var _glowLensMesh = null;
+  function _glowLensOn() {
+    if (_glowLensMesh) return;
+    if (typeof A._nightFixtureWorldPositions !== 'function') return;
+    var pos = A._nightFixtureWorldPositions();
+    if (!pos || !pos.length) return;
+    var geo = new THREE.PlaneGeometry(1, 1);
+    var mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
+      depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
+    });
+    var mesh = new THREE.InstancedMesh(geo, mat, pos.length);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 999;
+    mesh.name = '__glowLensQuads';
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion();
+    var pVec = new THREE.Vector3(), sVec = new THREE.Vector3(), col = new THREE.Color();
+    // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
+    // matches §GLOW_EMIT_DOWN, the direction the fixture actually emits and the direction __drop nudges).
+    qFace.setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+    // §GLOW_LENS_CLEARANCE_FIX (2026-08-07): the round sprite's old GLOW_EYE_OFFSET (0.3m TOWARD
+    // THE CAMERA) is direction-agnostic for a symmetric dot but visibly shifts an ORIENTED
+    // rectangle sideways at any angled view (the Hospital hallway misalignment). A small STRAIGHT
+    // DOWN clearance (same axis __drop already uses) clears the depth test against the fixture's
+    // own geometry without moving X/Z off the real fixture at all, from any angle.
+    var GLOW_LENS_CLEARANCE = 0.03;
+    var exits = 0, quads = 0, skippedTier2 = 0;
+    for (var i = 0; i < pos.length; i++) {
+      var p = pos[i];
+      if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
+      // §NIGHT_TIER_GATE (2026-08-07, user cascade) — the lens quad only draws for a real named
+      // fixture (p.__guid set) or the explicitly-sanctioned presentation-only ceiling plant
+      // (p.__presentation) — NOT tier 2's "any overhead element in the room" pick, which the user
+      // scoped as light-only ("as source of lite", no quad mentioned for that tier).
+      if (p.__guid == null && !p.__presentation) { skippedTier2++; continue; }
+      var py = p.y - (p.__drop || 0.12) - GLOW_LENS_CLEARANCE;
+      pVec.set(p.x, py, p.z);
+      // §GLOW_LENS_NO_DOUBLE_YAW (2026-08-07, next session, numeric witness not visual — see
+      // NIGHT_AND_FIXTURE_LIGHTING.md §SESSION HANDOFF "second cause" item): bbox_x/bbox_y from
+      // element_transforms are the WORLD-frame AABB, rotation_z ALREADY baked in — proven by
+      // Terminal_extracted.db's EmergencyLight_EL3 rows, same fixture reporting bbox swapped
+      // (0.168x0.419 at rz=+pi/2 vs 0.419x0.168 at rz=pi). The old code treated (bbox_x,bbox_y) as
+      // LOCAL dims and yawed them AGAIN by rotation_z — a no-op at rz=0/pi (why upstairs looked
+      // fine) but a 90 deg swap of the quad's world footprint at rz=+-pi/2 (why downstairs didn't
+      // fit: FitUpstairs.png). No yaw needed — q stays face-down only.
+      q.copy(qFace);
+      var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
+      sVec.set(w, h, 1);
+      m4.compose(pVec, q, sVec);
+      mesh.setMatrixAt(quads, m4);
+      col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      mesh.setColorAt(quads, col.multiplyScalar(GLOW_GAIN));
+      quads++;
+    }
+    mesh.count = quads;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    A.scene.add(mesh);
+    _glowLensMesh = mesh;
+    console.log('§GLOW_LENS_QUAD staged ' + quads + ' lens quads (' + exits +
+      ' exit signs left on the round sprite, ' + skippedTier2 +
+      ' tier-2 overhead-picks skipped — PL only, no quad), 1 draw call, 0 scene materials touched');
+  }
+  function _glowLensOff() {
+    if (!_glowLensMesh) return;
+    A.scene.remove(_glowLensMesh);
+    _glowLensMesh.geometry.dispose();
+    _glowLensMesh.material.dispose();
+    console.log('§GLOW_LENS_QUAD removed');
+    _glowLensMesh = null;
+  }
 
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
@@ -3706,10 +3852,14 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._bloomOff === undefined) A._bloomOff = true;
     if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
-    // §PHOTO_GLOW_SPRITE: night mode may already have staged these. Restage anyway, so the eye
-    // offset is computed against the pose the still is actually frozen at rather than wherever the
-    // camera happened to be when night mode was switched on.
-    _glowOff(); _glowOn();
+    // §GLOW_STILL_RESTORED (2026-08-07): live nav stays PL-only (round sprite stopped staging
+    // there earlier, §GLOW_SPRITE_NAV_OFF — unchanged). The still gets the lens quad back, fixed
+    // (§GLOW_LENS_CLEARANCE_FIX) + the real point lights it was always getting, now frustum-cased
+    // instead of a flat 50-cap (§NIGHT_STILL_FRUSTUM in tools.js). Exit signs keep the round
+    // soft-glow subset alongside the quad (§GLOW_EXIT_SOFT — a backlit panel is not a lens).
+    _glowOff();
+    _glowOn(function(p) { return p.__exit; });
+    _glowLensOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
@@ -3721,10 +3871,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // budget. Re-arming it made Alt+S measurably heavier (user: "alt-s also getting heavy";
     // §STILL_REFINE elapsedMs 4496 -> 6560 on Hospital), which is exactly what 4x the point lights
     // costs: per-fragment lighting on every lit material, plus a shader recompile when the count
-    // changes. So it stays OFF — opt in with A._nightStillBoost = true.
-    // It also buys little now: §PHOTO_GLOW_SPRITE already makes all 1272 fixtures READ as lit for
-    // one draw call, and the point lights only add throw onto nearby surfaces. The finding stands
-    // recorded; the cost is not paid by default.
+    // changes. It shipped OFF by default for that reason.
+    // §NIGHT_LIGHT_BUDGET_UP (2026-08-07): RE-ARMED — user directive explicitly accepts this cost
+    // ("we got speed... throw all in, up to 50 as it is baking"), see tools.js A._nightStillBoost.
     if (A._nightStillBoost &&
         A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
