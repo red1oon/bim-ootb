@@ -807,12 +807,11 @@
         '<button id="cpe-vf-toggle" title="turn on the POV viewfinder (B) — shows the exact camera pose the rehearsal is at" ' +
           'style="flex:none;padding:3px 8px;font-size:13px;line-height:1;background:#2a2e34;color:#888;' +
           'border:1px solid #4a4f57;border-radius:4px;cursor:pointer;display:flex;align-items:center">' + _eyeIconSvg(false) + '</button>' +
-        // §CPE_WALK_EDIT_V1 (prompts/CPE_POV_WALK_PATHING.md) — walk B in POV with mouse+WASD, press
-        // Enter/click to snap a stick where you are looking. All behaviour lives in viewer/cpe_walk.js;
-        // this button only starts/stops it (same icon-only-button convention as the eye toggle).
-        '<button id="cpe-walk-toggle" title="walk the POV (B) with mouse-look + WASD; click or Enter snaps a stick where you are looking and facing" ' +
-          'style="flex:none;padding:3px 8px;font-size:11px;line-height:1;background:#2a2e34;color:#888;' +
-          'border:1px solid #4a4f57;border-radius:4px;cursor:pointer">walk</button></div>' +
+        // §CPE_WALK_SHOES_BTN (2026-08-07, user: "The Walk button (shoes icon preferred) should be
+        // at the POV frame") — the walk toggle moved OUT of this title row onto B's own frame header
+        // (_buildVFPanel), extending §CPE_SOLE_OWNER: the POV frame owns its walk, the eye owns the
+        // frame. See _wireWalkToggle, wired in _toggleViewfinder's ON branch now.
+        '</div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path controls, one strip.
@@ -1667,7 +1666,18 @@
         'height:22px;background:rgba(20,22,26,0.85);color:#4fc3f7;font:600 10px system-ui,sans-serif;' +
         'padding:2px 6px;display:flex;align-items:center;justify-content:space-between;' +
         'border-bottom:1px solid #4fc3f7;user-select:none">' +
-        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
+        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span>' +
+        // §CPE_WALK_SHOES_BTN (2026-08-07, user ruling): the walk toggle lives ON B's frame header —
+        // shoes (Lucide footprints, pulled verbatim like panels.js §CINEMA_ROW_ICONS; inline SVG so
+        // stroke:currentColor follows the active-color swap in cpe_walk.js _syncButton). The header
+        // and panel are pointer-events:none by design — the button opts itself back in.
+        '<button id="cpe-walk-toggle" title="walk this POV: mouse-look + WASD; click or Enter snaps a stick where you stand and face (Esc or click again to stop)" ' +
+          'style="pointer-events:auto;flex:none;width:18px;height:18px;padding:1px;line-height:0;background:transparent;color:#888;' +
+          'border:1px solid #4a4f57;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">' +
+          '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/>' +
+            '<path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/>' +
+            '<path d="M16 17h4"/><path d="M4 13h4"/></svg></button></div>';
     document.body.appendChild(d);
     // §CPE_VF_STACK owns final geometry (see _vfLayoutStack) and bottom-anchors B + the fused bar
     // as ONE object, so B's own independent viewport clamp is retired here too. Clamping each panel
@@ -1850,9 +1860,16 @@
       // §CPE_VF_STACK — AFTER both panels exist and the bar has real content (its height is
       // content-driven and must be measured, not assumed), lay the fused stack out as one object.
       _vfLayoutStack();
+      // §CPE_WALK_SHOES_BTN: the walk button was just built with B's panel — wire it here, every
+      // time the eye re-opens (the old panel and its listeners were removed on the last eye-off).
+      _wireWalkToggle();
       if (a.markDirty) a.markDirty();
       console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — timeline panel shown alongside it (§CPE_VF_EYE_DRIVES_SCRUB)');
     } else {
+      // §CPE_WALK_SHOES_BTN + §CPE_SOLE_OWNER: the walk session is B's tenant — closing B (its
+      // owner) force-stops an active walk BEFORE the panel (and the walk button on it) is removed,
+      // so freeze/TM/pointer-lock/stick-editor listeners are all restored, never orphaned.
+      if (window.CpeWalk && window.CpeWalk.isActive && window.CpeWalk.isActive()) window.CpeWalk.forceStop();
       var panel = document.getElementById('cpe-vf-panel');
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
@@ -3026,9 +3043,9 @@
       // (already null-guards on a missing track).
       _state.scrubTn = 0;
       // §CPE_VIEWFINDER: the eye-icon toggle button lives in the panel's title row (_buildPanel).
+      // §CPE_WALK_SHOES_BTN: the walk button lives on B's frame header now — built and wired in
+      // _toggleViewfinder's ON branch, not here (B does not exist yet at open()).
       _wireViewfinderToggle();
-      // §CPE_WALK_EDIT_V1: the walk-mode toggle button, same title row.
-      _wireWalkToggle();
       // §CPE_PREVIEW_DIVERGENCE: state the basis every re-plan below is pinned to, once. If a pasted
       // console ever shows the bake's §CINEMA_PIVOT disagreeing with the editor's, this line says
       // which camera the editor was planning from.
