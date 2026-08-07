@@ -329,9 +329,13 @@
   function _syncButton() {
     var btn = document.getElementById('cpe-walk-toggle');
     if (!btn) return;
+    // §CPE_WALK_SHOES_BTN: the button is the Lucide footprints SVG on B's frame header now
+    // (stroke:currentColor) — active state is the color swap alone; never write textContent here,
+    // that would erase the icon markup.
     btn.style.color = _active ? '#4fc3f7' : '#888';
     btn.style.borderColor = _active ? '#4fc3f7' : '#4a4f57';
-    btn.textContent = _active ? 'walking…' : 'walk';
+    btn.title = _active ? 'walking — Esc or click to stop; Enter/click on the scene snaps a stick'
+                        : 'walk this POV: mouse-look + WASD; click or Enter snaps a stick where you stand and face (Esc or click again to stop)';
   }
 
   function toggle() { return _active ? stop() : start(); }

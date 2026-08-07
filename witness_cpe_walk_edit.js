@@ -88,6 +88,13 @@ async function gates(browser, BLD) {
   P('G-WALK-ISOLATE-1 pre-walk pointerdown at a handle is claimed by the stick editor (_state.drag set)',
     claimedBefore === true, `_probeDrag()=${claimedBefore}`);
 
+  // ══ G-WALK-BTN-ABSENT (§CPE_WALK_SHOES_BTN): with the eye OFF there is no B frame, and the walk
+  // button lives ON B's frame header now — so it must NOT exist yet (it used to sit in the CPE
+  // panel's title row; this gate proves the move, not just the addition). ══
+  const btnPre = await page.evaluate(() => !!document.getElementById('cpe-walk-toggle'));
+  P('G-WALK-BTN-ABSENT eye off => no B frame => no walk button anywhere (button moved off the CPE title row)',
+    btnPre === false, `#cpe-walk-toggle exists=${btnPre}`);
+
   // ══ mount walk mode ══
   const mark1 = logs.length;
   const mounted = await page.evaluate(() => window.CpeWalk.toggle());
@@ -109,6 +116,16 @@ async function gates(browser, BLD) {
   P('G-WALK-FREEZE overlay canvas exists while mounted, sized to the WebGL canvas (main view is covered)',
     !!freezeInfo && freezeInfo.w === freezeInfo.canvasW && freezeInfo.h === freezeInfo.canvasH,
     `freeze=${JSON.stringify(freezeInfo)} logged=[${win1.filter(l => l.startsWith('§CPE_WALK_FREEZE')).join(' | ')}]`);
+
+  // ══ G-WALK-BTN-B (§CPE_WALK_SHOES_BTN): mounting auto-opened B, and the walk button (shoes icon)
+  // must exist ON B's frame header — inside #cpe-vf-panel, carrying the footprints SVG. ══
+  const btnB = await page.evaluate(() => {
+    const btn = document.getElementById('cpe-walk-toggle');
+    const panel = document.getElementById('cpe-vf-panel');
+    return { exists: !!btn, inPanel: !!(btn && panel && panel.contains(btn)), hasSvg: !!(btn && btn.querySelector('svg path')) };
+  });
+  P('G-WALK-BTN-B walk button exists on B\'s frame header (inside #cpe-vf-panel, shoes SVG present)',
+    btnB.exists && btnB.inPanel && btnB.hasSvg, JSON.stringify(btnB));
 
   // ══ G-WALK-ISOLATE-2: mounted, the SAME gesture is NOT claimed ══
   const claimedDuring = await dispatchPointerDownUp(page, setup.hx, setup.hy);
@@ -142,9 +159,20 @@ async function gates(browser, BLD) {
     !!snapRes && typeof snapRes.replanMs === 'number' && win2.some(l => l.startsWith('§CPE_WALK_SNAP pos=')),
     `replanMs=${snapRes ? snapRes.replanMs : 'null'} logged=${win2.filter(l => l.startsWith('§CPE_WALK_SNAP')).join(' | ')}`);
 
-  // Reset to a known unmounted baseline (still mounted from the earlier snap test).
-  await page.evaluate(() => { if (window.CpeWalk.isActive()) window.CpeWalk.toggle(); });
+  // ══ G-WALK-EYE-OFF-STOP (§CPE_WALK_SHOES_BTN / §CPE_SOLE_OWNER): closing B (the eye, walk's
+  // owner surface) while a walk is active must force-stop the walk — freeze dropped, no orphaned
+  // session. This doubles as the reset to the unmounted baseline the gates below assume. ══
+  const eyeOff = await page.evaluate(() => {
+    const activeBefore = window.CpeWalk.isActive();
+    window.APP.cinemaPathEditor._vfToggle();   // eye OFF (same call cpe_walk's own start() uses for ON)
+    return { activeBefore, activeAfter: window.CpeWalk.isActive(),
+             freezeGone: !document.getElementById('cpe-walk-freeze'),
+             btnGone: !document.getElementById('cpe-walk-toggle') };
+  });
   await sleep(100);
+  P('G-WALK-EYE-OFF-STOP closing B (eye off) force-stops an active walk (session, freeze and button all gone)',
+    eyeOff.activeBefore === true && eyeOff.activeAfter === false && eyeOff.freezeGone && eyeOff.btnGone,
+    JSON.stringify(eyeOff));
 
   // ══ G-WALK-TMLOCK — stub panel/button so this gate proves OUR dispatch+lock code, independent
   // of whether real Time Machine happens to be activated in this session (out of scope: we do not
