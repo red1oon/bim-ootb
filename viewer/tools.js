@@ -999,7 +999,10 @@ function setupTools(A) {
         // vocabulary §PHOTO_EMBER uses, and the "filter for 'light'" the user asked for. Measured
         // on the Clinic: 1105 naive name matches -> 841 real luminaires, 264 rejected.
         var r = A.db.exec(
-          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z FROM elements_meta m " +
+          // §GLOW_LENS_QUAD (2026-08-07): bbox_x/bbox_y/rotation_z added so the still-render lens
+          // quad (effects.js) can size and orient itself to the REAL fixture instead of a generic
+          // round halo. Still-only consumer — the live round sprite ignores these three columns.
+          "SELECT t.center_x, t.center_y, t.center_z, m.element_name, t.bbox_z, t.bbox_x, t.bbox_y, t.rotation_z FROM elements_meta m " +
           "JOIN element_transforms t ON m.guid=t.guid " +
           // §NIGHT_NAME_NOT_CLASS (2026-07-27, user: "anything that has 'light' name", "i dunno why
           // we keep missing 'light' in names"). THE ANSWER IS THE CLASS GATE, which used to read
@@ -1068,7 +1071,8 @@ function setupTools(A) {
           "  'IfcStair','IfcStairFlight','IfcMember','IfcBeam','IfcColumn','IfcRailing')");
         if (r.length && r[0].values.length > 0) {
           r[0].values.forEach(function(row) {
-            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0 });
+            A._nightFixtures.push({ x: row[0], y: row[1], z: row[2], name: row[3] || '', h: row[4] || 0,
+              bw: row[5] || 0, bd: row[6] || 0, rz: row[7] || 0 });
           });
           source = 'IFC';
         }
@@ -1304,6 +1308,8 @@ function setupTools(A) {
         // troffer 0.07m, downlight 0.10m, plain recessed 0.075m, pendant-linear 0.77m (Clinic) —
         // the pendant number is the drop rod, and dropping by it lands the glow on the lamp.
         p.__drop = (f.h || 0) / 2 + 0.12;
+        // §GLOW_LENS_QUAD — real fixture footprint + yaw, still-render lens only (see effects.js).
+        p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
         return p;
       });
     }

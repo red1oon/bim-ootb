@@ -3345,6 +3345,8 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
+    // §GLOW_LENS_QUAD: the fitted lens quad is still-only — always tear it down here.
+    _glowLensOff();
     // §PHOTO_GLOW_SPRITE: restage rather than remove when night mode is still on — the sprites
     // belong to NIGHT, not to the still; only their bloom was still-only. Restaging also refreshes
     // the eye offset against wherever the camera ended up.
@@ -3674,6 +3676,80 @@ async function setupEffects(A, renderer, scene, camera) {
   A._glowStage   = function() { _glowOn(); };
   A._glowUnstage = function() { _glowOff(); };
 
+  // ══ §GLOW_LENS_QUAD (NIGHT_AND_FIXTURE_LIGHTING.md §GLOW_LENS_QUAD verdict, 2026-08-07) ══
+  // STILL-RENDER ONLY. User directive 2026-08-07: "only for the render, such realism will be a
+  // wow. while night fly thru it is OK" — live navigation/night-mode keeps the round
+  // §PHOTO_GLOW_SPRITE halo exactly as it is; this function is never called from there.
+  //
+  // Replaces the round Points sprite (one fixed size, always a circle) with an InstancedMesh of
+  // quads, each sized to ITS OWN fixture's bbox_x x bbox_y and yawed by its own rotation_z, sitting
+  // at the emitting face — a 0.6x1.2m troffer seen from below reads as a 0.6x1.2m rectangle of
+  // light, not a generic dot floating near it. Same position/colour/eye-offset source as the round
+  // sprite (A._nightFixtureWorldPositions) so the two mechanisms never disagree.
+  //
+  // §GLOW_EXIT_SOFT is deliberately NOT ported here — an exit sign is a small backlit panel, not a
+  // lit lens, and stays on the round soft-glow treatment even during the still (skipped below).
+  //
+  // Simplification, stated not hidden: only rotation_z (yaw about vertical) is applied. Fixtures in
+  // the five shipped buildings are ceiling/wall-mounted flat panels — rotation_x/y would matter for
+  // a tilted spotlight, which none of the current luminaire vocabulary matches.
+  var _glowLensMesh = null;
+  function _glowLensOn() {
+    if (_glowLensMesh) return;
+    if (typeof A._nightFixtureWorldPositions !== 'function') return;
+    var pos = A._nightFixtureWorldPositions();
+    if (!pos || !pos.length) return;
+    var cam = A.camera.position;
+    var geo = new THREE.PlaneGeometry(1, 1);
+    var mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
+      depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
+    });
+    var mesh = new THREE.InstancedMesh(geo, mat, pos.length);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 999;
+    mesh.name = '__glowLensQuads';
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
+    var pVec = new THREE.Vector3(), sVec = new THREE.Vector3(), col = new THREE.Color();
+    // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
+    // matches §GLOW_EMIT_DOWN, the direction the fixture actually emits and the direction __drop nudges).
+    qFace.setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+    var exits = 0, quads = 0;
+    for (var i = 0; i < pos.length; i++) {
+      var p = pos[i];
+      if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
+      var py = p.y - (p.__drop || 0.12);
+      var dx = cam.x - p.x, dy = cam.y - py, dz = cam.z - p.z;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var k = GLOW_EYE_OFFSET / d;
+      pVec.set(p.x + dx * k, py + dy * k, p.z + dz * k);
+      qYaw.setFromEuler(new THREE.Euler(0, p.__rz || 0, 0));
+      q.copy(qFace); q.premultiply(qYaw);   // face down, THEN yaw to the fixture's real rotation_z
+      var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
+      sVec.set(w, h, 1);
+      m4.compose(pVec, q, sVec);
+      mesh.setMatrixAt(quads, m4);
+      col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
+      mesh.setColorAt(quads, col.multiplyScalar(GLOW_GAIN));
+      quads++;
+    }
+    mesh.count = quads;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    A.scene.add(mesh);
+    _glowLensMesh = mesh;
+    console.log('§GLOW_LENS_QUAD staged ' + quads + ' lens quads (' + exits +
+      ' exit signs left on the round sprite), 1 draw call, 0 scene materials touched');
+  }
+  function _glowLensOff() {
+    if (!_glowLensMesh) return;
+    A.scene.remove(_glowLensMesh);
+    _glowLensMesh.geometry.dispose();
+    _glowLensMesh.material.dispose();
+    console.log('§GLOW_LENS_QUAD removed');
+    _glowLensMesh = null;
+  }
+
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
@@ -3706,10 +3782,10 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._bloomOff === undefined) A._bloomOff = true;
     if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
-    // §PHOTO_GLOW_SPRITE: night mode may already have staged these. Restage anyway, so the eye
-    // offset is computed against the pose the still is actually frozen at rather than wherever the
-    // camera happened to be when night mode was switched on.
-    _glowOff(); _glowOn();
+    // §GLOW_LENS_QUAD (2026-08-07): the still gets the fitted lens quad, not the round nav sprite —
+    // "only for the render" (user directive). Night mode may already have staged the round sprite;
+    // swap it for the quad rather than stacking both.
+    _glowOff(); _glowLensOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
