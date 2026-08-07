@@ -3850,16 +3850,11 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._bloomOff === undefined) A._bloomOff = true;
     if (A._bloomPass) A._bloomPass.enabled = !A._bloomOff && (!!A._emberEnabled || !!A._glowSpriteEnabled);
     _emberOn();          // §PHOTO_EMBER_DISARMED — no-op unless deliberately re-armed
-    // §GLOW_LENS_QUAD (2026-08-07): the still gets the fitted lens quad, not the round nav sprite —
-    // "only for the render" (user directive). Night mode may already have staged the round sprite;
-    // swap it for the quad rather than stacking both.
-    // §GLOW_LENS_EXIT_FIX: the quad deliberately skips exit signs (§GLOW_EXIT_SOFT — a backlit panel,
-    // not a lens), so a plain swap left them with NO glow at all during the still, a regression from
-    // before this change (found on the Clinic screenshot). Stage the round sprite for the exit-sign
-    // SUBSET only, alongside the quad for everything else, so exits keep their soft glow.
+    // §GLOW_ALL_REMOVED (2026-08-07, user: "remove all them, return to PL days... just increase
+    // them" — both the round sprite and the lens quad are OFF, still and nav. Real point lights
+    // only (A._nightLights, budget raised below). _glowOff() kept as a safety no-op in case
+    // anything is somehow still staged from before this change.
     _glowOff();
-    _glowOn(function(p) { return p.__exit; });
-    _glowLensOn();
     // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
     // navigation budget (every light costs per-pixel work on every lit material every frame); a
     // frozen still renders once and then sits there, so that budget does not apply to it. The
