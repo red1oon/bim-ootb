@@ -1677,7 +1677,13 @@
           '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/>' +
             '<path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/>' +
-            '<path d="M16 17h4"/><path d="M4 13h4"/></svg></button></div>';
+            '<path d="M16 17h4"/><path d="M4 13h4"/></svg></button>' +
+        // §CPE_WALK_WEBXR_VR — stopgap flag-plant (prompts/CPE_WALK_WEBXR_VR.md), analogous to the
+        // walk-toggle button just above. Starts hidden; _wireXrToggle() below shows it only if
+        // window.CpeXr.isSupported() resolves true (no headset in dev — stays hidden here).
+        '<button id="cpe-xr-toggle" title="enter VR (WebXR headset)" ' +
+          'style="display:none;pointer-events:auto;flex:none;padding:1px 4px;line-height:1;background:transparent;color:#888;' +
+          'border:1px solid #4a4f57;border-radius:3px;cursor:pointer;font:600 9px system-ui,sans-serif;margin-left:4px">VR</button></div>';
     document.body.appendChild(d);
     // §CPE_VF_STACK owns final geometry (see _vfLayoutStack) and bottom-anchors B + the fused bar
     // as ONE object, so B's own independent viewport clamp is retired here too. Clamping each panel
@@ -1863,6 +1869,7 @@
       // §CPE_WALK_SHOES_BTN: the walk button was just built with B's panel — wire it here, every
       // time the eye re-opens (the old panel and its listeners were removed on the last eye-off).
       _wireWalkToggle();
+      _wireXrToggle();
       if (a.markDirty) a.markDirty();
       console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — timeline panel shown alongside it (§CPE_VF_EYE_DRIVES_SCRUB)');
     } else {
@@ -1914,6 +1921,16 @@
       if (window.CpeWalk && typeof window.CpeWalk.toggle === 'function') window.CpeWalk.toggle();
       else console.warn('§CPE_WALK_MODULE_MISSING cpe_walk.js did not load — walk button is a no-op');
     });
+  }
+  // §CPE_WALK_WEBXR_VR — analogous to _wireWalkToggle above; all WebXR session logic lives in
+  // cpe_xr.js (window.CpeXr). Button starts hidden (see markup) and is shown only if isSupported()
+  // resolves true — this environment has no headset, so it stays hidden.
+  function _wireXrToggle() {
+    var btn = document.getElementById('cpe-xr-toggle');
+    if (!btn || !window.CpeXr) return;
+    window.CpeXr.isSupported().then(function(ok) { if (ok) btn.style.display = ''; });
+    btn.addEventListener('pointerdown', function(ev) { ev.stopPropagation(); });
+    btn.addEventListener('click', function(ev) { ev.stopPropagation(); window.CpeXr.enter(); });
   }
 
   // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path strip.
