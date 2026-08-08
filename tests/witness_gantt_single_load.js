@@ -21,26 +21,52 @@ const URL = process.env.WITNESS_URL ||
   const page = await (await browser.newContext()).newPage();
   const lines = [];
   page.on('console', m => { const t = m.text();
-    if (/§GANTT_PREMATERIALIZE|§SUPPORT_CHECK|§GANTT injected|§XRAY_EDGES|§GANTT_AUTO_GENERATE|§TM_REFOLD|§GANTT_BAR_IDENTITY|§TIME_MACHINE (ON|OFF)/.test(t)) {
+    if (/§GANTT_PREMATERIALIZE|§SUPPORT_CHECK|§GANTT injected|§XRAY_EDGES|§GANTT_AUTO_GENERATE|§TM_REFOLD|§GANTT_BAR_IDENTITY|§GANTT_CACHE_HIT|§GANTT_STALE_CACHE|§TIME_MACHINE (ON|OFF)/.test(t)) {
       lines.push(t); console.log('[console]', t); } });
+
+  async function driveTmOnce() {
+    await page.waitForFunction(() => window.APP && window.APP.db && window.toggleTimeMachine, null, { timeout: 180000 });
+    await page.evaluate(() => window.toggleTimeMachine());
+    await page.waitForFunction(() => { try { return window.tmGetState && window.tmGetState().active; } catch (e) { return false; } }, null, { timeout: 300000 });
+    // The user's second step: press the Gantt chart icon (opens the drawer → drawGanttMini → the
+    // §GANTT_EDIT_LOCK auto-generate branch that used to fire the refold double-load).
+    await page.evaluate(() => document.getElementById('tm-gantt').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
+    await page.waitForTimeout(8000);   // window in which the OLD code fired auto-generate + refold
+  }
+  function counts(from) {
+    const slice = lines.slice(from);
+    const n = re => slice.filter(l => re.test(l)).length;
+    const barLine = slice.find(l => /§GANTT_BAR_IDENTITY.*editable=/.test(l)) || '';
+    return { pre: n(/§GANTT_PREMATERIALIZE native schedule written/), support: n(/§SUPPORT_CHECK/),
+             injected: n(/§GANTT injected/), xray: n(/§XRAY_EDGES/), autogen: n(/§GANTT_AUTO_GENERATE/),
+             refold: n(/§TM_REFOLD/), cacheHit: n(/§GANTT_CACHE_HIT/), stale: n(/§GANTT_STALE_CACHE/),
+             editable: +(barLine.match(/editable=(\d+)/) || [0, 0])[1] };
+  }
+
+  /* ── A: COLD open (fresh profile — no IDB gantt cache, no schedule) — the #1237 case ───────── */
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => window.APP && window.APP.db && window.toggleTimeMachine, null, { timeout: 180000 });
-  await page.evaluate(() => window.toggleTimeMachine());
-  await page.waitForFunction(() => { try { return window.tmGetState && window.tmGetState().active; } catch (e) { return false; } }, null, { timeout: 300000 });
-  // The user's second step: press the Gantt chart icon (opens the drawer → drawGanttMini → the
-  // §GANTT_EDIT_LOCK auto-generate branch that used to fire the refold double-load).
-  await page.evaluate(() => document.getElementById('tm-gantt').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
-  await page.waitForTimeout(8000);   // window in which the OLD code fired auto-generate + refold
-  const n = re => lines.filter(l => re.test(l)).length;
-  const pre = n(/§GANTT_PREMATERIALIZE native schedule written/);
-  const support = n(/§SUPPORT_CHECK/), injected = n(/§GANTT injected/), xray = n(/§XRAY_EDGES/);
-  const autogen = n(/§GANTT_AUTO_GENERATE/), refold = n(/§TM_REFOLD/);
-  const barLine = lines.find(l => /§GANTT_BAR_IDENTITY.*editable=/.test(l)) || '';
-  const editable = +(barLine.match(/editable=(\d+)/) || [0, 0])[1];
-  console.log(`§GANTT_SINGLE_LOAD_CHECK prematerialize=${pre} support=${support} injected=${injected} xray=${xray} autogen=${autogen} refold=${refold} editableBars=${editable}`);
-  const pass = pre === 1 && support === 1 && injected === 1 && xray === 1 && autogen === 0 && refold === 0 && editable > 0;
-  console.log(pass ? 'PASS — cold TM open is single-pass: schedule materialized first, no auto-generate refold, bars editable'
-                   : 'FAIL — double-load signature still present (or bars not editable), see counts');
+  await driveTmOnce();
+  const a = counts(0);
+  console.log(`§GANTT_SINGLE_LOAD_CHECK prematerialize=${a.pre} support=${a.support} injected=${a.injected} xray=${a.xray} autogen=${a.autogen} refold=${a.refold} editableBars=${a.editable}`);
+  const passA = a.pre === 1 && a.support === 1 && a.injected === 1 && a.xray === 1 && a.autogen === 0 && a.refold === 0 && a.editable > 0;
+
+  /* ── B: WARM open (§GANTT_STALE_CACHE, 2026-08-08 — the live Terminal double-load report) ─────
+   * Reload in the SAME context: the IDB gantt cache from A survives, but the DB is re-fetched
+   * without schedule tables (they lived only in A's in-memory copy) — exactly a real next-session
+   * open. Pre-fix: §GANTT_CACHE_HIT then §GANTT_AUTO_GENERATE + §TM_REFOLD re-ran the whole chain
+   * (the double load). Post-fix: the stale cache is dropped (§GANTT_STALE_CACHE), the cold path
+   * runs ONCE, bars editable. */
+  const mark = lines.length;
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await driveTmOnce();
+  const b = counts(mark);
+  console.log(`§GANTT_WARM_LOAD_CHECK stale=${b.stale} cacheHit=${b.cacheHit} prematerialize=${b.pre} injected=${b.injected} autogen=${b.autogen} refold=${b.refold} editableBars=${b.editable}`);
+  const passB = b.stale === 1 && b.cacheHit === 0 && b.pre === 1 && b.injected === 1 && b.autogen === 0 && b.refold === 0 && b.editable > 0;
+
+  console.log(passA ? 'PASS A — cold TM open is single-pass: schedule materialized first, no auto-generate refold, bars editable'
+                    : 'FAIL A — cold double-load signature still present (or bars not editable), see counts');
+  console.log(passB ? 'PASS B — warm open with a schedule-less DB drops the stale cache and stays single-pass'
+                    : 'FAIL B — warm open still double-loads (cache honored while DB has no schedule), see counts');
   await browser.close();
-  process.exit(pass ? 0 : 1);
+  process.exit(passA && passB ? 0 : 1);
 })();
