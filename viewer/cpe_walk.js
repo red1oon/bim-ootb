@@ -91,6 +91,7 @@
   var _pointerLocked = false;
   var _freezeEl = null;
   var _tm = null;            // { panel, prevPointerEvents, lockedBtn } or null if TM was not touched
+  var _nav = null;           // prior A.controls.enabled value, or null if OrbitControls was not touched
   var _handlers = null;      // DOM listeners installed at mount, removed at unmount
   // §CPE_WALK_SPAWN (2026-08-07, user: "SCRUB BAR IS NOT TO BE USED! WALK!!!" — after their Hospital
   // bug report proved a shoes press at the aerial pose plants a sky stick at s=0.000): the walk is
@@ -191,6 +192,36 @@
       ' panel pointer-events="' + rec.prevPointerEvents + '"');
   }
 
+  // ══════════════════ §CPE_WALK_CTRL_DRAG_EXIT fix — same pause/restore shape as §CPE_WALK_TM_LOCK
+  // above, applied to the main-view OrbitControls (`A.controls`, scene.js:143). Two real bugs shared
+  // this one root cause (OrbitControls.module.js:1550 confirmed via git show origin/main, prompts/
+  // CPE_POV_WALK_PATHING.md §CPE_WALK_CTRL_DRAG_EXIT 2026-08-08): (1) OrbitControls stays `enabled`
+  // and live on the SAME canvas the whole walk, so its own pointerdown handler still runs and calls
+  // `setPointerCapture` — forbidden while the pointer is locked, throwing InvalidStateError on every
+  // click; (2) OrbitControls maps Ctrl+Left-drag to PAN (screenSpacePanning, the "move laterally /
+  // upstairs" gesture users reach for from normal-nav muscle memory) — but Ctrl+Left-Click is ALSO
+  // Chromium's cross-platform alternate context-menu trigger, and a context-menu request forces the
+  // browser to auto-release Pointer Lock, which `_onLockChange` below then reads as "user pressed
+  // Esc" and exits walk mode. Disabling `A.controls` for the duration removes bug (1) outright;
+  // suppressing `contextmenu` on the canvas removes the unplanned-unlock path in (2). Ctrl-drag still
+  // does nothing INSIDE walk mode after this — turning it into an actual pan/climb gesture there is a
+  // separate, not-yet-specified feature (see the same prompts-file section), deliberately not invented
+  // here.
+  function _navLock() {
+    var a = A();
+    if (!a.controls) { console.log('§CPE_WALK_NAV_LOCK no A.controls — nothing to lock'); return null; }
+    var rec = { prevEnabled: a.controls.enabled };
+    a.controls.enabled = false;
+    console.log('§CPE_WALK_NAV_LOCK OrbitControls disabled (was enabled=' + rec.prevEnabled + ')');
+    return rec;
+  }
+  function _navUnlock(rec) {
+    if (!rec) return;
+    var a = A();
+    if (a.controls) a.controls.enabled = rec.prevEnabled;
+    console.log('§CPE_WALK_NAV_LOCK restored enabled=' + rec.prevEnabled);
+  }
+
   // ══════════════════ pointer-lock mouse-look + WASD — pattern copied from
   // navigate_controls.js:28-56 (canvas.requestPointerLock, mousemove yaw/pitch with clamp,
   // pointerlockchange flag), adapted to drive `_vfCam` instead of the main nav camera. ══════════
@@ -241,6 +272,13 @@
   }
   function _onCanvasClick() {
     if (_active && !document.pointerLockElement) _canvas.requestPointerLock();
+  }
+  // §CPE_WALK_CTRL_DRAG_EXIT — Ctrl+Left-Click is Chromium's alternate context-menu trigger
+  // (cross-platform, not Mac-only); left unsuppressed, that request forces the browser to release
+  // Pointer Lock before the user's ctrl-drag even starts, which `_onLockChange` then reads as an
+  // Esc-exit. Block it for the duration of walk mode only.
+  function _onContextMenu(e) {
+    if (_active) { e.preventDefault(); e.stopPropagation(); }
   }
   // §CPE_WALK_GLIDE — trackpad-first locomotion (user: "it is all mousepad movement... pivot, zoom
   // in/out"): two-finger scroll and pinch (which browsers deliver as ctrl+wheel) glide the walker
@@ -487,13 +525,14 @@
     cpe._walkMount();
 
     _tm = _tmLock();
+    _nav = _navLock();
 
     if (!_renderMainOnce()) console.warn('§CPE_WALK_FREEZE_SKIP renderer unavailable, walking without a frozen backdrop');
     _captureFreeze();
 
     _handlers = {
       mousemove: _onMouseMove, lockchange: _onLockChange, keydown: _onKeyDown, keyup: _onKeyUp,
-      mousedown: _onMouseDown, click: _onCanvasClick, wheel: _onWheel,
+      mousedown: _onMouseDown, click: _onCanvasClick, wheel: _onWheel, contextmenu: _onContextMenu,
       gamepadconnected: _onGamepadConnected, gamepaddisconnected: _onGamepadDisconnected
     };
     document.addEventListener('mousemove', _handlers.mousemove, true);
@@ -502,6 +541,7 @@
     window.addEventListener('keyup', _handlers.keyup, true);
     canvas.addEventListener('mousedown', _handlers.mousedown, true);
     canvas.addEventListener('click', _handlers.click, true);
+    canvas.addEventListener('contextmenu', _handlers.contextmenu, true);
     // §CPE_WALK_GLIDE — passive:false so preventDefault can stop ctrl+wheel page-zoom (trackpad pinch)
     window.addEventListener('wheel', _handlers.wheel, { capture: true, passive: false });
     // §CPE_WALK_GAMEPAD_NAV — mount/unmount scoped like every other listener here (spec: "gated the
@@ -541,6 +581,7 @@
       if (_canvas) {
         _canvas.removeEventListener('mousedown', _handlers.mousedown, true);
         _canvas.removeEventListener('click', _handlers.click, true);
+        _canvas.removeEventListener('contextmenu', _handlers.contextmenu, true);
       }
       window.removeEventListener('wheel', _handlers.wheel, { capture: true });
       window.removeEventListener('gamepadconnected', _handlers.gamepadconnected, true);
@@ -551,6 +592,7 @@
     if (document.pointerLockElement === _canvas && document.exitPointerLock) document.exitPointerLock();
     _dropFreeze();
     _tmUnlock(_tm); _tm = null;
+    _navUnlock(_nav); _nav = null;
     // Seam 2's other half — restores the stick editor's own listeners.
     if (_cpe && _cpe._walkUnmount) _cpe._walkUnmount();
     console.log('§CPE_WALK_UNMOUNT_DONE snaps=' + _snapCount + ' frames=' + _frame +
