@@ -618,9 +618,45 @@ self.onmessage = async function(e) {
       }
     }
 
-    // Ghost admission: elements without geometry are BOM containers (IfcCurtainWall, IfcStair).
-    // They have no spatial representation — don't write them to elements_meta.
+    // §4D_NOGEO_COMPOSE (2026-08-08, prompts/4D_SCHEDULE_PERFECTION.md): a geometry-less element
+    // is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/IfcRoof — no own
+    // Representation; real geometry lives on its IfcRelAggregates children). Compose its position
+    // as the union AABB of whichever children already resolved a real transform above — real
+    // data (bomTree + transforms are both already computed by this same pass, no extra IFC walk),
+    // never invented. A ghost with no geometric children stays a ghost — nothing to compose from.
     const geomGuids = new Set(geometries.map(g => g.guid));
+    const xformByGuid = new Map(transforms.map(t => [t.guid, t]));
+    const childrenOf = new Map();
+    for (const rel of bomTree) {
+      if (rel.relType !== 'AGGREGATES') continue;
+      if (!childrenOf.has(rel.parentGuid)) childrenOf.set(rel.parentGuid, []);
+      childrenOf.get(rel.parentGuid).push(rel.childGuid);
+    }
+    let composedCount = 0;
+    for (const el of elements) {
+      if (geomGuids.has(el.guid)) continue;
+      const kids = (childrenOf.get(el.guid) || []).map(cg => xformByGuid.get(cg)).filter(Boolean);
+      if (!kids.length) continue;
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (const k of kids) {
+        if (k.cx - k.bx / 2 < minX) minX = k.cx - k.bx / 2;
+        if (k.cy - k.by / 2 < minY) minY = k.cy - k.by / 2;
+        if (k.cz - k.bz / 2 < minZ) minZ = k.cz - k.bz / 2;
+        if (k.cx + k.bx / 2 > maxX) maxX = k.cx + k.bx / 2;
+        if (k.cy + k.by / 2 > maxY) maxY = k.cy + k.by / 2;
+        if (k.cz + k.bz / 2 > maxZ) maxZ = k.cz + k.bz / 2;
+      }
+      transforms.push({ guid: el.guid, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, cz: (minZ + maxZ) / 2,
+        rx: 0, ry: 0, rz: 0, bx: maxX - minX, by: maxY - minY, bz: maxZ - minZ });
+      geomGuids.add(el.guid);
+      composedCount++;
+    }
+    if (composedCount) console.log('[S220] §4D_NOGEO_COMPOSE composed=' + composedCount +
+      ' (aggregate-parent elements with no own geometry, transform = union bbox of real children)');
+
+    // Ghost admission: elements STILL without geometry (no own mesh AND no geometric children to
+    // compose from) — don't write them to elements_meta.
     const ghosts = elements.filter(el => !geomGuids.has(el.guid));
     const renderableElements = elements.filter(el => geomGuids.has(el.guid));
     if (ghosts.length) {
