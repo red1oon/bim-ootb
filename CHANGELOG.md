@@ -4,6 +4,20 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.41.1](https://github.com/red1oon/bim-ootb/compare/v1.41.0...v1.41.1) (2026-08-08)
+
+
+### 🐛 Fixes
+
+* **4d:** §GANTT_STALE_CACHE — warm TM open still double-loaded the timeline ([#1257](https://github.com/red1oon/bim-ootb/issues/1257)) ([86eb1d5](https://github.com/red1oon/bim-ootb/commit/86eb1d5c8eed25ea24b6d5d5dbaa6ce4844aeaab))
+* **cinema:** §GLOW_LENS_BUILDUP_GATE — lens quad now follows the 4D buildup schedule ([#1260](https://github.com/red1oon/bim-ootb/issues/1260)) ([36a215f](https://github.com/red1oon/bim-ootb/commit/36a215f6d801b02077739ee54a88857d4e7c529d))
+* **cpe:** §CPE_VF_DPR_DOUBLE — scissor/viewport rect is CSS px; three.js applies the pixel ratio itself ([#1234](https://github.com/red1oon/bim-ootb/issues/1234)) ([142bcb1](https://github.com/red1oon/bim-ootb/commit/142bcb16aea15ae2446949c33a330de9c12adfb7))
+* **cpe:** §CPE_WALK_CTRL_DRAG_EXIT — OrbitControls disabled during walk, contextmenu suppressed ([#1261](https://github.com/red1oon/bim-ootb/issues/1261)) ([bdd707c](https://github.com/red1oon/bim-ootb/commit/bdd707cf3349539a17ad61f27c94150413a0ef7a))
+* **cpe:** §CPE_WALK_SNAP_GUARD — duplicate-stick guard with user's auto-Esc: same-spot re-click exits to review ([#1258](https://github.com/red1oon/bim-ootb/issues/1258)) ([2b8bc49](https://github.com/red1oon/bim-ootb/commit/2b8bc492cf8d5e63062b26bf43656c931637716a))
+* **dlod-nav:** §26 _boxIndex null-deref race on rapid o/o toggle ([#1259](https://github.com/red1oon/bim-ootb/issues/1259)) ([618943e](https://github.com/red1oon/bim-ootb/commit/618943e1e82a5233f77b3c0b1413ee6a8fef53cb))
+* **modeller:** §LAYER-SOLID-SEED — real per-layer OCCT solids seed the cut gate ([#1262](https://github.com/red1oon/bim-ootb/issues/1262)) ([0e719d2](https://github.com/red1oon/bim-ootb/commit/0e719d2d5c7d7559d8ea3c62532ca29fec0ca022))
+* **night:** §NIGHT_STILL_BOOST_GATE_FIX — nav mode was running with ~200 lights, not 30 ([#1255](https://github.com/red1oon/bim-ootb/issues/1255)) ([00d1925](https://github.com/red1oon/bim-ootb/commit/00d192563f9cba81829dff76930d082ce3db303c))
+
 ## [1.41.0](https://github.com/red1oon/bim-ootb/compare/v1.40.0...v1.41.0) (2026-08-08)
 
 
