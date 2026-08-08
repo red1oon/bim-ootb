@@ -1445,7 +1445,15 @@ function setupTools(A) {
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
     var needed;
-    if (A._nightStillBoost) {
+    // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
+    // never reset — it's a static "is the still-boost feature enabled" flag (effects.js reads it
+    // the same way, correctly, to decide whether Alt+S is ALLOWED to raise the cap). Reading it
+    // alone here as "are we in a still capture right now" meant plain navigation ALWAYS took the
+    // frustum/200-cap branch below, never the nearest-N nav budget a few lines down — found via
+    // live witness data: a bare 'n' toggle (no Alt+S) logged nightLights=200. A._stillRefineActive
+    // (effects.js, true only between startStillRefine/stopStillRefine) is the actual per-session
+    // state — AND it in alongside the feature flag.
+    if (A._nightStillBoost && A._stillRefineActive) {
       // §NIGHT_STILL_FRUSTUM (2026-08-07, user: "during Alt-S and movie baking, place quads and
       // PLs on every noticeable source in the frame") — frustum-cull to what's actually in view
       // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
