@@ -88,8 +88,13 @@
   // whose layer tables are deliberately NOT shipping while its `sporenkap` refusal stands) takes
   // ZERO new code paths. The per-layer geometry truth lives in the geo store's
   // `component_geometry_layers` index (rebuilt *_geo.db, scripts/gen_layered_geo_db.py).
+  // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): gate.layerRanges carries the ACTUAL
+  // (face_start,face_count) triangle range per layer, keyed by geometry_hash — this is what lets the
+  // cut-seed path build one REAL OCCT solid per authored layer (buildTriFace+sewAndSolidify) instead of
+  // an idealized box. Additive to the existing armed/multiLayer/layeredHashes fields above — every
+  // pre-existing consumer of this gate (the envelope-refuse check) is untouched.
   function _layerGate(db, geoDb) {
-    var gate = { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
+    var gate = { armed: false, multiLayer: {}, layeredHashes: {}, layerRanges: {}, nMulti: 0, nHashes: 0 };
     try {
       if (!db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rel_material_layer_set'").length) return gate;
       var r = db.exec("SELECT element_guid, layer_count, layer_set_name FROM rel_material_layer_set WHERE layer_count > 1");
@@ -97,6 +102,12 @@
       if (geoDb.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='component_geometry_layers'").length) {
         var lr = geoDb.exec("SELECT DISTINCT geometry_hash FROM component_geometry_layers");
         if (lr.length) lr[0].values.forEach(function (v) { gate.layeredHashes[v[0]] = true; gate.nHashes++; });
+        var lrr = geoDb.exec("SELECT geometry_hash, layer_seq, face_start, face_count FROM component_geometry_layers " +
+          "WHERE face_count > 0 ORDER BY geometry_hash, layer_seq");
+        if (lrr.length) lrr[0].values.forEach(function (v) {
+          var hash = v[0], start = v[2], count = v[3];
+          (gate.layerRanges[hash] || (gate.layerRanges[hash] = [])).push({ start: start, count: count });
+        });
       }
       gate.armed = gate.nMulti > 0;
     } catch (e) {
@@ -302,7 +313,10 @@
           // §ARC-ANCHOR: anchorOffset (the blob-local AABB centre recenter() subtracted) rides the ASSET, not
           // the signed op — the fold re-applies it rotated (bonsai_library.js foldInsert §ARC-ANCHOR), so every
           // committed GEOM_INSERT param stays byte-identical to the pre-fix substrate (replay-stable).
-          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces, anchorOffset: real.anchorOffset }); }
+          // §LAYER-SOLID-SEED: carry this hash's real per-layer face ranges (if any) alongside the mesh —
+          // bonsai_library.js registerRealGeometry stores it; bonsai_kernel.js._insertCutLayerSeed reads it
+          // at cut-seed time. null for every hash without authored layers (unchanged behaviour).
+          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces, anchorOffset: real.anchorOffset, layers: layerGate.layerRanges[rHash] || null }); }
         }
       }
       if (rx || ry) {

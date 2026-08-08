@@ -241,17 +241,18 @@ async function runE2E(NAME, body, opts) {
       opts = opts || {};
       const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
       // opts.cuttable (W-E2E-CUT / W-E2E-SEL-TINT-REFOLD subject guard, 2026-07-30): keep only candidates the
-      // PRODUCTION cut gate itself accepts — a rotated/non-box ARC insert is HONESTLY refused by bCut
-      // (Bonsai._insertCutBox returns null), so a cut witness that picks one measures the refusal path, not
-      // the cut. Duplex's biggest wallish candidates are now rotated (openings-inherit-host-rotation data),
-      // which is exactly how witness_e2e_cut went red with no cut regression. Eligibility is asked OF the
-      // production gate (reused, not re-implemented); a non-GEOM_INSERT solid is worker-cuttable natively.
+      // PRODUCTION cut gate itself accepts — a rotated/non-box/non-layered ARC insert is HONESTLY refused by
+      // bCut (Bonsai.canCut returns false), so a cut witness that picks one measures the refusal path, not
+      // the cut. Eligibility is asked OF the production gate (reused, not re-implemented); a non-GEOM_INSERT
+      // solid is worker-cuttable natively. §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): canCut() now
+      // also accepts a real authored multi-layer wall (not just a plain box) — was Bonsai._insertCutBox
+      // directly, widened to canCut() so this witness can reach the SAME real-wall population the fix adds.
       const filterCuttable = async (list) => {
         if (!opts.cuttable) return list;
         const ok = await pg.evaluate(fids => {
           const ops = window.Bonsai.oplog._geomOps(); const byId = new Map(ops.map(o => [o.id, o]));
           const out = {};
-          fids.forEach(f => { const op = byId.get(f); if (!op) { out[f] = false; return; } if (op.op_type !== 'GEOM_INSERT') { out[f] = true; return; } let b = null; try { b = window.Bonsai._insertCutBox(op); } catch (e) { } out[f] = !!(b && b.c1); });
+          fids.forEach(f => { const op = byId.get(f); if (!op) { out[f] = false; return; } let c = false; try { c = window.Bonsai.canCut(op); } catch (e) { } out[f] = !!c; });
           return out;
         }, list.map(c => c.fid));
         return list.filter(c => ok[c.fid]);
