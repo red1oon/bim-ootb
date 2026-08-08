@@ -861,9 +861,15 @@ function setupTools(A) {
   // effects.js — measured +2064ms on Hospital, judged not worth it at the time). User directive
   // this session explicitly accepts that cost ("we got speed... without DLOD we can scale with
   // some more cost") — so the still budget bump below is only real if this is also true.
-  A._nightMaxLightsNav = 24;       // navigation budget — the RESET target (effects.js reads this,
-                                    // not a literal, so tuning this one number can't silently break
-                                    // the still's nav-budget handback)
+  // §NIGHT_MOBILE_MIN_PL (2026-08-08, user: mobile hangs, "maybe just one set of PL") — mobile CPUs
+  // pay the same per-light shader-recompile-on-count-change cost as desktop (see §RAM section above)
+  // with far less headroom. One light (following the camera via the existing nearest-fixture
+  // selection in _nightUpdateLights) instead of 24 removes 23/24 of that cost on mobile specifically;
+  // desktop nav is unaffected. A._isMobile is set by setupStreaming, which runs before setupTools
+  // (see main.js _mods order), so it's already valid here.
+  A._nightMaxLightsNav = A._isMobile ? 1 : 24;   // navigation budget — the RESET target (effects.js
+                                    // reads this, not a literal, so tuning this one number can't
+                                    // silently break the still's nav-budget handback)
   A._nightMaxLights = A._nightMaxLightsNav;  // CURRENT budget — swapped to the still value during Alt+S
   A._nightMaxLightsStill = 50;     // frozen-still budget — paid once, no 60fps constraint
   A._nightStillBoost = true;       // re-armed 2026-08-07 — see effects.js §NIGHT_STILL_LIGHTS
@@ -1278,6 +1284,15 @@ function setupTools(A) {
       // so effects.js can re-call it every accumulation/orbit frame (see _reassertPhotoGlow),
       // same discipline. Cheap re-scan: skips any matCache key already processed.
       A._applyNightGlowToMatCache();
+      // §NIGHT_MEM_WITNESS (2026-08-08, user suspects a desktop memory issue across repeated
+      // Night toggles) — real numbers, not a guess-fix: heap (when the browser exposes it) +
+      // every collection this toggle touches, so a repeated on/off/on/off test SHOWS growth (or
+      // its absence) instead of being asserted from code-reading alone.
+      console.log('§NIGHT_MEM_WITNESS heapMB=' +
+        (performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) : 'n/a') +
+        ' matCacheKeys=' + Object.keys(A._matCache || {}).length +
+        ' glowMatKeys=' + Object.keys(A._nightGlowMatKeys || {}).length +
+        ' nightLights=' + (A._nightLightByPos ? A._nightLightByPos.size : 0));
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
@@ -1354,6 +1369,11 @@ function setupTools(A) {
         A.ground.visible = false;
         A._setGroundColor(A._whiteBg ? 0xffffff : 0x222233);
       }
+      console.log('§NIGHT_MEM_WITNESS heapMB=' +
+        (performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) : 'n/a') +
+        ' matCacheKeys=' + Object.keys(A._matCache || {}).length +
+        ' glowMatKeys=' + Object.keys(A._nightGlowMatKeys || {}).length +
+        ' nightLights=' + (A._nightLightByPos ? A._nightLightByPos.size : 0));
       console.log('§NIGHT_MODE off');
       btn.style.background = '#1a1a3e';
       btn.style.color = '#aac';
