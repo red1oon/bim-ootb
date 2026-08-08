@@ -6680,6 +6680,28 @@
       // §S260e: Only use cache if it has ELEMENT_PLACE ops (not just picks)
       var _hasCachedPlaces = cachedOps && cachedOps.length > 0 &&
         cachedOps.some(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
+      // §GANTT_STALE_CACHE (2026-08-08, 4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD warm-open
+      // variant, live user log on Terminal): #1237 fixed the COLD path only. A warm open serves
+      // cached ops here, but bar editability is a DB join (tasks/task_elements) and the DB is
+      // re-fetched fresh every session with no schedule tables in it — so bars resolve editable=0,
+      // drawGanttMini's auto-generate fires, and tmRefoldSchedule() throws the entire cached pass
+      // away and re-runs the full chain: the exact double load, resurrected through the cache
+      // branch, on EVERY warm open until schedule persistence lands. Same cure as #1237: when the
+      // DB behind the cache has no schedule, the cache is stale by construction — drop it and take
+      // the cold path's single pass (prematerialize → one injectGantt → recache).
+      if (_hasCachedPlaces) {
+        var _act = null;
+        try {
+          var _SAx = (typeof window !== 'undefined') && window.ScheduleAuthor;
+          _act = (_SAx && _SAx.activeSchedule) ? _SAx.activeSchedule(app.db) : null;
+        } catch (e) { _act = null; }
+        if (!_act) {
+          console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length +
+            ' but no schedule in DB — dropping cache, taking the single-pass cold path');
+          cacheDel('gantt');
+          _hasCachedPlaces = false;
+        }
+      }
       if (_hasCachedPlaces) {
         // Fast path: inject cached JSON into kernel_ops table
         console.log('§GANTT_CACHE_HIT ops=' + cachedOps.length);
