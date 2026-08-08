@@ -1659,6 +1659,20 @@
     var idx = _boxIndex, ridx = _realIndex;
     var guids = idx ? Object.keys(idx) : [];
     var i = 0;
+    // §26 fix (2026-08-08): finish() must run AT MOST ONCE per _restoreAllNow() invocation. Before
+    // this flag, step()'s own already-scheduled requestAnimationFrame(step) continuation (queued
+    // during THIS call's first synchronous step() below, before any external caller forces an
+    // early finish via the module-level _restoreFlush) was never cancelled — a rapid OFF→ON toggle
+    // makes _tick() call _restoreFlush() (=finish, closure-local, still the CURRENT invocation's)
+    // to force-complete the drain early so the fresh re-engage can rebuild _boxIndex. That leftover
+    // rAF-scheduled step() then fires on a LATER frame regardless, sees i already at guids.length,
+    // and calls finish() A SECOND TIME — re-disposing (via onDone=_disposeBoxes) whatever _boxIndex
+    // is CURRENTLY live (the fresh one from the re-engage), which the main tick's _evalChunk then
+    // reads as null on its very next call. Reproduced live: `witness_boxindex_race.js` — unfixed,
+    // rapid o/o on LTU_AHouse throws `Cannot read properties of null (reading '<guid>')` from
+    // _evalChunk, exactly matching the field stack trace; fixed, zero crash across repeated runs,
+    // __dlodNavAudit() mismatch=0 afterward (structurally correct, not just crash-silenced).
+    var _done = false;
     function runTo(end) {
       for (; i < end; i++) {
         var guid = guids[i], e = idx[guid];
@@ -1671,6 +1685,8 @@
       }
     }
     function finish() {
+      if (_done) return; // stale leftover step() firing after an external flush already finished this
+      _done = true;
       runTo(guids.length); // no-op if step() already finished the loop
       _restoreFlush = null;
       // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
@@ -1681,6 +1697,7 @@
       if (onDone) onDone();
     }
     function step() {
+      if (_done) return; // this invocation was already force-finished elsewhere — stop rescheduling
       runTo(Math.min(i + EVAL_CHUNK, guids.length));
       if (i < guids.length) requestAnimationFrame(step);
       else finish();
