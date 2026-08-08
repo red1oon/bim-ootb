@@ -187,5 +187,49 @@ gate('V4', 'Time Machine inactive (plain Night Mode, no buildup bake in progress
   shippedOff.length === N,
   'isVisible=null  glowing=' + shippedOff.length + '/' + N + ' (regression guard: this fix must not touch Night Mode outside a buildup)');
 
+// ── §GLOW_LENS_BUILDUP_GATE (2026-08-08) — the SAME defect, found again in the lens-quad path.
+// _glowLensOn() is called every baked frame during an Alt+C buildup movie (cinema_maxq.js:
+// stopStillRefine/startStillRefine cycle each frame — confirmed by grep, not assumed), but it built
+// its InstancedMesh straight from A._nightFixtureWorldPositions() with no Time Machine filter at
+// all, so a buildup bake showed every fixture's lens quad from frame 1 regardless of schedule state
+// — user: "the scene on canvas is flooded with lighting quads", "supposed to appear under 4D
+// schedule after light fixtures are present". Fix ports the identical filter line into _glowLensOn.
+const LENS_ANCHOR = '§GLOW_LENS_BUILDUP_GATE';
+if (fxSrc.indexOf(LENS_ANCHOR) < 0) { console.log('❌ EXTRACT — §GLOW_LENS_BUILDUP_GATE not found in viewer/effects.js _glowLensOn()'); process.exit(1); }
+const LENS_FILTER_LINE = 'pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });';
+if (fxSrc.indexOf(LENS_FILTER_LINE) < 0) { console.log('❌ EXTRACT — lens-quad filter line not found in viewer/effects.js _glowLensOn()'); process.exit(1); }
+const runLensFilter = new Function('pos', 'A', LENS_FILTER_LINE + '\nreturn pos;');
+
+const hLensMid = makeHarness();
+hLensMid.window.__tmOverlaySync(predMid);
+const shippedLensMid = runLensFilter(allPos.slice(), hLensMid.A);
+const shippedLensMidGuids = new Set(shippedLensMid.map(p => p.__guid));
+const setsEqualLensMid = shippedLensMidGuids.size === groundTruthMid.size &&
+  [...groundTruthMid].every(g => shippedLensMidGuids.has(g));
+gate('V5', 'lens quad, mid-buildup: matches the same placed/frontier/recent set as the round sprite — partial, not all-or-nothing',
+  setsEqualLensMid && groundTruthMid.size > 0 && groundTruthMid.size < N,
+  'shippedFilter=' + shippedLensMidGuids.size + '/' + N + '  setsEqual=' + setsEqualLensMid);
+
+const hLensStart = makeHarness();
+hLensStart.window.__tmOverlaySync(predStart);
+const shippedLensStart = runLensFilter(allPos.slice(), hLensStart.A);
+gate('V6', 'lens quad — THE REPORTED BUG: ZERO quads flood the canvas before the first fixture is even scheduled to install',
+  shippedLensStart.length === 0,
+  'glowing=' + shippedLensStart.length + '/' + N + ' (must be 0 — this is the live "flooded with lighting quads" defect)');
+
+const hLensEnd = makeHarness();
+hLensEnd.window.__tmOverlaySync(predEnd);
+const shippedLensEnd = runLensFilter(allPos.slice(), hLensEnd.A);
+gate('V7', 'lens quad, finished building: every fixture\'s quad renders once the buildup reaches its own install time',
+  shippedLensEnd.length === N,
+  'glowing=' + shippedLensEnd.length + '/' + N);
+
+const hLensOff = makeHarness();
+hLensOff.window.__tmOverlaySync(null);
+const shippedLensOff = runLensFilter(allPos.slice(), hLensOff.A);
+gate('V8', 'lens quad, Time Machine inactive (plain Alt+S still, no buildup) — every quad renders, unchanged by this fix',
+  shippedLensOff.length === N,
+  'glowing=' + shippedLensOff.length + '/' + N + ' (regression guard: Alt+S outside a buildup must be untouched)');
+
 console.log('\n§GLOW_GATE_WITNESS done pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);
