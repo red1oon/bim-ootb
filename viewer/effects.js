@@ -3754,6 +3754,13 @@ async function setupEffects(A, renderer, scene, camera) {
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
+    // §GLOW_LENS_BUILDUP_GATE (2026-08-08): _glowOn's round sprite already withholds a fixture's
+    // glow until Time Machine has placed it (§GLOW_BUILDUP_GATE above) — this quad path skipped
+    // that filter entirely, so an Alt+C buildup bake (which reaches here every frame via
+    // startStillRefine) staged every fixture's quad from frame 1, ignoring the 4D schedule. Same
+    // predicate, same guid-null passthrough for the synthetic per-storey/tier-3 fallback.
+    pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
     var mat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
