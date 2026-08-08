@@ -199,6 +199,40 @@ async function gates(browser, BLD) {
     Math.abs(glideOut - 3.6) < 0.01 && glideBack < 1e-9,
     `out=${glideOut.toFixed(3)}m back=${glideBack.toExponential(2)}`);
 
+  // ══ §CPE_WALK_SNAP_GUARD — the user's duplicate-stick report: repeat clicks at one spot must
+  // never stack sticks. Bounce (fast) is swallowed; deliberate same-spot re-click auto-Escs to
+  // review; a genuinely moved click plants. All through the REAL guarded _doSnap (_doSnapForTest). ══
+  const markG = logs.length;
+  const guard = await page.evaluate(async () => {
+    const n0 = window.APP.cinemaPathEditor._probeOverride().bands.length;
+    const activeBefore1 = window.CpeWalk.isActive();
+    const r1 = window.CpeWalk._doSnapForTest();                       // plant at the live pose
+    const activeAfter1 = window.CpeWalk.isActive();
+    const bounce = window.CpeWalk._doSnapForTest();                   // immediate repeat = bounce
+    const activeAfterBounce = window.CpeWalk.isActive();
+    await new Promise(res => setTimeout(res, 800));                   // clear the debounce window
+    const rpt = window.CpeWalk._doSnapForTest();                      // deliberate same-spot repeat
+    const activeAfterRepeat = window.CpeWalk.isActive();              // must have auto-Esc'd
+    window.CpeWalk.toggle();                                          // remount (resumes same spot)
+    // The auto-Esc's exitPointerLock fires a DEFERRED pointerlockchange that can kill a same-tick
+    // remount (synthetic-only race — real shoes presses are separated by human time). Let it land,
+    // then re-ensure a mounted walk before the moved-snap leg.
+    await new Promise(res => setTimeout(res, 250));
+    if (!window.CpeWalk.isActive()) window.CpeWalk.toggle();
+    const p = window.CpeWalk._poseForTest();
+    window.CpeWalk._setPoseForTest({ x: p.x + 2.5, y: p.y, z: p.z }, p.yaw, p.pitch);
+    await new Promise(res => setTimeout(res, 800));
+    const r2 = window.CpeWalk._doSnapForTest();                       // moved 2.5m = real next stick
+    const n1 = window.APP.cinemaPathEditor._probeOverride().bands.length;
+    return { planted1: !!r1, activeBefore1, activeAfter1, bounceNull: bounce === null, activeAfterBounce,
+             repeatNull: rpt === null, activeAfterRepeat, planted2: !!r2, n0, n1 };
+  });
+  const guardLogs = logs.slice(markG).filter(l => l.indexOf('§CPE_WALK') >= 0).slice(0, 12);
+  P('G-WALK-SNAP-GUARD bounce swallowed (walking), same-spot re-click auto-Escs (nothing planted), moved click plants — net +2 bands, never +3',
+    guard.planted1 && guard.bounceNull && guard.activeAfterBounce === true &&
+    guard.repeatNull && guard.activeAfterRepeat === false && guard.planted2 &&
+    guard.n1 === guard.n0 + 2, JSON.stringify(guard) + ' | ' + guardLogs.join(' | '));
+
   // ══ §CPE_WALK_SPAWN resume — shoes off/on continues at the identical pose (Esc keeps it;
   // only eye-off/editor-close forceStop clears it — proven by the later EYE-OFF gate's fresh spawn). ══
   const resume = await page.evaluate(() => {
