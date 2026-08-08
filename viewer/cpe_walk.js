@@ -98,6 +98,10 @@
   // resume pose so the next shoes press continues exactly where the user stood (snap → review →
   // continue). Only closing B / the editor (forceStop) clears it.
   var _resumePose = null;    // { x,y,z, yaw, pitch } from the last stop(); null = spawn fresh
+  // §CPE_WALK_SNAP_GUARD — duplicate-stick guard for the click (snap-and-keep-walking) gesture.
+  var SNAP_MIN_MOVE_M = 1.5;   // walker must move this far before the next stick can plant
+  var SNAP_DEBOUNCE_MS = 700;  // and at least this long after the previous plant
+  var _lastSnap = null;        // { x,y,z, t } of the last PLANTED stick this walk session
   var _glideLogged = false;
   // §CPE_WALK_GAMEPAD_NAV — connect-gated, per the spec's "zero cost when unused": _tick() only
   // calls navigator.getGamepads() when this flag is true (set by a real gamepadconnected event),
@@ -373,12 +377,41 @@
   function _doSnap() {
     if (!_active || !_cpe || !_vfCam) return null;
     var pos = { x: _vfCam.position.x, y: _vfCam.position.y, z: _vfCam.position.z };
+    // §CPE_WALK_SNAP_GUARD (2026-08-08, user: "i accidentally hit multi sticks at a single spot
+    // because i have not exited the walk mode... one cheap way is to auto ESC when the user clicks
+    // on the stick he just landed") — the click gesture plants WITHOUT exiting, so clicking the
+    // just-landed stick on the frozen backdrop planted a DUPLICATE at the same spot. Three-way
+    // resolution on a repeat click, all decided from the walker's own numbers (under pointer lock
+    // the crosshair IS where you stand — no cursor position exists to hit-test):
+    //   1. within the debounce window        → a double-click bounce; swallow it, stay walking;
+    //   2. later, but still at the same spot → the user is clicking AT the stick they just planted
+    //      = the user's own auto-Esc: exit to review, plant nothing;
+    //   3. moved a real distance             → a genuine next stick; plant and keep walking.
+    var now = performance.now();
+    if (_lastSnap) {
+      var dLast = Math.hypot(pos.x - _lastSnap.x, pos.y - _lastSnap.y, pos.z - _lastSnap.z);
+      if ((now - _lastSnap.t) < SNAP_DEBOUNCE_MS) {
+        console.log('§CPE_WALK_SNAP_GUARD bounce swallowed dtMs=' + (now - _lastSnap.t).toFixed(0) +
+          ' (min ' + SNAP_DEBOUNCE_MS + ') — still walking');
+        return null;
+      }
+      if (dLast < SNAP_MIN_MOVE_M) {
+        console.log('§CPE_WALK_SNAP_GUARD auto-Esc: repeat click at the just-planted stick (dist=' +
+          dLast.toFixed(2) + 'm < ' + SNAP_MIN_MOVE_M + 'm) — exiting walk to review, nothing planted');
+        stop();
+        return null;
+      }
+    }
     var fwdV = new THREE.Vector3(0, 0, -1).applyQuaternion(_vfCam.quaternion);
     var fwd = { x: fwdV.x, y: fwdV.y, z: fwdV.z };
     var t0 = performance.now();
     var res = _cpe._walkSnap(pos, fwd);
     var ms = performance.now() - t0;
     if (!res) { console.warn('§CPE_WALK_SNAP_FAIL pos=(' + pos.x.toFixed(2) + ',' + pos.y.toFixed(2) + ',' + pos.z.toFixed(2) + ') — no flown path to snap onto yet'); return null; }
+    // t is stamped AFTER the plant below completes (see the end of this function) — the debounce
+    // window must start when the user can SEE the result, not at click time: the replan + wow
+    // repaint between the two can exceed the window on slow renderers.
+    _lastSnap = { x: pos.x, y: pos.y, z: pos.z, t: now };
     _snapCount++;
     console.log('§CPE_WALK_SNAP_RESULT n=' + _snapCount + ' bandIndex=' + res.bandIndex + ' s=' + res.s.toFixed(3) +
       ' centre=(' + res.centre.x.toFixed(2) + ',' + res.centre.y.toFixed(2) + ',' + res.centre.z.toFixed(2) + ')' +
@@ -389,6 +422,9 @@
     // the new stick + re-snaked pipe the instant it lands — noise on top of the 0.3-1.2s replan the
     // spec already budgets for this.
     if (_renderMainOnce()) _captureFreeze();
+    // §CPE_WALK_SNAP_GUARD — re-stamp now that the replan + wow repaint are done (see the comment
+    // at the _lastSnap assignment above).
+    if (_lastSnap) _lastSnap.t = performance.now();
     return res;
   }
 
@@ -543,7 +579,9 @@
     isActive: function() { return _active; },
     // §CPE_WALK_SPAWN — external stops (eye-off, editor close) also clear the resume pose: the
     // walk context is gone, the next session must spawn fresh at the walk stretch's start.
-    forceStop: function() { _resumePose = null; return stop(); },
+    // §CPE_WALK_SNAP_GUARD — same lifetime: the duplicate-stick memory belongs to this editor
+    // context; a fresh editor session starts unguarded.
+    forceStop: function() { _resumePose = null; _lastSnap = null; return stop(); },
     // ══ witness hooks — read-only or exercising the REAL internal function, same precedent
     // cinema_path_editor.js's own `_probe*`/`_*ForTest` hooks already use (e.g. `_setPin`,
     // `_spawnStickForTest`) — never a re-implementation of the maths under test.
@@ -553,6 +591,10 @@
       if (!_cpe) return null;
       return _cpe._walkSnap(pos, fwd);
     },
+    // §CPE_WALK_SNAP_GUARD witness hook — runs the REAL guarded _doSnap() (guard included), unlike
+    // _snapForTest above which bypasses the guard on purpose (synthetic geometry tests need
+    // arbitrary repeated positions). Requires a mounted walk; snaps at the live _vfCam pose.
+    _doSnapForTest: function() { return _doSnap(); },
     _poseForTest: function() { return _vfCam ? { x: _vfCam.position.x, y: _vfCam.position.y, z: _vfCam.position.z, yaw: _yaw, pitch: _pitch } : null; },
     _setPoseForTest: function(pos, yaw, pitch) {
       if (!_vfCam) return false;
