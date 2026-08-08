@@ -371,10 +371,20 @@
       entries.forEach(e => {
         if (!e || !e.hash) return;
         const key = 'rg:' + e.hash;
-        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset }; n++; }
+        // §LAYER-SOLID-SEED: e.layers (from arc_editable.js's _layerGate.layerRanges) rides the SAME
+        // hash-keyed entry as the mesh it slices — additive field, absent/null for every non-layered hash.
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null }; n++; }
       });
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
+    },
+
+    // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): the real per-layer (face_start,face_count)
+    // triangle ranges for a geometry_hash, or null if this hash carries no authored-layer index (every
+    // resident/hash without §LOD400-LAYERS-REAL data — unchanged, this path is purely additive).
+    layersFor(hash) {
+      const g = hash && this._geom && this._geom['rg:' + hash];
+      return (g && g.layers) || null;
     },
 
     meshArrays(hash) {                          // LOD-300: real extracted mesh if loaded, else box proxy (dims-only)
