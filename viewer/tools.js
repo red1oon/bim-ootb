@@ -867,7 +867,7 @@ function setupTools(A) {
   // selection in _nightUpdateLights) instead of 24 removes 23/24 of that cost on mobile specifically;
   // desktop nav is unaffected. A._isMobile is set by setupStreaming, which runs before setupTools
   // (see main.js _mods order), so it's already valid here.
-  A._nightMaxLightsNav = A._isMobile ? 1 : 24;   // navigation budget — the RESET target (effects.js
+  A._nightMaxLightsNav = A._isMobile ? 1 : 30;   // navigation budget — the RESET target (effects.js
                                     // reads this, not a literal, so tuning this one number can't
                                     // silently break the still's nav-budget handback)
   A._nightMaxLights = A._nightMaxLightsNav;  // CURRENT budget — swapped to the still value during Alt+S
@@ -948,7 +948,7 @@ function setupTools(A) {
     return NIGHT_AMBER;
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
-  var NIGHT_LIGHT_INTENSITY = 4.5; // §S277d, reduced 8.0->6.5->4.5 2026-08-07 (user: still too bright after first cut)
+  var NIGHT_LIGHT_INTENSITY = 2.5; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08 (user: still too bright to make out individual PLs)
   var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
@@ -981,7 +981,7 @@ function setupTools(A) {
       if (!isLight && !isWindow && mk.indexOf('IfcPlate') >= 0 && m.transparent) isWindow = true;
       if (!isLight && !isWindow) continue;
       A._nightGlowMats.push({ mat: m, origE: m.emissive.getHex(), origEI: m.emissiveIntensity });
-      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.45; _glowCount++; } // reduced 0.8->0.65->0.45 2026-08-07
+      if (isLight) { m.emissive.setHex(0xffe4b5); m.emissiveIntensity = 0.3; _glowCount++; } // reduced 0.8->0.65->0.45->0.3 2026-08-08
       else { m.emissive.setHex(0xfff8ec); m.emissiveIntensity = 0.55; _windowGlowCount++; }
       m.needsUpdate = true;
     }
@@ -1284,19 +1284,18 @@ function setupTools(A) {
       // so effects.js can re-call it every accumulation/orbit frame (see _reassertPhotoGlow),
       // same discipline. Cheap re-scan: skips any matCache key already processed.
       A._applyNightGlowToMatCache();
-      // §NIGHT_MEM_WITNESS (2026-08-08, user suspects a desktop memory issue across repeated
-      // Night toggles) — real numbers, not a guess-fix: heap (when the browser exposes it) +
-      // every collection this toggle touches, so a repeated on/off/on/off test SHOWS growth (or
-      // its absence) instead of being asserted from code-reading alone.
+      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
+        ' glowMats=' + A._nightGlowMats.length);
+      // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
+      A._nightUpdateLights();
+      // §NIGHT_MEM_WITNESS (2026-08-08, moved AFTER _nightUpdateLights() — placing it before, as
+      // the first version did, made nightLights read 0 on every toggle-on since the light Map
+      // hadn't been populated yet. Real numbers now.
       console.log('§NIGHT_MEM_WITNESS heapMB=' +
         (performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) : 'n/a') +
         ' matCacheKeys=' + Object.keys(A._matCache || {}).length +
         ' glowMatKeys=' + Object.keys(A._nightGlowMatKeys || {}).length +
         ' nightLights=' + (A._nightLightByPos ? A._nightLightByPos.size : 0));
-      console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
-        ' glowMats=' + A._nightGlowMats.length);
-      // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
-      A._nightUpdateLights();
       // §GLOW_SPRITE_NAV_OFF (2026-08-07, user: "remove the others, no more those flimsy night
       // lights" — the round decorative sprite, not A._nightLights). Live nav now runs on the real
       // point lights ONLY (A._nightLights, bumped to 24 below) — no more static round dots. The
