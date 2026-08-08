@@ -313,9 +313,14 @@
         base_z: cz - bz / 2, top_z: cz + bz / 2,
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
         seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
-        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio)
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio),
+        // §4D_NOGEO (2026-08-07, mirrors time_machine.js's own pool — this function's header says
+        // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
+        // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
+        // that day-0 zone window is what spread walls from day 1 in the live movie.
+        noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
-    });
+    }).filter(function (e) { return !e.noGeo; });
   }
 
   // materializeZones(db, rules, opts) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up): the

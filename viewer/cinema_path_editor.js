@@ -339,6 +339,65 @@
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     return true;
   }
+  // ══ §CPE_WALK_EDIT_V1 (prompts/CPE_POV_WALK_PATHING.md) — the ONE new maths piece the walk
+  // feature needs: a stick whose CENTRE is the walked pose (not a curve sample) but whose ordering
+  // in the chain and seed TANGENT still come from the curve, exactly as §CPE_STICK's own
+  // `_spawnStick` does. Called by cpe_walk.js through the narrow surface below (`_walkSnap` on the
+  // public API) — this function is the only place cpe_walk.js reaches into `_state`/bands/plan.
+  function _walkSnap(pos, fwd) {
+    var a = A();
+    if (!_state || !_state.flowRaw || !_state.flowFrac || !_state.flowRaw.length) return null;
+    if (typeof a.cinemaSeedStick !== 'function') return null;
+    // Insertion fraction `s` in the SAME space _bandArcS reads (flowRaw/flowFrac) so ordering
+    // against the existing bands (each measured in that same space) is apples-to-apples.
+    var pts = _state.flowRaw, frac = _state.flowFrac, best = 0, bd = Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      var dx = pts[i].x - pos.x, dy = pts[i].y - pos.y, dz = pts[i].z - pos.z;
+      var d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = i; }
+    }
+    var s = frac[best];
+    var len = _state.bands.length ? _state.bands[0].len : 2;
+    var nb = a.cinemaSeedStick(pts, best, len);   // tangent direction from the curve at the nearest sample
+    if (!nb) return null;
+    nb.c = { x: pos.x, y: pos.y, z: pos.z };      // OVERRIDE centre: the walked pose, not the curve sample
+    nb._s = s; nb._stick = true;
+    // Facing = the existing pin data path (§CPE_AIM_PIN) — raycast the walked forward ray against
+    // real building meshes, same pattern `_tryPinClick` already uses (A.raycaster, scene meshes
+    // minus ground and CPE's own overlay `_state.objs`, so a walked-along stretch of the film tube
+    // itself can never be "the wall you were looking at"). Fallback = 10m out along the facing when
+    // nothing is hit — named in the spec, not invented here.
+    var look = null;
+    if (a.raycaster && a.scene && fwd) {
+      try {
+        a.raycaster.set(new THREE.Vector3(pos.x, pos.y, pos.z), new THREE.Vector3(fwd.x, fwd.y, fwd.z).normalize());
+        var meshes = [];
+        a.scene.traverse(function(o) { if (o.isMesh && o.visible && o !== a.ground && _state.objs.indexOf(o) === -1) meshes.push(o); });
+        var hits = a.raycaster.intersectObjects(meshes, false);
+        if (hits.length) look = { x: hits[0].point.x, y: hits[0].point.y, z: hits[0].point.z };
+      } catch (e) { console.warn('§CPE_WALK_SNAP_RAYCAST_FAIL ' + e.message); }
+    }
+    if (!look && fwd) look = { x: pos.x + fwd.x * 10, y: pos.y + fwd.y * 10, z: pos.z + fwd.z * 10 };
+    if (look) nb.lookAt = look;
+    // Ordering — identical rule to _spawnStick: after the last band whose own arc position precedes it.
+    var at = _state.bands.length - 1;
+    for (var k = 1; k < _state.bands.length; k++) {
+      var bs = _bandArcS(k);
+      if (bs != null && bs > s) { at = k; break; }
+    }
+    at = Math.max(1, Math.min(_state.bands.length - 1, at));
+    _undoPush('walk snap at ' + Math.round(s * 100) + '%');
+    _state.bands.splice(at, 0, nb);
+    _state.staged = false;
+    console.log('§CPE_WALK_SNAP pos=(' + pos.x.toFixed(2) + ',' + pos.y.toFixed(2) + ',' + pos.z.toFixed(2) + ')' +
+      ' s=' + s.toFixed(3) + ' index=' + at + '/' + _state.bands.length +
+      ' lookAt=' + (look ? '(' + look.x.toFixed(2) + ',' + look.y.toFixed(2) + ',' + look.z.toFixed(2) + ')' : 'none') +
+      ' — §CPE_STICK insertion maths, centre = walked pose not curve sample');
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return { bandIndex: at, s: s, centre: nb.c, lookAt: look, replanMs: _state.replanMs };
+  }
   function _removeStick(bi) {
     if (bi <= 0 || bi >= _state.bands.length - 1) return false;   // settle and stop are not removable
     _undoPush('remove ' + _labelOf(bi));
@@ -747,7 +806,12 @@
         // swaps it in place, never rebuilding the button.
         '<button id="cpe-vf-toggle" title="turn on the POV viewfinder (B) — shows the exact camera pose the rehearsal is at" ' +
           'style="flex:none;padding:3px 8px;font-size:13px;line-height:1;background:#2a2e34;color:#888;' +
-          'border:1px solid #4a4f57;border-radius:4px;cursor:pointer;display:flex;align-items:center">' + _eyeIconSvg(false) + '</button></div>' +
+          'border:1px solid #4a4f57;border-radius:4px;cursor:pointer;display:flex;align-items:center">' + _eyeIconSvg(false) + '</button>' +
+        // §CPE_WALK_SHOES_BTN (2026-08-07, user: "The Walk button (shoes icon preferred) should be
+        // at the POV frame") — the walk toggle moved OUT of this title row onto B's own frame header
+        // (_buildVFPanel), extending §CPE_SOLE_OWNER: the POV frame owns its walk, the eye owns the
+        // frame. See _wireWalkToggle, wired in _toggleViewfinder's ON branch now.
+        '</div>' +
       '<div id="cpe-hint" style="padding:6px 12px;font-size:10px;color:#888;border-bottom:1px solid #2a2e34;line-height:1.5"></div>' +
       '<div id="cpe-rows" style="padding:4px 0"></div>' +
       // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path controls, one strip.
@@ -1602,7 +1666,24 @@
         'height:22px;background:rgba(20,22,26,0.85);color:#4fc3f7;font:600 10px system-ui,sans-serif;' +
         'padding:2px 6px;display:flex;align-items:center;justify-content:space-between;' +
         'border-bottom:1px solid #4fc3f7;user-select:none">' +
-        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span></div>';
+        '<span>POV <span id="cpe-vf-clock" style="color:#888;font-family:monospace;font-weight:400"></span></span>' +
+        // §CPE_WALK_SHOES_BTN (2026-08-07, user ruling): the walk toggle lives ON B's frame header —
+        // shoes (Lucide footprints, pulled verbatim like panels.js §CINEMA_ROW_ICONS; inline SVG so
+        // stroke:currentColor follows the active-color swap in cpe_walk.js _syncButton). The header
+        // and panel are pointer-events:none by design — the button opts itself back in.
+        '<button id="cpe-walk-toggle" title="walk this POV: mouse-look + WASD; click or Enter snaps a stick where you stand and face (Esc or click again to stop)" ' +
+          'style="pointer-events:auto;flex:none;width:18px;height:18px;padding:1px;line-height:0;background:transparent;color:#888;' +
+          'border:1px solid #4a4f57;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center">' +
+          '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/>' +
+            '<path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/>' +
+            '<path d="M16 17h4"/><path d="M4 13h4"/></svg></button>' +
+        // §CPE_WALK_WEBXR_VR — stopgap flag-plant (prompts/CPE_WALK_WEBXR_VR.md), analogous to the
+        // walk-toggle button just above. Starts hidden; _wireXrToggle() below shows it only if
+        // window.CpeXr.isSupported() resolves true (no headset in dev — stays hidden here).
+        '<button id="cpe-xr-toggle" title="enter VR (WebXR headset)" ' +
+          'style="display:none;pointer-events:auto;flex:none;padding:1px 4px;line-height:1;background:transparent;color:#888;' +
+          'border:1px solid #4a4f57;border-radius:3px;cursor:pointer;font:600 9px system-ui,sans-serif;margin-left:4px">VR</button></div>';
     document.body.appendChild(d);
     // §CPE_VF_STACK owns final geometry (see _vfLayoutStack) and bottom-anchors B + the fused bar
     // as ONE object, so B's own independent viewport clamp is retired here too. Clamping each panel
@@ -1796,9 +1877,17 @@
       // §CPE_VF_STACK — AFTER both panels exist and the bar has real content (its height is
       // content-driven and must be measured, not assumed), lay the fused stack out as one object.
       _vfLayoutStack();
+      // §CPE_WALK_SHOES_BTN: the walk button was just built with B's panel — wire it here, every
+      // time the eye re-opens (the old panel and its listeners were removed on the last eye-off).
+      _wireWalkToggle();
+      _wireXrToggle();
       if (a.markDirty) a.markDirty();
       console.log('§CPE_VF on — one renderer, scissor sub-viewport, camera pose from the same plan.poseAt() the main view samples; display-only, no drop interaction — timeline panel shown alongside it (§CPE_VF_EYE_DRIVES_SCRUB)');
     } else {
+      // §CPE_WALK_SHOES_BTN + §CPE_SOLE_OWNER: the walk session is B's tenant — closing B (its
+      // owner) force-stops an active walk BEFORE the panel (and the walk button on it) is removed,
+      // so freeze/TM/pointer-lock/stick-editor listeners are all restored, never orphaned.
+      if (window.CpeWalk && window.CpeWalk.isActive && window.CpeWalk.isActive()) window.CpeWalk.forceStop();
       var panel = document.getElementById('cpe-vf-panel');
       if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
       if (a._cpeViewfinderRender === _vfRender) delete a._cpeViewfinderRender;
@@ -1830,6 +1919,29 @@
     // plain <button> the way it excludes INPUT/close/export elements.
     btn.addEventListener('pointerdown', function(ev) { ev.stopPropagation(); });
     btn.addEventListener('click', function(ev) { ev.stopPropagation(); _toggleViewfinder(btn); });
+  }
+  // §CPE_WALK_EDIT_V1 — the walk-mode button only calls into cpe_walk.js (window.CpeWalk); all
+  // mount/unmount/pointer-lock/freeze/snap logic lives there. Same pointerdown-stopPropagation
+  // guard as _wireViewfinderToggle, same reason (the panel drag strip would otherwise claim the click).
+  function _wireWalkToggle() {
+    var btn = document.getElementById('cpe-walk-toggle');
+    if (!btn) return;
+    btn.addEventListener('pointerdown', function(ev) { ev.stopPropagation(); });
+    btn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      if (window.CpeWalk && typeof window.CpeWalk.toggle === 'function') window.CpeWalk.toggle();
+      else console.warn('§CPE_WALK_MODULE_MISSING cpe_walk.js did not load — walk button is a no-op');
+    });
+  }
+  // §CPE_WALK_WEBXR_VR — analogous to _wireWalkToggle above; all WebXR session logic lives in
+  // cpe_xr.js (window.CpeXr). Button starts hidden (see markup) and is shown only if isSupported()
+  // resolves true — this environment has no headset, so it stays hidden.
+  function _wireXrToggle() {
+    var btn = document.getElementById('cpe-xr-toggle');
+    if (!btn || !window.CpeXr) return;
+    window.CpeXr.isSupported().then(function(ok) { if (ok) btn.style.display = ''; });
+    btn.addEventListener('pointerdown', function(ev) { ev.stopPropagation(); });
+    btn.addEventListener('click', function(ev) { ev.stopPropagation(); window.CpeXr.enter(); });
   }
 
   // ══ §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP — the whole-path strip.
@@ -2977,6 +3089,8 @@
       // (already null-guards on a missing track).
       _state.scrubTn = 0;
       // §CPE_VIEWFINDER: the eye-icon toggle button lives in the panel's title row (_buildPanel).
+      // §CPE_WALK_SHOES_BTN: the walk button lives on B's frame header now — built and wired in
+      // _toggleViewfinder's ON branch, not here (B does not exist yet at open()).
       _wireViewfinderToggle();
       // §CPE_PREVIEW_DIVERGENCE: state the basis every re-plan below is pinned to, once. If a pasted
       // console ever shows the bake's §CINEMA_PIVOT disagreeing with the editor's, this line says
@@ -3121,6 +3235,13 @@
       _renderPlans();
 
       function finish(action) {
+        // §CPE_WALK_EDIT_V1 teardown hook — walk-mode's pointer-lock listeners, its own rAF loop,
+        // the freeze overlay and the Time Machine lock must not outlive the editor (same "must not
+        // outlive" rule _vfTeardown/_scrubPanelTeardown already follow below). forceStop() is a no-op
+        // if walk mode was never entered or is already off.
+        if (window.CpeWalk && typeof window.CpeWalk.isActive === 'function' && window.CpeWalk.isActive()) {
+          window.CpeWalk.forceStop();
+        }
         var ov = (action === 'ok' || action === 'save') ? _buildOverride() : null;
         var edited = ov ? _isEdited() : false;
         _stopPulse(); _release('close'); _unwire(); _clearScene();
@@ -3352,7 +3473,59 @@
           if (!_state || !_state.flowRaw || !_state.flowFrac) return false;
           var idx = Math.max(0, Math.min(_state.flowFrac.length - 1, Math.round(_state.flowFrac.length * frac)));
           return _spawnStick({ i: idx, s: _state.flowFrac[idx] });
-        }
+        },
+        // ══ §CPE_WALK_EDIT_V1 witness hooks — the narrow read/write surface prompts/
+        // CPE_POV_WALK_PATHING.md hands to cpe_walk.js. `_walkMount`/`_walkUnmount` are the
+        // `_wire()`/`_unwire()` calls at walk mount/unmount named in the spec; `_walkSnap` is the
+        // band-insertion write surface (the one new maths piece, implemented above as `_walkSnap`).
+        _walkMount: function() {
+          if (!_state) return null;
+          _stopPulse();
+          _unwire();
+          console.log('§CPE_WALK_MOUNT stick-editor handlers off (_unwire), pulse stopped');
+          return true;
+        },
+        _walkUnmount: function() {
+          if (!_state) return null;
+          var a = A();
+          _wire();
+          _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+          if (a.markDirty) a.markDirty();
+          console.log('§CPE_WALK_UNMOUNT stick-editor handlers restored (_wire)');
+          return true;
+        },
+        _walkSnap: function(pos, fwd) { return _walkSnap(pos, fwd); },
+        // §CPE_WALK_SPAWN (2026-08-07, user rulings, two rounds): the walk is self-sufficient —
+        // a fresh shoes press spawns at the WALK STRETCH's start (the fat authorable tube), never
+        // the aerial dive pose (the user's Hospital sky-stick report, s=0.000 260m up).
+        // §CPE_WALK_SCRUB_SPAWN refinement (same day, user: "user can bring further along the path,
+        // then began the stick planting... that is alternative to speed things up, but in essence
+        // the walk finder mode is also it"): a scrub already sitting INSIDE the walk stretch is an
+        // optional accelerator — spawn THERE instead of the walk head. Outside the stretch (e.g.
+        // the untouched 0 = the dive) still falls back to the walk head. Positions vfCam directly.
+        _walkSpawnPose: function() {
+          if (!_state || !_state.plan || typeof _state.plan.poseAt !== 'function') return null;
+          var bts = _state.plan.beats || {};
+          var lo = isFinite(bts.spin) ? bts.spin : 0, hi = isFinite(bts.out) ? bts.out : 1;
+          var st = _state.scrubTn || 0;
+          var scrubbed = (st > lo && st < hi);
+          var tn = scrubbed ? st : lo + (hi - lo) * 0.02;   // head nudge stays clear of the beat seam
+          var p = _state.plan.poseAt(tn);
+          if (!p) return null;
+          if (_state.vfCam) { _state.vfCam.position.set(p.x, p.y, p.z); _state.vfCam.lookAt(p.tx, p.ty, p.tz); }
+          return { tn: tn, scrubbed: scrubbed, x: p.x, y: p.y, z: p.z, tx: p.tx, ty: p.ty, tz: p.tz };
+        },
+        // §CPE_WALK_SCRUB_SPAWN — cpe_walk.js compares this against the value it saw at the last
+        // stop(): a scrub MOVED since the last walk means the user chose a new start (scrub beats
+        // resume); an untouched scrub keeps the resume pose (continue where they stood).
+        _walkScrubTn: function() { return _state ? (_state.scrubTn || 0) : 0; },
+        // Read-only proof for G-WALK-ISOLATE: whether the stick editor's OWN drag gesture is live
+        // right now. `_state.drag` is only ever non-null while a real pointerdown->pointermove
+        // sequence, dispatched through the `_wire()`-installed capture-phase listeners, is in
+        // progress — so a witness can dispatch a synthetic pointerdown at a known handle and read
+        // this to prove the listeners are (or are not) actually attached, not merely assume it from
+        // the mount/unmount call having run. Mutates nothing itself.
+        _probeDrag: function() { return _state ? !!_state.drag : null; }
       };
       clearInterval(_attach);
     }

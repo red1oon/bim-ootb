@@ -606,6 +606,11 @@
         // MODELLER_MASTER.md row 17: the synthetic disc:'__ALL__' row (modeller.html §DISCWALK-ALL) walks EVERY
         // discipline — its tooltip must say so; ordinary disc rows keep the singular.
         const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL disciplines' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
+        // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1/§2.5 — the room node IS the grab target (IfcSpace carries no
+        // rendered mesh, so there is nothing to pick in the 3D canvas; confirmed by grep — no GEOM_INSERT/
+        // arc_editable seed ever runs for ifc_class='IfcSpace'). data-room carries the real guid the click
+        // dispatches with; mirrors the disc walkGlyph in shape.
+        const roomGlyph = n.room ? ' <span class="bn-roommove" data-room="' + n.room + '" title="Move this room — drag on canvas after grabbing" style="color:#4fc3f7">⛶</span>' : '';
         // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a per-EDGE-TYPE badge (⇄ abuts ·
         // ⌂ fills · ⧉ aggregates) + amber tint; the selected element shows its per-kind degree + its element↔
         // datum relations (⊥ anchored · ↕ spans). All read the derived map (window.swXEdges), never a baked table.
@@ -649,7 +654,7 @@
           (n.disc ? ' data-disc="' + n.disc + '"' : '') + (isNbr ? ' data-adj="1"' : '') + (hid ? ' data-hid="1"' : '') + ' draggable="true" ' +
           'style="padding:3px 6px 3px ' + pad + 'px;cursor:' + (isLeaf ? 'grab' : 'pointer') + ';border-radius:4px;' +
           (hid ? 'opacity:.45;' : '') + rowBg + '">' + eye +
-          (kids.length ? CHEV(showKids) : LEAF) + n.label + walkGlyph + adjBadge +
+          (kids.length ? CHEV(showKids) : LEAF) + n.label + walkGlyph + roomGlyph + adjBadge +
           (n.sub ? '  <span style="color:#7f8aa0;font-family:ui-monospace,monospace">' + n.sub + '</span>' : '') + '</div>';
         if (showKids) { const r = this._renderNodes(kids, depth + 1, ckey, match, String(n.id), hid); html += r.html; shown += r.shown; }
       });
@@ -716,6 +721,14 @@
         d.onclick = (e) => {
           // §V1: the eye toggle owns its click — never a select/collapse.
           if (e && e.target && e.target.closest && e.target.closest('.bn-eye')) { this._toggleHide(id); return; }
+          // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1/§2.5: the room grab glyph owns its click too — never a
+          // subtree-select/collapse (a room node otherwise falls into the generic non-leaf branch below).
+          if (e && e.target && e.target.closest && e.target.closest('.bn-roommove')) {
+            const cat = byKey[d.getAttribute('data-tcat')];
+            const guid = e.target.closest('.bn-roommove').getAttribute('data-room');
+            if (cat && cat.onRoomGrab) cat.onRoomGrab(guid);
+            return;
+          }
           if (isLeaf) {
             // The seeded ARC-BOM tree's leaf id IS THE GUID (bom_tree.js `id: e.guid`) — window.Bonsai.select
             // only accepts a NUMERIC featureId, so resolve guid→featureId via arc_editable.js's bridge

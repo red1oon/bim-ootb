@@ -3600,6 +3600,43 @@
     console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
   }
 
+  // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
+  // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
+  // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
+  // the user dragged — with ScheduleGate.auditFloating, ALL classes, no filter (the §DEQ_V1 bar).
+  // The check IS auditFloating: when §GEOMETRIC_SUPPORT_ORDER-class upgrades land in the gate
+  // module, this hook strengthens automatically, no separate integration.
+  // Returns { ok, floating, total, guids, ms, skipped? }. A state with nothing auditable (no
+  // geometry / gate not loaded) verifies ok WITH the skip named — logged by the caller, never a
+  // silent false pass.
+  function verifyGanttIntegrity() {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    function ms() { return Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0); }
+    if (typeof ScheduleGate === 'undefined' || !ScheduleGate.auditFloating)
+      return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
+    var els = _buildXrayElements();
+    if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var sched = {};
+    for (var i = 0; i < _ops.length; i++) {
+      var o = _ops[i];
+      var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
+      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
+    }
+    // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
+    // (zero bbox at origin) can neither bear nor hang and sit at project end by design
+    var audited = [];
+    for (var j = 0; j < els.length; j++) {
+      var e = els[j];
+      if (!sched[e.guid]) continue;
+      if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
+      audited.push(e);
+    }
+    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var guids = [];
+    var n = ScheduleGate.auditFloating(audited, sched, null, guids);
+    return { ok: n === 0, floating: n, total: audited.length, guids: guids, ms: ms() };
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Z-DRIVEN CONSTRUCTION SCHEDULE
   // ══════════════════════════════════════════════════════════════════
@@ -3829,7 +3866,13 @@
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
-        installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz)
+        installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz),
+        // §4D_NOGEO (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH): no transform row —
+        // COALESCE lands it at origin with a zero bbox. It cannot bear, hang, or be witnessed, and
+        // at z=0 (metres below the building) geoGate finds nothing under it, so it scheduled at
+        // day 0 AND dragged its whole zone's start there (user-witnessed: "walls before the
+        // foundations" — 233 such elements on Hospital, §GANTT band 0 z=[0.0,0.0] Architecture:233).
+        noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
@@ -3993,16 +4036,24 @@
     // schedule_gate.js's own MAX_CREWS_DEFAULT for any resource without an explicit value.
     var _maxCrews = {};
     for (var _mcRes in LR) if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
+    // §4D_NOGEO: geometry-less elements are EXCLUDED from the support-gated schedule (they poison
+    // it at day 0) and parked at the project end below — present in the movie's totals, never in
+    // its physics.
+    var _geoElements = elements.filter(function (el) { return !el.noGeo; });
+    var _noGeoN = elements.length - _geoElements.length;
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
-      ? ScheduleGate.computeSchedule(elements, baseMs, scaleFactor, _maxCrews) : null;
+      ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
+    var _schedEnd = baseMs;
+    for (var _sg in _sched) if (_sched[_sg].end > _schedEnd) _schedEnd = _sched[_sg].end;
+    if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
     elements.forEach(function(el) {
-      var s = _sched[el.guid] || { start: baseMs, end: baseMs + 60000 };
+      var s = _sched[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park, was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
            resource:el.resource, _end_ts:s.end}),
@@ -4014,15 +4065,16 @@
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
-    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING (beam/member/slab/furniture/MEP/wall)
-    // may start before the structure UNDER its XY footprint finishes. 0 ⇒ nothing floats. Pre-fix
-    // (Hospital): 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls
-    // (ε=0.5 skipped the slab they sit on). Two-pass + ε=0.05 → 0.
-    var _audit = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab' ||
-      e.cls.indexOf('Furni') >= 0 || e.cls.indexOf('Wall') >= 0; };
-    var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
-    var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
-    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
+    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING may start before its physical support
+    // (bearing-below OR the carrier it hangs from) finishes. 0 ⇒ nothing floats. Pre-fix (Hospital):
+    // 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls (ε=0.5
+    // skipped the slab they sit on). Two-pass + ε=0.05 → 0.
+    // §DEQ_V1 (2026-08-07, 4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #5): filter is ALL classes now —
+    // the old hand-picked list (Beam/Member/Slab/'Furni'/'Wall') silently excluded every MEP/flow
+    // class, so this line printed floating=0 while fans hung mid-air unaudited.
+    var _auditN = _geoElements.length;
+    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null);
+    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
 
     // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
     // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
@@ -4075,7 +4127,7 @@
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
     // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
-    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: _audit };
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: null };  // §DEQ_V1: audit is unfiltered now (was the hand-picked _audit predicate)
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
@@ -4138,14 +4190,18 @@
       var _elByGuid = {};
       elements.forEach(function(el) { _elByGuid[el.guid] = el; });
       var _byTask = {};
-      var _allOps = db.exec("SELECT output_guid, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+      var _allOps = db.exec("SELECT output_guid, parameters, timestamp FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
           var g = row[0], tid = _cap.guidTask[g];
           if (!tid) return;                         // uncovered → keep generative timing
           if (!_byTask[tid]) _byTask[tid] = [];
           var _el = _elByGuid[g];
-          _byTask[tid].push({ guid: g, params: row[1],
+          // §4D_LAYER_TRUTH (2026-08-07): the element's GENERATIVE (computeSchedule) start/end —
+          // the schedule layer's proven truth (floating=0) — rides into the task bucket so the
+          // window mapping below can PRESERVE it instead of discarding it.
+          var _lsEnd = 0; try { _lsEnd = (JSON.parse(row[1]) || {})._end_ts || 0; } catch (e) {}
+          _byTask[tid].push({ guid: g, params: row[1], ls: row[2] || 0, le: _lsEnd || ((row[2] || 0) + 60000),
             cz: _el ? _el.cz : 0, seq: _el ? _el.seq : 999,
             bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
             x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
@@ -4181,7 +4237,12 @@
         // S.base_z < T.base_z - EPS — audit_support_roleblind.js's own predicate), so a base_z walk
         // cannot place anything before its support. seq then cz break ties WITHIN a bearing level,
         // keeping §4D_FACADE_ORDER's trade discipline for same-level elements.
-        _bucket.sort(function(a, b) { return (a.bz - b.bz) || (a.seq - b.seq) || (a.cz - b.cz); });
+        // §4D_LAYER_TRUTH (2026-08-07, supersedes bz-primary here): order INSIDE a task = the
+        // generative schedule's own order (ls = computeSchedule start). base_z ordering was the
+        // best available proxy before the §DEQ_V1 engine — but it is provably wrong for hanging
+        // elements (a fan's base_z is BELOW its roof carrier's), while ls already encodes
+        // bearing-below + hang-carrier + the repair loop. bz/seq/cz stay as tiebreakers only.
+        _bucket.sort(function(a, b) { return (a.ls - b.ls) || (a.bz - b.bz) || (a.seq - b.seq) || (a.cz - b.cz); });
         // §4D_HOST_BEFORE_HOSTED (same spec file): float-noise near-ties defeat the seq tiebreak —
         // 101/5,924 host pairs on Hospital have the wall base 0–0.043m ABOVE its hosted glazing's
         // base (< EPS), so the panel sorts first. Constraint AFTER the sort, never a replacement:
@@ -4195,7 +4256,9 @@
           for (i = 0; i < items.length; i++) {
             var H = items[i]; if (!H.hostable) continue;
             var last = -1;
-            for (j = i + 1; j < items.length && items[j].bz <= H.bz + HEPS; j++) {
+            // §4D_LAYER_TRUTH: scan bound follows the new ls-primary sort — host/hosted pairs are
+            // near-tied in ls (same supports), so a 1-day ls window covers what the bz window did.
+            for (j = i + 1; j < items.length && items[j].ls <= H.ls + 86400000; j++) {
               var W = items[j];
               if (W.cls.indexOf('IfcWall') === 0 &&
                   H.x0 <= W.x1 && H.x1 >= W.x0 && H.y0 <= W.y1 && H.y1 >= W.y0 &&
@@ -4210,10 +4273,24 @@
             console.log('§STAGGER_HOST movedAfterHost=' + moved + ' (task bucket n=' + items.length + ')');
           }
         })(_bucket);
+        // §4D_LAYER_TRUTH (2026-08-07, replaces the even index-stagger): the even spread kept only
+        // the bucket's ORDER and re-timed elements uniformly across the window — measured on the
+        // user's own Hospital console: §XRAY_EDGES staged=284/63415 on this path vs staged=0 on the
+        // generative path, i.e. the window layer re-introduced 284 support violations the schedule
+        // layer had already solved. Map each element's generative [ls,le] AFFINELY into the task's
+        // own [w.s,w.e] instead: an untouched window (windows come from the SAME schedule's zone
+        // rollup) reproduces the generative times in shape, and a user-dragged window rescales them
+        // without reordering. Monotone by construction (bucket is ls-sorted).
         var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
+        var _lsMin = Infinity, _leMax = -Infinity;
+        _bucket.forEach(function(item) {
+          if (item.ls < _lsMin) _lsMin = item.ls;
+          if (item.le > _leMax) _leMax = item.le;
+        });
+        var _lsSpan = Math.max(1, _leMax - _lsMin);
         _bucket.forEach(function(item, i) {
-          var s_i = w.s + Math.floor((i / _n) * _span);
-          var e_i = (i + 1 < _n) ? (w.s + Math.floor(((i + 1) / _n) * _span)) : w.e;
+          var s_i = w.s + Math.floor(((item.ls - _lsMin) / _lsSpan) * _span);
+          var e_i = w.s + Math.floor(((item.le - _lsMin) / _lsSpan) * _span);
           if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
           var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
           p.phase = w.name;                         // real task name → shows in mini-Gantt
@@ -4272,34 +4349,66 @@
         else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
-      var _ogPushed = 0;
-      _allScheduled.forEach(function (T) {
-        var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
-        var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0;
-        for (var ci = 0; ci < cells.length; ci++) {
-          var arr = _ogStructGrid[cells[ci]];
-          if (arr) for (var si = 0; si < arr.length; si++) {
-            var S = arr[si];
-            if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
-            if (S.bz < T.bz - _ogEPS && Math.abs(S.tz - T.bz) <= _ogGAP && _ogXY(S, T) && S.e > lastEnd) lastEnd = S.e;
+      // §4D_LAYER_TRUTH (2026-08-07): the single ascending-bz pass was measured leaving 25 staged
+      // violations (witness_4d_layer_truth.js, Hospital) for the SAME two reasons §DEQ_REPAIR exists
+      // in schedule_gate.js: (a) pushing a carrier later never re-checks dependents already visited
+      // (bz order guarantees carriers-first only for bearing-below, and a push can still ripple
+      // forward), and (b) the predicate was hang-blind — a fan's carrier (roof above) has HIGHER bz,
+      // so ordering can't help it at all. Same fix as the engine layer: bearing-below OR (no bearing)
+      // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
+      // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
+      // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
+      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
+      var _ogPushed = 0, _ogSweeps = 0;
+      for (; _ogSweeps < 16; _ogSweeps++) {
+        var _ogMoved = 0;
+        _allScheduled.forEach(function (T) {
+          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+          var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
+          for (var ci = 0; ci < cells.length; ci++) {
+            var arr = _ogStructGrid[cells[ci]];
+            if (arr) for (var si = 0; si < arr.length; si++) {
+              var S = arr[si];
+              if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
+              // §4D_LAYER_TRUTH: predicate ALIGNED with auditFloating()/_buildXraySupportCache —
+              // carrier top REACHES my base (>= T.bz-GAP, unbounded above: a tall column a beam
+              // frames into tops far above the beam's base). The old ±GAP band was narrower than
+              // the audits and left exactly the 25 staged elements those audits could still see.
+              if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
+                hasBearing = true; if (S.e > lastEnd) lastEnd = S.e; }
+            }
+            if (!promotedSlab) continue;
+            arr = _ogWallGrid[cells[ci]];
+            if (arr) for (var wi = 0; wi < arr.length; wi++) {
+              var W = arr[wi];
+              if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
+              if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
+                hasBearing = true; if (W.e > lastEnd) lastEnd = W.e; }
+            }
           }
-          if (!promotedSlab) continue;
-          arr = _ogWallGrid[cells[ci]];
-          if (arr) for (var wi = 0; wi < arr.length; wi++) {
-            var W = arr[wi];
-            if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
-            if (W.bz < T.bz - _ogEPS && Math.abs(W.tz - T.bz) <= _ogGAP && _ogXY(W, T) && W.e > lastEnd) lastEnd = W.e;
+          if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
+            var hcells = _ogCellsQueryTop(T), hseen = {};
+            for (var hi = 0; hi < hcells.length; hi++) {
+              var harr = _ogStructGrid[hcells[hi]];
+              if (harr) for (var hj = 0; hj < harr.length; hj++) {
+                var H = harr[hj];
+                if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
+                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
+                    _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
+              }
+            }
           }
-        }
-        if (lastEnd && T.s < lastEnd) {
-          var dur = Math.max(60000, T.e - T.s);
-          T.s = lastEnd + 1;
-          T.e = T.s + dur;
-          _ogPushed++;
-        }
-      });
+          if (lastEnd && T.s < lastEnd) {
+            var dur = Math.max(60000, T.e - T.s);
+            T.s = lastEnd + 1;
+            T.e = T.s + dur;
+            _ogPushed++; _ogMoved++;
+          }
+        });
+        if (!_ogMoved) break;
+      }
       if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
-        ' elements later than their §PHASE_OVERLAP_BAND window to stay after their real structural support');
+        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');
 
       // §WRITE_LOOP_TIMING (2026-08-04) — a user report of the browser tab freezing traced to
       // console output stopping right at this point, on a 63,415-element building. No fix here —
@@ -5188,6 +5297,20 @@
     return rows;
   }
 
+  // §GANTT_RETIME_RESYNC (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH follow-on — user
+  // report: "foundation piling nor others does not come onto canvas anymore, though i dragged to
+  // certain bars passing", witnessed as §PERF_TRAVERSE cand=0 on every scrub after §GANTT_RETIME):
+  // retimeTaskElements moves the ops' timestamps, but THREE derived structures kept the old times —
+  // (1) the §PERF_INCR event index (_evMesh), so the incremental reveal skipped meshes straight
+  // across their new transitions (the blackout); (2) _ops' sort order (consumers binary-search it);
+  // (3) the §XRAY solidify cache (stale carrier ends). One resync, called by every retime commit
+  // path (drag, ruler shift, group shift, undo) — same drop-pattern deactivate() already uses.
+  function _tmResyncAfterRetime() {
+    _ops.sort(function (a, b) { return a.start_ts - b.start_ts; });
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: force full rebuild next tick
+    _tmRebuildXrayCache();
+  }
+
   // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
   function commitGanttDrag(bar, mode, deltaDays) {
     var app = A();
@@ -5262,6 +5385,7 @@
     _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5315,6 +5439,7 @@
     retimeTaskElements(app.db, barsByTask, res.moved);
     _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5366,6 +5491,7 @@
     retimeTaskElements(app.db, barsByTask, res.moved);
     _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5419,6 +5545,7 @@
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
     say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -5454,6 +5581,27 @@
   // called automatically by drawGanttMini when the drawer has nothing editable to show, no button,
   // no side panel involved at all any more. Calls the real engine verb directly, same as the panel's
   // own generateDraft() zone-detail path (schedule_author_ui.js), not a reimplementation of it.
+  // §GANTT_SINGLE_LOAD (2026-08-07, 4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD) — the materialize
+  // core, callable BEFORE activation: no UI tip, no refold. Returns true iff a fresh native schedule
+  // was written. Scoped to the truly-cold case only (NO schedule row at all) — an existing schedule,
+  // authored or captured, is left for injectGantt to absorb as-is; generateGanttSchedule() below keeps
+  // its own wider semantics (regenerates over a non-captured schedule) for the drawer's auto-gen
+  // fallback. Same materializeZones call/opts as generateGanttSchedule — keep them in sync.
+  function _materializeNativeSchedule(app) {
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.materializeZones) return false;
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act) return false;                       // schedule exists — injectGantt absorbs it, one pass
+    var todayStart = new Date().toISOString().slice(0, 10);
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false });
+    console.log('§GANTT_PREMATERIALIZE ' + (res.ok
+      ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
+      : 'failed reason=' + (res.reason || 'unknown') + ' — legacy auto-generate fallback will handle it'));
+    return !!res.ok;
+  }
+
   function generateGanttSchedule() {
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -5790,26 +5938,57 @@
         lockBtn._wired = true;
         lockBtn.addEventListener('pointerup', function (e) {
           e.stopPropagation();
-          _ganttEditable = !_ganttEditable;
-          lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
-          lockBtn.title = _ganttEditable
-            ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
-            : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
-          console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
-          // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
-          // props panel alone is ~330px wide) — widen automatically rather than making the user find
-          // the new resize grip every time. Only expands if narrower than the edit width already (a
-          // user who manually widened past it keeps their own choice); restores to whatever width was
-          // active the moment editing turned on, so a manual resize DURING editing is not fought.
-          if (_panel) {
-            var curW = _panel.getBoundingClientRect().width;
-            if (_ganttEditable) {
-              _panelWPreEdit = curW;
-              if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
-            } else if (_panelWPreEdit != null) {
-              _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+          function applyLockUi() {
+            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+            lockBtn.title = _ganttEditable
+              ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
+              : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+            console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
+            // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
+            // props panel alone is ~330px wide) — widen automatically rather than making the user find
+            // the new resize grip every time. Only expands if narrower than the edit width already (a
+            // user who manually widened past it keeps their own choice); restores to whatever width was
+            // active the moment editing turned on, so a manual resize DURING editing is not fought.
+            if (_panel) {
+              var curW = _panel.getBoundingClientRect().width;
+              if (_ganttEditable) {
+                _panelWPreEdit = curW;
+                if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
+              } else if (_panelWPreEdit != null) {
+                _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+              }
             }
           }
+          if (_ganttEditable) {
+            // §GANTT_LOCK_INTEGRITY: 🔓→🔒 verifies the EDITED schedule still holds physical
+            // integrity before the lock is accepted. Breach ⇒ the lock is REFUSED (stays Editing),
+            // the flag names the floaters, and ↺ Undo (or further corrective edits) is the way out —
+            // the gate is stateless, every lock attempt re-audits, so undo depth vs breach depth
+            // (spec open-question 1) needs no edit-history tracing. Only THIS transition is gated
+            // (spec Q2); unlock below never verifies.
+            var lm = document.getElementById('tm-gantt-lockmsg');
+            if (lm) { lm.textContent = 'Verifying integrity…'; lm.style.color = ''; }
+            setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
+              var v = verifyGanttIntegrity();
+              if (!v.ok) {
+                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '/' + v.total + ' ms=' + v.ms +
+                  ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
+                if (lm) {
+                  lm.textContent = '⚠ Integrity Breach: ' + v.floating + ' floating — press ↺ Undo edit (or fix), then lock again';
+                  lm.style.color = '#f66';
+                }
+                return;   // REFUSED — _ganttEditable stays true, nothing hidden
+              }
+              console.log('§GANTT_LOCK_VERIFY ok floating=0/' + v.total + ' ms=' + v.ms +
+                (v.skipped ? ' skipped=' + v.skipped : ''));
+              if (lm) { lm.textContent = ''; lm.style.color = ''; }
+              _ganttEditable = false;
+              applyLockUi();
+            }, 0);
+            return;
+          }
+          _ganttEditable = true;
+          applyLockUi();
         });
       }
       var lockMsg = document.getElementById('tm-gantt-lockmsg');
@@ -6541,6 +6720,14 @@
       if (!_placeOps.length) {
         if (st) st.textContent = 'Setting up 4D construction timeline...';
         viewerStatus('Time Machine: generating construction schedule...');
+        // §GANTT_SINGLE_LOAD (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD): a cold open used to run
+        // injectGantt TWICE — pass 1 with no schedule (placeholder dates, task_id-less ops), then
+        // drawGanttMini's §GANTT_EDIT_LOCK auto-materialize called tmRefoldSchedule(), which threw
+        // pass 1 away (deactivate + cacheDel + re-activate) and ran the ENTIRE chain again. Now the
+        // native schedule is materialized FIRST, so the single injectGantt run absorbs it, bars carry
+        // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
+        // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
+        _materializeNativeSchedule(app);
         if (!injectGantt()) {
           if (st) st.textContent = 'No elements found in database';
           viewerStatus('Time Machine: no elements found');
@@ -6562,7 +6749,7 @@
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
-      if (!_ops.length) { injectGantt(); _ops = loadOps(); _ganttDirty = true; }
+      if (!_ops.length) { _materializeNativeSchedule(A()); injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
@@ -6772,6 +6959,9 @@
     return wasActive;
   }
   window.tmRefoldSchedule = refoldSchedule;
+  // §GANTT_RETIME_RESYNC witness hook (double-underscore debug convention, read-only intent):
+  // lets witness_gantt_retime_resync.js drive the REAL ruler-shift commit path headlessly.
+  window.__tmGanttShift = shiftGanttSchedule;
 
   // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
   // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase

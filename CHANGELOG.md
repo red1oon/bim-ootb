@@ -4,6 +4,56 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.41.0](https://github.com/red1oon/bim-ootb/compare/v1.40.0...v1.41.0) (2026-08-08)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_LOCK_INTEGRITY — lock-back verifies physical integrity, refuses on breach, names offenders ([#1244](https://github.com/red1oon/bim-ootb/issues/1244)) ([1165d03](https://github.com/red1oon/bim-ootb/commit/1165d03ae6f15b0356a9d44915f6e742a3901a03))
+* **4d:** §GEOMETRIC_SUPPORT_ORDER — placement order derived from geometry DAG, seq demoted to tiebreak ([#1242](https://github.com/red1oon/bim-ootb/issues/1242)) ([0fe8eb2](https://github.com/red1oon/bim-ootb/commit/0fe8eb2b0ae34e2dff210f462a634804330e9e14))
+* **cpe-walk:** §CPE_WALK_GAMEPAD_NAV — standard-mapping gamepad as third walk-mode input ([#1251](https://github.com/red1oon/bim-ootb/issues/1251)) ([b475d8c](https://github.com/red1oon/bim-ootb/commit/b475d8c5e6baeedaa931f044298c9a8cebb97ba7))
+* **cpe:** §CPE_WALK_EDIT_V1 — POV walk-mode input device for the CPE stick editor ([#1243](https://github.com/red1oon/bim-ootb/issues/1243)) ([9540939](https://github.com/red1oon/bim-ootb/commit/9540939825007961457c2b17426f460d09be226f))
+* **cpe:** §CPE_WALK_SCRUB_SPAWN — scrub inside the walk stretch pre-positions the shoes spawn (optional accelerator) ([#1249](https://github.com/red1oon/bim-ootb/issues/1249)) ([dbb4ed6](https://github.com/red1oon/bim-ootb/commit/dbb4ed66d81d9903312362d97b75acb1edb03bbf))
+* **cpe:** §CPE_WALK_SHOES_BTN — walk toggle moved onto B's frame header as shoes icon; eye-off force-stops walk; hallway witness promoted ([#1246](https://github.com/red1oon/bim-ootb/issues/1246)) ([bba8995](https://github.com/red1oon/bim-ootb/commit/bba89956d6448d2b43cce92e941bba34c3560e89))
+* **cpe:** §CPE_WALK_WEBXR_VR stopgap — WebXR feature-detect + session lifecycle, controller/pose stubbed ([#1253](https://github.com/red1oon/bim-ootb/issues/1253)) ([b7dcfac](https://github.com/red1oon/bim-ootb/commit/b7dcfacbabed00bda7d89ff1166bdaf6744b26c7))
+* **modeller:** wire Room Move + Item Drag into the UI (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.5/§3) ([#1247](https://github.com/red1oon/bim-ootb/issues/1247)) ([87d9757](https://github.com/red1oon/bim-ootb/commit/87d97572f8b20bc7ce925c0cf4e7725d6cd4dbfa))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_LAYER_TRUTH — schedule-layer truth survives the task-window layer (walls-before-foundations regression) ([#1239](https://github.com/red1oon/bim-ootb/issues/1239)) ([d98faa9](https://github.com/red1oon/bim-ootb/commit/d98faa95e1133c066f50871e8d389e2c7aac96bf))
+* **4d:** §GANTT_RETIME_RESYNC — gantt edits blacked out the canvas (stale §PERF_INCR index + unsorted _ops + stale xray cache) ([#1240](https://github.com/red1oon/bim-ootb/issues/1240)) ([fa506ef](https://github.com/red1oon/bim-ootb/commit/fa506ef340edbf1f550a4bdfee5f52e0419f3ddc))
+* **4d:** §GANTT_SINGLE_LOAD — cold TM open ran injectGantt twice (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD) ([#1237](https://github.com/red1oon/bim-ootb/issues/1237)) ([279f560](https://github.com/red1oon/bim-ootb/commit/279f5602ab572a5651e1289d4bf908663f88f39f))
+* **cpe:** §CPE_WALK_SPAWN + §CPE_WALK_GLIDE + §CPE_WALK_ENTER_LOCK — walk is self-sufficient, trackpad-first ([#1248](https://github.com/red1oon/bim-ootb/issues/1248)) ([833c4ee](https://github.com/red1oon/bim-ootb/commit/833c4eed1582073cfc57e63d96e98254e3d03a20))
+* **night:** §NIGHT_MOBILE_MIN_PL cap + §NIGHT_MEM_WITNESS logging ([#1252](https://github.com/red1oon/bim-ootb/issues/1252)) ([17a490e](https://github.com/red1oon/bim-ootb/commit/17a490e9403ba08c0ea1729f98d06395067eab6a))
+* **night:** brightness round 3, nav budget 24-&gt;30, fix nightLights=0 witness bug ([#1254](https://github.com/red1oon/bim-ootb/issues/1254)) ([d255f89](https://github.com/red1oon/bim-ootb/commit/d255f89b414d60bd10381c10aaa5a53c84d6ca41))
+* **night:** quad rotation + drop-height + light-churn hiccup, brightness tune ([#1250](https://github.com/red1oon/bim-ootb/issues/1250)) ([733753e](https://github.com/red1oon/bim-ootb/commit/733753ecb2089b91e399487cdb4febaef60d39e5))
+
+## [1.40.0](https://github.com/red1oon/bim-ootb/compare/v1.39.1...v1.40.0) (2026-08-07)
+
+
+### ✨ Features
+
+* **4d:** §DEQ_V1 — default engine zero physics violations (fans-over-roof fixed, all-class audit) ([#1236](https://github.com/red1oon/bim-ootb/issues/1236)) ([e67d4f5](https://github.com/red1oon/bim-ootb/commit/e67d4f57684b5350f815a07e3d967ec4d6906e02))
+* **modeller:** whole-room move (GEOM_ROOM_MOVE) + gated free item drag ([#1224](https://github.com/red1oon/bim-ootb/issues/1224)) ([1b157f4](https://github.com/red1oon/bim-ootb/commit/1b157f4f9ca992ac0823950d61bc5bdcfe6693e9))
+
+
+### 🐛 Fixes
+
+* **cpe:** checkbox edit-detection, disable pin-click regression, plain POV frame, quiet version banners ([#1228](https://github.com/red1oon/bim-ootb/issues/1228)) ([db8a693](https://github.com/red1oon/bim-ootb/commit/db8a6936dfa2186836c145ac38902c9006beb2e3))
+* **cpe:** POV frame grips its picture (§CPE_VF_GRIP) + even buildup day tempo (§CPE_BUILDUP_EVEN_TEMPO) ([#1231](https://github.com/red1oon/bim-ootb/issues/1231)) ([4bc5bee](https://github.com/red1oon/bim-ootb/commit/4bc5bee512d08a8e4edd034ab164e18dff5c80ec))
+* **cpe:** POV rect is EXACT at any devicePixelRatio, and the timeline bar is fused to it (§CPE_VF_STACK) ([#1232](https://github.com/red1oon/bim-ootb/issues/1232)) ([b803c00](https://github.com/red1oon/bim-ootb/commit/b803c00140ace92eada8de086fdc7036efdaee6f))
+* **cpe:** scrub with BuildUp ON now drives the construction cursor (§CPE_SCRUB_BUILDUP_SYNC) ([#1226](https://github.com/red1oon/bim-ootb/issues/1226)) ([27f90a2](https://github.com/red1oon/bim-ootb/commit/27f90a25bc5e2633666dcfe7bc1648cfe290236d))
+* **cpe:** the grab zone is the DRAWN handle, not a fixed 18px (§CPE_GRAB_WYSIWYG) ([#1233](https://github.com/red1oon/bim-ootb/issues/1233)) ([c46a602](https://github.com/red1oon/bim-ootb/commit/c46a602f94effd3a10a43a10470993cb7494aa6f))
+* **tour:** add scrub-bar close button + Tab/space panel controls ([#1229](https://github.com/red1oon/bim-ootb/issues/1229)) ([751eab0](https://github.com/red1oon/bim-ootb/commit/751eab02dd41775ae1cd4608a2a218a03f2ab41a))
+
+
+### 📝 Documentation
+
+* **internal:** add PDF Terrain sample reference pair (source image + extraction output) ([#1227](https://github.com/red1oon/bim-ootb/issues/1227)) ([fdec1cc](https://github.com/red1oon/bim-ootb/commit/fdec1cc0ab9828f905ba67284a0b4afdbc60bcd0))
+* **prompts:** formalize the IfcOpenShell/Bonsai credit for the RiverIoT/Federation pattern ([#1225](https://github.com/red1oon/bim-ootb/issues/1225)) ([4e3b320](https://github.com/red1oon/bim-ootb/commit/4e3b3201105fe6cc63b95e2920adb4af5c6fc541))
+* **prompts:** spec a thorough shortcut-audit + WH-gate noise study (Fable dispatch) ([#1230](https://github.com/red1oon/bim-ootb/issues/1230)) ([d04cb5c](https://github.com/red1oon/bim-ootb/commit/d04cb5c11e207cc99ad73f14995af06d83351f02))
+
 ## [1.39.1](https://github.com/red1oon/bim-ootb/compare/v1.39.0...v1.39.1) (2026-08-06)
 
 
