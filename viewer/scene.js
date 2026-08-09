@@ -1283,6 +1283,94 @@ async function setupScene(A) {
     }
   };
 
+  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ported from
+  // import_worker.js's §4D_NOGEO_COMPOSE (same logic, client-side IFC import), run here at
+  // DB-load time so every ALREADY-SHIPPED building gets it too, not just fresh imports. A
+  // geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children).
+  // rel_aggregates is real 1:1 extracted relationship data (DAGCompiler/python/extractIFCtoDB.py
+  // already writes it for any current extraction) — missing only from older-vintage shipped DBs,
+  // backfilled per-building via a tiny relationship-only patch (buildings/patches/*.sql, no
+  // computed values, applied the same self-heal way as _applyPendingPatch above). Runs on the
+  // in-memory sql.js db ONLY — never writes back to the fetched buffer or the served file/OCI.
+  // Guards (ported verbatim from import_worker.js): never touches a guid that already has a real
+  // transform (the ghost set is built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT
+  // is OR IGNORE besides); a ghost with no geometric children found stays a ghost, named in the
+  // §NOGEO_COMPOSE_UNRESOLVED log rather than silently falling through to time_machine.js's
+  // §4D_NOGEO project-end park unlabeled. Fixpoint over passes for multi-level aggregates (a
+  // composed parent can itself feed a higher-level parent on a later pass).
+  A.composeGhostsFromAggregates = function(db) {
+    try {
+      var hasAgg = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='rel_aggregates'");
+      if (!hasAgg.length) return { composed: 0, unresolved: 0 };
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) return { composed: 0, unresolved: 0 };
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+      if (ar.length) ar[0].values.forEach(function(r) {
+        (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+      });
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?)");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} (aggregate-parent elements, transform = union bbox of real rel_aggregates children)`);
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric rel_aggregates children found — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn('[S203] §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
+    }
+  };
+
   // BLOB → Three.js BufferGeometry (optional precomputed normals BLOB)
   A.blobToGeometry = function(vBlob, fBlob, nBlob) {
     try {
