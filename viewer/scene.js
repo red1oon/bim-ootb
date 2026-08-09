@@ -1283,26 +1283,44 @@ async function setupScene(A) {
     }
   };
 
-  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ported from
-  // import_worker.js's §4D_NOGEO_COMPOSE (same logic, client-side IFC import), run here at
-  // DB-load time so every ALREADY-SHIPPED building gets it too, not just fresh imports. A
-  // geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
-  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children).
-  // rel_aggregates is real 1:1 extracted relationship data (DAGCompiler/python/extractIFCtoDB.py
-  // already writes it for any current extraction) — missing only from older-vintage shipped DBs,
-  // backfilled per-building via a tiny relationship-only patch (buildings/patches/*.sql, no
-  // computed values, applied the same self-heal way as _applyPendingPatch above). Runs on the
-  // in-memory sql.js db ONLY — never writes back to the fetched buffer or the served file/OCI.
-  // Guards (ported verbatim from import_worker.js): never touches a guid that already has a real
-  // transform (the ghost set is built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT
-  // is OR IGNORE besides); a ghost with no geometric children found stays a ghost, named in the
-  // §NOGEO_COMPOSE_UNRESOLVED log rather than silently falling through to time_machine.js's
-  // §4D_NOGEO project-end park unlabeled. Fixpoint over passes for multi-level aggregates (a
-  // composed parent can itself feed a higher-level parent on a later pass).
+  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ONE shared function, ONE
+  // trigger (called from streaming.js right after `A.db = new SQL.Database(...)`, both load
+  // paths — this covers an OCI sample load, a fresh drop-your-own-IFC import, and reopening a
+  // previously-imported building from bim_ootb_imports IndexedDB alike, since all three build
+  // `A.db` through this exact same streaming.js code, confirmed by reading it (import:// URLs
+  // route through A.cachedFetch → the same `new SQL.Database()` lines as any OCI URL). There used
+  // to be a SECOND copy of this logic in import_worker.js, running at import time instead of load
+  // time — dropped; redundant once every load (including the first one right after an import)
+  // goes through this one function anyway.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side
+  // DAGCompiler/python/extractIFCtoDB.py, AGGREGATES-only — already written for any current
+  // extraction, missing only from older-vintage shipped DBs, backfilled per-building via a tiny
+  // relationship-only patch, buildings/patches/*.sql, no computed values) or `bom_tree`
+  // (client-side import_worker.js, §S267 — mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered
+  // to AGGREGATES here). Same real relationship fact either way; the compose algorithm itself is
+  // one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file/OCI. Guards: never touches a guid that already has a real transform (the ghost set is
+  // built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost
+  // with no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log
+  // rather than silently falling through to time_machine.js's §4D_NOGEO project-end park
+  // unlabeled. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed
+  // a higher-level parent on a later pass).
+  //
+  // Every row this writes is marked `transform_source='composed_aggregate'` — the project's
+  // existing provenance convention (see extractIFCtoDB.py's 'void_anchor' rows) — so it stays
+  // distinguishable from real extracted geometry later, not just a console log line. Currently
+  // shipped DBs (and the fresh-import schema in import_db_builder.js) predate that column, so the
+  // ALTER runs here, in-memory, guarded for a DB that already has it.
   A.composeGhostsFromAggregates = function(db) {
     try {
-      var hasAgg = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='rel_aggregates'");
-      if (!hasAgg.length) return { composed: 0, unresolved: 0 };
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
 
       var ghostRows = db.exec(
         "SELECT m.guid, m.ifc_class FROM elements_meta m " +
@@ -1316,15 +1334,26 @@ async function setupScene(A) {
       if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
 
       var childrenOf = {};
-      var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
-      if (ar.length) ar[0].values.forEach(function(r) {
-        (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
-      });
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
 
       var stmt = db.prepare(
         "INSERT OR IGNORE INTO element_transforms " +
-        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z) " +
-        "VALUES (?,?,?,?,0,0,0,?,?,?)");
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
       var composed = 0;
       for (var pass = 0; pass < 10; pass++) {
         var progressed = false;
@@ -1358,11 +1387,11 @@ async function setupScene(A) {
       stmt.free();
 
       var unresolvedGuids = Object.keys(ghostClass);
-      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} (aggregate-parent elements, transform = union bbox of real rel_aggregates children)`);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
       if (unresolvedGuids.length) {
         var byClass = {};
         unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
-        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric rel_aggregates children found — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
+        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
       }
       return { composed: composed, unresolved: unresolvedGuids.length };
     } catch (e) {
