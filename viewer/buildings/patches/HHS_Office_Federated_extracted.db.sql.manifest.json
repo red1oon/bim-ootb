@@ -1,0 +1,52 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-08-10T03:30:08.322Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-hhs-oci",
+    "sha": "bbb9e00f9ee600a6ac388d96fb202165933ccccd",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/HHS_Office_Federated_extracted.db",
+    "etag": "b651eb84-21b5-405e-a008-c483d5826b3a",
+    "content-md5": "VLumEYLVqkvdgsahwX42KA==",
+    "size": "75579392",
+    "last-modified": "Mon, 06 Jul 2026 02:42:24 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "viewer/buildings/patches/HHS_Office_Federated_extracted.db.sql",
+    "bytes": 353072,
+    "md5": "fc1948eb858324301196fa9d8d521640",
+    "md5_b64": "/BlI64WDJDARlvqdjVIWQA==",
+    "object": "buildings/patches/HHS_Office_Federated_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "377105c5-aa65-47ef-b9db-0293a4a9ab25",
+    "size": "28838",
+    "last-modified": "Sun, 12 Jul 2026 17:20:03 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'node tests/witness_nogeo_compose.js --db \"$GATE_DB\" && sqlite3 \"$GATE_DB\" \"SELECT (SELECT COUNT(*) FROM spatial_structure)||\\\"/\\\"||(SELECT COUNT(*) FROM storey_walkable_raster)||\\\"/\\\"||(SELECT COUNT(*) FROM rel_aggregates);\" | grep -qx \"109/4/2120\"'",
+    "exit": 0,
+    "tail": [
+      "§WASM bundled=viewer/lib/sql-wasm.wasm md5=618e54b08615e92780b0a3a418da43d4 (the shipped build, not npm sql.js)",
+      "[S203] §NOGEO_COMPOSE composed=41 ms=74 (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)",
+      "§NOGEO_WITNESS PASS served.db ghosts 41→0 composed=41 unresolved=0 served_file_untouched=true transform_source=[[\"<real>\",6839],[\"composed_aggregate\",41]]",
+      "§NOGEO_WITNESS_TOTAL pass=1 fail=0"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-10T03:30:12.462Z",
+    "etag": "74d72fce-59e2-452f-80ed-655b307850da",
+    "verified": true
+  }
+}
