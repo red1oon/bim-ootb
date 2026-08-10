@@ -175,6 +175,33 @@
       return dead;
     },
 
+    // §SCRIPT_DUP (F2, 4D_SCHEDULE_PERFECTION.md 2026-08-10): the same script loaded twice under
+    // different paths lets LOAD ORDER silently pick the winner — the live log printed BOTH
+    // "§KERNEL_OPS_LOADED v13" and "v8" banners and nothing flagged it; the stale v8 clobbered v13
+    // and silently broke blue_fold/whatif (v13-only APIs). Log-only audit, zero behavior change:
+    // any <script> basename (query stripped) appearing more than once is warned. If a legitimate
+    // same-basename-different-file pair ever appears, list it in DUP_OK with the reason.
+    checkScriptDups: function () {
+      var DUP_OK = [];   // basenames allowed to repeat, each entry needs a reason comment
+      var seen = {}, dups = [];
+      var scripts = document.scripts || [];
+      for (var i = 0; i < scripts.length; i++) {
+        var src = scripts[i].getAttribute('src');
+        if (!src) continue;                                  // inline blocks can't collide by path
+        var base = src.split('?')[0].split('/').pop();
+        (seen[base] = seen[base] || []).push(src);
+      }
+      Object.keys(seen).forEach(function (base) {
+        if (seen[base].length > 1 && DUP_OK.indexOf(base) < 0) {
+          dups.push(base);
+          console.warn('§SCRIPT_DUP basename=' + base + ' srcs=[' + seen[base].join(', ') + ']');
+        }
+      });
+      console.log('§SCRIPT_DUP_AUDIT total=' + scripts.length + ' dup=' + dups.length +
+        (dups.length ? ' dupBasenames=' + dups.join(',') : ''));
+      return dups;
+    },
+
     // Test/debug surface
     _icons: _icons
   };
@@ -188,6 +215,7 @@
   (function pollAudit(tries) {
     if (window._shortcuts && Object.keys(window._shortcuts).length) {
       try { InputReg.checkShortcuts(); } catch (e) { console.warn('§SHORTCUT_AUDIT error=' + e.message); }
+      try { InputReg.checkScriptDups(); } catch (e) { console.warn('§SCRIPT_DUP_AUDIT error=' + e.message); }
       return;
     }
     if (tries <= 0) { console.warn('§SHORTCUT_AUDIT error=_shortcuts never appeared (scene init incomplete)'); return; }
