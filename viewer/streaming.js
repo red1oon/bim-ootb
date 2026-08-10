@@ -1985,6 +1985,7 @@ function setupStreaming(A) {
       // pre-STAIRWELL-STACK 43 rooms) is patched here or nowhere. Raw bytes stay in IDB.
       if (A._applyPendingPatch) metaBuf = await A._applyPendingPatch(metaBuf, metaUrl);
       A.db = new SQL.Database(new Uint8Array(metaBuf));
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
       A.libDb = A.db;
       A._splitHasMeta = true;
       console.log(`[S192] §DB_META_LOADED size=${(metaBuf.byteLength/1024/1024).toFixed(1)}MB`);
@@ -2131,6 +2132,7 @@ function setupStreaming(A) {
       var dbBuf = await A.cachedFetch(A.DB_URL);
       if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
       A.db = new SQL.Database(new Uint8Array(dbBuf));
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
       // §S283: Remember last building URL for PWA resume
       try { localStorage.setItem('pwa_last_db', A.DB_URL); } catch(e) {}

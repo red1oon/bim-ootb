@@ -1272,14 +1272,165 @@ async function setupScene(A) {
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
       var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      pdb.run(sql);
+      // §PATCH_CHUNK (2026-08-10): a single pdb.run() over one giant multi-thousand-statement
+      // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
+      // confirmed live, reproduced in a real headless browser AND in isolation against the exact
+      // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
+      // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
+      // does not catch this class of bug; only testing against the real bundled binary does. Run
+      // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
+      // patch file are one complete statement, but at least two existing patches
+      // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
+      // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
+      // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
+      // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
+      // batch ~500 statements per pdb.run() — multi-line statements always stay whole.
+      var rawLines = sql.split('\n');
+      var statements = [];
+      var stBuf = [];
+      for (var li = 0; li < rawLines.length; li++) {
+        var ln = rawLines[li];
+        if (!ln.trim().length) continue;
+        stBuf.push(ln);
+        if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+      }
+      if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+      var CHUNK = 500;
+      for (var i = 0; i < statements.length; i += CHUNK) {
+        pdb.run(statements.slice(i, i + CHUNK).join('\n'));
+      }
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes) from ${patchUrl}`);
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${statements.length} statements, ${Math.ceil(statements.length / CHUNK)} chunk(s)) from ${patchUrl}`);
       return out;
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
       return buf;
+    }
+  };
+
+  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ONE shared function, ONE
+  // trigger (called from streaming.js right after `A.db = new SQL.Database(...)`, both load
+  // paths — this covers an OCI sample load, a fresh drop-your-own-IFC import, and reopening a
+  // previously-imported building from bim_ootb_imports IndexedDB alike, since all three build
+  // `A.db` through this exact same streaming.js code, confirmed by reading it (import:// URLs
+  // route through A.cachedFetch → the same `new SQL.Database()` lines as any OCI URL). There used
+  // to be a SECOND copy of this logic in import_worker.js, running at import time instead of load
+  // time — dropped; redundant once every load (including the first one right after an import)
+  // goes through this one function anyway.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side
+  // DAGCompiler/python/extractIFCtoDB.py, AGGREGATES-only — already written for any current
+  // extraction, missing only from older-vintage shipped DBs, backfilled per-building via a tiny
+  // relationship-only patch, buildings/patches/*.sql, no computed values) or `bom_tree`
+  // (client-side import_worker.js, §S267 — mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered
+  // to AGGREGATES here). Same real relationship fact either way; the compose algorithm itself is
+  // one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file/OCI. Guards: never touches a guid that already has a real transform (the ghost set is
+  // built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost
+  // with no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log
+  // rather than silently falling through to time_machine.js's §4D_NOGEO project-end park
+  // unlabeled. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed
+  // a higher-level parent on a later pass).
+  //
+  // Every row this writes is marked `transform_source='composed_aggregate'` — the project's
+  // existing provenance convention (see extractIFCtoDB.py's 'void_anchor' rows) — so it stays
+  // distinguishable from real extracted geometry later, not just a console log line. Currently
+  // shipped DBs (and the fresh-import schema in import_db_builder.js) predate that column, so the
+  // ALTER runs here, in-memory, guarded for a DB that already has it.
+  A.composeGhostsFromAggregates = function(db) {
+    var _t0 = Date.now();
+    try {
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) {
+        // Paid this LEFT JOIN scan on every load, even for a building with zero ghosts (measured
+        // ~30-60ms on Hospital/Terminal's 48k-63k row elements_meta — negligible against the
+        // multi-second DB fetch/parse it runs alongside, but logged so that claim is a number,
+        // not an assumption, and stays checkable if this table ever grows an order of magnitude).
+        console.log(`[S203] §NOGEO_COMPOSE_SKIP no ghosts, ms=${Date.now() - _t0}`);
+        return { composed: 0, unresolved: 0 };
+      }
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} ms=${Date.now() - _t0} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn('[S203] §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
     }
   };
 
