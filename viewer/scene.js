@@ -1272,10 +1272,24 @@ async function setupScene(A) {
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
       var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      pdb.run(sql);
+      // §PATCH_CHUNK (2026-08-10): a single pdb.run() over one giant multi-thousand-statement
+      // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
+      // confirmed live, reproduced in a real headless browser AND in isolation against the exact
+      // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
+      // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
+      // does not catch this class of bug; only testing against the real bundled binary does. Run
+      // in bounded line-batches instead — every line in every patch file (this one and every prior
+      // one) is one complete statement by convention, so newline-splitting never cuts a statement
+      // in half. 500/batch proven safe against the real failing patch; small existing patches (a
+      // handful of lines) still run in one batch, unchanged behavior.
+      var lines = sql.split('\n').filter(function (l) { return l.trim().length > 0; });
+      var CHUNK = 500;
+      for (var i = 0; i < lines.length; i += CHUNK) {
+        pdb.run(lines.slice(i, i + CHUNK).join('\n'));
+      }
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes) from ${patchUrl}`);
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${lines.length} statements, ${Math.ceil(lines.length / CHUNK)} chunk(s)) from ${patchUrl}`);
       return out;
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
