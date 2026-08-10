@@ -8,8 +8,15 @@
 //     time_machine.js's real element build (sliced, never reimplemented — repo convention,
 //     witness_gantt_lock_integrity.js) fed through the canonical, UNCHANGED
 //     ScheduleGate.computeSchedule()/auditFloating() from viewer/schedule_gate.js, against the real
-//     Terminal_extracted.db. The bug itself lives in schedule_gate.js's DAG and stays OPEN — this
-//     witness reproduces it, it does not fix it, and it must NOT assert cycles/floating drop to 0.
+//     Terminal_extracted.db. FIXED 2026-08-10 (same day, follow-up PR): SCC analysis on the real
+//     DAG refuted the predicted hang-based 3-cycle and named the real class — tall multi-storey
+//     walls closed into cycles by (a) `contained` support sitting at their CROWN (a 3cm topping
+//     slab at a 22m wall's top counted as the wall's support) and (b) `wallBearsPromoted` firing
+//     for slabs EMBEDDED metres below the wall's top. Fix: contained support must live in the
+//     consumer's LOWER HALF; a wall carries a promoted slab only AT ITS TOP (wallCarries, ±GAP).
+//     Terminal: cycles 37,927→0, §DEQ_REPAIR shifts 251→0, floating 45→8 (37 were cycle-fallback
+//     ordering artifacts; the 8 remain a separate, named, open tail). This witness now ASSERTS
+//     cycles=0 and floating=8 so any regression screams.
 //
 //   ISSUE 2 (refactor invariance): the roof/load-path promotion classifier existed as two copies in
 //     time_machine.js (_buildXrayElements inline + injectGantt inline). Direct verification proved
@@ -114,6 +121,11 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const cycles = m ? parseInt(m[1], 10) : -1;
   assert(cycles >= 0, 'W-TMREPRO-2 §SUPPORT_CYCLE reported by canonical computeSchedule (cycles=' + cycles + ')');
   assert(typeof floating === 'number' && floating >= 0, 'W-TMREPRO-3 auditFloating returns a count (floating=' + floating + ')');
+  // §TM_GEO_ORDER_CYCLES fix bar (2026-08-10): the DAG is acyclic on Terminal under load-path
+  // promotion. floating=8 is the EXACT remaining tail (was 45; 37 were cycle-fallback artifacts) —
+  // if it moves EITHER way, that is a real behavior change to examine, not to absorb silently.
+  assert(cycles === 0, 'W-TMREPRO-4 Terminal support DAG is acyclic under load-path promotion (cycles=' + cycles + ', fix: lower-half contained + wallCarries)');
+  assert(floating === 8, 'W-TMREPRO-5 floating tail exactly 8 (measured after cycle fix; was 45) — got ' + floating);
 
   // THE line. Must be numerically identical pre vs post the _promoteRoofLoadPath refactor
   // (diffed across the two commits' logs — see header ISSUE 2). Numbers only; slice state is on
