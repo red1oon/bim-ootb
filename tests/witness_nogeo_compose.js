@@ -58,10 +58,11 @@ function sliceFn(src, header, close) {
   if (end < 0) throw new Error('no close for ' + header);
   return src.slice(start, end + ('\n' + close).length);
 }
-let fnPatch, fnCompose, evalTail, wasmDir;
+let fnChunk = '', fnPatch, fnCompose, evalTail, wasmDir;
 if (MODELLER) {
   // Modeller's copies are plain function declarations inside an IIFE (close on a line that is
   // exactly "  }"), referencing TAG + _modellerBase() — both provided in the eval scope below.
+  // (The Modeller's _applyPendingPatch carries its chunker inline — no separate slice needed.)
   const src = fs.readFileSync(path.join(ROOT, 'modeller', 'str_walker_outliner.js'), 'utf8');
   fnPatch = sliceFn(src, '  function _applyPendingPatch(buf, dbFile) {', '  }');
   fnCompose = sliceFn(src, '  function composeGhostsFromAggregates(db) {', '  }');
@@ -72,6 +73,7 @@ if (MODELLER) {
 } else {
   // viewer functions close on a line that is exactly "  };"
   const src = fs.readFileSync(path.join(ROOT, 'viewer', 'scene.js'), 'utf8');
+  fnChunk = sliceFn(src, '  A._runSqlChunked = function(db, sql) {', '  };');   // §PATCH_CHUNK extracted 2026-08-10 (shared with the needle path)
   fnPatch = sliceFn(src, '  A._applyPendingPatch = async function(buf, url) {', '  };');
   fnCompose = sliceFn(src, '  A.composeGhostsFromAggregates = function(db) {', '  };');
   evalTail = '';
@@ -94,7 +96,7 @@ async function main() {
     return { ok: true, status: 200, text: async () => fs.readFileSync(f, 'utf8') };
   };
   // eslint-disable-next-line no-eval
-  eval(fnPatch + '\n' + fnCompose + evalTail);
+  eval((fnChunk ? fnChunk + '\n' : '') + fnPatch + '\n' + fnCompose + evalTail);
 
   const argOf = (n) => { const i = process.argv.indexOf('--' + n); return i < 0 ? null : process.argv[i + 1]; };
   const explicitDb = argOf('db');
