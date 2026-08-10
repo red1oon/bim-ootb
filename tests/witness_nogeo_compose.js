@@ -42,6 +42,7 @@ function sliceFn(src, header) {
   return src.slice(start, end + '\n  };'.length);
 }
 const sceneSrc = fs.readFileSync(path.join(ROOT, 'viewer', 'scene.js'), 'utf8');
+const fnChunk = sliceFn(sceneSrc, '  A._runSqlChunked = function(db, sql) {');   // §PATCH_CHUNK extracted 2026-08-10 (shared with the needle path)
 const fnPatch = sliceFn(sceneSrc, '  A._applyPendingPatch = async function(buf, url) {');
 const fnCompose = sliceFn(sceneSrc, '  A.composeGhostsFromAggregates = function(db) {');
 
@@ -61,7 +62,7 @@ async function main() {
     return { ok: true, status: 200, text: async () => fs.readFileSync(f, 'utf8') };
   };
   // eslint-disable-next-line no-eval
-  eval(fnPatch + '\n' + fnCompose);
+  eval(fnChunk + '\n' + fnPatch + '\n' + fnCompose);
 
   const argOf = (n) => { const i = process.argv.indexOf('--' + n); return i < 0 ? null : process.argv[i + 1]; };
   const explicitDb = argOf('db');

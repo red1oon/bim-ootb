@@ -138,17 +138,29 @@
           status = 'dead'; target = 'not-fn'; dead.push(k);
         } else {
           var body = Function.prototype.toString.call(fn);
-          var names = [], re = /(?:\b(?:window|A|APP)\.)?([a-zA-Z_$][\w$]*)\s*\(/g, mm;
+          // §SHORTCUT-AUDIT-QUALIFIED: capture the owner of a dotted call too — the old regex
+          // reduced `WholeHistory.toggleOpen(` to bare `toggleOpen`, looked it up on
+          // window/APP/A only, and misreported a perfectly-working shortcut as dead
+          // (z/w/+/-/r false positives, seen live 2026-08-10).
+          var names = [], re = /(?:\b([a-zA-Z_$][\w$]*)\.)?([a-zA-Z_$][\w$]*)\s*\(/g, mm;
           while ((mm = re.exec(body)) !== null) {
-            var n = mm[1];
-            if (KEYWORDS.indexOf(n) < 0 && OBJS.indexOf(n) < 0 && DOM_BUILTINS.indexOf(n) < 0) names.push(n);
+            var owner = mm[1], n = mm[2];
+            if (owner && OBJS.indexOf(owner) >= 0) owner = null;   // window./A./APP. prefix = same as bare
+            if (KEYWORDS.indexOf(n) < 0 && OBJS.indexOf(n) < 0 && DOM_BUILTINS.indexOf(n) < 0)
+              names.push(owner ? owner + '.' + n : n);
           }
           if (!names.length) { status = 'inline'; inlineN++; }
           else {
-            var hit = names.filter(function (n) {
-              return typeof window[n] === 'function'
-                || (window.APP && typeof window.APP[n] === 'function')
-                || (window.A && typeof window.A[n] === 'function');
+            var hit = names.filter(function (q) {
+              var dot = q.indexOf('.');
+              if (dot > 0) {   // qualified Obj.fn — resolve the owner object globally, then the method
+                var o = q.slice(0, dot), f = q.slice(dot + 1);
+                var obj = window[o] || (window.APP && window.APP[o]) || (window.A && window.A[o]);
+                return !!(obj && typeof obj[f] === 'function');
+              }
+              return typeof window[q] === 'function'
+                || (window.APP && typeof window.APP[q] === 'function')
+                || (window.A && typeof window.A[q] === 'function');
             });
             if (hit.length) { status = 'ok'; target = hit[0]; okN++; }
             else { status = 'dead'; target = names.join(','); dead.push(k); }

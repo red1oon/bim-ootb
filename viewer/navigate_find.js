@@ -1022,9 +1022,13 @@
           var r = await fetch(patchUrl);
           if (r.ok) {
             var sqlText = await r.text();
-            A.db.run(sqlText);
+            // §PATCH_CHUNK: NEVER one giant A.db.run() here — a multi-thousand-statement patch
+            // (Hospital: 9,466 statements) crashes the bundled sql-wasm.wasm "memory access out
+            // of bounds" and bricks the SHARED wasm heap: every later dbQuery, the geo.db load
+            // and streaming init all fail. Same chunker as A._applyPendingPatch (scene.js).
+            var _ch = A._runSqlChunked(A.db, sqlText);
             applied = true;
-            console.log('[NEEDLE] §PATCH_APPLY ' + dbFile + ' applied (' + sqlText.length + ' bytes) from ' + patchUrl + ' [needle]');
+            console.log('[NEEDLE] §PATCH_APPLY ' + dbFile + ' applied (' + sqlText.length + ' bytes, ' + _ch.statements + ' statements, ' + _ch.chunks + ' chunk(s)) from ' + patchUrl + ' [needle]');
           } else {
             console.log('[NEEDLE] §PATCH_NONE ' + dbFile + ' (' + r.status + ') [needle]');
           }

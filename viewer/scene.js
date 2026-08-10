@@ -1261,6 +1261,41 @@ async function setupScene(A) {
   // patch script MUST be idempotent (DELETE-then-INSERT or INSERT OR IGNORE) so a repeat apply on
   // an already-current db is a safe no-op. Best-effort: a missing patch (404, the common case) or
   // any exec failure is swallowed and the ORIGINAL buffer returned untouched — never blocks an open.
+  // §PATCH_CHUNK (2026-08-10): a single db.run() over one giant multi-thousand-statement
+  // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
+  // confirmed live, reproduced in a real headless browser AND in isolation against the exact
+  // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
+  // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
+  // does not catch this class of bug; only testing against the real bundled binary does. Run
+  // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
+  // patch file are one complete statement, but at least two existing patches
+  // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
+  // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
+  // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
+  // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
+  // batch ~500 statements per db.run() — multi-line statements always stay whole.
+  // Shared by _applyPendingPatch (pre-load buffer patch) AND navigate_find.js's needle path
+  // (same patch applied to the LIVE A.db) — the needle path shipped un-chunked and bricked the
+  // whole sql.js heap on Hospital's 9,466-statement patch (every later query, the geo.db load
+  // and streaming init all died "memory access out of bounds"). One chunker, both callers.
+  A._runSqlChunked = function(db, sql) {
+    var rawLines = sql.split('\n');
+    var statements = [];
+    var stBuf = [];
+    for (var li = 0; li < rawLines.length; li++) {
+      var ln = rawLines[li];
+      if (!ln.trim().length) continue;
+      stBuf.push(ln);
+      if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+    }
+    if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+    var CHUNK = 500;
+    for (var i = 0; i < statements.length; i += CHUNK) {
+      db.run(statements.slice(i, i + CHUNK).join('\n'));
+    }
+    return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
+  };
+
   A._applyPendingPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
@@ -1272,36 +1307,10 @@ async function setupScene(A) {
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
       var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      // §PATCH_CHUNK (2026-08-10): a single pdb.run() over one giant multi-thousand-statement
-      // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
-      // confirmed live, reproduced in a real headless browser AND in isolation against the exact
-      // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
-      // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
-      // does not catch this class of bug; only testing against the real bundled binary does. Run
-      // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
-      // patch file are one complete statement, but at least two existing patches
-      // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
-      // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
-      // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
-      // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
-      // batch ~500 statements per pdb.run() — multi-line statements always stay whole.
-      var rawLines = sql.split('\n');
-      var statements = [];
-      var stBuf = [];
-      for (var li = 0; li < rawLines.length; li++) {
-        var ln = rawLines[li];
-        if (!ln.trim().length) continue;
-        stBuf.push(ln);
-        if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
-      }
-      if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
-      var CHUNK = 500;
-      for (var i = 0; i < statements.length; i += CHUNK) {
-        pdb.run(statements.slice(i, i + CHUNK).join('\n'));
-      }
+      var _ch = A._runSqlChunked(pdb, sql);   // §PATCH_CHUNK — see comment above _runSqlChunked
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${statements.length} statements, ${Math.ceil(statements.length / CHUNK)} chunk(s)) from ${patchUrl}`);
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${_ch.statements} statements, ${_ch.chunks} chunk(s)) from ${patchUrl}`);
       return out;
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
@@ -2650,6 +2659,8 @@ async function setupScene(A) {
   window._focusPanel = _focusPanel;
   window._blurPanel = _blurPanel;
   window._cyclePanel = _cyclePanel;
+  window._zoomStep = _zoomStep;   // §S281: audit-visible (was a +/- false "dead" — fn is closure-local)
+  window._cycleRoom = _cycleRoom; // §S281: audit-visible (was an r false "dead" — fn is closure-local)
   window._shortcuts = _shortcuts; // §S281: exposed so InputReg.checkShortcuts() can self-audit
   window._panels = _panels;
   window._focusStack = _focusStack; // §S280: exposed for [] double-tap
