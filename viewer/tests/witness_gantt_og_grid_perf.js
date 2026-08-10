@@ -1,16 +1,22 @@
 #!/usr/bin/env node
-// witness_gantt_og_grid_perf.js — §OG_GRID_Z_BAND (2026-08-05). Proves two things about
-// §PHASE_OVERLAP_SUPPORT_GUARD's cell-bucket pass (time_machine.js, "var _ogCELL" block):
+// witness_gantt_og_grid_perf.js — §OG_GRID_Z_BAND (2026-08-05) + §GANTT_REFOLD_HANG (2026-08-10).
+// Proves two things about the §PHASE_OVERLAP_SUPPORT_GUARD pass (time_machine.js _ogSupportGuard):
 //   1. CORRECTNESS: the Z-banded grid produces the EXACT same push decisions as a brute-force
 //      O(n^2) reference with no grid at all — the Z-banding only prunes which cells get SCANNED,
-//      the inner predicate is byte-identical, so this proves the pruning drops nothing real.
+//      the inner predicate is identical, so this proves the pruning drops nothing real.
 //   2. PERFORMANCE: a ceiling on Terminal (the worst real fixture — small footprint, 22 stacked
 //      storeys) so a future change can't silently reintroduce the multi-second block this fixed.
-//      Measured pre-fix: 4636ms. Post-fix: ~2840ms. Ceiling set well above measured noise, tight
-//      enough to catch a real regression back toward the old XY-only behavior.
-// Sliced by raw text span (flat sequential statements, not a named function — brace-balance
-// checked before running), same "never reimplement the block under test" convention this repo
-// already uses for matchRule/commitGanttDrag/undoLastGanttEdit.
+//      Measured pre-fix: 4636ms. Post-fix: ~2840ms.
+//
+// 2026-08-10 rewrite (§GANTT_REFOLD_HANG): the old version sliced the block by RAW TEXT MARKS and
+// its end-mark had rotted silently — §4D_LAYER_TRUTH (2026-08-07) reworded the log line it
+// anchored on, so this witness threw "end mark not found" on every run since, and nothing noticed
+// (CI does not run it). The pass now lives in a NAMED function (_ogSupportGuard, async,
+// chunk-yielding) — sliced by name + brace balance, stable against comment/log rewording. The
+// brute-force reference is ALSO brought up to the block's CURRENT semantics, which the old
+// reference predated: fixpoint sweeps (≤16), unbounded-above bearing (S.tz >= T.bz - GAP), and
+// the hang branch (no bearing → carrier above). Reference stays deliberately independent code
+// (not sliced) so a bug shared by both implementations cannot hide here.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -23,16 +29,18 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
-const startMark = 'var _ogCELL = ';
-const endMark = "if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +\n        ' elements later than their §PHASE_OVERLAP_BAND window to stay after their real structural support');";
-const si = tmSrc.indexOf(startMark);
-if (si < 0) throw new Error('start mark not found — has the block been renamed/moved?');
-const ei = tmSrc.indexOf(endMark, si);
-if (ei < 0) throw new Error('end mark not found — has the block been renamed/moved?');
-const block = tmSrc.slice(si, ei + endMark.length);
-let depth = 0;
-for (const ch of block) { if (ch === '{') depth++; else if (ch === '}') depth--; }
-assert(depth === 0, 'sliced block is brace-balanced (a self-contained statement sequence, not a truncated fragment)');
+function sliceFn(src, header) {
+  const idx = src.indexOf(header);
+  if (idx < 0) throw new Error(header + ' not found — renamed/moved?');
+  let depth = 0, i = idx, seenOpen = false;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') { depth++; seenOpen = true; }
+    else if (src[i] === '}') { depth--; if (seenOpen && depth === 0) return src.slice(idx, i + 1); }
+  }
+  throw new Error('unbalanced braces for ' + header);
+}
+const guardSrc = sliceFn(tmSrc, 'async function _ogSupportGuard(');
+assert(guardSrc.length > 1000, 'sliced _ogSupportGuard by NAME (brace-balanced, ' + guardSrc.length + ' chars — no more rotting text end-marks)');
 
 function loadRules() {
   var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
@@ -53,36 +61,54 @@ function realScheduledFrom(rows, matchRule, rules) {
   });
 }
 
-// Brute-force O(n^2) reference — the SAME predicate AND the same in-place-mutate-as-you-go
-// semantics as the shipped block (a carrier's own bz is always below what it carries, so
-// processing in ascending bz order means a candidate's .e may already reflect ITS OWN push
-// applied earlier in this same pass — that cascading is load-bearing, not incidental, so an
-// honest reference has to replicate it). The only real difference from the shipped code is HOW
-// candidates are found: no grid at all, scan every other element every time. Deliberately
-// independent code (not sliced) so a bug shared by both implementations would not hide here.
-function bruteForcePush(elements) {
+// Brute-force O(n^2) reference at the block's CURRENT semantics — fixpoint sweeps with the same
+// in-place-mutate-as-you-go cascade (a candidate's .e may already reflect its own push from this
+// sweep — that cascading is load-bearing), unbounded-above bearing, wall branch only for promoted
+// slabs, hang branch (no bearing → structure carrier above T.tz). Independent code, not sliced.
+function bruteForcePush(work) {
   const EPS = 0.05, GAP = 0.5;
   const xy = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
-  const work = elements.map(function (e) { return { guid: e.guid, s: e.s, e: e.e, cls: e.cls, seq: e.seq, bz: e.bz, tz: e.tz, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 }; });
   work.sort(function (a, b) { return a.bz - b.bz; });
   const pushed = {};
-  work.forEach(function (T) {
-    const promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
-    let lastEnd = 0;
-    for (let i = 0; i < work.length; i++) {
-      const S = work[i]; if (S.guid === T.guid) continue;
-      if (S.seq <= 4 && S.bz < T.bz - EPS && Math.abs(S.tz - T.bz) <= GAP && xy(S, T) && S.e > lastEnd) lastEnd = S.e;
-      if (promotedSlab && S.cls.indexOf('IfcWall') === 0 && S.bz < T.bz - EPS && Math.abs(S.tz - T.bz) <= GAP && xy(S, T) && S.e > lastEnd) lastEnd = S.e;
-    }
-    if (lastEnd && T.s < lastEnd) {
-      const dur = Math.max(60000, T.e - T.s);
-      T.s = lastEnd + 1; T.e = T.s + dur;
-      pushed[T.guid] = true;
-    } else {
-      pushed[T.guid] = false;
-    }
-  });
+  work.forEach(function (e) { pushed[e.guid] = false; });
+  for (let sweep = 0; sweep < 16; sweep++) {
+    let moved = 0;
+    work.forEach(function (T) {
+      const promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+      let lastEnd = 0, hasBearing = false;
+      for (let i = 0; i < work.length; i++) {
+        const S = work[i]; if (S.guid === T.guid) continue;
+        const isStruct = S.seq <= 4;
+        const isWall = S.cls.indexOf('IfcWall') === 0;
+        if ((isStruct || (promotedSlab && isWall)) &&
+            S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xy(S, T)) {
+          hasBearing = true; if (S.e > lastEnd) lastEnd = S.e;
+        }
+      }
+      if (!hasBearing && T.seq > 4) {
+        for (let i = 0; i < work.length; i++) {
+          const H = work[i]; if (H.guid === T.guid || H.seq > 4) continue;
+          if (H.bz >= T.tz - GAP && H.bz <= T.tz + GAP && H.tz > T.tz + EPS &&
+              xy(H, T) && H.e > lastEnd) lastEnd = H.e;
+        }
+      }
+      if (lastEnd && T.s < lastEnd) {
+        const dur = Math.max(60000, T.e - T.s);
+        T.s = lastEnd + 1; T.e = T.s + dur;
+        pushed[T.guid] = true; moved++;
+      }
+    });
+    if (!moved) break;
+  }
   return pushed;
+}
+
+function makeSandbox(scheduled) {
+  const sandbox = { _allScheduled: scheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math,
+    _TM_CHUNK: 2500, _tmYield: function () { return Promise.resolve(); } };
+  vm.createContext(sandbox);
+  vm.runInContext(guardSrc + '\nthis.__guard = _ogSupportGuard;', sandbox);
+  return sandbox;
 }
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
@@ -91,53 +117,46 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const SQL = await initSqlJs({ locateFile: f => path.join(SQLJS_DIST, f) });
   const rules = loadRules();
   const matchRule = ScheduleAuthor.matchRule;
+  const Q = "SELECT m.guid, m.ifc_class, COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
+    "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) FROM elements_meta m " +
+    "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'";
 
-  // ── CORRECTNESS — small fixture, O(n^2) reference is cheap enough to be honest ──
+  // ── CORRECTNESS — small fixture, O(n^2) fixpoint reference is cheap enough to be honest ──
   const smallPath = path.join(BLD_DIR, 'Duplex_extracted.db');
   if (fs.existsSync(smallPath)) {
     const db = new SQL.Database(fs.readFileSync(smallPath));
-    const r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
-      "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) FROM elements_meta m " +
-      "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+    const rows = db.exec(Q)[0].values;
     db.close();
-    const _allScheduled = realScheduledFrom(r[0].values, matchRule, rules);
-    const refPushed = bruteForcePush(_allScheduled);
+    const refPushed = bruteForcePush(realScheduledFrom(rows, matchRule, rules));
+    const scheduled = realScheduledFrom(rows, matchRule, rules);
     const origS = {};
-    _allScheduled.forEach(function (e) { origS[e.guid] = e.s; });   // capture BEFORE the block mutates in place (objects are shared by reference, not deep-cloned by .slice())
-
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
-    vm.createContext(sandbox);
-    vm.runInContext(block, sandbox);
-    const realPushedIds = {};
-    sandbox._allScheduled.forEach(function (T) { if (T.s !== origS[T.guid]) realPushedIds[T.guid] = T.s; });
-    // Compare by "was this guid identified as needing a push at all" — refPushed has a nonzero
-    // lastEnd whenever the brute force found a real carrier constraint above baseMs.
-    let mismatches = 0;
+    scheduled.forEach(function (e) { origS[e.guid] = e.s; });
+    const sb = makeSandbox(scheduled);
+    await sb.__guard(sb._allScheduled, null);   // null yieldFn = fully synchronous
+    let mismatches = 0, total = 0;
     for (const guid in refPushed) {
-      const realSaysPush = !!realPushedIds[guid];
+      total++;
+      const realSaysPush = sb._allScheduled.find(function (e) { return e.guid === guid; }).s !== origS[guid];
       if (refPushed[guid] !== realSaysPush) mismatches++;
     }
-    assert(mismatches === 0, 'Duplex: grid-based push decisions match the O(n^2) brute-force reference exactly — mismatches=' + mismatches + '/' + Object.keys(refPushed).length);
+    assert(mismatches === 0, 'Duplex: grid-based push decisions match the O(n^2) fixpoint brute-force reference exactly — mismatches=' + mismatches + '/' + total);
   } else {
     console.log('§SKIP correctness check — Duplex fixture missing');
   }
 
-  // ── PERFORMANCE — Terminal, the real reported-hang fixture ──
+  // ── PERFORMANCE — Terminal, the worst real fixture for this pass ──
   const bigPath = path.join(BLD_DIR, 'Terminal_extracted.db');
   if (fs.existsSync(bigPath)) {
     const db = new SQL.Database(fs.readFileSync(bigPath));
-    const r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
-      "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) FROM elements_meta m " +
-      "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+    const rows = db.exec(Q)[0].values;
     db.close();
-    const _allScheduled = realScheduledFrom(r[0].values, matchRule, rules);
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
-    vm.createContext(sandbox);
+    const scheduled = realScheduledFrom(rows, matchRule, rules);
+    const sb = makeSandbox(scheduled);
     const t0 = process.hrtime.bigint();
-    vm.runInContext(block, sandbox);
+    const pushedN = await sb.__guard(sb._allScheduled, null);
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-    console.log('§OG_GRID_PERF Terminal n=' + _allScheduled.length + ' ms=' + ms.toFixed(1) + ' pushed=' + sandbox._ogPushed);
-    assert(ms < 3500, 'Terminal (the real reported-hang fixture, 48,428 elements) completes under 3500ms — measured=' + ms.toFixed(1) + 'ms (pre-fix was 4636ms)');
+    console.log('§OG_GRID_PERF Terminal n=' + scheduled.length + ' ms=' + ms.toFixed(1) + ' pushed=' + pushedN);
+    assert(ms < 3500, 'Terminal (48,428 elements) completes under 3500ms — measured=' + ms.toFixed(1) + 'ms (pre-§OG_GRID_Z_BAND was 4636ms)');
   } else {
     console.log('§SKIP performance check — Terminal fixture missing');
   }
