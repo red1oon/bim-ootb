@@ -150,6 +150,13 @@
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
       window.__dwBuf = buf; window.__dwName = name;
+      // §NOGEO_COMPOSE (Modeller trigger — see the function's own doc above): compose geometry-less
+      // aggregate-parents from their real IfcRelAggregates children NOW, so swbInit, the BOM-graph
+      // tree AND the cross-edge derivation below all see a real transform for them. Ordered BEFORE
+      // the §ANCHOR blind on purpose: a void_anchor transform still counts as a real transform here,
+      // so an anchored element is never mistaken for a ghost. This transient handle only — __dwBuf
+      // keeps the RAW bytes (same contract as the §ANCHOR blind below).
+      composeGhostsFromAggregates(db);
       // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR — the user's binding condition: anchors excluded from EVERY
       // count/pick/audit): hide void-anchor transform rows from THIS transient handle — it feeds the STR
       // walker init, the BOM-graph tree AND the §XEDGE-ALL cross-edge derivation, and every one of those
@@ -652,39 +659,172 @@
       return r.text().then(function (sql) {
         if (!window.SQL) { console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — sql.js not ready'); return buf; }
         var pdb = new window.SQL.Database(new Uint8Array(buf));
-        try {
-          pdb.run(sql);
-        } catch (e) {
-          // §ANCHOR / idempotency hardening (W-E2E-VOID-ANCHOR): a patch may carry
-          // `ALTER TABLE … ADD COLUMN` (SQLite has no IF-NOT-EXISTS form) — normally it runs against the
-          // RAW shipped bytes (which lack the column) and succeeds, but a FUTURE re-shipped db that bakes
-          // the column in would make the whole-run throw here and silently drop EVERY other statement of
-          // the patch (rel_fills_host included). Recover statement-by-statement, tolerating ONLY the
-          // duplicate-column error (patch files are one-statement-per-line by convention — both the
-          // rel_fills_host and void-anchor generators emit exactly that shape). Any OTHER error keeps the
-          // established best-effort contract: log loud, use the db as patched so far.
-          if (!/duplicate column name/i.test(String(e && e.message))) throw e;
-          var tolerated = 0, applied = 0;
-          sql.split('\n').forEach(function (line) {
-            var s = line.trim();
-            if (!s || s.indexOf('--') === 0) return;
-            try { pdb.run(s); applied++; }
-            catch (e2) {
-              if (/duplicate column name/i.test(String(e2 && e2.message))) { tolerated++; }
-              else { console.warn(TAG + ' §PATCH_STMT_FAIL ' + dbFile + ' — ' + (e2 && e2.message) + ' stmt=' + s.slice(0, 80)); }
-            }
-          });
-          console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' statement-mode: applied=' + applied + ' toleratedDuplicateColumn=' + tolerated);
+        // §PATCH_CHUNK (2026-08-10, ported from viewer/scene.js A._applyPendingPatch): a single
+        // pdb.run() over one giant multi-thousand-statement string crashes THIS project's bundled
+        // sql-wasm.wasm ("memory access out of bounds") — confirmed live in the Viewer 2026-08-10
+        // against the exact shipped .wasm binary (modeller/lib ships the same build, md5-identical)
+        // with a 9,465-statement patch. A fresh Modeller rel_aggregates patch for a ghost-carrying
+        // resident is exactly that shape (Hospital_ARC: 9,454 pair statements). Statement-aware,
+        // not raw-line-count: accumulate lines into a statement until one ends in `;`, THEN batch
+        // ~500 statements per pdb.run() — a multi-line CREATE TABLE always stays whole.
+        var rawLines = sql.split('\n');
+        var statements = [];
+        var stBuf = [];
+        for (var li = 0; li < rawLines.length; li++) {
+          var ln = rawLines[li];
+          if (!ln.trim().length) continue;
+          stBuf.push(ln);
+          if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
         }
+        if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+        var CHUNK = 500;
+        var recovered = 0, tolerated = 0;
+        for (var ci = 0; ci < statements.length; ci += CHUNK) {
+          var chunk = statements.slice(ci, ci + CHUNK);
+          try {
+            pdb.run(chunk.join('\n'));
+          } catch (e) {
+            // §ANCHOR / idempotency hardening (W-E2E-VOID-ANCHOR), merged with §PATCH_CHUNK: a
+            // patch may carry `ALTER TABLE … ADD COLUMN` (SQLite has no IF-NOT-EXISTS form) —
+            // normally it runs against the RAW shipped bytes (which lack the column) and succeeds,
+            // but a FUTURE re-shipped db that bakes the column in would make the whole-CHUNK run
+            // throw here and silently drop every other statement of THAT chunk. Recover THIS
+            // chunk statement-by-statement (statements, not raw lines — multi-line statements stay
+            // whole), tolerating ONLY the duplicate-column error; every other chunk still runs
+            // batched. Any OTHER error keeps the established best-effort contract: log loud, use
+            // the db as patched so far.
+            if (!/duplicate column name/i.test(String(e && e.message))) throw e;
+            for (var si = 0; si < chunk.length; si++) {
+              try { pdb.run(chunk[si]); recovered++; }
+              catch (e2) {
+                if (/duplicate column name/i.test(String(e2 && e2.message))) { tolerated++; }
+                else { console.warn(TAG + ' §PATCH_STMT_FAIL ' + dbFile + ' — ' + (e2 && e2.message) + ' stmt=' + chunk[si].slice(0, 80)); }
+              }
+            }
+          }
+        }
+        if (recovered || tolerated) console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' statement-mode: applied=' + recovered + ' toleratedDuplicateColumn=' + tolerated);
         var out = pdb.export().buffer;
         pdb.close();
-        console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes) from ' + patchUrl);
+        console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes, ' + statements.length + ' statements, ' + Math.ceil(statements.length / CHUNK) + ' chunk(s)) from ' + patchUrl);
         return out;
       });
     }).catch(function (e) {
       console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — using unpatched db', e && e.message);
       return buf;
     });
+  }
+
+  // §NOGEO_COMPOSE (Modeller port, 2026-08-10 — verbatim from viewer/scene.js
+  // A.composeGhostsFromAggregates, prompts/4D_SCHEDULE_PERFECTION.md Part B; only the log prefix
+  // differs). ONE shared algorithm, ONE Modeller trigger: _openBuffer below — the single funnel all
+  // three open paths (resident fetch, local .db file, IFC-import) route through.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side extractIFCtoDB.py,
+  // AGGREGATES-only — already written for any current extraction, missing only from older-vintage
+  // shipped DBs, backfilled per-building via a tiny relationship-only patch,
+  // modeller/patches/*.sql, no computed values) or `bom_tree` (client-side import_worker.js §S267,
+  // mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered to AGGREGATES here). Same real
+  // relationship fact either way; the compose algorithm itself is one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file. Guards: never touches a guid that already has a real transform (the ghost set is built
+  // from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost with
+  // no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log — never
+  // silent. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed a
+  // higher-level parent on a later pass). Every row this writes is marked
+  // `transform_source='composed_aggregate'` — the project's existing provenance convention (see
+  // extractIFCtoDB.py's 'void_anchor' rows) — so it stays distinguishable from real extracted
+  // geometry later, not just a console log line. Shipped DBs predate that column, so the ALTER
+  // runs here, in-memory, guarded for a DB that already has it.
+  function composeGhostsFromAggregates(db) {
+    var _t0 = Date.now();
+    try {
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) {
+        console.log(TAG + ' §NOGEO_COMPOSE_SKIP no ghosts, ms=' + (Date.now() - _t0));
+        return { composed: 0, unresolved: 0 };
+      }
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(TAG + ' §NOGEO_COMPOSE composed=' + composed + ' ms=' + (Date.now() - _t0) + ' (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)');
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(TAG + ' §NOGEO_COMPOSE_UNRESOLVED count=' + unresolvedGuids.length + ' classes=' + JSON.stringify(byClass) + ' (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost)');
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn(TAG + ' §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
+    }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH

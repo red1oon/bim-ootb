@@ -31,3 +31,40 @@ INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_c
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWdx','3cUkl32yn9qRSPvBJVyWw5','3cUkl32yn9qRSPvBJVyWdx','IfcWall','IfcWindow','ifc:recovered');
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWe9','3cUkl32yn9qRSPvBJVyWw5','3cUkl32yn9qRSPvBJVyWe9','IfcWall','IfcWindow','ifc:recovered');
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyZTO','3cUkl32yn9qRSPvBJVyWy4','3cUkl32yn9qRSPvBJVyZTO','IfcWall','IfcWindow','ifc:recovered');
+
+-- SampleHouse_ARC.db rel_aggregates — real IfcRelAggregates parent->child GUID pairs (§NOGEO_COMPOSE,
+-- prompts/4D_SCHEDULE_PERFECTION.md Part B — Modeller port). Relationship-only, NO computed values:
+-- composeGhostsFromAggregates() does the union-bbox math live from element_transforms at open.
+-- Recovered VERBATIM from the source IFC's own IfcRelAggregates (same read as
+-- extractIFCtoDB.py extract, the ONE implementation), filtered to this DB's 2 ghost
+-- aggregate-parents (elements_meta rows with no element_transforms row).
+-- Source: Ifc4_SampleHouse.ifc (26)   Generated: 2026-08-10 (ifcopenshell 0.8.4.post1)
+-- Idempotent: CREATE IF NOT EXISTS + INSERT OR IGNORE on the (parent_guid,child_guid) PRIMARY KEY.
+
+CREATE TABLE IF NOT EXISTS rel_aggregates (parent_guid TEXT NOT NULL, child_guid TEXT NOT NULL, PRIMARY KEY (parent_guid, child_guid));
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_O');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_5');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_3');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMomB');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom8');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom9');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom7');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom4');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom5');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom3');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom0');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom1');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMomU');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$Y');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$l');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$j');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomS');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomT');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomQ');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomR');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomO');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomP');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomM');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomN');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomK');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomL');
