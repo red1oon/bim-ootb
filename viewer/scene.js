@@ -1278,18 +1278,30 @@ async function setupScene(A) {
       // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
       // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
       // does not catch this class of bug; only testing against the real bundled binary does. Run
-      // in bounded line-batches instead — every line in every patch file (this one and every prior
-      // one) is one complete statement by convention, so newline-splitting never cuts a statement
-      // in half. 500/batch proven safe against the real failing patch; small existing patches (a
-      // handful of lines) still run in one batch, unchanged behavior.
-      var lines = sql.split('\n').filter(function (l) { return l.trim().length > 0; });
+      // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
+      // patch file are one complete statement, but at least two existing patches
+      // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
+      // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
+      // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
+      // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
+      // batch ~500 statements per pdb.run() — multi-line statements always stay whole.
+      var rawLines = sql.split('\n');
+      var statements = [];
+      var stBuf = [];
+      for (var li = 0; li < rawLines.length; li++) {
+        var ln = rawLines[li];
+        if (!ln.trim().length) continue;
+        stBuf.push(ln);
+        if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+      }
+      if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
       var CHUNK = 500;
-      for (var i = 0; i < lines.length; i += CHUNK) {
-        pdb.run(lines.slice(i, i + CHUNK).join('\n'));
+      for (var i = 0; i < statements.length; i += CHUNK) {
+        pdb.run(statements.slice(i, i + CHUNK).join('\n'));
       }
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${lines.length} statements, ${Math.ceil(lines.length / CHUNK)} chunk(s)) from ${patchUrl}`);
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${statements.length} statements, ${Math.ceil(statements.length / CHUNK)} chunk(s)) from ${patchUrl}`);
       return out;
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
@@ -1332,6 +1344,7 @@ async function setupScene(A) {
   // shipped DBs (and the fresh-import schema in import_db_builder.js) predate that column, so the
   // ALTER runs here, in-memory, guarded for a DB that already has it.
   A.composeGhostsFromAggregates = function(db) {
+    var _t0 = Date.now();
     try {
       try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
       catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
@@ -1339,7 +1352,14 @@ async function setupScene(A) {
       var ghostRows = db.exec(
         "SELECT m.guid, m.ifc_class FROM elements_meta m " +
         "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
-      if (!ghostRows.length) return { composed: 0, unresolved: 0 };
+      if (!ghostRows.length) {
+        // Paid this LEFT JOIN scan on every load, even for a building with zero ghosts (measured
+        // ~30-60ms on Hospital/Terminal's 48k-63k row elements_meta — negligible against the
+        // multi-second DB fetch/parse it runs alongside, but logged so that claim is a number,
+        // not an assumption, and stays checkable if this table ever grows an order of magnitude).
+        console.log(`[S203] §NOGEO_COMPOSE_SKIP no ghosts, ms=${Date.now() - _t0}`);
+        return { composed: 0, unresolved: 0 };
+      }
       var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
       ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
 
@@ -1401,7 +1421,7 @@ async function setupScene(A) {
       stmt.free();
 
       var unresolvedGuids = Object.keys(ghostClass);
-      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} ms=${Date.now() - _t0} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
       if (unresolvedGuids.length) {
         var byClass = {};
         unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
