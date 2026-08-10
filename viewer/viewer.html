@@ -9,6 +9,7 @@
 <title>BIM OOTB v3 — DEV</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#4fc3f7">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -895,7 +896,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="elevation.js?v=1" onerror="console.warn('[Elevation] elevation.js skipped')"></script>
 <script src="grid_contours.js?v=5" onerror="console.warn('[GridContours] grid_contours.js skipped')"></script>
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
-<script src="kernel_ops.js?v=5" onerror="console.warn('[KernelOps] kernel_ops.js skipped')"></script>
+<!-- kernel_ops: loaded ONCE as ../erp/kernel_ops.js above (v13). The viewer-local copy (v8) used
+     to be re-loaded here and CLOBBERED v13 — silently breaking blue_fold.js/whatif.js, which call
+     v13-only discardBranch/acceptBranchUpTo. Do not re-add a second kernel_ops include. -->
 <script src="../common/whole_history.js?v=4" onerror="console.warn('[WholeHistory] common/whole_history.js skipped')"></script>
 <script src="../common/history_bar.js?v=6" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (the command-palette corner download triangle → AboutDIY.open; the Help pill keeps the shortcuts palette). Self-contained

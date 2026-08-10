@@ -187,7 +187,7 @@ const PRECACHE_ASSETS = [
   'materialize.js',
   'doc_canvas.js',
   // Feature modules loaded by index.html
-  'kernel_ops.js',
+  '../erp/kernel_ops.js',   // the ONE kernel_ops (v13) — viewer-local copy no longer loaded by viewer.html
   'cost_panel.js',
   'clash_report.js',
   'clash_snag.js',
