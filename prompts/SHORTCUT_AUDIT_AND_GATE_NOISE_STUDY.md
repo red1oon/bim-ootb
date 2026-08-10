@@ -1,12 +1,15 @@
-# ⚠ DO NOT REMOVE — Shortcut-audit false positives + WH-gate query noise: a THOROUGH study, not a band-aid
-# Scope: two console-noise findings from a live production log (Hospital building, OCI-hosted DB) turned
-#        out to be false alarms when hand-traced this session — but the study that would PROVE they're the
-#        ONLY false alarms was never done. This prompt is that study. Two separate root causes, one prompt:
-#        (1) input_registry.js's checkShortcuts() self-audit is architecturally too shallow to see most of
-#            this app's real shortcut-wiring paths, so its dead/MISS output cannot currently be trusted —
-#            in either direction. (2) wh_walk.js's gate-check queries a table that legitimately doesn't
-#            exist on non-warehouse buildings and logs a scary SQL error before its own catch swallows it;
-#            the file's own comment says this "showWhen precedent" pattern is used elsewhere too.
+# ⚠ DO NOT REMOVE — Witness harness hardening + shortcut-audit false positives + WH-gate query noise
+# Scope: THREE things, in this order, one prompt — organise before you review, so the review's own witness
+#        probes aren't rebuilt later: (0) the WITNESS pattern itself (real-state, no-mock, falsifiable
+#        claims) is proven high-value but has 3 concrete gaps hit live this session (no shared harness, no
+#        persisted run log, no fixture caching — a stale-state race + an accidental multi-minute rebuild
+#        both traced to this) — harden it FIRST. (1)+(2) two console-noise findings from a live production
+#        log (Hospital building, OCI-hosted DB) traced clean this session — false alarms, but the STUDY that
+#        would prove they're the ONLY false alarms was never done: input_registry.js's checkShortcuts()
+#        self-audit is architecturally too shallow to see most of this app's real shortcut-wiring paths, and
+#        wh_walk.js's gate-check queries a table that legitimately doesn't exist on non-warehouse buildings
+#        and logs a scary SQL error before its own catch swallows it (the file's own comment names this
+#        "showWhen precedent" pattern as used elsewhere too).
 #        Read `docs/TestArchitecture.md` §Anti-Drift + §Whitebox before touching anything. Whitebox §-tagged
 #        console.log is the PRIMARY witness — SAVE every probe run to a log and READ it before any
 #        conclusion. Honour this file until every item in the ▶ DONE checklist is ✅ or ⛔ with a named blocker.
@@ -55,7 +58,44 @@ turned out to be a **false positive**:
 ALSO a real dead shortcut hiding in the noise that got dismissed along with these nine? Nobody has checked.
 That is the actual job here — not silencing the log.
 
-## ▶ PHASE 0 — bounded pattern-shape sweep (do this FIRST, before Issue 1/2's tasks)
+## ▶ PHASE 0 — witness harness hardening (precursor: organise FIRST, so Phase 1/Issue 1/2 don't rebuild)
+Do this before Phase 1 and before writing any of Issue 1/2's own witness probes. Reasoning (assessed
+2026-08-06, in the session that scoped this doc): the WITNESS pattern itself is high-value where it's been
+used — real app state, no mocks, falsifiable-by-design claims tied to a named issue — proven again this
+session (`witness_tour_scrub.js`'s new `W-SCRUB-PANEL-TAB` claim caught two real bugs in its own test logic
+before passing, not just a rubber-stamp green). But it has three concrete, evidenced gaps, and Issue 1/2's
+own Witness Plan (below) is about to need exactly the infrastructure those gaps are missing — so build it
+ONCE here, generically, not as a one-off buried inside this study's own probe scripts:
+
+1. **Shared harness, not reinvented per file.** Every `witness_*.js` (dozens, repo root) reinvents its own
+   `claim()` assertion helper and puppeteer launch/page/cleanup boilerplate from scratch. Extract ONE shared
+   module (e.g. `scripts/witness_harness.js`) — the common `claim(name,pass,detail)` + result-collection +
+   summary-printing + browser lifecycle (launch args, leak-safe cleanup per the HARD RULES above) — that any
+   witness, old or new, can `require()`. Migrate `witness_tour_scrub.js` to it as the first proof it actually
+   generalizes (it already has a `claim()` shaped exactly like this — that's the extraction candidate).
+2. **Persistent run log — one place to see the whole picture.** Right now a witness's result exists only in
+   whatever terminal happened to run it. Add a small persisted, append-only log (e.g.
+   `witness_runs.ndjson` or similar — one line per run: timestamp, git commit, witness file, claims
+   PASS/FAIL) that the harness writes to automatically. A dev should be able to answer "is the app healthy /
+   what broke recently" by reading one file, not by knowing which of the ~dozens of `witness_*.js` scripts
+   to individually re-run and scroll through.
+3. **Fixture/state-caching to cut the "over-debug over-runs" cost.** The concrete evidence: this session's
+   `W-SCRUB-PANEL-TAB` work hit a real stale-state race (claims sharing one long-lived browser page leaked
+   `walkActions`/`_tourStarts` from an earlier claim) AND separately triggered an accidental multi-minute
+   full building re-stream from earlier seeks — both because nothing in the shared session checkpoints or
+   isolates state between claims. Study whether a "warm session" fixture (load the building/DB ONCE, snapshot
+   a known-good checkpoint, let claims restore-to-checkpoint instead of re-deriving state via more app calls)
+   is feasible for this app's architecture — if yes, land it; if the app's global-singleton `window.APP`
+   shape genuinely resists checkpointing, say so explicitly rather than half-attempting it.
+
+**Explicitly NOT in scope here:** CI-gating ("GREEN before commit is a LOCAL discipline, not automation" —
+`RosettaStoneGateTest.java` note in the top-level `CLAUDE.md`). That's a separate process/architecture
+decision the user has not asked for in this doc — don't fold it in.
+
+Once Phase 0 lands, Issue 1/2's own Witness Plan (below) MUST use the new shared harness — writing another
+one-off puppeteer script at that point would be exactly the double-work this precursor exists to prevent.
+
+## ▶ PHASE 1 — bounded pattern-shape sweep (after Phase 0, before Issue 1/2's tasks)
 Scoped to exactly two subsystems — the input/shortcut wiring and the DB-query-gate wiring — NOT a general
 codebase read-through. The leaf-level code read carefully this session (dated `§`-tag rationale, defensive
 guards, witness discipline throughout `scene.js`/`tour.js`/`wh_walk.js`) — this is not a "vibe-coded mess"
@@ -88,8 +128,8 @@ functions have appeared ad hoc in at least one other recent session) — a coupl
 survey — just enough to say whether Shape C is confined to keydown-handling or is a wider habit worth its
 own future prompt.
 
-Output of Phase 0: a short table (shape × file × verdict: confirmed-instance / false-alarm / not-applicable)
-appended to this doc before Issue 1/2's tasks proceed. If Phase 0 surfaces a NEW confirmed instance of any
+Output of Phase 1: a short table (shape × file × verdict: confirmed-instance / false-alarm / not-applicable)
+appended to this doc before Issue 1/2's tasks proceed. If Phase 1 surfaces a NEW confirmed instance of any
 shape outside the two issues already scoped here, note it and decide then whether it's in-scope for this
 same session or belongs in its own future prompt — don't silently fold in unbounded new scope mid-session.
 
@@ -185,7 +225,10 @@ Task 1 proves it's genuinely the only call site; otherwise a single-site patch i
 prompt is trying to avoid.
 
 ## ▶ WITNESS PLAN
-Headless, `§`-tagged, real app state — see `docs/TestArchitecture.md` §Whitebox Testing.
+Headless, `§`-tagged, real app state — see `docs/TestArchitecture.md` §Whitebox Testing. Both probes below
+are written USING Phase 0's shared harness (`claim()` + cleanup + the persisted run log) — not as new
+standalone puppeteer scripts. If Phase 0 wasn't actually landed before this point, stop and go back to it;
+writing one-off probes here is the exact double-work Phase 0 exists to prevent.
 - **Issue 1:** one probe per chosen architecture option, loading a real building, dispatching every bound
   key found in Task 1's inventory (not just the 9 originally flagged), asserting a REAL observable effect
   per key (camera moved, panel opened, mode toggled) — not merely reading the audit's own verdict.
@@ -199,9 +242,11 @@ This is exploratory, wide-context, cross-file architecture work (11+ files, an u
 `dbQuery`-gate call sites, a real "is there a hidden bug" open question) rather than a scoped known fix —
 the profile this project already reserves for a Fable dispatch (see `[[project_fable5_lane.md]]`'s
 allocation rule: *"Fable does the irreducible new reasoning; Opus/Sonnet replicate the proven pattern"*).
-The irreducible reasoning here is Task 4's architecture choice (a/b/c) plus the falsification pass (Task 5,
-Issue 1 Witness) that proves nothing else is hiding — that has to happen in one head holding the whole
-picture, which is exactly Fable 5's 1M-context strength, not a fit for a narrow single-file patch session.
+The irreducible reasoning here is Phase 0's harness-architecture call (can this app's `window.APP`
+singleton actually be checkpointed?), Task 4's shortcut-audit architecture choice (a/b/c), and the
+falsification pass (Task 5, Issue 1 Witness) that proves nothing else is hiding — that has to happen in one
+head holding the whole picture, which is exactly Fable 5's 1M-context strength, not a fit for a narrow
+single-file patch session.
 Suggested effort: `high` to start (this is wide-file-count study, not oracle-equivalence-grade proof
 construction) — escalate to `xhigh` only if Task 1/2's inventory genuinely stalls on ambiguity.
 Recommend running this as a **fresh Fable session**, this doc as its opening spec, NOT continued in the
@@ -209,12 +254,17 @@ current Sonnet session — per the user's own framing when this was scoped (2026
 
 ## ▶ DONE (fill in as the study proceeds — every ✅ needs a `§`-lined witness citation, every ⛔ needs a
 ##      named blocker, not a silent drop)
+- [ ] Phase 0 item 1: shared witness harness module extracted, `witness_tour_scrub.js` migrated as proof
+- [ ] Phase 0 item 2: persisted run log landed, at least one real run appended to it
+- [ ] Phase 0 item 3: fixture/checkpoint caching landed, OR explicitly ruled infeasible with a stated reason
+- [ ] Phase 1: shape × file × verdict table appended (self-audit / catch-swallow / reinvented-mechanism)
 - [ ] Task 1 (Issue 1): full 11+-file keydown-listener inventory, every bound key traced to a live handler
 - [ ] Task 2 (Issue 1): every `_shortcuts` entry independently traced (not just the 5 originally flagged)
 - [ ] Task 3 (Issue 1): MISS-checker's real source located and read
 - [ ] Task 4 (Issue 1): architecture (a)/(b)/(c) chosen and justified in a dated section below
-- [ ] Task 5 (Issue 1): post-fix audit re-run AND independent real-state verification (not self-graded)
+- [ ] Task 5 (Issue 1): post-fix audit re-run AND independent real-state verification (not self-graded),
+      probe written using Phase 0's shared harness
 - [ ] Task 1 (Issue 2): full grep sweep for the "maybe-absent-table gate" idiom, call-site count stated
 - [ ] Task 2 (Issue 2): shared silent primitive landed (if >1 site) or single-site fix justified (if =1)
-- [ ] Witness run headless, log saved + read, § lines cited above
+- [ ] Witness run headless via the shared harness, persisted log entry written, § lines cited above
 - [ ] PR opened via `/tmp/wt-*` worktree discipline (never edit `~/bim-ootb` directly)
