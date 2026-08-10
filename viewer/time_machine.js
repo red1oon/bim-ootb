@@ -3368,6 +3368,115 @@
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // §4D_ROOF_LOAD_PATH — roof/load-path promotion classifier (ONE copy)
+  // ══════════════════════════════════════════════════════════════════
+  // ONE classifier, TWO callers: injectGantt() (the live scheduler build) and _buildXrayElements()
+  // (the x-ray staging rebuild that verifyGanttIntegrity() — the schedule LOCK gate — also runs
+  // on). Consolidated 2026-08-10 from two inline copies verified byte-identical in .seq output —
+  // a future silent divergence would have made the lock gate verify against a different
+  // classification than the one actually scheduled: a correctness bug, not a rendering glitch.
+  //
+  // §4D_ROOF_LOAD_PATH M1 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH) — a slab's
+  // ROLE is a load-path fact, not a storey-name label. SUPERSEDES the deleted `/roof/i` override:
+  // measured 2026-08-01, that regex fired ZERO times on Hospital ("Level 1..7A"/"Unknown")
+  // and LTU_AHouse ("TAKPLAN", Swedish) — the two roof slabs it was meant to catch have storey
+  // "Unknown". For each IfcSlab, take the IfcWall*/IfcWallStandardCase whose XY footprint overlaps
+  // it ("those walls"). Two checks from the SAME paragraph of the spec, both epsilon-free:
+  //   (a) the slab's base_z is above the average midheight of those walls — the walls are BELOW
+  //       and physically carry it.
+  //   (b) NONE of those walls stand ON it (no overlapping wall has base_z >= the slab's own
+  //       top_z) — this is the spec's own stated definition of "the floor case" ("floor slab:
+  //       walls stand ON it ... otherwise it stays a floor slab"), and it is NOT redundant with
+  //       (a): measured on this exact DB, (a) alone is true for nearly every capped-wall slab in
+  //       the building (35 slabs -> 23 "promoted"), including known mid-building intermediate
+  //       floors (base_z 176.81, between Level 2 and Level 3, 5 more levels above) — a slab that
+  //       caps the walls below it satisfies (a) whether or not it ALSO carries walls above, so (a)
+  //       alone cannot tell "top of the load path" from "one more floor in the middle of it". (b)
+  //       is the missing half of the spec's own description and brings Hospital down to the 2
+  //       true roof slabs + a handful of isolated panels with no wall directly overlapping the
+  //       next level up (open corridor/atrium bays) — reported, not silently forced to exactly 2.
+  // Promoted -> roof role -> seq 8, phase 'Architecture'. Otherwise stays whatever seq matchRule
+  // gave it (the floor case). No new numeric constant either way — both checks compare the slab
+  // against its own extracted geometry and the walls' own extracted geometry.
+  //
+  // Pure two-phase pass over `elements` (order-independent — both original call sites ran it on
+  // differently-sorted arrays with identical .seq results). Mutates promoted slabs' el.seq (and
+  // el.phase — harmless bookkeeping on the x-ray path, whose elements never carried a phase field
+  // and nothing downstream reads it). Returns { total, seedCount, m4Count } so each caller keeps
+  // its own log wording — only injectGantt logs §GANTT_OVERRIDE, _buildXrayElements stays silent.
+  function _promoteRoofLoadPath(elements) {
+    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
+    var loadPathOverrides = 0;
+    // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
+    // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
+    var lpSlabs = [], lpSeed = [];
+    elements.forEach(function(el) {
+      if (el.cls !== 'IfcSlab') return;
+      var carriers = loadPathWalls.filter(function(w) {
+        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
+      });
+      if (!carriers.length) return;
+      var midSum = 0, above = [];
+      for (var ci = 0; ci < carriers.length; ci++) {
+        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
+        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
+      }
+      var wallMidheight = midSum / carriers.length;
+      var clauseA = el.base_z > wallMidheight;
+      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
+      if (clauseA && !above.length) {
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++;
+        lpSeed.push(el);
+      }
+    });
+
+    // §4D_WALLS_BEFORE_ROOF M4 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) —
+    // user, live on a Hospital MaxQ bake: "The roof before the walls still happening on the roof
+    // top". #1120's clause (b) disqualifies a roof if ANY XY-overlapping wall stands on it. On
+    // Hospital that disqualifies the 2091.5 m² topmost deck (3Csn1z$1v5Q8DXdumWYJUE, base_z 199.66)
+    // because the two helipad boxes — whose OWN roofs #1120 promoted — stand on it. MEASURED on
+    // origin/main: it starts 2022-07-27 as Superstructure while its 14 wall carriers finish
+    // 2023-04-30 — 277 days before its own walls, the identical error #1120 reported fixing for the
+    // boxes. This is #1120's `⚠ LIMIT 2` arriving, and wider than LIMIT 2 predicted: these walls are
+    // 3.05–3.47 m tall and DO carry something, so LIMIT 2's "parapet carries nothing" discriminator
+    // would not have caught it.
+    //   THE RULE: a wall standing on a slab is not "the next storey" if that wall is itself CAPPED
+    //   by a slab already known to be a roof (a helipad box, a plant enclosure, a coped parapet —
+    //   the load path tops out in a roof, it does not continue the building). Capped = a seed roof
+    //   slab XY-overlapping the wall with its base_z between the wall's base_z and top_z + GAP. A
+    //   wall capped by NOTHING does not qualify.
+    //   DEPTH 1, ON THE FROZEN SEED SET, DELIBERATELY. Full recursion was measured and collapses:
+    //   the box walls excuse the 199.66 deck -> the deck excuses 3064w0y0nDv9wdb1cWL_Gu -> Level 6
+    //   promotes -> Level 5 -> Level 4 -> the whole building becomes "roof". Depth-1 terminates.
+    //   MEASURED: Hospital 10 -> 11. The one addition is the user's slab. Level 6 (3 blockers),
+    //   Level 5 (33), Level 4 (514) and #1120's own floor control 1OV06Y3c5D8vODNyxVnSVI (56) all
+    //   stay blocked. A footprint-extent ratio was tried and REJECTED — it does not separate (roof
+    //   0.040 vs intermediate panels 0.024/0.024/0.029/0.044, Level 6 0.170); no threshold exists,
+    //   which is why this is a load-path rule and not an area rule.
+    var LP_GAP = 0.5;  // m — same "tops out at this level" tolerance schedule_gate.js uses (GAP)
+    var m4Promoted = 0;
+    if (lpSeed.length) {
+      lpSlabs.forEach(function(rec) {
+        var el = rec.el;
+        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
+        for (var ai = 0; ai < rec.above.length; ai++) {
+          var w = rec.above[ai], capped = false;
+          for (var si = 0; si < lpSeed.length; si++) {
+            var C = lpSeed[si];
+            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
+                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
+          }
+          if (!capped) return;             // a wall the building genuinely continues through
+        }
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++; m4Promoted++;
+      });
+    }
+    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // §Z_STACK_XRAY_STAGING — support-edge cache for x-ray staging
   // ══════════════════════════════════════════════════════════════════
   // Implementing prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING — Witness: witness_zstack_xray_staging.js
@@ -3381,7 +3490,11 @@
   // (repo convention: audit_support_roleblind.js / witness_stagger_support_order.js both copy the
   // support predicate rather than importing it — see origin/feat/element-cpm:viewer/schedule_gate.js
   // §ELEMENT_CPM, parked; only the PREDICATE is reused here, not the reordering engine it lived
-  // in). It is intentionally NEVER called by injectGantt and has no db.run/INSERT capability — it
+  // in). EXCEPTION (2026-08-10): the roof/load-path promotion is no longer a copy — both this
+  // function and injectGantt call the shared _promoteRoofLoadPath() above, because
+  // verifyGanttIntegrity() (the schedule LOCK gate) runs on THIS build and a silent classifier
+  // divergence there would be a correctness bug, not a rendering glitch.
+  // It is intentionally NEVER called by injectGantt and has no db.run/INSERT capability — it
   // exists so the xray cache can be (re)built on EVERY TM activation, including the cached-gantt
   // fast path (§GANTT_CACHE_HIT) where injectGantt() never runs at all.
   function _buildXrayElements() {
@@ -3465,45 +3578,13 @@
       };
     });
 
-    // §4D_ROOF_LOAD_PATH M1/M4 — same load-path promotion the live scheduler applies (copied, not
-    // shared, per this function's own header) so a promoted roof slab's carrier predicate (the
-    // looser wall-bears check, below) matches what actually got scheduled — the exact scenario
-    // this whole feature exists for ("roof before its walls").
-    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
-    var lpSlabs = [], lpSeed = [];
-    elements.forEach(function(el) {
-      if (el.cls !== 'IfcSlab') return;
-      var carriers = loadPathWalls.filter(function(w) {
-        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
-      });
-      if (!carriers.length) return;
-      var midSum = 0, above = [];
-      for (var ci = 0; ci < carriers.length; ci++) {
-        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
-        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
-      }
-      var wallMidheight = midSum / carriers.length;
-      var clauseA = el.base_z > wallMidheight;
-      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
-      if (clauseA && !above.length) { el.seq = 8; lpSeed.push(el); }
-    });
-    var LP_GAP = 0.5;
-    if (lpSeed.length) {
-      lpSlabs.forEach(function(rec) {
-        var el = rec.el;
-        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
-        for (var ai = 0; ai < rec.above.length; ai++) {
-          var w = rec.above[ai], capped = false;
-          for (var si = 0; si < lpSeed.length; si++) {
-            var C = lpSeed[si];
-            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
-                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
-          }
-          if (!capped) return;
-        }
-        el.seq = 8;
-      });
-    }
+    // §4D_ROOF_LOAD_PATH M1/M4 — same load-path promotion the live scheduler applies, now SHARED
+    // (one classifier, _promoteRoofLoadPath above — consolidated 2026-08-10 from an inline copy
+    // verified byte-identical in .seq output) so a promoted roof slab's carrier predicate (the
+    // looser wall-bears check) matches what actually got scheduled — the exact scenario this whole
+    // feature exists for ("roof before its walls"). Counts unused here: only injectGantt logs
+    // §GANTT_OVERRIDE.
+    var _lp = _promoteRoofLoadPath(elements);
     return elements;
   }
 
@@ -3879,99 +3960,13 @@
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
       NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
 
-    // §4D_ROOF_LOAD_PATH M1 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH) — a slab's
-    // ROLE is a load-path fact, not a storey-name label. SUPERSEDES the deleted `/roof/i` override
-    // above: measured 2026-08-01, that regex fired ZERO times on Hospital ("Level 1..7A"/"Unknown")
-    // and LTU_AHouse ("TAKPLAN", Swedish) — the two roof slabs it was meant to catch have storey
-    // "Unknown". For each IfcSlab, take the IfcWall*/IfcWallStandardCase whose XY footprint overlaps
-    // it ("those walls"). Two checks from the SAME paragraph of the spec, both epsilon-free:
-    //   (a) the slab's base_z is above the average midheight of those walls — the walls are BELOW
-    //       and physically carry it.
-    //   (b) NONE of those walls stand ON it (no overlapping wall has base_z >= the slab's own
-    //       top_z) — this is the spec's own stated definition of "the floor case" ("floor slab:
-    //       walls stand ON it ... otherwise it stays a floor slab"), and it is NOT redundant with
-    //       (a): measured on this exact DB, (a) alone is true for nearly every capped-wall slab in
-    //       the building (35 slabs -> 23 "promoted"), including known mid-building intermediate
-    //       floors (base_z 176.81, between Level 2 and Level 3, 5 more levels above) — a slab that
-    //       caps the walls below it satisfies (a) whether or not it ALSO carries walls above, so (a)
-    //       alone cannot tell "top of the load path" from "one more floor in the middle of it". (b)
-    //       is the missing half of the spec's own description and brings Hospital down to the 2
-    //       true roof slabs + a handful of isolated panels with no wall directly overlapping the
-    //       next level up (open corridor/atrium bays) — reported, not silently forced to exactly 2.
-    // Promoted -> roof role -> seq 8, phase 'Architecture'. Otherwise stays whatever seq matchRule
-    // gave it (the floor case). No new numeric constant either way — both checks compare the slab
-    // against its own extracted geometry and the walls' own extracted geometry.
-    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
-    var loadPathOverrides = 0;
-    // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
-    // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
-    var lpSlabs = [], lpSeed = [];
-    elements.forEach(function(el) {
-      if (el.cls !== 'IfcSlab') return;
-      var carriers = loadPathWalls.filter(function(w) {
-        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
-      });
-      if (!carriers.length) return;
-      var midSum = 0, above = [];
-      for (var ci = 0; ci < carriers.length; ci++) {
-        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
-        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
-      }
-      var wallMidheight = midSum / carriers.length;
-      var clauseA = el.base_z > wallMidheight;
-      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
-      if (clauseA && !above.length) {
-        el.seq = 8; el.phase = 'Architecture';
-        loadPathOverrides++;
-        lpSeed.push(el);
-      }
-    });
-
-    // §4D_WALLS_BEFORE_ROOF M4 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) —
-    // user, live on a Hospital MaxQ bake: "The roof before the walls still happening on the roof
-    // top". #1120's clause (b) disqualifies a roof if ANY XY-overlapping wall stands on it. On
-    // Hospital that disqualifies the 2091.5 m² topmost deck (3Csn1z$1v5Q8DXdumWYJUE, base_z 199.66)
-    // because the two helipad boxes — whose OWN roofs #1120 promoted — stand on it. MEASURED on
-    // origin/main: it starts 2022-07-27 as Superstructure while its 14 wall carriers finish
-    // 2023-04-30 — 277 days before its own walls, the identical error #1120 reported fixing for the
-    // boxes. This is #1120's `⚠ LIMIT 2` arriving, and wider than LIMIT 2 predicted: these walls are
-    // 3.05–3.47 m tall and DO carry something, so LIMIT 2's "parapet carries nothing" discriminator
-    // would not have caught it.
-    //   THE RULE: a wall standing on a slab is not "the next storey" if that wall is itself CAPPED
-    //   by a slab already known to be a roof (a helipad box, a plant enclosure, a coped parapet —
-    //   the load path tops out in a roof, it does not continue the building). Capped = a seed roof
-    //   slab XY-overlapping the wall with its base_z between the wall's base_z and top_z + GAP. A
-    //   wall capped by NOTHING does not qualify.
-    //   DEPTH 1, ON THE FROZEN SEED SET, DELIBERATELY. Full recursion was measured and collapses:
-    //   the box walls excuse the 199.66 deck -> the deck excuses 3064w0y0nDv9wdb1cWL_Gu -> Level 6
-    //   promotes -> Level 5 -> Level 4 -> the whole building becomes "roof". Depth-1 terminates.
-    //   MEASURED: Hospital 10 -> 11. The one addition is the user's slab. Level 6 (3 blockers),
-    //   Level 5 (33), Level 4 (514) and #1120's own floor control 1OV06Y3c5D8vODNyxVnSVI (56) all
-    //   stay blocked. A footprint-extent ratio was tried and REJECTED — it does not separate (roof
-    //   0.040 vs intermediate panels 0.024/0.024/0.029/0.044, Level 6 0.170); no threshold exists,
-    //   which is why this is a load-path rule and not an area rule.
-    var LP_GAP = 0.5;  // m — same "tops out at this level" tolerance schedule_gate.js uses (GAP)
-    var m4Promoted = 0;
-    if (lpSeed.length) {
-      lpSlabs.forEach(function(rec) {
-        var el = rec.el;
-        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
-        for (var ai = 0; ai < rec.above.length; ai++) {
-          var w = rec.above[ai], capped = false;
-          for (var si = 0; si < lpSeed.length; si++) {
-            var C = lpSeed[si];
-            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
-                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
-          }
-          if (!capped) return;             // a wall the building genuinely continues through
-        }
-        el.seq = 8; el.phase = 'Architecture';
-        loadPathOverrides++; m4Promoted++;
-      });
-    }
-    if (loadPathOverrides) console.log('§GANTT_OVERRIDE ' + loadPathOverrides +
+    // §4D_ROOF_LOAD_PATH M1 + §4D_WALLS_BEFORE_ROOF M4 — roof/load-path promotion, shared
+    // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
+    // when the two inline copies were consolidated 2026-08-10).
+    var _lp = _promoteRoofLoadPath(elements);
+    if (_lp.total) console.log('§GANTT_OVERRIDE ' + _lp.total +
       ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
-      ' (seed=' + lpSeed.length + ' + M4 rooftop-appurtenance=' + m4Promoted + ')');
+      ' (seed=' + _lp.seedCount + ' + M4 rooftop-appurtenance=' + _lp.m4Count + ')');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
     // Real construction: lower Z builds first regardless of storey name.
