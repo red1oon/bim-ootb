@@ -184,7 +184,16 @@
           // ON the wall, not structure the wall rests within — counting it here is a wallGate cycle
           // (measured: Hospital roof@199.66..199.81 inside wall@191.81..199.81, both re-shifting
           // every repair sweep). Promoted slabs support others via bearing-below and hangGate only.
-          var contained = !below && !elPool && !S.promoted && S.base_z > el.base_z + EPS && S.top_z < el.top_z + EPS;
+          // §TM_GEO_ORDER_CYCLES fix (2026-08-10, 4D_SCHEDULE_PERFECTION.md — Witness:
+          // witness_tm_geo_order_cycles.js): contained support must live in MY LOWER HALF. What I
+          // rest within sits near my base (every measured §GEO_SUPPORT_LEAK case: ramp/retaining
+          // structure near the consumer's base); a thin slab/beam/plate nested near my CROWN is
+          // what rests on ME. The old top bound (S.top_z < el.top_z + EPS) let a 3cm topping slab
+          // at a 22m wall's crown count as that wall's support — on Terminal that closed 37,927
+          // elements into Kahn-leftover cycles (wall→promoted-roof→topping-slab→wall). Lower-half
+          // bound measured on Terminal: leftover 37,927 → 0, only 0.8% of edges removed.
+          var contained = !below && !elPool && !S.promoted && S.base_z > el.base_z + EPS &&
+                          S.top_z <= (el.base_z + el.top_z) / 2;
           if ((below || contained) && S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
@@ -259,7 +268,13 @@
       var g = baseMs; cs = cellsOf(el);
       for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
-          if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.end > g && overlap(S, el)) g = S.end; } }
+          // §TM_GEO_ORDER_CYCLES fix: a wall CARRIES a promoted slab AT ITS TOP (top within GAP of
+          // the slab's base — the M5 Hospital measurement: wall tops meeting the roof base), never a
+          // slab embedded metres below its crown. Unbounded, a 22m Terminal wall "bore" a slab at
+          // its mid-height, and that slab's below-edges closed the wall into a cycle. Same bound as
+          // the DAG's wallCarries().
+          if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.top_z <= el.base_z + GAP &&
+              S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
     // ══ §GEOMETRIC_SUPPORT_ORDER (2026-08-07, 4D_SCHEDULE_PERFECTION.md) ════════════════════════
@@ -295,8 +310,13 @@
       else if (P.cls && P.cls.indexOf('IfcWall') === 0) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (wallIdxGrid[cs[c]] = wallIdxGrid[cs[c]] || []).push(t); } }
     // pair predicates — one definition, used for both indegree count and decrement-on-place
     function edgeBelow(S, E)     { return S.base_z < E.base_z - EPS; }                          // geoGate "below"
-    function edgeContained(S, E) { return !edgeBelow(S, E) && !isPromotedSlab(S) && S.base_z > E.base_z + EPS && S.top_z < E.top_z + EPS; }  // geoGate §GEO_SUPPORT_LEAK clause
-    function edgeBearing(S, E)   { return S.base_z < E.base_z - EPS && S.top_z >= E.base_z - GAP; }  // wallGate / hasBearingBelow
+    // §TM_GEO_ORDER_CYCLES fix (2026-08-10): contained support must live in E's LOWER HALF —
+    // mirrors geoGate's clause above (see the full rationale there; Terminal leftover 37,927 → 0).
+    function edgeContained(S, E) { return !edgeBelow(S, E) && !isPromotedSlab(S) && S.base_z > E.base_z + EPS && S.top_z <= (E.base_z + E.top_z) / 2; }  // geoGate §GEO_SUPPORT_LEAK clause
+    function edgeBearing(S, E)   { return S.base_z < E.base_z - EPS && S.top_z >= E.base_z - GAP; }  // hasBearingBelow / audit
+    // §TM_GEO_ORDER_CYCLES fix: wallGate's relation, bounded — a wall carries a promoted slab AT
+    // ITS TOP (top within GAP of the slab's base), never one embedded metres below its crown.
+    function wallCarries(S, E)   { return edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
     function edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }  // hangGate
     var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0;
     // stamp-array dedup (an {} per element measured 28s at 15k elements — dictionary churn), and a
@@ -329,7 +349,7 @@
         for (c = 0; c < cs.length; c++) { arr = wallIdxGrid[cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { si = arr[k]; if (si === t || stamp[si] === _gen) continue; stamp[si] = _gen;
             S = elements[si]; if (!overlap(S, E)) continue;
-            if (edgeBearing(S, E)) { (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } } }
+            if (wallCarries(S, E)) { (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } } }   // §TM_GEO_ORDER_CYCLES: bounded, carry-at-top
       }
     }
     // tiebreak = the old seq-primary processing order (precomputed keys — collapsePhase is regex)

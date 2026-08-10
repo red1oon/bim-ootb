@@ -99,7 +99,12 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 (async () => {
   let sliced;
   try {
-    sliced = ['_buildXrayElements', 'verifyGanttIntegrity'].map(n => sliceFn(tmSrc, n)).join('\n');
+    // _promoteRoofLoadPath: _buildXrayElements calls it since the #1272 consolidation — slice it
+    // too when present (same both-commits pattern as witness_tm_geo_order_cycles.js; without this
+    // the witness crashed ReferenceError on every post-#1272 run).
+    const _names = ['_buildXrayElements', 'verifyGanttIntegrity'];
+    if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) _names.unshift('_promoteRoofLoadPath');
+    sliced = _names.map(n => sliceFn(tmSrc, n)).join('\n');
   } catch (e) {
     assert(false, 'G-LI-2 slice failed (RED on main: ' + e.message + ')');
     finish();
