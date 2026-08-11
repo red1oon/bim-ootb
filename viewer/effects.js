@@ -2718,12 +2718,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // its proven fix, not reinventing: the real building bbox centre via A.ifc2three(), the
     // established IFC->scene axis transform, not a guessed axis mapping.
     var _ctr = A.controls ? A.controls.target : { x: 0, y: 0, z: 0 };
+    var _camTgtForLog = { x: _ctr.x, y: _ctr.y, z: _ctr.z };
     var _shadowBbox = _buildingBBoxArc() || _buildingBBoxIfc();
+    var _centreSrc = 'camera-target(FALLBACK, no bbox/ifc2three)';
     if (_shadowBbox && A.ifc2three) {
       var _sLo = A.ifc2three(_shadowBbox.xMin, _shadowBbox.yMin, _shadowBbox.zMin);
       var _sHi = A.ifc2three(_shadowBbox.xMax, _shadowBbox.yMax, _shadowBbox.zMax);
       _ctr = { x: (_sLo.x + _sHi.x) / 2, y: (_sLo.y + _sHi.y) / 2, z: (_sLo.z + _sHi.z) / 2 };
+      _centreSrc = 'building-bbox-centre';
     }
+    console.log('§PHOTO_SHADOW_TARGET src=' + _centreSrc +
+      ' target=(' + _ctr.x.toFixed(1) + ',' + _ctr.y.toFixed(1) + ',' + _ctr.z.toFixed(1) + ')' +
+      ' cameraTarget=(' + _camTgtForLog.x.toFixed(1) + ',' + _camTgtForLog.y.toFixed(1) + ',' + _camTgtForLog.z.toFixed(1) + ')' +
+      ' drift=' + Math.hypot(_ctr.x - _camTgtForLog.x, _ctr.y - _camTgtForLog.y, _ctr.z - _camTgtForLog.z).toFixed(1));
     A.sun.target.position.copy(_ctr);
     A.sun.target.updateMatrixWorld();
     var _env = 300;
