@@ -2804,7 +2804,43 @@ async function setupEffects(A, renderer, scene, camera) {
     A.sun.shadow.camera.right = _env;
     A.sun.shadow.camera.top = _env;
     A.sun.shadow.camera.bottom = -_env;
-    A.sun.shadow.bias = -0.0005;
+    // §PHOTO_SHADOW_BIAS_SCALE (2026-08-12 — the root cause of §MAIN_BUILDING_SHADOW; every number
+    // below was MEASURED live this session on HHS_Office_Federated, none guessed).
+    // three.js applies shadow.bias in NORMALISED depth, not metres — shadowmap_pars_fragment.glsl
+    // does literally `shadowCoord.z += shadowBias` where z spans [0,1] across the shadow camera's
+    // near..far. So the world-space peter-panning it produces is bias * (far - near), and the same
+    // constant means completely different things on two different shadow cameras:
+    //   A.toggleShadow (tools.js, the path the user confirms has ALWAYS worked, and the path this
+    //     one was copied from): it repositions the sun to ctr + env*(0.8,2,0.6), measured
+    //     sunDist=150 -> near=7.7 far=617.2, range=609.4 m -> -0.0005 = 0.305 m. Fine.
+    //   this path: it must NOT reposition the sun (A.sun.position is what updateSky, the Sky shader
+    //     and the lensflare all read — it stays at direction*5000), so measured sunDist=5000 ->
+    //     near=250 far=19998, range=19,748 m -> the SAME -0.0005 = 9.874 m. 32.4x.
+    // A 9.87 m world bias erases every shadow whose caster->receiver separation along the sun ray
+    // is under ~10 m. That separation is casterHeight / sin(elevation), so at the film's 55 deg
+    // opening nothing under 8.1 m tall cast anything at all: every rooftop fixture, and the near
+    // part of the building's own short ground shadow — while the tall skyline silhouette props
+    // cleared it easily, which is exactly the differential the user reported ("shadows only hit
+    // the other silhouette, not the HHS Office nor its roof"). Proven by paired A/B on a real
+    // render: changing ONLY this line's value, same camera/sun/geometry, darkened 1,665 px at the
+    // 55 deg opening and 12,095 px at dusk, and brightened 0 px at either
+    // (scratchpad witness_shadow_bias_ab.js — the change only ever ADDS shadow).
+    // Fix: hold the WORLD-space bias, don't copy the normalised constant. Floor is toggleShadow's
+    // own proven 0.305 m; at grazing sun one shadow texel spans texelWorld/tan(elevation) of depth,
+    // so the bias must also clear that or the ground self-shadows (acne). The arc's LOWEST
+    // elevation is used because _enablePhotoShadows runs once at staging while _sunArcStep sweeps
+    // the sun 55->6 deg afterwards without recomputing this camera — so the bias has to be safe at
+    // the worst angle the film reaches, not just at the angle staging happened to see.
+    var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
+    var _texelWorld = (2 * _env) / A.sun.shadow.mapSize.width;
+    var _grazeRad = THREE.MathUtils.degToRad(Math.max(1, PHOTO_SUN_ELEVATION_END));
+    var _worldBias = Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    A.sun.shadow.bias = -(_worldBias / _shadowRange);
+    console.log('§PHOTO_SHADOW_BIAS worldBias=' + _worldBias.toFixed(3) + 'm bias=' + A.sun.shadow.bias.toExponential(3) +
+      ' range=' + _shadowRange.toFixed(0) + 'm texel=' + _texelWorld.toFixed(3) + 'm grazeElev=' + PHOTO_SUN_ELEVATION_END +
+      ' (was -0.0005 = ' + (0.0005 * _shadowRange).toFixed(2) + 'm, which erased every caster under ' +
+      (0.0005 * _shadowRange * Math.sin(THREE.MathUtils.degToRad(PHOTO_SUN_ELEVATION_START))).toFixed(1) +
+      'm tall at the arc start)');
     A.sun.shadow.camera.updateProjectionMatrix();
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];
@@ -2816,6 +2852,16 @@ async function setupEffects(A, renderer, scene, camera) {
     // reflect the position/target JUST set above -- normally the renderer does this lazily before
     // its own shadow pass, but nothing has rendered yet at this point in the function, so without
     // this call the frustum test below would run against STALE (previous frame's) camera matrices.
+    // §PHOTO_SHADOW_FRUSTUM_STALE_LIGHT (2026-08-12): updateMatrices() reads the shadow camera's
+    // position out of light.matrixWorld, NOT light.position — and nothing has refreshed matrixWorld
+    // since updateSky moved the sun, so without this line the frustum test can run against the sun's
+    // PREVIOUS world position and report a coverage gap that does not exist at render time (the
+    // renderer's own scene.updateMatrixWorld runs before its shadow pass). Measured: a load that
+    // used A.toggleShadow first, then staged, logged inFrustum=2 outsideFrustum=349 here purely
+    // from that staleness, while a clean load logged inFrustum=351 outsideFrustum=0 on identical
+    // geometry. time_machine.js's applySunCycle already calls sun.updateMatrixWorld() for the same
+    // reason; this path had not. Instrumentation correctness — the render was never affected.
+    A.sun.updateMatrixWorld();
     A.sun.shadow.updateMatrices(A.sun);
     var _frustum = new THREE.Frustum();
     _frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(
