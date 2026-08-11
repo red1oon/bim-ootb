@@ -1232,7 +1232,6 @@
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
-        if (A._sunArcStep) A._sunArcStep(_tn);
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
@@ -1269,6 +1268,16 @@
           }
         }
         A.startStillRefine();
+        // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
+        // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
+        // which unconditionally re-runs A.updateSky(PHOTO_SUN_ELEVATION, ...) — the FIXED dusk
+        // value — every frame (staging is torn down and rebuilt every frame, not once per bake).
+        // Calling _sunArcStep() before startStillRefine() (as originally shipped in #1284) meant
+        // every frame's noon-to-dusk elevation got immediately overwritten back to the static dusk
+        // angle before the frame was ever captured — the arc never reached the output at all, only
+        // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
+        // correct per-frame elevation once the staging reset has already happened.
+        if (A._sunArcStep) A._sunArcStep(_tn);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         _restoreRandom();
