@@ -4341,6 +4341,147 @@
     return stats;
   }
 
+  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
+  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
+  // midair that is all" — and "no band aid fix, just generalised solution."
+  //
+  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
+  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
+  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
+  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
+  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
+  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
+  //       candidate at all, records `se=0`, and reports it clean;
+  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
+  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
+  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
+  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
+  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
+  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
+  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
+  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
+  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
+  //
+  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
+  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
+  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
+  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
+  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
+  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  //
+  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
+  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
+  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
+  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
+  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
+  // so the global maximum start never grows, and the sweep is capped besides.
+  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
+  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
+  // carrier out from under its consumer.
+  //
+  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
+  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
+  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
+  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
+  //
+  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
+  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
+  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
+  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    if (!SG || !SG.CELL) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
+    var n = items.length, i, j, k, c, S, T, arr, cs;
+    var grid = {};
+    function cellsOf(e) {
+      var o = [], a, b;
+      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
+        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    // contact graph + ground layer, built ONCE (geometry does not change as times shift)
+    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    for (i = 0; i < n; i++) {
+      T = items[i]; cs = cellsOf(T);
+      var lowest = Infinity, list = null;
+      for (c = 0; c < cs.length; c++) {
+        arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
+          S = items[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          stamp[j] = i + 1;
+          if (S.bz < lowest) lowest = S.bz;
+          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
+              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
+              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
+            (list || (list = [])).push(j);
+          }
+        }
+      }
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
+      contacts[i] = list;
+      if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
+    }
+    var movedFlag = new Uint8Array(n), first, d, changed;
+    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
+    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
+    // FINISHES"), so a stricter version of this repair was built and measured: move every element
+    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
+    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
+    // adds a duration rather than reusing an existing time).
+    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
+    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
+    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
+    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
+    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
+    // train"). It is also not the visual truth: renderAtTime shows an element from its START
+    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
+    // column is on screen resting on something, not hanging in midair.
+    // strictResidual below reports that population every run — a named, measured limit, never a
+    // silent one. Revisit only with a real user report that a half-built support reads as floating.
+    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
+    while (stats.sweeps < 12) {
+      stats.sweeps++; changed = 0;
+      for (i = 0; i < n; i++) {
+        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        first = Infinity;
+        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
+        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
+          d = first - items[i].s;
+          items[i].s += d; items[i].e += d;
+          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
+          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
+          changed++;
+        }
+      }
+      if (!changed) break;
+    }
+    for (i = 0; i < n; i++) {                                      // honest residual after the cap
+      var list3 = contacts[i]; if (!list3 || grounded[i]) continue;
+      first = Infinity;
+      for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
+      if (first > items[i].s + 1) stats.residual++;
+      var firstE = Infinity;
+      for (k = 0; k < list3.length; k++) { var e3 = items[list3[k]].e; if (e3 < firstE) firstE = e3; }
+      if (firstE > items[i].s + 1) stats.strictResidual++;   // reported, not gated — see PASS 1 header
+    }
+    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
+      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
+      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
+      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
+      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
+      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
+      ' grounded=' + stats.grounded + ' total=' + stats.total + ' ms=' + stats.ms);
+    return stats;
+  }
+
   // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
   // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
   // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
