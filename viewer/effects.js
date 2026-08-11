@@ -2522,8 +2522,11 @@ async function setupEffects(A, renderer, scene, camera) {
   // moves, right after updateSky(), so no frame captures with a stale shadow angle.
   function _sunArcStep(tNorm) {
     if (!A.updateSky) return;
-    A.updateSky(_sunElevationAt(tNorm), PHOTO_SUN_AZIMUTH);
+    var _el = _sunElevationAt(tNorm);
+    A.updateSky(_el, PHOTO_SUN_AZIMUTH);
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
+      ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
   }
   A._sunArcStep = _sunArcStep;
   var PHOTO_ENVMAP_BOOST = 3.0;   // multiply each material's existing envMapIntensity — stronger
@@ -2619,13 +2622,17 @@ async function setupEffects(A, renderer, scene, camera) {
     if (force && _wouldSkip) _photoShadowForcedSaves++;
     _photoShadowCheckIdx = _idx; _photoShadowCheckKids = _kids; _photoShadowCheckVis = _vis;
     _photoShadowReassertRuns++;
-    var changed = false;
+    var changed = false, _visMeshes = 0, _flippedOn = 0;
     A.scene.traverse(function(o) {
-      if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !o.castShadow) {
-        o.castShadow = true; o.receiveShadow = true; changed = true;
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible) return;
+      _visMeshes++;
+      if (!o.castShadow) {
+        o.castShadow = true; o.receiveShadow = true; changed = true; _flippedOn++;
       }
     });
     if (changed && A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    if (force) console.log('§PHOTO_SHADOW_FORCE_REASSERT visMeshes=' + _visMeshes +
+      ' flippedOn=' + _flippedOn + ' (0 flipped = every visible mesh already had castShadow on)');
   }
   // §PHOTO_ENVMAP_STALE (user ask: "sunlight bounce has not occurred even once" — found the real
   // cause, not a tuning miss): streaming.js assigns each material's `.envMap` ONCE, at streaming
