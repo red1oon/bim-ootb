@@ -240,6 +240,27 @@ var SEQUENCE_NAME_OVERRIDES = [
     phase: 'Architecture',
     sequence: 7,
     resource: 'CARPENTER'
+  },
+  // §PILE_SLAB_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md big-element
+  // follow-up — Witness: witness_big_element_support_coverage.js): Terminal's 236 §SUPPORT_UNCHECKED
+  // IfcSlab are 'jkrST_str-fo_pc_rcp:300 x 300mm' — 300×300mm × 30.15m precast RC foundation PILES
+  // ('str-fo' = JKR structural-foundation code) misclassified as IfcSlab by the authoring tool.
+  // They sit at the building's absolute lowest z (base −16.04..−15.94 vs model min −16.04) with
+  // NOTHING modeled beneath them — genuinely ground-bearing Substructure, the exact population the
+  // seq===1 exemption (schedule_gate.js 1c) exists for, unreachable by class lookup alone (this is
+  // the archived 'Gap A: IfcPile has no SEQUENCE_RULES entry' arriving disguised as IfcSlab).
+  // Pattern MEASURED against every shipped buildings/*.db (2026-08-11): with the IfcSlab class gate
+  // it matches exactly those 236 (Terminal family, incl. Terminal_meta/rooms/TermRooms copies) and
+  // nothing else; \bpile\b (not bare 'pile') keeps 'stockpile'-style names out, and Hospital's
+  // 'M_Pile Cap-6 Pile' footings are already IfcFooting (out of class scope, same target phase).
+  {
+    id: 'foundation_pile_misclassified_slab',
+    classes: ['IfcSlab'],
+    pattern: 'str-fo|\\bpile\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
   }
 ];
 

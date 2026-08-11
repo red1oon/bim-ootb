@@ -53,23 +53,35 @@ function sliceFn(src, name) {
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 
 // The 5 shipped buildings the 1.556 m³ p95 was measured on, with the EXTRACTED (not assumed)
-// buildingModelsSubstructure facts from the 2026-08-11 Q2 extraction: Terminal and HHS model ZERO
-// Substructure-phase elements (no IfcFooting, nothing else matches) — expected and correct, not a
-// bug. EXPECTED unchecked = measured baseline from this witness's own first logged run (repo
-// convention, cf. witness_tm_geo_order_cycles.js floating=8): if it moves EITHER way that is a real
-// behavior change to examine, never to absorb silently. null = measure-only (pre-baseline).
+// buildingModelsSubstructure facts. 2026-08-11 Q2 extraction said Terminal and HHS model ZERO
+// Substructure-phase elements — for HHS that stands; for Terminal it was an artifact of the class
+// lookup: its 236 'jkrST_str-fo_pc_rcp' 30m precast PILES were authored as IfcSlab, now reclassed
+// seq 1 by the 'foundation_pile_misclassified_slab' name-override (rates.js — big-element
+// follow-up, same day), so Terminal is bms=true. EXPECTED unchecked = measured baseline from this
+// witness's own logged runs (repo convention, cf. witness_tm_geo_order_cycles.js floating=8): if
+// it moves EITHER way that is a real behavior change to examine, never to absorb silently.
 const BUILDINGS = [
-  // Baselines MEASURED 2026-08-11 (this witness's own first logged run, bigsup_measure.log):
-  //   Terminal big=1333 unchecked=279 (IfcSlab:236,IfcBeam:22,...)      floating=8 (the known tail)
-  //   Hospital big=4314 unchecked=503 (IfcDuctSegment:139,IfcPlate:83,…) floating=0
-  //   Duplex   big=49   unchecked=6   (IfcSlab:4,IfcWallStandardCase:2)  floating=0
-  //   HHS      big=239  unchecked=21  (IfcFlowSegment:11,IfcSlab:5,…)    floating=0
-  //   Clinic   big=442  unchecked=22  (IfcWallStandardCase:10,…)         floating=1
-  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: false, expectedUnchecked: 279 },
-  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 503 },
+  // Baselines RE-MEASURED 2026-08-11 (big-element follow-up, bigsup_after_fix2.log) after three
+  // deliberate changes, each with its own delta reasoned below (first-run baselines in parens):
+  //  (1) §HANG_NEAREST fallback (schedule_gate.js) — big pure-sink hangers (rod-suspended MEP etc.)
+  //      now find their real carrier above: Terminal −11 (8 IfcDuctSegment+3 IfcDuctFitting),
+  //      Hospital −264 (139 IfcDuctSegment, 60 IfcDuctFitting, …), HHS −10, Clinic −6.
+  //  (2) pile name-override — Terminal −236 IfcSlab (piles, now seq-1 exempt; big pop 1333→1097).
+  //  (3) harness key fix (SEQUENCE_NAME_OVERRIDES was read from a key the JSON never had — these
+  //      witnesses silently ran with NAME OVERRIDES OFF while the live viewer always ran with
+  //      rates.js's in-file copy ON; now live-parity): curtainwall glazing/mullions (IfcPlate/
+  //      IfcMember→seq 7 sinks) re-mix Hospital/HHS/Clinic counts — Hospital's 83 unchecked
+  //      IfcPlate resolve via (1), Clinic gains 5 IfcWallStandardCase/IfcMember (net 0).
+  //   Terminal big=1097 unchecked=32  (IfcBeam:22,IfcColumn:7,IfcWall:3)  floating=8 (known tail, HELD)
+  //   Hospital big=4314 unchecked=177 (IfcBeam:56,IfcWallStandardCase:45,…) floating=0 (HELD)
+  //   Duplex   big=49   unchecked=6   (IfcSlab:4,IfcWallStandardCase:2)     floating=0 (HELD)
+  //   HHS      big=239  unchecked=13  (IfcSlab:5,IfcFlowSegment:3,…)        floating=0 (HELD)
+  //   Clinic   big=442  unchecked=22  (IfcWallStandardCase:15,IfcMember:3,…) floating=1 (HELD)
+  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 32 },   // was bms:false/279
+  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 6 },
-  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 21 },
-  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },
+  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 13 },   // was 21
+  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
 ];
 
 (async () => {
@@ -94,7 +106,7 @@ const BUILDINGS = [
     const sandbox = {
       console: console,
       performance: { now: () => Date.now() },
-      window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || [] },
+      window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
       A: function () { return { db: db }; },
     };
     vm.createContext(sandbox);
@@ -112,7 +124,7 @@ const BUILDINGS = [
     // Gap-B fact check: buildingModelsSubstructure per the same seq===1 test auditFloating applies.
     const bms = geoEls.some(e => e.seq === 1);
     assert(bms === B.bms, 'W-BIGSUP-' + B.name + '-2 buildingModelsSubstructure=' + bms +
-      ' matches the 2026-08-11 Q2 extraction (expected ' + B.bms + (B.bms ? '' : ' — no foundation layer modeled, expected and correct') + ')');
+      ' matches the EXTRACTED per-building fact (expected ' + B.bms + (B.bms ? '' : ' — no foundation layer modeled, expected and correct') + ')');
 
     const bigEls = geoEls.filter(e => e.seq !== 1 && (e.x1 - e.x0) * (e.y1 - e.y0) * (e.top_z - e.base_z) > BIG);
     const seqByGuid = {};
