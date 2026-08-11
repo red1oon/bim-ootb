@@ -314,6 +314,27 @@
               S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
+    // ══ §DOOR_WINDOW_HOST_WALL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════
+    // A door/window is not borne from below (geoGate) or hung from above (hangGate) — it is cut
+    // SIDEWAYS into a wall. Neither existing gate models that relationship, so a door/window has
+    // never been checked against the wall it is physically embedded in. Measured on all 7 shipped
+    // buildings (probe_door_wall.js): 0.5%-21.8% of doors/windows started before their own host
+    // wall finished, real cases up to 120+ days early — reported live, HHS_Office_Federated Level
+    // 2: door starts day 17.0, its wall doesn't finish until day 27.3.
+    // No IfcRelFillsElement/IfcRelVoidsElement data is extracted (no such table exists in the
+    // shipped DB), so the host wall is found geometrically — same wallGrid + overlap() primitive
+    // wallGate already uses, XY/Z bbox overlap instead of the "rests on top of" band wallGate
+    // tests. STRICT ADDITION: only Door/Window elements are gated; every other element's timing,
+    // and wallGate's own existing roof-slab-on-wall behavior, are untouched.
+    function openingGate(el) {
+      if (el.cls !== 'IfcDoor' && el.cls !== 'IfcWindow') return baseMs;
+      var g = baseMs; cs = cellsOf(el);
+      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) { S = arr[k];
+          if (S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS &&
+              S.end > g && overlap(S, el)) g = S.end; } }
+      return g;
+    }
     // ══ §GEOMETRIC_SUPPORT_ORDER (2026-08-07, 4D_SCHEDULE_PERFECTION.md) ════════════════════════
     // Placement order is derived from GEOMETRY FIRST: a support DAG built from XYZ data alone —
     // edge S→E for exactly the pair predicates the timing gates above consult (geoGate's
@@ -445,7 +466,7 @@
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1
+      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL
       if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
@@ -497,7 +518,7 @@
       var _moved = 0;
       nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
         .forEach(function (el) {
-        var need = Math.max(geoGate(el), wallGate(el), hangGate(el));
+        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el));
         var o = out[el.guid];
         if (o.start < need) {
           var dur = o.end - o.start; o.start = need; o.end = need + dur;
