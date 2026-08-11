@@ -2732,6 +2732,31 @@ async function setupEffects(A, renderer, scene, camera) {
       var _skyRadius = _skyEnvelope * PHOTO_SKYLINE_RADIUS_MULT;
       _env = Math.max(_env, Math.ceil(_skyRadius + PHOTO_SKYLINE_BOX_MARGIN));
     }
+    // §PHOTO_SUN_SHADOW_REACH (2026-08-11, real numbers not eyeballed — see
+    // prompts/PHOTOREAL_STILL_RENDER.md §SUN_ARC "study the maths" section): the skyline-only
+    // _env above sizes the frustum from the building's FOOTPRINT, never from how far a LOW sun
+    // throws a shadow. At dusk (elevation=6°) shadow reach = height/tan(6°) ~ 9.5x the building's
+    // own height — for HHS_Office_Federated (height~19.8m) that's ~188m, exceeding the ~180m
+    // skyline-only _env, so the shadow's own tip fell outside its shadow camera's frustum and was
+    // silently clipped (never rendered, not a shading bug). Measured: a real 52-frame bake showed
+    // contrast/dynamic-range declining monotonically toward dusk instead of increasing, consistent
+    // with this (scratchpad/analyze_hhs_shadow_frames.py, this session's own witness).
+    // Elevation read directly from A.sun.position, not passed in (this function has no elevation
+    // param) — scene.js updateSky() sets sun.position = direction * 5000 (a fixed constant, not
+    // approximated here), so elevation = asin(y/5000) is exact.
+    if (_skyBbox) {
+      var _bldgHeight = Math.max(1, _skyBbox.zMax - _skyBbox.zMin);
+      var _elevRad = Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)));
+      var _elevDeg = THREE.MathUtils.radToDeg(_elevRad);
+      if (_elevDeg > 0.5) {  // guard: at/below horizon, tan() blows up to a meaningless frustum
+        var _shadowReach = _bldgHeight / Math.tan(_elevRad);
+        var _envBefore = _env;
+        _env = Math.max(_env, Math.ceil(_shadowReach + PHOTO_SKYLINE_BOX_MARGIN));
+        if (_env !== _envBefore) console.log('§PHOTO_SUN_SHADOW_REACH elevation=' + _elevDeg.toFixed(1) +
+          ' bldgHeight=' + _bldgHeight.toFixed(1) + ' shadowReach=' + _shadowReach.toFixed(0) +
+          ' env ' + _envBefore + '->' + _env);
+      }
+    }
     // NOTE: computed AFTER A.updateSky() has already positioned A.sun at the dusk direction (see
     // call order in _applyPhotoStaging below) — using the ORIGINAL toggleShadow() order (frustum
     // math before the sun is repositioned) would size this frustum for the wrong sun distance.
