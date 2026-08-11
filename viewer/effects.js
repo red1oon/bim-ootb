@@ -4595,6 +4595,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // curves". Three bands = six waypoints, but stored and edited as three (user: "in a way the 3
   // bands are actually 6 waypoints... but efficiently folded into 3").
   var _cpeBands = null;
+  // §CPE_REPLAN_LAZY (CINEMA_DELIGHT_BATCH.md:40-66 spec; CPE_4D_PERF_MEM_FINDINGS.md §3-R3 —
+  // Witness: witness_cpe_replan_lazy.js): the plan prefix (§CINEMA_SPACE candidate scan +
+  // §CINEMA_DIVE settle + §CINEMA_EXIT door scoring/route) depends only on the MODEL and the
+  // camera basis — §CPE_PREVIEW_DIVERGENCE pins the basis at editor open, so during an editing
+  // session the prefix recomputed byte-identically on every band drag (~550ms of the measured
+  // 600-1000ms §CPE_REPLAN_SLOW, 8 consecutive drags byte-identical on Terminal). Cache it keyed
+  // on (building, _metaGen, camPos, yaw0, pitch0); a key change or A.cinemaPrefixInvalidate()
+  // (the "re-derive entry" control) recomputes. The cached §CINEMA_DIVE/§CINEMA_EXIT lines are
+  // replayed VERBATIM on a hit — witness_cpe_preview_divergence.js parses them for equality, and
+  // equality is exactly what the cache guarantees.
+  var _cinemaPrefixCache = null;
   // §CPE_HOSE (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE, user 2026-07-28: "what if
   // we make the whole path editable... just dragging a point where the whole path is like a long
   // rubber hose, reacting only by proximity to the point been dragged, and the rest just curves
@@ -5123,6 +5134,17 @@ async function setupEffects(A, renderer, scene, camera) {
     var yaw0 = Math.atan2(_dir0.z, _dir0.x);
     var pitch0 = Math.asin(Math.max(-1, Math.min(1, _dir0.y)));
 
+    // §CPE_REPLAN_LAZY — prefix cache key + hit test (see the module-scope comment at
+    // _cinemaPrefixCache). Everything from here to just past `outWp.push(exitOuter)` is the
+    // cacheable prefix; the restore branch is at the end of that span.
+    var _ppT0 = (typeof performance !== 'undefined') ? performance.now() : 0;
+    var _ppKey = (A.activeBuilding || '') + '|' + (A._metaGen || 0) + '|' +
+      [camPos0.x, camPos0.y, camPos0.z, yaw0, pitch0].map(function (v) { return v.toFixed(4); }).join(',');
+    var _ppHit = !!(_cinemaPrefixCache && _cinemaPrefixCache.key === _ppKey);
+    var _ppc = null;
+    if (_ppHit) _ppc = JSON.parse(_cinemaPrefixCache.json);
+    if (!_ppHit) {
+
     // ══ §CINEMA_SPACE — largest interior space, ALWAYS searched (2026-07-20 user ruling: "abandon
     // the 'next largest room' idea... It is disastrous for sure. Just back to original 'go to
     // largest space within 4 sec'. Let user play with it"). No floor-level weighting, no multi-
@@ -5274,7 +5296,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var diveDist = Math.hypot(settle.x - camPos0.x, settle.y - camPos0.y, settle.z - camPos0.z);
     var CINEMA_TRAVEL_THRESHOLD_M = 3;
     var hadToTravel = diveDist > CINEMA_TRAVEL_THRESHOLD_M;
-    console.log('§CINEMA_DIVE src=' + diveSrc + ' space="' + diveName + '" areaM2=' + diveArea.toFixed(1) +
+    var _ppDiveLine = '§CINEMA_DIVE src=' + diveSrc + ' space="' + diveName + '" areaM2=' + diveArea.toFixed(1) +
       ' settle=(' + settle.x.toFixed(1) + ',' + settle.y.toFixed(1) + ',' + settle.z.toFixed(1) + ')' +
       ' floorY=' + (floorY === null ? 'n/a' : floorY.toFixed(2)) + ' eye=' + CINEMA_EYE_M +
       ' fanMin=' + fan.min.toFixed(1) + ' fanMax=' + fan.max.toFixed(1) + ' fanMean=' + fan.mean.toFixed(1) +
@@ -5283,7 +5305,8 @@ async function setupEffects(A, renderer, scene, camera) {
       ' fanMinGlazing=' + fan.minGlazing + ' nudgeCap=' + nudgeCap +
       ' enclosed=' + (enclosedFrac * 100).toFixed(0) + '%' +
       ' yaw0=' + (yaw0 * 180 / Math.PI).toFixed(1) + '° pitch0=' + (pitch0 * 180 / Math.PI).toFixed(1) + '°' +
-      ' diveDist=' + diveDist.toFixed(1) + 'm');
+      ' diveDist=' + diveDist.toFixed(1) + 'm';
+    console.log(_ppDiveLine);
 
     // ══ §CINEMA_EXIT — chosen at the 4-second mark by POSITION **and** FACING ══════════════════
     // WAS: one global `entrance = widest-ground-door` for the whole building — every film on a
@@ -5353,12 +5376,13 @@ async function setupEffects(A, renderer, scene, camera) {
       exitSrc = 'facade-fallback';
     }
     exitScored.sort(function(a, b) { return a.cost - b.cost; });
-    console.log('§CINEMA_EXIT chosen=' + chosenExit.guid + ' name="' + chosenExit.name + '" dist=' +
+    var _ppExitLine = '§CINEMA_EXIT chosen=' + chosenExit.guid + ' name="' + chosenExit.name + '" dist=' +
       chosenExit.dist.toFixed(1) + ' facingDot=' + chosenExit.facingDot.toFixed(3) +
       ' perimFactor=' + (chosenExit.perim || 1).toFixed(2) + ' cost=' +
       chosenExit.cost.toFixed(1) + ' src=' + exitSrc + ' candidates=' + exitScored.length +
       ' runnerUp=' + (exitScored[1] ? exitScored[1].guid + '@' + exitScored[1].cost.toFixed(1) : 'none') +
-      ' hadToTravel=' + hadToTravel + ' diveDist=' + diveDist.toFixed(1) + 'm mood=' + (hadToTravel ? 'rushed' : 'graceful'));
+      ' hadToTravel=' + hadToTravel + ' diveDist=' + diveDist.toFixed(1) + 'm mood=' + (hadToTravel ? 'rushed' : 'graceful');
+    console.log(_ppExitLine);
 
     // Route out: ride the building's OWN room/corridor graph when it has one (wall-legal, the same
     // RoomGraph the Fly tour uses); straight line otherwise — then a wall clip is the model's data
@@ -5397,6 +5421,31 @@ async function setupEffects(A, renderer, scene, camera) {
                       y: chosenExit.p.y + CINEMA_EYE_M,
                       z: chosenExit.p.z + odz * Math.max(8, envelope * 0.15) };
     outWp.push(exitOuter);
+    // §CPE_REPLAN_LAZY — store the freshly-computed prefix. JSON round-trip so every later replan
+    // gets fresh copies (the suffix mutates outWp; a shared reference would corrupt the cache).
+    _cinemaPrefixCache = { key: _ppKey,
+      prefixMs: ((typeof performance !== 'undefined') ? performance.now() : 0) - _ppT0,
+      json: JSON.stringify({ settle: settle, fan: fan, diveDist: diveDist, hadToTravel: hadToTravel,
+        chosenExit: chosenExit, exitSrc: exitSrc, exitScored: exitScored, outWp: outWp,
+        outRoute: outRoute, exitOuter: exitOuter, spaceCandsLen: spaceCands.length,
+        odx: odx, odz: odz,
+        diveLine: _ppDiveLine, exitLine: _ppExitLine }) };
+    console.log('§CPE_REPLAN_LAZY miss=1 prefixMs=' + _cinemaPrefixCache.prefixMs.toFixed(1) + ' key=' + _ppKey.slice(0, 40));
+    } else {
+      // §CPE_REPLAN_LAZY — cache hit: restore every prefix output the suffix consumes and replay
+      // the §CINEMA_DIVE/§CINEMA_EXIT lines VERBATIM (identical by construction — the cache key
+      // pins every input the prefix reads; witness_cpe_preview_divergence.js keeps parsing them).
+      var settle = _ppc.settle, fan = _ppc.fan, diveDist = _ppc.diveDist,
+          hadToTravel = _ppc.hadToTravel, chosenExit = _ppc.chosenExit, exitSrc = _ppc.exitSrc,
+          exitScored = _ppc.exitScored, outWp = _ppc.outWp, outRoute = _ppc.outRoute,
+          exitOuter = _ppc.exitOuter, spaceCands = new Array(_ppc.spaceCandsLen),
+          odx = _ppc.odx, odz = _ppc.odz;   // Beat 3/4 outward-push fallback — read by the suffix's
+          // gaze fallback and the §Beat-4 seam measurement; the ONE prefix output the first cut of
+          // this cache missed (found by witness G-RL-EQUIV at 0.098m divergence, fixed same day).
+      console.log(_ppc.diveLine);
+      console.log(_ppc.exitLine);
+      console.log('§CPE_REPLAN_LAZY hit=1 savedMs=' + _cinemaPrefixCache.prefixMs.toFixed(1) + ' key=' + _ppKey.slice(0, 40));
+    }
     // ══ §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md §CINEMA_PATH_EDITOR_MODEL item 1):
     // AUTHORED waypoints replace the derived walk-out wholesale. Waypoints are the ONLY authored
     // data in this whole feature — position plus camera height, nothing else. The camera ANGLE is
@@ -7543,6 +7592,14 @@ async function setupEffects(A, renderer, scene, camera) {
       c.quaternion.copy(sq); c.updateMatrixWorld(true);
     }
   }
+
+  // §CPE_REPLAN_LAZY — the "re-derive entry" control (the spec's own ask: re-deriving the entry is
+  // a real thing the user may WANT — a different room to dive into, a different exit door — it just
+  // must not happen eight times by accident while dragging a stick).
+  A.cinemaPrefixInvalidate = function(reason) {
+    _cinemaPrefixCache = null;
+    console.log('§CPE_REPLAN_LAZY invalidated reason=' + (reason || 'manual'));
+  };
 
   A.cinemaPathPlan = function(durationSec, ov) {
     // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
