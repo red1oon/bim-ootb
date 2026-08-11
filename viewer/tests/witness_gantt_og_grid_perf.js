@@ -89,7 +89,9 @@ function bruteForcePush(elements) {
       let lastEnd = 0, envEnd = 0, hasBearing = false;
       for (let i = 0; i < work.length; i++) {
         const S = work[i]; if (S.guid === T.guid) continue;
-        const isStruct = S.seq <= 4;
+        // §PROMOTED_CARRIER_POOL (2026-08-11): struct pool = seq<=4 ∪ promoted slabs, aligned with
+        // auditFloating — mirrors the shipped guard's finding-A fix (see time_machine.js).
+        const isStruct = S.seq <= 4 || (S.cls === 'IfcSlab' && S.seq > 4);
         const isWall = S.seq > 4 && S.cls.indexOf('IfcWall') === 0;
         if (!isStruct && !(promotedSlab && isWall)) continue;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xy(S, T)) {
@@ -101,7 +103,7 @@ function bruteForcePush(elements) {
       if (!lastEnd && envEnd) lastEnd = envEnd;
       if (!hasBearing && T.seq > 4) {
         for (let i = 0; i < work.length; i++) {
-          const H = work[i]; if (H.guid === T.guid || H.seq > 4) continue;
+          const H = work[i]; if (H.guid === T.guid || !(H.seq <= 4 || (H.cls === 'IfcSlab' && H.seq > 4))) continue;   // §PROMOTED_CARRIER_POOL: hang pool == struct pool (audit parity)
           if (H.bz >= T.tz - GAP && H.bz <= T.tz + GAP && H.tz > T.tz + EPS && xy(H, T) && H.e > lastEnd) lastEnd = H.e;
         }
       }

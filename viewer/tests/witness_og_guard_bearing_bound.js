@@ -125,7 +125,9 @@ function detectionSet(scheduled) {
     return out;
   };
   scheduled.forEach(e => {
-    if (e.seq <= 4) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
+    // §PROMOTED_CARRIER_POOL (2026-08-11): detection pool = seq<=4 ∪ promoted slabs (audit parity,
+    // finding-A fix — see time_machine.js _buildXraySupportCache).
+    if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
   });
   const withBearing = {};
   scheduled.forEach(T => {

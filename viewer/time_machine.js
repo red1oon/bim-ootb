@@ -151,19 +151,9 @@
     } else {
       _ganttAxisEnd = _projectEnd;
     }
-    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
-    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
-    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
-    // threshold, never a new invented one.
-    var ends = _ops.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
-    var n = ends.length;
-    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
-    if (n > 20) {
-      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
-      _ganttAxisEnd = ends[hiI];
-    } else {
-      _ganttAxisEnd = _projectEnd;
-    }
+    // (G-3 fix 2026-08-11: a stale byte-duplicate of the block above sat here reading `_ops` —
+    // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
+    // BUILDING_OPEN. Removed; the cOps-based block above is the single authority.)
   }
 
   // ── Scene: emerge from nothing ──
@@ -3407,6 +3397,7 @@
   function _promoteRoofLoadPath(elements) {
     var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
     var loadPathOverrides = 0;
+    var lpGuids = [];  // promoted GUIDs — returned for the §4D_ROOF_LOAD_PATH witness hook (G-RLP-2/3)
     // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
     // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
     var lpSlabs = [], lpSeed = [];
@@ -3428,6 +3419,7 @@
         el.seq = 8; el.phase = 'Architecture';
         loadPathOverrides++;
         lpSeed.push(el);
+        lpGuids.push(el.guid);
       }
     });
 
@@ -3471,9 +3463,10 @@
         }
         el.seq = 8; el.phase = 'Architecture';
         loadPathOverrides++; m4Promoted++;
+        lpGuids.push(el.guid);
       });
     }
-    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted };
+    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted, guids: lpGuids };
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3609,7 +3602,13 @@
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S, T;
     for (i = 0; i < elements.length; i++) {
       var e = elements[i];
-      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      // §PROMOTED_CARRIER_POOL (2026-08-11, §TIER_SERIAL finding A follow-on): pool aligned with
+      // auditFloating's (schedule_gate.js) — seq<=4 ∪ load-path-PROMOTED slabs (seq>4 IfcSlab).
+      // Promoted roof slabs are audit/DAG carriers (helipad boxes stand on the promoted deck;
+      // Terminal's 24k wall-carried cone) but were INVISIBLE here, so their dependents were never
+      // staged/gated against them — the guard (_ogSupportSweep) applies the IDENTICAL pool, the
+      // pair stays one physics (witness_og_guard_bearing_bound W-OGB-3).
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); }
     }
     var eCount = 0;
@@ -3938,7 +3937,10 @@
       var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
       var _ogStructGrid = {}, _ogWallGrid = {};
       _allScheduled.forEach(function (e) {
-        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        // §PROMOTED_CARRIER_POOL (2026-08-11): pool aligned with auditFloating's — seq<=4 ∪
+        // promoted slabs (see _buildXraySupportCache for the full finding-A note; guard and judge
+        // MUST stay one physics or §XRAY_EDGES staged>0 comes back).
+        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
         else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
@@ -4380,6 +4382,11 @@
     // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
     // when the two inline copies were consolidated 2026-08-10).
     var _lp = _promoteRoofLoadPath(elements);
+    // §4D_ROOF_LOAD_PATH witness hook (double-underscore debug convention, same as __tmGanttShift):
+    // on the _cap path the ops' `phase` param is overwritten with the task NAME (p.phase = w.name
+    // below), so promotion is no longer observable through kernel_ops — witness_4d_roof_load_path
+    // G-RLP-2/3 read the promoted set here instead. Refreshed on every injectGantt run.
+    window.__tmLoadPathPromoted = _lp.guids;
     if (_lp.total) console.log('§GANTT_OVERRIDE ' + _lp.total +
       ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
       ' (seed=' + _lp.seedCount + ' + M4 rooftop-appurtenance=' + _lp.m4Count + ')');

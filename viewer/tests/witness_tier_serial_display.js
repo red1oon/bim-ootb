@@ -99,10 +99,18 @@ const GENERIC = { IfcBuildingElementProxy: 1, IfcBuildingElementPart: 1 };
 // LOCKED baseline (measured 2026-08-11, furniture_measure.log): furniture-named elements in
 // NON-generic Tier-1 classes — Terminal's single IfcSlab 'Floor:Table Top:904745' counter, 0
 // everywhere else. Movement either way = a real data/rules change to examine, not absorb.
-const NONGENERIC_T1_BASELINE = { Terminal: 1, Hospital: 0, Duplex: 0, HHS_Office_Federated: 0, Clinic: 0 };
+const NONGENERIC_T1_BASELINE = { Terminal: 1, Hospital: 0, Duplex: 0, HHS_Office_Federated: 0, Clinic: 0,
+  LTU_AHouse: 0, JKR: 0 };   // measured 2026-08-11 chase-to-zero pass (0 furniture-named Tier-1 on both)
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
-const BUILDINGS = ['Terminal', 'Hospital', 'Duplex', 'HHS_Office_Federated', 'Clinic'];
+// Coverage extended 2026-08-11 (chase-to-zero pass): LTU_AHouse + JKR join the locked set.
+// LTU_AHouse tests the LIVE-SERVED vintage (_meta.db — streaming.js §6.9 prefers the split pair
+// when present, so real users get that file, not _extracted.db). This witness takes NO position on
+// the still-open architectural question of which LTU vintage is canonical (the user's call) — it
+// tests what live users actually receive. The old _extracted vintage measured rawFloating=2839 vs
+// the live pair's 334 (probe_ltu.log, 2026-08-11) — the re-extraction itself fixed ~2500.
+const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };   // default: <name>_extracted.db
+const BUILDINGS = ['Terminal', 'Hospital', 'Duplex', 'HHS_Office_Federated', 'Clinic', 'LTU_AHouse', 'JKR'];
 const D = 86400000;
 
 (async () => {
@@ -115,7 +123,7 @@ const D = 86400000;
     'W-TS-0 furniture_generic_bucket override shipped in rates/sequence_rules.json');
 
   for (const bld of BUILDINGS) {
-    const dbPath = path.join(BLD_DIR, bld + '_extracted.db');
+    const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { assert(false, 'W-TS fixture missing: ' + dbPath); continue; }
     const db = new SQL.Database(fs.readFileSync(dbPath));
 
@@ -212,7 +220,14 @@ const D = 86400000;
     // through its 10 promoted slabs (294 direct bearers). A frame building (Hospital) has almost
     // none — the measured counts ARE the building topology. Movement either way = a real
     // data/topology/rules change to examine, not absorb.
-    const DAGWINS_BASELINE = { Terminal: 24007, Hospital: 9, Duplex: 0, HHS_Office_Federated: 420, Clinic: 6 };
+    // LTU_AHouse 882 / JKR 398 measured 2026-08-11 (chase-to-zero pass, probe_ltu.log/probe_jkr.log):
+    // both are the Terminal/HHS shape — steel members + promoted-slab cones the support DAG places
+    // across phase boundaries. LTU also carries rawTailExempt=334 (its raw floating tail: ALL 334
+    // are support-POOL members in mutual/co-planar bearing shapes — §SUPPORT_CYCLE reports 25,393
+    // cycle-fallback members on the live vintage — the documented warn-only class, not repairable
+    // without inventing physics; the old _extracted vintage read 2839).
+    const DAGWINS_BASELINE = { Terminal: 24007, Hospital: 9, Duplex: 0, HHS_Office_Federated: 420, Clinic: 6,
+      LTU_AHouse: 882, JKR: 398 };
     assert(stats && stats.dagWins === DAGWINS_BASELINE[bld],
       'W-TS-1b ' + bld + ' DAG-forced cross-phase population locked at ' + DAGWINS_BASELINE[bld] +
       ' (got ' + (stats ? stats.dagWins : '?') + ') — support order wins for these, counted never hidden');

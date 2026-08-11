@@ -93,6 +93,20 @@ const BUILDINGS = [
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
   { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 13 },   // was 21
   { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
+  // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
+  // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
+  // LTU_AHouse: the LIVE-SERVED vintage (_meta.db — streaming.js §6.9 serves the split pair to real
+  // users when present; which vintage is canonical remains the user's open decision, this witness
+  // just tests what users get). Measured 2026-08-11 (probe_ltu.log): unchecked=611 on the live
+  // vintage (old _extracted read 70 unchecked but 2839 floating — the Aug-10 re-extraction traded
+  // ~2500 wrong-order floats for honestly-unverifiable warns), floating=334 (ALL 334 are support-
+  // pool members in mutual/co-planar bearing shapes — §SUPPORT_CYCLE cycle-fallback tail, the
+  // documented warn-only class; §DEQ_REPAIR only repairs seq>4 by design since pushing a pool
+  // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
+  // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
+  // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 611 },
+  { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 
 (async () => {
