@@ -1231,6 +1231,8 @@
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
+        if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
+        if (A._sunArcStep) A._sunArcStep(_tn);
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
