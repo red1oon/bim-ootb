@@ -1334,7 +1334,26 @@
     // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
     // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
     var _sig = _tmSceneSig(app);
-    if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
+    // §PERF_INCR_DEFER (TM_STREAM_REBUILD_COALESCE.md; CPE_4D_PERF_MEM_FINDINGS.md §3-R5): TM
+    // active WHILE a big building still streams = every batch bumps _metaGen = a full 50-159ms
+    // index rebuild per batch (10+ on LTU, 0.5-2s stacked) — and each rebuild forced mode=full
+    // anyway (_incrPrimed reset). While app.streaming, skip the builds entirely and render
+    // full-mode (identical output — the full path never consults the index); build ONCE on the
+    // first pass after streaming settles. Mirrors _dlodEngaged's !app.streaming gate. A stale
+    // index is never consulted: the index is DROPPED here, not kept (§4 Risk discipline —
+    // "a stale index silently corrupts the scene").
+    if (!_evMesh || _sig !== _evSig) {
+      if (app.streaming) {
+        // Drop (never keep-stale) any existing index once; then stay index-less and silent —
+        // every pass below renders the full path (_incrPrimed=false ⇒ _incrOK=false).
+        if (_evMesh) {
+          _evMesh = null; _evSig = ''; _incrPrimed = false;
+          console.log('§PERF_INCR_DEFER streaming — index dropped, builds deferred until settle');
+        }
+      } else {
+        _tmBuildEventIndex(app, lingerMs);
+      }
+    }
     var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
     var _shadowNow = !!app._shadowOn;
     var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
