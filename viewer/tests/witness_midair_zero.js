@@ -26,6 +26,14 @@
 //   W-MZ-5  Wiring: _midairRepair is actually CALLED on the kernel_ops path in injectGantt. The
 //           §DOOR_WINDOW_HOST_WALL lesson — a gate wired at zero (or one of two) call sites is
 //           silently a no-op and measurably fixes nothing.
+//   W-MZ-6  The 🔓→🔒 LOCK gate judges by the SAME rule (verifyGanttIntegrity runs _midairAudit and
+//           refuses on it) — otherwise a planner's own bar-drag re-creates the hangings the
+//           generated film has none of, and the lock is granted anyway.
+//   W-MZ-7  That judge is not vacuous: drag one element 5 days before its first contact and it must
+//           report the hanging. A test that cannot fail proves nothing.
+//   W-MZ-8  The COST of this repair is locked, not hidden: moving an element later can leave a
+//           dependent starting before that support FINISHES (auditFloating's own measure). The
+//           after-value is baselined per building so the trade can never drift quietly.
 //
 // Approximation caveat (same as witness_tier_serial_display.js): durations come from
 // ScheduleAuthor._installSecs with real class fragmentation + linear weighting — the same
@@ -61,11 +69,22 @@ const sliced = [tierOrderLine,
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
   sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
-  sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_midairRepair')].join('\n');
+  sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
+  sliceFn(tmSrc, '_midairAudit'), sliceFn(tmSrc, '_midairRepair')].join('\n');
 
 // W-MZ-5 — the repair must be called on the kernel_ops path, not merely defined
 assert(/_twoTierRemap\(_twItems\);[\s\S]{0,600}_midairRepair\(_twItems\)/.test(tmSrc),
   'W-MZ-5 _midairRepair called on the kernel_ops path, right after _twoTierRemap (a defined-but-uncalled repair is a silent no-op)');
+// W-MZ-6 — the LOCK gate must judge by the same rule the generator enforces, or a planner's drag
+// re-creates exactly the hangings the generated film has none of and the lock is still granted.
+const _vgi = tmSrc.slice(tmSrc.indexOf('function verifyGanttIntegrity()'));
+const _vgiBody = _vgi.slice(0, _vgi.indexOf('\n  }\n'));
+assert(_vgiBody.indexOf('_midairAudit(') > 0,
+  'W-MZ-6a verifyGanttIntegrity (the 🔓→🔒 lock gate) runs _midairAudit — auditFloating alone cannot see this population');
+assert(/ok:\s*n <= base\.floating && ma\.midair <= base\.midair/.test(_vgiBody),
+  'W-MZ-6b the lock gate REFUSES on a midair INCREASE (§GANTT_LOCK_DELTA: ok requires BOTH audits no worse ' +
+  'than the edit-start baseline — absolute zero was the old contract and it refused the lock on 4 of 7 ' +
+  'buildings for an unedited schedule)');
 
 function loadRatesTable() {
   const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
@@ -80,6 +99,12 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // Measured 2026-08-12 (probe_midair_census.js, pre-repair, DISPLAY timeline). Orphans are an
 // EXTRACTION fact — elements whose bbox touches nothing anywhere in the model — so they are locked,
 // not gated to zero: no scheduling change can ever move them.
+// The measured cost of the repair, LOCKED per building (2026-08-12): auditFloating AFTER the repair
+// on display times. Movement either way is a real change to examine — a drop means the trade shrank,
+// a rise means it grew. Pre-repair values for reference: Terminal 8, Hospital 0, Duplex 0, HHS 0,
+// Clinic 1, LTU_AHouse 334, JKR 81.
+const FLOAT_AFTER_BASELINE = { Terminal: 102, Hospital: 135, Duplex: 9, HHS_Office_Federated: 11,
+  Clinic: 356, LTU_AHouse: 1100, JKR: 158 };
 const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
   LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
@@ -95,6 +120,7 @@ function census(items) {
   items.forEach((it, i) => cellsOf(it).forEach(c => (grid[c] = grid[c] || []).push(i)));
   let midair = 0, orphan = 0, grounded = 0, ok = 0;
   const worst = [];
+  let probe = null;   // any non-grounded element WITH contacts — used by W-MZ-7 to re-create a hanging
   items.forEach((T, i) => {
     let lowest = Infinity, firstContact = Infinity, contacts = 0;
     const seen = {};
@@ -116,13 +142,14 @@ function census(items) {
     }
     const isGround = !(lowest < T.bz - GAP);
     if (!contacts) { if (isGround) grounded++; else orphan++; return; }
+    if (!isGround && !probe && firstContact > 0) probe = { i, guid: T.guid, firstContact };
     if (firstContact <= T.s + 1) { ok++; return; }
     if (isGround) { grounded++; return; }
     midair++;
     worst.push({ cls: T.cls, seq: T.seq, phase: T.phase, bz: T.bz, start: T.s / D, sup: firstContact / D });
   });
   worst.sort((a, b) => (b.sup - b.start) - (a.sup - a.start));
-  return { midair, orphan, grounded, ok, worst };
+  return { midair, orphan, grounded, ok, worst, probe };
 }
 
 (async () => {
@@ -175,6 +202,16 @@ function census(items) {
 
     const before = census(items);
     const preStart = items.map(it => it.s);
+    // W-MZ-8 — the OLD invariant must not be traded away for the new one. Moving a support later can
+    // leave a dependent starting before that support FINISHES, which is exactly what auditFloating
+    // measures. Compare it across the repair on the DISPLAY times (geoEls carry the element shape
+    // auditFloating wants; sched maps guid -> the times under test).
+    const _floatAt = () => {
+      const m = {}; items.forEach(it => { m[it.guid] = { start: it.s, end: it.e }; });
+      const q = console.log; console.log = () => {};
+      try { return ScheduleGate.auditFloating(geoEls, m); } finally { console.log = q; }
+    };
+    const floatPre = _floatAt();
     console.log('§MIDAIR_BEFORE ' + bld + ' midair=' + before.midair + ' orphan=' + before.orphan +
       ' grounded=' + before.grounded + ' ok=' + before.ok + ' total=' + items.length);
     before.worst.slice(0, 3).forEach(w => console.log('    worst ' + w.cls + ' seq=' + w.seq + ' bz=' + w.bz.toFixed(2) +
@@ -186,12 +223,29 @@ function census(items) {
     console.log((repairLines.find(l => l.indexOf('§MIDAIR_REPAIR') === 0) || '§MIDAIR_REPAIR <no log captured>') + '  [' + bld + ']');
 
     const after = census(items);
+    const floatPost = _floatAt();
+    assert(floatPost === FLOAT_AFTER_BASELINE[bld],
+      'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
+      '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — moving an element later so it stops hanging can ' +
+      'leave a dependent starting before that support FINISHES. Deliberate and named, never silent: the joint ' +
+      'fixpoint was built and rejected on its own numbers (4 rounds, 7650 pushes, still 140 on Hospital, 0.8s->14.8s). ' +
+      'The structural fix is gate-layer, see §STRUCT_POOL_UNGATED.');
     assert(after.midair === 0, 'W-MZ-2 ' + bld + ' ZERO elements appear before the first thing they touch (got ' +
       after.midair + (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
       'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ')');
     let earlier = 0;
     items.forEach((it, i) => { if (it.s < preStart[i] - 1) earlier++; });
     assert(earlier === 0, 'W-MZ-3 ' + bld + ' repair moved nothing EARLIER (got ' + earlier + ')');
+    // W-MZ-7 — a test that can fail: drag one element back before everything it touches (what a
+    // planner's bar-drag does to its elements) and the lock-gate judge must SEE it.
+    if (after.probe) {
+      const it = items[after.probe.i], keepS = it.s, keepE = it.e;
+      it.s = after.probe.firstContact - 5 * D; it.e = it.s + (keepE - keepS);
+      const reAudit = census(items);
+      assert(reAudit.midair >= 1,
+        'W-MZ-7 ' + bld + ' judge catches a re-introduced hanging (moved 1 element 5d before its first contact, got midair=' + reAudit.midair + ')');
+      it.s = keepS; it.e = keepE;
+    } else { assert(false, 'W-MZ-7 ' + bld + ' no probe candidate found — census produced nothing to test with'); }
     assert(after.orphan === ORPHAN_BASELINE[bld],
       'W-MZ-4 ' + bld + ' orphans (touch nothing in the model) locked at ' + ORPHAN_BASELINE[bld] + ' (got ' + after.orphan +
       ') — an extraction limit, reported never gated');
