@@ -76,7 +76,7 @@ function makeSandbox(extra) {
 function spanYield() {
   const state = { count: 0, spans: [], last: Date.now(), start() { this.last = Date.now(); } };
   state.fn = function () { const now = Date.now(); state.spans.push(now - state.last); state.count++;
-    return new Promise(function (r) { setImmediate(function () { state.last = Date.now(); r(); }); }); };
+    return new Promise(function (r) { setTimeout(function () { state.last = Date.now(); r(); }, 0); }); };
   state.finish = function () { state.spans.push(Date.now() - state.last); };
   return state;
 }
