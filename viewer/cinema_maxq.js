@@ -1231,6 +1231,7 @@
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
+        if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
@@ -1267,8 +1268,54 @@
           }
         }
         A.startStillRefine();
+        // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
+        // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
+        // which unconditionally re-runs A.updateSky(PHOTO_SUN_ELEVATION, ...) — the FIXED dusk
+        // value — every frame (staging is torn down and rebuilt every frame, not once per bake).
+        // Calling _sunArcStep() before startStillRefine() (as originally shipped in #1284) meant
+        // every frame's noon-to-dusk elevation got immediately overwritten back to the static dusk
+        // angle before the frame was ever captured — the arc never reached the output at all, only
+        // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
+        // correct per-frame elevation once the staging reset has already happened.
+        if (A._sunArcStep) A._sunArcStep(_tn);
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
+        // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
+        // does the actively-installing (frontier) geometry have castShadow=true right now, right
+        // before this exact frame gets saved? Only logs when there's something under construction
+        // to check (self-throttling). window.__tmFrontierGuidsNow is set by time_machine.js's own
+        // renderAtTime(), the same tick that just ran inside _raf2() above.
+        if (window.__tmFrontierGuidsNow && window.__tmFrontierGuidsNow.size > 0) {
+          var _fGuids = window.__tmFrontierGuidsNow;
+          var _fTrue = 0, _fFalse = 0, _fMatched = 0;
+          var _fBatchTrue = 0, _fBatchFalse = 0, _fBatchObjs = 0;
+          A.scene.traverse(function(o) {
+            if (o.isMesh && o.userData && o.userData.guid && _fGuids.has(o.userData.guid)) {
+              _fMatched++;
+              if (o.castShadow) _fTrue++; else _fFalse++;
+              return;
+            }
+            // Steel beams/columns (isSteel, time_machine.js) are the most likely frontier class
+            // to be batched/instanced, not individually meshed -- castShadow there is a BATCH-wide
+            // flag (shared by every slot in that object, frontier or not), so this reports the
+            // batch's own flag whenever ANY of its slots is currently a frontier guid, not a
+            // per-instance answer -- the finest-grained truth this rendering architecture allows.
+            if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) {
+              var _bm = A._batchMeta[o.id];
+              for (var _bi = 0; _bi < _bm.length; _bi++) {
+                if (_fGuids.has(_bm[_bi].guid)) { _fBatchObjs++; if (o.castShadow) _fBatchTrue++; else _fBatchFalse++; return; }
+              }
+            } else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) {
+              var _im = A._instanceMeta[o.id];
+              for (var _ii = 0; _ii < _im.length; _ii++) {
+                if (_fGuids.has(_im[_ii].guid)) { _fBatchObjs++; if (o.castShadow) _fBatchTrue++; else _fBatchFalse++; return; }
+              }
+            }
+          });
+          console.log('§SHADOW_FRONTIER_AT_CAPTURE frame=' + i + ' frontierGuids=' + _fGuids.size +
+            ' singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse +
+            ' batchObjsContainingFrontier=' + _fBatchObjs + ' batchCastShadowTrue=' + _fBatchTrue + ' batchCastShadowFalse=' + _fBatchFalse);
+        }
         _restoreRandom();
         // A timeout can now only mean a genuinely slow frame, since hidden time no longer counts
         // against the budget. Counted rather than merely warned: the total is what lets the run

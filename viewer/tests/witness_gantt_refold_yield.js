@@ -38,7 +38,11 @@ function sliceFn(src, header) {
   }
   throw new Error('unbalanced braces for ' + header);
 }
-const guardSrc = sliceFn(tmSrc, 'async function _ogSupportGuard(');
+// SYNC NOTE 2026-08-12 (branch fix/gantt-refold-hang-sync): the branch's extracted
+// _ogSupportGuard was superseded by main's own _ogSupportSweep during the 26-commit drift, so the
+// guard-identity gates (old W-RFY-1..3) went with it — the sweep is main's witness-locked code,
+// untouched by this sync. What this witness still proves is the half that shipped: the chunked
+// kernel_ops writer (the measured §WRITE_LOOP_TIMING ms=2044.9 LTU freeze, live log 2026-08-10).
 const writerSrc = sliceFn(tmSrc, 'async function _writeScheduledChunked(');
 
 function loadRules() {
@@ -63,7 +67,7 @@ function makeSandbox(extra) {
     performance: { now: () => Date.now() }, _TM_CHUNK: 2500,
     _tmYield: function () { return Promise.resolve(); } }, extra || {});
   vm.createContext(sandbox);
-  vm.runInContext(guardSrc + '\n' + writerSrc + '\nthis.__guard = _ogSupportGuard; this.__writer = _writeScheduledChunked;', sandbox);
+  vm.runInContext(writerSrc + '\nthis.__writer = _writeScheduledChunked;', sandbox);
   return sandbox;
 }
 // Instrumented yield: counts calls + records the synchronous span (ms) since the previous yield
@@ -93,25 +97,14 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     const rows = src.exec(Q)[0].values;
     src.close();
 
-    // ── (a1) GUARD IDENTITY: yielding vs fully-sync on identical inputs ──
-    const sbSync = makeSandbox({ _allScheduled: realScheduledFrom(rows, matchRule, rules) });
-    await sbSync.__guard(sbSync._allScheduled, null);
-    const sbY = makeSandbox({ _allScheduled: realScheduledFrom(rows, matchRule, rules) });
-    const ySt = spanYield(); ySt.start();
-    await sbY.__guard(sbY._allScheduled, ySt.fn);
-    ySt.finish();
-    const mapSync = {}; sbSync._allScheduled.forEach(e => { mapSync[e.guid] = e.s + '|' + e.e; });
-    let diff = 0; sbY._allScheduled.forEach(e => { if (mapSync[e.guid] !== e.s + '|' + e.e) diff++; });
-    const gMax = Math.max.apply(null, ySt.spans);
-    console.log('§REFOLD_YIELD_GUARD bld=' + bld + ' n=' + rows.length + ' yields=' + ySt.count + ' maxSpanMs=' + gMax);
-    assert(diff === 0, 'W-RFY-1 ' + bld + ' guard: chunk-yield output IDENTICAL to fully-sync (diff=' + diff + '/' + rows.length + ')');
-    assert(ySt.count > 0, 'W-RFY-2 ' + bld + ' guard actually yields (count=' + ySt.count + ')');
-    assert(gMax < SPAN_MS, 'W-RFY-3 ' + bld + ' guard: no sync span >= ' + SPAN_MS + 'ms (max=' + gMax + 'ms) — non-blocking, not just fast');
-
     // ── (a2) WRITER IDENTITY: chunked per-chunk-txn vs the pre-fix single-txn loop, byte-equal rows ──
     function freshOpsDb(scheduled) {
       const db = new SQL.Database();
       db.run('CREATE TABLE kernel_ops (id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, op_type TEXT NOT NULL, parameters TEXT NOT NULL, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
+      // Same index the real injectGantt table setup creates (SE-7c) -- without it every UPDATE in
+      // this fixture full-scans kernel_ops (O(n^2): measured 454s for Terminal's 48,428 rows in this
+      // rig, 2026-08-12) and the SPAN_MS gate measures the missing index, not the chunking.
+      db.run('CREATE INDEX idx_kernel_ops_guid ON kernel_ops(output_guid)');
       const ins = db.prepare("INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES (0,'ELEMENT_PLACE','{}','[]',?,0)");
       scheduled.forEach(e => ins.run([e.guid]));
       ins.free();

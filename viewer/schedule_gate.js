@@ -37,6 +37,12 @@
   var CELL = 4;     // m — XY grid cell for the spatial support index
   var EPS  = 0.05;  // m — a support must start at least this far below me (excludes same-level peers)
   var GAP  = 0.5;   // m — audit: a support tops within this of my base (the thing I bear on)
+  // §SUPPORT_UNCHECKED — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 (1a), Witness:
+  // witness_big_element_support_coverage.js. "Big element" bbox-volume cutoff = the MEASURED p95 of
+  // bbox_x*bbox_y*bbox_z across 135,630 real elements in the 5 shipped buildings
+  // (Terminal/Hospital/Duplex/HHS/Clinic, extraction logged 2026-08-11; p99 was 11.808 m³ — same
+  // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
+  var BIG_ELEMENT_VOL = 1.556;  // m³
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
 
   function cellsOf(e) {
@@ -46,6 +52,9 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+  // bbox volume — the same m³ the BIG_ELEMENT_VOL p95 was measured in (§SUPPORT_UNCHECKED 1a and
+  // the §HANG_NEAREST fallback below share this one definition so their populations can never drift)
+  function bboxVol(e) { return (e.x1 - e.x0) * (e.y1 - e.y0) * (e.top_z - e.base_z); }
 
   // deriveBandRanks(elements) — the §4D_BAND_MONOTONIC ladder (see computeSchedule's header for the
   // full ruling): storeys grouped by collapsePhase(), each ranked by the MEDIAN base_z of its own
@@ -252,6 +261,34 @@
               !(S.promoted && el.cls && el.cls.indexOf('IfcWall') === 0 &&
                 el.base_z < S.base_z - EPS && el.top_z >= S.base_z - GAP) &&
               S.end > g && overlap(S, el)) g = S.end; } }
+      // §HANG_NEAREST (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md big-element
+      // follow-up — Witness: witness_big_element_support_coverage.js): the ±GAP carrier band
+      // assumes DIRECT mount ("the structure whose underside meets its top"), but rod-suspended
+      // MEP hangs 0.5–9.5m below its real carrier (MEASURED on the 5 shipped buildings: Hospital's
+      // 139 §SUPPORT_UNCHECKED IfcDuctSegment all have pool structure 0.51–4.61m above, p50 1.22m —
+      // just outside the band). STRICT ADDITION, same shape as §GEO_SUPPORT_LEAK's second clause:
+      // only fires when the band scan found NOTHING, and only for a BIG (>BIG_ELEMENT_VOL, the same
+      // measured p95 the 1a warn uses) pure-SINK element (seq>4, never a wall, never a promoted
+      // slab — sinks are in neither support pool, so they have no outgoing DAG edges and an added
+      // carrier edge can NEVER close a cycle; walls are excluded because wall→promoted-slab→wall
+      // triangles are constructible through wallCarries). Carrier = the NEAREST overlapping pool
+      // member above (parameter-free — no invented reach constant), plus co-planar members within
+      // GAP of it (a beam grid rods to every beam of the plane, not one). Small sinks keep the old
+      // ungated behavior — widening ALL sinks would re-gate 48,904 elements across the 5 shipped
+      // buildings (measured 2026-08-11), a Part-2-scale reorder, not this seam close.
+      if (g === baseMs && !elPool && !(el.cls && el.cls.indexOf('IfcWall') === 0) &&
+          bboxVol(el) > BIG_ELEMENT_VOL) {
+        var nb = Infinity;
+        for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
+            if (S.base_z > el.top_z + GAP && S.base_z < nb && overlap(S, el)) nb = S.base_z; } }
+        if (nb < Infinity) {
+          for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
+              if (S.base_z > el.top_z + GAP && S.base_z <= nb + GAP &&
+                  S.end > g && overlap(S, el)) g = S.end; } }
+        }
+      }
       return g;
     }
     // §4D_WALLS_BEFORE_ROOF M5 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — a
@@ -274,6 +311,27 @@
           // its mid-height, and that slab's below-edges closed the wall into a cycle. Same bound as
           // the DAG's wallCarries().
           if (S.base_z < el.base_z - EPS && S.top_z >= el.base_z - GAP && S.top_z <= el.base_z + GAP &&
+              S.end > g && overlap(S, el)) g = S.end; } }
+      return g;
+    }
+    // ══ §DOOR_WINDOW_HOST_WALL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════
+    // A door/window is not borne from below (geoGate) or hung from above (hangGate) — it is cut
+    // SIDEWAYS into a wall. Neither existing gate models that relationship, so a door/window has
+    // never been checked against the wall it is physically embedded in. Measured on all 7 shipped
+    // buildings (probe_door_wall.js): 0.5%-21.8% of doors/windows started before their own host
+    // wall finished, real cases up to 120+ days early — reported live, HHS_Office_Federated Level
+    // 2: door starts day 17.0, its wall doesn't finish until day 27.3.
+    // No IfcRelFillsElement/IfcRelVoidsElement data is extracted (no such table exists in the
+    // shipped DB), so the host wall is found geometrically — same wallGrid + overlap() primitive
+    // wallGate already uses, XY/Z bbox overlap instead of the "rests on top of" band wallGate
+    // tests. STRICT ADDITION: only Door/Window elements are gated; every other element's timing,
+    // and wallGate's own existing roof-slab-on-wall behavior, are untouched.
+    function openingGate(el) {
+      if (el.cls !== 'IfcDoor' && el.cls !== 'IfcWindow') return baseMs;
+      var g = baseMs; cs = cellsOf(el);
+      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) { S = arr[k];
+          if (S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS &&
               S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
@@ -318,7 +376,8 @@
     // ITS TOP (top within GAP of the slab's base), never one embedded metres below its crown.
     function wallCarries(S, E)   { return edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
     function edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }  // hangGate
-    var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0;
+    var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0,
+        _hangNearest = 0;  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
     // stamp-array dedup (an {} per element measured 28s at 15k elements — dictionary churn), and a
     // reused cands array; _gen is bumped once per scan so stamps never need clearing
     var stamp = new Int32Array(N), _gen = 0, cands = [], nc;
@@ -339,11 +398,29 @@
       //   pool pair would be a 2-cycle); a pool member never hangs from what it sits below of.
       // With that, pool-vs-pool edges are BELOW/BEARING only — strictly base_z-ordered, so the DAG
       // is acyclic for any real geometry; §SUPPORT_CYCLE below reports whatever remains, never hides it.
+      var hadCarrier = false;
       for (nc = 0; nc < cands.length; nc++) { si = cands[nc]; S = elements[si];
-        if (edgeBelow(S, E) || (!isPoolE && edgeContained(S, E)) ||
-            (hangs[t] && edgeCarrier(S, E) && !(isPoolE && E.base_z < S.base_z - EPS) &&
-             !(isPromotedSlab(S) && E.cls && E.cls.indexOf('IfcWall') === 0 && edgeBearing(E, S)))) {
+        var isCarrierEdge = hangs[t] && edgeCarrier(S, E) && !(isPoolE && E.base_z < S.base_z - EPS) &&
+             !(isPromotedSlab(S) && E.cls && E.cls.indexOf('IfcWall') === 0 && edgeBearing(E, S));
+        if (isCarrierEdge) hadCarrier = true;
+        if (edgeBelow(S, E) || (!isPoolE && edgeContained(S, E)) || isCarrierEdge) {
           (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } }
+      // §HANG_NEAREST — the DAG twin of hangGate's fallback above (one relation, two consumers, or
+      // placement order and runtime gate would disagree). Scope identical: big pure-sink hanger with
+      // ZERO in-band carriers → edge from every member of the nearest carrier plane. Sinks are in
+      // neither support pool ⇒ no outgoing edges ⇒ these added in-edges cannot create a cycle
+      // (W-TMREPRO-4 cycles=0 stays structural, not lucky).
+      if (hangs[t] && !isPoolE && !(E.cls && E.cls.indexOf('IfcWall') === 0) && !hadCarrier &&
+          bboxVol(E) > BIG_ELEMENT_VOL) {
+        var nbD = Infinity;
+        for (nc = 0; nc < cands.length; nc++) { S = elements[cands[nc]];
+          if (S.base_z > E.top_z + GAP && S.base_z < nbD) nbD = S.base_z; }
+        if (nbD < Infinity) {
+          for (nc = 0; nc < cands.length; nc++) { si = cands[nc]; S = elements[si];
+            if (S.base_z > E.top_z + GAP && S.base_z <= nbD + GAP) {
+              (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; _hangNearest++; } }
+        }
+      }
       if (isPromotedSlab(E)) {                                       // wallGate's relation
         _gen++;
         for (c = 0; c < cs.length; c++) { arr = wallIdxGrid[cs[c]]; if (!arr) continue;
@@ -389,7 +466,7 @@
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1
+      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL
       if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
@@ -423,7 +500,8 @@
     if (typeof console !== 'undefined' && console.log) {
       console.log('§SUPPORT_CYCLE cycles=' + _cyc.length +
         (_cyc.length ? ' sample=[' + _cyc.slice(0, 5).map(function (x) { return elements[x].guid; }).join(',') + ']' : ''));
-      console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' orderMs=' + (Date.now() - _t0));
+      console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' hangNearest=' + _hangNearest +
+        ' orderMs=' + (Date.now() - _t0));
     }
     var nonst = elements.filter(function (e) { return e.seq > 4; });
     // §DEQ_V1 repair loop — the zero-contradiction guarantee. The gates above are only as good as
@@ -440,7 +518,7 @@
       var _moved = 0;
       nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
         .forEach(function (el) {
-        var need = Math.max(geoGate(el), wallGate(el), hangGate(el));
+        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el));
         var o = out[el.guid];
         if (o.start < need) {
           var dur = o.end - o.start; o.start = need; o.end = need + dur;
@@ -510,15 +588,34 @@
   // collectGuids (optional, §GANTT_LOCK_INTEGRITY): an array to receive the offending GUIDs so a
   // caller can NAME what floats (the lock-back "Integrity Breach" flag), not just count it. The
   // count return is unchanged for every existing caller.
-  function auditFloating(elements, sched, classFilter, collectGuids) {
+  // collectUnchecked (optional, §SUPPORT_UNCHECKED — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a):
+  // an array to receive {guid, cls, vol, buildingModelsSubstructure} for every element ABOVE
+  // BIG_ELEMENT_VOL for which the scoped-pool scan found ZERO support candidates (neither bearing
+  // nor hang) — the zero-candidate blind spot where `se===0` used to silently pass with literally
+  // no support check applied. WARN-ONLY: the floating count `v` (this function's return) and the
+  // floating flag are byte-identical to before — observability only, never a gate, until real
+  // occurrence counts on shipped buildings are known.
+  function auditFloating(elements, sched, classFilter, collectGuids, collectUnchecked) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
       if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
+    // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
+    // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is
+    // that exact test (SEQUENCE_RULES: IfcFooting/IfcPile/IfcReinforcingBar carry sequence 1, all
+    // Substructure — IfcPile added 2026-08-11 closure pass, Gap A close, latent on all shipped
+    // buildings; plus TWO name-overrides deliberately assign seq 1, see rates/sequence_rules.json:
+    // 'foundation_pile_misclassified_slab' — Terminal's 236 'jkrST_str-fo_pc_rcp' 30m precast piles
+    // authored as IfcSlab, flipping Terminal to bms=true — and 'slab_on_grade_substructure' —
+    // Duplex/Clinic's 8 measured slab-on-grade IfcSlab, the 1c spec's own named ground-bearing
+    // class). false (HHS today) means "this building never modeled a foundation layer at all —
+    // weight findings with that context," never hides or downgrades them.
+    var bms = false;
+    for (i = 0; i < elements.length; i++) { if (elements[i].seq === 1) { bms = true; break; } }
     var v = 0;
     for (i = 0; i < elements.length; i++) { var T = elements[i];
       if (classFilter && !classFilter(T)) continue;
-      var se = 0, hasBearing = false, seen = {}; cs = cellsOf(T);
+      var se = 0, hasBearing = false, hasHang = false, seen = {}; cs = cellsOf(T);
       var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
@@ -540,9 +637,42 @@
                 !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
                   T.base_z < S.base_z - EPS && T.top_z >= S.base_z - GAP) &&
                 overlap(S, T)) {
+              hasHang = true;
               var eh = sched[S.guid].end; if (eh > se) se = eh; } } }
+        // §HANG_NEAREST — audit twin of the scheduler's fallback (hangGate/edgeCarrier above):
+        // a BIG pure-sink hanger with zero in-band carriers is audited against the nearest
+        // overlapping pool member above + its co-planar GAP band, exactly what the scheduler now
+        // gates it on. Keeping audit and gate symmetric is what keeps floating at its locked
+        // baselines (a wider audit alone would flag carriers the scheduler never waited for).
+        if (!hasHang && !tPool && !tWall && bboxVol(T) > BIG_ELEMENT_VOL) {
+          var nbA = Infinity, seenN = {};
+          for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
+              if (S.base_z > T.top_z + GAP && S.base_z < nbA && overlap(S, T)) nbA = S.base_z; } }
+          if (nbA < Infinity) {
+            var seenP = {};
+            for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
+                if (S.base_z > T.top_z + GAP && S.base_z <= nbA + GAP && overlap(S, T)) {
+                  hasHang = true;
+                  var ehn = sched[S.guid].end; if (ehn > se) se = ehn; } } }
+          }
+        }
       }
       if (se > 0 && sched[T.guid].start < se - 1) { v++; if (collectGuids) collectGuids.push(T.guid); }
+      // §SUPPORT_UNCHECKED (warn-only, additive) — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a/1c,
+      // Witness: witness_big_element_support_coverage.js. Zero candidates in EITHER scoped pool ⇒
+      // this element scheduled with NO support check applied at all (the seam a big element falls
+      // through). 1c exemption: seq===1 (phase==='Substructure') legitimately rests on unmodeled
+      // soil, never flagged. Does NOT touch v / the floating flag — observability only.
+      if (!hasBearing && !hasHang && T.seq !== 1) {
+        var _vol = (T.x1 - T.x0) * (T.y1 - T.y0) * (T.top_z - T.base_z);
+        if (_vol > BIG_ELEMENT_VOL) {
+          console.log('§SUPPORT_UNCHECKED guid=' + T.guid + ' cls=' + T.cls + ' vol=' + _vol.toFixed(3) +
+            ' buildingModelsSubstructure=' + bms);
+          if (collectUnchecked) collectUnchecked.push({ guid: T.guid, cls: T.cls, vol: _vol, buildingModelsSubstructure: bms });
+        }
+      }
     }
     return v;
   }
@@ -620,7 +750,10 @@
     return { zones: zones, edges: edges };
   }
 
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL };
+  // EPS/GAP exported alongside CELL so a consumer of the same geometry (time_machine.js
+  // §MIDAIR_REPAIR) can test contact with THIS module's measured constants instead of re-typing
+  // them — a second copy is a second thing to drift.
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

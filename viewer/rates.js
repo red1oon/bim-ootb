@@ -160,6 +160,15 @@ var EQUIPMENT_ALLOCATION = {
 var SEQUENCE_RULES = {
   // Substructure
   IfcFooting:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
+  // §GAP_A_CLOSE (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — Witness:
+  // witness_big_element_support_coverage.js): IfcPile had a COST entry (RATES above) but no
+  // sequence rule, so a correctly-classed pile would fall to the DEFAULT (Architecture/seq 6) —
+  // structurally wrong for a foundation element. Latent today (no shipped building models IfcPile
+  // as its own class — Terminal's real piles are authored as IfcSlab and reclassed by the
+  // name-override below; verified again 2026-08-11, zero count change on all 5 buildings), but a
+  // future building that labels its piles correctly would have hit this silently. Mirrors
+  // IfcFooting exactly — a pile is Substructure, seq-1 (1c ground-bearing exempt).
+  IfcPile:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   IfcReinforcingBar:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   // Superstructure
   IfcColumn:{phase:'Superstructure',sequence:2,resource:'STEEL_ERECTOR'},
@@ -240,6 +249,77 @@ var SEQUENCE_NAME_OVERRIDES = [
     phase: 'Architecture',
     sequence: 7,
     resource: 'CARPENTER'
+  },
+  // §PILE_SLAB_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md big-element
+  // follow-up — Witness: witness_big_element_support_coverage.js): Terminal's 236 §SUPPORT_UNCHECKED
+  // IfcSlab are 'jkrST_str-fo_pc_rcp:300 x 300mm' — 300×300mm × 30.15m precast RC foundation PILES
+  // ('str-fo' = JKR structural-foundation code) misclassified as IfcSlab by the authoring tool.
+  // They sit at the building's absolute lowest z (base −16.04..−15.94 vs model min −16.04) with
+  // NOTHING modeled beneath them — genuinely ground-bearing Substructure, the exact population the
+  // seq===1 exemption (schedule_gate.js 1c) exists for, unreachable by class lookup alone (this is
+  // the archived 'Gap A: IfcPile has no SEQUENCE_RULES entry' arriving disguised as IfcSlab).
+  // Pattern MEASURED against every shipped buildings/*.db (2026-08-11): with the IfcSlab class gate
+  // it matches exactly those 236 (Terminal family, incl. Terminal_meta/rooms/TermRooms copies) and
+  // nothing else; \bpile\b (not bare 'pile') keeps 'stockpile'-style names out, and Hospital's
+  // 'M_Pile Cap-6 Pile' footings are already IfcFooting (out of class scope, same target phase).
+  {
+    id: 'foundation_pile_misclassified_slab',
+    classes: ['IfcSlab'],
+    pattern: 'str-fo|\\bpile\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §SLAB_ON_GRADE_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md 250-followup
+  // — Witness: witness_big_element_support_coverage.js): slab-on-grade was NAMED in the original 1c
+  // spec ("IfcFooting/IfcPile/slab-on-grade rests on unmodeled soil") but only the class-level
+  // seq-1 rules ever implemented it — a slab-on-grade authored as plain IfcSlab lands at seq 4 and,
+  // being genuinely ground-bearing (fill between it and the footing tops), shows up as a
+  // §SUPPORT_UNCHECKED finding forever. Pattern MEASURED against every shipped buildings/*.db
+  // (2026-08-11, _logs discipline as the pile override above): under the IfcSlab class gate it
+  // matches exactly Duplex 4 ('127mm Slab on Grade' ×2 base −0.13, '150mm Exterior Slab on Grade'
+  // ×2 base −0.14) + Clinic 4 ('150mm Slab on Grade' ×3, '150mm Exterior…' ×1, bases −1.37..−0.15)
+  // and NOTHING else — every hit at true grade level over its building's footings, zero hits in
+  // Terminal/Hospital/HHS/JKR/LTU. (A 'Floor:150mm Slab on Grade' IfcOpeningElement exists in
+  // Clinic — excluded by the class gate.) Closes 4 of Duplex's 6 findings as correctly-exempt
+  // Substructure work, not by suppressing them but by naming what they are.
+  {
+    id: 'slab_on_grade_substructure',
+    classes: ['IfcSlab'],
+    pattern: 'slab[ _-]?on[ _-]?grade',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+  // 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes
+  // Substructure→Superstructure→Architecture a STRICT serial backbone (time_machine.js
+  // _twoTierRemap), so furniture-like content exported under a generic catch-all class
+  // (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would
+  // gate real structural phase completion on a chair or desk. Genuinely-tagged furniture
+  // (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — safe, untouched.
+  // MEASURED before writing (repo rule: extract, never guess a regex — furniture_measure.log,
+  // 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' ⊂
+  // 'adjus-TABLE' shower head; 'cabinet' = a fire-extinguisher cabinet already correctly in
+  // MEP Final/Tier 2) — hence word boundaries + the class gate. Scoped run (word-boundary,
+  // generic buckets only): ZERO live hits across all 5 shipped buildings — this safeguard is
+  // PROACTIVE (the pile-misclassification precedent above proves the generic-catch-all bug class
+  // is real on real-world IFCs), not a fix for a live defect. Known, deliberate NON-target:
+  // Terminal's 'Floor:Table Top:904745' (IfcSlab, 3.96×22.43m ×150mm built-in counter, Aras
+  // Tanah) stays Superstructure — IfcSlab is an unambiguous class ("don't touch classes that are
+  // already unambiguous", spec), and as a seq≤4 support-pool member reclassifying it would
+  // perturb the locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a
+  // reported (not gated) case instead of silently absorbing it.
+  {
+    id: 'furniture_generic_bucket',
+    classes: ['IfcBuildingElementProxy', 'IfcBuildingElementPart'],
+    pattern: '\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
   }
 ];
 

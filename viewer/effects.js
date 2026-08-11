@@ -307,6 +307,35 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
+  // §CAM_LIGHT (user ask, 2026-08-11: LTU_AHouse MaxQ frames go near-black or blown-white when the
+  // cinema camera passes close to geometry — measured via real luminance extraction on
+  // BIM_MaxQ_LTU_AHouse_1786345850390.mp4, 12/76 sampled frames >15% near-black pixels). Root cause:
+  // fixture PLs (A._nightLights, real IfcLightFixture positions + synthetic per-storey fallback,
+  // tools.js §S259) are ROOM-anchored, not camera-anchored — a fixture lighting the kitchen does
+  // nothing for a camera pressed against a wall on the far side of the building. A short-range
+  // PointLight riding the camera fixes exactly that case. Direct light only, same as every other
+  // light already in this scene (no bounce anywhere in this pipeline — see PHOTOREAL_STILL_RENDER.md
+  // GI history) and deliberately SHORT distance so it is a no-op anywhere the camera isn't already
+  // close to a surface — not a general-purpose fill light, not meant to change any establishing shot.
+  var CAM_LIGHT_COLOR = 0xfff2e0, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
+  var CAM_LIGHT_FORWARD_OFFSET = 0.4;  // metres in front of the camera, toward the look target — off
+                                        // the lens itself so it doesn't floodlight whatever the near
+                                        // clip plane happens to be pressed against.
+  // Called once per captured/previewed frame, AFTER camera.position/controls.target are set for that
+  // frame (cinema_maxq.js's bake loop, effects.js's live Cinema Orbit step()) — same pose, no extra
+  // scene query. No-ops when A._camLight doesn't exist (i.e. outside photo staging).
+  function _updateCamLight(tx, ty, tz) {
+    if (!A._camLight) return;
+    var cx = A.camera.position.x, cy = A.camera.position.y, cz = A.camera.position.z;
+    var dx = tx - cx, dy = ty - cy, dz = tz - cz;
+    var len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    A._camLight.position.set(
+      cx + (dx / len) * CAM_LIGHT_FORWARD_OFFSET,
+      cy + (dy / len) * CAM_LIGHT_FORWARD_OFFSET,
+      cz + (dz / len) * CAM_LIGHT_FORWARD_OFFSET
+    );
+  }
+  A._updateCamLight = _updateCamLight;
   // §PHOTO_SKYLINE_SHADOW_FRUSTUM: shared with _enablePhotoShadows()'s frustum sizing below (search
   // the same name there) so the two can never drift apart again the way they did at introduction —
   // both the skyline ring's placement radius AND the shadow-camera frustum need the SAME multiplier
@@ -2471,6 +2500,35 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_SUN_ELEVATION = 6;    // was 8 — lower = longer/more dramatic dusk shadows, still above
                                    // Preetham's near-black cutoff (TM's own dawn/dusk boost kicks in <10°)
   var PHOTO_SUN_AZIMUTH = 200;
+  // §SUN_ARC (user ask, 2026-08-11: "high noon at the start, low angle by the end" — free realism
+  // from something the film already has, no new render cost). Alt+S (a single still, no film
+  // fraction) keeps PHOTO_SUN_ELEVATION exactly as before — this arc only applies where a tNorm
+  // already exists: the MaxQ bake loop (cinema_maxq.js) and the live Cinema Orbit preview
+  // (this file's startCinemaOrbit/step()). PHOTO_SUN_ELEVATION_END is deliberately the SAME value
+  // Alt+S already uses, so every other dusk-tuned constant (fog dayT blend, ground albedo, exposure
+  // cut) still lands on the exact look they were tuned against once the film reaches its last frame.
+  var PHOTO_SUN_ELEVATION_START = 55;  // "high noon" look for an establishing open — not 90 (a
+                                        // straight-down sun reads flat/shadowless on a building)
+  var PHOTO_SUN_ELEVATION_END = PHOTO_SUN_ELEVATION;
+  function _sunElevationAt(tNorm) {
+    return PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * tNorm;
+  }
+  // updateSky() repositions the sun/sky/fog/lensflare but does NOT touch the shadow map — it has no
+  // reason to, every OTHER caller (Time Machine, plain nav) already re-renders continuously. A film
+  // with a moving sun does not: shadowMap.autoUpdate is off by default (perf — see streaming.js/
+  // effects.js §PHOTO_SHADOW comments), so without this the sky/fog would visibly sweep noon→dusk
+  // while every shadow stayed frozen at whatever angle was last baked — worse than not animating at
+  // all, since the mismatch reads as a bug rather than a static look. Called every frame the sun
+  // moves, right after updateSky(), so no frame captures with a stale shadow angle.
+  function _sunArcStep(tNorm) {
+    if (!A.updateSky) return;
+    var _el = _sunElevationAt(tNorm);
+    A.updateSky(_el, PHOTO_SUN_AZIMUTH);
+    if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
+      ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
+  }
+  A._sunArcStep = _sunArcStep;
   var PHOTO_ENVMAP_BOOST = 3.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
                                    // (history: 2.2 -> 3.2 -> 4.5 -> 3.0. The 4.5 step, combined with
@@ -2564,13 +2622,17 @@ async function setupEffects(A, renderer, scene, camera) {
     if (force && _wouldSkip) _photoShadowForcedSaves++;
     _photoShadowCheckIdx = _idx; _photoShadowCheckKids = _kids; _photoShadowCheckVis = _vis;
     _photoShadowReassertRuns++;
-    var changed = false;
+    var changed = false, _visMeshes = 0, _flippedOn = 0;
     A.scene.traverse(function(o) {
-      if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && !o.castShadow) {
-        o.castShadow = true; o.receiveShadow = true; changed = true;
+      if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible) return;
+      _visMeshes++;
+      if (!o.castShadow) {
+        o.castShadow = true; o.receiveShadow = true; changed = true; _flippedOn++;
       }
     });
     if (changed && A.renderer) A.renderer.shadowMap.needsUpdate = true;
+    if (force) console.log('§PHOTO_SHADOW_FORCE_REASSERT visMeshes=' + _visMeshes +
+      ' flippedOn=' + _flippedOn + ' (0 flipped = every visible mesh already had castShadow on)');
   }
   // §PHOTO_ENVMAP_STALE (user ask: "sunlight bounce has not occurred even once" — found the real
   // cause, not a tuning miss): streaming.js assigns each material's `.envMap` ONCE, at streaming
@@ -2645,7 +2707,30 @@ async function setupEffects(A, renderer, scene, camera) {
       A._shadowInited = true;
     }
     A.sun.castShadow = true;
+    // §PHOTO_SHADOW_TARGET_CENTRE (2026-08-11, real user report: "no shadow at high noon" on the
+    // film's OPENING DIVE beat): was A.controls.target unconditionally — the shadow camera was
+    // aimed wherever the VIEW camera currently happens to be looking, not at the building. During
+    // an establishing dive the view target drifts far from the building, so the whole shadow
+    // frustum (any _env size, any sun angle) could miss the building outright — a DIFFERENT bug
+    // from §PHOTO_SUN_SHADOW_REACH above (that one was frustum SIZE; this is frustum POSITION).
+    // Same failure shape §CINEMA_PIVOT already found + fixed for the camera orbit pivot itself
+    // (this file, _cinemaPathPlan, "WAS: var tgt = A.controls.target; UNCONDITIONALLY") — reusing
+    // its proven fix, not reinventing: the real building bbox centre via A.ifc2three(), the
+    // established IFC->scene axis transform, not a guessed axis mapping.
     var _ctr = A.controls ? A.controls.target : { x: 0, y: 0, z: 0 };
+    var _camTgtForLog = { x: _ctr.x, y: _ctr.y, z: _ctr.z };
+    var _shadowBbox = _buildingBBoxArc() || _buildingBBoxIfc();
+    var _centreSrc = 'camera-target(FALLBACK, no bbox/ifc2three)';
+    if (_shadowBbox && A.ifc2three) {
+      var _sLo = A.ifc2three(_shadowBbox.xMin, _shadowBbox.yMin, _shadowBbox.zMin);
+      var _sHi = A.ifc2three(_shadowBbox.xMax, _shadowBbox.yMax, _shadowBbox.zMax);
+      _ctr = { x: (_sLo.x + _sHi.x) / 2, y: (_sLo.y + _sHi.y) / 2, z: (_sLo.z + _sHi.z) / 2 };
+      _centreSrc = 'building-bbox-centre';
+    }
+    console.log('§PHOTO_SHADOW_TARGET src=' + _centreSrc +
+      ' target=(' + _ctr.x.toFixed(1) + ',' + _ctr.y.toFixed(1) + ',' + _ctr.z.toFixed(1) + ')' +
+      ' cameraTarget=(' + _camTgtForLog.x.toFixed(1) + ',' + _camTgtForLog.y.toFixed(1) + ',' + _camTgtForLog.z.toFixed(1) + ')' +
+      ' drift=' + Math.hypot(_ctr.x - _camTgtForLog.x, _ctr.y - _camTgtForLog.y, _ctr.z - _camTgtForLog.z).toFixed(1));
     A.sun.target.position.copy(_ctr);
     A.sun.target.updateMatrixWorld();
     var _env = 300;
@@ -2670,23 +2755,126 @@ async function setupEffects(A, renderer, scene, camera) {
       var _skyRadius = _skyEnvelope * PHOTO_SKYLINE_RADIUS_MULT;
       _env = Math.max(_env, Math.ceil(_skyRadius + PHOTO_SKYLINE_BOX_MARGIN));
     }
+    // §PHOTO_SUN_SHADOW_REACH (2026-08-11, real numbers not eyeballed — see
+    // prompts/PHOTOREAL_STILL_RENDER.md §SUN_ARC "study the maths" section): the skyline-only
+    // _env above sizes the frustum from the building's FOOTPRINT, never from how far a LOW sun
+    // throws a shadow. At dusk (elevation=6°) shadow reach = height/tan(6°) ~ 9.5x the building's
+    // own height — for HHS_Office_Federated (height~19.8m) that's ~188m, exceeding the ~180m
+    // skyline-only _env, so the shadow's own tip fell outside its shadow camera's frustum and was
+    // silently clipped (never rendered, not a shading bug). Measured: a real 52-frame bake showed
+    // contrast/dynamic-range declining monotonically toward dusk instead of increasing, consistent
+    // with this (scratchpad/analyze_hhs_shadow_frames.py, this session's own witness).
+    // Elevation read directly from A.sun.position, not passed in (this function has no elevation
+    // param) — scene.js updateSky() sets sun.position = direction * 5000 (a fixed constant, not
+    // approximated here), so elevation = asin(y/5000) is exact.
+    if (_skyBbox) {
+      var _bldgHeight = Math.max(1, _skyBbox.zMax - _skyBbox.zMin);
+      var _elevRad = Math.asin(Math.max(-1, Math.min(1, A.sun.position.y / 5000)));
+      var _elevDeg = THREE.MathUtils.radToDeg(_elevRad);
+      if (_elevDeg > 0.5) {  // guard: at/below horizon, tan() blows up to a meaningless frustum
+        var _shadowReach = _bldgHeight / Math.tan(_elevRad);
+        var _envBefore = _env;
+        _env = Math.max(_env, Math.ceil(_shadowReach + PHOTO_SKYLINE_BOX_MARGIN));
+        if (_env !== _envBefore) console.log('§PHOTO_SUN_SHADOW_REACH elevation=' + _elevDeg.toFixed(1) +
+          ' bldgHeight=' + _bldgHeight.toFixed(1) + ' shadowReach=' + _shadowReach.toFixed(0) +
+          ' env ' + _envBefore + '->' + _env);
+      }
+    }
     // NOTE: computed AFTER A.updateSky() has already positioned A.sun at the dusk direction (see
     // call order in _applyPhotoStaging below) — using the ORIGINAL toggleShadow() order (frustum
     // math before the sun is repositioned) would size this frustum for the wrong sun distance.
     var _sunDist = A.sun.position.distanceTo(_ctr);
-    A.sun.shadow.mapSize.width = 2048;
-    A.sun.shadow.mapSize.height = 2048;
+    // §PHOTO_SHADOW_RESOLUTION (2026-08-11, real user report: shadow "has no effect on the top
+    // fixtures... not thrown on roof"): §PHOTO_SUN_SHADOW_REACH above correctly widens _env to fit
+    // the building's own long shadow at low sun angles, but that widening spreads the SAME fixed
+    // texel budget more thinly across a bigger frustum -- small rooftop-scale objects (equipment,
+    // fixtures, ~1-2m) end up with only a handful of texels and their shadow washes out under PCF
+    // filtering, even though §PHOTO_SHADOW_FRUSTUM_COVERAGE already proves they're geometrically
+    // IN the frustum with castShadow=true. Doubling resolution here (2048->4096, 4x memory/render
+    // cost for the shadow pass) is deliberately scoped to THIS bake-only path, not A.toggleShadow's
+    // own 2048 (tools.js §S288: "quarters the texel cost of every shadow render" -- that number was
+    // chosen for a shadow mode active during CONTINUOUS live navigation, a cost/frame every frame;
+    // this path only ever runs during a deliberate Alt+S/MaxQ capture, never during normal nav, so
+    // the same cost concern does not apply here).
+    A.sun.shadow.mapSize.width = 4096;
+    A.sun.shadow.mapSize.height = 4096;
     A.sun.shadow.camera.near = Math.max(1, _sunDist * 0.05);
     A.sun.shadow.camera.far = _sunDist * 4;
     A.sun.shadow.camera.left = -_env;
     A.sun.shadow.camera.right = _env;
     A.sun.shadow.camera.top = _env;
     A.sun.shadow.camera.bottom = -_env;
-    A.sun.shadow.bias = -0.0005;
+    // §PHOTO_SHADOW_BIAS_SCALE (2026-08-12 — the root cause of §MAIN_BUILDING_SHADOW; every number
+    // below was MEASURED live this session on HHS_Office_Federated, none guessed).
+    // three.js applies shadow.bias in NORMALISED depth, not metres — shadowmap_pars_fragment.glsl
+    // does literally `shadowCoord.z += shadowBias` where z spans [0,1] across the shadow camera's
+    // near..far. So the world-space peter-panning it produces is bias * (far - near), and the same
+    // constant means completely different things on two different shadow cameras:
+    //   A.toggleShadow (tools.js, the path the user confirms has ALWAYS worked, and the path this
+    //     one was copied from): it repositions the sun to ctr + env*(0.8,2,0.6), measured
+    //     sunDist=150 -> near=7.7 far=617.2, range=609.4 m -> -0.0005 = 0.305 m. Fine.
+    //   this path: it must NOT reposition the sun (A.sun.position is what updateSky, the Sky shader
+    //     and the lensflare all read — it stays at direction*5000), so measured sunDist=5000 ->
+    //     near=250 far=19998, range=19,748 m -> the SAME -0.0005 = 9.874 m. 32.4x.
+    // A 9.87 m world bias erases every shadow whose caster->receiver separation along the sun ray
+    // is under ~10 m. That separation is casterHeight / sin(elevation), so at the film's 55 deg
+    // opening nothing under 8.1 m tall cast anything at all: every rooftop fixture, and the near
+    // part of the building's own short ground shadow — while the tall skyline silhouette props
+    // cleared it easily, which is exactly the differential the user reported ("shadows only hit
+    // the other silhouette, not the HHS Office nor its roof"). Proven by paired A/B on a real
+    // render: changing ONLY this line's value, same camera/sun/geometry, darkened 1,665 px at the
+    // 55 deg opening and 12,095 px at dusk, and brightened 0 px at either
+    // (scratchpad witness_shadow_bias_ab.js — the change only ever ADDS shadow).
+    // Fix: hold the WORLD-space bias, don't copy the normalised constant. Floor is toggleShadow's
+    // own proven 0.305 m; at grazing sun one shadow texel spans texelWorld/tan(elevation) of depth,
+    // so the bias must also clear that or the ground self-shadows (acne). The arc's LOWEST
+    // elevation is used because _enablePhotoShadows runs once at staging while _sunArcStep sweeps
+    // the sun 55->6 deg afterwards without recomputing this camera — so the bias has to be safe at
+    // the worst angle the film reaches, not just at the angle staging happened to see.
+    var _shadowRange = A.sun.shadow.camera.far - A.sun.shadow.camera.near;
+    var _texelWorld = (2 * _env) / A.sun.shadow.mapSize.width;
+    var _grazeRad = THREE.MathUtils.degToRad(Math.max(1, PHOTO_SUN_ELEVATION_END));
+    var _worldBias = Math.max(0.305, _texelWorld / Math.tan(_grazeRad));
+    A.sun.shadow.bias = -(_worldBias / _shadowRange);
+    console.log('§PHOTO_SHADOW_BIAS worldBias=' + _worldBias.toFixed(3) + 'm bias=' + A.sun.shadow.bias.toExponential(3) +
+      ' range=' + _shadowRange.toFixed(0) + 'm texel=' + _texelWorld.toFixed(3) + 'm grazeElev=' + PHOTO_SUN_ELEVATION_END +
+      ' (was -0.0005 = ' + (0.0005 * _shadowRange).toFixed(2) + 'm, which erased every caster under ' +
+      (0.0005 * _shadowRange * Math.sin(THREE.MathUtils.degToRad(PHOTO_SUN_ELEVATION_START))).toFixed(1) +
+      'm tall at the arc start)');
     A.sun.shadow.camera.updateProjectionMatrix();
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];
     A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _shadowList.push(o); });
+    // §PHOTO_SHADOW_FRUSTUM_COVERAGE (2026-08-11, real user ask: "GIGO code witness logging must
+    // reveal" -- not another video/frame-extraction round-trip): direct geometric proof of whether
+    // the shadow camera can actually SEE the casting geometry, computed from live scene state, no
+    // render needed. A.sun.shadow.updateMatrices() forces the shadow camera's position/matrices to
+    // reflect the position/target JUST set above -- normally the renderer does this lazily before
+    // its own shadow pass, but nothing has rendered yet at this point in the function, so without
+    // this call the frustum test below would run against STALE (previous frame's) camera matrices.
+    // §PHOTO_SHADOW_FRUSTUM_STALE_LIGHT (2026-08-12): updateMatrices() reads the shadow camera's
+    // position out of light.matrixWorld, NOT light.position — and nothing has refreshed matrixWorld
+    // since updateSky moved the sun, so without this line the frustum test can run against the sun's
+    // PREVIOUS world position and report a coverage gap that does not exist at render time (the
+    // renderer's own scene.updateMatrixWorld runs before its shadow pass). Measured: a load that
+    // used A.toggleShadow first, then staged, logged inFrustum=2 outsideFrustum=349 here purely
+    // from that staleness, while a clean load logged inFrustum=351 outsideFrustum=0 on identical
+    // geometry. time_machine.js's applySunCycle already calls sun.updateMatrixWorld() for the same
+    // reason; this path had not. Instrumentation correctness — the render was never affected.
+    A.sun.updateMatrixWorld();
+    A.sun.shadow.updateMatrices(A.sun);
+    var _frustum = new THREE.Frustum();
+    _frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(
+      A.sun.shadow.camera.projectionMatrix, A.sun.shadow.camera.matrixWorldInverse));
+    var _inFrustum = 0, _outFrustum = 0;
+    _shadowList.forEach(function(o) {
+      if (!o.visible) return;
+      if (o.geometry && !o.geometry.boundingSphere && o.geometry.computeBoundingSphere) o.geometry.computeBoundingSphere();
+      if (_frustum.intersectsObject(o)) _inFrustum++; else _outFrustum++;
+    });
+    console.log('§PHOTO_SHADOW_FRUSTUM_COVERAGE inFrustum=' + _inFrustum + ' outsideFrustum=' + _outFrustum +
+      ' (outsideFrustum = geometry the shadow camera cannot see right now, regardless of castShadow flags -- ' +
+      'nonzero here is a real, unfixed frustum-coverage gap; zero here rules frustum coverage OUT as the cause)');
     var _si = 0;
     (function _chunk() {
       var end = Math.min(_si + 5000, _shadowList.length);
@@ -3091,6 +3279,16 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§GROUND_COLOR_ORDER_FIX reasserted color=' + A.ground.material.color.r.toFixed(2) +
         ' gain=' + A._groundAlbedoGain.toFixed(2));
     }
+    // §CAM_LIGHT: created once, reused across staging sessions (cheap: one PointLight, no geometry).
+    if (!A._camLight) {
+      A._camLight = new THREE.PointLight(CAM_LIGHT_COLOR, CAM_LIGHT_INTENSITY, CAM_LIGHT_DISTANCE, CAM_LIGHT_DECAY);
+      // A shadow-casting light riding the camera would need its shadow map rebuilt every frame —
+      // exactly the per-frame cost this feature must not add (see §CAM_LIGHT note above).
+      A._camLight.castShadow = false;
+    }
+    A.scene.add(A._camLight);
+    console.log('§CAM_LIGHT on intensity=' + CAM_LIGHT_INTENSITY + ' distance=' + CAM_LIGHT_DISTANCE +
+      ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     _showPhotoProps(true);
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
@@ -3098,6 +3296,8 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
     A._photoStagingOn = false;
+    // §CAM_LIGHT: pull it back out of the scene — normal navigation never carries it.
+    if (A._camLight) { A.scene.remove(A._camLight); console.log('§CAM_LIGHT off'); }
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
@@ -7596,6 +7796,8 @@ async function setupEffects(A, renderer, scene, camera) {
       A.camera.position.set(pose.x, pose.y, pose.z);
       A.controls.target.set(pose.tx, pose.ty, pose.tz);
       A.controls.update();
+      _updateCamLight(pose.tx, pose.ty, pose.tz);
+      _sunArcStep(tNorm);
       _reassertPhotoShadowCoverage();
       _reassertPhotoMatBoost();
       _reassertPhotoEnvMap();

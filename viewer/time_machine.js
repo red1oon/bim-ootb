@@ -151,19 +151,9 @@
     } else {
       _ganttAxisEnd = _projectEnd;
     }
-    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
-    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
-    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
-    // threshold, never a new invented one.
-    var ends = _ops.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
-    var n = ends.length;
-    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
-    if (n > 20) {
-      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
-      _ganttAxisEnd = ends[hiI];
-    } else {
-      _ganttAxisEnd = _projectEnd;
-    }
+    // (G-3 fix 2026-08-11: a stale byte-duplicate of the block above sat here reading `_ops` —
+    // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
+    // BUILDING_OPEN. Removed; the cOps-based block above is the single authority.)
   }
 
   // ── Scene: emerge from nothing ──
@@ -1374,6 +1364,19 @@
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
     _lastShadowOn = _shadowNow;
 
+    // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12, real user report: "not casting shadows inside
+    // early construction"): existing §SHADOW_FRONTIER casters/receivers counters only increment
+    // when app._shadowOn (native Sunglass toggle) is true -- always false during a PHOTO_SHADOW/
+    // MaxQ bake, so that log reads 0/0 every bake regardless of whether the PHOTO_SHADOW system's
+    // OWN separate reassert (effects.js _reassertPhotoShadowCoverage) actually corrects it -- an
+    // unrelated internal counter, not proof either way. Built directly from `frontier` (already
+    // fully populated above, straight from the schedule ops) rather than captured during the
+    // scene traversal below -- an earlier version tried the traversal and came back empty every
+    // time: steel beams/columns (isSteel above) are exactly the elements most likely rendered via
+    // BatchedMesh/InstancedMesh, which never carry a single userData.guid the "single mesh" branch
+    // below can match against. Reading straight from `frontier` is correct regardless of which
+    // rendering path a given guid ends up on.
+    window.__tmFrontierGuidsNow = new Set(Object.keys(frontier));
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
@@ -3407,6 +3410,7 @@
   function _promoteRoofLoadPath(elements) {
     var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
     var loadPathOverrides = 0;
+    var lpGuids = [];  // promoted GUIDs — returned for the §4D_ROOF_LOAD_PATH witness hook (G-RLP-2/3)
     // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
     // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
     var lpSlabs = [], lpSeed = [];
@@ -3428,6 +3432,7 @@
         el.seq = 8; el.phase = 'Architecture';
         loadPathOverrides++;
         lpSeed.push(el);
+        lpGuids.push(el.guid);
       }
     });
 
@@ -3471,9 +3476,10 @@
         }
         el.seq = 8; el.phase = 'Architecture';
         loadPathOverrides++; m4Promoted++;
+        lpGuids.push(el.guid);
       });
     }
-    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted };
+    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted, guids: lpGuids };
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3609,7 +3615,13 @@
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S, T;
     for (i = 0; i < elements.length; i++) {
       var e = elements[i];
-      if (e.seq <= 4) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      // §PROMOTED_CARRIER_POOL (2026-08-11, §TIER_SERIAL finding A follow-on): pool aligned with
+      // auditFloating's (schedule_gate.js) — seq<=4 ∪ load-path-PROMOTED slabs (seq>4 IfcSlab).
+      // Promoted roof slabs are audit/DAG carriers (helipad boxes stand on the promoted deck;
+      // Terminal's 24k wall-carried cone) but were INVISIBLE here, so their dependents were never
+      // staged/gated against them — the guard (_ogSupportSweep) applies the IDENTICAL pool, the
+      // pair stays one physics (witness_og_guard_bearing_bound W-OGB-3).
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); }
     }
     var eCount = 0;
@@ -3618,6 +3630,14 @@
       var sc = schedMap[T.guid]; if (!sc) continue;
       var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
       cs = cellsOf(T);
+      // §OG_BEARING_BOUND (2026-08-11) — the judge half of the guard's two-tier bearing rule (see
+      // §PHASE_OVERLAP_SUPPORT_GUARD below for the full ruling): carriers topping within T's own
+      // extent (+GAP) define its bearing plane; ENVELOPING carriers (top above T.top_z+GAP, e.g. a
+      // full-height column the element frames into mid-span) still count as detected support but
+      // only judge T when no in-extent carrier exists. Guard and judge MUST apply the identical
+      // rule or staged>0 comes back (the 2026-08-07 §4D_LAYER_TRUTH alignment, third asymmetry
+      // fixed then; this change keeps the pair symmetric while removing the crown-wait).
+      var topBound = T.top_z + GAP, maxEnvEnd = 0;
       var mark = {}, maxCarrierEnd = 0, hasCarrier = false;
       for (c = 0; c < cs.length; c++) {
         arr = structGrid[cs[c]];
@@ -3625,7 +3645,9 @@
           S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
           if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
             var sc1 = schedMap[S.guid]; eCount++;
-            if (sc1) { hasCarrier = true; if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+            if (sc1) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+              else if (sc1.end > maxEnvEnd) maxEnvEnd = sc1.end; }
           }
         }
         // §XRAY_WALL_SCOPE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md "Z-stack" chase): a wall is
@@ -3648,11 +3670,14 @@
           if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
           if (S.top_z >= T.base_z - GAP) {
             var sc2 = schedMap[S.guid]; eCount++;
-            if (sc2) { hasCarrier = true; if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+            if (sc2) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+              else if (sc2.end > maxEnvEnd) maxEnvEnd = sc2.end; }
           }
         }
         }
       }
+      if (!maxCarrierEnd && maxEnvEnd) maxCarrierEnd = maxEnvEnd;   // §OG_BEARING_BOUND tier-2 fallback
       if (hasCarrier && maxCarrierEnd > sc.end) {
         _tmXraySolidifyTs[T.guid] = maxCarrierEnd;
         _tmXrayStagedTotal++;
@@ -3681,71 +3706,207 @@
     console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
   }
 
-  // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
-  // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
-  // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
-  // the user dragged — with ScheduleGate.auditFloating, ALL classes, no filter (the §DEQ_V1 bar).
-  // The check IS auditFloating: when §GEOMETRIC_SUPPORT_ORDER-class upgrades land in the gate
-  // module, this hook strengthens automatically, no separate integration.
-  // Returns { ok, floating, total, guids, ms, skipped? }. A state with nothing auditable (no
-  // geometry / gate not loaded) verifies ok WITH the skip named — logged by the caller, never a
-  // silent false pass.
-  function verifyGanttIntegrity() {
-    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    function ms() { return Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0); }
-    if (typeof ScheduleGate === 'undefined' || !ScheduleGate.auditFloating)
-      return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
-    var els = _buildXrayElements();
-    if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
-    var sched = {};
-    for (var i = 0; i < _ops.length; i++) {
-      var o = _ops[i];
-      var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
-      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
-    }
-    // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
-    // (zero bbox at origin) can neither bear nor hang and sit at project end by design
-    var audited = [];
-    for (var j = 0; j < els.length; j++) {
-      var e = els[j];
-      if (!sched[e.guid]) continue;
-      if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
-      audited.push(e);
-    }
-    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, total: 0, guids: [], ms: ms() };
-    var guids = [];
-    var n = ScheduleGate.auditFloating(audited, sched, null, guids);
-    return { ok: n === 0, floating: n, total: audited.length, guids: guids, ms: ms() };
+  // ── §TIER_SERIAL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11
+  // evening: phase-window collapse — the capstone piece) ─────────────────────────────────────────
+  // computeSchedule's generative output (the proven support DAG — UNTOUCHED, floating baselines
+  // unchanged) is remapped for DISPLAY into a two-tier structure:
+  //   Tier 1 — the structural backbone (Substructure → Superstructure → Architecture) is STRICTLY
+  //   SERIAL: each phase's last element completes before the next phase's first element starts.
+  //   "Never appears before its support" becomes a structural guarantee for the backbone instead
+  //   of a corrected-after-the-fact repair. Deliberate, user-confirmed refinement of the
+  //   2026-08-02 §4D_BAND_MONOTONIC ruling ("ARCH/STR should be exempt as they are the physical
+  //   foundation. Separate unrelated disciplines can run parallel thereafter if construction
+  //   practice permits") — the per-trade storey-by-storey discipline itself lives inside
+  //   computeSchedule and is inherited unchanged: this remap never REORDERS the generative
+  //   timeline, it only shifts whole phase groups later and pushes dependents after supports.
+  //   Tier 2 — everything else (MEP Rough-in, MEP Final, Finishes; FP/ELEC/ACMV/PLB and the
+  //   generic undifferentiated MEP bucket included — DECIDED: no special-case for it) stays ONE
+  //   CONCURRENT POOL: no artificial phase-window barrier between disciplines. Each element is
+  //   still individually gated by the real support DAG via _ogSupportSweep (bearing + hang +
+  //   §OG_BEARING_BOUND two-tier rule) — which is what actually prevents "built before support";
+  //   the phase bucket only ever affected display grouping.
+  // Misclassified-furniture safeguard: rates.js/sequence_rules.json 'furniture_generic_bucket'
+  // NAME_OVERRIDE keeps furniture-named generic-class elements out of Tier 1 entirely.
+  // Witness: viewer/tests/witness_tier_serial_display.js (W-TS-1..6, all 5 shipped buildings).
+  var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
+
+  // Backbone phase extents over the SERIALIZABLE population — elements marked _t1Straggler are
+  // excluded (see §TIER_STRAGGLER in _twoTierRemap: the measured, DAG-forced cross-phase tail).
+  function _tier1Extents(items) {
+    var ext = {};
+    items.forEach(function (it) {
+      if (it._t1Straggler || _TIER1_ORDER.indexOf(it.phase) < 0) return;
+      var x = ext[it.phase] || (ext[it.phase] = { minS: Infinity, maxE: -Infinity });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+    });
+    return ext;
   }
 
-  // ══════════════════════════════════════════════════════════════════
-  // Z-DRIVEN CONSTRUCTION SCHEDULE
-  // ══════════════════════════════════════════════════════════════════
-  //
-  // One abstract rule: lower Z finishes before higher Z starts.
-  // Within same Z-band (storey): seq from SEQUENCE_RULES for phase order.
-  // Same resource on same storey = sequential. Different resource = parallel.
-  // Always re-inject on activate — never use stale cached ops.
+  // Uniform per-phase-group shift: phase k starts no earlier than phase k-1's last end. A uniform
+  // shift preserves all within-group generative order, and cross-group Tier-1 support edges only
+  // ever point BACKWARD in _TIER1_ORDER (walls carry only load-path-PROMOTED slabs, which
+  // _promoteRoofLoadPath re-phases to Architecture — no Architecture→Superstructure support edge
+  // exists) — the measured exceptions are exactly the §TIER_STRAGGLER set, excluded here and
+  // governed purely by _tierAuditRegate instead.
+  function _tier1Serialize(items) {
+    var ext = _tier1Extents(items);
+    var deltas = {}, prevEnd = -Infinity;
+    _TIER1_ORDER.forEach(function (ph) {
+      var x = ext[ph]; if (!x) return;   // phase absent (e.g. HHS models no Substructure)
+      var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
+      deltas[ph] = d;
+      prevEnd = x.maxE + d;
+    });
+    items.forEach(function (it) {
+      if (it._t1Straggler) return;       // stragglers ride the regate, never the group shift
+      var d = deltas[it.phase];
+      if (d) { it.s += d; it.e += d; }
+    });
+    return deltas;
+  }
 
-  // §GANTT_REFOLD_HANG (2026-08-10, 4D_SCHEDULE_PERFECTION.md §GANTT_REFOLD_HANG handoff):
-  // injectGantt()'s two hot loops froze the tab on Hospital (63,415 elements — live-confirmed:
-  // the console stream stopped dead between §PHASE_OVERLAP_SUPPORT_GUARD's log and
-  // §WRITE_LOOP_TIMING's, which never printed). Both loops are order-dependent (shared object
-  // refs mutate .s/.e read by later elements) so they cannot be parallelized or reordered — but
-  // chunking PRESERVES order: slicing them into _TM_CHUNK-sized batches with a macrotask yield
-  // between batches changes nothing about the output, only returns control to the browser.
-  // setTimeout(0), not rAF — must keep draining while the tab is backgrounded.
-  var _TM_CHUNK = 2500;
-  function _tmYield() { return new Promise(function (r) { setTimeout(r, 0); }); }
+  // 0 = the Tier-1 chain is strictly serial: for consecutive PRESENT backbone phases, phase k's
+  // last end <= phase k+1's first start (transitive across the chain — each window is well-formed).
+  // Straggler-excluded by _tier1Extents; the straggler count itself is reported, never hidden.
+  function _tier1Protrusion(items) {
+    var ext = _tier1Extents(items);
+    var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
+    var overlapping = 0;
+    for (var i = 0; i + 1 < present.length; i++) {
+      if (ext[present[i]].maxE > ext[present[i + 1]].minS) overlapping++;
+    }
+    return overlapping;
+  }
 
-  // §OG support-guard pass, extracted VERBATIM from injectGantt (§GANTT_REFOLD_HANG) so (a) the
-  // chunk-yield driver wraps it cleanly and (b) witness_gantt_og_grid_perf.js can slice a NAMED
-  // function instead of raw text spans (its old end-mark had already rotted — found dead
-  // 2026-08-10: §4D_LAYER_TRUTH reworded the log line it anchored on). Inner predicate code is
-  // byte-identical to the pre-extraction block; only the sweep's forEach became an indexed loop
-  // yielding every _TM_CHUNK elements. _yieldFn injectable for the witness (null = fully sync).
-  async function _ogSupportGuard(_allScheduled, _yieldFn) {
-    if (_yieldFn === undefined) _yieldFn = _tmYield;
+  // ── §TIER_REGATE — audit-physics display re-gate (the remap's push pass) ─────────────────────
+  // MUST use the SAME physics as schedule_gate.js auditFloating()/the generative gates — structGrid
+  // INCLUDES promoted roof slabs, bearing takes the max end over ALL carriers (enveloping included),
+  // hang + §HANG_NEAREST fallback + both antisymmetry exclusions — NOT the §OG_BEARING_BOUND-bounded
+  // guard physics (_ogSupportSweep). MEASURED 2026-08-11, first witness run of this lane: re-gating
+  // with guard physics left 1,383 audit-visible floaters on HHS alone — every rooftop/hanging
+  // element whose carrier is a PROMOTED slab (Architecture phase, shifted later by Tier-1
+  // serialization) that the guard's seq<=4-only grid cannot see. schedule_gate.js is explicitly
+  // untouched by this lane (spec: computeSchedule AND auditFloating stay as-is), so this is a
+  // deliberate, WITNESS-PINNED mirror: witness_tier_serial_display.js W-TS-2 runs the REAL
+  // auditFloating over this pass's output on all 5 shipped buildings — any drift between this
+  // mirror and the canonical physics surfaces there as displayed-floating > generative-floating.
+  // Push-only (start moves LATER, duration kept), fixpoint <=16 sweeps (monotone pushes over the
+  // acyclic support relation — the DAG's own convergence argument). Note the generative times
+  // already satisfy this physics (§SUPPORT_CHECK floating baselines), so on an unshifted timeline
+  // this pass pushes at most the known raw floating tail.
+  function _tierAuditRegate(items, exempt, dryRun) {
+    var EPS = 0.05, GAP = 0.5;
+    var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+    var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
+    var cellsOf = function (e) {
+      var o = [], gi, gj;
+      for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
+        for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
+      return o;
+    };
+    var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+    var structGrid = {}, wallGrid = {};
+    items.forEach(function (e) {
+      var cs = null;
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
+      else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
+      if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
+    });
+    // per-element max qualifying-support end — auditFloating's se, on live item times
+    var seFor = function (T) {
+      var se = 0, hasBearing = false, seen = {}, cs = cellsOf(T), p, c, k, arr, S;
+      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+      for (p = 0; p < pools.length; p++) {
+        for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) {
+              hasBearing = true;
+              if (S.e > se) se = S.e; } } }
+      }
+      if (!hasBearing && T.seq > 4) {      // hangs — gate against the carrier above instead
+        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        var tWall = T.cls.indexOf('IfcWall') === 0;
+        var hasHang = false, seenH = {};
+        for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
+            if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
+                !(tPool && T.bz < S.bz - EPS) &&
+                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                  T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
+                xyOverlap(S, T)) {
+              hasHang = true;
+              if (S.e > se) se = S.e; } } }
+        // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
+        // co-planar GAP band, exactly what the scheduler/audit gate them on.
+        if (!hasHang && !tPool && !tWall &&
+            (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
+          var nbA = Infinity, seenN = {};
+          for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
+              if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
+          if (nbA < Infinity) {
+            var seenP = {};
+            for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
+                if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) {
+                  if (S.e > se) se = S.e; } } }
+          }
+        }
+      }
+      return se;
+    };
+    // dryRun: one non-mutating pass over CURRENT times → the set of guids violating audit-se.
+    // _twoTierRemap calls this ONCE on the pristine generative times: that set is the DAG's own
+    // deliberate tail (cycle-breaks + unsolvables — e.g. Clinic's parapet-wall/roof-slab loop,
+    // MEASURED 2026-08-11 clinic_cycle.log: chasing it pushed 43k times across 400 sweeps without
+    // converging, the whole building drifting together). Those elements are EXEMPT from pushing —
+    // they ride their group shifts, keeping exactly their raw-relative wrongness, never more.
+    // Every edge this pass DOES enforce was satisfied by the raw generative simultaneously, so the
+    // enforced constraint subgraph provably admits a schedule → the fixpoint exists and monotone
+    // pushes reach it (no cycle-chasing possible by construction).
+    if (dryRun) {
+      var fset = {}, fn = 0;
+      items.forEach(function (T) {
+        var se0 = seFor(T);
+        if (se0 > 0 && T.s < se0 - 1) { fset[T.guid] = 1; fn++; }
+      });
+      return { floatSet: fset, n: fn };
+    }
+    var pushed = 0, sweeps = 0;
+    for (; sweeps < 64; sweeps++) {
+      var moved = 0;
+      items.forEach(function (T) {
+        if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
+        var se = seFor(T);
+        if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
+          var dur = Math.max(60000, T.e - T.s);
+          T.s = se; T.e = se + dur;
+          pushed++; moved++;
+        }
+      });
+      if (!moved) break;
+    }
+    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' sweeps=' + (sweeps + 1) +
+      ' (audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
+    return { pushed: pushed, sweeps: sweeps };
+  }
+
+  // ── §PHASE_OVERLAP_SUPPORT_GUARD — the support-order sweep, now a NAMED shared pass ──────────
+  // 2026-08-11 §TIER_SERIAL restructure: hoisted VERBATIM out of injectGantt's _cap-only overlay
+  // branch. It now (a) enforces Tier 2's per-element support gating on the DEFAULT generative
+  // display path — its main job under the two-tier design — and (b) verifies/repairs the _cap
+  // global-affine overlay (expected ≈0 pushes there). The block's interior bytes and ORIGINAL
+  // INDENTATION are deliberately preserved: two witnesses (witness_og_guard_bearing_bound.js,
+  // witness_gantt_og_grid_perf.js) slice it by text markers (the _ogCELL declaration → the
+  // §PHASE_OVERLAP_SUPPORT_GUARD log statement, whose historical §PHASE_OVERLAP_BAND wording is
+  // part of the end-mark bytes) and execute it against synthetic _allScheduled arrays —
+  // re-indenting, rewording the log, or renaming variables would rot both (that exact rot killed
+  // witness_gantt_og_grid_perf once already, 2026-08-07..11).
+  // _allScheduled: [{guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq,...}] — mutated in place (including a
+  // bz-ascending sort); s only ever moves LATER (push after real support), duration preserved.
+  function _ogSupportSweep(_allScheduled) {
+      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
       // SAME role-blind support predicate this file already uses for the generative path
       // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
       // ascending base_z order is safe in ONE pass: a carrier's base_z is always below what it
@@ -3789,7 +3950,10 @@
       var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
       var _ogStructGrid = {}, _ogWallGrid = {};
       _allScheduled.forEach(function (e) {
-        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        // §PROMOTED_CARRIER_POOL (2026-08-11): pool aligned with auditFloating's — seq<=4 ∪
+        // promoted slabs (see _buildXraySupportCache for the full finding-A note; guard and judge
+        // MUST stay one physics or §XRAY_EDGES staged>0 comes back).
+        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
         else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
@@ -3806,20 +3970,38 @@
       var _ogPushed = 0, _ogSweeps = 0;
       for (; _ogSweeps < 16; _ogSweeps++) {
         var _ogMoved = 0;
-        var _visitT = function (T) {
+        _allScheduled.forEach(function (T) {
           var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
           var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
+          // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
+          // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:
+          // witness_og_guard_bearing_bound.js + witness_gantt_og_grid_perf.js):
+          // the bearing test was unbounded ABOVE — a full-height column/wall registered as carrying
+          // every element at every level inside its footprint, so each of those elements was pushed
+          // to the END of the whole enveloping carrier (over-conservative; the STUDY's verified
+          // bug). Two-tier fix, mirroring the DAG's own wallCarries lesson ("a wall carries a slab
+          // AT ITS TOP, never one embedded metres below its crown", generalized to my own span):
+          //   tier 1 — carriers whose top lies within MY OWN extent (+GAP) define my bearing plane;
+          //   tier 2 — ENVELOPING carriers (top above T.tz+GAP) are still DETECTED (hasBearing —
+          //            §4D_LAYER_TRUTH's 25-staged lesson: never narrower than the audits) but only
+          //            GATE me when no tier-1 carrier exists (a beam framing into a full-height
+          //            mast keeps its real support; it just stops waiting for the mast's crown when
+          //            a storey-level carrier is present).
+          // _buildXraySupportCache applies the IDENTICAL two-tier rule — guard and judge stay one
+          // physics, which is what keeps §XRAY_EDGES staged=0 (the 2026-08-07 alignment invariant).
+          var _ogTopBound = T.tz + _ogGAP, envEnd = 0;
           for (var ci = 0; ci < cells.length; ci++) {
             var arr = _ogStructGrid[cells[ci]];
             if (arr) for (var si = 0; si < arr.length; si++) {
               var S = arr[si];
               if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
-              // §4D_LAYER_TRUTH: predicate ALIGNED with auditFloating()/_buildXraySupportCache —
-              // carrier top REACHES my base (>= T.bz-GAP, unbounded above: a tall column a beam
-              // frames into tops far above the beam's base). The old ±GAP band was narrower than
-              // the audits and left exactly the 25 staged elements those audits could still see.
+              // §4D_LAYER_TRUTH: detection ALIGNED with auditFloating()/_buildXraySupportCache —
+              // carrier top REACHES my base (>= T.bz-GAP; a tall column a beam frames into still
+              // counts). §OG_BEARING_BOUND above splits gating into the two tiers.
               if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
-                hasBearing = true; if (S.e > lastEnd) lastEnd = S.e; }
+                hasBearing = true;
+                if (S.tz <= _ogTopBound) { if (S.e > lastEnd) lastEnd = S.e; }
+                else if (S.e > envEnd) envEnd = S.e; }
             }
             if (!promotedSlab) continue;
             arr = _ogWallGrid[cells[ci]];
@@ -3827,9 +4009,12 @@
               var W = arr[wi];
               if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
               if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
-                hasBearing = true; if (W.e > lastEnd) lastEnd = W.e; }
+                hasBearing = true;
+                if (W.tz <= _ogTopBound) { if (W.e > lastEnd) lastEnd = W.e; }
+                else if (W.e > envEnd) envEnd = W.e; }
             }
           }
+          if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
           if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
             var hcells = _ogCellsQueryTop(T), hseen = {};
             for (var hi = 0; hi < hcells.length; hi++) {
@@ -3848,24 +4033,555 @@
             T.e = T.s + dur;
             _ogPushed++; _ogMoved++;
           }
-        };
-        for (var _vi = 0; _vi < _allScheduled.length; _vi++) {
-          _visitT(_allScheduled[_vi]);
-          // §GANTT_REFOLD_HANG: yield every _TM_CHUNK elements — order preserved, output identical
-          if (_yieldFn && ((_vi + 1) % _TM_CHUNK === 0)) await _yieldFn();
-        }
+        });
         if (!_ogMoved) break;
       }
       if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
         ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');
-    return _ogPushed;
+      return { pushed: _ogPushed, sweeps: _ogSweeps };
   }
 
-  // §WRITE_LOOP_TIMING's per-row UPDATE pass, extracted + chunked (§GANTT_REFOLD_HANG) — ONE
-  // txn PER CHUNK so no BEGIN is ever held across a yield (an interleaved kernel_ops write
-  // between ticks would nest-BEGIN and throw). A mid-run failure leaves earlier chunks
-  // committed: harmless — _capActive only flips true after the FULL pass, and the next
-  // successful injectGantt overwrites every row it touches. _yieldFn injectable (witness).
+  // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
+  // supports (audit physics) → verify strictness; iterate (bounded). Converges structurally:
+  // shifts never break Tier-1 internal order, regate pushes only ever move later and only enforce
+  // raw-satisfied constraints (see _tierAuditRegate dryRun), and Tier-2 elements are never
+  // carriers (audit pools = seq<=4 ∪ promoted slabs ∪ walls — all Tier 1).
+  //
+  // §TIER_DAG_WINS (measured 2026-08-11, stragglers.log + promoted_deps.log): some Tier-1
+  // elements are placed by the support DAG ITSELF inside a LATER backbone phase, and for them
+  // support order WINS over strict serialization (the mission: nothing appears before its
+  // support). Two measured shapes:
+  //   - isolated forward deps: Hospital's 'Foundation Slab' IfcFooting + Clinic's slab-on-grade
+  //     pair, each poured around full-height Superstructure columns whose base sits below theirs;
+  //   - the WALL-CARRIED CONE: on buildings where storeys are wall-carried (Terminal: 45 direct
+  //     "upper column stands on a load-path-PROMOTED structural flat slab" edges), the entire
+  //     dependency cone above those slabs — ~24k of Terminal's 34.8k Superstructure elements —
+  //     must follow Architecture-phase carriers; a frame building (Hospital) has almost none.
+  // Treatment mirrors the closure pass's "annotate, don't suppress": mark them out of the
+  // serialization extents, let the regate own their timing (real construction order for a
+  // wall-carried building), COUNT them in the §TIER_SERIAL log as tier1DagWins, and lock the
+  // per-building count in the witness — never silently absorbed, never hidden.
+  function _twoTierRemap(items) {
+    if (!items || !items.length) return { iterations: 0, pushed: 0, sweeps: 0, overlapPairs: 0, dagWins: 0 };
+    // the DAG's own raw tail (deliberate cycle-breaks, e.g. Clinic's parapet/roof-slab loop) —
+    // computed on PRISTINE generative times, exempt from regate pushing forever after.
+    var _exempt = _tierAuditRegate(items, null, true).floatSet;
+    var iters = 0, pushed = 0, sweeps = 0, overlap = -1, dagWins = 0;
+    while (iters < 6) {
+      iters++;
+      _tier1Serialize(items);
+      var r = _tierAuditRegate(items, _exempt, false);
+      pushed += r.pushed; sweeps += r.sweeps;
+      overlap = _tier1Protrusion(items);
+      if (!overlap) break;
+      // mark this round's DAG-forced cross-phase elements, then re-serialize without them
+      var ext = _tier1Extents(items);
+      var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
+      var marked = 0;
+      for (var i = 0; i + 1 < present.length; i++) {
+        var ph = present[i], nextMinS = ext[present[i + 1]].minS;
+        if (ext[ph].maxE <= nextMinS) continue;
+        items.forEach(function (it) {
+          if (it._t1Straggler || it.phase !== ph) return;
+          if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
+        });
+      }
+      dagWins += marked;
+      if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
+    }
+    // §TIER2_AFTER_TIER1 (2026-08-11, same-day correction — user's original words: "separate
+    // unrelated disciplines can run parallel THEREAFTER" — after Tier 1 finishes, not concurrent
+    // with it). Tier 1's TRUE completion is every backbone-phase element, straggler included —
+    // "ARCH/STR out of the way first" means literally all of it, not just the serializable part.
+    // Uniform later-shift only: safe by construction, since pushing every Tier-2 element later by
+    // the SAME amount preserves all of Tier 2's own internal order and only pushes starts further
+    // past their already-satisfied support minimum, never before it.
+    var tier1End = -Infinity, tier2MinStart = Infinity;
+    items.forEach(function (it) {
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) { if (it.e > tier1End) tier1End = it.e; }
+      else if (it.s < tier2MinStart) tier2MinStart = it.s;
+    });
+    var tier2Shift = 0;
+    if (isFinite(tier1End) && isFinite(tier2MinStart) && tier2MinStart < tier1End) {
+      tier2Shift = tier1End - tier2MinStart;
+      items.forEach(function (it) {
+        if (_TIER1_ORDER.indexOf(it.phase) < 0) { it.s += tier2Shift; it.e += tier2Shift; }
+      });
+    }
+    var base = Infinity, endAll = -Infinity, ext2 = {};
+    items.forEach(function (it) {
+      if (it.s < base) base = it.s;
+      if (it.e > endAll) endAll = it.e;
+      var x = ext2[it.phase] || (ext2[it.phase] = { minS: Infinity, maxE: -Infinity, n: 0 });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+      x.n++;
+    });
+    var D = 86400000, parts = [];
+    Object.keys(ext2).forEach(function (ph) {
+      var x = ext2[ph];
+      parts.push(ph + '=[' + ((x.minS - base) / D).toFixed(1) + '..' + ((x.maxE - base) / D).toFixed(1) + ']d n=' + x.n);
+    });
+    console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
+      ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
+      ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
+      ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
+      ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
+      ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
+    return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
+      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
+      base: base, end: endAll, extents: ext2, exempt: _exempt };
+  }
+
+  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
+  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
+  // midair that is all" — and "no band aid fix, just generalised solution."
+  //
+  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
+  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
+  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
+  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
+  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
+  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
+  //       candidate at all, records `se=0`, and reports it clean;
+  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
+  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
+  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
+  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
+  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
+  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
+  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
+  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
+  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
+  //
+  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
+  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
+  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
+  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
+  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
+  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  //
+  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
+  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
+  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
+  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
+  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
+  // so the global maximum start never grows, and the sweep is capped besides.
+  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
+  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
+  // carrier out from under its consumer.
+  //
+  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
+  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
+  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
+  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
+  //
+  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
+  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
+  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
+  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
+  // _contactGraph(items) — the one place the physical world is derived. Both the repair below and
+  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
+  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
+  // (x0,x1,y0,y1,bz,tz) only — times are read later, never here: geometry does not move.
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok }.
+  function _contactGraph(items) {
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    if (!SG || !SG.CELL) return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 };
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
+    var n = items.length, i, j, k, c, S, T, arr, cs;
+    var grid = {};
+    function cellsOf(e) {
+      var o = [], a, b;
+      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
+        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    var orphans = 0, groundedN = 0;
+    for (i = 0; i < n; i++) {
+      T = items[i]; cs = cellsOf(T);
+      var lowest = Infinity, list = null;
+      for (c = 0; c < cs.length; c++) {
+        arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
+          S = items[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          stamp[j] = i + 1;
+          if (S.bz < lowest) lowest = S.bz;
+          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
+              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
+              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
+            (list || (list = [])).push(j);
+          }
+        }
+      }
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
+      contacts[i] = list;
+      if (grounded[i]) groundedN++; else if (!list) orphans++;
+    }
+    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
+  }
+
+  // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before the
+  // first element they touch appears. Used by verifyGanttIntegrity (the 🔓→🔒 lock gate) so a
+  // dragged bar that re-creates a hanging is REFUSED, not silently accepted — auditFloating alone
+  // cannot see this population (that is the whole §MIDAIR_REPAIR finding).
+  function _midairAudit(items) {
+    var out = { midair: 0, orphans: 0, guids: [], ok: true };
+    if (!items || !items.length) return out;
+    var G = _contactGraph(items);
+    if (!G.ok) return out;
+    out.orphans = G.orphans;
+    for (var i = 0; i < items.length; i++) {
+      var list = G.contacts[i]; if (!list || G.grounded[i]) continue;
+      var first = Infinity;
+      for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
+      if (first > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
+    }
+    out.ok = out.midair === 0;
+    return out;
+  }
+
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var G = _contactGraph(items);
+    if (!G.ok) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var contacts = G.contacts, grounded = G.grounded, n = items.length, i, k;
+    stats.orphans = G.orphans; stats.grounded = G.groundedN;
+    var movedFlag = new Uint8Array(n), first, d, changed;
+    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
+    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
+    // FINISHES"), so a stricter version of this repair was built and measured: move every element
+    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
+    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
+    // adds a duration rather than reusing an existing time).
+    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
+    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
+    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
+    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
+    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
+    // train"). It is also not the visual truth: renderAtTime shows an element from its START
+    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
+    // column is on screen resting on something, not hanging in midair.
+    // strictResidual below reports that population every run — a named, measured limit, never a
+    // silent one. Revisit only with a real user report that a half-built support reads as floating.
+    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
+    while (stats.sweeps < 12) {
+      stats.sweeps++; changed = 0;
+      for (i = 0; i < n; i++) {
+        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        first = Infinity;
+        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
+        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
+          d = first - items[i].s;
+          items[i].s += d; items[i].e += d;
+          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
+          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
+          changed++;
+        }
+      }
+      if (!changed) break;
+    }
+    // ── THE TRADE THIS REPAIR MAKES, MEASURED — reported every run, never hidden (2026-08-12) ──
+    // Moving an element later so it stops hanging can leave a DEPENDENT starting before that (now
+    // later) support FINISHES — exactly what ScheduleGate.auditFloating counts. MEASURED across the
+    // repair on display times: Hospital 0→135, Clinic 1→356, LTU_AHouse 334→1100, Terminal 8→102,
+    // JKR 81→158, HHS 0→11, Duplex 0→9.
+    // AN ALTERNATING JOINT FIXPOINT WAS BUILT AND REJECTED ON ITS OWN NUMBERS: running the shipped
+    // _tierAuditRegate sweep after this repair and re-running the midair fixpoint after that does
+    // NOT converge — 4 rounds, 7,650 pushes, Hospital still ended 0→140, and the cost went 0.8s →
+    // 14.8s. The two rules genuinely fight (one is keyed on a contact's START, the other on a
+    // support's END, and the contact relation is not a DAG), so alternating them just walks the
+    // whole schedule later. Do not re-attempt that shape.
+    // WHY THIS REPAIR STILL SHIPS AS-IS: the two are not equally true to what a viewer sees.
+    // renderAtTime draws an element from its START (frontier = the lit work front), so an element
+    // arriving over a still-installing support is on screen resting on something; an element
+    // arriving over NOTHING is the defect the user reported. auditFloating's count was never the
+    // visual invariant — this repair's census proved it wrong in both directions (5,561 real
+    // hangings it could not see, at its own "0 floating"). The honest fix for both at once lives at
+    // the GATE layer (schedule_gate.js, where placement is DAG-ordered so both constraints can be
+    // taken as one Math.max), not in a post-hoc sweep. Named in
+    // prompts/4D_SCHEDULE_PERFECTION.md §STRUCT_POOL_UNGATED as the open, structural option.
+    // floatDelta below carries the number into every run's log so this trade can never go quiet.
+    stats.floatPre = 0; stats.floatPost = 0;
+    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    stats.residual = 0; stats.strictResidual = 0;
+    for (i = 0; i < n; i++) {
+      var lstF = contacts[i]; if (!lstF || grounded[i]) continue;
+      var fS = Infinity, fE = Infinity;
+      for (k = 0; k < lstF.length; k++) { var sF = items[lstF[k]].s, eF = items[lstF[k]].e;
+        if (sF < fS) fS = sF; if (eF < fE) fE = eF; }
+      if (fS > items[i].s + 1) stats.residual++;
+      if (fE > items[i].s + 1) stats.strictResidual++;
+    }
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.auditFloating) {
+      // the trade, measured on THIS run's own data (see the header): the older support-FINISHED
+      // count before vs after. Reported, never gated — a rise here is the known, named cost.
+      var _fm = {}, _fe = [];
+      for (i = 0; i < n; i++) { _fm[items[i].guid] = { start: items[i].s, end: items[i].e };
+        _fe.push({ guid: items[i].guid, cls: items[i].cls, seq: items[i].seq, x0: items[i].x0, x1: items[i].x1,
+          y0: items[i].y0, y1: items[i].y1, base_z: items[i].bz, top_z: items[i].tz }); }
+      var _q = console.log; console.log = function () {};
+      try { stats.floatPost = ScheduleGate.auditFloating(_fe, _fm); } catch (e) { stats.floatPost = -1; } finally { console.log = _q; }
+    }
+    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
+      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
+      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
+      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
+      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
+      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
+      ' grounded=' + stats.grounded + ' auditFloatingAfter=' + stats.floatPost +
+      ' (the measured trade — see this function\'s header; the gate-layer fix is the open structural option)' +
+      ' total=' + stats.total + ' ms=' + stats.ms);
+    return stats;
+  }
+
+  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
+  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
+  // midair that is all" — and "no band aid fix, just generalised solution."
+  //
+  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
+  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
+  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
+  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
+  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
+  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
+  //       candidate at all, records `se=0`, and reports it clean;
+  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
+  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
+  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
+  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
+  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
+  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
+  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
+  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
+  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
+  //
+  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
+  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
+  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
+  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
+  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
+  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  //
+  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
+  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
+  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
+  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
+  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
+  // so the global maximum start never grows, and the sweep is capped besides.
+  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
+  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
+  // carrier out from under its consumer.
+  //
+  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
+  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
+  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
+  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
+  //
+  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
+  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
+  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
+  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    if (!SG || !SG.CELL) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
+    var n = items.length, i, j, k, c, S, T, arr, cs;
+    var grid = {};
+    function cellsOf(e) {
+      var o = [], a, b;
+      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
+        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    // contact graph + ground layer, built ONCE (geometry does not change as times shift)
+    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    for (i = 0; i < n; i++) {
+      T = items[i]; cs = cellsOf(T);
+      var lowest = Infinity, list = null;
+      for (c = 0; c < cs.length; c++) {
+        arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
+          S = items[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          stamp[j] = i + 1;
+          if (S.bz < lowest) lowest = S.bz;
+          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
+              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
+              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
+            (list || (list = [])).push(j);
+          }
+        }
+      }
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
+      contacts[i] = list;
+      if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
+    }
+    var movedFlag = new Uint8Array(n), first, d, changed;
+    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
+    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
+    // FINISHES"), so a stricter version of this repair was built and measured: move every element
+    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
+    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
+    // adds a duration rather than reusing an existing time).
+    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
+    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
+    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
+    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
+    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
+    // train"). It is also not the visual truth: renderAtTime shows an element from its START
+    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
+    // column is on screen resting on something, not hanging in midair.
+    // strictResidual below reports that population every run — a named, measured limit, never a
+    // silent one. Revisit only with a real user report that a half-built support reads as floating.
+    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
+    while (stats.sweeps < 12) {
+      stats.sweeps++; changed = 0;
+      for (i = 0; i < n; i++) {
+        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        first = Infinity;
+        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
+        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
+          d = first - items[i].s;
+          items[i].s += d; items[i].e += d;
+          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
+          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
+          changed++;
+        }
+      }
+      if (!changed) break;
+    }
+    for (i = 0; i < n; i++) {                                      // honest residual after the cap
+      var list3 = contacts[i]; if (!list3 || grounded[i]) continue;
+      first = Infinity;
+      for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
+      if (first > items[i].s + 1) stats.residual++;
+      var firstE = Infinity;
+      for (k = 0; k < list3.length; k++) { var e3 = items[list3[k]].e; if (e3 < firstE) firstE = e3; }
+      if (firstE > items[i].s + 1) stats.strictResidual++;   // reported, not gated — see PASS 1 header
+    }
+    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
+      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
+      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
+      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
+      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
+      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
+      ' grounded=' + stats.grounded + ' total=' + stats.total + ' ms=' + stats.ms);
+    return stats;
+  }
+
+  // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
+  // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
+  // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
+  // the user dragged — with ScheduleGate.auditFloating, ALL classes, no filter (the §DEQ_V1 bar).
+  // The check IS auditFloating: when §GEOMETRIC_SUPPORT_ORDER-class upgrades land in the gate
+  // module, this hook strengthens automatically, no separate integration.
+  // Returns { ok, floating, total, guids, ms, skipped? }. A state with nothing auditable (no
+  // geometry / gate not loaded) verifies ok WITH the skip named — logged by the caller, never a
+  // silent false pass.
+  function verifyGanttIntegrity() {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    function ms() { return Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0); }
+    if (typeof ScheduleGate === 'undefined' || !ScheduleGate.auditFloating)
+      return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
+    var els = _buildXrayElements();
+    if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var sched = {};
+    for (var i = 0; i < _ops.length; i++) {
+      var o = _ops[i];
+      var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
+      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
+    }
+    // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
+    // (zero bbox at origin) can neither bear nor hang and sit at project end by design
+    var audited = [];
+    for (var j = 0; j < els.length; j++) {
+      var e = els[j];
+      if (!sched[e.guid]) continue;
+      if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
+      audited.push(e);
+    }
+    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, midair: 0, total: 0, guids: [], ms: ms() };
+    var guids = [];
+    var n = ScheduleGate.auditFloating(audited, sched, null, guids);
+    // §MIDAIR_REPAIR (2026-08-12) — the lock gate must judge by the SAME rule the generator
+    // enforces, or a planner's drag can re-create exactly the hangings the generated film has none
+    // of and the lock would still be granted: auditFloating's support pools (seq<=4 + promoted
+    // slabs + walls) cannot see an element whose real neighbours are outside them, nor any
+    // structure-pool member at all. Same _contactGraph, no mutation — REFUSING the lock is right
+    // here, where a human made the change and can undo it, whereas the generator repairs silently.
+    var mrItems = audited.map(function (e) {
+      var t = sched[e.guid];
+      return { guid: e.guid, s: t.start, e: t.end, bz: e.base_z, tz: e.top_z,
+        x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 };
+    });
+    var ma = _midairAudit(mrItems);
+    if (ma.midair && guids.length < 20) guids = guids.concat(ma.guids.slice(0, 20 - guids.length));
+    // §GANTT_LOCK_DELTA (2026-08-12) — the gate asks "did YOUR EDIT break physics", not "is the
+    // generator perfect". Absolute zero was the wrong test and was already wrong before
+    // §MIDAIR_REPAIR: measured pre-repair auditFloating on the shipped buildings was Terminal 8,
+    // Clinic 1, JKR 81, LTU_AHouse 334 (the documented warn-only tails — co-planar framing, mutual
+    // bearing, the §SUPPORT_CYCLE population), so `ok: n === 0` refused the lock on 4 of 7
+    // buildings on a FRESHLY GENERATED, UNEDITED schedule. A planner could never re-lock there.
+    // The reference is now the state captured when editing began (_lockBaseline, set on unlock):
+    // a breach is an INCREASE in either measure. Both counts are still reported absolutely, so the
+    // known tails stay visible instead of being defined away.
+    var base = _lockBaseline || { floating: n, midair: ma.midair };
+    return { ok: n <= base.floating && ma.midair <= base.midair,
+      floating: n, midair: ma.midair, baseFloating: base.floating, baseMidair: base.midair,
+      dFloating: n - base.floating, dMidair: ma.midair - base.midair,
+      total: audited.length, guids: guids, ms: ms() };
+  }
+
+  // §GANTT_LOCK_DELTA — the physics state at the moment editing STARTED. Captured on 🔒→🔓 so the
+  // lock-back comparison is against what the planner inherited, never against an ideal the shipped
+  // generator does not reach on every building. Null ⇒ verifyGanttIntegrity self-references (any
+  // first call is its own baseline), which is the safe direction: it can only refuse a WORSENING.
+  var _lockBaseline = null;
+  function captureLockBaseline() {
+    var v = verifyGanttIntegrity();
+    _lockBaseline = { floating: v.floating, midair: v.midair };
+    console.log('§GANTT_LOCK_BASELINE floating=' + v.floating + ' midair=' + v.midair +
+      ' total=' + v.total + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)');
+    return _lockBaseline;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Z-DRIVEN CONSTRUCTION SCHEDULE
+  // ══════════════════════════════════════════════════════════════════
+  //
+  // One abstract rule: lower Z finishes before higher Z starts.
+  // Within same Z-band (storey): seq from SEQUENCE_RULES for phase order.
+  // Same resource on same storey = sequential. Different resource = parallel.
+  // Always re-inject on activate — never use stale cached ops.
+
+  // §GANTT_REFOLD_HANG (2026-08-10, 4D_SCHEDULE_PERFECTION.md §GANTT_REFOLD_HANG handoff):
+  // injectGantt()'s two hot loops froze the tab on Hospital (63,415 elements — live-confirmed:
+  // the console stream stopped dead between §PHASE_OVERLAP_SUPPORT_GUARD's log and
+  // §WRITE_LOOP_TIMING's, which never printed). Both loops are order-dependent (shared object
+  // refs mutate .s/.e read by later elements) so they cannot be parallelized or reordered — but
+  // chunking PRESERVES order: slicing them into _TM_CHUNK-sized batches with a macrotask yield
+  // between batches changes nothing about the output, only returns control to the browser.
+  // setTimeout(0), not rAF — must keep draining while the tab is backgrounded.
+  var _TM_CHUNK = 2500;
+  function _tmYield() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+  // §GANTT_REFOLD_HANG sync note (2026-08-12): the branch's extracted _ogSupportGuard was
+  // superseded during the 26-commit drift by main's own _ogSupportSweep (witness-locked physics —
+  // see §OG sections above); this sync keeps main's sweep untouched and lands ONLY the chunked
+  // kernel_ops writer below (the measured §WRITE_LOOP_TIMING freeze) + the async call-site plumbing.
   async function _writeScheduledChunked(db, _allScheduled, _yieldFn) {
     if (_yieldFn === undefined) _yieldFn = _tmYield;
     var _wlT0 = performance.now();
@@ -4124,6 +4840,11 @@
     // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
     // when the two inline copies were consolidated 2026-08-10).
     var _lp = _promoteRoofLoadPath(elements);
+    // §4D_ROOF_LOAD_PATH witness hook (double-underscore debug convention, same as __tmGanttShift):
+    // on the _cap path the ops' `phase` param is overwritten with the task NAME (p.phase = w.name
+    // below), so promotion is no longer observable through kernel_ops — witness_4d_roof_load_path
+    // G-RLP-2/3 read the promoted set here instead. Refreshed on every injectGantt run.
+    window.__tmLoadPathPromoted = _lp.guids;
     if (_lp.total) console.log('§GANTT_OVERRIDE ' + _lp.total +
       ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
       ' (seed=' + _lp.seedCount + ' + M4 rooftop-appurtenance=' + _lp.m4Count + ')');
@@ -4199,8 +4920,25 @@
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
       ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
+    // §TIER_SERIAL (2026-08-11): the DISPLAYED timeline is the two-tier remap of computeSchedule's
+    // output — backbone phases strictly serial, everything else one support-gated concurrent pool
+    // (full doctrine on _twoTierRemap above). _sched itself stays RAW: §SUPPORT_CHECK/§ROOF_GATE
+    // below keep auditing the generative layer's proven truth (floating baselines byte-identical);
+    // the kernel_ops written from _disp are what the movie/Gantt/X-ray judge consume.
+    var _twItems = _geoElements.map(function (el) {
+      var _ts = _sched[el.guid];
+      return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
+        bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
+        cls: el.cls, seq: el.seq, phase: el.phase };
+    });
+    var _twStats = _twoTierRemap(_twItems);
+    // §MIDAIR_REPAIR (2026-08-12) — last stop before kernel_ops: nothing may appear before the
+    // first thing it touches appears. Class-blind, pool-blind, later-only. See its own header.
+    _midairRepair(_twItems);
+    var _disp = {};
+    _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e }; });
     var _schedEnd = baseMs;
-    for (var _sg in _sched) if (_sched[_sg].end > _schedEnd) _schedEnd = _sched[_sg].end;
+    for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
     if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
@@ -4208,10 +4946,10 @@
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
     elements.forEach(function(el) {
-      var s = _sched[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park, was baseMs (day 0)
+      var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:s.end}),
+           resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
       if (s.end > _projEnd) _projEnd = s.end;
@@ -4228,8 +4966,17 @@
     // the old hand-picked list (Beam/Member/Slab/'Furni'/'Wall') silently excluded every MEP/flow
     // class, so this line printed floating=0 while fans hung mid-air unaudited.
     var _auditN = _geoElements.length;
-    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null);
+    // §SUPPORT_UNCHECKED collector — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a (warn-only):
+    // big elements (bbox vol > ScheduleGate.BIG_ELEMENT_VOL, measured p95) that the audit found
+    // ZERO support candidates for — previously silent false-pass. Floating count/gating unchanged.
+    var _unchecked = [];
+    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null, null, _unchecked);
     console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
+    console.log('§SUPPORT_UNCHECKED_SUMMARY n=' + _unchecked.length + '/' + _auditN +
+      ' bigVol>' + (ScheduleGate.BIG_ELEMENT_VOL || 1.556) + 'm³ zero-candidate' +
+      ' buildingModelsSubstructure=' + (_unchecked.length ? _unchecked[0].buildingModelsSubstructure
+        : _geoElements.some(function (e) { return e.seq === 1; })) +
+      ' (warn-only — reported not gated, see §SPEC 2026-08-11 1a)');
 
     // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
     // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
@@ -4247,18 +4994,29 @@
     //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
     try {
       var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
-      var _rgGrid = {}, _rgSlabs = [];
+      // §SPEC 2026-08-11 1b (4D_SCHEDULE_PERFECTION.md, Witness: witness_big_element_support_
+      // coverage.js): widen the audited pool beyond IfcSlab — EVERY element above the measured p95
+      // bbox volume (ScheduleGate.BIG_ELEMENT_VOL = 1.556 m³, extracted 2026-08-11) is also audited
+      // against the walls carrying it, independent of class or promotion status — the load-path
+      // classifier's known depth-1 false negatives become visible here instead of reading clean.
+      // REPORTED, NOT GATED (own counter pair; existing roofSlabs gate + otherSlabs measurement
+      // byte-identical). 1c: Substructure (seq===1) exempt — rests on unmodeled soil.
+      var _rgBIGVOL = (ScheduleGate.BIG_ELEMENT_VOL || 1.556);
+      var _rgGrid = {}, _rgSlabs = [], _rgBig = [];
       for (var _rgi = 0; _rgi < elements.length; _rgi++) {
         var _e = elements[_rgi];
+        if (_e.cls !== 'IfcSlab' && _e.seq !== 1 &&
+            (_e.x1 - _e.x0) * (_e.y1 - _e.y0) * (_e.top_z - _e.base_z) > _rgBIGVOL) _rgBig.push(_e);
         if (_e.cls === 'IfcSlab') { _rgSlabs.push(_e); continue; }
         if (_e.cls.indexOf('IfcWall') !== 0) continue;
         for (var _gx = Math.floor(_e.x0 / _rgCELL); _gx <= Math.floor(_e.x1 / _rgCELL); _gx++)
           for (var _gy = Math.floor(_e.y0 / _rgCELL); _gy <= Math.floor(_e.y1 / _rgCELL); _gy++)
             (_rgGrid[_gx + ',' + _gy] = _rgGrid[_gx + ',' + _gy] || []).push(_e);
       }
-      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0;
-      _rgSlabs.forEach(function(S) {
-        var sc = _sched[S.guid]; if (!sc) return;
+      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0, _rgBigN = 0, _rgBigLate = 0;
+      // shared wall-carrier scan — slabs and 1b's big elements are tested against the SAME physics
+      var _rgLateVsWalls = function(S) {
+        var sc = _sched[S.guid]; if (!sc) return null;
         var maxEnd = 0, seen = {};
         for (var gx = Math.floor(S.x0 / _rgCELL); gx <= Math.floor(S.x1 / _rgCELL); gx++)
           for (var gy = Math.floor(S.y0 / _rgCELL); gy <= Math.floor(S.y1 / _rgCELL); gy++) {
@@ -4271,18 +5029,27 @@
               }
             }
           }
-        var late = (maxEnd > 0 && sc.start < maxEnd - 1);
+        return (maxEnd > 0 && sc.start < maxEnd - 1);
+      };
+      _rgSlabs.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
         if (S.seq > 4) { _rgRoofN++; if (late) _rgRoofLate++; }
         else { _rgOtherN++; if (late) _rgOtherLate++; }
       });
+      _rgBig.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
+        _rgBigN++; if (late) _rgBigLate++;
+      });
       console.log('§ROOF_GATE roofSlabs=' + _rgRoofN + ' lateVsWallCarriers=' + _rgRoofLate +
         ' (0=required) | otherSlabs=' + _rgOtherN + ' lateVsWallCarriers=' + _rgOtherLate +
-        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)');
+        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)' +
+        ' | bigElems=' + _rgBigN + ' lateVsWallCarriers=' + _rgBigLate +
+        ' (>' + _rgBIGVOL + 'm³ p95, non-slab non-Substructure — reported not gated, §SPEC 2026-08-11 1b)');
     } catch (e) { console.log('§ROOF_GATE error: ' + e.message); }
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
     // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
-    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: null };  // §DEQ_V1: audit is unfiltered now (was the hand-picked _audit predicate)
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, disp: _disp, tier: _twStats, audit: null };  // §DEQ_V1: audit unfiltered; §TIER_SERIAL: disp = displayed two-tier map, sched stays RAW generative
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
@@ -4323,148 +5090,69 @@
       ', bands=' + storeyNames.length + ', ' + projectDays + ' days, scale=' + scaleFactor.toFixed(2) +
       ', start=' + startDate.toLocaleDateString() + ' end=' + endDate.toLocaleDateString());
 
-    // ── T3 §3.1/§3.3: overlay captured REAL dates + task names onto covered elements ──
-    // The generative pass above already laid every element on the real-start epoch (baseMs).
-    // Now patch the covered subset to their exact captured task window + real name, and flag
-    // them _captured=1. Uncovered elements keep their generated timing (honest estimate).
+    // ── T3 §3.1/§3.3: overlay captured task names + the captured project window onto covered
+    // elements. The generative pass above already laid every element on the real-start epoch
+    // (baseMs) carrying the §TIER_SERIAL two-tier display timeline.
     //
-    // §PLAYBACK-STAGGER (2026-07-19, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md
-    // Item 8): assigning the task's window VERBATIM to every covered element made EVERY floor's
-    // bar for a phase byte-identical — confirmed live (Hospital, all 8 Levels' Superstructure
-    // showed 2026-01-31..2026-03-02) — "the gantt chart bars are the SAME", and during actual
-    // playback the WHOLE phase pops into existence at once instead of an orderly, gradual reveal.
-    // Real per-element Z data already exists (elements[], built above, same array the generative
-    // pass sorts bottom-up) — bucket covered guids by task, sort each bucket bottom-up by cz (same
-    // discipline as the generative pass), and linearly distribute them across the task's OWN
-    // [w.s, w.e] window instead of collapsing them onto it. The phase's overall date range
-    // (editable in the Schedule Author wizard, `tasks.schedule_start/finish`) is UNCHANGED — only
-    // the per-element position WITHIN that window is now real-Z-ordered, not identical.
+    // §TIER_SERIAL Option A (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+    // 2026-08-11 evening — replaces §PLAYBACK-STAGGER/§STAGGER_SUPPORT_ORDER/§4D_LAYER_TRUTH's
+    // independent per-task-bucket affine + §STAGGER_HOST + the in-branch guard invocation):
+    // each task bucket used to be rescaled into its own §PHASE_OVERLAP_BAND window INDEPENDENTLY,
+    // which un-did computeSchedule's cross-bucket support order (measured pre-guard: Terminal 447 /
+    // Hospital 1,929 violations — the reason §PHASE_OVERLAP_SUPPORT_GUARD was born as a repair
+    // pass). Now the covered set maps through ONE global monotone affine into the captured project
+    // window [_cap.base, _cap.projEnd]: order — and therefore support order — is preserved BY
+    // CONSTRUCTION, no per-bucket window can reorder across bucket boundaries anymore. Deliberate,
+    // user-decided Option A cost: an individual task's dragged window no longer independently
+    // rescales its own elements — task NAMES still overlay (mini-Gantt), and the overall captured
+    // window anchors/scales the whole timeline. §STAGGER_HOST was already inert here (since
+    // §4D_LAYER_TRUTH's ls-affine, element times derive from ls alone — its index reshuffle
+    // changed nothing) — removed with the per-bucket map, not silently lost.
     _capActive = false; _coveredCount = 0; _coveragePct = 0;
     if (_cap) {
       var _covered = 0;
       var _elByGuid = {};
       elements.forEach(function(el) { _elByGuid[el.guid] = el; });
-      var _byTask = {};
+      var _allScheduled = [], _lsMin = Infinity, _leMax = -Infinity;
       var _allOps = db.exec("SELECT output_guid, parameters, timestamp FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
           var g = row[0], tid = _cap.guidTask[g];
-          if (!tid) return;                         // uncovered → keep generative timing
-          if (!_byTask[tid]) _byTask[tid] = [];
+          if (!tid) return;                         // uncovered → keeps the two-tier generated timing
+          var w = _cap.win[tid];
+          if (!w) return;                           // link points at summary/undated task
           var _el = _elByGuid[g];
-          // §4D_LAYER_TRUTH (2026-08-07): the element's GENERATIVE (computeSchedule) start/end —
-          // the schedule layer's proven truth (floating=0) — rides into the task bucket so the
-          // window mapping below can PRESERVE it instead of discarding it.
-          var _lsEnd = 0; try { _lsEnd = (JSON.parse(row[1]) || {})._end_ts || 0; } catch (e) {}
-          _byTask[tid].push({ guid: g, params: row[1], ls: row[2] || 0, le: _lsEnd || ((row[2] || 0) + 60000),
-            cz: _el ? _el.cz : 0, seq: _el ? _el.seq : 999,
+          var p; try { p = JSON.parse(row[1]) || {}; } catch (e) { p = {}; }
+          var _ls = row[2] || 0;
+          var _le = p._end_ts || (_ls + 60000);
+          if (_ls < _lsMin) _lsMin = _ls;
+          if (_le > _leMax) _leMax = _le;
+          p.phase = w.name;                         // real task name → shows in mini-Gantt
+          _allScheduled.push({ guid: g, s: _ls, e: _le, params: p, task: tid,
             bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
             x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
             y0: _el ? _el.y0 : 0, y1: _el ? _el.y1 : 0,
-            cls: _el ? _el.cls : '',
-            hostable: _el ? (_el.cls === 'IfcWindow' || _el.cls === 'IfcDoor' ||
-              ((_el.cls === 'IfcPlate' || _el.cls === 'IfcMember') && _el.seq === 7)) : false });
-        });
-      }
-      // §GANTT_REFOLD_HANG: BEGIN + the _upd prepare moved down into _writeScheduledChunked —
-      // nothing touches the db between here and the write loop, and the support-guard pass now
-      // YIELDS (holding a txn open across a yield would nest-BEGIN against any interleaved
-      // kernel_ops write landing between ticks).
-      // §PHASE_OVERLAP_SUPPORT_GUARD (GANTT_ACCURACY.md §PHASE_OVERLAP_BAND): schedule_author.js's
-      // task windows can now OVERLAP (a later phase starts once the leading trade clears ONE band,
-      // not the whole building — see materializeDefault). The per-task stagger below still only
-      // orders elements WITHIN their own task; it has no way to know a DIFFERENT (now-overlapping)
-      // task's elements. Measured before shipping: this creates real cross-task support violations
-      // (Terminal 447, Hospital 1,929 — e.g. a beam scheduled before the wall it bears on, because
-      // Architecture's window now starts inside Superstructure's tail). Collect every element's
-      // provisional (s_i, e_i) here instead of writing immediately, then run ONE global correction
-      // pass below — same "push after, never re-key" mechanism §4D_HOST_BEFORE_HOSTED already uses,
-      // just applied across tasks instead of within one.
-      var _allScheduled = [];
-      for (var _tid in _byTask) {
-        var w = _cap.win[_tid];
-        var _bucket = _byTask[_tid];
-        // §STAGGER_SUPPORT_ORDER (2026-08-02) — Implementing GANTT_ACCURACY.md ▶RESUME 2026-08-02
-        // (late) — Witness: witness_stagger_support_order.js (G-SSO-1..4).
-        // base_z FIRST: the previous (seq, cz) order revealed 6,240 carried elements before their
-        // in-window carriers on Hospital (988 IfcBeam on walls; worst 134d) — cz is a CENTROID, not
-        // a bearing surface, and seq-major put whole trades before the walls that carry them.
-        // base_z is a topological potential of the support DAG (a carrier ALWAYS has
-        // S.base_z < T.base_z - EPS — audit_support_roleblind.js's own predicate), so a base_z walk
-        // cannot place anything before its support. seq then cz break ties WITHIN a bearing level,
-        // keeping §4D_FACADE_ORDER's trade discipline for same-level elements.
-        // §4D_LAYER_TRUTH (2026-08-07, supersedes bz-primary here): order INSIDE a task = the
-        // generative schedule's own order (ls = computeSchedule start). base_z ordering was the
-        // best available proxy before the §DEQ_V1 engine — but it is provably wrong for hanging
-        // elements (a fan's base_z is BELOW its roof carrier's), while ls already encodes
-        // bearing-below + hang-carrier + the repair loop. bz/seq/cz stay as tiebreakers only.
-        _bucket.sort(function(a, b) { return (a.ls - b.ls) || (a.bz - b.bz) || (a.seq - b.seq) || (a.cz - b.cz); });
-        // §4D_HOST_BEFORE_HOSTED (same spec file): float-noise near-ties defeat the seq tiebreak —
-        // 101/5,924 host pairs on Hospital have the wall base 0–0.043m ABOVE its hosted glazing's
-        // base (< EPS), so the panel sorts first. Constraint AFTER the sort, never a replacement:
-        // move each hosted element (window/door/glazing) to just after the last XY-touching wall
-        // that z-contains it. The bucket is bz-sorted, so any such wall sorted after the hosted
-        // element lies within [H.bz, H.bz+EPS] — the forward scan is bounded and cheap. Moving an
-        // element LATER cannot create a support violation (hosted classes are never carriers).
-        (function(items) {
-          var HEPS = 0.05, keys = [], moved = 0, i, j;
-          for (i = 0; i < items.length; i++) keys.push(i);
-          for (i = 0; i < items.length; i++) {
-            var H = items[i]; if (!H.hostable) continue;
-            var last = -1;
-            // §4D_LAYER_TRUTH: scan bound follows the new ls-primary sort — host/hosted pairs are
-            // near-tied in ls (same supports), so a 1-day ls window covers what the bz window did.
-            for (j = i + 1; j < items.length && items[j].ls <= H.ls + 86400000; j++) {
-              var W = items[j];
-              if (W.cls.indexOf('IfcWall') === 0 &&
-                  H.x0 <= W.x1 && H.x1 >= W.x0 && H.y0 <= W.y1 && H.y1 >= W.y0 &&
-                  W.bz <= H.bz + HEPS && W.tz >= H.tz - HEPS) last = j;
-            }
-            if (last > i) { keys[i] = last + 0.5; moved++; }
-          }
-          if (moved) {
-            var order = items.map(function(el, k) { return { el: el, k: keys[k], i: k }; });
-            order.sort(function(a, b) { return (a.k - b.k) || (a.i - b.i); });
-            for (i = 0; i < items.length; i++) items[i] = order[i].el;
-            console.log('§STAGGER_HOST movedAfterHost=' + moved + ' (task bucket n=' + items.length + ')');
-          }
-        })(_bucket);
-        // §4D_LAYER_TRUTH (2026-08-07, replaces the even index-stagger): the even spread kept only
-        // the bucket's ORDER and re-timed elements uniformly across the window — measured on the
-        // user's own Hospital console: §XRAY_EDGES staged=284/63415 on this path vs staged=0 on the
-        // generative path, i.e. the window layer re-introduced 284 support violations the schedule
-        // layer had already solved. Map each element's generative [ls,le] AFFINELY into the task's
-        // own [w.s,w.e] instead: an untouched window (windows come from the SAME schedule's zone
-        // rollup) reproduces the generative times in shape, and a user-dragged window rescales them
-        // without reordering. Monotone by construction (bucket is ls-sorted).
-        var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
-        var _lsMin = Infinity, _leMax = -Infinity;
-        _bucket.forEach(function(item) {
-          if (item.ls < _lsMin) _lsMin = item.ls;
-          if (item.le > _leMax) _leMax = item.le;
-        });
-        var _lsSpan = Math.max(1, _leMax - _lsMin);
-        _bucket.forEach(function(item, i) {
-          var s_i = w.s + Math.floor(((item.ls - _lsMin) / _lsSpan) * _span);
-          var e_i = w.s + Math.floor(((item.le - _lsMin) / _lsSpan) * _span);
-          if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
-          var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
-          p.phase = w.name;                         // real task name → shows in mini-Gantt
-          _allScheduled.push({ guid: item.guid, s: s_i, e: e_i, params: p, task: _tid,
-            bz: item.bz, tz: item.tz, x0: item.x0, x1: item.x1, y0: item.y0, y1: item.y1,
-            cls: item.cls, seq: item.seq });
+            cls: _el ? _el.cls : '', seq: _el ? _el.seq : 999 });
           _covered++;
         });
       }
-
-      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
-      // §GANTT_REFOLD_HANG: the §OG support-guard pass now lives in _ogSupportGuard()
-      // above injectGantt — extracted verbatim, chunk-yielding. See its header comment.
-      await _ogSupportGuard(_allScheduled);
-
-      // §WRITE_LOOP_TIMING (2026-08-04) + §GANTT_REFOLD_HANG fix (2026-08-10): the freeze this
-      // tag used to only MEASURE ("no fix here") is fixed — the per-row UPDATE pass runs chunked
-      // in _writeScheduledChunked() above injectGantt, one txn per chunk, yielding between.
+      // ONE global affine into the captured window — floor() is monotone, so support margins keep
+      // their sign; only the 60s zero-duration fixup below can graze a margin after extreme
+      // compression, which the verification sweep right after repairs (expected ≈0 pushes).
+      var _capSpan = Math.max(1, _cap.projEnd - _cap.base);
+      var _lsSpan = Math.max(1, _leMax - _lsMin);
+      _allScheduled.forEach(function (item) {
+        item.s = _cap.base + Math.floor(((item.s - _lsMin) / _lsSpan) * _capSpan);
+        item.e = _cap.base + Math.floor(((item.e - _lsMin) / _lsSpan) * _capSpan);
+        if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
+      });
+      _ogSupportSweep(_allScheduled);
+      // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
+      // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
+      // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
+      // IDENTICAL rows in the IDENTICAL order (same fields, same log line), committing and yielding
+      // a macrotask every _TM_CHUNK=2500 rows so the tab stays responsive. Witness:
+      // viewer/tests/witness_gantt_refold_yield.js (identity gate: chunked rows == sync rows).
       await _writeScheduledChunked(db, _allScheduled);
       _capActive = true;
       _coveredCount = _covered;
@@ -6014,15 +6702,20 @@
             setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
               var v = verifyGanttIntegrity();
               if (!v.ok) {
-                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '/' + v.total + ' ms=' + v.ms +
+                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '(+' + v.dFloating + ') midair=' +
+                  (v.midair || 0) + '(+' + (v.dMidair || 0) + ')/' + v.total + ' ms=' + v.ms +
                   ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
                 if (lm) {
-                  lm.textContent = '⚠ Integrity Breach: ' + v.floating + ' floating — press ↺ Undo edit (or fix), then lock again';
+                  var _breach = [];
+                  if (v.dFloating > 0) _breach.push('+' + v.dFloating + ' floating');
+                  if (v.dMidair > 0) _breach.push('+' + v.dMidair + ' hanging in midair');
+                  lm.textContent = '⚠ Integrity Breach: ' + _breach.join(' + ') + ' — press ↺ Undo edit (or fix), then lock again';
                   lm.style.color = '#f66';
                 }
                 return;   // REFUSED — _ganttEditable stays true, nothing hidden
               }
-              console.log('§GANTT_LOCK_VERIFY ok floating=0/' + v.total + ' ms=' + v.ms +
+              console.log('§GANTT_LOCK_VERIFY ok floating=' + v.floating + '/base=' + v.baseFloating +
+                ' midair=' + v.midair + '/base=' + v.baseMidair + ' total=' + v.total + ' ms=' + v.ms +
                 (v.skipped ? ' skipped=' + v.skipped : ''));
               if (lm) { lm.textContent = ''; lm.style.color = ''; }
               _ganttEditable = false;
@@ -6031,6 +6724,7 @@
             return;
           }
           _ganttEditable = true;
+          captureLockBaseline();   // §GANTT_LOCK_DELTA: the state the planner inherited
           applyLockUi();
         });
       }
@@ -6580,7 +7274,9 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 8;   // §STAGGER_SUPPORT_ORDER (2026-08-02): captured stagger is base_z-major + host pass
+  var _GANTT_CACHE_VERSION = 11;   // §MIDAIR_REPAIR (2026-08-12): display times now repaired so nothing appears before the first element it touches — MUST bump on every change to computeSchedule's gating OR the display remap, or a building already materialized under an older version keeps replaying it forever (§KERNEL_OPS_SCHED_VERSION exists specifically to catch this bump).
+                                   // v10 was §DOOR_WINDOW_HOST_WALL (2026-08-11): door/window gated on its host wall's finish (schedule_gate.js openingGate)
+                                   // v9 was §TIER_SERIAL (2026-08-11): two-tier display remap (serial backbone + concurrent pool)
                                   // v7 was §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
   //                                 changes generated ordering for 35,484 non-structure elements.
   //                                 MUST bump: #1123 exists because a stale cache once stopped a
@@ -6656,6 +7352,15 @@
       db.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
     } catch (e) { /* no kernel_ops table → nothing to invalidate */ }
     return n;
+  }
+
+  // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
+  // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
+  // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
+  // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
+  function _kernelOpsSchedStale(placeOps, currentVersion) {
+    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
+      placeOps[0].parameters._genVersion !== currentVersion);
   }
 
   // ── Activate / Deactivate ──
@@ -6778,6 +7483,20 @@
         try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
         _placeOps = [];
         console.log('§TIME_MACHINE cleared stale unweighted ops — will re-inject');
+      }
+      // §KERNEL_OPS_SCHED_VERSION (2026-08-11): a building opened before this session's fix to the
+      // schedule-generation algorithm (e.g. §TIER2_AFTER_TIER1) has kernel_ops ELEMENT_PLACE rows
+      // materialized from the OLD algorithm, cached inside this building's IndexedDB-cached DB blob.
+      // _GANTT_CACHE_VERSION already gates the separate 'gantt' JSON cache but never this table, so a
+      // fixed schedule algorithm silently never reached an already-opened building — reported live:
+      // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
+      // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
+      // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+        try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
+        console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
+          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+        _placeOps = [];
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);

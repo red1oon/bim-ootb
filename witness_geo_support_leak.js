@@ -1,15 +1,30 @@
 // witness_geo_support_leak.js — headless, no browser, NO NAME/CLASS SPECIAL-CASING.
 //
+// v3 (2026-08-11, 4D closure pass — root cause of the long-standing "pre-existing FAIL 10/7"):
+// the 10-ungated/7-leaked FAIL this witness reported since before 2026-08-10 was measured against
+// code this repo was NOT shipping, on two independent axes of rot:
+//   (1) VIEWER_DIR defaulted to the ABSOLUTE shared checkout (/home/red1/bim-ootb/viewer), which
+//       at measurement time was 118 commits behind origin/main — the witness never tested the
+//       checkout it lives in. Re-run against current main: 10/7 collapsed to 2/2 with zero code
+//       changes. Default is now THIS checkout's own viewer/ (env VIEWER_DIR still overrides).
+//   (2) isRealSupport froze at v2's "contained anywhere in my span, co-based allowed" — but the
+//       shipped geoGate deliberately moved twice since: §DEQ_V1 (2026-08-07) requires the contained
+//       support's base STRICTLY above mine (antisymmetry — two co-based slabs otherwise "support"
+//       each other), and §TM_GEO_ORDER_CYCLES/PR#1276 (2026-08-10) requires it to top in my LOWER
+//       HALF (an upper-half neighbor rests ON me — the wide version closed 37,927 Terminal elements
+//       into cycles). The final 2/2 "leaks" (Hospital 0KbYdy…bo9 wall: only candidates top in its
+//       UPPER half at 171.13+ vs mid 169.32; 0WoET…Ltn proxy: only candidate co-based within EPS,
+//       165.36 vs 165.34) are exactly the two exclusions — real "no support detectable" cases
+//       (visible via §SUPPORT_UNCHECKED where big enough), NOT geoGate misses. v3 aligns the test
+//       with the CURRENT shipped predicate so the witness again proves what it claims: "geoGate's
+//       OWN rule says support exists here, yet the element scheduled ungated."
+//
 // v2 (2026-08-04): v1's detection was TOO LOOSE — "any real structure overlapping my XY footprint,
 // at ANY Z" — which over-flagged JKR's 3 "Slab Edge" IfcBuildingElementProxy elements whose only
 // overlapping structure is a real IfcSlab SITTING ABOVE them (slab base=80.85 = edge's own top=80.85,
 // flush — an edge-trim/formwork detail poured at-or-before the slab, not after; nothing real exists
 // BELOW these 3 at all). A thing above you is not what holds you up — same causal direction the real
-// geoGate()/auditFloating() already use. v2 uses the IDENTICAL directional test as the shipped
-// §GEO_SUPPORT_LEAK fix in schedule_gate.js's geoGate(): a real support is either (a) below my base
-// (EPS tolerance) or (b) its ENTIRE vertical span is contained within my own [base_z,top_z] — the
-// exact test that correctly catches the trucks (a real ramp genuinely contained within their oversized
-// bbox) and correctly does NOT catch JKR's slab-edge case (the slab pokes above the edge's own top).
+// geoGate()/auditFloating() already use.
 //
 // ISSUE THIS PROVES: geoGate() used to test ONLY (a), missing real, geometrically-contained support
 // (confirmed live+by-coordinate on Hospital's two "Semi Truck" IfcBuildingElementProxy elements: a
@@ -25,8 +40,12 @@ var fs = require('fs');
 var path = require('path');
 var initSqlJs = require('/home/red1/bim-ootb/node_modules/sql.js');
 var SQLJS_DIST = '/home/red1/bim-ootb/node_modules/sql.js/dist';
-var VIEWER = process.env.VIEWER_DIR || '/home/red1/bim-ootb/viewer';
-var BUILDINGS_DIR = '/home/red1/bim-ootb/buildings';
+// v3: default to the checkout THIS witness lives in — the absolute shared-checkout default meant
+// the witness silently tested whatever ~/bim-ootb happened to be (118 commits stale when the
+// "pre-existing FAIL" was being reported). Fixtures stay in the shared buildings/ dir (they are
+// data, not code under test) but honor an env override like the sibling witnesses' BLD_DIR.
+var VIEWER = process.env.VIEWER_DIR || path.join(__dirname, 'viewer');
+var BUILDINGS_DIR = process.env.BLD_DIR || '/home/red1/bim-ootb/buildings';
 var EPS = 0.05;   // m — matches schedule_gate.js's own EPS exactly, not a new constant
 
 var ScheduleAuthor = require(path.join(VIEWER, 'schedule_author.js'));
@@ -71,11 +90,17 @@ initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } }).the
     function xyOverlap(a, b) {
       return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
     }
-    // IDENTICAL directional test to the shipped geoGate() fix — below (EPS tolerance) OR fully
-    // contained within my own vertical span. Not a looser or different heuristic than the fix itself.
+    // v3: IDENTICAL directional test to the CURRENT shipped geoGate() (schedule_gate.js) — below
+    // (EPS tolerance) OR contained with STRICT base (§DEQ_V1 antisymmetry: base strictly above
+    // mine, co-based neighbors are siblings not support) topping in my LOWER HALF
+    // (§TM_GEO_ORDER_CYCLES/PR#1276: an upper-half neighbor rests ON me). geoGate additionally
+    // excludes PROMOTED slabs from contained — structurally satisfied here because this witness's
+    // struct pool is seq<=4 only (a promoted slab is seq>4 by definition, never in the pool).
+    // Not a looser or different heuristic than the shipped rule itself — that drift is exactly
+    // what made v2 report leaks the engine's own physics deliberately rejects.
     function isRealSupport(S, el) {
       var below = S.base_z < el.base_z - EPS;
-      var contained = !below && S.base_z > el.base_z - EPS && S.top_z < el.top_z + EPS;
+      var contained = !below && S.base_z > el.base_z + EPS && S.top_z <= (el.base_z + el.top_z) / 2;
       return (below || contained) && xyOverlap(S, el);
     }
 
