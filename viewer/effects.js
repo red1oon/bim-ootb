@@ -2707,7 +2707,23 @@ async function setupEffects(A, renderer, scene, camera) {
       A._shadowInited = true;
     }
     A.sun.castShadow = true;
+    // §PHOTO_SHADOW_TARGET_CENTRE (2026-08-11, real user report: "no shadow at high noon" on the
+    // film's OPENING DIVE beat): was A.controls.target unconditionally — the shadow camera was
+    // aimed wherever the VIEW camera currently happens to be looking, not at the building. During
+    // an establishing dive the view target drifts far from the building, so the whole shadow
+    // frustum (any _env size, any sun angle) could miss the building outright — a DIFFERENT bug
+    // from §PHOTO_SUN_SHADOW_REACH above (that one was frustum SIZE; this is frustum POSITION).
+    // Same failure shape §CINEMA_PIVOT already found + fixed for the camera orbit pivot itself
+    // (this file, _cinemaPathPlan, "WAS: var tgt = A.controls.target; UNCONDITIONALLY") — reusing
+    // its proven fix, not reinventing: the real building bbox centre via A.ifc2three(), the
+    // established IFC->scene axis transform, not a guessed axis mapping.
     var _ctr = A.controls ? A.controls.target : { x: 0, y: 0, z: 0 };
+    var _shadowBbox = _buildingBBoxArc() || _buildingBBoxIfc();
+    if (_shadowBbox && A.ifc2three) {
+      var _sLo = A.ifc2three(_shadowBbox.xMin, _shadowBbox.yMin, _shadowBbox.zMin);
+      var _sHi = A.ifc2three(_shadowBbox.xMax, _shadowBbox.yMax, _shadowBbox.zMax);
+      _ctr = { x: (_sLo.x + _sHi.x) / 2, y: (_sLo.y + _sHi.y) / 2, z: (_sLo.z + _sHi.z) / 2 };
+    }
     A.sun.target.position.copy(_ctr);
     A.sun.target.updateMatrixWorld();
     var _env = 300;
