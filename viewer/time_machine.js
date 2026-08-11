@@ -3694,6 +3694,409 @@
     console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
   }
 
+  // ── §TIER_SERIAL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11
+  // evening: phase-window collapse — the capstone piece) ─────────────────────────────────────────
+  // computeSchedule's generative output (the proven support DAG — UNTOUCHED, floating baselines
+  // unchanged) is remapped for DISPLAY into a two-tier structure:
+  //   Tier 1 — the structural backbone (Substructure → Superstructure → Architecture) is STRICTLY
+  //   SERIAL: each phase's last element completes before the next phase's first element starts.
+  //   "Never appears before its support" becomes a structural guarantee for the backbone instead
+  //   of a corrected-after-the-fact repair. Deliberate, user-confirmed refinement of the
+  //   2026-08-02 §4D_BAND_MONOTONIC ruling ("ARCH/STR should be exempt as they are the physical
+  //   foundation. Separate unrelated disciplines can run parallel thereafter if construction
+  //   practice permits") — the per-trade storey-by-storey discipline itself lives inside
+  //   computeSchedule and is inherited unchanged: this remap never REORDERS the generative
+  //   timeline, it only shifts whole phase groups later and pushes dependents after supports.
+  //   Tier 2 — everything else (MEP Rough-in, MEP Final, Finishes; FP/ELEC/ACMV/PLB and the
+  //   generic undifferentiated MEP bucket included — DECIDED: no special-case for it) stays ONE
+  //   CONCURRENT POOL: no artificial phase-window barrier between disciplines. Each element is
+  //   still individually gated by the real support DAG via _ogSupportSweep (bearing + hang +
+  //   §OG_BEARING_BOUND two-tier rule) — which is what actually prevents "built before support";
+  //   the phase bucket only ever affected display grouping.
+  // Misclassified-furniture safeguard: rates.js/sequence_rules.json 'furniture_generic_bucket'
+  // NAME_OVERRIDE keeps furniture-named generic-class elements out of Tier 1 entirely.
+  // Witness: viewer/tests/witness_tier_serial_display.js (W-TS-1..6, all 5 shipped buildings).
+  var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
+
+  // Backbone phase extents over the SERIALIZABLE population — elements marked _t1Straggler are
+  // excluded (see §TIER_STRAGGLER in _twoTierRemap: the measured, DAG-forced cross-phase tail).
+  function _tier1Extents(items) {
+    var ext = {};
+    items.forEach(function (it) {
+      if (it._t1Straggler || _TIER1_ORDER.indexOf(it.phase) < 0) return;
+      var x = ext[it.phase] || (ext[it.phase] = { minS: Infinity, maxE: -Infinity });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+    });
+    return ext;
+  }
+
+  // Uniform per-phase-group shift: phase k starts no earlier than phase k-1's last end. A uniform
+  // shift preserves all within-group generative order, and cross-group Tier-1 support edges only
+  // ever point BACKWARD in _TIER1_ORDER (walls carry only load-path-PROMOTED slabs, which
+  // _promoteRoofLoadPath re-phases to Architecture — no Architecture→Superstructure support edge
+  // exists) — the measured exceptions are exactly the §TIER_STRAGGLER set, excluded here and
+  // governed purely by _tierAuditRegate instead.
+  function _tier1Serialize(items) {
+    var ext = _tier1Extents(items);
+    var deltas = {}, prevEnd = -Infinity;
+    _TIER1_ORDER.forEach(function (ph) {
+      var x = ext[ph]; if (!x) return;   // phase absent (e.g. HHS models no Substructure)
+      var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
+      deltas[ph] = d;
+      prevEnd = x.maxE + d;
+    });
+    items.forEach(function (it) {
+      if (it._t1Straggler) return;       // stragglers ride the regate, never the group shift
+      var d = deltas[it.phase];
+      if (d) { it.s += d; it.e += d; }
+    });
+    return deltas;
+  }
+
+  // 0 = the Tier-1 chain is strictly serial: for consecutive PRESENT backbone phases, phase k's
+  // last end <= phase k+1's first start (transitive across the chain — each window is well-formed).
+  // Straggler-excluded by _tier1Extents; the straggler count itself is reported, never hidden.
+  function _tier1Protrusion(items) {
+    var ext = _tier1Extents(items);
+    var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
+    var overlapping = 0;
+    for (var i = 0; i + 1 < present.length; i++) {
+      if (ext[present[i]].maxE > ext[present[i + 1]].minS) overlapping++;
+    }
+    return overlapping;
+  }
+
+  // ── §TIER_REGATE — audit-physics display re-gate (the remap's push pass) ─────────────────────
+  // MUST use the SAME physics as schedule_gate.js auditFloating()/the generative gates — structGrid
+  // INCLUDES promoted roof slabs, bearing takes the max end over ALL carriers (enveloping included),
+  // hang + §HANG_NEAREST fallback + both antisymmetry exclusions — NOT the §OG_BEARING_BOUND-bounded
+  // guard physics (_ogSupportSweep). MEASURED 2026-08-11, first witness run of this lane: re-gating
+  // with guard physics left 1,383 audit-visible floaters on HHS alone — every rooftop/hanging
+  // element whose carrier is a PROMOTED slab (Architecture phase, shifted later by Tier-1
+  // serialization) that the guard's seq<=4-only grid cannot see. schedule_gate.js is explicitly
+  // untouched by this lane (spec: computeSchedule AND auditFloating stay as-is), so this is a
+  // deliberate, WITNESS-PINNED mirror: witness_tier_serial_display.js W-TS-2 runs the REAL
+  // auditFloating over this pass's output on all 5 shipped buildings — any drift between this
+  // mirror and the canonical physics surfaces there as displayed-floating > generative-floating.
+  // Push-only (start moves LATER, duration kept), fixpoint <=16 sweeps (monotone pushes over the
+  // acyclic support relation — the DAG's own convergence argument). Note the generative times
+  // already satisfy this physics (§SUPPORT_CHECK floating baselines), so on an unshifted timeline
+  // this pass pushes at most the known raw floating tail.
+  function _tierAuditRegate(items, exempt, dryRun) {
+    var EPS = 0.05, GAP = 0.5;
+    var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+    var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
+    var cellsOf = function (e) {
+      var o = [], gi, gj;
+      for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
+        for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
+      return o;
+    };
+    var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+    var structGrid = {}, wallGrid = {};
+    items.forEach(function (e) {
+      var cs = null;
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
+      else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
+      if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
+    });
+    // per-element max qualifying-support end — auditFloating's se, on live item times
+    var seFor = function (T) {
+      var se = 0, hasBearing = false, seen = {}, cs = cellsOf(T), p, c, k, arr, S;
+      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+      for (p = 0; p < pools.length; p++) {
+        for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) {
+              hasBearing = true;
+              if (S.e > se) se = S.e; } } }
+      }
+      if (!hasBearing && T.seq > 4) {      // hangs — gate against the carrier above instead
+        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        var tWall = T.cls.indexOf('IfcWall') === 0;
+        var hasHang = false, seenH = {};
+        for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
+            if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
+                !(tPool && T.bz < S.bz - EPS) &&
+                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                  T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
+                xyOverlap(S, T)) {
+              hasHang = true;
+              if (S.e > se) se = S.e; } } }
+        // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
+        // co-planar GAP band, exactly what the scheduler/audit gate them on.
+        if (!hasHang && !tPool && !tWall &&
+            (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
+          var nbA = Infinity, seenN = {};
+          for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
+              if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
+          if (nbA < Infinity) {
+            var seenP = {};
+            for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
+                if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) {
+                  if (S.e > se) se = S.e; } } }
+          }
+        }
+      }
+      return se;
+    };
+    // dryRun: one non-mutating pass over CURRENT times → the set of guids violating audit-se.
+    // _twoTierRemap calls this ONCE on the pristine generative times: that set is the DAG's own
+    // deliberate tail (cycle-breaks + unsolvables — e.g. Clinic's parapet-wall/roof-slab loop,
+    // MEASURED 2026-08-11 clinic_cycle.log: chasing it pushed 43k times across 400 sweeps without
+    // converging, the whole building drifting together). Those elements are EXEMPT from pushing —
+    // they ride their group shifts, keeping exactly their raw-relative wrongness, never more.
+    // Every edge this pass DOES enforce was satisfied by the raw generative simultaneously, so the
+    // enforced constraint subgraph provably admits a schedule → the fixpoint exists and monotone
+    // pushes reach it (no cycle-chasing possible by construction).
+    if (dryRun) {
+      var fset = {}, fn = 0;
+      items.forEach(function (T) {
+        var se0 = seFor(T);
+        if (se0 > 0 && T.s < se0 - 1) { fset[T.guid] = 1; fn++; }
+      });
+      return { floatSet: fset, n: fn };
+    }
+    var pushed = 0, sweeps = 0;
+    for (; sweeps < 64; sweeps++) {
+      var moved = 0;
+      items.forEach(function (T) {
+        if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
+        var se = seFor(T);
+        if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
+          var dur = Math.max(60000, T.e - T.s);
+          T.s = se; T.e = se + dur;
+          pushed++; moved++;
+        }
+      });
+      if (!moved) break;
+    }
+    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' sweeps=' + (sweeps + 1) +
+      ' (audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
+    return { pushed: pushed, sweeps: sweeps };
+  }
+
+  // ── §PHASE_OVERLAP_SUPPORT_GUARD — the support-order sweep, now a NAMED shared pass ──────────
+  // 2026-08-11 §TIER_SERIAL restructure: hoisted VERBATIM out of injectGantt's _cap-only overlay
+  // branch. It now (a) enforces Tier 2's per-element support gating on the DEFAULT generative
+  // display path — its main job under the two-tier design — and (b) verifies/repairs the _cap
+  // global-affine overlay (expected ≈0 pushes there). The block's interior bytes and ORIGINAL
+  // INDENTATION are deliberately preserved: two witnesses (witness_og_guard_bearing_bound.js,
+  // witness_gantt_og_grid_perf.js) slice it by text markers (the _ogCELL declaration → the
+  // §PHASE_OVERLAP_SUPPORT_GUARD log statement, whose historical §PHASE_OVERLAP_BAND wording is
+  // part of the end-mark bytes) and execute it against synthetic _allScheduled arrays —
+  // re-indenting, rewording the log, or renaming variables would rot both (that exact rot killed
+  // witness_gantt_og_grid_perf once already, 2026-08-07..11).
+  // _allScheduled: [{guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq,...}] — mutated in place (including a
+  // bz-ascending sort); s only ever moves LATER (push after real support), duration preserved.
+  function _ogSupportSweep(_allScheduled) {
+      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
+      // SAME role-blind support predicate this file already uses for the generative path
+      // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
+      // ascending base_z order is safe in ONE pass: a carrier's base_z is always below what it
+      // carries (the support DAG's own topological potential, established by §STAGGER_SUPPORT_ORDER
+      // above), so every true carrier of T has already been visited — and any correction already
+      // applied to it — by the time T is processed.
+      // §XRAY_WALL_SCOPE (found 2026-08-04, live in a real Hospital session — user report: proxy/
+      // misc elements chronologically before columns, "2 trucks came on first! Then walls!"): this
+      // predicate was even more permissive than the two sibling copies already fixed this session
+      // (schedule_gate.js auditFloating(), time_machine.js _buildXraySupportCache) — ANY wall was a
+      // candidate carrier for ANY element, no promoted-roof-slab restriction at all. A wall is only
+      // ever a real candidate carrier for a slab itself promoted to the roof role (seq>4) — same
+      // §4D_ROOF_LOAD_PATH M3 restriction, applied here for the third time this session. Structure
+      // (seq<=4) stays an unconditional carrier candidate for everything — only the wall branch is
+      // now gated on the TARGET being a promoted slab.
+      var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+      var _ogEPS = 0.05, _ogGAP = 0.5;
+      // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
+      // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
+      // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
+      // measured 4636ms on Terminal's 48,428 elements (22 stacked storeys, small footprint, worst
+      // cell 379 members) vs 1695ms on Hospital's 63,415 (more elements, but a bigger footprint means
+      // less Z-stacking per cell) — element COUNT alone doesn't predict the cost, per-cell Z-density
+      // does. Bucketing Z too prunes each query to the target's own real vertical neighborhood — the
+      // ONLY z-range `S.bz<T.bz-EPS && |S.tz-T.bz|<=GAP` can ever match — with the identical predicate
+      // inside the loop unchanged, so results are provably identical, only the scan is smaller.
+      var _ogCellsFor = function (x0, x1, y0, y1, z0, z1) {
+        var out = [];
+        for (var cx = Math.floor(x0 / _ogCELL); cx <= Math.floor(x1 / _ogCELL); cx++)
+          for (var cy = Math.floor(y0 / _ogCELL); cy <= Math.floor(y1 / _ogCELL); cy++)
+            for (var cz = Math.floor(z0 / _ogCELL); cz <= Math.floor(z1 / _ogCELL); cz++)
+              out.push(cx + '|' + cy + '|' + cz);
+        return out;
+      };
+      // Build-time: bucket a candidate under its OWN full vertical extent, so it registers in every
+      // z-cell it actually occupies (a tall candidate can span more than one).
+      var _ogCellsBuild = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz, e.tz); };
+      // Query-time: only a target's real z-neighborhood [T.bz-GAP, T.bz+GAP] can ever satisfy the
+      // |S.tz-T.bz|<=GAP predicate — querying anything wider would waste the pruning this exists for.
+      var _ogCellsQuery = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz - _ogGAP, e.bz + _ogGAP); };
+      var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+      var _ogStructGrid = {}, _ogWallGrid = {};
+      _allScheduled.forEach(function (e) {
+        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+      });
+      _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
+      // §4D_LAYER_TRUTH (2026-08-07): the single ascending-bz pass was measured leaving 25 staged
+      // violations (witness_4d_layer_truth.js, Hospital) for the SAME two reasons §DEQ_REPAIR exists
+      // in schedule_gate.js: (a) pushing a carrier later never re-checks dependents already visited
+      // (bz order guarantees carriers-first only for bearing-below, and a push can still ripple
+      // forward), and (b) the predicate was hang-blind — a fan's carrier (roof above) has HIGHER bz,
+      // so ordering can't help it at all. Same fix as the engine layer: bearing-below OR (no bearing)
+      // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
+      // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
+      // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
+      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
+      var _ogPushed = 0, _ogSweeps = 0;
+      for (; _ogSweeps < 16; _ogSweeps++) {
+        var _ogMoved = 0;
+        _allScheduled.forEach(function (T) {
+          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+          var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
+          // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
+          // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:
+          // witness_og_guard_bearing_bound.js + witness_gantt_og_grid_perf.js):
+          // the bearing test was unbounded ABOVE — a full-height column/wall registered as carrying
+          // every element at every level inside its footprint, so each of those elements was pushed
+          // to the END of the whole enveloping carrier (over-conservative; the STUDY's verified
+          // bug). Two-tier fix, mirroring the DAG's own wallCarries lesson ("a wall carries a slab
+          // AT ITS TOP, never one embedded metres below its crown", generalized to my own span):
+          //   tier 1 — carriers whose top lies within MY OWN extent (+GAP) define my bearing plane;
+          //   tier 2 — ENVELOPING carriers (top above T.tz+GAP) are still DETECTED (hasBearing —
+          //            §4D_LAYER_TRUTH's 25-staged lesson: never narrower than the audits) but only
+          //            GATE me when no tier-1 carrier exists (a beam framing into a full-height
+          //            mast keeps its real support; it just stops waiting for the mast's crown when
+          //            a storey-level carrier is present).
+          // _buildXraySupportCache applies the IDENTICAL two-tier rule — guard and judge stay one
+          // physics, which is what keeps §XRAY_EDGES staged=0 (the 2026-08-07 alignment invariant).
+          var _ogTopBound = T.tz + _ogGAP, envEnd = 0;
+          for (var ci = 0; ci < cells.length; ci++) {
+            var arr = _ogStructGrid[cells[ci]];
+            if (arr) for (var si = 0; si < arr.length; si++) {
+              var S = arr[si];
+              if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
+              // §4D_LAYER_TRUTH: detection ALIGNED with auditFloating()/_buildXraySupportCache —
+              // carrier top REACHES my base (>= T.bz-GAP; a tall column a beam frames into still
+              // counts). §OG_BEARING_BOUND above splits gating into the two tiers.
+              if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
+                hasBearing = true;
+                if (S.tz <= _ogTopBound) { if (S.e > lastEnd) lastEnd = S.e; }
+                else if (S.e > envEnd) envEnd = S.e; }
+            }
+            if (!promotedSlab) continue;
+            arr = _ogWallGrid[cells[ci]];
+            if (arr) for (var wi = 0; wi < arr.length; wi++) {
+              var W = arr[wi];
+              if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
+              if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
+                hasBearing = true;
+                if (W.tz <= _ogTopBound) { if (W.e > lastEnd) lastEnd = W.e; }
+                else if (W.e > envEnd) envEnd = W.e; }
+            }
+          }
+          if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
+          if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
+            var hcells = _ogCellsQueryTop(T), hseen = {};
+            for (var hi = 0; hi < hcells.length; hi++) {
+              var harr = _ogStructGrid[hcells[hi]];
+              if (harr) for (var hj = 0; hj < harr.length; hj++) {
+                var H = harr[hj];
+                if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
+                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
+                    _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
+              }
+            }
+          }
+          if (lastEnd && T.s < lastEnd) {
+            var dur = Math.max(60000, T.e - T.s);
+            T.s = lastEnd + 1;
+            T.e = T.s + dur;
+            _ogPushed++; _ogMoved++;
+          }
+        });
+        if (!_ogMoved) break;
+      }
+      if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
+        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');
+      return { pushed: _ogPushed, sweeps: _ogSweeps };
+  }
+
+  // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
+  // supports (audit physics) → verify strictness; iterate (bounded). Converges structurally:
+  // shifts never break Tier-1 internal order, regate pushes only ever move later and only enforce
+  // raw-satisfied constraints (see _tierAuditRegate dryRun), and Tier-2 elements are never
+  // carriers (audit pools = seq<=4 ∪ promoted slabs ∪ walls — all Tier 1).
+  //
+  // §TIER_DAG_WINS (measured 2026-08-11, stragglers.log + promoted_deps.log): some Tier-1
+  // elements are placed by the support DAG ITSELF inside a LATER backbone phase, and for them
+  // support order WINS over strict serialization (the mission: nothing appears before its
+  // support). Two measured shapes:
+  //   - isolated forward deps: Hospital's 'Foundation Slab' IfcFooting + Clinic's slab-on-grade
+  //     pair, each poured around full-height Superstructure columns whose base sits below theirs;
+  //   - the WALL-CARRIED CONE: on buildings where storeys are wall-carried (Terminal: 45 direct
+  //     "upper column stands on a load-path-PROMOTED structural flat slab" edges), the entire
+  //     dependency cone above those slabs — ~24k of Terminal's 34.8k Superstructure elements —
+  //     must follow Architecture-phase carriers; a frame building (Hospital) has almost none.
+  // Treatment mirrors the closure pass's "annotate, don't suppress": mark them out of the
+  // serialization extents, let the regate own their timing (real construction order for a
+  // wall-carried building), COUNT them in the §TIER_SERIAL log as tier1DagWins, and lock the
+  // per-building count in the witness — never silently absorbed, never hidden.
+  function _twoTierRemap(items) {
+    if (!items || !items.length) return { iterations: 0, pushed: 0, sweeps: 0, overlapPairs: 0, dagWins: 0 };
+    // the DAG's own raw tail (deliberate cycle-breaks, e.g. Clinic's parapet/roof-slab loop) —
+    // computed on PRISTINE generative times, exempt from regate pushing forever after.
+    var _exempt = _tierAuditRegate(items, null, true).floatSet;
+    var iters = 0, pushed = 0, sweeps = 0, overlap = -1, dagWins = 0;
+    while (iters < 6) {
+      iters++;
+      _tier1Serialize(items);
+      var r = _tierAuditRegate(items, _exempt, false);
+      pushed += r.pushed; sweeps += r.sweeps;
+      overlap = _tier1Protrusion(items);
+      if (!overlap) break;
+      // mark this round's DAG-forced cross-phase elements, then re-serialize without them
+      var ext = _tier1Extents(items);
+      var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
+      var marked = 0;
+      for (var i = 0; i + 1 < present.length; i++) {
+        var ph = present[i], nextMinS = ext[present[i + 1]].minS;
+        if (ext[ph].maxE <= nextMinS) continue;
+        items.forEach(function (it) {
+          if (it._t1Straggler || it.phase !== ph) return;
+          if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
+        });
+      }
+      dagWins += marked;
+      if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
+    }
+    var base = Infinity, endAll = -Infinity, ext2 = {};
+    items.forEach(function (it) {
+      if (it.s < base) base = it.s;
+      if (it.e > endAll) endAll = it.e;
+      var x = ext2[it.phase] || (ext2[it.phase] = { minS: Infinity, maxE: -Infinity, n: 0 });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+      x.n++;
+    });
+    var D = 86400000, parts = [];
+    Object.keys(ext2).forEach(function (ph) {
+      var x = ext2[ph];
+      parts.push(ph + '=[' + ((x.minS - base) / D).toFixed(1) + '..' + ((x.maxE - base) / D).toFixed(1) + ']d n=' + x.n);
+    });
+    console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
+      ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
+      ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
+      ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
+    return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
+      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length,
+      base: base, end: endAll, extents: ext2 };
+  }
+
   // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
   // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
   // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
@@ -4052,8 +4455,22 @@
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
       ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
+    // §TIER_SERIAL (2026-08-11): the DISPLAYED timeline is the two-tier remap of computeSchedule's
+    // output — backbone phases strictly serial, everything else one support-gated concurrent pool
+    // (full doctrine on _twoTierRemap above). _sched itself stays RAW: §SUPPORT_CHECK/§ROOF_GATE
+    // below keep auditing the generative layer's proven truth (floating baselines byte-identical);
+    // the kernel_ops written from _disp are what the movie/Gantt/X-ray judge consume.
+    var _twItems = _geoElements.map(function (el) {
+      var _ts = _sched[el.guid];
+      return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
+        bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
+        cls: el.cls, seq: el.seq, phase: el.phase };
+    });
+    var _twStats = _twoTierRemap(_twItems);
+    var _disp = {};
+    _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e }; });
     var _schedEnd = baseMs;
-    for (var _sg in _sched) if (_sched[_sg].end > _schedEnd) _schedEnd = _sched[_sg].end;
+    for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
     if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
@@ -4061,7 +4478,7 @@
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
     elements.forEach(function(el) {
-      var s = _sched[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park, was baseMs (day 0)
+      var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
            resource:el.resource, _end_ts:s.end}),
@@ -4164,7 +4581,7 @@
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
     // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
-    window.__tmScheduleDebug = { elements: elements, sched: _sched, audit: null };  // §DEQ_V1: audit is unfiltered now (was the hand-picked _audit predicate)
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, disp: _disp, tier: _twStats, audit: null };  // §DEQ_V1: audit unfiltered; §TIER_SERIAL: disp = displayed two-tier map, sched stays RAW generative
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
     // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
@@ -4205,269 +4622,66 @@
       ', bands=' + storeyNames.length + ', ' + projectDays + ' days, scale=' + scaleFactor.toFixed(2) +
       ', start=' + startDate.toLocaleDateString() + ' end=' + endDate.toLocaleDateString());
 
-    // ── T3 §3.1/§3.3: overlay captured REAL dates + task names onto covered elements ──
-    // The generative pass above already laid every element on the real-start epoch (baseMs).
-    // Now patch the covered subset to their exact captured task window + real name, and flag
-    // them _captured=1. Uncovered elements keep their generated timing (honest estimate).
+    // ── T3 §3.1/§3.3: overlay captured task names + the captured project window onto covered
+    // elements. The generative pass above already laid every element on the real-start epoch
+    // (baseMs) carrying the §TIER_SERIAL two-tier display timeline.
     //
-    // §PLAYBACK-STAGGER (2026-07-19, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md
-    // Item 8): assigning the task's window VERBATIM to every covered element made EVERY floor's
-    // bar for a phase byte-identical — confirmed live (Hospital, all 8 Levels' Superstructure
-    // showed 2026-01-31..2026-03-02) — "the gantt chart bars are the SAME", and during actual
-    // playback the WHOLE phase pops into existence at once instead of an orderly, gradual reveal.
-    // Real per-element Z data already exists (elements[], built above, same array the generative
-    // pass sorts bottom-up) — bucket covered guids by task, sort each bucket bottom-up by cz (same
-    // discipline as the generative pass), and linearly distribute them across the task's OWN
-    // [w.s, w.e] window instead of collapsing them onto it. The phase's overall date range
-    // (editable in the Schedule Author wizard, `tasks.schedule_start/finish`) is UNCHANGED — only
-    // the per-element position WITHIN that window is now real-Z-ordered, not identical.
+    // §TIER_SERIAL Option A (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+    // 2026-08-11 evening — replaces §PLAYBACK-STAGGER/§STAGGER_SUPPORT_ORDER/§4D_LAYER_TRUTH's
+    // independent per-task-bucket affine + §STAGGER_HOST + the in-branch guard invocation):
+    // each task bucket used to be rescaled into its own §PHASE_OVERLAP_BAND window INDEPENDENTLY,
+    // which un-did computeSchedule's cross-bucket support order (measured pre-guard: Terminal 447 /
+    // Hospital 1,929 violations — the reason §PHASE_OVERLAP_SUPPORT_GUARD was born as a repair
+    // pass). Now the covered set maps through ONE global monotone affine into the captured project
+    // window [_cap.base, _cap.projEnd]: order — and therefore support order — is preserved BY
+    // CONSTRUCTION, no per-bucket window can reorder across bucket boundaries anymore. Deliberate,
+    // user-decided Option A cost: an individual task's dragged window no longer independently
+    // rescales its own elements — task NAMES still overlay (mini-Gantt), and the overall captured
+    // window anchors/scales the whole timeline. §STAGGER_HOST was already inert here (since
+    // §4D_LAYER_TRUTH's ls-affine, element times derive from ls alone — its index reshuffle
+    // changed nothing) — removed with the per-bucket map, not silently lost.
     _capActive = false; _coveredCount = 0; _coveragePct = 0;
     if (_cap) {
       var _covered = 0;
       var _elByGuid = {};
       elements.forEach(function(el) { _elByGuid[el.guid] = el; });
-      var _byTask = {};
+      var _allScheduled = [], _lsMin = Infinity, _leMax = -Infinity;
       var _allOps = db.exec("SELECT output_guid, parameters, timestamp FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
           var g = row[0], tid = _cap.guidTask[g];
-          if (!tid) return;                         // uncovered → keep generative timing
-          if (!_byTask[tid]) _byTask[tid] = [];
+          if (!tid) return;                         // uncovered → keeps the two-tier generated timing
+          var w = _cap.win[tid];
+          if (!w) return;                           // link points at summary/undated task
           var _el = _elByGuid[g];
-          // §4D_LAYER_TRUTH (2026-08-07): the element's GENERATIVE (computeSchedule) start/end —
-          // the schedule layer's proven truth (floating=0) — rides into the task bucket so the
-          // window mapping below can PRESERVE it instead of discarding it.
-          var _lsEnd = 0; try { _lsEnd = (JSON.parse(row[1]) || {})._end_ts || 0; } catch (e) {}
-          _byTask[tid].push({ guid: g, params: row[1], ls: row[2] || 0, le: _lsEnd || ((row[2] || 0) + 60000),
-            cz: _el ? _el.cz : 0, seq: _el ? _el.seq : 999,
+          var p; try { p = JSON.parse(row[1]) || {}; } catch (e) { p = {}; }
+          var _ls = row[2] || 0;
+          var _le = p._end_ts || (_ls + 60000);
+          if (_ls < _lsMin) _lsMin = _ls;
+          if (_le > _leMax) _leMax = _le;
+          p.phase = w.name;                         // real task name → shows in mini-Gantt
+          _allScheduled.push({ guid: g, s: _ls, e: _le, params: p, task: tid,
             bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
             x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
             y0: _el ? _el.y0 : 0, y1: _el ? _el.y1 : 0,
-            cls: _el ? _el.cls : '',
-            hostable: _el ? (_el.cls === 'IfcWindow' || _el.cls === 'IfcDoor' ||
-              ((_el.cls === 'IfcPlate' || _el.cls === 'IfcMember') && _el.seq === 7)) : false });
-        });
-      }
-      db.run('BEGIN');
-      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
-        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
-      // §PHASE_OVERLAP_SUPPORT_GUARD (GANTT_ACCURACY.md §PHASE_OVERLAP_BAND): schedule_author.js's
-      // task windows can now OVERLAP (a later phase starts once the leading trade clears ONE band,
-      // not the whole building — see materializeDefault). The per-task stagger below still only
-      // orders elements WITHIN their own task; it has no way to know a DIFFERENT (now-overlapping)
-      // task's elements. Measured before shipping: this creates real cross-task support violations
-      // (Terminal 447, Hospital 1,929 — e.g. a beam scheduled before the wall it bears on, because
-      // Architecture's window now starts inside Superstructure's tail). Collect every element's
-      // provisional (s_i, e_i) here instead of writing immediately, then run ONE global correction
-      // pass below — same "push after, never re-key" mechanism §4D_HOST_BEFORE_HOSTED already uses,
-      // just applied across tasks instead of within one.
-      var _allScheduled = [];
-      for (var _tid in _byTask) {
-        var w = _cap.win[_tid];
-        var _bucket = _byTask[_tid];
-        // §STAGGER_SUPPORT_ORDER (2026-08-02) — Implementing GANTT_ACCURACY.md ▶RESUME 2026-08-02
-        // (late) — Witness: witness_stagger_support_order.js (G-SSO-1..4).
-        // base_z FIRST: the previous (seq, cz) order revealed 6,240 carried elements before their
-        // in-window carriers on Hospital (988 IfcBeam on walls; worst 134d) — cz is a CENTROID, not
-        // a bearing surface, and seq-major put whole trades before the walls that carry them.
-        // base_z is a topological potential of the support DAG (a carrier ALWAYS has
-        // S.base_z < T.base_z - EPS — audit_support_roleblind.js's own predicate), so a base_z walk
-        // cannot place anything before its support. seq then cz break ties WITHIN a bearing level,
-        // keeping §4D_FACADE_ORDER's trade discipline for same-level elements.
-        // §4D_LAYER_TRUTH (2026-08-07, supersedes bz-primary here): order INSIDE a task = the
-        // generative schedule's own order (ls = computeSchedule start). base_z ordering was the
-        // best available proxy before the §DEQ_V1 engine — but it is provably wrong for hanging
-        // elements (a fan's base_z is BELOW its roof carrier's), while ls already encodes
-        // bearing-below + hang-carrier + the repair loop. bz/seq/cz stay as tiebreakers only.
-        _bucket.sort(function(a, b) { return (a.ls - b.ls) || (a.bz - b.bz) || (a.seq - b.seq) || (a.cz - b.cz); });
-        // §4D_HOST_BEFORE_HOSTED (same spec file): float-noise near-ties defeat the seq tiebreak —
-        // 101/5,924 host pairs on Hospital have the wall base 0–0.043m ABOVE its hosted glazing's
-        // base (< EPS), so the panel sorts first. Constraint AFTER the sort, never a replacement:
-        // move each hosted element (window/door/glazing) to just after the last XY-touching wall
-        // that z-contains it. The bucket is bz-sorted, so any such wall sorted after the hosted
-        // element lies within [H.bz, H.bz+EPS] — the forward scan is bounded and cheap. Moving an
-        // element LATER cannot create a support violation (hosted classes are never carriers).
-        (function(items) {
-          var HEPS = 0.05, keys = [], moved = 0, i, j;
-          for (i = 0; i < items.length; i++) keys.push(i);
-          for (i = 0; i < items.length; i++) {
-            var H = items[i]; if (!H.hostable) continue;
-            var last = -1;
-            // §4D_LAYER_TRUTH: scan bound follows the new ls-primary sort — host/hosted pairs are
-            // near-tied in ls (same supports), so a 1-day ls window covers what the bz window did.
-            for (j = i + 1; j < items.length && items[j].ls <= H.ls + 86400000; j++) {
-              var W = items[j];
-              if (W.cls.indexOf('IfcWall') === 0 &&
-                  H.x0 <= W.x1 && H.x1 >= W.x0 && H.y0 <= W.y1 && H.y1 >= W.y0 &&
-                  W.bz <= H.bz + HEPS && W.tz >= H.tz - HEPS) last = j;
-            }
-            if (last > i) { keys[i] = last + 0.5; moved++; }
-          }
-          if (moved) {
-            var order = items.map(function(el, k) { return { el: el, k: keys[k], i: k }; });
-            order.sort(function(a, b) { return (a.k - b.k) || (a.i - b.i); });
-            for (i = 0; i < items.length; i++) items[i] = order[i].el;
-            console.log('§STAGGER_HOST movedAfterHost=' + moved + ' (task bucket n=' + items.length + ')');
-          }
-        })(_bucket);
-        // §4D_LAYER_TRUTH (2026-08-07, replaces the even index-stagger): the even spread kept only
-        // the bucket's ORDER and re-timed elements uniformly across the window — measured on the
-        // user's own Hospital console: §XRAY_EDGES staged=284/63415 on this path vs staged=0 on the
-        // generative path, i.e. the window layer re-introduced 284 support violations the schedule
-        // layer had already solved. Map each element's generative [ls,le] AFFINELY into the task's
-        // own [w.s,w.e] instead: an untouched window (windows come from the SAME schedule's zone
-        // rollup) reproduces the generative times in shape, and a user-dragged window rescales them
-        // without reordering. Monotone by construction (bucket is ls-sorted).
-        var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
-        var _lsMin = Infinity, _leMax = -Infinity;
-        _bucket.forEach(function(item) {
-          if (item.ls < _lsMin) _lsMin = item.ls;
-          if (item.le > _leMax) _leMax = item.le;
-        });
-        var _lsSpan = Math.max(1, _leMax - _lsMin);
-        _bucket.forEach(function(item, i) {
-          var s_i = w.s + Math.floor(((item.ls - _lsMin) / _lsSpan) * _span);
-          var e_i = w.s + Math.floor(((item.le - _lsMin) / _lsSpan) * _span);
-          if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
-          var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
-          p.phase = w.name;                         // real task name → shows in mini-Gantt
-          _allScheduled.push({ guid: item.guid, s: s_i, e: e_i, params: p, task: _tid,
-            bz: item.bz, tz: item.tz, x0: item.x0, x1: item.x1, y0: item.y0, y1: item.y1,
-            cls: item.cls, seq: item.seq });
+            cls: _el ? _el.cls : '', seq: _el ? _el.seq : 999 });
           _covered++;
         });
       }
-
-      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
-      // SAME role-blind support predicate this file already uses for the generative path
-      // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
-      // ascending base_z order is safe in ONE pass: a carrier's base_z is always below what it
-      // carries (the support DAG's own topological potential, established by §STAGGER_SUPPORT_ORDER
-      // above), so every true carrier of T has already been visited — and any correction already
-      // applied to it — by the time T is processed.
-      // §XRAY_WALL_SCOPE (found 2026-08-04, live in a real Hospital session — user report: proxy/
-      // misc elements chronologically before columns, "2 trucks came on first! Then walls!"): this
-      // predicate was even more permissive than the two sibling copies already fixed this session
-      // (schedule_gate.js auditFloating(), time_machine.js _buildXraySupportCache) — ANY wall was a
-      // candidate carrier for ANY element, no promoted-roof-slab restriction at all. A wall is only
-      // ever a real candidate carrier for a slab itself promoted to the roof role (seq>4) — same
-      // §4D_ROOF_LOAD_PATH M3 restriction, applied here for the third time this session. Structure
-      // (seq<=4) stays an unconditional carrier candidate for everything — only the wall branch is
-      // now gated on the TARGET being a promoted slab.
-      var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
-      var _ogEPS = 0.05, _ogGAP = 0.5;
-      // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
-      // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
-      // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
-      // measured 4636ms on Terminal's 48,428 elements (22 stacked storeys, small footprint, worst
-      // cell 379 members) vs 1695ms on Hospital's 63,415 (more elements, but a bigger footprint means
-      // less Z-stacking per cell) — element COUNT alone doesn't predict the cost, per-cell Z-density
-      // does. Bucketing Z too prunes each query to the target's own real vertical neighborhood — the
-      // ONLY z-range `S.bz<T.bz-EPS && |S.tz-T.bz|<=GAP` can ever match — with the identical predicate
-      // inside the loop unchanged, so results are provably identical, only the scan is smaller.
-      var _ogCellsFor = function (x0, x1, y0, y1, z0, z1) {
-        var out = [];
-        for (var cx = Math.floor(x0 / _ogCELL); cx <= Math.floor(x1 / _ogCELL); cx++)
-          for (var cy = Math.floor(y0 / _ogCELL); cy <= Math.floor(y1 / _ogCELL); cy++)
-            for (var cz = Math.floor(z0 / _ogCELL); cz <= Math.floor(z1 / _ogCELL); cz++)
-              out.push(cx + '|' + cy + '|' + cz);
-        return out;
-      };
-      // Build-time: bucket a candidate under its OWN full vertical extent, so it registers in every
-      // z-cell it actually occupies (a tall candidate can span more than one).
-      var _ogCellsBuild = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz, e.tz); };
-      // Query-time: only a target's real z-neighborhood [T.bz-GAP, T.bz+GAP] can ever satisfy the
-      // |S.tz-T.bz|<=GAP predicate — querying anything wider would waste the pruning this exists for.
-      var _ogCellsQuery = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz - _ogGAP, e.bz + _ogGAP); };
-      var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
-      var _ogStructGrid = {}, _ogWallGrid = {};
-      _allScheduled.forEach(function (e) {
-        if (e.seq <= 4) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
-        else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+      // ONE global affine into the captured window — floor() is monotone, so support margins keep
+      // their sign; only the 60s zero-duration fixup below can graze a margin after extreme
+      // compression, which the verification sweep right after repairs (expected ≈0 pushes).
+      var _capSpan = Math.max(1, _cap.projEnd - _cap.base);
+      var _lsSpan = Math.max(1, _leMax - _lsMin);
+      _allScheduled.forEach(function (item) {
+        item.s = _cap.base + Math.floor(((item.s - _lsMin) / _lsSpan) * _capSpan);
+        item.e = _cap.base + Math.floor(((item.e - _lsMin) / _lsSpan) * _capSpan);
+        if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
-      _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
-      // §4D_LAYER_TRUTH (2026-08-07): the single ascending-bz pass was measured leaving 25 staged
-      // violations (witness_4d_layer_truth.js, Hospital) for the SAME two reasons §DEQ_REPAIR exists
-      // in schedule_gate.js: (a) pushing a carrier later never re-checks dependents already visited
-      // (bz order guarantees carriers-first only for bearing-below, and a push can still ripple
-      // forward), and (b) the predicate was hang-blind — a fan's carrier (roof above) has HIGHER bz,
-      // so ordering can't help it at all. Same fix as the engine layer: bearing-below OR (no bearing)
-      // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
-      // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
-      // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
-      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
-      var _ogPushed = 0, _ogSweeps = 0;
-      for (; _ogSweeps < 16; _ogSweeps++) {
-        var _ogMoved = 0;
-        _allScheduled.forEach(function (T) {
-          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
-          var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
-          // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
-          // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:
-          // witness_og_guard_bearing_bound.js + witness_gantt_og_grid_perf.js):
-          // the bearing test was unbounded ABOVE — a full-height column/wall registered as carrying
-          // every element at every level inside its footprint, so each of those elements was pushed
-          // to the END of the whole enveloping carrier (over-conservative; the STUDY's verified
-          // bug). Two-tier fix, mirroring the DAG's own wallCarries lesson ("a wall carries a slab
-          // AT ITS TOP, never one embedded metres below its crown", generalized to my own span):
-          //   tier 1 — carriers whose top lies within MY OWN extent (+GAP) define my bearing plane;
-          //   tier 2 — ENVELOPING carriers (top above T.tz+GAP) are still DETECTED (hasBearing —
-          //            §4D_LAYER_TRUTH's 25-staged lesson: never narrower than the audits) but only
-          //            GATE me when no tier-1 carrier exists (a beam framing into a full-height
-          //            mast keeps its real support; it just stops waiting for the mast's crown when
-          //            a storey-level carrier is present).
-          // _buildXraySupportCache applies the IDENTICAL two-tier rule — guard and judge stay one
-          // physics, which is what keeps §XRAY_EDGES staged=0 (the 2026-08-07 alignment invariant).
-          var _ogTopBound = T.tz + _ogGAP, envEnd = 0;
-          for (var ci = 0; ci < cells.length; ci++) {
-            var arr = _ogStructGrid[cells[ci]];
-            if (arr) for (var si = 0; si < arr.length; si++) {
-              var S = arr[si];
-              if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
-              // §4D_LAYER_TRUTH: detection ALIGNED with auditFloating()/_buildXraySupportCache —
-              // carrier top REACHES my base (>= T.bz-GAP; a tall column a beam frames into still
-              // counts). §OG_BEARING_BOUND above splits gating into the two tiers.
-              if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
-                hasBearing = true;
-                if (S.tz <= _ogTopBound) { if (S.e > lastEnd) lastEnd = S.e; }
-                else if (S.e > envEnd) envEnd = S.e; }
-            }
-            if (!promotedSlab) continue;
-            arr = _ogWallGrid[cells[ci]];
-            if (arr) for (var wi = 0; wi < arr.length; wi++) {
-              var W = arr[wi];
-              if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
-              if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
-                hasBearing = true;
-                if (W.tz <= _ogTopBound) { if (W.e > lastEnd) lastEnd = W.e; }
-                else if (W.e > envEnd) envEnd = W.e; }
-            }
-          }
-          if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
-          if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
-            var hcells = _ogCellsQueryTop(T), hseen = {};
-            for (var hi = 0; hi < hcells.length; hi++) {
-              var harr = _ogStructGrid[hcells[hi]];
-              if (harr) for (var hj = 0; hj < harr.length; hj++) {
-                var H = harr[hj];
-                if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
-                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
-                    _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
-              }
-            }
-          }
-          if (lastEnd && T.s < lastEnd) {
-            var dur = Math.max(60000, T.e - T.s);
-            T.s = lastEnd + 1;
-            T.e = T.s + dur;
-            _ogPushed++; _ogMoved++;
-          }
-        });
-        if (!_ogMoved) break;
-      }
-      if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
-        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');
-
+      _ogSupportSweep(_allScheduled);
+      db.run('BEGIN');
+      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
       // §WRITE_LOOP_TIMING (2026-08-04) — a user report of the browser tab freezing traced to
       // console output stopping right at this point, on a 63,415-element building. No fix here —
       // just precise measurement, so the NEXT report says a real number instead of "it stopped".
@@ -6595,7 +6809,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 8;   // §STAGGER_SUPPORT_ORDER (2026-08-02): captured stagger is base_z-major + host pass
+  var _GANTT_CACHE_VERSION = 9;   // §TIER_SERIAL (2026-08-11): two-tier display remap (serial backbone + concurrent pool)
                                   // v7 was §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
   //                                 changes generated ordering for 35,484 non-structure elements.
   //                                 MUST bump: #1123 exists because a stale cache once stopped a

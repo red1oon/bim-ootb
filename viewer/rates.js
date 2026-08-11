@@ -292,6 +292,34 @@ var SEQUENCE_NAME_OVERRIDES = [
     phase: 'Substructure',
     sequence: 1,
     resource: 'CONCRETE_GANG'
+  },
+  // §FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+  // 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes
+  // Substructure→Superstructure→Architecture a STRICT serial backbone (time_machine.js
+  // _twoTierRemap), so furniture-like content exported under a generic catch-all class
+  // (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would
+  // gate real structural phase completion on a chair or desk. Genuinely-tagged furniture
+  // (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — safe, untouched.
+  // MEASURED before writing (repo rule: extract, never guess a regex — furniture_measure.log,
+  // 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' ⊂
+  // 'adjus-TABLE' shower head; 'cabinet' = a fire-extinguisher cabinet already correctly in
+  // MEP Final/Tier 2) — hence word boundaries + the class gate. Scoped run (word-boundary,
+  // generic buckets only): ZERO live hits across all 5 shipped buildings — this safeguard is
+  // PROACTIVE (the pile-misclassification precedent above proves the generic-catch-all bug class
+  // is real on real-world IFCs), not a fix for a live defect. Known, deliberate NON-target:
+  // Terminal's 'Floor:Table Top:904745' (IfcSlab, 3.96×22.43m ×150mm built-in counter, Aras
+  // Tanah) stays Superstructure — IfcSlab is an unambiguous class ("don't touch classes that are
+  // already unambiguous", spec), and as a seq≤4 support-pool member reclassifying it would
+  // perturb the locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a
+  // reported (not gated) case instead of silently absorbing it.
+  {
+    id: 'furniture_generic_bucket',
+    classes: ['IfcBuildingElementProxy', 'IfcBuildingElementPart'],
+    pattern: '\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
   }
 ];
 

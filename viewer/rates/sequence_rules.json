@@ -41,6 +41,19 @@
       "sequence": 1,
       "resource": "CONCRETE_GANG",
       "reason": "Slab-on-grade was NAMED in the original 1c spec ('IfcFooting/IfcPile/slab-on-grade rests on unmodeled soil') but only class-level seq-1 rules ever implemented it — a slab-on-grade authored as plain IfcSlab lands at seq 4 and, being genuinely ground-bearing (compacted fill between it and the footing tops, ~1.1m gap measured on Duplex), shows up as a permanent §SUPPORT_UNCHECKED finding. Pattern MEASURED against every shipped buildings/*.db 2026-08-11: under the IfcSlab class gate it matches exactly Duplex 4 ('127mm Slab on Grade' ×2, '150mm Exterior Slab on Grade' ×2, bases −0.14..−0.13) + Clinic 4 ('150mm Slab on Grade' ×3, '150mm Exterior Slab on Grade' ×1, bases −1.37..−0.15) and nothing else — every hit at true grade level over its own building's footings; a Clinic 'Floor:150mm Slab on Grade' IfcOpeningElement exists but is excluded by the class gate. See bim-compiler prompts/4D_SCHEDULE_PERFECTION.md 2026-08-11 closure pass."
+    },
+    {
+      "id": "furniture_generic_bucket",
+      "classes": [
+        "IfcBuildingElementProxy",
+        "IfcBuildingElementPart"
+      ],
+      "pattern": "\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b",
+      "flags": "i",
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER",
+      "reason": "§FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes Substructure→Superstructure→Architecture a STRICT serial backbone, so furniture-like content exported under a generic catch-all class (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would gate real structural phase completion on a chair or desk. Genuinely-tagged furniture (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — untouched. MEASURED before writing (furniture_measure.log 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' substring-matched 'adjustable' in a shower-head name; 'cabinet' matched a fire-extinguisher cabinet already correctly in MEP Final/Tier 2) — hence word boundaries + this class gate. Scoped run: ZERO live hits across all 5 shipped buildings — proactive safeguard (the pile-misclassification precedent proves this bug class is real on real-world IFCs), not a live-defect fix. Known deliberate non-target: Terminal 'Floor:Table Top:904745' (IfcSlab 3.96×22.43m ×150mm built-in counter) stays Superstructure — IfcSlab is an unambiguous class with two measured overrides already, and as a seq<=4 support-pool member reclassifying it would perturb locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a reported (not gated) case."
     }
   ],
   "SEQUENCE_RULES": {
