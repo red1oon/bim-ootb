@@ -1364,6 +1364,19 @@
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
     _lastShadowOn = _shadowNow;
 
+    // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12, real user report: "not casting shadows inside
+    // early construction"): existing §SHADOW_FRONTIER casters/receivers counters only increment
+    // when app._shadowOn (native Sunglass toggle) is true -- always false during a PHOTO_SHADOW/
+    // MaxQ bake, so that log reads 0/0 every bake regardless of whether the PHOTO_SHADOW system's
+    // OWN separate reassert (effects.js _reassertPhotoShadowCoverage) actually corrects it -- an
+    // unrelated internal counter, not proof either way. Built directly from `frontier` (already
+    // fully populated above, straight from the schedule ops) rather than captured during the
+    // scene traversal below -- an earlier version tried the traversal and came back empty every
+    // time: steel beams/columns (isSteel above) are exactly the elements most likely rendered via
+    // BatchedMesh/InstancedMesh, which never carry a single userData.guid the "single mesh" branch
+    // below can match against. Reading straight from `frontier` is correct regardless of which
+    // rendering path a given guid ends up on.
+    window.__tmFrontierGuidsNow = new Set(Object.keys(frontier));
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
