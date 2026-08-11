@@ -81,8 +81,10 @@ const _vgi = tmSrc.slice(tmSrc.indexOf('function verifyGanttIntegrity()'));
 const _vgiBody = _vgi.slice(0, _vgi.indexOf('\n  }\n'));
 assert(_vgiBody.indexOf('_midairAudit(') > 0,
   'W-MZ-6a verifyGanttIntegrity (the 🔓→🔒 lock gate) runs _midairAudit — auditFloating alone cannot see this population');
-assert(/ok:\s*n === 0 && ma\.midair === 0/.test(_vgiBody),
-  'W-MZ-6b the lock gate REFUSES on midair (ok requires both audits at zero, not just auditFloating)');
+assert(/ok:\s*n <= base\.floating && ma\.midair <= base\.midair/.test(_vgiBody),
+  'W-MZ-6b the lock gate REFUSES on a midair INCREASE (§GANTT_LOCK_DELTA: ok requires BOTH audits no worse ' +
+  'than the edit-start baseline — absolute zero was the old contract and it refused the lock on 4 of 7 ' +
+  'buildings for an unedited schedule)');
 
 function loadRatesTable() {
   const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
