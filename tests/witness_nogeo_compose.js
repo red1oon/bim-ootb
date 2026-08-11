@@ -35,10 +35,10 @@
  *     + 14 IfcBuildingElementProxy) carry their OWN Body representation and NO IfcRelAggregates in
  *     the source Ifc2x3_SampleCastle.ifc — NOT the aggregate class; they reach 0 because the SAME
  *     patch file's pre-existing §ANCHOR section gives them real extracted void_anchor transforms.
- *   • Garage_ARC.db has 19 IfcCurtainWall ghosts and NO patch: its source IFC
- *     (HospitalGarage_IFC4.ifc) no longer exists on disk, so the pairs cannot be EXTRACTED — it
- *     stays out of the default set (and stays NAMED in §NOGEO_COMPOSE_UNRESOLVED at every open)
- *     until the source resurfaces.
+ *   • Garage_ARC.db's 19 IfcCurtainWall ghosts: patched 2026-08-11 (patches/Garage_ARC.db.sql,
+ *     490 pairs) — the "source IFC no longer exists" claim was WRONG; it was found at
+ *     ~/Projects/bim-compiler/DAGCompiler/lib/input/IFC/HospitalGarage_IFC4.ifc (the IFC2x3
+ *     sibling is pair-identical, verified). Garage is in the default set like the other 7.
  */
 'use strict';
 const fs = require('fs');
