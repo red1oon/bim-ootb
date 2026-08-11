@@ -4166,7 +4166,13 @@ async function setupEffects(A, renderer, scene, camera) {
   // triggered it, making the effect nearly impossible to actually see. Absorb that incidental
   // nudge with a short grace window; a real subsequent interaction still cancels normally.
   var STILL_REFINE_GRACE_MS = 500;
-  A.stopStillRefine = function(force) {
+  // `keepStaging` (§MAXQ_STAGE_KEEP — CPE_4D_PERF_MEM_FINDINGS.md §2c/R1, Witness:
+  // witness_maxq_stage_keep.js): the MaxQ bake loop stops/restarts the refine EVERY frame; passing
+  // keepStaging=true lets it keep _applyPhotoStaging's per-BAKE state (ground/puddles/HDRI/fog/sky)
+  // alive across frames instead of tearing it down and rebuilding it per frame. Per-FRAME lighting
+  // still updates via _sunArcStep (it calls updateSky + shadowMap.needsUpdate itself). Every
+  // non-bake caller omits the arg and keeps the full-teardown behavior unchanged.
+  A.stopStillRefine = function(force, keepStaging) {
     if (!A._stillRefineActive) {
       // §STAGE2_DISARM (review finding 6): during soft-park a real selection/UI interaction must
       // kill the whole cycle AND revert the kept-alive staging — otherwise the dusk mood silently
@@ -4179,7 +4185,7 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     if (!force && _stillRefineStartMs && (performance.now() - _stillRefineStartMs) < STILL_REFINE_GRACE_MS) return;
     _autoStageArm(false);  // explicit/selection-driven stop cancels the auto re-arm too
-    _teardownStillRefine('cancelled (interaction)');
+    _teardownStillRefine('cancelled (interaction)', keepStaging);
   };
   // §STAGE1_STAGE2 (2026-07-16, sandbox spike — feat/ssgi-composer-poc — NOT the shipped Alt+S
   // path, an experimental auto-staging layer on top of it): "Stage 1" = mood persists through

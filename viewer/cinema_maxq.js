@@ -139,7 +139,7 @@
     return _wpSched.ends[k - 1];
   }
 
-  function _workPacingReset() { _wpSched = null; _wpTried = false; }
+  function _workPacingReset() { _wpSched = null; _wpTried = false; _fcIdx = null; }
 
   // ══ §CPE_BUILDUP_TOPOUT (2026-08-02) — the ending beats dwell on the FINISHED building ═════════
   // User, on the 1761-frame Hospital bake: "the top roof solar panels never gets to be shown - it
@@ -411,6 +411,10 @@
                          // and the whole building oscillates color frame-to-frame.
   var IDB_NAME = 'bim_ootb_cinema_maxq', IDB_STORE = 'frames';
   var _active = false, _cancel = false;
+  // §MAXQ_STAGE_KEEP / R1: guid→object index for the §SHADOW_FRONTIER_AT_CAPTURE check — built
+  // lazily per _metaGen inside the bake loop, freed with _workPacingReset() so the Maps don't
+  // outlive the bake.
+  var _fcIdx = null;
   // §MAXQ_WAKELOCK (user 2026-07-19: left the machine, bake paused until they came back — the
   // screen slept and rAF throttled with it). Hold a screen wake lock for the duration of the
   // bake+stitch so an unattended machine keeps rendering; re-acquire on visibilitychange (the
@@ -1218,12 +1222,23 @@
         // the tail of the movie. Stop here and salvage whatever was captured before the loss,
         // same treatment as the IDB-connection-lost path below.
         if (A._webglContextLost) { _glLost = true; console.log('§MAXQ_GL_LOST i=' + i + ' salvaging ' + framesDone + ' already-captured frames'); break; }
-        if (A._stillRefineActive) A.stopStillRefine(true);
+        // §MAXQ_STAGE_KEEP (CPE_4D_PERF_MEM_FINDINGS.md §2c/R1, Witness: witness_maxq_stage_keep.js):
+        // keepStaging=true — the photo staging (ground/puddles/HDRI/fog/sky) is per-BAKE state; only
+        // the TAA/AO accumulation is per-frame. Tearing staging down here and rebuilding it in the
+        // startStillRefine below cost the whole teardown→restage cycle on every frame (the measured
+        // §BAKE_FAST_PATH_COST "~660ms/frame unaccounted"). Per-frame sun still moves: _sunArcStep
+        // below calls updateSky + shadowMap.needsUpdate itself. The end-of-bake stopStillRefine
+        // calls stay full-teardown, so the scene restore on exit is unchanged.
+        if (A._stillRefineActive) A.stopStillRefine(true, true);
         // §MAXQ_HIDDEN_PAUSE: park BEFORE the cook, not after. Waiting here means the frame is
         // begun with the tab already visible, so the fold has a real rAF loop to converge on.
         await _awaitVisible('frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' settle');
-        await _sleep(SETTLE_MS);
+        // §MAXQ_STAGE_KEEP: SETTLE_MS existed to keep the NEXT staging from capturing mid-restore
+        // sun-tint/exposure values as "original" (see its declaration). With staging kept alive
+        // there is no restore in flight — sleep only when staging is actually down (frame 0, or a
+        // teardown forced by an interaction mid-bake).
+        if (!A._photoStagingOn) await _sleep(SETTLE_MS);
         _freezeRandom();
         var _tn = nFrames > 1 ? i / (nFrames - 1) : 0;
         var pose = poseAt(_tn);  // tNorm hits 1.0 on the last frame so the pull-back completes
@@ -1289,28 +1304,50 @@
           var _fGuids = window.__tmFrontierGuidsNow;
           var _fTrue = 0, _fFalse = 0, _fMatched = 0;
           var _fBatchTrue = 0, _fBatchFalse = 0, _fBatchObjs = 0;
-          A.scene.traverse(function(o) {
-            if (o.isMesh && o.userData && o.userData.guid && _fGuids.has(o.userData.guid)) {
-              _fMatched++;
-              if (o.castShadow) _fTrue++; else _fFalse++;
-              return;
-            }
-            // Steel beams/columns (isSteel, time_machine.js) are the most likely frontier class
-            // to be batched/instanced, not individually meshed -- castShadow there is a BATCH-wide
-            // flag (shared by every slot in that object, frontier or not), so this reports the
-            // batch's own flag whenever ANY of its slots is currently a frontier guid, not a
-            // per-instance answer -- the finest-grained truth this rendering architecture allows.
-            if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) {
-              var _bm = A._batchMeta[o.id];
-              for (var _bi = 0; _bi < _bm.length; _bi++) {
-                if (_fGuids.has(_bm[_bi].guid)) { _fBatchObjs++; if (o.castShadow) _fBatchTrue++; else _fBatchFalse++; return; }
+          // §MAXQ_STAGE_KEEP / R1 (CPE_4D_PERF_MEM_FINDINGS.md §2c): the answer this check gives is
+          // unchanged, but a full scene.traverse with a linear _batchMeta/_instanceMeta scan per
+          // batched object ran EVERY captured frame. Index guid→object ONCE per _metaGen (the same
+          // staleness key TM's own event index uses — streaming/re-stream bumps it, sprite churn
+          // does not), then answer each frame from the frontier set alone (O(frontier), not
+          // O(scene×slots)). Counting semantics preserved exactly: individual meshes tally per
+          // MESH; a batched/instanced object tallies ONCE if ANY of its slots is frontier — the
+          // same batch-wide-castShadow caveat as before (see the retained comment below).
+          // Steel beams/columns (isSteel, time_machine.js) are the most likely frontier class
+          // to be batched/instanced, not individually meshed -- castShadow there is a BATCH-wide
+          // flag (shared by every slot in that object, frontier or not), so this reports the
+          // batch's own flag whenever ANY of its slots is currently a frontier guid, not a
+          // per-instance answer -- the finest-grained truth this rendering architecture allows.
+          if (!_fcIdx || _fcIdx.gen !== A._metaGen) {
+            var _fcT0 = performance.now();
+            _fcIdx = { gen: A._metaGen, mesh: new Map(), group: new Map() };
+            A.scene.traverse(function(o) {
+              // Same branch precedence as the traverse this replaces: an isMesh with its own
+              // userData.guid answers as an individual mesh first (BatchedMesh/InstancedMesh
+              // included, matching the original's first-branch test); its slot guids still
+              // register below so the batch answer exists for OTHER frontier slots.
+              if (o.isMesh && o.userData && o.userData.guid) {
+                var _ml = _fcIdx.mesh.get(o.userData.guid);
+                if (_ml) _ml.push(o); else _fcIdx.mesh.set(o.userData.guid, [o]);
               }
-            } else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) {
-              var _im = A._instanceMeta[o.id];
-              for (var _ii = 0; _ii < _im.length; _ii++) {
-                if (_fGuids.has(_im[_ii].guid)) { _fBatchObjs++; if (o.castShadow) _fBatchTrue++; else _fBatchFalse++; return; }
+              if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) {
+                var _bm = A._batchMeta[o.id];
+                for (var _bi = 0; _bi < _bm.length; _bi++)
+                  if (!_fcIdx.group.has(_bm[_bi].guid)) _fcIdx.group.set(_bm[_bi].guid, o);
+              } else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) {
+                var _im = A._instanceMeta[o.id];
+                for (var _ii = 0; _ii < _im.length; _ii++)
+                  if (!_fcIdx.group.has(_im[_ii].guid)) _fcIdx.group.set(_im[_ii].guid, o);
               }
-            }
+            });
+            console.log('§SHADOW_FRONTIER_IDX built gen=' + _fcIdx.gen + ' meshGuids=' + _fcIdx.mesh.size +
+              ' groupGuids=' + _fcIdx.group.size + ' ms=' + (performance.now() - _fcT0).toFixed(1));
+          }
+          var _fSeenGroups = new Set();
+          _fGuids.forEach(function(g) {
+            var _ml = _fcIdx.mesh.get(g);
+            if (_ml) { for (var _mi = 0; _mi < _ml.length; _mi++) { _fMatched++; if (_ml[_mi].castShadow) _fTrue++; else _fFalse++; } return; }
+            var _go = _fcIdx.group.get(g);
+            if (_go && !_fSeenGroups.has(_go)) { _fSeenGroups.add(_go); _fBatchObjs++; if (_go.castShadow) _fBatchTrue++; else _fBatchFalse++; }
           });
           console.log('§SHADOW_FRONTIER_AT_CAPTURE frame=' + i + ' frontierGuids=' + _fGuids.size +
             ' singleMesh_matched=' + _fMatched + ' castShadowTrue=' + _fTrue + ' castShadowFalse=' + _fFalse +
