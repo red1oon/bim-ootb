@@ -225,6 +225,14 @@
   // ══════════════════ pointer-lock mouse-look + WASD — pattern copied from
   // navigate_controls.js:28-56 (canvas.requestPointerLock, mousemove yaw/pitch with clamp,
   // pointerlockchange flag), adapted to drive `_vfCam` instead of the main nav camera. ══════════
+  // §CPE_WALK_ROLL_SNAP fix (2026-08-11, prompts/CPE_POV_WALK_PATHING.md) — `_vfCam.rotation.order`
+  // is set to 'YXZ' once at mount (see start()), NOT the three.js default 'XYZ'. Under 'XYZ', pitch
+  // is composed around the WORLD X axis after yaw, so any diagonal mouse move (yaw!=0 AND pitch!=0
+  // at once — i.e. nearly all real mouse input) bakes real roll into the camera; under 'YXZ' (the
+  // convention three.js's own PointerLockControls uses for exactly this reason), pitch is applied
+  // around the camera's own local X axis BEFORE yaw sweeps it around world Y, so the camera can
+  // never roll for any yaw/pitch combination — matching OrbitControls' behavior (canvas mouse nav),
+  // which gets the same guarantee for free by parameterizing on clamped spherical phi/theta instead.
   function _onMouseMove(e) {
     if (!_active || !_pointerLocked) return;
     _yaw -= e.movementX * MOUSE_SENSITIVITY;
@@ -500,15 +508,27 @@
         (sp.scrubbed ? ') — spawning at the scrubbed path point (accelerator)' :
                        ') — start of the authorable stretch (self-sufficient default)'));
     }
-    _vfCam.rotation.reorder && _vfCam.rotation.reorder('XYZ');
-    _yaw = _vfCam.rotation.y; _pitch = _vfCam.rotation.x;
+    // §CPE_WALK_ROLL_SNAP fix — see _onMouseMove's header comment for why 'YXZ'. Re-derive yaw/pitch
+    // from the inherited forward vector rather than reading .rotation.x/.y directly: the incoming
+    // vfCam pose was positioned by cinema_path_editor.js's _walkSpawnPose/_applyVFPose via a raw
+    // camera.lookAt(target) (default up, never reordered) — when that lookAt's target sits close to
+    // straight up/down from the camera (a steep gaze), the lookAt itself can bake real roll into the
+    // resulting quaternion. Reading the forward vector and re-deriving yaw/pitch from it DROPS any
+    // such roll instead of misreading a slice of it as pitch.
+    _vfCam.rotation.order = 'YXZ';
+    var _fwd0 = new THREE.Vector3(0, 0, -1).applyQuaternion(_vfCam.quaternion);
+    _pitch = Math.asin(Math.max(-1, Math.min(1, _fwd0.y)));
+    _yaw = Math.atan2(-_fwd0.x, -_fwd0.z);
     if (_resumePose) {
       _yaw = _resumePose.yaw; _pitch = _resumePose.pitch;
-      _vfCam.rotation.set(_pitch, _yaw, 0);
       console.log('§CPE_WALK_SPAWN resume pos=(' + _resumePose.x.toFixed(2) + ',' + _resumePose.y.toFixed(2) +
         ',' + _resumePose.z.toFixed(2) + ') yaw=' + (_yaw * 180 / Math.PI).toFixed(1) +
         'deg pitch=' + (_pitch * 180 / Math.PI).toFixed(1) + 'deg — continuing where the last walk stopped');
     }
+    // Apply immediately, both branches — previously only the resume branch did this, leaving a fresh
+    // spawn showing whatever roll the inherited lookAt() pose had on screen until the FIRST mousemove
+    // silently snapped it away. That silent snap was the "topples upside-down" bug report.
+    _vfCam.rotation.set(_pitch, _yaw, 0);
     _keys = { w: false, a: false, s: false, d: false };
     _frame = 0; _snapCount = 0; _lastT = 0;
     // §CPE_WALK_GAMEPAD_NAV — a pad already connected BEFORE this mount (event fired while walk mode
