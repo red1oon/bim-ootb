@@ -581,13 +581,14 @@
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
     // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is
-    // that exact test (SEQUENCE_RULES: only IfcFooting/IfcReinforcingBar carry sequence 1, both
-    // Substructure; plus, since the big-element follow-up same day, ONE name-override deliberately
-    // assigns seq 1: 'foundation_pile_misclassified_slab' — Terminal's 236 'jkrST_str-fo_pc_rcp'
-    // 30m precast piles authored as IfcSlab, see rates/sequence_rules.json. That flips Terminal to
-    // bms=true — it DOES model a foundation layer, just under the wrong class). false (HHS today)
-    // means "this building never modeled a foundation layer at all — weight findings with that
-    // context," never hides or downgrades them.
+    // that exact test (SEQUENCE_RULES: IfcFooting/IfcPile/IfcReinforcingBar carry sequence 1, all
+    // Substructure — IfcPile added 2026-08-11 closure pass, Gap A close, latent on all shipped
+    // buildings; plus TWO name-overrides deliberately assign seq 1, see rates/sequence_rules.json:
+    // 'foundation_pile_misclassified_slab' — Terminal's 236 'jkrST_str-fo_pc_rcp' 30m precast piles
+    // authored as IfcSlab, flipping Terminal to bms=true — and 'slab_on_grade_substructure' —
+    // Duplex/Clinic's 8 measured slab-on-grade IfcSlab, the 1c spec's own named ground-bearing
+    // class). false (HHS today) means "this building never modeled a foundation layer at all —
+    // weight findings with that context," never hides or downgrades them.
     var bms = false;
     for (i = 0; i < elements.length; i++) { if (elements[i].seq === 1) { bms = true; break; } }
     var v = 0;

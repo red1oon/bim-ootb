@@ -3618,6 +3618,14 @@
       var sc = schedMap[T.guid]; if (!sc) continue;
       var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
       cs = cellsOf(T);
+      // §OG_BEARING_BOUND (2026-08-11) — the judge half of the guard's two-tier bearing rule (see
+      // §PHASE_OVERLAP_SUPPORT_GUARD below for the full ruling): carriers topping within T's own
+      // extent (+GAP) define its bearing plane; ENVELOPING carriers (top above T.top_z+GAP, e.g. a
+      // full-height column the element frames into mid-span) still count as detected support but
+      // only judge T when no in-extent carrier exists. Guard and judge MUST apply the identical
+      // rule or staged>0 comes back (the 2026-08-07 §4D_LAYER_TRUTH alignment, third asymmetry
+      // fixed then; this change keeps the pair symmetric while removing the crown-wait).
+      var topBound = T.top_z + GAP, maxEnvEnd = 0;
       var mark = {}, maxCarrierEnd = 0, hasCarrier = false;
       for (c = 0; c < cs.length; c++) {
         arr = structGrid[cs[c]];
@@ -3625,7 +3633,9 @@
           S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
           if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
             var sc1 = schedMap[S.guid]; eCount++;
-            if (sc1) { hasCarrier = true; if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+            if (sc1) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+              else if (sc1.end > maxEnvEnd) maxEnvEnd = sc1.end; }
           }
         }
         // §XRAY_WALL_SCOPE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md "Z-stack" chase): a wall is
@@ -3648,11 +3658,14 @@
           if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
           if (S.top_z >= T.base_z - GAP) {
             var sc2 = schedMap[S.guid]; eCount++;
-            if (sc2) { hasCarrier = true; if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+            if (sc2) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+              else if (sc2.end > maxEnvEnd) maxEnvEnd = sc2.end; }
           }
         }
         }
       }
+      if (!maxCarrierEnd && maxEnvEnd) maxCarrierEnd = maxEnvEnd;   // §OG_BEARING_BOUND tier-2 fallback
       if (hasCarrier && maxCarrierEnd > sc.end) {
         _tmXraySolidifyTs[T.guid] = maxCarrierEnd;
         _tmXrayStagedTotal++;
@@ -4389,17 +4402,35 @@
         _allScheduled.forEach(function (T) {
           var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
           var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
+          // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
+          // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:
+          // witness_og_guard_bearing_bound.js + witness_gantt_og_grid_perf.js):
+          // the bearing test was unbounded ABOVE — a full-height column/wall registered as carrying
+          // every element at every level inside its footprint, so each of those elements was pushed
+          // to the END of the whole enveloping carrier (over-conservative; the STUDY's verified
+          // bug). Two-tier fix, mirroring the DAG's own wallCarries lesson ("a wall carries a slab
+          // AT ITS TOP, never one embedded metres below its crown", generalized to my own span):
+          //   tier 1 — carriers whose top lies within MY OWN extent (+GAP) define my bearing plane;
+          //   tier 2 — ENVELOPING carriers (top above T.tz+GAP) are still DETECTED (hasBearing —
+          //            §4D_LAYER_TRUTH's 25-staged lesson: never narrower than the audits) but only
+          //            GATE me when no tier-1 carrier exists (a beam framing into a full-height
+          //            mast keeps its real support; it just stops waiting for the mast's crown when
+          //            a storey-level carrier is present).
+          // _buildXraySupportCache applies the IDENTICAL two-tier rule — guard and judge stay one
+          // physics, which is what keeps §XRAY_EDGES staged=0 (the 2026-08-07 alignment invariant).
+          var _ogTopBound = T.tz + _ogGAP, envEnd = 0;
           for (var ci = 0; ci < cells.length; ci++) {
             var arr = _ogStructGrid[cells[ci]];
             if (arr) for (var si = 0; si < arr.length; si++) {
               var S = arr[si];
               if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
-              // §4D_LAYER_TRUTH: predicate ALIGNED with auditFloating()/_buildXraySupportCache —
-              // carrier top REACHES my base (>= T.bz-GAP, unbounded above: a tall column a beam
-              // frames into tops far above the beam's base). The old ±GAP band was narrower than
-              // the audits and left exactly the 25 staged elements those audits could still see.
+              // §4D_LAYER_TRUTH: detection ALIGNED with auditFloating()/_buildXraySupportCache —
+              // carrier top REACHES my base (>= T.bz-GAP; a tall column a beam frames into still
+              // counts). §OG_BEARING_BOUND above splits gating into the two tiers.
               if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
-                hasBearing = true; if (S.e > lastEnd) lastEnd = S.e; }
+                hasBearing = true;
+                if (S.tz <= _ogTopBound) { if (S.e > lastEnd) lastEnd = S.e; }
+                else if (S.e > envEnd) envEnd = S.e; }
             }
             if (!promotedSlab) continue;
             arr = _ogWallGrid[cells[ci]];
@@ -4407,9 +4438,12 @@
               var W = arr[wi];
               if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
               if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
-                hasBearing = true; if (W.e > lastEnd) lastEnd = W.e; }
+                hasBearing = true;
+                if (W.tz <= _ogTopBound) { if (W.e > lastEnd) lastEnd = W.e; }
+                else if (W.e > envEnd) envEnd = W.e; }
             }
           }
+          if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
           if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
             var hcells = _ogCellsQueryTop(T), hseen = {};
             for (var hi = 0; hi < hcells.length; hi++) {
