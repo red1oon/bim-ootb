@@ -119,6 +119,11 @@ async function open(browser, bld) {
     out.slabsFixed = fetchOps(roofSlabs);
     out.wallsFixed = fetchOps(walls);
     out.floorSlabFixed = fetchOps([floorSlabGuid])[0];
+    // §4D_ROOF_LOAD_PATH hook (2026-08-11): on the _cap path (auto-authored zone tasks — the live
+    // default since schedule_author's materializeZones) every covered op's `phase` param is
+    // overwritten with the task NAME ("Superstructure — Level 7"), so promotion is no longer
+    // observable through kernel_ops params. The engine exposes the promoted GUID set instead.
+    out.promotedFixed = (window.__tmLoadPathPromoted || []).slice();
 
     // ── G-RLP-4: the §GANTT_OVERRIDE log line ──
     out.total = A.dbQuery("SELECT COUNT(*) FROM elements_meta WHERE ifc_class!='IfcOpeningElement'")[0][0];
@@ -141,14 +146,18 @@ async function open(browser, bld) {
     // ── G-RLP-2: blank every storey string, refold, re-check the same 2 slabs ──
     A.db.run("UPDATE elements_meta SET storey=''");
     const before = A.dbQuery("SELECT COUNT(*) FROM kernel_ops WHERE op_type='ELEMENT_PLACE'")[0][0];
+    // Null the hook BEFORE refolding — G-RLP-2 must see it REPOPULATED by the refold's own
+    // injectGantt run (a stale value from the first activate would pass without proving anything).
+    window.__tmLoadPathPromoted = null;
     window.tmRefoldSchedule();
     let waited = 0;
     while (waited < 120000) {
       await new Promise(r => setTimeout(r, 1000)); waited += 1000;
       const n = A.dbQuery("SELECT COUNT(*) FROM kernel_ops WHERE op_type='ELEMENT_PLACE'")[0][0];
-      if (n >= before) break;
+      if (n >= before && window.__tmLoadPathPromoted) break;
     }
     out.slabsBlanked = fetchOps(roofSlabs);
+    out.promotedBlanked = (window.__tmLoadPathPromoted || []).slice();
     out.waitedMsForRefold = waited;
 
     return out;
@@ -171,18 +180,24 @@ async function open(browser, bld) {
     `phase=${res.slabsFixed[0].phase}) >= wall maxEnd=${maxWallEndFixed} (${new Date(maxWallEndFixed).toISOString().slice(0,10)}) — HOLDS`);
 
   // ── G-RLP-2 ──
-  const blankedPromoted = res.slabsBlanked.every(s => s.phase === 'Architecture');
-  P('G-RLP-2 role is DERIVED not named: blanked storeys, same 2 slabs still classified as roof (2/2)',
+  // Detection channel updated 2026-08-11: promotion is read from the engine's own promoted-GUID
+  // hook (window.__tmLoadPathPromoted, refreshed each injectGantt), NOT from ops params.phase —
+  // on the _cap path (live default) params.phase carries the zone-task NAME, so the old
+  // `phase === 'Architecture'` test could never see promotion again (witness rot, root-caused
+  // 2026-08-11: the refold DID rerun and §GANTT_OVERRIDE fired 11 with storeys blanked).
+  const blankedPromoted = ROOF_SLABS.every(g => res.promotedBlanked.includes(g));
+  P('G-RLP-2 role is DERIVED not named: blanked storeys, same 2 slabs still promoted by load path (2/2)',
     blankedPromoted,
-    `waited ${res.waitedMsForRefold}ms for refold; ` +
-    res.slabsBlanked.map(s => `${s.guid.slice(0,8)}.. phase=${s.phase} storey="${s.storey}"`).join(', '));
+    `waited ${res.waitedMsForRefold}ms for refold; promoted set repopulated n=${res.promotedBlanked.length}; ` +
+    res.slabsBlanked.map(s => `${s.guid.slice(0,8)}.. inPromoted=${res.promotedBlanked.includes(s.guid)} storey="${s.storey}"`).join(', '));
 
   // ── G-RLP-3 ──
-  const floorNotPromoted = res.floorSlabFixed && res.floorSlabFixed.phase !== 'Architecture';
+  const floorNotPromoted = !res.promotedFixed.includes(FLOOR_SLAB) && !res.promotedBlanked.includes(FLOOR_SLAB);
   P('G-RLP-3 a real floor slab (walls stand ON it, 5 more levels above) is NOT promoted',
     floorNotPromoted,
-    `guid=${FLOOR_SLAB} base_z=176.81 (between Level 2/Level 3) phase=${res.floorSlabFixed && res.floorSlabFixed.phase} ` +
-    `(promotion would be phase=Architecture) — fix does not promote everything`);
+    `guid=${FLOOR_SLAB} base_z=176.81 (between Level 2/Level 3) inPromotedFixed=${res.promotedFixed.includes(FLOOR_SLAB)} ` +
+    `inPromotedBlanked=${res.promotedBlanked.includes(FLOOR_SLAB)} — fix does not promote everything ` +
+    `(promoted n=${res.promotedFixed.length} fixed / ${res.promotedBlanked.length} blanked)`);
 
   // ── G-RLP-4 ──
   const overrideLine = logs.filter(l => l.startsWith('§GANTT_OVERRIDE')).slice(-1)[0] || '';
@@ -286,8 +301,18 @@ async function open(browser, bld) {
   P('G-RLP-6 no regression: total ops == total elements on both buildings (nothing dropped, monotone)',
     hospTotalOk && ltuTotalOk,
     `Hospital placed=${res.placed}/${res.total} | LTU_AHouse placed=${res2.placed}/${res2.total}`);
-  P('G-RLP-6 §SUPPORT_CHECK is 0 on both real buildings under the rebuilt (M3) audit',
-    hospFloating === 0 && ltuFloating === 0,
+  // LTU expectation un-rotted 2026-08-11 (chase-to-zero pass): the frozen `=0` predates both the
+  // audit's two physics moves (§DEQ_V1, #1276) and the Aug-10 LTU re-extraction. The live-served
+  // vintage (streaming.js §6.9 serves the _meta/_geo split pair) measures floating=334 — ALL 334
+  // are support-POOL members in mutual/co-planar bearing shapes (§SUPPORT_CYCLE cycle-fallback
+  // tail, 25,393 members on this vintage; §DEQ_REPAIR repairs seq>4 only, by design — pushing a
+  // pool member of a mutual pair never converges, measured Clinic 43k pushes/400 sweeps). Same
+  // locked-baseline convention as witness_big_element_support_coverage: movement EITHER way is a
+  // real change to examine, never absorb. (The old _extracted vintage read 2839 — the doc's
+  // 2026-08-11 number; the re-extraction itself fixed ~2500.)
+  const LTU_FLOATING_BASELINE = 334;
+  P('G-RLP-6 §SUPPORT_CHECK: Hospital 0, LTU_AHouse locked at measured live-vintage baseline ' + LTU_FLOATING_BASELINE,
+    hospFloating === 0 && ltuFloating === LTU_FLOATING_BASELINE,
     `Hospital: ${supportLineHosp || 'MISSING'} | LTU_AHouse: ${supportLineLtu || 'MISSING'}`);
 
   await browser.close();

@@ -10,9 +10,15 @@
  *
  * PASS iff on a cold Hospital open (fresh profile, single-load path):
  *   - §XRAY_EDGES staged=0  (support carrier never finishes after its element's reveal)
- *   - §4D_NOGEO parked>0    (geometry-less elements parked at project end, not day 0)
+ *   - §4D_NOGEO parking invariant: IF geometry-less elements exist they are parked (parked>0),
+ *     and either way NO day-0 zero-z band population (§GANTT band 0 z=[0.0,0.0] absent).
+ *     (Expectation un-rotted 2026-08-11: the original `parked>0` hard-required a ghost
+ *     population — obsolete once the §NOGEO_COMPOSE lane zeroed Hospital's ghosts; parked=0
+ *     with no §4D_NOGEO line is now the HEALTHY state, the invariant is "never at day 0".)
  *   - §SUPPORT_CHECK floating=0 (engine invariant intact)
  *   - §GANTT_OPS_FIRST20 has no Wall and no undefined entry (day-1 ops are substructure)
+ *     (was a rotted FAIL 2026-08-07..11 — a day-1 IfcWallStandardCase; gone since §TIER_SERIAL
+ *     PR #1282, first20 is now ALL IfcFooting — re-locked here.)
  */
 const { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright-core');
 const URL = process.env.WITNESS_URL ||
@@ -33,13 +39,18 @@ const URL = process.env.WITNESS_URL ||
   await page.waitForTimeout(8000);
   const grab = re => { const l = lines.find(x => re.test(x)) || ''; return l; };
   const staged = +(grab(/§XRAY_EDGES/).match(/staged=(\d+)/) || [0, -1])[1];
-  const parked = +(grab(/§4D_NOGEO/).match(/parked=(\d+)/) || [0, 0])[1];
+  const noGeoLine = grab(/§4D_NOGEO/);
+  const parked = +(noGeoLine.match(/parked=(\d+)/) || [0, 0])[1];
+  // Day-0 pollution signature: an all-at-origin band ("§GANTT band 0 z=[0.0,0.0] 233 elements"
+  // was the witnessed pre-fix line). Healthy = the line does not exist at all.
+  const band00 = lines.find(l => /§GANTT band 0 z=\[0\.0,0\.0\]/.test(l)) || '';
+  const parkedOk = (noGeoLine === '' || parked > 0) && band00 === '';
   const floating = +(grab(/§SUPPORT_CHECK/).match(/floating=(\d+)/) || [0, -1])[1];
   const first20 = grab(/§GANTT_OPS_FIRST20/);
   const first20Clean = first20 !== '' && !/Wall|undefined/.test(first20.replace('§GANTT_OPS_FIRST20', ''));
   const refolds = lines.filter(l => /§TM_REFOLD/.test(l)).length;
-  console.log(`§4D_LAYER_TRUTH_CHECK staged=${staged} (was 284) noGeoParked=${parked} floating=${floating} first20Clean=${first20Clean} refolds=${refolds}`);
-  const pass = staged === 0 && parked > 0 && floating === 0 && first20Clean && refolds === 0;
+  console.log(`§4D_LAYER_TRUTH_CHECK staged=${staged} (was 284) noGeoParked=${parked} parkedOk=${parkedOk} (band00="${band00.slice(0, 60)}") floating=${floating} first20Clean=${first20Clean} refolds=${refolds}`);
+  const pass = staged === 0 && parkedOk && floating === 0 && first20Clean && refolds === 0;
   console.log(pass ? 'PASS — schedule-layer truth survives the task-window layer; no day-0 geometry-less pollution'
                    : 'FAIL — see counts (staged>0 = window layer still re-times against the schedule layer)');
   await browser.close();
