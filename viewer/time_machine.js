@@ -4509,7 +4509,7 @@
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:s.end}),
+           resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
       if (s.end > _projEnd) _projEnd = s.end;
@@ -6915,6 +6915,15 @@
     return n;
   }
 
+  // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
+  // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
+  // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
+  // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
+  function _kernelOpsSchedStale(placeOps, currentVersion) {
+    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
+      placeOps[0].parameters._genVersion !== currentVersion);
+  }
+
   // ── Activate / Deactivate ──
   function setToolbarHighlight(on) {
     var btn = document.getElementById('time-machine-btn');
@@ -7035,6 +7044,20 @@
         try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
         _placeOps = [];
         console.log('§TIME_MACHINE cleared stale unweighted ops — will re-inject');
+      }
+      // §KERNEL_OPS_SCHED_VERSION (2026-08-11): a building opened before this session's fix to the
+      // schedule-generation algorithm (e.g. §TIER2_AFTER_TIER1) has kernel_ops ELEMENT_PLACE rows
+      // materialized from the OLD algorithm, cached inside this building's IndexedDB-cached DB blob.
+      // _GANTT_CACHE_VERSION already gates the separate 'gantt' JSON cache but never this table, so a
+      // fixed schedule algorithm silently never reached an already-opened building — reported live:
+      // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
+      // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
+      // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+        try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
+        console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
+          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+        _placeOps = [];
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
