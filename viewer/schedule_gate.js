@@ -750,7 +750,10 @@
     return { zones: zones, edges: edges };
   }
 
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
+  // EPS/GAP exported alongside CELL so a consumer of the same geometry (time_machine.js
+  // §MIDAIR_REPAIR) can test contact with THIS module's measured constants instead of re-typing
+  // them — a second copy is a second thing to drift.
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
