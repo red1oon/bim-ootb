@@ -4586,7 +4586,43 @@
   // Same resource on same storey = sequential. Different resource = parallel.
   // Always re-inject on activate — never use stale cached ops.
 
-  function injectGantt() {
+  // §GANTT_REFOLD_HANG (2026-08-10, 4D_SCHEDULE_PERFECTION.md §GANTT_REFOLD_HANG handoff):
+  // injectGantt()'s two hot loops froze the tab on Hospital (63,415 elements — live-confirmed:
+  // the console stream stopped dead between §PHASE_OVERLAP_SUPPORT_GUARD's log and
+  // §WRITE_LOOP_TIMING's, which never printed). Both loops are order-dependent (shared object
+  // refs mutate .s/.e read by later elements) so they cannot be parallelized or reordered — but
+  // chunking PRESERVES order: slicing them into _TM_CHUNK-sized batches with a macrotask yield
+  // between batches changes nothing about the output, only returns control to the browser.
+  // setTimeout(0), not rAF — must keep draining while the tab is backgrounded.
+  var _TM_CHUNK = 2500;
+  function _tmYield() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+  // §GANTT_REFOLD_HANG sync note (2026-08-12): the branch's extracted _ogSupportGuard was
+  // superseded during the 26-commit drift by main's own _ogSupportSweep (witness-locked physics —
+  // see §OG sections above); this sync keeps main's sweep untouched and lands ONLY the chunked
+  // kernel_ops writer below (the measured §WRITE_LOOP_TIMING freeze) + the async call-site plumbing.
+  async function _writeScheduledChunked(db, _allScheduled, _yieldFn) {
+    if (_yieldFn === undefined) _yieldFn = _tmYield;
+    var _wlT0 = performance.now();
+    db.run('BEGIN');
+    var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+      "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+    for (var _wi = 0; _wi < _allScheduled.length; _wi++) {
+      var item = _allScheduled[_wi];
+      item.params._end_ts = item.e;
+      item.params._captured = 1;
+      item.params._task = item.task;
+      _upd.run([item.s, JSON.stringify(item.params), item.guid]);
+      if (_yieldFn && ((_wi + 1) % _TM_CHUNK === 0) && (_wi + 1) < _allScheduled.length) {
+        db.run('COMMIT'); await _yieldFn(); db.run('BEGIN');
+      }
+    }
+    _upd.free();
+    console.log('§WRITE_LOOP_TIMING rows=' + _allScheduled.length + ' ms=' + (performance.now() - _wlT0).toFixed(1));
+    db.run('COMMIT');
+  }
+
+  async function injectGantt() {
     var app = A();
     if (!app || !app.db) return false;
     var db = app.db;
@@ -5130,22 +5166,13 @@
         if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
       _ogSupportSweep(_allScheduled);
-      db.run('BEGIN');
-      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
-        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
-      // §WRITE_LOOP_TIMING (2026-08-04) — a user report of the browser tab freezing traced to
-      // console output stopping right at this point, on a 63,415-element building. No fix here —
-      // just precise measurement, so the NEXT report says a real number instead of "it stopped".
-      var _wlT0 = performance.now();
-      _allScheduled.forEach(function (item) {
-        item.params._end_ts = item.e;
-        item.params._captured = 1;
-        item.params._task = item.task;
-        _upd.run([item.s, JSON.stringify(item.params), item.guid]);
-      });
-      _upd.free();
-      console.log('§WRITE_LOOP_TIMING rows=' + _allScheduled.length + ' ms=' + (performance.now() - _wlT0).toFixed(1));
-      db.run('COMMIT');
+      // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
+      // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
+      // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
+      // IDENTICAL rows in the IDENTICAL order (same fields, same log line), committing and yielding
+      // a macrotask every _TM_CHUNK=2500 rows so the tab stays responsive. Witness:
+      // viewer/tests/witness_gantt_refold_yield.js (identity gate: chunked rows == sync rows).
+      await _writeScheduledChunked(db, _allScheduled);
       _capActive = true;
       _coveredCount = _covered;
       _coveragePct = totalDbElements ? Math.round(_covered / totalDbElements * 100) : 0;
@@ -7416,7 +7443,7 @@
     var app = A();
 
     // §S260c: Check IDB for cached Gantt JSON
-    cacheGet('gantt').then(function(cachedOps) {
+    cacheGet('gantt').then(async function(cachedOps) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt
       // §S260e: Only use cache if it has ELEMENT_PLACE ops (not just picks)
       var _hasCachedPlaces = cachedOps && cachedOps.length > 0 &&
         cachedOps.some(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
@@ -7504,7 +7531,7 @@
         // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
         // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
         _materializeNativeSchedule(app);
-        if (!injectGantt()) {
+        if (!(await injectGantt())) {
           if (st) st.textContent = 'No elements found in database';
           viewerStatus('Time Machine: no elements found');
           console.log('§TIME_MACHINE no ops and no elements — nothing to show');
@@ -7521,11 +7548,11 @@
 
       _finishActivate(app);
       resolve(true);
-    }).catch(function(e) {
+    }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
-      if (!_ops.length) { _materializeNativeSchedule(A()); injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path
+      if (!_ops.length) { _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
@@ -8359,7 +8386,8 @@
 
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
-  // just exposes it. Returns its boolean (count>0 / false); callers cache.
+  // just exposes it. §GANTT_REFOLD_HANG: injectGantt is async now — this returns a
+  // Promise<boolean>; callers must treat a thenable as "generating" (see navigate_find.js).
   window.tmGenerateTimeline = function() { return injectGantt(); };
 
   // §TM_STREAM_RESWEEP: streaming.js has no awareness of Time Machine — new BatchedMesh/

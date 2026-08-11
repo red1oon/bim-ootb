@@ -3564,6 +3564,13 @@
         var ok = false;
         try { ok = window.tmGenerateTimeline(); }
         catch(e) { console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator threw: ' + e.message + '" phases=0'); return null; }
+        if (ok && typeof ok.then === 'function') {
+          // §GANTT_REFOLD_HANG: the generator is async now (chunk-yielding injectGantt) — ops are
+          // not in kernel_ops yet. Report generating; the next Phase-axis open re-reads kernel_ops.
+          ok.then(function (good) { console.log('[RP-TB] §PHASE_LENS gen=real async-done ok=' + !!good + ' — reopen the Phase axis to read kernel_ops'); });
+          console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator running async (chunk-yield); reopen to load" phases=0');
+          return null;
+        }
         if (!ok) {
           console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator returned false (no elements)" phases=0');
           return null;
