@@ -4068,8 +4068,17 @@
     // the old hand-picked list (Beam/Member/Slab/'Furni'/'Wall') silently excluded every MEP/flow
     // class, so this line printed floating=0 while fans hung mid-air unaudited.
     var _auditN = _geoElements.length;
-    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null);
+    // §SUPPORT_UNCHECKED collector — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a (warn-only):
+    // big elements (bbox vol > ScheduleGate.BIG_ELEMENT_VOL, measured p95) that the audit found
+    // ZERO support candidates for — previously silent false-pass. Floating count/gating unchanged.
+    var _unchecked = [];
+    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null, null, _unchecked);
     console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
+    console.log('§SUPPORT_UNCHECKED_SUMMARY n=' + _unchecked.length + '/' + _auditN +
+      ' bigVol>' + (ScheduleGate.BIG_ELEMENT_VOL || 1.556) + 'm³ zero-candidate' +
+      ' buildingModelsSubstructure=' + (_unchecked.length ? _unchecked[0].buildingModelsSubstructure
+        : _geoElements.some(function (e) { return e.seq === 1; })) +
+      ' (warn-only — reported not gated, see §SPEC 2026-08-11 1a)');
 
     // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
     // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
@@ -4087,18 +4096,29 @@
     //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
     try {
       var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
-      var _rgGrid = {}, _rgSlabs = [];
+      // §SPEC 2026-08-11 1b (4D_SCHEDULE_PERFECTION.md, Witness: witness_big_element_support_
+      // coverage.js): widen the audited pool beyond IfcSlab — EVERY element above the measured p95
+      // bbox volume (ScheduleGate.BIG_ELEMENT_VOL = 1.556 m³, extracted 2026-08-11) is also audited
+      // against the walls carrying it, independent of class or promotion status — the load-path
+      // classifier's known depth-1 false negatives become visible here instead of reading clean.
+      // REPORTED, NOT GATED (own counter pair; existing roofSlabs gate + otherSlabs measurement
+      // byte-identical). 1c: Substructure (seq===1) exempt — rests on unmodeled soil.
+      var _rgBIGVOL = (ScheduleGate.BIG_ELEMENT_VOL || 1.556);
+      var _rgGrid = {}, _rgSlabs = [], _rgBig = [];
       for (var _rgi = 0; _rgi < elements.length; _rgi++) {
         var _e = elements[_rgi];
+        if (_e.cls !== 'IfcSlab' && _e.seq !== 1 &&
+            (_e.x1 - _e.x0) * (_e.y1 - _e.y0) * (_e.top_z - _e.base_z) > _rgBIGVOL) _rgBig.push(_e);
         if (_e.cls === 'IfcSlab') { _rgSlabs.push(_e); continue; }
         if (_e.cls.indexOf('IfcWall') !== 0) continue;
         for (var _gx = Math.floor(_e.x0 / _rgCELL); _gx <= Math.floor(_e.x1 / _rgCELL); _gx++)
           for (var _gy = Math.floor(_e.y0 / _rgCELL); _gy <= Math.floor(_e.y1 / _rgCELL); _gy++)
             (_rgGrid[_gx + ',' + _gy] = _rgGrid[_gx + ',' + _gy] || []).push(_e);
       }
-      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0;
-      _rgSlabs.forEach(function(S) {
-        var sc = _sched[S.guid]; if (!sc) return;
+      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0, _rgBigN = 0, _rgBigLate = 0;
+      // shared wall-carrier scan — slabs and 1b's big elements are tested against the SAME physics
+      var _rgLateVsWalls = function(S) {
+        var sc = _sched[S.guid]; if (!sc) return null;
         var maxEnd = 0, seen = {};
         for (var gx = Math.floor(S.x0 / _rgCELL); gx <= Math.floor(S.x1 / _rgCELL); gx++)
           for (var gy = Math.floor(S.y0 / _rgCELL); gy <= Math.floor(S.y1 / _rgCELL); gy++) {
@@ -4111,13 +4131,22 @@
               }
             }
           }
-        var late = (maxEnd > 0 && sc.start < maxEnd - 1);
+        return (maxEnd > 0 && sc.start < maxEnd - 1);
+      };
+      _rgSlabs.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
         if (S.seq > 4) { _rgRoofN++; if (late) _rgRoofLate++; }
         else { _rgOtherN++; if (late) _rgOtherLate++; }
       });
+      _rgBig.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
+        _rgBigN++; if (late) _rgBigLate++;
+      });
       console.log('§ROOF_GATE roofSlabs=' + _rgRoofN + ' lateVsWallCarriers=' + _rgRoofLate +
         ' (0=required) | otherSlabs=' + _rgOtherN + ' lateVsWallCarriers=' + _rgOtherLate +
-        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)');
+        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)' +
+        ' | bigElems=' + _rgBigN + ' lateVsWallCarriers=' + _rgBigLate +
+        ' (>' + _rgBIGVOL + 'm³ p95, non-slab non-Substructure — reported not gated, §SPEC 2026-08-11 1b)');
     } catch (e) { console.log('§ROOF_GATE error: ' + e.message); }
     // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
     // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the

@@ -37,6 +37,12 @@
   var CELL = 4;     // m — XY grid cell for the spatial support index
   var EPS  = 0.05;  // m — a support must start at least this far below me (excludes same-level peers)
   var GAP  = 0.5;   // m — audit: a support tops within this of my base (the thing I bear on)
+  // §SUPPORT_UNCHECKED — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 (1a), Witness:
+  // witness_big_element_support_coverage.js. "Big element" bbox-volume cutoff = the MEASURED p95 of
+  // bbox_x*bbox_y*bbox_z across 135,630 real elements in the 5 shipped buildings
+  // (Terminal/Hospital/Duplex/HHS/Clinic, extraction logged 2026-08-11; p99 was 11.808 m³ — same
+  // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
+  var BIG_ELEMENT_VOL = 1.556;  // m³
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
 
   function cellsOf(e) {
@@ -510,15 +516,30 @@
   // collectGuids (optional, §GANTT_LOCK_INTEGRITY): an array to receive the offending GUIDs so a
   // caller can NAME what floats (the lock-back "Integrity Breach" flag), not just count it. The
   // count return is unchanged for every existing caller.
-  function auditFloating(elements, sched, classFilter, collectGuids) {
+  // collectUnchecked (optional, §SUPPORT_UNCHECKED — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a):
+  // an array to receive {guid, cls, vol, buildingModelsSubstructure} for every element ABOVE
+  // BIG_ELEMENT_VOL for which the scoped-pool scan found ZERO support candidates (neither bearing
+  // nor hang) — the zero-candidate blind spot where `se===0` used to silently pass with literally
+  // no support check applied. WARN-ONLY: the floating count `v` (this function's return) and the
+  // floating flag are byte-identical to before — observability only, never a gate, until real
+  // occurrence counts on shipped buildings are known.
+  function auditFloating(elements, sched, classFilter, collectGuids, collectUnchecked) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
     for (i = 0; i < elements.length; i++) { var e = elements[i];
       if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
+    // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
+    // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is
+    // that exact test (SEQUENCE_RULES: only IfcFooting/IfcReinforcingBar carry sequence 1, both
+    // Substructure; no name-override assigns seq 1 — verified in rates/sequence_rules.json). false
+    // (Terminal/HHS today) means "this building never modeled a foundation layer at all — weight
+    // findings with that context," never hides or downgrades them.
+    var bms = false;
+    for (i = 0; i < elements.length; i++) { if (elements[i].seq === 1) { bms = true; break; } }
     var v = 0;
     for (i = 0; i < elements.length; i++) { var T = elements[i];
       if (classFilter && !classFilter(T)) continue;
-      var se = 0, hasBearing = false, seen = {}; cs = cellsOf(T);
+      var se = 0, hasBearing = false, hasHang = false, seen = {}; cs = cellsOf(T);
       var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
@@ -540,9 +561,23 @@
                 !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
                   T.base_z < S.base_z - EPS && T.top_z >= S.base_z - GAP) &&
                 overlap(S, T)) {
+              hasHang = true;
               var eh = sched[S.guid].end; if (eh > se) se = eh; } } }
       }
       if (se > 0 && sched[T.guid].start < se - 1) { v++; if (collectGuids) collectGuids.push(T.guid); }
+      // §SUPPORT_UNCHECKED (warn-only, additive) — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a/1c,
+      // Witness: witness_big_element_support_coverage.js. Zero candidates in EITHER scoped pool ⇒
+      // this element scheduled with NO support check applied at all (the seam a big element falls
+      // through). 1c exemption: seq===1 (phase==='Substructure') legitimately rests on unmodeled
+      // soil, never flagged. Does NOT touch v / the floating flag — observability only.
+      if (!hasBearing && !hasHang && T.seq !== 1) {
+        var _vol = (T.x1 - T.x0) * (T.y1 - T.y0) * (T.top_z - T.base_z);
+        if (_vol > BIG_ELEMENT_VOL) {
+          console.log('§SUPPORT_UNCHECKED guid=' + T.guid + ' cls=' + T.cls + ' vol=' + _vol.toFixed(3) +
+            ' buildingModelsSubstructure=' + bms);
+          if (collectUnchecked) collectUnchecked.push({ guid: T.guid, cls: T.cls, vol: _vol, buildingModelsSubstructure: bms });
+        }
+      }
     }
     return v;
   }
@@ -620,7 +655,7 @@
     return { zones: zones, edges: edges };
   }
 
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
