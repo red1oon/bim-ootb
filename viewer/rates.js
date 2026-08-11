@@ -160,6 +160,15 @@ var EQUIPMENT_ALLOCATION = {
 var SEQUENCE_RULES = {
   // Substructure
   IfcFooting:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
+  // §GAP_A_CLOSE (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — Witness:
+  // witness_big_element_support_coverage.js): IfcPile had a COST entry (RATES above) but no
+  // sequence rule, so a correctly-classed pile would fall to the DEFAULT (Architecture/seq 6) —
+  // structurally wrong for a foundation element. Latent today (no shipped building models IfcPile
+  // as its own class — Terminal's real piles are authored as IfcSlab and reclassed by the
+  // name-override below; verified again 2026-08-11, zero count change on all 5 buildings), but a
+  // future building that labels its piles correctly would have hit this silently. Mirrors
+  // IfcFooting exactly — a pile is Substructure, seq-1 (1c ground-bearing exempt).
+  IfcPile:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   IfcReinforcingBar:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   // Superstructure
   IfcColumn:{phase:'Superstructure',sequence:2,resource:'STEEL_ERECTOR'},
@@ -257,6 +266,28 @@ var SEQUENCE_NAME_OVERRIDES = [
     id: 'foundation_pile_misclassified_slab',
     classes: ['IfcSlab'],
     pattern: 'str-fo|\\bpile\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §SLAB_ON_GRADE_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md 250-followup
+  // — Witness: witness_big_element_support_coverage.js): slab-on-grade was NAMED in the original 1c
+  // spec ("IfcFooting/IfcPile/slab-on-grade rests on unmodeled soil") but only the class-level
+  // seq-1 rules ever implemented it — a slab-on-grade authored as plain IfcSlab lands at seq 4 and,
+  // being genuinely ground-bearing (fill between it and the footing tops), shows up as a
+  // §SUPPORT_UNCHECKED finding forever. Pattern MEASURED against every shipped buildings/*.db
+  // (2026-08-11, _logs discipline as the pile override above): under the IfcSlab class gate it
+  // matches exactly Duplex 4 ('127mm Slab on Grade' ×2 base −0.13, '150mm Exterior Slab on Grade'
+  // ×2 base −0.14) + Clinic 4 ('150mm Slab on Grade' ×3, '150mm Exterior…' ×1, bases −1.37..−0.15)
+  // and NOTHING else — every hit at true grade level over its building's footings, zero hits in
+  // Terminal/Hospital/HHS/JKR/LTU. (A 'Floor:150mm Slab on Grade' IfcOpeningElement exists in
+  // Clinic — excluded by the class gate.) Closes 4 of Duplex's 6 findings as correctly-exempt
+  // Substructure work, not by suppressing them but by naming what they are.
+  {
+    id: 'slab_on_grade_substructure',
+    classes: ['IfcSlab'],
+    pattern: 'slab[ _-]?on[ _-]?grade',
     flags: 'i',
     phase: 'Substructure',
     sequence: 1,

@@ -10,7 +10,8 @@
 // ruled them out — the 8-element floating tail is isolated-outlier noise); this witness targets the
 // coverage seam itself: for every big element in each shipped building, it must have ≥1 recorded
 // support candidate OR be Substructure-exempt (1c: seq===1 ⟺ phase==='Substructure' —
-// IfcFooting/IfcReinforcingBar only, verified 1:1 in rates/sequence_rules.json) — every remaining
+// IfcFooting/IfcPile/IfcReinforcingBar class rules + the 'foundation_pile_misclassified_slab' and
+// 'slab_on_grade_substructure' name-overrides, verified 1:1 in rates/sequence_rules.json) — every remaining
 // exception is COUNTED and LOCKED as a measured baseline below, split by the Gap-B annotation
 // buildingModelsSubstructure (annotate-don't-suppress: Terminal/HHS model NO foundation layer at
 // all, so their findings carry that context instead of being hidden or treated as equally alarming).
@@ -77,9 +78,19 @@ const BUILDINGS = [
   //   Duplex   big=49   unchecked=6   (IfcSlab:4,IfcWallStandardCase:2)     floating=0 (HELD)
   //   HHS      big=239  unchecked=13  (IfcSlab:5,IfcFlowSegment:3,…)        floating=0 (HELD)
   //   Clinic   big=442  unchecked=22  (IfcWallStandardCase:15,IfcMember:3,…) floating=1 (HELD)
+  // RE-MEASURED 2026-08-11 (closure pass, bigsup_after_fix.log) after the
+  // 'slab_on_grade_substructure' name-override (rates.js/sequence_rules.json — slab-on-grade is
+  // the 1c spec's own named ground-bearing class, pattern measured to exactly Duplex 4 + Clinic 4
+  // IfcSlab across every shipped DB, zero elsewhere): Duplex unchecked 6→2 / big 49→45 (its 4 SoG
+  // slabs — forensically ground-bearing, footing tops ~1.1m below over fill — now seq-1 exempt),
+  // Clinic big 442→440 (its SoG slabs already had bearing candidates; 2 were big; unchecked 22
+  // HELD), Terminal/Hospital/HHS byte-identical, per-building floating HELD (8/0/0/0/1). The
+  // IfcPile SEQUENCE_RULES entry added the same pass (Gap A close) changed nothing anywhere —
+  // latent by construction (no shipped building models the class; Terminal's real piles arrive
+  // via the IfcSlab name-override). TOTAL 250→246.
   { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 32 },   // was bms:false/279
   { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
-  { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 6 },
+  { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
   { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 13 },   // was 21
   { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
 ];
