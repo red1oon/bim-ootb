@@ -307,6 +307,35 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   var _photoFacadeLights = [];  // [{mid:{x,z}(three), normalThree:{x,z}, up:PointLight, down:PointLight}]
   var PHOTO_FACADE_UP_BASE = 9, PHOTO_FACADE_DOWN_BASE = 7;
+  // §CAM_LIGHT (user ask, 2026-08-11: LTU_AHouse MaxQ frames go near-black or blown-white when the
+  // cinema camera passes close to geometry — measured via real luminance extraction on
+  // BIM_MaxQ_LTU_AHouse_1786345850390.mp4, 12/76 sampled frames >15% near-black pixels). Root cause:
+  // fixture PLs (A._nightLights, real IfcLightFixture positions + synthetic per-storey fallback,
+  // tools.js §S259) are ROOM-anchored, not camera-anchored — a fixture lighting the kitchen does
+  // nothing for a camera pressed against a wall on the far side of the building. A short-range
+  // PointLight riding the camera fixes exactly that case. Direct light only, same as every other
+  // light already in this scene (no bounce anywhere in this pipeline — see PHOTOREAL_STILL_RENDER.md
+  // GI history) and deliberately SHORT distance so it is a no-op anywhere the camera isn't already
+  // close to a surface — not a general-purpose fill light, not meant to change any establishing shot.
+  var CAM_LIGHT_COLOR = 0xfff2e0, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
+  var CAM_LIGHT_FORWARD_OFFSET = 0.4;  // metres in front of the camera, toward the look target — off
+                                        // the lens itself so it doesn't floodlight whatever the near
+                                        // clip plane happens to be pressed against.
+  // Called once per captured/previewed frame, AFTER camera.position/controls.target are set for that
+  // frame (cinema_maxq.js's bake loop, effects.js's live Cinema Orbit step()) — same pose, no extra
+  // scene query. No-ops when A._camLight doesn't exist (i.e. outside photo staging).
+  function _updateCamLight(tx, ty, tz) {
+    if (!A._camLight) return;
+    var cx = A.camera.position.x, cy = A.camera.position.y, cz = A.camera.position.z;
+    var dx = tx - cx, dy = ty - cy, dz = tz - cz;
+    var len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    A._camLight.position.set(
+      cx + (dx / len) * CAM_LIGHT_FORWARD_OFFSET,
+      cy + (dy / len) * CAM_LIGHT_FORWARD_OFFSET,
+      cz + (dz / len) * CAM_LIGHT_FORWARD_OFFSET
+    );
+  }
+  A._updateCamLight = _updateCamLight;
   // §PHOTO_SKYLINE_SHADOW_FRUSTUM: shared with _enablePhotoShadows()'s frustum sizing below (search
   // the same name there) so the two can never drift apart again the way they did at introduction —
   // both the skyline ring's placement radius AND the shadow-camera frustum need the SAME multiplier
@@ -2471,6 +2500,32 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_SUN_ELEVATION = 6;    // was 8 — lower = longer/more dramatic dusk shadows, still above
                                    // Preetham's near-black cutoff (TM's own dawn/dusk boost kicks in <10°)
   var PHOTO_SUN_AZIMUTH = 200;
+  // §SUN_ARC (user ask, 2026-08-11: "high noon at the start, low angle by the end" — free realism
+  // from something the film already has, no new render cost). Alt+S (a single still, no film
+  // fraction) keeps PHOTO_SUN_ELEVATION exactly as before — this arc only applies where a tNorm
+  // already exists: the MaxQ bake loop (cinema_maxq.js) and the live Cinema Orbit preview
+  // (this file's startCinemaOrbit/step()). PHOTO_SUN_ELEVATION_END is deliberately the SAME value
+  // Alt+S already uses, so every other dusk-tuned constant (fog dayT blend, ground albedo, exposure
+  // cut) still lands on the exact look they were tuned against once the film reaches its last frame.
+  var PHOTO_SUN_ELEVATION_START = 55;  // "high noon" look for an establishing open — not 90 (a
+                                        // straight-down sun reads flat/shadowless on a building)
+  var PHOTO_SUN_ELEVATION_END = PHOTO_SUN_ELEVATION;
+  function _sunElevationAt(tNorm) {
+    return PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * tNorm;
+  }
+  // updateSky() repositions the sun/sky/fog/lensflare but does NOT touch the shadow map — it has no
+  // reason to, every OTHER caller (Time Machine, plain nav) already re-renders continuously. A film
+  // with a moving sun does not: shadowMap.autoUpdate is off by default (perf — see streaming.js/
+  // effects.js §PHOTO_SHADOW comments), so without this the sky/fog would visibly sweep noon→dusk
+  // while every shadow stayed frozen at whatever angle was last baked — worse than not animating at
+  // all, since the mismatch reads as a bug rather than a static look. Called every frame the sun
+  // moves, right after updateSky(), so no frame captures with a stale shadow angle.
+  function _sunArcStep(tNorm) {
+    if (!A.updateSky) return;
+    A.updateSky(_sunElevationAt(tNorm), PHOTO_SUN_AZIMUTH);
+    if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
+  }
+  A._sunArcStep = _sunArcStep;
   var PHOTO_ENVMAP_BOOST = 3.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
                                    // (history: 2.2 -> 3.2 -> 4.5 -> 3.0. The 4.5 step, combined with
@@ -3091,6 +3146,16 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§GROUND_COLOR_ORDER_FIX reasserted color=' + A.ground.material.color.r.toFixed(2) +
         ' gain=' + A._groundAlbedoGain.toFixed(2));
     }
+    // §CAM_LIGHT: created once, reused across staging sessions (cheap: one PointLight, no geometry).
+    if (!A._camLight) {
+      A._camLight = new THREE.PointLight(CAM_LIGHT_COLOR, CAM_LIGHT_INTENSITY, CAM_LIGHT_DISTANCE, CAM_LIGHT_DECAY);
+      // A shadow-casting light riding the camera would need its shadow map rebuilt every frame —
+      // exactly the per-frame cost this feature must not add (see §CAM_LIGHT note above).
+      A._camLight.castShadow = false;
+    }
+    A.scene.add(A._camLight);
+    console.log('§CAM_LIGHT on intensity=' + CAM_LIGHT_INTENSITY + ' distance=' + CAM_LIGHT_DISTANCE +
+      ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     _showPhotoProps(true);
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
@@ -3098,6 +3163,8 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoStagingOn) return;  // §PHOTO_DOUBLE_APPLY_GUARD: nothing staged, nothing to revert
     _photoStagingOn = false;
     A._photoStagingOn = false;
+    // §CAM_LIGHT: pull it back out of the scene — normal navigation never carries it.
+    if (A._camLight) { A.scene.remove(A._camLight); console.log('§CAM_LIGHT off'); }
     // §LAYER2_HDRI: restore the procedural envMap — the real HDRI is still cached for next time,
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
@@ -7596,6 +7663,8 @@ async function setupEffects(A, renderer, scene, camera) {
       A.camera.position.set(pose.x, pose.y, pose.z);
       A.controls.target.set(pose.tx, pose.ty, pose.tz);
       A.controls.update();
+      _updateCamLight(pose.tx, pose.ty, pose.tz);
+      _sunArcStep(tNorm);
       _reassertPhotoShadowCoverage();
       _reassertPhotoMatBoost();
       _reassertPhotoEnvMap();
