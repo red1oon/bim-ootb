@@ -104,7 +104,16 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     // the witness crashed ReferenceError on every post-#1272 run).
     const _names = ['_buildXrayElements', 'verifyGanttIntegrity'];
     if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) _names.unshift('_promoteRoofLoadPath');
-    sliced = _names.map(n => sliceFn(tmSrc, n)).join('\n');
+    // §MIDAIR_REPAIR (2026-08-12): the lock gate now ALSO judges "nothing appears before the first
+    // thing it touches" (_midairAudit → _contactGraph) — auditFloating's pools cannot see that
+    // population. Slice them when present, same both-commits pattern as _promoteRoofLoadPath above.
+    if (tmSrc.indexOf('function _midairAudit(') >= 0) _names.unshift('_contactGraph', '_midairAudit', '_midairRepair');
+    sliced = _names.map(n => sliceFn(tmSrc, n)).join('\n') +
+      (_names.indexOf('_midairRepair') >= 0
+        ? '\n' + (/var _TIER1_ORDER = \[[^\]]*\];/.exec(tmSrc) || [''])[0] +
+          '\nvar _lockBaseline = null;' + sliceFn(tmSrc, 'captureLockBaseline') +
+          '\nthis.__repair = _midairRepair; this.__capture = captureLockBaseline;'
+        : '');
   } catch (e) {
     assert(false, 'G-LI-2 slice failed (RED on main: ' + e.message + ')');
     finish();
@@ -133,11 +142,32 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const geoEls = els.filter(e => !(e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z));
   geoEls.forEach(e => { e.resource = e.cls; e.installSecs = 120; });
   const sched = ScheduleGate.computeSchedule(geoEls, 0, 1);
+  // §MIDAIR_REPAIR (2026-08-12): the app's kernel_ops carry the DISPLAY times — computeSchedule's
+  // output AFTER the repair (injectGantt's last step before the write). This fixture must be the
+  // same thing, or it tests a state the running app never has: the raw generative layer still
+  // contains the 5,561-element hanging population the repair exists to remove, so verifyGanttIntegrity
+  // would (correctly) refuse a lock that the live app never sees. Same shape as injectGantt's call.
+  if (typeof sandbox.__repair === 'function') {
+    const rItems = geoEls.map(e => ({ guid: e.guid, s: sched[e.guid].start, e: sched[e.guid].end,
+      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq, phase: e.phase }));
+    sandbox.__rItems = rItems;
+    vm.runInContext('this.__repair(this.__rItems);', sandbox);
+    rItems.forEach(it => { sched[it.guid].start = it.s; sched[it.guid].end = it.e; });
+  }
   sandbox._ops = geoEls.map(e => ({ timestamp: sched[e.guid].start, end_ts: sched[e.guid].end, output_guid: e.guid, input_guids: [e.guid] }));
 
+  // §GANTT_LOCK_DELTA (2026-08-12): the gate compares against the state editing STARTED from, not
+  // against absolute zero — `ok: n === 0` refused the lock on a freshly generated, UNEDITED
+  // schedule for 4 of the 7 shipped buildings (measured pre-repair auditFloating: Terminal 8,
+  // Clinic 1, JKR 81, LTU_AHouse 334 — the documented warn-only tails). Capture the baseline the
+  // way the shipped unlock handler does, then a clean schedule must verify ok BY DEFINITION, and
+  // only a WORSENING can breach. That is the property this witness now proves.
+  sandbox.__capture();
   const clean = sandbox.__verify();
-  assert(clean && clean.ok === true && clean.floating === 0,
-    'G-LI-2b clean engine schedule verifies ok (floating=' + (clean && clean.floating) + '/' + (clean && clean.total) + ' ms=' + (clean && clean.ms) + ')');
+  assert(clean && clean.ok === true && clean.dFloating === 0 && clean.dMidair === 0,
+    'G-LI-2b clean engine schedule verifies ok against its own edit-start baseline (floating=' +
+    (clean && clean.floating) + '/base=' + (clean && clean.baseFloating) + ' midair=' + (clean && clean.midair) +
+    '/base=' + (clean && clean.baseMidair) + ' total=' + (clean && clean.total) + ' ms=' + (clean && clean.ms) + ')');
 
   // Simulate the bad drag: take a floating-capable element (has a real bearing support that ends
   // late) and move its op to start at time 0 — before its support finishes. Find one empirically:
@@ -154,15 +184,18 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     op.timestamp = saved.t; op.end_ts = saved.e; saved = null;
   }
   assert(brokeGuid !== null, 'G-LI-2c a real bad drag is constructible on Duplex (moved ' + brokeGuid + ' to t=0)');
-  assert(breach && breach.ok === false && breach.floating > 0,
-    'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ')');
+  assert(breach && breach.ok === false && (breach.dFloating > 0 || breach.dMidair > 0),
+    'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ' +' +
+    (breach && breach.dFloating) + ', midair=' + (breach && breach.midair) + ' +' + (breach && breach.dMidair) + ')');
   assert(breach && breach.guids && breach.guids.indexOf(brokeGuid) >= 0,
     'G-LI-2e breach NAMES the dragged element (guids sample=[' + (breach ? breach.guids.slice(0, 3).join(',') : '') + '])');
 
   // Undo (restore the exact pre-edit values, what undoLastGanttEdit does) → verifies clean again.
   if (saved) { saved.op.timestamp = saved.t; saved.op.end_ts = saved.e; }
   const after = sandbox.__verify();
-  assert(after.ok === true && after.floating === 0, 'G-LI-2f after Undo the lock verifies ok again (floating=' + after.floating + ')');
+  assert(after.ok === true && after.dFloating === 0 && after.dMidair === 0,
+    'G-LI-2f after Undo the lock verifies ok again (floating=' + after.floating + '/base=' + after.baseFloating +
+    ' midair=' + after.midair + '/base=' + after.baseMidair + ')');
   db.close();
 
   /* ── G-LI-4: audit cost at Hospital scale (spec open-question 3, measured not guessed) ────── */

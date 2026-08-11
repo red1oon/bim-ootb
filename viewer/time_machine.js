@@ -4130,7 +4130,7 @@
       ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
     return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
       dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
-      base: base, end: endAll, extents: ext2 };
+      base: base, end: endAll, extents: ext2, exempt: _exempt };
   }
 
   // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
@@ -4180,12 +4180,14 @@
   // schedule that can fix it (it hangs at every instant, including the last frame). That is an
   // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
   // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
-  function _midairRepair(items) {
-    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
-    if (!items || !items.length) return stats;
-    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  // _contactGraph(items) — the one place the physical world is derived. Both the repair below and
+  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
+  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
+  // (x0,x1,y0,y1,bz,tz) only — times are read later, never here: geometry does not move.
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok }.
+  function _contactGraph(items) {
     var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
-    if (!SG || !SG.CELL) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    if (!SG || !SG.CELL) return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 };
     var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
     var n = items.length, i, j, k, c, S, T, arr, cs;
     var grid = {};
@@ -4196,8 +4198,8 @@
       return o;
     }
     for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
-    // contact graph + ground layer, built ONCE (geometry does not change as times shift)
     var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    var orphans = 0, groundedN = 0;
     for (i = 0; i < n; i++) {
       T = items[i]; cs = cellsOf(T);
       var lowest = Infinity, list = null;
@@ -4218,8 +4220,39 @@
       }
       grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
       contacts[i] = list;
-      if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
+      if (grounded[i]) groundedN++; else if (!list) orphans++;
     }
+    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
+  }
+
+  // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before the
+  // first element they touch appears. Used by verifyGanttIntegrity (the 🔓→🔒 lock gate) so a
+  // dragged bar that re-creates a hanging is REFUSED, not silently accepted — auditFloating alone
+  // cannot see this population (that is the whole §MIDAIR_REPAIR finding).
+  function _midairAudit(items) {
+    var out = { midair: 0, orphans: 0, guids: [], ok: true };
+    if (!items || !items.length) return out;
+    var G = _contactGraph(items);
+    if (!G.ok) return out;
+    out.orphans = G.orphans;
+    for (var i = 0; i < items.length; i++) {
+      var list = G.contacts[i]; if (!list || G.grounded[i]) continue;
+      var first = Infinity;
+      for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
+      if (first > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
+    }
+    out.ok = out.midair === 0;
+    return out;
+  }
+
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var G = _contactGraph(items);
+    if (!G.ok) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var contacts = G.contacts, grounded = G.grounded, n = items.length, i, k;
+    stats.orphans = G.orphans; stats.grounded = G.groundedN;
     var movedFlag = new Uint8Array(n), first, d, changed;
     // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
     // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
@@ -4254,23 +4287,57 @@
       }
       if (!changed) break;
     }
-    for (i = 0; i < n; i++) {                                      // honest residual after the cap
-      var list3 = contacts[i]; if (!list3 || grounded[i]) continue;
-      first = Infinity;
-      for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
-      if (first > items[i].s + 1) stats.residual++;
-      var firstE = Infinity;
-      for (k = 0; k < list3.length; k++) { var e3 = items[list3[k]].e; if (e3 < firstE) firstE = e3; }
-      if (firstE > items[i].s + 1) stats.strictResidual++;   // reported, not gated — see PASS 1 header
-    }
+    // ── THE TRADE THIS REPAIR MAKES, MEASURED — reported every run, never hidden (2026-08-12) ──
+    // Moving an element later so it stops hanging can leave a DEPENDENT starting before that (now
+    // later) support FINISHES — exactly what ScheduleGate.auditFloating counts. MEASURED across the
+    // repair on display times: Hospital 0→135, Clinic 1→356, LTU_AHouse 334→1100, Terminal 8→102,
+    // JKR 81→158, HHS 0→11, Duplex 0→9.
+    // AN ALTERNATING JOINT FIXPOINT WAS BUILT AND REJECTED ON ITS OWN NUMBERS: running the shipped
+    // _tierAuditRegate sweep after this repair and re-running the midair fixpoint after that does
+    // NOT converge — 4 rounds, 7,650 pushes, Hospital still ended 0→140, and the cost went 0.8s →
+    // 14.8s. The two rules genuinely fight (one is keyed on a contact's START, the other on a
+    // support's END, and the contact relation is not a DAG), so alternating them just walks the
+    // whole schedule later. Do not re-attempt that shape.
+    // WHY THIS REPAIR STILL SHIPS AS-IS: the two are not equally true to what a viewer sees.
+    // renderAtTime draws an element from its START (frontier = the lit work front), so an element
+    // arriving over a still-installing support is on screen resting on something; an element
+    // arriving over NOTHING is the defect the user reported. auditFloating's count was never the
+    // visual invariant — this repair's census proved it wrong in both directions (5,561 real
+    // hangings it could not see, at its own "0 floating"). The honest fix for both at once lives at
+    // the GATE layer (schedule_gate.js, where placement is DAG-ordered so both constraints can be
+    // taken as one Math.max), not in a post-hoc sweep. Named in
+    // prompts/4D_SCHEDULE_PERFECTION.md §STRUCT_POOL_UNGATED as the open, structural option.
+    // floatDelta below carries the number into every run's log so this trade can never go quiet.
+    stats.floatPre = 0; stats.floatPost = 0;
     stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    stats.residual = 0; stats.strictResidual = 0;
+    for (i = 0; i < n; i++) {
+      var lstF = contacts[i]; if (!lstF || grounded[i]) continue;
+      var fS = Infinity, fE = Infinity;
+      for (k = 0; k < lstF.length; k++) { var sF = items[lstF[k]].s, eF = items[lstF[k]].e;
+        if (sF < fS) fS = sF; if (eF < fE) fE = eF; }
+      if (fS > items[i].s + 1) stats.residual++;
+      if (fE > items[i].s + 1) stats.strictResidual++;
+    }
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.auditFloating) {
+      // the trade, measured on THIS run's own data (see the header): the older support-FINISHED
+      // count before vs after. Reported, never gated — a rise here is the known, named cost.
+      var _fm = {}, _fe = [];
+      for (i = 0; i < n; i++) { _fm[items[i].guid] = { start: items[i].s, end: items[i].e };
+        _fe.push({ guid: items[i].guid, cls: items[i].cls, seq: items[i].seq, x0: items[i].x0, x1: items[i].x1,
+          y0: items[i].y0, y1: items[i].y1, base_z: items[i].bz, top_z: items[i].tz }); }
+      var _q = console.log; console.log = function () {};
+      try { stats.floatPost = ScheduleGate.auditFloating(_fe, _fm); } catch (e) { stats.floatPost = -1; } finally { console.log = _q; }
+    }
     console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
       ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
       stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
       stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
       ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
       ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
-      ' grounded=' + stats.grounded + ' total=' + stats.total + ' ms=' + stats.ms);
+      ' grounded=' + stats.grounded + ' auditFloatingAfter=' + stats.floatPost +
+      ' (the measured trade — see this function\'s header; the gate-layer fix is the open structural option)' +
+      ' total=' + stats.total + ' ms=' + stats.ms);
     return stats;
   }
 
@@ -4305,10 +4372,49 @@
       if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
       audited.push(e);
     }
-    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, midair: 0, total: 0, guids: [], ms: ms() };
     var guids = [];
     var n = ScheduleGate.auditFloating(audited, sched, null, guids);
-    return { ok: n === 0, floating: n, total: audited.length, guids: guids, ms: ms() };
+    // §MIDAIR_REPAIR (2026-08-12) — the lock gate must judge by the SAME rule the generator
+    // enforces, or a planner's drag can re-create exactly the hangings the generated film has none
+    // of and the lock would still be granted: auditFloating's support pools (seq<=4 + promoted
+    // slabs + walls) cannot see an element whose real neighbours are outside them, nor any
+    // structure-pool member at all. Same _contactGraph, no mutation — REFUSING the lock is right
+    // here, where a human made the change and can undo it, whereas the generator repairs silently.
+    var mrItems = audited.map(function (e) {
+      var t = sched[e.guid];
+      return { guid: e.guid, s: t.start, e: t.end, bz: e.base_z, tz: e.top_z,
+        x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 };
+    });
+    var ma = _midairAudit(mrItems);
+    if (ma.midair && guids.length < 20) guids = guids.concat(ma.guids.slice(0, 20 - guids.length));
+    // §GANTT_LOCK_DELTA (2026-08-12) — the gate asks "did YOUR EDIT break physics", not "is the
+    // generator perfect". Absolute zero was the wrong test and was already wrong before
+    // §MIDAIR_REPAIR: measured pre-repair auditFloating on the shipped buildings was Terminal 8,
+    // Clinic 1, JKR 81, LTU_AHouse 334 (the documented warn-only tails — co-planar framing, mutual
+    // bearing, the §SUPPORT_CYCLE population), so `ok: n === 0` refused the lock on 4 of 7
+    // buildings on a FRESHLY GENERATED, UNEDITED schedule. A planner could never re-lock there.
+    // The reference is now the state captured when editing began (_lockBaseline, set on unlock):
+    // a breach is an INCREASE in either measure. Both counts are still reported absolutely, so the
+    // known tails stay visible instead of being defined away.
+    var base = _lockBaseline || { floating: n, midair: ma.midair };
+    return { ok: n <= base.floating && ma.midair <= base.midair,
+      floating: n, midair: ma.midair, baseFloating: base.floating, baseMidair: base.midair,
+      dFloating: n - base.floating, dMidair: ma.midair - base.midair,
+      total: audited.length, guids: guids, ms: ms() };
+  }
+
+  // §GANTT_LOCK_DELTA — the physics state at the moment editing STARTED. Captured on 🔒→🔓 so the
+  // lock-back comparison is against what the planner inherited, never against an ideal the shipped
+  // generator does not reach on every building. Null ⇒ verifyGanttIntegrity self-references (any
+  // first call is its own baseline), which is the safe direction: it can only refuse a WORSENING.
+  var _lockBaseline = null;
+  function captureLockBaseline() {
+    var v = verifyGanttIntegrity();
+    _lockBaseline = { floating: v.floating, midair: v.midair };
+    console.log('§GANTT_LOCK_BASELINE floating=' + v.floating + ' midair=' + v.midair +
+      ' total=' + v.total + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)');
+    return _lockBaseline;
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -6428,15 +6534,20 @@
             setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
               var v = verifyGanttIntegrity();
               if (!v.ok) {
-                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '/' + v.total + ' ms=' + v.ms +
+                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '(+' + v.dFloating + ') midair=' +
+                  (v.midair || 0) + '(+' + (v.dMidair || 0) + ')/' + v.total + ' ms=' + v.ms +
                   ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
                 if (lm) {
-                  lm.textContent = '⚠ Integrity Breach: ' + v.floating + ' floating — press ↺ Undo edit (or fix), then lock again';
+                  var _breach = [];
+                  if (v.dFloating > 0) _breach.push('+' + v.dFloating + ' floating');
+                  if (v.dMidair > 0) _breach.push('+' + v.dMidair + ' hanging in midair');
+                  lm.textContent = '⚠ Integrity Breach: ' + _breach.join(' + ') + ' — press ↺ Undo edit (or fix), then lock again';
                   lm.style.color = '#f66';
                 }
                 return;   // REFUSED — _ganttEditable stays true, nothing hidden
               }
-              console.log('§GANTT_LOCK_VERIFY ok floating=0/' + v.total + ' ms=' + v.ms +
+              console.log('§GANTT_LOCK_VERIFY ok floating=' + v.floating + '/base=' + v.baseFloating +
+                ' midair=' + v.midair + '/base=' + v.baseMidair + ' total=' + v.total + ' ms=' + v.ms +
                 (v.skipped ? ' skipped=' + v.skipped : ''));
               if (lm) { lm.textContent = ''; lm.style.color = ''; }
               _ganttEditable = false;
@@ -6445,6 +6556,7 @@
             return;
           }
           _ganttEditable = true;
+          captureLockBaseline();   // §GANTT_LOCK_DELTA: the state the planner inherited
           applyLockUi();
         });
       }
