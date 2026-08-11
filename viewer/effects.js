@@ -2784,8 +2784,20 @@ async function setupEffects(A, renderer, scene, camera) {
     // call order in _applyPhotoStaging below) — using the ORIGINAL toggleShadow() order (frustum
     // math before the sun is repositioned) would size this frustum for the wrong sun distance.
     var _sunDist = A.sun.position.distanceTo(_ctr);
-    A.sun.shadow.mapSize.width = 2048;
-    A.sun.shadow.mapSize.height = 2048;
+    // §PHOTO_SHADOW_RESOLUTION (2026-08-11, real user report: shadow "has no effect on the top
+    // fixtures... not thrown on roof"): §PHOTO_SUN_SHADOW_REACH above correctly widens _env to fit
+    // the building's own long shadow at low sun angles, but that widening spreads the SAME fixed
+    // texel budget more thinly across a bigger frustum -- small rooftop-scale objects (equipment,
+    // fixtures, ~1-2m) end up with only a handful of texels and their shadow washes out under PCF
+    // filtering, even though §PHOTO_SHADOW_FRUSTUM_COVERAGE already proves they're geometrically
+    // IN the frustum with castShadow=true. Doubling resolution here (2048->4096, 4x memory/render
+    // cost for the shadow pass) is deliberately scoped to THIS bake-only path, not A.toggleShadow's
+    // own 2048 (tools.js §S288: "quarters the texel cost of every shadow render" -- that number was
+    // chosen for a shadow mode active during CONTINUOUS live navigation, a cost/frame every frame;
+    // this path only ever runs during a deliberate Alt+S/MaxQ capture, never during normal nav, so
+    // the same cost concern does not apply here).
+    A.sun.shadow.mapSize.width = 4096;
+    A.sun.shadow.mapSize.height = 4096;
     A.sun.shadow.camera.near = Math.max(1, _sunDist * 0.05);
     A.sun.shadow.camera.far = _sunDist * 4;
     A.sun.shadow.camera.left = -_env;
