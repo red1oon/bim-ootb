@@ -2797,6 +2797,26 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A.ground) A.ground.receiveShadow = true;
     var _shadowList = [];
     A.scene.traverse(function(o) { if (o.isMesh || o.isInstancedMesh || o.isBatchedMesh) _shadowList.push(o); });
+    // §PHOTO_SHADOW_FRUSTUM_COVERAGE (2026-08-11, real user ask: "GIGO code witness logging must
+    // reveal" -- not another video/frame-extraction round-trip): direct geometric proof of whether
+    // the shadow camera can actually SEE the casting geometry, computed from live scene state, no
+    // render needed. A.sun.shadow.updateMatrices() forces the shadow camera's position/matrices to
+    // reflect the position/target JUST set above -- normally the renderer does this lazily before
+    // its own shadow pass, but nothing has rendered yet at this point in the function, so without
+    // this call the frustum test below would run against STALE (previous frame's) camera matrices.
+    A.sun.shadow.updateMatrices(A.sun);
+    var _frustum = new THREE.Frustum();
+    _frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(
+      A.sun.shadow.camera.projectionMatrix, A.sun.shadow.camera.matrixWorldInverse));
+    var _inFrustum = 0, _outFrustum = 0;
+    _shadowList.forEach(function(o) {
+      if (!o.visible) return;
+      if (o.geometry && !o.geometry.boundingSphere && o.geometry.computeBoundingSphere) o.geometry.computeBoundingSphere();
+      if (_frustum.intersectsObject(o)) _inFrustum++; else _outFrustum++;
+    });
+    console.log('§PHOTO_SHADOW_FRUSTUM_COVERAGE inFrustum=' + _inFrustum + ' outsideFrustum=' + _outFrustum +
+      ' (outsideFrustum = geometry the shadow camera cannot see right now, regardless of castShadow flags -- ' +
+      'nonzero here is a real, unfixed frustum-coverage gap; zero here rules frustum coverage OUT as the cause)');
     var _si = 0;
     (function _chunk() {
       var end = Math.min(_si + 5000, _shadowList.length);
