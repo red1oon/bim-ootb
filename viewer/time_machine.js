@@ -4076,6 +4076,25 @@
       dagWins += marked;
       if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
     }
+    // §TIER2_AFTER_TIER1 (2026-08-11, same-day correction — user's original words: "separate
+    // unrelated disciplines can run parallel THEREAFTER" — after Tier 1 finishes, not concurrent
+    // with it). Tier 1's TRUE completion is every backbone-phase element, straggler included —
+    // "ARCH/STR out of the way first" means literally all of it, not just the serializable part.
+    // Uniform later-shift only: safe by construction, since pushing every Tier-2 element later by
+    // the SAME amount preserves all of Tier 2's own internal order and only pushes starts further
+    // past their already-satisfied support minimum, never before it.
+    var tier1End = -Infinity, tier2MinStart = Infinity;
+    items.forEach(function (it) {
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) { if (it.e > tier1End) tier1End = it.e; }
+      else if (it.s < tier2MinStart) tier2MinStart = it.s;
+    });
+    var tier2Shift = 0;
+    if (isFinite(tier1End) && isFinite(tier2MinStart) && tier2MinStart < tier1End) {
+      tier2Shift = tier1End - tier2MinStart;
+      items.forEach(function (it) {
+        if (_TIER1_ORDER.indexOf(it.phase) < 0) { it.s += tier2Shift; it.e += tier2Shift; }
+      });
+    }
     var base = Infinity, endAll = -Infinity, ext2 = {};
     items.forEach(function (it) {
       if (it.s < base) base = it.s;
@@ -4093,9 +4112,11 @@
     console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
       ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
       ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
+      ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
+      ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
       ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
     return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
-      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length,
+      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
       base: base, end: endAll, extents: ext2 };
   }
 
