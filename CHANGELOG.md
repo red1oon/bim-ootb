@@ -4,6 +4,35 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.42.0](https://github.com/red1oon/bim-ootb/compare/v1.41.1...v1.42.0) (2026-08-11)
+
+
+### ✨ Features
+
+* **4d:** §SUPPORT_UNCHECKED — close the big-element zero-support-check seam (warn-only) ([#1277](https://github.com/red1oon/bim-ootb/issues/1277)) ([db3453d](https://github.com/red1oon/bim-ootb/commit/db3453d860f0b2a2f6a82b012abf1a7d3b30bfa4))
+* **modeller:** port §NOGEO_COMPOSE ghost-compose + §PATCH_CHUNK chunked patching to Modeller open path ([#1273](https://github.com/red1oon/bim-ootb/issues/1273)) ([b1ff61a](https://github.com/red1oon/bim-ootb/commit/b1ff61a8956c3d349770c5f20dd51c224ab1615e))
+
+
+### 🐛 Fixes
+
+* **4d:** §NOGEO_COMPOSE — Clinic's 43 ghosts (4th affected building, never on the list) ([#1267](https://github.com/red1oon/bim-ootb/issues/1267)) ([78353a2](https://github.com/red1oon/bim-ootb/commit/78353a281673fb25bb9f72bf05f15e0c454d01b3))
+* **4d:** §NOGEO_COMPOSE — geometry-less aggregate-parent elements + patch chunking ([#1263](https://github.com/red1oon/bim-ootb/issues/1263)) ([a081480](https://github.com/red1oon/bim-ootb/commit/a081480a6fa8bf3647d2d03f8ec663162ed3cd2d))
+* **4d:** §NOGEO_COMPOSE — HHS_Office_Federated's 41 geometry-less aggregate-parent elements ([#1265](https://github.com/red1oon/bim-ootb/issues/1265)) ([a863e8a](https://github.com/red1oon/bim-ootb/commit/a863e8a95456203d1668fe2ada60731652498eda))
+* **4d:** §NOGEO_COMPOSE — HHS_Office_Federated's 41 ghosts + a committed witness ([#1266](https://github.com/red1oon/bim-ootb/issues/1266)) ([bbb9e00](https://github.com/red1oon/bim-ootb/commit/bbb9e00f9ee600a6ac388d96fb202165933ccccd))
+* **4d:** §TM_GEO_ORDER_CYCLES — Terminal support-DAG cycles 37,927→0, floating 45→8 ([#1276](https://github.com/red1oon/bim-ootb/issues/1276)) ([268a85f](https://github.com/red1oon/bim-ootb/commit/268a85f5ad1094a565e08531835d86e61863501c))
+* **4d:** sync buildings/patches/HHS_Office_Federated_extracted.db.sql to the served copy ([#1269](https://github.com/red1oon/bim-ootb/issues/1269)) ([560a057](https://github.com/red1oon/bim-ootb/commit/560a0577303db90e07676f09b8f9348b13f3235f))
+* **viewer:** chunk the needle-path patch apply — un-chunked 9,466-statement run bricked the wasm heap ([#1271](https://github.com/red1oon/bim-ootb/issues/1271)) ([ae68f7a](https://github.com/red1oon/bim-ootb/commit/ae68f7a763ebdb2080b5c46dcf69a4dda74dbed5))
+
+
+### 📝 Documentation
+
+* **prompts:** SHORTCUT_AUDIT_AND_GATE_NOISE_STUDY — add Phase 0 witness-harness precursor ([#1275](https://github.com/red1oon/bim-ootb/issues/1275)) ([724451f](https://github.com/red1oon/bim-ootb/commit/724451fdd262b696b4c1f89302978026fa6ae9d6))
+
+
+### ♻️ Refactors
+
+* **4d:** consolidate roof/load-path promotion classifier into _promoteRoofLoadPath + §TM_GEO_ORDER_CYCLES_REPRO witness ([#1272](https://github.com/red1oon/bim-ootb/issues/1272)) ([6239929](https://github.com/red1oon/bim-ootb/commit/623992999011cca8c9cb55ffdddb717dbb48196a))
+
 ## [1.41.1](https://github.com/red1oon/bim-ootb/compare/v1.41.0...v1.41.1) (2026-08-08)
 
 
