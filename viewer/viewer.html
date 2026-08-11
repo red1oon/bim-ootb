@@ -1038,6 +1038,39 @@ if('serviceWorker' in navigator){
   } else {
     console.log('§BUILD_VERSION (no active controller yet — reload once to confirm)');
   }
+  // §SWUPDATE_TOAST (2026-08-11, per prompts/GLASSBOWL_SWUPDATE.md's already-designed pattern,
+  // ported here rather than reinvented): a real user hit the gap this spec exists for -- SW
+  // CACHE_VERSION bumps in the background, but an already-open tab keeps running its already-
+  // imported JS modules until a fresh navigation. No listener existed to tell the user a new
+  // version had landed, so the fix was "clear site data" (which also wipes IndexedDB -- the
+  // cached building DB -- collateral damage the user rightly objected to). This is the missing
+  // half: sw.js already calls self.skipWaiting() unconditionally on install, so the new worker
+  // activates and claims control on its own -- listening for `controllerchange` is enough, no
+  // message-roundtrip needed. NEVER auto-reload silently (could interrupt a live MaxQ bake) --
+  // only a tap reloads, matching the spec's rule 4.
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (window.__swReloaded) return;  // one-shot guard, never loop
+    console.log('§SWUPDATE_TOAST controllerchange — new version active, showing toast');
+    var t = document.createElement('div');
+    t.id = 'swUpdateToast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);' +
+      'background:#222;color:#fff;padding:10px 16px;border-radius:8px;font:13px sans-serif;' +
+      'z-index:99999;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4);display:flex;' +
+      'align-items:center;gap:10px;';
+    var label = document.createElement('span');
+    label.textContent = 'Update ready — tap to refresh';
+    var close = document.createElement('span');
+    close.textContent = '✕';
+    close.style.cssText = 'opacity:.6;padding:0 2px;';
+    close.addEventListener('click', function(e){ e.stopPropagation(); t.remove(); });
+    t.appendChild(label); t.appendChild(close);
+    t.addEventListener('click', function(){
+      window.__swReloaded = true;
+      console.log('§SWUPDATE_TOAST tapped — reloading');
+      location.reload();
+    });
+    document.body.appendChild(t);
+  });
 }
 // §S283: Capture beforeinstallprompt early — scene.js reads window._installPrompt
 window._installPrompt = null;
