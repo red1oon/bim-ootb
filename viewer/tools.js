@@ -949,7 +949,18 @@ function setupTools(A) {
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
   var NIGHT_LIGHT_INTENSITY = 2.5; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08 (user: still too bright to make out individual PLs)
-  var NIGHT_LIGHT_DECAY = 1.5; // §S277d: between linear (1) and quadratic (2) — reaches further than physics
+  // §NIGHT_LIGHT_NEARFIELD (2026-08-13, user: "bright lighting up surrounding when afar, but when
+  // near not evident"). Confirmed against three.module.min.js's own shader (not guessed):
+  // `getDistanceAttenuation` = 1 / max(pow(lightDistance, decayExponent), 0.01) — no lower
+  // distance clamp beyond that 0.01 floor (~4.6cm). At decay=1.5, falloff hits ~11.2x base
+  // intensity at 0.2m and ~2.8x at 0.5m; under ACESFilmic tonemapping (exposure=0.45) that's
+  // enough to clip a close surface to a flat/blown highlight instead of a readable graded glow —
+  // reading as "nothing visible" up close for the opposite reason of being too dim. Lowered
+  // 1.5->1.0 (linear): same maths at 0.2m/0.5m falls to ~5x/2x instead of ~11.2x/2.8x, AND at long
+  // range decay=1.0 falls off SLOWER than 1.5 (reaches further, not less), so the "bright from
+  // afar" character this is deliberately NOT trading away. First-pass value, like every other
+  // constant in this file — verify live, no pixel-level A/B run (would need a real close-up bake).
+  var NIGHT_LIGHT_DECAY = 1.0; // was 1.5 — between linear (1) and quadratic (2), reaches further than physics
 
   // §NIGHT_GLOW_REASSERT: extracted from toggleNightMode() so it can be re-called every frame
   // while night mode / photo-staging is active — see the comment at its call site below for why.
