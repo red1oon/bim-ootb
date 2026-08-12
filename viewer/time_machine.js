@@ -5009,14 +5009,27 @@
       }
       return { avgLength: {}, length: {} };
     })();
+    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of _lin. Same single-source-of-truth wrapper
+    // shape as the two above; without it the live movie charges a 78m wall exactly what it charges
+    // a 1m one, which is what "ARCH comes on too fast" looks like on screen.
+    var _area = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._areaWeighting) {
+        return window.ScheduleAuthor._areaWeighting(db, window.RATES || {}, _frag.fragmented, SR, SD, NO, LR);
+      }
+      console.warn('§TM_AREA_WEIGHT_FALLBACK ScheduleAuthor not loaded — M2 classes NOT area-weighted');
+      return { avgArea: {}, area: {} };
+    })();
     function getInstallSecs(cls, rule, guid, bx, by, bz) {
       rule = rule || matchRule(cls);
       var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
       var hasGeom = bx > 0 || by > 0 || bz > 0;
       var clsAvgLen = _lin.avgLength[cls];
       var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0) ? Math.max(bx, by, bz) / clsAvgLen : null;
+      var clsAvgArea = _area.avgArea[cls];
+      var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
+                       _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
       if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
-        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       var resource = rule.resource;
