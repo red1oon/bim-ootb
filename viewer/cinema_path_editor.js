@@ -2991,6 +2991,14 @@
         console.warn('§CPE_SKIP no waypoints to seed bands from — proceeding unchanged');
         return resolve({ action: 'ok', override: null, durationSec: ctx.durationSec });
       }
+      // §TM_WARM (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c, R4(a) — user ruling
+      // 2026-08-12 "warm data only, never activate"): the editor is the strongest available signal
+      // that a ▶ Play is coming, so precompute TM's DB-derived x-ray elements on IDLE now instead
+      // of on the click. This does NOT open Time Machine — G-CPE-SOLE-OWNER is intact; see
+      // tmWarmXrayElements' own header for the contract and the baseline-perf guard (pure idle, no
+      // timeout, no fallback timer, self-skipping) that keeps it off the editing path.
+      try { if (typeof window.tmWarmXrayElements === 'function') window.tmWarmXrayElements(); } catch (e) {}
+
       // §CPE_REOPEN_DOUBLE (CINEMA_PATH_EDITOR.md — user: "it seems to dupe more bars upon alt-c
       // cancel and resume"). ADOPT the authored bands when the plan was built from them; only SEED
       // when there are none. The two functions have reciprocal fan-out — _cinemaSeedBands emits one
