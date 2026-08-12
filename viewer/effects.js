@@ -3454,8 +3454,13 @@ async function setupEffects(A, renderer, scene, camera) {
   // 4/12→8, denoiseRadius 6→12 below) to cut residual noise too — free here, this is an offline
   // accumulate, not a real-time cost. First-pass pixel radius, like every other value here — verify
   // live on the next round trip, not with a synthetic re-A/B.
+  // §PHOTO_AO_EDGE (2026-08-13, same-day 3rd round: user, after §PHOTO_AO_SCALE cleared the
+  // darkness, "completely no edge corner shadow"): intensity had been sitting at 2 (down from the
+  // original 6) since the first retune and was never revisited when the radius mechanism changed —
+  // too weak to read at all once the broad-area darkening was gone. One controlled step up, not
+  // back to 6. STILL_AO_RADIUS left unchanged — single-variable change, easy to read next round.
   var STILL_AO_RADIUS = 32;       // pixels (screenSpaceRadius mode), not metres
-  var STILL_AO_INTENSITY = 2;
+  var STILL_AO_INTENSITY = 4;
   var _stillAOPromise = null, _stillAORAF = null, _stillAODepthDirty = true;
   function _buildStillAO() {
     return Promise.all([

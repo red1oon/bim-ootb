@@ -49,7 +49,13 @@ async function setupGIPoc(A, renderer, scene, camera) {
       n8aoPass.configuration.screenSpaceRadius = true;
       n8aoPass.configuration.aoRadius = 32;       // pixels (16-64 recommended range), not metres
       n8aoPass.configuration.distanceFalloff = 0.2;
-      n8aoPass.configuration.intensity = 2;
+      // §PHOTO_AO_EDGE (2026-08-13, same-day 3rd round: user, after §PHOTO_AO_SCALE cleared the
+      // darkness, "completely no edge corner shadow"): intensity had been sitting at 2 (down from
+      // the original 6) since the very first retune and was never revisited when the radius
+      // mechanism changed to screenSpaceRadius — too weak to read at all once the broad-area
+      // darkening was gone. One controlled step up, not back to 6. aoRadius (32px) left unchanged
+      // — this is a single-variable change so the next round trip is easy to read.
+      n8aoPass.configuration.intensity = 4;
       n8aoPass.configuration.aoSamples = 8;       // still-preview budget, not tuned for real-time nav
       // §GI_POC_GHOST_FIX: N8AO's accumulationRenderTarget is ONLY cleared on camera movement when
       // configuration.accumulate=true (read from n8ao's own source — the `else` branch that calls

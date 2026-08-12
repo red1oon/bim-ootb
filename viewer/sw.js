@@ -8,7 +8,12 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1017';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1018';   // bump on each deploy; per-change detail is the git commit message.
+// v1018 (2026-08-13) §PHOTO_AO_EDGE: N8AO intensity 2->4 in effects.js/effects_gi_poc.js (corner/
+// edge contact shadow had gone invisible after the v1016 screenSpaceRadius fix) — bump so
+// returning browsers get the new intensity instead of a cached pre-fix pass. This PR's own v1017
+// collided with #1333's independent same-day bump (kept below, per this file's own KEEP-BOTH/
+// take-the-higher merge convention) — took one past it.
 // v1017 (2026-08-13) §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS: 4D schedule generation changed
 // (schedule_gate.js computeSchedule's crew shift + time_machine.js's Tier-2 remap) — bump so
 // returning browsers regenerate instead of replaying a cached pre-fix schedule/asset set.
