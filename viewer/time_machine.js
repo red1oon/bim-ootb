@@ -4992,6 +4992,16 @@
       console.warn('§TM_AREA_WEIGHT_FALLBACK ScheduleAuthor not loaded — M2 classes NOT area-weighted');
       return { avgArea: {}, area: {} };
     })();
+    // §VOL_WEIGHT (2026-08-12) — the M3 twin, wired here for the same reason §HEAVY_MEMBER_SPEED_LIMIT
+    // had to be: the wizard path getting a weighting the live playback clock does not is exactly the
+    // fork §TM_DURATION_SYNC exists to prevent. Inert while no shipped class is priced M3 (see
+    // schedule_author.js _volumeWeighting header) — wired now so a repricing needs no code change.
+    var _vol = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._volumeWeighting) {
+        return window.ScheduleAuthor._volumeWeighting(db, window.RATES || {}, _frag.fragmented, SR, SD, NO, LR);
+      }
+      return { avgVolume: {}, volume: {} };
+    })();
     function getInstallSecs(cls, rule, guid, bx, by, bz) {
       rule = rule || matchRule(cls);
       var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
@@ -5001,8 +5011,11 @@
       var clsAvgArea = _area.avgArea[cls];
       var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
                        _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
+      var clsAvgVol = _vol.avgVolume[cls];
+      var volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
+                         clsAvgVol > 0 && _vol.volume[guid] > 0) ? _vol.volume[guid] / clsAvgVol : null;
       if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
-        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio);
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio, volumeRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       var resource = rule.resource;

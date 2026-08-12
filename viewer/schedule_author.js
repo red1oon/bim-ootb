@@ -59,7 +59,9 @@
   // by its class's real average length. A flat per-unit rate assumes every element is "typical
   // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
   // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
-  function _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio) {
+  // `areaRatio` / `volumeRatio` (optional) — the M2 and M3 twins of lengthRatio (§ARCH_AREA_WEIGHT,
+  // §VOL_WEIGHT below): same ratio-to-class-average form, on dominant-face area and on bbox volume.
+  function _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio, volumeRatio) {
     var resource = rule && rule.resource;
     if (!resource || !laborRates[resource]) return 120;
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
@@ -71,13 +73,15 @@
     var secsPerUnit = 28800 / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
-    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of lengthRatio. Same REDISTRIBUTION form, and
-    // that form is the whole safety argument: ratio = thisArea / classAvgArea, so mean(ratio)=1 by
-    // construction and a class's total labour is preserved exactly. Do NOT confuse it with the
+    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of lengthRatio; §VOL_WEIGHT below is the M3 one,
+    // so all three sized units now redistribute instead of charging flat. Same REDISTRIBUTION form,
+    // and that form is the whole safety argument: ratio = thisArea / classAvgArea, so mean(ratio)=1
+    // by construction and a class's total labour is preserved exactly. Do NOT confuse it with the
     // realQty branch two lines up, which MULTIPLIES by absolute area — _classFragmentation's own
     // header records what that does to a non-fragmented class: "measured: IfcWall would jump from
     // ~14 days to 563 days."
     if (areaRatio != null) return Math.round(secsPerUnit * areaRatio);
+    if (volumeRatio != null) return Math.round(secsPerUnit * volumeRatio);
     return Math.round(secsPerUnit);
   }
 
@@ -109,6 +113,10 @@
     "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
     "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
     "ELSE MAX(t.bbox_x,t.bbox_y) END";
+  // §VOL_WEIGHT — the M3 quantity expression. Byte-identical to the `vol` column foldCost (this
+  // file) already computes for M3-priced cost, which is what makes it canonical here rather than
+  // a second, differently-derived volume.
+  var _VOL_EXPR = 't.bbox_x*t.bbox_y*t.bbox_z';
   function _classFragmentation(db, qsRates) {
     var out = { fragmented: {}, area: {} };
     qsRates = qsRates || {};
@@ -281,6 +289,92 @@
     return out;
   }
 
+  // §VOL_WEIGHT (2026-08-12 — Witness: viewer/tests/witness_arch_area_weight.js G-VOL-*) ─────────
+  // The third and last sized unit. _linearWeighting owns `unit === 'M'`, _areaWeighting owns
+  // `unit === 'M2'`; a class priced `unit === 'M3'` (volume — footings, pads, and other heavy
+  // cast/bulk items) still fell through every branch of _installSecs to the flat
+  // `28800/productivity`, so a tiny pad footing and a massive raft footing charged the SAME install
+  // time. Same complaint that drove the M2 fix, user live: "They are heavy items should take longer
+  // relatively to MEP etc."
+  //
+  // ⚠ MEASURED SHIPPED-DATA REALITY (2026-08-12) — read this before expecting it to fire: NO class
+  // in the shipped rates model is priced M3 today. rates.js RATES is 32 EA / 11 M / 7 M2 / 1 KG,
+  // and all 17 rates/*.json templates carry the identical split (0 M3 in every one). So this path
+  // selects ZERO classes on shipped data and is INERT by construction until a class is repriced to
+  // M3 — via the Settings JSON editor, a rate template, or rates.js. It is not speculative code:
+  // `unit === 'M3'` is already a live branch in foldCost (this file) and analysis_sidecar.js
+  // compute5D, so the cost side has honoured M3 all along and only the LABOUR side was missing it.
+  // The real case waiting on it is IfcFooting — measured 821 elements across Hospital/LTU_AHouse/
+  // Clinic spanning 0.26..602.09 m³ (2320x) while priced `unit:'EA'` (rates.js:49), i.e. all 821
+  // charge one identical install time today. Repricing it is a rates DATA decision, deliberately
+  // NOT made here.
+  //
+  // Every safety property of _areaWeighting is reproduced verbatim: the fragmented-class exclusion
+  // (no double-weighting), the `> 0` zero-guard (a zero bbox dimension makes volume 0 — those fall
+  // through to flat rather than being charged ZERO install time, the bug that halved HHS IfcPlate),
+  // the rate-uniformity scan (mixed-rate classes degrade to flat), and mean(ratio)=1 so a class's
+  // total labour is preserved exactly. Generic by construction — no class is named in the logic.
+  function _volumeWeighting(db, qsRates, fragmented, rules, dflt, nameOverrides, laborRates) {
+    var out = { avgVolume: {}, volume: {} };
+    qsRates = qsRates || {}; fragmented = fragmented || {};
+    var m3 = [];
+    for (var cls in qsRates) {
+      if (qsRates[cls] && qsRates[cls].unit === 'M3' && !fragmented[cls]) m3.push(cls);
+    }
+    if (!m3.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      // The average MUST be taken over exactly the elements that will receive a ratio, or
+      // mean(ratio) != 1 and the class total moves — the one thing this form exists to prevent.
+      r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _VOL_EXPR + ') FROM elements_meta m ' +
+        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(m3) + ') GROUP BY m.ifc_class');
+    } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
+    var have = [], mixed = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgVolume[cls] = avg; have.push(cls); }
+      });
+    }
+    if (!have.length) return out;
+    // Rate-uniformity scan — one pass, only over the candidate classes.
+    if (rules && laborRates) {
+      var keep = [];
+      have.forEach(function (cls) {
+        var er;
+        try {
+          er = db.exec("SELECT COALESCE(m.element_name,'') FROM elements_meta m WHERE m.ifc_class='" +
+            cls.replace(/'/g, "''") + "'");
+        } catch (e) { return; }
+        if (!er.length || !er[0].values.length) return;
+        var first = null, uniform = true;
+        for (var i = 0; i < er[0].values.length; i++) {
+          var rl = matchNameOverride(cls, er[0].values[i][0], nameOverrides || []) ||
+                   matchRule(cls, rules, dflt);
+          var sc = _installSecs(cls, rl, laborRates, null, null);
+          if (first === null) first = sc;
+          else if (sc !== first) { uniform = false; break; }
+        }
+        if (uniform) keep.push(cls); else { mixed.push(cls); delete out.avgVolume[cls]; }
+      });
+      have = keep;
+      if (mixed.length) console.log('§VOL_WEIGHT_SKIP mixed-rate classes left FLAT: ' + mixed.join(',') +
+        ' — a class total is only preserved when every element shares one secsPerUnit');
+      if (!have.length) return out;
+    }
+    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+      'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
+    if (vr.length && vr[0].values.length) vr[0].values.forEach(function (row) { out.volume[row[0]] = row[1] || 0; });
+    console.log('§VOL_WEIGHT classes=' + have.length + ' [' +
+      have.map(function (c) { return c + ':avg=' + out.avgVolume[c].toFixed(2) + 'm3'; }).join(', ') +
+      '] — real VOLUME redistributes each class\'s existing flat total (mean ratio 1.0, class total unchanged), ' +
+      'so a raft footing no longer installs as fast as a pad');
+    return out;
+  }
+
   // YYYY-MM-DD a given number of whole days after a base date string. Pure UTC arithmetic so
   // it is deterministic regardless of host timezone (no Date.now / locale dependence).
   function _addDays(baseStr, days) {
@@ -350,6 +444,7 @@
     var _frag = _classFragmentation(db, qsRates);
     var _lin = _linearWeighting(db, qsRates);
     var _area = _areaWeighting(db, qsRates, _frag.fragmented, rules, dflt, nameOverrides, laborRates);   // §ARCH_AREA_WEIGHT
+    var _vol = _volumeWeighting(db, qsRates, _frag.fragmented, rules, dflt, nameOverrides, laborRates);  // §VOL_WEIGHT
 
     // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
     // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
@@ -410,12 +505,18 @@
       var clsAvgArea = _area.avgArea[cls];
       var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
                        _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
+      // §VOL_WEIGHT: same discipline again. A class carries exactly one rates unit, so M2 and M3
+      // are mutually exclusive in practice — the full guard chain is kept anyway so precedence
+      // stays explicit rather than relying on that invariant holding forever.
+      var clsAvgVol = _vol.avgVolume[cls];
+      var volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
+                         clsAvgVol > 0 && _vol.volume[guid] > 0) ? _vol.volume[guid] / clsAvgVol : null;
       return {
         guid: guid, cls: cls, name: name, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
         seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
-        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio),
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio, volumeRatio),
         // §4D_NOGEO (2026-08-07, mirrors time_machine.js's own pool — this function's header says
         // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
         // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
@@ -1634,6 +1735,7 @@
     _classFragmentation: _classFragmentation,
     _linearWeighting: _linearWeighting,
     _areaWeighting: _areaWeighting,
+    _volumeWeighting: _volumeWeighting,
     FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,
