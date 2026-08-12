@@ -13,302 +13,302 @@
     "IfcDuct": {
       "rate": 5800,
       "unit": "M",
-      "desc": "\u4e9c\u925b\u92fc\u677f\u30c0\u30af\u30c8\uff08\u5e73\u5747400mm\uff09",
+      "desc": "亜鉛鋼板ダクト（平均400mm）",
       "smm_section": "U10"
     },
     "IfcDuctSegment": {
       "rate": 5800,
       "unit": "M",
-      "desc": "\u30c0\u30af\u30c8\u30bb\u30b0\u30e1\u30f3\u30c8",
+      "desc": "ダクトセグメント",
       "smm_section": "U10"
     },
     "IfcDuctFitting": {
       "rate": 12500,
       "unit": "EA",
-      "desc": "\u30c0\u30af\u30c8\u7d99\u624b\uff08\u30a8\u30eb\u30dc\u3001\u30c6\u30a3\u30fc\uff09",
+      "desc": "ダクト継手（エルボ、ティー）",
       "smm_section": "U10"
     },
     "IfcPipe": {
       "rate": 2200,
       "unit": "M",
-      "desc": "\u914d\u7ba1\uff08SGP/VP \u5e73\u5747100mm\uff09",
+      "desc": "配管（SGP/VP 平均100mm）",
       "smm_section": "S10"
     },
     "IfcPipeSegment": {
       "rate": 2200,
       "unit": "M",
-      "desc": "\u914d\u7ba1\u30bb\u30b0\u30e1\u30f3\u30c8",
+      "desc": "配管セグメント",
       "smm_section": "S10"
     },
     "IfcPipeFitting": {
       "rate": 4500,
       "unit": "EA",
-      "desc": "\u914d\u7ba1\u7d99\u624b",
+      "desc": "配管継手",
       "smm_section": "S10"
     },
     "IfcCableCarrier": {
       "rate": 3800,
       "unit": "M",
-      "desc": "\u30b1\u30fc\u30d6\u30eb\u30e9\u30c3\u30af\uff08300mm\uff09",
+      "desc": "ケーブルラック（300mm）",
       "smm_section": "V20"
     },
     "IfcCableCarrierSegment": {
       "rate": 3800,
       "unit": "M",
-      "desc": "\u30b1\u30fc\u30d6\u30eb\u30e9\u30c3\u30af\u30bb\u30b0\u30e1\u30f3\u30c8",
+      "desc": "ケーブルラックセグメント",
       "smm_section": "V20"
     },
     "IfcBeam": {
       "rate": 28000,
       "unit": "M",
-      "desc": "\u69cb\u9020\u7528H\u5f62\u92fc\u6881",
+      "desc": "構造用H形鋼梁",
       "smm_section": "G10"
     },
     "IfcColumn": {
       "rate": 52000,
       "unit": "M",
-      "desc": "\u69cb\u9020\u7528\u92fc\u67f1",
+      "desc": "構造用鋼柱",
       "smm_section": "G10"
     },
     "IfcSlab": {
       "rate": 12800,
       "unit": "M2",
-      "desc": "RC\u5e8a\u7248 250mm",
+      "desc": "RC床版 250mm",
       "smm_section": "E10"
     },
     "IfcWall": {
       "rate": 6500,
       "unit": "M2",
-      "desc": "\u30b3\u30f3\u30af\u30ea\u30fc\u30c8\u30d6\u30ed\u30c3\u30af\u58c1 150mm",
+      "desc": "コンクリートブロック壁 150mm",
       "smm_section": "F10"
     },
     "IfcWallStandardCase": {
       "rate": 6500,
       "unit": "M2",
-      "desc": "\u6a19\u6e96\u58c1",
+      "desc": "標準壁",
       "smm_section": "F10"
     },
     "IfcCurtainWall": {
       "rate": 35000,
       "unit": "M2",
-      "desc": "\u30ab\u30fc\u30c6\u30f3\u30a6\u30a9\u30fc\u30eb",
+      "desc": "カーテンウォール",
       "smm_section": "H10"
     },
     "IfcCovering": {
       "rate": 8500,
       "unit": "M2",
-      "desc": "\u5e8a\u30fb\u5929\u4e95\u4ed5\u4e0a\u3052",
+      "desc": "床・天井仕上げ",
       "smm_section": "M10"
     },
     "IfcRoof": {
       "rate": 11500,
       "unit": "M2",
-      "desc": "\u91d1\u5c5e\u5c4b\u6839",
+      "desc": "金属屋根",
       "smm_section": "H60"
     },
     "IfcLightFixture": {
       "rate": 18500,
       "unit": "EA",
-      "desc": "LED\u7167\u660e\u5668\u5177",
+      "desc": "LED照明器具",
       "smm_section": "V40"
     },
     "IfcOutlet": {
       "rate": 5800,
       "unit": "EA",
-      "desc": "\u30b3\u30f3\u30bb\u30f3\u30c8",
+      "desc": "コンセント",
       "smm_section": "V20"
     },
     "IfcDoor": {
       "rate": 125000,
       "unit": "EA",
-      "desc": "\u5efa\u5177\u30bb\u30c3\u30c8",
+      "desc": "建具セット",
       "smm_section": "L20"
     },
     "IfcWindow": {
       "rate": 72000,
       "unit": "EA",
-      "desc": "\u7a93",
+      "desc": "窓",
       "smm_section": "L10"
     },
     "IfcBuildingElementProxy": {
       "rate": 35000,
       "unit": "EA",
-      "desc": "\u305d\u306e\u4ed6\u8981\u7d20",
+      "desc": "その他要素",
       "smm_section": "P10"
     },
     "IfcFlowTerminal": {
       "rate": 145000,
       "unit": "EA",
-      "desc": "\u7a7a\u8abf\u7aef\u672b",
+      "desc": "空調端末",
       "smm_section": "U10"
     },
     "IfcFurnishingElement": {
       "rate": 48000,
       "unit": "EA",
-      "desc": "\u5bb6\u5177",
+      "desc": "家具",
       "smm_section": "N10"
     },
     "IfcPlate": {
       "rate": 4200,
       "unit": "M2",
-      "desc": "\u92fc\u677f",
+      "desc": "鋼板",
       "smm_section": "G10"
     },
     "IfcMember": {
       "rate": 13500,
       "unit": "M",
-      "desc": "\u92fc\u90e8\u6750",
+      "desc": "鋼部材",
       "smm_section": "G10"
     },
     "IfcRailing": {
       "rate": 12800,
       "unit": "M",
-      "desc": "\u624b\u647a\u308a",
+      "desc": "手摺り",
       "smm_section": "L30"
     },
     "IfcStair": {
       "rate": 185000,
       "unit": "EA",
-      "desc": "\u968e\u6bb5",
+      "desc": "階段",
       "smm_section": "L30"
     },
     "IfcStairFlight": {
       "rate": 92000,
       "unit": "EA",
-      "desc": "\u968e\u6bb5\u30d5\u30e9\u30a4\u30c8",
+      "desc": "階段フライト",
       "smm_section": "L30"
     },
     "IfcFooting": {
       "rate": 3411.16,
       "unit": "M3",
-      "desc": "\u57fa\u790e\u30d5\u30fc\u30c1\u30f3\u30b0",
+      "desc": "基礎フーチング",
       "smm_section": "D20",
       "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 38000,
       "unit": "EA",
-      "desc": "\u57fa\u790e\u676d",
+      "desc": "基礎杭",
       "smm_section": "D30"
     },
     "IfcReinforcingBar": {
       "rate": 185,
       "unit": "KG",
-      "desc": "\u9244\u7b4b",
+      "desc": "鉄筋",
       "smm_section": "E30"
     },
     "IfcFlowSegment": {
       "rate": 5200,
       "unit": "M",
-      "desc": "\u6d41\u8def\u30bb\u30b0\u30e1\u30f3\u30c8",
+      "desc": "流路セグメント",
       "smm_section": "Y10"
     },
     "IfcFlowFitting": {
       "rate": 8500,
       "unit": "EA",
-      "desc": "\u6d41\u8def\u7d99\u624b",
+      "desc": "流路継手",
       "smm_section": "Y10"
     },
     "IfcFlowController": {
       "rate": 19500,
       "unit": "EA",
-      "desc": "\u6d41\u8def\u5236\u5fa1\u6a5f\u5668",
+      "desc": "流路制御機器",
       "smm_section": "Y10"
     },
     "IfcEnergyConversionDevice": {
       "rate": 380000,
       "unit": "EA",
-      "desc": "\u30a8\u30cd\u30eb\u30ae\u30fc\u5909\u63db\u6a5f\u5668",
+      "desc": "エネルギー変換機器",
       "smm_section": "T10"
     },
     "IfcFlowTreatmentDevice": {
       "rate": 52000,
       "unit": "EA",
-      "desc": "\u6d41\u4f53\u51e6\u7406\u6a5f\u5668",
+      "desc": "流体処理機器",
       "smm_section": "Y10"
     },
     "IfcFlowMovingDevice": {
       "rate": 145000,
       "unit": "EA",
-      "desc": "\u6d41\u4f53\u642c\u9001\u6a5f\u5668",
+      "desc": "流体搬送機器",
       "smm_section": "T10"
     },
     "IfcFlowStorageDevice": {
       "rate": 215000,
       "unit": "EA",
-      "desc": "\u6d41\u4f53\u8caf\u8535\u6a5f\u5668",
+      "desc": "流体貯蔵機器",
       "smm_section": "Y10"
     },
     "IfcElectricAppliance": {
       "rate": 22000,
       "unit": "EA",
-      "desc": "\u96fb\u6c17\u6a5f\u5668",
+      "desc": "電気機器",
       "smm_section": "V20"
     },
     "IfcFurniture": {
       "rate": 62000,
       "unit": "EA",
-      "desc": "\u5bb6\u5177",
+      "desc": "家具",
       "smm_section": "N10"
     },
     "IfcOpeningElement": {
       "rate": 0,
       "unit": "EA",
-      "desc": "\u958b\u53e3\u90e8",
+      "desc": "開口部",
       "smm_section": ""
     },
     "IfcDistributionElement": {
       "rate": 18500,
       "unit": "EA",
-      "desc": "\u914d\u5206\u88c5\u7f6e",
+      "desc": "配分装置",
       "smm_section": "Y10"
     },
     "IfcFireSuppressionTerminal": {
       "rate": 16500,
       "unit": "EA",
-      "desc": "\u30b9\u30d7\u30ea\u30f3\u30af\u30e9\u30fc\u30d8\u30c3\u30c9",
+      "desc": "スプリンクラーヘッド",
       "smm_section": "S60"
     },
     "IfcAirTerminal": {
       "rate": 14000,
       "unit": "EA",
-      "desc": "\u5439\u51fa\u53e3/\u5438\u8fbc\u53e3",
+      "desc": "吹出口/吸込口",
       "smm_section": "U10"
     },
     "IfcValve": {
       "rate": 10500,
       "unit": "EA",
-      "desc": "\u30d0\u30eb\u30d6",
+      "desc": "バルブ",
       "smm_section": "S10"
     },
     "IfcAlarm": {
       "rate": 13000,
       "unit": "EA",
-      "desc": "\u706b\u707d\u5831\u77e5\u5668",
+      "desc": "火災報知器",
       "smm_section": "W50"
     },
     "IfcController": {
       "rate": 45000,
       "unit": "EA",
-      "desc": "\u30d3\u30eb\u7ba1\u7406\u30b3\u30f3\u30c8\u30ed\u30fc\u30e9",
+      "desc": "ビル管理コントローラ",
       "smm_section": "W60"
     },
     "IfcRamp": {
       "rate": 120000,
       "unit": "EA",
-      "desc": "\u30b9\u30ed\u30fc\u30d7",
+      "desc": "スロープ",
       "smm_section": "L30"
     },
     "IfcRampFlight": {
       "rate": 130000,
       "unit": "EA",
-      "desc": "\u30b9\u30ed\u30fc\u30d7\u30d5\u30e9\u30a4\u30c8",
+      "desc": "スロープフライト",
       "smm_section": "L30"
     },
     "IfcBuildingElementPart": {
       "rate": 0,
       "unit": "EA",
-      "desc": "\u5efa\u7bc9\u90e8\u54c1",
+      "desc": "建築部品",
       "smm_section": ""
     }
   },
@@ -316,7 +316,7 @@
     "HVAC_TECH": {
       "rate_per_day": 28500,
       "crew_size": 2,
-      "trade": "\u7a7a\u8abf\u6280\u80fd\u8005\uff08\u719f\u7df4\uff09",
+      "trade": "空調技能者（熟練）",
       "productivity": {
         "IfcDuct": 16,
         "IfcDuctSegment": 16,
@@ -330,7 +330,7 @@
     "PLUMBER": {
       "rate_per_day": 26000,
       "crew_size": 2,
-      "trade": "\u914d\u7ba1\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "配管工（熟練）",
       "productivity": {
         "IfcPipe": 22,
         "IfcPipeSegment": 22,
@@ -347,7 +347,7 @@
     "ELECTRICIAN": {
       "rate_per_day": 27000,
       "crew_size": 2,
-      "trade": "\u96fb\u6c17\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "電気工（熟練）",
       "productivity": {
         "IfcCableCarrier": 28,
         "IfcCableCarrierSegment": 28,
@@ -362,7 +362,7 @@
     "STEEL_ERECTOR": {
       "rate_per_day": 30000,
       "crew_size": 4,
-      "trade": "\u9244\u9aa8\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "鉄骨工（熟練）",
       "productivity": {
         "IfcBeam": 7,
         "IfcColumn": 5,
@@ -373,7 +373,7 @@
     "CONCRETE_GANG": {
       "rate_per_day": 22000,
       "crew_size": 6,
-      "trade": "\u30b3\u30f3\u30af\u30ea\u30fc\u30c8\u6253\u8a2d\u73ed",
+      "trade": "コンクリート打設班",
       "productivity": {
         "IfcSlab": 30,
         "IfcFooting": 6,
@@ -386,7 +386,7 @@
     "MASON": {
       "rate_per_day": 24000,
       "crew_size": 3,
-      "trade": "\u5de6\u5b98\u30fb\u30d6\u30ed\u30c3\u30af\u5de5\uff08\u719f\u7df4\uff09+ \u666e\u901a\u4f5c\u696d\u54e1",
+      "trade": "左官・ブロック工（熟練）+ 普通作業員",
       "productivity": {
         "IfcWall": 10,
         "IfcWallStandardCase": 10,
@@ -397,7 +397,7 @@
     "CARPENTER": {
       "rate_per_day": 26000,
       "crew_size": 2,
-      "trade": "\u578b\u67a0\u5927\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "型枠大工（熟練）",
       "productivity": {
         "IfcDoor": 6,
         "IfcWindow": 6,
@@ -410,7 +410,7 @@
     "ROOFER": {
       "rate_per_day": 27000,
       "crew_size": 3,
-      "trade": "\u5c4b\u6839\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "屋根工（熟練）",
       "productivity": {
         "IfcRoof": 25
       }
@@ -418,7 +418,7 @@
     "FINISHER": {
       "rate_per_day": 22000,
       "crew_size": 2,
-      "trade": "\u5185\u88c5\u5de5\uff08\u719f\u7df4\uff09",
+      "trade": "内装工（熟練）",
       "productivity": {
         "IfcCovering": 20,
         "IfcFurniture": 8,
@@ -428,34 +428,34 @@
     "LABORER": {
       "rate_per_day": 17000,
       "crew_size": 1,
-      "trade": "\u666e\u901a\u4f5c\u696d\u54e1",
+      "trade": "普通作業員",
       "productivity": {}
     }
   },
   "equipment": {
     "MOBILE_CRANE_20T": {
       "rate_per_day": 85000,
-      "desc": "\u79fb\u52d5\u5f0f\u30af\u30ec\u30fc\u30f3 20\u30c8\u30f3"
+      "desc": "移動式クレーン 20トン"
     },
     "TOWER_CRANE": {
       "rate_per_day": 120000,
-      "desc": "\u30bf\u30ef\u30fc\u30af\u30ec\u30fc\u30f3"
+      "desc": "タワークレーン"
     },
     "CONCRETE_PUMP": {
       "rate_per_day": 65000,
-      "desc": "\u30b3\u30f3\u30af\u30ea\u30fc\u30c8\u30dd\u30f3\u30d7\u8eca"
+      "desc": "コンクリートポンプ車"
     },
     "SCISSOR_LIFT_8M": {
       "rate_per_day": 15000,
-      "desc": "\u30b7\u30b6\u30fc\u30b9\u30ea\u30d5\u30c8 8m"
+      "desc": "シザースリフト 8m"
     },
     "WELDING_MACHINE": {
       "rate_per_day": 4500,
-      "desc": "\u6eb6\u63a5\u6a5f 300A"
+      "desc": "溶接機 300A"
     },
     "GENERATOR_5KVA": {
       "rate_per_day": 6500,
-      "desc": "\u767a\u96fb\u6a5f 5KVA"
+      "desc": "発電機 5KVA"
     }
   },
   "equipment_allocation": {
@@ -730,7 +730,7 @@
   "work_packages": [
     {
       "id": "PACKAGE 1",
-      "name": "\u57fa\u790e\u5de5\u4e8b",
+      "name": "基礎工事",
       "color": "8E44AD",
       "classes": [
         "IfcFooting",
@@ -740,7 +740,7 @@
     },
     {
       "id": "PACKAGE 2",
-      "name": "\u8eaf\u4f53\u5de5\u4e8b",
+      "name": "躯体工事",
       "color": "2980B9",
       "classes": [
         "IfcColumn",
@@ -752,7 +752,7 @@
     },
     {
       "id": "PACKAGE 3",
-      "name": "\u8a2d\u5099\u7c97\u5de5\u4e8b",
+      "name": "設備粗工事",
       "color": "D35400",
       "classes": [
         "IfcDuct",
@@ -776,7 +776,7 @@
     },
     {
       "id": "PACKAGE 4",
-      "name": "\u5efa\u7bc9\u5de5\u4e8b",
+      "name": "建築工事",
       "color": "ED7D31",
       "classes": [
         "IfcWall",
@@ -794,7 +794,7 @@
     },
     {
       "id": "PACKAGE 5",
-      "name": "\u4ed5\u4e0a\u5de5\u4e8b",
+      "name": "仕上工事",
       "color": "27AE60",
       "classes": [
         "IfcCovering",
@@ -804,7 +804,7 @@
     },
     {
       "id": "PACKAGE 6",
-      "name": "\u8a2d\u5099\u4ed5\u4e0a\u5de5\u4e8b",
+      "name": "設備仕上工事",
       "color": "C0392B",
       "classes": [
         "IfcFlowTerminal",
@@ -819,28 +819,28 @@
     }
   ],
   "smm_sections": {
-    "A": "\u4eee\u8a2d\u5de5\u4e8b",
-    "C": "\u65e2\u5b58\u5efa\u7269",
-    "D": "\u5730\u696d\u5de5\u4e8b",
-    "E": "\u30b3\u30f3\u30af\u30ea\u30fc\u30c8\u5de5\u4e8b",
-    "F": "\u7d44\u7a4d\u5de5\u4e8b",
-    "G": "\u9244\u9aa8\u5de5\u4e8b",
-    "H": "\u5c4b\u6839\u30fb\u5916\u58c1\u5de5\u4e8b",
-    "J": "\u9632\u6c34\u5de5\u4e8b",
-    "K": "\u5185\u88c5\u4e0b\u5730\u5de5\u4e8b",
-    "L": "\u5efa\u5177\u30fb\u968e\u6bb5\u5de5\u4e8b",
-    "M": "\u4ed5\u4e0a\u5de5\u4e8b",
-    "N": "\u5bb6\u5177\u30fb\u4ec0\u5668",
-    "P": "\u96d1\u5de5\u4e8b",
-    "Q": "\u5916\u69cb\u5de5\u4e8b",
-    "R": "\u6392\u6c34\u8a2d\u5099",
-    "S": "\u7d66\u6392\u6c34\u885b\u751f\u8a2d\u5099",
-    "T": "\u7a7a\u6c17\u8abf\u548c\u8a2d\u5099",
-    "U": "\u63db\u6c17\u8a2d\u5099",
-    "V": "\u96fb\u6c17\u8a2d\u5099",
-    "W": "\u9632\u707d\u30fb\u901a\u4fe1\u8a2d\u5099",
-    "X": "\u6607\u964d\u6a5f\u8a2d\u5099",
-    "Y": "\u8a2d\u5099\u5de5\u4e8b\uff08\u7dcf\u5408\uff09"
+    "A": "仮設工事",
+    "C": "既存建物",
+    "D": "地業工事",
+    "E": "コンクリート工事",
+    "F": "組積工事",
+    "G": "鉄骨工事",
+    "H": "屋根・外壁工事",
+    "J": "防水工事",
+    "K": "内装下地工事",
+    "L": "建具・階段工事",
+    "M": "仕上工事",
+    "N": "家具・什器",
+    "P": "雑工事",
+    "Q": "外構工事",
+    "R": "排水設備",
+    "S": "給排水衛生設備",
+    "T": "空気調和設備",
+    "U": "換気設備",
+    "V": "電気設備",
+    "W": "防災・通信設備",
+    "X": "昇降機設備",
+    "Y": "設備工事（総合）"
   },
   "provisions": {
     "preliminaries_pct": 10,
