@@ -7632,7 +7632,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 11;   // §MIDAIR_REPAIR (2026-08-12): display times now repaired so nothing appears before the first element it touches — MUST bump on every change to computeSchedule's gating OR the display remap, or a building already materialized under an older version keeps replaying it forever (§KERNEL_OPS_SCHED_VERSION exists specifically to catch this bump).
+  var _GANTT_CACHE_VERSION = 12;   // §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
+                                   // v11 was §MIDAIR_REPAIR (2026-08-12): display times repaired so nothing appears before the first element it touches
                                    // v10 was §DOOR_WINDOW_HOST_WALL (2026-08-11): door/window gated on its host wall's finish (schedule_gate.js openingGate)
                                    // v9 was §TIER_SERIAL (2026-08-11): two-tier display remap (serial backbone + concurrent pool)
                                   // v7 was §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
