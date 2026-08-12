@@ -5229,8 +5229,7 @@
     // the REAL generation path reads rates.js's SHIFT_HOURS (default 24) and threads it through as
     // computeSchedule's 5th arg below, so the module actually runs the hours this project asked for.
     var fullDayMs = 24 * 3600000;
-    var _shiftHours = (typeof window !== 'undefined' && window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS
-      : (typeof SHIFT_HOURS !== 'undefined' && SHIFT_HOURS > 0 ? SHIFT_HOURS : 24);
+    var _shiftHours = (typeof window !== 'undefined' && window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
     var shiftMs = _shiftHours * 3600000;
     var rawDays = rawMs / shiftMs;
     var scaleFactor = rawDays < 10 ? (10 * shiftMs) / rawMs : 1;
