@@ -93,6 +93,34 @@
   // §DOOR_WINDOW_HOST_WALL records), so the host is inferred geometrically and nothing is invented.
   var HOSTED_CLS = /^(IfcOutlet|IfcLightFixture|IfcSwitchingDevice|IfcSensor|IfcAlarm|IfcFlowTerminal|IfcAirTerminal|IfcElectricAppliance|IfcFireSuppressionTerminal)$/;
   var HOST_CLS   = /^(IfcWall|IfcWallStandardCase|IfcSlab|IfcRoof|IfcCovering|IfcCurtainWall)$/;
+  // ══ §CURTAIN_WALL_OPENING (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+  // User, live: HHS_Office_Federated Level 3 doors float — visible before their host wall exists.
+  // MEASURED (bim-compiler scripts/probe_door_wall.js, the file §DOOR_WINDOW_HOST_WALL below cites
+  // but which was never actually committed until today): openingGate holds PERFECTLY where it
+  // applies — rawEARLY=0.0% against wallGrid on all 7 shipped buildings. The defect is COVERAGE, not
+  // the predicate: 34 of HHS's 133 openings (25.6%) have ZERO wallGrid candidate, because place()
+  // fills wallGrid from `cls.indexOf('IfcWall') === 0` and HHS's façade is a CURTAIN WALL, whose
+  // openings are framed by parts that are not prefixed IfcWall at all. openingGate therefore fell
+  // straight through to baseMs for them and they were ungated from day 0 — the same shape of bug as
+  // §HOSTED_BEFORE_HOST's IfcCovering (a real class in NO pool), one layer over.
+  //
+  // The classes are EXTRACTED from the data, never guessed — HHS's own element_name column names
+  // them: IfcCurtainWall = "Curtain Wall:Standard" (the assembly), IfcPlate = "Systemelement:
+  // Verglasung" (glazing infill), IfcMember = "Rechteckiger Pfosten:6 x 15 mit Deckprofil"
+  // (rectangular mullion). That is the standard IFC curtain-wall decomposition, and it is the ONLY
+  // representation available: the shipped DBs carry no IfcRelAggregates/IfcRelFillsElement (checked
+  // — spatial_structure holds only IfcBuildingStorey/IfcSpace, and no IfcPlate/IfcMember has a
+  // parent row), so the assembly exists solely as its geometric parts. Note IfcCurtainWall itself
+  // has ZERO geometry rows in HHS — it is a pure container — which is exactly why gating on the
+  // assembly class alone would have been a no-op and the parts are what must be indexed.
+  //
+  // Why these parts are invisible to every OTHER gate, and it is one fact: IfcMember is seq 3 and
+  // IfcPlate seq 4, so both live in the STRUCTURE grid, where geoGate only tests bearing-below
+  // (S.base_z < el.base_z - EPS) or contained-in-my-lower-half. A full-height mullion beside a door
+  // starts at the SAME floor level as the door, so it satisfies neither — a door cut into a curtain
+  // wall is a SIDEWAYS relationship, precisely the one §DOOR_WINDOW_HOST_WALL was written for, and
+  // the only reason it was missed is that the pool it reads is keyed on a class-name prefix.
+  var CW_HOST_CLS = /^(IfcCurtainWall|IfcPlate|IfcMember)$/;
   var HOST_Z     = 1.0;  // m — hosted centre must sit within the host's Z extent ± this (probe's measured bracket)
   // ONE host-inference definition at module scope, three consumers: computeSchedule's hostGate, its
   // DAG edge, and time_machine.js's display-layer repair (exported as hostPairs below, the same
@@ -187,7 +215,11 @@
   // returns { guid: { start, end } } ms.
   function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
-    var grid = {}, wallGrid = {}, out = {}, c, cs, k, arr, S;
+    var grid = {}, wallGrid = {}, cwGrid = {}, out = {}, c, cs, k, arr, S;
+    // §CURTAIN_WALL_OPENING observability — keyed by guid, not a counter: openingGate is called
+    // several times per element (placeNonst plus every §DEQ_REPAIR sweep), so a bare ++ would report
+    // sweeps rather than openings.
+    var _cwSeen = {}, _cwFellThrough = {};
     // §HOSTED_BEFORE_HOST: the host pairing is resolved ONCE, up front, off pure geometry — NOT from
     // an incremental placement grid. That is deliberate and it was a measured bug before it was a
     // design: a grid filled in PLACEMENT order and the DAG's index built in ELEMENT order break
@@ -321,15 +353,28 @@
       // multi-window `dur` consumes as many following windows as it needs.
       var end = wallAt(prodAt(start) + dur); _prodMsTot += dur;
       out[el.guid] = { start: start, end: end };
+      var prec = null;   // §CURTAIN_WALL_OPENING: the rec this element contributes, reused by cwGrid
       if (el.seq <= 4 || isPromotedSlab(el)) {
         var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid,
                     promoted: isPromotedSlab(el) };
-        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec);
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec); prec = rec;
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
       else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
         var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
-        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec);
+        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec); prec = wrec;
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
+      // §CURTAIN_WALL_OPENING — a SECOND INDEX over records that already exist, not a second pool
+      // membership: the mullion/glazing rec is the SAME object the structure grid holds, so a
+      // §DEQ_REPAIR shift of that part is seen through both indexes with no copy to drift. Only
+      // IfcCurtainWall itself (seq 6, not IfcWall-prefixed ⇒ no rec today) ever mints a new one.
+      // Nothing is REMOVED from any existing grid, so geoGate/wallGate/hangGate are untouched.
+      if (el.cls && CW_HOST_CLS.test(el.cls)) {
+        if (!prec) {
+          prec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
+          (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(prec);
+        }
+        cs = cellsOf(el); for (c = 0; c < cs.length; c++) (cwGrid[cs[c]] = cwGrid[cs[c]] || []).push(prec);
+      }
       return end;
     }
     var recsByGuid = {};   // §DEQ_V1 repair loop: guid -> its support-grid recs, so a shift updates them
@@ -433,14 +478,36 @@
     // wallGate already uses, XY/Z bbox overlap instead of the "rests on top of" band wallGate
     // tests. STRICT ADDITION: only Door/Window elements are gated; every other element's timing,
     // and wallGate's own existing roof-slab-on-wall behavior, are untouched.
+    // The bracket predicate, hoisted verbatim so both pools are tested by ONE definition. Returns
+    // the latest end among bracketing hosts in `gr`, or -1 when NOTHING in that pool brackets el —
+    // the distinction the old single-pool version could not make (it returned baseMs both for "no
+    // host" and "host already finished", which is exactly why a missing pool was silent).
+    function openingScan(gr, el) {
+      var g = -1, cs2 = cellsOf(el), c2, k2, arr2, S2;
+      for (c2 = 0; c2 < cs2.length; c2++) { arr2 = gr[cs2[c2]]; if (!arr2) continue;
+        for (k2 = 0; k2 < arr2.length; k2++) { S2 = arr2[k2];
+          if (S2.base_z <= el.top_z + EPS && S2.top_z >= el.base_z - EPS && overlap(S2, el) && S2.end > g) g = S2.end; } }
+      return g;
+    }
+    // §CURTAIN_WALL_OPENING: STRICT ADDITION, and the fallback ordering is what makes it strict —
+    // the curtain-wall pool is consulted ONLY when the opening has no IfcWall* host at all. An
+    // opening that is gated today keeps its EXACT current start (measured: Terminal/JKR have 0
+    // ungated openings ⇒ literally zero elements move there). No new threshold is introduced: the
+    // fallback reuses openingScan's own EPS bracket. Cannot cycle — IfcMember/IfcPlate are seq 3/4,
+    // so the §DEQ_REPAIR loop (which shifts seq>4 only) never moves them, and the one seq>4 member
+    // of the pool, IfcCurtainWall, is not an opening so nothing ever gates it back.
     function openingGate(el) {
       if (el.cls !== 'IfcDoor' && el.cls !== 'IfcWindow') return baseMs;
-      var g = baseMs; cs = cellsOf(el);
-      for (c = 0; c < cs.length; c++) { arr = wallGrid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) { S = arr[k];
-          if (S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS &&
-              S.end > g && overlap(S, el)) g = S.end; } }
-      return g;
+      var g = openingScan(wallGrid, el);
+      if (g < 0) {
+        g = openingScan(cwGrid, el);
+        // cwGrid GROWS during placement, so an opening reached early can fall through and be gated
+        // on a later sweep — the two tallies must not double-count it. The §DEQ_REPAIR loop
+        // re-evaluates every opening against the FINAL grid, so the last verdict is the true one.
+        if (g >= 0) { _cwSeen[el.guid] = 1; delete _cwFellThrough[el.guid]; }
+        else if (!_cwSeen[el.guid]) _cwFellThrough[el.guid] = 1;
+      }
+      return g > baseMs ? g : baseMs;
     }
     // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
     // User, live 2026-08-12: "electrical outlets and hanging elements appearing bit early." MEASURED
@@ -665,6 +732,10 @@
     var _rIter = 0, _rMovedTot = 0;
     for (; _rIter < 16; _rIter++) {
       var _moved = 0;
+      // §CURTAIN_WALL_OPENING tally reset — cwGrid/wallGrid are complete by now, so the LAST sweep's
+      // verdicts are the true ones. Without this the counts keep entries from placement time, when
+      // the grids were still filling and an opening could transiently have no wall in its cell.
+      _cwSeen = {}; _cwFellThrough = {};
       nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
         .forEach(function (el) {
         var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el));
@@ -686,6 +757,14 @@
     }
     if (typeof console !== 'undefined' && console.log)
       console.log('§DEQ_REPAIR sweeps=' + _rIter + ' shifted=' + _rMovedTot + ' (0=order already dependency-consistent)');
+    // §CURTAIN_WALL_OPENING — the coverage number, so the pool is auditable rather than trusted.
+    // cwGated = openings with NO IfcWall* host that the curtain-wall pool caught; stillUngated =
+    // openings bracketed by neither pool (a genuinely wall-less opening — reported, never invented
+    // a host for). Both 0 on a building with no curtain wall, which is the no-op proof.
+    if (typeof console !== 'undefined' && console.log)
+      console.log('§CURTAIN_WALL_OPENING cwGated=' + Object.keys(_cwSeen).length +
+        ' stillUngated=' + Object.keys(_cwFellThrough).length +
+        ' cwCells=' + Object.keys(cwGrid).length);
     // §CREW_DAY (§ARCH_START_TEMPO / M1) — the whitebox proof that the shift cap is live and that it
     // neither lost nor invented labour. spanD = wall-clock days the programme now occupies;
     // serialProdD = the same labour on ONE crew at 8 h/day (Σ installSecs*scale / SHIFT_MS) — the
