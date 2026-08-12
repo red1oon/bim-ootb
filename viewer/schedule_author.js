@@ -59,7 +59,7 @@
   // by its class's real average length. A flat per-unit rate assumes every element is "typical
   // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
   // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
-  function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
+  function _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio) {
     var resource = rule && rule.resource;
     if (!resource || !laborRates[resource]) return 120;
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
@@ -71,6 +71,13 @@
     var secsPerUnit = 28800 / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
+    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of lengthRatio. Same REDISTRIBUTION form, and
+    // that form is the whole safety argument: ratio = thisArea / classAvgArea, so mean(ratio)=1 by
+    // construction and a class's total labour is preserved exactly. Do NOT confuse it with the
+    // realQty branch two lines up, which MULTIPLIES by absolute area — _classFragmentation's own
+    // header records what that does to a non-fragmented class: "measured: IfcWall would jump from
+    // ~14 days to 563 days."
+    if (areaRatio != null) return Math.round(secsPerUnit * areaRatio);
     return Math.round(secsPerUnit);
   }
 
@@ -185,6 +192,95 @@
     return out;
   }
 
+  // §ARCH_AREA_WEIGHT (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §DAY_GAP_PHASE_OCC
+  // GAP 4 — Witness: viewer/tests/witness_arch_area_weight.js W-AREA) ───────────────────────────
+  // _linearWeighting selects on `unit === 'M'`, which is why the 7 metre-priced classes (beam,
+  // column, member, railing, pipe/duct/cable segments) scale with real size and NOTHING ELSE does.
+  // The M2 set — IfcSlab, IfcWall, IfcWallStandardCase, IfcCurtainWall, IfcCovering, IfcRoof,
+  // IfcPlate — is the architecture bulk, and it fell through every branch of _installSecs to the
+  // flat `28800/productivity`. MEASURED on Hospital: IfcWallStandardCase spans 1.07m..78.50m (73x),
+  // IfcWall 0.90..78.79 (88x), IfcCovering 1.21..85.72 (71x), IfcSlab 3.70..100.83 (27x) — and
+  // every one of those elements was charged the SAME install time. User, live: "The ARCH still
+  // comes on too fast. They are heavy items should take longer relatively to MEP etc."
+  //
+  // Generic by construction — nothing here names a class. Selection is `unit === 'M2'` straight
+  // from the shipped rates table, and the measure is the SAME dominant-face _AREA_EXPR
+  // _classFragmentation already uses. A model whose heavy class is curtain-wall glazing or brick
+  // coursing is caught identically.
+  //
+  // ⚠ EXCLUDES classes _classFragmentation already flagged: those take the realQty branch (absolute
+  // area, deliberately inflating a class whose element count is not a real installable unit), and
+  // applying both would double-weight them. Fragmented wins; this fills the gap it leaves.
+  // ⚠ RATE-UNIFORM CLASSES ONLY. mean(ratio)=1 preserves a class total only when every element in
+  // the class shares one secsPerUnit. MEASURED counter-example: HHS IfcPlate splits 438 elements at
+  // 120s (no-resource fallback) and 191 at 2400s — the ratio correlates with the subgroup, so the
+  // class total moved 510,960 -> 258,260 and monotonicity broke. Mixed-rate classes degrade to
+  // flat, the same honest-degrade every other branch here uses; no inflation is possible.
+  function _areaWeighting(db, qsRates, fragmented, rules, dflt, nameOverrides, laborRates) {
+    var out = { avgArea: {}, area: {} };
+    qsRates = qsRates || {}; fragmented = fragmented || {};
+    var m2 = [];
+    for (var cls in qsRates) {
+      if (qsRates[cls] && qsRates[cls].unit === 'M2' && !fragmented[cls]) m2.push(cls);
+    }
+    if (!m2.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      // ⚠ The average MUST be taken over exactly the elements that will receive a ratio, or
+      // mean(ratio) != 1 and the class total moves — which is the one thing this form exists to
+      // prevent. Witnessed: without the `> 0` guard, elements whose second bbox dimension is 0
+      // measured area 0, took ratio 0, and were charged ZERO install time — HHS IfcPlate total
+      // halved (510,960 -> 258,260) and monotonicity broke. Zero-area elements now fall through to
+      // flat, the same honest-degrade the realQty and lengthRatio branches already use.
+      r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _AREA_EXPR + ') FROM elements_meta m ' +
+        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(m2) + ') GROUP BY m.ifc_class');
+    } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
+    var have = [], mixed = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgArea[cls] = avg; have.push(cls); }
+      });
+    }
+    if (!have.length) return out;
+    // Rate-uniformity scan — one pass, only over the candidate classes.
+    if (rules && laborRates) {
+      var keep = [];
+      have.forEach(function (cls) {
+        var er;
+        try {
+          er = db.exec("SELECT COALESCE(m.element_name,'') FROM elements_meta m WHERE m.ifc_class='" +
+            cls.replace(/'/g, "''") + "'");
+        } catch (e) { return; }
+        if (!er.length || !er[0].values.length) return;
+        var first = null, uniform = true;
+        for (var i = 0; i < er[0].values.length; i++) {
+          var rl = matchNameOverride(cls, er[0].values[i][0], nameOverrides || []) ||
+                   matchRule(cls, rules, dflt);
+          var sc = _installSecs(cls, rl, laborRates, null, null);
+          if (first === null) first = sc;
+          else if (sc !== first) { uniform = false; break; }
+        }
+        if (uniform) keep.push(cls); else { mixed.push(cls); delete out.avgArea[cls]; }
+      });
+      have = keep;
+      if (mixed.length) console.log('§ARCH_AREA_WEIGHT_SKIP mixed-rate classes left FLAT: ' + mixed.join(',') +
+        ' — a class total is only preserved when every element shares one secsPerUnit');
+      if (!have.length) return out;
+    }
+    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+      'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
+    if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
+    console.log('§ARCH_AREA_WEIGHT classes=' + have.length + ' [' +
+      have.map(function (c) { return c + ':avg=' + out.avgArea[c].toFixed(2) + 'm2'; }).join(', ') +
+      '] — real AREA redistributes each class\'s existing flat total (mean ratio 1.0, class total unchanged), ' +
+      'so a 78m wall no longer installs as fast as a 1m one');
+    return out;
+  }
+
   // YYYY-MM-DD a given number of whole days after a base date string. Pure UTC arithmetic so
   // it is deterministic regardless of host timezone (no Date.now / locale dependence).
   function _addDays(baseStr, days) {
@@ -253,6 +349,7 @@
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
     var _frag = _classFragmentation(db, qsRates);
     var _lin = _linearWeighting(db, qsRates);
+    var _area = _areaWeighting(db, qsRates, _frag.fragmented, rules, dflt, nameOverrides, laborRates);   // §ARCH_AREA_WEIGHT
 
     // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
     // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
@@ -308,12 +405,17 @@
       var clsAvgLen = _lin.avgLength[cls];
       var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0)
         ? Math.max(bx, by, bz) / clsAvgLen : null;
+      // §ARCH_AREA_WEIGHT: same honest-degrade discipline — only with real geometry, a real class
+      // average, and only when neither stronger signal already claimed this element.
+      var clsAvgArea = _area.avgArea[cls];
+      var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
+                       _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
       return {
         guid: guid, cls: cls, name: name, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
         seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
-        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio),
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio),
         // §4D_NOGEO (2026-08-07, mirrors time_machine.js's own pool — this function's header says
         // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
         // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
@@ -1531,6 +1633,7 @@
     _installSecs: _installSecs,
     _classFragmentation: _classFragmentation,
     _linearWeighting: _linearWeighting,
+    _areaWeighting: _areaWeighting,
     FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,
