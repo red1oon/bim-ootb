@@ -4377,6 +4377,31 @@
       var d = t1EndZ[z] - t2MinZ[z];
       if (d > 0) { it.s += d; it.e += d; if (d > tier2Shift) tier2Shift = d; }
     });
+    // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+    // The zone shift above is order-preserving WITHIN a zone — its own comment says so, and that is
+    // true. It is NOT order-preserving ACROSS zones, and a hosted element and the ceiling it hangs
+    // in routinely land in different ones: _zoneOf is the RAW storey, so a covering tagged
+    // "Level 3 Ceiling" and the light fixture in it tagged "Level 3" are two zones, get two
+    // different shifts (or none at all — a zone with no Tier-1 returns early above), and the pair
+    // re-inverts after the generative layer had it right.
+    // MEASURED, per stage, by witness_hosted_before_host.js on the fixed generative layer:
+    // JKR gen=0 → remap=30, HHS_Office_Federated gen=0 → remap=11. So schedule_gate.js's hostGate
+    // cannot own this alone — the layer that re-broke the order has to be the layer that repairs it.
+    // Same host inference the scheduler gates on (ScheduleGate.hostPairs — ONE definition, the same
+    // reason EPS/GAP are imported rather than re-typed), and the same later-only safety
+    // §MIDAIR_REPAIR carries: a hosted element is pushed to its host's end, never pulled earlier,
+    // so nothing already satisfied above can be undone by it.
+    var _hostFixed = 0;
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.hostPairs) {
+      var _hp = ScheduleGate.hostPairs(items.map(function (it) {
+        return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
+                 base_z: it.bz, top_z: it.tz };
+      }));
+      _hp.forEach(function (p) {
+        var e = items[p.i], h = items[p.h];
+        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _hostFixed++; }
+      });
+    }
     var base = Infinity, endAll = -Infinity, ext2 = {};
     items.forEach(function (it) {
       if (it.s < base) base = it.s;
@@ -4394,6 +4419,8 @@
     console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
       ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
       ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
+      ' §HOSTED_BEFORE_HOST hostFixed=' + _hostFixed +
+      ' (hosted elements the cross-zone Tier-2 shift left ahead of their own host, pushed back to it)' +
       ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
       ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
       ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
