@@ -279,6 +279,7 @@
     // §17.16 step: same console-only convention (window.__dlodNav.occlStructEnabled = true),
     // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior. Once witnessed
     // (W-OCC2-*), this flips to default true and occlBvhEnabled's whole §17.2-17.4 machinery retires.
+    occlStructEnabled: false, occlStructReady: false, occlStructCount: 0, occlStructRootDiag: 0,
     occlStructCandidates: 0, occlStructHidden: 0, occlStructQueriesIssued: 0, occlStructResultsRead: 0,
     // §17.17.2/§17.17.3 sub-levers — all three only ever read while occlStructEnabled is true, so
     // the off-path stays byte-identical regardless of their values (W-OCC3-EQUIV).
