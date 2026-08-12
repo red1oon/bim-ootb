@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-07-25T07:45:16.808Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-main-baseline",
+    "sha": "491413ffb4e3e277c23b7e7f4a61dfb7f4bf57d2",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "2fd95d47-fde0-4fde-aaaa-039deac32233",
+    "content-md5": "cTpK9OHSgS1SDXGvbPPkHA==",
+    "size": "4342707",
+    "last-modified": "Sat, 06 Jun 2026 08:15:58 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/Hospital_meta.db.sql",
+    "bytes": 226962,
+    "md5": "7e97413cd546d4065de67a8565a17b22",
+    "md5_b64": "fpdBPNVG1AZd5nqFZaF7Ig==",
+    "object": "buildings/patches/Hospital_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "10d2a309-c67e-4c19-810c-61d3fd5b0f63",
+    "size": "144960",
+    "last-modified": "Sat, 25 Jul 2026 00:49:21 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c \"node /home/red1/bim-compiler/prompts/Modeller/DISC_Walker/poc_raster_cover.js /tmp/wt-main-baseline \\\"$GATE_DB\\\" | tail -25 | grep -q \\\"connected_rooms_below_30pct=0/\\\"\"",
+    "exit": 0,
+    "tail": [
+      ""
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-07-25T07:45:19.367Z",
+    "etag": "55b71e23-1b2b-4cf1-8710-b48eb7b5feef",
+    "verified": true
+  }
+}

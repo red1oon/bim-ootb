@@ -274,12 +274,17 @@
       host.appendChild(todayLine);
     }
 
-    leaves.forEach(function (n) {
+    // geometry per task, filled in below — the dependency-arrow overlay draws from this afterward
+    // (needs every bar's final on-screen position, so it has to run after the row loop, not during it).
+    var AXIS_H = 16, ROW_H = 26;   // must match .g-axis/.g-row in schedule_editor.html
+    var geom = {};
+    leaves.forEach(function (n, idx) {
       var dur = daysBetween(n.start, n.finish);
       var off = daysBetween(min, n.start);
       var row = el('div', 'g-row');
       row.appendChild(el('div', 'g-label', n.name));
       var track = el('div', 'g-track');
+      var yCenter = AXIS_H + idx * ROW_H + ROW_H / 2;
       // §SE-5b milestone — a 0-day task (start===finish) renders as a diamond, not a bar.
       if (dur === 0) {
         var ms = el('div', 'g-milestone' + (n.critical ? ' crit' : ''));
@@ -287,10 +292,12 @@
         ms.dataset.task = n.id;
         ms.title = n.name + '  ' + n.start + ' (milestone)';
         track.appendChild(ms);
+        geom[n.id] = { x: labelW + off * pxPerDay, xEnd: labelW + off * pxPerDay, y: yCenter };
       } else {
         var bar = el('div', 'g-bar' + (n.critical ? ' crit' : ''), dur + 'd');
-        bar.style.left = (off * pxPerDay) + 'px';
-        bar.style.width = Math.max(8, dur * pxPerDay) + 'px';
+        var barX = off * pxPerDay, barW = Math.max(8, dur * pxPerDay);
+        bar.style.left = barX + 'px';
+        bar.style.width = barW + 'px';
         bar.dataset.task = n.id;
         bar.title = n.name + '  ' + n.start + ' → ' + n.finish + (n.totalFloat != null ? '  (float ' + n.totalFloat + 'd)' : '');
         _wireBarDrag(bar, n, off, pxPerDay);
@@ -299,10 +306,59 @@
         _wireLinkDrag(handle, n);
         bar.appendChild(handle);
         track.appendChild(bar);
+        geom[n.id] = { x: labelW + barX, xEnd: labelW + barX + barW, y: yCenter };
       }
       row.appendChild(track);
       host.appendChild(row);
     });
+
+    // §SE-5c dependency arrows — traditional Gantt connector lines between linked bars, the visual
+    // counterpart to the text-only §SE list (renderDeps' predName→succName rows). Drawn from
+    // task_sequences via the SAME read SA().listDependencies already uses, honouring FS/SS/FF/SF
+    // (endpoint = start or finish per type, matching schedule_author.js SEQ_TYPES/computeCpm — not
+    // always drawn finish→start). An SVG overlay sits on top of the rows (host is position:relative);
+    // z-index keeps it above bars for visibility but pointer-events:none so drag/click still hit bars.
+    var deps = SA().listDependencies ? SA().listDependencies(db, schedId) : [];
+    var drawable = deps.filter(function (dep) { return geom[dep.predId] && geom[dep.succId]; });
+    if (drawable.length) {
+      var svgH = AXIS_H + leaves.length * ROW_H;
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'g-deps-svg');
+      svg.setAttribute('width', labelW + chartW);
+      svg.setAttribute('height', svgH);
+      svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0';
+      svg.style.pointerEvents = 'none'; svg.style.zIndex = '2';
+      var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      [['g-arrowhead', '#6f89ac'], ['g-arrowhead-crit', '#d2475c']].forEach(function (m) {
+        var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        marker.setAttribute('id', m[0]);
+        marker.setAttribute('viewBox', '0 0 8 8'); marker.setAttribute('refX', '7'); marker.setAttribute('refY', '4');
+        marker.setAttribute('markerWidth', '7'); marker.setAttribute('markerHeight', '7'); marker.setAttribute('orient', 'auto-start-reverse');
+        var tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        tri.setAttribute('d', 'M0,0 L8,4 L0,8 z'); tri.setAttribute('fill', m[1]);
+        marker.appendChild(tri); defs.appendChild(marker);
+      });
+      svg.appendChild(defs);
+      drawable.forEach(function (dep) {
+        var pg = geom[dep.predId], sg = geom[dep.succId];
+        var crit = critSet[dep.predId] && critSet[dep.succId];
+        // endpoint per link type — SS/FF/SF connect at START, not always predecessor's finish.
+        var x1 = (dep.type === 'SS' || dep.type === 'SF') ? pg.x : pg.xEnd;
+        var x2 = (dep.type === 'FF' || dep.type === 'SF') ? sg.xEnd : sg.x;
+        var y1 = pg.y, y2 = sg.y;
+        var midX = x1 + Math.max(6, (x2 - x1) / 2 * (x2 >= x1 ? 1 : -1));
+        var d3 = 'M ' + x1 + ' ' + y1 + ' L ' + midX + ' ' + y1 + ' L ' + midX + ' ' + y2 + ' L ' + x2 + ' ' + y2;
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d3);
+        path.setAttribute('class', 'g-dep-line' + (crit ? ' crit' : ''));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('marker-end', 'url(#' + (crit ? 'g-arrowhead-crit' : 'g-arrowhead') + ')');
+        path.setAttribute('title', dep.predName + ' → ' + dep.succName + ' (' + dep.type + (dep.lag ? ', lag ' + dep.lag + 'd' : '') + ')');
+        svg.appendChild(path);
+      });
+      host.appendChild(svg);
+      console.log('§SE_GANTT_ARROWS drawn=' + drawable.length + '/' + deps.length + ' (skipped=' + (deps.length - drawable.length) + ' undated/off-chart endpoints)');
+    }
     console.log('§SE_GANTT bars=' + leaves.length + ' span=' + min + '..' + max + ' days=' + totalDays + ' zoom=' + _zoom);
   }
 
@@ -394,6 +450,38 @@
     }
     renderWbs(); renderDeps(); renderGantt();
     persist();
+  }
+
+  // ── §4D_SCHEDULE_DIFF: grade an IMPORTED P6/MSP schedule against OUR own real-quantity/labor-rate
+  // estimate for THIS building (CPM_FLOAT_GAP.md — user's own words: "our 4D schedule diff and show
+  // them their variance - ie correcting theirs!"). Only meaningful on a CAPTURED (imported) schedule —
+  // diffing our own generated estimate against itself is a no-op, same guard doGenerate already uses.
+  function onDiffVsModel() {
+    var DFx = global.ScheduleDiff;
+    var out = $('se-diff-out');
+    if (!DFx) { status('⚠ schedule_diff.js not loaded'); return; }
+    if (!db || !schedId) { status('⚠ no schedule loaded'); return; }
+    var act = SA().activeSchedule(db);
+    if (!act || !act.captured) {
+      status('⚖ Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first (⤓ P6).');
+      return;
+    }
+    if (out) out.textContent = 'computing…';
+    setTimeout(function () {
+      var res = DFx.computeScheduleDiff(db, null, { importedScheduleId: schedId, start: '2026-01-01' });
+      if (res.error) { if (out) out.textContent = '⚠ ' + res.error; return; }
+      var lines = res.phases.map(function (r) {
+        var icon = r.flag === 'optimistic' ? '⚡' : r.flag === 'slow' ? '🐢' : '✓';
+        return icon + ' ' + r.phase + ': theirs ' + r.theirDays + 'd vs ours ' + r.ourDays + 'd (' +
+          (r.deltaPct > 0 ? '+' : '') + r.deltaPct + '%) — ' + r.flagMsg;
+      });
+      if (res.unmatchedActivities.length) lines.push(res.unmatchedActivities.length + ' activity(ies) unmatched — see console §4D_DIFF_UNMATCHED');
+      if (out) out.textContent = lines.join('   ');
+      status('4D Schedule Diff: ' + res.summary.matchedPhases + '/' + res.summary.ourPhases + ' phases compared, ' +
+        res.summary.matchedActivities + '/' + res.summary.theirActivities + ' activities matched.');
+      console.log('§SE_DIFF schedule=' + schedId + ' matchedPhases=' + res.summary.matchedPhases +
+        ' matchedActivities=' + res.summary.matchedActivities + ' unmatched=' + res.summary.unmatchedActivities);
+    }, 30);
   }
 
   // §SE-6: debounced write-back to the SAME IndexedDB cache slot the building was loaded from — the
@@ -500,7 +588,7 @@
     }
     status('Materializing default schedule — please wait…');
     setTimeout(function () {
-      var res = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+      var res = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', laborRates: global.LABOR_RATES });
       schedId = res.scheduleId;
       collapsed = {}; critSet = {};
       renderWbs(); renderDeps(); renderGantt(); fillAddForm();
@@ -650,7 +738,7 @@
         status('Materializing default schedule for ' + url.split('/').pop() + ' — please wait…');
         return new Promise(function (resolve) {
           setTimeout(function () {
-            var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', phaseDays: 30 });
+            var resM = SA().materializeDefault(db, global.SEQUENCE_RULES, { start: '2026-01-01', laborRates: global.LABOR_RATES });
             schedId = 'SCH_AUTHORED';
             status('Seeded default schedule (' + resM.phases.length + ' phases) — ' + url.split('/').pop());
             persist();   // §SE-6 — the freshly-seeded schedule is itself an edit worth saving
@@ -665,6 +753,7 @@
         renderWbs(); renderDeps(); renderGantt();
         var addBtn = $('se-add-btn'); if (addBtn) addBtn.onclick = onAdd;
         var cpmBtn = $('se-cpm-btn'); if (cpmBtn) cpmBtn.onclick = onComputeCpm;
+        var diffBtn = $('se-diff-btn'); if (diffBtn) diffBtn.onclick = onDiffVsModel;
         var genBtn = $('se-generate-btn'); if (genBtn) genBtn.onclick = doGenerate;
         var expBtn = $('se-export-msp-btn'); if (expBtn) expBtn.onclick = exportMSProject;
         var expPmxmlBtn = $('se-export-pmxml-btn'); if (expPmxmlBtn) expPmxmlBtn.onclick = exportPMXML;
@@ -690,7 +779,7 @@
       .catch(function (e) { status('⚠ ' + e.message); console.error('§SE_UI ERROR', e); });
   }
 
-  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, setZoom: setZoom, exportMSProject: exportMSProject, exportPMXML: exportPMXML, exportXER: exportXER };
+  global.ScheduleEditor = { init: init, renderWbs: renderWbs, renderDeps: renderDeps, renderGantt: renderGantt, computeCpm: onComputeCpm, diffVsModel: onDiffVsModel, setZoom: setZoom, exportMSProject: exportMSProject, exportPMXML: exportPMXML, exportXER: exportXER };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(typeof window !== 'undefined' ? window : this);

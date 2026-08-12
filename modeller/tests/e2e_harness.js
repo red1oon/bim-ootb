@@ -134,11 +134,55 @@ async function runE2E(NAME, body, opts) {
             return null;
           }
           , bboxScreen(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return null; let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; for (let i = 0; i < 8; i++) { const x = (i & 1) ? b.max.x : b.min.x, y = (i & 2) ? b.max.y : b.min.y, z = (i & 4) ? b.max.z : b.min.z; const p = this.proj(x, y, z); if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; } return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }; }
+          // Anti-flake (2026-07-30, found chasing W-E2E-CUT/W-E2E-SEL-TINT-REFOLD pick()=null runs): clicking a
+          // candidate's projected BBOX CENTRE is a lottery — a low wall's centre is routinely occluded by an
+          // upper-storey mesh, so whether the click lands depends on sub-pixel camera state that varies run to
+          // run. Return a VERIFIED click point instead: sample the mesh's own triangle centroids, project each,
+          // and keep the first whose raycast FIRST HIT (same raycast the app's pick uses) is this very mesh.
+          // Deterministic given the camera; null = genuinely not visible from here (caller skips the candidate).
+          , clickPointFor(fid) {
+            const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null;
+            const cam = window.A.camera, rc = new window.THREE.Raycaster();
+            const meshes = g.children.filter(o => o.isMesh);
+            const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect();
+            m.updateMatrixWorld();
+            const pos = m.geometry.attributes.position, idx = m.geometry.index;
+            const triN = idx ? idx.count / 3 : pos.count / 3;
+            const samples = Math.min(triN, 60), p = new window.THREE.Vector3();
+            for (let s = 0; s < samples; s++) {
+              const ti = Math.floor(s * triN / samples);
+              const a = idx ? idx.getX(ti * 3) : ti * 3, b = idx ? idx.getX(ti * 3 + 1) : ti * 3 + 1, c = idx ? idx.getX(ti * 3 + 2) : ti * 3 + 2;
+              p.set((pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3).applyMatrix4(m.matrixWorld);
+              const sp = this.proj(p.x, p.y, p.z);
+              if (sp[0] < r.left + 8 || sp[0] > r.right - 8 || sp[1] < r.top + 8 || sp[1] > r.bottom - 8 || sp[2] > 1) continue;
+              rc.setFromCamera(new window.THREE.Vector2(((sp[0] - r.left) / r.width) * 2 - 1, -(((sp[1] - r.top) / r.height) * 2 - 1)), cam);
+              const hits = rc.intersectObjects(meshes, false);
+              if (hits.length && hits[0].object === m) return [sp[0], sp[1]];
+            }
+            return null;
+          }
         }; return true;
       });
+      // §OPEN-SETTLE (2026-08-07, guide-recapture hardening): on a loaded machine the fixed 2200/600ms
+      // sleeps above aren't always enough — candidates() (on-screen-projected, camera-dependent) has been
+      // observed returning 0 immediately post-fit, then 40 ~1-1.5s later once the fit/damping settles. This
+      // is camera-timing flake, not an app bug (mesh/candidate DATA is present throughout — see diag capture
+      // in RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md 2026-08-07). Poll instead of trusting the fixed sleep so
+      // t.pick() never starts its scan against a transiently-empty candidate list.
+      { const t0 = Date.now(); let n = 0;
+        while (Date.now() - t0 < 6000) { n = await pg.evaluate(() => window.__e2e.candidates().length); if (n > 0) break; await sleep(200); }
+        console.log('  §OPEN-SETTLE candidates=' + n + ' waitedMs=' + (Date.now() - t0)); }
     },
     proj(x, y, z) { return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
+    // real mouse click ON the mesh with this featureId, at a raycast-verified point (anti-flake — see
+    // __e2e.clickPointFor); falls back to the projected bbox centre if no verified point is visible.
+    async clickOn(fid) {
+      let pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), fid);
+      if (!pt) { const c = await this.centre(fid); if (!c) return false; pt = await this.proj(c[0], c[1], c[2]); }
+      await pg.mouse.click(pt[0], pt[1]); await sleep(250);
+      return true;
+    },
     pixsum() { return pg.evaluate(() => window.__e2e.pixsum()); },
     async bboxScreen(fid) { return pg.evaluate(f => window.__e2e.bboxScreen(f), fid); },
     // §F2-FRAMING: fly the camera to a real element close-up (spec G4 "element close-up") — use BEFORE
@@ -195,9 +239,54 @@ async function runE2E(NAME, body, opts) {
     // require the click to have selected THAT candidate (the old code returned whatever got selected).
     async pick(opts) {
       opts = opts || {};
-      let cands = await pg.evaluate(() => window.__e2e.candidates());
+      const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
+      // opts.cuttable (W-E2E-CUT / W-E2E-SEL-TINT-REFOLD subject guard, 2026-07-30): keep only candidates the
+      // PRODUCTION cut gate itself accepts — a rotated/non-box/non-layered ARC insert is HONESTLY refused by
+      // bCut (Bonsai.canCut returns false), so a cut witness that picks one measures the refusal path, not
+      // the cut. Eligibility is asked OF the production gate (reused, not re-implemented); a non-GEOM_INSERT
+      // solid is worker-cuttable natively. §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): canCut() now
+      // also accepts a real authored multi-layer wall (not just a plain box) — was Bonsai._insertCutBox
+      // directly, widened to canCut() so this witness can reach the SAME real-wall population the fix adds.
+      const filterCuttable = async (list) => {
+        if (!opts.cuttable) return list;
+        const ok = await pg.evaluate(fids => {
+          const ops = window.Bonsai.oplog._geomOps(); const byId = new Map(ops.map(o => [o.id, o]));
+          const out = {};
+          fids.forEach(f => { const op = byId.get(f); if (!op) { out[f] = false; return; } let c = false; try { c = window.Bonsai.canCut(op); } catch (e) { } out[f] = !!c; });
+          return out;
+        }, list.map(c => c.fid));
+        return list.filter(c => ok[c.fid]);
+      };
+      // opts.axisSafe (2026-08-07, guide-recapture card, W-E2E-MOVE finding): a Move/Scale gizmo's per-axis
+      // handle is LOCAL to the insert (§F2-FRAMING precedent in witness_e2e_scale.js: "the scaleX cube sits
+      // on the insert's LOCAL x"). The size-only `wallish` heuristic can't tell a real wall from a genuinely
+      // TILTED insert with the same world-AABB proportions — found live: fid=69 in Duplex is an IfcWindow
+      // with placement.rotY=90° (a real pitch, not a wall) that "wallish" happily matched, and a world-+X
+      // drag on it produced a 1.2m world-Z shift the op-log never recorded (local-X ≠ world-X once rotY≠0).
+      // Filter to inserts whose OWN placement has near-zero rotX/rotY — world axes == local axes, so a
+      // world-X drag and the op's dx/dy/dz mean the same thing (the assumption every axis-drag witness makes).
+      const filterAxisSafe = async (list) => {
+        if (!opts.axisSafe) return list;
+        const ok = await pg.evaluate(fids => {
+          const ops = window.Bonsai.oplog._geomOps(); const byId = new Map(ops.map(o => [o.id, o]));
+          const out = {};
+          fids.forEach(f => { const op = byId.get(f); if (!op) { out[f] = false; return; }
+            if (op.op_type !== 'GEOM_INSERT') { out[f] = true; return; }
+            const pl = op.parameters && op.parameters.placement;
+            out[f] = !pl || (Math.abs(pl.rotX || 0) < 1e-6 && Math.abs(pl.rotY || 0) < 1e-6); });
+          return out;
+        }, list.map(c => c.fid));
+        return list.filter(c => ok[c.fid]);
+      };
+      let cands = await filterAxisSafe(await filterCuttable(await pg.evaluate(() => window.__e2e.candidates())));
+      // opts.maxVol (2026-08-07, W-E2E-MOVE finding): headless-swiftshader crashed reproducibly (3/3 runs,
+      // "Target closed") capturing a close-up right after dragging Duplex's single BIGGEST panel (fid=112,
+      // vol=11.38 — an 8.8m exterior wall with 2 hosted fillings; re-fold retessellates the whole span). Not
+      // chased further (a real GPU-driver/software-rasterizer resource limit, not app logic — out of a
+      // guide-screenshot lane's scope) — cap candidate volume so witnesses needing a legible single-element
+      // close-up don't land on the pathological largest mesh in the building.
+      if (opts.maxVol != null) cands = cands.filter(c => c.vol <= opts.maxVol);
       if (opts.prefer === 'wall') {
-        const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
         cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
       }
       // §ZOOM-SEL: every selection now auto-flies the camera (modeller.html zoomToSelection). A real user
@@ -205,9 +294,14 @@ async function runE2E(NAME, body, opts) {
       // otherwise every coordinate a witness computes right after pick() is stale mid-flight. On a wrong-fid
       // hit the fly also moved the camera, so the remaining precomputed candidate coords are stale too:
       // refetch them and restart the scan.
-      const wallish = c => c.sz && c.sz[2] >= 1.2 && Math.min(c.sz[0], c.sz[1]) <= 0.6 && Math.max(c.sz[0], c.sz[1]) >= 1.0 && Math.max(c.sz[0], c.sz[1]) <= 8;
       for (let attempt = 0; attempt < 2; attempt++) {
-        for (const c of cands) { await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);
+        for (const c of cands) {
+          // Anti-flake: click a raycast-VERIFIED point on the candidate itself (see __e2e.clickPointFor),
+          // not its bbox centre — a centre occluded by an upper storey made pick() return null run-to-run.
+          const pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), c.fid);
+          if (!pt && opts.prefer) continue;   // candidate genuinely not visible from this camera → next
+          const cx = pt ? pt[0] : c.sx, cy = pt ? pt[1] : c.sy;
+          await pg.mouse.move(cx, cy); await sleep(40); await pg.mouse.click(cx, cy); await sleep(120);
           const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
           if (sel.length === 1 && (!opts.prefer || sel[0] === c.fid)) { await this.flySettle(); return { fid: sel[0], centre: await this.centre(sel[0]) }; }
           if (sel.length) {
@@ -220,7 +314,8 @@ async function runE2E(NAME, body, opts) {
             const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
           }
         }
-        cands = await pg.evaluate(() => window.__e2e.candidates());
+        cands = await filterAxisSafe(await filterCuttable(await pg.evaluate(() => window.__e2e.candidates())));
+        if (opts.maxVol != null) cands = cands.filter(c => c.vol <= opts.maxVol);
         if (opts.prefer === 'wall') cands = cands.filter(wallish).concat(cands.filter(c => !wallish(c)));
       }
       return null;

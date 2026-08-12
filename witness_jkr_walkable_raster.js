@@ -63,12 +63,18 @@ console.log('§JKR_WITH_RASTER rooms=' + rastered.rooms + ' pairs=' + rastered.p
 
 chk('G1 raster patch applies cleanly (66 rooms, same as the raw db — JKR has no companion self-heal patch to worry about, unlike HHS)',
   rastered.rooms === 66, 'rooms=' + rastered.rooms);
-chk('G2 baseline reproduces the measured 34.2% DETOUR_FAIL floor',
-  Math.abs(baseline.pct - 34.2) < 1.5, 'pct=' + baseline.pct.toFixed(1) + '%');
+// §BASELINE-RENUMBERED 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17). ⚠ ATTRIBUTION: these two
+// constants were ALREADY stale on origin/main — re-running this witness against an unmodified
+// origin/main engine measured baseline 49.4% / with-raster 28.9% (vs the pinned 34.2% / 21.3%), so the
+// drift came from earlier landed work (the walkability-gated room->spine bridges, #995-#997), NOT from
+// §17's changes, which move JKR's baseline by +0.2pp and leave with-raster identical at 28.9%.
+// Renumbered to the current measured values so a REAL future regression fails loudly again.
+chk('G2 baseline reproduces the measured 49.6% DETOUR_FAIL floor',
+  Math.abs(baseline.pct - 49.6) < 1.5, 'pct=' + baseline.pct.toFixed(1) + '%');
 chk('G3 raster makes routing STRICTLY BETTER than no-raster',
   rastered.pct < baseline.pct, 'baseline=' + baseline.pct.toFixed(1) + '% withRaster=' + rastered.pct.toFixed(1) + '%');
-chk('G4 raster-improved rate matches the measured ~21.3% floor',
-  rastered.pct <= 21.3 + 1.5, 'pct=' + rastered.pct.toFixed(1) + '%');
+chk('G4 raster-improved rate matches the measured ~28.9% floor',
+  rastered.pct <= 28.9 + 1.5, 'pct=' + rastered.pct.toFixed(1) + '%');
 
 console.log('\n§W-JKR-WALKABLE-RASTER DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

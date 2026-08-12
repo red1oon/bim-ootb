@@ -155,6 +155,7 @@
   <button id="b-grid" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Grid</span></button>
   <button id="b-gridmove" disabled title="Drag a gridline — attached walls recompose"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="m15 5-3-3-3 3"/><path d="m15 19-3 3-3-3"/><path d="M2 12h20"/></svg><span>Move Grid</span></button>
   <button id="b-move" disabled title="Move the selected object — drag an axis handle or nudge with arrow keys (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9 2 12l3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg><span>Move</span></button>
+  <button id="b-itemdrag" disabled title="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg><span>Drag Item</span></button>
   <button id="b-sketch" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg><span>Sketch</span></button>
   <button id="b-extrude" disabled style="display:none"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L12 2L16 6"/><path d="M12 2V22"/></svg><span>Extrude</span></button>
   <button id="b-constrain" disabled style="display:none" title="Constraint intent the solver enforces on the sketch"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span>Axis</span></button>
@@ -241,10 +242,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
 <script src="bonsai_gridmove.js?v=1" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=12" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=13" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
-<script src="bom_tree.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
-<script src="bom_tree_outliner.js?v=3" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
+<script src="bom_tree.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
+<script src="bom_tree_outliner.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
 <script src="cross_edges.js?v=2" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
@@ -278,6 +279,13 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
 <script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
+<!-- ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2/§3 — two INDEPENDENT capabilities that share the op-log commit discipline
+     and the refuse-not-fabricate placement gate, but keep separate ops, tools and witnesses (spec §0).
+     bonsai_roommove.js CALLS sdg_cascade.js (loaded above) for its second hop; bonsai_itemdrag.js CALLS
+     real_placement_resolver.js (loaded immediately above) as its up-front gate — both load AFTER their
+     dependencies, and both are additive: neither modifies the grid, BOM or walker modules. -->
+<script src="bonsai_roommove.js?v=1" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
+<script src="bonsai_itemdrag.js?v=1" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
 <script src="routewalker.js?v=6" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
@@ -582,6 +590,7 @@ async function xrayReveal(on) {
   const DEFAULT_OPACITY = 0.06, TARGET_CUMULATIVE = 0.35;
   const structureMeshes = g.children.filter(mesh => {
     if (!mesh.isMesh || !mesh.material) return false;
+    if (mesh.userData && mesh.userData.anchor) return false;   // §ANCHOR: never in the x-ray set (its stackDepth raycast does NOT skip invisible meshes)
     const fid = mesh.userData && mesh.userData.featureId;
     return !(fid != null && fx[fid] != null);
   });
@@ -1054,6 +1063,13 @@ function _paintSel() {                                    // emissive: primary b
 }
 // a re-fold rebuilds meshes (new geometry uuids) — re-sync outlines onto the fresh meshes
 window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) { } });
+// §SEL-TINT-REFOLD (MODELLER_MASTER.md row 16 — Witness: W-E2E-SEL-TINT-REFOLD): the hook above never fires
+// on a scrubTo re-fold (history slider undo/redo, x-ray restore, Connect timeline) because scrubTo
+// deliberately never _emit()s — so the rebuilt mesh of a STILL-selected featureId came back with emissive
+// 000000 while _selSet still held it. foldChainToScene now announces 'bonsai:refold' after the rebuilt
+// meshes land; repaint through _paintSel — the ONE existing tinting path, membership re-resolved by
+// featureId (meshes are NEW objects after a re-fold). Idempotent + cheap on the paths bonsai:oplog covers.
+window.addEventListener('bonsai:refold', () => { try { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); } catch (e) { } });
 // ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
 // zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
 // variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
@@ -1281,7 +1297,9 @@ window.Bonsai.frameInstanceRow = (rowId) => {
 window.Bonsai.setAllVisible = () => {                     // reset before deterministically re-applying every hidden subtree
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
   g.children.forEach(o => {
-    if (o.isMesh && o.userData.featureId != null) o.visible = true;
+    // §ANCHOR: the reset leg must NEVER reveal an invisible ride anchor — its .visible=false is its
+    // identity (W-E2E-VOID-ANCHOR G1), not an Outliner eye-hide to be undone here.
+    if (o.isMesh && o.userData.featureId != null && !o.userData.anchor) o.visible = true;
     if (o.userData && o.userData.dwRoot) o.children.forEach(c => {
       c.visible = true;
       // §I5: the reset leg also restores every per-instance hide (then _applyHidden re-applies the hidden set)
@@ -1310,7 +1328,7 @@ window.Bonsai.dimExcept = (sel) => {
   let dimmed = 0;
   const root = g.children.find(o => o.userData && o.userData.dwRoot);
   g.children.forEach(o => {
-    if (!o.isMesh || o.userData.featureId == null) return;
+    if (!o.isMesh || o.userData.featureId == null || o.userData.anchor) return;   // §ANCHOR: never dimmed, never counted
     const keep = !sel || sel.fids.has(o.userData.featureId);
     _dimMat(o.material, keep); if (!keep) dimmed++;
   });
@@ -1358,6 +1376,11 @@ function _applyShadowFlags() {
 }
 window.Bonsai.setShadows = (v) => { _shadowMode = (v === 'auto') ? 'auto' : !!v; return _applyShadowFlags(); };
 window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } catch (e) { } });
+// §SEL-TINT-REFOLD sibling (same root cause, found by W-E2E-CUT C6's pixel oracle, 2026-07-30): a scrubTo
+// re-fold (history slider, x-ray restore, Connect timeline) rebuilds every mesh with castShadow/receiveShadow
+// FALSE and never fires bonsai:oplog — so the scene renders subtly unshadowed until the next commit. Re-apply
+// at the same 'bonsai:refold' choke point the selection repaint uses (event from foldChainToScene).
+window.addEventListener('bonsai:refold', () => { try { _applyShadowFlags(); } catch (e) { } });
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
@@ -1403,6 +1426,10 @@ window.Bonsai.frameElementByGuid = (guid) => {
   let db = null;
   try {
     db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+    // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): hide void-anchor transform rows from this transient copy —
+    // pre-anchor these guids had NO transform row, so framing one must keep returning false (the honest
+    // toast), never fly the camera to an invisible anchor. Guarded: the column exists only on patched dbs.
+    try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
     const r = db.exec("SELECT t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z " +
       "FROM element_transforms t WHERE t.guid='" + String(guid).replace(/'/g, "''") + "'");
     if (!r.length || !r[0].values.length) return false;
@@ -1414,7 +1441,7 @@ window.Bonsai.frameElementByGuid = (guid) => {
   } catch (e) { console.warn('§FRAME_GUID fail ' + (e && e.message)); return false; }
   finally { if (db) { try { db.close(); } catch (e) { } } }
 };
-function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting); }
+function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting || roomMoving || itemDragging); }
 // §Q2 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK): walked fixtures live as InstancedMesh buckets
 // under dwRoot (NOT direct children of g), so the old non-recursive intersect never even raycast them — a
 // canvas click on a walked fixture was a silent miss, instanceId or not. Include the buckets; THREE populates
@@ -1437,7 +1464,9 @@ function pickAt(clientX, clientY, opts) {
   const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   // §V1: o.visible filter — hidden means hidden (unpickable), see _dwPickables note.
-  const list = g.children.filter(o => o.isMesh && o.visible).concat(_dwPickables(opts && opts.hover));
+  // §ANCHOR defense-in-depth (W-E2E-VOID-ANCHOR): userData.anchor is ALSO excluded explicitly — an
+  // invisible ride anchor must never answer a pick even if some future path flips its visibility.
+  const list = g.children.filter(o => o.isMesh && o.visible && !o.userData.anchor).concat(_dwPickables(opts && opts.hover));
   // §I5c (W-E2E-INSTHIDE c): a hidden INSTANCE is unpickable too — skip its hits so the ray falls through to
   // the object behind (or nothing). §V1's bucket-level filter stays in _dwPickables; this is the per-instance
   // leg, and it covers EVERY hover/click/shift-click path (they all raycast through here).
@@ -1461,7 +1490,7 @@ function featuresInRect(x0, y0, x1, y1) {                  // features whose pro
   const lo = { x: Math.min(x0, x1), y: Math.min(y0, y1) }, hi = { x: Math.max(x0, x1), y: Math.max(y0, y1) };
   const out = [];
   g.children.forEach(o => {
-    if (!o.isMesh || o.userData.featureId == null || !o.visible) return;   // §V1: hidden = not marquee-selectable either
+    if (!o.isMesh || o.userData.featureId == null || !o.visible || o.userData.anchor) return;   // §V1: hidden = not marquee-selectable either; §ANCHOR never marquee-selectable
     o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
     const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2).project(camera);
     const sx = r.left + (c.x + 1) / 2 * r.width, sy = r.top + (1 - c.y) / 2 * r.height;
@@ -1515,6 +1544,8 @@ function modeCursor() {
   if (sketching || routing) return 'crosshair'; // drawing sketch points / a route
   if (edgePicking) return 'crosshair';          // picking edges to fillet
   if (gridMoving) return 'grab';                // grabbing a gridline to drag
+  if (roomMoving) return 'grab';                // room armed via the Outliner — drag anywhere on canvas
+  if (itemDragging) return 'crosshair';         // click a fixture/fitting to grab it (gated pick)
   if (moving) return 'move';                    // dragging the transform gizmo
   return null;                                  // default browsing → hover decides
 }
@@ -1595,13 +1626,17 @@ function pickInstance(im, i) {
 // thinnest axis, centred 40% on the other two), commit as a GEOM_CUT child of the selected feature.
 bCut.onclick = async () => {
   if (selectedId == null || !selectedMesh) { setStat('select a wall first'); return; }
-  // §CUT-ON-ARC: a seeded ARC wall is a baked GEOM_INSERT — cutting it promotes it to a B-rep box from its EXACT
-  // measured corners (bonsai_kernel._insertCutBox). Only an axis-aligned BOX can be promoted without inventing
-  // geometry; a rotated/non-box insert returns null → refuse the cut HERE (never write an un-foldable op).
+  // §CUT-ON-ARC: a seeded ARC wall is a baked GEOM_INSERT — cutting it promotes it to a real B-rep solid,
+  // either an axis-aligned box built from its EXACT measured corners (bonsai_kernel._insertCutBox) OR, per
+  // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL), N real per-layer solids fused from its authored
+  // component_geometry_layers (bonsai_kernel._insertCutLayerSeed) for a non-box multi-layer wall. Neither
+  // invents geometry; window.Bonsai.canCut() asks the SAME production gate the E2E harness's `cuttable`
+  // filter uses. Only a genuinely rotated/non-box/non-layered insert is refused HERE (never write an
+  // un-foldable op).
   const _selOp = (window.Bonsai.oplog._geomOps() || []).find(o => o.id === selectedId);
-  if (_selOp && _selOp.op_type === 'GEOM_INSERT' && !window.Bonsai._insertCutBox(_selOp)) {
-    setStat('cut needs a box-shaped wall — this element is rotated or non-box (not yet supported)');
-    toast('⛔ cut needs a box-shaped wall (rotated / non-box element not yet supported)', 'error'); return;
+  if (_selOp && _selOp.op_type === 'GEOM_INSERT' && !window.Bonsai.canCut(_selOp)) {
+    setStat('cut needs a box-shaped or layered wall — this element is rotated or non-box (not yet supported)');
+    toast('⛔ cut needs a box-shaped or layered wall (rotated / non-box element not yet supported)', 'error'); return;
   }
   selectedMesh.geometry.computeBoundingBox();
   const bb = selectedMesh.geometry.boundingBox, mn = bb.min, mx = bb.max;
@@ -1992,6 +2027,167 @@ async function commitGridMove() {
 }
 window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };   // test hook (§STRETCH-GATE smoke)
 canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
+
+// ── ROOM MOVE (whole-room drag) ───────────────────────────────────────────────────────────────────
+// Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.5 — Witness: W-ROOMMOVE-UI.
+// Grab target = the Outliner room node (§2.1 "implementer's choice"): an IfcSpace is never GEOM_INSERT-seeded
+// (grepped — arc_editable.js has no room mesh), so there is nothing to raycast-pick in the 3D canvas; the
+// Outliner's own ⛶ glyph (bonsai_outliner.js) is the only real grab target. Grab happens on click
+// (window.__armRoomMove, dispatched via bom_tree_outliner.js's onRoomGrab), then drag continues on the CANVAS
+// ground plane — mirrors bonsai_gridmove.js's arm→pointerdown→pointermove(preview/tint)→pointerup(commit)
+// structure exactly; only the ARM trigger moves from a toolbar button to the Outliner row (the op itself is
+// UI-agnostic per spec §2.1).
+let roomMoving = false, _roomDrag = null;
+window.__armRoomMove = function (spaceGuid) {
+  if (roomMoving) exitRoomMove();                                 // grabbing a new room cancels any prior arm
+  if (!window.__dwBuf || !window.SQL) { console.warn('§ROOMMOVE-UI no building open — cannot grab a room'); setStat('room move: open a building first'); return; }
+  let db, session;
+  try { db = new window.SQL.Database(new Uint8Array(window.__dwBuf)); }
+  catch (e) { console.warn('§ROOMMOVE-UI db open failed ' + (e && e.message)); return; }
+  try { session = window.Bonsai.roommove.beginRoomDragSession(spaceGuid, { db: db }); }
+  finally { db.close(); }                                          // §ROOMMOVE-UI: transient re-open, mirrors disc_walker.js's own __dwBuf re-open idiom
+  if (!session) { setStat('room move refused — see console (§ROOMMOVE)'); return; }   // engine already console.error'd (spec §2.7)
+  roomMoving = true; _roomDrag = null; controls.enabled = false; applyModeCursor();
+  setStat('room "' + session.room.name + '" armed (' + session.members.length + ' members) — drag anywhere on canvas to move, Esc cancels');
+  audioCue('tick');
+};
+function exitRoomMove() {
+  roomMoving = false; _roomDrag = null; controls.enabled = true; applyModeCursor();
+  gmClearTints();
+  if (window.Bonsai.roommove && window.Bonsai.roommove.endDragSession) window.Bonsai.roommove.endDragSession();
+}
+function rmTint(members) {
+  gmClearTints();
+  const s = window.Bonsai.roommove._session;
+  if (!s) return;
+  (members || []).forEach(m => { const mesh = s.meshByFid[m.featureId]; if (mesh) _emis(mesh, 0x1e66c8); });   // blue = rigid translate (§2.4: no scale ever occurs)
+  if (window.A && A.requestRender) A.requestRender();
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!roomMoving || e.button !== 0 || _roomDrag) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  _roomDrag = { downX: hit.x, downY: hit.y, dx: 0, dy: 0 };
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!roomMoving || !_roomDrag) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(GROUND, hit)) return;
+  _roomDrag.dx = hit.x - _roomDrag.downX; _roomDrag.dy = hit.y - _roomDrag.downY;
+  const preview = window.Bonsai.roommove.previewCommands(_roomDrag.dx, _roomDrag.dy);
+  rmTint(preview.members);
+  setStat('room move Δ(' + _roomDrag.dx.toFixed(2) + ',' + _roomDrag.dy.toFixed(2) + ') — ' + preview.members.length + ' members');
+});
+canvas.addEventListener('pointerup', async () => {
+  if (!roomMoving || !_roomDrag) return;
+  if (Math.abs(_roomDrag.dx) < 0.05 && Math.abs(_roomDrag.dy) < 0.05) { exitRoomMove(); return; }   // dead-zone (mirror commitGridMove) → click, no commit
+  const { dx, dy } = _roomDrag;
+  const _gateBefore = _gateBoxes();                                 // §GATE-1 parity: snapshot AABBs BEFORE the edit
+  try {
+    const res = await window.Bonsai.roommove.commit(dx, dy, 0);
+    if (res) {
+      const gateMsg = _runGate(_gateBefore, res.members.map(m => m.featureId));
+      setStat('room moved Δ(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ') members=' + res.members.length + ' verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
+      audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    }
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER roommove fail ' + err); }
+  exitRoomMove();
+});
+
+// ── ITEM DRAG (free single-item drag, gated) ──────────────────────────────────────────────────────
+// Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3 — Witness: W-ITEMDRAG-UI.
+// A DEDICATED #b-itemdrag toolbar button (mirrors bGridMove's arm/cancel pattern), NOT folded into the
+// existing #b-move gizmo tool: Move is UNGATED axis-constrained direct manipulation (W-BONSAI-MOVE, already
+// shipped) — this tool is a genuinely different contract (resolver-gated session start, collision/host
+// canDropAt validation, snap-back on refusal) and mixing the two would silently change Move's own behavior.
+const bItemDrag = document.getElementById('b-itemdrag');
+const IDRAG_ARM = _ico('<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/>') + '<span>Drag Item</span>';
+const IDRAG_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>Cancel</span>';
+let itemDragging = false, _itemDrag = null;
+function enterItemDrag() {
+  itemDragging = true; _itemDrag = null; bItemDrag.innerHTML = IDRAG_CANCEL; controls.enabled = false; applyModeCursor();
+  setStat('drag item: click a fixture/fitting, drag on canvas — release to drop (green=valid, red=blocked), Esc cancels');
+}
+function exitItemDrag() {
+  itemDragging = false; _itemDrag = null; bItemDrag.innerHTML = IDRAG_ARM; controls.enabled = true; applyModeCursor();
+  gmClearTints();
+  if (window.Bonsai.itemdrag && window.Bonsai.itemdrag.endDragSession) window.Bonsai.itemdrag.endDragSession();
+}
+bItemDrag.onclick = () => itemDragging ? exitItemDrag() : enterItemDrag();
+function idTint(fid, valid) {
+  gmClearTints();
+  const g = window.Bonsai.group && window.Bonsai.group();
+  const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
+  const m = byFid ? byFid[fid] : (g && g.children.find(o => o.isMesh && o.userData.featureId === fid));
+  if (m) _emis(m, valid ? 0x1ea83c : 0x8c1e1e);                    // green=valid / red=blocked (spec §3.3)
+  if (window.A && A.requestRender) A.requestRender();
+}
+// Grab a fid. Factored out so a witness can call it directly with a caller-held productHint (spec §3.2:
+// "a caller that genuinely HOLDS the product id ... may pass opts.productHint") to exercise the MATCH path
+// deterministically. The real pick handler below always passes {} — Q5's own resolved-against-live-code
+// finding is that NO already-committed element carries a UI-recoverable hint: the product identity rides only
+// on the transient _rw/_dw sidecar object at commit time (modeller.html:3104/4325-ish), never persisted to
+// kernel_ops, so it cannot be reconstructed from _geomOps() after the fact. A generic pick therefore honestly
+// REFUSES on today's substrate — the spec's own anticipated v1 outcome (§3.2 Q5), not a UI gap.
+function grabItem(fid, opts) {
+  let session;
+  try { session = window.Bonsai.itemdrag.beginItemDragSession(fid, opts || {}); }
+  catch (err) { console.error('§ITEMDRAG-UI ' + (err && err.message || err)); setStat('drag refused — ' + (err && err.message || err)); return false; }
+  if (!session) { setStat('drag refused — see console (§ITEMDRAG)'); return false; }
+  _itemDrag = { fid: fid, session: session, candidate: null };
+  setStat('item #' + fid + ' lifted (' + session.real.matchedProductId + ') — drag to place');
+  return true;
+}
+window.__armItemDrag = (fid, opts) => { if (!itemDragging) enterItemDrag(); return grabItem(fid, opts); };   // test hook
+canvas.addEventListener('pointerdown', (e) => {
+  if (!itemDragging || e.button !== 0 || _itemDrag) return;
+  const hit = pickAt(e.clientX, e.clientY);
+  const fid = hit && hit.object && hit.object.userData ? hit.object.userData.featureId : null;
+  if (fid == null) return;
+  grabItem(fid, {});
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!itemDragging || !_itemDrag) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  const z = _itemDrag.session.preCentre[2];                        // holds the pre-drag height (v1 UI scope)
+  // Raycast against a horizontal plane AT the item's own pre-drag height, not the world z=0 GROUND — a
+  // WALL/CEILING-hosted item (spec §3.3 requires_host) typically sits well above z=0, and the world-Z=0 hit
+  // point for a given screen pixel is generally NOT the same (x,y) as the point at the item's own height
+  // (they only coincide for a perfectly top-down camera). §3.4's snap still corrects the FINAL flush position
+  // once a real host is found; this only fixes which (x,y) canDropAt is asked to test each frame.
+  const itemPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
+  if (!raycaster.ray.intersectPlane(itemPlane, hit)) return;
+  const v = window.Bonsai.itemdrag.canDropAt(hit.x, hit.y, z);
+  idTint(_itemDrag.fid, v.valid);
+  _itemDrag.candidate = [hit.x, hit.y, z];
+  setStat((v.valid ? 'valid drop' : 'blocked: ' + v.reason) + ' — release to ' + (v.valid ? 'commit' : 'cancel'));
+});
+canvas.addEventListener('pointerup', async () => {
+  if (!itemDragging || !_itemDrag) return;
+  if (!_itemDrag.candidate) { exitItemDrag(); return; }             // click without a drag → cancel (mirror gridmove dead-zone)
+  const [x, y, z] = _itemDrag.candidate;
+  const _gateBefore = _gateBoxes();
+  try {
+    const res = await window.Bonsai.itemdrag.commit(x, y, z);
+    if (res.committed) {
+      const gateMsg = _runGate(_gateBefore, [_itemDrag.fid]);
+      setStat('item #' + _itemDrag.fid + ' moved verify=' + res.verify + (gateMsg ? '  ' + gateMsg : ''));
+      audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    } else {
+      setStat('drop refused: ' + (res.verdict && res.verdict.reason) + ' — item stays at its pre-drag position');
+    }
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER itemdrag fail ' + err); }
+  exitItemDrag();
+});
 
 // ── MOVE (direct-manipulation of a PLACED object) ─────────────────────────────────────────────────
 // W-BONSAI-MOVE / P1 (MODELLER_DIRECT_MANIPULATION.md §0-RESULTS). Select an object → a custom XYZ axis-handle
@@ -2469,16 +2665,24 @@ async function commitMoveDrag() {
 canvas.addEventListener('pointerup', () => { if (moving && _moveDrag) commitMoveDrag(); });
 // §GATE-1 helpers (RESUME_MODELLER_CONFORMITY_GATE.md). Snapshot every editable mesh's world AABB → {fid: box}.
 function _gateBoxes() {
+  // §ANCHOR (W-E2E-VOID-ANCHOR G5): invisible ride anchors are EXCLUDED from the conformity/save gate —
+  // the gate audits RENDERED geometry only; anchors' boxes live in gridmove._buildBoxByFid (which
+  // deliberately INCLUDES them — the cascade needs them) but must never enter a clash/clearance audit.
   const g = window.Bonsai && window.Bonsai.group && window.Bonsai.group(); const out = {};
-  if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
+  if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
   return out;
 }
 // rel for the gate: hosted-by (door-in-wall) + abuts (face-touch) are EXPECTED contact (never a clash); hostOf
 // drives the door-out-of-host check. Resolved guid→fid through the §ARC-1 bridge over the recovered edges.
 function _gateRel() {
+  // §ANCHOR (W-E2E-VOID-ANCHOR G5): edges touching an invisible ride anchor are EXCLUDED from the gate
+  // relation — pre-anchor these hosts had no fid at all (h==null skipped them), so this keeps the gate's
+  // inputs byte-identical; without it, a door-out-of-host check would gate against a host box the gate
+  // itself (deliberately) does not carry.
   const X = window.swXEdges || {}, fbg = window.__arcFidByGuid || {}, relSet = {}, hostOf = {}, abuts = [];
-  (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
-  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
+  const anc = window.__arcAnchorFids || null, isAnc = (fid) => !!(anc && anc.has(fid));
+  (X.fills || []).forEach(e => { const h = fbg[e.host_guid], f = fbg[e.filling_guid]; if (h != null && f != null && !isAnc(h) && !isAnc(f)) { relSet[Math.min(h, f) + '|' + Math.max(h, f)] = 1; hostOf[f] = h; } });
+  (X.abuts || []).forEach(e => { const a = fbg[e.a], b = fbg[e.b]; if (a != null && b != null && !isAnc(a) && !isAnc(b)) { relSet[Math.min(a, b) + '|' + Math.max(a, b)] = 1; abuts.push({ a, b }); } });
   return { related: (a, b) => !!relSet[Math.min(a, b) + '|' + Math.max(a, b)], hostOf: hostOf, abuts: abuts };
 }
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
@@ -3354,7 +3558,8 @@ window.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.key === 'Escape') {                                       // cancel whatever mode is active
     if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
-    else if (gridMoving) exitGridMove(); else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); clearInstPick(); }
+    else if (gridMoving) exitGridMove(); else if (roomMoving) exitRoomMove(); else if (itemDragging) exitItemDrag();
+    else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); clearInstPick(); }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
@@ -3368,7 +3573,7 @@ window.addEventListener('keydown', (e) => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !sketching && !routing) { e.preventDefault(); deleteSelected(); }
 });
 
-bClear.disabled = bSketch.disabled = document.getElementById('b-export').disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = bSave.disabled = false;
+bClear.disabled = bSketch.disabled = document.getElementById('b-export').disabled = bGrid.disabled = bRoute.disabled = bFillet.disabled = bGridMove.disabled = bInsert.disabled = bSave.disabled = bItemDrag.disabled = false;
 window.Bonsai.outliner.mount();   // Blender-style Outliner (the richer Find) over the signed op-log — loads defaults (Walls/Openings)
 // Routes category for the Outliner: GEOM_SWEEP runs (MEP). Registered (not hardcoded) via the addCategory seam.
 // NOTE: the modeller's Outliner is an AUTHORING tree only — it deliberately carries NO 4D/5D info; that is the
@@ -3513,6 +3718,9 @@ async function _discWalkOne(disc, ctx, opts) {
     if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
+    // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): the disc-walkers must see the PRE-ANCHOR substrate — a void-anchor
+    // transform row is ride plumbing for the ARC seed ONLY, never a wall a walk may route along/count.
+    try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); var _abn = bdb.getRowsModified(); if (_abn) console.log('§ANCHOR blind: ' + _abn + ' anchor transform(s) hidden from disc-walk substrate'); } catch (e) { }
     // §LIVEWIRE DEFAULT-FLIP (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE, 2026-07-10): schedule-FIRST.
     // The proven paths engage where their data exists — placeSchedule on real-space buildings (Duplex, 21
     // stamped rooms, W-DX-WALKBACK-RSGT 14/14), placeMeasured on terminal_rules buildings (W-TERM-NOSPACES
@@ -3589,6 +3797,7 @@ async function _discWalkOne(disc, ctx, opts) {
     try {
       if (window.DiscWalker.assemble) {
         var abdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+        try { abdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND — see disc-walk note
         var asm = window.DiscWalker.assemble(disc, abdb);
         abdb.close();
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
@@ -3855,6 +4064,11 @@ function _flashSettleDisc(disc) {
     var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
     var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
     if (proxyMode) {
+      // MODELLER_MASTER.md row 18: the batch-hold downgrade was §-log-only — surface it to the USER once per
+      // walk run via the existing toast (W-BONSAI-TOAST). Guarded by the run-scoped flag discWalkAll resets,
+      // so a run that only ENTERS proxyMode mid-walk (the scene grows as each disc commits) still says it
+      // exactly once. Geometry is identical either way; only the reveal animation is simplified.
+      if (!window.__dwProxyToasted) { window.__dwProxyToasted = true; if (window.toast) toast('Large scene — reveal animation simplified; final geometry unchanged', 'ok'); }
       var HOLD = 150;   // batch hold+settle only — no per-instance stagger above the threshold
       setTimeout(function () {
         idx.forEach(function (e) { e.im.setColorAt(e.i, e.base); });
@@ -3901,6 +4115,11 @@ window.discWalkAll = async function (ctx) {
   var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
   var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
   console.log('§DISCWALK-ALL start disciplines=[' + ds.join(',') + '] n=' + ds.length + ' sceneElements=' + sceneTotal + ' threshold=' + window.DW_ALL_PROXY_THRESHOLD + ' proxyMode=' + proxyMode);
+  // MODELLER_MASTER.md row 18: reset the once-per-run proxy toast flag; if the RUN already starts in
+  // proxyMode, say it up front (the per-disc flash branch in _flashSettleDisc covers a mid-run entry).
+  // The §DISCWALK-ALL log line above stays unchanged.
+  window.__dwProxyToasted = false;
+  if (proxyMode) { window.__dwProxyToasted = true; if (window.toast) toast('Large scene — reveal animation simplified; final geometry unchanged', 'ok'); }
   setStat('Walk ALL — x-ray on, walking ' + ds.length + ' disciplines…');
   var xr = await xrayReveal(true);
   console.log('§DISCWALK-ALL xray-on glass=' + xr.glass + ' glow=' + xr.glow + ' t=' + (Date.now() - t0) + 'ms');
@@ -4446,6 +4665,7 @@ window.seedTrunk = async function (disc) {
   if (!fixtures.length) { alert('Walk ' + disc + ' first — there are no placed fixtures to route a trunk through.'); return; }
   if (!window.__dwBuf) { alert('Open a building first.'); return; }
   var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+  try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND — trunk grid derives from REAL walls only, see disc-walk note
   try {
     var seedInfo = window.DiscWalker.defaultSeed(bdb);
     if (seedInfo.refused) { alert('No entry element (door/stair) to seed the trunk from: ' + seedInfo.reason); return; }

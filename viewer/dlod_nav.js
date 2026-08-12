@@ -9,8 +9,10 @@
 // W-ROOM-OCCL-PROXY, W-ROOM-OCCL-PERF, W-ROOM-OCCL-STABILITY. Room-mismatch (camera's current
 // room ≠ element's contained room) as a THIRD OR'd demote criterion in the same _boxIndex state
 // machine; live point-in-rect current-room test with the walker's floor-anchor Z-join; N-eval
-// membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled (default
-// false) — when false, behavior is identical to the pre-§13 module.
+// membership-stability gate; interior legs only. window.__dlodNav.roomOcclEnabled — DEFAULT
+// TRUE as of §18/§19 (2026-07-23): PROMOTE/DEMOTE tightened (below) on the condition the camera's
+// own current room stays solid regardless of distance, which needs this criterion always live, not
+// console-only. Flip to false for the old §9-only distance/frustum behavior.
 // §ROOM_OCCL step 2 (portal/PVS) — Implementing FLY_TOUR_DLOD_SCALE.md §16 — Witnesses:
 // W-PVS-EQUIV, W-PVS-CORRECT, W-PVS-STABILITY, W-PVS-PERF. window.__dlodNav.pvsEnabled (default
 // false) REPLACES the plain room-equality mismatch test with room-graph-derived visible-room-set
@@ -27,6 +29,13 @@
 // descent; visible ⇒ descend on a later cycle), round-robined across frames with a per-node
 // result HOLD window (§17.4). COMPOSES with §16's PVS per §17.9 decision 3 — roomMis runs as the
 // free first filter, occlMis is a plain further OR. false ⇒ behavior identical to shipped §13+§16.
+// §17.16 supersedes this with a structural-occluder decouple (see occlStructEnabled below);
+// §17.2-17.4 stays in the tree, gated off, until §17.16's own witnesses retire it.
+// §20 — FLY_TOUR_DLOD_SCALE.md §20: adaptive mesh-budget distance boost, a FIFTH mechanism
+// layered on the same PROMOTE_DIST/DEMOTE_DIST thresholds these criteria are evaluated against
+// (widens them under an active-count watermark controller — see budgetBoostEnabled below). Its own
+// §20.1 cross-track safeguard requires the controller's active-count read to reflect the
+// distance/frustum/room population BEFORE occlusion pruning — see _passEligible/_stats.activeElig.
 //
 // Nav-scope DLOD box-proxy: during free orbit/pan and Fly Tour on large buildings (>50k
 // elements), far/out-of-frustum elements render as wireframe boxes (TM_DLOD_SCALE.md §9's
@@ -48,7 +57,11 @@
   function A() { return window.APP || window.A; }
 
   var NAV_MIN_ELEMENTS = 50000;    // LARGE_BUILDING, time_machine.js:471 — same proven gate
-  var PROMOTE_DIST = 50, DEMOTE_DIST = 80;          // §8: S261's band, now with fade on top
+  // §19 (2026-07-23, user: "tightening distances OK as long as in-room remain solid" — §18
+  // measured ~4.5→~8.4fps mean at the §8 band, full-ghost ceiling ~13.4fps): tightened from
+  // 50/80 now that _wantedReal has a same-room-as-camera bypass (below) protecting whatever room
+  // the camera is actually in from distance demotion regardless of these numbers.
+  var PROMOTE_DIST = 38, DEMOTE_DIST = 60;
   var PROMOTE_SQ = PROMOTE_DIST * PROMOTE_DIST, DEMOTE_SQ = DEMOTE_DIST * DEMOTE_DIST;
   var FRUSTUM_MARGIN = 5;          // §9: angular hysteresis — must be 5m OUTSIDE frustum to demote
   var FADE_FRAMES = 10;            // §8 FINDINGS #4: N=10 sufficed; 5 and 20 both worse
@@ -68,6 +81,25 @@
   var DEPTH_MAX_RADIUS = 25;       // §9 shine-thru fix: no depth pass for oversized bboxes — a
                                    // giant slab's invisible occluder would erase REAL nearby
                                    // geometry (center-distance ≠ bbox extent); wireframe-only there
+  // §20 (2026-07-24) adaptive mesh-budget distance boost. Real sweep on LTU_AHouse (RTX 4060,
+  // headless hardware-GL, witness/w_budget_perf.log — real frame_ms at a fixed aerial pose with
+  // forceBoost pinned across 11 values, active count 46→43,422): the ~16.6-16.7ms fully-boxed
+  // floor (matches §10's 17.3ms) holds flat through ~3,700 active, is still only +9% at 7,795
+  // (18.1ms), but is ALREADY +33% by 11,094 (22.2ms) and +65% by 15,616 (27.5ms) — the real knee
+  // sits around 10-12k active, notably EARLIER than the 20k figure floated in conversation
+  // (§20.2's own warning, confirmed: that figure was not measured). Watermarks placed with
+  // margin on both sides of the real knee, not at its edge:
+  var BUDGET_LOW = 6000;           // comfortably below the +9%-at-7,795 point — genuine headroom
+  var BUDGET_HIGH = 12000;         // just past the +33% mark, before the steeper +65%/+90% climb
+                                    // at 15,616/20,001 — decrements before the expensive zone
+  var BUDGET_STEP = 2;             // meters per eval cycle (150ms throttle) — slow ramp, no pop;
+                                    // ≈500-750 active elements/meter in the transition zone per
+                                    // the sweep, so one step moves the count by roughly 1,000-1,500
+  var MAX_BOOST = 60;              // meters (PROMOTE 38→98, DEMOTE 60→120 at full boost) — the
+                                    // sweep's own boost=60 point (active=20,001, 31.6ms, ~1.9x
+                                    // floor) is where BUDGET_HIGH's decrement would already be
+                                    // firing; capped here as a sanity ceiling, not the primary
+                                    // safety valve (BUDGET_HIGH's count-based decrement is)
   var ROOM_STABLE_N = 12;          // §13 membership-stability gate (§11.2 Q4: 10-15 frames —
                                    // filters all 17 measured A→B→A flaps at ~0.2s switch latency,
                                    // well under the 500ms median room dwell)
@@ -156,8 +188,20 @@
   var _lastCamSig = null;
   var _guidArr = null, _evalCursor = 0, _scanPending = false; // §FLY_SMOOTH: chunked-scan state
   var _passReal = 0, _passBoxed = 0; // partition counters accumulated across a pass
+  // §20 cross-track safeguard (FLY_TOUR_DLOD_SCALE.md §20.1): pre-occlusion eligible count,
+  // published to _stats.activeElig at pass-complete — see _budgetControl's own header comment.
+  var _passEligible = 0;
   var _logAccStarted = 0, _lastLogT = 0; // 2026-07-21 user "remove history log spam": eval line ≤1 per 2s
-  // §ROOM_OCCL state (§13) — ALL of it inert unless _stats.roomOcclEnabled is flipped true
+  // §20 (2026-07-24) — persisted closed-loop distance-boost state. At 0 (shipped default, and
+  // whenever budgetBoostEnabled is false) PROMOTE_DIST/DEMOTE_DIST are used completely unmodified
+  // — byte-identical to §19 (W-BUDGET-EQUIV). forceBoost, when non-null, pins _budgetBoost for
+  // witness use (sweep/delta) and disables the controller's own ramp/decay that cycle.
+  var _budgetBoost = 0;
+  var _appliedBoost = 0;           // effective boost baked into the CURRENT partition (change ⇒ rearm scan)
+  var _lastBudgetT = 0;            // periodic-tick throttle clock (150ms — see _tick)
+  var _passPromoteSq = 0, _passDemoteSq = 0; // effective thresholds, frozen per-pass (see _evalChunk)
+  var _passBoostVal = 0;           // the boost value the CURRENTLY-COMPLETING pass was frozen at
+  // §ROOM_OCCL state (§13) — live by default since §19; inert only if roomOcclEnabled is set false
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
   // §ROOM_OCCL step 2 (§16) — portal/PVS state, ALL inert unless _stats.pvsEnabled is flipped true
@@ -200,13 +244,24 @@
   var _occStructPendingList = [];  // guids with an ISSUED, not-yet-resolved GPU query
   var _lastOcclStructEnabled = false;
   var _stats = { mutations: 0, active: 0, boxed: 0, fades: 0, snaps: 0, evalMs: 0,
-    // §13 step-1 testing lever: plain boolean, default false, live-flippable from the console
-    // (window.__dlodNav.roomOcclEnabled = true) — NOT a UI toggle; false ⇒ identical to shipped.
-    roomOcclEnabled: false, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
+    // §20 (2026-07-24) cross-track safeguard state: activeElig is the distance/frustum/room
+    // population measured BEFORE occlusion pruning (§17.16.4's own candidate definition) — the
+    // budget controller reads THIS, never post-occlusion `active`, so boost and occlusion stay
+    // decoupled (FLY_TOUR_DLOD_SCALE.md §20.1's cross-track note). At boost=0 and both occlusion
+    // levers off, activeElig === active exactly.
+    activeElig: 0,
+    // §19: default TRUE — see file-header note. Still live-flippable from the console
+    // (window.__dlodNav.roomOcclEnabled = false) to fall back to plain distance/frustum.
+    roomOcclEnabled: true, roomCur: null, roomLeg: false, roomEvals: 0, roomChanges: 0,
     roomIdxRects: 0, roomIdxStamped: 0,
     // §16 step-2 testing lever: same convention — console-only (window.__dlodNav.pvsEnabled =
     // true), independent of roomOcclEnabled's own default; false ⇒ §13's exact shipped behavior.
     pvsEnabled: false, pvsRooms: 0, pvsAvgVisible: 0,
+    // §20 (2026-07-24) — console-only lever, same convention: false ⇒ §19's exact shipped
+    // PROMOTE_DIST/DEMOTE_DIST behavior, byte-identical (W-BUDGET-EQUIV). forceBoost (null =
+    // controller-driven) lets a witness pin the effective boost directly for a sweep/delta
+    // measurement without waiting for the ramp to converge.
+    budgetBoostEnabled: true, budgetBoost: 0, forceBoost: null,
     // §17 step-3 testing lever: same convention — console-only (window.__dlodNav.occlBvhEnabled =
     // true), independent of the §13/§16 levers; false ⇒ identical to shipped §13+§16 behavior.
     occlBvhEnabled: false, occlBvhNodes: 0, occlHidden: 0, occlCut: 0,
@@ -224,7 +279,6 @@
     // §17.16 step: same console-only convention (window.__dlodNav.occlStructEnabled = true),
     // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior. Once witnessed
     // (W-OCC2-*), this flips to default true and occlBvhEnabled's whole §17.2-17.4 machinery retires.
-    occlStructEnabled: false, occlStructReady: false, occlStructCount: 0, occlStructRootDiag: 0,
     occlStructCandidates: 0, occlStructHidden: 0, occlStructQueriesIssued: 0, occlStructResultsRead: 0,
     // §17.17.2/§17.17.3 sub-levers — all three only ever read while occlStructEnabled is true, so
     // the off-path stays byte-identical regardless of their values (W-OCC3-EQUIV).
@@ -235,6 +289,37 @@
     occlStructBiasM: OCCL_STRUCT_BIAS_M, occlStructThinM: OCCL_STRUCT_THIN_M,
     occlStructThinBiasM: OCCL_STRUCT_THIN_BIAS_M, occlStructThinSubjects: 0 };
   window.__dlodNav = _stats;
+
+  // §20 — effective boost this pass: forceBoost (witness pin) wins outright; otherwise the
+  // controller's own ramped value when enabled; 0 (shipped) when disabled.
+  function _effBoost() {
+    if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) return _stats.forceBoost;
+    if (_stats.budgetBoostEnabled !== true) return 0;
+    return _budgetBoost;
+  }
+
+  // §20 closed-loop controller — called on the periodic 150ms budget-tick (below), driven off
+  // the LAST PUBLISHED PRE-OCCLUSION count (_stats.activeElig, from the most recently completed
+  // scan pass). §20.1's cross-track safeguard (added after occl-BVH/§17.16 shipped alongside this):
+  // reading the post-occlusion `_stats.active` here would create a feedback loop — boost sees a
+  // low count → widens distance → occlusion hides most of the new candidates anyway → count still
+  // low → boost widens further, chasing a target occlusion keeps eating, unbounded. `activeElig`
+  // is measured immediately after distance/frustum/room-mismatch, the same population §17.16.4
+  // defines as occlusion's own query subjects, BEFORE occlMis prunes it — decoupling the two closed
+  // loops. At boost=0 with both occlusion levers off, activeElig === active, so this is still
+  // byte-identical to the pre-occlusion §20 behavior (W-BUDGET-EQUIV unaffected). Returns the
+  // resulting effective boost. A forced boost (witness pin) short-circuits the ramp entirely — ramp
+  // state (_budgetBoost) itself does not move while pinned, so releasing the pin resumes from
+  // wherever it was, not 0.
+  function _budgetControl() {
+    if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) { _stats.budgetBoost = _stats.forceBoost; return _stats.forceBoost; }
+    if (_stats.budgetBoostEnabled !== true) { _budgetBoost = 0; _stats.budgetBoost = 0; return 0; }
+    if (_stats.activeElig < BUDGET_LOW) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
+    else if (_stats.activeElig > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
+    // between watermarks: hold steady, no assignment — this dead band IS the hysteresis
+    _stats.budgetBoost = _budgetBoost;
+    return _budgetBoost;
+  }
 
   function _gateBlockReason(app) {
     if (!app || !app.scene || !app.camera || typeof THREE === 'undefined') return 'no-app';
@@ -1525,29 +1610,37 @@
   }
 
   // ── Per-element wanted state under hysteresis (FLY_TOUR_DLOD_SCALE.md §9 decision rule) ──
-  function _wantedReal(e, camPos, guid) {
+  // §20: promoteSq/demoteSq are passed in (effective PROMOTE_DIST/DEMOTE_DIST + boost, squared,
+  // precomputed ONCE per pass by the caller) rather than read as fixed module constants — at
+  // boost=0 these equal PROMOTE_SQ/DEMOTE_SQ exactly, so this is a pure generalization, not a
+  // behavior change on the boost=0 path (W-BUDGET-EQUIV). guid (§17/§17.16) keys the occlusion
+  // hide-sets — the traversal's live hide-set is guid-keyed, elements are only ever looked up.
+  function _wantedReal(e, camPos, promoteSq, demoteSq, guid) {
     var d2 = camPos.distanceToSquared(e.pos);
     // §13/§16 room-mismatch: THIRD OR'd demote criterion (promote = inverse AND-of-NOTs). Only
     // bites when roomOcclEnabled+interior-leg+camera-in-a-room (_roomActive) AND the element has a
     // compiled containment row (e.room). false ⇒ short-circuits to the shipped decision rule.
     var roomMis = _roomMismatch(e);
-    // §17 occl-BVH: FOURTH OR'd demote criterion, keyed by guid (the traversal's hide-set is
-    // guid-keyed — the reason this function now takes guid at all). Composes with PVS per §17.9
+    // §19: element is contained in the room the camera is CURRENTLY in — exempt from the distance
+    // gate entirely (frustum/hysteresis still applies below). Without this, tightening
+    // PROMOTE/DEMOTE for far-field aggression would also box out the room the user is standing in.
+    var sameRoom = _roomActive && e.room !== undefined && e.room === _roomCur;
+    // §17 occl-BVH / §17.16 structural: FOURTH OR'd demote criterion. Composes with PVS per §17.9
     // decision 3: roomMis filters first for free, occlMis is a plain further OR — no short-circuit
-    // engineering into the traversal itself (correctness first, v1).
-    // §17.16: transitional OR — both default false so EQUIV stays trivially satisfied; occlBvh's
-    // whole §17.2-17.4 machinery retires once §17.16's own witnesses (W-OCC2-*) pass.
+    // engineering into the traversal itself (correctness first, v1). §17.16: transitional OR —
+    // both default false so EQUIV stays trivially satisfied; occlBvh's whole §17.2-17.4 machinery
+    // retires once §17.16's own witnesses (W-OCC2-*) pass.
     var occlMis = _occlBvhMismatch(guid) || _occStructMismatch(guid);
     if (e.state === 'real') {
-      // demote only when clearly out: >80m OR sphere+5m margin outside frustum OR room mismatch
-      // OR GPU-query-proven occluded
-      if (d2 > DEMOTE_SQ) return false;
+      // demote only when clearly out: >60m (+boost) OR sphere+5m margin outside frustum OR room
+      // mismatch OR GPU-query-proven occluded (distance skipped entirely when sameRoom — §19 above)
+      if (!sameRoom && d2 > demoteSq) return false;
       if (roomMis || occlMis) return false;
       _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN;
       return _frustum.intersectsSphere(_sphere);
     }
-    // promote only when clearly in: ≤50m AND exact frustum AND no criterion still demoting
-    if (d2 > PROMOTE_SQ) return false;
+    // promote only when clearly in: ≤38m (+boost) AND exact frustum AND no criterion still demoting
+    if (!sameRoom && d2 > promoteSq) return false;
     if (roomMis || occlMis) return false;
     _sphere.center.copy(e.pos); _sphere.radius = e.radius;
     return _frustum.intersectsSphere(_sphere);
@@ -1563,6 +1656,20 @@
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
     var camPos = app.camera.position;
+    // §20: effective thresholds frozen at PASS START (_evalCursor===0), not recomputed every
+    // chunk-tick — the periodic 150ms budget-tick (in _tick) can fire mid-pass (a pass takes
+    // ~8 chunk-ticks to cover 122k elements, close to the same 150ms cadence), and letting the
+    // threshold drift mid-pass left early-chunk elements evaluated under an older boost than
+    // late-chunk elements in the SAME pass — a smear that never got a follow-up clean pass to
+    // reconcile once the ramp stopped (found via W-BUDGET-DELTA: mismatch stuck at 804 after 20s
+    // with boost visibly steady). Freezing per-pass fixes it: at boost=0 this is still exactly
+    // PROMOTE_SQ/DEMOTE_SQ every pass (W-BUDGET-EQUIV unaffected).
+    if (_evalCursor === 0) {
+      _passBoostVal = _effBoost();
+      _passPromoteSq = _passBoostVal ? (PROMOTE_DIST + _passBoostVal) * (PROMOTE_DIST + _passBoostVal) : PROMOTE_SQ;
+      _passDemoteSq = _passBoostVal ? (DEMOTE_DIST + _passBoostVal) * (DEMOTE_DIST + _passBoostVal) : DEMOTE_SQ;
+    }
+    var promoteSq = _passPromoteSq, demoteSq = _passDemoteSq;
     var end = Math.min(_evalCursor + EVAL_CHUNK, _guidArr.length);
     var started = 0;
     // §17.16.4: candidate accumulation rides the SAME chunked scan, no second O(n) pass. A pass
@@ -1572,29 +1679,36 @@
     if (_stats.occlStructEnabled === true && _evalCursor === 0) _occStructCandBuf = [];
     for (var i = _evalCursor; i < end; i++) {
       var guid = _guidArr[i], e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos, guid);
-      if (_occStructCandBuf) {
-        // §17.16.4: candidate = "would be real ignoring occlusion" under the SAME §9/§13 hysteresis
-        // rule _wantedReal applies to e.state (distance + frustum + room, no occlMis) — mirrors
-        // _wantedReal exactly minus the occlMis term. A flat distance-only net (tried first, reverted
-        // — measured 103,476 candidates vs the sandbox's own ~27k "active" population at an
-        // equivalent pose) forgot the frustum test entirely; this is the correct, tighter population.
-        var d2s = camPos.distanceToSquared(e.pos);
-        var elig;
-        if (e.state === 'real') {
-          elig = d2s <= DEMOTE_SQ && !_roomMismatch(e);
-          if (elig) { _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN; elig = _frustum.intersectsSphere(_sphere); }
-        } else {
-          elig = d2s <= PROMOTE_SQ && !_roomMismatch(e);
-          if (elig) { _sphere.center.copy(e.pos); _sphere.radius = e.radius; elig = _frustum.intersectsSphere(_sphere); }
-        }
+      var want = _wantedReal(e, camPos, promoteSq, demoteSq, guid);
+      // §17.16.4 candidate population / §20.1 cross-track safeguard: "would be real ignoring
+      // occlusion" under the SAME §9/§13/§19/§20 hysteresis rule _wantedReal applies to e.state
+      // (distance + frustum + room, no occlMis) — mirrors _wantedReal exactly minus the occlMis
+      // term, using the SAME per-pass boosted promoteSq/demoteSq _wantedReal itself just used (not
+      // the fixed PROMOTE_SQ/DEMOTE_SQ — those would silently diverge from _wantedReal's own
+      // decision once boost is nonzero). A flat distance-only net (tried first, reverted —
+      // measured 103,476 candidates vs the sandbox's own ~27k "active" population at an equivalent
+      // pose) forgot the frustum test entirely; this is the correct, tighter population. Computed
+      // UNCONDITIONALLY (not just when occlStructEnabled) so _passEligible — and therefore the §20
+      // budget controller's activeElig read — stays correct whichever occlusion lever is on.
+      var d2s = camPos.distanceToSquared(e.pos);
+      var elig;
+      if (e.state === 'real') {
+        elig = d2s <= demoteSq && !_roomMismatch(e);
+        if (elig) { _sphere.center.copy(e.pos); _sphere.radius = e.radius + FRUSTUM_MARGIN; elig = _frustum.intersectsSphere(_sphere); }
+      } else {
+        elig = d2s <= promoteSq && !_roomMismatch(e);
+        if (elig) { _sphere.center.copy(e.pos); _sphere.radius = e.radius; elig = _frustum.intersectsSphere(_sphere); }
+      }
+      if (elig) {
+        _passEligible++;
         // §17.17.2 (W-OCC3-SELF): the occluder set is never its own query subject. Filtered HERE as
         // well as in _occStructIssueQueries so occlStructCandidates and query volume both reflect it
-        // (~4103 of ~19-27k candidates on LTU_AHouse — real work, not just bookkeeping).
-        if (elig && _occStructIsOccluder(guid)) elig = false;
-        if (elig) _occStructCandBuf.push(guid);
-        else if (_occ2Hidden && _occ2Hidden[guid] === true) delete _occ2Hidden[guid]; // stale — out of eligible zone
-      }
+        // (~4103 of ~19-27k candidates on LTU_AHouse — real work, not just bookkeeping). Only the
+        // occl-struct candidate list is filtered — general eligibility (_passEligible, the §20
+        // budget controller's own input) is unaffected: an occluder wall is still "active" in the
+        // ordinary DLOD sense, it's just never a query SUBJECT.
+        if (_occStructCandBuf && !_occStructIsOccluder(guid)) _occStructCandBuf.push(guid);
+      } else if (_occ2Hidden && _occ2Hidden[guid] === true) delete _occ2Hidden[guid]; // stale — out of eligible zone
       if (want === (e.state === 'real')) { if (e.state === 'box') _passBoxed++; else _passReal++; continue; }
       var r = _realIndex[guid];
       if (!r) { e.state = want ? 'real' : 'box'; continue; } // no real mesh resident — index only
@@ -1606,10 +1720,18 @@
     _stats.evalMs = +(performance.now() - t0).toFixed(1); // per-CHUNK cost now (was per full pass)
     _logAccStarted += started;
     if (_evalCursor >= _guidArr.length) { // pass complete — publish partition, rearm on next pose change
-      _stats.active = _passReal; _stats.boxed = _passBoxed;
-      _passReal = 0; _passBoxed = 0;
+      _stats.active = _passReal; _stats.boxed = _passBoxed; _stats.activeElig = _passEligible;
+      _passReal = 0; _passBoxed = 0; _passEligible = 0;
       _evalCursor = 0;
-      _scanPending = false;
+      // §20: if the boost moved on (periodic tick fired) WHILE this pass was still mid-flight —
+      // a real race, a pass takes ~8 chunk-ticks (~130ms) at close to the same 150ms cadence the
+      // boost can change on — this pass was frozen at a now-stale value (_passBoostVal). Clearing
+      // _scanPending here would silently strand the partition at that stale value forever (no
+      // camera/room change left to re-arm it) — found via W-BUDGET-DELTA (mismatch stuck at
+      // 1000+ indefinitely after boost visibly stopped changing). Instead, leave _scanPending
+      // true so a fresh pass starts IMMEDIATELY under the current boost — at most one extra pass,
+      // and only while boost is still actively moving; a converged/steady boost never re-triggers.
+      _scanPending = (_passBoostVal !== _effBoost());
       if (_occStructCandBuf) { _occStructCandGuids = _occStructCandBuf; _occStructCandBuf = null; }
       var _nowLog = performance.now();
       if (_logAccStarted && (_nowLog - _lastLogT) >= 2000) {
@@ -1630,25 +1752,64 @@
            q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + ',' + q.w.toFixed(3);
   }
 
-  function _restoreAll(app, reason) {
+  // §FPS_MODE finding (2026-07-23): the old _restoreAll was a single synchronous loop over the
+  // whole box index — measured 2.5-3.6s frame_ms spike on LTU_AHouse (122k) on every disengage,
+  // worse than the cold-engage burst it mirrors. Chunked the same way _evalChunk already is
+  // (EVAL_CHUNK per rAF tick). _restoreFlush lets a re-engage force-finish a still-draining
+  // restore synchronously first, so _buildBoxes never races a stale in-flight drain — bounded to
+  // "whatever's left undone" rather than always the full 122k.
+  var _restoreFlush = null;
+  function _restoreAllNow(app, reason, onDone) {
     _roomReset(); // §ROOM_OCCL: disengage clears current-room state (index stays, building-keyed)
     _cancelFadesSnap(app);
-    if (_boxIndex) {
-      for (var guid in _boxIndex) {
-        var e = _boxIndex[guid];
+    var idx = _boxIndex, ridx = _realIndex;
+    var guids = idx ? Object.keys(idx) : [];
+    var i = 0;
+    // §26 fix (2026-08-08): finish() must run AT MOST ONCE per _restoreAllNow() invocation. Before
+    // this flag, step()'s own already-scheduled requestAnimationFrame(step) continuation (queued
+    // during THIS call's first synchronous step() below, before any external caller forces an
+    // early finish via the module-level _restoreFlush) was never cancelled — a rapid OFF→ON toggle
+    // makes _tick() call _restoreFlush() (=finish, closure-local, still the CURRENT invocation's)
+    // to force-complete the drain early so the fresh re-engage can rebuild _boxIndex. That leftover
+    // rAF-scheduled step() then fires on a LATER frame regardless, sees i already at guids.length,
+    // and calls finish() A SECOND TIME — re-disposing (via onDone=_disposeBoxes) whatever _boxIndex
+    // is CURRENTLY live (the fresh one from the re-engage), which the main tick's _evalChunk then
+    // reads as null on its very next call. Reproduced live: `witness_boxindex_race.js` — unfixed,
+    // rapid o/o on LTU_AHouse throws `Cannot read properties of null (reading '<guid>')` from
+    // _evalChunk, exactly matching the field stack trace; fixed, zero crash across repeated runs,
+    // __dlodNavAudit() mismatch=0 afterward (structurally correct, not just crash-silenced).
+    var _done = false;
+    function runTo(end) {
+      for (; i < end; i++) {
+        var guid = guids[i], e = idx[guid];
         if (e.state === 'box') {
-          var r = _realIndex && _realIndex[guid];
+          var r = ridx && ridx[guid];
           _setBoxInstance(e, false);
           if (r) _showReal(r);
           e.state = 'real';
         }
       }
     }
-    // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
-    if (app.activeGuidFilter && app.filterByGuids) app.filterByGuids(app.activeGuidFilter);
-    else if ((app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) && app.filterStorey) app.filterStorey(app.activeStoreyFilter);
-    if (app.markDirty) app.markDirty();
-    console.log('§DLOD_NAV_DISENGAGE reason=' + reason + ' mutations=' + _stats.mutations);
+    function finish() {
+      if (_done) return; // stale leftover step() firing after an external flush already finished this
+      _done = true;
+      runTo(guids.length); // no-op if step() already finished the loop
+      _restoreFlush = null;
+      // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
+      if (app.activeGuidFilter && app.filterByGuids) app.filterByGuids(app.activeGuidFilter);
+      else if ((app.activeStoreyFilter !== null && app.activeStoreyFilter !== undefined) && app.filterStorey) app.filterStorey(app.activeStoreyFilter);
+      if (app.markDirty) app.markDirty();
+      console.log('§DLOD_NAV_DISENGAGE reason=' + reason + ' mutations=' + _stats.mutations);
+      if (onDone) onDone();
+    }
+    function step() {
+      if (_done) return; // this invocation was already force-finished elsewhere — stop rescheduling
+      runTo(Math.min(i + EVAL_CHUNK, guids.length));
+      if (i < guids.length) requestAnimationFrame(step);
+      else finish();
+    }
+    _restoreFlush = finish;
+    step();
   }
 
   function _tick() {
@@ -1657,14 +1818,18 @@
     var app = A();
     var block = _gateBlockReason(app);
     if (block) {
-      if (_engaged) { _restoreAll(app, block); _engaged = false; _lastCamSig = null; }
+      if (_engaged) { _engaged = false; window._dlodNavEngaged = false; _lastCamSig = null; _restoreAllNow(app, block); }
       _rafId = requestAnimationFrame(_tick); // stay alive; re-engage when the gate clears
       return;
     }
     if (!_engaged) {
+      if (_restoreFlush) _restoreFlush(); // finish any still-draining restore before rebuilding the index
       if (!_buildBoxes(app)) { _rafId = requestAnimationFrame(_tick); return; }
       _buildRealIndex(app);
-      _engaged = true; _lastCamSig = null;
+      _engaged = true; window._dlodNavEngaged = true; _lastCamSig = null;
+      // §20: fresh engage starts the boost ramp at 0 (never carries a stale value across a
+      // disengage/re-engage cycle — same discipline as _lastCamSig reset above).
+      _budgetBoost = 0; _stats.budgetBoost = 0; _appliedBoost = 0; _lastBudgetT = 0;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
     // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
@@ -1685,6 +1850,27 @@
     if (fading && app.markDirty) app.markDirty();
     var sig = _camSig(app);
     if (sig !== _lastCamSig) { _lastCamSig = sig; _scanPending = true; } // pose changed — (re)arm scan
+    // §20: periodic 150ms budget-tick, INDEPENDENT of camera movement — this is the one new
+    // periodic driver this feature adds (everything else in this file only re-evaluates on pose
+    // change). Reads the last-published _stats.active (guarded until a pass has actually
+    // completed at least once, so the cold-engage active=0 burst can't be misread as "empty,
+    // ramp up"). Only re-arms a scan pass when the effective boost actually CHANGED — a converged,
+    // steady boost costs nothing extra per frame beyond this one cheap comparison (self-limiting,
+    // §20.1's own design goal: near-zero overhead once settled, whether settled at 0 or at max).
+    if (_stats.budgetBoostEnabled === true || (_stats.forceBoost !== null && _stats.forceBoost !== undefined)) {
+      var nowB = performance.now();
+      if (nowB - _lastBudgetT >= 150) {
+        _lastBudgetT = nowB;
+        if ((_stats.active + _stats.boxed) > 0) {
+          var newBoost = _budgetControl();
+          if (newBoost !== _appliedBoost) {
+            _appliedBoost = newBoost;
+            _scanPending = true; // partition must be recomputed under the new effective distance
+            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed);
+          }
+        }
+      }
+    }
     if (_scanPending) _evalChunk(app); // one chunk per frame until the pass completes
     _rafId = requestAnimationFrame(_tick);
   }
@@ -1709,8 +1895,18 @@
         return;
       }
       _pillOn = true; window._dlodNavOn = true;
-      console.log('§DLOD_NAV_TOGGLE on=true');
-      _statusMsg(app, 'Nav LOD ON — boxing far elements (o to turn off)');
+      // §DLOD_NAV_TOGGLE_BLOCKED: toggling on while a gate condition already holds (e.g. bbox/ghost
+      // mode's filterByGuids(new Set()) leaves activeGuidFilter truthy) used to log on=true and stay
+      // silently disengaged — no ENGAGE line, no toast, no way to tell it did nothing. Surface it now;
+      // _tick still auto-engages once the block clears, this is feedback-only, no behavior change.
+      var _armBlock = _gateBlockReason(app);
+      if (_armBlock) {
+        console.log('§DLOD_NAV_TOGGLE on=true blocked=' + _armBlock);
+        _statusMsg(app, 'Nav LOD armed but blocked (' + _armBlock + ') — will engage once cleared');
+      } else {
+        console.log('§DLOD_NAV_TOGGLE on=true');
+        _statusMsg(app, 'Nav LOD ON — boxing far elements (o to turn off)');
+      }
       if (!_rafId) _rafId = requestAnimationFrame(_tick);
       // §DLOD_NAV_ROOMS: a >50k-element building crossing the nav-LOD gate is the same "about to
       // navigate seriously" signal Fly Tour already treats as "make sure rooms are fresh"
@@ -1736,10 +1932,14 @@
     } else {
       _pillOn = false; window._dlodNavOn = false;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-      if (_engaged) { _restoreAll(app, 'pill-off'); _engaged = false; }
-      _disposeBoxes();
       console.log('§DLOD_NAV_TOGGLE on=false');
       _statusMsg(app, 'Nav LOD OFF — full detail restored');
+      if (_engaged) {
+        _engaged = false; window._dlodNavEngaged = false;
+        _restoreAllNow(app, 'pill-off', _disposeBoxes); // dispose only once the chunked drain finishes
+      } else {
+        _disposeBoxes();
+      }
     }
     if (app && app.markDirty) app.markDirty();
   };
@@ -1752,9 +1952,15 @@
     _psm.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     _frustum.setFromProjectionMatrix(_psm);
     var camPos = app.camera.position, mismatch = 0, boxed = 0, real = 0, roomOnly = 0;
+    // §20: same effective-threshold generalization as _evalChunk — at boost=0 (or the mechanism
+    // disabled) this is PROMOTE_SQ/DEMOTE_SQ exactly, so the audit still agrees with a boost=0
+    // partition byte-for-byte (W-BUDGET-EQUIV covers this path too).
+    var _boost = _effBoost();
+    var _promoteSq = _boost ? (PROMOTE_DIST + _boost) * (PROMOTE_DIST + _boost) : PROMOTE_SQ;
+    var _demoteSq = _boost ? (DEMOTE_DIST + _boost) * (DEMOTE_DIST + _boost) : DEMOTE_SQ;
     for (var guid in _boxIndex) {
       var e = _boxIndex[guid];
-      var want = _wantedReal(e, camPos, guid);
+      var want = _wantedReal(e, camPos, _promoteSq, _demoteSq, guid);
       if (want !== (e.state === 'real')) mismatch++;
       if (e.state === 'box') boxed++; else real++;
       // §ROOM_OCCL/§16 (W-ROOM-OCCL-PROXY / W-PVS-CORRECT support): boxed PURELY because of room
@@ -1768,6 +1974,8 @@
       }
     }
     var res = { engaged: true, mismatch: mismatch, real: real, boxed: boxed, fades: _fades.length, snaps: _stats.snaps,
+      budget: { enabled: _stats.budgetBoostEnabled === true, boost: _boost,
+        promoteDist: PROMOTE_DIST + _boost, demoteDist: DEMOTE_DIST + _boost },
       roomOccl: { enabled: _stats.roomOcclEnabled === true, active: _roomActive, room: _roomCur,
         legActive: _stats.roomLeg, roomOnlyBoxed: roomOnly,
         pvsEnabled: _stats.pvsEnabled === true, pvsRooms: _stats.pvsRooms, pvsAvgVisible: _stats.pvsAvgVisible },
@@ -1785,6 +1993,7 @@
         biasM: _stats.occlStructBiasM, thinM: _stats.occlStructThinM,
         thinBiasM: _stats.occlStructThinBiasM, thinSubjects: _stats.occlStructThinSubjects } };
     console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length +
+      ' activeElig=' + _stats.activeElig +
       (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : '') +
       (_stats.pvsEnabled === true ? ' §PVS_AUDIT rooms=' + _stats.pvsRooms + ' avgVisible=' + _stats.pvsAvgVisible : '') +
       (_stats.occlBvhEnabled === true ? ' §OCCL_BVH_AUDIT hidden=' + _stats.occlHidden + ' cut=' + _stats.occlCut +

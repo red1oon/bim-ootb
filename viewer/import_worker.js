@@ -569,15 +569,32 @@ self.onmessage = async function(e) {
             indices: idxBuf,
             normals: normals.buffer,
           });
-          // If no IFC bbox was extracted, compute from vertices
+          // If no IFC bbox was extracted, compute from vertices.
+          // Implementing IFC_LARGE_PRIVATE_STRESS_TEST.md §NEXT_SESSION item 2 — Witness: W-BBOX-BIGMESH
+          // §BBOX_SCALAR: was three vxs/vys/vzs arrays + Math.max.apply(null, arr). `apply` spreads the
+          // whole array onto the call stack AS ARGUMENTS; measured limit 125,570 args (poc_apply_overflow.js),
+          // and KUL070 meshes reach 248,782 verts — those threw "Maximum call stack size exceeded" and the
+          // element was §GEOM_SKIPped. This is NOT a rare fallback: nothing in this pipeline reads
+          // IfcBoundingBox (grep IFCBOUNDINGBOX = 0 in the KUL files; extractIFCtoDB.py and Bonsai's
+          // federation_preprocessor both derive AABBs from the geometry pass), so this is the STANDARD
+          // path for every import. Single scalar pass: no intermediate arrays, no stack growth, O(n).
           if (!el._bboxX) {
-            var vxs = [], vys = [], vzs = [];
+            var _mnx = Infinity, _mny = Infinity, _mnz = Infinity;
+            var _mxx = -Infinity, _mxy = -Infinity, _mxz = -Infinity;
             for (var vi2 = 0; vi2 < vertCount; vi2++) {
-              vxs.push(positions[vi2*3]); vys.push(positions[vi2*3+1]); vzs.push(positions[vi2*3+2]);
+              var _px = positions[vi2*3], _py = positions[vi2*3+1], _pz = positions[vi2*3+2];
+              if (_px < _mnx) _mnx = _px; if (_px > _mxx) _mxx = _px;
+              if (_py < _mny) _mny = _py; if (_py > _mxy) _mxy = _py;
+              if (_pz < _mnz) _mnz = _pz; if (_pz > _mxz) _mxz = _pz;
             }
-            el._bboxX = Math.max.apply(null, vxs) - Math.min.apply(null, vxs);
-            el._bboxY = Math.max.apply(null, vys) - Math.min.apply(null, vys);
-            el._bboxZ = Math.max.apply(null, vzs) - Math.min.apply(null, vzs);
+            el._bboxX = _mxx - _mnx;
+            el._bboxY = _mxy - _mny;
+            el._bboxZ = _mxz - _mnz;
+            if (vertCount > 125570) {
+              console.log('§BBOX_BIGMESH guid=' + el.guid + ' verts=' + vertCount +
+                ' bbox=' + el._bboxX.toFixed(2) + 'x' + el._bboxY.toFixed(2) + 'x' + el._bboxZ.toFixed(2) +
+                ' (over the 125,570 apply-limit that used to §GEOM_SKIP this element)');
+            }
           }
           transforms.push({ guid: el.guid, cx: cx, cy: cy, cz: cz, rx: 0, ry: 0, rz: 0,
             bx: el._bboxX, by: el._bboxY, bz: el._bboxZ });

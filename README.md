@@ -60,6 +60,7 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **DAGeVu authoring modeller** (`modeller/modeller.html`) — a browser BIM *authoring* surface beside the viewer: an occt-wasm B-rep kernel as a pure `ops → mesh` function, where the signed op-log **is** the feature tree and geometry is a deterministic fold. Insert library components at LOD from a BOM-hierarchy catalog (real meshes), drop a whole house / floor / room as a recursive BOM-assembly, sketch with a planegcs constraint solver, sweep / fillet / chamfer — all replayable and reversible. Real buildings with rooms, storeys and typed cross-edges load as resident assemblies; the 3D construction grid is the active authoring frontier. Renamed from "Bonsai" to avoid a brand clash
 - **Connect Scene** — shared cross-surface context over the one op-log: selection, timeline and identity cross between the DAGeVu modeller, the viewer and the ERP while the surfaces stay separate (one log → two folds that co-vanish on undo)
 - **4D/5D Schedule Editor** (`viewer/schedule_editor.html`) — a full authoring arc built on top of the Time Machine: collapsible WBS outline, dependency editing, bounded CPM with critical-path highlight, drag-to-reschedule Gantt bars with duration lock, and live cross-tab sync via BroadcastChannel — every edit replays on the 3D viewer's Time Machine in real time
+- **BIM OOTB Film-Maker** (Alt+C) — a full cinematic film computed from the model's own room graph in under a second (dive → main hall → walk out a real door → exterior orbit), no camera path authored by hand; a drag-to-edit dialog lets you pivot or slide any leg before recording. I found no other BIM tool offering this. [Watch the film](https://youtu.be/sUTscAgnQMc)
 
 → **Read the paper:** [BIM OOTB Feature Paper](https://red1oon.github.io/BIMCompiler/FeatureComparison/)
 
@@ -142,9 +143,9 @@ erp/                  — Kernel-ERP engine
   docs/               — ERP feature specs
 ```
 
-## 25 Pre-loaded Buildings
+## 32 Pre-loaded Buildings
 
-The gallery includes 25 IFC buildings from public datasets (8 landmark + 17 city) — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
+The gallery includes 32 IFC buildings from public datasets — from a simple house (487 elements) to a hospital (40,086 elements). Building databases are served from OCI Object Storage; the viewer code is served from GitHub Pages.
 
 ## Deploy
 
@@ -188,7 +189,7 @@ cd tests && npm install && npx playwright test
 
 This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **800+ commits across 540+ PRs through June 2026**, now **140+ vanilla JS modules** (≈100 BIM + 40 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **1,274 commits across 966 merged PRs through July 2026**, now **208 vanilla JS modules** (119 BIM + 89 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
 
 The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 

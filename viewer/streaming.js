@@ -220,6 +220,11 @@ function setupStreaming(A) {
   A._instanceGuids = {}; // guid → {meshId, instanceIndex} for reverse lookup
   A._isMobile = (navigator.maxTouchPoints > 0 && window.screen.width < 1024)
     && !new URLSearchParams(location.search).has('tm');
+  // §MERGED_GUID: `?tm` has always meant "I need per-element slots" — it forced the non-merged path
+  // via _isMobile back when merging was device-gated. Merging is capability-gated now, so carry the
+  // same promise onto the new gate. Set once here and NOT cleared on clearStreamed: TM (which also
+  // sets it) re-streams, and a re-stream that silently re-merged would defeat the whole point.
+  A._forceNoMerge = new URLSearchParams(location.search).has('tm');
   A._bboxPlaceholder = null;
 
   // Per-element wireframe cubes, one InstancedMesh per discipline for disc-based coloring
@@ -433,9 +438,8 @@ function setupStreaming(A) {
       IfcSlab: _TRI_CONCRETE,
       IfcColumn: _TRI_CONCRETE,
       IfcFooting: _TRI_CONCRETE,
-      IfcPile: _TRI_CONCRETE,
       IfcStair: _TRI_CONCRETE,
-      IfcRamp: _TRI_CONCRETE,
+      IfcStairFlight: _TRI_CONCRETE,
       // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
       IfcWallStandardCase: _TRI_PLASTER,
       IfcCovering: _TRI_PLASTER,
@@ -444,13 +448,16 @@ function setupStreaming(A) {
       IfcMember: _TRI_METAL,
       IfcPlate: _TRI_METAL,
       IfcRailing: _TRI_METAL,
-      IfcPipe: _TRI_METAL,
       IfcPipeFitting: _TRI_METAL,
       IfcPipeSegment: _TRI_METAL,
-      IfcDuct: _TRI_METAL,
       IfcDuctFitting: _TRI_METAL,
       IfcDuctSegment: _TRI_METAL,
-      IfcCableCarrier: _TRI_METAL
+      IfcCableCarrierSegment: _TRI_METAL,
+      IfcCableCarrierFitting: _TRI_METAL,
+      // ── IFC2x3 generic-MEP convention (Clinic/LTU/HHS export these instead of the above) ──
+      IfcFlowSegment: _TRI_METAL,
+      IfcFlowTerminal: _TRI_METAL,
+      IfcFlowFitting: _TRI_METAL
     };
 
     const key = rgbaStr || '_default';
@@ -755,6 +762,29 @@ function setupStreaming(A) {
           if (A.CITY_URL && A._cityTagAndBudget) A._cityTagAndBudget(A.activeBuilding);
           // §S285: marquee — stream the next queued building (sequential drain).
           if (A.CITY_URL && A._cityStreamNext) A._cityStreamNext();
+          // §SCENE_MERGE (§SM-7.1 step 7): same sequential drain for buildings folded in by
+          // Open→Merge. A real merged package (Clinic = 5 discipline buildings) has N names and
+          // streamBuilding() handles ONE, so it chains here exactly like City's queue above.
+          if (A._mergePending && A._mergePending.length && A._mergeStreamNext) A._mergeStreamNext();
+          // §MERGE_CONTRACT (W-SCENE-MERGE): §CONTRACT_CHECK is scene-wide and building-blind, so
+          // the merge needs its own per-building split of what is ACTUALLY registered for picking.
+          // guidMap values joined back to elements_meta.building — both sides must be > 0.
+          if (A.cityBuildingDbs && Object.keys(A.buildingCentres || {}).length > 1 && A.db) {
+            try {
+              var _mcOwn = {}, _mcGuids = Object.values(A.guidMap);
+              for (var _mgi in A._mergedIndex) _mcGuids.push(_mgi);
+              var _mcSt = A.db.prepare('SELECT building FROM elements_meta WHERE guid = ?');
+              for (var _mgj = 0; _mgj < _mcGuids.length; _mgj++) {
+                _mcSt.bind([_mcGuids[_mgj]]);
+                if (_mcSt.step()) { var _b = _mcSt.get()[0]; _mcOwn[_b] = (_mcOwn[_b] || 0) + 1; }
+                _mcSt.reset();
+              }
+              _mcSt.free();
+              console.log('§MERGE_CONTRACT buildings=' + Object.keys(_mcOwn).length +
+                ' rendered=' + JSON.stringify(_mcOwn) +
+                ' centres=' + Object.keys(A.buildingCentres).length);
+            } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
+          }
         }
         // §S262: Enable DLOD frustum + storey visibility culling (no geometry swap)
         if (A.dlodEnable) {  // §S265: DLOD visibility culling on all devices
@@ -1006,16 +1036,27 @@ function setupStreaming(A) {
   if (!A._batchMeta) A._batchMeta = {};
   if (!A._batchStoreyMap) A._batchStoreyMap = {};
   if (!A._batchDiscMap) A._batchDiscMap = {};
+  // §MERGED_GUID: _mergedMeta[meshId] = [{guid, storey, disc, ifcClass, idxStart, idxCount,
+  //   hidden, minX..maxZ}, ...] — the merged path's slot table. _mergedIndex is the guid→
+  //   {meshId, rangeIdx} reverse lookup (guidMap can't hold it: keyed by mesh.id, one-to-many).
+  if (!A._mergedMeta) A._mergedMeta = {};
+  if (!A._mergedIndex) A._mergedIndex = {};
+  // Raycast accounting — makes the Walk/fly protection MEASURABLE (elements actually triangle-tested
+  // vs elements scanned), so the AABB pre-cull can be proven working instead of assumed.
+  if (!A._mergedRayStats) A._mergedRayStats = { casts: 0, tested: 0, scanned: 0 };
 
   // ── §S280d: Streaming Contract ────────────────────────────────────────────
   // ROUTING RULE (sacred — do NOT change without testing TM, picking, storey/disc filter):
   //   elements.length === 1  → BatchedMesh  → metadata in _batchMeta
   //   elements.length >= 2   → InstancedMesh → metadata in _instanceMeta
-  //   mobile single-instance → MergedMesh    → no per-GUID metadata (merged)
+  //   single-instance, no WEBGL_multi_draw → MergedMesh → metadata in _mergedMeta (§MERGED_GUID,
+  //     2026-07-28: was "no per-GUID metadata"; merged elements now carry full identity via
+  //     index ranges, so picking/filter/TM hold on this path too)
   // CONSUMERS (16 files): time_machine, picking, helpers, walk, dlod, ghostglass,
   //   grid_views, scene, doc_canvas, city, wizard_classify, nlp, tools, main
-  // CONTRACT: every non-merged element must appear in exactly ONE of _batchMeta or
-  //   _instanceMeta, AND have a guidMap entry. Violation = TM/picking/filter breakage.
+  // CONTRACT: every element must appear in exactly ONE of _batchMeta / _instanceMeta /
+  //   _mergedMeta, AND be reachable by guid (guidMap, or _mergedIndex for merged).
+  //   Violation = TM/picking/filter breakage.
 
   // §S280d: Shared metadata registration — used by _flushInstanced AND _flushBboxBatched.
   // Ensures both paths populate the same 4 structures (the contract surface).
@@ -1028,6 +1069,71 @@ function setupStreaming(A) {
     if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
     A._batchDiscMap[dk].push({ mesh: bm, slotId: slotId });
     return { guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '', slotId: slotId, bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3 };
+  };
+
+  // §MERGED_GUID — per-element raycast for merged meshes. Witness: W-MERGED-RAYCAST.
+  // ISSUE IT PROVES: a merged bucket is ONE geometry with no BVH (three-mesh-bvh builds boundsTree
+  // on the shared meshCache source geometries, not on baked merged copies). Plain Mesh.raycast
+  // would brute-force every triangle in the bucket — and sfx.js:445 fly-rayblast casts at 11Hz
+  // during Walk/fly, so that cost would land directly on the mobile navigation path this whole
+  // change is supposed to protect. Two-level instead: ray→element-AABB slab test (a few ns each,
+  // and the AABBs came from the baked vertices so they are exact), then the STOCK Mesh.raycast
+  // restricted by drawRange to just the surviving elements' index slices — stock triangle maths,
+  // stock intersect record (point/face/faceIndex/uv), no hand-rolled geometry.
+  var _mgSphere = null, _mgInvMat = null, _mgRay = null;
+  A._installMergedRaycast = function(mesh) {
+    var _stockRaycast = THREE.Mesh.prototype.raycast;
+    mesh.raycast = function(raycaster, intersects) {
+      var meta = A._mergedMeta[this.id];
+      if (!meta) return _stockRaycast.call(this, raycaster, intersects);
+      var geo = this.geometry, idxAttr = geo.index;
+      if (!idxAttr) return _stockRaycast.call(this, raycaster, intersects);
+
+      // Whole-bucket reject first (stock does this too, but we must do it before the AABB sweep).
+      if (!_mgSphere) { _mgSphere = new THREE.Sphere(); _mgInvMat = new THREE.Matrix4(); _mgRay = new THREE.Ray(); }
+      if (geo.boundingSphere === null) geo.computeBoundingSphere();
+      _mgSphere.copy(geo.boundingSphere).applyMatrix4(this.matrixWorld);
+      if (!raycaster.ray.intersectsSphere(_mgSphere)) return;
+
+      // Ray → this mesh's local space (identity in practice — merged verts are baked world-space —
+      // but never assume it; a parented/offset merged mesh must still pick correctly).
+      _mgInvMat.copy(this.matrixWorld).invert();
+      _mgRay.copy(raycaster.ray).applyMatrix4(_mgInvMat);
+      var ox = _mgRay.origin.x, oy = _mgRay.origin.y, oz = _mgRay.origin.z;
+      var dx = _mgRay.direction.x, dy = _mgRay.direction.y, dz = _mgRay.direction.z;
+      // 1/0 = Infinity would make 0*Infinity = NaN for a ray exactly on a slab plane; a large
+      // finite reciprocal keeps the slab test branch-free and NaN-free.
+      var ix = dx !== 0 ? 1 / dx : 1e30, iy = dy !== 0 ? 1 / dy : 1e30, iz = dz !== 0 ? 1 / dz : 1e30;
+      var near = raycaster.near || 0, far = raycaster.far === undefined ? Infinity : raycaster.far;
+
+      var _prevStart = geo.drawRange.start, _prevCount = geo.drawRange.count;
+      var tested = 0;
+      for (var i = 0; i < meta.length; i++) {
+        var m = meta[i];
+        if (m.hidden) continue;                       // respects filterMergedMesh / Room Lens
+        var t1 = (m.minX - ox) * ix, t2 = (m.maxX - ox) * ix;
+        var tmin = t1 < t2 ? t1 : t2, tmax = t1 < t2 ? t2 : t1;
+        t1 = (m.minY - oy) * iy; t2 = (m.maxY - oy) * iy;
+        var lo = t1 < t2 ? t1 : t2, hi = t1 < t2 ? t2 : t1;
+        if (lo > tmin) tmin = lo;  if (hi < tmax) tmax = hi;
+        t1 = (m.minZ - oz) * iz; t2 = (m.maxZ - oz) * iz;
+        lo = t1 < t2 ? t1 : t2; hi = t1 < t2 ? t2 : t1;
+        if (lo > tmin) tmin = lo;  if (hi < tmax) tmax = hi;
+        if (tmax < 0 || tmin > tmax || tmin > far || tmax < near) continue;
+
+        // Stock triangle intersection, scoped to this element's index slice.
+        geo.setDrawRange(m.idxStart, m.idxCount);
+        var before = intersects.length;
+        _stockRaycast.call(this, raycaster, intersects);
+        for (var k = before; k < intersects.length; k++) {
+          intersects[k]._mergedGuid = m.guid;          // exact identity, O(1) — no faceIndex search
+          intersects[k]._mergedRange = m;
+        }
+        tested++;
+      }
+      geo.setDrawRange(_prevStart, _prevCount);
+      if (A._mergedRayStats) { A._mergedRayStats.casts++; A._mergedRayStats.tested += tested; A._mergedRayStats.scanned += meta.length; }
+    };
   };
 
   A._registerInstanceSlot = function(iMesh, el, instanceIndex) {
@@ -1050,27 +1156,75 @@ function setupStreaming(A) {
     let instancedCount = 0, batchedCount = 0, mergedCount = 0, drawCalls = 0;
     var _prevDrawCalls = 0;
 
-    // ── S232: On mobile, bucket single-instance elements for merge ──
+    // ── S232: bucket single-instance elements for merge (see A._useMerge below) ──
     const mergeBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
     // ── S260: On desktop, bucket single-instance elements for BatchedMesh ──
     // §S261: When _useDlodPath, these buckets are passed to _flushBboxBatched instead
     const batchBuckets = {};  // key: "storey|disc|rgba" → [{el, geo}, ...]
+    // §MERGED_GUID (MOBILE_PERF.md §SPEC 2026-07-28) — Witness: W-MERGED-GUID.
+    // WITHOUT WEBGL_multi_draw a BatchedMesh costs ONE DRAW CALL PER SLOT (~13.5K on LTU); merging
+    // the bucket's geometry into one buffer costs one draw per bucket (~200). WITH multi_draw the
+    // BatchedMesh path is already one draw per bucket AND keeps the per-slot APIs, so merging would
+    // only add vertex-baking cost for nothing — hence the gate is the CAPABILITY, not the device.
+    // (68bd9a7's lag was `_useMerge` always-true because `_hasMultiDraw` was never defined; it is
+    // now persisted in scene.js. Default-true on probe failure keeps the safe BatchedMesh path.)
+    // `?merge=1` / `?merge=0` forces the routing either way — the A/B handle for measuring draw
+    // counts on a real device, and how the witness drives the merged path on hardware that has
+    // multi_draw. Parsed once per session, not per flush (this runs every 500-5000 elements).
+    if (A._mergeOverride === undefined) A._mergeOverride = new URLSearchParams(location.search).get('merge');
+    const _mergeOverride = A._mergeOverride;
+    // _forceNoMerge OUTRANKS the override: it is set by TM (and `?tm`) to get per-element slots, and
+    // TM re-streams to obtain them. If `?merge=1` could still win, that re-stream would re-merge,
+    // TM's activate() would see merged meshes again and re-stream again — an infinite unmerge loop
+    // (observed in the probe run before this ordering was fixed, not theorised).
+    const _useMerge = A._forceNoMerge ? false
+                    : _mergeOverride === '1' ? true
+                    : _mergeOverride === '0' ? false
+                    : (A._hasMultiDraw === false);
+    if (_useMerge && !A._mergeLogged) {
+      A._mergeLogged = true;
+      console.log('§MERGE_ROUTE on — multi_draw=' + A._hasMultiDraw + ' mobile=' + A._isMobile +
+        ' override=' + (_mergeOverride === null ? 'none' : _mergeOverride));
+    }
 
     for (const [hash, elements] of Object.entries(A._pendingInstances)) {
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
-      if (elements.length === 1) {
-        // §S260: Desktop — bucket for BatchedMesh (single-instance hashes only)
-        const el = elements[0];
-        // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
-        // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
-        // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
-        const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
-        if (!batchBuckets[key]) batchBuckets[key] = [];
-        batchBuckets[key].push({ el, geo });
+      // §S280e (2026-07-25, FLY_TOUR_DLOD_SCALE.md §21 follow-up — verified live via
+      // scene.traverse() on LTU_AHouse: 13,453 InstancedMesh scene objects averaging only 2.7
+      // instances each. Each is a real, separate scene-graph object paying full per-object
+      // frustum-cull traversal every frame (three.js perObjectFrustumCulled) regardless of
+      // visibility — confirmed as the cause of a frame-cost floor that persisted even with draw
+      // calls cut to ~16 via box-proxy (Duplex, ~150 objects total, ran 4-8x faster at a
+      // comparable draw-call count). Raising the BatchedMesh cutoff from "1 instance only" to
+      // "LOW_INSTANCE_BATCH_MAX or fewer" folds these near-empty hashes into the SAME
+      // already-existing multi-geometry BatchedMesh bucketing used for single-instance elements
+      // (bucketed by storey|disc|rgba|matVariant, not by hash — a bucket already holds many
+      // different geometries, so a few instances of the same geometry is not a new capability).
+      // UNVERIFIED against TM/picking/storey+disc filter — this is the "sacred, do NOT change
+      // without testing" line above. Do not treat this as shipped/done until those three are
+      // re-tested on a large building; _batchMeta/_instanceMeta contract shape is unchanged
+      // (every element still lands in exactly one, via the same _registerBatchSlot call), which
+      // is why this is expected to be safe, but expectation is not the same as verification.
+      var LOW_INSTANCE_BATCH_MAX = 3;
+      if (elements.length <= LOW_INSTANCE_BATCH_MAX) {
+        // §S260/§S280e: Desktop — bucket for BatchedMesh (low-instance-count hashes)
+        for (let li = 0; li < elements.length; li++) {
+          const el = elements[li];
+          // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
+          // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
+          // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
+          // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
+          // Applies to §S280e's low-instance elements too: each is baked individually into the
+          // merged buffer with its own index range, so identity survives exactly as for singles.
+          const _target = _useMerge ? mergeBuckets : batchBuckets;
+          if (!_target[key]) _target[key] = [];
+          _target[key].push({ el, geo });
+        }
       } else {
-        // 2+ instances — InstancedMesh (both desktop and mobile)
+        // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
         const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
@@ -1221,11 +1375,14 @@ function setupStreaming(A) {
       _prevDrawCalls = batchedCount;
     }
 
-    // ── S232: Merge single-instance buckets on mobile ──
-    if (A._isMobile) {
+    // ── S232 + §MERGED_GUID: Merge single-instance buckets (no-multi_draw devices) ──
+    if (_useMerge) {
       for (const [key, items] of Object.entries(mergeBuckets)) {
         if (items.length === 0) continue;
         const [storey, disc, rgba] = key.split('|');
+        // §MERGED_GUID: per-element index range map — built inside the existing bake loop below,
+        // so identity costs one array push per element and NO extra geometry pass.
+        const ranges = [];
 
         // Bake transform into vertices and concatenate all geometries in this bucket
         let totalVerts = 0, totalIdx = 0;
@@ -1260,12 +1417,21 @@ function setupStreaming(A) {
           const _nm = new THREE.Matrix3().getNormalMatrix(_m4);
 
           // Bake positions
+          // §MERGED_GUID: accumulate this element's world AABB from the BAKED vertices — exact
+          // under any rotation, and free (we already touch every vertex here). Deliberately NOT
+          // derived from the DB bbox_x/y/z, which is axis-aligned in IFC space and would understate
+          // the world extent of a rotated element.
+          let _eMinX = Infinity, _eMinY = Infinity, _eMinZ = Infinity;
+          let _eMaxX = -Infinity, _eMaxY = -Infinity, _eMaxZ = -Infinity;
           for (let v = 0; v < count; v++) {
             _v.set(srcPos.getX(v), srcPos.getY(v), srcPos.getZ(v));
             _v.applyMatrix4(_m4);
             mergedPos[(vOff + v) * 3] = _v.x;
             mergedPos[(vOff + v) * 3 + 1] = _v.y;
             mergedPos[(vOff + v) * 3 + 2] = _v.z;
+            if (_v.x < _eMinX) _eMinX = _v.x;  if (_v.x > _eMaxX) _eMaxX = _v.x;
+            if (_v.y < _eMinY) _eMinY = _v.y;  if (_v.y > _eMaxY) _eMaxY = _v.y;
+            if (_v.z < _eMinZ) _eMinZ = _v.z;  if (_v.z > _eMaxZ) _eMaxZ = _v.z;
           }
 
           // Bake normals
@@ -1280,6 +1446,7 @@ function setupStreaming(A) {
           }
 
           // Rebase indices
+          const _idxStart = iOff;
           if (srcGeo.index) {
             const srcIdx = srcGeo.index;
             for (let j = 0; j < srcIdx.count; j++) {
@@ -1292,6 +1459,17 @@ function setupStreaming(A) {
             }
             iOff += count;
           }
+          // §MERGED_GUID: the identity record. idxStart/idxCount address this element's slice of
+          // the shared index buffer — the merged equivalent of a BatchedMesh slotId. Everything
+          // downstream (exact picking, per-element hide, promote-on-demand) reads those two numbers;
+          // the AABB pre-culls raycasts so a merged mesh without a BVH stays cheap for Walk/fly ray
+          // probes (sfx.js fly-rayblast, 11Hz) — see mesh.raycast below.
+          ranges.push({
+            guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass || '',
+            idxStart: _idxStart, idxCount: iOff - _idxStart, hidden: false,
+            bx: el.bx || 0.3, by: el.by || 0.3, bz: el.bz || 0.3,
+            minX: _eMinX, maxX: _eMaxX, minY: _eMinY, maxY: _eMaxY, minZ: _eMinZ, maxZ: _eMaxZ
+          });
           vOff += count;
           vBase += count;
         }
@@ -1307,11 +1485,27 @@ function setupStreaming(A) {
         mesh.userData.disc = disc === '_' ? '' : disc;
         mesh.userData.isMerged = true;
         mesh.userData.mergedCount = items.length;
+        // §MERGED_GUID — CONTRACT REGISTRATION. §S280d's contract says every non-merged element must
+        // live in exactly one of _batchMeta/_instanceMeta with a guidMap entry; merged elements now
+        // satisfy the same shape via _mergedMeta + _mergedIndex, so the "no per-GUID metadata"
+        // exemption is retired. guidMap is NOT written per element (it is keyed by mesh.id, which is
+        // one-to-many here) — _mergedIndex is the reverse lookup instead.
+        A._mergedMeta[mesh.id] = ranges;
+        for (let r = 0; r < ranges.length; r++) {
+          if (ranges[r].guid) A._mergedIndex[ranges[r].guid] = { meshId: mesh.id, rangeIdx: r };
+        }
+        A._mergeActive = true;
+        A._installMergedRaycast(mesh);
         if (!A._storeyVisible(mesh.userData.storey)) mesh.visible = false;
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(mesh.userData.disc)) mesh.visible = false;
         A.scene.add(mesh);
         mergedCount += items.length;
         drawCalls++;
+      }
+      if (mergedCount > 0) {
+        console.log('§MERGED_FLUSH buckets=' + Object.keys(mergeBuckets).length +
+          ' elements=' + mergedCount + ' draws=' + Object.keys(mergeBuckets).length +
+          ' (BatchedMesh-without-multi_draw would be ' + mergedCount + ')');
       }
     }
 
@@ -1329,19 +1523,29 @@ function setupStreaming(A) {
 
     // §S280d: Contract assertion — verify metadata integrity at final flush
     if (A.streamIdx >= A.streamQueue.length) {
-      var _ca_batch = 0, _ca_inst = 0, _ca_guid = 0, _ca_orphan = 0;
+      var _ca_batch = 0, _ca_inst = 0, _ca_guid = 0, _ca_orphan = 0, _ca_merged = 0, _ca_mgIdx = 0;
       for (var _bmId in A._batchMeta) _ca_batch += A._batchMeta[_bmId].length;
       for (var _imId in A._instanceMeta) _ca_inst += A._instanceMeta[_imId].length;
+      // §MERGED_GUID: merged elements are now a FIRST-CLASS side of the contract — counted here so
+      // "zero metadata" stays a real alarm on the merged path instead of being excused by _isMobile.
+      for (var _mgId in A._mergedMeta) _ca_merged += A._mergedMeta[_mgId].length;
+      _ca_mgIdx = Object.keys(A._mergedIndex).length;
       _ca_guid = Object.keys(A.guidMap).length;
-      var _ca_registered = _ca_batch + _ca_inst;
-      if (!A._isMobile && _ca_registered === 0 && A.streamedCount > 0) {
+      var _ca_registered = _ca_batch + _ca_inst + _ca_merged;
+      if (_ca_registered === 0 && A.streamedCount > 0) {
         console.error('§CONTRACT_FAIL zero metadata entries but streamedCount=' + A.streamedCount +
-          ' — routing broke: no GUIDs in _batchMeta or _instanceMeta. TM/picking will fail.');
+          ' — routing broke: no GUIDs in _batchMeta, _instanceMeta or _mergedMeta. TM/picking will fail.');
       }
-      if (_ca_guid < _ca_registered) {
-        _ca_orphan = _ca_registered - _ca_guid;
-        console.error('§CONTRACT_FAIL guidMap=' + _ca_guid + ' but meta=' + _ca_registered +
+      // guidMap covers the batched+instanced sides; merged identity lives in _mergedIndex instead
+      // (guidMap is keyed by mesh.id, which is one-to-many for a merged bucket).
+      if (_ca_guid < _ca_batch + _ca_inst) {
+        _ca_orphan = (_ca_batch + _ca_inst) - _ca_guid;
+        console.error('§CONTRACT_FAIL guidMap=' + _ca_guid + ' but meta=' + (_ca_batch + _ca_inst) +
           ' — ' + _ca_orphan + ' orphaned GUIDs. Picking will miss elements.');
+      }
+      if (_ca_merged > 0 && _ca_mgIdx === 0) {
+        console.error('§CONTRACT_FAIL merged meta=' + _ca_merged + ' but _mergedIndex is empty' +
+          ' — merged elements unreachable by guid. Lens/isolate will miss them.');
       }
       for (var _ciId in A._instanceMeta) {
         var _ciMeta = A._instanceMeta[_ciId];
@@ -1351,11 +1555,15 @@ function setupStreaming(A) {
         }
       }
       console.log('§CONTRACT_CHECK batch=' + _ca_batch + ' instanced=' + _ca_inst +
+        ' merged=' + _ca_merged + ' mergedIndex=' + _ca_mgIdx +
         ' guidMap=' + _ca_guid + ' streamed=' + A.streamedCount + ' orphans=' + _ca_orphan);
     }
     // §TM_STREAM_RESWEEP: newly-flushed geometry defaults to visible — if Time Machine is
     // active, sweep it against the current cursor (no-op when TM isn't active).
     if (window.tmResweep) window.tmResweep();
+    // §BILLBOARD_ALWAYS: the model is fully streamed here, so any billboard element in the DB can
+    // now be read and given its face. Idempotent and a no-op for buildings that have no billboard.
+    if (A._billboardAutoBuild) A._billboardAutoBuild();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1693,6 +1901,16 @@ function setupStreaming(A) {
     const SQL = await initSqlJs(sqlOpts);
     A._SQL = SQL; // Cache for reuse (diff DB, import) — avoids re-downloading WASM
 
+    // Implementing prompts/Viewer/BLANK_VIEWER_LANDING_CARD.md §1 (bim-ootb port) — Witness: manual, see §STATUS
+    // Blank mode with nothing opened: fetch(A.DB_URL) below would resolve '' to the page's own HTML and
+    // fail confusingly. A.openModelDb() (Ctrl+O / Open Building pill) navigates to viewer.html?db=import://…
+    // once a file is picked — a fresh page load, so no re-entry guard is needed here.
+    if (A.BLANK_MODE && !A.DB_URL) {
+      A.status.textContent = 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
+      console.log('§BLANK_MODE active=1 waiting_for_open=1');
+      return;
+    }
+
     if (A.CITY_URL) {
       // S250 §6: On mobile, defer city_index.db auto-load to save memory
       if (A._isMobile) {
@@ -1808,6 +2026,7 @@ function setupStreaming(A) {
       // pre-STAIRWELL-STACK 43 rooms) is patched here or nowhere. Raw bytes stay in IDB.
       if (A._applyPendingPatch) metaBuf = await A._applyPendingPatch(metaBuf, metaUrl);
       A.db = new SQL.Database(new Uint8Array(metaBuf));
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
       A.libDb = A.db;
       A._splitHasMeta = true;
       console.log(`[S192] §DB_META_LOADED size=${(metaBuf.byteLength/1024/1024).toFixed(1)}MB`);
@@ -1962,6 +2181,7 @@ function setupStreaming(A) {
       var dbBuf = await A.cachedFetch(A.DB_URL);
       if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
       A.db = new SQL.Database(new Uint8Array(dbBuf));
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
       // §S283: Remember last building URL for PWA resume
       try { localStorage.setItem('pwa_last_db', A.DB_URL); } catch(e) {}
@@ -2195,6 +2415,11 @@ function setupStreaming(A) {
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};
+    // §MERGED_GUID: merged identity dies with the meshes it addressed (index ranges are per-mesh).
+    A._mergedMeta = {};
+    A._mergedIndex = {};
+    A._mergeActive = false;
+    A._mergeLogged = false;
     document.getElementById('s-streamed').textContent = '0';
     document.getElementById('s-building-total').textContent = '0';
     document.getElementById('s-buildings-done').textContent = '0';

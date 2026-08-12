@@ -52,7 +52,15 @@ async function setupScene(A) {
     var _dbg = _capGl.getExtension('WEBGL_debug_renderer_info');
     var _gpu = _dbg ? _capGl.getParameter(_dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
     console.log('§RENDERER_CAPS multi_draw=' + (_md ? 'on (fast batched path)' : 'off (slow — per-draw fallback)') + ' gpu=' + _gpu);
-  } catch(_e) { console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message)); }
+    // §MERGED_GUID (MOBILE_PERF.md §SPEC 2026-07-28 Part 4): PERSIST the capability — S280c's
+    // `_hasMultiDraw` was computed and thrown away here, which is why the merged low-draw fallback
+    // has been dead since 68bd9a7 (2026-05-27). streaming.js reads this to decide merge routing.
+    // Default TRUE on probe failure = keep the BatchedMesh path (never merge on unknown caps).
+    A._hasMultiDraw = _md;
+  } catch(_e) {
+    A._hasMultiDraw = true;
+    console.log('§RENDERER_CAPS probe failed: ' + (_e && _e.message));
+  }
   // ── Implementing FLY_TOUR_DLOD_SCALE.md §14 (bim-compiler prompts/Viewer/) — GPU capability
   // warning. Witnesses: W-GPU-WARN-FIRSTRUN / -DEGRADED / -RECOVERED / -NONAG.
   // Compares the caps just probed above against the "last known good" signature in localStorage
@@ -100,6 +108,12 @@ async function setupScene(A) {
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
+  // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
+  // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
+  // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
+  // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
+  // how bloom, ember and the 48-light budget are all still-only.
   renderer.toneMappingExposure = 0.45;
   console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
   renderer.localClippingEnabled = true;
@@ -243,8 +257,20 @@ async function setupScene(A) {
       A._envMapThrottle = true;
       setTimeout(function() {
         try {
-          var envRT = _pmrem.fromScene(_sky);
-          A._envMap = envRT.texture;
+          // §ALT_FRAME_LUMINANCE (2026-07-25): while a photoshoot/MaxQ bake has swapped A._envMap
+          // to the real photographed HDRI (effects.js _applyPhotoStaging, A._envMapHdriActive),
+          // this throttled callback must NOT stomp it back to the procedural sky-only PMREM — it
+          // fires up to 2000ms after the updateSky() call that scheduled it, which lands mid-frame
+          // on any capture loop (Alt+S/Alt+C) whose own cadence is close to that same 2000ms window,
+          // silently swapping every material's reflection source frame-to-frame and reading as an
+          // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
+          // is unaffected — this flag is only ever true during a staged photoshoot.
+          if (!A._envMapHdriActive) {
+            var envRT = _pmrem.fromScene(_sky);
+            A._envMap = envRT.texture;
+          } else {
+            console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
+          }
         } catch(e) {}
         A._envMapThrottle = false;
       }, 2000);
@@ -389,6 +415,12 @@ async function setupScene(A) {
   // Don't auto-reload — user loses Red Pill / Doc context. Just show a banner to tap.
   canvas.addEventListener('webglcontextlost', function(e) {
     e.preventDefault();
+    // §MAXQ_CONTEXT_LOSS (2026-07-26, real user repro — Hospital, ~7min single-tab bake): a long
+    // MaxQ capture keeps rendering "successfully" after context loss — WebGL calls become silent
+    // no-ops rather than throwing, so every frame from this point on captures a blank/black canvas
+    // with zero error. Expose the flag on A so cinema_maxq.js's per-frame loop can detect it and
+    // stop+salvage, the same way it already handles a lost IndexedDB connection mid-bake.
+    A._webglContextLost = true;
     console.log('§WEBGL_CONTEXT_LOST — tap banner to reload');
     var banner = document.createElement('div');
     banner.id = 'webgl-lost-banner';
@@ -398,6 +430,7 @@ async function setupScene(A) {
     document.body.appendChild(banner);
   });
   canvas.addEventListener('webglcontextrestored', function() {
+    A._webglContextLost = false;
     var banner = document.getElementById('webgl-lost-banner');
     if (banner) banner.remove();
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -414,6 +447,17 @@ async function setupScene(A) {
   A.ifc2three = function(ix, iy, iz) {
     return { x: ix - A.modelOffset.x, y: iz - A.modelOffset.z, z: -(iy - A.modelOffset.y) };
   };
+  // Exact inverse. Anything PERSISTED must be stored in IFC space, never three.js space:
+  // A.modelOffset is established at load time, so a three.js coordinate written into a .db is only
+  // meaningful to the session that wrote it. This is why staffage_instances stores ifc_* columns,
+  // and §CINEMA_PATH_EDITOR's cinema_path table follows it.
+  A.three2ifc = function(x, y, z) {
+    return { ix: x + A.modelOffset.x, iy: -z + A.modelOffset.y, iz: y + A.modelOffset.z };
+  };
+  // Direction vectors carry NO offset — only the axis swap. Running a direction through the point
+  // converters would add the model offset to it and silently rotate/scale it into nonsense.
+  A.three2ifcDir = function(x, y, z) { return { ix: x, iy: -z, iz: y }; };
+  A.ifc2threeDir = function(ix, iy, iz) { return { x: ix, y: iz, z: -iy }; };
 
   // IndexedDB cache
   A.CACHE_DB_NAME = 'bim_ootb_cache';
@@ -434,6 +478,21 @@ async function setupScene(A) {
       if (e.usage > 0 && e.usage >= e.quota * 0.95) {
         console.warn('[S203] §QUOTA_HIGH usage=' + uMB + '/' + qMB + 'MB — browser storage nearly full (other sites). Our cache preserved.');
       }
+    }).catch(function() {});
+  }
+
+  // §PERSIST (W-DB-CACHE-KEY F2 — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1): ask ONCE per
+  // load for durable storage. Until this, persist() was only ever called from the PWA-install overlay
+  // (_ensureBuildingCached), so a normal viewer session ran on best-effort storage — the browser is then
+  // free to silently evict the whole origin's IndexedDB, and a 251MB building blob is the first thing it
+  // drops. Nothing in the log said so; you just saw §CACHE_MISS_READ and a fresh 251MB download next time.
+  // Cheap, idempotent (already-granted resolves true without a prompt), and never blocks the boot.
+  if (navigator.storage && navigator.storage.persisted && navigator.storage.persist) {
+    navigator.storage.persisted().then(function(already) {
+      if (already) { console.log('[S203] §PERSIST already=true'); return; }
+      return navigator.storage.persist().then(function(granted) {
+        console.log('[S203] §PERSIST granted=' + granted + (granted ? '' : ' — cache is best-effort, browser may evict'));
+      });
     }).catch(function() {});
   }
 
@@ -500,14 +559,18 @@ async function setupScene(A) {
 
   // §S260b: LRU eviction — keep max 80 entries (~25 buildings × 3 files). Evict oldest on write.
   A._MAX_CACHE_ENTRIES = 80;
-  A._evictOldest = async function(cacheDb) {
+  // §CACHE_EVICT_LRU_FORCE (W-DB-CACHE-KEY F3): `forceN` drops the N oldest entries even when the
+  // count is under the cap — the quota-abort path calls it that way. It used to .clear() the WHOLE
+  // store instead, so one over-quota write threw away every other building that was fitting fine.
+  A._evictOldest = async function(cacheDb, forceN) {
     try {
       var tx = cacheDb.transaction('timestamps', 'readonly');
       var store = tx.objectStore('timestamps');
       var allKeys = await new Promise(function(r) {
         var req = store.getAllKeys(); req.onsuccess = function() { r(req.result || []); }; req.onerror = function() { r([]); };
       });
-      if (allKeys.length < A._MAX_CACHE_ENTRIES) return;
+      if (!forceN && allKeys.length < A._MAX_CACHE_ENTRIES) return 0;
+      if (forceN && !allKeys.length) return 0;
       // Get all timestamps, sort by oldest
       var entries = [];
       var tx2 = cacheDb.transaction('timestamps', 'readonly');
@@ -519,31 +582,47 @@ async function setupScene(A) {
         entries.push({ key: allKeys[i], ts: ts });
       }
       entries.sort(function(a, b) { return a.ts - b.ts; });
-      // Remove oldest until we're under limit
-      var toRemove = entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
+      // Remove oldest until we're under limit (or the forced count, for the quota-abort retry).
+      var toRemove = forceN ? entries.slice(0, Math.min(forceN, entries.length))
+                            : entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
       if (toRemove.length > 0) {
-        var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
-        for (var j = 0; j < toRemove.length; j++) {
-          tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
-          tx3.objectStore('timestamps').delete(toRemove[j].key);
-        }
-        console.log('[S203] §CACHE_EVICT_LRU removed=' + toRemove.length + ' keys=' + toRemove.map(function(e){return e.key.split('/').pop();}).join(','));
+        await new Promise(function(done) {
+          var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+          for (var j = 0; j < toRemove.length; j++) {
+            tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
+            tx3.objectStore('timestamps').delete(toRemove[j].key);
+          }
+          tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
+        });
+        console.log('[S203] §CACHE_EVICT_LRU removed=' + toRemove.length + ' forced=' + (forceN ? 'yes' : 'no') +
+          ' keys=' + toRemove.map(function(e){return String(e.key).split('/').pop();}).join(','));
       }
-    } catch(e) { /* eviction is best-effort */ }
+      return toRemove.length;
+    } catch(e) { /* eviction is best-effort */ return 0; }
   };
 
   // §S260b: Check if URL is in cache (returns buffer or null, no network)
+  // §CACHE_KEY (W-DB-CACHE-KEY): must use the SAME canonical key as cachedFetch, and must fall back to
+  // the legacy raw-url key for profiles cached before the fix. Missing this here re-opened the exact
+  // §OFFLINE-GATEWAY-LEAK that streaming.js:2051 warns about: streaming's diagnostic size check calls
+  // _checkCache(A.DB_URL) and, on a miss, fires a HEAD at the network for a building already in IDB —
+  // visible in the field as `§DB_SIZE_CHECK size=0MB src=network` on a cached building.
   A._checkCache = async function(url) {
     try {
       const cacheDb = await A.openCacheDB();
       if (!cacheDb) return null;
-      const cached = await new Promise((resolve) => {
-        const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
-        const req = tx.objectStore(A.CACHE_STORE).get(url);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      });
-      return cached;
+      const key = (window.DbResolve && window.DbResolve.cacheKey) ? window.DbResolve.cacheKey(url, A.PROD_BASE) : url;
+      const get = function(k) {
+        return new Promise((resolve) => {
+          const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
+          const req = tx.objectStore(A.CACHE_STORE).get(k);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      };
+      const cached = await get(key);
+      if (cached) return cached;
+      return (key !== url) ? await get(url) : null;   // legacy raw-url entry, pre-fix profiles
     } catch(e) { return null; }
   };
 
@@ -567,11 +646,85 @@ async function setupScene(A) {
       console.log('§STAFFAGE_SAVE rows=' + rows.length);
     } catch (e) { console.warn('§STAFFAGE_SAVE_FAIL ' + e.message); }
   }
+  // §CINEMA_PATH_EDITOR (prompts/CINEMA_PATH_EDITOR.md, guardrail 5 + §CINEMA_PATH_EDITOR_MODEL):
+  // an edited cinema path is AUTHORED data, so under the prime rule it must be STORED, never
+  // re-guessed. Mirrors staffage_instances exactly — same explicit-action model: "Save this path"
+  // stages the edit into memory, the user's normal Ctrl+S is what writes it to the file. Adjusting
+  // and proceeding stays ephemeral, so a user experimenting with waypoints can walk away without
+  // having changed the building.
+  // Positions only, plus the beat seconds — camera ANGLE is never stored because it is never
+  // authored (it is LOS to the next waypoint, re-derived on load).
+  // §CPE_BANDS rule 6 — store BANDS, not the six loose waypoints they expand to. Rigidity then
+  // survives a save/reload STRUCTURALLY: six free points would just be six points, with nothing
+  // stopping them drifting apart or bending on the next session. One row per band: anchor, unit
+  // direction, length. Both in IFC space, for the same reason staffage_instances is — A.modelOffset
+  // is established at load time, so three.js coordinates are only meaningful to the session that
+  // wrote them.
+  function _writeCinemaPathTable(db) {
+    var ov = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
+    // §CPE_PATH_NOT_PORTABLE fix, part 2 (prompts/CINEMA_PATH_EDITOR.md): this guard used to `return`
+    // silently — the only route that makes an authored path portable, dropping it with no trace. A
+    // save that drops the path must be visible, not silent.
+    if (!ov) { console.log('§CINEMA_PATH_WRITE skipped reason=no-staged-path'); return; }
+    if (!ov.bands || ov.bands.length < 2) {
+      console.log('§CINEMA_PATH_WRITE skipped reason=bands=' + (ov.bands ? ov.bands.length : 0) + '<2');
+      return;
+    }
+    try {
+      db.run("DROP TABLE IF EXISTS cinema_path");
+      // §CPE_STICK_HOLD: hold_sec is APPENDED as the last column, never inserted among the existing
+      // ones — a table written by an older build has 13 columns and the reader selects by NAME with
+      // a fallback, so both directions of the version skew stay readable (§CPE_PATH_NOT_PORTABLE
+      // only just made these files portable at all; do not break that in the next release).
+      db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
+             "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
+             "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
+             "hold_sec REAL)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      ov.bands.forEach(function(b, i) {
+        var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
+        var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
+        stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
+                  ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec,
+                  +(b.hold || 0)]);
+      });
+      stmt.free();
+      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
+    } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
+  }
+  // prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4 — camera/display/nav/panel/Find-selection/Time-Machine
+  // state, one row per building, same choke point as staffage_instances/cinema_path above so a single
+  // Ctrl+S carries all three together. Camera stored in IFC space (A.three2ifc) for the same reason
+  // cinema_path is: A.modelOffset is only meaningful to the session that wrote it, not a reopen on a
+  // different machine. Every field below reads a real, already-public flag — none invented for this.
+  function _writeSceneStateTable(db) {
+    if (!A.camera || !A.controls) return;
+    try {
+      var p = A.three2ifc(A.camera.position.x, A.camera.position.y, A.camera.position.z);
+      var t = A.three2ifc(A.controls.target.x, A.controls.target.y, A.controls.target.z);
+      var fp = (window._getFocusedPanel && window._getFocusedPanel()) || null;
+      var findGuids = (A.activeGuidFilter && A.activeGuidFilter.size) ? Array.from(A.activeGuidFilter).join(',') : '';
+      db.run("DROP TABLE IF EXISTS scene_state");
+      db.run("CREATE TABLE scene_state (cam_ifc_x REAL, cam_ifc_y REAL, cam_ifc_z REAL, " +
+             "tgt_ifc_x REAL, tgt_ifc_y REAL, tgt_ifc_z REAL, xray_on INTEGER, dlod_on INTEGER, " +
+             "walk_mode INTEGER, focused_panel TEXT, find_guids TEXT, tm_on INTEGER)");
+      var stmt = db.prepare("INSERT INTO scene_state VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+      stmt.run([p.ix, p.iy, p.iz, t.ix, t.iy, t.iz, A.xrayOn ? 1 : 0, A._dlodEnabled ? 1 : 0,
+                A.walkModeActive ? 1 : 0, fp ? fp.id : null, findGuids, A._tmOn ? 1 : 0]);
+      stmt.free();
+      console.log('§SCENE_STATE_SAVE cam=' + p.ix.toFixed(1) + ',' + p.iy.toFixed(1) + ',' + p.iz.toFixed(1) +
+        ' xray=' + (A.xrayOn ? 1 : 0) + ' dlod=' + (A._dlodEnabled ? 1 : 0) + ' walk=' + (A.walkModeActive ? 1 : 0) +
+        ' panel=' + (fp ? fp.id : 'none') + ' findGuids=' + (findGuids ? findGuids.split(',').length : 0) +
+        ' tm=' + (A._tmOn ? 1 : 0));
+    } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
       _writeStaffageTable(A.db);
+      _writeCinemaPathTable(A.db);
+      _writeSceneStateTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -597,6 +750,8 @@ async function setupScene(A) {
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
     _writeStaffageTable(mono);
+    _writeCinemaPathTable(mono);
+    _writeSceneStateTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -628,9 +783,252 @@ async function setupScene(A) {
     console.log('§SAVE_DONE mode=download name=' + name + ' bytes=' + bytes.byteLength);
   };
 
-  // ── Open Building → native Open… (FSA / file input). Picks a saved .db, replaces the scene. ──
-  // Mirrors the import monolith path: stash bytes in the cache store, navigate viewer with ?db=import://…
+  // ── §SCENE_MERGE — the merge-or-replace prompt ────────────────────────────────────────────────
+  // Implementing prompts/LANDING_MULTIMERGE_SAVEOPEN_RESURRECT.md §SM-3 / §SM-7 — Witness: W-SCENE-MERGE
+  // PORT of archive/gallery.html:1045 showMergeModal(): same two-button shape, same copy, Enter=merge,
+  // Esc=new. Two forced deltas, both because viewer.html has none of gallery's modal elements:
+  //   (a) the DOM is built once here and reused, and
+  //   (b) gallery's ">1 target → <select>" branch is DROPPED — a Viewer scene has exactly one active
+  //       building, so there is never a target list. NO card / NO list surface (HARD CONSTRAINT).
+  A._showMergeModal = function(fileName, targetName) {
+    return new Promise(function(resolve) {
+      var modal = document.getElementById('merge-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'merge-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:100000;display:none;align-items:center;' +
+          'justify-content:center;background:rgba(0,0,0,0.62);font:14px system-ui,sans-serif';
+        modal.innerHTML =
+          '<div style="background:#1b1e24;border:1px solid rgba(255,255,255,0.14);border-radius:10px;' +
+          'padding:22px 24px;max-width:440px;color:#e8e8e8;box-shadow:0 10px 40px rgba(0,0,0,0.6)">' +
+          '<div id="merge-target" style="font-size:15px;line-height:1.45;margin-bottom:6px"></div>' +
+          '<div style="font-size:12px;opacity:0.65;margin-bottom:18px">Merge keeps the current scene and ' +
+          'adds this file alongside it. New replaces the scene with just this file.</div>' +
+          '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+          '<button id="merge-new-btn" style="padding:8px 16px;border-radius:6px;cursor:pointer;' +
+          'background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);color:#ddd">New (Esc)</button>' +
+          '<button id="merge-btn" style="padding:8px 16px;border-radius:6px;cursor:pointer;' +
+          'background:rgba(79,195,247,0.18);border:1px solid rgba(79,195,247,0.5);color:#4fc3f7;' +
+          'font-weight:600">Merge (Enter)</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+      }
+      document.getElementById('merge-target').textContent =
+        'Merge "' + fileName + '" into "' + targetName + '"?';
+      modal.style.display = 'flex';
+      console.log('§MERGE_PROMPT file=' + fileName + ' target=' + targetName);
+
+      function cleanup() { modal.style.display = 'none'; document.removeEventListener('keydown', onKey, true); }
+      function done(action) { cleanup(); resolve({ action: action }); }
+      function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done('merge'); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('new'); }
+      }
+      document.addEventListener('keydown', onKey, true);
+      document.getElementById('merge-btn').onclick = function() { done('merge'); };
+      document.getElementById('merge-new-btn').onclick = function() { done('new'); };
+    });
+  };
+
+  // Which tables get folded in. meta/transforms/instances are the streaming contract; the rest are
+  // what rooms (rel_contained_in_space, spatial_structure) and 4D (tasks*) read. Folded only when the
+  // table exists on BOTH sides. Dedup is INSERT OR IGNORE — the already-proven rule
+  // (import_db_builder.js:45: same GUID twice collapses).
+  A._MERGE_META_TABLES = ['elements_meta', 'element_transforms', 'element_instances',
+    'rel_contained_in_space', 'spatial_structure', 'tasks', 'task_elements', 'task_sequences',
+    'schedules', 'bom_tree'];
+  A._MERGE_GEO_TABLES = ['component_geometries', 'base_geometries'];
+
+  // ⚠ sql.js `exec` returns ONLY statements that produced rows, so `SELECT * … LIMIT 0` yields `[]`
+  // and NOT a columns list — the first cut of this used that and silently merged nothing
+  // (§MERGE_DONE newBuildings=0 with zero §MERGE_ROWS lines). PRAGMA table_info returns real rows.
+  function _mergeCols(db, table) {
+    try {
+      var r = db.exec('PRAGMA table_info("' + table.replace(/"/g, '') + '")');
+      if (!r || !r.length || !r[0].values.length) return null;
+      return r[0].values.map(function(v) { return v[1]; });
+    } catch (e) { return null; }
+  }
+
+  // §SM-7.0 landmine 3: real DBs disagree on columns (Duplex.component_geometries has `normals`,
+  // Clinic's does not). Insert on the INTERSECTION, driven by the DESTINATION's schema so the
+  // destination schema never changes — which is also what keeps the once-probed, cached
+  // A._libHasNormals (streaming.js:868) honest after a merge.
+  function _mergeTable(src, dst, table) {
+    var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
+    if (!sCols || !dCols) return null;
+    var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
+    if (!cols.length) return null;
+    var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
+    var before = 0, after = 0;
+    try { before = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
+    // Stream row-by-row rather than materialising the whole table first — component_geometries is
+    // ~100MB of BLOBs on Clinic and 311MB-class on KUL070 (§SM-5 memory is the real ceiling).
+    var srcRows = 0, errs = 0;
+    try {
+      var st = src.prepare('SELECT ' + q + ' FROM "' + table + '"');
+      var ins = dst.prepare('INSERT OR IGNORE INTO "' + table + '" (' + q + ') VALUES (' +
+        cols.map(function() { return '?'; }).join(',') + ')');
+      while (st.step()) { srcRows++; try { ins.run(st.get()); } catch (e2) { errs++; } }
+      st.free(); ins.free();
+    } catch (e) { console.warn('§MERGE_READ_FAIL table=' + table + ' ' + e.message); return null; }
+    try { after = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
+    var added = after - before, dup = srcRows - added;
+    console.log('§MERGE_ROWS table=' + table + ' src=' + srcRows + ' before=' + before +
+      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
+      ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
+    return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  function _georefPin(db) {
+    if (!db) return null;
+    try {
+      var r = db.exec("SELECT key, value FROM project_metadata WHERE key IN " +
+        "('georef_offset_x','georef_offset_y','georef_offset_z')");
+      if (!r || !r.length) return null;
+      var o = {};
+      r[0].values.forEach(function(v) { o[v[0]] = parseFloat(v[1]); });
+      if (isNaN(o.georef_offset_x) && isNaN(o.georef_offset_y) && isNaN(o.georef_offset_z)) return null;
+      return [o.georef_offset_x || 0, o.georef_offset_y || 0, o.georef_offset_z || 0];
+    } catch (e) { return null; }
+  }
+
+  // Merge an opened .db into the LIVE scene instead of navigating. §SM-7.1.
+  A._mergeDbIntoScene = async function(fileName, bytes) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var SQL = A._SQL || A.citySQL || A._citySQL;
+    if (!SQL) { console.log('§MERGE_FAIL reason=no_sql_factory'); if (A.status) A.status.textContent = 'Merge failed — sql.js not ready'; return false; }
+    if (!A.db) { console.log('§MERGE_FAIL reason=no_live_db'); return false; }
+    var src;
+    try { src = new SQL.Database(new Uint8Array(bytes)); }
+    catch (e) { console.log('§MERGE_FAIL reason=open_src ' + e.message); return false; }
+
+    var before = Object.keys(A.buildingCentres || {});
+    var srcBlds = [];
+    try {
+      var br = src.exec('SELECT DISTINCT building FROM elements_meta');
+      if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
+    } catch (e) {}
+    console.log('§MERGE_START file=' + fileName + ' bytes=' + bytes.byteLength +
+      ' srcBuildings=' + JSON.stringify(srcBlds) + ' sceneBuildings=' + JSON.stringify(before));
+
+    // ── §SM-7.1 step 2: frame rebase. The ALREADY-OPEN building's georef pins the frame; the
+    // incoming DB rebases into it. Same rule as import.js:299-310's sessionGeorefOffset, applied to
+    // a live scene instead of the first file of a drop. A.modelOffset is deliberately NOT touched —
+    // building A's meshes are already placed against it (§SM-7.0 landmine 4).
+    var pin = _georefPin(A.db), inc = _georefPin(src);
+    if (pin && inc) {
+      var dx = inc[0] - pin[0], dy = inc[1] - pin[1], dz = inc[2] - pin[2];
+      if (dx || dy || dz) {
+        try {
+          src.run('UPDATE element_transforms SET center_x = center_x + ?, center_y = center_y + ?, center_z = center_z + ?', [dx, dy, dz]);
+          console.log('§MERGE_GEOREF mode=rebase pin=(' + pin.join(',') + ') inc=(' + inc.join(',') + ') delta=(' + dx + ',' + dy + ',' + dz + ')');
+        } catch (e) { console.log('§MERGE_GEOREF mode=rebase_fail ' + e.message); }
+      } else {
+        console.log('§MERGE_GEOREF mode=same pin=(' + pin.join(',') + ')');
+      }
+    } else {
+      console.log('§MERGE_GEOREF mode=none pin=' + (pin ? '(' + pin.join(',') + ')' : 'absent') +
+        ' inc=' + (inc ? '(' + inc.join(',') + ')' : 'absent') + ' — each DB keeps its own coordinates');
+    }
+
+    // ── §SM-7.1 step 3: fold the tables
+    var stats = {};
+    A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
+    if (A.libDb) {
+      A._MERGE_GEO_TABLES.forEach(function(t) {
+        var s = _mergeTable(src, A.libDb, t);
+        if (s) stats[t] = s;
+        else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
+      });
+    }
+    console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
+      ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
+    if (!stats.elements_meta) {
+      console.error('§MERGE_FAIL reason=elements_meta_not_folded — schema read failed, nothing merged');
+      try { src.close(); } catch (e) {}
+      if (A.status) A.status.textContent = 'Merge failed — could not read ' + fileName;
+      return false;
+    }
+    if (!stats.elements_meta.added) {
+      console.log('§MERGE_WARN elements_meta added=0 — nothing new (all GUIDs already present)');
+    }
+    try { src.close(); } catch (e) {}   // §SM-5 memory: free the source DB immediately
+
+    // ── §SM-7.1 step 5: register in the City shape for API symmetry (one DB now holds both)
+    A.cityBuildingDbs = A.cityBuildingDbs || {};
+    srcBlds.forEach(function(n) { A.cityBuildingDbs[n] = { db: A.db, libDb: A.libDb }; });
+
+    // ── §SM-7.1 step 6: add ONLY the new building names to buildingCentres (same GROUP BY query as
+    // streaming.js:2119). Existing centres are left exactly as they are.
+    var env = null;
+    for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
+    var added = [];
+    try {
+      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      for (var ci = 0; ci < centres.length; ci++) {
+        var row = centres[ci];
+        if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
+        A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
+        if (env) A.buildingCentres[row[0]].envelope = env;
+        added.push(row[0]);
+      }
+    } catch (e) { console.log('§MERGE_CENTRES_FAIL ' + e.message); }
+    console.log('§MERGE_CENTRES before=' + before.length + ' after=' + Object.keys(A.buildingCentres).length +
+      ' added=' + JSON.stringify(added));
+
+    try {
+      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      A.totalElements = er.length ? er[0][0] : A.totalElements;
+      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      A.discCounts = {};
+      for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
+    } catch (e) {}
+    if (A.updateHUD) A.updateHUD();
+    if (A.populateBuildingList) A.populateBuildingList();
+    if (A._updateFogDensity) A._updateFogDensity();
+
+    var ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    console.log('§MERGE_DONE file=' + fileName + ' newBuildings=' + added.length +
+      ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
+    if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
+
+    // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
+    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergeStreamNext();
+    return true;
+  };
+
+  // Sequential drain, mirroring city.js's _cityStreamNext. Chained from the stream-complete hook in
+  // streaming.js (right beside the existing City drain) — streamBuilding() handles ONE building, and
+  // a real merged package (Clinic = 5 discipline buildings) has N.
+  A._mergeStreamNext = function() {
+    if (!A._mergePending || !A._mergePending.length) return;
+    if (A.streaming) return;                     // re-chained at next stream-complete
+    var next = null;
+    while (A._mergePending.length) {
+      var n = A._mergePending.shift();
+      if (n && !(A.buildingsRendered && A.buildingsRendered.has(n))) { next = n; break; }
+    }
+    if (!next) { console.log('§MERGE_STREAM_DONE queue=empty'); return; }
+    console.log('§MERGE_STREAM bld=' + next + ' remaining=' + A._mergePending.length);
+    A.streamBuilding(next);
+  };
+
+  // ── Open Building → native Open… (FSA / file input). ──
+  // §SCENE_MERGE: a building already open → ASK (merge into this scene / replace). Replace is
+  // today's path, byte-for-byte: stash bytes in the cache store, navigate with ?db=import://…
   A._openDbBytes = async function(fileName, bytes) {
+    var open = Object.keys(A.buildingCentres || {});
+    if (A.db && open.length) {
+      var target = (A.activeBuilding && A.buildingCentres[A.activeBuilding]) ? A.activeBuilding : open[0];
+      var choice = await A._showMergeModal(fileName, target);
+      console.log('§MERGE_CHOICE file=' + fileName + ' target=' + target + ' action=' + choice.action);
+      if (choice.action === 'merge') { await A._mergeDbIntoScene(fileName, bytes); return; }
+    } else {
+      console.log('§MERGE_SKIP reason=no_building_open — replace path');
+    }
     var key = fileName.replace(/\.(db|sqlite)$/i, '') + '.db';
     var dbUrl = 'import://' + key + '/v0';
     var cacheDb = await A.openCacheDB();
@@ -644,37 +1042,70 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
+  // A.importMultiIFC (import.js:267), take the DB it produced, feed it into the same merge/replace
+  // flow. §SM-5 named the ceiling and it is measured, not theoretical: a single ~1GB+ source file
+  // silently imports PARTIAL against the wasm32 4GB budget (IFC_LARGE_PRIVATE_STRESS_TEST §KUL009),
+  // so say so out loud rather than hiding it behind a merge prompt.
+  A._openIfcFiles = async function(files) {
+    if (!A.importMultiIFC) { console.log('§OPEN_IFC_FAIL reason=no_importMultiIFC'); if (A.status) A.status.textContent = 'IFC import unavailable'; return; }
+    var big = [];
+    for (var i = 0; i < files.length; i++) if (files[i].size > 900 * 1048576) big.push(files[i].name + '=' + (files[i].size / 1048576).toFixed(0) + 'MB');
+    if (big.length) {
+      console.warn('§OPEN_IFC_WASM_RISK files=' + big.join(',') + ' — wasm32 4GB ceiling (§KUL009): this may import PARTIAL');
+      if (A.status) A.status.textContent = 'Large IFC (' + big.join(',') + ') — may import partially (4GB wasm limit)';
+    }
+    console.log('§OPEN_IFC files=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){ return f.name; }).join(','));
+    var out = await A.importMultiIFC(files);
+    if (!out || !out.record) { console.log('§OPEN_IFC_FAIL reason=no_record_returned'); return; }
+    var bytes = out.record.extractedDb || out.record.metaDb;
+    if (!bytes) { console.log('§OPEN_IFC_FAIL reason=no_db_bytes split=' + !!out.record.metaDb); return; }
+    console.log('§OPEN_IFC_DB building=' + out.buildingName + ' bytes=' + bytes.byteLength + ' split=' + !!out.split);
+    await A._openDbBytes(out.buildingName + '.db', new Uint8Array(bytes));
+  };
+
   A.openModelDb = async function() {
     // Native Open… (Chromium FSA). Fallback = hidden <input type=file>.
     if (window.showOpenFilePicker) {
       try {
-        var picks = await window.showOpenFilePicker({ multiple: false,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db', '.sqlite'] } }] });
-        var file = await picks[0].getFile();
-        var buf = await file.arrayBuffer();
-        console.log('§OPEN_PICK mode=fsa name=' + file.name + ' bytes=' + buf.byteLength);
-        await A._openDbBytes(file.name, new Uint8Array(buf));
+        var picks = await window.showOpenFilePicker({ multiple: true,
+          types: [{ description: 'Building database or IFC', accept: { 'application/x-sqlite3': ['.db', '.sqlite'], 'application/x-step': ['.ifc'] } }] });
+        var fsaFiles = [];
+        for (var pi = 0; pi < picks.length; pi++) fsaFiles.push(await picks[pi].getFile());
+        console.log('§OPEN_PICK mode=fsa n=' + fsaFiles.length + ' name=' + fsaFiles[0].name + ' bytes=' + fsaFiles[0].size);
+        if (/\.ifc$/i.test(fsaFiles[0].name)) { await A._openIfcFiles(fsaFiles); return; }
+        var buf = await fsaFiles[0].arrayBuffer();
+        await A._openDbBytes(fsaFiles[0].name, new Uint8Array(buf));
         return;
       } catch (e) { if (e.name === 'AbortError') { console.log('§OPEN_CANCEL user'); return; } /* fall through */ }
     }
-    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite'; input.style.display = 'none';
+    var input = document.createElement('input'); input.type = 'file'; input.accept = '.db,.sqlite,.ifc';
+    input.multiple = true; input.style.display = 'none';
     input.addEventListener('change', async function(){
       if (!input.files.length) return;
-      var file = input.files[0]; var buf = await file.arrayBuffer();
-      console.log('§OPEN_PICK mode=input name=' + file.name + ' bytes=' + buf.byteLength);
-      await A._openDbBytes(file.name, new Uint8Array(buf));
-      document.body.removeChild(input);
+      var file = input.files[0];
+      console.log('§OPEN_PICK mode=input n=' + input.files.length + ' name=' + file.name + ' bytes=' + file.size);
+      if (/\.ifc$/i.test(file.name)) { await A._openIfcFiles(input.files); }
+      else { var buf = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf)); }
+      if (input.parentNode) document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
   };
 
   A.cachedFetch = async function(url) {
+    // §CACHE_KEY (W-DB-CACHE-KEY — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1): look the
+    // blob up under the CANONICAL key, not the raw url. The landing opens a building with the absolute
+    // OCI url and the ERP red pill opens the SAME building with '../buildings/<file>' — keyed raw, the
+    // second one missed and re-downloaded 251MB every time. db_resolve.cacheKey folds the production
+    // buildings/ set onto one key and leaves dev/deploy paths verbatim. Network still uses the real url.
+    const key = (window.DbResolve && window.DbResolve.cacheKey) ? window.DbResolve.cacheKey(url, A.PROD_BASE) : url;
+    if (key !== url) console.log(`[S203] §CACHE_KEY url=${url.split('/').pop()} key=${key}`);
     const cacheDb = await A.openCacheDB();
     if (cacheDb) {
       try {
         const cached = await new Promise((resolve, reject) => {
           const tx = cacheDb.transaction(A.CACHE_STORE, 'readonly');
-          const req = tx.objectStore(A.CACHE_STORE).get(url);
+          const req = tx.objectStore(A.CACHE_STORE).get(key);
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => resolve(null);
         });
@@ -682,13 +1113,43 @@ async function setupScene(A) {
           // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
           // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
           A._cacheHitLogged = A._cacheHitLogged || {};
-          if (!A._cacheHitLogged[url]) {
-            A._cacheHitLogged[url] = 1;
+          if (!A._cacheHitLogged[key]) {
+            A._cacheHitLogged[key] = 1;
             console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
           }
           // Update LRU timestamp on hit
-          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), url); } catch(e2) {}
+          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
           return cached;
+        }
+        // §CACHE_KEY_LEGACY (W-DB-CACHE-KEY): profiles that cached BEFORE this fix hold the blob under
+        // the raw url. Adopt it in place rather than making every existing user pay one more 251MB
+        // download for the privilege of the fix. Re-key is best-effort; if it fails the legacy entry
+        // is still found next load.
+        if (key !== url) {
+          var legacy = await new Promise(function(resolve) {
+            try {
+              var txL = cacheDb.transaction(A.CACHE_STORE, 'readonly');
+              var reqL = txL.objectStore(A.CACHE_STORE).get(url);
+              reqL.onsuccess = function() { resolve(reqL.result); };
+              reqL.onerror = function() { resolve(null); };
+            } catch(e3) { resolve(null); }
+          });
+          if (legacy) {
+            console.log(`[S203] §CACHE_KEY_LEGACY_HIT url=${url.split('/').pop()} size=${(legacy.byteLength/1024/1024).toFixed(1)}MB → re-keying to ${key} (no re-download)`);
+            try {
+              await new Promise(function(resolve) {
+                var txR = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+                txR.objectStore(A.CACHE_STORE).put(legacy, key);
+                txR.objectStore('timestamps').put(Date.now(), key);
+                txR.objectStore(A.CACHE_STORE).delete(url);
+                txR.objectStore('timestamps').delete(url);
+                txR.oncomplete = function() { console.log(`[S203] §CACHE_KEY_REKEY_OK key=${key}`); resolve(); };
+                txR.onerror = function() { resolve(); };
+                txR.onabort = function() { console.warn(`[S203] §CACHE_KEY_REKEY_SKIP key=${key} — legacy entry left in place`); resolve(); };
+              });
+            } catch(e4) {}
+            return legacy;
+          }
         }
         console.log(`[S203] §CACHE_MISS_READ url=${url.split('/').pop()} — not in IDB, will fetch`);
       } catch(e) { console.log(`[S203] §CACHE_READ_ERR ${e.message}`); }
@@ -748,36 +1209,36 @@ async function setupScene(A) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
-        await new Promise(function(resolve) {
-          var _writeOk = false;
-          const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
-          tx.objectStore('timestamps').put(Date.now(), url);
-          const req = tx.objectStore(A.CACHE_STORE).put(buf, url);
-          req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
-          req.onerror = function(e) {
-            // §S260b: Quota exceeded — let tx abort so onabort evicts+retries
-            console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
-          };
-          tx.oncomplete = function() {
-            if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-            resolve();
-          };
-          tx.onabort = function() {
-            // Evict all entries then retry write
-            console.log(`[S203] §CACHE_EVICT clearing all cached DBs for space`);
-            var tx2 = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-            tx2.objectStore(A.CACHE_STORE).clear();
-            tx2.oncomplete = function() {
-              var tx3 = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-              var req3 = tx3.objectStore(A.CACHE_STORE).put(buf, url);
-              req3.onsuccess = function() { console.log(`[S203] §CACHE_EVICT_WRITE_OK url=${url.split('/').pop()}`); };
-              req3.onerror = function() { console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL — quota too small`); };
-              tx3.oncomplete = resolve;
-              tx3.onerror = function() { resolve(); };
+        // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
+        var _attemptWrite = function() {
+          return new Promise(function(resolve) {
+            var _writeOk = false;
+            const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+            tx.objectStore('timestamps').put(Date.now(), key);
+            const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
+            req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
+            req.onerror = function() {
+              // §S260b: Quota exceeded — let the tx abort so the caller evicts LRU and retries.
+              console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
-            tx2.onerror = function() { resolve(); };
-          };
-        });
+            tx.oncomplete = function() {
+              if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
+              resolve(_writeOk);
+            };
+            tx.onabort = function() { resolve(false); };
+          });
+        };
+        // §CACHE_EVICT_LRU_RETRY (F3): on a quota abort, drop the OLDEST entries and try again —
+        // bounded. The old code .clear()'d the entire store, so one oversized write wiped every
+        // other cached building and turned the next open of ANY of them into a fresh download.
+        var _ok = await _attemptWrite();
+        for (var _try = 0; !_ok && _try < 4; _try++) {
+          var _dropped = await A._evictOldest(cacheDb, 4);
+          if (!_dropped) break;                       // nothing left to give up — stop, don't spin
+          console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
+          _ok = await _attemptWrite();
+        }
+        if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} — quota too small even after LRU eviction`);
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 
@@ -800,6 +1261,41 @@ async function setupScene(A) {
   // patch script MUST be idempotent (DELETE-then-INSERT or INSERT OR IGNORE) so a repeat apply on
   // an already-current db is a safe no-op. Best-effort: a missing patch (404, the common case) or
   // any exec failure is swallowed and the ORIGINAL buffer returned untouched — never blocks an open.
+  // §PATCH_CHUNK (2026-08-10): a single db.run() over one giant multi-thousand-statement
+  // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
+  // confirmed live, reproduced in a real headless browser AND in isolation against the exact
+  // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
+  // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
+  // does not catch this class of bug; only testing against the real bundled binary does. Run
+  // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
+  // patch file are one complete statement, but at least two existing patches
+  // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
+  // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
+  // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
+  // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
+  // batch ~500 statements per db.run() — multi-line statements always stay whole.
+  // Shared by _applyPendingPatch (pre-load buffer patch) AND navigate_find.js's needle path
+  // (same patch applied to the LIVE A.db) — the needle path shipped un-chunked and bricked the
+  // whole sql.js heap on Hospital's 9,466-statement patch (every later query, the geo.db load
+  // and streaming init all died "memory access out of bounds"). One chunker, both callers.
+  A._runSqlChunked = function(db, sql) {
+    var rawLines = sql.split('\n');
+    var statements = [];
+    var stBuf = [];
+    for (var li = 0; li < rawLines.length; li++) {
+      var ln = rawLines[li];
+      if (!ln.trim().length) continue;
+      stBuf.push(ln);
+      if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+    }
+    if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+    var CHUNK = 500;
+    for (var i = 0; i < statements.length; i += CHUNK) {
+      db.run(statements.slice(i, i + CHUNK).join('\n'));
+    }
+    return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
+  };
+
   A._applyPendingPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
@@ -811,14 +1307,139 @@ async function setupScene(A) {
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
       var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      pdb.run(sql);
+      var _ch = A._runSqlChunked(pdb, sql);   // §PATCH_CHUNK — see comment above _runSqlChunked
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes) from ${patchUrl}`);
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${_ch.statements} statements, ${_ch.chunks} chunk(s)) from ${patchUrl}`);
       return out;
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
       return buf;
+    }
+  };
+
+  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ONE shared function, ONE
+  // trigger (called from streaming.js right after `A.db = new SQL.Database(...)`, both load
+  // paths — this covers an OCI sample load, a fresh drop-your-own-IFC import, and reopening a
+  // previously-imported building from bim_ootb_imports IndexedDB alike, since all three build
+  // `A.db` through this exact same streaming.js code, confirmed by reading it (import:// URLs
+  // route through A.cachedFetch → the same `new SQL.Database()` lines as any OCI URL). There used
+  // to be a SECOND copy of this logic in import_worker.js, running at import time instead of load
+  // time — dropped; redundant once every load (including the first one right after an import)
+  // goes through this one function anyway.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side
+  // DAGCompiler/python/extractIFCtoDB.py, AGGREGATES-only — already written for any current
+  // extraction, missing only from older-vintage shipped DBs, backfilled per-building via a tiny
+  // relationship-only patch, buildings/patches/*.sql, no computed values) or `bom_tree`
+  // (client-side import_worker.js, §S267 — mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered
+  // to AGGREGATES here). Same real relationship fact either way; the compose algorithm itself is
+  // one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file/OCI. Guards: never touches a guid that already has a real transform (the ghost set is
+  // built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost
+  // with no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log
+  // rather than silently falling through to time_machine.js's §4D_NOGEO project-end park
+  // unlabeled. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed
+  // a higher-level parent on a later pass).
+  //
+  // Every row this writes is marked `transform_source='composed_aggregate'` — the project's
+  // existing provenance convention (see extractIFCtoDB.py's 'void_anchor' rows) — so it stays
+  // distinguishable from real extracted geometry later, not just a console log line. Currently
+  // shipped DBs (and the fresh-import schema in import_db_builder.js) predate that column, so the
+  // ALTER runs here, in-memory, guarded for a DB that already has it.
+  A.composeGhostsFromAggregates = function(db) {
+    var _t0 = Date.now();
+    try {
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) {
+        // Paid this LEFT JOIN scan on every load, even for a building with zero ghosts (measured
+        // ~30-60ms on Hospital/Terminal's 48k-63k row elements_meta — negligible against the
+        // multi-second DB fetch/parse it runs alongside, but logged so that claim is a number,
+        // not an assumption, and stays checkable if this table ever grows an order of magnitude).
+        console.log(`[S203] §NOGEO_COMPOSE_SKIP no ghosts, ms=${Date.now() - _t0}`);
+        return { composed: 0, unresolved: 0 };
+      }
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} ms=${Date.now() - _t0} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn('[S203] §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
     }
   };
 
@@ -906,6 +1527,174 @@ async function setupScene(A) {
     if (A.markDirty) A.markDirty();
     console.log('§ZOOM dir=' + dir + ' ' + (dir > 0 ? 'in' : 'out'));
   }
+
+  // ══════════════════════════════════════════════════════════════
+  // ROOM_CYCLE_HOME_SHORTCUTS.md — plain R cycles to progressively smaller rooms by real area;
+  // plain Home resets the cycle + fits a tight exterior view. Fully independent of Alt+C
+  // Cinema/MaxQ (no shared state, never calls startMaxQualityOrbit/startCinemaOrbit).
+  // ══════════════════════════════════════════════════════════════
+  var _roomCycleList = null;   // [{guid,area,name,cx,cy,cz,sx,sy}] sorted area DESC — IFC-space centers
+  var _roomCycleIdx = -1;      // -1 = fresh/reset; 0 = largest; clamps at list.length-1
+  var _roomCycleBld = null;    // building the list was built for — a building switch forces a rebuild
+
+  // "Largest" per ROOM_CYCLE_HOME_SHORTCUTS.md §Spec: SUM(size_x*size_y) GROUP BY room_guid over
+  // spatial_structure (existing columns — no schema change), excluding SUSPECT_* (compiler's own
+  // low-confidence flag, same filter class as Alt+C's §CINEMA_SPACE_ENCLOSED_SKIP). `room_guid` is
+  // only present after room_walker.js's writeRooms() ALTERs it in (§MULTI-RECT compiled rooms) —
+  // real/un-compiled IfcSpace data has no such column, same schema-tolerance fallback (bare `guid`)
+  // navigate_find.js/room_graph.js/hallway_backbone.js already use everywhere else.
+  function _buildRoomAreaList() {
+    if (!A.dbQuery) return [];
+    var hasRoomGuid = false;
+    try {
+      var cols = A.dbQuery('PRAGMA table_info(spatial_structure)');
+      hasRoomGuid = cols.some(function(c) { return c[1] === 'room_guid'; });
+    } catch (e) { /* table missing — rows below will just come back empty */ }
+    var rg = hasRoomGuid ? 'room_guid' : 'guid';
+    var rows = A.dbQuery(
+      'SELECT ' + rg + ' AS rg, SUM(size_x * size_y) AS area FROM spatial_structure ' +
+      "WHERE type='IfcSpace' AND " + rg + ' IS NOT NULL ' +
+      "AND (predefined_type IS NULL OR predefined_type NOT LIKE 'SUSPECT\\_%' ESCAPE '\\') " +
+      'GROUP BY ' + rg + ' ORDER BY area DESC');
+    var list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var guid = rows[i][0], area = rows[i][1];
+      if (!guid || !(area > 0)) continue;
+      // Primary rect row (§MULTI-RECT: guid === room_guid is the un-suffixed first sub-rect) —
+      // its own center/size is the room's anchor position, not an average across sub-rects.
+      var pr = A.dbQuery('SELECT name, center_x, center_y, center_z, size_x, size_y ' +
+        "FROM spatial_structure WHERE type='IfcSpace' AND guid = ?", [guid]);
+      if (!pr.length) continue;
+      list.push({ guid: guid, area: area, name: pr[0][0] || guid,
+        cx: pr[0][1], cy: pr[0][2], cz: pr[0][3], sx: pr[0][4], sy: pr[0][5] });
+    }
+    return list;
+  }
+
+  // The building's main entrance = the lowest-cz 'exit' node of the room/corridor graph — reused
+  // verbatim from tour.js's own entrance pick (never reimplemented, per the spec's Confirmed facts).
+  function _graphEntrance(graph) {
+    if (!graph || !graph.nodesByGuid) return null;
+    var entrance = null;
+    for (var k in graph.nodesByGuid) {
+      var n = graph.nodesByGuid[k];
+      if (n.kind === 'exit' && (!entrance || n.cz < entrance.cz)) entrance = n;
+    }
+    return entrance ? { cx: entrance.cx, cy: entrance.cy, cz: entrance.cz } : null;
+  }
+
+  // A specific room's OWN doorway — any graph edge touching this room's guid that carries a real
+  // doorGuid (E1/E2/E4), reusing the door-carrying-room routing tag (bim-ootb#03a6cb7) rather than
+  // reinventing door detection. Every such door is registered in graph.nodesByGuid (kind 'doorwp'/
+  // 'exit') with its own real measured position — never a storey centroid.
+  function _roomOwnDoor(graph, roomGuid) {
+    if (!graph || !graph.edges) return null;
+    for (var i = 0; i < graph.edges.length; i++) {
+      var e = graph.edges[i];
+      if (!e.doorGuid) continue;
+      if (e.a === roomGuid || e.b === roomGuid) {
+        var dn = graph.nodesByGuid && graph.nodesByGuid[e.doorGuid];
+        if (dn) return { cx: dn.cx, cy: dn.cy, cz: dn.cz };
+      }
+    }
+    return null;
+  }
+
+  // Point the camera at `room` (controls.target = room's own center, per spec) so its view
+  // direction leans toward `facing` (entrance for the largest room, own doorway for the rest) —
+  // i.e. the camera is positioned on the OPPOSITE side of the room from `facing`, so continuing
+  // forward from the camera through the room center points at the facing point's bearing.
+  function _faceRoom(room, facing, facingSrc) {
+    var roomC3 = A.ifc2three(room.cx, room.cy, room.cz);
+    var roomSpan = Math.max(room.sx || 0, room.sy || 0, 4);
+    var dist = Math.max(4, roomSpan * 1.5); // same 1.5 fit-margin convention as streaming.js §CAMERA
+    var camPos;
+    if (facing) {
+      var facing3 = A.ifc2three(facing.cx, facing.cy, facing.cz);
+      var dx = facing3.x - roomC3.x, dz = facing3.z - roomC3.z;
+      var horiz = Math.hypot(dx, dz);
+      var ux = horiz > 1e-6 ? dx / horiz : 1, uz = horiz > 1e-6 ? dz / horiz : 0;
+      camPos = { x: roomC3.x - ux * dist * 0.6, y: roomC3.y + dist * 0.8, z: roomC3.z - uz * dist * 0.6 };
+    } else {
+      facingSrc = 'none';
+      camPos = { x: roomC3.x + dist * 0.6, y: roomC3.y + dist * 0.8, z: roomC3.z + dist * 0.6 };
+    }
+    A.camera.position.set(camPos.x, camPos.y, camPos.z);
+    A.controls.target.set(roomC3.x, roomC3.y, roomC3.z);
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+    return facingSrc;
+  }
+
+  async function _cycleRoom() {
+    if (!A.camera || !A.controls || typeof THREE === 'undefined' || !A.dbQuery) {
+      console.log('§ROOM_CYCLE no-op reason=no-engine'); return;
+    }
+    // Lazy-load the Navigate bundle — A.ensureRooms/A.getRoomGraph live there (78KB saved on first
+    // paint; same warm-up pattern effects.js's §CINEMA_ROOMS already uses for the same reason).
+    if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) {
+      try { await A.loadNavigate(); } catch (e) { console.log('§ROOM_CYCLE loadNavigate_err=' + e.message); return; }
+    }
+    if (typeof A.ensureRooms === 'function') {
+      try { await A.ensureRooms({}); } catch (e) { console.log('§ROOM_CYCLE ensureRooms_err=' + e.message); }
+    }
+    if (_roomCycleIdx < 0 || _roomCycleBld !== A.activeBuilding) {
+      _roomCycleList = _buildRoomAreaList();
+      _roomCycleBld = A.activeBuilding;
+      _roomCycleIdx = -1;
+    }
+    if (!_roomCycleList || !_roomCycleList.length) { console.log('§ROOM_CYCLE no-op reason=no-rooms'); return; }
+    if (_roomCycleIdx < _roomCycleList.length - 1) _roomCycleIdx++;  // clamp at the smallest, never wrap
+    var room = _roomCycleList[_roomCycleIdx];
+    var graph = (typeof A.getRoomGraph === 'function') ? A.getRoomGraph() : null;
+    var isFirst = _roomCycleIdx === 0;
+    // §JUDGMENT-CALL (spec "Out of scope", flagged not user-confirmed): room #2+ faces its OWN
+    // doorway rather than the global entrance — falls back to the entrance if the room has no
+    // tagged door edge (e.g. an isolated/no-door compiled room) so a facing is still attempted.
+    var facing = isFirst ? _graphEntrance(graph) : (_roomOwnDoor(graph, room.guid) || _graphEntrance(graph));
+    var facingSrc = isFirst ? 'entrance' : (_roomOwnDoor(graph, room.guid) ? 'own-door' : 'entrance-fallback');
+    facingSrc = _faceRoom(room, facing, facing ? facingSrc : 'none');
+    console.log('§ROOM_CYCLE press=' + (_roomCycleIdx + 1) + ' guid=' + room.guid +
+      ' area=' + room.area.toFixed(1) + ' name=' + room.name + ' facing=' + facingSrc);
+  }
+
+  // Fit the camera to a TIGHT (zero-margin) exterior view of the whole building's
+  // element_transforms bbox — byte-identical elevation/azimuth ratio (0.6,0.8,0.6) and buildingCentres
+  // target as the initial-load §CAMERA framing (streaming.js, confirmed via grep before copying),
+  // just with the padding multiplier dropped from 1.5 to 1.0 (the 80m floor is a degenerate-envelope
+  // safety clamp, not "margin", so it stays).
+  function _homeFillFrame() {
+    if (!A.camera || !A.controls || !A.dbQuery || typeof THREE === 'undefined') {
+      console.log('§ROOM_HOME no-op reason=no-engine'); return;
+    }
+    var bboxQ = A.dbQuery(A._hasBbox
+      ? 'SELECT MAX(bbox_x), MAX(bbox_y), MAX(bbox_z), MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms'
+      : 'SELECT NULL, NULL, NULL, MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
+    var envW = 500, envD = 500, envH = 100;
+    if (bboxQ.length > 0 && bboxQ[0][3] != null) {
+      var xMin = bboxQ[0][3], xMax = bboxQ[0][4], yMin = bboxQ[0][5], yMax = bboxQ[0][6], zMin = bboxQ[0][7], zMax = bboxQ[0][8];
+      envW = xMax - xMin; envD = yMax - yMin; envH = zMax - zMin;
+    }
+    if (envW < 1 && A.buildingCentres && Object.keys(A.buildingCentres).length > 0) {
+      var bc0 = Object.values(A.buildingCentres)[0];
+      envW = Math.max(50, Math.sqrt(bc0.count) * 2); envD = envW; envH = envW * 0.5;
+    }
+    var envelope = Math.max(envW, envD, envH);
+    var dist = Math.max(80, envelope * 1.0);  // §ZERO_MARGIN: was envelope*1.5 at load time
+    var firstBc = (A.buildingCentres && Object.keys(A.buildingCentres).length) ? Object.values(A.buildingCentres)[0] : null;
+    var ctr = firstBc ? A.ifc2three(firstBc.ix, firstBc.iy, firstBc.iz) : A.ifc2three(0, 0, 0);
+    A.camera.position.set(ctr.x + dist * 0.6, ctr.y + dist * 0.8, ctr.z + dist * 0.6);
+    A.controls.target.set(ctr.x, ctr.y, ctr.z);
+    A.controls.update();
+    if (A.markDirty) A.markDirty();
+    console.log('§ROOM_HOME reset=cycle+frame bbox=' + envW.toFixed(0) + 'x' + envD.toFixed(0) + 'x' + envH.toFixed(0) + 'm dist=' + dist.toFixed(0) + 'm');
+  }
+
+  function _homeResetAndFrame() {
+    _roomCycleIdx = -1;   // next R press goes back to the largest room
+    _homeFillFrame();
+  }
+  A._roomCycle = { list: function() { return _roomCycleList; }, idx: function() { return _roomCycleIdx; } }; // exposed for tests
 
   var _shortcuts = {
     '+':  function() { _zoomStep(1); },             // zoom in
@@ -1115,6 +1904,9 @@ async function setupScene(A) {
     // the pill-drawer reorg (§DELETIONS, e433ac4) but this binding + window.toggleRecord() were
     // left behind, throwing ReferenceError: _recBtn is not defined on every press. No live caller
     // left anywhere in the codebase — matches the reorg's own "no longer in use, delete" verdict.
+    // ROOM_CYCLE_HOME_SHORTCUTS.md (2026-07-22): 'r' reused for Room Cycle — plain R is confirmed
+    // free (grepped), unrelated to the retired Record binding above.
+    'r':  function() { _cycleRoom(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…
@@ -1125,6 +1917,10 @@ async function setupScene(A) {
       else if (A.status) A.status.textContent = 'UNDER CONSTRUCTION';
     },
     '/':  function() { if (A.quickShare) A.quickShare(); },
+    // §HOVER_NAME (HOVER_NAME.md): verified free against this table 2026-07-29. Checkbox lives in
+    // the Find panel; A.toggleHoverName exists from load (hover_name.js) regardless of whether the
+    // panel was ever opened, so the key works standalone — same lazy-load-then-act shape as 'f'.
+    "'": function() { if (A.toggleHoverName) A.toggleHoverName('key'); },
     '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
       if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
       else if (typeof window.toggleOverflow === 'function') window.toggleOverflow();
@@ -1279,6 +2075,9 @@ async function setupScene(A) {
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
       all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
+      // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
+      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
@@ -1860,6 +2659,8 @@ async function setupScene(A) {
   window._focusPanel = _focusPanel;
   window._blurPanel = _blurPanel;
   window._cyclePanel = _cyclePanel;
+  window._zoomStep = _zoomStep;   // §S281: audit-visible (was a +/- false "dead" — fn is closure-local)
+  window._cycleRoom = _cycleRoom; // §S281: audit-visible (was an r false "dead" — fn is closure-local)
   window._shortcuts = _shortcuts; // §S281: exposed so InputReg.checkShortcuts() can self-audit
   window._panels = _panels;
   window._focusStack = _focusStack; // §S280: exposed for [] double-tap
@@ -1958,6 +2759,19 @@ async function setupScene(A) {
         _focusedPanel.nav.onTypeahead(e.key);
         return;
       }
+    }
+
+    // ROOM_CYCLE_HOME_SHORTCUTS.md — plain Home resets the R-cycle + fits a tight exterior frame,
+    // but ONLY in the genuine gap where Home is otherwise unclaimed: placed AFTER the _focusedPanel
+    // block above (so a focused list-nav panel keeps owning Home for jump-to-top, case 2 in the
+    // spec's Confirmed facts) and guarded off whenever corridor-nav is active (navigate_engine.js's
+    // own separate keydown listener already owns Home for route-reset via A._nav.active, case 1) —
+    // NOT placed in the top "always-on modifiers" section, which runs before the panel-focus check
+    // and would wrongly steal case 2.
+    if (noMod && notInput && e.key === 'Home' && !(A._nav && A._nav.active) && !_focusedPanel) {
+      e.preventDefault();
+      _homeResetAndFrame();
+      return;
     }
 
     if (!noMod || !notInput) { console.log('§KBD_ROUTE drop key=' + e.key + ' noMod=' + noMod + ' notInput=' + notInput); return; }

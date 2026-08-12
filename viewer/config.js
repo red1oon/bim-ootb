@@ -19,11 +19,14 @@ function setupConfig(A) {
   // OCI prod base for building DBs (matches index.html _prodBase). cachedFetch retries a failing
   // relative buildings/<file> against this base so a stale relative db url self-heals (W-DB-404-OCI-RETRY).
   A.PROD_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
-  // §S283: If no ?db= param, try last building from localStorage (PWA resume), then default
+  // Implementing prompts/Viewer/BLANK_VIEWER_LANDING_CARD.md §1 (bim-ootb port) — Witness: manual, see §STATUS
+  A.BLANK_MODE = _params.get('blank') === '1';
+  // §S283: If no ?db= param, try last building from localStorage (PWA resume), then default.
+  // Blank mode skips BOTH — a truly empty scene, not a PWA-resumed or sample building.
   var _lastDb = null;
   try { _lastDb = localStorage.getItem('pwa_last_db'); } catch(e) {}
-  A.DB_URL = _params.get('db') || _lastDb || (_base ? _base + 'Duplex_extracted.db' : 'buildings/Duplex_extracted.db');
-  if (_lastDb && !_params.get('db')) console.log('§PWA_RESUME db=' + _lastDb);
+  A.DB_URL = A.BLANK_MODE ? '' : (_params.get('db') || _lastDb || (_base ? _base + 'Duplex_extracted.db' : 'buildings/Duplex_extracted.db'));
+  if (_lastDb && !_params.get('db') && !A.BLANK_MODE) console.log('§PWA_RESUME db=' + _lastDb);
   A.CITY_URL = _params.get('city') || null;
   A.BLD_BASE = _params.get('bldbase') || '';
 

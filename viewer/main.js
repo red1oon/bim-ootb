@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -160,7 +160,7 @@ async function initViewer() {
         // (x8, never removes) any edge touching one so room→room routing prefers corridors.
         // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
         // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
-        '../common/room_graph.js?v=9',
+        '../common/room_graph.js?v=12',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
@@ -172,7 +172,7 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=56',
+        'navigate_find.js?v=57',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -661,6 +661,31 @@ async function initViewer() {
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
   let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
+
+  // §FPS_MODE: frame_ms sampler tagged by nav-DLOD/xray-cycle/fly/orbit state — landed to settle
+  // whether nav-DLOD ('o') actually helps frame time while flying vs dragging vs bbox-cycle mode
+  // (bbox mode gates nav-DLOD off via activeGuidFilter, see dlod_nav.js _gateBlockReason). Only
+  // accumulates on frames that actually did work (post-_awake) — idle-parked gaps aren't real cost.
+  var _fpsSum = 0, _fpsN = 0, _fpsMax = 0, _fpsLastT = 0, _fpsLastLogT = 0;
+  function _fpsSample(now) {
+    if (_fpsLastT) {
+      var dt = now - _fpsLastT;
+      _fpsSum += dt; _fpsN++;
+      if (dt > _fpsMax) _fpsMax = dt;
+    }
+    _fpsLastT = now;
+    if (_fpsN && (now - _fpsLastLogT) >= 2000) {
+      var mean = +(_fpsSum / _fpsN).toFixed(1);
+      var disp = APP.xrayOn ? 'xray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'bbox' : 'solid');
+      // dlod= reads _dlodNavEngaged (actually classifying/boxing), not the pill-pressed _dlodNavOn —
+      // a gate-blocked press (streaming/find-isolation/etc, see dlod_nav.js _gateBlockReason) does
+      // nothing at all, and tagging those frames "on" would silently poison this exact comparison.
+      console.log('§FPS_MODE mean=' + mean + ' max=' + _fpsMax.toFixed(1) + ' n=' + _fpsN +
+        ' dlod=' + (window._dlodNavEngaged ? 'on' : 'off') + ' disp=' + disp +
+        ' fly=' + (APP.flyActive ? 1 : 0) + ' orbit=' + (_orbiting ? 1 : 0));
+      _fpsSum = 0; _fpsN = 0; _fpsMax = 0; _fpsLastLogT = now;
+    }
+  }
   // §IDLE-PARK: these are the wake points. markDirty/controls-change now also REVIVE the
   // rAF chain (the loop self-parks when idle — see animate()). _startLoop is hoisted + guarded
   // (no-op if already running), so calling it on every change is cheap.
@@ -685,7 +710,15 @@ async function initViewer() {
     // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
     if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
-    if (!_orbiting && APP.streamedCount > 5000) {
+    // §CPE_VF_DPR_GUARD (2026-08-05): skip the perf-DPR drop while the cinema path editor's POV
+    // inset (B) is open. B's own scissor render (cinema_path_editor.js _vfRender) reads
+    // renderer.getPixelRatio() fresh every frame, so a mid-drag pr flip between _fullDPR and
+    // _orbitDPR — invisible on the main view (browser upscales the whole canvas uniformly) —
+    // shows up as B's small inset box visibly resizing/rescaling frame to frame (§CPE_VF_RENDER_TRACE
+    // logged x/y/w/h changing while panelR stayed fixed). This LOD trick exists purely for main-canvas
+    // orbit smoothness on large buildings; B is a tiny sub-render, not worth degrading, and coupling
+    // it to a main-canvas-only heuristic is exactly the entanglement the user flagged — separate them.
+    if (!_orbiting && APP.streamedCount > 5000 && !APP._cpeViewfinderRender) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
     }
@@ -705,12 +738,20 @@ async function initViewer() {
   // §S287b: SINGLE-OWNER render loop. Every (re)start routes through here; the _rafId guard
   // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
   // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
+  var _idleCycles = 0;   // §LOG_SPAM_THROTTLE — the idle gate's cycle count, logged instead of each cycle
   function _startLoop() {
     if (_rafId) return;                       // already running — never double
     _loopStarts++;
     _needsRender = true;
     _rafId = requestAnimationFrame(animate);
-    console.log('§RENDER_LOOP start total=' + _loopStarts);
+    // §LOG_SPAM_THROTTLE (user, 2026-07-27: "solve the spam too"). This trio — RENDER_LOOP start,
+    // IDLE_GATE park, IDLE_GATE wake — fires once per idle cycle, and the idle gate cycles on every
+    // pointer twitch: their Hospital console ran to `total=189` with hundreds of interleaved
+    // park/wake pairs, burying every §-line that carries information. The COUNT is the signal here,
+    // not each occurrence, so log the first few in full and then only every 25th, carrying the
+    // running total (which is what the §RENDER_LOOP witness asserts on anyway).
+    if (_loopStarts <= 3 || _loopStarts % 25 === 0)
+      console.log('§RENDER_LOOP start total=' + _loopStarts + (_loopStarts > 3 ? ' (throttled: every 25th)' : ''));
   }
   function _ensureLoop() { _tabVisible = true; _startLoop(); }
   document.addEventListener('visibilitychange', function() {
@@ -822,10 +863,17 @@ async function initViewer() {
                  APP.flyActive || _orbiting || _pipelinesCompiling;
     if (!_awake) {
       _rafId = null;
-      if (!_idleLogged) { console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames)'); _idleLogged = true; }
+      if (!_idleLogged) {
+        _idleCycles = (_idleCycles || 0) + 1;
+        if (_idleCycles <= 3 || _idleCycles % 25 === 0)
+          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) cycles=' + _idleCycles +
+            (_idleCycles > 3 ? ' (throttled: every 25th)' : ''));
+        _idleLogged = true;
+      }
       return;
     }
     _rafId = requestAnimationFrame(animate);
+    _fpsSample(performance.now()); // §FPS_MODE — elapsed since previous awake-frame start = full per-frame cost
     if (!APP.walkModeActive) {
       APP.controls.update();
       if (APP.walkMode) { APP.walkTick(); } else { APP.flyTick(); }
@@ -857,6 +905,11 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER: an OPT-IN second-camera scissor sub-render, installed only while the
+        // cinema path editor's B panel is toggled on (cinema_path_editor.js). undefined/absent the
+        // rest of the time, so this is a single property check when off — never touched by the
+        // MaxQ bake, which does not run through this loop and never sets the hook.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
       }
     } else {
@@ -870,8 +923,13 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER — see the mobile branch above for the full comment.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
-        if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
+        if (_idleLogged) {
+          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake cycles=' + (_idleCycles || 0));
+          _idleLogged = false;
+        }
       } else if (!_idleLogged) {
         console.log('§IDLE_GATE park — desktop loop idle, 0 GPU frames (static scene)');
         _idleLogged = true;
@@ -1074,6 +1132,58 @@ async function initViewer() {
           console.log('§SHARE_PARSE ' + (restored.length > 0 ? restored.join(' ') : 'none'));
         }
       }, 1500);
+    }
+
+    // §SCENE_STATE_RESTORE (prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4) — restore the SAVED DEFAULT
+    // view for a plain DB open, no share link. Runs on every load (unlike the S265 block above, which
+    // only fires when a hash is present); a hash field wins over the DB's saved default per-field —
+    // an explicit shared link is a more deliberate ask than the reopener's own last-saved view.
+    if (APP.db) {
+      var hasSceneState = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='scene_state'");
+      if (hasSceneState && hasSceneState.length) {
+        var ssChecks = 0;
+        var ssTimer = setInterval(function() {
+          ssChecks++;
+          if (APP.streamedCount > 10 || ssChecks > 20) {
+            clearInterval(ssTimer);
+            try {
+              var ssRows = APP.dbQuery("SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z," +
+                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
+              if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
+              var sr = ssRows[0], ssApplied = [];
+              if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
+                var scp = APP.ifc2three(sr[0], sr[1], sr[2]), sct = APP.ifc2three(sr[3], sr[4], sr[5]);
+                APP.camera.position.set(scp.x, scp.y, scp.z);
+                APP.controls.target.set(sct.x, sct.y, sct.z);
+                APP.controls.update();
+                ssApplied.push('camera');
+              }
+              if (!hashParams.xray && sr[6] && typeof APP.toggleXray === 'function' && !APP.xrayOn) {
+                APP.toggleXray(); ssApplied.push('xray');
+              }
+              if (sr[7] && typeof APP.dlodEnable === 'function' && !APP._dlodEnabled) {
+                APP.dlodEnable(); ssApplied.push('dlod');
+              }
+              if (sr[8] && typeof APP.startDriveThru === 'function' && !APP.walkModeActive) {
+                APP.startDriveThru(); ssApplied.push('walk');
+              }
+              if (sr[9] && typeof APP.runPanelAction === 'function') {
+                if (APP.runPanelAction(sr[9])) ssApplied.push('panel=' + sr[9]);
+              }
+              if (!hashParams.pick && sr[10] && typeof APP.filterByGuids === 'function') {
+                var ssGuids = String(sr[10]).split(',').filter(Boolean);
+                if (ssGuids.length) { APP.filterByGuids(new Set(ssGuids)); ssApplied.push('find=' + ssGuids.length); }
+              }
+              if (!hashParams.tm && sr[11] && typeof window.toggleTimeMachine === 'function') {
+                window.toggleTimeMachine(); ssApplied.push('tm');
+              }
+              console.log('§SCENE_STATE_RESTORE ' + (ssApplied.length ? ssApplied.join(' ') : 'none'));
+            } catch (e) { console.warn('§SCENE_STATE_RESTORE_FAIL ' + e.message); }
+          }
+        }, 1500);
+      } else {
+        console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
+      }
     }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;

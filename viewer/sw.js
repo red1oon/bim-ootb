@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v841';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1011';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -43,6 +43,7 @@ const SHELL_LIBS = [
   'lib/SSAOPass.js',
   'lib/OutlinePass.js',
   'lib/OutputPass.js',
+  'lib/BloomPass.js',
   // §CINEMA_SSAA (2026-07-18) + transitive-import completion: the 6 modules above `import` these
   // 8 (Pass/CopyShader ← everything; ShaderPass/MaskPass ← EffectComposer; SSAARenderPass ←
   // TAARenderPass; SimplexNoise/SSAOShader ← SSAOPass; OutputShader ← OutputPass) — precaching
@@ -113,6 +114,9 @@ const PRECACHE_ASSETS = [
   'loader.js',
   'effects.js',
   'cinema_maxq.js',
+  'cinema_path_editor.js',
+  'cpe_walk.js',
+  'cpe_xr.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
   'scene.js',
@@ -120,6 +124,9 @@ const PRECACHE_ASSETS = [
   'panels.js',
   'tools.js',
   'picking.js',
+  'hover_name.js',
+  'cpe_room_title.js',
+  'cpe_day_counter.js',
   'tour.js',
   'clash_matrix.js',
   'measure.js',
@@ -180,7 +187,7 @@ const PRECACHE_ASSETS = [
   'materialize.js',
   'doc_canvas.js',
   // Feature modules loaded by index.html
-  'kernel_ops.js',
+  '../erp/kernel_ops.js',   // the ONE kernel_ops (v13) — viewer-local copy no longer loaded by viewer.html
   'cost_panel.js',
   'clash_report.js',
   'clash_snag.js',
@@ -189,8 +196,10 @@ const PRECACHE_ASSETS = [
   'time_machine.js',
   'dlod_nav.js',
   'schedule_author.js',
+  'schedule_read_4d.js',
   'schedule_author_ui.js',
   'foreign_schedule.js',
+  'schedule_diff.js',
   'schedule_sync.js',
   'schedule_editor.html',
   'schedule_editor_ui.js',
@@ -284,6 +293,20 @@ function isNetworkFirst(url) {
   // Precached local files — cache-first (CACHE_VERSION bump purges + refreshes)
   var filename = base.split('/').pop();
   if (_PRECACHE_SET.has(filename)) return false;
+  // §SQL-PATCH-NETWORK-FIRST (2026-07-25, measured on a real user session —
+  // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): `buildings/patches/*.sql` used to fall through to
+  // cacheFirst, because only .html/.js were network-first and .sql matched nothing. That silently
+  // breaks THE PROJECT'S OWN DB-CHANGE DOCTRINE (CLAUDE.md §DB CHANGES): every DB fix ships as a
+  // small .sql applied at load by A._applyPendingPatch(), so an UPDATED patch could never reach an
+  // already-installed client — the SW kept serving the first body it ever cached. Proven live: the
+  // regenerated Hospital walkable raster went to OCI at 07:45:18Z, and a session SIX HOURS later
+  // (rooms_meta.built_at 13:37:44Z) still compiled against the OLD raster — its saved db carries the
+  // pre-fix Level 1 signature (x0=-0.0147 cols=304 rows=332 instead of x0=-12.5998 cols=403 rows=372)
+  // and its console reproduced all three pre-fix §PATH_LEGAL_DETOUR_FAIL legs exactly
+  // (34.2m/96, 39.5m/135, 10.1m/34). With the live patch applied to that same saved db: zero
+  // DETOUR_FAIL. networkFirst (not no-cache) keeps the offline PWA path intact — it falls back to the
+  // cached body when the network is gone, which is what §38-offline-pwa needs.
+  if (base.endsWith('.sql')) return true;
   // Unknown JS/HTML not in precache list — network-first (safe default)
   if (base.endsWith('.html') || base.endsWith('.js')) return true;
   return false;

@@ -2836,6 +2836,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         window.APP = window.APP || {};
         var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
         window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — Witness: W-RECEIPT-MOVEMENTTYPE. The M_InOut
+        // real AD_Tab family splits Shipment (257, "MovementType IN ('C-')") vs Material Receipt (296,
+        // "MovementType IN ('V+')") vs the return tabs (52371/53276) by MovementType, NOT IsSOTrx (verified
+        // live against ad_seed.db — M_InOut carries no IsSOTrx-pattern WhereClause anywhere) — the SAME
+        // per-window signal as the IsSOTrx case above, different column. Same stash-scoped-to-this-create
+        // pattern as _createIsSOTrx.
+        var _wcMt = tab.whereClause && /\bMovementType\s+IN\s*\(\s*'([A-Z][+-])'/i.exec(tab.whereClause);
+        window.APP._createMovementType = _wcMt ? _wcMt[1].toUpperCase() : null;
         // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "order-LINE stale parent FK") —
         // a child tab's (tabLevel>0) New form has a locked/readonly parent-link column (e.g.
         // C_OrderLine.C_Order_ID) but nothing ever seeded its value with the actual parent record's pk:

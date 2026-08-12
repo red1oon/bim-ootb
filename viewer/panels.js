@@ -29,7 +29,7 @@ var ICONS = {
   cloud:     { svg: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', trl: 'ui_tt_shadow', key: 'H', desc: 'Shadow' },
   contrast:  { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>', trl: 'ui_tt_bg', key: 'B', desc: 'Background' },
   maximize:  { svg: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', trl: 'ui_tt_fullscreen', key: null, desc: 'Fullscreen' },
-  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+X', desc: 'Bounding Boxes' },
+  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+Z', desc: 'Bounding Boxes' },
   camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
   video:     { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>', trl: 'ui_tt_cinema', key: null, desc: 'Cinema Orbit' },
   // §CINEMA_ROW_ICONS (2026-07-18, user ask): Lucide, pulled verbatim (unpkg.com/lucide-static@1.25.0)
@@ -724,6 +724,7 @@ function setupPanels(A) {
       A.filterBatchedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
     console.log(`[S200] §STOREY_FILTER ${Array.isArray(storey) ? '[' + storey.join(',') + ']' : (storey || 'ALL')}`);
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -827,6 +828,7 @@ function setupPanels(A) {
         return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -848,7 +850,17 @@ function setupPanels(A) {
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => keep(meta.guid));
     });
-    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    // §MERGED_GUID: merged meshes are plain isMesh with no userData.guid — they matched NONE of the
+    // three collectors above, so an isolate used to leave them fully visible. Fourth collector, same
+    // keep() predicate, per-element via the index-range map.
+    var _mgVis = 0, _mgMeshes = 0;
+    A.collectMeshes(o => o.userData && o.userData.isMerged).forEach(mesh => {
+      _mgMeshes++;
+      A.filterMergedMesh(mesh, meta => { var k = keep(meta.guid); if (k) _mgVis++; return k; });
+    });
+    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)) +
+      (_mgMeshes ? ' merged_meshes=' + _mgMeshes + ' merged_visible=' + _mgVis : ''));
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -1466,6 +1478,14 @@ function setupPanels(A) {
       for (var i = 0; i < _actions.length; i++) { if (_actions[i].id === id) return _actions[i]; }
       return null;
     }
+    // prompts/Viewer/SAVE_DB_SCENE_STATE.md — the one generic hook the combined scene-state restore
+    // needs: fire an action's own fn() by id, the same call its pill/drawer row already makes on tap.
+    // No new open logic — reuses the single source of truth (_actions) this whole module already is.
+    A.runPanelAction = function(id) {
+      var act = _actionById(id);
+      if (act && act.fn) { act.fn(); return true; }
+      return false;
+    };
 
     // One row = icon + label, reusing act.fn/isActive/hold verbatim. hold (Measure→Clash,
     // X-Ray→Bbox, World History→Z-drawer) replays the SAME long-press-then-tap mechanics as

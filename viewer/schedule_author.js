@@ -22,11 +22,167 @@
     for (var key in rules) {
       if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
     }
+    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key at all used to
+    // land on `dflt` silently — found live on real Hospital data (861 IfcDistributionControlElement,
+    // 113 IfcSwitchingDevice). Loud, not silent: whoever imports a new IFC set with a genuinely
+    // unclassified class sees it in the log instead of it vanishing into the generic default.
+    if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
     return bestKey ? rules[bestKey] : dflt;
+  }
+
+  // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
+  // ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely
+  // structural plates/members. Checked BEFORE matchRule, never replacing it — see rates/sequence_rules.json.
+  function matchNameOverride(cls, name, nameOverrides) {
+    if (!name || !nameOverrides) return null;
+    for (var i = 0; i < nameOverrides.length; i++) {
+      var ov = nameOverrides[i];
+      if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+      if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+      if (ov._re && ov._re.test(name)) return ov;
+    }
+    return null;
   }
 
   function _slug(name) {
     return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
+  // _installSecs — REPLICATES time_machine.js getInstallSecs EXACTLY (same 28800s/day, same 120s
+  // no-data default, same longest-substring productivity match), parameterized instead of reading
+  // window globals so it is node-testable. `rule` is the phase rule already resolved for this
+  // element (matchNameOverride/matchRule) — not re-derived, to keep the classification a single pass.
+  // `realQty` (optional) — §LABOR_QUANTITY_WEIGHT below: when a class is geometrically
+  // over-fragmented, the caller passes this element's REAL bbox area instead of leaving it null,
+  // and the same per-unit rate (28800/prod) is charged per m² instead of once per element.
+  // `lengthRatio` (optional) — §HEAVY_MEMBER_SPEED_LIMIT below: this element's real length divided
+  // by its class's real average length. A flat per-unit rate assumes every element is "typical
+  // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
+  // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
+  function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
+    var resource = rule && rule.resource;
+    if (!resource || !laborRates[resource]) return 120;
+    var labor = laborRates[resource], bestPk = null, bestLen = 0;
+    for (var pk in labor.productivity) {
+      if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
+    }
+    var prod = bestPk ? labor.productivity[bestPk] : 0;
+    if (prod <= 0) return 120;
+    var secsPerUnit = 28800 / prod;
+    if (realQty != null) return Math.round(secsPerUnit * realQty);
+    if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
+    return Math.round(secsPerUnit);
+  }
+
+  // _classFragmentation(db, rates) — §LABOR_QUANTITY_WEIGHT (GANTT_ACCURACY.md "RESUME 2026-08-04,
+  // root cause found"): 33,324 Terminal "Metal Deck" IfcPlate fragments average 0.074 m² each —
+  // smaller than a floor tile — so charging LABOR_RATES.STEEL_ERECTOR.productivity.IfcPlate=12/day
+  // once PER FRAGMENT (33,324 "elements") inflated Superstructure to 968 days. The formula itself
+  // was never wrong; its INPUT (element count as a proxy for real installable quantity) was wrong
+  // for this one over-fragmented class.
+  //
+  // The fix is NOT "always use RATES[cls].unit='M2' as area" — measured on Terminal, every OTHER
+  // M2-priced class already has a normal, real-panel-sized average (IfcSlab 22.7 m², IfcWall 40.6
+  // m², IfcCovering 65.6 m², IfcRoof 91.4 m²) — their per-element counts already ARE real
+  // installable units, and area-weighting them anyway would invent a NEW regression with zero
+  // evidence behind it (measured: IfcWall would jump from ~14 days to 563 days). So this is a
+  // DATA-DRIVEN per-class test, not a per-unit-type blanket rule: an M2-priced class is
+  // fragmented only when its OWN measured average bbox area is smaller than a floor tile
+  // (FRAGMENT_M2_FLOOR) — the same yardstick this file's own investigation already used in
+  // prose ("0.074 m² is smaller than a floor tile"), now the actual test. Any building where some
+  // OTHER M2 class is the fragmented one (curtain-wall glazing, brick coursing) is caught the same
+  // way, generically — nothing here names "Metal Deck" or "IfcPlate".
+  //
+  // Non-invented: uses RATES[cls].unit (already shipped, rates.js) to find candidate classes, and
+  // the EXACT analysis_sidecar.js compute5D dominant-face-area SQL expression (already shipped) to
+  // measure them. No conversion factor, no assumed "real plate size" — the measured average IS the
+  // test, and the real per-element area IS the weight.
+  var FRAGMENT_M2_FLOOR = 1.0;   // m² — "smaller than a floor tile"
+  var _AREA_EXPR = "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+    "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+    "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+    "ELSE MAX(t.bbox_x,t.bbox_y) END";
+  function _classFragmentation(db, qsRates) {
+    var out = { fragmented: {}, area: {} };
+    qsRates = qsRates || {};
+    var m2Classes = [];
+    for (var cls in qsRates) if (qsRates[cls] && qsRates[cls].unit === 'M2') m2Classes.push(cls);
+    if (!m2Classes.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + _AREA_EXPR + ") FROM elements_meta m " +
+        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "AND m.ifc_class IN (" + q(m2Classes) + ") GROUP BY m.ifc_class");
+    } catch (e) { return out; }   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
+    var fragClasses = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0 && avg < FRAGMENT_M2_FLOOR) { out.fragmented[cls] = { avg: avg, total: total, count: cnt }; fragClasses.push(cls); }
+      });
+    }
+    if (!fragClasses.length) return out;
+    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(fragClasses) + ")");
+    if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
+    fragClasses.forEach(function (cls) {
+      var f = out.fragmented[cls];
+      console.log('§LABOR_QUANTITY_WEIGHT class=' + cls + ' count=' + f.count + ' avgArea=' + f.avg.toFixed(4) +
+        'm2 (<' + FRAGMENT_M2_FLOOR + 'm2 floor) totalRealArea=' + f.total.toFixed(1) +
+        'm2 — real AREA used as labor quantity, not element count');
+    });
+    return out;
+  }
+
+  // _linearWeighting(db, rates) — §HEAVY_MEMBER_SPEED_LIMIT (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md
+  // "20 piling beams erected right away" complaint). Root cause, MEASURED: a flat per-unit labor rate
+  // (28800/prod) charges every element of a class the SAME install time regardless of its real size —
+  // fine when a class IS uniform, wrong when it isn't. Terminal IfcBeam: 0.91m to 60.00m (8.2x spread).
+  // LTU_AHouse IfcBeam: 0.09m to 118.20m (17.4x spread). A 60m span truss and a 0.9m stub both took the
+  // identical "1 crew-hour" — no size-based speed limit for heavy/long members, so many same-day
+  // placements read as an "impossible" bunched Gantt regardless of real size.
+  // Same shape as §LABOR_QUANTITY_WEIGHT (_classFragmentation) above, generalized from AREA (M2) to
+  // LENGTH (M) — every RATES class already priced per linear metre (IfcBeam, IfcColumn, IfcMember,
+  // IfcDuct/IfcPipe/IfcCableCarrier runs, …) is a candidate, non-invented: RATES[cls].unit==='M' is
+  // already-shipped data, real length is the same MAX(bbox_x,bbox_y,bbox_z) expression used
+  // elsewhere in this file. UNLIKE the M2 fix, this does not gate on a "fragmented" threshold and
+  // does not change the class's TOTAL labor-time — it REDISTRIBUTES the existing flat total
+  // proportionally to each element's real length vs. its class's real average length (ratio≈1 when a
+  // class is already uniform, e.g. Clinic's IfcBeam at 1.5x spread — no distortion there; ratio grows
+  // exactly where the spread is real, e.g. LTU_AHouse). Generic: applies to any 'M'-unit class on any
+  // building, nothing named here.
+  function _linearWeighting(db, qsRates) {
+    var out = { avgLength: {}, length: {} };
+    qsRates = qsRates || {};
+    var mClasses = [];
+    for (var cls in qsRates) if (qsRates[cls] && qsRates[cls].unit === 'M') mClasses.push(cls);
+    if (!mClasses.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var LEN_EXPR = 'MAX(t.bbox_x,t.bbox_y,t.bbox_z)';
+    var r;
+    try {
+      r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + LEN_EXPR + ") FROM elements_meta m " +
+        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "AND m.ifc_class IN (" + q(mClasses) + ") GROUP BY m.ifc_class");
+    } catch (e) { return out; }   // no element_transforms table — degrade to flat (no weighting)
+    var haveClasses = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgLength[cls] = avg; haveClasses.push(cls); }
+      });
+    }
+    if (!haveClasses.length) return out;
+    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(haveClasses) + ")");
+    if (lr.length && lr[0].values.length) lr[0].values.forEach(function (row) { out.length[row[0]] = row[1] || 0; });
+    console.log('§HEAVY_MEMBER_SPEED_LIMIT classes=' + haveClasses.length + ' [' +
+      haveClasses.map(function (c) { return c + ':avg=' + out.avgLength[c].toFixed(2) + 'm'; }).join(', ') +
+      '] — real LENGTH redistributes each class\'s existing flat total, per-element speed now scales with real size');
+    return out;
   }
 
   // YYYY-MM-DD a given number of whole days after a base date string. Pure UTC arithmetic so
@@ -81,6 +237,180 @@
     return true;
   }
 
+  // _buildScheduleElements(db, rules, opts) — REPLICATES time_machine.js's element-building recipe
+  // EXACTLY (storey-Z reassignment for elements with no real storey + matchRule/matchNameOverride +
+  // installSecs), off the DB directly so materializeZones is node-testable and can feed
+  // ScheduleGate.computeSchedule the SAME element shape the live movie already uses. The one piece
+  // not already replicated elsewhere in this file is the §STOREY-Z reassignment (time_machine.js
+  // assignStoreyByZ) — ported verbatim, same reasoning: an element with no real storey containment
+  // (a literal "Unknown" IFC storey label — 69.9% of Terminal) is reassigned to the nearest REAL
+  // storey by median center-Z, deterministic, nothing invented.
+  function _buildScheduleElements(db, rules, opts) {
+    opts = opts || {};
+    var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var qsRates = opts.rates || (global.RATES) || {};
+    var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    var _frag = _classFragmentation(db, qsRates);
+    var _lin = _linearWeighting(db, qsRates);
+
+    // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
+    // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
+    // header says "REPLICATES ... EXACTLY") — that query excludes IfcOpeningElement (time_machine.js
+    // WHERE m.ifc_class != 'IfcOpeningElement', 3x). This one didn't, so materializeDefault/
+    // materializeZones scheduled wall/window VOIDS as if they were physical installable work — up to
+    // 4.5% of elements on a real building (JKR: 425/9410). Silent: doesn't break DAG/support-order
+    // (openings rarely collide with anything), just inflates phase/zone element+crew-time counts and
+    // breaks the "movie-coherent, can never tell a different story" guarantee those functions claim.
+    // §CLASS_UNMATCHED_FALLBACK (found 2026-08-04, witness_class_fallback_blackbox.js): IfcSpace is a
+    // spatial-zone entity, not a physical installable element — same non-physical category as
+    // IfcOpeningElement, excluded the same way (never invented labor for a room volume).
+    var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
+      "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
+      "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
+      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
+      "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+    if (!r.length || !r[0].values.length) return [];
+
+    var storeyZs = {};
+    r[0].values.forEach(function (row) {
+      var storey = row[3], cz = row[6];
+      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
+      (storeyZs[storey] = storeyZs[storey] || []).push(cz);
+    });
+    var storeyNames = Object.keys(storeyZs), storeyMedianZ = {};
+    storeyNames.forEach(function (s) {
+      var zs = storeyZs[s].slice().sort(function (a, b) { return a - b; });
+      storeyMedianZ[s] = zs[Math.floor(zs.length / 2)];
+    });
+    function assignStoreyByZ(storey, cz) {
+      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+      if (!storeyNames.length) return storey;
+      var best = storeyNames[0], bd = Infinity;
+      for (var i = 0; i < storeyNames.length; i++) {
+        var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
+        if (d < bd) { bd = d; best = storeyNames[i]; }
+      }
+      return best;
+    }
+
+    return r[0].values.map(function (row) {
+      var guid = row[0], cls = row[1], name = row[2], rawStorey = row[3];
+      var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
+      var storey = assignStoreyByZ(rawStorey, cz);
+      var ov = matchNameOverride(cls, name, nameOverrides);
+      var rule = ov || matchRule(cls, rules, dflt);
+      var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
+      // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
+      // same honest-degrade as realQty above (never divide by a fabricated average).
+      var hasGeom = bx > 0 || by > 0 || bz > 0;
+      var clsAvgLen = _lin.avgLength[cls];
+      var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0)
+        ? Math.max(bx, by, bz) / clsAvgLen : null;
+      return {
+        guid: guid, cls: cls, name: name, storey: storey,
+        base_z: cz - bz / 2, top_z: cz + bz / 2,
+        x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
+        seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio),
+        // §4D_NOGEO (2026-08-07, mirrors time_machine.js's own pool — this function's header says
+        // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
+        // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
+        // that day-0 zone window is what spread walls from day 1 in the live movie.
+        noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
+      };
+    }).filter(function (e) { return !e.noGeo; });
+  }
+
+  // materializeZones(db, rules, opts) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up): the
+  // DETAIL-granularity sibling of materializeDefault. Where materializeDefault gives 5 coarse phase
+  // tasks, this persists one task per (phase × real floor) ZONE — built from
+  // ScheduleGate.computeSchedule's already-proven per-element real start/end times (the SAME numbers
+  // the live Time Machine movie plays, so the detail Gantt/CPM view and the movie can never tell a
+  // different story) and ScheduleGate.deriveZones' structurally-DAG-safe edges (see that function's
+  // header — every edge traces to an OBSERVED pair of real start times, nothing re-simulated or
+  // invented). Writes to the SAME SCH_AUTHORED schedule_id as materializeDefault (idempotent
+  // rebuild) — this is an ALTERNATIVE detail view of the one generated schedule, not a second,
+  // competing one. Movie stays instant/zero-friction (schedule_gate.js's live fallback, untouched);
+  // this is the on-demand "for the minority who want to drill in" detail path.
+  function materializeZones(db, rules, opts) {
+    opts = opts || {};
+    var schedId = opts.scheduleId || 'SCH_AUTHORED';
+    var start = opts.start || '2026-01-01';
+    var SG = opts.scheduleGate || global.ScheduleGate;
+    if (!SG || !SG.computeSchedule || !SG.deriveZones) {
+      console.log('§AUTHOR_ZONES_FAIL reason=ScheduleGate_not_loaded');
+      return { ok: false, reason: 'no_schedule_gate' };
+    }
+    var elements = _buildScheduleElements(db, rules, opts);
+    if (!elements.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_elements'); return { ok: false, reason: 'no_elements' }; }
+
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var maxCrews = {};
+    for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
+    var schedule = SG.computeSchedule(elements, 0, 1, maxCrews);
+    var rolled = SG.deriveZones(elements, schedule);
+    if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
+
+    db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+    _ensureWideTasks(db);
+    db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+
+    db.run('BEGIN TRANSACTION');
+    db.run('DELETE FROM task_elements WHERE task_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId]);
+    db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
+    db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
+    db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
+    db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start]);
+
+    var rootId = 'TASK_ROOT';
+    var minStart = Math.min.apply(null, rolled.zones.map(function (z) { return z.start; }));
+    var maxEnd = Math.max.apply(null, rolled.zones.map(function (z) { return z.end; }));
+    var totalDays = Math.max(1, Math.round((maxEnd - minStart) / 86400000));
+    db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, start, _addDays(start, totalDays), 'P' + totalDays + 'D', null, 'PLANNED']);
+
+    var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    var zoneTaskId = {}, zoneDays = {};
+    rolled.zones.forEach(function (z) {
+      var tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
+      zoneTaskId[z.id] = tid;
+      var sDays = Math.round((z.start - minStart) / 86400000), eDays = Math.round((z.end - minStart) / 86400000);
+      if (eDays <= sDays) eDays = sDays + 1;
+      // §ZONE_EDGE_LEAD: remember the ROUNDED day numbers actually written. The edge lags below are
+      // derived from these, not re-rounded independently from raw ms — rounding dates and lags
+      // separately let the two disagree by a day, which showed up as 53 self-violated edges on
+      // Terminal even once the negative-lag fix was in.
+      zoneDays[z.id] = { s: sDays, e: eDays };
+      var s = _addDays(start, sDays), f = _addDays(start, eDays);
+      stmtTk.run([tid, schedId, rootId, z.phase + ' — ' + z.storey, 'CONSTRUCTION', 0, s, f, 'P' + (eDays - sDays) + 'D', null, 'PLANNED']);
+      z.guids.forEach(function (g) { stmtTe.run([tid, g]); });
+    });
+    stmtTk.free(); stmtTe.free();
+
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var edgeN = 0;
+    rolled.edges.forEach(function (e) {
+      var p = zoneTaskId[e.predId], s = zoneTaskId[e.succId]; if (!p || !s || p === s) return;
+      // FS lag straight off the persisted day numbers → succ.start = pred.finish + lag EXACTLY.
+      // Negative values are real leads (P6's "FS-5d"), not errors: overlapping zones are how real
+      // crews work, and clamping them to 0 is what made the graph contradict its own dates.
+      var pd = zoneDays[e.predId], sd = zoneDays[e.succId];
+      var lagDays = (pd && sd) ? (sd.s - pd.e) : Math.round(e.lagMs / 86400000);
+      stmtSeq.run([p, s, 'FS', lagDays]);
+      edgeN++;
+    });
+    stmtSeq.free();
+    db.run('COMMIT');
+
+    console.log('§AUTHOR_ZONES schedule=' + schedId + ' zones=' + rolled.zones.length + ' edges=' + edgeN +
+      ' elements=' + elements.length + ' totalDays=' + totalDays);
+    return { ok: true, scheduleId: schedId, zoneCount: rolled.zones.length, edgeCount: edgeN, totalDays: totalDays };
+  }
+
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
   // db: a sql.js Database with `elements_meta`. rules: SEQUENCE_RULES map. opts: {start, phaseDays,
   // scheduleId, defaultRule}. Idempotent — rebuilds the SCH_AUTHORED schedule from scratch.
@@ -94,11 +424,23 @@
                                 // them UNDATED so the user originates the schedule (nothing shows in
                                 // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
+    var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §PHASE_DURATION: labor rates for workload-proportional phase width (see below). Falls back to
+    // {} when unavailable (blank-model bootstrap, older tests) — every element then gets the SAME
+    // 120s default weight, which degrades gracefully to plain element-count proportionality, never
+    // to the old flat-phaseDays-per-phase behaviour.
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    // §LABOR_QUANTITY_WEIGHT: RATES (rates.js, the QS/BOQ cost table — separate from LABOR_RATES)
+    // gives each class's real physical measure via `unit`. Used ONLY to detect and re-weight
+    // classes whose geometry is over-fragmented relative to real installable units — see
+    // _classFragmentation's header for why this cannot be a blanket per-unit-type rule.
+    var qsRates = opts.rates || (global.RATES) || {};
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
     db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
     _ensureWideTasks(db);   // migrate any legacy-thin tasks table → the widened DDL `_cap` reads
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    var _frag = _classFragmentation(db, qsRates);
 
     // §SE-5a: one transaction around the whole rebuild (delete + insert). Without this, sql.js pays
     // per-statement implicit-commit overhead on EVERY row — for a large building (tens of thousands of
@@ -115,61 +457,150 @@
     db.run("DELETE FROM tasks WHERE schedule_id='" + schedId + "'");
     db.run("DELETE FROM schedules WHERE schedule_id='" + schedId + "'");
 
-    // Read the raw material: every element + its class.
+    // Read the raw material: every element + its class + name (name feeds matchNameOverride) +
+    // storey (§PHASE_OVERLAP_BAND below — real band count for the overlap fix).
     var elems = [];
-    var er = db.exec('SELECT guid, ifc_class FROM elements_meta');
+    // §CLASS_UNMATCHED_FALLBACK follow-up (2026-08-05, named in 4D_SCHEDULE_PERFECTION.md): the
+    // _buildScheduleElements/materializeZones path already excludes IfcOpeningElement (ghost/position-
+    // only, never real work) and IfcSpace (spatial zone, not physical work) — this query was the one
+    // materialize path that still read every row unfiltered. Same exclusion, same two classes, so a
+    // blank-model default schedule can't invent labor for a room volume or a doorway either.
+    var er = db.exec("SELECT guid, ifc_class, COALESCE(element_name,''), COALESCE(storey,'') FROM elements_meta " +
+      "WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
     if (er.length && er[0].values.length) {
-      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1] }); });
+      er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2], storey: r[3] }); });
     }
 
     // Group into phases via the SAME rule the read-path uses.
     var phases = {};   // phaseName -> { name, seq, guids:[] }
+    var nameOverridden = 0;
     elems.forEach(function (e) {
-      var rule = matchRule(e.cls, rules, dflt);
+      var ov = matchNameOverride(e.cls, e.name, nameOverrides);
+      if (ov) nameOverridden++;
+      var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
-      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [] }; }
+      if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
       p.guids.push(e.guid);
+      p.storeys[e.storey] = true;   // §PHASE_OVERLAP_BAND below — real storey count, not invented
+      // Bucket by resource (trade), not summed flat — see the width computation below: different
+      // trades within a phase run in PARALLEL (this file's own "true parallel trades" principle,
+      // §Current Problems item 3 / resourceCursor in time_machine.js), so a phase's duration is set
+      // by its slowest trade, not the sum of all trades' work.
+      var resKey = rule.resource || '__NONE__';
+      var realQty = (_frag.fragmented[e.cls] && _frag.area[e.guid] != null) ? _frag.area[e.guid] : null;
+      p.resourceSecs[resKey] = (p.resourceSecs[resKey] || 0) + _installSecs(e.cls, rule, laborRates, realQty);
     });
+    if (nameOverridden) console.log('§NAME_OVERRIDE ' + nameOverridden + ' elements reclassified by name (' +
+      nameOverrides.map(function (o) { return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
 
     // Order phases by sequence (then name, stable) → contiguous WBS leaves.
     var ordered = Object.keys(phases).map(function (k) { return phases[k]; });
     ordered.sort(function (a, b) { return (a.seq - b.seq) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+
+    // §PHASE_DURATION (GANTT_ACCURACY.md "RESUME 2026-08-04+"): each phase's calendar-window width
+    // is workload-proportional, NOT the old flat `phaseDays` constant — that made Superstructure's
+    // 72.4%-of-building bucket occupy the SAME width as Finishes' smallest bucket, so the building
+    // looked visually complete within the first hours of a 4D film (workInFirst10%=51.7%, measured).
+    // Per-trade labor-seconds (Σ getInstallSecs, already-extracted LABOR_RATES productivity) is
+    // divided by that trade's `max_crews` (also already-extracted, not invented — how many
+    // independent crews of a trade work the site simultaneously) to get realistic elapsed days, and
+    // a phase's duration is the SLOWEST trade (max, not sum) — trades within a phase already run in
+    // parallel per this file's own principle, so the bottleneck trade sets the phase's real length.
+    // User-confirmed 2026-08-04: max_crews applied, bottleneck (not summed) — plain Σ-seconds/1-crew
+    // gave Terminal a 10.2y total (Superstructure alone 2,922d); this gives ~3.5y, Superstructure
+    // ~968d (still ~75% of the project, correctly dominant, but no longer absurd).
+    // §PHASE_OVERLAP_BAND (GANTT_ACCURACY.md "GENERIC RULE" item 3, conventional construction
+    // scheduling — Line of Balance / flowline): `materializeDefault` used to place phase i+1 only
+    // after phase i was 100% done PROJECT-WIDE (plain Σ cursor below), so a phase that legitimately
+    // dominates the workload (e.g. Superstructure) pushed every later phase's start out to nearly
+    // the project's end — measured on Terminal pre-fix: Architecture started at day 1,189 of 1,264
+    // (94%). Real construction does not wait for a trade to leave the WHOLE building before the
+    // next trade starts — it follows the leading trade band-by-band (floor-by-floor), starting once
+    // the leading trade has cleared ONE band, same as any flowline/repetitive-work schedule.
+    //
+    // `p.storeys` (built above from `elements_meta.storey`, real extracted data, no name-matching)
+    // gives each phase's real band count. lagDays = the time to clear ONE band (widthDays/numBands)
+    // — not an invented overlap fraction (contrast §CPE_PHASE_STAGGER's fixed 20%, a FILM-layer
+    // hack, now removed). A phase touching only 1 band (numBands=1, e.g. a single-storey building)
+    // degrades to the old fully-contiguous behaviour automatically — no special-casing needed.
+    var totalDays = 0, _cursor = 0;
+    ordered.forEach(function (p) {
+      var maxTradeDays = 0, laborSecsTotal = 0;
+      for (var resKey in p.resourceSecs) {
+        var secs = p.resourceSecs[resKey];
+        laborSecsTotal += secs;
+        var maxCrews = (laborRates[resKey] && laborRates[resKey].max_crews) || 1;
+        var tradeDays = secs / (28800 * maxCrews);
+        if (tradeDays > maxTradeDays) maxTradeDays = tradeDays;
+      }
+      p.widthDays = Math.max(1, Math.ceil(maxTradeDays));
+      p.laborSecs = laborSecsTotal;   // kept for the log line only
+      var numBands = Math.max(1, Object.keys(p.storeys).length);
+      p.lagDays = Math.max(1, Math.ceil(p.widthDays / numBands));
+      p.startCursor = _cursor;
+      _cursor += p.lagDays;
+      totalDays = Math.max(totalDays, p.startCursor + p.widthDays);
+      console.log('§PHASE_DURATION phase=' + p.name + ' elements=' + p.guids.length +
+        ' laborSecs=' + p.laborSecs + ' trades=' + Object.keys(p.resourceSecs).length + ' days=' + p.widthDays);
+      console.log('§PHASE_OVERLAP_BAND phase=' + p.name + ' bands=' + numBands +
+        ' lagDays=' + p.lagDays + ' startsAtDay=' + p.startCursor +
+        ' (overlaps ' + Math.max(0, p.widthDays - p.lagDays) + 'd of the PREVIOUS phase\'s tail)');
+    });
 
     db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start]);
 
     // ROOT summary task (is_summary=1 → excluded from _cap leaf window; spans the whole project).
     // In blank mode dates are NULL (the user originates them via scheduleDefault/the wizard).
     var rootId = 'TASK_ROOT';
-    var totalDays = Math.max(phaseDays, ordered.length * phaseDays);
     var rootStart = blank ? null : start;
-    var rootFinish = blank ? null : _addDays(start, ordered.length * phaseDays);
+    var rootFinish = blank ? null : _addDays(start, totalDays);
     db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, rootStart, rootFinish, blank ? null : 'P' + totalDays + 'D', null, 'PLANNED']);
 
     var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
-    var outPhases = [], cursor = 0, assignN = 0;
+    var outPhases = [], assignN = 0;
     ordered.forEach(function (p) {
       var tid = 'TASK_' + _slug(p.name);
-      var s = blank ? null : _addDays(start, cursor * phaseDays);
-      var f = blank ? null : _addDays(start, (cursor + 1) * phaseDays);
-      cursor++;
+      p.taskId = tid;   // CPM_FLOAT_GAP.md Gap 1 — kept on p so the task_sequences pass below can use it
+      var s = blank ? null : _addDays(start, p.startCursor);
+      var f = blank ? null : _addDays(start, p.startCursor + p.widthDays);
       // Leaf, is_summary=0. Dated → _cap.win picks it up; blank/undated → _cap skips it (the user
       // originates the dates, then it appears in the timeline). Assignments are made either way.
-      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + phaseDays + 'D', null, 'PLANNED']);
+      stmtTk.run([tid, schedId, rootId, p.name, 'CONSTRUCTION', 0, s, f, blank ? null : 'P' + p.widthDays + 'D', null, 'PLANNED']);
       p.guids.forEach(function (g) { stmtTe.run([tid, g]); assignN++; });
-      outPhases.push({ taskId: tid, name: p.name, sequence: p.seq, start: s, finish: f, count: p.guids.length });
+      outPhases.push({ taskId: tid, name: p.name, sequence: p.seq, start: s, finish: f, count: p.guids.length, durationDays: p.widthDays });
     });
     stmtTk.free();
     stmtTe.free();
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — §PHASE_OVERLAP_BAND already computed the real
+    // leading-trade/follow-on-trade relationship between consecutive phases (p.lagDays = days for
+    // the leading phase to clear one band before the next phase can start behind it) but only ever
+    // wrote it into schedule_start/schedule_finish, never into task_sequences — so computeCpm was
+    // blind to a generated (no-plan) schedule: zero predecessor/successor rows, every phase trivially
+    // ES=0, float meaningless. This exposes the SAME already-derived number as an explicit
+    // CPM-solvable SS edge — not a new/invented relationship, just the one already computed above,
+    // made readable by computeCpm/listDependencies/the Gantt dependency view.
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    db.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [schedId, schedId]);
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < ordered.length; i++) {
+      var pred = ordered[i - 1], succ = ordered[i];
+      stmtSeq.run([pred.taskId, succ.taskId, 'SS', pred.lagDays]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_SEQUENCES schedule=' + schedId + ' edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
 
     db.run('COMMIT');   // §SE-5a — single commit for the whole rebuild
 
     console.log('§AUTHOR_MATERIALIZE schedule=' + schedId + ' mode=' + (blank ? 'blank' : 'dated') +
       ' phases=' + outPhases.length + ' leafTasks=' + outPhases.length +
-      ' assignments=' + assignN + ' elements=' + elems.length);
-    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN, blank: blank };
+      ' assignments=' + assignN + ' elements=' + elems.length + ' totalDays=' + totalDays);
+    return { scheduleId: schedId, rootId: rootId, phases: outPhases, taskCount: outPhases.length, assignmentCount: assignN, blank: blank, totalDays: totalDays };
   }
 
   // assignElement(db, guid, taskId) — the CRAFT verb. Re-home one element to a different phase task.
@@ -227,23 +658,83 @@
     scheduleId = scheduleId || 'SCH_AUTHORED';
     opts = opts || {};
     var start = opts.start || '2026-01-01';
-    var phaseDays = opts.phaseDays || 30;
+    var phaseDays = opts.phaseDays || 30;   // still the floor/no-data fallback width (see below)
+    var rules = opts.rules || (global.SEQUENCE_RULES) || {};
+    var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
+    var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
+    var qsRates = opts.rates || (global.RATES) || {};   // §LABOR_QUANTITY_WEIGHT — see materializeDefault
     var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
-    var cursor = 0;
+    var _frag = _classFragmentation(db, qsRates);
+
+    // §PHASE_DURATION — same bug, same fix as materializeDefault (GANTT_ACCURACY.md "RESUME
+    // 2026-08-04+"): a blank-materialized schedule reaches this function with dates not yet
+    // assigned, so `phaseDays` was the ONLY width ever used here too. Re-derive each task's
+    // workload from task_elements/elements_meta (materializeDefault's own phase objects aren't
+    // persisted) and apply the identical bottleneck-trade, max_crews-adjusted width. A task with
+    // no resolvable elements/labor data falls back to opts.phaseDays (matches materializeDefault's
+    // own no-laborRates degrade-to-count behaviour when there's nothing to weight by).
+    // §PHASE_OVERLAP_BAND — same fix, same reasoning as materializeDefault (see its header comment):
+    // real storey count per task (from elements_meta.storey) instead of a project-wide contiguous cursor.
+    var widthDays = {}, bandCount = {};
+    ids.forEach(function (tid) {
+      var er = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.storey,'') FROM task_elements te JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
+      var resourceSecs = {}, storeys = {};
+      if (er.length && er[0].values.length) {
+        er[0].values.forEach(function (row) {
+          var guid = row[0], cls = row[1], storey = row[2];
+          var rule = matchRule(cls, rules, dflt);
+          var resKey = rule.resource || '__NONE__';
+          var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
+          resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
+          storeys[storey] = true;
+        });
+      }
+      var maxTradeDays = 0;
+      for (var resKey2 in resourceSecs) {
+        var maxCrews = (laborRates[resKey2] && laborRates[resKey2].max_crews) || 1;
+        var d = resourceSecs[resKey2] / (28800 * maxCrews);
+        if (d > maxTradeDays) maxTradeDays = d;
+      }
+      widthDays[tid] = maxTradeDays > 0 ? Math.max(1, Math.ceil(maxTradeDays)) : phaseDays;
+      bandCount[tid] = Math.max(1, Object.keys(storeys).length);
+    });
+
+    var cursor = 0, totalDays = 0, lagByTid = {};
     db.run('BEGIN TRANSACTION');   // §SE-5a — same per-statement-overhead fix as materializeDefault
     ids.forEach(function (tid) {
-      var s = _addDays(start, cursor), f = _addDays(start, cursor + phaseDays);
+      var w = widthDays[tid];
+      var lag = Math.max(1, Math.ceil(w / bandCount[tid]));
+      lagByTid[tid] = lag;
+      var s = _addDays(start, cursor), f = _addDays(start, cursor + w);
       db.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
-        [s, f, 'P' + phaseDays + 'D', tid]);
-      cursor += phaseDays;
+        [s, f, 'P' + w + 'D', tid]);
+      console.log('§PHASE_OVERLAP_BAND task=' + tid + ' bands=' + bandCount[tid] + ' lagDays=' + lag + ' startsAtDay=' + cursor);
+      totalDays = Math.max(totalDays, cursor + w);
+      cursor += lag;
     });
     db.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
-      [start, _addDays(start, cursor), scheduleId]);
+      [start, _addDays(start, totalDays), scheduleId]);
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — same edge-exposure as materializeDefault (see its
+    // comment above the identical block): this function re-dates a previously-blank schedule, so it
+    // must (re)write the SAME SS edges here too, using the just-recomputed per-task lag — otherwise a
+    // schedule authored blank-then-dated would keep the STALE edges (or none) from before dating.
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    db.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [scheduleId, scheduleId]);
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < ids.length; i++) {
+      stmtSeq.run([ids[i - 1], ids[i], 'SS', lagByTid[ids[i - 1]]]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_SEQUENCES schedule=' + scheduleId + ' edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
+
     db.run('COMMIT');
-    console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + cursor + 'd');
-    return { scheduled: ids.length, start: start, span: cursor };
+    console.log('§AUTHOR_SCHEDULE schedule=' + scheduleId + ' phases=' + ids.length + ' from=' + start + ' span=' + totalDays + 'd');
+    return { scheduled: ids.length, start: start, span: totalDays };
   }
 
   // foldCost(db, scheduleId, RATES, ratesDefault, currency) — §AUTHOR-1 step ④ (5D).
@@ -504,7 +995,275 @@
     return { ok: true, start: newStart, finish: finish, days: days };
   }
 
+  // Shared core: translate an explicit list of task rows by a constant number of days. No
+  // constraint checking — a uniform translation of a fixed row set can never create or resolve a
+  // task_sequences violation, by construction. duration is untouched.
+  function _shiftRows(db, rows, deltaDays) {
+    var upd = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE task_id=?');
+    var moved = [];
+    db.run('BEGIN');
+    rows.forEach(function (row) {
+      var taskId = row[0], newStart = _addDays(row[1], deltaDays), newFinish = _addDays(row[2], deltaDays);
+      upd.run([newStart, newFinish, taskId]);
+      moved.push({ id: taskId, start: newStart, finish: newFinish });
+    });
+    upd.free();
+    db.run('COMMIT');
+    return moved;
+  }
+
+  // §TM_RULER_SHIFT (2026-08-05, user ruling: dragging the Gantt drawer's day ruler adjusts the
+  // whole project's start/finish, "updated of course along with any other edit"). Translate EVERY
+  // task in the schedule — leaf AND summary alike.
+  function shiftSchedule(db, scheduleId, deltaDays) {
+    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE schedule_id=?', [scheduleId]);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_SHIFT_FAIL schedule=' + scheduleId + ' reason=no_tasks');
+      return { ok: false, reason: 'no_tasks' };
+    }
+    var moved = _shiftRows(db, r[0].values, deltaDays);
+    console.log('§SE_SHIFT schedule=' + scheduleId + ' deltaDays=' + deltaDays + ' tasks=' + moved.length);
+    return { ok: true, moved: moved, deltaDays: deltaDays };
+  }
+
+  // §GANTT_GROUP_MOVE (2026-08-05, user ruling: marquee-select a cluster of bars, MS-Word-style —
+  // "when dragging a bar, it drags along its group"). Same uniform-translate primitive as
+  // shiftSchedule, scoped to an explicit task_id list (the marquee selection) instead of a whole
+  // schedule. The selection itself is ephemeral UI state, never persisted — only the resulting date
+  // change is a real edit.
+  function shiftTasks(db, taskIds, deltaDays) {
+    if (!taskIds || !taskIds.length) return { ok: false, reason: 'no_tasks' };
+    var placeholders = taskIds.map(function () { return '?'; }).join(',');
+    var r = db.exec('SELECT task_id, schedule_start, schedule_finish FROM tasks WHERE task_id IN (' + placeholders + ')', taskIds);
+    if (!r.length || !r[0].values.length) {
+      console.log('§SE_GROUP_SHIFT_FAIL reason=no_matching_tasks');
+      return { ok: false, reason: 'no_tasks' };
+    }
+    var moved = _shiftRows(db, r[0].values, deltaDays);
+    console.log('§SE_GROUP_SHIFT tasks=' + moved.length + ' deltaDays=' + deltaDays);
+    return { ok: true, moved: moved, deltaDays: deltaDays };
+  }
+
+  // ── §GANTT_EDIT C1/C2 — constraint-aware move (prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
+  // moveTask() above deliberately writes dates and nothing else ("CPM invalidation is the caller's
+  // concern"). That is the right primitive but the WRONG thing to put under a user's finger: a drag
+  // with no constraint checking lets a user "fix" a real schedule violation by dragging it out of
+  // sight instead of fixing its cause — directly against the Prime Rule. This is the caller that
+  // supplies the missing half: clamp on the way back, cascade on the way forward.
+  //
+  // SEMANTICS — push-only, deliberately:
+  //   C2 CLAMP   a move EARLIER than the task's predecessors permit is refused and clamped to the
+  //              earliest legal date, reporting which predecessor bound it. Never silently accepted.
+  //   C1 CASCADE a move LATER drags every real task_sequences successor that would otherwise start
+  //              before its constraint, transitively.
+  //   Successors are only ever pushed LATER, never pulled earlier. This follows the idiom this file
+  //   and time_machine.js already use everywhere (§4D_HOST_BEFORE_HOSTED, §PHASE_OVERLAP_SUPPORT_GUARD
+  //   — "push after, never re-key"), and it avoids silently re-optimising a schedule the user did not
+  //   ask us to touch: they moved ONE bar. Pulling successors earlier could also violate their OTHER
+  //   predecessors, turning one drag into an unbounded re-solve.
+  function _dayNum(s) { var t = Date.parse(s + 'T00:00:00Z'); return isNaN(t) ? null : Math.round(t / 86400000); }
+  function _dayStr(n) { return new Date(n * 86400000).toISOString().slice(0, 10); }
+
+  // Earliest legal start (in day numbers) for `id` given its predecessors' CURRENT dates.
+  // IfcSequenceEnum semantics, the same four this file's computeCpm already solves.
+  function _earliestStart(id, T, preds) {
+    var list = preds[id]; if (!list || !list.length) return null;
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i], P = T[e.pred]; if (!P) continue;
+      var dur = T[id] ? T[id].dur : 1, lag = e.lag || 0, c;
+      switch (e.type) {
+        case 'SS': c = P.start + lag; break;
+        case 'FF': c = P.finish + lag - dur; break;
+        case 'SF': c = P.start + lag - dur; break;
+        default:   c = P.finish + lag;          // FS
+      }
+      if (best === null || c > best) { best = c; e._binding = true; }
+    }
+    return best;
+  }
+
+  function _bindingPred(id, T, preds, at) {
+    var list = preds[id] || [];
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i], P = T[e.pred]; if (!P) continue;
+      var dur = T[id] ? T[id].dur : 1, lag = e.lag || 0, c;
+      switch (e.type) {
+        case 'SS': c = P.start + lag; break;
+        case 'FF': c = P.finish + lag - dur; break;
+        case 'SF': c = P.start + lag - dur; break;
+        default:   c = P.finish + lag;
+      }
+      if (c === at) return e.pred + '(' + e.type + (lag ? (lag > 0 ? '+' : '') + lag + 'd' : '') + ')';
+    }
+    return null;
+  }
+
+  // moveTaskCascade(db, scheduleId, taskId, newStart, opts) →
+  //   { ok, start, finish, clamped, clampedFrom, blockedBy, moved:[{id,start,finish}], cascaded }
+  // opts.dryRun — compute and report without writing (used by the drag preview and by the witness).
+  function moveTaskCascade(db, scheduleId, taskId, newStart, opts) {
+    opts = opts || {};
+    var T = {}, ids = [], preds = {}, succs = {};
+    var tr;
+    try {
+      tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration, is_summary ' +
+        'FROM tasks WHERE schedule_id=?', [scheduleId]);
+    } catch (e) { return { ok: false, reason: 'no_tasks' }; }
+    if (!tr.length || !tr[0].values.length) return { ok: false, reason: 'no_tasks' };
+    tr[0].values.forEach(function (row) {
+      if (row[4] === 1) return;                       // summaries are rolled up, never moved directly
+      var s = _dayNum(row[1]); if (s === null) return;
+      var dur = _durDays(row[3], row[1], row[2]);
+      T[row[0]] = { id: row[0], start: s, finish: s + dur, dur: dur };
+      ids.push(row[0]);
+    });
+    if (!T[taskId]) { console.log('§GANTT_EDIT_MOVE_FAIL task=' + taskId + ' reason=no_such_task'); return { ok: false, reason: 'no_such_task' }; }
+    try {
+      var er = db.exec('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences');
+      if (er.length && er[0].values.length) er[0].values.forEach(function (row) {
+        if (!T[row[0]] || !T[row[1]]) return;          // edge leaving this schedule's leaf set
+        var e = { pred: row[0], succ: row[1], type: row[2] || 'FS', lag: row[3] != null ? row[3] : 0 };
+        (preds[row[1]] = preds[row[1]] || []).push(e);
+        (succs[row[0]] = succs[row[0]] || []).push(e);
+      });
+    } catch (e) {}
+
+    // ---- C2: clamp against this task's own predecessors.
+    var want = _dayNum(newStart);
+    if (want === null) return { ok: false, reason: 'bad_date' };
+    var floor = _earliestStart(taskId, T, preds);
+    var clamped = false, clampedFrom = null, blockedBy = null;
+    if (floor !== null && want < floor) {
+      clamped = true; clampedFrom = newStart;
+      blockedBy = _bindingPred(taskId, T, preds, floor);
+      want = floor;
+      console.log('§GANTT_EDIT_CLAMP task=' + taskId + ' requested=' + clampedFrom +
+        ' clampedTo=' + _dayStr(want) + ' blockedBy=' + blockedBy);
+    }
+
+    // ---- Apply to the in-memory model, then C1: cascade forward, push-only.
+    T[taskId].start = want; T[taskId].finish = want + T[taskId].dur;
+    var moved = {}; moved[taskId] = true;
+    var queue = [taskId], guard = 0, limit = ids.length * 4 + 16;
+    while (queue.length) {
+      if (++guard > limit) { console.log('§GANTT_EDIT_CASCADE_ABORT task=' + taskId + ' reason=iteration_limit'); break; }
+      var cur = queue.shift(), out = succs[cur] || [];
+      for (var i = 0; i < out.length; i++) {
+        var sid = out[i].succ, S = T[sid]; if (!S) continue;
+        var es = _earliestStart(sid, T, preds);
+        if (es !== null && S.start < es) {           // push-only: never pull a successor earlier
+          S.start = es; S.finish = es + S.dur;
+          moved[sid] = true;
+          queue.push(sid);
+        }
+      }
+    }
+
+    var movedList = Object.keys(moved).map(function (id) {
+      return { id: id, start: _dayStr(T[id].start), finish: _dayStr(T[id].finish), days: T[id].dur };
+    });
+    if (!opts.dryRun) {
+      db.run('BEGIN');
+      var st = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+      movedList.forEach(function (m) { st.run([m.start, m.finish, 'P' + m.days + 'D', m.id]); });
+      st.free();
+      db.run('COMMIT');
+    }
+    console.log('§GANTT_EDIT_MOVE task=' + taskId + ' start=' + _dayStr(T[taskId].start) +
+      ' finish=' + _dayStr(T[taskId].finish) + ' clamped=' + clamped +
+      ' cascaded=' + (movedList.length - 1) + (opts.dryRun ? ' (dryRun)' : ''));
+    return { ok: true, start: _dayStr(T[taskId].start), finish: _dayStr(T[taskId].finish),
+      clamped: clamped, clampedFrom: clampedFrom, blockedBy: blockedBy,
+      moved: movedList, cascaded: movedList.length - 1 };
+  }
+
+  // resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) — §GANTT_EDIT E2, the edge-pull.
+  // moveTask/moveTaskCascade preserve duration by design, so resize needs its own verb rather than
+  // overloading them. Writes the new duration, then re-runs the SAME clamp+cascade so a lengthened
+  // bar pushes its successors exactly as a moved one does.
+  function resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) {
+    opts = opts || {};
+    var s = _dayNum(newStart), f = _dayNum(newFinish);
+    if (s === null || f === null) return { ok: false, reason: 'bad_date' };
+    if (f <= s) f = s + 1;                              // never zero/negative duration
+    var r = db.exec('SELECT is_summary FROM tasks WHERE task_id=?', [taskId]);
+    if (!r.length || !r[0].values.length) return { ok: false, reason: 'no_such_task' };
+    if (r[0].values[0][0] === 1) return { ok: false, reason: 'is_summary' };
+    db.run('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?',
+      [_dayStr(s), _dayStr(f), 'P' + (f - s) + 'D', taskId]);
+    console.log('§GANTT_EDIT_RESIZE task=' + taskId + ' start=' + _dayStr(s) + ' finish=' + _dayStr(f) +
+      ' days=' + (f - s));
+    return moveTaskCascade(db, scheduleId, taskId, _dayStr(s), opts);
+  }
+
+  // setBaseline(db, scheduleId) — §GANTT_EDIT_UNDO's transport-row sibling, ⚑ Set Baseline
+  // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"). P6 baseline = a frozen snapshot
+  // of every task's dates, taken at a deliberate moment, compared against the live (possibly
+  // since-edited) schedule — SCHEDULE variance, a different axis from §TM-VARIANCE's existing
+  // C_Project PlannedAmt/CommittedAmt COST variance, which this does not touch.
+  // Single baseline (not P6's multi-baseline numbering) — MVP scope, matches the definition the
+  // user confirmed 2026-08-05: re-running this OVERWRITES the prior baseline, it does not version it.
+  // Snapshots EVERY task row for the schedule (including summaries) so project-level rollup variance
+  // is available too, not just leaf tasks.
+  function setBaseline(db, scheduleId) {
+    db.run('CREATE TABLE IF NOT EXISTS task_baseline (task_id TEXT PRIMARY KEY, schedule_id TEXT, ' +
+      'baseline_start TEXT, baseline_finish TEXT, baseline_duration TEXT, set_at TEXT)');
+    var tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [scheduleId]);
+    if (!tr.length || !tr[0].values.length) { console.log('§GANTT_SET_BASELINE_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    var setAt = new Date().toISOString();
+    db.run('BEGIN');
+    db.run('DELETE FROM task_baseline WHERE schedule_id=?', [scheduleId]);
+    var st = db.prepare('INSERT INTO task_baseline VALUES (?,?,?,?,?,?)');
+    tr[0].values.forEach(function (row) { st.run([row[0], scheduleId, row[1], row[2], row[3], setAt]); });
+    st.free();
+    db.run('COMMIT');
+    console.log('§GANTT_SET_BASELINE schedule=' + scheduleId + ' tasks=' + tr[0].values.length + ' setAt=' + setAt);
+    return { ok: true, taskCount: tr[0].values.length, setAt: setAt };
+  }
+
+  // getBaselineVariance(db, scheduleId) — reads BOTH tables, computes nothing that isn't a direct
+  // date subtraction of two already-real, already-persisted values. varianceDays > 0 = the task now
+  // finishes LATER than its baseline (slip); < 0 = earlier. `projectVarianceDays` is TASK_ROOT's own
+  // row if present (its schedule_finish is already the whole project's real end, same convention
+  // moveTaskCascade/materializeZones use elsewhere in this file — never re-derived by scanning leaves).
+  function getBaselineVariance(db, scheduleId) {
+    var br;
+    try { br = db.exec('SELECT task_id, baseline_start, baseline_finish FROM task_baseline WHERE schedule_id=?', [scheduleId]); }
+    catch (e) { return { ok: false, reason: 'no_baseline' }; }
+    if (!br.length || !br[0].values.length) return { ok: false, reason: 'no_baseline' };
+    var baseline = {};
+    br[0].values.forEach(function (row) { baseline[row[0]] = { start: row[1], finish: row[2] }; });
+    var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish, is_summary FROM tasks WHERE schedule_id=?', [scheduleId]);
+    var tasks = [], projectVarianceDays = null;
+    (tr.length ? tr[0].values : []).forEach(function (row) {
+      var tid = row[0], b = baseline[tid]; if (!b) return;   // a task added after baseline was set — no variance to report
+      var varianceDays = _dayNum(row[3]) - _dayNum(b.finish);
+      tasks.push({ taskId: tid, name: row[1], baselineStart: b.start, baselineFinish: b.finish,
+        currentStart: row[2], currentFinish: row[3], varianceDays: varianceDays });
+      if (tid === 'TASK_ROOT') projectVarianceDays = varianceDays;
+    });
+    return { ok: true, tasks: tasks, projectVarianceDays: projectVarianceDays };
+  }
+
   // computeCpm(db, scheduleId, opts) — write early/late dates, float, is_critical onto the leaf tasks.
+  // fixedDates opt (§ZONE_CPM_COHERENCE): computeCpm's forward pass normally DERIVES each task's
+  // early start from the graph (max over predecessors' EF+lag) — correct when the dates themselves
+  // are the thing being solved for (a captured P6 schedule re-solving after an edit, or the
+  // phase-level chain, which is a simple ≤1-parent-per-node list where derivation and the real dates
+  // always agree). It stops being correct once a node can have MULTIPLE real parents, as
+  // materializeZones' zone graph does (a zone can be gated by both its own-phase floor-below AND a
+  // same-floor earlier trade): each incoming edge's lag was computed independently from ONE real
+  // observed pair, so taking the graph max over several independently-derived lags can compound past
+  // what the real, jointly-crew-constrained computation (ScheduleGate.computeSchedule — the same
+  // engine driving the live movie) actually produced. MEASURED on Terminal's 71-zone graph: derived
+  // PF=138d vs the real movie's 93d (+48%, CPM_FLOAT_GAP.md session note, 2026-08-03).
+  // Fix: when opts.fixedDates is set, es/ef come DIRECTLY from the already-real, already-movie-
+  // coherent schedule_start/schedule_finish this task was persisted with — never re-derived through
+  // the graph. The backward pass (LS/LF/float/critical) is UNCHANGED and still runs over real edges,
+  // so float/criticality stay meaningful; only the (previously-compounding) forward derivation is
+  // skipped. Opt-in, not the default — existing callers (phase-level, captured P6) get byte-identical
+  // behavior; only a caller that already trusts its own persisted dates as ground truth sets this.
   function computeCpm(db, scheduleId, opts) {
     opts = opts || {};
     var tr;
@@ -513,11 +1272,15 @@
         'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [scheduleId]);
     } catch (e) { return { error: 'no_tasks' }; }
     if (!tr.length || !tr[0].values.length) return { error: 'no_tasks', tasks: [], projectDuration: 0, criticalIds: [] };
-    var T = {}, ids = [], minStart = null;
+    var minStart = null;
+    tr[0].values.forEach(function (row) { var s = row[1]; if (s && (!minStart || s < minStart)) minStart = s; });
+    var projStart = opts.start || minStart || '2026-01-01';
+    var T = {}, ids = [];
     tr[0].values.forEach(function (row) {
       var id = row[0], s = row[1], f = row[2];
-      if (s && (!minStart || s < minStart)) minStart = s;
-      T[id] = { id: id, dur: _durDays(row[3], s, f), es: 0, ef: 0, ls: 0, lf: 0, preds: [], succs: [] };
+      var dur = _durDays(row[3], s, f);
+      var fixedEs = opts.fixedDates && s ? _durDays(null, projStart, s) : 0;
+      T[id] = { id: id, dur: dur, es: fixedEs, ef: fixedEs + dur, ls: 0, lf: 0, preds: [], succs: [] };
       ids.push(id);
     });
     // edges among these leaf tasks only
@@ -528,7 +1291,8 @@
       var edge = { pred: p, succ: s, type: (row[2] || 'FS').toUpperCase(), lag: (row[3] != null ? row[3] : 0) };
       T[s].preds.push(edge); T[p].succs.push(edge);
     });
-    // Kahn topo sort (DAG guaranteed by the §SE-1 cycle guard; bail defensively if not).
+    // Kahn topo sort (DAG guaranteed by the §SE-1 cycle guard; bail defensively if not) — still run
+    // under fixedDates too: it's the cycle/orphan integrity check, independent of the ES derivation.
     var indeg = {}, queue = [], topo = [];
     ids.forEach(function (id) { indeg[id] = T[id].preds.length; if (indeg[id] === 0) queue.push(id); });
     while (queue.length) {
@@ -539,18 +1303,29 @@
       console.log('§SE_CPM_BAIL cycle-or-orphan topo=' + topo.length + ' tasks=' + ids.length);
       return { error: 'cycle', tasks: [], projectDuration: 0, criticalIds: [] };
     }
-    // FORWARD: ES/EF in topo order.
-    topo.forEach(function (id) {
-      var t = T[id], es = 0;
-      t.preds.forEach(function (e) { es = Math.max(es, _fwdES(T[e.pred], e.lag, e.type, t.dur)); });
-      t.es = Math.max(0, es); t.ef = t.es + t.dur;
-    });
+    // FORWARD: ES/EF in topo order — SKIPPED under fixedDates (see header); es/ef already set above
+    // from the real persisted dates.
+    if (!opts.fixedDates) {
+      topo.forEach(function (id) {
+        var t = T[id], es = 0;
+        t.preds.forEach(function (e) { es = Math.max(es, _fwdES(T[e.pred], e.lag, e.type, t.dur)); });
+        t.es = Math.max(0, es); t.ef = t.es + t.dur;
+      });
+    }
     var PF = 0; ids.forEach(function (id) { PF = Math.max(PF, T[id].ef); });
-    // BACKWARD: LF/LS in reverse topo order.
+    // BACKWARD: LF/LS in reverse topo order. A task's late finish can never legitimately exceed the
+    // project's own finish PF — that IS the definition of "project finish." The un-clamped succs-loop
+    // result can overshoot PF for a task whose only successor edge is SS/SF (constrains the
+    // SUCCESSOR's START, never THIS task's finish) — e.g. a §PHASE_OVERLAP_BAND-style SS chain where
+    // an early, long-duration phase (its EF ends up defining PF itself) is followed by a short-lag
+    // successor: nothing in the graph consumes that predecessor's FINISH, so the naive backward pass
+    // (mirroring only its successor's late START) can compute an LF hundreds of days past PF — a
+    // provably-impossible float that silently zeroed the critical path on any SS-only chain (this
+    // was never exercised before task_sequences carried real SS edges — CPM_FLOAT_GAP.md Gap 1).
     for (var i = topo.length - 1; i >= 0; i--) {
       var t = T[topo[i]];
       if (!t.succs.length) t.lf = PF;
-      else { var lf = Infinity; t.succs.forEach(function (e) { lf = Math.min(lf, _bwdLF(T[e.succ], e.lag, e.type, t.dur)); }); t.lf = lf; }
+      else { var lf = Infinity; t.succs.forEach(function (e) { lf = Math.min(lf, _bwdLF(T[e.succ], e.lag, e.type, t.dur)); }); t.lf = Math.min(lf, PF); }
       t.ls = t.lf - t.dur;
     }
     // float + critical + free float + write-back
@@ -747,7 +1522,19 @@
 
   var API = {
     matchRule: matchRule,
+    matchNameOverride: matchNameOverride,
+    // §TM_DURATION_SYNC — exported so time_machine.js's playback-clock duration engine
+    // (getInstallSecs, viewer/time_machine.js ~3478) can call the SAME fragmentation-aware
+    // install-seconds formula the WBS/Gantt authoring path uses, instead of carrying its own
+    // hand-duplicated copy that silently lost the §LABOR_QUANTITY_WEIGHT area-weighting fix
+    // (commit d35366a). Single source of truth — do not fork these again.
+    _installSecs: _installSecs,
+    _classFragmentation: _classFragmentation,
+    _linearWeighting: _linearWeighting,
+    FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
+    materializeZones: materializeZones,
+    _buildScheduleElements: _buildScheduleElements,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
@@ -761,6 +1548,12 @@
     updateDependency: updateDependency,
     computeCpm: computeCpm,
     moveTask: moveTask,
+    moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
+    shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
+    shiftTasks: shiftTasks,             // §GANTT_GROUP_MOVE — uniform date shift over an explicit task_id list
+    resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
+    setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
+    getBaselineVariance: getBaselineVariance,
     addTask: addTask,
     reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute,
@@ -771,5 +1564,5 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
 
-  console.log('§SCHEDULE_AUTHOR_LOADED v7');
+  console.log('§SCHEDULE_AUTHOR_LOADED v8');
 })(typeof self !== 'undefined' ? self : this);

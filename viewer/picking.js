@@ -105,6 +105,7 @@ function setupPicking(A) {
       A.walkPath = [];
       var _fb = document.getElementById('fly-btn'); if (_fb) _fb.classList.remove('active');
       document.getElementById('walk-speed-btn').style.display = 'none';
+      if (A._scrubHide) A._scrubHide();   // §TOUR_TIMELINE_SCRUB — canvas tap aborts the tour, bar goes with it
     }
     // Long-press (500ms) → volume info card (mobile-friendly right-click)
     // Only start on single-finger touch; cancel if pinch (2nd pointer) or any move
@@ -344,7 +345,19 @@ function setupPicking(A) {
       const meta = A._instanceMeta[hit.object.id][hit.instanceId];
       if (meta) guid = meta.guid;
     }
-    // S232: Merged mesh — resolve nearest element by hit-point distance in DB
+    // §MERGED_GUID: Merged mesh — EXACT identity. The custom raycast (streaming.js
+    // _installMergedRaycast) tags each intersection with the guid of the element whose index range
+    // produced the hit, so this is O(1) and cannot pick a neighbour. Witness: W-MERGED-PICK.
+    if (!guid && hit.object.userData.isMerged && hit._mergedGuid) {
+      guid = hit._mergedGuid;
+      var _mr = hit._mergedRange || {};
+      console.log('§MERGED_PICK guid=' + guid + ' idxStart=' + _mr.idxStart +
+        ' storey=' + (_mr.storey || '') + ' disc=' + (_mr.disc || '') + ' class=' + (_mr.ifcClass || ''));
+    }
+    // S232 LEGACY FALLBACK: merged hit with no range tag (merged mesh built before the range map,
+    // or a raycast that bypassed the custom path) — resolve nearest element by hit-point distance
+    // in DB. Approximate by construction: returns the closest CENTROID in the same storey+disc,
+    // which is the wrong element among close-packed neighbours. Kept only as a safety net.
     if (!guid && hit.object.userData.isMerged) {
       // Convert Three.js hit point back to IFC coordinates
       const hp = hit.point;

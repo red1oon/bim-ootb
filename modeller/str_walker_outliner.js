@@ -33,17 +33,29 @@
   //     mesh substrate (component_geometries), fetched+cached independently (its own IndexedDB URL key, own
   //     `geoV` cache-bust) ONLY for residents that declare it — Terminal is the sole split-file resident today;
   //     every other entry has no `geoDb` and takes ZERO extra network/IDB path (see openResident/_fetchGeoDb).
-  // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each, ALL sharing ONE mesh.db
-  // (true-dup + rotation-consolidation + orphan-removal applied; see that spec's §-log for the numbers).
+  // EMBED_8_ARC_BUILDINGS_MESH_DB.md — the canonical 8, ARC-only metadata each.
+  // §GEO-SERVED (2026-07-30, live-defect fix): each resident now names its OWN small geo file, served from
+  // object storage, INSTEAD of the one shared 120MB modeller/mesh.db. mesh.db is Git-LFS-tracked
+  // (.gitattributes) and **GitHub Pages does not resolve LFS** — the live page was being handed a 134-byte
+  // text pointer ("version https://git-lfs.github.com/spec/v1") with HTTP 200, so the geometry index came
+  // back empty and EVERY element silently fell back to its measured bounding box. Months of localhost
+  // witnesses passed because the local file is the real 120MB db. Two consequences of the split:
+  //   • correctness — the mesh actually arrives, so real LOD400 geometry renders on the live site;
+  //   • cost — opening Duplex fetched 120MB to draw 0.7MB of meshes; it now fetches 1.2MB.
+  // Per CLAUDE.md's DB policy: extracted/derived mesh/geo DBs are distributed as full binaries via object
+  // storage, NEVER via git/LFS. That policy (2026-07-11) is the authority here and supersedes the older
+  // "modeller takes zero cloud dependency" note above it (2026-06-26) for GEOMETRY files only — resident
+  // METADATA (*_ARC.db, small, non-LFS) still comes from the same-dir GH-Pages folder, unchanged.
+  var GEO_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/modeller/';
   var RESIDENTS = [
-    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'mesh.db', geoV: 2 },
-    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'mesh.db', geoV: 2 }
+    { key: 'SampleHouse',   label: 'SampleHouse · wall-bearing',        db: 'SampleHouse_ARC.db', v: 1, geoDb: 'SampleHouse_geo.db',    geoV: 3, geoBase: GEO_BASE },
+    { key: 'Duplex',        label: 'Duplex · wall-bearing',             db: 'Duplex_ARC.db',      v: 2, geoDb: 'Duplex_geo.db',         geoV: 6, geoBase: GEO_BASE },   // geoV 6: row 33 exception ruling — the 2 clip-trimmed party walls come back as honest 5-slab whole-layer subsets (their own real material); empty ROWS stay banned
+    { key: 'SampleCastle',  label: 'SampleCastle · column-framed',      db: 'SampleCastle_ARC.db',v: 1, geoDb: 'SampleCastle_geo.db',   geoV: 3, geoBase: GEO_BASE },
+    { key: 'HHS',           label: 'HHS Office · column-framed',        db: 'HHS_ARC.db',         v: 1, geoDb: 'HHS_geo.db',            geoV: 3, geoBase: GEO_BASE },
+    { key: 'Clinic',        label: 'Clinic · column-framed',            db: 'Clinic_ARC.db',      v: 1, geoDb: 'Clinic_geo.db',         geoV: 3, geoBase: GEO_BASE },
+    { key: 'Hospital',      label: 'Hospital · column-framed',          db: 'Hospital_ARC.db',    v: 1, geoDb: 'Hospital_geo.db',       geoV: 3, geoBase: GEO_BASE },
+    { key: 'HospitalGarage',label: 'HospitalGarage · column-framed',    db: 'Garage_ARC.db',      v: 1, geoDb: 'HospitalGarage_geo.db', geoV: 3, geoBase: GEO_BASE },
+    { key: 'Terminal',      label: 'Terminal · column-framed (oracle)', db: 'Terminal_ARC.db',    v: 1, geoDb: 'Terminal_geo.db',       geoV: 3, geoBase: GEO_BASE }
   ];
 
   // The modeller's own GH-Pages playground base — modeller.html and its resident DBs now share the
@@ -138,6 +150,21 @@
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
       window.__dwBuf = buf; window.__dwName = name;
+      // §NOGEO_COMPOSE (Modeller trigger — see the function's own doc above): compose geometry-less
+      // aggregate-parents from their real IfcRelAggregates children NOW, so swbInit, the BOM-graph
+      // tree AND the cross-edge derivation below all see a real transform for them. Ordered BEFORE
+      // the §ANCHOR blind on purpose: a void_anchor transform still counts as a real transform here,
+      // so an anchored element is never mistaken for a ghost. This transient handle only — __dwBuf
+      // keeps the RAW bytes (same contract as the §ANCHOR blind below).
+      composeGhostsFromAggregates(db);
+      // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR — the user's binding condition: anchors excluded from EVERY
+      // count/pick/audit): hide void-anchor transform rows from THIS transient handle — it feeds the STR
+      // walker init, the BOM-graph tree AND the §XEDGE-ALL cross-edge derivation, and every one of those
+      // must see the byte-identical PRE-ANCHOR substrate (abuts/anchored/spans counts unchanged). The
+      // anchors stay in __dwBuf itself — _seedArcEditable (the ONE consumer that needs them) re-opens the
+      // buffer separately. Guarded: only a patched SampleCastle_ARC.db has the column; getRowsModified
+      // makes the exclusion loud instead of silent.
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); var _abn = db.getRowsModified(); if (_abn) console.log(TAG + ' §ANCHOR blind: ' + _abn + ' anchor transform(s) hidden from walker/BOM-tree/cross-edge substrate (ARC seed still sees them)'); } catch (e) { }
       var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
       // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
@@ -246,7 +273,20 @@
             // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
             // collides with a same-named .db resident's own instance either.
             var O = window.Bonsai && window.Bonsai.oplog;
-            var openIt = function () { _openBuffer(dbs.extractedDb, name); };
+            // §IFC-OPEN-SEED-FIX (2026-07-07, W-ARC-SOURCE-PARITY witness finding): openResident() always
+            // follows _openBuffer with _forkEditable(res) → _seedArcEditable, the commit that actually places
+            // GEOM_INSERT ops into window.Bonsai.group() — this path never did, so an IFC-opened building was
+            // WALKABLE (element_transforms queryable) but rendered ZERO ARC geometry (empty 3D scene, nothing
+            // to grab/edit; measured: SampleHouse/Duplex both 0 window.Bonsai.group().children after IFC-open).
+            // Mirror _forkEditable's replay+seed steps directly here (NOT a call to _forkEditable(res) itself
+            // — that re-runs setModelKey('mo_'+res.key), which would stomp the 'mo_ifc_'+name key just set
+            // below and re-collide with a same-named .db resident's instance, exactly what §IFC-OPEN-KEY-FIX
+            // above prevents). No res object exists for an ad-hoc IFC-opened file, so _fetchGeoDb (Terminal's
+            // split-geo-db fetch) is skipped — geoBuf=null, same as every non-Terminal .db resident already.
+            var openIt = function () {
+              var ok = _openBuffer(dbs.extractedDb, name);
+              if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+            };
             if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
             else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
@@ -444,20 +484,46 @@
   // exact same IndexedDB cache pattern (_idbGetDb/_idbPutDb, its own URL key so it caches independently of
   // the meta db) — cache-first, else fetch+persist. Residents with no `geoDb` field resolve null IMMEDIATELY,
   // no network/IDB call at all (SampleHouse/Duplex/SampleCastle/SampleCastle-ARC are untouched).
+  // §GEO-SERVED: the bytes a geo fetch returns must actually BE a SQLite database. This guard exists because
+  // the live site returned HTTP 200 with a 134-byte Git-LFS pointer for months — a "successful" fetch that
+  // carried no geometry, which then degraded silently into bounding-box rendering. A 200 is not evidence.
+  var _SQLITE_MAGIC = 'SQLite format 3';
+  function _assertRealGeoDb(buf, res, url) {
+    var n = buf ? buf.byteLength : 0;
+    var head = '';
+    try {
+      var b = new Uint8Array(buf, 0, Math.min(n, 64));
+      for (var i = 0; i < b.length; i++) head += String.fromCharCode(b[i]);
+    } catch (e) { head = ''; }
+    if (head.indexOf(_SQLITE_MAGIC) === 0) return buf;
+    // console.error, never console.warn — warn is hidden by DevTools' default filter, which is part of why
+    // this defect survived so long unseen.
+    var why = head.indexOf('git-lfs.github.com') >= 0
+      ? 'served a Git-LFS POINTER, not the database — LFS files are not resolved by GitHub Pages'
+      : 'served ' + n + ' bytes that are not a SQLite file';
+    console.error(TAG + ' §GEO-SERVED-FAIL ' + res.key + ' ' + why + ' url=' + url +
+      ' — refusing to seed: real geometry is unavailable and a bounding box must NEVER stand in for it');
+    throw new Error('§GEO-SERVED-FAIL ' + res.key + ': ' + why);
+  }
+
   function _fetchGeoDb(res) {
     if (!res.geoDb) return Promise.resolve(null);
-    var url = _modellerBase() + res.geoDb + ((res.geoV || res.v) ? '?v=' + (res.geoV || res.v) : '');
+    // §GEO-SERVED: geometry files come from res.geoBase (object storage) when declared; resident METADATA
+    // still comes from the same-dir GH-Pages folder via _modellerBase().
+    var url = (res.geoBase || _modellerBase()) + res.geoDb + ((res.geoV || res.v) ? '?v=' + (res.geoV || res.v) : '');
     return _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-HIT (local) ' + (cached.byteLength / 1024 / 1024).toFixed(1) + 'MB');
-        return cached;
+        return _assertRealGeoDb(cached, res, url);
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' geoDb cache-MISS → fetch ' + url);
       return fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
         .then(function (buf) {
+          _assertRealGeoDb(buf, res, url);
           _idbPutDb(url, buf).then(function (p) {
             console.log(TAG + ' §STRWALK-CACHE ' + res.geoDb + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
           });
+          console.log(TAG + ' §GEO-SERVED ' + res.key + ' real geometry substrate ' + (buf.byteLength / 1024 / 1024).toFixed(2) + 'MB verified SQLite');
           return buf;
         });
     });
@@ -478,7 +544,11 @@
         window.__dwGeoBuf = geoBuf || null;
         _seedArcEditable(O, res.key, geoBuf);
       }).catch(function (e) {
-        console.warn(TAG + ' §STRWALK-OPEN geoDb fetch failed for ' + res.key + ' — seeding meta-only (no real geometry)', e && e.message);
+        // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the
+        // live LFS-pointer defect stayed invisible for months. What follows is measured bounding boxes, which
+        // are NOT this building's real geometry; say so unmistakably rather than letting it pass for a render.
+        console.error(TAG + ' §GEO-SERVED-DEGRADED ' + res.key + ' — NO real geometry substrate loaded. What you' +
+          ' are seeing is MEASURED BOUNDING BOXES, not the building. Cause: ' + (e && e.message), e);
         window.__dwGeoBuf = null;
         _seedArcEditable(O, res.key, null);
       });
@@ -589,16 +659,172 @@
       return r.text().then(function (sql) {
         if (!window.SQL) { console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — sql.js not ready'); return buf; }
         var pdb = new window.SQL.Database(new Uint8Array(buf));
-        pdb.run(sql);
+        // §PATCH_CHUNK (2026-08-10, ported from viewer/scene.js A._applyPendingPatch): a single
+        // pdb.run() over one giant multi-thousand-statement string crashes THIS project's bundled
+        // sql-wasm.wasm ("memory access out of bounds") — confirmed live in the Viewer 2026-08-10
+        // against the exact shipped .wasm binary (modeller/lib ships the same build, md5-identical)
+        // with a 9,465-statement patch. A fresh Modeller rel_aggregates patch for a ghost-carrying
+        // resident is exactly that shape (Hospital_ARC: 9,454 pair statements). Statement-aware,
+        // not raw-line-count: accumulate lines into a statement until one ends in `;`, THEN batch
+        // ~500 statements per pdb.run() — a multi-line CREATE TABLE always stays whole.
+        var rawLines = sql.split('\n');
+        var statements = [];
+        var stBuf = [];
+        for (var li = 0; li < rawLines.length; li++) {
+          var ln = rawLines[li];
+          if (!ln.trim().length) continue;
+          stBuf.push(ln);
+          if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+        }
+        if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+        var CHUNK = 500;
+        var recovered = 0, tolerated = 0;
+        for (var ci = 0; ci < statements.length; ci += CHUNK) {
+          var chunk = statements.slice(ci, ci + CHUNK);
+          try {
+            pdb.run(chunk.join('\n'));
+          } catch (e) {
+            // §ANCHOR / idempotency hardening (W-E2E-VOID-ANCHOR), merged with §PATCH_CHUNK: a
+            // patch may carry `ALTER TABLE … ADD COLUMN` (SQLite has no IF-NOT-EXISTS form) —
+            // normally it runs against the RAW shipped bytes (which lack the column) and succeeds,
+            // but a FUTURE re-shipped db that bakes the column in would make the whole-CHUNK run
+            // throw here and silently drop every other statement of THAT chunk. Recover THIS
+            // chunk statement-by-statement (statements, not raw lines — multi-line statements stay
+            // whole), tolerating ONLY the duplicate-column error; every other chunk still runs
+            // batched. Any OTHER error keeps the established best-effort contract: log loud, use
+            // the db as patched so far.
+            if (!/duplicate column name/i.test(String(e && e.message))) throw e;
+            for (var si = 0; si < chunk.length; si++) {
+              try { pdb.run(chunk[si]); recovered++; }
+              catch (e2) {
+                if (/duplicate column name/i.test(String(e2 && e2.message))) { tolerated++; }
+                else { console.warn(TAG + ' §PATCH_STMT_FAIL ' + dbFile + ' — ' + (e2 && e2.message) + ' stmt=' + chunk[si].slice(0, 80)); }
+              }
+            }
+          }
+        }
+        if (recovered || tolerated) console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' statement-mode: applied=' + recovered + ' toleratedDuplicateColumn=' + tolerated);
         var out = pdb.export().buffer;
         pdb.close();
-        console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes) from ' + patchUrl);
+        console.log(TAG + ' §PATCH_APPLY ' + dbFile + ' applied (' + sql.length + ' bytes, ' + statements.length + ' statements, ' + Math.ceil(statements.length / CHUNK) + ' chunk(s)) from ' + patchUrl);
         return out;
       });
     }).catch(function (e) {
       console.warn(TAG + ' §PATCH_APPLY_FAIL ' + dbFile + ' — using unpatched db', e && e.message);
       return buf;
     });
+  }
+
+  // §NOGEO_COMPOSE (Modeller port, 2026-08-10 — verbatim from viewer/scene.js
+  // A.composeGhostsFromAggregates, prompts/4D_SCHEDULE_PERFECTION.md Part B; only the log prefix
+  // differs). ONE shared algorithm, ONE Modeller trigger: _openBuffer below — the single funnel all
+  // three open paths (resident fetch, local .db file, IFC-import) route through.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side extractIFCtoDB.py,
+  // AGGREGATES-only — already written for any current extraction, missing only from older-vintage
+  // shipped DBs, backfilled per-building via a tiny relationship-only patch,
+  // modeller/patches/*.sql, no computed values) or `bom_tree` (client-side import_worker.js §S267,
+  // mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered to AGGREGATES here). Same real
+  // relationship fact either way; the compose algorithm itself is one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file. Guards: never touches a guid that already has a real transform (the ghost set is built
+  // from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost with
+  // no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log — never
+  // silent. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed a
+  // higher-level parent on a later pass). Every row this writes is marked
+  // `transform_source='composed_aggregate'` — the project's existing provenance convention (see
+  // extractIFCtoDB.py's 'void_anchor' rows) — so it stays distinguishable from real extracted
+  // geometry later, not just a console log line. Shipped DBs predate that column, so the ALTER
+  // runs here, in-memory, guarded for a DB that already has it.
+  function composeGhostsFromAggregates(db) {
+    var _t0 = Date.now();
+    try {
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) {
+        console.log(TAG + ' §NOGEO_COMPOSE_SKIP no ghosts, ms=' + (Date.now() - _t0));
+        return { composed: 0, unresolved: 0 };
+      }
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(TAG + ' §NOGEO_COMPOSE composed=' + composed + ' ms=' + (Date.now() - _t0) + ' (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)');
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(TAG + ' §NOGEO_COMPOSE_UNRESOLVED count=' + unresolvedGuids.length + ' classes=' + JSON.stringify(byClass) + ' (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost)');
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn(TAG + ' §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
+    }
   }
 
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH

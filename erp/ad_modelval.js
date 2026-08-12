@@ -201,6 +201,20 @@
     function w(info) { return (info.warnings = info.warnings || []); }
     function chg(info, col) { return !!(info.recordOld && info.record && String(info.recordOld[col]) !== String(info.record[col])); }
     var H = [
+      ['MInOut.movementTypeFromWindow', function (ctx, info) {
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — Witness: W-RECEIPT-MOVEMENTTYPE. Mirrors
+        // MOrder.docTypeTargetDefault's ctx.issotrx thread (ad_modelval.js ~line 131): crud_ops.json's
+        // m_inout entry declares no C_DocType_ID field, so movementTypeDerive below (which reads an
+        // already-set C_DocType_ID) can never fire for a manually-created record — this is the ONLY seam
+        // where the per-window signal (ctx.movementtype, threaded from the AD_Tab's own WhereClause, e.g.
+        // Material Receipt tab 296's "MovementType IN ('V+')") can reach the new row at all.
+        var r = info.record;
+        if (!r.movementtype && /^[A-Z][+-]$/.test((ctx && ctx.movementtype) || '')) {
+          d(info).movementtype = ctx.movementtype;
+          if (!r.issotrx) d(info).issotrx = ctx.movementtype.charAt(0) === 'C' ? 'Y' : 'N';
+        }
+        return null;
+      }],
       ['MInOut.movementTypeDerive', function (ctx, info) {   // :1306-1308 ∘ getMovementType:1275-1287
         var r = info.record;
         if (info.recordOld && !chg(info, 'c_doctype_id')) return null;   // fires on new record or doctype change
@@ -248,10 +262,26 @@
     function chg(info, col) { return !!(info.recordOld && info.record && String(info.recordOld[col]) !== String(info.record[col])); }
     function pick(r, info, col) { var dv = info.derived && info.derived[col]; return dv != null ? dv : r[col]; }
     var H = [
+      ['MInvoice.issotrxFromWindow', function (ctx, info) {
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — Witness: W-INVOICE-ISSOTRX. c_invoice's real
+        // AD_Tab family (263 "IsSOTrx='Y'", 290/470 "IsSOTrx='N'") already matches the EXISTING
+        // window.APP._createIsSOTrx regex (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21) — but crud_ops.json's
+        // c_invoice entry declares no IsSOTrx field, so nothing ever wrote ctx.issotrx onto the new record
+        // itself (MOrder's docTypeTargetDefault derives BOTH doctype AND issotrx together; MInvoice's own
+        // docTypeTargetDefault below only READS r.issotrx, assuming something upstream already set it — for
+        // an auto-generated invoice that's DOC_SPECS.createInvoice's header(); for a MANUAL create (only
+        // possible via the Create-Lines-From-PO/Receipt picker, §Fix 4) this hook is that missing seam.
+        var r = info.record;
+        if (!r.issotrx && (ctx && (ctx.issotrx === 'Y' || ctx.issotrx === 'N'))) d(info).issotrx = ctx.issotrx;
+        return null;
+      }],
       ['MInvoice.bpDefaults', function (ctx, info) {         // :1147-1149 ∘ setBPartner:631-673 — location + term/pricelist/rule from the BP
         var r = info.record;
         if (Number(r.c_bpartner_location_id) > 0) return null;
-        var so = r.issotrx === 'Y';
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — pick() (not bare r.issotrx) sees issotrxFromWindow's
+        // derived value too, same-pass (hooks share one `info`, only `info.record` itself stays the static
+        // pre-hook snapshot — this is the existing derived-fallback convention priceListDefault already uses).
+        var so = pick(r, info, 'issotrx') === 'Y';
         var bp = db.prepare('SELECT paymentrule,c_paymentterm_id,po_paymentterm_id,m_pricelist_id,po_pricelist_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id));
         if (!bp) return null;
         var pt = so ? bp.c_paymentterm_id : bp.po_paymentterm_id;      // :638-644
@@ -294,7 +324,10 @@
       ['MInvoice.docTypeTargetDefault', function (ctx, info) {  // :1190-1194 ∘ setC_DocTypeTarget_ID:804-822 — ARI/API by SO flag
         var r = info.record;
         if (Number(r.c_doctypetarget_id) > 0) return null;
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY isdefault DESC, ad_org_id DESC, c_doctype_id").get(r.issotrx === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id));
+        // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — pick() sees issotrxFromWindow's derived value (same
+        // convention as bpDefaults above); without it a manually-created Purchase invoice always fell through
+        // to the bare r.issotrx (undefined) branch, which is truthy-false too but for the WRONG reason.
+        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY isdefault DESC, ad_org_id DESC, c_doctype_id").get(pick(r, info, 'issotrx') === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id));
         if (dt) d(info).c_doctypetarget_id = dt.c_doctype_id;
         return null;
       }],

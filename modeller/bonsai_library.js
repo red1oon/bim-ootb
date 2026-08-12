@@ -371,10 +371,20 @@
       entries.forEach(e => {
         if (!e || !e.hash) return;
         const key = 'rg:' + e.hash;
-        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset }; n++; }
+        // §LAYER-SOLID-SEED: e.layers (from arc_editable.js's _layerGate.layerRanges) rides the SAME
+        // hash-keyed entry as the mesh it slices — additive field, absent/null for every non-layered hash.
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null }; n++; }
       });
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
+    },
+
+    // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): the real per-layer (face_start,face_count)
+    // triangle ranges for a geometry_hash, or null if this hash carries no authored-layer index (every
+    // resident/hash without §LOD400-LAYERS-REAL data — unchanged, this path is purely additive).
+    layersFor(hash) {
+      const g = hash && this._geom && this._geom['rg:' + hash];
+      return (g && g.layers) || null;
     },
 
     meshArrays(hash) {                          // LOD-300: real extracted mesh if loaded, else box proxy (dims-only)
@@ -402,6 +412,12 @@
       if (P.hash && !c) throw new Error('GEOM_INSERT unknown component ' + P.hash);
       const rawBox = (!c && Array.isArray(P.bbox)) ? P.bbox : null;
       if (!c && !rawBox) throw new Error('GEOM_INSERT needs a hash or a measured bbox');
+      // §ANCHOR (W-E2E-VOID-ANCHOR): a void-consumed host seeded as an invisible ride anchor
+      // (arc_editable.js buildSeedOps params.anchorOnly). It folds through the NORMAL raw-bbox path
+      // below (real measured extent/placement — the cascade needs its true box) but the payload is
+      // tagged so the mesh builder (bonsai_kernel.js _buildMesh) makes it a real-but-INVISIBLE
+      // THREE.Mesh (.visible=false, minimal material, userData.anchor=true) and every count skips it.
+      const anchorOnly = !!P.anchorOnly;
       // §REAL-GEOM (2026-07-02, "no silent box fallback"): a per-element real mesh (component_geometries/
       // base_geometries, registered by the browser wiring via registerRealGeometry BEFORE fold — see
       // arc_editable.js buildSeedOps/seedArc) is a SEPARATE, ADDITIVE field (P.realGeomHash) — orthogonal to
@@ -496,7 +512,7 @@
       // PER-MESH opacity (§MAT-PARITY, MODELLER_RENDER_MATERIAL_PARITY.md Task 1): arc_editable.js's ARC seed
       // stamps parameters.opacity from the element's real material_rgba alpha (glass/IfcWindow etc.) — same
       // source viewer/streaming.js reads. undefined ⇒ opaque, today's unchanged behaviour for every other class.
-      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined), opacity: (P.opacity != null ? P.opacity : undefined) };
+      return { featureId: op.id, triangleCount: base.indices.length / 3, positions, normals: null, indices: base.indices, color: (P.color != null ? P.color : undefined), opacity: (P.opacity != null ? P.opacity : undefined), anchor: anchorOnly || undefined };
     },
 
     // GHOST preview (uncommitted): a LOD-200 box of the component at a candidate placement, so the host can

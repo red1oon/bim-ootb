@@ -78,12 +78,20 @@ console.log('§HHS_WITH_RASTER (spatial_structure + raster patch) rooms=' + rast
 
 chk('G1 raster patch applies onto the TRUE production room set (105 rooms, matching the spatial_structure patch — not the raw db\'s 23)',
   rastered.rooms === 105, 'rooms=' + rastered.rooms);
-chk('G2 baseline (spatial_structure patch alone) reproduces the measured 33.7% DETOUR_FAIL floor',
-  Math.abs(baseline.pct - 33.7) < 1.5, 'pct=' + baseline.pct.toFixed(1) + '%');
+// §BASELINE-RENUMBERED 2026-07-25 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): both pinned constants
+// below moved because routing got BETTER, not because the fixture changed. room_graph.js now counts
+// a real door's own threshold footprint and a real stair flight's footprint as walkable evidence
+// (§DOOR-THRESHOLD-WALKABLE / §STAIR-FOOTPRINT-WALKABLE — a doorway is the only place you can cross
+// a wall, and a stair is circulation, yet neither was covered by slab triangles or room rects), and
+// the raster is a union MEMBER again rather than a short-circuit (§RASTER-UNION-NOT-EXCLUSIVE).
+// Measured on THIS fixture: baseline 33.7% -> 28.8%, with-raster 28.7% -> 19.3%. The assertions stay
+// pinned to real measured numbers (not '<= previous'), so a future regression still fails loudly.
+chk('G2 baseline (spatial_structure patch alone) reproduces the measured 28.8% DETOUR_FAIL floor',
+  Math.abs(baseline.pct - 28.8) < 1.5, 'pct=' + baseline.pct.toFixed(1) + '%');
 chk('G3 raster makes routing STRICTLY BETTER than no-raster on the true room set (the whole point of shipping it — a raster that doesn\'t clear this is worse than none)',
   rastered.pct < baseline.pct, 'baseline=' + baseline.pct.toFixed(1) + '% withRaster=' + rastered.pct.toFixed(1) + '%');
-chk('G4 raster-improved rate matches the measured ~28.7% floor (real number, not re-derived on the fly)',
-  rastered.pct <= 28.7 + 1.5, 'pct=' + rastered.pct.toFixed(1) + '%');
+chk('G4 raster-improved rate matches the measured ~19.3% floor (real number, not re-derived on the fly)',
+  rastered.pct <= 19.3 + 1.5, 'pct=' + rastered.pct.toFixed(1) + '%');
 
 console.log('\n§W-HHS-WALKABLE-RASTER DONE pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

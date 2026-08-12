@@ -30,11 +30,32 @@
   var _cursor = 0;        // current time (ms) in the project timeline
   var _projectStart = 0;
   var _projectEnd = 0;
+  // §GANTT_AXIS_OUTLIER (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md) — SEPARATE from _projectStart/
+  // _projectEnd on purpose: those two remain the real, unqualified playback bounds (renderAtTime,
+  // scrubbing, "every element must eventually build" — Prime Rule, do not touch). These are the DISPLAY
+  // axis for the Gantt drawer only. Live-confirmed via __tmGanttBars on Hospital: one storey='_UNKNOWN'
+  // op alone defined _projectEnd (1049d), while every real, storey-tagged bar finished by ~325d (31% of
+  // that span) — the SAME '_UNKNOWN' bucket deriveBandRanks() (schedule_gate.js) already excludes from
+  // its ladder ("the unknown bucket is not a floor"), just not yet from this axis. A single malformed
+  // event should not be able to rescale the whole chart; it still gets built by the real timeline above.
+  // User ruling: don't special-case '_UNKNOWN' as the label — refer back to the pattern already proven
+  // correct in this file for exactly this problem (§GANTT_MINI_TRIM's 2nd-98th percentile bar trim),
+  // root-cause-agnostic so it catches any wild outlier, not just the one already found.
+  var _ganttAxisStart = 0;
+  var _ganttAxisEnd = 0;
   var _days = [];          // distinct day start timestamps
   var _anchorDay = null;
   var _anchorHr = null;
   var _savedVisibility = [];
   var _highlightMeshes = [];
+  // §Z_STACK_XRAY_STAGING (2026-08-03, prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING) — guid → ms
+  // the cursor must reach before that guid may render SOLID. Present ONLY for the defect
+  // population (an element whose last support carrier finishes AFTER the element's own reveal) —
+  // built once per TM activation by _buildXraySupportCache(), a pure function of already-extracted
+  // geometry + the current _ops schedule. Never written to kernel_ops/DB — presentation only.
+  var _tmXraySolidifyTs = {};
+  var _tmXrayStagedTotal = 0;   // total guids ever eligible to stage, this activation (the "n=")
+  var _tmXraySolidifiedN = 0;   // guids that have crossed their solidify ms so far (the "solidified=")
   var _ganttVisible = false;
   var _dashVisible = false;
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
@@ -42,6 +63,12 @@
   var _varVisible = false;
   var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
+  // §GANTT_BAR_IDENTITY (K0): the storey|phase rollup below used to be recomputed from scratch on
+  // EVERY drawGanttMini() call — i.e. once per playback frame, walking all 63,415 ops on Hospital.
+  // The rollup only changes when _ops changes, so it is now cached behind this flag and the draw
+  // path is pure drawing.
+  var _ganttDirty = true;
+  var _ganttIdentified = 0, _ganttUnidentified = 0;   // §GANTT_BAR_IDENTITY counters
   // T3 (4D_CAPTURE_AND_FALLBACK §3.1): native-4D coverage of the active schedule.
   var _capActive = false;   // true when the timeline used a captured IFC schedule
   var _coveredCount = 0;    // elements driven by real captured task dates
@@ -83,19 +110,50 @@
     } catch(e) { return []; }
   }
 
+  // §GANTT_OPS_BOOKKEEPING_LEAK (2026-08-04): _ops (loadOps()) intentionally carries EVERY kernel_ops
+  // row, not just construction ops — copyGuids(false) and other consumers legitimately want the full
+  // mixed history (picks, GRID_*, etc.), so the fix does NOT belong in loadOps()'s query. But a
+  // bookkeeping op like BUILDING_OPEN (streaming.js, commitOp with no ts -> Date.now(), real
+  // wall-clock, no storey/phase, no real output_guid) has no business defining the PROJECT'S OWN
+  // timeline bounds — traced live as the "_UNKNOWN/Architecture outlier" behind §GANTT_AXIS_OUTLIER
+  // (#1175, which qualified the DISPLAY axis but left _projectStart/_projectEnd — the real playback
+  // bounds scrubbing/renderAtTime use — still polluted, unmeasured until now). Scoped to exactly the
+  // two places that build the construction TIMELINE from _ops: this function's bounds, and
+  // buildGanttTasks()'s bar grouping.
+  function _placeOps() { return _ops.filter(function (o) { return o.op_type === 'ELEMENT_PLACE'; }); }
+
   function computeDays() {
+    var cOps = _placeOps();
     var seen = {};
-    _ops.forEach(function(op) {
+    cOps.forEach(function(op) {
       var d = new Date(op.start_ts);
       var key = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
       if (!seen[key]) seen[key] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     });
     _days = Object.values(seen).sort(function(a,b){ return a - b; });
-    if (_ops.length) {
+    if (cOps.length) {
       // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
-      _projectStart = _ops[0].start_ts - 1;
-      _projectEnd = Math.max.apply(null, _ops.map(function(o){ return o.end_ts; }));
+      _projectStart = cOps[0].start_ts - 1;
+      _projectEnd = Math.max.apply(null, cOps.map(function(o){ return o.end_ts; }));
     }
+    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
+    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
+    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
+    // threshold, never a new invented one. Kept as real, independent defense against genuinely
+    // mistagged construction data even now that cOps excludes bookkeeping ops (§GANTT_MINI_TRIM's own
+    // proven case — a handful of real elements DO carry a real-but-wrong storey tag).
+    var ends = cOps.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
+    var n = ends.length;
+    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
+    if (n > 20) {
+      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+      _ganttAxisEnd = ends[hiI];
+    } else {
+      _ganttAxisEnd = _projectEnd;
+    }
+    // (G-3 fix 2026-08-11: a stale byte-duplicate of the block above sat here reading `_ops` —
+    // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
+    // BUILDING_OPEN. Removed; the cOps-based block above is the single authority.)
   }
 
   // ── Scene: emerge from nothing ──
@@ -505,6 +563,21 @@
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
+  // §DLOD_VF_CAMGUARD (2026-08-05, cross-session finding — independently root-caused in both
+  // 4D_SCHEDULE_PERFECTION.md and CINEMA_PATH_EDITOR.md's own SESSION HANDOFF). The buildup-
+  // visibility gate used to be hardcoded to the main camera always, even while CPE's POV panel
+  // scrubs its own `vfCam` independently (main camera stays parked during a scrub) — so the POV
+  // inset could show buildup-hidden geometry gated by the WRONG camera's frustum. Pulled out as its
+  // own pure function (same precedent as `_retimeSpan`'s own header: kept self-contained so a
+  // witness can slice the real decision out of `renderAtTime` instead of re-implementing it).
+  // Returns the POV camera while CPE's viewfinder is genuinely on, else the main camera — never
+  // guesses, reads CPE's own exposed `activePOVCamera()` accessor.
+  function _dlodResolveCamera(app) {
+    var povCam = (typeof window !== 'undefined' && window.APP && window.APP.cinemaPathEditor &&
+      window.APP.cinemaPathEditor.activePOVCamera) ? window.APP.cinemaPathEditor.activePOVCamera() : null;
+    return povCam || app.camera;
+  }
+
   // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
   // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
   function _dlodInView(g) {
@@ -748,9 +821,19 @@
   // do) — so a drag starting while the 24-frame accumulate is in flight blends N8AO across the
   // moving view, exactly the reported "ghosting when moving the scene." Fix: same pose-signature
   // restart discipline, ported directly — position+quaternion string, checked every frame.
-  function _giHoldCamSig(app) {
-    if (!app || !app.camera) return '';
-    var p = app.camera.position, q = app.camera.quaternion;
+  // §DLOD_VF_CAMGUARD_SIG (2026-08-05) — optional `cam` override, defaulting to app.camera so both
+  // existing GI hold-converge call sites below (main-viewport-only, unaffected) are byte-identical.
+  // The DLOD call site passes the SAME resolved camera _dlodInView's frustum was built from
+  // (_dlodResolveCamera's result — vfCam when POV is active) instead of always app.camera: without
+  // this, _dlodCamMoved never sees vfCam moving during a POV-only scrub/play (main stays parked,
+  // §CPE_SCRUB_POV_ONLY), so the incremental-delta path could skip re-evaluating DLOD visibility
+  // for geometry newly entering/leaving vfCam's OWN moving frustum — stale buildup in the POV inset
+  // that a fresh full pass (triggered by anything else, e.g. a big cursor jump) would silently fix,
+  // masking the gap. Same camera basis end-to-end: resolve → frustum → moved-detection.
+  function _giHoldCamSig(app, cam) {
+    cam = cam || (app && app.camera);
+    if (!cam) return '';
+    var p = cam.position, q = cam.quaternion;
     return p.x.toFixed(4) + ',' + p.y.toFixed(4) + ',' + p.z.toFixed(4) + ',' +
            q.x.toFixed(5) + ',' + q.y.toFixed(5) + ',' + q.z.toFixed(5) + ',' + q.w.toFixed(5);
   }
@@ -1126,7 +1209,7 @@
     var frontier = {};  // guid → {t: 0-1 progress, isSteel: bool}
     var recent = {};    // guid → fade 0-1 (1 = just finished)
     var arrival = {};   // guid → true (just appeared this tick — white flash)
-    var _sfxPhases = null; // §SFX: phase set at the frontier this tick (built only when sfx.js present)
+    var _sfxPhases = null; // phase set at the frontier this tick (§SFX voice + §CPE_ROOM_TITLE_COLLECTIVE bracket)
     var lingerMs = tickMs() * 3; // linger for 3 ticks after completion
     var _isMobileTM = !!(window._isMobile || window._isMobileTM);
 
@@ -1151,9 +1234,11 @@
         frontier[guid] = { t: progress, isSteel: isSteel };
         // Arrival = first 15% of install time (white flash)
         if (progress < 0.15) arrival[guid] = true;
-        // §SFX seam (sfx.js): collect the construction phase(s) at the frontier. No-op
-        // when sfx.js absent or audio OFF — sfx decides whether/what to play (SoC).
-        if (window.__sfxTM && p.phase) { if (!_sfxPhases) _sfxPhases = {}; _sfxPhases[p.phase] = (_sfxPhases[p.phase] || 0) + 1; }
+        // §SFX seam (sfx.js) + §CPE_ROOM_TITLE_COLLECTIVE (cpe_room_title.js): collect the
+        // construction phase(s) at the frontier. Two consumers now — the sfx voice AND the
+        // caption's [phase] bracket — so the collection no longer gates on __sfxTM; each
+        // consumer still decides for itself what to do with it (SoC).
+        if (p.phase) { if (!_sfxPhases) _sfxPhases = {}; _sfxPhases[p.phase] = (_sfxPhases[p.phase] || 0) + 1; }
       }
     }
 
@@ -1215,8 +1300,24 @@
       _dlodBuildBoxes(app);
       if (_dlodBoxIndex && app.camera) {
         if (!_dlodFrustum) { _dlodFrustum = new THREE.Frustum(); _dlodPSM = new THREE.Matrix4(); _dlodSphere = new THREE.Sphere(); }
-        _dlodCamPos = app.camera.position;
-        _dlodPSM.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
+        // §DLOD_VF_CAMGUARD — gate against whichever camera the user is actually looking through.
+        var _dlodActiveCam = _dlodResolveCamera(app);
+        // §DLOD_VF_MATRIX_STALE (2026-08-05) — this function runs off Time Machine's OWN setTimeout
+        // ticker (_playTimer, see playTick), never synchronized with the rAF-driven animate() loop.
+        // app.camera's matrixWorld/matrixWorldInverse get refreshed every rAF frame because
+        // renderer.render(scene, app.camera) runs there unconditionally. vfCam's ONLY gets refreshed
+        // by cinema_path_editor.js's own _vfRender(), itself gated behind the SAME rAF loop's
+        // needsRender check — so on a POV-only rehearsal, whichever of these two independent timers
+        // (TM's setTimeout vs. rAF) happens to fire first in a given moment can read vfCam's matrix
+        // BEFORE this tick's _applyVFPose() move has actually reached it, i.e. the frustum below is
+        // built from the WRONG pose. updateMatrixWorld() recomputes both matrixWorld and
+        // matrixWorldInverse from whatever position/quaternion _applyVFPose already set — cheap
+        // (single camera, not a scene traverse) and makes this tick's frustum correct regardless of
+        // which timer got here first. This is exactly the vfCam-goes-blank mechanism named in the
+        // prior session's handoff ("vfCam ends up looking at nothing").
+        _dlodActiveCam.updateMatrixWorld();
+        _dlodCamPos = _dlodActiveCam.position;
+        _dlodPSM.multiplyMatrices(_dlodActiveCam.projectionMatrix, _dlodActiveCam.matrixWorldInverse);
         _dlodFrustum.setFromProjectionMatrix(_dlodPSM);
       } else {
         _dlodOn = false; // box build failed (deps/query) — fall back to legacy behavior this tick
@@ -1233,7 +1334,26 @@
     // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
     // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
     var _sig = _tmSceneSig(app);
-    if (!_evMesh || _sig !== _evSig) _tmBuildEventIndex(app, lingerMs);
+    // §PERF_INCR_DEFER (TM_STREAM_REBUILD_COALESCE.md; CPE_4D_PERF_MEM_FINDINGS.md §3-R5): TM
+    // active WHILE a big building still streams = every batch bumps _metaGen = a full 50-159ms
+    // index rebuild per batch (10+ on LTU, 0.5-2s stacked) — and each rebuild forced mode=full
+    // anyway (_incrPrimed reset). While app.streaming, skip the builds entirely and render
+    // full-mode (identical output — the full path never consults the index); build ONCE on the
+    // first pass after streaming settles. Mirrors _dlodEngaged's !app.streaming gate. A stale
+    // index is never consulted: the index is DROPPED here, not kept (§4 Risk discipline —
+    // "a stale index silently corrupts the scene").
+    if (!_evMesh || _sig !== _evSig) {
+      if (app.streaming) {
+        // Drop (never keep-stale) any existing index once; then stay index-less and silent —
+        // every pass below renders the full path (_incrPrimed=false ⇒ _incrOK=false).
+        if (_evMesh) {
+          _evMesh = null; _evSig = ''; _incrPrimed = false;
+          console.log('§PERF_INCR_DEFER streaming — index dropped, builds deferred until settle');
+        }
+      } else {
+        _tmBuildEventIndex(app, lingerMs);
+      }
+    }
     var _dLo = Math.min(_prevCursor, cursorMs), _dHi = Math.max(_prevCursor, cursorMs);
     var _shadowNow = !!app._shadowOn;
     var _shadowJustToggled = (_lastShadowOn !== null && _lastShadowOn !== _shadowNow);
@@ -1246,7 +1366,10 @@
     // behavioural change (W-DLOD-EQUIV).
     var _dlodCamMoved = false;
     if (_dlodOn) {
-      var _dlodCamSigNow = _giHoldCamSig(app);
+      // §DLOD_VF_CAMGUARD_SIG: same camera _dlodCamPos/frustum were just built from above
+      // (_dlodActiveCam — vfCam when POV is active, main otherwise), not always app.camera — see
+      // that function's own comment for why using the wrong one here goes stale silently.
+      var _dlodCamSigNow = _giHoldCamSig(app, _dlodActiveCam);
       _dlodCamMoved = (_dlodLastCamSig !== null && _dlodLastCamSig !== _dlodCamSigNow);
       _dlodLastCamSig = _dlodCamSigNow;
     } else {
@@ -1260,7 +1383,20 @@
     if (_incrOK) _incrStats.delta++; else _incrStats.full++;
     _lastShadowOn = _shadowNow;
 
-    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0;
+    // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12, real user report: "not casting shadows inside
+    // early construction"): existing §SHADOW_FRONTIER casters/receivers counters only increment
+    // when app._shadowOn (native Sunglass toggle) is true -- always false during a PHOTO_SHADOW/
+    // MaxQ bake, so that log reads 0/0 every bake regardless of whether the PHOTO_SHADOW system's
+    // OWN separate reassert (effects.js _reassertPhotoShadowCoverage) actually corrects it -- an
+    // unrelated internal counter, not proof either way. Built directly from `frontier` (already
+    // fully populated above, straight from the schedule ops) rather than captured during the
+    // scene traversal below -- an earlier version tried the traversal and came back empty every
+    // time: steel beams/columns (isSteel above) are exactly the elements most likely rendered via
+    // BatchedMesh/InstancedMesh, which never carry a single userData.guid the "single mesh" branch
+    // below can match against. Reading straight from `frontier` is correct regardless of which
+    // rendering path a given guid ends up on.
+    window.__tmFrontierGuidsNow = new Set(Object.keys(frontier));
+    var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
       if (!obj.userData) return;
@@ -1274,6 +1410,7 @@
         // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
         // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
         var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !_dlodInView(g);
+        if (hideForProxy) _perfHideForProxy++;
         var showReal = (isRecent || isPlaced) && !hideForProxy;
 
         // Visibility + highlighting
@@ -1286,13 +1423,49 @@
             // Cyan flash (first 15%) then orange glow during install
             var fColor = ft < 0.15 ? 0x44ffff : 0xff8c00;
             applyHighlight(obj, fColor, 0.85, 0.4);
+            // §Z_STACK_XRAY_STAGING: a backward scrub can re-enter frontier for an element that was
+            // staged at a later cursor — clear the stale flag so the next placed-tick re-evaluates
+            // the ghost fresh instead of trusting a flag left over from a different cursor position.
+            obj._tm_xrayStaged = false;
           }
         } else if (showReal) {
           obj.visible = true;
-          if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
+          // §Z_STACK_XRAY_STAGING (prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING) — placed at its
+          // scheduled time, but not all support carriers have finished: ghost it instead of solid.
+          // Reuses applyHighlight/restoreMaterial's own clone+restore (grey, 0.3 opacity, 0 emissive
+          // so it reads as plain translucency, not the frontier glow) rather than a new mechanism.
+          // Material is touched ONLY on the entry/exit tick (not every tick) — clearHighlight() at
+          // the top of renderAtTime skips _tm_xrayStaged objects on purpose (see clearHighlight),
+          // so a large sustained staged population does not pay a clone/dispose cost every tick.
+          // Gated on obj.isMesh — same guard the frontier branch above uses before its own
+          // applyHighlight call, since applyHighlight touches obj.material (a plain Object3D with a
+          // guid but no material would crash there, exactly why frontier already gates on it).
+          if (obj.isMesh) {
+            var _xrTs = _tmXraySolidifyTs[g];
+            var _xrStagedNow = (_xrTs !== undefined && cursorMs < _xrTs);
+            if (_xrStagedNow) {
+              if (!obj._tm_xrayStaged) {
+                _wbMat('XRAY_STAGED', obj);
+                applyHighlight(obj, 0x888888, 0.3, 0);
+                obj._tm_xrayStaged = true;
+              }
+            } else {
+              if (obj._tm_xrayStaged) {
+                _tmXraySolidifiedN++;
+                if (_tmXraySolidifiedN % 25 === 0 || _tmXraySolidifiedN === _tmXrayStagedTotal) {
+                  console.log('§XRAY_STAGED n=' + _tmXrayStagedTotal + ' solidified=' + _tmXraySolidifiedN);
+                }
+                obj._tm_xrayStaged = false;
+              }
+              if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
+            }
+          } else if (obj._tm_highlighted) {
+            _wbMat('RESTORE', obj); restoreMaterial(obj);
+          }
         } else {
           obj.visible = false;
           if (obj._tm_highlighted) restoreMaterial(obj);
+          obj._tm_xrayStaged = false;   // §Z_STACK_XRAY_STAGING: scrubbed before its own reveal — not staged
         }
 
         // Shadow + camera (merged — was 3 separate traversals)
@@ -1452,6 +1625,19 @@
     // on the throttled log. Read via window.__tmTrav in a probe.
     window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
                         mode: _incrOK ? 'delta' : 'full' };
+    // §DLOD_VF_VISCOUNT (2026-08-05) — every tick while DLOD is engaged AND a POV camera (not main)
+    // is the active gate, per the prior session's ask: "add a log of visible-element-count from
+    // vfCam's perspective... at the moment _vfRender()'s box goes visually blank". Not throttled
+    // like §PERF_TRAVERSE — only fires while B is on, so volume is bounded by rehearsal length, not
+    // general use. hideForProxy climbing toward objs (few/no real meshes left near the camera) at
+    // the SAME tick the user reports "blank" would confirm the DLOD-culling theory directly; staying
+    // low would point elsewhere (e.g. scissor/viewport, see §CPE_VF_RENDER_TRACE).
+    if (_dlodOn && _dlodActiveCam !== app.camera) {
+      window.__tmDlodVf = { hideForProxy: _perfHideForProxy, objs: _perfObjs,
+        camPos: { x: +_dlodCamPos.x.toFixed(2), y: +_dlodCamPos.y.toFixed(2), z: +_dlodCamPos.z.toFixed(2) } };
+      console.log('§DLOD_VF_VISCOUNT hideForProxy=' + _perfHideForProxy + ' objs=' + _perfObjs +
+        ' camPos=' + JSON.stringify(window.__tmDlodVf.camPos));
+    }
     _incrPrimed = true;   // a full pass has now established slot state for every mesh
     // §GROUP_SPARK: emit AFTER the traverse — capping and per-group random selection need the
     // whole candidate set, which spawn-as-you-find (the reverted #866 shape) cannot provide.
@@ -1828,9 +2014,14 @@
 
     // §SFX seam (sfx.js): report frontier phases + a representative world centroid (→ stereo
     // pan) + progress/activity (→ the cinematic bed's two dials). No-op when audio off/absent.
+    // most-active phase first (by element count) — stable dominant, not alphabetical flicker
+    var _sfxArr = _sfxPhases ? Object.keys(_sfxPhases).sort(function (a, b) { return _sfxPhases[b] - _sfxPhases[a]; }) : [];
+    // §CPE_ROOM_TITLE_COLLECTIVE: the dominant frontier phase, refreshed EVERY tick — null the
+    // moment the frontier empties (construction complete), so the caption bracket can never
+    // outlive the work it names. cpe_room_title.js reads this at draw time.
+    var _appPh = (typeof A === 'function') ? A() : null;
+    if (_appPh) _appPh.tmFrontierPhase = _sfxArr[0] || null;
     if (window.__sfxTM) {
-      // most-active phase first (by element count) — stable dominant, not alphabetical flicker
-      var _sfxArr = _sfxPhases ? Object.keys(_sfxPhases).sort(function (a, b) { return _sfxPhases[b] - _sfxPhases[a]; }) : [];
       var _sfxCen = null;
       if (_frontierPositions.length) {
         var _sx = 0, _sy = 0, _sz = 0;
@@ -1841,6 +2032,26 @@
       var _sfxProg = _sfxSpan > 0 ? Math.max(0, Math.min(1, (_cursor - _projectStart) / _sfxSpan)) : 0;
       window.__sfxTM(_sfxArr, _sfxCen, { progress: _sfxProg, active: _frontierPositions.length });
       _sfxPhases = null;
+    }
+
+    // Implementing prompts/PHOTOREAL_STILL_RENDER.md §BILLBOARD_NAME_ELEMENT §5 —
+    // Witness: W-BILLBOARD-NAME-ELEMENT V1/V2.
+    // §TM_OVERLAY_SYNC seam — presentation overlays (the billboard artwork quad and the building
+    // name-plate lettering in effects.js) are NOT elements: they carry no userData.guid, so the
+    // traverse above never touches them and they render from frame 0 of a buildup, even at cursors
+    // where the REAL element they sit on is hidden. Handing them the element's guid instead would
+    // make two scene objects answer to one guid for picking/Find/BOM, and would run applyHighlight
+    // (cyan/orange emissive at 0.85 opacity) over the artwork during its install window.
+    // So: one O(1) feature-detected call, same shape and same place as the §SFX seam above. TM
+    // hands over the visibility it has ALREADY computed for this tick — the overlay owner cannot
+    // drift from the element because it is not re-deriving anything. Passing null (see deactivate)
+    // means "TM is off, show your overlays".
+    if (window.__tmOverlaySync) {
+      try {
+        window.__tmOverlaySync(function (g) {
+          return !!placed[g] || !!frontier[g] || recent[g] !== undefined;
+        });
+      } catch (e) { /* an overlay owner must never be able to break the scrub */ }
     }
 
     applySunCycle(cursorMs);
@@ -1869,6 +2080,22 @@
     } else if (app.renderer && app.scene && app.camera) {
       app.renderer.render(app.scene, app.camera);
     }
+    // §CPE_VF_BUILDUP_BLANK (2026-08-06) — user report: "B blank during BuildUp playback, only
+    // shows when paused" (HANDOFF 2026-08-06 LATE, Item 1). renderAtTime() just painted the FULL
+    // canvas with the MAIN camera, wiping out whatever B's own scissor sub-render
+    // (cinema_path_editor.js _vfRender, installed as app._cpeViewfinderRender) drew on a prior
+    // frame. B only got repainted afterward if main.js's animate() rAF loop happened to run again
+    // and see _needsRender still true — during a povOnly BuildUp rehearsal that is a race against
+    // cinema_path_editor.js's OWN independent rAF chain (_previewFly's step(), which calls
+    // tmSetCursor -> renderAtTime every frame and so re-wins the race almost every tick). Confirmed
+    // live: witness_cpe_vf_buildup_blank.js (scratchpad, not yet committed) measured B's render
+    // count against §PERF_TRAVERSE tick count during a 5s povOnly+buildup rehearsal — HHS_Office_
+    // Federated, ~75% coverage before this fix (occasional flicker of real content between long
+    // stale/frozen stretches — matches the earlier HANDOFF's inconclusive pixel-readback samples),
+    // 100%+ after. Calling the hook here — same call main.js's animate() already makes at both its
+    // own render branches — repaints B immediately after every tick, unconditionally, removing the
+    // race instead of hoping to win it. No-op (single property check) when B is off.
+    if (app._cpeViewfinderRender) app._cpeViewfinderRender();
     updateStatus();
     _broadcastTimeline();   // §S3 — realtime cross-tab scrub + pinpoint the item the data is addressing
   }
@@ -2056,11 +2283,26 @@
     obj._tm_highlighted = false;
   }
 
-  function clearHighlight() {
-    for (var i = _highlightMeshes.length - 1; i >= 0; i--) {
-      restoreMaterial(_highlightMeshes[i]);
+  function clearHighlight(force) {
+    // §Z_STACK_XRAY_STAGING: this runs at the TOP of every renderAtTime tick (§S260c "restore
+    // previously highlighted meshes to solid"), which is correct for the transient frontier glow
+    // (~a handful of elements at a time, per §CREW-CAP) but would be an O(staged-population)
+    // clone+dispose CYCLE every tick if it also swept a large, SUSTAINED staged population — the
+    // exact per-tick cost W-XRAY-4 exists to keep bounded. _tm_xrayStaged objects are left alone
+    // here; renderAtTime's own showReal branch restores them explicitly, exactly once, on the tick
+    // they actually resolve (or scrub behind their own reveal) — see the _tm_xrayStaged checks there.
+    // §TM_CLOSE_RESTORE (2026-08-04): that per-tick skip must NOT apply when TM itself is being
+    // switched off — deactivate()'s restoreVisibility() passes force=true so a still-staged (ghosted,
+    // grey/0.3-opacity) element does not survive TM closing. Same "nothing may survive TM being
+    // switched off" convention this file already applies to _gspClear/_tmXraySolidifyTs/etc.
+    var keep = [];
+    for (var i = 0; i < _highlightMeshes.length; i++) {
+      var hm = _highlightMeshes[i];
+      if (!force && hm._tm_xrayStaged) { keep.push(hm); continue; }
+      hm._tm_xrayStaged = false;
+      restoreMaterial(hm);
     }
-    _highlightMeshes = [];
+    _highlightMeshes = keep;
     clearAllOutlines(); // §S260c: also remove wireframe outlines
   }
 
@@ -2430,8 +2672,8 @@
     });
   }
 
-  function restoreVisibility() {
-    clearHighlight();
+  function restoreVisibility(force) {
+    clearHighlight(force);
     var app = A();
     // §SE-7: matrices come from `_savedInstanceMatrices` (renderAtTime's lazy per-tick cache), not a
     // private clone saveVisibility() no longer makes. `activate()` always calls `renderAtTime()` at
@@ -2501,7 +2743,12 @@
         '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
         '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
-        '<button id="tm-author" style="font-size:12px;padding:2px 6px" title="Author 4D schedule — build phases up, assign elements, tune dates">&#9998;</button>' +
+        // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
+        // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
+        // both constraint-aware). The ↗ Editor tab below stays FOR NOW and is consolidated into the
+        // drawer in a later pass. schedule_author_ui.js is left on disk and still loads: this removes
+        // the entry point, not the module, so nothing else that references it breaks. The guarded
+        // handler below is a no-op once the element is gone.
         '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
         '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
@@ -2530,14 +2777,40 @@
         '<button id="tm-stop-btn" style="width:30px;font-size:14px" title="Stop">&#x25A0;</button>' +
         '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
         '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
-        '<button id="tm-touched" style="flex:1;font-size:9px">Copy Touched</button>' +
-        '<button id="tm-new" style="flex:1;font-size:9px">Copy New</button>' +
+        '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
+        '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
-        '<div id="tm-gantt-legend" style="display:flex;flex-wrap:wrap;gap:2px 8px;padding:2px 4px 2px 64px;font-size:10px;color:#ccc;min-height:14px"></div>' +
+        // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
+        // storey, phase, element count, day range and source, so the legend was pure duplication.
+        // §GANTT_RULER (E5) + §GANTT_RESIZE (E6), 2026-08-04. The drawer had NO time axis at all —
+        // the only temporal reference was the cursor hairline, so a bar's absolute dates were only
+        // discoverable by hovering it. position:sticky keeps the header pinned while the bar rows
+        // scroll underneath, so the axis is always on screen. The grip above it drags the drawer
+        // taller than the CSS 220px cap (a 22-storey building renders ~130 bars into that box).
+        '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
+          '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
+            'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+          // §GANTT_EDIT_LOCK (user ruling 2026-08-05, supersedes §GANTT_AUTHOR_ENTRY's button): no
+          // button opens a side panel any more, native or otherwise — the drawer materializes its own
+          // schedule automatically (see drawGanttMini's auto-generate call) the first time it has
+          // nothing to show, same native ScheduleAuthor.materializeZones/materializeDefault path,
+          // still guarded against clobbering a real imported schedule. What the user DOES need a
+          // manual control for is whether the bars are draggable right now — that's this lock toggle,
+          // not a generate trigger.
+          '<div id="tm-gantt-lockbar" style="display:flex;align-items:center;gap:6px;padding:3px 6px;' +
+            'font-size:10px;color:#8a97a5;border-bottom:1px solid rgba(79,195,247,0.15)">' +
+            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
+            'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
+            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span></div>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" ' +
+            'title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
+        '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
           '<div id="tm-gantt-hair" style="position:absolute;top:0;width:2px;height:100%;background:#ff8c00;pointer-events:none;z-index:1;display:none"></div>' +
+          '<div id="tm-gantt-marquee" style="position:absolute;border:1px dashed #4fc3f7;' +
+            'background:rgba(79,195,247,0.12);pointer-events:none;z-index:1;display:none"></div>' +
           '<div id="tm-gantt-tip" style="position:absolute;top:4px;left:0;background:rgba(20,20,40,0.92);color:#ff8c00;font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid rgba(255,140,0,0.3);pointer-events:none;z-index:2;display:none;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis"></div>' +
         '</div>' +
       '</div>' +
@@ -2558,12 +2831,30 @@
         '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">S-Curve</div>' +
         '<canvas id="tm-dash-scurve" width="200" height="60" style="width:100%;height:60px"></canvas>' +
         '<div id="tm-dash-daycnt" style="font-size:10px;color:#999;margin-top:2px;text-align:center"></div>' +
-      '</div>';
+      '</div>' +
+      // §TM_PANEL_RESIZE (2026-08-05, user ruling: "panel borders supposed to be draggable so we
+      // can see more"). The whole drawer was hardcoded 376px with a resize handle for the internal
+      // Gantt box's HEIGHT (tm-gantt-grip) but nothing for the drawer's own WIDTH — exactly what the
+      // screenshot showed: the props panel overlapping the storey labels and ruler with nowhere to
+      // grow into. `_panel` is centered via left:50%/translateX(-50%), so a single edge handle grows
+      // the box symmetrically for free — no left-edge math needed.
+      '<div id="tm-panel-resize-grip" title="Drag to resize the drawer" style="position:absolute;' +
+        'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>' +
+      // §TM_PANEL_RESIZE_H (2026-08-05, user: "make the lower border pullable expandable too, not
+      // just the right border") — same edge-grip pattern as the width handle above, mirrored onto
+      // the panel's bottom edge so both resizable dimensions are reachable the same way.
+      '<div id="tm-panel-resize-grip-b" title="Drag to resize the drawer" style="position:absolute;' +
+        'left:0;right:0;bottom:-3px;height:8px;cursor:ns-resize;z-index:6"></div>';
     document.body.appendChild(_panel);
+    wirePanelResize();
+    wirePanelResizeHeight();
 
     var style = document.createElement('style');
     style.textContent =
       '#time-machine-panel{transition:width 200ms ease-out}' +
+      '#time-machine-panel.tm-panel-resizing{transition:none}' +
+      '#tm-panel-resize-grip:hover,#tm-panel-resize-grip.tm-gripping{background:rgba(79,195,247,0.35)}' +
+      '#tm-panel-resize-grip-b:hover,#tm-panel-resize-grip-b.tm-gripping{background:rgba(79,195,247,0.35)}' +
       '#time-machine-panel button{background:rgba(255,255,255,0.1);color:#e0e0e0;border:1px solid rgba(79,195,247,0.3);' +
       'border-radius:4px;padding:4px 4px;cursor:pointer;font-size:10px}' +
       '#time-machine-panel button:hover{background:rgba(79,195,247,0.2)}' +
@@ -2640,11 +2931,11 @@
       e.stopPropagation(); stopPlayback();
     });
 
-    document.getElementById('tm-touched').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(false);
+    document.getElementById('tm-undo').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); undoLastGanttEdit();
     });
-    document.getElementById('tm-new').addEventListener('pointerup', function(e) {
-      e.stopPropagation(); copyGuids(true);
+    document.getElementById('tm-baseline').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); setGanttBaseline();
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -2778,7 +3069,13 @@
       if (btn) btn.classList.toggle('tm-active', _ganttVisible);
       var box = document.getElementById('tm-gantt-box');
       if (box) box.classList.toggle('open', _ganttVisible);
-      if (_ganttVisible) drawGanttMini();
+      // §GANTT_AUTHOR_REPROBE (2/2, found in a real browser 2026-08-04): re-probing inside
+      // buildTaskIndex() was not enough on its own — buildGanttTasks() is gated on _ganttDirty, and
+      // authoring a schedule does not set it, so the re-probe never ran and freshly authored bars
+      // stayed non-editable. PROVEN live: materializeZones returned ok:true with 18 zones while the
+      // drawer still showed the "not editable" banner. Opening the drawer is exactly the moment the
+      // user expects it to reflect reality, so mark it dirty here.
+      if (_ganttVisible) { _ganttDirty = true; drawGanttMini(); }
     });
     document.getElementById('tm-dash').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -2825,13 +3122,19 @@
       configSlider();
       console.log('§TM_VARIANCE_JUMP phase="' + p.phase + '" cursor=' + Math.round(_cursor) + ' committed=' + p.aCost);
     });
+    // ── §GANTT_DRAG (E1/E2 UI half) — pointerdown starts a bar drag, pointerup either commits the
+    // edit or falls through to the original seek. Registered BEFORE the seek handler so _dragMoved
+    // is already set by the time that one runs.
+    wireGanttDrag();
     document.getElementById('tm-gantt-canvas').addEventListener('pointerup', function(e) {
       if (!_active || !_ops.length) return;
+      if (_dragConsumed) { _dragConsumed = false; return; }   // this pointerup finished an edit, not a seek
       var rect = e.target.getBoundingClientRect();
       var x = (e.clientX - rect.left - 60) / (rect.width - 60);  // account for storey label margin
       if (x < 0) x = 0;
       var pct = Math.min(1, Math.max(0, x));
-      var ts = _projectStart + pct * (_projectEnd - _projectStart);
+      // §GANTT_AXIS_OUTLIER: invert against the SAME qualified axis the bars/ruler are drawn against.
+      var ts = _ganttAxisStart + pct * Math.max(1, _ganttAxisEnd - _ganttAxisStart);
       var bar = findBarAtClick(e);
       renderAtTime(ts);
       anchorFromCursor();
@@ -3087,6 +3390,1500 @@
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // §4D_ROOF_LOAD_PATH — roof/load-path promotion classifier (ONE copy)
+  // ══════════════════════════════════════════════════════════════════
+  // ONE classifier, TWO callers: injectGantt() (the live scheduler build) and _buildXrayElements()
+  // (the x-ray staging rebuild that verifyGanttIntegrity() — the schedule LOCK gate — also runs
+  // on). Consolidated 2026-08-10 from two inline copies verified byte-identical in .seq output —
+  // a future silent divergence would have made the lock gate verify against a different
+  // classification than the one actually scheduled: a correctness bug, not a rendering glitch.
+  //
+  // §4D_ROOF_LOAD_PATH M1 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_ROOF_LOAD_PATH) — a slab's
+  // ROLE is a load-path fact, not a storey-name label. SUPERSEDES the deleted `/roof/i` override:
+  // measured 2026-08-01, that regex fired ZERO times on Hospital ("Level 1..7A"/"Unknown")
+  // and LTU_AHouse ("TAKPLAN", Swedish) — the two roof slabs it was meant to catch have storey
+  // "Unknown". For each IfcSlab, take the IfcWall*/IfcWallStandardCase whose XY footprint overlaps
+  // it ("those walls"). Two checks from the SAME paragraph of the spec, both epsilon-free:
+  //   (a) the slab's base_z is above the average midheight of those walls — the walls are BELOW
+  //       and physically carry it.
+  //   (b) NONE of those walls stand ON it (no overlapping wall has base_z >= the slab's own
+  //       top_z) — this is the spec's own stated definition of "the floor case" ("floor slab:
+  //       walls stand ON it ... otherwise it stays a floor slab"), and it is NOT redundant with
+  //       (a): measured on this exact DB, (a) alone is true for nearly every capped-wall slab in
+  //       the building (35 slabs -> 23 "promoted"), including known mid-building intermediate
+  //       floors (base_z 176.81, between Level 2 and Level 3, 5 more levels above) — a slab that
+  //       caps the walls below it satisfies (a) whether or not it ALSO carries walls above, so (a)
+  //       alone cannot tell "top of the load path" from "one more floor in the middle of it". (b)
+  //       is the missing half of the spec's own description and brings Hospital down to the 2
+  //       true roof slabs + a handful of isolated panels with no wall directly overlapping the
+  //       next level up (open corridor/atrium bays) — reported, not silently forced to exactly 2.
+  // Promoted -> roof role -> seq 8, phase 'Architecture'. Otherwise stays whatever seq matchRule
+  // gave it (the floor case). No new numeric constant either way — both checks compare the slab
+  // against its own extracted geometry and the walls' own extracted geometry.
+  //
+  // Pure two-phase pass over `elements` (order-independent — both original call sites ran it on
+  // differently-sorted arrays with identical .seq results). Mutates promoted slabs' el.seq (and
+  // el.phase — harmless bookkeeping on the x-ray path, whose elements never carried a phase field
+  // and nothing downstream reads it). Returns { total, seedCount, m4Count } so each caller keeps
+  // its own log wording — only injectGantt logs §GANTT_OVERRIDE, _buildXrayElements stays silent.
+  function _promoteRoofLoadPath(elements) {
+    var loadPathWalls = elements.filter(function(e) { return e.cls.indexOf('IfcWall') === 0; });
+    var loadPathOverrides = 0;
+    var lpGuids = [];  // promoted GUIDs — returned for the §4D_ROOF_LOAD_PATH witness hook (G-RLP-2/3)
+    // §4D_WALLS_BEFORE_ROOF (2026-08-01) — pass 1 computes the SEED set exactly as #1120 shipped it
+    // (clause a AND clause b), so the shipped count is reproduced unchanged before M4 widens it.
+    var lpSlabs = [], lpSeed = [];
+    elements.forEach(function(el) {
+      if (el.cls !== 'IfcSlab') return;
+      var carriers = loadPathWalls.filter(function(w) {
+        return el.x0 <= w.x1 && el.x1 >= w.x0 && el.y0 <= w.y1 && el.y1 >= w.y0;
+      });
+      if (!carriers.length) return;
+      var midSum = 0, above = [];
+      for (var ci = 0; ci < carriers.length; ci++) {
+        midSum += (carriers[ci].base_z + carriers[ci].top_z) / 2;
+        if (carriers[ci].base_z >= el.top_z) above.push(carriers[ci]);
+      }
+      var wallMidheight = midSum / carriers.length;
+      var clauseA = el.base_z > wallMidheight;
+      lpSlabs.push({ el: el, clauseA: clauseA, above: above });
+      if (clauseA && !above.length) {
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++;
+        lpSeed.push(el);
+        lpGuids.push(el.guid);
+      }
+    });
+
+    // §4D_WALLS_BEFORE_ROOF M4 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) —
+    // user, live on a Hospital MaxQ bake: "The roof before the walls still happening on the roof
+    // top". #1120's clause (b) disqualifies a roof if ANY XY-overlapping wall stands on it. On
+    // Hospital that disqualifies the 2091.5 m² topmost deck (3Csn1z$1v5Q8DXdumWYJUE, base_z 199.66)
+    // because the two helipad boxes — whose OWN roofs #1120 promoted — stand on it. MEASURED on
+    // origin/main: it starts 2022-07-27 as Superstructure while its 14 wall carriers finish
+    // 2023-04-30 — 277 days before its own walls, the identical error #1120 reported fixing for the
+    // boxes. This is #1120's `⚠ LIMIT 2` arriving, and wider than LIMIT 2 predicted: these walls are
+    // 3.05–3.47 m tall and DO carry something, so LIMIT 2's "parapet carries nothing" discriminator
+    // would not have caught it.
+    //   THE RULE: a wall standing on a slab is not "the next storey" if that wall is itself CAPPED
+    //   by a slab already known to be a roof (a helipad box, a plant enclosure, a coped parapet —
+    //   the load path tops out in a roof, it does not continue the building). Capped = a seed roof
+    //   slab XY-overlapping the wall with its base_z between the wall's base_z and top_z + GAP. A
+    //   wall capped by NOTHING does not qualify.
+    //   DEPTH 1, ON THE FROZEN SEED SET, DELIBERATELY. Full recursion was measured and collapses:
+    //   the box walls excuse the 199.66 deck -> the deck excuses 3064w0y0nDv9wdb1cWL_Gu -> Level 6
+    //   promotes -> Level 5 -> Level 4 -> the whole building becomes "roof". Depth-1 terminates.
+    //   MEASURED: Hospital 10 -> 11. The one addition is the user's slab. Level 6 (3 blockers),
+    //   Level 5 (33), Level 4 (514) and #1120's own floor control 1OV06Y3c5D8vODNyxVnSVI (56) all
+    //   stay blocked. A footprint-extent ratio was tried and REJECTED — it does not separate (roof
+    //   0.040 vs intermediate panels 0.024/0.024/0.029/0.044, Level 6 0.170); no threshold exists,
+    //   which is why this is a load-path rule and not an area rule.
+    var LP_GAP = 0.5;  // m — same "tops out at this level" tolerance schedule_gate.js uses (GAP)
+    var m4Promoted = 0;
+    if (lpSeed.length) {
+      lpSlabs.forEach(function(rec) {
+        var el = rec.el;
+        if (el.seq === 8 || !rec.clauseA || !rec.above.length) return;
+        for (var ai = 0; ai < rec.above.length; ai++) {
+          var w = rec.above[ai], capped = false;
+          for (var si = 0; si < lpSeed.length; si++) {
+            var C = lpSeed[si];
+            if (C.x0 <= w.x1 && C.x1 >= w.x0 && C.y0 <= w.y1 && C.y1 >= w.y0 &&
+                C.base_z >= w.base_z && C.base_z <= w.top_z + LP_GAP) { capped = true; break; }
+          }
+          if (!capped) return;             // a wall the building genuinely continues through
+        }
+        el.seq = 8; el.phase = 'Architecture';
+        loadPathOverrides++; m4Promoted++;
+        lpGuids.push(el.guid);
+      });
+    }
+    return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted, guids: lpGuids };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ── §ZONE_INDEX (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §ZONE_INDEX —
+  // Witness: viewer/tests/witness_zone_index.js W-ZONE) ────────────────────────────────────────
+  // ONE derived spatial-zone index, built once per (building, _metaGen) and reused by every
+  // building op that needs a zone. Before this, the SAME median-Z storey banding was written out
+  // TWICE — inside _buildXrayElements and again inside injectGantt — byte-identical algorithms
+  // differing only in which column index their own SELECT put `cz` at, plus a counter. That is the
+  // duplication pattern CPE_4D_PERF_MEM_FINDINGS.md §R7 already records for the support predicate
+  // (4 copies) and the element build (a self-described "DELIBERATE COPY"); a third consumer (the
+  // §TIER_SERIAL_BY_ZONE barrier) would have made it three, so it is consolidated FIRST.
+  //
+  // ⚠ THE ZONE IS A GEOMETRIC INFERENCE, NOT IFC TRUTH — say so wherever it is reported. Measured
+  // share of elements whose elements_meta.storey is null/empty/"unknown": Duplex 86.0%, Terminal
+  // 69.9%, Clinic 32.2%, Hospital 15.9%. A key read straight from the column would be absent for
+  // most elements on most buildings, which is why the median-Z reassignment exists at all and why
+  // it — not the column — is the primary key.
+  //
+  // FALLBACK CHAIN, finest available wins, each level an optional refinement over the one below,
+  // never a prerequisite (user: "storey room space should all come into play amicably"):
+  //     room/space  → storey → derived median-Z band → single zone
+  // Measured reason it must be a chain and not a requirement: of the 7 shipped buildings, ONLY
+  // Terminal carries the richer tables (spatial_structure n=59, rel_contained_in_space n=2,181).
+  // A model extracted without them loses precision, never correctness; a single-storey model
+  // degrades to one zone, which is exactly today's global behaviour.
+  //
+  // ⚠ SCOPE OF THIS CHANGE: consolidation + cache ONLY. `level` and `spaceOf` are BUILT and
+  // REPORTED but nothing consumes them yet — turning the space level on changes zone granularity,
+  // which is a scheduling behaviour change and belongs with §TIER_SERIAL_BY_ZONE's own witness,
+  // not with a refactor that has to prove itself byte-identical.
+  var _zoneMemo = [];   // 2-slot, most-recent first — same discipline as §XRAY_CACHE_MEMO
+
+  function _zoneIndexBuild(db) {
+    var t0 = performance.now();
+    var r;
+    // Same population filter both former copies used, so the index is exactly their union.
+    try {
+      r = db.exec('SELECT m.guid, m.storey, COALESCE(t.center_z, 0) as cz ' +
+        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+    } catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+    var rows = r[0].values;
+
+    var zvals = {}, unknownN = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var st = rows[i][1] || '_UNKNOWN';
+      if (st === '_UNKNOWN' || /^unknown$/i.test(st)) { unknownN++; continue; }
+      (zvals[st] || (zvals[st] = [])).push(rows[i][2] || 0);
+    }
+    var medianZ = {};
+    for (var sk in zvals) {
+      var vals = zvals[sk].sort(function (a, b) { return a - b; });
+      var mid = Math.floor(vals.length / 2);
+      medianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    }
+    var names = Object.keys(medianZ).sort(function (a, b) { return medianZ[a] - medianZ[b]; });
+    var band = {};
+    for (var bi = 0; bi < names.length; bi++) band[names[bi]] = bi;
+
+    // Tie audit: the two former copies fed their maps in DIFFERENT row orders (injectGantt's SELECT
+    // carries ORDER BY cz, _buildXrayElements' does not). Sorting by medianZ is only order-stable
+    // when no two storeys SHARE a median — so a tie is the one condition under which the old pair
+    // could legitimately have disagreed with each other, and under which this consolidation would
+    // be picking a winner rather than preserving both. Counted and logged, never silently assumed.
+    var tiesN = 0;
+    for (var ti = 1; ti < names.length; ti++) if (medianZ[names[ti]] === medianZ[names[ti - 1]]) tiesN++;
+
+    // Optional finest level — present only where the extractor produced it (Terminal today).
+    var spaceOf = null, spaceN = 0;
+    try {
+      var sr = db.exec('SELECT element_guid, space_guid FROM rel_contained_in_space');
+      if (sr.length && sr[0].values.length) {
+        spaceOf = {};
+        for (var si = 0; si < sr[0].values.length; si++) spaceOf[sr[0].values[si][0]] = sr[0].values[si][1];
+        spaceN = sr[0].values.length;
+      }
+    } catch (e) { spaceOf = null; }   // table absent — expected on 6 of 7 buildings, not an error
+
+    var level = spaceOf ? 'space' : (names.length > 1 ? 'band' : (names.length === 1 ? 'storey' : 'single'));
+    return {
+      medianZ: medianZ, names: names, band: band, spaceOf: spaceOf,
+      level: level, tiesN: tiesN, unknownN: unknownN, spaceN: spaceN,
+      totalN: rows.length, buildMs: performance.now() - t0,
+      // The reassignment both former copies performed, verbatim — an element with no real storey
+      // is placed on the nearest real one by |cz - medianZ|, first-wins on an exact distance tie
+      // (loop keeps the earlier name on `<`), which is the previous behaviour exactly.
+      assign: function (storey, cz) {
+        if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+        if (!names.length) return storey;
+        var best = names[0], bd = Infinity;
+        for (var ai = 0; ai < names.length; ai++) {
+          var d = Math.abs(cz - medianZ[names[ai]]);
+          if (d < bd) { bd = d; best = names[ai]; }
+        }
+        return best;
+      }
+    };
+  }
+
+  // Memoized accessor. Key mirrors §XRAY_CACHE_MEMO: over-invalidating on _metaGen is the safe
+  // direction (a miss costs one rebuild; a false hit is a wrong-zone bug).
+  function _zoneIndex() {
+    var app = A();
+    if (!app || !app.db) return null;
+    // Read _metaGen directly rather than borrowing §XRAY_CACHE_MEMO's helper — two unrelated memos
+    // should not be coupled through a shared accessor just because their keys happen to rhyme.
+    var key = ((app.activeBuilding) || '?') + '|' + ((app._metaGen != null) ? (app._metaGen | 0) : -1);
+    for (var i = 0; i < _zoneMemo.length; i++) {
+      if (_zoneMemo[i].key === key) {
+        var hit = _zoneMemo[i];
+        if (_zoneMemo.length > 1 && i > 0) { _zoneMemo.splice(i, 1); _zoneMemo.unshift(hit); }
+        return hit.idx;
+      }
+    }
+    var idx = _zoneIndexBuild(app.db);
+    if (!idx) return null;
+    _zoneMemo.unshift({ key: key, idx: idx });
+    if (_zoneMemo.length > 2) _zoneMemo.length = 2;
+    console.log('§ZONE_INDEX built bands=' + idx.names.length + ' level=' + idx.level +
+      ' elements=' + idx.totalN + ' noStorey=' + idx.unknownN +
+      ' (' + (100 * idx.unknownN / Math.max(1, idx.totalN)).toFixed(1) + '% — zone is a median-Z' +
+      ' INFERENCE, not IFC truth)' + ' medianTies=' + idx.tiesN +
+      ' spaceRows=' + idx.spaceN + ' ms=' + idx.buildMs.toFixed(1));
+    return idx;
+  }
+  // Test hook (diagnostic only, same contract as __tmXrayProbe) — lets W-ZONE compare the shared
+  // index against a freshly-built one and read the memo depth.
+  window.__tmZoneProbe = function (op) {
+    if (op === 'clearMemo') { _zoneMemo = []; }
+    var idx = _zoneIndex();
+    if (!idx) return null;
+    return { bands: idx.names.length, names: idx.names.slice(), band: idx.band,
+             medianZ: idx.medianZ, level: idx.level, ties: idx.tiesN,
+             unknownN: idx.unknownN, totalN: idx.totalN, spaceN: idx.spaceN,
+             memoDepth: _zoneMemo.length };
+  };
+
+  // §Z_STACK_XRAY_STAGING — support-edge cache for x-ray staging
+  // ══════════════════════════════════════════════════════════════════
+  // Implementing prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING — Witness: witness_zstack_xray_staging.js
+  // An element revealed at its scheduled time whose support carriers are NOT all placed renders
+  // X-RAY instead of solid, and flips solid the instant its last carrier places. This is a
+  // RENDER-ONLY gate layered on the existing (correct, user-confirmed) reveal timing — it never
+  // writes kernel_ops, never reorders anything (W-XRAY-2: computeSchedule's output is untouched by
+  // this section, byte-identical with or without it).
+  //
+  // _buildXrayElements() is a DELIBERATE COPY of the geometry+seq build inside injectGantt()
+  // (repo convention: audit_support_roleblind.js / witness_stagger_support_order.js both copy the
+  // support predicate rather than importing it — see origin/feat/element-cpm:viewer/schedule_gate.js
+  // §ELEMENT_CPM, parked; only the PREDICATE is reused here, not the reordering engine it lived
+  // in). EXCEPTION (2026-08-10): the roof/load-path promotion is no longer a copy — both this
+  // function and injectGantt call the shared _promoteRoofLoadPath() above, because
+  // verifyGanttIntegrity() (the schedule LOCK gate) runs on THIS build and a silent classifier
+  // divergence there would be a correctness bug, not a rendering glitch.
+  // It is intentionally NEVER called by injectGantt and has no db.run/INSERT capability — it
+  // exists so the xray cache can be (re)built on EVERY TM activation, including the cached-gantt
+  // fast path (§GANTT_CACHE_HIT) where injectGantt() never runs at all.
+  function _buildXrayElements() {
+    var app = A();
+    if (!app || !app.db) return null;
+    var db = app.db;
+    var SR = window.SEQUENCE_RULES || {};
+    var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+    var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+    function matchNameOverride(cls, name) {
+      if (!name) return null;
+      for (var i = 0; i < NO.length; i++) {
+        var ov = NO[i];
+        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+        if (ov._re && ov._re.test(name)) return ov;
+      }
+      return null;
+    }
+    function matchRule(cls, name) {
+      if (!cls) return SD;
+      var ov = matchNameOverride(cls, name);
+      if (ov) return ov;
+      var bestKey = null, bestLen = 0;
+      for (var key in SR) {
+        if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
+      }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
+      return bestKey ? SR[bestKey] : SD;
+    }
+    var r;
+    try {
+      r = db.exec(
+        'SELECT m.guid, m.ifc_class, m.element_name, m.storey, ' +
+        'COALESCE(t.center_z, 0) as cz, COALESCE(t.bbox_z, 0) as bz, ' +
+        'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
+        'FROM elements_meta m ' +
+        'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'"
+      );
+    } catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+
+    // §ZONE_INDEX (2026-08-12) — was an inline copy of the median-Z banding, byte-identical to
+    // injectGantt's own except for the column index its SELECT put `cz` at. One shared index now;
+    // see _zoneIndexBuild's header for why the zone is an inference and why it is memoized.
+    var _zi = _zoneIndex();
+    function assignStoreyByZ(storey, cz) { return _zi ? _zi.assign(storey, cz) : storey; }
+
+    var elements = r[0].values.map(function(row) {
+      var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
+      var cx = row[6] || 0, cy = row[7] || 0, bx = row[8] || 0, by = row[9] || 0;
+      var storey = assignStoreyByZ(rawStorey, cz);
+      var rule = matchRule(cls, elName);
+      return {
+        guid: row[0], cls: cls, storey: storey,
+        base_z: cz - bz / 2, top_z: cz + bz / 2,
+        x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
+        seq: rule.sequence
+      };
+    });
+
+    // §4D_ROOF_LOAD_PATH M1/M4 — same load-path promotion the live scheduler applies, now SHARED
+    // (one classifier, _promoteRoofLoadPath above — consolidated 2026-08-10 from an inline copy
+    // verified byte-identical in .seq output) so a promoted roof slab's carrier predicate (the
+    // looser wall-bears check) matches what actually got scheduled — the exact scenario this whole
+    // feature exists for ("roof before its walls"). Counts unused here: only injectGantt logs
+    // §GANTT_OVERRIDE.
+    var _lp = _promoteRoofLoadPath(elements);
+    return elements;
+  }
+
+  // Build _tmXraySolidifyTs from elements + schedMap = { guid: {end: ms}, ... } (derived from the
+  // CURRENT _ops, whatever their source — generated fallback or captured IFC 4D — so captured-path
+  // ghosting works unchanged, same pass, per §Z_STACK_XRAY_STAGING's own out-of-scope note).
+  // Predicate copied verbatim from origin/feat/element-cpm:viewer/schedule_gate.js lines 216-256
+  // (structGrid/wallGrid spatial index, EPS/GAP/CELL constants) — same numbers the shipped
+  // schedule_gate.js's own auditFloating() already uses.
+  function _buildXraySupportCache(elements, schedMap) {
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;
+    if (!elements || !elements.length) return;
+    var t0 = performance.now();
+    var CELL = 4, EPS = 0.05, GAP = 0.5;
+    function cellsOf(e) {
+      var o = [], i, j;
+      for (i = Math.floor(e.x0 / CELL); i <= Math.floor(e.x1 / CELL); i++)
+        for (j = Math.floor(e.y0 / CELL); j <= Math.floor(e.y1 / CELL); j++) o.push(i + ',' + j);
+      return o;
+    }
+    function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+    var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S, T;
+    for (i = 0; i < elements.length; i++) {
+      var e = elements[i];
+      // §PROMOTED_CARRIER_POOL (2026-08-11, §TIER_SERIAL finding A follow-on): pool aligned with
+      // auditFloating's (schedule_gate.js) — seq<=4 ∪ load-path-PROMOTED slabs (seq>4 IfcSlab).
+      // Promoted roof slabs are audit/DAG carriers (helipad boxes stand on the promoted deck;
+      // Terminal's 24k wall-carried cone) but were INVISIBLE here, so their dependents were never
+      // staged/gated against them — the guard (_ogSupportSweep) applies the IDENTICAL pool, the
+      // pair stays one physics (witness_og_guard_bearing_bound W-OGB-3).
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); }
+    }
+    var eCount = 0;
+    for (i = 0; i < elements.length; i++) {
+      T = elements[i];
+      var sc = schedMap[T.guid]; if (!sc) continue;
+      var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+      cs = cellsOf(T);
+      // §OG_BEARING_BOUND (2026-08-11) — the judge half of the guard's two-tier bearing rule (see
+      // §PHASE_OVERLAP_SUPPORT_GUARD below for the full ruling): carriers topping within T's own
+      // extent (+GAP) define its bearing plane; ENVELOPING carriers (top above T.top_z+GAP, e.g. a
+      // full-height column the element frames into mid-span) still count as detected support but
+      // only judge T when no in-extent carrier exists. Guard and judge MUST apply the identical
+      // rule or staged>0 comes back (the 2026-08-07 §4D_LAYER_TRUTH alignment, third asymmetry
+      // fixed then; this change keeps the pair symmetric while removing the crown-wait).
+      var topBound = T.top_z + GAP, maxEnvEnd = 0;
+      var mark = {}, maxCarrierEnd = 0, hasCarrier = false;
+      for (c = 0; c < cs.length; c++) {
+        arr = structGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
+          if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
+            var sc1 = schedMap[S.guid]; eCount++;
+            if (sc1) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc1.end > maxCarrierEnd) maxCarrierEnd = sc1.end; }
+              else if (sc1.end > maxEnvEnd) maxEnvEnd = sc1.end; }
+          }
+        }
+        // §XRAY_WALL_SCOPE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md "Z-stack" chase): a wall is
+        // only EVER a real candidate carrier for a slab ITSELF promoted to the roof role (seq>4) —
+        // schedule_gate.js's auditFloating() already restricts wallGrid this way (§4D_ROOF_LOAD_PATH
+        // M3: "walls do not structurally carry beams/members/furniture in this DB", MEASURED 2026-08-01
+        // — the unrestricted version false-"floated" 0->3421/10979 on Hospital). This sibling
+        // implementation never got that same restriction, so wallGrid was checked for EVERY element,
+        // not just promoted slabs — a beam/column/ordinary-slab sitting near a wall's top height (a
+        // wall's top and a beam's base are naturally close at any floor-to-floor transition) got
+        // flagged as "carried by" a wall it never structurally depends on. MEASURED: 1,217 false-
+        // positive xray-staged elements on Hospital (93% of them beams/columns/ordinary-slabs vs.
+        // walls), all cleared to 0 by adding the SAME `promotedSlab` guard auditFloating() already
+        // uses. Only reachable for a promotedSlab T (see var promotedSlab above), never for beams/
+        // columns/furniture/MEP.
+        if (promotedSlab) {
+        arr = wallGrid[cs[c]];
+        if (arr) for (k = 0; k < arr.length; k++) {
+          S = arr[k]; if (S === T || mark[S.guid]) continue; mark[S.guid] = 1;
+          if (!(S.base_z < T.base_z - EPS) || !overlap(S, T)) continue;
+          if (S.top_z >= T.base_z - GAP) {
+            var sc2 = schedMap[S.guid]; eCount++;
+            if (sc2) { hasCarrier = true;
+              if (S.top_z <= topBound) { if (sc2.end > maxCarrierEnd) maxCarrierEnd = sc2.end; }
+              else if (sc2.end > maxEnvEnd) maxEnvEnd = sc2.end; }
+          }
+        }
+        }
+      }
+      if (!maxCarrierEnd && maxEnvEnd) maxCarrierEnd = maxEnvEnd;   // §OG_BEARING_BOUND tier-2 fallback
+      if (hasCarrier && maxCarrierEnd > sc.end) {
+        _tmXraySolidifyTs[T.guid] = maxCarrierEnd;
+        _tmXrayStagedTotal++;
+      }
+    }
+    var msBuild = performance.now() - t0;
+    console.log('§XRAY_EDGES n=' + eCount + ' ms=' + msBuild.toFixed(1) +
+      ' staged=' + _tmXrayStagedTotal + '/' + elements.length +
+      ' (elements whose last support carrier finishes after their own reveal)');
+  }
+
+  // ── §XRAY_CACHE_MEMO (2026-08-12, bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c —
+  // Implementing R4(b), user ruling "memoize on an input key, keep the reset" — Witness:
+  // viewer/tests/witness_xray_cache_memo.js W-XRAY-MEMO) ────────────────────────────────────────
+  // The rebuild below ran on EVERY activation (~0.7s / 74,942 edges on Hospital), including the
+  // §GANTT_CACHE_HIT fast path. It is a PURE FUNCTION of (elements from the DB) + (_ops end_ts),
+  // so an identical-input re-activation was recomputing a byte-identical map.
+  //
+  // What is memoized and what is NOT — this distinction IS the doctrine compliance:
+  //   MEMOIZED: the derived map (guid → solidify ms) + its "staged total". Pure, input-keyed.
+  //   NOT MEMOIZED (still reset on TM-off, unchanged at :deactivate): _tmXraySolidifiedN and the
+  //   per-object _tm_xrayStaged flags — the RUNTIME STAGING STATE. §Z_STACK_XRAY_STAGING's
+  //   "nothing may survive TM being switched off" is about that state, and it still doesn't.
+  // A memo surviving is not the same as state surviving.
+  //
+  // Safe to alias rather than deep-copy: the ONLY writes to _tmXraySolidifyTs[...] are inside
+  // _buildXraySupportCache (which rebuilds it wholesale); every other site REASSIGNS the var
+  // (`= {}`), never mutates the object, so deactivate()'s reset cannot corrupt the memo.
+  //
+  // TWO SLOTS, not one — and the reason is the MAXQ/Alt-C round trip specifically. A single slot
+  // makes tmApplyDerivedOrder → tmRestoreDerivedOrder miss in BOTH directions: the derived re-key
+  // evicts the real-order map, then restoring evicts the derived one. Two slots (most-recent +
+  // previous) make that alternation hit both ways, which is exactly the path the cinema bake walks.
+  // Witnessed: with one slot, G-XM-KEY's restore leg came back MISS.
+  var _xrayElemMemo = null;    // { key, elements }  — DB-derived, _ops-independent (warmable)
+  var _xrayCacheMemo = [];     // [{ key, ts, staged }, ...] most-recent first, capped at 2
+
+  function _xrayMemoFind(key) {
+    for (var i = 0; i < _xrayCacheMemo.length; i++) if (_xrayCacheMemo[i].key === key) return _xrayCacheMemo[i];
+    return null;
+  }
+  function _xrayMemoPut(key, ts, staged) {
+    for (var i = 0; i < _xrayCacheMemo.length; i++) {
+      if (_xrayCacheMemo[i].key === key) { _xrayCacheMemo.splice(i, 1); break; }
+    }
+    _xrayCacheMemo.unshift({ key: key, ts: ts, staged: staged });
+    if (_xrayCacheMemo.length > 2) _xrayCacheMemo.length = 2;
+  }
+
+  // _metaGen is in both keys per the ruling. It OVER-invalidates for the elements half (it bumps on
+  // streaming/eviction, which cannot change a DB SELECT) — that is the deliberately safe direction:
+  // a miss costs a rebuild, a false hit is a wrong-render bug.
+  function _xrayMemoGen() {
+    var app = A();
+    return (app && app._metaGen != null) ? (app._metaGen | 0) : -1;
+  }
+
+  // Build the elements list, or serve it from the memo. Shared by the rebuild and by §TM_WARM.
+  function _xrayElementsMemoized() {
+    var app = A();
+    var key = ((app && app.activeBuilding) || '?') + '|' + _xrayMemoGen();
+    if (_xrayElemMemo && _xrayElemMemo.key === key) return { elements: _xrayElemMemo.elements, hit: true };
+    var els = _buildXrayElements();
+    if (els) _xrayElemMemo = { key: key, elements: els };
+    return { elements: els, hit: false };
+  }
+
+  // Shared entry point: rebuild the xray cache from whatever _ops currently holds. Called from
+  // _finishActivate (every TM activation) AND from tmRestoreDerivedOrder (MAXQ → back to the real
+  // construction order, where the cache IS valid again and must not stay cleared).
+  function _tmRebuildXrayCache() {
+    var _xt0 = performance.now();
+    var _xrSched = {};
+    // opsSig: rolling hash over (guid, end_ts), computed in the pass that already builds _xrSched —
+    // no extra traversal. This is what makes every re-key path self-correcting WITHOUT a special
+    // case: tmApplyDerivedOrder (camera-path re-key) and _tmResyncAfterRetime (drag/ruler/group/
+    // undo) both move end_ts, so the sig changes and the memo is forced to miss.
+    var _sigH = 0x811c9dc5, _sigN = 0;
+    for (var _xi = 0; _xi < _ops.length; _xi++) {
+      var _xo = _ops[_xi];
+      var _xg = _xo.output_guid || (_xo.input_guids && _xo.input_guids.length && _xo.input_guids[0]);
+      if (_xg) {
+        _xrSched[_xg] = { end: _xo.end_ts };
+        _sigN++;
+        for (var _sc = 0; _sc < _xg.length; _sc++) {
+          _sigH ^= _xg.charCodeAt(_sc); _sigH = (_sigH * 0x01000193) >>> 0;
+        }
+        _sigH ^= (_xo.end_ts | 0); _sigH = (_sigH * 0x01000193) >>> 0;
+      }
+    }
+    var _opsSig = _ops.length + ':' + _sigN + ':' + _sigH.toString(16);
+    var _key = _xrayMemoGen() + '|' + _opsSig;
+
+    var _memoHit = _xrayMemoFind(_key);
+    if (_memoHit) {
+      _tmXraySolidifyTs = _memoHit.ts;
+      _tmXrayStagedTotal = _memoHit.staged;
+      _tmXraySolidifiedN = 0;   // runtime progress ALWAYS restarts — never memoized
+      console.log('§XRAY_CACHE_BUILD elemMs=0.0 edgeMs=0.0 total_ms=' +
+        (performance.now() - _xt0).toFixed(1) + ' elemMemo=hit edgeMemo=hit staged=' + _tmXrayStagedTotal);
+      return;
+    }
+
+    var _e0 = performance.now();
+    var _em = _xrayElementsMemoized();
+    var _elemMs = performance.now() - _e0;
+    var _xrElements = _em.elements;
+    var _g0 = performance.now();
+    if (_xrElements) _buildXraySupportCache(_xrElements, _xrSched);
+    else { _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0; }
+    var _edgeMs = performance.now() - _g0;
+    if (_xrElements) _xrayMemoPut(_key, _tmXraySolidifyTs, _tmXrayStagedTotal);
+    console.log('§XRAY_CACHE_BUILD elemMs=' + _elemMs.toFixed(1) + ' edgeMs=' + _edgeMs.toFixed(1) +
+      ' total_ms=' + (performance.now() - _xt0).toFixed(1) +
+      ' elemMemo=' + (_em.hit ? 'hit' : 'miss') + ' edgeMemo=miss staged=' + _tmXrayStagedTotal);
+  }
+
+  // ── §TIER_SERIAL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11
+  // evening: phase-window collapse — the capstone piece) ─────────────────────────────────────────
+  // computeSchedule's generative output (the proven support DAG — UNTOUCHED, floating baselines
+  // unchanged) is remapped for DISPLAY into a two-tier structure:
+  //   Tier 1 — the structural backbone (Substructure → Superstructure → Architecture) is STRICTLY
+  //   SERIAL: each phase's last element completes before the next phase's first element starts.
+  //   "Never appears before its support" becomes a structural guarantee for the backbone instead
+  //   of a corrected-after-the-fact repair. Deliberate, user-confirmed refinement of the
+  //   2026-08-02 §4D_BAND_MONOTONIC ruling ("ARCH/STR should be exempt as they are the physical
+  //   foundation. Separate unrelated disciplines can run parallel thereafter if construction
+  //   practice permits") — the per-trade storey-by-storey discipline itself lives inside
+  //   computeSchedule and is inherited unchanged: this remap never REORDERS the generative
+  //   timeline, it only shifts whole phase groups later and pushes dependents after supports.
+  //   Tier 2 — everything else (MEP Rough-in, MEP Final, Finishes; FP/ELEC/ACMV/PLB and the
+  //   generic undifferentiated MEP bucket included — DECIDED: no special-case for it) stays ONE
+  //   CONCURRENT POOL: no artificial phase-window barrier between disciplines. Each element is
+  //   still individually gated by the real support DAG via _ogSupportSweep (bearing + hang +
+  //   §OG_BEARING_BOUND two-tier rule) — which is what actually prevents "built before support";
+  //   the phase bucket only ever affected display grouping.
+  // Misclassified-furniture safeguard: rates.js/sequence_rules.json 'furniture_generic_bucket'
+  // NAME_OVERRIDE keeps furniture-named generic-class elements out of Tier 1 entirely.
+  // Witness: viewer/tests/witness_tier_serial_display.js (W-TS-1..6, all 5 shipped buildings).
+  var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
+
+  // Backbone phase extents over the SERIALIZABLE population — elements marked _t1Straggler are
+  // excluded (see §TIER_STRAGGLER in _twoTierRemap: the measured, DAG-forced cross-phase tail).
+  // §TIER_SERIAL_BY_ZONE (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §TIER_SERIAL_BY_ZONE — Witness: viewer/tests/witness_tier_serial_zone.js W-TSZ) ─────────────
+  // The backbone barrier was GLOBAL: every Superstructure element ANYWHERE finished before any
+  // Architecture element started. Measured cost: the remap inflated the programme 1.71x-3.71x over
+  // the generative timeline on all 7 buildings (Hospital 314.9d -> 1168.7d), and on LTU it produced
+  // a 29%-of-film dead run.
+  //
+  // DERIVED FROM THE EXISTING RULING, not a new one. §TIER_SERIAL's own header quotes the user's
+  // 2026-08-02 words: "ARCH/STR should be exempt as they are the physical foundation. Separate
+  // unrelated disciplines can run parallel thereafter IF CONSTRUCTION PRACTICE PERMITS." Practice
+  // permits walls on level 1 while level 7 is still framing; a global barrier is a cruder reading
+  // of that sentence than a per-zone one. The physical guarantee is UNCHANGED and is not what this
+  // touches: _ogSupportSweep already gates every element individually against the real support DAG.
+  // This is the display grouping on top of it, and it now says "backbone order holds WITHIN a
+  // zone" instead of "across the whole model".
+  //
+  // The zone comes from §ZONE_INDEX (#1313) — the derived median-Z band, never a configured list,
+  // so this is generic to any IFC. A single-zone model degenerates to EXACTLY the old global
+  // behaviour, which is what keeps the change safe on models without storey data.
+  function _zoneOf(it) { return (it && it.storey) || '_ALL'; }
+
+  // ext[zone][phase] = {minS,maxE}. Straggler-excluded exactly as before.
+  function _tier1Extents(items) {
+    var ext = {};
+    items.forEach(function (it) {
+      if (it._t1Straggler || _TIER1_ORDER.indexOf(it.phase) < 0) return;
+      var z = ext[_zoneOf(it)] || (ext[_zoneOf(it)] = {});
+      var x = z[it.phase] || (z[it.phase] = { minS: Infinity, maxE: -Infinity });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+    });
+    return ext;
+  }
+
+  // Uniform per-phase-group shift: phase k starts no earlier than phase k-1's last end. A uniform
+  // shift preserves all within-group generative order, and cross-group Tier-1 support edges only
+  // ever point BACKWARD in _TIER1_ORDER (walls carry only load-path-PROMOTED slabs, which
+  // _promoteRoofLoadPath re-phases to Architecture — no Architecture→Superstructure support edge
+  // exists) — the measured exceptions are exactly the §TIER_STRAGGLER set, excluded here and
+  // governed purely by _tierAuditRegate instead.
+  function _tier1Serialize(items) {
+    var ext = _tier1Extents(items);
+    var deltas = {};                     // deltas[zone][phase]
+    for (var z in ext) {
+      var zd = deltas[z] = {}, prevEnd = -Infinity;
+      _TIER1_ORDER.forEach(function (ph) {
+        var x = ext[z][ph]; if (!x) return;   // phase absent in THIS zone (common: no Substructure upstairs)
+        var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
+        zd[ph] = d;
+        prevEnd = x.maxE + d;
+      });
+    }
+    items.forEach(function (it) {
+      if (it._t1Straggler) return;       // stragglers ride the regate, never the group shift
+      var zd = deltas[_zoneOf(it)];
+      var d = zd && zd[it.phase];
+      if (d) { it.s += d; it.e += d; }
+    });
+    return deltas;
+  }
+
+  // 0 = the Tier-1 chain is strictly serial: for consecutive PRESENT backbone phases, phase k's
+  // last end <= phase k+1's first start (transitive across the chain — each window is well-formed).
+  // Straggler-excluded by _tier1Extents; the straggler count itself is reported, never hidden.
+  // §TIER_SERIAL_BY_ZONE: counted WITHIN each zone and summed. W-TS-1's bar is unchanged in
+  // meaning — "the backbone chain is serial" — but its scope is now the zone, which is the whole
+  // point of the change; a single-zone model reduces to the identical global count.
+  function _tier1Protrusion(items) {
+    var ext = _tier1Extents(items);
+    var overlapping = 0;
+    for (var z in ext) {
+      var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
+      for (var i = 0; i + 1 < present.length; i++) {
+        if (ext[z][present[i]].maxE > ext[z][present[i + 1]].minS) overlapping++;
+      }
+    }
+    return overlapping;
+  }
+
+  // ── §TIER_REGATE — audit-physics display re-gate (the remap's push pass) ─────────────────────
+  // MUST use the SAME physics as schedule_gate.js auditFloating()/the generative gates — structGrid
+  // INCLUDES promoted roof slabs, bearing takes the max end over ALL carriers (enveloping included),
+  // hang + §HANG_NEAREST fallback + both antisymmetry exclusions — NOT the §OG_BEARING_BOUND-bounded
+  // guard physics (_ogSupportSweep). MEASURED 2026-08-11, first witness run of this lane: re-gating
+  // with guard physics left 1,383 audit-visible floaters on HHS alone — every rooftop/hanging
+  // element whose carrier is a PROMOTED slab (Architecture phase, shifted later by Tier-1
+  // serialization) that the guard's seq<=4-only grid cannot see. schedule_gate.js is explicitly
+  // untouched by this lane (spec: computeSchedule AND auditFloating stay as-is), so this is a
+  // deliberate, WITNESS-PINNED mirror: witness_tier_serial_display.js W-TS-2 runs the REAL
+  // auditFloating over this pass's output on all 5 shipped buildings — any drift between this
+  // mirror and the canonical physics surfaces there as displayed-floating > generative-floating.
+  // Push-only (start moves LATER, duration kept), fixpoint <=16 sweeps (monotone pushes over the
+  // acyclic support relation — the DAG's own convergence argument). Note the generative times
+  // already satisfy this physics (§SUPPORT_CHECK floating baselines), so on an unshifted timeline
+  // this pass pushes at most the known raw floating tail.
+  function _tierAuditRegate(items, exempt, dryRun) {
+    var EPS = 0.05, GAP = 0.5;
+    var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+    var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
+    var cellsOf = function (e) {
+      var o = [], gi, gj;
+      for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
+        for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
+      return o;
+    };
+    var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+    var structGrid = {}, wallGrid = {};
+    items.forEach(function (e) {
+      var cs = null;
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
+      else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
+      if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
+    });
+    // per-element max qualifying-support end — auditFloating's se, on live item times
+    var seFor = function (T) {
+      var se = 0, hasBearing = false, seen = {}, cs = cellsOf(T), p, c, k, arr, S;
+      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+      for (p = 0; p < pools.length; p++) {
+        for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) {
+              hasBearing = true;
+              if (S.e > se) se = S.e; } } }
+      }
+      if (!hasBearing && T.seq > 4) {      // hangs — gate against the carrier above instead
+        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        var tWall = T.cls.indexOf('IfcWall') === 0;
+        var hasHang = false, seenH = {};
+        for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
+            if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
+                !(tPool && T.bz < S.bz - EPS) &&
+                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                  T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
+                xyOverlap(S, T)) {
+              hasHang = true;
+              if (S.e > se) se = S.e; } } }
+        // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
+        // co-planar GAP band, exactly what the scheduler/audit gate them on.
+        if (!hasHang && !tPool && !tWall &&
+            (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
+          var nbA = Infinity, seenN = {};
+          for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
+              if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
+          if (nbA < Infinity) {
+            var seenP = {};
+            for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
+                if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) {
+                  if (S.e > se) se = S.e; } } }
+          }
+        }
+      }
+      return se;
+    };
+    // dryRun: one non-mutating pass over CURRENT times → the set of guids violating audit-se.
+    // _twoTierRemap calls this ONCE on the pristine generative times: that set is the DAG's own
+    // deliberate tail (cycle-breaks + unsolvables — e.g. Clinic's parapet-wall/roof-slab loop,
+    // MEASURED 2026-08-11 clinic_cycle.log: chasing it pushed 43k times across 400 sweeps without
+    // converging, the whole building drifting together). Those elements are EXEMPT from pushing —
+    // they ride their group shifts, keeping exactly their raw-relative wrongness, never more.
+    // Every edge this pass DOES enforce was satisfied by the raw generative simultaneously, so the
+    // enforced constraint subgraph provably admits a schedule → the fixpoint exists and monotone
+    // pushes reach it (no cycle-chasing possible by construction).
+    if (dryRun) {
+      var fset = {}, fn = 0;
+      items.forEach(function (T) {
+        var se0 = seFor(T);
+        if (se0 > 0 && T.s < se0 - 1) { fset[T.guid] = 1; fn++; }
+      });
+      return { floatSet: fset, n: fn };
+    }
+    var pushed = 0, sweeps = 0;
+    for (; sweeps < 64; sweeps++) {
+      var moved = 0;
+      items.forEach(function (T) {
+        if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
+        var se = seFor(T);
+        if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
+          var dur = Math.max(60000, T.e - T.s);
+          T.s = se; T.e = se + dur;
+          pushed++; moved++;
+        }
+      });
+      if (!moved) break;
+    }
+    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' sweeps=' + (sweeps + 1) +
+      ' (audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
+    return { pushed: pushed, sweeps: sweeps };
+  }
+
+  // ── §PHASE_OVERLAP_SUPPORT_GUARD — the support-order sweep, now a NAMED shared pass ──────────
+  // 2026-08-11 §TIER_SERIAL restructure: hoisted VERBATIM out of injectGantt's _cap-only overlay
+  // branch. It now (a) enforces Tier 2's per-element support gating on the DEFAULT generative
+  // display path — its main job under the two-tier design — and (b) verifies/repairs the _cap
+  // global-affine overlay (expected ≈0 pushes there). The block's interior bytes and ORIGINAL
+  // INDENTATION are deliberately preserved: two witnesses (witness_og_guard_bearing_bound.js,
+  // witness_gantt_og_grid_perf.js) slice it by text markers (the _ogCELL declaration → the
+  // §PHASE_OVERLAP_SUPPORT_GUARD log statement, whose historical §PHASE_OVERLAP_BAND wording is
+  // part of the end-mark bytes) and execute it against synthetic _allScheduled arrays —
+  // re-indenting, rewording the log, or renaming variables would rot both (that exact rot killed
+  // witness_gantt_og_grid_perf once already, 2026-08-07..11).
+  // _allScheduled: [{guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq,...}] — mutated in place (including a
+  // bz-ascending sort); s only ever moves LATER (push after real support), duration preserved.
+  function _ogSupportSweep(_allScheduled) {
+      // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
+      // SAME role-blind support predicate this file already uses for the generative path
+      // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
+      // ascending base_z order is safe in ONE pass: a carrier's base_z is always below what it
+      // carries (the support DAG's own topological potential, established by §STAGGER_SUPPORT_ORDER
+      // above), so every true carrier of T has already been visited — and any correction already
+      // applied to it — by the time T is processed.
+      // §XRAY_WALL_SCOPE (found 2026-08-04, live in a real Hospital session — user report: proxy/
+      // misc elements chronologically before columns, "2 trucks came on first! Then walls!"): this
+      // predicate was even more permissive than the two sibling copies already fixed this session
+      // (schedule_gate.js auditFloating(), time_machine.js _buildXraySupportCache) — ANY wall was a
+      // candidate carrier for ANY element, no promoted-roof-slab restriction at all. A wall is only
+      // ever a real candidate carrier for a slab itself promoted to the roof role (seq>4) — same
+      // §4D_ROOF_LOAD_PATH M3 restriction, applied here for the third time this session. Structure
+      // (seq<=4) stays an unconditional carrier candidate for everything — only the wall branch is
+      // now gated on the TARGET being a promoted slab.
+      var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+      var _ogEPS = 0.05, _ogGAP = 0.5;
+      // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
+      // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
+      // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
+      // measured 4636ms on Terminal's 48,428 elements (22 stacked storeys, small footprint, worst
+      // cell 379 members) vs 1695ms on Hospital's 63,415 (more elements, but a bigger footprint means
+      // less Z-stacking per cell) — element COUNT alone doesn't predict the cost, per-cell Z-density
+      // does. Bucketing Z too prunes each query to the target's own real vertical neighborhood — the
+      // ONLY z-range `S.bz<T.bz-EPS && |S.tz-T.bz|<=GAP` can ever match — with the identical predicate
+      // inside the loop unchanged, so results are provably identical, only the scan is smaller.
+      var _ogCellsFor = function (x0, x1, y0, y1, z0, z1) {
+        var out = [];
+        for (var cx = Math.floor(x0 / _ogCELL); cx <= Math.floor(x1 / _ogCELL); cx++)
+          for (var cy = Math.floor(y0 / _ogCELL); cy <= Math.floor(y1 / _ogCELL); cy++)
+            for (var cz = Math.floor(z0 / _ogCELL); cz <= Math.floor(z1 / _ogCELL); cz++)
+              out.push(cx + '|' + cy + '|' + cz);
+        return out;
+      };
+      // Build-time: bucket a candidate under its OWN full vertical extent, so it registers in every
+      // z-cell it actually occupies (a tall candidate can span more than one).
+      var _ogCellsBuild = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz, e.tz); };
+      // Query-time: only a target's real z-neighborhood [T.bz-GAP, T.bz+GAP] can ever satisfy the
+      // |S.tz-T.bz|<=GAP predicate — querying anything wider would waste the pruning this exists for.
+      var _ogCellsQuery = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.bz - _ogGAP, e.bz + _ogGAP); };
+      var _ogXY = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+      var _ogStructGrid = {}, _ogWallGrid = {};
+      _allScheduled.forEach(function (e) {
+        // §PROMOTED_CARRIER_POOL (2026-08-11): pool aligned with auditFloating's — seq<=4 ∪
+        // promoted slabs (see _buildXraySupportCache for the full finding-A note; guard and judge
+        // MUST stay one physics or §XRAY_EDGES staged>0 comes back).
+        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
+      });
+      _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
+      // §4D_LAYER_TRUTH (2026-08-07): the single ascending-bz pass was measured leaving 25 staged
+      // violations (witness_4d_layer_truth.js, Hospital) for the SAME two reasons §DEQ_REPAIR exists
+      // in schedule_gate.js: (a) pushing a carrier later never re-checks dependents already visited
+      // (bz order guarantees carriers-first only for bearing-below, and a push can still ripple
+      // forward), and (b) the predicate was hang-blind — a fan's carrier (roof above) has HIGHER bz,
+      // so ordering can't help it at all. Same fix as the engine layer: bearing-below OR (no bearing)
+      // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
+      // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
+      // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
+      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
+      var _ogPushed = 0, _ogSweeps = 0;
+      for (; _ogSweeps < 16; _ogSweeps++) {
+        var _ogMoved = 0;
+        _allScheduled.forEach(function (T) {
+          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+          var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
+          // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
+          // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:
+          // witness_og_guard_bearing_bound.js + witness_gantt_og_grid_perf.js):
+          // the bearing test was unbounded ABOVE — a full-height column/wall registered as carrying
+          // every element at every level inside its footprint, so each of those elements was pushed
+          // to the END of the whole enveloping carrier (over-conservative; the STUDY's verified
+          // bug). Two-tier fix, mirroring the DAG's own wallCarries lesson ("a wall carries a slab
+          // AT ITS TOP, never one embedded metres below its crown", generalized to my own span):
+          //   tier 1 — carriers whose top lies within MY OWN extent (+GAP) define my bearing plane;
+          //   tier 2 — ENVELOPING carriers (top above T.tz+GAP) are still DETECTED (hasBearing —
+          //            §4D_LAYER_TRUTH's 25-staged lesson: never narrower than the audits) but only
+          //            GATE me when no tier-1 carrier exists (a beam framing into a full-height
+          //            mast keeps its real support; it just stops waiting for the mast's crown when
+          //            a storey-level carrier is present).
+          // _buildXraySupportCache applies the IDENTICAL two-tier rule — guard and judge stay one
+          // physics, which is what keeps §XRAY_EDGES staged=0 (the 2026-08-07 alignment invariant).
+          var _ogTopBound = T.tz + _ogGAP, envEnd = 0;
+          for (var ci = 0; ci < cells.length; ci++) {
+            var arr = _ogStructGrid[cells[ci]];
+            if (arr) for (var si = 0; si < arr.length; si++) {
+              var S = arr[si];
+              if (S.guid === T.guid || seen[S.guid]) continue; seen[S.guid] = 1;
+              // §4D_LAYER_TRUTH: detection ALIGNED with auditFloating()/_buildXraySupportCache —
+              // carrier top REACHES my base (>= T.bz-GAP; a tall column a beam frames into still
+              // counts). §OG_BEARING_BOUND above splits gating into the two tiers.
+              if (S.bz < T.bz - _ogEPS && S.tz >= T.bz - _ogGAP && _ogXY(S, T)) {
+                hasBearing = true;
+                if (S.tz <= _ogTopBound) { if (S.e > lastEnd) lastEnd = S.e; }
+                else if (S.e > envEnd) envEnd = S.e; }
+            }
+            if (!promotedSlab) continue;
+            arr = _ogWallGrid[cells[ci]];
+            if (arr) for (var wi = 0; wi < arr.length; wi++) {
+              var W = arr[wi];
+              if (W.guid === T.guid || seen[W.guid]) continue; seen[W.guid] = 1;
+              if (W.bz < T.bz - _ogEPS && W.tz >= T.bz - _ogGAP && _ogXY(W, T)) {
+                hasBearing = true;
+                if (W.tz <= _ogTopBound) { if (W.e > lastEnd) lastEnd = W.e; }
+                else if (W.e > envEnd) envEnd = W.e; }
+            }
+          }
+          if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
+          if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
+            var hcells = _ogCellsQueryTop(T), hseen = {};
+            for (var hi = 0; hi < hcells.length; hi++) {
+              var harr = _ogStructGrid[hcells[hi]];
+              if (harr) for (var hj = 0; hj < harr.length; hj++) {
+                var H = harr[hj];
+                if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
+                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
+                    _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
+              }
+            }
+          }
+          if (lastEnd && T.s < lastEnd) {
+            var dur = Math.max(60000, T.e - T.s);
+            T.s = lastEnd + 1;
+            T.e = T.s + dur;
+            _ogPushed++; _ogMoved++;
+          }
+        });
+        if (!_ogMoved) break;
+      }
+      if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +
+        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');
+      return { pushed: _ogPushed, sweeps: _ogSweeps };
+  }
+
+  // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
+  // supports (audit physics) → verify strictness; iterate (bounded). Converges structurally:
+  // shifts never break Tier-1 internal order, regate pushes only ever move later and only enforce
+  // raw-satisfied constraints (see _tierAuditRegate dryRun), and Tier-2 elements are never
+  // carriers (audit pools = seq<=4 ∪ promoted slabs ∪ walls — all Tier 1).
+  //
+  // §TIER_DAG_WINS (measured 2026-08-11, stragglers.log + promoted_deps.log): some Tier-1
+  // elements are placed by the support DAG ITSELF inside a LATER backbone phase, and for them
+  // support order WINS over strict serialization (the mission: nothing appears before its
+  // support). Two measured shapes:
+  //   - isolated forward deps: Hospital's 'Foundation Slab' IfcFooting + Clinic's slab-on-grade
+  //     pair, each poured around full-height Superstructure columns whose base sits below theirs;
+  //   - the WALL-CARRIED CONE: on buildings where storeys are wall-carried (Terminal: 45 direct
+  //     "upper column stands on a load-path-PROMOTED structural flat slab" edges), the entire
+  //     dependency cone above those slabs — ~24k of Terminal's 34.8k Superstructure elements —
+  //     must follow Architecture-phase carriers; a frame building (Hospital) has almost none.
+  // Treatment mirrors the closure pass's "annotate, don't suppress": mark them out of the
+  // serialization extents, let the regate own their timing (real construction order for a
+  // wall-carried building), COUNT them in the §TIER_SERIAL log as tier1DagWins, and lock the
+  // per-building count in the witness — never silently absorbed, never hidden.
+  function _twoTierRemap(items) {
+    if (!items || !items.length) return { iterations: 0, pushed: 0, sweeps: 0, overlapPairs: 0, dagWins: 0 };
+    // the DAG's own raw tail (deliberate cycle-breaks, e.g. Clinic's parapet/roof-slab loop) —
+    // computed on PRISTINE generative times, exempt from regate pushing forever after.
+    var _exempt = _tierAuditRegate(items, null, true).floatSet;
+    var iters = 0, pushed = 0, sweeps = 0, overlap = -1, dagWins = 0;
+    while (iters < 6) {
+      iters++;
+      _tier1Serialize(items);
+      var r = _tierAuditRegate(items, _exempt, false);
+      pushed += r.pushed; sweeps += r.sweeps;
+      overlap = _tier1Protrusion(items);
+      if (!overlap) break;
+      // mark this round's DAG-forced cross-phase elements, then re-serialize without them
+      var ext = _tier1Extents(items);
+      var marked = 0;
+      for (var z in ext) {                       // §TIER_SERIAL_BY_ZONE: absorb per zone
+        var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
+        for (var i = 0; i + 1 < present.length; i++) {
+          var ph = present[i], nextMinS = ext[z][present[i + 1]].minS, zk = z;
+          if (ext[z][ph].maxE <= nextMinS) continue;
+          items.forEach(function (it) {
+            if (it._t1Straggler || it.phase !== ph || _zoneOf(it) !== zk) return;
+            if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
+          });
+        }
+      }
+      dagWins += marked;
+      if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
+    }
+    // §TIER2_AFTER_TIER1 (2026-08-11, same-day correction — user's original words: "separate
+    // unrelated disciplines can run parallel THEREAFTER" — after Tier 1 finishes, not concurrent
+    // with it). Tier 1's TRUE completion is every backbone-phase element, straggler included —
+    // "ARCH/STR out of the way first" means literally all of it, not just the serializable part.
+    // Uniform later-shift only: safe by construction, since pushing every Tier-2 element later by
+    // the SAME amount preserves all of Tier 2's own internal order and only pushes starts further
+    // past their already-satisfied support minimum, never before it.
+    // §TIER_SERIAL_BY_ZONE: "Tier 2 THEREAFTER" is now evaluated per zone — MEP on a floor waits
+    // for that floor's backbone, not for the whole building's. The user's same-day correction
+    // ("after Tier 1 finishes, not concurrent with it") is preserved in its zone: within any zone
+    // no Tier-2 element starts before that zone's Tier-1 is complete. A single-zone model is
+    // byte-identical to the previous global shift.
+    var t1EndZ = {}, t2MinZ = {};
+    items.forEach(function (it) {
+      var z = _zoneOf(it);
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) {
+        if (!(z in t1EndZ) || it.e > t1EndZ[z]) t1EndZ[z] = it.e;
+      } else if (!(z in t2MinZ) || it.s < t2MinZ[z]) t2MinZ[z] = it.s;
+    });
+    var tier2Shift = 0;
+    items.forEach(function (it) {
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) return;
+      var z = _zoneOf(it);
+      // A zone with Tier-2 but no Tier-1 (MEP in an unbanded pocket) has nothing to wait for here;
+      // _ogSupportSweep still gates it individually, so it is left where the generative layer put it.
+      if (!(z in t1EndZ)) return;
+      var d = t1EndZ[z] - t2MinZ[z];
+      if (d > 0) { it.s += d; it.e += d; if (d > tier2Shift) tier2Shift = d; }
+    });
+    // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+    // The zone shift above is order-preserving WITHIN a zone — its own comment says so, and that is
+    // true. It is NOT order-preserving ACROSS zones, and a hosted element and the ceiling it hangs
+    // in routinely land in different ones: _zoneOf is the RAW storey, so a covering tagged
+    // "Level 3 Ceiling" and the light fixture in it tagged "Level 3" are two zones, get two
+    // different shifts (or none at all — a zone with no Tier-1 returns early above), and the pair
+    // re-inverts after the generative layer had it right.
+    // MEASURED, per stage, by witness_hosted_before_host.js on the fixed generative layer:
+    // JKR gen=0 → remap=30, HHS_Office_Federated gen=0 → remap=11. So schedule_gate.js's hostGate
+    // cannot own this alone — the layer that re-broke the order has to be the layer that repairs it.
+    // Same host inference the scheduler gates on (ScheduleGate.hostPairs — ONE definition, the same
+    // reason EPS/GAP are imported rather than re-typed), and the same later-only safety
+    // §MIDAIR_REPAIR carries: a hosted element is pushed to its host's end, never pulled earlier,
+    // so nothing already satisfied above can be undone by it.
+    var _hostFixed = 0, _openFixed = 0;
+    var _gateEls = (typeof ScheduleGate !== 'undefined' && (ScheduleGate.hostPairs || ScheduleGate.openingPairs))
+      ? items.map(function (it) {
+          return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
+                   base_z: it.bz, top_z: it.tz };
+        })
+      : null;
+    if (_gateEls && ScheduleGate.hostPairs) {
+      var _hp = ScheduleGate.hostPairs(_gateEls);
+      _hp.forEach(function (p) {
+        var e = items[p.i], h = items[p.h];
+        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _hostFixed++; }
+      });
+    }
+    // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md)
+    // The §HOSTED_BEFORE_HOST argument above, one layer over and with the same remedy — deliberately
+    // not a second mechanism. openingGate (schedule_gate.js) gates a door/window on its host wall's
+    // FINISH and holds perfectly where it runs: rawEARLY 0.0% on all 7 shipped buildings
+    // (witness_curtain_wall_opening G-CWO-RAW). The DISPLAY timeline then undid it — MEASURED by that
+    // witness's own G-CWO-DISPLAY, which was shipped non-asserting for exactly this fix to promote:
+    // LTU_AHouse 28.5%, Terminal 16.4%, JKR 10.1%, Hospital 2.5% of openings started before their
+    // host finished on the timeline the movie plays. Same cause as the host case: the passes that
+    // rewrite times afterwards (the Tier-1 straggler/zone work above, _tierAuditRegate, and
+    // _midairRepair after) are order-preserving only within a zone, and a door and the wall it is cut
+    // into are routinely in different ones.
+    // SAME PAIRING THE GATE USES (ScheduleGate.openingPairs — one definition, same reason hostPairs
+    // is imported rather than re-derived), same later-only safety: an opening is pushed to its host's
+    // end, never pulled earlier, so nothing already satisfied above can be undone by it. Every host
+    // of the pool is honoured, which is openingGate's own MAX-over-pool bound; hosts are walls and
+    // curtain-wall parts and openings are never hosts, so one pass reaches that maximum exactly.
+    if (_gateEls && ScheduleGate.openingPairs) {
+      var _opMoved = {};
+      ScheduleGate.openingPairs(_gateEls).forEach(function (p) {
+        var e = items[p.i], h = items[p.h];
+        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _opMoved[p.i] = 1; }
+      });
+      _openFixed = Object.keys(_opMoved).length;
+    }
+    var base = Infinity, endAll = -Infinity, ext2 = {};
+    items.forEach(function (it) {
+      if (it.s < base) base = it.s;
+      if (it.e > endAll) endAll = it.e;
+      var x = ext2[it.phase] || (ext2[it.phase] = { minS: Infinity, maxE: -Infinity, n: 0 });
+      if (it.s < x.minS) x.minS = it.s;
+      if (it.e > x.maxE) x.maxE = it.e;
+      x.n++;
+    });
+    var D = 86400000, parts = [];
+    Object.keys(ext2).forEach(function (ph) {
+      var x = ext2[ph];
+      parts.push(ph + '=[' + ((x.minS - base) / D).toFixed(1) + '..' + ((x.maxE - base) / D).toFixed(1) + ']d n=' + x.n);
+    });
+    console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
+      ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
+      ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
+      ' §HOSTED_BEFORE_HOST hostFixed=' + _hostFixed +
+      ' (hosted elements the cross-zone Tier-2 shift left ahead of their own host, pushed back to it)' +
+      ' §DOOR_WINDOW_HOST_WALL_DISPLAY openFixed=' + _openFixed +
+      ' (doors/windows this remap left starting before their own host wall finished, pushed to its end)' +
+      ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
+      ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
+      ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
+    return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
+      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
+      base: base, end: endAll, extents: ext2, exempt: _exempt };
+  }
+
+  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
+  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
+  // midair that is all" — and "no band aid fix, just generalised solution."
+  //
+  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
+  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
+  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
+  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
+  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
+  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
+  //       candidate at all, records `se=0`, and reports it clean;
+  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
+  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
+  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
+  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
+  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
+  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
+  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
+  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
+  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
+  //
+  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
+  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
+  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
+  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
+  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
+  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  //
+  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
+  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
+  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
+  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
+  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
+  // so the global maximum start never grows, and the sweep is capped besides.
+  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
+  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
+  // carrier out from under its consumer.
+  //
+  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
+  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
+  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
+  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
+  //
+  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
+  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
+  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
+  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
+  // _contactGraph(items) — the one place the physical world is derived. Both the repair below and
+  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
+  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
+  // (x0,x1,y0,y1,bz,tz) only — times are read later, never here: geometry does not move.
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok }.
+  function _contactGraph(items) {
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    if (!SG || !SG.CELL) return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 };
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
+    var n = items.length, i, j, k, c, S, T, arr, cs;
+    var grid = {};
+    function cellsOf(e) {
+      var o = [], a, b;
+      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
+        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    var orphans = 0, groundedN = 0;
+    for (i = 0; i < n; i++) {
+      T = items[i]; cs = cellsOf(T);
+      var lowest = Infinity, list = null;
+      for (c = 0; c < cs.length; c++) {
+        arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
+          S = items[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          stamp[j] = i + 1;
+          if (S.bz < lowest) lowest = S.bz;
+          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
+              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
+              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
+            (list || (list = [])).push(j);
+          }
+        }
+      }
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
+      contacts[i] = list;
+      if (grounded[i]) groundedN++; else if (!list) orphans++;
+    }
+    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
+  }
+
+  // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before the
+  // first element they touch appears. Used by verifyGanttIntegrity (the 🔓→🔒 lock gate) so a
+  // dragged bar that re-creates a hanging is REFUSED, not silently accepted — auditFloating alone
+  // cannot see this population (that is the whole §MIDAIR_REPAIR finding).
+  function _midairAudit(items) {
+    var out = { midair: 0, orphans: 0, guids: [], ok: true };
+    if (!items || !items.length) return out;
+    var G = _contactGraph(items);
+    if (!G.ok) return out;
+    out.orphans = G.orphans;
+    for (var i = 0; i < items.length; i++) {
+      var list = G.contacts[i]; if (!list || G.grounded[i]) continue;
+      var first = Infinity;
+      for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
+      if (first > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
+    }
+    out.ok = out.midair === 0;
+    return out;
+  }
+
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var G = _contactGraph(items);
+    if (!G.ok) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var contacts = G.contacts, grounded = G.grounded, n = items.length, i, k;
+    stats.orphans = G.orphans; stats.grounded = G.groundedN;
+    var movedFlag = new Uint8Array(n), first, d, changed;
+    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
+    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
+    // FINISHES"), so a stricter version of this repair was built and measured: move every element
+    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
+    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
+    // adds a duration rather than reusing an existing time).
+    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
+    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
+    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
+    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
+    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
+    // train"). It is also not the visual truth: renderAtTime shows an element from its START
+    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
+    // column is on screen resting on something, not hanging in midair.
+    // strictResidual below reports that population every run — a named, measured limit, never a
+    // silent one. Revisit only with a real user report that a half-built support reads as floating.
+    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
+    while (stats.sweeps < 12) {
+      stats.sweeps++; changed = 0;
+      for (i = 0; i < n; i++) {
+        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        first = Infinity;
+        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
+        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
+          d = first - items[i].s;
+          items[i].s += d; items[i].e += d;
+          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
+          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
+          changed++;
+        }
+      }
+      if (!changed) break;
+    }
+    // ── THE TRADE THIS REPAIR MAKES, MEASURED — reported every run, never hidden (2026-08-12) ──
+    // Moving an element later so it stops hanging can leave a DEPENDENT starting before that (now
+    // later) support FINISHES — exactly what ScheduleGate.auditFloating counts. MEASURED across the
+    // repair on display times: Hospital 0→135, Clinic 1→356, LTU_AHouse 334→1100, Terminal 8→102,
+    // JKR 81→158, HHS 0→11, Duplex 0→9.
+    // AN ALTERNATING JOINT FIXPOINT WAS BUILT AND REJECTED ON ITS OWN NUMBERS: running the shipped
+    // _tierAuditRegate sweep after this repair and re-running the midair fixpoint after that does
+    // NOT converge — 4 rounds, 7,650 pushes, Hospital still ended 0→140, and the cost went 0.8s →
+    // 14.8s. The two rules genuinely fight (one is keyed on a contact's START, the other on a
+    // support's END, and the contact relation is not a DAG), so alternating them just walks the
+    // whole schedule later. Do not re-attempt that shape.
+    // WHY THIS REPAIR STILL SHIPS AS-IS: the two are not equally true to what a viewer sees.
+    // renderAtTime draws an element from its START (frontier = the lit work front), so an element
+    // arriving over a still-installing support is on screen resting on something; an element
+    // arriving over NOTHING is the defect the user reported. auditFloating's count was never the
+    // visual invariant — this repair's census proved it wrong in both directions (5,561 real
+    // hangings it could not see, at its own "0 floating"). The honest fix for both at once lives at
+    // the GATE layer (schedule_gate.js, where placement is DAG-ordered so both constraints can be
+    // taken as one Math.max), not in a post-hoc sweep. Named in
+    // prompts/4D_SCHEDULE_PERFECTION.md §STRUCT_POOL_UNGATED as the open, structural option.
+    // floatDelta below carries the number into every run's log so this trade can never go quiet.
+    stats.floatPre = 0; stats.floatPost = 0;
+    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    stats.residual = 0; stats.strictResidual = 0;
+    for (i = 0; i < n; i++) {
+      var lstF = contacts[i]; if (!lstF || grounded[i]) continue;
+      var fS = Infinity, fE = Infinity;
+      for (k = 0; k < lstF.length; k++) { var sF = items[lstF[k]].s, eF = items[lstF[k]].e;
+        if (sF < fS) fS = sF; if (eF < fE) fE = eF; }
+      if (fS > items[i].s + 1) stats.residual++;
+      if (fE > items[i].s + 1) stats.strictResidual++;
+    }
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.auditFloating) {
+      // the trade, measured on THIS run's own data (see the header): the older support-FINISHED
+      // count before vs after. Reported, never gated — a rise here is the known, named cost.
+      var _fm = {}, _fe = [];
+      for (i = 0; i < n; i++) { _fm[items[i].guid] = { start: items[i].s, end: items[i].e };
+        _fe.push({ guid: items[i].guid, cls: items[i].cls, seq: items[i].seq, x0: items[i].x0, x1: items[i].x1,
+          y0: items[i].y0, y1: items[i].y1, base_z: items[i].bz, top_z: items[i].tz }); }
+      var _q = console.log; console.log = function () {};
+      try { stats.floatPost = ScheduleGate.auditFloating(_fe, _fm); } catch (e) { stats.floatPost = -1; } finally { console.log = _q; }
+    }
+    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
+      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
+      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
+      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
+      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
+      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
+      ' grounded=' + stats.grounded + ' auditFloatingAfter=' + stats.floatPost +
+      ' (the measured trade — see this function\'s header; the gate-layer fix is the open structural option)' +
+      ' total=' + stats.total + ' ms=' + stats.ms);
+    return stats;
+  }
+
+  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
+  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
+  // midair that is all" — and "no band aid fix, just generalised solution."
+  //
+  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
+  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
+  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
+  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
+  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
+  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
+  //       candidate at all, records `se=0`, and reports it clean;
+  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
+  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
+  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
+  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
+  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
+  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
+  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
+  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
+  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
+  //
+  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
+  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
+  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
+  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
+  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
+  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  //
+  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
+  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
+  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
+  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
+  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
+  // so the global maximum start never grows, and the sweep is capped besides.
+  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
+  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
+  // carrier out from under its consumer.
+  //
+  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
+  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
+  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
+  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
+  //
+  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
+  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
+  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
+  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
+  function _midairRepair(items) {
+    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
+    if (!items || !items.length) return stats;
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    if (!SG || !SG.CELL) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
+    var n = items.length, i, j, k, c, S, T, arr, cs;
+    var grid = {};
+    function cellsOf(e) {
+      var o = [], a, b;
+      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
+        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    // contact graph + ground layer, built ONCE (geometry does not change as times shift)
+    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
+    for (i = 0; i < n; i++) {
+      T = items[i]; cs = cellsOf(T);
+      var lowest = Infinity, list = null;
+      for (c = 0; c < cs.length; c++) {
+        arr = grid[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
+          S = items[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          stamp[j] = i + 1;
+          if (S.bz < lowest) lowest = S.bz;
+          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
+              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
+              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
+            (list || (list = [])).push(j);
+          }
+        }
+      }
+      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
+      contacts[i] = list;
+      if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
+    }
+    var movedFlag = new Uint8Array(n), first, d, changed;
+    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
+    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
+    // FINISHES"), so a stricter version of this repair was built and measured: move every element
+    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
+    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
+    // adds a duration rather than reusing an existing time).
+    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
+    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
+    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
+    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
+    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
+    // train"). It is also not the visual truth: renderAtTime shows an element from its START
+    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
+    // column is on screen resting on something, not hanging in midair.
+    // strictResidual below reports that population every run — a named, measured limit, never a
+    // silent one. Revisit only with a real user report that a half-built support reads as floating.
+    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
+    while (stats.sweeps < 12) {
+      stats.sweeps++; changed = 0;
+      for (i = 0; i < n; i++) {
+        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        first = Infinity;
+        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
+        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
+          d = first - items[i].s;
+          items[i].s += d; items[i].e += d;
+          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
+          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
+          changed++;
+        }
+      }
+      if (!changed) break;
+    }
+    for (i = 0; i < n; i++) {                                      // honest residual after the cap
+      var list3 = contacts[i]; if (!list3 || grounded[i]) continue;
+      first = Infinity;
+      for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
+      if (first > items[i].s + 1) stats.residual++;
+      var firstE = Infinity;
+      for (k = 0; k < list3.length; k++) { var e3 = items[list3[k]].e; if (e3 < firstE) firstE = e3; }
+      if (firstE > items[i].s + 1) stats.strictResidual++;   // reported, not gated — see PASS 1 header
+    }
+    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
+    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
+      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
+      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
+      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
+      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
+      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
+      ' grounded=' + stats.grounded + ' total=' + stats.total + ' ms=' + stats.ms);
+    return stats;
+  }
+
+  // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
+  // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on
+  // the §GANTT_CACHE_HIT path too) and audits the CURRENT op times — the post-edit truth, whatever
+  // the user dragged — with ScheduleGate.auditFloating, ALL classes, no filter (the §DEQ_V1 bar).
+  // The check IS auditFloating: when §GEOMETRIC_SUPPORT_ORDER-class upgrades land in the gate
+  // module, this hook strengthens automatically, no separate integration.
+  // Returns { ok, floating, total, guids, ms, skipped? }. A state with nothing auditable (no
+  // geometry / gate not loaded) verifies ok WITH the skip named — logged by the caller, never a
+  // silent false pass.
+  function verifyGanttIntegrity() {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    function ms() { return Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0); }
+    if (typeof ScheduleGate === 'undefined' || !ScheduleGate.auditFloating)
+      return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
+    var els = _buildXrayElements();
+    if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
+    var sched = {};
+    for (var i = 0; i < _ops.length; i++) {
+      var o = _ops[i];
+      var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
+      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
+    }
+    // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
+    // (zero bbox at origin) can neither bear nor hang and sit at project end by design
+    var audited = [];
+    for (var j = 0; j < els.length; j++) {
+      var e = els[j];
+      if (!sched[e.guid]) continue;
+      if (e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z) continue;
+      audited.push(e);
+    }
+    if (!audited.length) return { ok: true, skipped: 'no_scheduled_geometry', floating: 0, midair: 0, total: 0, guids: [], ms: ms() };
+    var guids = [];
+    var n = ScheduleGate.auditFloating(audited, sched, null, guids);
+    // §MIDAIR_REPAIR (2026-08-12) — the lock gate must judge by the SAME rule the generator
+    // enforces, or a planner's drag can re-create exactly the hangings the generated film has none
+    // of and the lock would still be granted: auditFloating's support pools (seq<=4 + promoted
+    // slabs + walls) cannot see an element whose real neighbours are outside them, nor any
+    // structure-pool member at all. Same _contactGraph, no mutation — REFUSING the lock is right
+    // here, where a human made the change and can undo it, whereas the generator repairs silently.
+    var mrItems = audited.map(function (e) {
+      var t = sched[e.guid];
+      return { guid: e.guid, s: t.start, e: t.end, bz: e.base_z, tz: e.top_z,
+        x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 };
+    });
+    var ma = _midairAudit(mrItems);
+    if (ma.midair && guids.length < 20) guids = guids.concat(ma.guids.slice(0, 20 - guids.length));
+    // §GANTT_LOCK_DELTA (2026-08-12) — the gate asks "did YOUR EDIT break physics", not "is the
+    // generator perfect". Absolute zero was the wrong test and was already wrong before
+    // §MIDAIR_REPAIR: measured pre-repair auditFloating on the shipped buildings was Terminal 8,
+    // Clinic 1, JKR 81, LTU_AHouse 334 (the documented warn-only tails — co-planar framing, mutual
+    // bearing, the §SUPPORT_CYCLE population), so `ok: n === 0` refused the lock on 4 of 7
+    // buildings on a FRESHLY GENERATED, UNEDITED schedule. A planner could never re-lock there.
+    // The reference is now the state captured when editing began (_lockBaseline, set on unlock):
+    // a breach is an INCREASE in either measure. Both counts are still reported absolutely, so the
+    // known tails stay visible instead of being defined away.
+    var base = _lockBaseline || { floating: n, midair: ma.midair };
+    return { ok: n <= base.floating && ma.midair <= base.midair,
+      floating: n, midair: ma.midair, baseFloating: base.floating, baseMidair: base.midair,
+      dFloating: n - base.floating, dMidair: ma.midair - base.midair,
+      total: audited.length, guids: guids, ms: ms() };
+  }
+
+  // §GANTT_LOCK_DELTA — the physics state at the moment editing STARTED. Captured on 🔒→🔓 so the
+  // lock-back comparison is against what the planner inherited, never against an ideal the shipped
+  // generator does not reach on every building. Null ⇒ verifyGanttIntegrity self-references (any
+  // first call is its own baseline), which is the safe direction: it can only refuse a WORSENING.
+  var _lockBaseline = null;
+  function captureLockBaseline() {
+    var v = verifyGanttIntegrity();
+    _lockBaseline = { floating: v.floating, midair: v.midair };
+    console.log('§GANTT_LOCK_BASELINE floating=' + v.floating + ' midair=' + v.midair +
+      ' total=' + v.total + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)');
+    return _lockBaseline;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // Z-DRIVEN CONSTRUCTION SCHEDULE
   // ══════════════════════════════════════════════════════════════════
   //
@@ -3095,7 +4892,43 @@
   // Same resource on same storey = sequential. Different resource = parallel.
   // Always re-inject on activate — never use stale cached ops.
 
-  function injectGantt() {
+  // §GANTT_REFOLD_HANG (2026-08-10, 4D_SCHEDULE_PERFECTION.md §GANTT_REFOLD_HANG handoff):
+  // injectGantt()'s two hot loops froze the tab on Hospital (63,415 elements — live-confirmed:
+  // the console stream stopped dead between §PHASE_OVERLAP_SUPPORT_GUARD's log and
+  // §WRITE_LOOP_TIMING's, which never printed). Both loops are order-dependent (shared object
+  // refs mutate .s/.e read by later elements) so they cannot be parallelized or reordered — but
+  // chunking PRESERVES order: slicing them into _TM_CHUNK-sized batches with a macrotask yield
+  // between batches changes nothing about the output, only returns control to the browser.
+  // setTimeout(0), not rAF — must keep draining while the tab is backgrounded.
+  var _TM_CHUNK = 2500;
+  function _tmYield() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+  // §GANTT_REFOLD_HANG sync note (2026-08-12): the branch's extracted _ogSupportGuard was
+  // superseded during the 26-commit drift by main's own _ogSupportSweep (witness-locked physics —
+  // see §OG sections above); this sync keeps main's sweep untouched and lands ONLY the chunked
+  // kernel_ops writer below (the measured §WRITE_LOOP_TIMING freeze) + the async call-site plumbing.
+  async function _writeScheduledChunked(db, _allScheduled, _yieldFn) {
+    if (_yieldFn === undefined) _yieldFn = _tmYield;
+    var _wlT0 = performance.now();
+    db.run('BEGIN');
+    var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+      "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+    for (var _wi = 0; _wi < _allScheduled.length; _wi++) {
+      var item = _allScheduled[_wi];
+      item.params._end_ts = item.e;
+      item.params._captured = 1;
+      item.params._task = item.task;
+      _upd.run([item.s, JSON.stringify(item.params), item.guid]);
+      if (_yieldFn && ((_wi + 1) % _TM_CHUNK === 0) && (_wi + 1) < _allScheduled.length) {
+        db.run('COMMIT'); await _yieldFn(); db.run('BEGIN');
+      }
+    }
+    _upd.free();
+    console.log('§WRITE_LOOP_TIMING rows=' + _allScheduled.length + ' ms=' + (performance.now() - _wlT0).toFixed(1));
+    db.run('COMMIT');
+  }
+
+  async function injectGantt() {
     var app = A();
     if (!app || !app.db) return false;
     var db = app.db;
@@ -3151,17 +4984,70 @@
     var SR = window.SEQUENCE_RULES || {};
     var LR = window.LABOR_RATES || {};
     var SD = window.SEQUENCE_DEFAULT || {phase:'Architecture',sequence:6,resource:null};
+    var NO = window.SEQUENCE_NAME_OVERRIDES || [];  // §4D_FACADE_ORDER — see rates/sequence_rules.json
 
-    function matchRule(cls) {
+    // §4D_FACADE_ORDER: ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember)
+    // from genuinely structural plates/members (e.g. Terminal's Metal Deck IfcPlate, seq 4 is correct
+    // there) — name is the only extracted signal. Checked BEFORE the class lookup, never replacing it:
+    // an element that matches no override keeps its plain class-default seq.
+    function matchNameOverride(cls, name) {
+      if (!name) return null;
+      for (var i = 0; i < NO.length; i++) {
+        var ov = NO[i];
+        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+        if (ov._re && ov._re.test(name)) return ov;
+      }
+      return null;
+    }
+    function matchRule(cls, name) {
       if (!cls) return SD;
+      var ov = matchNameOverride(cls, name);
+      if (ov) return ov;
       var bestKey = null, bestLen = 0;
       for (var key in SR) {
         if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
       }
+      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
+      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
       return bestKey ? SR[bestKey] : SD;
     }
-    function getInstallSecs(cls) {
-      var rule = matchRule(cls);
+    // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
+    // to be a hand-duplicated copy of the per-unit-rate formula with NO fragmentation/area-weighting —
+    // Terminal's 33,324 "Metal Deck" IfcPlate fragments (avg 0.074 m² each) each got a full per-element
+    // labor charge, inflating the REAL-TIME PLAYBACK clock (via schedule_gate.js place()'s
+    // installSecs*scaleFactor) even after schedule_author.js's WBS/Gantt dates were fixed to the
+    // correct 111-day Superstructure. Now calls schedule_author.js's ScheduleAuthor._installSecs
+    // (the SAME function materializeDefault/scheduleContiguous use) with the SAME realQty area-weight
+    // (`_frag`, computed once per injectGantt() call below) — single source of truth, no second copy.
+    var _frag = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._classFragmentation) {
+        return window.ScheduleAuthor._classFragmentation(db, window.RATES || {});
+      }
+      console.warn('§TM_DURATION_SYNC_FALLBACK ScheduleAuthor not loaded — install-secs NOT area-weighted for fragmented classes');
+      return { fragmented: {}, area: {} };
+    })();
+    // §HEAVY_MEMBER_SPEED_LIMIT sync (2026-08-04) — same gap as §TM_DURATION_SYNC above, found live:
+    // this wrapper never passed the real-length weighting fix (schedule_author.js _installSecs 5th
+    // arg) through, so the default/initial Time Machine timeline still charged every beam/column the
+    // SAME flat duration regardless of real size, even though the "Generate first draft" wizard path
+    // (schedule_author.js) already had it. Same single-source-of-truth call, just the missing param.
+    var _lin = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._linearWeighting) {
+        return window.ScheduleAuthor._linearWeighting(db, window.RATES || {});
+      }
+      return { avgLength: {}, length: {} };
+    })();
+    function getInstallSecs(cls, rule, guid, bx, by, bz) {
+      rule = rule || matchRule(cls);
+      var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
+      var hasGeom = bx > 0 || by > 0 || bz > 0;
+      var clsAvgLen = _lin.avgLength[cls];
+      var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0) ? Math.max(bx, by, bz) / clsAvgLen : null;
+      if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
+      }
+      // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       var resource = rule.resource;
       if (!resource || !LR[resource]) return 120;
       var labor = LR[resource], bestPk = null, bestLen = 0;
@@ -3182,7 +5068,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' " +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace' " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
@@ -3195,27 +5081,13 @@
     // Min Z is unreliable — a column extending down from an upper storey gives it a low minZ,
     // causing upper elements to appear before lower storeys finish.
     // Median Z represents the typical floor level of that storey.
-    var storeyZvals = {};  // REAL (non-Unknown) storey name → [cz, cz, ...] — the §STOREY-Z anchor basis
-    r[0].values.forEach(function(row) {
-      var storey = row[3] || '_UNKNOWN';
-      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
-      var cz = row[5] || 0;
-      if (!storeyZvals[storey]) storeyZvals[storey] = [];
-      storeyZvals[storey].push(cz);
-    });
-    // Compute median Z per storey
-    var storeyMedianZ = {};
-    for (var sk in storeyZvals) {
-      var vals = storeyZvals[sk].sort(function(a, b) { return a - b; });
-      var mid = Math.floor(vals.length / 2);
-      storeyMedianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-    }
-    // Sort storeys by median Z → assign band index
-    var storeyNames = Object.keys(storeyMedianZ).sort(function(a, b) {
-      return storeyMedianZ[a] - storeyMedianZ[b];
-    });
-    var storeyBand = {};
-    for (var si = 0; si < storeyNames.length; si++) storeyBand[storeyNames[si]] = si;
+    // §ZONE_INDEX (2026-08-12) — was a second inline copy of the median-Z banding (see
+    // _zoneIndexBuild). Same numbers, one owner, memoized across activations. The §GANTT
+    // storey-bands line below is kept BYTE-IDENTICAL: it is part of W-ZONE's equivalence bar.
+    var _zi = _zoneIndex();
+    var storeyMedianZ = _zi ? _zi.medianZ : {};
+    var storeyNames = _zi ? _zi.names : [];
+    var storeyBand = _zi ? _zi.band : {};
 
     console.log('§GANTT storey-bands: ' + storeyNames.length + ' bands from storey names (median Z): ' +
       storeyNames.map(function(s, i) { return i + '="' + s + '" medZ=' + storeyMedianZ[s].toFixed(1); }).join(', '));
@@ -3233,44 +5105,59 @@
     // corrected storey with zero further code changes downstream.
     var unknownReassigned = 0;
     function assignStoreyByZ(storey, cz) {
+      // §ZONE_INDEX: the reassignment itself now lives in the shared index; the counter stays here
+      // because §GANTT_STOREY_Z below reports what THIS pass reassigned, not what the index holds.
       if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-      if (!storeyNames.length) return storey;
-      var best = storeyNames[0], bd = Infinity;
-      for (var ai = 0; ai < storeyNames.length; ai++) {
-        var d = Math.abs(cz - storeyMedianZ[storeyNames[ai]]);
-        if (d < bd) { bd = d; best = storeyNames[ai]; }
-      }
+      if (!_zi || !storeyNames.length) return storey;
       unknownReassigned++;
-      return best;
+      return _zi.assign(storey, cz);
     }
 
     // ── Build elements with storey-aware overrides ──
-    var roofOverrides = 0;
+    var nameOverrides = 0;
     var elements = r[0].values.map(function(row) {
-      var cls = row[1], rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
+      var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
-      var rule = matchRule(cls);
+      var ov = matchNameOverride(cls, elName);
+      if (ov) nameOverrides++;
+      var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
 
-      // §A.1 Storey-aware override: slabs on "Roof" storey → Architecture/Roof seq 8
-      if (/roof/i.test(storey) && cls === 'IfcSlab' && seq < 8) {
-        seq = 8; phase = 'Architecture';
-        roofOverrides++;
-      }
-
       return {
-        guid: row[0], cls: cls, name: row[2] || '', storey: storey,
+        guid: row[0], cls: cls, name: elName, storey: storey,
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
         base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: Z geometry (base = underside, top = where it tops out)
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
         seq: seq, phase: phase,
         resource: rule.resource || '_DEFAULT',
-        installSecs: getInstallSecs(cls)
+        installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz),
+        // §4D_NOGEO (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH): no transform row —
+        // COALESCE lands it at origin with a zero bbox. It cannot bear, hang, or be witnessed, and
+        // at z=0 (metres below the building) geoGate finds nothing under it, so it scheduled at
+        // day 0 AND dragged its whole zone's start there (user-witnessed: "walls before the
+        // foundations" — 233 such elements on Hospital, §GANTT band 0 z=[0.0,0.0] Architecture:233).
+        noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     });
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
-    if (roofOverrides) console.log('§GANTT_OVERRIDE ' + roofOverrides + ' roof slabs overridden to seq=8');
+    if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
+      NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
+
+    // §4D_ROOF_LOAD_PATH M1 + §4D_WALLS_BEFORE_ROOF M4 — roof/load-path promotion, shared
+    // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
+    // when the two inline copies were consolidated 2026-08-10).
+    var _lp = _promoteRoofLoadPath(elements);
+    // §4D_ROOF_LOAD_PATH witness hook (double-underscore debug convention, same as __tmGanttShift):
+    // witness_4d_roof_load_path G-RLP-2/3 read the promoted set here rather than from kernel_ops.
+    // This hook was ADDED because the _cap path used to overwrite the ops' `phase` param with the
+    // task NAME, hiding the promotion from kernel_ops; §GANTT_PHASE_CLOBBER (2026-08-12, ~:5238)
+    // ends that clobber, so `phase` is honest in kernel_ops again — the hook stays because reading
+    // the promoted set directly is still the cheaper, more direct assertion. Refreshed every run.
+    window.__tmLoadPathPromoted = _lp.guids;
+    if (_lp.total) console.log('§GANTT_OVERRIDE ' + _lp.total +
+      ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
+      ' (seed=' + _lp.seedCount + ' + M4 rooftop-appurtenance=' + _lp.m4Count + ')');
 
     // §S260e: Sort by actual Z (quantized to 3m bands) → seq → fine Z
     // Real construction: lower Z builds first regardless of storey name.
@@ -3306,12 +5193,29 @@
     var totalSecs = 0;
     elements.forEach(function(el) { totalSecs += el.installSecs; });
     var rawMs = totalSecs * 1000;
-    // Round the clock — 24/7, no weekends
+    // Round the clock — 24/7 CALENDAR, no weekends, no holidays (unchanged ruling).
+    // §ARCH_START_TEMPO / M1 (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md): the
+    // 24/7 calendar never meant a 24-HOUR SHIFT, but this line assumed one — `rawDays` divided the
+    // labour by a 24 h day while every second of it came from `28800/productivity`, i.e. an 8 h
+    // crew-day (schedule_author.js _installSecs; its phase widths already divide by 28800*crews).
+    // So the movie clock and the authored Gantt disagreed by exactly 24/8 on the same work.
+    // schedule_gate.js now spends a crew's seconds inside an 8 h window per calendar day, so the
+    // wall-clock day this project really needs is rawMs/SHIFT_MS — take the shift length FROM that
+    // module (one owner, no second constant to drift).
+    // COMPOSITION WITH scaleFactor, deliberately not compounding: scaleFactor exists only to inflate
+    // a DEGENERATELY tiny project (<10 days) up to a watchable 10. Measuring rawDays on the capped
+    // clock FIRST means the 3x the crew day already bought is counted before the <10 test — a
+    // project that reaches 10 real days once its crews work 8 h/day gets scaleFactor 1, not a second
+    // stretch on top. The 10-day floor is then in the same wall-clock unit as everything downstream.
     var fullDayMs = 24 * 3600000;
-    var rawDays = rawMs / fullDayMs;
-    var scaleFactor = rawDays < 10 ? (10 * fullDayMs) / rawMs : 1;
+    var shiftMs = (typeof ScheduleGate !== 'undefined' && ScheduleGate.SHIFT_MS) || 8 * 3600000;
+    var rawDays = rawMs / shiftMs;
+    var scaleFactor = rawDays < 10 ? (10 * shiftMs) / rawMs : 1;
 
     var projectDays = Math.max(10, Math.ceil(rawDays * scaleFactor));
+    console.log('§CREW_DAY_CLOCK totalSecs=' + Math.round(totalSecs) + ' shiftH=' + (shiftMs / 3600000) +
+      ' rawDays=' + rawDays.toFixed(1) + ' scale=' + scaleFactor.toFixed(2) + ' projectDays=' + projectDays +
+      ' (was rawDays=' + (rawMs / fullDayMs).toFixed(1) + ' on the pre-M1 24h-shift clock)');
     var startDate = new Date();
     startDate.setDate(startDate.getDate() - projectDays);
     startDate.setHours(0, 0, 0, 0);
@@ -3333,21 +5237,111 @@
     // §CREW-CAP (2026-07-18): real-world crew count per trade — see schedule_gate.js header.
     // LABOR_RATES[resource].max_crews (rates.js / rates/sequence_rules.json), falls back to
     // schedule_gate.js's own MAX_CREWS_DEFAULT for any resource without an explicit value.
+    // ── §CREW_DEMAND + §HR_COST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+    // item 4 — Witness: viewer/tests/witness_crew_demand.js W-CREW) ───────────────────────────
+    // User: "as each user imports own IFC set, the script gives them the max resource needed, and
+    // when they edit it it can regenerate 4D anew" + "the 5D set per building will then reflect
+    // the cost of HR used too."
+    //
+    // ⚠ WHAT THIS IS NOT: an auto-scaler. A first cut derived crews as
+    // ceil(workDays(T)/projectDays) and MEASURED AS A NO-OP on all 7 buildings — projectDays is the
+    // all-trade serial total (Hospital 1036, LTU 2329), so no single trade's work can exceed it and
+    // the ceil is always 1, below every baseline. Worse, the premise behind wanting one was wrong:
+    // MEP Rough-in's "130.8% occupancy" is a SINGLE-CREW-EQUIVALENT ratio (work-days ÷ window-days).
+    // Exceeding 100% just means more than one crew is busy on average — which is the normal case.
+    // The real check is capacity: MEP Rough-in draws on 3 trades x 2 crews over a 555-day window
+    // = ~3,330 crew-days available against 725.9 needed. It is NOT crew-starved, and the shipped
+    // table is not the small-job list it looked like. Reporting the numbers instead of "fixing"
+    // something that measures fine.
     var _maxCrews = {};
-    for (var _mcRes in LR) if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
+    for (var _mcRes in LR) {
+      if (LR[_mcRes].max_crews_fixed != null) _maxCrews[_mcRes] = LR[_mcRes].max_crews_fixed;
+      else if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
+    }
+    // Per-trade labour content, straight from the installSecs the scheduler itself uses
+    // (28800s = the 8h crew-day getInstallSecs divides by).
+    var _crewWorkDays = {};
+    elements.forEach(function (el) {
+      var _r = el.resource || '_DEFAULT';
+      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / 28800;
+    });
+    // §CREW_DEMAND — "the max resource needed", reported per trade so a user can see what to edit.
+    // capacity = crews x projectDays crew-days; utilisation = demand / capacity. A trade over 100%
+    // genuinely cannot fit and wants more crews; everything under is headroom.
+    // §ARCH_START_TEMPO / M1: this ratio is only now dimensionally honest. demand is crew-days
+    // (installSecs/28800 = 8 h each) while projectDays used to be counted on a 24-h clock, so ONE
+    // calendar day was silently worth THREE crew-days of capacity and every utilisation printed here
+    // was overstated ~3x. Same formula, same inputs — projectDays is now wall-clock days at the same
+    // 8 h shift the demand is quoted in, so a trade's % is comparable to its real crew count.
+    var _cdLog = [];
+    for (var _cd in _crewWorkDays) {
+      var _cdr = LR[_cd]; if (!_cdr) continue;
+      var _crews = _maxCrews[_cd] || 1;
+      var _cap = _crews * projectDays;
+      _cdLog.push(_cd + ' demand=' + _crewWorkDays[_cd].toFixed(1) + 'cd crews=' + _crews +
+        (_cdr.max_crews_fixed != null ? '(FIXED)' : '') +
+        ' capacity=' + _cap.toFixed(0) + 'cd util=' + (_cap ? (100 * _crewWorkDays[_cd] / _cap).toFixed(1) : '?') + '%');
+    }
+    console.log('§CREW_DEMAND projectDays=' + projectDays + ' — ' + _cdLog.join(' | ') +
+      ' (util>100% = that trade cannot fit and wants more crews; set max_crews_fixed in ' +
+      'rates/sequence_rules.json and regenerate to apply an edit)');
+
+    // §HR_COST (5D) — the labour the schedule commits, per trade. personDays = crew-days x
+    // crew_size (a 6-hand gang spends 6 person-days per crew-day); cost = personDays x rate_per_day.
+    // ⚠ Reading note that matters for 5D: crew COUNT does not change this total — the same labour
+    // content done by more hands in less time. Crews change WHEN the cost lands, not how much.
+    // That time-phasing is what makes it 5D rather than a bill of quantities.
+    var _hrTotal = 0, _hrPD = 0, _hrLog = [];
+    for (var _hr in _crewWorkDays) {
+      var _hrR = LR[_hr]; if (!_hrR || !_hrR.rate_per_day) continue;
+      var _pd = _crewWorkDays[_hr] * (_hrR.crew_size || 1);
+      var _cost = _pd * _hrR.rate_per_day;
+      _hrTotal += _cost; _hrPD += _pd;
+      _hrLog.push(_hr + ' personDays=' + _pd.toFixed(1) + ' @' + _hrR.rate_per_day + '/d = ' + Math.round(_cost));
+    }
+    console.log('§HR_COST total=' + Math.round(_hrTotal) + ' personDays=' + _hrPD.toFixed(1) +
+      ' across ' + _hrLog.length + ' trades — ' + _hrLog.join(' | ') +
+      ' (crew count changes WHEN this lands, not the total)');
+
+    // §4D_NOGEO: geometry-less elements are EXCLUDED from the support-gated schedule (they poison
+    // it at day 0) and parked at the project end below — present in the movie's totals, never in
+    // its physics.
+    var _geoElements = elements.filter(function (el) { return !el.noGeo; });
+    var _noGeoN = elements.length - _geoElements.length;
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
-      ? ScheduleGate.computeSchedule(elements, baseMs, scaleFactor, _maxCrews) : null;
+      ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
+    // §TIER_SERIAL (2026-08-11): the DISPLAYED timeline is the two-tier remap of computeSchedule's
+    // output — backbone phases strictly serial, everything else one support-gated concurrent pool
+    // (full doctrine on _twoTierRemap above). _sched itself stays RAW: §SUPPORT_CHECK/§ROOF_GATE
+    // below keep auditing the generative layer's proven truth (floating baselines byte-identical);
+    // the kernel_ops written from _disp are what the movie/Gantt/X-ray judge consume.
+    var _twItems = _geoElements.map(function (el) {
+      var _ts = _sched[el.guid];
+      return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
+        bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
+        cls: el.cls, seq: el.seq, phase: el.phase,
+        storey: el.storey };   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
+    });
+    var _twStats = _twoTierRemap(_twItems);
+    // §MIDAIR_REPAIR (2026-08-12) — last stop before kernel_ops: nothing may appear before the
+    // first thing it touches appears. Class-blind, pool-blind, later-only. See its own header.
+    _midairRepair(_twItems);
+    var _disp = {};
+    _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e }; });
+    var _schedEnd = baseMs;
+    for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
+    if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
     elements.forEach(function(el) {
-      var s = _sched[el.guid] || { start: baseMs, end: baseMs + 60000 };
+      var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:s.end}),
+           resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
       if (s.end > _projEnd) _projEnd = s.end;
@@ -3356,24 +5350,118 @@
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
-    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING (beam/member/slab/furniture/MEP/wall)
-    // may start before the structure UNDER its XY footprint finishes. 0 ⇒ nothing floats. Pre-fix
-    // (Hospital): 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls
-    // (ε=0.5 skipped the slab they sit on). Two-pass + ε=0.05 → 0.
-    var _audit = function(e){ return e.cls === 'IfcBeam' || e.cls === 'IfcMember' || e.cls === 'IfcSlab' ||
-      e.cls.indexOf('Furni') >= 0 || e.cls.indexOf('Wall') >= 0; };
-    var _auditN = 0; for (var _bi = 0; _bi < elements.length; _bi++) if (_audit(elements[_bi])) _auditN++;
-    var _float = ScheduleGate.auditFloating(elements, _sched, _audit);
-    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (struct+furniture+walls over their XY support) gated=' + elements.length + ' (0=solved)');
+    // §SUPPORT_CHECK: independent XY-aware audit — NOTHING may start before its physical support
+    // (bearing-below OR the carrier it hangs from) finishes. 0 ⇒ nothing floats. Pre-fix (Hospital):
+    // 84 beams + 765 members floated (Z-only) and 133 furniture + 1980 flow + 1156 walls (ε=0.5
+    // skipped the slab they sit on). Two-pass + ε=0.05 → 0.
+    // §DEQ_V1 (2026-08-07, 4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #5): filter is ALL classes now —
+    // the old hand-picked list (Beam/Member/Slab/'Furni'/'Wall') silently excluded every MEP/flow
+    // class, so this line printed floating=0 while fans hung mid-air unaudited.
+    var _auditN = _geoElements.length;
+    // §SUPPORT_UNCHECKED collector — 4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 1a (warn-only):
+    // big elements (bbox vol > ScheduleGate.BIG_ELEMENT_VOL, measured p95) that the audit found
+    // ZERO support candidates for — previously silent false-pass. Floating count/gating unchanged.
+    var _unchecked = [];
+    var _float = ScheduleGate.auditFloating(_geoElements, _sched, null, null, _unchecked);
+    console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
+    console.log('§SUPPORT_UNCHECKED_SUMMARY n=' + _unchecked.length + '/' + _auditN +
+      ' bigVol>' + (ScheduleGate.BIG_ELEMENT_VOL || 1.556) + 'm³ zero-candidate' +
+      ' buildingModelsSubstructure=' + (_unchecked.length ? _unchecked[0].buildingModelsSubstructure
+        : _geoElements.some(function (e) { return e.seq === 1; })) +
+      ' (warn-only — reported not gated, see §SPEC 2026-08-11 1a)');
+
+    // §4D_WALLS_BEFORE_ROOF M6 (2026-08-01, prompts/GANTT_ACCURACY.md §4D_WALLS_BEFORE_ROOF) — stop
+    // the instrument from lying. §SUPPORT_CHECK above offers its wall pool ONLY to slabs the load-
+    // path rule already promoted (seq>4), so a roof it FAILED to promote reads floating=0 exactly as
+    // if nothing were wrong — that is #1120's `⚠ LIMIT 1`, and it is why "roof before walls" survived
+    // a merge that reported floating=0/10979 on the very run the user was complaining about (24 of
+    // 35 Hospital slabs started ~290 days before the walls carrying them, and the only instrument
+    // said solved). This line is ROLE-BLIND: it counts, for EVERY IfcSlab regardless of seq, whether
+    // it starts before the XY-overlapping walls that carry it finish.
+    //   roofSlabs half  = a GATE. Must be 0. A roof-role slab that starts before its carriers is the
+    //                     defect this section exists to kill.
+    //   otherSlabs half = a MEASUREMENT, NOT a gate. An ordinary intermediate floor legitimately
+    //                     precedes the partitions beneath it in a frame-first concrete schedule —
+    //                     gating on it is #1120's measured-and-rejected "attempt 2" (24 false
+    //                     positives). Printing it is what makes LIMIT 1 auditable instead of hidden.
+    try {
+      var _rgCELL = (ScheduleGate.CELL || 4), _rgEPS = 0.05, _rgGAP = 0.5;
+      // §SPEC 2026-08-11 1b (4D_SCHEDULE_PERFECTION.md, Witness: witness_big_element_support_
+      // coverage.js): widen the audited pool beyond IfcSlab — EVERY element above the measured p95
+      // bbox volume (ScheduleGate.BIG_ELEMENT_VOL = 1.556 m³, extracted 2026-08-11) is also audited
+      // against the walls carrying it, independent of class or promotion status — the load-path
+      // classifier's known depth-1 false negatives become visible here instead of reading clean.
+      // REPORTED, NOT GATED (own counter pair; existing roofSlabs gate + otherSlabs measurement
+      // byte-identical). 1c: Substructure (seq===1) exempt — rests on unmodeled soil.
+      var _rgBIGVOL = (ScheduleGate.BIG_ELEMENT_VOL || 1.556);
+      var _rgGrid = {}, _rgSlabs = [], _rgBig = [];
+      for (var _rgi = 0; _rgi < elements.length; _rgi++) {
+        var _e = elements[_rgi];
+        if (_e.cls !== 'IfcSlab' && _e.seq !== 1 &&
+            (_e.x1 - _e.x0) * (_e.y1 - _e.y0) * (_e.top_z - _e.base_z) > _rgBIGVOL) _rgBig.push(_e);
+        if (_e.cls === 'IfcSlab') { _rgSlabs.push(_e); continue; }
+        if (_e.cls.indexOf('IfcWall') !== 0) continue;
+        for (var _gx = Math.floor(_e.x0 / _rgCELL); _gx <= Math.floor(_e.x1 / _rgCELL); _gx++)
+          for (var _gy = Math.floor(_e.y0 / _rgCELL); _gy <= Math.floor(_e.y1 / _rgCELL); _gy++)
+            (_rgGrid[_gx + ',' + _gy] = _rgGrid[_gx + ',' + _gy] || []).push(_e);
+      }
+      var _rgRoofN = 0, _rgRoofLate = 0, _rgOtherN = 0, _rgOtherLate = 0, _rgBigN = 0, _rgBigLate = 0;
+      // shared wall-carrier scan — slabs and 1b's big elements are tested against the SAME physics
+      var _rgLateVsWalls = function(S) {
+        var sc = _sched[S.guid]; if (!sc) return null;
+        var maxEnd = 0, seen = {};
+        for (var gx = Math.floor(S.x0 / _rgCELL); gx <= Math.floor(S.x1 / _rgCELL); gx++)
+          for (var gy = Math.floor(S.y0 / _rgCELL); gy <= Math.floor(S.y1 / _rgCELL); gy++) {
+            var arr = _rgGrid[gx + ',' + gy]; if (!arr) continue;
+            for (var wi = 0; wi < arr.length; wi++) {
+              var W = arr[wi]; if (seen[W.guid]) continue; seen[W.guid] = 1;
+              if (W.base_z < S.base_z - _rgEPS && W.top_z >= S.base_z - _rgGAP &&
+                  S.x0 <= W.x1 && S.x1 >= W.x0 && S.y0 <= W.y1 && S.y1 >= W.y0) {
+                var we = _sched[W.guid]; if (we && we.end > maxEnd) maxEnd = we.end;
+              }
+            }
+          }
+        return (maxEnd > 0 && sc.start < maxEnd - 1);
+      };
+      _rgSlabs.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
+        if (S.seq > 4) { _rgRoofN++; if (late) _rgRoofLate++; }
+        else { _rgOtherN++; if (late) _rgOtherLate++; }
+      });
+      _rgBig.forEach(function(S) {
+        var late = _rgLateVsWalls(S); if (late === null) return;
+        _rgBigN++; if (late) _rgBigLate++;
+      });
+      console.log('§ROOF_GATE roofSlabs=' + _rgRoofN + ' lateVsWallCarriers=' + _rgRoofLate +
+        ' (0=required) | otherSlabs=' + _rgOtherN + ' lateVsWallCarriers=' + _rgOtherLate +
+        ' (frame-first, expected — reported not gated, see GANTT_ACCURACY.md LIMIT 1)' +
+        ' | bigElems=' + _rgBigN + ' lateVsWallCarriers=' + _rgBigLate +
+        ' (>' + _rgBIGVOL + 'm³ p95, non-slab non-Substructure — reported not gated, §SPEC 2026-08-11 1b)');
+    } catch (e) { console.log('§ROOF_GATE error: ' + e.message); }
+    // §4D_ROOF_LOAD_PATH witness hook (2026-08-01) — same double-underscore debug convention as
+    // __tmTrav/__forceFull/__tmStep above: read-only, lets witness_4d_roof_load_path.js compare the
+    // OLD (seq<=4-only) and NEW (M3) audit definitions against the SAME elements+schedule.
+    window.__tmScheduleDebug = { elements: elements, sched: _sched, disp: _disp, tier: _twStats, audit: null };  // §DEQ_V1: audit unfiltered; §TIER_SERIAL: disp = displayed two-tier map, sched stays RAW generative
 
     // §S260c BUG5: Log first 20 ops to verify bottom-up storey ordering
+    // §GANTT_OPS_TIEBREAK (2026-08-04) — display-only fix, real timestamps unchanged. Many elements
+    // genuinely tie at the same millisecond (each trade's crew queue starts independently at t=0 —
+    // by design, real parallel trades, MEASURED: footings/proxies/walls/columns all start at exactly
+    // 0ms on Hospital). ORDER BY timestamp alone leaves ties in arbitrary DB order, which read as
+    // "wrong sequence" even though nothing about the real schedule/movie/support-check is wrong.
+    // Fetch a wider window, stable-sort by (timestamp, seq) in JS, THEN take 20 — so ties display
+    // Substructure-first without touching a single real computed date anywhere else in the app.
     var _first20 = [];
     try {
-      var f20r = db.exec('SELECT timestamp, parameters FROM kernel_ops WHERE undone=0 ORDER BY timestamp LIMIT 20');
+      var f20r = db.exec('SELECT timestamp, parameters FROM kernel_ops WHERE undone=0 ORDER BY timestamp LIMIT 500');
       if (f20r.length) {
-        f20r[0].values.forEach(function(row) {
+        var _f20rows = f20r[0].values.map(function (row) {
           var p = JSON.parse(row[1]);
-          _first20.push(p.storey + '|band=' + storeyBand[p.storey || '_UNKNOWN'] + '|seq=' + (matchRule(p.cls).sequence) + '|' + p.cls);
+          return { ts: row[0], p: p, seq: matchRule(p.cls, p.name).sequence };
+        });
+        _f20rows.sort(function (a, b) { return (a.ts - b.ts) || (a.seq - b.seq); });
+        _f20rows.slice(0, 20).forEach(function (r) {
+          _first20.push(r.p.storey + '|band=' + storeyBand[r.p.storey || '_UNKNOWN'] + '|seq=' + r.seq + '|' + r.p.cls);
         });
       }
     } catch(e) {}
@@ -3394,60 +5482,87 @@
       ', bands=' + storeyNames.length + ', ' + projectDays + ' days, scale=' + scaleFactor.toFixed(2) +
       ', start=' + startDate.toLocaleDateString() + ' end=' + endDate.toLocaleDateString());
 
-    // ── T3 §3.1/§3.3: overlay captured REAL dates + task names onto covered elements ──
-    // The generative pass above already laid every element on the real-start epoch (baseMs).
-    // Now patch the covered subset to their exact captured task window + real name, and flag
-    // them _captured=1. Uncovered elements keep their generated timing (honest estimate).
+    // ── T3 §3.1/§3.3: overlay captured task names + the captured project window onto covered
+    // elements. The generative pass above already laid every element on the real-start epoch
+    // (baseMs) carrying the §TIER_SERIAL two-tier display timeline.
     //
-    // §PLAYBACK-STAGGER (2026-07-19, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md
-    // Item 8): assigning the task's window VERBATIM to every covered element made EVERY floor's
-    // bar for a phase byte-identical — confirmed live (Hospital, all 8 Levels' Superstructure
-    // showed 2026-01-31..2026-03-02) — "the gantt chart bars are the SAME", and during actual
-    // playback the WHOLE phase pops into existence at once instead of an orderly, gradual reveal.
-    // Real per-element Z data already exists (elements[], built above, same array the generative
-    // pass sorts bottom-up) — bucket covered guids by task, sort each bucket bottom-up by cz (same
-    // discipline as the generative pass), and linearly distribute them across the task's OWN
-    // [w.s, w.e] window instead of collapsing them onto it. The phase's overall date range
-    // (editable in the Schedule Author wizard, `tasks.schedule_start/finish`) is UNCHANGED — only
-    // the per-element position WITHIN that window is now real-Z-ordered, not identical.
+    // §TIER_SERIAL Option A (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+    // 2026-08-11 evening — replaces §PLAYBACK-STAGGER/§STAGGER_SUPPORT_ORDER/§4D_LAYER_TRUTH's
+    // independent per-task-bucket affine + §STAGGER_HOST + the in-branch guard invocation):
+    // each task bucket used to be rescaled into its own §PHASE_OVERLAP_BAND window INDEPENDENTLY,
+    // which un-did computeSchedule's cross-bucket support order (measured pre-guard: Terminal 447 /
+    // Hospital 1,929 violations — the reason §PHASE_OVERLAP_SUPPORT_GUARD was born as a repair
+    // pass). Now the covered set maps through ONE global monotone affine into the captured project
+    // window [_cap.base, _cap.projEnd]: order — and therefore support order — is preserved BY
+    // CONSTRUCTION, no per-bucket window can reorder across bucket boundaries anymore. Deliberate,
+    // user-decided Option A cost: an individual task's dragged window no longer independently
+    // rescales its own elements — task NAMES still overlay (mini-Gantt), and the overall captured
+    // window anchors/scales the whole timeline. §STAGGER_HOST was already inert here (since
+    // §4D_LAYER_TRUTH's ls-affine, element times derive from ls alone — its index reshuffle
+    // changed nothing) — removed with the per-bucket map, not silently lost.
     _capActive = false; _coveredCount = 0; _coveragePct = 0;
     if (_cap) {
       var _covered = 0;
       var _elByGuid = {};
       elements.forEach(function(el) { _elByGuid[el.guid] = el; });
-      var _byTask = {};
-      var _allOps = db.exec("SELECT output_guid, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+      var _allScheduled = [], _lsMin = Infinity, _leMax = -Infinity;
+      var _allOps = db.exec("SELECT output_guid, parameters, timestamp FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
           var g = row[0], tid = _cap.guidTask[g];
-          if (!tid) return;                         // uncovered → keep generative timing
-          if (!_byTask[tid]) _byTask[tid] = [];
-          _byTask[tid].push({ guid: g, params: row[1], cz: _elByGuid[g] ? _elByGuid[g].cz : 0 });
-        });
-      }
-      db.run('BEGIN');
-      var _upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
-        "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
-      for (var _tid in _byTask) {
-        var w = _cap.win[_tid];
-        var _bucket = _byTask[_tid];
-        _bucket.sort(function(a, b) { return a.cz - b.cz; });   // bottom-up, same discipline as generative pass
-        var _n = _bucket.length, _span = Math.max(1, w.e - w.s);
-        _bucket.forEach(function(item, i) {
-          var s_i = w.s + Math.floor((i / _n) * _span);
-          var e_i = (i + 1 < _n) ? (w.s + Math.floor(((i + 1) / _n) * _span)) : w.e;
-          if (e_i <= s_i) e_i = s_i + 60000;   // never zero/negative duration
-          var p; try { p = JSON.parse(item.params); } catch (e) { p = {}; }
-          p.phase = w.name;                         // real task name → shows in mini-Gantt
-          p._end_ts = e_i;
-          p._captured = 1;                          // visual distinction + coverage flag
-          p._task = _tid;
-          _upd.run([s_i, JSON.stringify(p), item.guid]);
+          if (!tid) return;                         // uncovered → keeps the two-tier generated timing
+          var w = _cap.win[tid];
+          if (!w) return;                           // link points at summary/undated task
+          var _el = _elByGuid[g];
+          var p; try { p = JSON.parse(row[1]) || {}; } catch (e) { p = {}; }
+          var _ls = row[2] || 0;
+          var _le = p._end_ts || (_ls + 60000);
+          if (_ls < _lsMin) _lsMin = _ls;
+          if (_le > _leMax) _leMax = _le;
+          // §GANTT_PHASE_CLOBBER (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md —
+          // Witness: W-PHASE-KEY / witness_gantt_phase_palette.js). This line used to be
+          // `p.phase = w.name`, i.e. it wrote the TASK NAME into the field the whole drawer keys
+          // on. Harmless while task names looked like phases; destructive since zone-level
+          // authoring became the default, because materializeZones names its tasks
+          // "<Phase> — <Storey>". Measured on the user's Hospital session, every op's phase became
+          // "Architecture — Level 1" and three separate things broke at once:
+          //   1. PHASE_COLORS[task.phase] || '#888'  -> all 35 bars grey (also PHASE_INK/PHASE_SHORT)
+          //   2. _phaseRank() = _ROW_PHASE_ORDER.indexOf(phase) -> -1 for every row, so the sort
+          //      falls through to alphabetical: §GANTT_ROW_ORDER printed Architecture … Substructure
+          //      5th — §GANTT_ROW_ORDER (K1)'s ORIGINAL reported bug, back verbatim and silent.
+          //   3. tm-dash-phases buckets by the same field and filters through PHASE_ORDER -> zero
+          //      matches, no §DASH_PHASE line in the entire session, phase progress renders empty.
+          // The name was never made visible by this line anyway: buildGanttTasks reads it from the
+          // task index into `taskName` (~:5694) and the bar detail header renders
+          // `bar.taskName || (bar.phase + ' — ' + bar.storey)` (~:6716). So keep the name, in its
+          // own field, and leave the phase alone — the drawer needs BOTH, not one overwriting the other.
+          p.taskName = w.name;                      // real task name → mini-Gantt detail header
+          _allScheduled.push({ guid: g, s: _ls, e: _le, params: p, task: tid,
+            bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
+            x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
+            y0: _el ? _el.y0 : 0, y1: _el ? _el.y1 : 0,
+            cls: _el ? _el.cls : '', seq: _el ? _el.seq : 999 });
           _covered++;
         });
       }
-      _upd.free();
-      db.run('COMMIT');
+      // ONE global affine into the captured window — floor() is monotone, so support margins keep
+      // their sign; only the 60s zero-duration fixup below can graze a margin after extreme
+      // compression, which the verification sweep right after repairs (expected ≈0 pushes).
+      var _capSpan = Math.max(1, _cap.projEnd - _cap.base);
+      var _lsSpan = Math.max(1, _leMax - _lsMin);
+      _allScheduled.forEach(function (item) {
+        item.s = _cap.base + Math.floor(((item.s - _lsMin) / _lsSpan) * _capSpan);
+        item.e = _cap.base + Math.floor(((item.e - _lsMin) / _lsSpan) * _capSpan);
+        if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
+      });
+      _ogSupportSweep(_allScheduled);
+      // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
+      // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
+      // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
+      // IDENTICAL rows in the IDENTICAL order (same fields, same log line), committing and yielding
+      // a macrotask every _TM_CHUNK=2500 rows so the tab stays responsive. Witness:
+      // viewer/tests/witness_gantt_refold_yield.js (identity gate: chunked rows == sync rows).
+      await _writeScheduledChunked(db, _allScheduled);
       _capActive = true;
       _coveredCount = _covered;
       _coveragePct = totalDbElements ? Math.round(_covered / totalDbElements * 100) : 0;
@@ -3465,13 +5580,110 @@
   // ── Mini Gantt chart ──
   var _ganttTasksComputed = false; // log once flag
 
+  // ── §GANTT_BAR_IDENTITY (K0 — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
+  // The drawer used to derive its bars purely by grouping raw kernel_ops on storey|phase, yielding
+  // bar objects with NO task_id — which is precisely why no bar was ever draggable: moveTask(db,
+  // taskId, …) had nothing to be handed. schedule_author.js materializeZones() already writes the
+  // SAME phase×floor decomposition into the real model (tasks + task_elements + task_sequences).
+  // Two code paths derived one decomposition independently and were never connected. This joins them.
+  //
+  // The join is by GUID through task_elements, deliberately NOT by matching storey/phase strings:
+  // deriveZones() keys a zone on collapsePhase(e.storey) while the drawer reads the raw p.storey off
+  // the op params, so those two names legitimately differ and string-matching would silently
+  // mis-associate bars. GUID identity is exact.
+  //
+  // Bars whose ops carry no task (a generated schedule with nothing authored) keep their old
+  // storey|phase identity and simply stay non-editable — honest, and reported as a coverage ratio by
+  // §GANTT_BAR_IDENTITY rather than hidden.
+  var _taskIndex = null;      // { guidTask:{guid→tid}, tasks:{tid→{id,name,start,finish}}, scheduleId }
+  var _taskIndexFor = null;   // building key the index was built for (invalidation)
+
+  function buildTaskIndex() {
+    var app = A();
+    var key = (app && app.activeBuilding) || '';
+    // §GANTT_AUTHOR_REPROBE (found by the browser wiring test, 2026-08-04): only a POSITIVE result is
+    // cached. Caching the negative meant that once the drawer had been opened on an un-authored
+    // building, authoring a schedule afterwards never took effect — the bars stayed non-editable
+    // until a building change, because nothing invalidated the "no schedule" answer. Re-probing costs
+    // one activeSchedule() query per rebuild, and rebuilds only happen when _ganttDirty is set.
+    if (_taskIndex !== null && _taskIndex.ok && _taskIndexFor === key) return _taskIndex;
+    _taskIndexFor = key;
+    _taskIndex = { ok: false, guidTask: {}, tasks: {}, scheduleId: null, n: 0 };
+    if (!app || !app.db) return null;
+    var db = app.db, sched = null;
+    try {
+      var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+      if (SA && SA.activeSchedule) sched = SA.activeSchedule(db);
+    } catch (e) { sched = null; }
+    if (!sched || !sched.id) {
+      console.log('§GANTT_BAR_IDENTITY schedule=none bars stay non-editable (no authored schedule)');
+      return null;
+    }
+    try {
+      var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish FROM tasks ' +
+        'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [sched.id]);
+      if (tr.length) tr[0].values.forEach(function (row) {
+        _taskIndex.tasks[row[0]] = { id: row[0], name: row[1], start: row[2], finish: row[3] };
+        _taskIndex.n++;
+      });
+      var er = db.exec('SELECT te.guid, te.task_id FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id WHERE t.schedule_id=?', [sched.id]);
+      if (er.length) er[0].values.forEach(function (row) { _taskIndex.guidTask[row[0]] = row[1]; });
+    } catch (e) {
+      console.log('§GANTT_BAR_IDENTITY schedule=' + sched.id + ' error=' + e.message);
+      return null;
+    }
+    _taskIndex.scheduleId = sched.id;
+    _taskIndex.ok = _taskIndex.n > 0;
+    return _taskIndex.ok ? _taskIndex : null;
+  }
+
+  // Invalidate the cached index + bar rollup (call after any write that re-dates or re-authors).
+  function invalidateGanttModel() { _taskIndex = null; _taskIndexFor = null; _ganttDirty = true; }
+
+  // §GANTT_PALETTE (2026-08-04, prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT VIS) — user report:
+  // "not clear enough which is which". Three real collisions in the previous palette, not taste:
+  //  1. Substructure #7a8a8e and Superstructure #5b7fa5 were both desaturated blue-greys — the least
+  //     distinguishable pair sat on the two ADJACENT structural phases.
+  //  2. Architecture #c07a4a (orange-brown) competed with two RESERVED STATUS colours: #ff8c00 is the
+  //     active-bar outline + cursor hairline, #ffeb3b is the captured-IFC-4D frame. A phase fill must
+  //     never occupy a status hue.
+  //  3. The palette encoded no trade family: the two MEP phases (#8bc34a green / #ab47bc purple)
+  //     looked unrelated, while MEP Rough-in and Finishes (#26a69a teal) looked related.
+  // Now: three trade families by HUE (structure blue / MEP green / architecture purple), dark→light
+  // WITHIN each family following build order, and orange+yellow left free for status only.
+  //
+  // MEASURED, not eyeballed (CIE76 dE + WCAG, scratchpad/palette_tune.js — the FUNDAMENTAL LAW
+  // applies to colour too: numbers, not "looks better"):
+  //   min pairwise dE      20.8 → 34.7   (worst old pair was Substructure/Superstructure, as reported)
+  //   min dE to a status hue 42.5 → 60.9
+  //   worst label contrast  2.10:1 → 5.92:1   (the OLD palette failed a 3.0 floor on every light bar —
+  //                                            white-on-#8bc34a was 2.10:1, effectively unreadable)
   var PHASE_COLORS = {
-    'Substructure': '#7a8a8e',
-    'Superstructure': '#5b7fa5',
-    'MEP Rough-in': '#8bc34a',
-    'Architecture': '#c07a4a',
-    'MEP Final': '#ab47bc',
-    'Finishes': '#26a69a'
+    'Substructure':   '#37516b',   // structure, deep
+    'Superstructure': '#79b4e8',   // structure, light
+    'MEP Rough-in':   '#27714a',   // MEP, deep
+    'MEP Final':      '#7ccb80',   // MEP, light
+    'Architecture':   '#5e3f87',   // architecture, deep
+    'Finishes':       '#c096e0'    // architecture, light
+  };
+
+  // Adaptive label ink — white on the deep family members, near-black on the light ones. Forcing
+  // white onto every bar is what drove the old 2.10:1 contrast; picked per fill, all six clear 5.9:1.
+  var PHASE_INK = {
+    'Substructure':   '#ffffff',
+    'Superstructure': '#10141a',
+    'MEP Rough-in':   '#ffffff',
+    'MEP Final':      '#10141a',
+    'Architecture':   '#ffffff',
+    'Finishes':       '#10141a'
+  };
+
+  // The in-bar text label used to be phase.substring(0,3), which collided on exactly the same pair
+  // the colours did: "Sub" vs "Sup", one character apart at 9px. Explicit short codes instead.
+  var PHASE_SHORT = {
+    'Substructure': 'SUB', 'Superstructure': 'SUPER', 'MEP Rough-in': 'MEP-R',
+    'MEP Final': 'MEP-F', 'Architecture': 'ARCH', 'Finishes': 'FIN'
   };
 
   // ── §TM-VARIANCE — budget-vs-actual from the STORED twin (TM_4D5D_VARIANCE_LANE §S1) ──
@@ -3756,27 +5968,40 @@
       ' AC=' + EVM.AC + ' CPI=' + EVM.CPI.toFixed(3) + ' CV=' + EVM.CV + ' BAC=' + EVM.BAC + ' EAC=' + EVM.EAC + ' VAC=' + EVM.VAC);
   }
 
-  function drawGanttMini() {
-    if (!_ops.length) return;
-    var canvas = document.getElementById('tm-gantt-canvas');
-    var box = document.getElementById('tm-gantt-box');
-    if (!canvas || !box) return;
-
-    // Group ops by storey|phase
+  // buildGanttTasks() — the storey|phase rollup, now cached and task-identity-aware (K0).
+  // Grouping key is the REAL task_id whenever the op's guid resolves through task_elements, so each
+  // resulting bar carries `taskId` and is addressable by moveTask/resizeTask/addDependency. Ops with
+  // no task fall back to the original storey|phase key and stay non-editable.
+  function buildGanttTasks() {
+    if (!_ganttDirty) return;
+    _ganttDirty = false;
+    var idx = buildTaskIndex();
     var groups = {};
+    var _idN = 0, _noIdN = 0;
     for (var i = 0; i < _ops.length; i++) {
       var op = _ops[i];
+      // §GANTT_OPS_BOOKKEEPING_LEAK: a non-construction op (BUILDING_OPEN, ELEMENT_PICK, GRID_*, ...)
+      // is not a task and must not become a bar — see computeDays()'s own header comment for the
+      // traced mechanism. _ops itself stays the full mixed history for other consumers (copyGuids).
+      if (op.op_type !== 'ELEMENT_PLACE') continue;
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
-      var key = storey + '|' + phase;
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, starts: [], ends: [], count: 0, cap: 0 };
+      // Real task identity first (exact, by guid); storey|phase only as the un-authored fallback.
+      var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
+      if (tid) _idN++; else _noIdN++;
+      var key = tid ? ('T:' + tid) : (storey + '|' + phase);
+      if (!groups[key]) groups[key] = { storey: storey, phase: phase, taskId: tid || null,
+        taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
+        starts: [], ends: [], count: 0, cap: 0, guids: [] };
       var g = groups[key];
       g.starts.push(op.start_ts);
       g.ends.push(op.end_ts);
+      g.guids.push(op.output_guid);   // W1 needs the member set to re-time an edited bar
       g.count++;
       if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
     }
+    _ganttIdentified = _idN; _ganttUnidentified = _noIdN;
 
     // §GANTT_MINI_TRIM (2026-07-18, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6
     // postscript 2): the bar's displayed span used to be the true min/max of every element in the
@@ -3812,30 +6037,1120 @@
       _ganttTasks.push(g);
     }
 
-    // Sort by start time
-    _ganttTasks.sort(function(a, b) { return a.startTs - b.startTs; });
+    // §GANTT_ROW_ORDER (K1, 2026-08-04) — user report: "are you using any 4D convention used by P6 on
+    // gantt phase/task ordering? Last session was a mess putting substructure which has above ground
+    // appearing first." Correct answer at the time: we followed NO convention. Rows were sorted purely
+    // by `a.startTs - b.startTs`, so whichever zone happened to compute earliest floated to the top and
+    // a phase's floors appeared interleaved with other phases' — arbitrary, and unreadable as a
+    // construction programme.
+    //
+    // P6/MSP order rows by WBS path, THEN by early start. Our WBS is (phase → floor): the zone
+    // decomposition materializeZones already persists. So: phase in real construction sequence first,
+    // then start time within the phase (which tracks bottom-up floor order, because the engine builds
+    // floors bottom-up). Falls back to alphabetical for any phase outside the canonical list rather
+    // than silently bucketing it at position 0.
+    //
+    // ⚠ DERIVED FROM SEQUENCE_RULES, NEVER HARDCODED — and this matters, it is not tidiness.
+    // The first draft of this fix copied the order out of _VAR_ORDER (~:4238) and was WRONG: that
+    // array still reads Substructure/Superstructure/MEP Rough-in/Architecture/…, i.e. MEP rough-in
+    // BEFORE the building envelope — the exact backwards discipline PR #1165 fixed in SEQUENCE_RULES
+    // and across all 18 rate-template sources. _VAR_ORDER is a THIRD stale copy that #1165 missed
+    // (the two known-stale PHASE_ORDER arrays in this file are the other two). The real engine order,
+    // read from SEQUENCE_RULES' own sequence numbers, is:
+    //   Substructure(1) → Superstructure(2) → Architecture(5) → MEP Rough-in(7) → MEP Final(9) → Finishes(10)
+    // Deriving it kills this whole class of drift: the drawer cannot disagree with the engine again.
+    var _ROW_PHASE_ORDER = (function () {
+      var SR = (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null;
+      if (SR) {
+        var minSeq = {};
+        for (var k in SR) {
+          var r = SR[k]; if (!r || !r.phase || r.sequence == null) continue;
+          if (minSeq[r.phase] == null || r.sequence < minSeq[r.phase]) minSeq[r.phase] = r.sequence;
+        }
+        var ks = Object.keys(minSeq);
+        if (ks.length) return ks.sort(function (a, b) { return minSeq[a] - minSeq[b]; });
+      }
+      // Fallback only when SEQUENCE_RULES has not loaded — matches the derived order above.
+      return ['Substructure', 'Superstructure', 'Architecture', 'MEP Rough-in', 'MEP Final', 'Finishes'];
+    })();
+    function _phaseRank(p) {
+      var i = _ROW_PHASE_ORDER.indexOf(p);
+      return i < 0 ? _ROW_PHASE_ORDER.length : i;      // unknown phases sort after the known ones
+    }
+    _ganttTasks.sort(function (a, b) {
+      var pa = _phaseRank(a.phase), pb = _phaseRank(b.phase);
+      if (pa !== pb) return pa - pb;
+      if (pa === _ROW_PHASE_ORDER.length && a.phase !== b.phase) return a.phase < b.phase ? -1 : 1;
+      return (a.startTs - b.startTs) || (a.storey < b.storey ? -1 : a.storey > b.storey ? 1 : 0);
+    });
 
     if (!_ganttTasksComputed) {
+      var _idBars = 0;
+      for (var bi = 0; bi < _ganttTasks.length; bi++) if (_ganttTasks[bi].taskId) _idBars++;
       console.log('§GANTT_MINI tasks=' + _ganttTasks.length);
+      // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
+      // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
+      // authored schedule exists for this building, NOT that the join failed.
+      // K1 proof line: the row order actually drawn, so "is substructure first" is checkable from the
+      // log instead of from a screenshot.
+      console.log('§GANTT_ROW_ORDER phases=' + JSON.stringify(_ganttTasks.map(function (t) { return t.phase; })
+        .filter(function (p, i, arr) { return i === 0 || arr[i - 1] !== p; })));
+      console.log('§GANTT_BAR_IDENTITY schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
+        ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
+        ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
+        ' modelTasks=' + ((_taskIndex && _taskIndex.n) || 0));
       _ganttTasksComputed = true;
     }
+  }
 
-    // Phase legend strip
-    var legend = document.getElementById('tm-gantt-legend');
-    if (legend && !legend.childElementCount) {
-      var seenPhases = {};
-      for (var li = 0; li < _ganttTasks.length; li++) {
-        var lp = _ganttTasks[li].phase;
-        if (!seenPhases[lp]) {
-          seenPhases[lp] = true;
-          var sp = document.createElement('span');
-          sp.style.cssText = 'display:inline-flex;align-items:center;gap:2px';
-          sp.innerHTML = '<span style="width:8px;height:8px;border-radius:1px;background:' +
-            (PHASE_COLORS[lp] || '#888') + ';display:inline-block"></span>' + lp;
-          legend.appendChild(sp);
+  // §GANTT_RULER (E5) — the drawer's time axis. Ticks are chosen so labels land roughly every 80px
+  // and always on a "nice" day interval, so the axis stays readable from a 30-day Duplex to a
+  // 1000-day Terminal without any per-building tuning. Returns the tick times so the bar canvas can
+  // draw matching gridlines — one source of truth for where a date sits horizontally.
+  var _RULER_STEPS = [1, 2, 5, 7, 14, 30, 60, 90, 180, 365, 730];
+  // §GANTT_AXIS_OUTLIER: ruler geometry is DISPLAY — uses the qualified axis (_ganttAxisStart/End),
+  // never the real playback _projectStart/_projectEnd. See the var declarations for why.
+  function ganttRulerTicks(barW) {
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    var totalDays = range / 86400000;
+    var pxPerDay = barW / totalDays;
+    var step = _RULER_STEPS[_RULER_STEPS.length - 1];
+    for (var i = 0; i < _RULER_STEPS.length; i++) {
+      if (_RULER_STEPS[i] * pxPerDay >= 80) { step = _RULER_STEPS[i]; break; }
+    }
+    var ticks = [];
+    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: _ganttAxisStart + d * 86400000 });
+    return { ticks: ticks, step: step, totalDays: totalDays };
+  }
+
+  function drawGanttRuler(cW, marginL, barW) {
+    var rc = document.getElementById('tm-gantt-ruler');
+    if (!rc) return null;
+    var H = 18, dpr = window.devicePixelRatio || 1;
+    rc.width = cW * dpr; rc.height = H * dpr; rc.style.height = H + 'px';
+    var ctx = rc.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cW, H);
+    var R = ganttRulerTicks(barW);
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    // "Day N" origin label in the storey-label gutter, so the axis reads as project days too.
+    ctx.fillStyle = '#8a97a5'; ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('Day', 4, H / 2);
+    var longSpan = R.step >= 30;
+    ctx.strokeStyle = 'rgba(120,140,160,0.35)'; ctx.lineWidth = 1;
+    R.ticks.forEach(function (t) {
+      var x = marginL + (t.ts - _ganttAxisStart) / range * barW;
+      if (x < marginL - 0.5 || x > marginL + barW + 0.5) return;
+      ctx.beginPath(); ctx.moveTo(x + 0.5, H - 5); ctx.lineTo(x + 0.5, H); ctx.stroke();
+      var dt = new Date(t.ts);
+      // Real calendar date, plus the project-day number the rest of the drawer already speaks in.
+      var lbl = longSpan
+        ? dt.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+        : dt.getDate() + ' ' + dt.toLocaleDateString(undefined, { month: 'short' });
+      ctx.fillStyle = '#aab6c2'; ctx.textAlign = 'center';
+      ctx.fillText(lbl, x, 5);
+      ctx.fillStyle = '#68758a';
+      ctx.fillText('d' + t.day, x, 13);
+    });
+    // Cursor marker on the axis, same orange as the hairline. Clamped into [0,1] — the real _cursor
+    // can legitimately sit past the qualified axis (e.g. scrubbed to the outlier op itself); off the
+    // qualified ruler is the correct place for that, not a reason to hide the marker entirely.
+    var hxFrac = Math.max(0, Math.min(1, (_cursor - _ganttAxisStart) / range));
+    var hx = marginL + hxFrac * barW;
+    if (hx >= marginL && hx <= marginL + barW) {
+      ctx.fillStyle = '#ff8c00';
+      ctx.beginPath(); ctx.moveTo(hx, H - 6); ctx.lineTo(hx - 4, H); ctx.lineTo(hx + 4, H); ctx.closePath(); ctx.fill();
+    }
+    return R;
+  }
+
+  // §TM_PANEL_RESIZE — drag tm-panel-resize-grip to widen the WHOLE drawer past its 376px default.
+  // _panel is centered (left:50%/translateX(-50%)), so dragging the right edge by dx pixels must
+  // grow width by 2*dx for the edge to actually track the cursor 1:1 (the invisible left edge moves
+  // -dx to keep centered) — see wirePanelResize's pointermove for the derivation.
+  var _panelW = 0;            // 0 = follow the stylesheet default (376px); set once the user drags
+  var _panelWPreEdit = null;  // width to restore to when Editing turns back off (auto-expand undo)
+  var PANEL_W_DEFAULT = 376, PANEL_W_EDIT = 560, PANEL_W_MIN = 320;
+
+  function wirePanelResize() {
+    var grip = document.getElementById('tm-panel-resize-grip');
+    if (!grip || !_panel || grip._wired) return;
+    grip._wired = true;
+    var startX = 0, startW = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startX = e.clientX; startW = _panel.getBoundingClientRect().width;
+      _panel.classList.add('tm-panel-resizing');
+      grip.classList.add('tm-gripping');
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var maxW = Math.min(Math.round(window.innerWidth * 0.92), 900);
+      var w = Math.max(PANEL_W_MIN, Math.min(maxW, Math.round(startW + 2 * (e.clientX - startX))));
+      _panelW = w;
+      _panel.style.width = w + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      _panel.classList.remove('tm-panel-resizing');
+      grip.classList.remove('tm-gripping');
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§TM_PANEL_RESIZE width=' + _panelW + 'px');
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
+  // §TM_PANEL_RESIZE_H — companion to wirePanelResize() above, same grip/pointer-capture pattern,
+  // mirrored onto the panel's bottom edge. FIX (2026-08-06, user: "it seems there is an inner frame
+  // for the gantt chart panel... it does not be max" — confirmed live): this used to grow the OUTER
+  // _panel shell only, leaving the actual content (#tm-gantt-box, the Gantt canvas) clipped at its
+  // own separate height cap — so the drag looked like it worked but never uncrammed any content.
+  // Now it drives the SAME #tm-gantt-box / _ganttBoxH that the internal top-strip grip
+  // (wireGanttResize, §GANTT_RESIZE E6) already owns — this is just a second, more discoverable
+  // entry point to that one real resize, not a second independent mechanism. _panel itself has no
+  // height cap of its own (flex column, grows to fit content) so it naturally follows the box taller
+  // — no outer-panel style needed at all, exactly like the top-strip grip already proves works.
+  function wirePanelResizeHeight() {
+    var grip = document.getElementById('tm-panel-resize-grip-b');
+    var box = document.getElementById('tm-gantt-box');
+    if (!grip || !box || grip._wired) return;
+    grip._wired = true;
+    var startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = box.clientHeight;
+      if (_panel) _panel.classList.add('tm-panel-resizing');
+      grip.classList.add('tm-gripping');
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      // Grip sits at the drawer's BOTTOM edge (opposite of tm-gantt-grip's top-edge placement), so
+      // dragging DOWN (positive dy) grows it — same clamp bounds as wireGanttResize for consistency.
+      var h = Math.max(80, Math.min(Math.round(window.innerHeight * 0.75), startH + (e.clientY - startY)));
+      _ganttBoxH = h;
+      box.style.maxHeight = h + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      if (_panel) _panel.classList.remove('tm-panel-resizing');
+      grip.classList.remove('tm-gripping');
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§TM_PANEL_RESIZE_H height=' + _ganttBoxH + 'px rows=' + _ganttTasks.length);
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
+  // §TM_RULER_SHIFT UI — drag the day ruler to move the whole project's start/finish (user ruling
+  // 2026-08-05). Same lock gate as bar drag/resize/link (this is the biggest possible edit, not a
+  // reason to exempt it from the lock). Uses the SAME axis math as ganttHit's dayPx so a drag of N
+  // pixels always means the same N days everywhere in the drawer, ruler included.
+  function wireGanttRulerShift() {
+    var rc = document.getElementById('tm-gantt-ruler');
+    if (!rc || rc._shiftWired) return;
+    rc._shiftWired = true;
+    var startX = 0, dragDays = 0, dragging = false;
+    rc.addEventListener('pointerdown', function (e) {
+      if (!_ganttEditable) {
+        console.log('§TM_RULER_SHIFT_REJECT reason=locked');
+        var t0 = document.getElementById('tm-gantt-tip');
+        if (t0) {
+          t0.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t0.style.display = 'block';
+          setTimeout(function () { t0.style.display = 'none'; }, 2200);
         }
+        return;
+      }
+      dragging = true; startX = e.clientX; dragDays = 0;
+      try { rc.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault(); e.stopPropagation();
+    });
+    rc.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+      var barW = Math.max(1, rc.clientWidth - 60);   // 60 = the storey-label gutter, same as ganttHit/drawGanttMini
+      var dayPx = barW / (range / 86400000);
+      dragDays = Math.round((e.clientX - startX) / Math.max(0.001, dayPx));
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) {
+        tip.textContent = 'Shift whole schedule ' + (dragDays >= 0 ? '+' : '') + dragDays + 'd';
+        tip.style.left = '4px'; tip.style.top = '20px'; tip.style.display = 'block';
+      }
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { rc.releasePointerCapture(e.pointerId); } catch (err) {}
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) tip.style.display = 'none';
+      if (dragDays) shiftGanttSchedule(dragDays);
+    }
+    rc.addEventListener('pointerup', end);
+    rc.addEventListener('pointercancel', end);
+  }
+
+  // §GANTT_RESIZE (E6) — drag the grip to make the drawer taller than the CSS 220px cap. Inline
+  // max-height wins over the .tm-drawer-bottom.open rule, so the class keeps owning open/close and
+  // this only owns the height. Reuses the same pointer-capture idiom as makeDraggable.
+  var _ganttBoxH = 0;   // 0 = follow the stylesheet default
+  function wireGanttResize() {
+    var grip = document.getElementById('tm-gantt-grip');
+    var box = document.getElementById('tm-gantt-box');
+    if (!grip || !box || grip._wired) return;
+    grip._wired = true;
+    var startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = box.clientHeight;
+      grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      // Grip sits at the drawer's TOP edge, so dragging UP (negative dy) grows it.
+      var h = Math.max(80, Math.min(Math.round(window.innerHeight * 0.75), startH + (startY - e.clientY)));
+      _ganttBoxH = h;
+      box.style.maxHeight = h + 'px';
+      e.preventDefault(); e.stopPropagation();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+      console.log('§GANTT_RESIZE height=' + _ganttBoxH + 'px rows=' + _ganttTasks.length);
+    }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
+  // ── §GANTT_DRAG (E1/E2) + §GANTT_RETIME (W1) ──────────────────────────────────────────────────
+  // The UI half of the constraint-aware edit. The ENGINE half lives in schedule_author.js
+  // (moveTaskCascade / resizeTask) and is witnessed independently — this layer only translates a
+  // gesture into a date and then re-times the affected elements so the movie cannot disagree with
+  // the chart it was dragged on.
+  var _drag = null;            // { bar, mode:'move'|'resizeL'|'resizeR', x0, dayPx, previewDays }
+  var _dragConsumed = false;   // set on a committed edit so the seek handler ignores that pointerup
+  var EDGE_PX = 5;             // grab zone at each bar end — inside this, a drag resizes, not moves
+
+  // §GANTT_EDIT_LOCK (user ruling 2026-08-05): the drawer is the ONLY editing surface now — no more
+  // side-panel button. Default LOCKED so an accidental drag can never move a date; the user flips it
+  // ON deliberately to edit. Gates drag/resize (wireGanttDrag pointerdown, which also gates the E3
+  // drag-to-link since endDrag never runs without a live _drag) and the E7 props dblclick (typed
+  // retime + unlink). Playback/scrub/seek/render are NEVER gated — the canvas stays live feedback
+  // regardless of lock state (user: "if canvas is runtime responsive, it gives the user feedback
+  // which is desirable"). Persistence model is UNCHANGED: every accepted edit still writes straight
+  // to the tasks/kernel_ops tables the instant it's committed (same as before this toggle existed,
+  // §GANTT_EDIT_UNDO already covers the single-level undo of that immediate write) — the toggle is a
+  // UI lock only, not a new draft/commit layer.
+  var _ganttEditable = false;
+  var _ganttAutoGenAttempted = false;  // reset per activate() — one auto-generate attempt per open
+
+  // §GANTT_GROUP_MOVE (user ruling 2026-08-05): marquee-select a cluster of bars (MS-Word-style —
+  // drag from EMPTY canvas space, sweep into the bars you want), then dragging any SELECTED bar
+  // moves the whole group together (same uniform-shift primitive as §TM_RULER_SHIFT, scoped to the
+  // selection instead of the whole project). Ephemeral, never persisted — same convention as
+  // selecting files in a file manager: it exists between "marquee" and "click away," nothing more.
+  // Click any empty canvas space (a marquee drag that ends up ~zero-size) clears it — same gesture
+  // starts a NEW marquee and dissolves the OLD selection in one motion, no separate "ungroup" verb.
+  var _ganttSelected = {};   // taskId -> true
+  var _marquee = null;       // { x0, y0, x1, y1 } in canvas-local px while a marquee drag is live
+  var _groupDrag = null;     // { taskIds, x0, y0, dayPx, days, moved } while dragging a selected bar
+
+  // §GANTT_EDIT_UNDO — single-level (not a stack): a drag can cascade N successors with no way back
+  // except regenerating the whole schedule (real gap, this session's own edit UI made it possible).
+  // Scope is deliberately narrow: only commitGanttDrag (E1/E2 move/resize) sets this, not link/unlink
+  // or the property panel — matching exactly the need named in 4D_SCHEDULE_PERFECTION.md, not a
+  // speculative general undo system. { schedId, tasksBefore:{taskId:{start,finish,duration}},
+  // opsBefore:{guid:{start_ts,end_ts,parameters}}, taskId, mode } — cleared on every fresh TM activate().
+  var _lastEdit = null;
+
+  // Which bar (and where on it) is under the pointer? Extends findBarAtClick with an edge zone so a
+  // single gesture can mean either E1 (move) or E2 (edge-pull), the way P6/MSP behave.
+  function ganttHit(e) {
+    var bar = findBarAtClick(e);
+    if (!bar) return null;
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var marginL = 60, barW = rect.width - marginL;
+    // §GANTT_AXIS_OUTLIER: must match the qualified axis findBarAtClick/drawGanttMini now use.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    var bx = marginL + (bar.startTs - _ganttAxisStart) / range * barW;
+    var bw = Math.max(2, (bar.endTs - bar.startTs) / range * barW);
+    var mode = 'move';
+    if (x <= bx + EDGE_PX) mode = 'resizeL';
+    else if (x >= bx + bw - EDGE_PX) mode = 'resizeR';
+    return { bar: bar, mode: mode, dayPx: barW / (range / 86400000) };
+  }
+
+  // §GANTT_RETIME (W1) — after an accepted edit, re-time the affected tasks' OWN elements onto their
+  // new window. This is what keeps the drawer and the 3D movie from diverging: the bar's drawn span
+  // is derived from the element ops (§GANTT_BAR_IDENTITY), so moving the elements IS what moves the
+  // bar. Coherence is structural rather than policed afterwards.
+  //
+  // The remap is AFFINE over each element's existing position in its old window, deliberately: a
+  // zone's internal ordering was already computed correctly by the engine (computeSchedule, plus this
+  // session's support fixes), so an edit must PRESERVE that order, not re-derive it. Only the window
+  // the order is stretched across changes.
+  // The remap itself, kept pure and self-contained so witness_gantt_edit_coherence.js can slice it
+  // out of THIS source and test the shipped function rather than a hand-copied duplicate (the copy
+  // problem this codebase already paid for three times with the support predicate).
+  function _retimeSpan(opS, opE, oS, oE, nS, nE) {
+    var oSpan = Math.max(1, oE - oS), nSpan = Math.max(1, nE - nS);
+    var s = Math.round(nS + ((opS - oS) / oSpan) * nSpan);
+    var e = Math.round(nS + ((opE - oS) / oSpan) * nSpan);
+    if (s < nS) s = nS;
+    if (e > nE) e = nE;
+    if (e <= s) e = Math.min(nE, s + 60000);
+    return { s: s, e: e };
+  }
+
+  function retimeTaskElements(db, barsByTask, moved) {
+    var upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
+      "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
+    var opByGuid = {}, i;
+    for (i = 0; i < _ops.length; i++) if (_ops[i].output_guid) opByGuid[_ops[i].output_guid] = _ops[i];
+    var rows = 0, t0 = (window.performance || Date).now();
+    db.run('BEGIN');
+    moved.forEach(function (m) {
+      var bar = barsByTask[m.id]; if (!bar || !bar.guids || !bar.guids.length) return;
+      var nS = Date.parse(m.start + 'T00:00:00Z'), nE = Date.parse(m.finish + 'T00:00:00Z');
+      if (isNaN(nS) || isNaN(nE) || nE <= nS) return;
+      var oS = bar.startTs, oE = bar.endTs, oSpan = Math.max(1, oE - oS), nSpan = nE - nS;
+      for (var gi = 0; gi < bar.guids.length; gi++) {
+        var g = bar.guids[gi], op = opByGuid[g]; if (!op) continue;
+        var r = _retimeSpan(op.start_ts, op.end_ts, oS, oE, nS, nE);
+        op.start_ts = r.s; op.end_ts = r.e;
+        op.parameters._end_ts = r.e;
+        upd.run([r.s, JSON.stringify(op.parameters), g]);
+        rows++;
+      }
+    });
+    db.run('COMMIT');
+    upd.free();
+    console.log('§GANTT_RETIME tasks=' + moved.length + ' rows=' + rows +
+      ' ms=' + ((window.performance || Date).now() - t0).toFixed(1));
+    return rows;
+  }
+
+  // §GANTT_RETIME_RESYNC (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH follow-on — user
+  // report: "foundation piling nor others does not come onto canvas anymore, though i dragged to
+  // certain bars passing", witnessed as §PERF_TRAVERSE cand=0 on every scrub after §GANTT_RETIME):
+  // retimeTaskElements moves the ops' timestamps, but THREE derived structures kept the old times —
+  // (1) the §PERF_INCR event index (_evMesh), so the incremental reveal skipped meshes straight
+  // across their new transitions (the blackout); (2) _ops' sort order (consumers binary-search it);
+  // (3) the §XRAY solidify cache (stale carrier ends). One resync, called by every retime commit
+  // path (drag, ruler shift, group shift, undo) — same drop-pattern deactivate() already uses.
+  function _tmResyncAfterRetime() {
+    _ops.sort(function (a, b) { return a.start_ts - b.start_ts; });
+    _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: force full rebuild next tick
+    _tmRebuildXrayCache();
+  }
+
+  // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
+  function commitGanttDrag(bar, mode, deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.moveTaskCascade) {
+      console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!bar.taskId) {
+      // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
+      console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
+      return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+
+    // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. Cascade scope isn't known
+    // until the verb returns, so this captures every leaf task in the active schedule (cheap — a
+    // handful to a few hundred rows), not just the dragged one.
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
+        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res;
+    if (mode === 'move') {
+      res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
+    } else if (mode === 'resizeR') {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs),
+        d(bar.endTs + deltaDays * 86400000), {});
+    } else {
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000),
+        d(bar.endTs), {});
+    }
+    if (!res || !res.ok) {
+      console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+    // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
+    if (res.clamped) {
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip) {
+        tip.textContent = 'Blocked by ' + res.blockedBy + ' — clamped to ' + res.start;
+        tip.style.display = 'block';
+        setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
     }
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+
+    // §GANTT_EDIT_UNDO — the element-op "before" state, captured from the in-memory _ops (still the
+    // pre-retime values at this point) for exactly the guids retimeTaskElements is about to touch.
+    // Hash the guid->op lookup ONCE (same shape as retimeTaskElements's own opByGuid below) — a
+    // linear scan per guid here was O(cascadeGuids * totalOps): measured 92s wall-clock on Terminal
+    // (3,519 guids * 48,428 ops) before this fix, unusable for an interactive drag.
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi2 = 0; oi2 < _ops.length; oi2++) if (_ops[oi2].output_guid) _opByGuidForUndo[_ops[oi2].output_guid] = _ops[oi2];
+    (res.moved || []).forEach(function (m) {
+      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
+      bar2.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved || []);
+    _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
+      ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // §TM_RULER_SHIFT — drag the day ruler to move the WHOLE project's start/finish. Same shape as
+  // commitGanttDrag (snapshot every leaf task's before-state + every touched guid's before-state
+  // into the SAME _lastEdit single-level undo, call the real engine verb, retimeTaskElements to
+  // resync playback), just against SA.shiftSchedule instead of moveTaskCascade/resizeTask and
+  // against EVERY task instead of one cascade. mode:'shift' in _lastEdit is cosmetic (log/tip text
+  // only) — undoLastGanttEdit's restore loop doesn't branch on it, so no other change was needed
+  // there at all.
+  function shiftGanttSchedule(deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.shiftSchedule) {
+      console.log('§TM_RULER_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!deltaDays) return;   // a click, not a drag — nothing to shift
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res = SA.shiftSchedule(app.db, schedId, deltaDays);
+    if (!res || !res.ok) {
+      console.log('§TM_RULER_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi2 = 0; oi2 < _ops.length; oi2++) if (_ops[oi2].output_guid) _opByGuidForUndo[_ops[oi2].output_guid] = _ops[oi2];
+    res.moved.forEach(function (m) {
+      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
+      bar2.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved);
+    _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // §GANTT_GROUP_MOVE — same shape as shiftGanttSchedule, scoped to an explicit marquee-selected
+  // task_id list instead of the whole schedule. Reuses the SAME _lastEdit single-level undo — its
+  // restore loop doesn't care whether tasksBefore/opsBefore covers a cascade, the whole schedule,
+  // or a selection, it just restores whatever's in there.
+  function commitGanttGroupShift(taskIds, deltaDays) {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.shiftTasks) {
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!deltaDays || !taskIds || !taskIds.length) return;
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+
+    var tasksBefore = {};
+    try {
+      var placeholders = taskIds.map(function () { return '?'; }).join(',');
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id IN (' + placeholders + ')', taskIds);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res = SA.shiftTasks(app.db, taskIds, deltaDays);
+    if (!res || !res.ok) {
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      return;
+    }
+
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi3 = 0; oi3 < _ops.length; oi3++) if (_ops[oi3].output_guid) _opByGuidForUndo[_ops[oi3].output_guid] = _ops[oi3];
+    res.moved.forEach(function (m) {
+      var bar3 = barsByTask[m.id]; if (!bar3 || !bar3.guids) return;
+      bar3.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved);
+    _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
+  // that edit changed: the task dates (moveTaskCascade/resizeTask's write to `tasks`) and the
+  // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
+  // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
+  function undoLastGanttEdit() {
+    var app = A();
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2200);
+    }
+    if (!_lastEdit || !app || !app.db) {
+      console.log('§GANTT_EDIT_UNDO_REJECT reason=nothing_to_undo');
+      say('Nothing to undo');
+      return;
+    }
+    var edit = _lastEdit;
+    _lastEdit = null;   // single-level — commit even if a write below throws, never retry the same edit
+    var db = app.db;
+    db.run('BEGIN');
+    var stT = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+    var tRestored = 0;
+    for (var tid in edit.tasksBefore) {
+      var t = edit.tasksBefore[tid];
+      stT.run([t.start, t.finish, t.duration, tid]);
+      tRestored++;
+    }
+    stT.free();
+    var stO = db.prepare('UPDATE kernel_ops SET timestamp=?, parameters=? WHERE op_type=\'ELEMENT_PLACE\' AND output_guid=?');
+    var oRestored = 0;
+    // Same O(1)-per-guid hash, same reason as commitGanttDrag's opsBefore capture — a linear scan
+    // per guid here is O(cascadeGuids * totalOps), unusable on a large building's cascade.
+    var _opByGuidForRestore = {};
+    for (var oi3 = 0; oi3 < _ops.length; oi3++) if (_ops[oi3].output_guid) _opByGuidForRestore[_ops[oi3].output_guid] = _ops[oi3];
+    for (var guid in edit.opsBefore) {
+      var o = edit.opsBefore[guid];
+      stO.run([o.start_ts, o.parameters, guid]);
+      var opR = _opByGuidForRestore[guid];
+      if (opR) { opR.start_ts = o.start_ts; opR.end_ts = o.end_ts; opR.parameters = JSON.parse(o.parameters); }
+      oRestored++;
+    }
+    stO.free();
+    db.run('COMMIT');
+    console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
+      ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
+    say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+  }
+
+  // ⚑ Set Baseline — replaces the dead Copy New slot. Definition user-confirmed 2026-08-05
+  // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"): a deliberate snapshot of the
+  // schedule's own dates, a DIFFERENT axis from §TM-VARIANCE's existing ERP cost variance. Manual
+  // button today because MOB's auto-trigger-at-ERP-push (M2) doesn't exist yet — once it does, the
+  // SAME ScheduleAuthor.setBaseline verb gets called there too; this button does not become obsolete,
+  // it becomes the "re-baseline for an approved change order" case named in the spec.
+  function setGanttBaseline() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2600);
+    }
+    if (!app || !app.db || !SA || !SA.setBaseline) {
+      console.log('§GANTT_SET_BASELINE_REJECT reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var res = SA.setBaseline(app.db, schedId);
+    if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
+    say('Baseline set — ' + res.taskCount + ' tasks');
+  }
+
+  // §GANTT_AUTHOR_ENTRY (native, §GANTT_EDIT_LOCK 2026-08-05 dropped the last old-panel fallback) —
+  // called automatically by drawGanttMini when the drawer has nothing editable to show, no button,
+  // no side panel involved at all any more. Calls the real engine verb directly, same as the panel's
+  // own generateDraft() zone-detail path (schedule_author_ui.js), not a reimplementation of it.
+  // §GANTT_SINGLE_LOAD (2026-08-07, 4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD) — the materialize
+  // core, callable BEFORE activation: no UI tip, no refold. Returns true iff a fresh native schedule
+  // was written. Scoped to the truly-cold case only (NO schedule row at all) — an existing schedule,
+  // authored or captured, is left for injectGantt to absorb as-is; generateGanttSchedule() below keeps
+  // its own wider semantics (regenerates over a non-captured schedule) for the drawer's auto-gen
+  // fallback. Same materializeZones call/opts as generateGanttSchedule — keep them in sync.
+  function _materializeNativeSchedule(app) {
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.materializeZones) return false;
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act) return false;                       // schedule exists — injectGantt absorbs it, one pass
+    var todayStart = new Date().toISOString().slice(0, 10);
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false });
+    console.log('§GANTT_PREMATERIALIZE ' + (res.ok
+      ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
+      : 'failed reason=' + (res.reason || 'unknown') + ' — legacy auto-generate fallback will handle it'));
+    return !!res.ok;
+  }
+
+  function generateGanttSchedule() {
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 3200);
+    }
+    if (!app || !app.db || !SA || !SA.materializeZones) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
+    // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
+    // anything. Previously this fell back to opening the old ScheduleAuthorUI side panel to edit a
+    // captured schedule's structure — user ruling 2026-08-05 removed that too ("prefer to edit right
+    // in the gantt chart itself"): a captured schedule is left exactly as imported (never
+    // regenerated) and is edited through the SAME drawer lock/drag/link/props surface as any other
+    // schedule, once its bars carry real task_ids via the normal cap/injectGantt load path.
+    var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
+    if (act && act.captured) {
+      console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — leaving it as imported, not regenerating');
+      return;
+    }
+    // §TM_RULER_SHIFT (2026-08-05, user ruling): "defaulted to today if the JSON is silent" — the
+    // native auto-generate path has no imported schedule to take a start date from, so it starts
+    // TODAY (real wall-clock date), not a hardcoded placeholder. Once materialized the user can drag
+    // the ruler to shift the whole project to a different start, same as any other edit.
+    var todayStart = new Date().toISOString().slice(0, 10);
+    var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
+      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false }) : { ok: false };
+    }
+    if (!res.ok) {
+      console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
+      say('Could not generate a schedule'); return;
+    }
+    console.log('§GANTT_AUTHOR_ENTRY native generate zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') +
+      ' phases=' + (res.phases ? res.phases.length : 'n/a'));
+    say('Schedule generated — refreshing…');
+    // Reuse the SAME refresh path applyTo4D() already uses for this exact situation (a fresh/edited
+    // schedule needs the drawer's overlay re-run) — real, already-working machinery, not a second
+    // lighter-weight refresh path whose correctness would need its own separate proof.
+    if (typeof window.tmRefoldSchedule === 'function') window.tmRefoldSchedule();
+    else { invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor); }
+  }
+
+  function wireGanttDrag() {
+    var cv = document.getElementById('tm-gantt-canvas');
+    if (!cv || cv._dragWired) return;
+    cv._dragWired = true;
+    cv.addEventListener('pointerdown', function (e) {
+      if (!_active || !_ganttTasks.length) return;
+      var hit = ganttHit(e);
+      if (!hit) {
+        // §GANTT_GROUP_MOVE — empty canvas starts a marquee-select (MS-Word-style: drag from empty
+        // space, sweep into the bars you want). Same lock gate as everything else — selecting is
+        // UI-only, but its only purpose here is to enable a group move, which IS an edit.
+        if (!_ganttEditable) return;
+        var mrect = e.target.getBoundingClientRect();
+        _marquee = { x0: e.clientX - mrect.left, y0: e.clientY - mrect.top, x1: e.clientX - mrect.left, y1: e.clientY - mrect.top };
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+      // §GANTT_DRAG_REJECT at the point of refusal. This used to be a bare `return`: a user dragging
+      // a non-editable bar got NO feedback and NO log line, and the browser wiring test could not
+      // tell "handler never fired" apart from "handler correctly refused". Silence is not a refusal.
+      if (!hit.bar.taskId) {
+        console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + hit.bar.storey +
+          '" phase="' + hit.bar.phase + '"');
+        var t0 = document.getElementById('tm-gantt-tip');
+        if (t0) {
+          t0.textContent = 'Not editable — no schedule task on this bar';
+          t0.style.display = 'block';
+          setTimeout(function () { t0.style.display = 'none'; }, 2200);
+        }
+        return;
+      }
+      // §GANTT_EDIT_LOCK — drag/resize AND the drag-to-link path (endDrag never runs without a live
+      // _drag) are both gated here, at the single point of entry. Seek/scrub/hover are untouched —
+      // those are wired on tm-gantt-canvas's OWN pointerup/pointermove listeners registered earlier
+      // in activate(), not in this function.
+      if (!_ganttEditable) {
+        console.log('§GANTT_DRAG_REJECT reason=locked');
+        var t1 = document.getElementById('tm-gantt-tip');
+        if (t1) {
+          t1.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t1.style.display = 'block';
+          setTimeout(function () { t1.style.display = 'none'; }, 2200);
+        }
+        return;
+      }
+      // §GANTT_GROUP_MOVE — dragging a bar that's part of the current multi-selection moves the
+      // WHOLE group together. Dragging a bar OUTSIDE the current selection clears it first (same
+      // convention as every other selection UI: clicking an unselected object deselects the group).
+      if (_ganttSelected[hit.bar.taskId] && Object.keys(_ganttSelected).length > 1) {
+        _groupDrag = { taskIds: Object.keys(_ganttSelected), x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+      if (Object.keys(_ganttSelected).length) { _ganttSelected = {}; drawGanttMini(); }
+      _drag = { bar: hit.bar, mode: hit.mode, x0: e.clientX, y0: e.clientY, dayPx: hit.dayPx, days: 0, moved: false };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (_marquee) {
+        var mrect2 = e.target.getBoundingClientRect();
+        _marquee.x1 = e.clientX - mrect2.left; _marquee.y1 = e.clientY - mrect2.top;
+        var mel = document.getElementById('tm-gantt-marquee');
+        if (mel) {
+          var lo = Math.min(_marquee.x0, _marquee.x1), hi = Math.max(_marquee.x0, _marquee.x1);
+          var top = Math.min(_marquee.y0, _marquee.y1), bot = Math.max(_marquee.y0, _marquee.y1);
+          mel.style.left = lo + 'px'; mel.style.top = top + 'px';
+          mel.style.width = (hi - lo) + 'px'; mel.style.height = (bot - top) + 'px';
+          mel.style.display = 'block';
+        }
+        e.preventDefault();
+        return;
+      }
+      if (_groupDrag) {
+        var days2 = Math.round((e.clientX - _groupDrag.x0) / Math.max(0.001, _groupDrag.dayPx));
+        if (days2 !== _groupDrag.days) { _groupDrag.days = days2; _groupDrag.moved = _groupDrag.moved || days2 !== 0; }
+        var tip2 = document.getElementById('tm-gantt-tip');
+        if (tip2 && _groupDrag.moved) {
+          tip2.textContent = 'Move ' + _groupDrag.taskIds.length + ' bars  ' + (days2 >= 0 ? '+' : '') + days2 + 'd';
+          tip2.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+          tip2.style.top = Math.max(2, e.offsetY - 22) + 'px';
+          tip2.style.display = 'block';
+        }
+        e.preventDefault();
+        return;
+      }
+      if (!_drag) { cv.style.cursor = (function () { var h = ganttHit(e); return h && h.bar.taskId ? (h.mode === 'move' ? 'grab' : 'ew-resize') : 'pointer'; })(); return; }
+      var days = Math.round((e.clientX - _drag.x0) / Math.max(0.001, _drag.dayPx));
+      if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
+      var tip = document.getElementById('tm-gantt-tip');
+      if (tip && _drag.moved) {
+        tip.textContent = (_drag.mode === 'move' ? 'Move ' : 'Resize ') + _drag.bar.phase + ' — ' +
+          _drag.bar.storey + '  ' + (days >= 0 ? '+' : '') + days + 'd';
+        tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
+        tip.style.top = Math.max(2, e.offsetY - 22) + 'px';
+        tip.style.display = 'block';
+      }
+      e.preventDefault();
+    });
+    function endDrag(e) {
+      if (_marquee) {
+        var m = _marquee; _marquee = null;
+        try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+        var mel2 = document.getElementById('tm-gantt-marquee');
+        if (mel2) mel2.style.display = 'none';
+        // A near-zero marquee is a CLICK, not a drag — click-away-to-deselect, the same gesture
+        // that starts a new marquee also dissolves the old selection (no separate "ungroup" verb).
+        if (Math.abs(m.x1 - m.x0) + Math.abs(m.y1 - m.y0) < 4) {
+          if (Object.keys(_ganttSelected).length) {
+            _ganttSelected = {};
+            console.log('§GANTT_GROUP_SELECT count=0 (cleared)');
+            drawGanttMini();
+          }
+          return;
+        }
+        var hitBars = barsInRect(cv.clientWidth, m.x0, m.y0, m.x1, m.y1);
+        _ganttSelected = {};
+        hitBars.forEach(function (t) { _ganttSelected[t.taskId] = true; });
+        console.log('§GANTT_GROUP_SELECT count=' + hitBars.length);
+        drawGanttMini();
+        return;
+      }
+      if (_groupDrag) {
+        var gd = _groupDrag; _groupDrag = null;
+        try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+        var tip3 = document.getElementById('tm-gantt-tip');
+        if (tip3) tip3.style.display = 'none';
+        if (!gd.moved || !gd.days) return;   // a click, not a drag
+        _dragConsumed = true;
+        commitGanttGroupShift(gd.taskIds, gd.days);
+        return;
+      }
+      if (!_drag) return;
+      var d = _drag; _drag = null;
+      try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+      // §GANTT_LINK (E3): a drag that ENDS on a different bar, at least one row away, means "link
+      // these two", not "move this one". Requiring a full row of vertical travel keeps incidental
+      // drift during a horizontal move from silently creating a dependency.
+      var drop = ganttHit(e);
+      if (drop && drop.bar !== d.bar && drop.bar.taskId && d.bar.taskId &&
+          Math.abs(e.clientY - d.y0) >= 14) {
+        _dragConsumed = true;
+        linkGanttBars(d.bar, drop.bar);
+        return;
+      }
+      if (!d.moved || !d.days) return;          // a click, not a drag — let the seek handler have it
+      _dragConsumed = true;
+      commitGanttDrag(d.bar, d.mode, d.days);
+    }
+    cv.addEventListener('pointerup', endDrag);
+    cv.addEventListener('pointercancel', endDrag);
+    // §GANTT_PROPS (E7): double-click opens the keyed-entry panel. Drag is for speed, typing is for
+    // accuracy — on a 400-day project one pixel is ~2 days, so drag alone can never be the precise path.
+    cv.addEventListener('dblclick', function (e) {
+      var hit = ganttHit(e);
+      if (!hit || !hit.bar.taskId) return;
+      if (!_ganttEditable) {  // §GANTT_EDIT_LOCK — same gate as drag, props panel also edits (typed retime + unlink)
+        console.log('§GANTT_PROPS_REJECT reason=locked');
+        return;
+      }
+      _dragConsumed = true; openGanttProps(hit.bar);
+    });
+  }
+
+  // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
+  // schedule is invalid, so the guard refuses rather than "fixing" it silently.
+  function linkGanttBars(predBar, succBar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); return; }
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
+    if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
+      console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
+      say('Refused — that link would create a cycle');
+      return;
+    }
+    var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
+    console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
+      ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
+    say('Linked: ' + predBar.phase + ' — ' + predBar.storey + '  →  ' + succBar.phase + ' — ' + succBar.storey);
+    // The new edge may make the successor illegal where it currently sits. Re-apply it through the
+    // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
+    // freshly-created violation on screen.
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    if (SA.moveTaskCascade) {
+      var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId,
+        new Date(succBar.startTs).toISOString().slice(0, 10), {});
+      if (res && res.ok && res.moved && res.moved.length) {
+        var byTask = {};
+        for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+        retimeTaskElements(app.db, byTask, res.moved);
+      }
+    }
+    invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+  }
+
+  // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
+  // 1px arrow hit-target: same verbs, same C1/C2 checks, just a precise input surface).
+  function openGanttProps(bar) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA) return;
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    var box = document.getElementById('tm-gantt-props') || (function () {
+      var el = document.createElement('div');
+      el.id = 'tm-gantt-props';
+      el.style.cssText = 'position:absolute;right:8px;bottom:8px;z-index:20;background:rgba(20,20,40,0.97);' +
+        'border:1px solid rgba(79,195,247,0.35);border-radius:8px;padding:8px 10px;font-size:11px;' +
+        'color:#e0e0e0;min-width:250px;max-width:330px;max-height:60vh;overflow:auto';
+      (document.getElementById('time-machine-panel') || document.body).appendChild(el);
+      return el;
+    })();
+    var deps = (SA.listDependencies ? SA.listDependencies(app.db, schedId) : [])
+      .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
+    var depHtml = deps.length ? deps.map(function (x, i) {
+      var dir = x.succId === bar.taskId ? '← after' : '→ before';
+      var other = x.succId === bar.taskId ? x.predName : x.succName;
+      return '<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0">' +
+        '<span>' + dir + ' <b>' + other + '</b> <span style="color:#8a97a5">' + x.type +
+        (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</span></span>' +
+        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">unlink</button></div>';
+    }).join('') : '<div style="color:#8a97a5">no dependencies</div>';
+    box.innerHTML =
+      '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
+      '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
+        '<input id="tmp-s" type="date" value="' + d(bar.startTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
+        '<input id="tmp-f" type="date" value="' + d(bar.endTs) + '" style="flex:1;font-size:11px"></div>' +
+      '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
+      '<div style="display:flex;gap:6px;margin-top:8px">' +
+        '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
+        '<button id="tmp-close" style="font-size:11px">Close</button></div>' +
+      '<div id="tmp-msg" style="color:#ff8c00;margin-top:4px;min-height:12px"></div>';
+    box.style.display = 'block';
+    console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
+    document.getElementById('tmp-close').onclick = function () { box.style.display = 'none'; };
+    box.querySelectorAll('[data-unlink]').forEach(function (btn) {
+      btn.onclick = function () {
+        var x = deps[parseInt(btn.getAttribute('data-unlink'), 10)];
+        if (!x || !SA.removeDependency) return;
+        SA.removeDependency(app.db, x.predId, x.succId);
+        console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
+        invalidateGanttModel(); computeDays(); drawGanttMini(); openGanttProps(bar);
+      };
+    });
+    document.getElementById('tmp-apply').onclick = function () {
+      var s = document.getElementById('tmp-s').value, f = document.getElementById('tmp-f').value;
+      var msg = document.getElementById('tmp-msg');
+      // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
+      // surface onto one model, never a bypass around C1/C2.
+      var res = (s !== d(bar.startTs) && f === d(bar.endTs) && SA.moveTaskCascade)
+        ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
+        : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
+      if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
+      if (msg) msg.textContent = res.clamped ? ('Clamped to ' + res.start + ' by ' + res.blockedBy) :
+        ('Applied · ' + res.cascaded + ' successor(s) cascaded');
+      var byTask = {};
+      for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+      retimeTaskElements(app.db, byTask, res.moved || []);
+      console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
+        ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
+      invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+    };
+  }
+
+  function drawGanttMini() {
+    if (!_ops.length) return;
+    var canvas = document.getElementById('tm-gantt-canvas');
+    var box = document.getElementById('tm-gantt-box');
+    if (!canvas || !box) return;
+    buildGanttTasks();
+    if (!_ganttTasks.length) return;
+    wireGanttResize();
+    wireGanttRulerShift();
+    // §GANTT_EDIT_LOCK: wire the lock toggle once, and auto-materialize a schedule the first time
+    // this drawer has nothing editable to show (replaces the old §GANTT_AUTHOR_ENTRY button — no
+    // click required, no side panel involved). One attempt per activate() (_ganttAutoGenAttempted),
+    // so a genuine materialize failure doesn't retry every redraw.
+    (function () {
+      var editable = 0;
+      for (var q = 0; q < _ganttTasks.length; q++) if (_ganttTasks[q].taskId) editable++;
+      var lockBtn = document.getElementById('tm-gantt-editlock');
+      if (lockBtn && !lockBtn._wired) {
+        lockBtn._wired = true;
+        lockBtn.addEventListener('pointerup', function (e) {
+          e.stopPropagation();
+          function applyLockUi() {
+            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+            lockBtn.title = _ganttEditable
+              ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
+              : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+            console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
+            // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
+            // props panel alone is ~330px wide) — widen automatically rather than making the user find
+            // the new resize grip every time. Only expands if narrower than the edit width already (a
+            // user who manually widened past it keeps their own choice); restores to whatever width was
+            // active the moment editing turned on, so a manual resize DURING editing is not fought.
+            if (_panel) {
+              var curW = _panel.getBoundingClientRect().width;
+              if (_ganttEditable) {
+                _panelWPreEdit = curW;
+                if (curW < PANEL_W_EDIT) { _panelW = PANEL_W_EDIT; _panel.style.width = PANEL_W_EDIT + 'px'; }
+              } else if (_panelWPreEdit != null) {
+                _panelW = _panelWPreEdit; _panel.style.width = _panelWPreEdit + 'px'; _panelWPreEdit = null;
+              }
+            }
+          }
+          if (_ganttEditable) {
+            // §GANTT_LOCK_INTEGRITY: 🔓→🔒 verifies the EDITED schedule still holds physical
+            // integrity before the lock is accepted. Breach ⇒ the lock is REFUSED (stays Editing),
+            // the flag names the floaters, and ↺ Undo (or further corrective edits) is the way out —
+            // the gate is stateless, every lock attempt re-audits, so undo depth vs breach depth
+            // (spec open-question 1) needs no edit-history tracing. Only THIS transition is gated
+            // (spec Q2); unlock below never verifies.
+            var lm = document.getElementById('tm-gantt-lockmsg');
+            if (lm) { lm.textContent = 'Verifying integrity…'; lm.style.color = ''; }
+            setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
+              var v = verifyGanttIntegrity();
+              if (!v.ok) {
+                console.log('§GANTT_LOCK_BREACH floating=' + v.floating + '(+' + v.dFloating + ') midair=' +
+                  (v.midair || 0) + '(+' + (v.dMidair || 0) + ')/' + v.total + ' ms=' + v.ms +
+                  ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
+                if (lm) {
+                  var _breach = [];
+                  if (v.dFloating > 0) _breach.push('+' + v.dFloating + ' floating');
+                  if (v.dMidair > 0) _breach.push('+' + v.dMidair + ' hanging in midair');
+                  lm.textContent = '⚠ Integrity Breach: ' + _breach.join(' + ') + ' — press ↺ Undo edit (or fix), then lock again';
+                  lm.style.color = '#f66';
+                }
+                return;   // REFUSED — _ganttEditable stays true, nothing hidden
+              }
+              console.log('§GANTT_LOCK_VERIFY ok floating=' + v.floating + '/base=' + v.baseFloating +
+                ' midair=' + v.midair + '/base=' + v.baseMidair + ' total=' + v.total + ' ms=' + v.ms +
+                (v.skipped ? ' skipped=' + v.skipped : ''));
+              if (lm) { lm.textContent = ''; lm.style.color = ''; }
+              _ganttEditable = false;
+              applyLockUi();
+            }, 0);
+            return;
+          }
+          _ganttEditable = true;
+          captureLockBaseline();   // §GANTT_LOCK_DELTA: the state the planner inherited
+          applyLockUi();
+        });
+      }
+      var lockMsg = document.getElementById('tm-gantt-lockmsg');
+      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? 'No schedule available' : '');
+      if (!editable && !_ganttAutoGenAttempted) {
+        _ganttAutoGenAttempted = true;
+        console.log('§GANTT_AUTO_GENERATE no editable bars — materializing a schedule natively');
+        generateGanttSchedule();
+      }
+    })();
+    if (_ganttBoxH) box.style.maxHeight = _ganttBoxH + 'px';
+
+    // §GANTT_PALETTE: the phase legend strip is GONE (user: "the legend is redundant, just hover
+    // labelling is sufficient"). The hover tooltip already reports strictly more than the legend did
+    // — storey, phase, element count, day range AND the generated-vs-IFC-4D source — so the legend
+    // carried no information of its own. Removing it returns its row of vertical space to the bars.
 
     // Canvas sizing
     var barH = 12, gapH = 2, rowH = barH + gapH;
@@ -3853,13 +7168,29 @@
 
     ctx.clearRect(0, 0, cW, cH);
 
-    var range = Math.max(1, _projectEnd - _projectStart);
+    // §GANTT_AXIS_OUTLIER: qualified DISPLAY axis (see var declarations) — bars/ruler/gridlines/hairline
+    // all draw against this, never the real playback _projectStart/_projectEnd.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     var prevStorey = '';
+
+    // §GANTT_RULER (E5): draw the sticky axis header, then lay its ticks down the bar canvas as
+    // gridlines. Same tick set for both, so a bar's edge can be read against a real date instead of
+    // being eyeballed against nothing. Drawn BEFORE the bars so it never sits on top of them.
+    var R = drawGanttRuler(cW, marginL, barW);
+    if (R) {
+      ctx.strokeStyle = 'rgba(120,140,160,0.13)';
+      ctx.lineWidth = 1;
+      R.ticks.forEach(function (t) {
+        var gx = Math.round(marginL + (t.ts - _ganttAxisStart) / range * barW) + 0.5;
+        if (gx < marginL || gx > marginL + barW) return;
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cH); ctx.stroke();
+      });
+    }
 
     // Draw bars
     for (var ti = 0; ti < numTasks; ti++) {
       var task = _ganttTasks[ti];
-      var x = marginL + (task.startTs - _projectStart) / range * barW;
+      var x = marginL + (task.startTs - _ganttAxisStart) / range * barW;
       var w = (task.endTs - task.startTs) / range * barW;
       if (w < 2) w = 2;
       var y = ti * rowH + 2;
@@ -3879,7 +7210,9 @@
       // Active highlight: cursor is within this task's time range
       var isActive = (_cursor >= task.startTs && _cursor <= task.endTs);
 
-      ctx.globalAlpha = 0.8;
+      // §GANTT_PALETTE: fills at full opacity — 0.8 flattened what little contrast the old palette
+      // had. The families carry the distinction now, so the bars can be read at a glance.
+      ctx.globalAlpha = 1;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
 
@@ -3899,20 +7232,51 @@
         ctx.strokeRect(x, y, w, barH);
       }
 
-      // Label: first 3 chars of phase, only if bar wide enough
+      // §GANTT_GROUP_MOVE — marquee-selected bars get a bright cyan frame, same idea as the
+      // captured-schedule yellow frame above (a different concern, so a different colour, drawn
+      // last so it always reads on top). Selection is ephemeral UI state (_ganttSelected), not
+      // persisted — this is the only place it's visible.
+      if (task.taskId && _ganttSelected[task.taskId]) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#4fc3f7';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, barH + 2);
+      }
+
+      // Label: explicit phase short-code (§GANTT_PALETTE). substring(0,3) used to yield "Sub" vs
+      // "Sup" — one character apart at 9px, colliding on the very pair the colours also collided on.
       if (w > 40) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = PHASE_INK[task.phase] || '#fff';
         ctx.font = '9px sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(task.phase.substring(0, 3), x + w - 3, y + barH / 2);
+        ctx.fillText(PHASE_SHORT[task.phase] || task.phase.substring(0, 3), x + w - 3, y + barH / 2);
       }
     }
 
-    // Hairline cursor
+    // §GANTT_BAR_RECTS — read-only debug hook, same double-underscore convention as __tmScheduleDebug
+    // above. Exposes the ACTUAL drawn rect of every bar so a browser wiring test can aim a synthetic
+    // pointer at measured geometry instead of guessing at it. The first attempt at proving the drag
+    // aimed at marginL+40px and hit empty canvas past the end of a short bar, which is
+    // indistinguishable from "the handler never fired" — this removes that ambiguity for good.
+    // §GANTT_AXIS_OUTLIER: hook reads back the qualified axis too, so a live probe sees exactly
+    // what's drawn, not the pre-fix unqualified math.
+    try {
+      window.__tmGanttBars = _ganttTasks.map(function (t, i) {
+        var bx = marginL + (t.startTs - _ganttAxisStart) / range * barW;
+        var bw = Math.max(2, (t.endTs - t.startTs) / range * barW);
+        return { i: i, taskId: t.taskId || null, phase: t.phase, storey: t.storey,
+          x: bx, w: bw, y: i * rowH + 2, h: barH, midX: bx + bw / 2, midY: i * rowH + 2 + barH / 2 };
+      });
+    } catch (e) {}
+
+    // Hairline cursor. §GANTT_AXIS_OUTLIER: clamp into the qualified axis — the real _cursor can
+    // legitimately run past it (e.g. once playback reaches the outlier op itself), and an unclamped
+    // hairline would draw far outside the canvas instead of pinning to the visible edge.
     ctx.globalAlpha = 1;
-    var hx = marginL + (_cursor - _projectStart) / range * barW;
+    var hxFrac2 = Math.max(0, Math.min(1, (_cursor - _ganttAxisStart) / range));
+    var hx = marginL + hxFrac2 * barW;
     ctx.strokeStyle = '#ff8c00';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -3960,18 +7324,42 @@
     var y = e.clientY - rect.top;
     var barH = 12, gapH = 2, rowH = barH + gapH;
     var cW = rect.width;
-    var range = Math.max(1, _projectEnd - _projectStart);
+    // §GANTT_AXIS_OUTLIER: must match drawGanttMini's own bar geometry, which draws against the
+    // qualified axis — hit-testing against the unqualified one would silently miss bars.
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
     var marginL = 60;
     var barW = cW - marginL;
     for (var i = 0; i < _ganttTasks.length; i++) {
       var task = _ganttTasks[i];
-      var bx = marginL + (task.startTs - _projectStart) / range * barW;
+      var bx = marginL + (task.startTs - _ganttAxisStart) / range * barW;
       var bw = (task.endTs - task.startTs) / range * barW;
       if (bw < 2) bw = 2;
       var by = i * rowH + 2;
       if (x >= bx && x <= bx + bw && y >= by && y <= by + barH) return task;
     }
     return null;
+  }
+
+  // §GANTT_GROUP_MOVE — every task whose drawn rect intersects the given canvas-local marquee
+  // rectangle. SAME geometry as findBarAtClick (marginL=60, rowH=14) — a marquee that misses a bar
+  // findBarAtClick would also miss is a bug, not a feature, so this deliberately shares the exact
+  // constants rather than a second copy of them. Only bars with a real taskId are selectable — an
+  // un-authored bar has nothing to shift.
+  function barsInRect(cW, rx0, ry0, rx1, ry1) {
+    var barH = 12, gapH = 2, rowH = barH + gapH;
+    var range = Math.max(1, _ganttAxisEnd - _ganttAxisStart);
+    var marginL = 60;
+    var barW = cW - marginL;
+    var lo = Math.min(rx0, rx1), hi = Math.max(rx0, rx1), top = Math.min(ry0, ry1), bot = Math.max(ry0, ry1);
+    var out = [];
+    for (var i = 0; i < _ganttTasks.length; i++) {
+      var task = _ganttTasks[i]; if (!task.taskId) continue;
+      var bx = marginL + (task.startTs - _ganttAxisStart) / range * barW;
+      var bw = (task.endTs - task.startTs) / range * barW; if (bw < 2) bw = 2;
+      var by = i * rowH + 2;
+      if (bx <= hi && bx + bw >= lo && by <= bot && by + barH >= top) out.push(task);
+    }
+    return out;
   }
 
   // ── RES_ICONS (reused from boq_charts) ──
@@ -4287,7 +7675,26 @@
   // prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2. v4 (2026-07-18): §STOREY-Z
   // no-storey-element reassignment (PR #869) — Item 6. Missed on first landing (user hit exactly
   // this "hard reset didn't fix it" symptom); this bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 4;
+  // v5 (2026-08-01): §4D_ROOF_LOAD_PATH (PR #1120) changed BOTH things this comment names — the
+  // slab sequence rule (role now derived from the load path, not the storey name) and
+  // schedule_gate.js's gating logic (walls became candidate supports for promoted roof slabs).
+  // Missed on first landing for the SECOND time in this file's history, and the user hit the exact
+  // symptom the v4 note above already describes in those words: "I still see the roof of the helipad
+  // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
+  // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
+  // IndexedDB, not the HTTP cache. This bump is that fix's second half.
+  var _GANTT_CACHE_VERSION = 15;   // §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12): _twoTierRemap gained openingGate's display-layer twin (ScheduleGate.openingPairs) — a door/window the remap left starting before its own host wall FINISHED is pushed to that wall's end. MEASURED display EARLY% before→after: LTU_AHouse 28.5→2.0, Terminal 16.4→0.0, JKR 10.1→0.0, Hospital 2.5→0.2, HHS/Clinic/Duplex 0.0→0.0 (every residual is _midairRepair moving a host wall later AFTER the twin ran — witness_curtain_wall_opening G-CWO-STAGE attributes it). The DISPLAY timeline is what kernel_ops is written from, so a building materialized under v14 replays the un-repaired order forever regardless of deployed code — the same second-half miss this constant's own v12/v13 notes record.
+                                   // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
+                                   // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
+                                   // v12 was §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
+                                   // v11 was §MIDAIR_REPAIR (2026-08-12): display times repaired so nothing appears before the first element it touches
+                                   // v10 was §DOOR_WINDOW_HOST_WALL (2026-08-11): door/window gated on its host wall's finish (schedule_gate.js openingGate)
+                                   // v9 was §TIER_SERIAL (2026-08-11): two-tier display remap (serial backbone + concurrent pool)
+                                  // v7 was §4D_BAND_MONOTONIC (2026-08-02): PASS B cross-storey trade gate
+  //                                 changes generated ordering for 35,484 non-structure elements.
+  //                                 MUST bump: #1123 exists because a stale cache once stopped a
+  //                                 sequencing fix reaching a browser, and the user has already been
+  //                                 observed running new code against cached old ops.
 
   function _cacheKey(prefix) {
     var app = A();
@@ -4360,6 +7767,15 @@
     return n;
   }
 
+  // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
+  // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
+  // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
+  // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
+  function _kernelOpsSchedStale(placeOps, currentVersion) {
+    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
+      placeOps[0].parameters._genVersion !== currentVersion);
+  }
+
   // ── Activate / Deactivate ──
   function setToolbarHighlight(on) {
     var btn = document.getElementById('time-machine-btn');
@@ -4373,17 +7789,38 @@
 
   function activate() {
     if (_active) return;
-    // Mobile merged meshes have no guid — re-stream as individual meshes
+    _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
+    _ganttAutoGenAttempted = false;   // §GANTT_EDIT_LOCK — allow one fresh auto-generate attempt
+    _ganttSelected = {}; _marquee = null; _groupDrag = null;   // §GANTT_GROUP_MOVE — stale selection from a prior building must never apply here
+    // §MERGED_GUID: TM mutates elements individually (setMatrixAt/setVisibleAt per slot), which a
+    // merged buffer cannot do — so TM re-streams unmerged. Two corrections to the old trigger:
+    //   (1) condition is _mergeActive (are merged meshes ACTUALLY in the scene), not _isMobile.
+    //       Since 68bd9a7 killed the merge routing, `_isMobile` re-streamed the WHOLE building on
+    //       every mobile TM open for nothing; and with merging now capability-gated rather than
+    //       device-gated, a no-multi_draw DESKTOP has merged meshes too and needs the same unmerge.
+    //   (2) _forceNoMerge makes the re-stream stick — flipping _isMobile no longer disables merging
+    //       (the gate is A._hasMultiDraw), so without this flag the re-stream would just re-merge.
+    // ONE-SHOT: if a re-stream somehow still produced merged meshes, activate normally rather than
+    // re-streaming forever. Belt-and-braces against the loop described above — a spinning
+    // clearStreamed/streamBuilding cycle is a far worse failure than TM opening with merged geometry.
     var app = A();
-    if (app && app._isMobile) {
-      app._isMobile = false;
+    if (app && app._mergeActive && !app._tmUnmergeTried) {
+      app._tmUnmergeTried = true;
+      app._forceNoMerge = true;
       var bld = app.activeBuilding;
+      console.log('§TM_UNMERGE re-streaming ' + (bld || '?') + ' without merge (TM needs per-element slots)');
+      // §TM_UNMERGE duration (2026-08-12, CPE_4D_PERF_MEM_FINDINGS.md §3c R4 part (c)): this
+      // branch re-streams the WHOLE building on the first-Play click path — a cost that scales with
+      // building size and, until this line, was invisible in every witness that pre-streams
+      // unmerged. Unmeasured, it hides inside "first Play felt slow".
+      var _umT0 = performance.now();
       app.clearStreamed();
       if (bld) { app.streamBuilding(bld); }
       // Wait for re-stream to finish, then activate
       var _reWait = setInterval(function() {
         if (app.buildingsRendered && app.buildingsRendered.size > 0 && !app.streaming) {
           clearInterval(_reWait);
+          console.log('§TM_UNMERGE done bld=' + (bld || '?') + ' ms=' + (performance.now() - _umT0).toFixed(1));
           activate();
         }
       }, 500);
@@ -4406,10 +7843,32 @@
     var app = A();
 
     // §S260c: Check IDB for cached Gantt JSON
-    cacheGet('gantt').then(function(cachedOps) {
+    cacheGet('gantt').then(async function(cachedOps) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt
       // §S260e: Only use cache if it has ELEMENT_PLACE ops (not just picks)
       var _hasCachedPlaces = cachedOps && cachedOps.length > 0 &&
         cachedOps.some(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
+      // §GANTT_STALE_CACHE (2026-08-08, 4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD warm-open
+      // variant, live user log on Terminal): #1237 fixed the COLD path only. A warm open serves
+      // cached ops here, but bar editability is a DB join (tasks/task_elements) and the DB is
+      // re-fetched fresh every session with no schedule tables in it — so bars resolve editable=0,
+      // drawGanttMini's auto-generate fires, and tmRefoldSchedule() throws the entire cached pass
+      // away and re-runs the full chain: the exact double load, resurrected through the cache
+      // branch, on EVERY warm open until schedule persistence lands. Same cure as #1237: when the
+      // DB behind the cache has no schedule, the cache is stale by construction — drop it and take
+      // the cold path's single pass (prematerialize → one injectGantt → recache).
+      if (_hasCachedPlaces) {
+        var _act = null;
+        try {
+          var _SAx = (typeof window !== 'undefined') && window.ScheduleAuthor;
+          _act = (_SAx && _SAx.activeSchedule) ? _SAx.activeSchedule(app.db) : null;
+        } catch (e) { _act = null; }
+        if (!_act) {
+          console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length +
+            ' but no schedule in DB — dropping cache, taking the single-pass cold path');
+          cacheDel('gantt');
+          _hasCachedPlaces = false;
+        }
+      }
       if (_hasCachedPlaces) {
         // Fast path: inject cached JSON into kernel_ops table
         console.log('§GANTT_CACHE_HIT ops=' + cachedOps.length);
@@ -4427,7 +7886,7 @@
         }
         stmt.free();
         db.run('COMMIT');
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (st) st.textContent = '';
         viewerStatus('Time Machine: ' + _ops.length + ' elements (cached)');
         _finishActivate(app);
@@ -4436,7 +7895,7 @@
       }
 
       // No cache — try loading existing kernel_ops
-      _ops = loadOps();
+      _ops = loadOps(); _ganttDirty = true;
       // §S260e: Only count ELEMENT_PLACE ops — ignore picks/other ops
       var _placeOps = _ops.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
       if (_placeOps.length && !_placeOps[0].parameters._end_ts) {
@@ -4444,20 +7903,42 @@
         _placeOps = [];
         console.log('§TIME_MACHINE cleared stale unweighted ops — will re-inject');
       }
-      if (_placeOps.length) { _ops = _placeOps; }
+      // §KERNEL_OPS_SCHED_VERSION (2026-08-11): a building opened before this session's fix to the
+      // schedule-generation algorithm (e.g. §TIER2_AFTER_TIER1) has kernel_ops ELEMENT_PLACE rows
+      // materialized from the OLD algorithm, cached inside this building's IndexedDB-cached DB blob.
+      // _GANTT_CACHE_VERSION already gates the separate 'gantt' JSON cache but never this table, so a
+      // fixed schedule algorithm silently never reached an already-opened building — reported live:
+      // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
+      // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
+      // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+        try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
+        console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
+          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+        _placeOps = [];
+      }
+      if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
 
       if (!_placeOps.length) {
         if (st) st.textContent = 'Setting up 4D construction timeline...';
         viewerStatus('Time Machine: generating construction schedule...');
-        if (!injectGantt()) {
+        // §GANTT_SINGLE_LOAD (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD): a cold open used to run
+        // injectGantt TWICE — pass 1 with no schedule (placeholder dates, task_id-less ops), then
+        // drawGanttMini's §GANTT_EDIT_LOCK auto-materialize called tmRefoldSchedule(), which threw
+        // pass 1 away (deactivate + cacheDel + re-activate) and ran the ENTIRE chain again. Now the
+        // native schedule is materialized FIRST, so the single injectGantt run absorbs it, bars carry
+        // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
+        // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
+        _materializeNativeSchedule(app);
+        if (!(await injectGantt())) {
           if (st) st.textContent = 'No elements found in database';
           viewerStatus('Time Machine: no elements found');
           console.log('§TIME_MACHINE no ops and no elements — nothing to show');
           resolve(false);
           return;
         }
-        _ops = loadOps();
+        _ops = loadOps(); _ganttDirty = true;
         if (!_ops.length) { resolve(false); return; }
         // §S260c: Cache the newly computed schedule to IDB
         cachePut('gantt', _ops);
@@ -4467,11 +7948,11 @@
 
       _finishActivate(app);
       resolve(true);
-    }).catch(function(e) {
+    }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
-      _ops = loadOps();
-      if (!_ops.length) { injectGantt(); _ops = loadOps(); }
+      _ops = loadOps(); _ganttDirty = true;
+      if (!_ops.length) { _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
       if (_ops.length) { _finishActivate(app); resolve(true); }
       else resolve(false);
     });
@@ -4508,6 +7989,12 @@
     // User can toggle shadow (H) independently. TM just plays construction.
     console.log('§TM_SUN_INHERIT shadowOn=' + !!app._shadowOn + ' sky=' + !!app._sky + ' sunCycle=user-choice');
     console.log('§TM_SHADOW_INHERIT shadowOn=' + !!app._shadowOn + ' groundVisible=' + (app.ground ? app.ground.visible : 'n/a'));
+    // §Z_STACK_XRAY_STAGING — (re)build the support-edge cache on EVERY activation, not only a
+    // fresh generate: runs on the §GANTT_CACHE_HIT fast path too (injectGantt never executes
+    // there), so this is the ONE place, keyed off the _ops that actually ended up loaded regardless
+    // of source (generated fallback or captured IFC 4D — schedMap is read from _ops, not from
+    // injectGantt's own locals). Read-only: one SELECT + one pass over _ops, no db writes.
+    _tmRebuildXrayCache();
     computeDays();
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
@@ -4536,7 +8023,12 @@
     stopPlayback();
     clearSparks();
     _gspClear();   // §GROUP_SPARK: nothing may survive TM being switched off
+    // §TM_OVERLAY_SYNC (see renderAtTime): null = "TM is off". Same contract as _gspClear above —
+    // nothing TM imposed on a presentation overlay may survive TM being switched off, otherwise a
+    // name plate stays hidden in the finished building because the scrub happened to end early.
+    if (window.__tmOverlaySync) { try { window.__tmOverlaySync(null); } catch (e) {} }
     _evMesh = null; _evSig = ''; _incrPrimed = false;   // §PERF_INCR: drop the event index
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;  // §Z_STACK_XRAY_STAGING: nothing may survive TM being switched off
     _dlodDisposeBoxes(); _dlodProxyOn = false; _lastProxyEngaged = null; _dlodLastCamSig = null; // §DLOD_TM: nothing may survive TM being switched off
     var _lodBtnOff = document.getElementById('tm-lod'); if (_lodBtnOff) _lodBtnOff.classList.remove('tm-active');
     restoreSky();
@@ -4559,6 +8051,7 @@
     _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false;
+    invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
     var ganttBox = document.getElementById('tm-gantt-box');
@@ -4586,7 +8079,7 @@
     if (app) app._tmOn = false;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     _panel.style.display = 'none';
     setToolbarHighlight(false);
-    restoreVisibility();
+    restoreVisibility(true);  // §TM_CLOSE_RESTORE: force — nothing (incl. xray-staged ghosts) may survive TM going off
     // §S262: DLOD runs independently — no pause/resume needed
     viewerStatus('');
     console.log('§TIME_MACHINE OFF — restored');
@@ -4669,6 +8162,9 @@
     return wasActive;
   }
   window.tmRefoldSchedule = refoldSchedule;
+  // §GANTT_RETIME_RESYNC witness hook (double-underscore debug convention, read-only intent):
+  // lets witness_gantt_retime_resync.js drive the REAL ruler-shift commit path headlessly.
+  window.__tmGanttShift = shiftGanttSchedule;
 
   // §S2 (TM_4D5D_VARIANCE_LANE) — juncture jump: land the cursor at the START of a named phase's window so the
   // scene is rendered PARTIALLY-BUILT at that moment (the IFC cost panel's "View at this moment"). The phase
@@ -4818,9 +8314,572 @@
     return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
+  // ══ §MAXQ_TIME / §CPE_BUILDUP — drive the construction state from an external baker ═══════════
+  // Spec: bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME (mode D) + prompts/
+  // CINEMA_PATH_EDITOR.md §CPE_BUILDUP. User 2026-07-28: "this construction bit is a checkbox to
+  // animate its buildup as cam goes along... its giving the impression and not chronologically
+  // accurate. But the elements laying on each other according to its part in the 4D is educational."
+  //
+  // ⚠ WORDING, and it is forced by the data, not a hedge: `Terminal_Hi.db` has NO tasks/task_elements
+  // tables and `Hospital_extracted.db` has them EMPTY (tasks=0). What TM synthesises is a DERIVED
+  // BUILD ORDER (Z-band + SEQUENCE_RULES), never a construction programme. Say "derived build order"
+  // — a BIM audience told "the schedule" will ask for the P6/MSP link, and there isn't one.
+  //
+  // renderAtTime() is internal by design; this is the ONE public cursor setter it needs. Note the
+  // §0a lesson from prompts/TM_INCREMENTAL_RENDER_PERF.md: pass the target cursor as a LOCAL value,
+  // never mutate the global `_cursor` first — doing that collapses the delta window to zero width and
+  // the incremental path silently skips the whole scene.
+  window.tmSetCursor = function(ms) {
+    if (!isFinite(ms)) return false;
+    renderAtTime(Math.max(_projectStart, Math.min(_projectEnd, ms)));
+    return true;
+  };
+
+  // A bake needs Time Machine's op-log without the user having pressed the button. Same wait shape
+  // as tmJumpToOrder's own whenReady() — activate() is async (it may have to inject the derived
+  // timeline first), so poll for the ops rather than assuming they are there on the next line.
+  //
+  // §CPE_BUILDUP_ARM_GATE (2026-08-12, bim-compiler prompts/CINEMA_PATH_EDITOR.md — Witness:
+  // W-ARM-GATE / witness_cpe_buildup_arm_gate.js). This used to poll `_ops.length` alone, which is
+  // truthy for ONE stale op. Measured on the user's own Hospital run: at arm time `_ops` held
+  // exactly the `BUILDING_OPEN` kernel op (`§TM_OPS_CHECK total=1 place=0`) and the epoch had never
+  // been computed (`_projectStart == _projectEnd == 0`), so this resolved true against a zero-span
+  // 1970 timeline. The rehearsal then armed on it (`§CPE_PREVIEW_BUILDUP armed ops=1 placed=0`) and
+  // every frame's cursor `projectStart + u*(projectEnd-projectStart)` evaluated to the SAME 0 —
+  // 497 frames of `§PERF_TRAVERSE span=0h`, camera flying, nothing building. The real 63,415-op
+  // timeline finished loading (`§WRITE_LOOP_TIMING rows=63415`) seconds AFTER the flight started.
+  // Readiness is "the timeline has a real SPAN", not "the array is non-empty" — the identical bar
+  // ghostGroundArm already applied to the same state (`§GHOST_GROUND skip reason=buildup span is 0`)
+  // and the only consumer that refused it. This is NOT a new wait: the existing 60x500ms poll now
+  // waits for the condition it always meant. A real timeline always has span > 0 (`_projectStart =
+  // _ops[0].start_ts - 1`, `_projectEnd` = max end_ts), so this cannot reject a usable state.
+  function _bakeTimelineReady() { return !!_ops.length && _projectEnd > _projectStart; }
+  window.tmActivateForBake = function() {
+    return new Promise(function(resolve) {
+      if (_active && _bakeTimelineReady()) return resolve(true);
+      if (!_active) { try { activate(); } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); } }
+      var n = 0, iv = setInterval(function() {
+        if (_bakeTimelineReady() || ++n > 60) {
+          clearInterval(iv);
+          var ok = _bakeTimelineReady();
+          if (!ok) console.warn('§CPE_BUILDUP_ARM_GATE timeout ops=' + _ops.length +
+            ' projectStart=' + _projectStart + ' projectEnd=' + _projectEnd +
+            ' — no timeline with a real span after ' + n + ' polls; refusing to arm a cursor that cannot move');
+          resolve(ok);
+        }
+      }, 500);
+    });
+  };
+
+  // ── §TM_WARM (2026-08-12, bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c —
+  // Implementing R4(a), user ruling "warm data only, never activate" — Witness: W-XRAY-MEMO #3) ──
+  // G-CPE-SOLE-OWNER ("only a real Play opens Time Machine") holds by its LETTER here: this
+  // precomputes DERIVED DATA into the memo and nothing else. It does not call activate(), does not
+  // set _active, does not touch _ops, does not show the panel, and runs no DB write.
+  //
+  // Why only the elements half: _ops is NOT warmable and deliberately is not warmed — both load
+  // paths in _activateAsync have side effects the ruling forbids (the §GANTT_CACHE_HIT branch
+  // DELETEs+INSERTs kernel_ops; the cold branch runs the full injectGantt recompute). So the
+  // support-edge pass (which needs _ops for its schedMap) still runs on first Play; §XRAY_CACHE_MEMO
+  // is what makes every activation AFTER the first free. Stated plainly so nobody reads this as
+  // "first Play is now 0 ms" — it is not.
+  //
+  // ⚠ BASELINE-PERF GUARD (user directive 2026-08-12: "it is performing very well now! Thus do take
+  // care not to disturb that baseline perf"). _buildXrayElements() is ONE synchronous chunk (a
+  // SELECT + a map over up to 125k rows) — once started it cannot yield, so an ill-timed warm is a
+  // long task = a visible hitch mid-edit. Hence: pure-idle, NO requestIdleCallback timeout (never
+  // forced — if the browser never idles, warm never happens and nothing is worse than today), and
+  // NO setTimeout fallback (a fallback timer is exactly the "runs at a bad moment" case this guard
+  // exists to prevent). Skipped outright while streaming, while TM is active, or if already warm.
+  window.tmWarmXrayElements = function() {
+    var app = A();
+    if (!app || !app.db) return false;
+    if (_active) return false;                 // TM already owns this — nothing to warm
+    if (app.streaming) return false;           // mirrors _dlodEngaged's !streaming gate
+    // The busy flags dlod_nav.js:53 already names as "not idle": Cinema (_cinemaOrbitActive/
+    // _maxqActive) and the Photoreal still refine (_stillRefineActive). Extracted from that list
+    // rather than invented — there is no _bakeActive on APP.
+    if (app._maxqActive || app._cinemaOrbitActive || app._stillRefineActive) return false;
+    if (typeof window.requestIdleCallback !== 'function') return false;   // no fallback, by design
+    var key = ((app && app.activeBuilding) || '?') + '|' + _xrayMemoGen();
+    if (_xrayElemMemo && _xrayElemMemo.key === key) return false;         // already warm
+    window.requestIdleCallback(function() {
+      var a2 = A();
+      // Re-check at fire time: idle may land minutes later, after a Play/bake/stream started.
+      if (!a2 || !a2.db || _active || a2.streaming || a2._maxqActive || a2._cinemaOrbitActive || a2._stillRefineActive) {
+        console.log('§TM_WARM skipped — state changed before idle fired');
+        return;
+      }
+      var t0 = performance.now();
+      var em = _xrayElementsMemoized();
+      console.log('§TM_WARM elements=' + ((em.elements && em.elements.length) || 0) +
+        ' ms=' + (performance.now() - t0).toFixed(1) + ' memo=' + (em.hit ? 'hit' : 'miss') +
+        ' active=' + _active + ' ops=' + _ops.length + ' (TM not activated)');
+    });
+    return true;
+  };
+
+  // Mode D: re-key the derived order so the reveal follows the CAMERA PATH instead of the Z-bands.
+  // This adds NO new render path — `renderAtTime` is untouched. It consumes `_ops` purely as "sorted
+  // ascending by start_ts, break past the cursor", so re-keying the timestamps IS the feature.
+  //
+  // The key, and why it is derived rather than tuned:
+  //     revealS = (floor(cameraS · frames) + zRank) / frames
+  // `cameraS` is where along the flight the camera comes closest to the element — the primary order,
+  // which is the user's "construction follows the camera path". `zRank` is the element's place in the
+  // DERIVED 4D order, and dividing by `frames` makes it the tie-break WITHIN one frame of camera
+  // travel — so a region assembles bottom-up in its own 4D order as the camera passes it, which is
+  // the "elements laying on each other according to its part in the 4D" half. The bucket size is the
+  // bake's own frame count, not a chosen constant.
+  //
+  // Install duration is one and a half frames of cursor, deliberately: the playback-derived
+  // `lingerMs = tickMs()*3` is ~2.7h in DAY mode while a film steps DAYS per frame, so inheriting it
+  // would step clean over every frontier state and the film would read as pop-in rather than
+  // assembly (recorded in PHOTOREAL_STILL_RENDER.md §MAXQ_TIME code-read, item 3.2).
+  var _bkSaved = null;
+  window.tmOrderByCameraPath = function(poseAt, frames, opts) {
+    opts = opts || {};
+    var t0 = performance.now();
+    if (typeof poseAt !== 'function') { console.warn('§MAXQ_TIME_ABORT reason=no-poseAt'); return null; }
+    if (!_ops.length) { console.warn('§MAXQ_TIME_ABORT reason=no-ops (Time Machine has no derived order yet)'); return null; }
+    var app = A();
+    if (!app || !app.db || typeof app.three2ifc !== 'function') {
+      console.warn('§MAXQ_TIME_ABORT reason=no-db-or-transform'); return null;
+    }
+    var nF = Math.max(2, frames | 0);
+    // Element positions, in IFC space — the camera path is converted TO ifc rather than every element
+    // to three, because there are ~250 path samples and up to 10^5 elements.
+    var pos = {}, discOf = {}, nPos = 0;
+    try {
+      var rows = app.dbQuery('SELECT t.guid, t.center_x, t.center_y, t.center_z, m.discipline ' +
+                             'FROM element_transforms t LEFT JOIN elements_meta m ON m.guid = t.guid');
+      for (var r = 0; r < rows.length; r++) {
+        pos[rows[r][0]] = [rows[r][1], rows[r][2], rows[r][3]];
+        discOf[rows[r][0]] = rows[r][4] || '?';
+        nPos++;
+      }
+    } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=' + e.message); return null; }
+    if (!nPos) { console.warn('§MAXQ_TIME_ABORT reason=no-element_transforms'); return null; }
+
+    var NS = 256, path = [], k;
+    for (k = 0; k < NS; k++) {
+      var p = poseAt(k / (NS - 1));
+      var q = app.three2ifc(p.x, p.y, p.z);
+      path.push([q.ix, q.iy, q.iz]);
+    }
+    // Save the derived order ONCE so tmRestoreDerivedOrder can put it back exactly, without a
+    // re-query (a re-query would also re-run injectGantt's cost for nothing).
+    if (!_bkSaved) {
+      _bkSaved = { ops: _ops.map(function(o) { return { i: o, s: o.start_ts, e: o.end_ts }; }),
+                   ps: _projectStart, pe: _projectEnd };
+    }
+    var n = _ops.length, span = Math.max(1, _bkSaved.pe - _bkSaved.ps), base = _bkSaved.ps;
+    var hit = 0, miss = 0, arc = 0;
+    for (var i = 0; i < n; i++) {
+      var op = _ops[i];
+      var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var P = guid ? pos[guid] : null;
+      var zRank = n > 1 ? i / (n - 1) : 0;
+      var camS;
+      if (!P) { camS = zRank; miss++; }          // no geometry: keep its derived place, do not invent one
+      else {
+        var bestK = 0, bestD = Infinity;
+        for (k = 0; k < NS; k++) {
+          var dx = path[k][0] - P[0], dy = path[k][1] - P[1], dz = path[k][2] - P[2];
+          var d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < bestD) { bestD = d2; bestK = k; }
+        }
+        camS = bestK / (NS - 1); hit++;
+        if (discOf[guid] === 'ARC') arc++;
+      }
+      var reveal = (Math.floor(camS * nF) + zRank) / nF;
+      if (reveal > 1) reveal = 1;
+      op.start_ts = base + reveal * span;
+      op.end_ts = op.start_ts + (span / nF) * 1.5;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _ops[0].start_ts - 1;
+    _projectEnd = Math.max.apply(null, _ops.map(function(o) { return o.end_ts; }));
+    // The event index is keyed on _ops; it is now stale in every entry. Drop it and require a fresh
+    // full pass before any delta skip can engage again (§PERF_INCR's own invalidation contract).
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    // §Z_STACK_XRAY_STAGING: this re-keys op timestamps to a CAMERA-PATH order ("NOT a construction
+    // programme" — see the log line below), not the construction schedule the staging cache was
+    // built from, so its cached solidify times no longer correspond to when guids actually reach
+    // "placed" under this order. Drop it rather than show a stale/wrong ghost — no rebuild call
+    // exists on this path since "support" isn't a meaningful concept for a camera-driven reveal
+    // order; elements simply go solid the moment they place, same as before this feature, only in
+    // this one non-construction mode.
+    _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0;
+    console.log('§MAXQ_TIME mode=D ops=' + n + ' placed=' + hit + ' noGeom=' + miss +
+      ' arc=' + arc + ' frames=' + nF + ' samples=' + NS +
+      ' span=' + Math.round(span) + 'ms installFrames=1.5' +
+      ' ms=' + (performance.now() - t0).toFixed(0) +
+      ' — DERIVED BUILD ORDER re-keyed to the camera path (NOT a construction programme)');
+    return { ops: n, placed: hit, noGeom: miss, arc: arc, source: 'derived',
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.1 — is this building's 4D REAL or DERIVED? ────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.1 — Witness: W-SCHED-COVERAGE
+  // PURE READ. Must not trigger injectGantt and must not mutate anything.
+  //
+  // ⚠ MEASURED CORRECTION — `_capActive` ALONE IS THE WRONG TEST, and the witness caught it before
+  // this shipped. `_capActive` is set by injectGantt's `_cap` overlay, so it is a RUN-SCOPED SIDE
+  // EFFECT, not a property of the data. `activate()` deliberately SKIPS injectGantt when the db
+  // already carries usable ELEMENT_PLACE ops with `_end_ts` (the cached/shipped-timeline fast path,
+  // ~line 4462) — which is exactly the case for a building whose schedule was authored in an earlier
+  // session and persisted. Confirmed on TerminalHi4D.db: all 48,433 ops carry `_captured:1` and
+  // `_task:TASK_*`, timestamps spanning the real 2026-01-01..2026-05-30 window, yet `_capActive` was
+  // false and this verb reported 'derived' — i.e. the real schedule was there and would still have
+  // been thrown away by mode D.
+  // So the source is decided by the OPS THEMSELVES: dated leaf tasks must exist AND the loaded ops
+  // must actually be keyed to them (`parameters._captured`, the marker `_cap` persists), with
+  // `_capActive` accepted as the same-session equivalent. Coverage falls back to the op count for the
+  // same reason — `_coveredCount` is only populated on the run where injectGantt executed.
+  window.tmScheduleSource = function() {
+    var leafTasks = 0, summarySkipped = 0, total = 0;
+    var app = A();
+    var capOps = 0;
+    for (var oi = 0; oi < _ops.length; oi++) {
+      if (_ops[oi].parameters && _ops[oi].parameters._captured) capOps++;
+    }
+    if (app && app.db) {
+      try {
+        var tr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE schedule_start IS NOT NULL " +
+          "AND schedule_finish IS NOT NULL AND (is_summary IS NULL OR is_summary = 0)");
+        if (tr.length && tr[0].values.length) leafTasks = tr[0].values[0][0] | 0;
+        var sr = app.db.exec("SELECT COUNT(*) FROM tasks WHERE is_summary = 1");
+        if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
+      } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
+      try {
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
+        if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
+      } catch (e) { total = 0; }
+    }
+    // Coverage is counted off the LOADED OPS FIRST, not off `_coveredCount`. `_coveredCount` tallies
+    // `_cap`'s UPDATE executions against kernel_ops, so a db carrying duplicate ELEMENT_PLACE rows for
+    // a guid inflates it above the element count (measured: 2238 on a 1119-element Duplex after an
+    // extra injectGantt pass). `capOps` is what the film actually reveals, so it is the honest number;
+    // `_coveredCount` is kept only as the fallback for the window where ops have not been reloaded yet.
+    var covered = capOps || _coveredCount;
+    return {
+      source: (leafTasks > 0 && (_capActive || capOps > 0)) ? 'captured' : 'derived',
+      leafTasks: leafTasks, summarySkipped: summarySkipped,
+      capOps: capOps, capActive: _capActive,
+      covered: covered, total: total, coveredUpdates: _coveredCount,
+      pct: total ? Math.min(100, Math.round(covered / total * 100)) : 0,
+      projectStart: _projectStart, projectEnd: _projectEnd, ops: _ops.length
+    };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §3.2 — the CAPTURED branch of the buildup ───────────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §3.2
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  //
+  // ⚠ This verb deliberately WRITES NOTHING, and that is the whole design — not an omission.
+  // injectGantt's `_cap` overlay has ALREADY keyed every covered op to its own task's
+  // [schedule_start, schedule_finish] window (leaf tasks only — `is_summary` is filtered there), with
+  // §PLAYBACK-STAGGER distributing each task's guids bottom-up by center_z WITHIN that window.
+  // loadOps() then reads them back ORDER BY timestamp and computeDays() sets _projectStart/_projectEnd
+  // to the real project epoch. So "order the reveal by the real schedule" is already true of `_ops`
+  // the moment the timeline exists; mode D's re-key is what was DESTROYING it (§2).
+  //
+  // Returns the SAME shape tmOrderByCameraPath returns, so cinema_maxq.js's per-frame cursor loop
+  // needs no change. Because nothing was written, _bkSaved stays null and tmRestoreDerivedOrder() is a
+  // genuine no-op — stronger than restoring correctly, since there is nothing to get wrong.
+  window.tmOrderBySchedule = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    var ss = window.tmScheduleSource();
+    if (!ss.leafTasks) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-dated-leaf-tasks'); return null; }
+    if (ss.source !== 'captured') { console.warn('§CPE_BUILDUP_SOURCE reject reason=ops-not-keyed-to-tasks'); return null; }
+    var capOps = ss.capOps;
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE source=captured leafTasks=' + ss.leafTasks +
+      ' summarySkipped=' + ss.summarySkipped + ' covered=' + ss.covered + '/' + ss.total +
+      ' pct=' + ss.pct + '% capOps=' + capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — REAL LINKED SCHEDULE, reveal follows schedule_start (no re-key, no float/logic in this data)');
+    return { ops: _ops.length, placed: capOps, noGeom: _ops.length - capOps, arc: 0, source: 'captured',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_FOLLOW_TM — the film PLAYS the Time Machine; it does not author a build order ──
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_SOURCE_BLIND
+  // User, 2026-07-29: "do not bake anything for TM.. as i said, it is user's own plan" /
+  // "this practices good separation of tasks" — Time Machine owns the build order, Alt+C owns the
+  // camera. The film is a camera over a timeline someone else authored, and nothing about pressing
+  // Alt+C may change WHEN anything is built.
+  //
+  // This is the ONE verb both callers (the bake in cinema_maxq.js and the Preview in
+  // cinema_path_editor.js) now use, which is also the fix for those two having chosen the buildup
+  // source by different rules — the preview called tmOrderByCameraPath unconditionally while the bake
+  // consulted tmScheduleSource(), so on a captured-schedule building the rehearsal and the film could
+  // disagree about what they were showing.
+  //
+  // Like tmOrderBySchedule (which it delegates to for the captured case) it WRITES NOTHING: `_ops`
+  // are already in timeline order the moment the timeline exists — loadOps() reads them ORDER BY
+  // timestamp and computeDays() sets the real project epoch. So "follow the Time Machine" needs no
+  // pass at all, which is why _bkSaved stays null and tmRestoreDerivedOrder() is a genuine no-op.
+  //
+  // mode S = a captured/linked schedule keyed to dated leaf tasks.
+  // mode T = this model's own derived 4D timeline (schedule_gate's geometry-gated, bottom-up order —
+  //          real work, but NOT a construction programme; the wording tiers in §5 still apply).
+  // There is deliberately no mode D here. tmOrderByCameraPath still exists and is still correct at
+  // what it does, but re-keying a timeline to camera proximity is exactly the interference this verb
+  // was written to remove.
+  window.tmFollowTimeline = function() {
+    if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    // §CPE_BUILDUP_ARM_GATE guard 2 (see tmActivateForBake above for the measured failure): a
+    // timeline with no SPAN cannot drive a cursor — `projectStart + u*(projectEnd-projectStart)` is
+    // the same value at every u, so the film freezes on frame 0's state and no log says why. Refuse
+    // it loudly instead of handing back a bkState the caller will faithfully follow to nowhere. The
+    // BAKE (cinema_maxq.js) calls this same verb, so this also stops a film silently recording a
+    // static building. ghostGroundArm/dayCounterLiveStart already refuse this exact state.
+    if (!(_projectEnd > _projectStart)) {
+      console.warn('§CPE_BUILDUP_SOURCE reject reason=zero-span ops=' + _ops.length +
+        ' projectStart=' + _projectStart + ' projectEnd=' + _projectEnd +
+        ' — every frame would ask for the same cursor; the timeline is not loaded yet');
+      return null;
+    }
+    var ss = window.tmScheduleSource();
+    if (ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
+      var cap = window.tmOrderBySchedule();
+      if (cap) return cap;
+      // A degraded captured schedule falls through to the timeline as loaded — still the user's
+      // plan, never a re-key.
+      console.warn('§CPE_BUILDUP_SOURCE fallthrough reason=captured-but-unusable — following the timeline as loaded');
+    }
+    // Count what the reveal can actually show, the same way mode D counted `placed`: an op with no
+    // geometry still holds its place in the order, it just has nothing to appear.
+    var app = A(), placed = 0, noGeom = 0;
+    try {
+      var have = {};
+      var rows = app.dbQuery('SELECT guid FROM element_transforms');
+      for (var r = 0; r < rows.length; r++) have[rows[r][0]] = 1;
+      for (var i = 0; i < _ops.length; i++) {
+        var op = _ops[i];
+        var guid = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+        if (guid && have[guid]) placed++; else noGeom++;
+      }
+    } catch (e) { placed = _ops.length; noGeom = 0; }   // counting failed → do not block the film
+    // §CPE_BUILDUP_ARM_GATE guard 2b: `placed` is this function's own count of ops that can actually
+    // APPEAR. Zero of them means the reveal has nothing to reveal no matter where the cursor goes —
+    // the user's failing run reported exactly `placed=0` and armed anyway. A counting FAILURE above
+    // degrades to placed=_ops.length (never 0), so this only ever fires on a real, measured zero.
+    if (placed === 0) {
+      console.warn('§CPE_BUILDUP_SOURCE reject reason=nothing-placed ops=' + _ops.length +
+        ' noGeom=' + noGeom + ' — no op in this timeline maps to geometry; there is nothing to build');
+      return null;
+    }
+    var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
+    console.log('§CPE_BUILDUP_SOURCE mode=T reason=generated-timeline ops=' + _ops.length +
+      ' placed=' + placed + ' noGeom=' + noGeom +
+      ' leafTasks=' + ss.leafTasks + ' capOps=' + ss.capOps + '/' + _ops.length +
+      ' capActive=' + ss.capActive +
+      ' window=' + iso(_projectStart) + '..' + iso(_projectEnd) +
+      ' — the reveal FOLLOWS this model\'s own 4D timeline, unmodified (no re-key; not a construction programme)');
+    return { ops: _ops.length, placed: placed, noGeom: noGeom, arc: 0, source: 'timeline',
+             leafTasks: ss.leafTasks, covered: ss.covered, total: ss.total, pct: ss.pct,
+             projectStart: _projectStart, projectEnd: _projectEnd };
+  };
+
+  // ── §CPE_BUILDUP_REAL_SCHEDULE §4 — the numeric instrument the witnesses read ──────────────────
+  // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_BUILDUP_REAL_SCHEDULE §4
+  // Witnesses: W-SCHED-REAL-ORDER, W-SCHED-REVERSIBLE
+  // Read-only, aggregate-only (never 10^5 rows across the bridge). Per dated leaf task it returns the
+  // FIRST and LAST reveal timestamp its bound elements actually get in `_ops` — which is what makes
+  // "the phases do not interleave" a number instead of an opinion. Works in BOTH branches, so the
+  // same instrument reads the captured order and mode D's re-key, and the two can be compared.
+  // `checksum` is the exact-reversibility probe: sums over EVERY op, so any single mutated timestamp
+  // changes it (W-SCHED-REVERSIBLE), without shipping the op list to the caller.
+  window.tmPhaseWindows = function() {
+    var app = A(), out = [], byGuid = {};
+    var chk = { opCount: _ops.length, sumStart: 0, sumEnd: 0 };
+    for (var i = 0; i < _ops.length; i++) { chk.sumStart += _ops[i].start_ts; chk.sumEnd += _ops[i].end_ts; }
+    if (!app || !app.db) return { phases: [], checksum: chk };
+    var rows;
+    try {
+      rows = app.db.exec('SELECT te.guid, te.task_id, t.name, t.schedule_start FROM task_elements te ' +
+        'JOIN tasks t ON t.task_id = te.task_id ' +
+        'WHERE t.schedule_start IS NOT NULL AND t.schedule_finish IS NOT NULL ' +
+        'AND (t.is_summary IS NULL OR t.is_summary = 0)');
+    } catch (e) { return { phases: [], checksum: chk }; }
+    if (!rows.length || !rows[0].values.length) return { phases: [], checksum: chk };
+    var meta = {};
+    rows[0].values.forEach(function(r) {
+      byGuid[r[0]] = r[1];
+      if (!meta[r[1]]) meta[r[1]] = { taskId: r[1], name: r[2], scheduleStart: r[3], n: 0,
+                                      minStart: Infinity, maxStart: -Infinity, bound: 0 };
+      meta[r[1]].bound++;
+    });
+    for (i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      var tid = g ? byGuid[g] : null;
+      if (!tid) continue;
+      var m = meta[tid];
+      m.n++;
+      if (op.start_ts < m.minStart) m.minStart = op.start_ts;
+      if (op.start_ts > m.maxStart) m.maxStart = op.start_ts;
+    }
+    for (var k in meta) if (meta[k].n) out.push(meta[k]);
+    out.sort(function(a, b) {
+      return (Date.parse(a.scheduleStart) - Date.parse(b.scheduleStart)) ||
+             (a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0);   // §3.2: stable tie-break only
+    });
+    return { phases: out, checksum: chk };
+  };
+
+  window.tmRestoreDerivedOrder = function() {
+    if (!_bkSaved) return false;
+    for (var i = 0; i < _bkSaved.ops.length; i++) {
+      _bkSaved.ops[i].i.start_ts = _bkSaved.ops[i].s;
+      _bkSaved.ops[i].i.end_ts = _bkSaved.ops[i].e;
+    }
+    _ops.sort(function(a, b) { return a.start_ts - b.start_ts; });
+    _projectStart = _bkSaved.ps; _projectEnd = _bkSaved.pe;
+    _evMesh = null; _evSig = ''; _incrPrimed = false;
+    _bkSaved = null;
+    _tmRebuildXrayCache();  // §Z_STACK_XRAY_STAGING: back on the real construction order — the
+                              // cache is valid again, rebuild it rather than leave it cleared
+    console.log('§MAXQ_TIME restored — derived Z-band order back in force');
+    return true;
+  };
+  // W-BUILDUP-SAMPLE reads this: how many ops are placed at the current cursor. Counting ops rather
+  // than meshes keeps the witness independent of the render path it is meant to be checking.
+  window.tmPlacedCount = function(ms) {
+    var c = isFinite(ms) ? ms : _cursor, n = 0;
+    for (var i = 0; i < _ops.length; i++) {
+      if (_ops[i].start_ts > c) break;
+      if (_ops[i].end_ts <= c) n++;
+    }
+    return n;
+  };
+
+  // §CPE_GHOST_GROUND (CINEMA_PATH_EDITOR.md) — the cursor time at which the buildup first places
+  // something that is NOT underground. A buildup film opens on substructure, and substructure sits
+  // below the ground plane (§GROUND_Y), so the opening is not empty — it is OCCLUDED. This is the
+  // moment the ghosted plane may start returning to opaque.
+  //
+  // `bottom >= ifcZ - EPS` deliberately COUNTS the ground-floor slab itself (its bottom IS the
+  // ground datum, by construction — tools.js picks the plane's height from that very slab). The
+  // user's own framing was "until its above slabs appears", and the slab appearing is exactly the
+  // moment the ground stops needing to be see-through.
+  //
+  // One DB read, one pass over the ops, called ONCE per bake/preview — never per frame.
+  // Returns null when nothing is ever at or above the datum (a fully-buried model, or no ops), and
+  // the caller must treat null as "never ghost" rather than "ghost forever".
+  window.tmFirstAboveGroundMs = function(ifcZ) {
+    var app = A();
+    if (!app || !app.db || !isFinite(ifcZ) || !_ops.length) return null;
+    var EPS = 0.05, above = Object.create(null), rows;
+    try {
+      rows = app.db.exec('SELECT guid, center_z - COALESCE(bbox_z, 0) / 2.0 AS bottom ' +
+                         'FROM element_transforms WHERE center_z IS NOT NULL');
+    } catch (e) { console.warn('§GHOST_GROUND_TRIGGER_FAIL ' + e.message); return null; }
+    if (!rows.length || !rows[0].values.length) return null;
+    var vals = rows[0].values, nAbove = 0;
+    for (var r = 0; r < vals.length; r++) {
+      if (vals[r][1] != null && vals[r][1] >= ifcZ - EPS) { above[vals[r][0]] = 1; nAbove++; }
+    }
+    // ⚠ MIN over end_ts, NOT the first match in start order. `_ops` is ordered by start_ts, but an
+    // element only BECOMES VISIBLE when its op ends — `tmPlacedCount` counts `end_ts <= cursor`, and
+    // the ghost has to lift on the same definition or it lifts while the ground is still bare.
+    // Measured on Hospital: taking the first start-ordered match gave triggerT=0.0162 while ops with
+    // EARLIER end_ts existed further down the list. One extra pass over 63k ops, once per bake.
+    var firstMs = null, scanned = 0, matched = 0, belowN = 0, lastBelowMs = null;
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      scanned++;
+      if (!g || !above[g]) { if (g) { belowN++; if (lastBelowMs == null || op.end_ts > lastBelowMs) lastBelowMs = op.end_ts; } continue; }
+      matched++;
+      if (firstMs == null || op.end_ts < firstMs) firstMs = op.end_ts;
+    }
+    console.log('§GHOST_GROUND_TRIGGER groundZ=' + ifcZ.toFixed(2) + ' aboveElems=' + nAbove + '/' + vals.length +
+      ' firstAboveMs=' + (firstMs == null ? 'none' : Math.round(firstMs)) +
+      ' aboveOps=' + matched + ' belowOps=' + belowN +
+      ' lastBelowMs=' + (lastBelowMs == null ? 'none' : Math.round(lastBelowMs)) +
+      ' opsScanned=' + scanned + '/' + _ops.length +
+      ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
+      ' — before this the buildup is entirely below the ground plane');
+    return firstMs;
+  };
+
+  // §CPE_GHOST_GROUND_RATIO — the SCHEDULE of above-ground placement, not just its first moment.
+  // Measured on Hospital: the first at-or-above-ground element lands at t=0.0162 (2.4s of a 147.9s
+  // film) while below-ground work continues to t=0.9947 — that model has no clean "substructure
+  // window" at all, so a first-element trigger lifts the ghost before the camera has even landed.
+  // The generic answer is a RATIO against the model's own above-ground total: the ground solidifies
+  // as the building rises, on every building, with no per-model tuning.
+  //
+  // Returns sorted end_ts for every above-ground op (binary-searchable per frame — never a rescan),
+  // plus the counts a caller needs to decide whether ghosting applies to this model at all.
+  window.tmGroundSchedule = function(ifcZ) {
+    var app = A();
+    if (!app || !app.db || !isFinite(ifcZ) || !_ops.length) return null;
+    var EPS = 0.05, above = Object.create(null), rows;
+    try {
+      rows = app.db.exec('SELECT guid, center_z - COALESCE(bbox_z, 0) / 2.0 AS bottom ' +
+                         'FROM element_transforms WHERE center_z IS NOT NULL');
+    } catch (e) { console.warn('§GHOST_GROUND_TRIGGER_FAIL ' + e.message); return null; }
+    if (!rows.length || !rows[0].values.length) return null;
+    var vals = rows[0].values, i;
+    for (i = 0; i < vals.length; i++) {
+      if (vals[i][1] != null && vals[i][1] >= ifcZ - EPS) above[vals[i][0]] = 1;
+    }
+    var ends = [], belowN = 0;
+    for (i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!g) continue;
+      if (above[g]) ends.push(op.end_ts); else belowN++;
+    }
+    ends.sort(function(a, b) { return a - b; });
+    var out = { ends: ends, aboveTotal: ends.length, belowTotal: belowN,
+                firstAboveMs: ends.length ? ends[0] : null,
+                projectStart: _projectStart, projectEnd: _projectEnd };
+    console.log('§GHOST_GROUND_SCHEDULE groundZ=' + ifcZ.toFixed(2) +
+      ' aboveOps=' + out.aboveTotal + ' belowOps=' + out.belowTotal +
+      ' firstAboveMs=' + (out.firstAboveMs == null ? 'none' : Math.round(out.firstAboveMs)) +
+      ' — opacity follows the SHARE of above-ground work placed, so it scales to any building');
+    return out;
+  };
+
+  // §CPE_BUILDUP_WORK_PACED (CINEMA_PATH_EDITOR.md) — the sorted completion times of every op, so a
+  // film can advance by WORK instead of by CALENDAR. Measured on the user's own Hospital bakes: at
+  // the same film fraction one run had 210/63,421 elements placed and another 15,485/63,416, because
+  // the derived 4D order clusters thousands of elements at nearby timestamps and the film was
+  // stepping the cursor linearly in days. Stepping it linearly in ELEMENTS makes "10% of the film"
+  // mean "10% of the building" on any model.
+  //
+  // One pass, called ONCE per bake/preview — never per frame. Read-only: nothing here re-keys or
+  // reorders the op log (§CPE_BUILDUP_FOLLOW_TM — the film plays the timeline, it does not author one).
+  window.tmWorkSchedule = function() {
+    if (!_ops.length) return null;
+    var ends = new Float64Array(_ops.length), i;
+    for (i = 0; i < _ops.length; i++) ends[i] = _ops[i].end_ts;
+    ends.sort();
+    var out = { ends: ends, total: ends.length, projectStart: _projectStart, projectEnd: _projectEnd };
+    // How front-loaded IS this model? The share of work completed in the first 10% of the calendar —
+    // 0.10 would mean evenly spread, and anything far above it is exactly the burst the user saw.
+    var tenPct = _projectStart + 0.10 * (_projectEnd - _projectStart), n10 = 0;
+    for (i = 0; i < ends.length; i++) { if (ends[i] > tenPct) break; n10++; }
+    out.workInFirstTenthOfCalendar = ends.length ? n10 / ends.length : 0;
+    console.log('§CPE_WORK_SCHEDULE ops=' + out.total +
+      ' span=' + Math.round(_projectStart) + '..' + Math.round(_projectEnd) +
+      ' workInFirst10%OfCalendar=' + (out.workInFirstTenthOfCalendar * 100).toFixed(1) + '%' +
+      ' (10.0% would be evenly spread — anything above it is the burst calendar pacing shows)');
+    return out;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
-  // just exposes it. Returns its boolean (count>0 / false); callers cache.
+  // just exposes it. §GANTT_REFOLD_HANG: injectGantt is async now — this returns a
+  // Promise<boolean>; callers must treat a thenable as "generating" (see navigate_find.js).
   window.tmGenerateTimeline = function() { return injectGantt(); };
 
   // §TM_STREAM_RESWEEP: streaming.js has no awareness of Time Machine — new BatchedMesh/
@@ -4833,6 +8892,24 @@
   // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
   // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
   window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
+  // W-XRAY-MEMO test hook (§XRAY_CACHE_MEMO): read the x-ray staging map + memo state, and drive
+  // the memo's key discipline deterministically. Diagnostic only — no production caller, same
+  // contract as __tmSnapshotVisible. `map` returns the FULL guid→ms map so the witness can assert
+  // byte-identical restore key-by-key rather than trusting a digest.
+  window.__tmXrayProbe = function (op, arg) {
+    if (op === 'clearMemo') { _xrayElemMemo = null; _xrayCacheMemo = []; }
+    else if (op === 'rebuild') { _tmRebuildXrayCache(); }
+    else if (op === 'nudge') {   // move one op's end_ts → the key MUST miss
+      if (_ops.length) _ops[0].end_ts += (arg || 0);
+    }
+    else if (op === 'deactivate') { deactivate(); }   // the same verb the panel's close button calls
+    var keys = Object.keys(_tmXraySolidifyTs);
+    var out = { n: keys.length, staged: _tmXrayStagedTotal, solidified: _tmXraySolidifiedN,
+                elemMemo: !!_xrayElemMemo, edgeMemo: _xrayCacheMemo.length,
+                active: _active, ops: _ops.length };
+    if (op === 'map') { out.map = {}; for (var i = 0; i < keys.length; i++) out.map[keys[i]] = _tmXraySolidifyTs[keys[i]]; }
+    return out;
+  };
   // Test hook: simulate a playback tick (small cursor advance + roll bump) so a probe can exercise
   // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
   window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;

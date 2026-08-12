@@ -175,6 +175,14 @@
       '  <input type="text" id="find-name" data-trl-placeholder="ui_find_placeholder" placeholder="' + _t('ui_find_placeholder', 'Count doors, Total cost…') + '">',
       '</div>',
       '<div id="find-chips"></div>',
+      // §HOVER_NAME (HOVER_NAME.md): hidden on touch — no hover on mobile, don't ship a
+      // control that silently does nothing there.
+      '<div id="find-hover-row" style="display:' + (window._isMobile ? 'none' : 'flex') +
+        ';align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:11px;color:#ccc">',
+      '  <input type="checkbox" id="find-hover-name-cb" style="cursor:pointer;margin:0">',
+      '  <label for="find-hover-name-cb" style="cursor:pointer;user-select:none">' +
+        _t('ui_hover_name', 'Hover name') + ' <span style="opacity:0.5">(&#39;)</span></label>',
+      '</div>',
       // Hidden selects — still used for data binding
       '<select id="find-type" style="display:none"><option value="">' + _t('ui_find_all_types', 'All types') + '</option></select>',
       '<select id="find-storey" style="display:none"><option value="">' + _t('ui_all_storeys', 'All Storeys') + '</option></select>',
@@ -247,6 +255,13 @@
     var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
     var elChips = document.getElementById('find-chips');
+    // §HOVER_NAME: checkbox and the ' key drive ONE state — checkbox side of that contract.
+    var elHoverCb = document.getElementById('find-hover-name-cb');
+    if (elHoverCb) {
+      elHoverCb.addEventListener('change', function() {
+        if (A.toggleHoverName) A.toggleHoverName('checkbox', elHoverCb.checked);
+      });
+    }
     var elMicBtn = document.getElementById('find-mic-btn');
     var elSelected = document.getElementById('find-selected');
     // §RevitParity A1: isolate controls
@@ -1007,9 +1022,13 @@
           var r = await fetch(patchUrl);
           if (r.ok) {
             var sqlText = await r.text();
-            A.db.run(sqlText);
+            // §PATCH_CHUNK: NEVER one giant A.db.run() here — a multi-thousand-statement patch
+            // (Hospital: 9,466 statements) crashes the bundled sql-wasm.wasm "memory access out
+            // of bounds" and bricks the SHARED wasm heap: every later dbQuery, the geo.db load
+            // and streaming init all fail. Same chunker as A._applyPendingPatch (scene.js).
+            var _ch = A._runSqlChunked(A.db, sqlText);
             applied = true;
-            console.log('[NEEDLE] §PATCH_APPLY ' + dbFile + ' applied (' + sqlText.length + ' bytes) from ' + patchUrl + ' [needle]');
+            console.log('[NEEDLE] §PATCH_APPLY ' + dbFile + ' applied (' + sqlText.length + ' bytes, ' + _ch.statements + ' statements, ' + _ch.chunks + ' chunk(s)) from ' + patchUrl + ' [needle]');
           } else {
             console.log('[NEEDLE] §PATCH_NONE ' + dbFile + ' (' + r.status + ') [needle]');
           }
@@ -1352,11 +1371,36 @@
         _clearPathHighlight();
         return null;
       }
-      var roomNames = result.path.map(function(g) { return graph.nodesByGuid[g].name; });
+      // §STOPS-VS-VIA: `rooms=[...]` used to list EVERY path anchor under a field named "rooms", which
+      // is how the field came to read "12 rooms" for a 4-room route (the rest were corridor spine, door
+      // and stair waypoints). Split it: `stops=` is the real room/exit sequence, `via=` is the way
+      // between them. Same data, no extra query, and each field now means what it says.
+      var stopNames = [], viaNames = [];
+      result.path.forEach(function(g) {
+        var n = graph.nodesByGuid[g] || {};
+        if (n.kind === 'room' || n.kind === 'exit') stopNames.push(n.name); else viaNames.push(n.name);
+      });
       var doorGuids = result.doors.map(function(d) { return d.guid; });
+      // §ROOM_PATH_PRECISION (2026-07-25, §14's summary-first rule applied to this line): the old
+      // form printed `hops=<doors.length> rooms=[<every path node's name>]`, which read as "12 rooms,
+      // 6 doors" on the real Hospital capture when the truth was 4 distinct portals (one of them a
+      // STAIR crossed on 3 storey hops, hence the same guid three times) and only 4 actual rooms —
+      // the rest of `rooms=[]` were corridor-spine, door- and stair-WAYPOINTS. A reader could not
+      // tell a real double-back from a repeated stair hop. Now: node KINDS are named, portals are
+      // counted distinctly, and the drawn-polyline point count is on the same line, so the log alone
+      // distinguishes "route revisits a door" from "one stair, three flights".
+      var kindOf = function(g) { return (graph.nodesByGuid[g] || {}).kind || '?'; };
+      var counts = {};
+      result.path.forEach(function(g) { var k = kindOf(g); counts[k] = (counts[k] || 0) + 1; });
+      var distinctDoors = {}; doorGuids.forEach(function(g) { distinctDoors[g] = (distinctDoors[g] || 0) + 1; });
+      var repeated = Object.keys(distinctDoors).filter(function(g) { return distinctDoors[g] > 1; });
       console.log('[RP-PATH] §ROOM_PATH from=' + fromN.name + ' to=' + toN.name +
-        ' hops=' + result.doors.length + ' rooms=[' + roomNames.join(',') + ']' +
-        ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm');
+        ' hops=' + result.doors.length + ' portals=' + Object.keys(distinctDoors).length +
+        ' anchors={' + Object.keys(counts).map(function(k) { return k + ':' + counts[k]; }).join(' ') + '}' +
+        ' polyPts=' + ((result.polyline || []).length) +
+        ' stops=[' + stopNames.join(',') + '] via=[' + viaNames.join(',') + ']' +
+        ' doors=[' + doorGuids.join(',') + '] distance=' + result.distance.toFixed(2) + 'm' +
+        (repeated.length ? ' repeatedPortals=[' + repeated.map(function(g) { return g + 'x' + distinctDoors[g]; }).join(',') + ']' : ''));
       _drawPathHighlight(graph, result);
       return result;
     }
@@ -1515,6 +1559,36 @@
         var d = rr[7] || '_'; (byDisc[d] = byDisc[d] || []).push(rr);
       }
       var discs = Object.keys(byDisc);
+      // §BBOX_GHOST_ALL — envelope-first, ALL-elements fallback (IFC_LARGE_PRIVATE_STRESS_TEST.md
+      // §KUL002 — Witness: W-BBOX-GHOST-NOENVELOPE). _isEnvelope() matches only Wall|Slab|Roof|
+      // CurtainWall|Covering|Plate. A plant/MEP model has NONE of those — KUL070 is 8 walls + 1 slab
+      // in 25,029 elements — so this returned null, Alt+Z's bbox state drew nothing, and the
+      // large-building shell path silently fell through to x-ray dim (that IS the "why is it
+      // translucent" report). Do NOT widen _isEnvelope itself: for models that DO have an envelope
+      // the filter is the point — it keeps the ghost a shell of far context (LTU 28,569 of 122,667,
+      // Terminal 34,446 of 48,428). Widening globally would 4x LTU's box count and lose that meaning.
+      // Falling back only when the envelope set is EMPTY changes nothing for those models and gives
+      // an envelope-less model the boxes it does have. Cost is unchanged: instanced wireframe boxes
+      // from element_transforms.bbox_*, one BoxGeometry + N instances (project_altx_ghost.md).
+      // Threshold, not just empty: KUL070 has 9 envelope elements in 25,033 (0.04%) — non-zero, so an
+      // "if empty" test misses it and the ghost still draws 9 boxes = visually nothing. Fire when the
+      // envelope is absent OR negligible: <2% of elements AND <200 of them (BOTH, so a small building
+      // with a genuinely thin envelope isn't caught by the ratio alone). Measured margin against the
+      // fleet — nearest real case is Hospital at 4,518/63,415 = 7.1%, well clear of 2%:
+      //   KUL070 9/25,033=0.04% → FALLBACK · Hospital 7.1% · JKR 12.1% · LTU 22.7% · Terminal 71.1% → unchanged.
+      var _envN = 0;
+      for (var k in byDisc) _envN += byDisc[k].length;
+      if (rows.length && (_envN === 0 || (_envN / rows.length < 0.02 && _envN < 200))) {
+        byDisc = {};
+        for (var j = 0; j < rows.length; j++) {
+          var r2 = rows[j], d2 = r2[7] || '_';
+          (byDisc[d2] = byDisc[d2] || []).push(r2);
+        }
+        discs = Object.keys(byDisc);
+        console.log('[MG] §BBOX_GHOST_ALL envelope=' + _envN + '/' + rows.length +
+          ' (' + (100 * _envN / rows.length).toFixed(2) + '%) too thin to be a shell — boxing ALL '
+          + rows.length + ' elements, discs=' + discs.join(','));
+      }
       if (!discs.length) { console.log('[MG] §BBOX_GHOST_EMPTY rows=' + rows.length); return null; }
       var group = new THREE.Group(), geo = new THREE.BoxGeometry(1, 1, 1), total = 0;
       var m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -2106,7 +2180,7 @@
     function _clearRoomCuboid() {
       var kept = [];
       _roomBoxes.forEach(function(rb) {
-        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidFillGlow' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire') {
+        if (rb.guid === '_cuboidFill' || rb.guid === '_cuboidFillGlow' || rb.guid === '_cuboidWireOuter' || rb.guid === '_cuboidWire' || rb.guid === '_cuboidDoor') {
           if (rb.mesh) {
             if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
             if (rb.mesh.geometry) rb.mesh.geometry.dispose();
@@ -2139,7 +2213,12 @@
     // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
     // animations, never a leaked rAF loop after the mesh is gone).
     var _pulseId = 0;
-    function _drawRoomCuboid(center, size, category) {
+    // §ROOM_SELECT_DOORS (2026-07-26, user ask: "when we zoom to particular room it is just a box
+    // purple without its accompanying door... let's have that too since its free" — free because
+    // _spawnDoorMeshesForRooms already exists for the category-reveal case; a single selected room
+    // is just a 1-guid call to the SAME function, not new logic): roomGuid is optional so every
+    // existing caller that doesn't pass one keeps working with no door drawn, unchanged.
+    function _drawRoomCuboid(center, size, category, roomGuid) {
       if (!A.scene || typeof THREE === 'undefined') return;
       _clearRoomCuboid();
       var myPulse = ++_pulseId;
@@ -2171,6 +2250,12 @@
       A.scene.add(wire2); _roomBoxes.push({ guid: '_cuboidWireOuter', mesh: wire2 });
       wire.renderOrder = 1002; wire.userData._roomShell = true;
       A.scene.add(wire); _roomBoxes.push({ guid: '_cuboidWire', mesh: wire });
+
+      if (roomGuid) {
+        var doorMeshes = _spawnDoorMeshesForRooms([roomGuid]);
+        doorMeshes.forEach(function(m) { _roomBoxes.push({ guid: '_cuboidDoor', mesh: m }); });
+        console.log('[RP-TA] §ROOM_SELECT_DOORS guid=' + roomGuid + ' doors=' + doorMeshes.length);
+      }
 
       var restFillOp = 0.5, restWireScale = 1.0, restWire2Scale = 1.015, overshoot = 0.09;
       var t = 0;
@@ -2701,14 +2786,14 @@
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=cuboid guid=' + guid + ' bound=' + bound.size +
           ' box=' + zoomBox.size.x.toFixed(1) + 'x' + zoomBox.size.y.toFixed(1) + 'x' + zoomBox.size.z.toFixed(1) + ' margin=0.7');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, clipPlanes: _clip, zoomMult: 1.8, suppressHighlight: true });
-        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
+        _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory, guid);
       } else if (bound.size) {
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=bounding-elements guid=' + guid + ' (no zoomBox available)');
         _drillSelect(bound, name, 'ROOM_SELECT', { isItem: true, parentSet: storeySet, zoomBox: zoomBox, zoomMult: 1.8 });
       } else {
         console.log('[RP-TA] §ROOM_HIGHLIGHT mode=' + (zoomBox ? 'cuboid' : 'cuboid-fallback') + ' guid=' + guid + ' (no bounding mesh found)');
         _drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
-        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory);
+        if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory, guid);
       }
     }
 
@@ -2731,12 +2816,25 @@
         if (m.material) m.material.dispose();
       });
       _revealDoorMeshes = [];
+      // §CORRIDOR-REVEAL-SHELL: a shell _revealCategoryGroup added for a backprop CORRIDOR_ROOM::*
+      // guid was never part of the base Room Lens batch (_roomLensOn never draws one for it) — DROP
+      // it entirely here rather than just dimming, or it lingers as a phantom faint box forever
+      // (until the whole lens resets on axis-switch/panel-close, a much later teardown).
+      var kept = [];
       _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.userData && rb.mesh.userData._revealAdded) {
+          if (rb.mesh.parent) rb.mesh.parent.remove(rb.mesh);
+          if (rb.mesh.geometry) rb.mesh.geometry.dispose();
+          if (rb.mesh.material) rb.mesh.material.dispose();
+          return;
+        }
         if (rb.mesh && rb.mesh.material && rb.mesh.userData && rb.mesh.userData._roomShell) {
           rb.mesh.material.opacity = 0.10;   // §RP-SHELL's own baseline shine-through opacity
           rb.mesh.material.needsUpdate = true;
         }
+        kept.push(rb);
       });
+      _roomBoxes = kept;
       _categoryRevealOn = null;
       if (A.markDirty) A.markDirty();
     }
@@ -2776,27 +2874,21 @@
       }
       return out;
     }
-    function _revealCategoryGroup(gk, groupRooms) {
-      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
-      _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
-      var guidSet = {};
-      (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
-      var brightened = 0;
-      _roomBoxes.forEach(function(rb) {
-        if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
-          rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
-          rb.mesh.material.needsUpdate = true;
-          brightened++;
-        }
-      });
-      var doorPositions = _doorPositionsForRooms(Object.keys(guidSet));
+    // §DOOR-REAL-BOX (factored out 2026-07-26 so a SINGLE room's own select can reuse it too, not
+    // just a whole-category reveal — see _drawRoomCuboid's call below): a box sized to the door's
+    // own real bbox_x/bbox_y/bbox_z + yawed by its real rotation_z reads as an actual door leaf, not
+    // an arbitrary sphere — real measured data, not invented. Every door SHARES one geometry+material
+    // per (sizeX,sizeY,sizeZ) combo would be ideal but doors legitimately vary in size
+    // building-to-building; a fresh BoxGeometry per marker is cheap (both callers cap this at a
+    // handful of rooms' worth of doors, never the whole building) and disposal is the CALLER's job
+    // (each caller tracks the returned meshes in its own array). Same fixed 0x8d5524 brown regardless
+    // of which category/room is revealing them — including Restrooms, whose own shell fill (0x6d4c41,
+    // ROOM_CATEGORY_COLORS above) is a close brown too; not fixed here, just noting the low-contrast
+    // case exists (user asked, 2026-07-26) in case a future pass wants a distinct door hue instead.
+    function _spawnDoorMeshesForRooms(guids) {
+      var doorPositions = _doorPositionsForRooms(guids);
+      var meshes = [];
       if (A.scene && A.ifc2three && typeof THREE !== 'undefined' && doorPositions.length) {
-        // §DOOR-REAL-BOX: a box sized to the door's own real bbox_x/bbox_y/bbox_z + yawed by its
-        // real rotation_z reads as an actual door leaf, not an arbitrary sphere — real measured
-        // data, not invented. Every door SHARES one geometry+material per (sizeX,sizeY,sizeZ)
-        // combo would be ideal but doors legitimately vary in size building-to-building; a fresh
-        // BoxGeometry per marker is cheap (this reveal is capped at one room-category's doors,
-        // never the whole building) and disposed on toggle-off (see _clearCategoryReveal above).
         var sphereGeo = null; // lazy singleton fallback, only built if a door is missing dims
         var doorMat = new THREE.MeshBasicMaterial({ color: 0x8d5524, transparent: true, opacity: 0.85, depthTest: false });
         var boxCount = 0, sphereCount = 0;
@@ -2815,14 +2907,58 @@
           }
           m.position.set(c.x, c.y + 0.05, c.z);
           m.renderOrder = 1002;
+          m.userData._doorMarker = true; // §-verifiable: witnesses can traverse the scene for this tag rather than guessing by color/position
           A.scene.add(m);
-          _revealDoorMeshes.push(m);
+          meshes.push(m);
         });
         console.log('[RP-TA] §DOOR_MARKER_SHAPE boxes=' + boxCount + ' spheres(no-real-dims-fallback)=' + sphereCount);
       }
+      return meshes;
+    }
+    function _revealCategoryGroup(gk, groupRooms) {
+      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
+      _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
+      var guidSet = {};
+      (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
+      var brightened = 0, matchedGuids = {};
+      _roomBoxes.forEach(function(rb) {
+        if (rb.mesh && rb.mesh.material && guidSet[rb.guid]) {
+          rb.mesh.material.opacity = 0.55;   // same "brightened" level _drawPathHighlight already uses for path-member shells
+          rb.mesh.material.needsUpdate = true;
+          brightened++;
+          matchedGuids[rb.guid] = true;
+        }
+      });
+      // §CORRIDOR-REVEAL-SHELL (2026-07-26, user-reported live testing: tapping "Hall / Corridor"
+      // lit doors brown but left every shell dark — confirmed in a live console capture,
+      // `§CATEGORY_REVEAL on gk="Hall / Corridor" rooms=0 doors=59`): a `CORRIDOR_ROOM::*` guid (the
+      // §CORRIDOR-ROOM-BACKPROP synthetic hallway bucket, real door+wall-verified but with NO
+      // spatial_structure row) never gets a shell in `_roomBoxes` — `_allRoomVolumes()` only queries
+      // real rows, same reason `_roomSelect` needs its own `isCorridorRoom`/`_corridorRoomBBox`
+      // branch instead of the normal `_roomBoxes` lookup. The `rooms=0` case above is exactly a
+      // Hall/Corridor group made ENTIRELY of these backprop entries — nothing in `_roomBoxes` could
+      // ever match. Draw a fresh shell for each unmatched member here, same helper `_roomSelect`
+      // already uses for the single-room case — real measured position/span, not invented — and
+      // start it already brightened (0.55) since it's created FOR this reveal, never dim-then-skip.
+      var addedShells = 0;
+      Object.keys(guidSet).forEach(function(g) {
+        if (matchedGuids[g] || g.indexOf('CORRIDOR_ROOM::') !== 0) return;
+        var rw = _corridorRoomBBox(g);
+        if (!rw || rw.cx == null || rw.sx == null || !A.ifc2three || typeof THREE === 'undefined') return;
+        var cc = A.ifc2three(rw.cx, rw.cy, rw.cz);
+        var center = new THREE.Vector3(cc.x, cc.y, cc.z);
+        var size = new THREE.Vector3(Math.max(rw.sx || 0.5, 0.5), Math.max(rw.sz || 0.5, 0.5), Math.max(rw.sy || 0.5, 0.5));
+        var mesh = _drawRoomShell(center, size, 0.55, _categoryColor('corridor').fill);
+        if (mesh) {
+          mesh.userData._revealAdded = true; // §CORRIDOR-REVEAL-SHELL: never part of the base Room Lens batch — _clearCategoryReveal must DISPOSE it, not just dim it, or it leaks into every later view
+          _roomBoxes.push({ guid: g, name: rw.name, mesh: mesh, center: center, size: size, category: 'corridor' });
+          addedShells++; brightened++;
+        }
+      });
+      _revealDoorMeshes = _spawnDoorMeshesForRooms(Object.keys(guidSet));
       _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' doors=' + doorPositions.length);
+      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' addedShells=' + addedShells + ' doors=' + _revealDoorMeshes.length);
     }
 
     // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
@@ -3193,21 +3329,65 @@
         box.appendChild(msg);
         return;
       }
+      // §PATH_PANEL_KINDS (2026-07-25, real user screenshots `RoomsPath{Top,Front,Side}View.png`):
+      // this list used to render EVERY `res.path` entry as a numbered ROOM stop and pair it with
+      // `res.doors[i]` POSITIONALLY. The two arrays are neither the same length nor the same
+      // sequence — `path` carries room nodes AND corridor-spine / door / stair waypoints, `doors`
+      // carries one entry per traversed portal edge — so the panel showed a DOOR
+      // ("M_Single-Flush:0915 x 2134mm_Wood:668663") as numbered stop 4, printed
+      // "└─ door: Stair:180mm max riser 280mm going" under three corridor rows, listed the same
+      // corridor twice, and headed the list "6 doors" when the route crosses 4 distinct portals
+      // (one a stair, counted once per storey hop). Fixed by rendering each anchor BY ITS OWN KIND
+      // straight off the path — no positional zip can go out of step — and counting portals
+      // distinctly in the header. Same data, no new query.
+      var stairNamePrefixes = [];
+      Object.keys(graph.nodesByGuid).forEach(function(g) {
+        var n = graph.nodesByGuid[g];
+        if (n && n.kind === 'stairwp' && n.name) stairNamePrefixes.push(String(n.name).replace(/ \((lower|upper)\)$/, ''));
+      });
+      var isStairPortal = function(d) {
+        var nm = String((d && d.name) || '');
+        return stairNamePrefixes.some(function(p) { return p && nm.indexOf(p) === 0; });
+      };
+      var seen = {}, nDoor = 0, nStair = 0;
+      (res.doors || []).forEach(function(d) {
+        if (!d || seen[d.guid]) return;
+        seen[d.guid] = 1;
+        if (isStairPortal(d)) nStair++; else nDoor++;
+      });
       var hdr = document.createElement('div');
       hdr.style.cssText = 'font-size:10px;color:#4fc3f7;padding:4px 2px 2px';
-      hdr.textContent = res.doors.length + (res.doors.length === 1 ? ' door · ' : ' doors · ') + res.distance.toFixed(1) + 'm';
+      hdr.textContent = nDoor + (nDoor === 1 ? ' door' : ' doors') +
+        (nStair ? ' · ' + nStair + (nStair === 1 ? ' stair' : ' stairs') : '') +
+        ' · ' + res.distance.toFixed(1) + 'm';
       box.appendChild(hdr);
-      res.path.forEach(function(guid, i) {
+      var stopNo = 0, lastCorridorKey = null;
+      res.path.forEach(function(guid) {
         var n = graph.nodesByGuid[guid];
-        box.appendChild(_treeNode((i + 1) + '. ' + n.name + ' · ' + (n.label || n.name), '', 1,
-          { onTap: function() { _roomSelect(guid); } }));
-        if (i < res.doors.length) {
-          var d = document.createElement('div');
-          d.style.cssText = 'padding:2px 10px 2px 34px;font-size:9px;color:#777;display:flex;align-items:center;gap:4px';
-          d.textContent = '└─ door: ' + (res.doors[i].name || res.doors[i].guid);
-          d.title = 'door guid: ' + res.doors[i].guid;
-          box.appendChild(d);
+        if (!n) return;
+        if (n.kind === 'room' || n.kind === 'exit') {
+          lastCorridorKey = null;
+          stopNo++;
+          box.appendChild(_treeNode(stopNo + '. ' + n.name + ' · ' + (n.label || n.name), '', 1,
+            { onTap: function() { _roomSelect(guid); } }));
+          return;
         }
+        // waypoint anchors: shown as the WAY you get there, indented under the previous stop
+        var lead = '', title = '';
+        if (n.kind === 'doorwp') { lead = '└─ through door: ' + n.name; title = 'door guid: ' + guid; lastCorridorKey = null; }
+        else if (n.kind === 'stairwp') { lead = '└─ via stair: ' + n.name; title = 'stair waypoint: ' + guid; lastCorridorKey = null; }
+        else { // spine / circ — one line per continuous corridor run, not one per bucket
+          var key = 'corr|' + (n.storey || '');
+          if (key === lastCorridorKey) return;
+          lastCorridorKey = key;
+          lead = '└─ along ' + (n.name || 'corridor');
+          title = 'circulation waypoint: ' + guid;
+        }
+        var d = document.createElement('div');
+        d.style.cssText = 'padding:2px 10px 2px 34px;font-size:9px;color:#777;display:flex;align-items:center;gap:4px';
+        d.textContent = lead;
+        d.title = title;
+        box.appendChild(d);
       });
     }
 
@@ -3384,6 +3564,13 @@
         var ok = false;
         try { ok = window.tmGenerateTimeline(); }
         catch(e) { console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator threw: ' + e.message + '" phases=0'); return null; }
+        if (ok && typeof ok.then === 'function') {
+          // §GANTT_REFOLD_HANG: the generator is async now (chunk-yielding injectGantt) — ops are
+          // not in kernel_ops yet. Report generating; the next Phase-axis open re-reads kernel_ops.
+          ok.then(function (good) { console.log('[RP-TB] §PHASE_LENS gen=real async-done ok=' + !!good + ' — reopen the Phase axis to read kernel_ops'); });
+          console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator running async (chunk-yield); reopen to load" phases=0');
+          return null;
+        }
         if (!ok) {
           console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops status="generator returned false (no elements)" phases=0');
           return null;
@@ -4259,6 +4446,13 @@
       if (A.filterByGuids) A.filterByGuids(null);
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing: category-reveal doors and the
+      // Path highlight survived a Find-panel close/reopen): _roomLensReset() only tears down
+      // _roomBoxes — the category reveal's OWN door meshes (_revealDoorMeshes) and the Path
+      // sub-mode's line/markers (_pathExtraMeshes) are separate arrays neither reset touches. Clear
+      // both explicitly, same as every other overlay this open path already resets.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       if (elIsoBar) elIsoBar.style.display = 'none';
       _phaseCache = null; // fresh timeline per open (building may have changed)
       _probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
@@ -4294,6 +4488,12 @@
       // cruft — always tear them down on close so nothing lingers invisibly.
       _roomLensReset();
       _highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing): same gap as openFindPanel's
+      // fresh-open reset above — _roomLensReset() never touches _revealDoorMeshes (category-reveal
+      // brown doors) or _pathExtraMeshes (Path sub-mode line+markers), both separate arrays. Without
+      // this they survive closeFindPanel() and leak into the scene after the panel is gone.
+      _clearCategoryReveal();
+      _clearPathHighlight();
       // §PICK-BBOX-LEAK (user): the picking.js-owned bbox (window._pickHighlight, a LineSegments
       // EdgesGeometry) is a SHARED global cleared only when a NEW pick happens — clearHighlight()
       // above disposes it ONLY when it === the Find-local _highlight (and early-returns when that's

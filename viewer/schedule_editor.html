@@ -68,6 +68,9 @@
   #se-cpm-btn { background: #243042; border-color: #34465e; color: #cdd7e4; cursor: pointer; }
   #se-cpm-btn:hover { background: #2c3a50; }
   #se-cpm-out { font-size: 11px; color: #9fb0c6; }
+  #se-diff-btn { background: #243042; border: 1px solid #34465e; color: #cdd7e4; cursor: pointer; margin-left: 6px; }
+  #se-diff-btn:hover { background: #2c3a50; }
+  #se-diff-out { font-size: 11px; color: #9fb0c6; padding: 4px 0 2px; line-height: 1.6; }
   .se-dep-row.se-dep-crit .se-dep-pred, .se-dep-row.se-dep-crit .se-dep-succ { color: #f0a6b1; font-weight: 600; }
   /* Gantt timeline */
   .gantt-pane { height: calc(58vh - 96px); overflow: auto; padding: 10px 12px; }
@@ -102,6 +105,10 @@
   /* §SE-5b today marker — vertical line across the whole Gantt body */
   .g-today-line { position: absolute; top: -16px; bottom: 0; width: 1px; background: #4fc3f7;
                   z-index: 1; opacity: .6; pointer-events: none; }
+  /* §SE-5c dependency-arrow overlay (traditional Gantt connector lines) */
+  .g-deps-svg { overflow: visible; }
+  .g-dep-line { stroke: #6f89ac; stroke-width: 1.4; opacity: .8; }
+  .g-dep-line.crit { stroke: #d2475c; stroke-width: 1.8; opacity: .95; }
   .g-today-line::before { content: 'today'; position: absolute; top: -14px; left: 3px; font-size: 9px;
                            color: #4fc3f7; opacity: 1; }
   /* dependency rows */
@@ -153,6 +160,7 @@
     <span class="se-ribbon-label">Compute</span>
     <button id="se-cpm-btn" title="Critical-path forward/backward pass over the dependency graph">▶ CPM</button>
     <span id="se-cpm-out"></span>
+    <button id="se-diff-btn" title="4D Schedule Diff — grade an IMPORTED P6/MS Project schedule's per-phase durations against this building's own real-quantity + labor-rate estimate (import a P6/MSP file first via ⤓ P6)">⚖ Diff vs Model</button>
   </div>
   <div class="se-ribbon-group">
     <span class="se-ribbon-label">Zoom</span>
@@ -162,6 +170,7 @@
   </div>
 </div>
 <div id="se-status">Initialising…</div>
+<div id="se-diff-out"></div>
 <main>
   <section class="pane left">
     <h2>Work Breakdown (WBS)</h2>
@@ -187,9 +196,10 @@
 </section>
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
 <script src="rates.js?v=4" onerror="console.warn('§LOAD_FAIL rates.js')"></script>
-<script src="schedule_author.js?v=10" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=12" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <script src="foreign_schedule.js?v=1" onerror="console.warn('§LOAD_FAIL foreign_schedule.js')"></script>
+<script src="schedule_diff.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_diff.js')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_editor_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
+<script src="schedule_editor_ui.js?v=11" onerror="console.warn('§LOAD_FAIL schedule_editor_ui.js')"></script>
 </body>
 </html>

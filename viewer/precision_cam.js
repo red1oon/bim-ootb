@@ -151,7 +151,10 @@
     if (!A() || !A().controls) return;
     _pivot = true;
     window._autoPivot = true;  // exposed for Help-row isActive highlight
-    _onEnd = function() { if (_pivot) recenterPivot(); };
+    // §PIVOT_FINE_WINS: Fine is a deliberate user act (visible top-centre icon) for slowly
+    // closing in on one specific point — Auto-Pivot yanking the target elsewhere on every
+    // drag-end would fight that. Fine wins: pause auto-recenter while Fine is active.
+    _onEnd = function() { if (_pivot && !_fine) recenterPivot(); };
     A().controls.addEventListener('end', _onEnd);
     _pivotPaint();
     if (_pivotInd) _pivotInd.style.display = 'flex';  // top-centre orbit-icon notice
