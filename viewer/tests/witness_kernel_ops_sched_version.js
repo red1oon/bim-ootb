@@ -45,9 +45,12 @@ const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
-function sliceFn(src, name) {
+// §DAY_GAP_TAIL discipline, applied here 2026-08-12 (§ARCH_START_TEMPO / M1): `optional` lets a
+// helper that a newer time_machine.js introduced be sliced without breaking on a revision that
+// predates it — same shape witness_midair_zero.js and bim-compiler/scripts/probe_arch_start.js use.
+function sliceFn(src, name, optional) {
   const idx = src.indexOf('function ' + name + '(');
-  if (idx < 0) throw new Error(name + ' not found');
+  if (idx < 0) { if (optional) return null; throw new Error(name + ' not found'); }
   let depth = 0, i = idx, seenOpen = false;
   for (; i < src.length; i++) {
     if (src[i] === '{') { depth++; seenOpen = true; }
@@ -71,8 +74,17 @@ if (tmSrc.indexOf(genVersionLine) < 0) {
 const tierOrderLine = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];";
 if (tmSrc.indexOf(tierOrderLine) < 0) { assert(false, 'W-KOS-0c _TIER1_ORDER constant found in time_machine.js'); finish(); }
 
+// ⚠ #1313 (§ZONE_INDEX) moved _buildXrayElements' storey banding into the shared _zoneIndex, and
+// this slice list was never updated — so from W-KOS-4 onward this witness has thrown
+// `ReferenceError: _zoneIndex is not defined` and certified NOTHING about the live materialize path
+// since. Exactly the dead-witness failure §DAY_GAP_TAIL found in witness_midair_zero.js the same
+// day. Found 2026-08-12 while landing §ARCH_START_TEMPO / M1 — which bumps the very constant this
+// witness guards, so a dead one here is not something to leave for later.
+const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', true), sliceFn(tmSrc, '_zoneIndex', true)].filter(Boolean);
 const sliced = [
   tierOrderLine,
+  (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
+  sliceFn(tmSrc, '_zoneOf', true) || '',
   sliceFn(tmSrc, '_kernelOpsSchedStale'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),

@@ -36,6 +36,7 @@ const VIEWER_DIR = path.join(__dirname, '..');
 const SQLJS_DIR = process.env.SQLJS_DIR || path.join(HOME, 'bim-ootb', 'modeller', 'lib');
 const initSqlJs = require(path.join(SQLJS_DIR, 'sql-wasm.js'));
 const ScheduleAuthor = require(path.join(VIEWER_DIR, 'schedule_author.js'));
+const ScheduleGate = require(path.join(VIEWER_DIR, 'schedule_gate.js'));   // §ARCH_START_TEMPO / M1: SHIFT_MS, one owner
 const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
@@ -105,7 +106,12 @@ function computeFor(els, LR, projectDays, crewMul) {
                installSecs: ScheduleAuthor._installSecs(cls, rule, LR, realQty, null) };
     });
     let tot = 0; els.forEach(e => { tot += e.installSecs; });
-    const projectDays = Math.max(10, Math.ceil(tot * 1000 / 86400000));
+    // §ARCH_START_TEMPO / M1 (2026-08-12): mirrors injectGantt's projectDays, which now sizes a
+    // calendar day by the crew's 8-hour SHIFT (ScheduleGate.SHIFT_MS) instead of 24 h — installSecs
+    // is 28800/productivity, so demand (crew-days) and capacity (crews x projectDays) are finally in
+    // the same unit here. Same formula as the shipped line, taken from the same owner.
+    const SHIFT_MS = ScheduleGate.SHIFT_MS;
+    const projectDays = Math.max(10, Math.ceil(tot * 1000 / SHIFT_MS));
 
     const a = computeFor(els, LR, projectDays, 1);
     const b = computeFor(els, LR, projectDays, 2);   // double every crew — cost must not move
