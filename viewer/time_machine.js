@@ -3708,21 +3708,110 @@
       ' (elements whose last support carrier finishes after their own reveal)');
   }
 
+  // ── §XRAY_CACHE_MEMO (2026-08-12, bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c —
+  // Implementing R4(b), user ruling "memoize on an input key, keep the reset" — Witness:
+  // viewer/tests/witness_xray_cache_memo.js W-XRAY-MEMO) ────────────────────────────────────────
+  // The rebuild below ran on EVERY activation (~0.7s / 74,942 edges on Hospital), including the
+  // §GANTT_CACHE_HIT fast path. It is a PURE FUNCTION of (elements from the DB) + (_ops end_ts),
+  // so an identical-input re-activation was recomputing a byte-identical map.
+  //
+  // What is memoized and what is NOT — this distinction IS the doctrine compliance:
+  //   MEMOIZED: the derived map (guid → solidify ms) + its "staged total". Pure, input-keyed.
+  //   NOT MEMOIZED (still reset on TM-off, unchanged at :deactivate): _tmXraySolidifiedN and the
+  //   per-object _tm_xrayStaged flags — the RUNTIME STAGING STATE. §Z_STACK_XRAY_STAGING's
+  //   "nothing may survive TM being switched off" is about that state, and it still doesn't.
+  // A memo surviving is not the same as state surviving.
+  //
+  // Safe to alias rather than deep-copy: the ONLY writes to _tmXraySolidifyTs[...] are inside
+  // _buildXraySupportCache (which rebuilds it wholesale); every other site REASSIGNS the var
+  // (`= {}`), never mutates the object, so deactivate()'s reset cannot corrupt the memo.
+  //
+  // TWO SLOTS, not one — and the reason is the MAXQ/Alt-C round trip specifically. A single slot
+  // makes tmApplyDerivedOrder → tmRestoreDerivedOrder miss in BOTH directions: the derived re-key
+  // evicts the real-order map, then restoring evicts the derived one. Two slots (most-recent +
+  // previous) make that alternation hit both ways, which is exactly the path the cinema bake walks.
+  // Witnessed: with one slot, G-XM-KEY's restore leg came back MISS.
+  var _xrayElemMemo = null;    // { key, elements }  — DB-derived, _ops-independent (warmable)
+  var _xrayCacheMemo = [];     // [{ key, ts, staged }, ...] most-recent first, capped at 2
+
+  function _xrayMemoFind(key) {
+    for (var i = 0; i < _xrayCacheMemo.length; i++) if (_xrayCacheMemo[i].key === key) return _xrayCacheMemo[i];
+    return null;
+  }
+  function _xrayMemoPut(key, ts, staged) {
+    for (var i = 0; i < _xrayCacheMemo.length; i++) {
+      if (_xrayCacheMemo[i].key === key) { _xrayCacheMemo.splice(i, 1); break; }
+    }
+    _xrayCacheMemo.unshift({ key: key, ts: ts, staged: staged });
+    if (_xrayCacheMemo.length > 2) _xrayCacheMemo.length = 2;
+  }
+
+  // _metaGen is in both keys per the ruling. It OVER-invalidates for the elements half (it bumps on
+  // streaming/eviction, which cannot change a DB SELECT) — that is the deliberately safe direction:
+  // a miss costs a rebuild, a false hit is a wrong-render bug.
+  function _xrayMemoGen() {
+    var app = A();
+    return (app && app._metaGen != null) ? (app._metaGen | 0) : -1;
+  }
+
+  // Build the elements list, or serve it from the memo. Shared by the rebuild and by §TM_WARM.
+  function _xrayElementsMemoized() {
+    var app = A();
+    var key = ((app && app.activeBuilding) || '?') + '|' + _xrayMemoGen();
+    if (_xrayElemMemo && _xrayElemMemo.key === key) return { elements: _xrayElemMemo.elements, hit: true };
+    var els = _buildXrayElements();
+    if (els) _xrayElemMemo = { key: key, elements: els };
+    return { elements: els, hit: false };
+  }
+
   // Shared entry point: rebuild the xray cache from whatever _ops currently holds. Called from
   // _finishActivate (every TM activation) AND from tmRestoreDerivedOrder (MAXQ → back to the real
   // construction order, where the cache IS valid again and must not stay cleared).
   function _tmRebuildXrayCache() {
     var _xt0 = performance.now();
     var _xrSched = {};
+    // opsSig: rolling hash over (guid, end_ts), computed in the pass that already builds _xrSched —
+    // no extra traversal. This is what makes every re-key path self-correcting WITHOUT a special
+    // case: tmApplyDerivedOrder (camera-path re-key) and _tmResyncAfterRetime (drag/ruler/group/
+    // undo) both move end_ts, so the sig changes and the memo is forced to miss.
+    var _sigH = 0x811c9dc5, _sigN = 0;
     for (var _xi = 0; _xi < _ops.length; _xi++) {
       var _xo = _ops[_xi];
       var _xg = _xo.output_guid || (_xo.input_guids && _xo.input_guids.length && _xo.input_guids[0]);
-      if (_xg) _xrSched[_xg] = { end: _xo.end_ts };
+      if (_xg) {
+        _xrSched[_xg] = { end: _xo.end_ts };
+        _sigN++;
+        for (var _sc = 0; _sc < _xg.length; _sc++) {
+          _sigH ^= _xg.charCodeAt(_sc); _sigH = (_sigH * 0x01000193) >>> 0;
+        }
+        _sigH ^= (_xo.end_ts | 0); _sigH = (_sigH * 0x01000193) >>> 0;
+      }
     }
-    var _xrElements = _buildXrayElements();
+    var _opsSig = _ops.length + ':' + _sigN + ':' + _sigH.toString(16);
+    var _key = _xrayMemoGen() + '|' + _opsSig;
+
+    var _memoHit = _xrayMemoFind(_key);
+    if (_memoHit) {
+      _tmXraySolidifyTs = _memoHit.ts;
+      _tmXrayStagedTotal = _memoHit.staged;
+      _tmXraySolidifiedN = 0;   // runtime progress ALWAYS restarts — never memoized
+      console.log('§XRAY_CACHE_BUILD elemMs=0.0 edgeMs=0.0 total_ms=' +
+        (performance.now() - _xt0).toFixed(1) + ' elemMemo=hit edgeMemo=hit staged=' + _tmXrayStagedTotal);
+      return;
+    }
+
+    var _e0 = performance.now();
+    var _em = _xrayElementsMemoized();
+    var _elemMs = performance.now() - _e0;
+    var _xrElements = _em.elements;
+    var _g0 = performance.now();
     if (_xrElements) _buildXraySupportCache(_xrElements, _xrSched);
     else { _tmXraySolidifyTs = {}; _tmXrayStagedTotal = 0; _tmXraySolidifiedN = 0; }
-    console.log('§XRAY_CACHE_BUILD total_ms=' + (performance.now() - _xt0).toFixed(1));
+    var _edgeMs = performance.now() - _g0;
+    if (_xrElements) _xrayMemoPut(_key, _tmXraySolidifyTs, _tmXrayStagedTotal);
+    console.log('§XRAY_CACHE_BUILD elemMs=' + _elemMs.toFixed(1) + ' edgeMs=' + _edgeMs.toFixed(1) +
+      ' total_ms=' + (performance.now() - _xt0).toFixed(1) +
+      ' elemMemo=' + (_em.hit ? 'hit' : 'miss') + ' edgeMemo=miss staged=' + _tmXrayStagedTotal);
   }
 
   // ── §TIER_SERIAL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11
@@ -7415,12 +7504,18 @@
       app._forceNoMerge = true;
       var bld = app.activeBuilding;
       console.log('§TM_UNMERGE re-streaming ' + (bld || '?') + ' without merge (TM needs per-element slots)');
+      // §TM_UNMERGE duration (2026-08-12, CPE_4D_PERF_MEM_FINDINGS.md §3c R4 part (c)): this
+      // branch re-streams the WHOLE building on the first-Play click path — a cost that scales with
+      // building size and, until this line, was invisible in every witness that pre-streams
+      // unmerged. Unmeasured, it hides inside "first Play felt slow".
+      var _umT0 = performance.now();
       app.clearStreamed();
       if (bld) { app.streamBuilding(bld); }
       // Wait for re-stream to finish, then activate
       var _reWait = setInterval(function() {
         if (app.buildingsRendered && app.buildingsRendered.size > 0 && !app.streaming) {
           clearInterval(_reWait);
+          console.log('§TM_UNMERGE done bld=' + (bld || '?') + ' ms=' + (performance.now() - _umT0).toFixed(1));
           activate();
         }
       }, 500);
@@ -7948,6 +8043,54 @@
     });
   };
 
+  // ── §TM_WARM (2026-08-12, bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c —
+  // Implementing R4(a), user ruling "warm data only, never activate" — Witness: W-XRAY-MEMO #3) ──
+  // G-CPE-SOLE-OWNER ("only a real Play opens Time Machine") holds by its LETTER here: this
+  // precomputes DERIVED DATA into the memo and nothing else. It does not call activate(), does not
+  // set _active, does not touch _ops, does not show the panel, and runs no DB write.
+  //
+  // Why only the elements half: _ops is NOT warmable and deliberately is not warmed — both load
+  // paths in _activateAsync have side effects the ruling forbids (the §GANTT_CACHE_HIT branch
+  // DELETEs+INSERTs kernel_ops; the cold branch runs the full injectGantt recompute). So the
+  // support-edge pass (which needs _ops for its schedMap) still runs on first Play; §XRAY_CACHE_MEMO
+  // is what makes every activation AFTER the first free. Stated plainly so nobody reads this as
+  // "first Play is now 0 ms" — it is not.
+  //
+  // ⚠ BASELINE-PERF GUARD (user directive 2026-08-12: "it is performing very well now! Thus do take
+  // care not to disturb that baseline perf"). _buildXrayElements() is ONE synchronous chunk (a
+  // SELECT + a map over up to 125k rows) — once started it cannot yield, so an ill-timed warm is a
+  // long task = a visible hitch mid-edit. Hence: pure-idle, NO requestIdleCallback timeout (never
+  // forced — if the browser never idles, warm never happens and nothing is worse than today), and
+  // NO setTimeout fallback (a fallback timer is exactly the "runs at a bad moment" case this guard
+  // exists to prevent). Skipped outright while streaming, while TM is active, or if already warm.
+  window.tmWarmXrayElements = function() {
+    var app = A();
+    if (!app || !app.db) return false;
+    if (_active) return false;                 // TM already owns this — nothing to warm
+    if (app.streaming) return false;           // mirrors _dlodEngaged's !streaming gate
+    // The busy flags dlod_nav.js:53 already names as "not idle": Cinema (_cinemaOrbitActive/
+    // _maxqActive) and the Photoreal still refine (_stillRefineActive). Extracted from that list
+    // rather than invented — there is no _bakeActive on APP.
+    if (app._maxqActive || app._cinemaOrbitActive || app._stillRefineActive) return false;
+    if (typeof window.requestIdleCallback !== 'function') return false;   // no fallback, by design
+    var key = ((app && app.activeBuilding) || '?') + '|' + _xrayMemoGen();
+    if (_xrayElemMemo && _xrayElemMemo.key === key) return false;         // already warm
+    window.requestIdleCallback(function() {
+      var a2 = A();
+      // Re-check at fire time: idle may land minutes later, after a Play/bake/stream started.
+      if (!a2 || !a2.db || _active || a2.streaming || a2._maxqActive || a2._cinemaOrbitActive || a2._stillRefineActive) {
+        console.log('§TM_WARM skipped — state changed before idle fired');
+        return;
+      }
+      var t0 = performance.now();
+      var em = _xrayElementsMemoized();
+      console.log('§TM_WARM elements=' + ((em.elements && em.elements.length) || 0) +
+        ' ms=' + (performance.now() - t0).toFixed(1) + ' memo=' + (em.hit ? 'hit' : 'miss') +
+        ' active=' + _active + ' ops=' + _ops.length + ' (TM not activated)');
+    });
+    return true;
+  };
+
   // Mode D: re-key the derived order so the reveal follows the CAMERA PATH instead of the Z-bands.
   // This adds NO new render path — `renderAtTime` is untouched. It consumes `_ops` purely as "sorted
   // ascending by start_ts, break past the cursor", so re-keying the timestamps IS the feature.
@@ -8400,6 +8543,24 @@
   // streaming.js calls this (feature-detected, optional — same pattern as window.__sfxTM) after
   // each flush; no-ops when TM isn't active, so zero cost/behavior change for non-TM viewing.
   window.tmResweep = function() { if (_active) renderAtTime(_cursor); };
+  // W-XRAY-MEMO test hook (§XRAY_CACHE_MEMO): read the x-ray staging map + memo state, and drive
+  // the memo's key discipline deterministically. Diagnostic only — no production caller, same
+  // contract as __tmSnapshotVisible. `map` returns the FULL guid→ms map so the witness can assert
+  // byte-identical restore key-by-key rather than trusting a digest.
+  window.__tmXrayProbe = function (op, arg) {
+    if (op === 'clearMemo') { _xrayElemMemo = null; _xrayCacheMemo = []; }
+    else if (op === 'rebuild') { _tmRebuildXrayCache(); }
+    else if (op === 'nudge') {   // move one op's end_ts → the key MUST miss
+      if (_ops.length) _ops[0].end_ts += (arg || 0);
+    }
+    else if (op === 'deactivate') { deactivate(); }   // the same verb the panel's close button calls
+    var keys = Object.keys(_tmXraySolidifyTs);
+    var out = { n: keys.length, staged: _tmXrayStagedTotal, solidified: _tmXraySolidifiedN,
+                elemMemo: !!_xrayElemMemo, edgeMemo: _xrayCacheMemo.length,
+                active: _active, ops: _ops.length };
+    if (op === 'map') { out.map = {}; for (var i = 0; i < keys.length; i++) out.map[keys[i]] = _tmXraySolidifyTs[keys[i]]; }
+    return out;
+  };
   // Test hook: simulate a playback tick (small cursor advance + roll bump) so a probe can exercise
   // the incremental (delta) path deterministically without the cinema UI. Diagnostic only.
   window.__tmStep = function (dms) { if (!_active) return null; _gspRoll++;
