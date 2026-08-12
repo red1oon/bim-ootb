@@ -14,7 +14,14 @@
 // phase-sightability structure (§TIER_MOVIE — each backbone phase owns a contiguous, exclusive
 // slice of the displayed timeline, which is exactly what a linear movie clock renders).
 //
-//   W-TS-1  Tier-1 strictly serial: _twoTierRemap reports tier1OverlapPairs=0 on every building.
+//   W-TS-1  Tier-1 strictly serial WITHIN EACH ZONE: _twoTierRemap reports tier1OverlapPairs=0 on
+//           every building. ⚠ SCOPE CHANGED 2026-08-12 (§TIER_SERIAL_BY_ZONE): the bar is still
+//           zero, but it is now summed per derived storey band rather than over the whole model.
+//           Derived from the user's own 2026-08-02 ruling, which §TIER_SERIAL's header quotes:
+//           "ARCH/STR ... the physical foundation. Separate unrelated disciplines can run parallel
+//           thereafter IF CONSTRUCTION PRACTICE PERMITS" — practice permits walls on level 1 while
+//           level 7 frames. The physical guarantee is untouched: _ogSupportSweep still gates every
+//           element individually against the real support DAG; this is the display grouping on top.
 //           >0 = the backbone still overlaps — the capstone claim is false.
 //   W-TS-2  No new support violations: auditFloating over the REMAPPED times <= auditFloating over
 //           the RAW generative times (display may REPAIR the known floating tail, never grow it).
@@ -73,6 +80,12 @@ if (tmSrc.indexOf(tierOrderLine) < 0) { assert(false, 'W-TS-0 _TIER1_ORDER const
 
 const sliced = [
   tierOrderLine,
+  // §ZONE_INDEX (#1313) + §TIER_SERIAL_BY_ZONE: _buildXrayElements reads the shared memoized zone
+  // index, and the tier functions key off _zoneOf. Both ride along verbatim, same idiom as the rest.
+  'var _zoneMemo = [];',
+  sliceFn(tmSrc, '_zoneIndexBuild'),
+  sliceFn(tmSrc, '_zoneIndex'),
+  sliceFn(tmSrc, '_zoneOf'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_tier1Extents'),
@@ -197,7 +210,13 @@ const D = 86400000;
     // ── the shipped two-tier remap (sliced) ──
     const items = geoEls.map(e => ({ guid: e.guid, s: sched[e.guid].start, e: sched[e.guid].end,
       bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
-      cls: e.cls, seq: e.seq, phase: e.phase }));
+      cls: e.cls, seq: e.seq, phase: e.phase,
+      // §TIER_SERIAL_BY_ZONE: the zone key MUST ride along, exactly as injectGantt's _twItems
+      // carries it. Without it _zoneOf falls back to '_ALL' and this harness would silently
+      // exercise the DEGENERATE single-zone path — i.e. it would pass while proving nothing about
+      // the change. Caught exactly that way on the first run (JKR twoTierDays=110.1 here vs 74.4
+      // from the probe against the same code).
+      storey: e.storey }));
     const tierLines = [];
     sandbox.console = { log: (...a) => tierLines.push(a.join(' ')), warn: () => {} };
     vm.runInContext('this.__lastStats = null;', sandbox);
@@ -210,7 +229,8 @@ const D = 86400000;
     // W-TS-1 — strict serial backbone (dag-wins-excluded extents; the dag-wins population is
     // counted + locked in W-TS-1b, never hidden)
     assert(stats && stats.overlapPairs === 0,
-      'W-TS-1 ' + bld + ' Tier-1 backbone strictly serial (tier1OverlapPairs=' + (stats ? stats.overlapPairs : '?') + ', iterations=' + (stats ? stats.iterations : '?') + ')');
+      'W-TS-1 ' + bld + ' Tier-1 backbone strictly serial WITHIN EACH ZONE (tier1OverlapPairs=' +
+      (stats ? stats.overlapPairs : '?') + ', iterations=' + (stats ? stats.iterations : '?') + ')');
     // §TIER_DAG_WINS lock (measured 2026-08-11, stragglers.log + promoted_deps.log): elements the
     // support DAG itself places inside a LATER backbone phase — support order wins for them.
     // Hospital/Clinic: isolated forward deps (foundation slab / slab-on-grade poured around
@@ -226,8 +246,16 @@ const D = 86400000;
     // are support-POOL members in mutual/co-planar bearing shapes — §SUPPORT_CYCLE reports 25,393
     // cycle-fallback members on the live vintage — the documented warn-only class, not repairable
     // without inventing physics; the old _extracted vintage read 2839).
-    const DAGWINS_BASELINE = { Terminal: 24007, Hospital: 9, Duplex: 0, HHS_Office_Federated: 420, Clinic: 6,
-      LTU_AHouse: 882, JKR: 398 };
+    // ⚠ RE-BASELINED 2026-08-12 for §TIER_SERIAL_BY_ZONE. These are the GLOBAL-barrier era numbers,
+    // kept for the record: Terminal 24007 · Hospital 9 · Duplex 0 · HHS 420 · Clinic 6 · LTU 882 ·
+    // JKR 398. Scoping the barrier per zone legitimately moves them, because "cross-phase" is now
+    // judged inside a zone rather than across the whole model — and the movement is not uniformly
+    // in one direction, which is exactly why it is re-locked rather than absorbed into a tolerance:
+    // Terminal 24007→4003 and JKR 398→205 (far fewer elements forced out of their phase), but
+    // Hospital 9→256 and LTU 882→1017 (more, because a zone's window is tighter than the model's).
+    // Movement from HERE is still a real data/rules change to examine, same contract as before.
+    const DAGWINS_BASELINE = { Terminal: 4003, Hospital: 256, Duplex: 0, HHS_Office_Federated: 420, Clinic: 5,
+      LTU_AHouse: 1017, JKR: 205 };
     assert(stats && stats.dagWins === DAGWINS_BASELINE[bld],
       'W-TS-1b ' + bld + ' DAG-forced cross-phase population locked at ' + DAGWINS_BASELINE[bld] +
       ' (got ' + (stats ? stats.dagWins : '?') + ') — support order wins for these, counted never hidden');
@@ -309,9 +337,17 @@ const D = 86400000;
     console.log('§TIER_MOVIE bld=' + bld + ' backboneShares ' + parts.join(' ') +
       ' | dagWinsRidingLaterWindows=' + (stats ? stats.dagWins : '?') +
       ' | tier2 n=' + t2N + ' runningConcurrentWithBackbone=' + t2Concurrent +
-      ' (' + (t2N ? (t2Concurrent / t2N * 100).toFixed(0) : 0) + '%) — serialized backbone slices are exclusive+contiguous, Tier 2 fills alongside');
-    assert(positive && shareSum <= 100.5,
-      'W-TS-6 ' + bld + ' backbone movie slices well-formed (each present serialized phase >0 span; exclusive shares sum ' + shareSum.toFixed(1) + '% <= 100%)');
+      ' (' + (t2N ? (t2Concurrent / t2N * 100).toFixed(0) : 0) + '%) — backbone slices exclusive+contiguous WITHIN each zone, zones overlap, Tier 2 fills alongside');
+    // §TIER_SERIAL_BY_ZONE: the <=100% bound is RETIRED, not relaxed. It encoded the global
+    // barrier's premise — that backbone phase slices are exclusive across the WHOLE film, so their
+    // shares cannot sum past it. With a per-zone barrier, different zones' backbone slices overlap
+    // in time BY DESIGN (level 1 walls while level 7 frames), so the sum legitimately exceeds 100%
+    // (measured: Terminal 106.1%, Hospital 102.5%, JKR 102.9%). The exclusivity property has not
+    // been dropped — it moved to W-TS-1, which asserts overlapPairs=0 summed WITHIN each zone.
+    // Reported here so the number stays visible, asserted there where it now means something.
+    assert(positive,
+      'W-TS-6 ' + bld + ' backbone movie slices well-formed (each present serialized phase >0 span; ' +
+      'shares sum ' + shareSum.toFixed(1) + '% — >100% expected under per-zone serialization, exclusivity now gated by W-TS-1)');
   }
 
   finish();
