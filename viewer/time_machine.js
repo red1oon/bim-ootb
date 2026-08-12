@@ -5164,8 +5164,67 @@
     // §CREW-CAP (2026-07-18): real-world crew count per trade — see schedule_gate.js header.
     // LABOR_RATES[resource].max_crews (rates.js / rates/sequence_rules.json), falls back to
     // schedule_gate.js's own MAX_CREWS_DEFAULT for any resource without an explicit value.
+    // ── §CREW_DEMAND + §HR_COST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+    // item 4 — Witness: viewer/tests/witness_crew_demand.js W-CREW) ───────────────────────────
+    // User: "as each user imports own IFC set, the script gives them the max resource needed, and
+    // when they edit it it can regenerate 4D anew" + "the 5D set per building will then reflect
+    // the cost of HR used too."
+    //
+    // ⚠ WHAT THIS IS NOT: an auto-scaler. A first cut derived crews as
+    // ceil(workDays(T)/projectDays) and MEASURED AS A NO-OP on all 7 buildings — projectDays is the
+    // all-trade serial total (Hospital 1036, LTU 2329), so no single trade's work can exceed it and
+    // the ceil is always 1, below every baseline. Worse, the premise behind wanting one was wrong:
+    // MEP Rough-in's "130.8% occupancy" is a SINGLE-CREW-EQUIVALENT ratio (work-days ÷ window-days).
+    // Exceeding 100% just means more than one crew is busy on average — which is the normal case.
+    // The real check is capacity: MEP Rough-in draws on 3 trades x 2 crews over a 555-day window
+    // = ~3,330 crew-days available against 725.9 needed. It is NOT crew-starved, and the shipped
+    // table is not the small-job list it looked like. Reporting the numbers instead of "fixing"
+    // something that measures fine.
     var _maxCrews = {};
-    for (var _mcRes in LR) if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
+    for (var _mcRes in LR) {
+      if (LR[_mcRes].max_crews_fixed != null) _maxCrews[_mcRes] = LR[_mcRes].max_crews_fixed;
+      else if (LR[_mcRes].max_crews) _maxCrews[_mcRes] = LR[_mcRes].max_crews;
+    }
+    // Per-trade labour content, straight from the installSecs the scheduler itself uses
+    // (28800s = the 8h crew-day getInstallSecs divides by).
+    var _crewWorkDays = {};
+    elements.forEach(function (el) {
+      var _r = el.resource || '_DEFAULT';
+      _crewWorkDays[_r] = (_crewWorkDays[_r] || 0) + (el.installSecs || 0) / 28800;
+    });
+    // §CREW_DEMAND — "the max resource needed", reported per trade so a user can see what to edit.
+    // capacity = crews x projectDays crew-days; utilisation = demand / capacity. A trade over 100%
+    // genuinely cannot fit and wants more crews; everything under is headroom.
+    var _cdLog = [];
+    for (var _cd in _crewWorkDays) {
+      var _cdr = LR[_cd]; if (!_cdr) continue;
+      var _crews = _maxCrews[_cd] || 1;
+      var _cap = _crews * projectDays;
+      _cdLog.push(_cd + ' demand=' + _crewWorkDays[_cd].toFixed(1) + 'cd crews=' + _crews +
+        (_cdr.max_crews_fixed != null ? '(FIXED)' : '') +
+        ' capacity=' + _cap.toFixed(0) + 'cd util=' + (_cap ? (100 * _crewWorkDays[_cd] / _cap).toFixed(1) : '?') + '%');
+    }
+    console.log('§CREW_DEMAND projectDays=' + projectDays + ' — ' + _cdLog.join(' | ') +
+      ' (util>100% = that trade cannot fit and wants more crews; set max_crews_fixed in ' +
+      'rates/sequence_rules.json and regenerate to apply an edit)');
+
+    // §HR_COST (5D) — the labour the schedule commits, per trade. personDays = crew-days x
+    // crew_size (a 6-hand gang spends 6 person-days per crew-day); cost = personDays x rate_per_day.
+    // ⚠ Reading note that matters for 5D: crew COUNT does not change this total — the same labour
+    // content done by more hands in less time. Crews change WHEN the cost lands, not how much.
+    // That time-phasing is what makes it 5D rather than a bill of quantities.
+    var _hrTotal = 0, _hrPD = 0, _hrLog = [];
+    for (var _hr in _crewWorkDays) {
+      var _hrR = LR[_hr]; if (!_hrR || !_hrR.rate_per_day) continue;
+      var _pd = _crewWorkDays[_hr] * (_hrR.crew_size || 1);
+      var _cost = _pd * _hrR.rate_per_day;
+      _hrTotal += _cost; _hrPD += _pd;
+      _hrLog.push(_hr + ' personDays=' + _pd.toFixed(1) + ' @' + _hrR.rate_per_day + '/d = ' + Math.round(_cost));
+    }
+    console.log('§HR_COST total=' + Math.round(_hrTotal) + ' personDays=' + _hrPD.toFixed(1) +
+      ' across ' + _hrLog.length + ' trades — ' + _hrLog.join(' | ') +
+      ' (crew count changes WHEN this lands, not the total)');
+
     // §4D_NOGEO: geometry-less elements are EXCLUDED from the support-gated schedule (they poison
     // it at day 0) and parked at the project end below — present in the movie's totals, never in
     // its physics.
