@@ -1286,8 +1286,33 @@ function setupTools(A) {
       A._applyNightGlowToMatCache();
       console.log('§NIGHT_MODE on fixtures=' + A._nightFixtures.length + ' source=' + source +
         ' glowMats=' + A._nightGlowMats.length);
+      // §BAKE_LIGHT_BUILDUP_GATE — make sure the Time Machine predicate slot EXISTS before the
+      // first selection: window.__tmOverlaySync is what TM calls each tick to hand over its
+      // placed/frontier/recent answer, and effects.js only registers it from the glow-sprite path
+      // (_glowOn), which returns early when sprites are disabled. Registering here (idempotent)
+      // means the point lights read the schedule whether or not the sprites are staged.
+      if (typeof A._tmOverlayRegister === 'function') A._tmOverlayRegister();
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
+      // §BAKE_LIGHT_BUILDUP_GATE restage — the same count-changed rule §GLOW_BUILDUP_GATE uses for
+      // the sprite cloud: while a buildup is running, the set of PLACED fixtures grows tick by
+      // tick, so re-select when that count actually changes (not every tick). Skipped while a
+      // still/bake fold is active — that path already re-selects once per frame from
+      // startStillRefine, and a second selection per frame is pure light churn (§NIGHT_LIGHT_CHURN).
+      if (typeof A._tmVisSubscribe === 'function' && !A._nightTmVisSubscribed) {
+        A._nightTmVisSubscribed = true;
+        A._tmVisSubscribe(function(isVisible) {
+          if (!A._nightMode || A._stillRefineActive) return;
+          var all = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
+          var n = 0;
+          for (var _ti = 0; _ti < all.length; _ti++) {
+            if (all[_ti].__guid == null || !isVisible || isVisible(all[_ti].__guid)) n++;
+          }
+          if (n === A._nightPlacedLast) return;
+          A._nightPlacedLast = n;
+          A._nightUpdateLights();
+        });
+      }
       // §NIGHT_MEM_WITNESS (2026-08-08, moved AFTER _nightUpdateLights() — placing it before, as
       // the first version did, made nightLights read 0 on every toggle-on since the light Map
       // hadn't been populated yet. Real numbers now.
@@ -1439,11 +1464,86 @@ function setupTools(A) {
     return A._nightFixturePositions;
   };
 
+  // §NIGHT_PICK_NEAREST (extracted 2026-08-12 by §BAKE_INTERIOR_LIGHTS) — the navigation selection
+  // rule, moved out of _nightUpdateLights's third branch VERBATIM so a second caller can reuse it:
+  // score every candidate by distance to a point HALFWAY between the eye and the look-at (§S277d),
+  // take them nearest-first while skipping anything within NIGHT_SPREAD_MIN_M of one already
+  // picked (§NIGHT_SPREAD), then fill any remainder ignoring spacing so the budget is always fully
+  // used. `already` is the set the caller has ALREADY placed (the still/bake in-frustum set) — its
+  // members are excluded from the pick, counted against `limit`, and honoured by the spread test,
+  // so a top-up lands AWAY from the lights that are already there. Nav passes `already` empty and
+  // therefore gets byte-identical behaviour to before the extraction.
+  var NIGHT_SPREAD_MIN_M = 4;
+  function _nightPickNearest(pool, limit, already) {
+    var picked = already ? already.slice() : [];
+    if (picked.length >= limit) return picked;
+    var camPos = A.camera.position;
+    var _tgt = A.controls ? A.controls.target : camPos;
+    var _aim = {
+      x: camPos.x + (_tgt.x - camPos.x) * 0.5,
+      y: camPos.y + (_tgt.y - camPos.y) * 0.5,
+      z: camPos.z + (_tgt.z - camPos.z) * 0.5
+    };
+    var have = new Set(picked);
+    var sorted = [];
+    for (var pi = 0; pi < pool.length; pi++) {
+      var p = pool[pi];
+      if (have.has(p)) continue;
+      var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
+      sorted.push({ pos: p, dist2: dx * dx + dy * dy + dz * dz });
+    }
+    sorted.sort(function(a, b) { return a.dist2 - b.dist2; });
+    for (var si = 0; si < sorted.length && picked.length < limit; si++) {
+      var cand = sorted[si].pos;
+      var tooClose = picked.some(function(pk) {
+        var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
+        return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
+      });
+      if (!tooClose) { picked.push(cand); have.add(cand); }
+    }
+    for (var si2 = 0; si2 < sorted.length && picked.length < limit; si2++) {
+      if (!have.has(sorted[si2].pos)) { picked.push(sorted[si2].pos); have.add(sorted[si2].pos); }
+    }
+    return picked;
+  }
+
+  // §BAKE_INTERIOR_LIGHTS (2026-08-12, user: "Night mode usually solves this PL well, when Fly or
+  // handsfree... during baking, there are no PLs shining at the lighting"). MEASURED on a real
+  // headless Duplex MaxQ bake before any change (probe_bake_lighting.log, 28 frames):
+  //     frame 0  §NIGHT_STILL_LIGHTS raised to 18 lights   scenePointLightIntensitySum 127.39
+  //     frame 1  §NIGHT_STILL_LIGHTS raised to 0  lights   scenePointLightIntensitySum  82.39
+  //     frames 2..27  A._nightLights.length = 0 for the ENTIRE rest of the bake
+  // 127.39 - 82.39 = 45.00 = 18 x NIGHT_LIGHT_INTENSITY(2.5) — every fixture light gone, exactly.
+  // TWO defects, and it is the pair that makes it permanent:
+  //   (a) the still/bake branch below selects ONLY what the frustum contains. A frame that happens
+  //       to look where no fixture centre falls (a wide establishing beat, or an interior where the
+  //       fittings lighting the room you stand in are overhead/behind) selects ZERO, and every
+  //       light is disposed.
+  //   (b) the callers' re-arm gate (effects.js §NIGHT_STILL_LIGHTS and _teardownStillRefine) read
+  //       A._nightLights.length — the OUTPUT of the last selection — to decide whether to call this
+  //       function at all. Once (a) drove that output to 0, nothing could ever call it again: a
+  //       self-latching zero. That is why the whole remaining film is dark, not just the one frame
+  //       that emptied the frustum, and why the fixtures being installed later never turns anything
+  //       back on. Nav is unaffected because it never takes the frustum branch (§NIGHT_STILL_BOOST_
+  //       GATE_FIX) — which is exactly the user's "Fly or handsfree is well lit" vs "bake is dark".
+  // The fix here is (a) plus the buildup gate below; (b) is fixed at both call sites in effects.js.
   A._nightUpdateLights = function() {
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
+    // §BAKE_LIGHT_BUILDUP_GATE — the IDENTICAL one-line filter effects.js _glowOn (§GLOW_BUILDUP_
+    // GATE) and _glowLensOn (§GLOW_LENS_BUILDUP_GATE) already apply to the glow sprite and the lens
+    // quad, now applied to the ILLUMINATION as well: the two systems disagreed, and the point light
+    // was the one that ignored the schedule. Measured in the same baseline run — the Duplex bake
+    // logged `§PHOTO_GLOW_SPRITE_GATE 0/18 fixtures placed yet — nothing to light` while 18 point
+    // lights were shining from those same unplaced fittings. A fixture with no guid (the synthetic
+    // per-storey / room-fallback tiers) has no real element to gate against and always lights, same
+    // rule as the sprite. A._tmIsVisible defaults to true whenever Time Machine is not driving the
+    // scene, so plain Night Mode navigation is completely unchanged.
+    var pos = allPos.filter(function(p) {
+      return p.__guid == null || typeof A._tmIsVisible !== 'function' || A._tmIsVisible(p.__guid);
+    });
     var camPos = A.camera.position;
-    var needed;
+    var needed, _selMode, _inViewN = 0;
     // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
     // never reset — it's a static "is the still-boost feature enabled" flag (effects.js reads it
     // the same way, correctly, to decide whether Alt+S is ALLOWED to raise the cap). Reading it
@@ -1458,54 +1558,51 @@ function setupTools(A) {
       // rather than a flat count cap; a still pays this cost once, not every frame. 200 is a
       // sanity ceiling against a pathological wide aerial shot with hundreds in frame at once —
       // not a deliberate creative limit.
+      // §BAKE_FRUSTUM_STALE — the frustum must be built from THIS pose, not the last rendered one.
+      // three.js only refreshes camera.matrixWorldInverse inside renderer.render(), and the MaxQ
+      // bake calls startStillRefine() (→ here) immediately after moving the camera and BEFORE any
+      // render of that pose, so the cull ran against the PREVIOUS frame's view. Same two lines the
+      // renderer itself runs — not a new mechanism.
+      A.camera.updateMatrixWorld();
+      A.camera.matrixWorldInverse.copy(A.camera.matrixWorld).invert();
       var frustum = new THREE.Frustum();
       var vpMatrix = new THREE.Matrix4().multiplyMatrices(A.camera.projectionMatrix, A.camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(vpMatrix);
-      var inView = allPos.filter(function(p) {
+      var inView = pos.filter(function(p) {
         return frustum.containsPoint(new THREE.Vector3(p.x, p.y, p.z));
       });
-      needed = inView.slice(0, 200).map(function(p) { return { pos: p }; });
-    } else if (allPos.length <= A._nightMaxLights) {
+      _inViewN = inView.length;
+      var picked = inView.slice(0, 200);
+      // §BAKE_INTERIOR_LIGHTS defect (a): frustum-only was a HARD floor of zero. A point light
+      // behind or above the eye still lights the wall in front of it — containsPoint tests the
+      // fitting's own centre, so an interior lit by the troffers over your head selected nothing.
+      // Top the set up to the still budget (A._nightMaxLightsStill = 50, already the sanctioned
+      // still count) with the SAME nearest-to-aim + §NIGHT_SPREAD rule navigation uses — no new
+      // constant, no second selection mechanism, and never more than the 200 the frustum branch
+      // already allowed. Fixtures in frame keep priority; the top-up only fills what is left.
+      if (picked.length < A._nightMaxLights) picked = _nightPickNearest(pos, A._nightMaxLights, picked);
+      needed = picked.map(function(p) { return { pos: p }; });
+      _selMode = 'still-frustum';
+    } else if (pos.length <= A._nightMaxLights) {
       // Small building — place ALL fixtures, no culling
-      needed = allPos.map(function(p) { return { pos: p }; });
+      needed = pos.map(function(p) { return { pos: p }; });
+      _selMode = 'all';
     } else {
       // §S277d: MIXED selection — score by a point BETWEEN the eye and the look-at, so the
       // active lights sit near you AND extend down the hall you're flying toward (they
       // transfer ahead as you move). Pure camera-nearest clustered them all at the eye; pure
       // orbit-target clustered them at building centre. Debounced by the controls 'change'
       // listener (>5m move) so small orbits don't thrash the set.
-      var _tgt = A.controls ? A.controls.target : camPos;
-      var _aim = {
-        x: camPos.x + (_tgt.x - camPos.x) * 0.5,
-        y: camPos.y + (_tgt.y - camPos.y) * 0.5,
-        z: camPos.z + (_tgt.z - camPos.z) * 0.5
-      };
-      var sorted = allPos.map(function(p) {
-        var dx = p.x - _aim.x, dy = p.y - _aim.y, dz = p.z - _aim.z;
-        return { pos: p, dist2: dx*dx + dy*dy + dz*dz };
-      }).sort(function(a, b) { return a.dist2 - b.dist2; });
       // §NIGHT_SPREAD (2026-08-07, user: "not in dense area, if two sources nearby spread out to
       // cover further line of sight") — greedy nearest-first, but skip a candidate within
-      // NIGHT_SPREAD_MIN_M of one already picked, so the 24-light budget reaches further down a
-      // corridor instead of bunching on one dense cluster right at the camera. If spacing can't
-      // fill the budget (not enough distant candidates), a second pass fills the rest ignoring
-      // spacing — the budget is always fully used, spacing is a preference, not a hard cutoff.
-      var NIGHT_SPREAD_MIN_M = 4;
-      var picked = [];
-      for (var si = 0; si < sorted.length && picked.length < A._nightMaxLights; si++) {
-        var cand = sorted[si].pos;
-        var tooClose = picked.some(function(pk) {
-          var ddx = pk.x - cand.x, ddy = pk.y - cand.y, ddz = pk.z - cand.z;
-          return (ddx * ddx + ddy * ddy + ddz * ddz) < NIGHT_SPREAD_MIN_M * NIGHT_SPREAD_MIN_M;
-        });
-        if (!tooClose) picked.push(cand);
-      }
-      if (picked.length < A._nightMaxLights) {
-        for (var si2 = 0; si2 < sorted.length && picked.length < A._nightMaxLights; si2++) {
-          if (picked.indexOf(sorted[si2].pos) === -1) picked.push(sorted[si2].pos);
-        }
-      }
-      needed = picked.map(function(p) { return { pos: p }; });
+      // NIGHT_SPREAD_MIN_M of one already picked, so the budget reaches further down a corridor
+      // instead of bunching on one dense cluster right at the camera. If spacing can't fill the
+      // budget (not enough distant candidates), a second pass fills the rest ignoring spacing —
+      // the budget is always fully used, spacing is a preference, not a hard cutoff.
+      // Both rules now live in _nightPickNearest above (§NIGHT_PICK_NEAREST), unchanged — the
+      // still/bake branch tops up with the same rule instead of going dark.
+      needed = _nightPickNearest(pos, A._nightMaxLights, null).map(function(p) { return { pos: p }; });
+      _selMode = 'nearest-to-aim';
     }
     // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
     // set from scratch on every call — called on every 5m of camera travel while night mode is on,
@@ -1552,6 +1649,27 @@ function setupTools(A) {
       A._nightLightByPos.delete(pos);
     });
     A._nightLights = Array.from(A._nightLightByPos.values());
+    // §BAKE_LIGHTS — the numeric truth this feature is verified by (FUNDAMENTAL LAW: code and maths,
+    // never a screenshot of the film). Published for the bake's own per-frame line (cinema_maxq.js)
+    // and logged HERE whenever the answer changes, so a live session's console shows the point at
+    // which lighting appears/disappears and against what placed-fixture count. `placed` is the
+    // schedule's own answer via A._tmIsVisible — the bake does not re-derive placement.
+    var _intensitySum = 0;
+    for (var _li = 0; _li < A._nightLights.length; _li++) _intensitySum += A._nightLights[_li].intensity;
+    A._nightLightSelectInfo = {
+      fixtures: allPos.length, placed: pos.length, inView: _inViewN,
+      active: A._nightLights.length, mode: _selMode,
+      budget: A._nightMaxLights, floor: A._nightNearFadeFloor,
+      intensitySum: +_intensitySum.toFixed(2)
+    };
+    var _sig = _selMode + '|' + pos.length + '|' + A._nightLights.length;
+    if (_sig !== A._nightLightSelectSig) {
+      A._nightLightSelectSig = _sig;
+      console.log('§BAKE_LIGHTS select mode=' + _selMode + ' placedFixtures=' + pos.length + '/' + allPos.length +
+        ' inFrustum=' + _inViewN + ' activePL=' + A._nightLights.length +
+        ' budget=' + A._nightMaxLights + ' nearFadeFloor=' + A._nightNearFadeFloor +
+        ' intensitySum=' + _intensitySum.toFixed(2));
+    }
     if (A.markDirty) A.markDirty();
   };
 

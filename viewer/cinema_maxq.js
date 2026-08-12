@@ -1293,6 +1293,32 @@
         // ever the ORIGINAL fixed 6°. Moving the call to AFTER startStillRefine() re-asserts the
         // correct per-frame elevation once the staging reset has already happened.
         if (A._sunArcStep) A._sunArcStep(_tn);
+        // §BAKE_LIGHTS (2026-08-12, user: "during baking, there are no PLs shining at the lighting"
+        // — while the same building explored at night via Fly/handsfree is well lit). The per-frame
+        // NUMERIC record of what is actually lighting this frame, so the claim "the film's fixture
+        // lighting tracks the 4D schedule" is grep-checkable from a bake log instead of watched.
+        // Nothing is computed here: A._nightUpdateLights (tools.js §BAKE_LIGHTS) has just re-selected
+        // for THIS pose and THIS cursor inside the startStillRefine above, and publishes its own
+        // counts — placedFixtures comes from Time Machine's predicate, not from a second derivation.
+        // Read at the SAME cadence as §CPE_BUILDUP (first, last, every 60th) because a 2500ms/frame
+        // bake does not need a line per frame, and because the two lines are then directly
+        // comparable: `placed=` elements against `placedFixtures=` luminaires against `activePL=`.
+        // WHY INTERIOR AND EXTERIOR DIFFER, measured, not assumed: photo staging enables sun shadow
+        // casting (§PHOTO_SHADOW) and logs §MOVIE_SHADOW_TM sun=4.400 fill=2.042. Outdoors a surface
+        // gets sun + fill = 6.44; indoors the roof shadows the sun out and the ONLY light left is the
+        // 2.042 uniform fill plus these point lights. So the missing point lights are near-invisible
+        // outside and total inside — the user's "outside at the end looks fine, inside is dark" is a
+        // real, structural difference, not two separate faults.
+        if (i === 0 || i === nFrames - 1 || i % 60 === 0) {
+          var _bl = A._nightLightSelectInfo;
+          console.log('§BAKE_LIGHTS frame=' + i + '/' + nFrames + ' nightMode=' + !!A._nightMode +
+            (_bl ? ' placedFixtures=' + _bl.placed + '/' + _bl.fixtures + ' inFrustum=' + _bl.inView +
+                   ' activePL=' + _bl.active + ' mode=' + _bl.mode + ' budget=' + _bl.budget +
+                   ' nearFadeFloor=' + _bl.floor + ' plIntensitySum=' + _bl.intensitySum
+                 : ' (no fixture selection has run — A._nightLightSelectInfo unset)') +
+            ' sun=' + (A.sun ? A.sun.intensity.toFixed(3) : '?') +
+            ' fill=' + ((A.ambient ? A.ambient.intensity : 0) + (A.hemi ? A.hemi.intensity : 0)).toFixed(3));
+        }
         var ok = await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
