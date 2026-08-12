@@ -44,6 +44,55 @@
   // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
   var BIG_ELEMENT_VOL = 1.556;  // m³
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
+  // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═══════════
+  // The class sets and the ±HOST_Z bracket below are NOT new: they are verbatim the host inference
+  // that bim-compiler scripts/probe_arch_start.js measured the defect with (§HOSTED_BEFORE_HOST),
+  // so the scheduler now enforces exactly the predicate the witness asserts — one rule, every
+  // consumer, the same discipline §HANG_NEAREST follows. IFC ships no host link for these elements
+  // (no IfcRelVoidsElement/host column exists in the shipped extracted DBs — same fact
+  // §DOOR_WINDOW_HOST_WALL records), so the host is inferred geometrically and nothing is invented.
+  var HOSTED_CLS = /^(IfcOutlet|IfcLightFixture|IfcSwitchingDevice|IfcSensor|IfcAlarm|IfcFlowTerminal|IfcAirTerminal|IfcElectricAppliance|IfcFireSuppressionTerminal)$/;
+  var HOST_CLS   = /^(IfcWall|IfcWallStandardCase|IfcSlab|IfcRoof|IfcCovering|IfcCurtainWall)$/;
+  var HOST_Z     = 1.0;  // m — hosted centre must sit within the host's Z extent ± this (probe's measured bracket)
+  // ONE host-inference definition at module scope, three consumers: computeSchedule's hostGate, its
+  // DAG edge, and time_machine.js's display-layer repair (exported as hostPairs below, the same
+  // reason EPS/GAP are exported — "a second copy is a second thing to drift").
+  // Nearest bracketing host: among hosts whose bbox spans the hosted element's own XY cell and whose
+  // Z extent brackets its centre (±HOST_Z), the one nearest in XY. Verbatim probe_arch_start.js.
+  // isHosted needs no wall/slab guard — HOSTED_CLS ∩ HOST_CLS = ∅ by construction, which is also
+  // what makes a hosted element a pure DAG sink (see the host edge's cycle argument).
+  function isHosted(el) { return HOSTED_CLS.test(el.cls || '') && el.seq > 4; }
+  function hostCellKey(el) {
+    return Math.floor((el.x0 + el.x1) / 2 / CELL) + ',' + Math.floor((el.y0 + el.y1) / 2 / CELL);
+  }
+  function nearestHostAt(el, list, els) {   // list: indices into els
+    var cx = (el.x0 + el.x1) / 2, cy = (el.y0 + el.y1) / 2, cz = (el.base_z + el.top_z) / 2;
+    var bi = -1, bd = Infinity, q, H, d;
+    for (q = 0; q < list.length; q++) {
+      H = els[list[q]];
+      if (H.guid === el.guid) continue;
+      if (cz < H.base_z - HOST_Z || cz > H.top_z + HOST_Z) continue;   // not at this host's height
+      d = Math.abs((H.x0 + H.x1) / 2 - cx) + Math.abs((H.y0 + H.y1) / 2 - cy);
+      if (d < bd) { bd = d; bi = q; }
+    }
+    return bi;
+  }
+  // hostPairs(els) -> [{ i, h }] index pairs into els (i = hosted, h = its inferred host).
+  // els: [{ guid, cls, seq, x0,x1,y0,y1, base_z, top_z }]. Pure geometry — no timing read, so a
+  // caller can pair once and then compare whatever stage of the timeline it owns.
+  function hostPairs(els) {
+    var idx = {}, out = [], t, cs, c, e, k, bi;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!HOST_CLS.test(e.cls || '')) continue;
+      cs = cellsOf(e); for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t); }
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!isHosted(e)) continue;
+      k = idx[hostCellKey(e)]; if (!k) continue;
+      bi = nearestHostAt(e, k, els);
+      if (bi >= 0) out.push({ i: t, h: k[bi] });
+    }
+    return out;
+  }
 
   function cellsOf(e) {
     var o = [], i, j;
@@ -99,6 +148,15 @@
   function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
     var grid = {}, wallGrid = {}, out = {}, c, cs, k, arr, S;
+    // §HOSTED_BEFORE_HOST: the host pairing is resolved ONCE, up front, off pure geometry — NOT from
+    // an incremental placement grid. That is deliberate and it was a measured bug before it was a
+    // design: a grid filled in PLACEMENT order and the DAG's index built in ELEMENT order break
+    // Manhattan-distance ties differently, so the gate could wait on one host while the DAG had
+    // ordered a different one — 125 of LTU_AHouse's 5,466 hosted elements survived the gate that way.
+    // One pairing, shared by the gate below, the DAG edge, and (through hostPairs) the display layer.
+    var _hostOf = {}, _hostPairs = hostPairs(elements), _hp;
+    for (_hp = 0; _hp < _hostPairs.length; _hp++)
+      _hostOf[elements[_hostPairs[_hp].i].guid] = elements[_hostPairs[_hp].h].guid;
     function crewCapFor(resource) {
       if (typeof maxCrews === 'number') return maxCrews;
       if (maxCrews && maxCrews[resource]) return maxCrews[resource];
@@ -335,6 +393,37 @@
               S.end > g && overlap(S, el)) g = S.end; } }
       return g;
     }
+    // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
+    // User, live 2026-08-12: "electrical outlets and hanging elements appearing bit early." MEASURED
+    // on the DISPLAY timeline before this gate existed (probe_arch_start.js §HOSTED_BEFORE_HOST, all
+    // 7 shipped buildings): Hospital 1480/2830 (52.3%) hosted elements start before the element they
+    // are mounted in, worst 147.7d; Terminal 25.6%, LTU_AHouse 37.8% (worst 573.9d), Clinic 24.1%,
+    // HHS 17.8%, Duplex 8.7%, JKR 5.9%. Long-standing, NOT a §TIER_SERIAL_BY_ZONE regression — the
+    // same probe run against 42539c9 (pre-#1313) reports 50.3/25.2/37.7/23.2/17.7/9.6/5.7%.
+    //
+    // WHY NO EXISTING GATE CAUGHT IT, and it is one fact: the host of essentially every offender is
+    // IfcCovering — a ceiling — and IfcCovering is in NO support pool. geoGate/hangGate read the
+    // structure grid (seq<=4 + promoted slabs), wallGate/openingGate read the wall grid. A ceiling is
+    // in neither, so a light fixture had literally nothing to be checked against. Worse, the shipped
+    // trade order makes the inversion the DEFAULT rather than an accident: sequence_rules.json puts
+    // MEP Final at seq 9 and Finishes (IfcCovering) at seq 10, so a lay-in fixture is scheduled
+    // BEFORE the ceiling it drops into, by rule, everywhere. hangGate cannot save it either — its
+    // §HANG_NEAREST fallback is scoped to BIG (>BIG_ELEMENT_VOL) elements, and outlets/fixtures are
+    // exactly the small ones it deliberately leaves ungated.
+    //
+    // THE RULE: a hosted element inherits its HOST's floor — it may not start before the host it is
+    // mounted in/on has FINISHED (the same S.end every other gate in this module returns). STRICT
+    // ADDITION: only HOSTED_CLS elements are gated, nothing else's timing moves, and an element with
+    // no bracketing host in its cell keeps exactly its previous behaviour.
+    // Reads the host's CURRENT end straight out of `out`, so a §DEQ_REPAIR shift of a host is seen
+    // by what it hosts on the very next sweep — no stale grid copy to keep in step. An unplaced host
+    // (a §SUPPORT_CYCLE fallback member) yields baseMs here and the repair loop closes it after.
+    function hostGate(el) {                // finish of the wall/slab/ceiling this element is mounted in
+      var hg = _hostOf[el.guid];
+      if (!hg) return baseMs;
+      var o = out[hg];
+      return (o && o.end > baseMs) ? o.end : baseMs;
+    }
     // ══ §GEOMETRIC_SUPPORT_ORDER (2026-08-07, 4D_SCHEDULE_PERFECTION.md) ════════════════════════
     // Placement order is derived from GEOMETRY FIRST: a support DAG built from XYZ data alone —
     // edge S→E for exactly the pair predicates the timing gates above consult (geoGate's
@@ -377,7 +466,8 @@
     function wallCarries(S, E)   { return edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
     function edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }  // hangGate
     var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0,
-        _hangNearest = 0;  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
+        _hangNearest = 0,  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
+        _hostEdges = 0;    // §HOSTED_BEFORE_HOST host→hosted edges added (logged in §GEO_ORDER)
     // stamp-array dedup (an {} per element measured 28s at 15k elements — dictionary churn), and a
     // reused cands array; _gen is bumped once per scan so stamps never need clearing
     var stamp = new Int32Array(N), _gen = 0, cands = [], nc;
@@ -429,6 +519,16 @@
             if (wallCarries(S, E)) { (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; } } }   // §TM_GEO_ORDER_CYCLES: bounded, carry-at-top
       }
     }
+    // §HOSTED_BEFORE_HOST — the DAG twin of hostGate, from the SAME _hostPairs the gate reads, so
+    // placement order and runtime gate cannot pick different hosts (they did, until they shared one
+    // pairing — see _hostOf's header). CANNOT CREATE A CYCLE, structurally, not by luck: HOSTED_CLS
+    // ∩ HOST_CLS = ∅ and isHosted requires seq>4, so a hosted element is in NO pool — struct, wall
+    // or host — hence has zero outgoing edges and an added in-edge closes nothing. Same argument
+    // §HANG_NEAREST rests on (W-TMREPRO-4 cycles=0 stays structural).
+    for (_hp = 0; _hp < _hostPairs.length; _hp++) {
+      si = _hostPairs[_hp].h; t = _hostPairs[_hp].i;
+      (succs[si] = succs[si] || []).push(t); indeg[t]++; _edges++; _hostEdges++;
+    }
     // tiebreak = the old seq-primary processing order (precomputed keys — collapsePhase is regex)
     var rankKey = new Float64Array(N), seqKey = new Float64Array(N);
     for (t = 0; t < N; t++) { rankKey[t] = _bandRank[collapsePhase(elements[t].storey)] || 0; seqKey[t] = elements[t].seq; }
@@ -466,7 +566,7 @@
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL
+      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL + §HOSTED_BEFORE_HOST
       if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
@@ -501,7 +601,7 @@
       console.log('§SUPPORT_CYCLE cycles=' + _cyc.length +
         (_cyc.length ? ' sample=[' + _cyc.slice(0, 5).map(function (x) { return elements[x].guid; }).join(',') + ']' : ''));
       console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' hangNearest=' + _hangNearest +
-        ' orderMs=' + (Date.now() - _t0));
+        ' hostEdges=' + _hostEdges + ' orderMs=' + (Date.now() - _t0));
     }
     var nonst = elements.filter(function (e) { return e.seq > 4; });
     // §DEQ_V1 repair loop — the zero-contradiction guarantee. The gates above are only as good as
@@ -518,7 +618,7 @@
       var _moved = 0;
       nonst.slice().sort(function (a, b) { return out[a.guid].start - out[b.guid].start; })
         .forEach(function (el) {
-        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el));
+        var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el));
         var o = out[el.guid];
         if (o.start < need) {
           var dur = o.end - o.start; o.start = need; o.end = need + dur;
@@ -753,7 +853,7 @@
   // EPS/GAP exported alongside CELL so a consumer of the same geometry (time_machine.js
   // §MIDAIR_REPAIR) can test contact with THIS module's measured constants instead of re-typing
   // them — a second copy is a second thing to drift.
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
