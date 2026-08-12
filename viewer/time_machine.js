@@ -4360,22 +4360,37 @@
     // ("after Tier 1 finishes, not concurrent with it") is preserved in its zone: within any zone
     // no Tier-2 element starts before that zone's Tier-1 is complete. A single-zone model is
     // byte-identical to the previous global shift.
-    var t1EndZ = {}, t2MinZ = {};
+    // §TIER2_PER_ELEMENT_CLAMP (2026-08-13, ruling given — user: "DONT ASK ME, JUST FIX. U already
+    // know what i want.") The prior uniform shift sized d = t1EndZ[z] - t2MinZ[z] off the EARLIEST
+    // Tier-2 element in the zone and applied it to EVERY Tier-2 element there, shearing the whole
+    // block later even for elements that already started after t1EndZ[z] — measured: turns MEP
+    // Final's 121-day generative package into a 784-day display window with zero added work.
+    // The barrier's own contract is per-element ("no Tier-2 element starts before that zone's Tier-1
+    // is complete"), so clamp each element individually to t1EndZ[z] instead. Strictly less movement
+    // than the uniform shift, cannot violate the barrier. Not order-preserving across elements (an
+    // element clamped onto the barrier can now land after one it depends on) — that is why
+    // _midairRepair (below) and witness_midair_zero MUST run after this and are extended to assert
+    // the repaired order, per the ruling.
+    var t1EndZ = {};
     items.forEach(function (it) {
       var z = _zoneOf(it);
       if (_TIER1_ORDER.indexOf(it.phase) >= 0) {
         if (!(z in t1EndZ) || it.e > t1EndZ[z]) t1EndZ[z] = it.e;
-      } else if (!(z in t2MinZ) || it.s < t2MinZ[z]) t2MinZ[z] = it.s;
+      }
     });
-    var tier2Shift = 0;
+    var tier2Shift = 0, tier2Pushed = 0;
     items.forEach(function (it) {
       if (_TIER1_ORDER.indexOf(it.phase) >= 0) return;
       var z = _zoneOf(it);
       // A zone with Tier-2 but no Tier-1 (MEP in an unbanded pocket) has nothing to wait for here;
       // _ogSupportSweep still gates it individually, so it is left where the generative layer put it.
       if (!(z in t1EndZ)) return;
-      var d = t1EndZ[z] - t2MinZ[z];
-      if (d > 0) { it.s += d; it.e += d; if (d > tier2Shift) tier2Shift = d; }
+      if (it.s < t1EndZ[z]) {
+        var dur = it.e - it.s, d = t1EndZ[z] - it.s;
+        it.s = t1EndZ[z]; it.e = t1EndZ[z] + dur;
+        tier2Pushed++;
+        if (d > tier2Shift) tier2Shift = d;
+      }
     });
     // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
     // The zone shift above is order-preserving WITHIN a zone — its own comment says so, and that is
@@ -4450,12 +4465,13 @@
       ' (hosted elements the cross-zone Tier-2 shift left ahead of their own host, pushed back to it)' +
       ' §DOOR_WINDOW_HOST_WALL_DISPLAY openFixed=' + _openFixed +
       ' (doors/windows this remap left starting before their own host wall finished, pushed to its end)' +
-      ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
-      ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
+      ' §TIER2_AFTER_TIER1 maxShiftDays=' + (tier2Shift / D).toFixed(1) + ' pushed=' + tier2Pushed +
+      ' (§TIER2_PER_ELEMENT_CLAMP: per-element push-to-barrier, not a uniform zone shift;' +
+      ' 0 pushed=Tier2 already started after Tier1\'s true completion everywhere)' +
       ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
     return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
       dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
-      base: base, end: endAll, extents: ext2, exempt: _exempt };
+      tier2Pushed: tier2Pushed, base: base, end: endAll, extents: ext2, exempt: _exempt };
   }
 
   // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
@@ -5207,8 +5223,14 @@
     // clock FIRST means the 3x the crew day already bought is counted before the <10 test — a
     // project that reaches 10 real days once its crews work 8 h/day gets scaleFactor 1, not a second
     // stretch on top. The 10-day floor is then in the same wall-clock unit as everything downstream.
+    // §SHIFT_HOURS (2026-08-13, rates.js — user ruling: "24hr is our default, import and JSON
+    // setting can import as we align to standard model"). schedule_gate.js's own default stays 8h
+    // (so witnesses/probes that never pass shiftHours are untouched — see computeSchedule's header);
+    // the REAL generation path reads rates.js's SHIFT_HOURS (default 24) and threads it through as
+    // computeSchedule's 5th arg below, so the module actually runs the hours this project asked for.
     var fullDayMs = 24 * 3600000;
-    var shiftMs = (typeof ScheduleGate !== 'undefined' && ScheduleGate.SHIFT_MS) || 8 * 3600000;
+    var _shiftHours = (typeof window !== 'undefined' && window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
+    var shiftMs = _shiftHours * 3600000;
     var rawDays = rawMs / shiftMs;
     var scaleFactor = rawDays < 10 ? (10 * shiftMs) / rawMs : 1;
 
@@ -5309,7 +5331,7 @@
     var _geoElements = elements.filter(function (el) { return !el.noGeo; });
     var _noGeoN = elements.length - _geoElements.length;
     var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
-      ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews) : null;
+      ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews, _shiftHours) : null;
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
     // §TIER_SERIAL (2026-08-11): the DISPLAYED timeline is the two-tier remap of computeSchedule's
     // output — backbone phases strictly serial, everything else one support-gated concurrent pool
@@ -7683,7 +7705,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 15;   // §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12): _twoTierRemap gained openingGate's display-layer twin (ScheduleGate.openingPairs) — a door/window the remap left starting before its own host wall FINISHED is pushed to that wall's end. MEASURED display EARLY% before→after: LTU_AHouse 28.5→2.0, Terminal 16.4→0.0, JKR 10.1→0.0, Hospital 2.5→0.2, HHS/Clinic/Duplex 0.0→0.0 (every residual is _midairRepair moving a host wall later AFTER the twin ran — witness_curtain_wall_opening G-CWO-STAGE attributes it). The DISPLAY timeline is what kernel_ops is written from, so a building materialized under v14 replays the un-repaired order forever regardless of deployed code — the same second-half miss this constant's own v12/v13 notes record.
+  var _GANTT_CACHE_VERSION = 16;   // §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS (2026-08-13): _twoTierRemap's Tier-2 push is now a per-element clamp to t1EndZ[z] instead of a uniform zone shift (MEP Final occupancy 22%->~69-105%, no more dead-air window inflation), and the real generation path now runs the crew's shift at rates.js SHIFT_HOURS (default 24, was hardcoded 8) — user ruling: "24hr is our default, import and JSON setting can import as we align to standard model". MEASURED Hospital totalDays 2019.6(v15, live) -> 369.2 (v16, all 7 buildings shrank 1.7x-5.5x, see prompts/4D_SCHEDULE_PERFECTION.md). A building materialized under v15 replays the old span/order forever regardless of deployed code without this bump.
                                    // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
                                    // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
                                    // v12 was §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
