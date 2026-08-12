@@ -22,6 +22,44 @@ function setupStreaming(A) {
   // drawBuildingBoxes() retired — replaced by per-element _drawBboxPlaceholders()
   A.drawBuildingBoxes = function() {};
 
+  // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.4 — Witness: W-OCC3-LTU.
+  // CPE_4D_PERF_MEM_FINDINGS.md §R6 measured the blocker: the 2026-08-10 re-extracted
+  // LTU_AHouse_meta.db's elements_meta has NO `building` column (PRAGMA-verified: id, guid,
+  // discipline, ifc_class, element_name, element_type, storey, material_name, material_rgba), so
+  // every `WHERE m.building = ?` filter throws → §HELPERS_QUERY_ERR no such column: m.building →
+  // §CENTRES_RESULT rows=0 → startStreaming() finds no building and returns silently. Geo downloads,
+  // ZERO meshes ever stream. R6 named two fixes; this is the code-side one (a re-extract is bigger,
+  // riskier, and out of scope — and this repo bans committing DB binaries outright regardless).
+  //
+  // Scope is deliberately narrow: probe the column ONCE per loaded DB; when it is ABSENT treat the
+  // DB as containing exactly ONE building and drop the predicate. A DB that HAS the column takes the
+  // identical path it takes today — the probe is the only added work, and that equivalence is the
+  // witness. The label is EXTRACTED from the DB URL basename (a real source), never invented.
+  A._buildingCol = undefined;   // true = column present (normal), false = single-building fallback
+  A._hasBuildingCol = function(db) {
+    if (A._buildingCol !== undefined) return A._buildingCol;
+    if (!db) return true;       // unknown yet — assume normal, re-probed once the DB is real
+    try {
+      var res = db.exec("PRAGMA table_info(elements_meta)");
+      var cols = (res && res.length) ? res[0].values.map(function(r) { return r[1]; }) : [];
+      A._buildingCol = cols.indexOf('building') !== -1;
+      if (!A._buildingCol) {
+        console.log('§SINGLE_BLD_FALLBACK reason=no-building-column cols=' + JSON.stringify(cols) +
+          ' name=' + A._singleBuildingName());
+      }
+    } catch (e) {
+      console.log('§SINGLE_BLD_PROBE_ERR ' + (e && e.message));
+      A._buildingCol = true;    // probe failed ⇒ do not change behaviour
+    }
+    return A._buildingCol;
+  };
+  // Derive the one building's label from the DB URL basename — LTU_AHouse_meta.db → LTU_AHouse.
+  A._singleBuildingName = function() {
+    var u = A.DB_URL || 'building.db';
+    var base = u.split('?')[0].split('/').pop() || 'building.db';
+    return base.replace(/\.db$/i, '').replace(/_(meta|geo|extracted)$/i, '') || 'building';
+  };
+
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
     for (const [name, bc] of Object.entries(A.buildingCentres)) {
@@ -125,6 +163,9 @@ function setupStreaming(A) {
         catch(e) { A._hasBbox = false; }
       }
       const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+      // §17.17.4 (W-OCC3-LTU): on a DB with no `building` column the predicate becomes 1=1 and the
+      // bind list drops with it — every row IS this building by definition of the fallback.
+      const _bldOk = A._hasBuildingCol(A.db);
       const rows = A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
@@ -133,10 +174,10 @@ function setupStreaming(A) {
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
-        WHERE m.building = ?
+        WHERE ${_bldOk ? 'm.building = ?' : '1=1'}
           AND i.geometry_hash IS NOT NULL
           AND m.ifc_class != 'IfcOpeningElement'
-      `, [nearest]);
+      `, _bldOk ? [nearest] : []);
       if (!rows.length) {
         console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
         return;
@@ -1992,7 +2033,10 @@ function setupStreaming(A) {
 
       // §S260b: Set activeBuilding + _hasBbox early so 4D5D relay + clash work during geo download
       try {
-        var _bldRows = A.db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1");
+        // §17.17.4 (W-OCC3-LTU): no `building` column ⇒ one building, label extracted from the URL.
+        var _bldRows = A._hasBuildingCol(A.db)
+          ? A.db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1")
+          : A.db.exec("SELECT '" + A._singleBuildingName().replace(/'/g, "''") + "' b, COUNT(*) c FROM elements_meta");
         if (_bldRows.length && _bldRows[0].values[0][0]) {
           A.activeBuilding = _bldRows[0].values[0][0];
           console.log(`[S260b] §ACTIVE_BUILDING_EARLY name=${A.activeBuilding}`);
@@ -2006,7 +2050,10 @@ function setupStreaming(A) {
           if (_sBldLabel && _sBldLabel.getAttribute('data-trl') === 'ui_buildings') _sBldLabel.textContent = 'Building';
           // §S260e: Element count from meta.db
           try {
-            var _elCnt = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE building=?", [A.activeBuilding]);
+            var _bldOk2 = A._hasBuildingCol(A.db);   // §17.17.4 (W-OCC3-LTU)
+            var _elCnt = _bldOk2
+              ? A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE building=?", [A.activeBuilding])
+              : A.db.exec("SELECT COUNT(*) FROM elements_meta");
             if (_elCnt.length) {
               var _n = _elCnt[0].values[0][0];
               var _sEl = document.getElementById('s-elements');
@@ -2016,12 +2063,14 @@ function setupStreaming(A) {
           } catch(e) {}
           // §S260b: Redraw bboxes with discipline colors now that meta.db is loaded
           if (_posLoaded && A._drawBboxPlaceholders) {
+            var _bldOk3 = A._hasBuildingCol(A.db);   // §17.17.4 (W-OCC3-LTU)
             var _colorRows = A.dbQuery(`SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
               t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z,
               m.storey, m.ifc_class, m.element_name, t.bbox_x, t.bbox_y, t.bbox_z
               FROM elements_meta m JOIN element_instances i ON m.guid=i.guid
               JOIN element_transforms t ON t.guid=m.guid
-              WHERE m.building=? AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`, [A.activeBuilding]);
+              WHERE ${_bldOk3 ? 'm.building=?' : '1=1'} AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`,
+              _bldOk3 ? [A.activeBuilding] : []);
             if (_colorRows.length) {
               A._drawBboxPlaceholders(_colorRows);
               console.log('[S260b] §BBOX_RECOLOR discs=' + new Set(_colorRows.map(function(r){return r[3]})).size);
@@ -2143,14 +2192,24 @@ function setupStreaming(A) {
     if (Object.keys(A.buildingCentres).length === 0) {
       console.log('§CENTRES_QUERY A.db=' + (!!A.db) + ' tables=' + (A.db ? JSON.stringify(A.db.exec("SELECT name FROM sqlite_master WHERE type='table'")) : 'none'));
       try {
-        const rows = A.dbQuery(`
+        // §17.17.4 (W-OCC3-LTU): with no `building` column this query used to throw inside dbQuery
+        // (§HELPERS_QUERY_ERR), return [], and leave buildingCentres empty — startStreaming() then
+        // silently found no building and nothing ever streamed. One building, one centre instead.
+        const _bldOk = A._hasBuildingCol(A.db);
+        const rows = _bldOk ? A.dbQuery(`
           SELECT m.building, COUNT(*),
             AVG(t.center_x), AVG(t.center_y), AVG(t.center_z)
           FROM elements_meta m
           JOIN element_transforms t ON t.guid = m.guid
           GROUP BY m.building
+        `) : A.dbQuery(`
+          SELECT '${A._singleBuildingName().replace(/'/g, "''")}', COUNT(*),
+            AVG(t.center_x), AVG(t.center_y), AVG(t.center_z)
+          FROM elements_meta m
+          JOIN element_transforms t ON t.guid = m.guid
         `);
-        console.log('§CENTRES_RESULT rows=' + rows.length + (rows.length > 0 ? ' first=' + JSON.stringify(rows[0]) : ''));
+        console.log('§CENTRES_RESULT rows=' + rows.length + ' bldCol=' + _bldOk +
+          (rows.length > 0 ? ' first=' + JSON.stringify(rows[0]) : ''));
         for (const row of rows) {
           A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
         }
