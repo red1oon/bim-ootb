@@ -4,6 +4,45 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.43.0](https://github.com/red1oon/bim-ootb/compare/v1.42.0...v1.43.0) (2026-08-11)
+
+
+### ✨ Features
+
+* **4d:** §TIER_SERIAL phase-window collapse — two-tier display timeline (serial backbone + concurrent pool) ([#1282](https://github.com/red1oon/bim-ootb/issues/1282)) ([9197a09](https://github.com/red1oon/bim-ootb/commit/9197a099505bf08767ba5567ec7823a3d6187069))
+* **cinema:** camera-following fill light + noon-to-dusk sun arc ([#1284](https://github.com/red1oon/bim-ootb/issues/1284)) ([883dad2](https://github.com/red1oon/bim-ootb/commit/883dad28a6e0da117434b74cda71687c0649847a))
+* **viewer:** SW update toast -- no more 'clear site data' to get unstuck ([#1297](https://github.com/red1oon/bim-ootb/issues/1297)) ([1493a64](https://github.com/red1oon/bim-ootb/commit/1493a646840e6df2afd0cd1f37cd4564046632df))
+
+
+### 🐛 Fixes
+
+* **4d:** §DOOR_WINDOW_HOST_WALL — door/window can no longer start before the wall it's cut into finishes ([#1294](https://github.com/red1oon/bim-ootb/issues/1294)) ([aa15537](https://github.com/red1oon/bim-ootb/commit/aa15537370b972015825adecace7aef505025efc))
+* **4d:** §GANTT_LOCK_DELTA + midair-aware lock gate — the planner round-trip, and the trade [#1301](https://github.com/red1oon/bim-ootb/issues/1301) made ([#1303](https://github.com/red1oon/bim-ootb/issues/1303)) ([add18e5](https://github.com/red1oon/bim-ootb/commit/add18e59ef6287128b7e511e14358736609e2fe7))
+* **4d:** §HANG_NEAREST + pile reclass — Terminal/Hospital §SUPPORT_UNCHECKED root causes, 831→250 ([#1278](https://github.com/red1oon/bim-ootb/issues/1278)) ([366ed42](https://github.com/red1oon/bim-ootb/commit/366ed420fff3e3f0a9afa1e49a3f55fdfcf40e81))
+* **4d:** §KERNEL_OPS_SCHED_VERSION — stale materialized kernel_ops never reached a fixed schedule algorithm ([#1291](https://github.com/red1oon/bim-ootb/issues/1291)) ([fd3e021](https://github.com/red1oon/bim-ootb/commit/fd3e021ba2f7a306bfa4c6cefd29f35737f120d1))
+* **4d:** §MIDAIR_REPAIR — nothing appears before the first thing it touches (5,561 → 0) ([#1301](https://github.com/red1oon/bim-ootb/issues/1301)) ([bcec670](https://github.com/red1oon/bim-ootb/commit/bcec6706554aefef74282cf85889cda2551e092f))
+* **4d:** chase-to-zero — 3 witnesses un-rotted, LTU+JKR coverage locked, §PROMOTED_CARRIER_POOL guard/judge fix ([#1283](https://github.com/red1oon/bim-ootb/issues/1283)) ([83c7ef0](https://github.com/red1oon/bim-ootb/commit/83c7ef0c481fc639a35a99c6a35714f7c1e56073))
+* **4d:** closure pass — §OG_BEARING_BOUND (Part 2 Option C), slab-on-grade reclass, IfcPile Gap A, geo_support_leak witness un-rotted ([#1281](https://github.com/red1oon/bim-ootb/issues/1281)) ([7e02d7e](https://github.com/red1oon/bim-ootb/commit/7e02d7eb70bd526a94109aede8df6f278a826de2))
+* **4d:** Tier 2 starts after Tier 1 truly completes, not concurrent with it ([#1286](https://github.com/red1oon/bim-ootb/issues/1286)) ([929d097](https://github.com/red1oon/bim-ootb/commit/929d0975b42df75e35345760e61df6f4723dd9f3))
+* **cinema:** §SUN_ARC never reached output — call-order bug from [#1284](https://github.com/red1oon/bim-ootb/issues/1284) ([#1288](https://github.com/red1oon/bim-ootb/issues/1288)) ([5806d81](https://github.com/red1oon/bim-ootb/commit/5806d8156c72a34478bab66e2af9835c251c56b5))
+* **modeller:** §NOGEO_COMPOSE — Garage_ARC's 19 ghosts, the 8th and last building (source IFC found) ([#1280](https://github.com/red1oon/bim-ootb/issues/1280)) ([8e846d5](https://github.com/red1oon/bim-ootb/commit/8e846d56a50a398cc910a073bbc87c057f179565))
+* **photo:** §MAIN_BUILDING_SHADOW root cause — shadow.bias is normalised, not metres ([#1302](https://github.com/red1oon/bim-ootb/issues/1302)) ([6b4eddf](https://github.com/red1oon/bim-ootb/commit/6b4eddfe1330f92f294896f5cb0d9099173cf134))
+* **photo:** §PHOTO_SUN_SHADOW_REACH -- shadow frustum too small for low-elevation sun ([#1293](https://github.com/red1oon/bim-ootb/issues/1293)) ([800ad89](https://github.com/red1oon/bim-ootb/commit/800ad89532ccbe0b790644575f3c0596a355894e))
+* **photo:** double shadow map resolution -- small rooftop fixtures were washing out ([#1299](https://github.com/red1oon/bim-ootb/issues/1299)) ([f9ecab3](https://github.com/red1oon/bim-ootb/commit/f9ecab35ce79bb137cfc0146d61365c241faf68c))
+* **photo:** shadow camera was aimed at view-camera target, not the building ([#1295](https://github.com/red1oon/bim-ootb/issues/1295)) ([293c49b](https://github.com/red1oon/bim-ootb/commit/293c49b85d1d8ccb33aa5de1292409b690acb88b))
+* **viewer:** §CPE_WALK_ROLL_SNAP — POV walk camera rolled/toppled on diagonal mouse-look ([#1292](https://github.com/red1oon/bim-ootb/issues/1292)) ([f869c42](https://github.com/red1oon/bim-ootb/commit/f869c4268b7527309c6c7b3e2794dc53a941e8d8))
+* **viewer:** bump SW CACHE_VERSION for [#1288](https://github.com/red1oon/bim-ootb/issues/1288) -- missed on the original merge ([#1289](https://github.com/red1oon/bim-ootb/issues/1289)) ([3a36a0d](https://github.com/red1oon/bim-ootb/commit/3a36a0d8d2e845fe38502d097593f4104be3fc4d))
+* **viewer:** bump SW CACHE_VERSION for §CAM_LIGHT/§SUN_ARC (PR [#1284](https://github.com/red1oon/bim-ootb/issues/1284)) ([#1285](https://github.com/red1oon/bim-ootb/issues/1285)) ([1c3b989](https://github.com/red1oon/bim-ootb/commit/1c3b989b5612e6b7d9fdb09fb25ddb210a05204b))
+* **viewer:** bump SW CACHE_VERSION for PR [#1286](https://github.com/red1oon/bim-ootb/issues/1286) -- missed on the original merge ([#1287](https://github.com/red1oon/bim-ootb/issues/1287)) ([aaef1b4](https://github.com/red1oon/bim-ootb/commit/aaef1b40dfbf36977bf156fd0a1f8c6b36565833))
+
+
+### ⚡ Performance
+
+* **4d:** §GANTT_REFOLD_HANG — chunk-yield kernel_ops writer, synced against main ([#1304](https://github.com/red1oon/bim-ootb/issues/1304)) ([3a7e4ca](https://github.com/red1oon/bim-ootb/commit/3a7e4ca96294ad26d54d501af7e8d09a462bfdd4))
+* **4d:** §PERF_INCR_DEFER — no TM event-index rebuilds while a building streams ([#1306](https://github.com/red1oon/bim-ootb/issues/1306)) ([7e4bdba](https://github.com/red1oon/bim-ootb/commit/7e4bdba7ae048caa23cc9da65bce760fd18fa9d2))
+* **cinema:** §CPE_REPLAN_LAZY — cache the invariant plan prefix, one compute per editor session ([#1305](https://github.com/red1oon/bim-ootb/issues/1305)) ([03e1b71](https://github.com/red1oon/bim-ootb/commit/03e1b7141d1014a173d9971491de3f363a265a16))
+* **cinema:** §MAXQ_STAGE_KEEP — photo staging survives the bake's frame loop; frontier check indexed ([#1307](https://github.com/red1oon/bim-ootb/issues/1307)) ([4adb4bd](https://github.com/red1oon/bim-ootb/commit/4adb4bdd72193e402a5cc41f55e6c72116275854))
+
 ## [1.42.0](https://github.com/red1oon/bim-ootb/compare/v1.41.1...v1.42.0) (2026-08-11)
 
 
