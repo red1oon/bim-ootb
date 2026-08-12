@@ -62,7 +62,11 @@ function calcLabor(cls, qty) {
   for (const key in LABOR) {
     const lr = LABOR[key];
     if (lr.productivity && lr.productivity[cls] !== undefined) {
-      const prod = lr.productivity[cls];
+      let prod = lr.productivity[cls];
+      // §FOOTING_M3: qty is real m3 for an M3-priced class, productivity is stored per-element —
+      // scale by the same volFactor the rate was derived with, without touching the shared value.
+      const re = RATES[cls];
+      if (re && re.unit === 'M3' && re.volFactor) prod = prod * re.volFactor;
       const days = qty / prod;
       const cost = days * lr.crew_size * lr.rate_per_day;
       return { cost: Math.round(cost), days, crew: lr.crew_size, trade: lr.trade, tradeKey: key, prod };

@@ -65,7 +65,7 @@ var RATES = {
   // Every rates/*.json template carries the same conversion against its own EA rate.
   // IfcPile stays EA: ZERO IfcPile elements exist in any shipped building, so there is no measured
   // avgVolume to divide by and any m3 rate would be invented. Reprice it when a model ships piles.
-  IfcFooting:{rate:75.28,unit:'M3',desc:'Foundation Footing'},
+  IfcFooting:{rate:75.28,unit:'M3',desc:'Foundation Footing',volFactor:4.25074802767622},
   IfcPile:{rate:850,unit:'EA',desc:'Foundation Pile'},
   IfcReinforcingBar:{rate:45,unit:'KG',desc:'Reinforcing Steel'},
   IfcFlowSegment:{rate:120,unit:'M',desc:'Flow Segment'},
@@ -415,6 +415,12 @@ function calcLabor(ifcClass, qty) {
     var lr = LABOR_RATES[key];
     if (lr.productivity && lr.productivity[ifcClass] !== undefined) {
       var prod = lr.productivity[ifcClass];
+      // §FOOTING_M3 OPEN ITEM resolved (2026-08-12): productivity is stored per-element (4D's own
+      // reading, e.g. "6 footings/day") but qty here is real m3 for an M3-priced class — scale prod
+      // by the SAME volFactor (avg real volume) the rate itself was divided by, so days stays
+      // correct WITHOUT touching the shared LABOR_RATES.productivity value 4D also reads.
+      var re = (typeof RATES !== 'undefined') ? RATES[ifcClass] : null;
+      if (re && re.unit === 'M3' && re.volFactor) prod = prod * re.volFactor;
       var days = qty / prod;
       var cost = days * lr.crew_size * lr.rate_per_day;
       return {cost: Math.round(cost), days: days, crew: lr.crew_size, trade: lr.trade, tradeKey: key, prod: prod};

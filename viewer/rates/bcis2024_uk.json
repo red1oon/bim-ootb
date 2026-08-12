@@ -5,7 +5,7 @@
     "currency": "GBP",
     "currency2": "USD",
     "exchange_rate": 0.74,
-    "source": "BCIS (RICS) 2024 — placeholder rates, replace with licensed data",
+    "source": "BCIS (RICS) 2024 \u2014 placeholder rates, replace with licensed data",
     "validity_days": 60,
     "measurement_standard": "NRM2 (RICS)"
   },
@@ -182,7 +182,8 @@
       "rate": 43.29,
       "unit": "M3",
       "desc": "Foundation Footing",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 490,

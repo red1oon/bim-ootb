@@ -13,301 +13,302 @@
     "IfcDuct": {
       "rate": 52000,
       "unit": "M",
-      "desc": "아연도금 강판 덕트 (평균 400mm)",
+      "desc": "\uc544\uc5f0\ub3c4\uae08 \uac15\ud310 \ub355\ud2b8 (\ud3c9\uade0 400mm)",
       "smm_section": "U10"
     },
     "IfcDuctSegment": {
       "rate": 52000,
       "unit": "M",
-      "desc": "덕트 세그먼트",
+      "desc": "\ub355\ud2b8 \uc138\uadf8\uba3c\ud2b8",
       "smm_section": "U10"
     },
     "IfcDuctFitting": {
       "rate": 115000,
       "unit": "EA",
-      "desc": "덕트 피팅 (엘보, 티)",
+      "desc": "\ub355\ud2b8 \ud53c\ud305 (\uc5d8\ubcf4, \ud2f0)",
       "smm_section": "U10"
     },
     "IfcPipe": {
       "rate": 15500,
       "unit": "M",
-      "desc": "PVC/HDPE 배관 (평균 100mm)",
+      "desc": "PVC/HDPE \ubc30\uad00 (\ud3c9\uade0 100mm)",
       "smm_section": "S10"
     },
     "IfcPipeSegment": {
       "rate": 15500,
       "unit": "M",
-      "desc": "배관 세그먼트",
+      "desc": "\ubc30\uad00 \uc138\uadf8\uba3c\ud2b8",
       "smm_section": "S10"
     },
     "IfcPipeFitting": {
       "rate": 32000,
       "unit": "EA",
-      "desc": "배관 피팅",
+      "desc": "\ubc30\uad00 \ud53c\ud305",
       "smm_section": "S10"
     },
     "IfcCableCarrier": {
       "rate": 26500,
       "unit": "M",
-      "desc": "케이블 트레이 (300mm)",
+      "desc": "\ucf00\uc774\ube14 \ud2b8\ub808\uc774 (300mm)",
       "smm_section": "V20"
     },
     "IfcCableCarrierSegment": {
       "rate": 26500,
       "unit": "M",
-      "desc": "케이블 트레이 세그먼트",
+      "desc": "\ucf00\uc774\ube14 \ud2b8\ub808\uc774 \uc138\uadf8\uba3c\ud2b8",
       "smm_section": "V20"
     },
     "IfcBeam": {
       "rate": 215000,
       "unit": "M",
-      "desc": "구조용 강재 보",
+      "desc": "\uad6c\uc870\uc6a9 \uac15\uc7ac \ubcf4",
       "smm_section": "G10"
     },
     "IfcColumn": {
       "rate": 395000,
       "unit": "M",
-      "desc": "구조용 강재 기둥",
+      "desc": "\uad6c\uc870\uc6a9 \uac15\uc7ac \uae30\ub465",
       "smm_section": "G10"
     },
     "IfcSlab": {
       "rate": 92000,
       "unit": "M2",
-      "desc": "철근콘크리트 슬래브 250mm",
+      "desc": "\ucca0\uadfc\ucf58\ud06c\ub9ac\ud2b8 \uc2ac\ub798\ube0c 250mm",
       "smm_section": "E10"
     },
     "IfcWall": {
       "rate": 48000,
       "unit": "M2",
-      "desc": "조적벽 150mm",
+      "desc": "\uc870\uc801\ubcbd 150mm",
       "smm_section": "F10"
     },
     "IfcWallStandardCase": {
       "rate": 48000,
       "unit": "M2",
-      "desc": "표준 벽체",
+      "desc": "\ud45c\uc900 \ubcbd\uccb4",
       "smm_section": "F10"
     },
     "IfcCurtainWall": {
       "rate": 250000,
       "unit": "M2",
-      "desc": "커튼월",
+      "desc": "\ucee4\ud2bc\uc6d4",
       "smm_section": "H10"
     },
     "IfcCovering": {
       "rate": 62000,
       "unit": "M2",
-      "desc": "바닥/천장 마감재",
+      "desc": "\ubc14\ub2e5/\ucc9c\uc7a5 \ub9c8\uac10\uc7ac",
       "smm_section": "M10"
     },
     "IfcRoof": {
       "rate": 78000,
       "unit": "M2",
-      "desc": "금속 지붕재",
+      "desc": "\uae08\uc18d \uc9c0\ubd95\uc7ac",
       "smm_section": "H60"
     },
     "IfcLightFixture": {
       "rate": 155000,
       "unit": "EA",
-      "desc": "LED 조명기구",
+      "desc": "LED \uc870\uba85\uae30\uad6c",
       "smm_section": "V40"
     },
     "IfcOutlet": {
       "rate": 42000,
       "unit": "EA",
-      "desc": "전기 콘센트",
+      "desc": "\uc804\uae30 \ucf58\uc13c\ud2b8",
       "smm_section": "V20"
     },
     "IfcDoor": {
       "rate": 920000,
       "unit": "EA",
-      "desc": "도어 세트",
+      "desc": "\ub3c4\uc5b4 \uc138\ud2b8",
       "smm_section": "L20"
     },
     "IfcWindow": {
       "rate": 520000,
       "unit": "EA",
-      "desc": "창호",
+      "desc": "\ucc3d\ud638",
       "smm_section": "L10"
     },
     "IfcBuildingElementProxy": {
       "rate": 280000,
       "unit": "EA",
-      "desc": "기타 건축요소",
+      "desc": "\uae30\ud0c0 \uac74\ucd95\uc694\uc18c",
       "smm_section": "P10"
     },
     "IfcFlowTerminal": {
       "rate": 1150000,
       "unit": "EA",
-      "desc": "공조 터미널",
+      "desc": "\uacf5\uc870 \ud130\ubbf8\ub110",
       "smm_section": "U10"
     },
     "IfcFurnishingElement": {
       "rate": 385000,
       "unit": "EA",
-      "desc": "가구류",
+      "desc": "\uac00\uad6c\ub958",
       "smm_section": "N10"
     },
     "IfcPlate": {
       "rate": 32000,
       "unit": "M2",
-      "desc": "강판",
+      "desc": "\uac15\ud310",
       "smm_section": "G10"
     },
     "IfcMember": {
       "rate": 105000,
       "unit": "M",
-      "desc": "철골 부재",
+      "desc": "\ucca0\uace8 \ubd80\uc7ac",
       "smm_section": "G10"
     },
     "IfcRailing": {
       "rate": 95000,
       "unit": "M",
-      "desc": "난간",
+      "desc": "\ub09c\uac04",
       "smm_section": "L30"
     },
     "IfcStair": {
       "rate": 1450000,
       "unit": "EA",
-      "desc": "계단",
+      "desc": "\uacc4\ub2e8",
       "smm_section": "L30"
     },
     "IfcStairFlight": {
       "rate": 720000,
       "unit": "EA",
-      "desc": "계단 플라이트",
+      "desc": "\uacc4\ub2e8 \ud50c\ub77c\uc774\ud2b8",
       "smm_section": "L30"
     },
     "IfcFooting": {
       "rate": 24701.53,
       "unit": "M3",
-      "desc": "기초 푸팅",
-      "smm_section": "D20"
+      "desc": "\uae30\ucd08 \ud478\ud305",
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 285000,
       "unit": "EA",
-      "desc": "기초 말뚝",
+      "desc": "\uae30\ucd08 \ub9d0\ub69d",
       "smm_section": "D30"
     },
     "IfcReinforcingBar": {
       "rate": 1450,
       "unit": "KG",
-      "desc": "철근",
+      "desc": "\ucca0\uadfc",
       "smm_section": "E30"
     },
     "IfcFlowSegment": {
       "rate": 42000,
       "unit": "M",
-      "desc": "유체 세그먼트",
+      "desc": "\uc720\uccb4 \uc138\uadf8\uba3c\ud2b8",
       "smm_section": "Y10"
     },
     "IfcFlowFitting": {
       "rate": 68000,
       "unit": "EA",
-      "desc": "유체 피팅",
+      "desc": "\uc720\uccb4 \ud53c\ud305",
       "smm_section": "Y10"
     },
     "IfcFlowController": {
       "rate": 152000,
       "unit": "EA",
-      "desc": "유량 제어기",
+      "desc": "\uc720\ub7c9 \uc81c\uc5b4\uae30",
       "smm_section": "Y10"
     },
     "IfcEnergyConversionDevice": {
       "rate": 2850000,
       "unit": "EA",
-      "desc": "에너지 변환장치",
+      "desc": "\uc5d0\ub108\uc9c0 \ubcc0\ud658\uc7a5\uce58",
       "smm_section": "T10"
     },
     "IfcFlowTreatmentDevice": {
       "rate": 395000,
       "unit": "EA",
-      "desc": "유체 처리장치",
+      "desc": "\uc720\uccb4 \ucc98\ub9ac\uc7a5\uce58",
       "smm_section": "Y10"
     },
     "IfcFlowMovingDevice": {
       "rate": 1150000,
       "unit": "EA",
-      "desc": "유체 이송장치",
+      "desc": "\uc720\uccb4 \uc774\uc1a1\uc7a5\uce58",
       "smm_section": "T10"
     },
     "IfcFlowStorageDevice": {
       "rate": 1650000,
       "unit": "EA",
-      "desc": "유체 저장장치",
+      "desc": "\uc720\uccb4 \uc800\uc7a5\uc7a5\uce58",
       "smm_section": "Y10"
     },
     "IfcElectricAppliance": {
       "rate": 165000,
       "unit": "EA",
-      "desc": "전기 기기",
+      "desc": "\uc804\uae30 \uae30\uae30",
       "smm_section": "V20"
     },
     "IfcFurniture": {
       "rate": 495000,
       "unit": "EA",
-      "desc": "가구",
+      "desc": "\uac00\uad6c",
       "smm_section": "N10"
     },
     "IfcOpeningElement": {
       "rate": 0,
       "unit": "EA",
-      "desc": "개구부 (보이드)",
+      "desc": "\uac1c\uad6c\ubd80 (\ubcf4\uc774\ub4dc)",
       "smm_section": ""
     },
     "IfcDistributionElement": {
       "rate": 165000,
       "unit": "EA",
-      "desc": "분배 요소",
+      "desc": "\ubd84\ubc30 \uc694\uc18c",
       "smm_section": "Y10"
     },
     "IfcFireSuppressionTerminal": {
       "rate": 148000,
       "unit": "EA",
-      "desc": "스프링클러 헤드",
+      "desc": "\uc2a4\ud504\ub9c1\ud074\ub7ec \ud5e4\ub4dc",
       "smm_section": "S60"
     },
     "IfcAirTerminal": {
       "rate": 125000,
       "unit": "EA",
-      "desc": "디퓨저/그릴",
+      "desc": "\ub514\ud4e8\uc800/\uadf8\ub9b4",
       "smm_section": "U10"
     },
     "IfcValve": {
       "rate": 92000,
       "unit": "EA",
-      "desc": "밸브",
+      "desc": "\ubc38\ube0c",
       "smm_section": "S10"
     },
     "IfcAlarm": {
       "rate": 115000,
       "unit": "EA",
-      "desc": "화재 경보장치",
+      "desc": "\ud654\uc7ac \uacbd\ubcf4\uc7a5\uce58",
       "smm_section": "W50"
     },
     "IfcController": {
       "rate": 395000,
       "unit": "EA",
-      "desc": "빌딩 제어기",
+      "desc": "\ube4c\ub529 \uc81c\uc5b4\uae30",
       "smm_section": "W60"
     },
     "IfcRamp": {
       "rate": 1050000,
       "unit": "EA",
-      "desc": "경사로",
+      "desc": "\uacbd\uc0ac\ub85c",
       "smm_section": "L30"
     },
     "IfcRampFlight": {
       "rate": 1150000,
       "unit": "EA",
-      "desc": "경사로 플라이트",
+      "desc": "\uacbd\uc0ac\ub85c \ud50c\ub77c\uc774\ud2b8",
       "smm_section": "L30"
     },
     "IfcBuildingElementPart": {
       "rate": 0,
       "unit": "EA",
-      "desc": "건축요소 부품",
+      "desc": "\uac74\ucd95\uc694\uc18c \ubd80\ud488",
       "smm_section": ""
     }
   },
@@ -315,7 +316,7 @@
     "HVAC_TECH": {
       "rate_per_day": 245000,
       "crew_size": 2,
-      "trade": "공조기술자 (숙련공)",
+      "trade": "\uacf5\uc870\uae30\uc220\uc790 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcDuct": 18,
         "IfcDuctSegment": 18,
@@ -329,7 +330,7 @@
     "PLUMBER": {
       "rate_per_day": 225000,
       "crew_size": 2,
-      "trade": "배관공 (숙련공)",
+      "trade": "\ubc30\uad00\uacf5 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcPipe": 25,
         "IfcPipeSegment": 25,
@@ -346,7 +347,7 @@
     "ELECTRICIAN": {
       "rate_per_day": 235000,
       "crew_size": 2,
-      "trade": "전기기사 (숙련공)",
+      "trade": "\uc804\uae30\uae30\uc0ac (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcCableCarrier": 30,
         "IfcCableCarrierSegment": 30,
@@ -361,7 +362,7 @@
     "STEEL_ERECTOR": {
       "rate_per_day": 265000,
       "crew_size": 4,
-      "trade": "철골공 (숙련공)",
+      "trade": "\ucca0\uace8\uacf5 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcBeam": 8,
         "IfcColumn": 6,
@@ -372,7 +373,7 @@
     "CONCRETE_GANG": {
       "rate_per_day": 195000,
       "crew_size": 6,
-      "trade": "콘크리트 팀 (혼성)",
+      "trade": "\ucf58\ud06c\ub9ac\ud2b8 \ud300 (\ud63c\uc131)",
       "productivity": {
         "IfcSlab": 35,
         "IfcFooting": 6,
@@ -385,7 +386,7 @@
     "MASON": {
       "rate_per_day": 210000,
       "crew_size": 3,
-      "trade": "미장공 (숙련공) + 보조",
+      "trade": "\ubbf8\uc7a5\uacf5 (\uc219\ub828\uacf5) + \ubcf4\uc870",
       "productivity": {
         "IfcWall": 12,
         "IfcWallStandardCase": 12,
@@ -396,7 +397,7 @@
     "CARPENTER": {
       "rate_per_day": 220000,
       "crew_size": 2,
-      "trade": "목수 (숙련공)",
+      "trade": "\ubaa9\uc218 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcDoor": 6,
         "IfcWindow": 6,
@@ -409,7 +410,7 @@
     "ROOFER": {
       "rate_per_day": 235000,
       "crew_size": 3,
-      "trade": "지붕공 (숙련공)",
+      "trade": "\uc9c0\ubd95\uacf5 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcRoof": 25
       }
@@ -417,7 +418,7 @@
     "FINISHER": {
       "rate_per_day": 185000,
       "crew_size": 2,
-      "trade": "마감공 (숙련공)",
+      "trade": "\ub9c8\uac10\uacf5 (\uc219\ub828\uacf5)",
       "productivity": {
         "IfcCovering": 20,
         "IfcFurniture": 8,
@@ -427,34 +428,34 @@
     "LABORER": {
       "rate_per_day": 145000,
       "crew_size": 1,
-      "trade": "보통인부",
+      "trade": "\ubcf4\ud1b5\uc778\ubd80",
       "productivity": {}
     }
   },
   "equipment": {
     "MOBILE_CRANE_20T": {
       "rate_per_day": 650000,
-      "desc": "이동식 크레인 20톤"
+      "desc": "\uc774\ub3d9\uc2dd \ud06c\ub808\uc778 20\ud1a4"
     },
     "TOWER_CRANE": {
       "rate_per_day": 920000,
-      "desc": "타워 크레인"
+      "desc": "\ud0c0\uc6cc \ud06c\ub808\uc778"
     },
     "CONCRETE_PUMP": {
       "rate_per_day": 480000,
-      "desc": "콘크리트 펌프카"
+      "desc": "\ucf58\ud06c\ub9ac\ud2b8 \ud38c\ud504\uce74"
     },
     "SCISSOR_LIFT_8M": {
       "rate_per_day": 120000,
-      "desc": "시저 리프트 8m"
+      "desc": "\uc2dc\uc800 \ub9ac\ud504\ud2b8 8m"
     },
     "WELDING_MACHINE": {
       "rate_per_day": 35000,
-      "desc": "용접기 300A"
+      "desc": "\uc6a9\uc811\uae30 300A"
     },
     "GENERATOR_5KVA": {
       "rate_per_day": 48000,
-      "desc": "발전기 5KVA"
+      "desc": "\ubc1c\uc804\uae30 5KVA"
     }
   },
   "equipment_allocation": {
@@ -818,28 +819,28 @@
     }
   ],
   "smm_sections": {
-    "A": "예비비",
-    "C": "기존 부지 / 건물",
-    "D": "토공사",
-    "E": "현장타설 콘크리트 / 대형 프리캐스트",
-    "F": "조적공사",
-    "G": "구조용 금속 / 골조",
-    "H": "외장재 / 덮개",
-    "J": "방수공사",
-    "K": "내장재 / 건식 파티션",
-    "L": "창호 / 문 / 계단",
-    "M": "표면 마감재",
-    "N": "가구 / 장비",
-    "P": "건축 잡자재",
-    "Q": "포장 / 조경 / 펜스",
-    "R": "배수 시스템",
-    "S": "배관 급수 시스템",
-    "T": "기계 냉난방",
-    "U": "환기 / 공조",
-    "V": "전기 공급 / 전력 / 조명",
-    "W": "통신 / 보안 / 제어",
-    "X": "운송 시스템",
-    "Y": "기계 / 전기 설비 (일반)"
+    "A": "\uc608\ube44\ube44",
+    "C": "\uae30\uc874 \ubd80\uc9c0 / \uac74\ubb3c",
+    "D": "\ud1a0\uacf5\uc0ac",
+    "E": "\ud604\uc7a5\ud0c0\uc124 \ucf58\ud06c\ub9ac\ud2b8 / \ub300\ud615 \ud504\ub9ac\uce90\uc2a4\ud2b8",
+    "F": "\uc870\uc801\uacf5\uc0ac",
+    "G": "\uad6c\uc870\uc6a9 \uae08\uc18d / \uace8\uc870",
+    "H": "\uc678\uc7a5\uc7ac / \ub36e\uac1c",
+    "J": "\ubc29\uc218\uacf5\uc0ac",
+    "K": "\ub0b4\uc7a5\uc7ac / \uac74\uc2dd \ud30c\ud2f0\uc158",
+    "L": "\ucc3d\ud638 / \ubb38 / \uacc4\ub2e8",
+    "M": "\ud45c\uba74 \ub9c8\uac10\uc7ac",
+    "N": "\uac00\uad6c / \uc7a5\ube44",
+    "P": "\uac74\ucd95 \uc7a1\uc790\uc7ac",
+    "Q": "\ud3ec\uc7a5 / \uc870\uacbd / \ud39c\uc2a4",
+    "R": "\ubc30\uc218 \uc2dc\uc2a4\ud15c",
+    "S": "\ubc30\uad00 \uae09\uc218 \uc2dc\uc2a4\ud15c",
+    "T": "\uae30\uacc4 \ub0c9\ub09c\ubc29",
+    "U": "\ud658\uae30 / \uacf5\uc870",
+    "V": "\uc804\uae30 \uacf5\uae09 / \uc804\ub825 / \uc870\uba85",
+    "W": "\ud1b5\uc2e0 / \ubcf4\uc548 / \uc81c\uc5b4",
+    "X": "\uc6b4\uc1a1 \uc2dc\uc2a4\ud15c",
+    "Y": "\uae30\uacc4 / \uc804\uae30 \uc124\ube44 (\uc77c\ubc18)"
   },
   "provisions": {
     "preliminaries_pct": 10,

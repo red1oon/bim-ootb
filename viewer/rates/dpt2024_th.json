@@ -13,301 +13,302 @@
     "IfcDuct": {
       "rate": 1350,
       "unit": "M",
-      "desc": "ท่อลมเหล็กชุบสังกะสี (เฉลี่ย 400มม.)",
+      "desc": "\u0e17\u0e48\u0e2d\u0e25\u0e21\u0e40\u0e2b\u0e25\u0e47\u0e01\u0e0a\u0e38\u0e1a\u0e2a\u0e31\u0e07\u0e01\u0e30\u0e2a\u0e35 (\u0e40\u0e09\u0e25\u0e35\u0e48\u0e22 400\u0e21\u0e21.)",
       "smm_section": "U10"
     },
     "IfcDuctSegment": {
       "rate": 1350,
       "unit": "M",
-      "desc": "ท่อลมส่วนตรง",
+      "desc": "\u0e17\u0e48\u0e2d\u0e25\u0e21\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e23\u0e07",
       "smm_section": "U10"
     },
     "IfcDuctFitting": {
       "rate": 3100,
       "unit": "EA",
-      "desc": "อุปกรณ์ข้อต่อท่อลม",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e02\u0e49\u0e2d\u0e15\u0e48\u0e2d\u0e17\u0e48\u0e2d\u0e25\u0e21",
       "smm_section": "U10"
     },
     "IfcPipe": {
       "rate": 395,
       "unit": "M",
-      "desc": "ท่อ PVC/HDPE (เฉลี่ย 100มม.)",
+      "desc": "\u0e17\u0e48\u0e2d PVC/HDPE (\u0e40\u0e09\u0e25\u0e35\u0e48\u0e22 100\u0e21\u0e21.)",
       "smm_section": "S10"
     },
     "IfcPipeSegment": {
       "rate": 395,
       "unit": "M",
-      "desc": "ท่อส่วนตรง",
+      "desc": "\u0e17\u0e48\u0e2d\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e23\u0e07",
       "smm_section": "S10"
     },
     "IfcPipeFitting": {
       "rate": 780,
       "unit": "EA",
-      "desc": "อุปกรณ์ข้อต่อท่อ",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e02\u0e49\u0e2d\u0e15\u0e48\u0e2d\u0e17\u0e48\u0e2d",
       "smm_section": "S10"
     },
     "IfcCableCarrier": {
       "rate": 640,
       "unit": "M",
-      "desc": "รางเคเบิลเทรย์ (300มม.)",
+      "desc": "\u0e23\u0e32\u0e07\u0e40\u0e04\u0e40\u0e1a\u0e34\u0e25\u0e40\u0e17\u0e23\u0e22\u0e4c (300\u0e21\u0e21.)",
       "smm_section": "V20"
     },
     "IfcCableCarrierSegment": {
       "rate": 640,
       "unit": "M",
-      "desc": "รางเคเบิลเทรย์ส่วนตรง",
+      "desc": "\u0e23\u0e32\u0e07\u0e40\u0e04\u0e40\u0e1a\u0e34\u0e25\u0e40\u0e17\u0e23\u0e22\u0e4c\u0e2a\u0e48\u0e27\u0e19\u0e15\u0e23\u0e07",
       "smm_section": "V20"
     },
     "IfcBeam": {
       "rate": 5600,
       "unit": "M",
-      "desc": "คานเหล็กรูปพรรณ I-Beam",
+      "desc": "\u0e04\u0e32\u0e19\u0e40\u0e2b\u0e25\u0e47\u0e01\u0e23\u0e39\u0e1b\u0e1e\u0e23\u0e23\u0e13 I-Beam",
       "smm_section": "G10"
     },
     "IfcColumn": {
       "rate": 10200,
       "unit": "M",
-      "desc": "เสาเหล็กรูปพรรณ",
+      "desc": "\u0e40\u0e2a\u0e32\u0e40\u0e2b\u0e25\u0e47\u0e01\u0e23\u0e39\u0e1b\u0e1e\u0e23\u0e23\u0e13",
       "smm_section": "G10"
     },
     "IfcSlab": {
       "rate": 2350,
       "unit": "M2",
-      "desc": "พื้น ค.ส.ล. หนา 250มม.",
+      "desc": "\u0e1e\u0e37\u0e49\u0e19 \u0e04.\u0e2a.\u0e25. \u0e2b\u0e19\u0e32 250\u0e21\u0e21.",
       "smm_section": "E10"
     },
     "IfcWall": {
       "rate": 1180,
       "unit": "M2",
-      "desc": "ผนังก่ออิฐบล็อก 150มม.",
+      "desc": "\u0e1c\u0e19\u0e31\u0e07\u0e01\u0e48\u0e2d\u0e2d\u0e34\u0e10\u0e1a\u0e25\u0e47\u0e2d\u0e01 150\u0e21\u0e21.",
       "smm_section": "F10"
     },
     "IfcWallStandardCase": {
       "rate": 1180,
       "unit": "M2",
-      "desc": "ผนังมาตรฐาน",
+      "desc": "\u0e1c\u0e19\u0e31\u0e07\u0e21\u0e32\u0e15\u0e23\u0e10\u0e32\u0e19",
       "smm_section": "F10"
     },
     "IfcCurtainWall": {
       "rate": 6200,
       "unit": "M2",
-      "desc": "ผนังกระจก",
+      "desc": "\u0e1c\u0e19\u0e31\u0e07\u0e01\u0e23\u0e30\u0e08\u0e01",
       "smm_section": "H10"
     },
     "IfcCovering": {
       "rate": 1520,
       "unit": "M2",
-      "desc": "วัสดุปูพื้น/ฝ้าเพดาน",
+      "desc": "\u0e27\u0e31\u0e2a\u0e14\u0e38\u0e1b\u0e39\u0e1e\u0e37\u0e49\u0e19/\u0e1d\u0e49\u0e32\u0e40\u0e1e\u0e14\u0e32\u0e19",
       "smm_section": "M10"
     },
     "IfcRoof": {
       "rate": 1950,
       "unit": "M2",
-      "desc": "หลังคาเหล็ก",
+      "desc": "\u0e2b\u0e25\u0e31\u0e07\u0e04\u0e32\u0e40\u0e2b\u0e25\u0e47\u0e01",
       "smm_section": "H60"
     },
     "IfcLightFixture": {
       "rate": 3950,
       "unit": "EA",
-      "desc": "โคมไฟ LED",
+      "desc": "\u0e42\u0e04\u0e21\u0e44\u0e1f LED",
       "smm_section": "V40"
     },
     "IfcOutlet": {
       "rate": 1020,
       "unit": "EA",
-      "desc": "เต้ารับไฟฟ้า",
+      "desc": "\u0e40\u0e15\u0e49\u0e32\u0e23\u0e31\u0e1a\u0e44\u0e1f\u0e1f\u0e49\u0e32",
       "smm_section": "V20"
     },
     "IfcDoor": {
       "rate": 23500,
       "unit": "EA",
-      "desc": "ชุดประตู",
+      "desc": "\u0e0a\u0e38\u0e14\u0e1b\u0e23\u0e30\u0e15\u0e39",
       "smm_section": "L20"
     },
     "IfcWindow": {
       "rate": 12800,
       "unit": "EA",
-      "desc": "หน้าต่าง",
+      "desc": "\u0e2b\u0e19\u0e49\u0e32\u0e15\u0e48\u0e32\u0e07",
       "smm_section": "L10"
     },
     "IfcBuildingElementProxy": {
       "rate": 6950,
       "unit": "EA",
-      "desc": "องค์ประกอบอื่นๆ",
+      "desc": "\u0e2d\u0e07\u0e04\u0e4c\u0e1b\u0e23\u0e30\u0e01\u0e2d\u0e1a\u0e2d\u0e37\u0e48\u0e19\u0e46",
       "smm_section": "P10"
     },
     "IfcFlowTerminal": {
       "rate": 28500,
       "unit": "EA",
-      "desc": "ปลายทางระบบปรับอากาศ",
+      "desc": "\u0e1b\u0e25\u0e32\u0e22\u0e17\u0e32\u0e07\u0e23\u0e30\u0e1a\u0e1a\u0e1b\u0e23\u0e31\u0e1a\u0e2d\u0e32\u0e01\u0e32\u0e28",
       "smm_section": "U10"
     },
     "IfcFurnishingElement": {
       "rate": 9800,
       "unit": "EA",
-      "desc": "เครื่องเรือน",
+      "desc": "\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e40\u0e23\u0e37\u0e2d\u0e19",
       "smm_section": "N10"
     },
     "IfcPlate": {
       "rate": 780,
       "unit": "M2",
-      "desc": "แผ่นเหล็ก",
+      "desc": "\u0e41\u0e1c\u0e48\u0e19\u0e40\u0e2b\u0e25\u0e47\u0e01",
       "smm_section": "G10"
     },
     "IfcMember": {
       "rate": 2600,
       "unit": "M",
-      "desc": "ชิ้นส่วนเหล็ก",
+      "desc": "\u0e0a\u0e34\u0e49\u0e19\u0e2a\u0e48\u0e27\u0e19\u0e40\u0e2b\u0e25\u0e47\u0e01",
       "smm_section": "G10"
     },
     "IfcRailing": {
       "rate": 2300,
       "unit": "M",
-      "desc": "ราวกันตก",
+      "desc": "\u0e23\u0e32\u0e27\u0e01\u0e31\u0e19\u0e15\u0e01",
       "smm_section": "L30"
     },
     "IfcStair": {
       "rate": 36800,
       "unit": "EA",
-      "desc": "บันได",
+      "desc": "\u0e1a\u0e31\u0e19\u0e44\u0e14",
       "smm_section": "L30"
     },
     "IfcStairFlight": {
       "rate": 18000,
       "unit": "EA",
-      "desc": "ช่วงบันได",
+      "desc": "\u0e0a\u0e48\u0e27\u0e07\u0e1a\u0e31\u0e19\u0e44\u0e14",
       "smm_section": "L30"
     },
     "IfcFooting": {
       "rate": 611.66,
       "unit": "M3",
-      "desc": "ฐานรากแผ่",
-      "smm_section": "D20"
+      "desc": "\u0e10\u0e32\u0e19\u0e23\u0e32\u0e01\u0e41\u0e1c\u0e48",
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 6950,
       "unit": "EA",
-      "desc": "เสาเข็ม",
+      "desc": "\u0e40\u0e2a\u0e32\u0e40\u0e02\u0e47\u0e21",
       "smm_section": "D30"
     },
     "IfcReinforcingBar": {
       "rate": 370,
       "unit": "KG",
-      "desc": "เหล็กเสริม",
+      "desc": "\u0e40\u0e2b\u0e25\u0e47\u0e01\u0e40\u0e2a\u0e23\u0e34\u0e21",
       "smm_section": "E30"
     },
     "IfcFlowSegment": {
       "rate": 980,
       "unit": "M",
-      "desc": "ท่อส่งระบบ",
+      "desc": "\u0e17\u0e48\u0e2d\u0e2a\u0e48\u0e07\u0e23\u0e30\u0e1a\u0e1a",
       "smm_section": "Y10"
     },
     "IfcFlowFitting": {
       "rate": 1650,
       "unit": "EA",
-      "desc": "ข้อต่อระบบท่อ",
+      "desc": "\u0e02\u0e49\u0e2d\u0e15\u0e48\u0e2d\u0e23\u0e30\u0e1a\u0e1a\u0e17\u0e48\u0e2d",
       "smm_section": "Y10"
     },
     "IfcFlowController": {
       "rate": 3680,
       "unit": "EA",
-      "desc": "อุปกรณ์ควบคุมการไหล",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e04\u0e27\u0e1a\u0e04\u0e38\u0e21\u0e01\u0e32\u0e23\u0e44\u0e2b\u0e25",
       "smm_section": "Y10"
     },
     "IfcEnergyConversionDevice": {
       "rate": 69500,
       "unit": "EA",
-      "desc": "อุปกรณ์แปลงพลังงาน",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e41\u0e1b\u0e25\u0e07\u0e1e\u0e25\u0e31\u0e07\u0e07\u0e32\u0e19",
       "smm_section": "T10"
     },
     "IfcFlowTreatmentDevice": {
       "rate": 9800,
       "unit": "EA",
-      "desc": "อุปกรณ์บำบัด",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e1a\u0e33\u0e1a\u0e31\u0e14",
       "smm_section": "Y10"
     },
     "IfcFlowMovingDevice": {
       "rate": 28500,
       "unit": "EA",
-      "desc": "อุปกรณ์ขับเคลื่อนของไหล",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e02\u0e31\u0e1a\u0e40\u0e04\u0e25\u0e37\u0e48\u0e2d\u0e19\u0e02\u0e2d\u0e07\u0e44\u0e2b\u0e25",
       "smm_section": "T10"
     },
     "IfcFlowStorageDevice": {
       "rate": 41000,
       "unit": "EA",
-      "desc": "อุปกรณ์เก็บกักของไหล",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e40\u0e01\u0e47\u0e1a\u0e01\u0e31\u0e01\u0e02\u0e2d\u0e07\u0e44\u0e2b\u0e25",
       "smm_section": "Y10"
     },
     "IfcElectricAppliance": {
       "rate": 3950,
       "unit": "EA",
-      "desc": "เครื่องใช้ไฟฟ้า",
+      "desc": "\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e43\u0e0a\u0e49\u0e44\u0e1f\u0e1f\u0e49\u0e32",
       "smm_section": "V20"
     },
     "IfcFurniture": {
       "rate": 12200,
       "unit": "EA",
-      "desc": "เฟอร์นิเจอร์",
+      "desc": "\u0e40\u0e1f\u0e2d\u0e23\u0e4c\u0e19\u0e34\u0e40\u0e08\u0e2d\u0e23\u0e4c",
       "smm_section": "N10"
     },
     "IfcOpeningElement": {
       "rate": 0,
       "unit": "EA",
-      "desc": "ช่องเปิด",
+      "desc": "\u0e0a\u0e48\u0e2d\u0e07\u0e40\u0e1b\u0e34\u0e14",
       "smm_section": ""
     },
     "IfcDistributionElement": {
       "rate": 4100,
       "unit": "EA",
-      "desc": "อุปกรณ์จ่าย",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e08\u0e48\u0e32\u0e22",
       "smm_section": "Y10"
     },
     "IfcFireSuppressionTerminal": {
       "rate": 3680,
       "unit": "EA",
-      "desc": "หัวสปริงเกอร์",
+      "desc": "\u0e2b\u0e31\u0e27\u0e2a\u0e1b\u0e23\u0e34\u0e07\u0e40\u0e01\u0e2d\u0e23\u0e4c",
       "smm_section": "S60"
     },
     "IfcAirTerminal": {
       "rate": 3100,
       "unit": "EA",
-      "desc": "หัวจ่ายลม/ช่องลม",
+      "desc": "\u0e2b\u0e31\u0e27\u0e08\u0e48\u0e32\u0e22\u0e25\u0e21/\u0e0a\u0e48\u0e2d\u0e07\u0e25\u0e21",
       "smm_section": "U10"
     },
     "IfcValve": {
       "rate": 2300,
       "unit": "EA",
-      "desc": "วาล์ว",
+      "desc": "\u0e27\u0e32\u0e25\u0e4c\u0e27",
       "smm_section": "S10"
     },
     "IfcAlarm": {
       "rate": 2850,
       "unit": "EA",
-      "desc": "อุปกรณ์แจ้งเตือนอัคคีภัย",
+      "desc": "\u0e2d\u0e38\u0e1b\u0e01\u0e23\u0e13\u0e4c\u0e41\u0e08\u0e49\u0e07\u0e40\u0e15\u0e37\u0e2d\u0e19\u0e2d\u0e31\u0e04\u0e04\u0e35\u0e20\u0e31\u0e22",
       "smm_section": "W50"
     },
     "IfcController": {
       "rate": 9800,
       "unit": "EA",
-      "desc": "ตัวควบคุมอาคาร",
+      "desc": "\u0e15\u0e31\u0e27\u0e04\u0e27\u0e1a\u0e04\u0e38\u0e21\u0e2d\u0e32\u0e04\u0e32\u0e23",
       "smm_section": "W60"
     },
     "IfcRamp": {
       "rate": 26200,
       "unit": "EA",
-      "desc": "ทางลาด",
+      "desc": "\u0e17\u0e32\u0e07\u0e25\u0e32\u0e14",
       "smm_section": "L30"
     },
     "IfcRampFlight": {
       "rate": 28600,
       "unit": "EA",
-      "desc": "ช่วงทางลาด",
+      "desc": "\u0e0a\u0e48\u0e27\u0e07\u0e17\u0e32\u0e07\u0e25\u0e32\u0e14",
       "smm_section": "L30"
     },
     "IfcBuildingElementPart": {
       "rate": 0,
       "unit": "EA",
-      "desc": "ส่วนประกอบ",
+      "desc": "\u0e2a\u0e48\u0e27\u0e19\u0e1b\u0e23\u0e30\u0e01\u0e2d\u0e1a",
       "smm_section": ""
     }
   },
@@ -315,7 +316,7 @@
     "HVAC_TECH": {
       "rate_per_day": 1500,
       "crew_size": 2,
-      "trade": "ช่างเทคนิคระบบปรับอากาศ (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e40\u0e17\u0e04\u0e19\u0e34\u0e04\u0e23\u0e30\u0e1a\u0e1a\u0e1b\u0e23\u0e31\u0e1a\u0e2d\u0e32\u0e01\u0e32\u0e28 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcDuct": 18,
         "IfcDuctSegment": 18,
@@ -329,7 +330,7 @@
     "PLUMBER": {
       "rate_per_day": 1350,
       "crew_size": 2,
-      "trade": "ช่างประปา (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e1b\u0e23\u0e30\u0e1b\u0e32 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcPipe": 25,
         "IfcPipeSegment": 25,
@@ -346,7 +347,7 @@
     "ELECTRICIAN": {
       "rate_per_day": 1450,
       "crew_size": 2,
-      "trade": "ช่างไฟฟ้า (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e44\u0e1f\u0e1f\u0e49\u0e32 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcCableCarrier": 30,
         "IfcCableCarrierSegment": 30,
@@ -361,7 +362,7 @@
     "STEEL_ERECTOR": {
       "rate_per_day": 1600,
       "crew_size": 4,
-      "trade": "ช่างเหล็ก (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e40\u0e2b\u0e25\u0e47\u0e01 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcBeam": 8,
         "IfcColumn": 6,
@@ -372,7 +373,7 @@
     "CONCRETE_GANG": {
       "rate_per_day": 1200,
       "crew_size": 6,
-      "trade": "ทีมงานคอนกรีต (ผสม)",
+      "trade": "\u0e17\u0e35\u0e21\u0e07\u0e32\u0e19\u0e04\u0e2d\u0e19\u0e01\u0e23\u0e35\u0e15 (\u0e1c\u0e2a\u0e21)",
       "productivity": {
         "IfcSlab": 35,
         "IfcFooting": 6,
@@ -385,7 +386,7 @@
     "MASON": {
       "rate_per_day": 1280,
       "crew_size": 3,
-      "trade": "ช่างก่อ (ฝีมือ) + กรรมกร",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e01\u0e48\u0e2d (\u0e1d\u0e35\u0e21\u0e37\u0e2d) + \u0e01\u0e23\u0e23\u0e21\u0e01\u0e23",
       "productivity": {
         "IfcWall": 12,
         "IfcWallStandardCase": 12,
@@ -396,7 +397,7 @@
     "CARPENTER": {
       "rate_per_day": 1350,
       "crew_size": 2,
-      "trade": "ช่างไม้ (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e44\u0e21\u0e49 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcDoor": 6,
         "IfcWindow": 6,
@@ -409,7 +410,7 @@
     "ROOFER": {
       "rate_per_day": 1450,
       "crew_size": 3,
-      "trade": "ช่างมุงหลังคา (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e21\u0e38\u0e07\u0e2b\u0e25\u0e31\u0e07\u0e04\u0e32 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcRoof": 25
       }
@@ -417,7 +418,7 @@
     "FINISHER": {
       "rate_per_day": 1100,
       "crew_size": 2,
-      "trade": "ช่างตกแต่ง (ฝีมือ)",
+      "trade": "\u0e0a\u0e48\u0e32\u0e07\u0e15\u0e01\u0e41\u0e15\u0e48\u0e07 (\u0e1d\u0e35\u0e21\u0e37\u0e2d)",
       "productivity": {
         "IfcCovering": 20,
         "IfcFurniture": 8,
@@ -427,34 +428,34 @@
     "LABORER": {
       "rate_per_day": 770,
       "crew_size": 1,
-      "trade": "กรรมกรทั่วไป",
+      "trade": "\u0e01\u0e23\u0e23\u0e21\u0e01\u0e23\u0e17\u0e31\u0e48\u0e27\u0e44\u0e1b",
       "productivity": {}
     }
   },
   "equipment": {
     "MOBILE_CRANE_20T": {
       "rate_per_day": 15200,
-      "desc": "เครน 20 ตัน"
+      "desc": "\u0e40\u0e04\u0e23\u0e19 20 \u0e15\u0e31\u0e19"
     },
     "TOWER_CRANE": {
       "rate_per_day": 18000,
-      "desc": "ทาวเวอร์เครน"
+      "desc": "\u0e17\u0e32\u0e27\u0e40\u0e27\u0e2d\u0e23\u0e4c\u0e40\u0e04\u0e23\u0e19"
     },
     "CONCRETE_PUMP": {
       "rate_per_day": 7800,
-      "desc": "รถปั๊มคอนกรีต"
+      "desc": "\u0e23\u0e16\u0e1b\u0e31\u0e4a\u0e21\u0e04\u0e2d\u0e19\u0e01\u0e23\u0e35\u0e15"
     },
     "SCISSOR_LIFT_8M": {
       "rate_per_day": 2350,
-      "desc": "กระเช้าไฮดรอลิก 8ม."
+      "desc": "\u0e01\u0e23\u0e30\u0e40\u0e0a\u0e49\u0e32\u0e44\u0e2e\u0e14\u0e23\u0e2d\u0e25\u0e34\u0e01 8\u0e21."
     },
     "WELDING_MACHINE": {
       "rate_per_day": 530,
-      "desc": "เครื่องเชื่อม 300A"
+      "desc": "\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e40\u0e0a\u0e37\u0e48\u0e2d\u0e21 300A"
     },
     "GENERATOR_5KVA": {
       "rate_per_day": 780,
-      "desc": "เครื่องปั่นไฟ 5KVA"
+      "desc": "\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e1b\u0e31\u0e48\u0e19\u0e44\u0e1f 5KVA"
     }
   },
   "equipment_allocation": {

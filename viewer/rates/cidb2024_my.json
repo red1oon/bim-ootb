@@ -182,7 +182,8 @@
       "rate": 75.28,
       "unit": "M3",
       "desc": "Foundation Footing",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 850,

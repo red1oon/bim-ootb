@@ -182,7 +182,8 @@
       "rate": 17.17,
       "unit": "M3",
       "desc": "Zapata de cimentacion",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 195,

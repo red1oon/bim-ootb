@@ -182,7 +182,8 @@
       "rate": 43.52,
       "unit": "M3",
       "desc": "Fundament",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 520,
@@ -446,7 +447,7 @@
     },
     "SCISSOR_LIFT_8M": {
       "rate_per_day": 135,
-      "desc": "Scherenhubbühne 8m"
+      "desc": "Scherenhubb\u00fchne 8m"
     },
     "WELDING_MACHINE": {
       "rate_per_day": 35,
@@ -832,7 +833,7 @@
     "N": "Moebel / Einrichtung",
     "P": "Diverse Bauteile",
     "Q": "Aussenanlagen",
-    "R": "Entwässerung",
+    "R": "Entw\u00e4sserung",
     "S": "Sanitaer",
     "T": "Heizung / Kuehlung",
     "U": "Lueftung / Klimatechnik",
