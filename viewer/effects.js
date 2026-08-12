@@ -3593,10 +3593,23 @@ async function setupEffects(A, renderer, scene, camera) {
     // user into their next orbit and the frame rate goes with it. Compares against the CURRENT nav
     // default (A._nightMaxLightsNav), not a stale literal, so §NIGHT_LIGHT_BUDGET_UP-style tuning
     // never silently breaks this reset.
-    if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
+    // §BAKE_INTERIOR_LIGHTS — two changes, same reasoning as §MAXQ_STAGE_KEEP:
+    // (1) during a MaxQ bake with staging KEPT, the still budget is per-BAKE state, not per-frame.
+    //     Handing it back here and re-raising it in the next startStillRefine rebuilt the whole
+    //     light set TWICE per captured frame (up to 200 -> nav -> up to 200), and a change in the
+    //     point-light COUNT is exactly what forces three.js's per-material shader recompile that
+    //     §NIGHT_LIGHT_CHURN measured as the expensive part. The bake is offline and has no 60fps
+    //     budget to protect, and the end-of-bake stop (keepStaging falsy) still hands it back, so
+    //     an interrupted or finished bake can never leak the still budget into navigation.
+    // (2) the re-select is gated on the INPUT (night mode + this building's fixtures), not on
+    //     A._nightLights.length — see the §NIGHT_STILL_LIGHTS gate below for the self-latching
+    //     zero that reading the previous output produced.
+    if (keepStaging && A._maxqActive) {
+      // bake keeps the still budget across frames — nothing to hand back until the bake ends
+    } else if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
-      if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
+      if (A._nightMode && A._nightFixtures && A._nightFixtures.length) A._nightUpdateLights();
     }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
     // Alt+J preview survives, only dropped back to nav-quality knobs; see effects_gi_poc.js).
@@ -4046,6 +4059,42 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowLensMesh = null;
   }
 
+  // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets the raised point-light set. The nav
+  // number is a 60fps budget (every light costs per-pixel work on every lit material every frame);
+  // a frozen still renders once and then sits there, so that budget does not apply to it. The
+  // user's report was that the night lights "have been weak" — part of that was simply that an
+  // 841-fixture building was being lit by the navigation count.
+  // §NIGHT_STILL_LIGHTS_REGATE (2026-07-27, found answering "how many POL did we employ?"): this
+  // was gated on A._emberEnabled, which §PHOTO_EMBER_DISARMED set to false — so the raised still
+  // budget had been DEAD CODE ever since, and every Alt+S still was lit by the NAVIGATION budget.
+  // Re-arming it made Alt+S measurably heavier (user: "alt-s also getting heavy"; §STILL_REFINE
+  // elapsedMs 4496 -> 6560 on Hospital), which is exactly what 4x the point lights costs:
+  // per-fragment lighting on every lit material, plus a shader recompile when the count changes.
+  // It shipped OFF by default for that reason.
+  // §NIGHT_LIGHT_BUDGET_UP (2026-08-07): RE-ARMED — user directive explicitly accepts this cost
+  // ("we got speed... throw all in, up to 50 as it is baking"), see tools.js A._nightStillBoost.
+  // §BAKE_INTERIOR_LIGHTS defect (b) (2026-08-12, tools.js carries the full measurement): this gate
+  // used to read `A._nightLights.length` — the OUTPUT of the LAST selection. A bake frame whose
+  // frustum happened to hold no fixture drove that output to 0, and from then on the gate was false
+  // forever, so _nightUpdateLights() was never called again and the rest of the film baked with
+  // ZERO fixture lighting (measured on a real headless Duplex bake: 18 lights at frame 0, 0 from
+  // frame 2 to the end of 28). The question this gate should ask is whether the BUILDING has
+  // fixtures to light and night mode is on — inputs, which cannot be zeroed by their own previous
+  // answer. Extracted into a function at the same time, so it can be called AFTER staging (which
+  // is what turns night mode on) instead of before it.
+  function _stillNightLightBoost() {
+    if (!(A._nightStillBoost && A._nightMode && A._nightFixtures && A._nightFixtures.length &&
+          typeof A._nightUpdateLights === 'function')) return;
+    A._nightMaxLights = A._nightMaxLightsStill;
+    A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
+    A._nightUpdateLights();
+    var _sel = A._nightLightSelectInfo || {};
+    console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
+      ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still' +
+      ' (placedFixtures=' + (_sel.placed == null ? '?' : _sel.placed + '/' + _sel.fixtures) +
+      ' inFrustum=' + (_sel.inView == null ? '?' : _sel.inView) + ')');
+  }
+
   A.startStillRefine = function() {
     if (!A._composer || !A._taaPass || A._stillRefineActive) return;
     // §GI_EXCLUSION (review finding 5): the GI preview composer and this TAA composer both render
@@ -4086,28 +4135,12 @@ async function setupEffects(A, renderer, scene, camera) {
     _glowOff();
     _glowOn(function(p) { return p.__exit; });
     _glowLensOn();
-    // §NIGHT_STILL_LIGHTS: if night mode is on, the still gets 4x the point lights. 12 is a 60fps
-    // navigation budget (every light costs per-pixel work on every lit material every frame); a
-    // frozen still renders once and then sits there, so that budget does not apply to it. The
-    // user's report is that the night lights "have been weak" — part of that is simply that a
-    // 841-fixture building was being lit by 12 of them.
-    // §NIGHT_STILL_LIGHTS_REGATE (2026-07-27, found answering "how many POL did we employ?"): this
-    // was gated on A._emberEnabled, which §PHOTO_EMBER_DISARMED set to false — so the 48-light still
-    // budget had been DEAD CODE ever since, and every Alt+S still was lit by the 12-light NAVIGATION
-    // budget. Re-arming it made Alt+S measurably heavier (user: "alt-s also getting heavy";
-    // §STILL_REFINE elapsedMs 4496 -> 6560 on Hospital), which is exactly what 4x the point lights
-    // costs: per-fragment lighting on every lit material, plus a shader recompile when the count
-    // changes. It shipped OFF by default for that reason.
-    // §NIGHT_LIGHT_BUDGET_UP (2026-08-07): RE-ARMED — user directive explicitly accepts this cost
-    // ("we got speed... throw all in, up to 50 as it is baking"), see tools.js A._nightStillBoost.
-    if (A._nightStillBoost &&
-        A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
-      A._nightMaxLights = A._nightMaxLightsStill;
-      A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
-      A._nightUpdateLights();
-      console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
-        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still');
-    }
+    // §BAKE_INTERIOR_LIGHTS ordering: the raise itself now runs AFTER _applyPhotoStaging() below —
+    // staging is what turns night mode ON in the first place (its amber-glow mechanism), so on the
+    // FIRST fold of a session this block ran before there was any night mode to boost and the frame
+    // was lit at the NAVIGATION budget with the 0.3 near-fade penalty still applied. That is a
+    // MaxQ frame-0 defect and an Alt+S first-press defect in one; both are fixed by ordering, not
+    // by a new mechanism. See _stillNightLightBoost() below.
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
     A._taaPass.accumulateIndex = -1;
@@ -4122,6 +4155,7 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillRestartLogged = false;
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
+    _stillNightLightBoost();   // §BAKE_INTERIOR_LIGHTS — after staging, which is what turns night on
     console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
     // §PHOTO_ENVMAP_STALE safety net: the fresh dusk env map is 2s-throttled (scene.js
     // A.updateSky), but a fast/cached accumulate can finish (and stop calling _reassertPhotoEnvMap
