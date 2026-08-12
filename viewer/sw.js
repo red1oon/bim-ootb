@@ -8,7 +8,10 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1018';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1019';   // bump on each deploy; per-change detail is the git commit message.
+// v1019 (2026-08-13) §NIGHT_LIGHT_NEARFIELD: tools.js NIGHT_LIGHT_DECAY 1.5->1.0 — real
+// PointLights were blowing out to a flat highlight right up close under ACES tonemapping (bright
+// from afar, "not evident" close up) — bump so returning browsers get the retuned falloff.
 // v1018 (2026-08-13) §PHOTO_AO_EDGE: N8AO intensity 2->4 in effects.js/effects_gi_poc.js (corner/
 // edge contact shadow had gone invisible after the v1016 screenSpaceRadius fix) — bump so
 // returning browsers get the new intensity instead of a cached pre-fix pass. This PR's own v1017
