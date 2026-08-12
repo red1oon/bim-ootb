@@ -3957,11 +3957,34 @@
 
   // Backbone phase extents over the SERIALIZABLE population — elements marked _t1Straggler are
   // excluded (see §TIER_STRAGGLER in _twoTierRemap: the measured, DAG-forced cross-phase tail).
+  // §TIER_SERIAL_BY_ZONE (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §TIER_SERIAL_BY_ZONE — Witness: viewer/tests/witness_tier_serial_zone.js W-TSZ) ─────────────
+  // The backbone barrier was GLOBAL: every Superstructure element ANYWHERE finished before any
+  // Architecture element started. Measured cost: the remap inflated the programme 1.71x-3.71x over
+  // the generative timeline on all 7 buildings (Hospital 314.9d -> 1168.7d), and on LTU it produced
+  // a 29%-of-film dead run.
+  //
+  // DERIVED FROM THE EXISTING RULING, not a new one. §TIER_SERIAL's own header quotes the user's
+  // 2026-08-02 words: "ARCH/STR should be exempt as they are the physical foundation. Separate
+  // unrelated disciplines can run parallel thereafter IF CONSTRUCTION PRACTICE PERMITS." Practice
+  // permits walls on level 1 while level 7 is still framing; a global barrier is a cruder reading
+  // of that sentence than a per-zone one. The physical guarantee is UNCHANGED and is not what this
+  // touches: _ogSupportSweep already gates every element individually against the real support DAG.
+  // This is the display grouping on top of it, and it now says "backbone order holds WITHIN a
+  // zone" instead of "across the whole model".
+  //
+  // The zone comes from §ZONE_INDEX (#1313) — the derived median-Z band, never a configured list,
+  // so this is generic to any IFC. A single-zone model degenerates to EXACTLY the old global
+  // behaviour, which is what keeps the change safe on models without storey data.
+  function _zoneOf(it) { return (it && it.storey) || '_ALL'; }
+
+  // ext[zone][phase] = {minS,maxE}. Straggler-excluded exactly as before.
   function _tier1Extents(items) {
     var ext = {};
     items.forEach(function (it) {
       if (it._t1Straggler || _TIER1_ORDER.indexOf(it.phase) < 0) return;
-      var x = ext[it.phase] || (ext[it.phase] = { minS: Infinity, maxE: -Infinity });
+      var z = ext[_zoneOf(it)] || (ext[_zoneOf(it)] = {});
+      var x = z[it.phase] || (z[it.phase] = { minS: Infinity, maxE: -Infinity });
       if (it.s < x.minS) x.minS = it.s;
       if (it.e > x.maxE) x.maxE = it.e;
     });
@@ -3976,16 +3999,20 @@
   // governed purely by _tierAuditRegate instead.
   function _tier1Serialize(items) {
     var ext = _tier1Extents(items);
-    var deltas = {}, prevEnd = -Infinity;
-    _TIER1_ORDER.forEach(function (ph) {
-      var x = ext[ph]; if (!x) return;   // phase absent (e.g. HHS models no Substructure)
-      var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
-      deltas[ph] = d;
-      prevEnd = x.maxE + d;
-    });
+    var deltas = {};                     // deltas[zone][phase]
+    for (var z in ext) {
+      var zd = deltas[z] = {}, prevEnd = -Infinity;
+      _TIER1_ORDER.forEach(function (ph) {
+        var x = ext[z][ph]; if (!x) return;   // phase absent in THIS zone (common: no Substructure upstairs)
+        var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
+        zd[ph] = d;
+        prevEnd = x.maxE + d;
+      });
+    }
     items.forEach(function (it) {
       if (it._t1Straggler) return;       // stragglers ride the regate, never the group shift
-      var d = deltas[it.phase];
+      var zd = deltas[_zoneOf(it)];
+      var d = zd && zd[it.phase];
       if (d) { it.s += d; it.e += d; }
     });
     return deltas;
@@ -3994,12 +4021,17 @@
   // 0 = the Tier-1 chain is strictly serial: for consecutive PRESENT backbone phases, phase k's
   // last end <= phase k+1's first start (transitive across the chain — each window is well-formed).
   // Straggler-excluded by _tier1Extents; the straggler count itself is reported, never hidden.
+  // §TIER_SERIAL_BY_ZONE: counted WITHIN each zone and summed. W-TS-1's bar is unchanged in
+  // meaning — "the backbone chain is serial" — but its scope is now the zone, which is the whole
+  // point of the change; a single-zone model reduces to the identical global count.
   function _tier1Protrusion(items) {
     var ext = _tier1Extents(items);
-    var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
     var overlapping = 0;
-    for (var i = 0; i + 1 < present.length; i++) {
-      if (ext[present[i]].maxE > ext[present[i + 1]].minS) overlapping++;
+    for (var z in ext) {
+      var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
+      for (var i = 0; i + 1 < present.length; i++) {
+        if (ext[z][present[i]].maxE > ext[z][present[i + 1]].minS) overlapping++;
+      }
     }
     return overlapping;
   }
@@ -4301,15 +4333,17 @@
       if (!overlap) break;
       // mark this round's DAG-forced cross-phase elements, then re-serialize without them
       var ext = _tier1Extents(items);
-      var present = _TIER1_ORDER.filter(function (ph) { return ext[ph]; });
       var marked = 0;
-      for (var i = 0; i + 1 < present.length; i++) {
-        var ph = present[i], nextMinS = ext[present[i + 1]].minS;
-        if (ext[ph].maxE <= nextMinS) continue;
-        items.forEach(function (it) {
-          if (it._t1Straggler || it.phase !== ph) return;
-          if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
-        });
+      for (var z in ext) {                       // §TIER_SERIAL_BY_ZONE: absorb per zone
+        var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
+        for (var i = 0; i + 1 < present.length; i++) {
+          var ph = present[i], nextMinS = ext[z][present[i + 1]].minS, zk = z;
+          if (ext[z][ph].maxE <= nextMinS) continue;
+          items.forEach(function (it) {
+            if (it._t1Straggler || it.phase !== ph || _zoneOf(it) !== zk) return;
+            if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
+          });
+        }
       }
       dagWins += marked;
       if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
@@ -4321,18 +4355,28 @@
     // Uniform later-shift only: safe by construction, since pushing every Tier-2 element later by
     // the SAME amount preserves all of Tier 2's own internal order and only pushes starts further
     // past their already-satisfied support minimum, never before it.
-    var tier1End = -Infinity, tier2MinStart = Infinity;
+    // §TIER_SERIAL_BY_ZONE: "Tier 2 THEREAFTER" is now evaluated per zone — MEP on a floor waits
+    // for that floor's backbone, not for the whole building's. The user's same-day correction
+    // ("after Tier 1 finishes, not concurrent with it") is preserved in its zone: within any zone
+    // no Tier-2 element starts before that zone's Tier-1 is complete. A single-zone model is
+    // byte-identical to the previous global shift.
+    var t1EndZ = {}, t2MinZ = {};
     items.forEach(function (it) {
-      if (_TIER1_ORDER.indexOf(it.phase) >= 0) { if (it.e > tier1End) tier1End = it.e; }
-      else if (it.s < tier2MinStart) tier2MinStart = it.s;
+      var z = _zoneOf(it);
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) {
+        if (!(z in t1EndZ) || it.e > t1EndZ[z]) t1EndZ[z] = it.e;
+      } else if (!(z in t2MinZ) || it.s < t2MinZ[z]) t2MinZ[z] = it.s;
     });
     var tier2Shift = 0;
-    if (isFinite(tier1End) && isFinite(tier2MinStart) && tier2MinStart < tier1End) {
-      tier2Shift = tier1End - tier2MinStart;
-      items.forEach(function (it) {
-        if (_TIER1_ORDER.indexOf(it.phase) < 0) { it.s += tier2Shift; it.e += tier2Shift; }
-      });
-    }
+    items.forEach(function (it) {
+      if (_TIER1_ORDER.indexOf(it.phase) >= 0) return;
+      var z = _zoneOf(it);
+      // A zone with Tier-2 but no Tier-1 (MEP in an unbanded pocket) has nothing to wait for here;
+      // _ogSupportSweep still gates it individually, so it is left where the generative layer put it.
+      if (!(z in t1EndZ)) return;
+      var d = t1EndZ[z] - t2MinZ[z];
+      if (d > 0) { it.s += d; it.e += d; if (d > tier2Shift) tier2Shift = d; }
+    });
     var base = Infinity, endAll = -Infinity, ext2 = {};
     items.forEach(function (it) {
       if (it.s < base) base = it.s;
@@ -5139,7 +5183,8 @@
       var _ts = _sched[el.guid];
       return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
         bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
-        cls: el.cls, seq: el.seq, phase: el.phase };
+        cls: el.cls, seq: el.seq, phase: el.phase,
+        storey: el.storey };   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
     });
     var _twStats = _twoTierRemap(_twItems);
     // §MIDAIR_REPAIR (2026-08-12) — last stop before kernel_ops: nothing may appear before the
