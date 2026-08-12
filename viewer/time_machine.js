@@ -8033,12 +8033,35 @@
   // A bake needs Time Machine's op-log without the user having pressed the button. Same wait shape
   // as tmJumpToOrder's own whenReady() — activate() is async (it may have to inject the derived
   // timeline first), so poll for the ops rather than assuming they are there on the next line.
+  //
+  // §CPE_BUILDUP_ARM_GATE (2026-08-12, bim-compiler prompts/CINEMA_PATH_EDITOR.md — Witness:
+  // W-ARM-GATE / witness_cpe_buildup_arm_gate.js). This used to poll `_ops.length` alone, which is
+  // truthy for ONE stale op. Measured on the user's own Hospital run: at arm time `_ops` held
+  // exactly the `BUILDING_OPEN` kernel op (`§TM_OPS_CHECK total=1 place=0`) and the epoch had never
+  // been computed (`_projectStart == _projectEnd == 0`), so this resolved true against a zero-span
+  // 1970 timeline. The rehearsal then armed on it (`§CPE_PREVIEW_BUILDUP armed ops=1 placed=0`) and
+  // every frame's cursor `projectStart + u*(projectEnd-projectStart)` evaluated to the SAME 0 —
+  // 497 frames of `§PERF_TRAVERSE span=0h`, camera flying, nothing building. The real 63,415-op
+  // timeline finished loading (`§WRITE_LOOP_TIMING rows=63415`) seconds AFTER the flight started.
+  // Readiness is "the timeline has a real SPAN", not "the array is non-empty" — the identical bar
+  // ghostGroundArm already applied to the same state (`§GHOST_GROUND skip reason=buildup span is 0`)
+  // and the only consumer that refused it. This is NOT a new wait: the existing 60x500ms poll now
+  // waits for the condition it always meant. A real timeline always has span > 0 (`_projectStart =
+  // _ops[0].start_ts - 1`, `_projectEnd` = max end_ts), so this cannot reject a usable state.
+  function _bakeTimelineReady() { return !!_ops.length && _projectEnd > _projectStart; }
   window.tmActivateForBake = function() {
     return new Promise(function(resolve) {
-      if (_active && _ops.length) return resolve(true);
+      if (_active && _bakeTimelineReady()) return resolve(true);
       if (!_active) { try { activate(); } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); } }
       var n = 0, iv = setInterval(function() {
-        if (_ops.length || ++n > 60) { clearInterval(iv); resolve(!!_ops.length); }
+        if (_bakeTimelineReady() || ++n > 60) {
+          clearInterval(iv);
+          var ok = _bakeTimelineReady();
+          if (!ok) console.warn('§CPE_BUILDUP_ARM_GATE timeout ops=' + _ops.length +
+            ' projectStart=' + _projectStart + ' projectEnd=' + _projectEnd +
+            ' — no timeline with a real span after ' + n + ' polls; refusing to arm a cursor that cannot move');
+          resolve(ok);
+        }
       }, 500);
     });
   };
@@ -8304,6 +8327,18 @@
   // was written to remove.
   window.tmFollowTimeline = function() {
     if (!_ops.length) { console.warn('§CPE_BUILDUP_SOURCE reject reason=no-ops'); return null; }
+    // §CPE_BUILDUP_ARM_GATE guard 2 (see tmActivateForBake above for the measured failure): a
+    // timeline with no SPAN cannot drive a cursor — `projectStart + u*(projectEnd-projectStart)` is
+    // the same value at every u, so the film freezes on frame 0's state and no log says why. Refuse
+    // it loudly instead of handing back a bkState the caller will faithfully follow to nowhere. The
+    // BAKE (cinema_maxq.js) calls this same verb, so this also stops a film silently recording a
+    // static building. ghostGroundArm/dayCounterLiveStart already refuse this exact state.
+    if (!(_projectEnd > _projectStart)) {
+      console.warn('§CPE_BUILDUP_SOURCE reject reason=zero-span ops=' + _ops.length +
+        ' projectStart=' + _projectStart + ' projectEnd=' + _projectEnd +
+        ' — every frame would ask for the same cursor; the timeline is not loaded yet');
+      return null;
+    }
     var ss = window.tmScheduleSource();
     if (ss.source === 'captured' && typeof window.tmOrderBySchedule === 'function') {
       var cap = window.tmOrderBySchedule();
@@ -8325,6 +8360,15 @@
         if (guid && have[guid]) placed++; else noGeom++;
       }
     } catch (e) { placed = _ops.length; noGeom = 0; }   // counting failed → do not block the film
+    // §CPE_BUILDUP_ARM_GATE guard 2b: `placed` is this function's own count of ops that can actually
+    // APPEAR. Zero of them means the reveal has nothing to reveal no matter where the cursor goes —
+    // the user's failing run reported exactly `placed=0` and armed anyway. A counting FAILURE above
+    // degrades to placed=_ops.length (never 0), so this only ever fires on a real, measured zero.
+    if (placed === 0) {
+      console.warn('§CPE_BUILDUP_SOURCE reject reason=nothing-placed ops=' + _ops.length +
+        ' noGeom=' + noGeom + ' — no op in this timeline maps to geometry; there is nothing to build');
+      return null;
+    }
     var iso = function(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '?'; };
     console.log('§CPE_BUILDUP_SOURCE mode=T reason=generated-timeline ops=' + _ops.length +
       ' placed=' + placed + ' noGeom=' + noGeom +
