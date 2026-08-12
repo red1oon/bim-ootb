@@ -4949,9 +4949,11 @@
     // when the two inline copies were consolidated 2026-08-10).
     var _lp = _promoteRoofLoadPath(elements);
     // §4D_ROOF_LOAD_PATH witness hook (double-underscore debug convention, same as __tmGanttShift):
-    // on the _cap path the ops' `phase` param is overwritten with the task NAME (p.phase = w.name
-    // below), so promotion is no longer observable through kernel_ops — witness_4d_roof_load_path
-    // G-RLP-2/3 read the promoted set here instead. Refreshed on every injectGantt run.
+    // witness_4d_roof_load_path G-RLP-2/3 read the promoted set here rather than from kernel_ops.
+    // This hook was ADDED because the _cap path used to overwrite the ops' `phase` param with the
+    // task NAME, hiding the promotion from kernel_ops; §GANTT_PHASE_CLOBBER (2026-08-12, ~:5238)
+    // ends that clobber, so `phase` is honest in kernel_ops again — the hook stays because reading
+    // the promoted set directly is still the cheaper, more direct assertion. Refreshed every run.
     window.__tmLoadPathPromoted = _lp.guids;
     if (_lp.total) console.log('§GANTT_OVERRIDE ' + _lp.total +
       ' slabs promoted to roof role (seq=8) by load path — base_z above the average midheight of their XY-overlapping walls' +
@@ -5235,7 +5237,24 @@
           var _le = p._end_ts || (_ls + 60000);
           if (_ls < _lsMin) _lsMin = _ls;
           if (_le > _leMax) _leMax = _le;
-          p.phase = w.name;                         // real task name → shows in mini-Gantt
+          // §GANTT_PHASE_CLOBBER (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md —
+          // Witness: W-PHASE-KEY / witness_gantt_phase_palette.js). This line used to be
+          // `p.phase = w.name`, i.e. it wrote the TASK NAME into the field the whole drawer keys
+          // on. Harmless while task names looked like phases; destructive since zone-level
+          // authoring became the default, because materializeZones names its tasks
+          // "<Phase> — <Storey>". Measured on the user's Hospital session, every op's phase became
+          // "Architecture — Level 1" and three separate things broke at once:
+          //   1. PHASE_COLORS[task.phase] || '#888'  -> all 35 bars grey (also PHASE_INK/PHASE_SHORT)
+          //   2. _phaseRank() = _ROW_PHASE_ORDER.indexOf(phase) -> -1 for every row, so the sort
+          //      falls through to alphabetical: §GANTT_ROW_ORDER printed Architecture … Substructure
+          //      5th — §GANTT_ROW_ORDER (K1)'s ORIGINAL reported bug, back verbatim and silent.
+          //   3. tm-dash-phases buckets by the same field and filters through PHASE_ORDER -> zero
+          //      matches, no §DASH_PHASE line in the entire session, phase progress renders empty.
+          // The name was never made visible by this line anyway: buildGanttTasks reads it from the
+          // task index into `taskName` (~:5694) and the bar detail header renders
+          // `bar.taskName || (bar.phase + ' — ' + bar.storey)` (~:6716). So keep the name, in its
+          // own field, and leave the phase alone — the drawer needs BOTH, not one overwriting the other.
+          p.taskName = w.name;                      // real task name → mini-Gantt detail header
           _allScheduled.push({ guid: g, s: _ls, e: _le, params: p, task: tid,
             bz: _el ? _el.base_z : 0, tz: _el ? _el.top_z : 0,
             x0: _el ? _el.x0 : 0, x1: _el ? _el.x1 : 0,
