@@ -54,23 +54,48 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 function finish() { console.log('\n§MIDAIR_ZERO_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(fail ? 1 : 0); }
 
-function sliceFn(src, name) {
-  const idx = src.indexOf('function ' + name + '(');
-  if (idx < 0) throw new Error(name + ' not found');
-  let depth = 0, i = idx, seenOpen = false;
-  for (; i < src.length; i++) {
-    if (src[i] === '{') { depth++; seenOpen = true; }
-    else if (src[i] === '}') { depth--; if (seenOpen && depth === 0) return src.slice(idx, i + 1); }
+// §DAY_GAP_TAIL (2026-08-12) — `which` selects among SAME-NAMED definitions. time_machine.js
+// defines _midairRepair TWICE (:4457-delegating and :4660-inlined). JS function declarations hoist,
+// so the LAST one is what the browser executes; this witness sliced the FIRST and was therefore
+// judging a copy that never runs. Same class of defect as the one this lane already recorded ("the
+// tier witness was silently testing nothing"), so it is fixed here rather than noted.
+function sliceFn(src, name, which, optional) {
+  let from = 0;
+  for (let pass = 0; pass <= (which || 0); pass++) {
+    const idx = src.indexOf('function ' + name + '(', from);
+    if (idx < 0) { if (optional) return null; throw new Error(name + ' #' + (which || 0) + ' not found'); }
+    let depth = 0, i = idx, seenOpen = false;
+    for (; i < src.length; i++) {
+      if (src[i] === '{') { depth++; seenOpen = true; }
+      else if (src[i] === '}') { depth--; if (seenOpen && depth === 0) break; }
+    }
+    if (i >= src.length) throw new Error('unbalanced braces for ' + name);
+    if (pass === (which || 0)) return src.slice(idx, i + 1);
+    from = i + 1;
   }
-  throw new Error('unbalanced braces for ' + name);
+  throw new Error('unreachable');
 }
+// how many _midairRepair definitions exist — the LAST is ship truth (declaration hoisting)
+let _mrCount = 0, _mrFrom = 0;
+for (;;) { const k = tmSrc.indexOf('function _midairRepair(', _mrFrom); if (k < 0) break; _mrCount++; _mrFrom = k + 1; }
 const tierOrderLine = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];";
+// §ZONE_INDEX (#1313) + §TIER_SERIAL_BY_ZONE (#1314) added module-level helpers that
+// _buildXrayElements / _tier1Extents / _twoTierRemap now call. They were never added to this slice
+// list, so this witness has thrown `ReferenceError: _zoneIndex is not defined` — and exited before
+// measuring a single building — since #1313 landed. Sliced optionally, exactly as
+// bim-compiler/scripts/probe_arch_start.js does, so older revisions still run unchanged.
+const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
 const sliced = [tierOrderLine,
+  (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
+  sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
   sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
   sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
-  sliceFn(tmSrc, '_midairAudit'), sliceFn(tmSrc, '_midairRepair')].join('\n');
+  sliceFn(tmSrc, '_midairAudit'), sliceFn(tmSrc, '_midairRepair', _mrCount - 1)].join('\n');
+console.log('§MIDAIR_SLICE _midairRepairDefs=' + _mrCount + ' slicing #' + (_mrCount - 1) +
+  ' (the LAST definition — what declaration hoisting makes the browser run)' +
+  ' zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)'));
 
 // W-MZ-5 — the repair must be called on the kernel_ops path, not merely defined
 assert(/_twoTierRemap\(_twItems\);[\s\S]{0,600}_midairRepair\(_twItems\)/.test(tmSrc),
@@ -133,6 +158,11 @@ function census(items) {
         seen[j] = 1;
         if (S.bz < lowest) lowest = S.bz;
         const bearing = S.bz < T.bz - EPS && S.tz >= T.bz - GAP;
+        // §DAY_GAP_TAIL (2026-08-12): this mirrors _contactGraph's carrier clause EXACTLY,
+        // including its lower-bound-only band (`S.bz >= T.tz - GAP` with no upper bound, so any
+        // element at any height above T counts). That asymmetry vs hangGate/_tierAuditRegate was
+        // measured and deliberately LEFT ALONE — see the §DAY_GAP_TAIL entry in
+        // bim-compiler prompts/4D_SCHEDULE_PERFECTION.md for the numbers that rejected changing it.
         const carrier = S.bz >= T.tz - GAP && S.tz > T.tz + EPS;
         const embedded = S.bz <= T.bz + EPS && S.tz >= T.tz - EPS;
         if (!bearing && !carrier && !embedded) continue;
