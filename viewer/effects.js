@@ -3430,16 +3430,24 @@ async function setupEffects(A, renderer, scene, camera) {
   var STILL_AO_ENABLED = true;
   var STILL_AO_FRAMES = 24;       // n8ao accumulates 1 AO sample-set per still frame; 24 ≈ converged
   // §PHOTO_AO_TUNE (2026-07-16, real-GPU A/B at STILL quality — PHOTO_AO_TUNE_r{8_i6,5_i4,3_i4,
-  // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6
-  // KEPT. The review's earlier "broad mottle / reads busy" verdict was measured over LIVE
-  // navigation, where every frame resets the AO accumulation (markDirty→firstFrame) and shows raw
-  // single-frame noise — at still quality the accumulation fully converges (24+ frames, frozen
-  // camera) and the same radius reads as clean depth: courtyard corners, roof openings, skyline
-  // masses, base contact. Smaller radii (3/1.5) are near-invisible at whole-building establishing
-  // distance — consistent with §GI_POC_RADIUS_TEST's original sub-pixel finding. Perf at still:
-  // r8 ≈ 30ms/frame, r3 ≈ 6.5ms/frame (RTX 4060, 1280x800) — both trivial for a one-shot still.
-  var STILL_AO_RADIUS = 8;
-  var STILL_AO_INTENSITY = 6;
+  // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6 was
+  // kept THEN — the earlier "broad mottle / reads busy" verdict it was compared against was
+  // measured over LIVE navigation (raw, unconverged single-frame AO), and at still quality the same
+  // radius read as clean contact shadow instead. Smaller radii (3/1.5) were near-invisible at
+  // whole-building establishing distance in that same test.
+  // §PHOTO_AO_DARK (2026-08-13, user live verdict: "Alt-G too dark... affecting Alt-S and movie" —
+  // full trace in prompts/PHOTOREAL_STILL_RENDER.md §PHOTO_AO_TUNING): the 2026-07-16 test compared
+  // this radius/intensity against a WORSE (raw-noise) baseline, at ONE lighting condition, and
+  // never against the darkness the user is now flagging directly, nor against §SUN_ARC's dusk
+  // sweep (shipped 2026-08-11, after this constant was set) which compounds AO darkening on the
+  // dim half of every Alt+C film. A live user verdict on "look" supersedes an old A/B per this
+  // project's standing rule (the look is the user's call) — radius 8→4, intensity 6→2, matching
+  // the same retune applied to the standalone Alt+G preview (effects_gi_poc.js). Denoise raised
+  // toward n8ao's own library defaults (aoSamples 8/16, denoiseSamples 4/12→8, denoiseRadius
+  // 6→12 below) to cut residual noise too — free here, this is an offline accumulate, not a
+  // real-time cost. Verify live on the next round trip, not with a synthetic re-A/B.
+  var STILL_AO_RADIUS = 4;
+  var STILL_AO_INTENSITY = 2;
   var _stillAOPromise = null, _stillAORAF = null, _stillAODepthDirty = true;
   function _buildStillAO() {
     return Promise.all([
@@ -3460,8 +3468,9 @@ async function setupEffects(A, renderer, scene, camera) {
       n8.configuration.aoRadius = STILL_AO_RADIUS;
       n8.configuration.intensity = STILL_AO_INTENSITY;
       n8.configuration.aoSamples = 8;
-      n8.configuration.denoiseSamples = 4;
-      n8.configuration.denoiseRadius = 6;
+      n8.configuration.denoiseSamples = 8;        // §PHOTO_AO_DARK: 4→8, toward n8ao's own library
+      n8.configuration.denoiseRadius = 12;        // default (8/12) — cuts residual noise, free at
+                                                   // still/bake (offline accumulate, not real-time)
       n8.configuration.halfRes = false;           // still-frame quality
       n8.renderToScreen = false;
       var copyMat = new THREE.ShaderMaterial({

@@ -31,12 +31,19 @@ async function setupGIPoc(A, renderer, scene, camera) {
       composer.addPass(new _pp.RenderPass(scene, camera));
 
       var n8aoPass = new _pp.N8AOPostPass(scene, camera, window.innerWidth, window.innerHeight);
-      n8aoPass.configuration.aoRadius = 8;         // §GI_POC_RADIUS_TEST: bumped from 1.5 — at a whole-
+      n8aoPass.configuration.aoRadius = 4;         // §GI_POC_RADIUS_TEST: bumped from 1.5 — at a whole-
       // building establishing-shot distance (envelope ~68m on Terminal), a 1.5m radius produces a
       // sub-pixel contact band, invisible in practice (confirmed: no visible difference vs staging-
       // only in a direct A/B test). Testing a building-scale radius instead — architectural AO
       // radii for exterior shots commonly run several meters, not sub-2m interior-detail scale.
-      n8aoPass.configuration.intensity = 6;
+      // §PHOTO_AO_DARK (2026-08-13, user live verdict: "Alt-G too dark... affecting Alt-S and
+      // movie" — supersedes the still-quality-only 2026-07-16 A/B kept in effects.js's own
+      // STILL_AO_RADIUS/INTENSITY comment; see prompts/PHOTOREAL_STILL_RENDER.md §PHOTO_AO_TUNING
+      // for the full trace). radius 8→4, intensity 6→2 — this app's own §GI_CINEMA_PRESET comment
+      // already frames radius=8/intensity=6 as a still/converged-only choice, never validated as a
+      // general "always this dark" default; the look is the user's call per this project's
+      // standing rule, verify live on the next round trip rather than re-run a synthetic A/B here.
+      n8aoPass.configuration.intensity = 2;
       n8aoPass.configuration.aoSamples = 8;       // still-preview budget, not tuned for real-time nav
       // §GI_POC_GHOST_FIX: N8AO's accumulationRenderTarget is ONLY cleared on camera movement when
       // configuration.accumulate=true (read from n8ao's own source — the `else` branch that calls
