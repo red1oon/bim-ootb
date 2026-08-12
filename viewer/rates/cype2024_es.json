@@ -179,8 +179,8 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 73,
-      "unit": "EA",
+      "rate": 17.17,
+      "unit": "M3",
       "desc": "Zapata de cimentacion",
       "smm_section": "D20"
     },

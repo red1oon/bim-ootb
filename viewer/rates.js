@@ -46,7 +46,26 @@ var RATES = {
   IfcRailing:{rate:280,unit:'M',desc:'Railing'},
   IfcStair:{rate:4500,unit:'EA',desc:'Staircase'},
   IfcStairFlight:{rate:2200,unit:'EA',desc:'Stair Flight'},
-  IfcFooting:{rate:320,unit:'EA',desc:'Foundation Footing'},
+  // §FOOTING_M3 (2026-08-12) — EA→M3 is a UNIT correction, not a new commercial rate. A footing
+  // priced per-EA charges a 0.26 m3 pad and a 602 m3 raft identically; measured across the 7 shipped
+  // buildings IfcFooting is 821 real elements, 0.2595..602.0946 m3 — a 2320x spread billed flat.
+  // The m3 rate is DERIVED from the EA rate this table already carried, never invented:
+  //   rate_m3 = rate_EA / avgVolume  = 320 / 4.25074802767622 = 75.280868 → 75.28
+  // avgVolume is the class-wide mean of _VOL_EXPR (t.bbox_x*t.bbox_y*t.bbox_z — the same volume
+  // foldCost/_volumeWeighting already treat as canonical) over all 821 elements:
+  //   SELECT COUNT(*), SUM(t.bbox_x*t.bbox_y*t.bbox_z) FROM elements_meta m
+  //   JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='IfcFooting'
+  //   AND t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (t.bbox_x*t.bbox_y*t.bbox_z)>0
+  //   -- over Terminal/Hospital/Duplex/HHS_Office_Federated/Clinic/LTU_AHouse/JKR
+  //   -- => 821 | 3489.86413072218 | avg 4.25074802767622
+  // So sum(rate_m3 * volume) over that population == rate_EA * 821 EXACTLY (262,720 either way,
+  // this table's currency): the same class total, now distributed by real size. Per BUILDING it
+  // shifts by that building's own avg/class avg (Hospital 5.14/4.25 = +21%, Clinic 1.69/4.25 = -60%)
+  // — that shift IS the correction, and it is the only honest reading of a class-wide unit change.
+  // Every rates/*.json template carries the same conversion against its own EA rate.
+  // IfcPile stays EA: ZERO IfcPile elements exist in any shipped building, so there is no measured
+  // avgVolume to divide by and any m3 rate would be invented. Reprice it when a model ships piles.
+  IfcFooting:{rate:75.28,unit:'M3',desc:'Foundation Footing'},
   IfcPile:{rate:850,unit:'EA',desc:'Foundation Pile'},
   IfcReinforcingBar:{rate:45,unit:'KG',desc:'Reinforcing Steel'},
   IfcFlowSegment:{rate:120,unit:'M',desc:'Flow Segment'},
@@ -110,6 +129,22 @@ var LABOR_RATES = {
     productivity: {IfcBeam:8,IfcColumn:6,IfcPlate:12,IfcMember:10}
   },
   CONCRETE_GANG: {
+    // ⚠ §FOOTING_M3 OPEN ITEM (2026-08-12) — IfcFooting:6 is NOT converted, deliberately, and this
+    // note exists so the consequence is not lost. `productivity` is read with TWO different
+    // quantity semantics by two live paths off the same window.LABOR_RATES object:
+    //   4D  schedule_author._installSecs: 28800/prod seconds PER ELEMENT (then x a mean-1 ratio)
+    //   5D  boq_charts/mep_report/mep_qto_populate calcLabor(cls, qty): days = qty / prod, where
+    //       qty is whatever RATES[cls].unit selects — count for EA, m2 for M2, now m3 for M3.
+    // So repricing IfcFooting EA→M3 silently re-reads "6" from 6 footings/day to 6 m3/day, and the
+    // 5D LABOUR column for footings rises exactly avgVolume-fold: measured 119,045 → 506,031 over
+    // the 821 shipped footings (4.25x; Hospital 80,185→411,897, LTU_AHouse 23,925→68,145, Clinic
+    // 13,920→23,592, Duplex 1,015→2,397; equipment unaffected, IfcFooting has no EQUIPMENT_ALLOCATION).
+    // The MATERIAL column is unaffected and provably neutral — see the §FOOTING_M3 note on RATES.
+    // The neutral conversion would be 6 x 4.25074802767622 = 25.50 m3/day, but that same key drives
+    // the 4D path, where it would shrink every footing task 4.25x and move the programme. Which of
+    // the two readings is intended is an estimating decision, so it is NOT guessed here.
+    // NOTE this ambiguity is pre-existing, not created by §FOOTING_M3: every M/M2-priced class
+    // (IfcSlab:35, IfcWall, IfcCovering…) already runs the same split today. Footing just joined them.
     rate_per_day: 145, crew_size: 6, max_crews: 3, trade: 'Concrete Gang (Mixed)',
     productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3}
   },

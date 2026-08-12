@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1005';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1009';   // bump on each deploy; per-change detail is the git commit message.
+// §FOOTING_M3 (2026-08-12): REQUIRED, not routine. rates.js and rates/cidb2024_my.json are both in
+// PRECACHE_ASSETS and served CACHE-FIRST, so a client holding the old cache would keep the EA-priced
+// IfcFooting forever — the repricing would never reach it. v1005→v1009 also clears this branch being
+// behind origin/main (v1008); on merge conflict take the HIGHER, per CLAUDE.md.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

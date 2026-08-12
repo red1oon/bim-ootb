@@ -405,7 +405,12 @@ async function initViewer() {
             "SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * " +
             "CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) " +
             "WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) " +
-            "ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area " +
+            "ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area, " +
+            // §FOOTING_M3 (2026-08-12): 6th column. IfcFooting is now priced unit:'M3' (rates.js),
+            // and boq_charts' M3 branch bills this SUM. Without it the relay path silently fell
+            // through to count and under-billed the class by avgVolume (5.66x on cidb rates).
+            // Same expression as foldCost/_volumeWeighting/analysis_sidecar vol_m3 — one volume.
+            "SUM(t.bbox_x * t.bbox_y * t.bbox_z) as total_vol " +
             "FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid " +
             "WHERE m.building = '" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 " +
             "GROUP BY m.discipline, m.ifc_class, m.storey"

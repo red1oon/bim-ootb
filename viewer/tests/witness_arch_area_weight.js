@@ -30,21 +30,41 @@
 //   ISSUE: `unit === 'M3'` classes fell through every _installSecs branch to flat, so a tiny pad
 //   footing and a massive raft footing charged identical install time.
 //
-//   ⚠ WHY THIS HALF USES A FIXTURE, stated plainly so nobody reads more into a green run than is
-//   there: NO class in the shipped rates model is priced M3. viewer/rates.js RATES is 32 EA /
-//   11 M / 7 M2 / 1 KG and all 17 rates/*.json templates carry the identical split (0 M3 each).
-//   So on shipped data _volumeWeighting selects nothing — which G-VOL-SHIPPED-INERT asserts as a
-//   POSITIVE result (zero regression), not as a pass by absence. To prove the mechanism actually
-//   works, the M3 gates run against a one-key fixture that reprices IfcFooting EA->M3. IfcFooting
-//   is not an arbitrary pick: it is the named real-world case (821 elements across Hospital/
-//   LTU_AHouse/Clinic spanning 0.26..602.09 m3 — 2320x — all charged the same today), and the
-//   fixture changes ONLY the witness's own in-memory copy. Shipped rates are untouched; repricing
-//   for real is a rates DATA decision this witness deliberately does not make.
+//   ⚠ THE FIXTURE IS GONE — these gates now run on the SHIPPED rates table (§FOOTING_M3,
+//   2026-08-12). When _volumeWeighting first landed, no class in the shipped model was priced M3
+//   (32 EA / 11 M / 7 M2 / 1 KG, identical split in all 17 templates), so the M3 half could only be
+//   proved against a one-key in-memory fixture and G-VOL-SHIPPED-INERT asserted the mechanism
+//   selected nothing. IfcFooting has since been repriced EA→M3 in rates.js and in all 16 templates
+//   that carry a materials.IfcFooting entry, so the mechanism now fires on real shipped data and
+//   that inert gate is RETIRED, replaced by G-VOL-SHIPPED-LIVE (its inverse — the same collateral
+//   assertion, now stated over a live path). Deleting it outright would have dropped the
+//   "nothing ELSE moved" half, which is the part still worth owning.
 //
-//   G-VOL-SHIPPED-INERT (BLOCKING) with shipped RATES, _volumeWeighting selects 0 classes and every
-//                  element's installSecs is byte-identical with the new arg wired vs. not.
-//   G-VOL-TOTAL    (BLOCKING) under the fixture, per class total installSecs after == before.
-//   G-VOL-SPREAD   per-element spread rises above flat on the fixture class. Proves it did something.
+//   ⚠ THE RATE IS DERIVED, NOT INVENTED — G-VOL-RATE-DERIVED is what proves that, and it is the
+//   reason this witness carries the pre-change EA rates as constants. The conversion is a pure unit
+//   correction of the rate the table already had:
+//       rate_m3 = rate_EA / avgVolume,  avgVolume = 4.25074802767622 m3
+//   avgVolume is the class-wide mean of t.bbox_x*t.bbox_y*t.bbox_z (the ONE volume foldCost,
+//   _volumeWeighting and analysis_sidecar.vol_m3 already share) over every real IfcFooting in the
+//   7 shipped buildings — 821 elements, SUM 3489.86413072218 m3, spanning 0.2595..602.0946 m3:
+//     SELECT COUNT(*), SUM(t.bbox_x*t.bbox_y*t.bbox_z) FROM elements_meta m
+//     JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='IfcFooting'
+//     AND t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (t.bbox_x*t.bbox_y*t.bbox_z)>0
+//   Multiplying any shipped m3 rate back by that divisor must return the EA rate it came from —
+//   that round trip is the gate. IfcPile is deliberately NOT converted: zero IfcPile elements exist
+//   in any shipped building, so there is no measured divisor and any m3 rate would be invented.
+//
+//   G-VOL-RATE-DERIVED (BLOCKING) every shipped IfcFooting m3 rate × avgVolume returns its own
+//                  pre-change EA rate (<=0.05% — the 2dp rounding band), across rates.js + all 16
+//                  templates, and none of them still says EA. The anti-invention gate.
+//   G-VOL-COST-NEUTRAL (BLOCKING) sum(rate_m3 × real volume) over the 821-element derivation
+//                  population equals rate_EA × 821 — the same class total, redistributed by size.
+//                  Per BUILDING it deliberately shifts by that building's own avg/class avg.
+//   G-VOL-SHIPPED-LIVE (BLOCKING) on shipped RATES _volumeWeighting selects exactly the M3-priced
+//                  classes and NOTHING else — every element of a non-M3 class is byte-identical
+//                  with the volumeRatio arg wired vs. not. (Replaces G-VOL-SHIPPED-INERT.)
+//   G-VOL-TOTAL    (BLOCKING) on shipped rates, per class total installSecs after == before.
+//   G-VOL-SPREAD   per-element spread rises above flat on the weighted class. Proves it did something.
 //   G-VOL-ORDER    a physically larger element never gets LESS time than a smaller one.
 //   G-VOL-NOCLOBBER  classes claimed by realQty / lengthRatio / areaRatio are byte-identical.
 'use strict';
@@ -158,10 +178,13 @@ function loadRatesTable() {
     clobbered.length ? 'double-weighted: ' + clobbered.join(' ')
       : 'classes already claimed by realQty (fragmented) or lengthRatio are byte-identical — no double-weighting');
 
-  // ── §VOL_WEIGHT (M3) — see the fixture note in this file's header ────────────────────────────
-  const M3_FIXTURE_CLASS = 'IfcFooting';
+  // ── §VOL_WEIGHT (M3) — runs on the SHIPPED rates table, see this file's header ────────────────
+  // The set of classes the shipped table prices M3. Derived from RATES, never hardcoded: whatever
+  // is priced M3 is what _volumeWeighting must claim, and nothing else may move.
+  const M3_PRICED = Object.keys(RATES).filter(c => RATES[c] && RATES[c].unit === 'M3');
   let volTotalBad = [], volSpread = [], volOrderBad = [], volClobbered = [], volRan = 0;
-  let shippedM3 = [], inertBad = [], fixtureSeen = 0;
+  let liveM3 = [], collateralBad = [], liveSeen = 0;
+  let neutralCount = 0, neutralVol = 0;   // §FOOTING_M3 cost-neutrality accumulators
 
   for (const bld of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
@@ -171,14 +194,10 @@ function loadRatesTable() {
     const lin = SA._linearWeighting(db, RATES);
     const area = SA._areaWeighting(db, RATES, frag.fragmented, SR, SD, NO, LR);
 
-    // (a) shipped rates — must select nothing at all.
-    const volShipped = SA._volumeWeighting(db, RATES, frag.fragmented, SR, SD, NO, LR);
-    Object.keys(volShipped.avgVolume).forEach(c => shippedM3.push(`${bld}/${c}`));
-
-    // (b) the fixture — one key repriced, in this witness's own copy only.
-    const RATES_M3 = Object.assign({}, RATES);
-    RATES_M3[M3_FIXTURE_CLASS] = Object.assign({}, RATES[M3_FIXTURE_CLASS] || { rate: 0 }, { unit: 'M3' });
-    const vol = SA._volumeWeighting(db, RATES_M3, frag.fragmented, SR, SD, NO, LR);
+    // The shipped rates table IS the M3 table now — one call, no fixture. Anything it claims that
+    // the table does not price M3 is a selection bug, and that is what G-VOL-SHIPPED-LIVE reads.
+    const vol = SA._volumeWeighting(db, RATES, frag.fragmented, SR, SD, NO, LR);
+    Object.keys(vol.avgVolume).forEach(c => liveM3.push(`${bld}/${c}`));
 
     const r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), " +
       't.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
@@ -198,20 +217,16 @@ function loadRatesTable() {
       const areaRatio = (realQty == null && lengthRatio == null && hasGeom && avgArea > 0 &&
                          area.area[guid] > 0) ? area.area[guid] / avgArea : null;
 
-      // shipped-inert: new arg wired, but volumeRatio derived from the SHIPPED table.
-      const avgVolShipped = volShipped.avgVolume[cls];
-      const volRatioShipped = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
-                               avgVolShipped > 0 && volShipped.volume[guid] > 0)
-        ? volShipped.volume[guid] / avgVolShipped : null;
-      const noArg = SA._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio);
-      const withArg = SA._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio, volRatioShipped);
-      if (noArg !== withArg) inertBad.push(`${bld}/${cls}`);
-
-      // fixture: the M3 path under the repriced table.
       const avgVol = vol.avgVolume[cls];
       const volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
                            avgVol > 0 && vol.volume[guid] > 0) ? vol.volume[guid] / avgVol : null;
+      const noArg = SA._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio);
       const after = SA._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio, volumeRatio);
+      // COLLATERAL: a class the shipped table does NOT price M3 must be untouched by the new arg.
+      // This is the surviving half of the retired G-VOL-SHIPPED-INERT.
+      if (M3_PRICED.indexOf(cls) < 0 && noArg !== after) collateralBad.push(`${bld}/${cls}`);
+      // §FOOTING_M3 cost-neutrality population — exactly the rows the divisor was averaged over.
+      if (cls === 'IfcFooting' && vol.volume[guid] > 0) { neutralCount++; neutralVol += vol.volume[guid]; }
       const c = byCls[cls] || (byCls[cls] = { b: 0, a: 0, n: 0, weighted: false,
                                               claimed: (realQty != null || lengthRatio != null || areaRatio != null),
                                               pts: [], diffs: 0 });
@@ -224,7 +239,7 @@ function loadRatesTable() {
     for (const cls in byCls) {
       const c = byCls[cls];
       if (c.weighted) {
-        fixtureSeen++;
+        liveSeen++;
         const tol = Math.max(2, c.b * 0.05);   // same 5% band + rounding floor as G-AREA-TOTAL
         if (Math.abs(c.a - c.b) > tol) volTotalBad.push(`${bld}/${cls} ${c.b}->${c.a} (${(100*(c.a-c.b)/c.b).toFixed(1)}%)`);
         const secs = c.pts.map(p => p.s).filter(x => x > 0);
@@ -241,19 +256,58 @@ function loadRatesTable() {
       }
     }
     if (wt.length) volSpread.push(`${bld}[${wt.join(' ')}]`);
-    console.log(`      ${bld}: shippedM3Classes=${Object.keys(volShipped.avgVolume).length} ` +
-      `fixtureWeighted=${wt.join(' ') || 'none'}`);
+    console.log(`      ${bld}: shippedM3Classes=${Object.keys(vol.avgVolume).length} ` +
+      `weighted=${wt.join(' ') || 'none'}`);
     db.close();
   }
 
-  gate('G-VOL-SHIPPED-INERT', shippedM3.length === 0 && inertBad.length === 0 && volRan > 0,
-    (shippedM3.length ? 'shipped RATES unexpectedly yielded M3 classes: ' + shippedM3.join(' ') + ' ' : '') +
-    (inertBad.length ? 'installSecs CHANGED on shipped rates: ' + inertBad.slice(0, 5).join(' ')
-      : `shipped rates price 0 classes M3, so the new path selects nothing and every element's install time is byte-identical on all ${volRan} buildings — zero regression`));
-  gate('G-VOL-TOTAL', volTotalBad.length === 0 && fixtureSeen > 0,
+  // ── §FOOTING_M3 — the anti-invention gate. Every shipped m3 rate must round-trip through the
+  // measured divisor back to the EA rate it was converted from. AVG_VOL and EA_BEFORE are the
+  // derivation record; if someone edits a rate to a market number, this gate is what catches it.
+  const AVG_VOL = 4.25074802767622;   // class-wide mean bbox volume, 821 shipped IfcFooting, see header
+  const EA_BEFORE = {                 // the pre-conversion unit:'EA' rate each source carried
+    'rates.js': 320, aramco2024_sa: 275, asaqs2024_za: 4500, bcis2024_uk: 184, bki2024_de: 185,
+    cidb2024_my: 320, cype2024_es: 73, dpt2024_th: 2600, gb50500_cn: 520, jbci2024_jp: 14500,
+    kict2024_kr: 105000, pwd2024_bd: 5500, rawlinsons2024_au: 540, rsmeans2024_us: 240,
+    sinapi2024_br: 385, sni2024_id: 1150000, untec2024_fr: 75
+  };
+  const rateBad = [], rateOk = [];
+  function checkFootingRate(src, entry) {
+    const ea = EA_BEFORE[src];
+    if (ea == null) return;                                    // source not part of the conversion
+    if (!entry) { rateBad.push(`${src}: IfcFooting entry vanished`); return; }
+    if (entry.unit !== 'M3') { rateBad.push(`${src}: still unit=${entry.unit}, not converted`); return; }
+    const implied = entry.rate * AVG_VOL;                      // the round trip
+    const relPct = Math.abs(implied - ea) / ea * 100;
+    if (relPct > 0.05) rateBad.push(`${src}: ${entry.rate}x${AVG_VOL.toFixed(4)}=${implied.toFixed(2)} != EA ${ea} (${relPct.toFixed(3)}%) — INVENTED, not derived`);
+    else rateOk.push(`${src}:${entry.rate}`);
+  }
+  checkFootingRate('rates.js', RATES.IfcFooting);
+  fs.readdirSync(path.join(VIEWER_DIR, 'rates')).filter(f => f.endsWith('.json')).forEach(f => {
+    let tpl; try { tpl = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', f), 'utf8')); } catch (e) { return; }
+    checkFootingRate(f.replace(/\.json$/, ''), (tpl.materials || {}).IfcFooting);
+  });
+  gate('G-VOL-RATE-DERIVED', rateBad.length === 0 && rateOk.length === Object.keys(EA_BEFORE).length,
+    rateBad.length ? rateBad.slice(0, 4).join(' | ')
+      : `all ${rateOk.length} shipped IfcFooting m3 rates round-trip through avgVolume=${AVG_VOL.toFixed(6)} back to their own pre-change EA rate (<=0.05%, the 2dp band) — every rate DERIVED from the rate that was already there, none invented`);
+
+  // Cost neutrality over the derivation population — the arithmetic that proves the conversion.
+  const eaBase = EA_BEFORE['rates.js'], m3Base = RATES.IfcFooting ? RATES.IfcFooting.rate : 0;
+  const oldTotal = eaBase * neutralCount, newTotal = m3Base * neutralVol;
+  const neutralPct = oldTotal > 0 ? Math.abs(newTotal - oldTotal) / oldTotal * 100 : 100;
+  gate('G-VOL-COST-NEUTRAL', neutralCount > 0 && neutralPct <= 0.05,
+    neutralCount === 0 ? 'no IfcFooting elements found — the derivation population is empty'
+      : `${neutralCount} shipped footings, ${neutralVol.toFixed(3)} m3: OLD ${eaBase}/EA x ${neutralCount} = ${oldTotal.toFixed(0)} vs NEW ${m3Base}/M3 x ${neutralVol.toFixed(3)} = ${newTotal.toFixed(0)} (${neutralPct.toFixed(4)}% apart) — same class total, redistributed by real size`);
+
+  gate('G-VOL-SHIPPED-LIVE', collateralBad.length === 0 && liveM3.length > 0 && volRan > 0 &&
+       liveM3.every(x => M3_PRICED.indexOf(x.split('/')[1]) >= 0),
+    collateralBad.length ? 'a class NOT priced M3 changed install time: ' + collateralBad.slice(0, 5).join(' ')
+      : (liveM3.length === 0 ? `shipped rates price [${M3_PRICED.join(',')}] M3 but _volumeWeighting selected NOTHING on any of ${volRan} buildings — the mechanism is inert on live data`
+        : `_volumeWeighting selects exactly the M3-priced classes on shipped rates (${liveM3.join(' ')}) and every element of every other class is byte-identical with the volumeRatio arg wired vs. not — no collateral across all ${volRan} buildings`));
+  gate('G-VOL-TOTAL', volTotalBad.length === 0 && liveSeen > 0,
     volTotalBad.length ? 'class total MOVED (inflation!): ' + volTotalBad.join(' ')
-      : (fixtureSeen > 0 ? `every volume-weighted class keeps its total install time (${fixtureSeen} class-instances under the ${M3_FIXTURE_CLASS} M3 fixture) — redistribution, not inflation`
-        : `fixture class ${M3_FIXTURE_CLASS} weighted nothing — mechanism unproven`));
+      : (liveSeen > 0 ? `every volume-weighted class keeps its total install time (${liveSeen} class-instances on SHIPPED rates) — redistribution, not inflation`
+        : `no class weighted on shipped rates — mechanism unproven`));
   gate('G-VOL-SPREAD', volSpread.length > 0,
     volSpread.length ? 'per-element spread now scales with real volume: ' + volSpread.join(' ')
       : 'NO class gained spread — the volume weighting is not reaching any element');

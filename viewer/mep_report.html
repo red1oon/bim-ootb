@@ -251,21 +251,24 @@ async function init() {
   var bldSafe = bldName.replace(/'/g, "''");
 
   // Build unit sets from RATES
-  var LINEAR = new Set(), AREA = new Set();
+  // §FOOTING_M3 (2026-08-12): VOL is the third sized unit — added when IfcFooting was repriced
+  // EA→M3 (rates.js §FOOTING_M3). Without it an M3 class fell to the `else` and billed by count.
+  var LINEAR = new Set(), AREA = new Set(), VOL = new Set();
   for (var cls in RATES) {
     if (RATES[cls].unit === 'M') LINEAR.add(cls);
     if (RATES[cls].unit === 'M2') AREA.add(cls);
+    if (RATES[cls].unit === 'M3') VOL.add(cls);
   }
 
   // §T7 ANALYSIS_SIDECAR — REUSE the same currency-free 5D sidecar (OPFS-cached) as
   // boq_charts: its rows are exactly disc/class/storey + count/length/area. First open
   // computes+persists, repeat opens read OPFS (fast + offline). Fallback to the 3 SQL
   // aggregates if the sidecar is unavailable (older browsers / OPFS off).
-  var countRows, linearMap = {}, areaMap = {};
+  var countRows, linearMap = {}, areaMap = {}, volMap = {};   // §FOOTING_M3: volMap = unit M3
   var _5d = (window.AnalysisSidecar && bldName) ? await window.AnalysisSidecar.get5D(db, bldName) : null;
   if (_5d && _5d.rows && _5d.rows.length) {
     countRows = [{ values: _5d.rows.map(function (r) { return [r.disc, r.cls, r.storey, r.count]; }) }];
-    _5d.rows.forEach(function (r) { var k = r.disc + '|' + r.cls + '|' + r.storey; linearMap[k] = r.length_m; areaMap[k] = r.area_m2; });
+    _5d.rows.forEach(function (r) { var k = r.disc + '|' + r.cls + '|' + r.storey; linearMap[k] = r.length_m; areaMap[k] = r.area_m2; volMap[k] = r.vol_m3; });
     console.log('§MEP_5D_SIDECAR source=' + (_5d.basis || 'sidecar') + ' rows=' + _5d.rows.length);
   } else {
     countRows = db.exec("SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) as cnt FROM elements_meta m WHERE m.building = '" + bldSafe + "' GROUP BY m.discipline, m.ifc_class, m.storey");
@@ -276,6 +279,10 @@ async function init() {
     try {
       var aR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) ELSE MAX(t.bbox_x, t.bbox_y) END) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
       if (aR.length) for (var i = 0; i < aR[0].values.length; i++) { var v = aR[0].values[i]; areaMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
+    } catch(e) {}
+    try {   // §FOOTING_M3 — bbox envelope volume, same shape as the length/area aggregates above
+      var vR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(t.bbox_x * t.bbox_y * t.bbox_z) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+      if (vR.length) for (var i = 0; i < vR[0].values.length; i++) { var v = vR[0].values[i]; volMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
     } catch(e) {}
   }
   if (!countRows.length || !countRows[0].values.length) {
@@ -303,6 +310,8 @@ async function init() {
       qty = linearMap[key] || cnt;
     } else if (unit === 'M2' && AREA.has(cls)) {
       qty = areaMap[key] || cnt;
+    } else if (unit === 'M3' && VOL.has(cls)) {
+      qty = volMap[key] || cnt;   // §FOOTING_M3
     } else {
       qty = cnt;
     }

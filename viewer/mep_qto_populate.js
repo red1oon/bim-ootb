@@ -45,11 +45,15 @@ const RATES = tpl.materials || {};
 const RATES_DEFAULT = { rate: 500, unit: 'EA', desc: 'Misc Element' };
 
 // Build unit sets
+// §FOOTING_M3 (2026-08-12): third sized unit, added with the IfcFooting EA→M3 repricing
+// (rates.js §FOOTING_M3). An M3 class previously fell through to count-based billing here.
 const LINEAR_CLASSES = new Set();
 const AREA_CLASSES = new Set();
+const VOLUME_CLASSES = new Set();
 for (const cls in RATES) {
   if (RATES[cls].unit === 'M') LINEAR_CLASSES.add(cls);
   if (RATES[cls].unit === 'M2') AREA_CLASSES.add(cls);
+  if (RATES[cls].unit === 'M3') VOLUME_CLASSES.add(cls);
 }
 
 // Labor calc (simplified from rates.js)
@@ -159,6 +163,22 @@ for (const dbPath of targets) {
     areaMap[r.discipline + '|' + r.ifc_class + '|' + r.storey] = r.total_area;
   }
 
+  // Volume query (M3) — §FOOTING_M3. bbox envelope, the same expression foldCost /
+  // _volumeWeighting / analysis_sidecar.vol_m3 already use. One volume, not a second definition.
+  const volMap = {};
+  const volRows = db.prepare(`
+    SELECT m.discipline, m.ifc_class, m.storey,
+           SUM(t.bbox_x * t.bbox_y * t.bbox_z) as total_vol
+    FROM elements_meta m
+    JOIN element_transforms t ON m.guid = t.guid
+    WHERE m.building = ?
+      AND t.bbox_x IS NOT NULL AND t.bbox_x > 0
+    GROUP BY m.discipline, m.ifc_class, m.storey
+  `).all(bldName);
+  for (const r of volRows) {
+    volMap[r.discipline + '|' + r.ifc_class + '|' + r.storey] = r.total_vol;
+  }
+
   // Process + write cache
   const insert = db.prepare(`INSERT INTO qto_cache
     (ifc_class, storey, discipline, qty, uom, element_count, material_cost, labour_cost, equipment_cost, rate_template, computed_at)
@@ -183,6 +203,9 @@ for (const dbPath of targets) {
         if (!qty || qty <= 0) { qty = cnt; warnCount++; }
       } else if (unit === 'M2' && AREA_CLASSES.has(cls)) {
         qty = areaMap[key];
+        if (!qty || qty <= 0) { qty = cnt; warnCount++; }
+      } else if (unit === 'M3' && VOLUME_CLASSES.has(cls)) {
+        qty = volMap[key];   // §FOOTING_M3
         if (!qty || qty <= 0) { qty = cnt; warnCount++; }
       } else {
         qty = cnt;

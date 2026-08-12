@@ -977,15 +977,21 @@ async function init() {
   }
 
   // Build unit lookup from RATES: which IFC classes are M, M2, EA, KG
+  // §FOOTING_M3 (2026-08-12): M3 was the one sized unit this BOQ never had a branch for — an M3
+  // class fell to the `else` and billed by COUNT. Latent until IfcFooting was repriced EA→M3
+  // (rates.js §FOOTING_M3); at that point it would have billed 821 footings at the per-m3 rate
+  // each, under-reporting the class by avgVolume (5.66x). Third unit, same shape as M and M2.
   const LINEAR_CLASSES = new Set();   // unit = M
   const AREA_CLASSES = new Set();     // unit = M2
+  const VOLUME_CLASSES = new Set();   // unit = M3
   for (const cls in RATES) {
     if (RATES[cls].unit === 'M')  LINEAR_CLASSES.add(cls);
     if (RATES[cls].unit === 'M2') AREA_CLASSES.add(cls);
+    if (RATES[cls].unit === 'M3') VOLUME_CLASSES.add(cls);
   }
 
   const _t0 = performance.now();
-  let countRows, linearQty = {}, areaQty = {};
+  let countRows, linearQty = {}, areaQty = {}, volQty = {};   // §FOOTING_M3: volQty = unit M3
   var _relayGuids = null;  // S253d: relayed GUIDs from viewer (populated in relay path)
 
   // S253: Fast path — ask viewer for data via BroadcastChannel (no DB load)
@@ -1002,6 +1008,7 @@ async function init() {
         const key = r[0] + '|' + r[1] + '|' + r[2];
         linearQty[key] = r[3];
         areaQty[key] = r[4];
+        volQty[key] = r[5];   // §FOOTING_M3 — undefined from an older viewer, handled at billing
       }
     }
     console.log('§QTO_RELAY_HIT building=' + bldName + ' rows=' + relay.countRows.length +
@@ -1030,7 +1037,7 @@ async function init() {
       if (retry.dimRows) {
         for (const r of retry.dimRows) {
           var k = r[0] + '|' + r[1] + '|' + r[2];
-          linearQty[k] = r[3]; areaQty[k] = r[4];
+          linearQty[k] = r[3]; areaQty[k] = r[4]; volQty[k] = r[5];   // §FOOTING_M3
         }
       }
       console.log('§QTO_RELAY_RETRY_HIT building=' + bldName + ' rows=' + retry.countRows.length);
@@ -1138,7 +1145,8 @@ async function init() {
         " SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) *" +
         " CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z)" +
         " WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z)" +
-        " ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area" +
+        " ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area," +
+        " SUM(t.bbox_x * t.bbox_y * t.bbox_z) as total_vol" +   // §FOOTING_M3
         " FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid" +
         " WHERE m.building = '" + _bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0" +
         " GROUP BY m.discipline, m.ifc_class, m.storey"
@@ -1148,6 +1156,7 @@ async function init() {
           const key = r[0] + '|' + r[1] + '|' + r[2];
           linearQty[key] = r[3];
           areaQty[key] = r[4];
+          volQty[key] = r[5];   // §FOOTING_M3
         }
       }
     } catch(e) { console.warn('§QTO_WARN dimension query error: ' + e.message); }
@@ -1180,6 +1189,13 @@ async function init() {
       }
     } else if (unit === 'M2' && AREA_CLASSES.has(cls)) {
       qty = areaQty[key];
+      if (!qty || qty <= 0) {
+        qty = cnt;
+        qtoWarnCount++;
+        console.warn('§QTO_WARN no bbox for cls=' + cls + ' storey=' + storey + ', using count fallback (' + cnt + ')');
+      }
+    } else if (unit === 'M3' && VOLUME_CLASSES.has(cls)) {
+      qty = volQty[key];   // §FOOTING_M3 — bbox envelope volume, same fallback shape as M/M2
       if (!qty || qty <= 0) {
         qty = cnt;
         qtoWarnCount++;
