@@ -1048,9 +1048,26 @@ if('serviceWorker' in navigator){
   // activates and claims control on its own -- listening for `controllerchange` is enough, no
   // message-roundtrip needed. NEVER auto-reload silently (could interrupt a live MaxQ bake) --
   // only a tap reloads, matching the spec's rule 4.
+  // §SWUPDATE_FIRST_CLAIM (2026-08-12, user: "why would a 'Update Ready - Tap Reset' message
+  // appear upon loading a building after SW reset"): `controllerchange` fires for TWO different
+  // events, and only one of them is an update. After a SW reset/unregister (or a first visit) the
+  // page loads with NO controller — `§BUILD_VERSION (no active controller yet)` in the user's log —
+  // then the freshly-registered worker installs (`§PRECACHE-TRIM install set=140`), skipWaiting()s,
+  // and clients.claim()s the page. controller goes null -> worker, `controllerchange` fires, and the
+  // toast claimed "Update ready" for what is really this page's FIRST controller. Nothing was
+  // updated and reloading changes nothing — pure noise, in the middle of a 229MB building load.
+  // The sibling ERP shells already carry exactly this guard and say why in their own comment
+  // ("NEVER on the first-install clients.claim() controllerchange"); the viewer port missed it.
+  // An update, by definition, REPLACES a controller that was already there.
+  var _swHadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', function(){
     if (window.__swReloaded) return;  // one-shot guard, never loop
-    console.log('§SWUPDATE_TOAST controllerchange — new version active, showing toast');
+    if (!_swHadController) {
+      console.log('§SWUPDATE_TOAST skip reason=first-claim (page had no controller at load; ' +
+        'this is the initial install taking over, not a new version) — no toast');
+      return;
+    }
+    console.log('§SWUPDATE_TOAST controllerchange — new version active, showing toast (hadController=true)');
     var t = document.createElement('div');
     t.id = 'swUpdateToast';
     t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);' +
