@@ -254,8 +254,22 @@ const D = 86400000;
     // Terminal 24007→4003 and JKR 398→205 (far fewer elements forced out of their phase), but
     // Hospital 9→256 and LTU 882→1017 (more, because a zone's window is tighter than the model's).
     // Movement from HERE is still a real data/rules change to examine, same contract as before.
+    // ⚠ RE-LOCKED 2026-08-12 for §ARCH_START_TEMPO / M1 (the 8-hour crew day). ONE number moved:
+    // LTU_AHouse 1017 → 1019 (+2 of 122,330 elements, 0.2% of its own straggler set). Everything
+    // else is byte-identical, and that asymmetry is the evidence, not an anomaly:
+    //   • The GENERATIVE layer provably did not move. computeSchedule's new output is EXACTLY
+    //     toWall(old output) — verified element-for-element on all 265,954 elements of the 7 shipped
+    //     buildings, 0 mismatches, and auditFloating over the raw schedule is identical on every one
+    //     (8/0/0/0/1/334/81, unchanged). toWall is strictly increasing, so every gate max and every
+    //     start<end comparison in the scheduler is preserved.
+    //   • dagWins is measured on the DISPLAY timeline, AFTER _tier1Serialize, and that pass adds a
+    //     wall-clock delta (it.s += d). A wall-clock shift is NOT invariant under the shift clock:
+    //     an element whose install straddles a day's 8-h window boundary has a longer wall-clock
+    //     width than one that fits inside it, so `it.e > nextMinS` can flip for elements sitting
+    //     within one window of the boundary. LTU is the only building with a straggler population
+    //     dense enough at that margin (18 zones, 122k elements) for 2 to cross it.
     const DAGWINS_BASELINE = { Terminal: 4003, Hospital: 256, Duplex: 0, HHS_Office_Federated: 420, Clinic: 5,
-      LTU_AHouse: 1017, JKR: 205 };
+      LTU_AHouse: 1019, JKR: 205 };
     assert(stats && stats.dagWins === DAGWINS_BASELINE[bld],
       'W-TS-1b ' + bld + ' DAG-forced cross-phase population locked at ' + DAGWINS_BASELINE[bld] +
       ' (got ' + (stats ? stats.dagWins : '?') + ') — support order wins for these, counted never hidden');

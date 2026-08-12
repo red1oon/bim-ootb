@@ -44,6 +44,46 @@
   // class mix, less coverage). EXTRACTED, not invented — do not retune without re-measuring.
   var BIG_ELEMENT_VOL = 1.556;  // m³
   var MAX_CREWS_DEFAULT = 3;  // §CREW-CAP: fallback crew count per resource when no lookup is given
+  // ══ §ARCH_START_TEMPO / M1 — THE 8-HOUR CREW DAY (2026-08-12) ═══════════════════════════════
+  // `el.installSecs` is 28800/productivity — 28800 s IS one 8-hour crew-day (schedule_author.js
+  // _installSecs line 71, and its own phase widths already divide by `28800 * maxCrews`). But
+  // place() below spent those seconds as PURE CONTINUOUS WALL-CLOCK ms: nothing capped how many of
+  // them could land inside one calendar day, so a crew that ran out of one day's quota simply
+  // started the next day's work in the same day's hour 9. Effective model: every crew works 24 real
+  // hours, non-stop, forever — 3x the shift the productivity table is quoted in.
+  // MEASURED (Terminal Substructure): 236 IfcSlab x 822.9 s / 3 CONCRETE_GANG crews = 64,732 s =
+  // 0.75 wall-clock days, and the probe reported Substructure=[0.0..0.8]d. On a real 8-h shift the
+  // same labour is 2.25 days — exactly 24/8, structural, not a coincidence.
+  //
+  // THE FIX, at the ONE layer every gate and every crew slot already funnels through: a crew's clock
+  // is kept in PRODUCTIVE ms and mapped to wall-clock ms for storage. Each calendar day donates
+  // SHIFT_MS productive ms; the remaining 16 h are idle for that crew and the work rolls over to the
+  // START of the next day's window — never lost, never double-counted, and a `dur` longer than one
+  // window consumes as many following windows as it needs (toWall's floor/mod does that by
+  // construction, no per-day loop).
+  //
+  // WHAT DOES NOT CHANGE, deliberately: the calendar stays 24/7 — no weekend, no holiday, work may
+  // start or continue on ANY day. That settled ruling is about not SKIPPING days; this is about the
+  // length of a day's shift, which it never spoke to.
+  // Because toWall is strictly increasing and toProductive is its exact left inverse on every time
+  // this module produces, the whole generative schedule is toWall(old schedule): every gate max,
+  // every ordering and every start<end comparison is preserved element-for-element. Only the
+  // wall-clock SPAN grows (~3x on crew-bound phases) — which is the fix.
+  var SHIFT_MS = 8 * 3600 * 1000;    // productive ms one crew can spend in one calendar day
+  var DAY_MS   = 24 * 3600 * 1000;   // the calendar day the film advances through (24/7, unchanged)
+  // toProductive(t, base): wall-clock ms -> productive ms elapsed for a crew since `base`.
+  // toWall(p, base): the inverse. toProductive(toWall(p)) === p for every p >= 0, so a duration can
+  // be recovered from a stored [start,end] pair without carrying it alongside (the repair loop).
+  function toProductive(t, base) {
+    var off = t - base; if (off <= 0) return 0;
+    var d = Math.floor(off / DAY_MS), r = off - d * DAY_MS;
+    return d * SHIFT_MS + (r < SHIFT_MS ? r : SHIFT_MS);
+  }
+  function toWall(p, base) {
+    if (p <= 0) return base;
+    var d = Math.floor(p / SHIFT_MS), r = p - d * SHIFT_MS;
+    return base + d * DAY_MS + r;
+  }
   // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═══════════
   // The class sets and the ±HOST_Z bracket below are NOT new: they are verbatim the host inference
   // that bim-compiler scripts/probe_arch_start.js measured the defect with (§HOSTED_BEFORE_HOST),
@@ -269,9 +309,18 @@
     // joins the same support grid as PASS-A structure. As a support it sits ABOVE what it carries, so
     // the bearing-below predicate almost never matches it; only hangGate reads it upward.
     function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }
+    // §ARCH_START_TEMPO / M1 — the crew day, bound to this run's epoch (see the module header).
+    // Every crew slot, every gate and the repair loop below read/write wall-clock ms exactly as
+    // before; only the ADVANCE of the clock by a duration goes through the shift window.
+    function prodAt(t) { return toProductive(t, baseMs); }
+    function wallAt(p) { return toWall(p, baseMs); }
+    var _prodMsTot = 0;   // §CREW_DAY audit: productive ms actually committed
     function place(el, start) {
       var dur = Math.round((el.installSecs || 120) * scaleFactor * 1000);
-      var end = start + dur; out[el.guid] = { start: start, end: end };
+      // 8 productive h per calendar day: the remainder rolls to the next day's window start, and a
+      // multi-window `dur` consumes as many following windows as it needs.
+      var end = wallAt(prodAt(start) + dur); _prodMsTot += dur;
+      out[el.guid] = { start: start, end: end };
       if (el.seq <= 4 || isPromotedSlab(el)) {
         var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid,
                     promoted: isPromotedSlab(el) };
@@ -621,7 +670,12 @@
         var need = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el));
         var o = out[el.guid];
         if (o.start < need) {
-          var dur = o.end - o.start; o.start = need; o.end = need + dur;
+          // §ARCH_START_TEMPO / M1: a shift preserves the element's PRODUCTIVE duration, not its
+          // wall-clock width — moving it across a different number of idle windows would otherwise
+          // silently invent or destroy crew hours. toProductive is toWall's exact inverse on both
+          // stored times, so the duration is recovered, never carried.
+          var dur = prodAt(o.end) - prodAt(o.start);
+          o.start = need; o.end = wallAt(prodAt(need) + dur);
           var rl = recsByGuid[el.guid];
           if (rl) for (var q = 0; q < rl.length; q++) rl[q].end = o.end;
           _moved++;
@@ -632,6 +686,20 @@
     }
     if (typeof console !== 'undefined' && console.log)
       console.log('§DEQ_REPAIR sweeps=' + _rIter + ' shifted=' + _rMovedTot + ' (0=order already dependency-consistent)');
+    // §CREW_DAY (§ARCH_START_TEMPO / M1) — the whitebox proof that the shift cap is live and that it
+    // neither lost nor invented labour. spanD = wall-clock days the programme now occupies;
+    // serialProdD = the same labour on ONE crew at 8 h/day (Σ installSecs*scale / SHIFT_MS) — the
+    // number materializeDefault's phase widths have always been quoted in. spanD24 is what the same
+    // schedule would have spanned on the old 24-h clock, printed so the 3x is measured, not claimed.
+    if (typeof console !== 'undefined' && console.log) {
+      var _cdEnd = baseMs, _cdG;
+      for (_cdG in out) if (out[_cdG].end > _cdEnd) _cdEnd = out[_cdG].end;
+      console.log('§CREW_DAY shift=' + (SHIFT_MS / 3600000) + 'h/' + (DAY_MS / 3600000) + 'h n=' + N +
+        ' spanD=' + ((_cdEnd - baseMs) / DAY_MS).toFixed(1) +
+        ' spanD24=' + (toProductive(_cdEnd, baseMs) / DAY_MS).toFixed(1) +
+        ' serialProdD=' + (_prodMsTot / SHIFT_MS).toFixed(1) +
+        ' (a crew works ' + (SHIFT_MS / 3600000) + 'h of every calendar day — 24/7 calendar unchanged)');
+    }
     // The ladder this rule is standing on, printed so it can be audited rather than trusted — see
     // the §GANTT_STOREY_Z reassignment warning in the header comment above.
     if (typeof console !== 'undefined' && console.log) {
@@ -853,7 +921,10 @@
   // EPS/GAP exported alongside CELL so a consumer of the same geometry (time_machine.js
   // §MIDAIR_REPAIR) can test contact with THIS module's measured constants instead of re-typing
   // them — a second copy is a second thing to drift.
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL };
+  // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
+  // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
+  // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

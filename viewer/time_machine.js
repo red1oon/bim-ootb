@@ -5164,12 +5164,29 @@
     var totalSecs = 0;
     elements.forEach(function(el) { totalSecs += el.installSecs; });
     var rawMs = totalSecs * 1000;
-    // Round the clock — 24/7, no weekends
+    // Round the clock — 24/7 CALENDAR, no weekends, no holidays (unchanged ruling).
+    // §ARCH_START_TEMPO / M1 (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md): the
+    // 24/7 calendar never meant a 24-HOUR SHIFT, but this line assumed one — `rawDays` divided the
+    // labour by a 24 h day while every second of it came from `28800/productivity`, i.e. an 8 h
+    // crew-day (schedule_author.js _installSecs; its phase widths already divide by 28800*crews).
+    // So the movie clock and the authored Gantt disagreed by exactly 24/8 on the same work.
+    // schedule_gate.js now spends a crew's seconds inside an 8 h window per calendar day, so the
+    // wall-clock day this project really needs is rawMs/SHIFT_MS — take the shift length FROM that
+    // module (one owner, no second constant to drift).
+    // COMPOSITION WITH scaleFactor, deliberately not compounding: scaleFactor exists only to inflate
+    // a DEGENERATELY tiny project (<10 days) up to a watchable 10. Measuring rawDays on the capped
+    // clock FIRST means the 3x the crew day already bought is counted before the <10 test — a
+    // project that reaches 10 real days once its crews work 8 h/day gets scaleFactor 1, not a second
+    // stretch on top. The 10-day floor is then in the same wall-clock unit as everything downstream.
     var fullDayMs = 24 * 3600000;
-    var rawDays = rawMs / fullDayMs;
-    var scaleFactor = rawDays < 10 ? (10 * fullDayMs) / rawMs : 1;
+    var shiftMs = (typeof ScheduleGate !== 'undefined' && ScheduleGate.SHIFT_MS) || 8 * 3600000;
+    var rawDays = rawMs / shiftMs;
+    var scaleFactor = rawDays < 10 ? (10 * shiftMs) / rawMs : 1;
 
     var projectDays = Math.max(10, Math.ceil(rawDays * scaleFactor));
+    console.log('§CREW_DAY_CLOCK totalSecs=' + Math.round(totalSecs) + ' shiftH=' + (shiftMs / 3600000) +
+      ' rawDays=' + rawDays.toFixed(1) + ' scale=' + scaleFactor.toFixed(2) + ' projectDays=' + projectDays +
+      ' (was rawDays=' + (rawMs / fullDayMs).toFixed(1) + ' on the pre-M1 24h-shift clock)');
     var startDate = new Date();
     startDate.setDate(startDate.getDate() - projectDays);
     startDate.setHours(0, 0, 0, 0);
@@ -5222,6 +5239,11 @@
     // §CREW_DEMAND — "the max resource needed", reported per trade so a user can see what to edit.
     // capacity = crews x projectDays crew-days; utilisation = demand / capacity. A trade over 100%
     // genuinely cannot fit and wants more crews; everything under is headroom.
+    // §ARCH_START_TEMPO / M1: this ratio is only now dimensionally honest. demand is crew-days
+    // (installSecs/28800 = 8 h each) while projectDays used to be counted on a 24-h clock, so ONE
+    // calendar day was silently worth THREE crew-days of capacity and every utilisation printed here
+    // was overstated ~3x. Same formula, same inputs — projectDays is now wall-clock days at the same
+    // 8 h shift the demand is quoted in, so a trade's % is comparable to its real crew count.
     var _cdLog = [];
     for (var _cd in _crewWorkDays) {
       var _cdr = LR[_cd]; if (!_cdr) continue;
@@ -7632,7 +7654,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 12;   // §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
+  var _GANTT_CACHE_VERSION = 13;   // §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
+                                   // v12 was §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
                                    // v11 was §MIDAIR_REPAIR (2026-08-12): display times repaired so nothing appears before the first element it touches
                                    // v10 was §DOOR_WINDOW_HOST_WALL (2026-08-11): door/window gated on its host wall's finish (schedule_gate.js openingGate)
                                    // v9 was §TIER_SERIAL (2026-08-11): two-tier display remap (serial backbone + concurrent pool)

@@ -204,7 +204,10 @@ function countEarly(pairs, get) {
     let totSecs = 0;
     geoEls.forEach(e => { const r = e.resource || '_DEFAULT';
       crewWorkDays[r] = (crewWorkDays[r] || 0) + (e.installSecs || 0) / 28800; totSecs += e.installSecs || 0; });
-    const projDays = Math.max(10, Math.ceil(totSecs * 1000 / 86400000));
+    // §ARCH_START_TEMPO / M1 (2026-08-12): injectGantt sizes a day by the 8-h crew SHIFT now — same
+    // owner, same formula. (This value only feeds the autoscale `need` below, which measures as a
+    // no-op on all 7 shipped buildings either way; kept in step so the mirror stays a real mirror.)
+    const projDays = Math.max(10, Math.ceil(totSecs * 1000 / ScheduleGate.SHIFT_MS));
     const maxCrews = {};
     for (const rk in LR) {
       if (!LR[rk].max_crews && LR[rk].max_crews_fixed == null) continue;

@@ -128,8 +128,20 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // on display times. Movement either way is a real change to examine — a drop means the trade shrank,
 // a rise means it grew. Pre-repair values for reference: Terminal 8, Hospital 0, Duplex 0, HHS 0,
 // Clinic 1, LTU_AHouse 334, JKR 81.
+// ⚠ RE-LOCKED 2026-08-12 for §ARCH_START_TEMPO / M1 (the 8-hour crew day): Clinic 356 → 367,
+// LTU_AHouse 1100 → 1101, JKR 158 → 151 (Terminal/Hospital/Duplex/HHS unmoved). Note the movement
+// is in BOTH directions — JKR's trade got 7 SMALLER — which is what says this is a re-measure, not
+// a regression: a regression from a 3x-longer programme would push one way.
+// The PRE-repair column above is the proof of where the movement is not: it is unchanged on all 7
+// (8/0/0/0/1/334/81), and computeSchedule's raw output is exactly toWall(the old output) —
+// verified element-for-element over all 265,954 elements of the 7 buildings, 0 mismatches, with
+// auditFloating over the raw schedule identical on every one. So the generative layer contributes
+// zero of this delta. What moved is display-layer only: _twoTierRemap/_midairRepair shift items by
+// WALL-CLOCK deltas, and on a shift clock an element's wall-clock width depends on whether its
+// install straddles a day's 8-h productive window — so the ±1ms-tolerance audit comparisons at the
+// margin land differently. 11/367 on Clinic, 1/1101 on LTU, -7/151 on JKR.
 const FLOAT_AFTER_BASELINE = { Terminal: 102, Hospital: 135, Duplex: 9, HHS_Office_Federated: 11,
-  Clinic: 356, LTU_AHouse: 1100, JKR: 158 };
+  Clinic: 367, LTU_AHouse: 1101, JKR: 151 };
 const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
   LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
