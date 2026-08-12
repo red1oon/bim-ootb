@@ -3441,12 +3441,20 @@ async function setupEffects(A, renderer, scene, camera) {
   // never against the darkness the user is now flagging directly, nor against §SUN_ARC's dusk
   // sweep (shipped 2026-08-11, after this constant was set) which compounds AO darkening on the
   // dim half of every Alt+C film. A live user verdict on "look" supersedes an old A/B per this
-  // project's standing rule (the look is the user's call) — radius 8→4, intensity 6→2, matching
-  // the same retune applied to the standalone Alt+G preview (effects_gi_poc.js). Denoise raised
-  // toward n8ao's own library defaults (aoSamples 8/16, denoiseSamples 4/12→8, denoiseRadius
-  // 6→12 below) to cut residual noise too — free here, this is an offline accumulate, not a
-  // real-time cost. Verify live on the next round trip, not with a synthetic re-A/B.
-  var STILL_AO_RADIUS = 4;
+  // project's standing rule (the look is the user's call) — first pass: radius 8→4, intensity 6→2.
+  // §PHOTO_AO_SCALE (2026-08-13, same-day follow-up, user: "far off well lighted, up close dark"):
+  // the flat retune above didn't fix this — it's a distance-scale problem, not overall strength. A
+  // FIXED WORLD-SPACE radius (metres) spans the whole visible wall up close but is a barely-visible
+  // contact band far away; no single metre value is right at both distances. Switched to n8ao's
+  // `screenSpaceRadius` mode (their README: aoRadius becomes SCREEN PIXELS, recommended 16-64, and
+  // the effective world radius self-scales with camera distance so the AO reads a consistent size
+  // on screen) — same change applied to the standalone Alt+G preview (effects_gi_poc.js).
+  // `distanceFalloff` (never set before — was n8ao's own default of 1) set to their documented 0.2
+  // for this mode. Denoise raised toward n8ao's own library defaults (aoSamples 8/16, denoiseSamples
+  // 4/12→8, denoiseRadius 6→12 below) to cut residual noise too — free here, this is an offline
+  // accumulate, not a real-time cost. First-pass pixel radius, like every other value here — verify
+  // live on the next round trip, not with a synthetic re-A/B.
+  var STILL_AO_RADIUS = 32;       // pixels (screenSpaceRadius mode), not metres
   var STILL_AO_INTENSITY = 2;
   var _stillAOPromise = null, _stillAORAF = null, _stillAODepthDirty = true;
   function _buildStillAO() {
@@ -3465,7 +3473,9 @@ async function setupEffects(A, renderer, scene, camera) {
                                                   // compositer the first frame a transparent material streams in
       n8.configuration.gammaCorrection = false;   // OutputPass tone-maps after this pass — stay linear
       n8.configuration.accumulate = true;         // camera is frozen during the AO phase — refine, don't flicker
+      n8.configuration.screenSpaceRadius = true;  // §PHOTO_AO_SCALE: radius scales with camera distance
       n8.configuration.aoRadius = STILL_AO_RADIUS;
+      n8.configuration.distanceFalloff = 0.2;     // n8ao's documented value for screenSpaceRadius mode
       n8.configuration.intensity = STILL_AO_INTENSITY;
       n8.configuration.aoSamples = 8;
       n8.configuration.denoiseSamples = 8;        // §PHOTO_AO_DARK: 4→8, toward n8ao's own library
