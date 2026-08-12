@@ -3991,9 +3991,40 @@ async function setupEffects(A, renderer, scene, camera) {
   // Simplification, stated not hidden: only rotation_z (yaw about vertical) is applied. Fixtures in
   // the five shipped buildings are ceiling/wall-mounted flat panels — rotation_x/y would matter for
   // a tilted spotlight, which none of the current luminaire vocabulary matches.
-  var _glowLensMesh = null;
+  // §GLOW_LENS_SOFT_EDGE (2026-08-13, user: "clumsy fitting" on the hard-edged quad, then "can
+  // glowTexture but nor overdo like before too bally" — i.e. soften it, but don't regress to the
+  // round/ball look the quad specifically replaced). A plain BLURRED RADIAL texture (like the
+  // round sprite's own _glowTexture()) would read as a circle again once composited over a
+  // rectangle, which is exactly the "bally" look to avoid. This is a feathered RECTANGLE instead:
+  // flat/opaque across the centre, fading to transparent only in a thin border margin — keeps the
+  // fitted rectangular silhouette (the whole point of §GLOW_LENS_QUAD) while losing the hard edge.
+  var _glowLensTex = null;
+  function _glowLensTexture() {
+    if (_glowLensTex) return _glowLensTex;
+    var S = 128, c = document.createElement('canvas');
+    c.width = c.height = S;
+    var g = c.getContext('2d');
+    var inset = S * 0.17;   // feather margin — centre ~66% of each axis stays fully opaque
+    g.filter = 'blur(' + Math.round(S * 0.09) + 'px)';
+    g.fillStyle = '#ffffff';
+    g.fillRect(inset, inset, S - inset * 2, S - inset * 2);
+    _glowLensTex = new THREE.CanvasTexture(c);
+    return _glowLensTex;
+  }
+  // §GLOW_LENS_SHAPE_FIT (2026-08-13, user: "can't it detect if it is gap from the light shape?
+  // And fit ie round bottom where appeared?"): bbox_x/bbox_y are already extracted, real,
+  // per-fixture data (used for sizing above) — their ASPECT RATIO is a real geometric signal, not
+  // a guess: an elongated bbox (troffer/strip) reads as rectangular, a near-square bbox is the
+  // shape a round downlight's AABB also produces (a true circle's bbox is a square). Below this
+  // threshold, use the round soft texture (reusing _glowTexture(), the round sprite's own — no new
+  // asset); at/above it, use the feathered-rectangle texture. Can't distinguish a genuinely square
+  // FIXTURE from a round one by bbox alone (both bound to a square) — stated limitation, not
+  // hidden; no better shape signal is extracted today, and this is still a real, data-driven split
+  // rather than a single one-size-fits-all shape.
+  var GLOW_LENS_ROUND_ASPECT = 1.25;
+  var _glowLensMeshRect = null, _glowLensMeshRound = null;
   function _glowLensOn() {
-    if (_glowLensMesh) return;
+    if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
     var pos = A._nightFixtureWorldPositions();
     if (!pos || !pos.length) return;
@@ -4005,14 +4036,21 @@ async function setupEffects(A, renderer, scene, camera) {
     pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
-    var mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending,
+    var matRect = new THREE.MeshBasicMaterial({
+      color: 0xffffff, map: _glowLensTexture(), transparent: true, blending: THREE.AdditiveBlending,
       depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
     });
-    var mesh = new THREE.InstancedMesh(geo, mat, pos.length);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 999;
-    mesh.name = '__glowLensQuads';
+    var matRound = new THREE.MeshBasicMaterial({
+      color: 0xffffff, map: _glowTexture(), transparent: true, blending: THREE.AdditiveBlending,
+      depthTest: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide
+    });
+    // Worst-case sized (every fixture could land in either bucket) — .count trims to actual use
+    // below, same discipline the single-mesh version already used for pos.length vs quads.
+    var meshRect = new THREE.InstancedMesh(geo, matRect, pos.length);
+    var meshRound = new THREE.InstancedMesh(geo, matRound, pos.length);
+    meshRect.frustumCulled = meshRound.frustumCulled = false;
+    meshRect.renderOrder = meshRound.renderOrder = 999;
+    meshRect.name = '__glowLensQuadsRect'; meshRound.name = '__glowLensQuadsRound';
     var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), qFace = new THREE.Quaternion();
     var pVec = new THREE.Vector3(), sVec = new THREE.Vector3(), col = new THREE.Color();
     // Plane's default normal is +Z; rotate +90 deg about X so it faces -Y (down, toward the floor —
@@ -4024,7 +4062,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // DOWN clearance (same axis __drop already uses) clears the depth test against the fixture's
     // own geometry without moving X/Z off the real fixture at all, from any angle.
     var GLOW_LENS_CLEARANCE = 0.03;
-    var exits = 0, quads = 0, skippedTier2 = 0;
+    var exits = 0, rectN = 0, roundN = 0, skippedTier2 = 0;
     for (var i = 0; i < pos.length; i++) {
       var p = pos[i];
       if (p.__exit) { exits++; continue; }   // §GLOW_EXIT_SOFT stays on the round sprite — see above
@@ -4045,29 +4083,48 @@ async function setupEffects(A, renderer, scene, camera) {
       // fit: FitUpstairs.png). No yaw needed — q stays face-down only.
       q.copy(qFace);
       var w = p.__bw || GLOW_SPRITE_SIZE, h = p.__bd || GLOW_SPRITE_SIZE;
-      sVec.set(w, h, 1);
+      var aspect = Math.max(w, h) / Math.max(0.001, Math.min(w, h));
+      var isRound = aspect < GLOW_LENS_ROUND_ASPECT;
+      // Round texture is inscribed in a square plane — size it off the LARGER dimension so the
+      // lit circle doesn't undershoot the fixture's actual footprint.
+      if (isRound) { var d = Math.max(w, h); sVec.set(d, d, 1); } else { sVec.set(w, h, 1); }
       m4.compose(pVec, q, sVec);
-      mesh.setMatrixAt(quads, m4);
       col.setHex(p.__color === undefined ? 0xffe4b5 : p.__color);
-      mesh.setColorAt(quads, col.multiplyScalar(GLOW_GAIN));
-      quads++;
+      col.multiplyScalar(GLOW_GAIN);
+      if (isRound) {
+        meshRound.setMatrixAt(roundN, m4); meshRound.setColorAt(roundN, col); roundN++;
+      } else {
+        meshRect.setMatrixAt(rectN, m4); meshRect.setColorAt(rectN, col); rectN++;
+      }
     }
-    mesh.count = quads;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    A.scene.add(mesh);
-    _glowLensMesh = mesh;
-    console.log('§GLOW_LENS_QUAD staged ' + quads + ' lens quads (' + exits +
+    meshRect.count = rectN; meshRound.count = roundN;
+    meshRect.instanceMatrix.needsUpdate = true; meshRound.instanceMatrix.needsUpdate = true;
+    if (meshRect.instanceColor) meshRect.instanceColor.needsUpdate = true;
+    if (meshRound.instanceColor) meshRound.instanceColor.needsUpdate = true;
+    if (rectN) { A.scene.add(meshRect); _glowLensMeshRect = meshRect; }
+    if (roundN) { A.scene.add(meshRound); _glowLensMeshRound = meshRound; }
+    console.log('§GLOW_LENS_QUAD staged rect=' + rectN + ' round=' + roundN + ' (' + exits +
       ' exit signs left on the round sprite, ' + skippedTier2 +
-      ' tier-2 overhead-picks skipped — PL only, no quad), 1 draw call, 0 scene materials touched');
+      ' tier-2 overhead-picks skipped — PL only, no quad), ' + ((rectN ? 1 : 0) + (roundN ? 1 : 0)) +
+      ' draw call(s), 0 scene materials touched');
   }
   function _glowLensOff() {
-    if (!_glowLensMesh) return;
-    A.scene.remove(_glowLensMesh);
-    _glowLensMesh.geometry.dispose();
-    _glowLensMesh.material.dispose();
+    if (!_glowLensMeshRect && !_glowLensMeshRound) return;
+    // Both meshes share ONE PlaneGeometry instance (built fresh each _glowLensOn() call) —
+    // dispose it once, off whichever mesh is present, not per-mesh (double-dispose is harmless in
+    // three.js but wasteful/misleading to read).
+    (_glowLensMeshRect || _glowLensMeshRound).geometry.dispose();
+    if (_glowLensMeshRect) {
+      A.scene.remove(_glowLensMeshRect);
+      _glowLensMeshRect.material.dispose();
+      _glowLensMeshRect = null;
+    }
+    if (_glowLensMeshRound) {
+      A.scene.remove(_glowLensMeshRound);
+      _glowLensMeshRound.material.dispose();
+      _glowLensMeshRound = null;
+    }
     console.log('§GLOW_LENS_QUAD removed');
-    _glowLensMesh = null;
   }
 
   A.startStillRefine = function() {
