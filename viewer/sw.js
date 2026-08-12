@@ -8,10 +8,13 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1014';   // bump on each deploy; per-change detail is the git commit message.
-// v1014 (2026-08-13) §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS: 4D schedule generation changed
+const CACHE_VERSION = 'v1015';   // bump on each deploy; per-change detail is the git commit message.
+// v1015 (2026-08-13) §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS: 4D schedule generation changed
 // (schedule_gate.js computeSchedule's crew shift + time_machine.js's Tier-2 remap) — bump so
 // returning browsers regenerate instead of replaying a cached pre-fix schedule/asset set.
+// Collided with #1331's v1013->v1014 (independent same-day bump, no dedicated comment — see its
+// commit message: N8AO radius/intensity retune, effects.js is in PRECACHE_ASSETS) — took the
+// higher number per this file's own KEEP-BOTH/take-the-higher merge convention.
 // v1013 (2026-08-13) §17.17.4 (W-OCC3-ARM): occlStructEnabled armed default-true in dlod_nav.js —
 // bump so returning browsers actually get the new default instead of a cached copy.
 // v1012 (2026-08-13) §RULES_TABLE_SOURCE: rates/sequence_rules.json is PRECACHED (line ~234) and its
