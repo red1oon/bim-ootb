@@ -140,8 +140,15 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // WALL-CLOCK deltas, and on a shift clock an element's wall-clock width depends on whether its
 // install straddles a day's 8-h productive window — so the ±1ms-tolerance audit comparisons at the
 // margin land differently. 11/367 on Clinic, 1/1101 on LTU, -7/151 on JKR.
-const FLOAT_AFTER_BASELINE = { Terminal: 102, Hospital: 135, Duplex: 9, HHS_Office_Federated: 11,
-  Clinic: 367, LTU_AHouse: 1101, JKR: 151 };
+// §TIER2_PER_ELEMENT_CLAMP (2026-08-13): Terminal 102->103, LTU_AHouse 1101->1142 — the clamp is
+// deliberately non-order-preserving (pushes a Tier-2 element straight to t1EndZ[z] instead of a
+// uniform zone shift, per the ruling in prompts/4D_SCHEDULE_PERFECTION.md §TIER2_AFTER_TIER1), so a
+// few more elements land after a dependent that _midairRepair's later-only push cannot fully reorder
+// — the SAME accepted trade-off class this witness already locks (W-MZ-8's own header), not a new
+// one. W-MZ-2 (the acceptance bar: floating==0) is UNCHANGED on all 7 buildings — re-verify that
+// first if this baseline ever needs updating again.
+const FLOAT_AFTER_BASELINE = { Terminal: 103, Hospital: 135, Duplex: 9, HHS_Office_Federated: 11,
+  Clinic: 367, LTU_AHouse: 1142, JKR: 151 };
 const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
   LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;

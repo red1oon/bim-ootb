@@ -14,6 +14,18 @@
 var RATE_TEMPLATE_META = null;
 var RATE_TEMPLATE_NAME = null;  // e.g. 'cidb2024_my'
 
+// §SHIFT_HOURS (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — user ruling: "24hr is
+// our default, import and JSON setting can import as we align to standard model"). Productive hours
+// one crew spends per calendar day in the generated 4D. #1323 §ARCH_START_TEMPO/M1 shipped 8 (the
+// rate table's own crew-day length) as the ONLY value, which tripled every building's display span
+// (Hospital ~2020d) — the user judged that too slow and wants the FAST 24h/day clock as the default,
+// with 8h available as an explicit opt-in for a "standard model" rate-pack import. schedule_gate.js
+// still defaults to 8 internally (so every witness/probe that doesn't pass shiftHours is unaffected —
+// they test ORDER/floating, which is invariant to a uniform time rescale, not absolute day counts);
+// this is the ONE value the real viewer generation path (time_machine.js injectGantt) reads and
+// threads through as computeSchedule's 5th arg. A future rate-pack JSON can override this per import.
+var SHIFT_HOURS = 24;
+
 // ============================================================================
 // CIDB 2024 MATERIAL RATES — hardcoded fallback (from boq_export.py)
 // ============================================================================

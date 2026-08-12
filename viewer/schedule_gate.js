@@ -265,8 +265,14 @@
   //   when omitted or a resource has no entry. Shared PROJECT-WIDE across both passes (not per-band,
   //   not per-Level) — see §CREW-CAP header comment.
   // returns { guid: { start, end } } ms.
-  function computeSchedule(elements, baseMs, scaleFactor, maxCrews) {
+  // shiftHours: §SHIFT_HOURS (rates.js, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — productive
+  // hours per calendar day. Optional; when omitted this module's own 8h default holds (every caller
+  // that doesn't pass it — the witnesses/probes — is unaffected, since a uniform time rescale changes
+  // no order/floating assertion). Reassigned fresh at the TOP of every call, never inherited from a
+  // previous one, so back-to-back calls with different values (or none) never cross-contaminate.
+  function computeSchedule(elements, baseMs, scaleFactor, maxCrews, shiftHours) {
     baseMs = baseMs || 0; scaleFactor = scaleFactor || 1;
+    SHIFT_MS = (shiftHours > 0 ? shiftHours : 8) * 3600 * 1000;
     var grid = {}, wallGrid = {}, cwGrid = {}, out = {}, c, cs, k, arr, S;
     // §CURTAIN_WALL_OPENING observability — keyed by guid, not a counter: openingGate is called
     // several times per element (placeNonst plus every §DEQ_REPAIR sweep), so a bare ++ would report
