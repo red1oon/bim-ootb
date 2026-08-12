@@ -4,6 +4,46 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.44.0](https://github.com/red1oon/bim-ootb/compare/v1.43.0...v1.44.0) (2026-08-12)
+
+
+### ✨ Features
+
+* **5d:** §CREW_DEMAND + §HR_COST — per-trade labour cost, and the crew premise disproved ([#1315](https://github.com/red1oon/bim-ootb/issues/1315)) ([99babe7](https://github.com/red1oon/bim-ootb/commit/99babe7b588355193f41fd9e45ebfc923a9503e9))
+
+
+### 🐛 Fixes
+
+* **4d:** §ARCH_START_TEMPO/M1 — the 8-hour crew day (movie clock stops running crews 24/7) ([#1323](https://github.com/red1oon/bim-ootb/issues/1323)) ([27ae527](https://github.com/red1oon/bim-ootb/commit/27ae5279d41c2c4b8dac3e293cf1d41ad37e5aa9))
+* **4d:** §CURTAIN_WALL_OPENING — HHS Level-3 doors floated because openingGate's POOL, not its predicate, was wrong ([#1325](https://github.com/red1oon/bim-ootb/issues/1325)) ([83b1f69](https://github.com/red1oon/bim-ootb/commit/83b1f69535157359527108728258db3a800c68d5))
+* **4d:** §DAY_GAP_TAIL — witness_midair_zero has been dead since [#1313](https://github.com/red1oon/bim-ootb/issues/1313), and judging the wrong copy ([#1321](https://github.com/red1oon/bim-ootb/issues/1321)) ([1660c99](https://github.com/red1oon/bim-ootb/commit/1660c99f5658fa654265cb2c6fbcbab4ed159661))
+* **4d:** §DOOR_WINDOW_HOST_WALL_DISPLAY — openingGate's display-layer twin (the movie undid the gate) ([#1326](https://github.com/red1oon/bim-ootb/issues/1326)) ([0b97891](https://github.com/red1oon/bim-ootb/commit/0b97891430d26fe31928264912e9d7347efa1da2))
+* **4d:** §GANTT_CACHE_VERSION — bump for [#1319](https://github.com/red1oon/bim-ootb/issues/1319)'s hostGate, missed on first landing ([#1322](https://github.com/red1oon/bim-ootb/issues/1322)) ([6e1ca24](https://github.com/red1oon/bim-ootb/commit/6e1ca2442e887115a958e2091a9a79a01e5125e1))
+* **4d:** §GANTT_PHASE_CLOBBER — stop overwriting parameters.phase with the task NAME ([#1312](https://github.com/red1oon/bim-ootb/issues/1312)) ([42539c9](https://github.com/red1oon/bim-ootb/commit/42539c92eab9f226f6f0a10afea798e60edf6388))
+* **4d:** §HOSTED_BEFORE_HOST — a hosted element inherits its host's floor ([#1319](https://github.com/red1oon/bim-ootb/issues/1319)) ([c972778](https://github.com/red1oon/bim-ootb/commit/c97277854ec23bfd8194957a9e25cbbcc98d7cd9))
+* **4d:** §RULES_TABLE_SOURCE — re-sync sequence_rules.json to rates.js, the table the viewer actually runs ([#1329](https://github.com/red1oon/bim-ootb/issues/1329)) ([e0d6d4b](https://github.com/red1oon/bim-ootb/commit/e0d6d4b08bc946841069a1bded69cb5aff914b49))
+* **4d:** kill MEP dead-air (TIER2 per-element clamp) + restore 24h/day default (SHIFT_HOURS) ([#1333](https://github.com/red1oon/bim-ootb/issues/1333)) ([2463ff1](https://github.com/red1oon/bim-ootb/commit/2463ff158e49f3400eedc6ef17fbb593629e90e6))
+* **4d:** witness_kernel_ops_sched_version has been dead since [#1313](https://github.com/red1oon/bim-ootb/issues/1313) — and it guards the version bump ([#1324](https://github.com/red1oon/bim-ootb/issues/1324)) ([50885c1](https://github.com/red1oon/bim-ootb/commit/50885c1c4303acf80d4adc8472477ce4c4fb33e5))
+* **cinema:** §MOVIE_SHADOW_TM — bake shadow strength matched to Time Machine exactly ([#1316](https://github.com/red1oon/bim-ootb/issues/1316)) ([314185d](https://github.com/red1oon/bim-ootb/commit/314185d792d9d6a53443411d3f7d51f2f745652e))
+* **cpe:** §CPE_BUILDUP_ARM_GATE — the rehearsal armed onto an empty timeline ([#1310](https://github.com/red1oon/bim-ootb/issues/1310)) ([e799b97](https://github.com/red1oon/bim-ootb/commit/e799b97963b90c913af8a1faacdd259b2b8be8ea))
+* **viewer:** §17.17 occl-struct render-target bug + self-exclude/bias + LTU single-building fallback ([#1328](https://github.com/red1oon/bim-ootb/issues/1328)) ([f99b38f](https://github.com/red1oon/bim-ootb/commit/f99b38f8c6914f4258b38f5a407ad9c3fdc337b2))
+* **viewer:** §17.17.4 arm occlStructEnabled default-true, restore dropped init line (W-OCC3-ARM) ([#1330](https://github.com/red1oon/bim-ootb/issues/1330)) ([9d56919](https://github.com/red1oon/bim-ootb/commit/9d569195d09a5c088f775bc58efe1aa553658219))
+* **viewer:** §SWUPDATE_FIRST_CLAIM — no "Update ready" toast on the first controller ([#1311](https://github.com/red1oon/bim-ootb/issues/1311)) ([291bd29](https://github.com/red1oon/bim-ootb/commit/291bd29462968182cf8af8444a71201510102cba))
+* **viewer:** N8AO screen-space radius — fixes "far bright, up close dark" ([#1334](https://github.com/red1oon/bim-ootb/issues/1334)) ([682a54f](https://github.com/red1oon/bim-ootb/commit/682a54f00534d3df0cb0355bdc0488a27c45bdf4))
+* **viewer:** retune N8AO radius/intensity — Alt+G, Alt+S and Alt+C bakes read too dark/noisy ([#1331](https://github.com/red1oon/bim-ootb/issues/1331)) ([ffb23a4](https://github.com/red1oon/bim-ootb/commit/ffb23a486a44a185804ad4d0f9c217bf87d3c609))
+* **viewer:** SW precache install can serve stale HTTP-cached responses ([#1332](https://github.com/red1oon/bim-ootb/issues/1332)) ([e65a339](https://github.com/red1oon/bim-ootb/commit/e65a3396e2ca636e013ce0533017edc15be23c8d))
+
+
+### ⚡ Performance
+
+* **4d:** §TIER_SERIAL_BY_ZONE — backbone barrier scoped per derived zone, programme -27..-47% ([#1314](https://github.com/red1oon/bim-ootb/issues/1314)) ([1a20932](https://github.com/red1oon/bim-ootb/commit/1a20932f7ef43fb33fe7b46a4d05a620642a09a3))
+* **4d:** §XRAY_CACHE_MEMO + §TM_WARM — R4, both halves ruled by the user ([#1308](https://github.com/red1oon/bim-ootb/issues/1308)) ([14db2cd](https://github.com/red1oon/bim-ootb/commit/14db2cd918cb86f14cd4d302388029b5cf46d8b7))
+
+
+### ♻️ Refactors
+
+* **4d:** §ZONE_INDEX — one memoized spatial-zone index, two inline copies removed ([#1313](https://github.com/red1oon/bim-ootb/issues/1313)) ([475373b](https://github.com/red1oon/bim-ootb/commit/475373b81e83ee1d71d27ccac41d80177c9ba21f))
+
 ## [1.43.0](https://github.com/red1oon/bim-ootb/compare/v1.42.0...v1.43.0) (2026-08-11)
 
 
