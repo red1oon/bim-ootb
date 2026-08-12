@@ -3502,6 +3502,142 @@
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // ── §ZONE_INDEX (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §ZONE_INDEX —
+  // Witness: viewer/tests/witness_zone_index.js W-ZONE) ────────────────────────────────────────
+  // ONE derived spatial-zone index, built once per (building, _metaGen) and reused by every
+  // building op that needs a zone. Before this, the SAME median-Z storey banding was written out
+  // TWICE — inside _buildXrayElements and again inside injectGantt — byte-identical algorithms
+  // differing only in which column index their own SELECT put `cz` at, plus a counter. That is the
+  // duplication pattern CPE_4D_PERF_MEM_FINDINGS.md §R7 already records for the support predicate
+  // (4 copies) and the element build (a self-described "DELIBERATE COPY"); a third consumer (the
+  // §TIER_SERIAL_BY_ZONE barrier) would have made it three, so it is consolidated FIRST.
+  //
+  // ⚠ THE ZONE IS A GEOMETRIC INFERENCE, NOT IFC TRUTH — say so wherever it is reported. Measured
+  // share of elements whose elements_meta.storey is null/empty/"unknown": Duplex 86.0%, Terminal
+  // 69.9%, Clinic 32.2%, Hospital 15.9%. A key read straight from the column would be absent for
+  // most elements on most buildings, which is why the median-Z reassignment exists at all and why
+  // it — not the column — is the primary key.
+  //
+  // FALLBACK CHAIN, finest available wins, each level an optional refinement over the one below,
+  // never a prerequisite (user: "storey room space should all come into play amicably"):
+  //     room/space  → storey → derived median-Z band → single zone
+  // Measured reason it must be a chain and not a requirement: of the 7 shipped buildings, ONLY
+  // Terminal carries the richer tables (spatial_structure n=59, rel_contained_in_space n=2,181).
+  // A model extracted without them loses precision, never correctness; a single-storey model
+  // degrades to one zone, which is exactly today's global behaviour.
+  //
+  // ⚠ SCOPE OF THIS CHANGE: consolidation + cache ONLY. `level` and `spaceOf` are BUILT and
+  // REPORTED but nothing consumes them yet — turning the space level on changes zone granularity,
+  // which is a scheduling behaviour change and belongs with §TIER_SERIAL_BY_ZONE's own witness,
+  // not with a refactor that has to prove itself byte-identical.
+  var _zoneMemo = [];   // 2-slot, most-recent first — same discipline as §XRAY_CACHE_MEMO
+
+  function _zoneIndexBuild(db) {
+    var t0 = performance.now();
+    var r;
+    // Same population filter both former copies used, so the index is exactly their union.
+    try {
+      r = db.exec('SELECT m.guid, m.storey, COALESCE(t.center_z, 0) as cz ' +
+        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+    } catch (e) { return null; }
+    if (!r.length || !r[0].values.length) return null;
+    var rows = r[0].values;
+
+    var zvals = {}, unknownN = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var st = rows[i][1] || '_UNKNOWN';
+      if (st === '_UNKNOWN' || /^unknown$/i.test(st)) { unknownN++; continue; }
+      (zvals[st] || (zvals[st] = [])).push(rows[i][2] || 0);
+    }
+    var medianZ = {};
+    for (var sk in zvals) {
+      var vals = zvals[sk].sort(function (a, b) { return a - b; });
+      var mid = Math.floor(vals.length / 2);
+      medianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    }
+    var names = Object.keys(medianZ).sort(function (a, b) { return medianZ[a] - medianZ[b]; });
+    var band = {};
+    for (var bi = 0; bi < names.length; bi++) band[names[bi]] = bi;
+
+    // Tie audit: the two former copies fed their maps in DIFFERENT row orders (injectGantt's SELECT
+    // carries ORDER BY cz, _buildXrayElements' does not). Sorting by medianZ is only order-stable
+    // when no two storeys SHARE a median — so a tie is the one condition under which the old pair
+    // could legitimately have disagreed with each other, and under which this consolidation would
+    // be picking a winner rather than preserving both. Counted and logged, never silently assumed.
+    var tiesN = 0;
+    for (var ti = 1; ti < names.length; ti++) if (medianZ[names[ti]] === medianZ[names[ti - 1]]) tiesN++;
+
+    // Optional finest level — present only where the extractor produced it (Terminal today).
+    var spaceOf = null, spaceN = 0;
+    try {
+      var sr = db.exec('SELECT element_guid, space_guid FROM rel_contained_in_space');
+      if (sr.length && sr[0].values.length) {
+        spaceOf = {};
+        for (var si = 0; si < sr[0].values.length; si++) spaceOf[sr[0].values[si][0]] = sr[0].values[si][1];
+        spaceN = sr[0].values.length;
+      }
+    } catch (e) { spaceOf = null; }   // table absent — expected on 6 of 7 buildings, not an error
+
+    var level = spaceOf ? 'space' : (names.length > 1 ? 'band' : (names.length === 1 ? 'storey' : 'single'));
+    return {
+      medianZ: medianZ, names: names, band: band, spaceOf: spaceOf,
+      level: level, tiesN: tiesN, unknownN: unknownN, spaceN: spaceN,
+      totalN: rows.length, buildMs: performance.now() - t0,
+      // The reassignment both former copies performed, verbatim — an element with no real storey
+      // is placed on the nearest real one by |cz - medianZ|, first-wins on an exact distance tie
+      // (loop keeps the earlier name on `<`), which is the previous behaviour exactly.
+      assign: function (storey, cz) {
+        if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+        if (!names.length) return storey;
+        var best = names[0], bd = Infinity;
+        for (var ai = 0; ai < names.length; ai++) {
+          var d = Math.abs(cz - medianZ[names[ai]]);
+          if (d < bd) { bd = d; best = names[ai]; }
+        }
+        return best;
+      }
+    };
+  }
+
+  // Memoized accessor. Key mirrors §XRAY_CACHE_MEMO: over-invalidating on _metaGen is the safe
+  // direction (a miss costs one rebuild; a false hit is a wrong-zone bug).
+  function _zoneIndex() {
+    var app = A();
+    if (!app || !app.db) return null;
+    // Read _metaGen directly rather than borrowing §XRAY_CACHE_MEMO's helper — two unrelated memos
+    // should not be coupled through a shared accessor just because their keys happen to rhyme.
+    var key = ((app.activeBuilding) || '?') + '|' + ((app._metaGen != null) ? (app._metaGen | 0) : -1);
+    for (var i = 0; i < _zoneMemo.length; i++) {
+      if (_zoneMemo[i].key === key) {
+        var hit = _zoneMemo[i];
+        if (_zoneMemo.length > 1 && i > 0) { _zoneMemo.splice(i, 1); _zoneMemo.unshift(hit); }
+        return hit.idx;
+      }
+    }
+    var idx = _zoneIndexBuild(app.db);
+    if (!idx) return null;
+    _zoneMemo.unshift({ key: key, idx: idx });
+    if (_zoneMemo.length > 2) _zoneMemo.length = 2;
+    console.log('§ZONE_INDEX built bands=' + idx.names.length + ' level=' + idx.level +
+      ' elements=' + idx.totalN + ' noStorey=' + idx.unknownN +
+      ' (' + (100 * idx.unknownN / Math.max(1, idx.totalN)).toFixed(1) + '% — zone is a median-Z' +
+      ' INFERENCE, not IFC truth)' + ' medianTies=' + idx.tiesN +
+      ' spaceRows=' + idx.spaceN + ' ms=' + idx.buildMs.toFixed(1));
+    return idx;
+  }
+  // Test hook (diagnostic only, same contract as __tmXrayProbe) — lets W-ZONE compare the shared
+  // index against a freshly-built one and read the memo depth.
+  window.__tmZoneProbe = function (op) {
+    if (op === 'clearMemo') { _zoneMemo = []; }
+    var idx = _zoneIndex();
+    if (!idx) return null;
+    return { bands: idx.names.length, names: idx.names.slice(), band: idx.band,
+             medianZ: idx.medianZ, level: idx.level, ties: idx.tiesN,
+             unknownN: idx.unknownN, totalN: idx.totalN, spaceN: idx.spaceN,
+             memoDepth: _zoneMemo.length };
+  };
+
   // §Z_STACK_XRAY_STAGING — support-edge cache for x-ray staging
   // ══════════════════════════════════════════════════════════════════
   // Implementing prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING — Witness: witness_zstack_xray_staging.js
@@ -3565,30 +3701,11 @@
     } catch (e) { return null; }
     if (!r.length || !r[0].values.length) return null;
 
-    var storeyZvals = {};
-    r[0].values.forEach(function(row) {
-      var storey = row[3] || '_UNKNOWN';
-      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
-      var cz = row[4] || 0;
-      (storeyZvals[storey] || (storeyZvals[storey] = [])).push(cz);
-    });
-    var storeyMedianZ = {};
-    for (var sk in storeyZvals) {
-      var vals = storeyZvals[sk].sort(function(a, b) { return a - b; });
-      var mid = Math.floor(vals.length / 2);
-      storeyMedianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-    }
-    var storeyNames = Object.keys(storeyMedianZ).sort(function(a, b) { return storeyMedianZ[a] - storeyMedianZ[b]; });
-    function assignStoreyByZ(storey, cz) {
-      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-      if (!storeyNames.length) return storey;
-      var best = storeyNames[0], bd = Infinity;
-      for (var ai = 0; ai < storeyNames.length; ai++) {
-        var d = Math.abs(cz - storeyMedianZ[storeyNames[ai]]);
-        if (d < bd) { bd = d; best = storeyNames[ai]; }
-      }
-      return best;
-    }
+    // §ZONE_INDEX (2026-08-12) — was an inline copy of the median-Z banding, byte-identical to
+    // injectGantt's own except for the column index its SELECT put `cz` at. One shared index now;
+    // see _zoneIndexBuild's header for why the zone is an inference and why it is memoized.
+    var _zi = _zoneIndex();
+    function assignStoreyByZ(storey, cz) { return _zi ? _zi.assign(storey, cz) : storey; }
 
     var elements = r[0].values.map(function(row) {
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
@@ -4864,27 +4981,13 @@
     // Min Z is unreliable — a column extending down from an upper storey gives it a low minZ,
     // causing upper elements to appear before lower storeys finish.
     // Median Z represents the typical floor level of that storey.
-    var storeyZvals = {};  // REAL (non-Unknown) storey name → [cz, cz, ...] — the §STOREY-Z anchor basis
-    r[0].values.forEach(function(row) {
-      var storey = row[3] || '_UNKNOWN';
-      if (storey === '_UNKNOWN' || /^unknown$/i.test(storey)) return;
-      var cz = row[5] || 0;
-      if (!storeyZvals[storey]) storeyZvals[storey] = [];
-      storeyZvals[storey].push(cz);
-    });
-    // Compute median Z per storey
-    var storeyMedianZ = {};
-    for (var sk in storeyZvals) {
-      var vals = storeyZvals[sk].sort(function(a, b) { return a - b; });
-      var mid = Math.floor(vals.length / 2);
-      storeyMedianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-    }
-    // Sort storeys by median Z → assign band index
-    var storeyNames = Object.keys(storeyMedianZ).sort(function(a, b) {
-      return storeyMedianZ[a] - storeyMedianZ[b];
-    });
-    var storeyBand = {};
-    for (var si = 0; si < storeyNames.length; si++) storeyBand[storeyNames[si]] = si;
+    // §ZONE_INDEX (2026-08-12) — was a second inline copy of the median-Z banding (see
+    // _zoneIndexBuild). Same numbers, one owner, memoized across activations. The §GANTT
+    // storey-bands line below is kept BYTE-IDENTICAL: it is part of W-ZONE's equivalence bar.
+    var _zi = _zoneIndex();
+    var storeyMedianZ = _zi ? _zi.medianZ : {};
+    var storeyNames = _zi ? _zi.names : [];
+    var storeyBand = _zi ? _zi.band : {};
 
     console.log('§GANTT storey-bands: ' + storeyNames.length + ' bands from storey names (median Z): ' +
       storeyNames.map(function(s, i) { return i + '="' + s + '" medZ=' + storeyMedianZ[s].toFixed(1); }).join(', '));
@@ -4902,15 +5005,12 @@
     // corrected storey with zero further code changes downstream.
     var unknownReassigned = 0;
     function assignStoreyByZ(storey, cz) {
+      // §ZONE_INDEX: the reassignment itself now lives in the shared index; the counter stays here
+      // because §GANTT_STOREY_Z below reports what THIS pass reassigned, not what the index holds.
       if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-      if (!storeyNames.length) return storey;
-      var best = storeyNames[0], bd = Infinity;
-      for (var ai = 0; ai < storeyNames.length; ai++) {
-        var d = Math.abs(cz - storeyMedianZ[storeyNames[ai]]);
-        if (d < bd) { bd = d; best = storeyNames[ai]; }
-      }
+      if (!_zi || !storeyNames.length) return storey;
       unknownReassigned++;
-      return best;
+      return _zi.assign(storey, cz);
     }
 
     // ── Build elements with storey-aware overrides ──
