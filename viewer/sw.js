@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1014';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1015';   // bump on each deploy; per-change detail is the git commit message.
 // v1013 (2026-08-13) §17.17.4 (W-OCC3-ARM): occlStructEnabled armed default-true in dlod_nav.js —
 // bump so returning browsers actually get the new default instead of a cached copy.
 // v1012 (2026-08-13) §RULES_TABLE_SOURCE: rates/sequence_rules.json is PRECACHED (line ~234) and its
@@ -256,11 +256,21 @@ self.addEventListener('install', (event) => {
   const _installSet = [...PRECACHE_ASSETS, ...SHELL_LIBS];
   console.log('§PRECACHE-TRIM install set=' + _installSet.length + ' deferred=' + DEFERRED_LIBS.length +
     ' (web-ifc/xlsx/exceljs off the install path, ~8.9MB)');
+  // §SW_PRECACHE_STALE_FIX (2026-08-13): cache.add(url) fetches through the BROWSER's own HTTP
+  // cache — a same-origin GET with an unexpired Cache-Control (these static assets serve
+  // max-age=600) can be satisfied from that cache instead of hitting network, even during a
+  // brand-new install triggered by a real CACHE_VERSION bump. Real repro: edit a precached file,
+  // bump CACHE_VERSION, deploy — a browser that loaded the OLD file within the last 10 minutes
+  // silently re-precaches that same stale response into the NEW version's cache, and won't
+  // self-correct until the NEXT version bump. `{cache: 'reload'}` forces the underlying fetch to
+  // bypass HTTP cache validation, so install always pulls the real current network response.
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       Promise.all(
         _installSet.map(url =>
-          cache.add(url).catch(err => console.warn('§SW_PRECACHE_SKIP', url, err.message))
+          fetch(url, { cache: 'reload' })
+            .then(resp => cache.put(url, resp))
+            .catch(err => console.warn('§SW_PRECACHE_SKIP', url, err.message))
         )
       )
     )
