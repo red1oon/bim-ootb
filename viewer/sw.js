@@ -8,7 +8,14 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1011';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1012';   // bump on each deploy; per-change detail is the git commit message.
+// v1012 (2026-08-13) §RULES_TABLE_SOURCE: rates/sequence_rules.json is PRECACHED (line ~234) and its
+// content changed — LABOR_RATES.ELECTRICIAN.productivity re-synced to rates.js's 15 class keys. Its
+// only readers are mep_report.html and boq_charts.html (viewer.html never calls loadSequenceRules),
+// so without this bump those two pages keep costing 7 electrical classes off a stale 8-key table.
+// Deliberately NOT accompanied by a _GANTT_CACHE_VERSION bump: the viewer's generated schedule is
+// byte-unchanged by this commit (it never reads the JSON, and the rates.js edit is comment-only), so
+// forcing every materialized building to re-bake would be churn with no behavioural difference.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
