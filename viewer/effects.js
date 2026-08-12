@@ -2471,7 +2471,18 @@ async function setupEffects(A, renderer, scene, camera) {
   var PHOTO_SUN_COLOR = 0xffa55c;       // warm golden-hour sun, not neutral white
   var PHOTO_AMBIENT_COLOR = 0x8a6a55;   // warm dim ambient — shadow side reads dusk-toned, not grey
   var PHOTO_HEMI_SKY_COLOR = 0x6a5a7a;  // dusky violet-warm sky half of the hemi light
-  var PHOTO_SUN_INTENSITY_SCALE = 0.7;  // dimmer than full daylight — evening, not noon
+  // §MOVIE_SHADOW_TM (2026-08-12, user, verbatim: "MAKE SHADOW FOR MOVIE MAKER AS STRONG AS IN TM").
+  // These three scales are what made baked shadows read lighter than Time Machine's own shadow play.
+  // Measured against scene.js's native lights (sun 4.4, ambient 0.785, hemi 1.257 — TM's sun/fill
+  // ratio 4.4/2.042 = 2.155):
+  //     was  sun x0.7 = 3.08, ambient x1.15 = 0.903, hemi x1.25 = 1.571  -> ratio 1.245
+  //     i.e. 57.8% of TM's contrast, 42% weaker. Two moves compounded — the sun scaled DOWN while
+  //     the fill scaled UP (0.7 / 1.2115 = 0.578).
+  // Set to 1.0 so the bake uses TM's own balance verbatim; ratio is now 2.155, identical to TM.
+  // The old dusk-dimmed values are recorded above, not deleted, because everything else here
+  // (PHOTO_SUN_COLOR, the fog/exposure/albedo constants) was tuned against them and is deliberately
+  // left untouched — this changes the light BALANCE only, nothing about colour or exposure.
+  var PHOTO_SUN_INTENSITY_SCALE = 1.0;  // was 0.7 — §MOVIE_SHADOW_TM, match TM's shadow strength
   var PHOTO_EXPOSURE_SCALE = 0.85;      // slightly underexposed overall — "materials in little light"
   // §PHOTO_EXPOSURE_LIFT (2026-07-27, user: "Scene still too dark drab"). The still was rendering at
   // 0.45 x 0.85 = 0.3825 — about a stop and a half under three.js's default, which is most of why
@@ -2574,8 +2585,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // scene toward the same brightness, which dilutes the RELATIVE contrast the shadow and the
   // discrete point-light addons depend on to read as distinct. Dialed back — some lift over the
   // raw sin(6 deg) ground darkness, not enough to wash out contrast.
-  var PHOTO_HEMI_INTENSITY_SCALE = 1.25;
-  var PHOTO_AMBIENT_INTENSITY_SCALE = 1.15;
+  var PHOTO_HEMI_INTENSITY_SCALE = 1.0;    // was 1.25 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
+  var PHOTO_AMBIENT_INTENSITY_SCALE = 1.0;  // was 1.15 — §MOVIE_SHADOW_TM (fill no longer lifted above TM's)
   // §GROUND_ALBEDO — the multiplicative lever the two paragraphs above never had. Everything they
   // describe is ADDITIVE (emissive add; hemi/ambient fill), which is exactly why both flattened the
   // cast shadow; this one scales lit and shadowed ground by the same factor. The claim that the
@@ -3243,6 +3254,14 @@ async function setupEffects(A, renderer, scene, camera) {
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
         A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
         A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
+        // §MOVIE_SHADOW_TM: shadow strength is sun/(ambient+hemi). Logged so it can be checked
+        // against TM's own numbers numerically instead of by eye (FUNDAMENTAL LAW — code and maths
+        // is the truth, never screenshots). TM native = 4.4/(0.785+1.257) = 2.155.
+        var _fill = A.ambient.intensity + A.hemi.intensity;
+        console.log('§MOVIE_SHADOW_TM sun=' + A.sun.intensity.toFixed(3) +
+          ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
+          ' fill=' + _fill.toFixed(3) + ' sunFillRatio=' + (_fill ? (A.sun.intensity / _fill).toFixed(3) : 'inf') +
+          ' (TM native ratio 2.155 — equal means the bake matches TM shadow strength)');
       }
     }
     // §PHOTO_FOG_ORDER_FIX (2026-07-16, RESUME BRIEF ADDENDUM item 2 — "sky/ground darkness, one
