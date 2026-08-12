@@ -92,6 +92,19 @@ function getSMMSection(ifcClass) {
 // crew_size already here (CIDB 2024-derived, not extracted from IFC) — editable via the Settings
 // JSON editor / rates/sequence_rules.json the same way. Modest defaults for a large commercial
 // project; bump for a genuinely huge/fast-tracked site, lower for a small one.
+// ⚠ §RULES_TABLE_SOURCE (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — THIS TABLE,
+// NOT THE JSON, IS WHAT THE VIEWER RUNS. Same fact as the note at SEQUENCE_NAME_OVERRIDES below:
+// viewer.html never calls loadSequenceRules(), so rates/sequence_rules.json is a MIRROR (plus the
+// Settings-editor override surface) and this literal is the executed table. That is easy to forget
+// and it drifted: ELECTRICIAN.productivity here carried 15 class keys while the JSON carried 8
+// (IfcSwitchingDevice, IfcSensor, IfcActuator, IfcFlowInstrument, IfcDistributionControlElement,
+// IfcProtectiveDeviceTrippingUnit, IfcUnitaryControlElement were absent there). Because every Node
+// probe and every viewer/tests/witness_*.js reads the JSON, they were all measuring a labour table
+// the browser never used — Hospital programme 1889.4d measured vs 1926.4d shipped, and MEP Final
+// occupancy 14.1% vs 21.0%. Re-synced 2026-08-13. EDIT BOTH FILES IN THE SAME COMMIT.
+// (Separate, still true: panels.js's 5D rate-pack picker calls loadRateTemplate(), whose shallow
+// LABOR_RATES[k] = tpl.labor[k] REPLACES a whole trade — and no pack file carries max_crews, so
+// selecting one silently drops every crew cap to schedule_gate.js's MAX_CREWS_DEFAULT.)
 var LABOR_RATES = {
   HVAC_TECH: {
     rate_per_day: 185, crew_size: 2, max_crews: 2, trade: 'HVAC Technician (Skilled)',

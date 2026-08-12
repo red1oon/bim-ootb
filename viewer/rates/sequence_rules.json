@@ -2,7 +2,7 @@
   "meta": {
     "name": "Default Sequence + Labour Rules",
     "version": "2024.2",
-    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity) used by Time Machine injectGantt and 4D/5D consumers. Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). Editable via Settings JSON editor; rates.js keeps these as the in-file sync default."
+    "note": "Timeline default steps (ifc_class -> phase/sequence/resource + labour productivity). Values copied verbatim from rates.js (schedule_generator.py / boq_export.py origins). READ THIS BEFORE CITING A NUMBER FROM THIS FILE (corrected 2026-08-13, §RULES_TABLE_SOURCE): this file is NOT what Time Machine injectGantt runs on. viewer.html never calls loadSequenceRules() — only mep_report.html and boq_charts.html do — so rates.js's hardcoded SEQUENCE_RULES/LABOR_RATES/SEQUENCE_DEFAULT/SEQUENCE_NAME_OVERRIDES are what the viewer, Time Machine and the Author wizard actually execute, and this file is their MIRROR plus the Settings-JSON-editor override surface. The previous wording here claimed the opposite and is why every Node probe and viewer/tests/witness_*.js measured this file instead of ship: they had drifted (LABOR_RATES.ELECTRICIAN.productivity held 8 class keys here against rates.js's 15 — IfcSwitchingDevice/IfcSensor/IfcActuator/IfcFlowInstrument/IfcDistributionControlElement/IfcProtectiveDeviceTrippingUnit/IfcUnitaryControlElement were missing), worth 1889.4d vs 1926.4d of Hospital programme. Re-synced 2026-08-13. When you edit rates.js, edit this file in the same commit."
   },
   "NAME_OVERRIDES": [
     {
@@ -399,8 +399,15 @@
         "IfcOutlet": 25,
         "IfcElectricAppliance": 15,
         "IfcFlowController": 10,
+        "IfcSwitchingDevice": 10,
         "IfcAlarm": 25,
-        "IfcController": 10
+        "IfcController": 10,
+        "IfcDistributionControlElement": 10,
+        "IfcActuator": 10,
+        "IfcSensor": 10,
+        "IfcFlowInstrument": 10,
+        "IfcProtectiveDeviceTrippingUnit": 10,
+        "IfcUnitaryControlElement": 10
       }
     },
     "STEEL_ERECTOR": {
