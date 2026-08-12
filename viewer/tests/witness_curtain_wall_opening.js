@@ -37,13 +37,28 @@
 //                  fails it 34 times. It asserts COVERAGE, which no prior witness did.
 //   G-CWO-FALLBACK reported — how many openings the curtain-wall pool actually caught per building,
 //                  and how many have no host of any kind (a real data limit, never invented away).
-//   G-CWO-DISPLAY  reported, NOT blocking, and deliberately so: it surfaces
-//                  §DOOR_WINDOW_HOST_WALL_DISPLAY — a SEPARATE, pre-existing, still-OPEN defect
-//                  where _twoTierRemap + _midairRepair rewrite the display timeline and undo
-//                  openingGate's guarantee (measured LTU 28.6% worst 974.0d, Terminal 16.4%, JKR
-//                  10.1%, Hospital 2.5% worst 172.5d — HHS/Clinic/Duplex 0). Failing on it here
-//                  would red-flag every run for something this fix does not claim to solve; printing
-//                  it every run is what stops it being forgotten the way this one was.
+//   G-CWO-DISPLAY  (BLOCKING since 2026-08-12) EARLY <= 5% of hostMatched on the DISPLAY timeline
+//                  the movie actually plays (post _twoTierRemap + _midairRepair). It shipped
+//                  REPORT-ONLY for one day, deliberately, so the defect it surfaced —
+//                  §DOOR_WINDOW_HOST_WALL_DISPLAY, openingGate correct at the generative layer and
+//                  undone by the display rewrite — could be fixed and this gate promoted rather than
+//                  red-flagging every run for something unowned. That fix landed: _twoTierRemap now
+//                  carries openingGate's twin (ScheduleGate.openingPairs), the same shape
+//                  §HOSTED_BEFORE_HOST's own display twin uses.
+//                  MEASURED display EARLY%, before the twin → after it:
+//                    LTU_AHouse 28.5 → 2.0 (25/1280) | Terminal 16.4 → 0.0 | JKR 10.1 → 0.0
+//                    Hospital    2.5 → 0.2 (1/570)   | HHS/Clinic/Duplex 0.0 → 0.0
+//                  Not 0, for the same measured reason G-HOST-DISPLAY is not: _midairRepair runs
+//                  AFTER the remap and may move a host wall later than what it hosts (LTU 25 doors,
+//                  Hospital 1 — every residual is remap=0 → display=N, i.e. attributable to that one
+//                  pass, which is what G-CWO-STAGE below prints). Chasing it to 0 means alternating
+//                  the two rules to a joint fixpoint, which _midairRepair's own header records as
+//                  BUILT, MEASURED and REJECTED (4 rounds, 7,650 pushes, no convergence, 0.8s→14.8s)
+//                  — one is keyed on a contact's START, the other on a host's END. 5% is this lane's
+//                  standing error margin.
+//   G-CWO-STAGE    attribution, reported per building — EARLY after generation vs after the remap
+//                  (where the twin runs) vs after the midair repair. This is what names WHICH layer
+//                  any residual came from instead of leaving it an unexplained number.
 //
 // Command (from the worktree root):
 //   BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_curtain_wall_opening.js
@@ -62,6 +77,8 @@ const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
 const D = 86400000;
+const DISPLAY_TOL = 5;   // % of hostMatched — the lane's standing error margin (G-CWO-DISPLAY),
+                         // the same one witness_hosted_before_host's G-HOST-DISPLAY carries
 
 // Kept identical to schedule_gate.js's own openingGate/CW_HOST_CLS and to probe_door_wall.js.
 // Changing it here without changing them there is what this comment exists to prevent.
@@ -164,7 +181,7 @@ function countEarly(pairs, getS, getE) {
     sliceFn(tmSrc, '_midairRepair', 1) || sliceFn(tmSrc, '_midairRepair', 0)].filter(Boolean).join('\n');
 
   let ran = 0;
-  const rawBad = [], coverBad = [], fallbackRep = [], dispRep = [];
+  const rawBad = [], coverBad = [], fallbackRep = [], dispBad = [], stageRep = [];
 
   for (const bld of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
@@ -235,6 +252,11 @@ function countEarly(pairs, getS, getE) {
     sandbox.console = { log: () => {}, warn: () => {} };
     sandbox.__items = items;
     vm.runInContext('this.__remap(this.__items);', sandbox);
+    // stage 2: + two-tier remap (where §DOOR_WINDOW_HOST_WALL_DISPLAY's twin runs). Frozen here so
+    // G-CWO-STAGE can attribute any residual to a NAMED layer instead of leaving it unexplained.
+    const remS = {}, remE = {};
+    items.forEach(it => { remS[it.guid] = it.s; remE[it.guid] = it.e; });
+    const rem = countEarly(pairs, it => remS[it.guid], it => remE[it.guid]);
     vm.runInContext('this.__repair(this.__items);', sandbox);
     const disp = countEarly(pairs, it => it.s, it => it.e);             // stage 3: DISPLAY (what plays)
 
@@ -249,10 +271,13 @@ function countEarly(pairs, getS, getE) {
     else if (engCw !== viaCw || engUn !== noHost)
       coverBad.push(`${bld}=engine(cwGated=${engCw},stillUngated=${engUn}) vs witness(viaCw=${viaCw},noHost=${noHost})`);
     fallbackRep.push(`${bld} viaCurtainWall=${viaCw} noHostAtAll=${noHost}/${openN}`);
-    dispRep.push(`${bld} gen=${raw.early} display=${disp.early}(${pct(disp.early)}%, worst ${disp.worstD.toFixed(1)}d)`);
+    if (100 * disp.early / pairs.length > DISPLAY_TOL)
+      dispBad.push(`${bld}=${pct(disp.early)}% (${disp.early}/${pairs.length}, worst ${disp.worstD.toFixed(1)}d ${disp.worst})`);
+    stageRep.push(`${bld} gen=${raw.early} remap=${rem.early} display=${disp.early}`);
 
     console.log(`      ${bld}: openings=${openN} hostMatched=${pairs.length} viaCurtainWall=${viaCw} ` +
-      `noHostAtAll=${noHost} EARLY gen=${raw.early}(${pct(raw.early)}%) display=${disp.early}(${pct(disp.early)}%) ` +
+      `noHostAtAll=${noHost} EARLY gen=${raw.early}(${pct(raw.early)}%) remap=${rem.early}(${pct(rem.early)}%) ` +
+      `display=${disp.early}(${pct(disp.early)}%) ` +
       `worstDisplay=${disp.worstD.toFixed(1)}d${disp.worst ? ' ' + disp.worst : ''}`);
   }
 
@@ -270,11 +295,15 @@ function countEarly(pairs, getS, getE) {
     ' — viaCurtainWall is what the IfcCurtainWall/IfcPlate/IfcMember pool caught that the IfcWall* ' +
     'pool could not see; noHostAtAll is a real data limit (an opening in no modelled envelope), ' +
     'reported rather than invented away');
-  gate('G-CWO-DISPLAY', ran > 0, dispRep.join(' | ') +
-    ' — REPORT ONLY. Any gen→display growth is §DOOR_WINDOW_HOST_WALL_DISPLAY, a separate ' +
-    'pre-existing OPEN defect: _twoTierRemap/_midairRepair rewrite the played timeline and undo ' +
-    'openingGate, which has no display-layer twin the way §HOSTED_BEFORE_HOST does. Not failed ' +
-    'here because this fix does not claim to solve it; printed every run so it is not forgotten.');
+  gate('G-CWO-DISPLAY', dispBad.length === 0 && ran > 0,
+    dispBad.length ? `over the ${DISPLAY_TOL}% margin on the timeline the movie plays: ` + dispBad.join(' ')
+      : `every building within the ${DISPLAY_TOL}% margin on the DISPLAY timeline (post remap + ` +
+        `midair repair) — §DOOR_WINDOW_HOST_WALL_DISPLAY's twin in _twoTierRemap holds`);
+  gate('G-CWO-STAGE', ran > 0, stageRep.join(' | ') +
+    ' — gen is schedule_gate.js\'s own output (openingGate); remap is after _twoTierRemap, where ' +
+    '§DOOR_WINDOW_HOST_WALL_DISPLAY\'s twin runs; any growth from remap to display is _midairRepair ' +
+    'moving a host wall later than what it hosts, and this is where that shows rather than being an ' +
+    'unexplained number');
 
   const passed = results.filter(r => r.pass).length;
   console.log(`\n§CWO_WITNESS ${passed}/${results.length} gates passed`);

@@ -169,6 +169,58 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+  // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══
+  // MEASURED (witness_curtain_wall_opening's own G-CWO-DISPLAY, left non-asserting on purpose so a
+  // fix could promote it): openingGate holds PERFECTLY on the generative timeline — rawEARLY 0.0% on
+  // all 7 shipped buildings — and the DISPLAY timeline the movie actually plays undoes it, LTU_AHouse
+  // 28.5%, Terminal 16.4%, JKR 10.1%, Hospital 2.5% of openings starting before their own host wall
+  // FINISHES. Identical shape to §HOSTED_BEFORE_HOST one layer over: a gate that is correct where it
+  // runs, re-broken by _twoTierRemap/_midairRepair rewriting the times afterwards. Same remedy, and
+  // deliberately the same SHAPE as hostPairs above rather than a second mechanism: one pairing at
+  // module scope, so the display-layer repair enforces the exact relation openingGate enforces.
+  //
+  // isOpening/openingBrackets are hoisted here so openingGate's openingScan and this twin test ONE
+  // predicate (the reason EPS/GAP are exported rather than re-typed — "a second copy is a second
+  // thing to drift"). Pool ORDER is openingGate's, verbatim: the IfcWall* pool when the opening has
+  // ANY wall host, else the §CURTAIN_WALL_OPENING fallback pool. Getting that order wrong would make
+  // the display layer enforce something the scheduler was never asked to.
+  function isOpening(e) { return e.cls === 'IfcDoor' || e.cls === 'IfcWindow'; }
+  function openingBrackets(S, el) {                 // openingScan's own bracket, one definition
+    return S.base_z <= el.top_z + EPS && S.top_z >= el.base_z - EPS && overlap(S, el);
+  }
+  // openingPairs(els) -> [{ i, h }] index pairs into els (i = opening, h = a host bracketing it).
+  // EVERY host of the chosen pool is returned, not the nearest — openingGate returns the MAX end
+  // over its whole pool, so a consumer that honours every pair reproduces the gate's exact bound.
+  // Pure geometry, no timing read: a caller pairs once and then compares whatever stage it owns.
+  function openingPairs(els) {
+    var wallIdx = {}, cwIdx = {}, out = [], t, e, cs, c, isW;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      isW = !!(e.cls && e.cls.indexOf('IfcWall') === 0);
+      if (!isW && !CW_HOST_CLS.test(e.cls || '')) continue;
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++)
+        if (isW) (wallIdx[cs[c]] = wallIdx[cs[c]] || []).push(t);
+        else (cwIdx[cs[c]] = cwIdx[cs[c]] || []).push(t);
+    }
+    var seen = {}, gen = 0;
+    function scan(idx, el, into) {                  // dedup by index — an element spans many cells
+      var cs2 = cellsOf(el), c2, arr, k2, si;
+      into.length = 0; gen++;
+      for (c2 = 0; c2 < cs2.length; c2++) { arr = idx[cs2[c2]]; if (!arr) continue;
+        for (k2 = 0; k2 < arr.length; k2++) { si = arr[k2]; if (seen[si] === gen) continue;
+          seen[si] = gen;
+          if (openingBrackets(els[si], el)) into.push(si); } }
+      return into;
+    }
+    var wall = [], cw = [], pool, q;
+    for (t = 0; t < els.length; t++) { e = els[t];
+      if (!isOpening(e)) continue;
+      pool = scan(wallIdx, e, wall);
+      if (!pool.length) pool = scan(cwIdx, e, cw);
+      for (q = 0; q < pool.length; q++) out.push({ i: t, h: pool[q] });
+    }
+    return out;
+  }
   // bbox volume — the same m³ the BIG_ELEMENT_VOL p95 was measured in (§SUPPORT_UNCHECKED 1a and
   // the §HANG_NEAREST fallback below share this one definition so their populations can never drift)
   function bboxVol(e) { return (e.x1 - e.x0) * (e.y1 - e.y0) * (e.top_z - e.base_z); }
@@ -486,7 +538,9 @@
       var g = -1, cs2 = cellsOf(el), c2, k2, arr2, S2;
       for (c2 = 0; c2 < cs2.length; c2++) { arr2 = gr[cs2[c2]]; if (!arr2) continue;
         for (k2 = 0; k2 < arr2.length; k2++) { S2 = arr2[k2];
-          if (S2.base_z <= el.top_z + EPS && S2.top_z >= el.base_z - EPS && overlap(S2, el) && S2.end > g) g = S2.end; } }
+          // §DOOR_WINDOW_HOST_WALL_DISPLAY: the bracket now lives at module scope (openingBrackets)
+          // so this gate and its display-layer twin can never test different geometry.
+          if (openingBrackets(S2, el) && S2.end > g) g = S2.end; } }
       return g;
     }
     // §CURTAIN_WALL_OPENING: STRICT ADDITION, and the fallback ordering is what makes it strict —
@@ -497,7 +551,7 @@
     // so the §DEQ_REPAIR loop (which shifts seq>4 only) never moves them, and the one seq>4 member
     // of the pool, IfcCurtainWall, is not an opening so nothing ever gates it back.
     function openingGate(el) {
-      if (el.cls !== 'IfcDoor' && el.cls !== 'IfcWindow') return baseMs;
+      if (!isOpening(el)) return baseMs;
       var g = openingScan(wallGrid, el);
       if (g < 0) {
         g = openingScan(cwGrid, el);
@@ -1003,7 +1057,7 @@
   // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
   // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
   // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, openingPairs: openingPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

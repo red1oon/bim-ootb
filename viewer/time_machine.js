@@ -4391,16 +4391,43 @@
     // reason EPS/GAP are imported rather than re-typed), and the same later-only safety
     // §MIDAIR_REPAIR carries: a hosted element is pushed to its host's end, never pulled earlier,
     // so nothing already satisfied above can be undone by it.
-    var _hostFixed = 0;
-    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.hostPairs) {
-      var _hp = ScheduleGate.hostPairs(items.map(function (it) {
-        return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
-                 base_z: it.bz, top_z: it.tz };
-      }));
+    var _hostFixed = 0, _openFixed = 0;
+    var _gateEls = (typeof ScheduleGate !== 'undefined' && (ScheduleGate.hostPairs || ScheduleGate.openingPairs))
+      ? items.map(function (it) {
+          return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
+                   base_z: it.bz, top_z: it.tz };
+        })
+      : null;
+    if (_gateEls && ScheduleGate.hostPairs) {
+      var _hp = ScheduleGate.hostPairs(_gateEls);
       _hp.forEach(function (p) {
         var e = items[p.i], h = items[p.h];
         if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _hostFixed++; }
       });
+    }
+    // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md)
+    // The §HOSTED_BEFORE_HOST argument above, one layer over and with the same remedy — deliberately
+    // not a second mechanism. openingGate (schedule_gate.js) gates a door/window on its host wall's
+    // FINISH and holds perfectly where it runs: rawEARLY 0.0% on all 7 shipped buildings
+    // (witness_curtain_wall_opening G-CWO-RAW). The DISPLAY timeline then undid it — MEASURED by that
+    // witness's own G-CWO-DISPLAY, which was shipped non-asserting for exactly this fix to promote:
+    // LTU_AHouse 28.5%, Terminal 16.4%, JKR 10.1%, Hospital 2.5% of openings started before their
+    // host finished on the timeline the movie plays. Same cause as the host case: the passes that
+    // rewrite times afterwards (the Tier-1 straggler/zone work above, _tierAuditRegate, and
+    // _midairRepair after) are order-preserving only within a zone, and a door and the wall it is cut
+    // into are routinely in different ones.
+    // SAME PAIRING THE GATE USES (ScheduleGate.openingPairs — one definition, same reason hostPairs
+    // is imported rather than re-derived), same later-only safety: an opening is pushed to its host's
+    // end, never pulled earlier, so nothing already satisfied above can be undone by it. Every host
+    // of the pool is honoured, which is openingGate's own MAX-over-pool bound; hosts are walls and
+    // curtain-wall parts and openings are never hosts, so one pass reaches that maximum exactly.
+    if (_gateEls && ScheduleGate.openingPairs) {
+      var _opMoved = {};
+      ScheduleGate.openingPairs(_gateEls).forEach(function (p) {
+        var e = items[p.i], h = items[p.h];
+        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _opMoved[p.i] = 1; }
+      });
+      _openFixed = Object.keys(_opMoved).length;
     }
     var base = Infinity, endAll = -Infinity, ext2 = {};
     items.forEach(function (it) {
@@ -4421,6 +4448,8 @@
       ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
       ' §HOSTED_BEFORE_HOST hostFixed=' + _hostFixed +
       ' (hosted elements the cross-zone Tier-2 shift left ahead of their own host, pushed back to it)' +
+      ' §DOOR_WINDOW_HOST_WALL_DISPLAY openFixed=' + _openFixed +
+      ' (doors/windows this remap left starting before their own host wall finished, pushed to its end)' +
       ' §TIER2_AFTER_TIER1 shiftDays=' + (tier2Shift / D).toFixed(1) +
       ' (0=Tier2 already started after Tier1\'s true completion, no shift needed)' +
       ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
@@ -7654,7 +7683,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 14;   // §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
+  var _GANTT_CACHE_VERSION = 15;   // §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12): _twoTierRemap gained openingGate's display-layer twin (ScheduleGate.openingPairs) — a door/window the remap left starting before its own host wall FINISHED is pushed to that wall's end. MEASURED display EARLY% before→after: LTU_AHouse 28.5→2.0, Terminal 16.4→0.0, JKR 10.1→0.0, Hospital 2.5→0.2, HHS/Clinic/Duplex 0.0→0.0 (every residual is _midairRepair moving a host wall later AFTER the twin ran — witness_curtain_wall_opening G-CWO-STAGE attributes it). The DISPLAY timeline is what kernel_ops is written from, so a building materialized under v14 replays the un-repaired order forever regardless of deployed code — the same second-half miss this constant's own v12/v13 notes record.
+                                   // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
                                    // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
                                    // v12 was §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.
                                    // v11 was §MIDAIR_REPAIR (2026-08-12): display times repaired so nothing appears before the first element it touches
