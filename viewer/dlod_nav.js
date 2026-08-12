@@ -277,8 +277,13 @@
     // doesn't re-walk this exact fix shape without knowing it was already tried and falsified.
     occlDepthDecoupleEnabled: false,
     // §17.16 step: same console-only convention (window.__dlodNav.occlStructEnabled = true),
-    // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior. Once witnessed
-    // (W-OCC2-*), this flips to default true and occlBvhEnabled's whole §17.2-17.4 machinery retires.
+    // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior.
+    // §17.17.4 (W-OCC3-ARM): the squash-merge that landed §17.17.1-3 (PR #1328) dropped this
+    // declaration entirely (_stats.occlStructEnabled read as undefined, not false — harmless since
+    // undefined===true is still false, but not the intended explicit default). Restored here,
+    // armed true: false-hide dropped 26.9%→2.3-4.1% (real RTX 4060, LTU_AHouse), W-OCC3-EQUIV
+    // passed lever-off first. See prompts/OCCL_STRUCT_SESSION_HANDOFF.md.
+    occlStructEnabled: true, occlStructReady: false, occlStructCount: 0, occlStructRootDiag: 0,
     occlStructCandidates: 0, occlStructHidden: 0, occlStructQueriesIssued: 0, occlStructResultsRead: 0,
     // §17.17.2/§17.17.3 sub-levers — all three only ever read while occlStructEnabled is true, so
     // the off-path stays byte-identical regardless of their values (W-OCC3-EQUIV).
