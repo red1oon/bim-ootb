@@ -268,8 +268,13 @@ const D = 86400000;
     //     width than one that fits inside it, so `it.e > nextMinS` can flip for elements sitting
     //     within one window of the boundary. LTU is the only building with a straggler population
     //     dense enough at that margin (18 zones, 122k elements) for 2 to cross it.
-    const DAGWINS_BASELINE = { Terminal: 4003, Hospital: 256, Duplex: 0, HHS_Office_Federated: 420, Clinic: 5,
-      LTU_AHouse: 1019, JKR: 205 };
+    // §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): stair
+    // flights now contribute real geoGate/DAG edges (previously invisible to structIdxGrid), so
+    // more real cross-phase dependencies are correctly forced — Hospital 256->257, LTU_AHouse
+    // 1019->1076, JKR 205->227. Terminal/Duplex/HHS/Clinic unmoved (their flights' phase already
+    // matched the population they were already forcing, or they carry no IfcStairFlight elements).
+    const DAGWINS_BASELINE = { Terminal: 4003, Hospital: 257, Duplex: 0, HHS_Office_Federated: 420, Clinic: 5,
+      LTU_AHouse: 1076, JKR: 227 };
     assert(stats && stats.dagWins === DAGWINS_BASELINE[bld],
       'W-TS-1b ' + bld + ' DAG-forced cross-phase population locked at ' + DAGWINS_BASELINE[bld] +
       ' (got ' + (stats ? stats.dagWins : '?') + ') — support order wins for these, counted never hidden');

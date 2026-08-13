@@ -368,7 +368,7 @@
       // The DAG makes the rule explicit and uniform: between two pool members only BELOW orders
       // them; the §GEO_SUPPORT_LEAK cases this clause exists for were all non-pool consumers
       // (IfcWallStandardCase / Proxy) and keep it unchanged.
-      var elPool = el.seq <= 4 || isPromotedSlab(el);
+      var elPool = el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el);
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           var below = S.base_z < el.base_z - EPS;
@@ -399,6 +399,13 @@
     // joins the same support grid as PASS-A structure. As a support it sits ABOVE what it carries, so
     // the bearing-below predicate almost never matches it; only hangGate reads it upward.
     function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }
+    // §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): a flight is
+    // real structure but routes through placeNonst (seq=6), so it was never inserted into
+    // structIdxGrid/grid — invisible AS SUPPORT to anything resting on it (a mid-landing, a floor
+    // above). Same shape as isPromotedSlab: one narrow class admitted to the support-visibility
+    // index without becoming a structure-pool member for GATE-ROUTING purposes (placeNonst,
+    // its own full gate set, is unchanged for the flight itself).
+    function isStairFlight(e) { return e.cls === 'IfcStairFlight'; }
     // §ARCH_START_TEMPO / M1 — the crew day, bound to this run's epoch (see the module header).
     // Every crew slot, every gate and the repair loop below read/write wall-clock ms exactly as
     // before; only the ADVANCE of the clock by a duration goes through the shift window.
@@ -412,7 +419,7 @@
       var end = wallAt(prodAt(start) + dur); _prodMsTot += dur;
       out[el.guid] = { start: start, end: end };
       var prec = null;   // §CURTAIN_WALL_OPENING: the rec this element contributes, reused by cwGrid
-      if (el.seq <= 4 || isPromotedSlab(el)) {
+      if (el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el)) {
         var rec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid,
                     promoted: isPromotedSlab(el) };
         (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec); prec = rec;
@@ -453,7 +460,7 @@
     function hangGate(el) {                // latest finish of the structure this element hangs from
       if (el.seq <= 4 || hasBearingBelow(el)) return baseMs;
       var g = baseMs; cs = cellsOf(el);
-      var elPool = isPromotedSlab(el);     // §GEOMETRIC_SUPPORT_ORDER — see geoGate's pool rule
+      var elPool = isPromotedSlab(el) || isStairFlight(el);     // §GEOMETRIC_SUPPORT_ORDER — see geoGate's pool rule
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           // carrier's TOP strictly above mine (antisymmetric — same-z sibling slabs otherwise carry
@@ -629,7 +636,7 @@
     // pools auditFloating scans, so scheduler order and audit test the same physics
     var structIdxGrid = {}, wallIdxGrid = {};
     for (t = 0; t < N; t++) { var P = elements[t];
-      if (P.seq <= 4 || isPromotedSlab(P)) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (structIdxGrid[cs[c]] = structIdxGrid[cs[c]] || []).push(t); }
+      if (P.seq <= 4 || isPromotedSlab(P) || isStairFlight(P)) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (structIdxGrid[cs[c]] = structIdxGrid[cs[c]] || []).push(t); }
       else if (P.cls && P.cls.indexOf('IfcWall') === 0) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (wallIdxGrid[cs[c]] = wallIdxGrid[cs[c]] || []).push(t); } }
     // pair predicates — one definition, used for both indegree count and decrement-on-place
     function edgeBelow(S, E)     { return S.base_z < E.base_z - EPS; }                          // geoGate "below"
@@ -648,7 +655,7 @@
     // reused cands array; _gen is bumped once per scan so stamps never need clearing
     var stamp = new Int32Array(N), _gen = 0, cands = [], nc;
     for (t = 0; t < N; t++) {
-      var E = elements[t], hasB = false, isPoolE = E.seq <= 4 || isPromotedSlab(E);
+      var E = elements[t], hasB = false, isPoolE = E.seq <= 4 || isPromotedSlab(E) || isStairFlight(E);
       _gen++; cands.length = 0;
       cs = cellsOf(E);
       for (c = 0; c < cs.length; c++) { arr = structIdxGrid[cs[c]]; if (!arr) continue;
