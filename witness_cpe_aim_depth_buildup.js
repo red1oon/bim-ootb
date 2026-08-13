@@ -84,6 +84,50 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     for (let i = 0; i <= 20; i++) onSamples.push(A._probeAimDepth(i / 20));
     out.onSamples = onSamples;
 
+    // ── M7/M8 — user, 2026-08-13: "Cam may fast turn, but not jitter around." Measures the REAL
+    // flown gaze (plan2.poseAt), frame-spaced same as a real bake (fps=15, 55s => 825 frames), with
+    // the aim system as it now ships (candidate 1 + eye-bias + candidate 2, all active) against the
+    // SAME walk with A.__cpeAimOff suppressing every aim rule — the exact idiom witness_cpe_hose.js's
+    // A1/A2 already established for the (non-buildup) density rule, applied here for the first time
+    // to an ACTUAL buildup walk, where A1/A2 never measured.
+    const fps = 15, dur = 55, nF = Math.round(fps * dur);
+    const sample = (pl, n) => { const a = []; for (let i = 0; i < n; i++) a.push(pl.poseAt(i / (n - 1))); return a; };
+    const peakTurn = poses => {
+      let mx = 0, mxAt = 0;
+      for (let i = 1; i < poses.length; i++) {
+        const p0 = poses[i - 1], p1 = poses[i];
+        const ax = p0.tx - p0.x, ay = p0.ty - p0.y, az = p0.tz - p0.z, al = Math.hypot(ax, ay, az) || 1;
+        const bx = p1.tx - p1.x, by = p1.ty - p1.y, bz = p1.tz - p1.z, bl = Math.hypot(bx, by, bz) || 1;
+        const d = (ax * bx + ay * by + az * bz) / (al * bl);
+        const ang = Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI;
+        if (ang > mx) { mx = ang; mxAt = i / (poses.length - 1); }
+      }
+      return { peak: mx, at: mxAt };
+    };
+    const withRule = sample(plan2, nF);
+    A.__cpeAimOff = true;
+    const plan2NoAim = A.cinemaPathPlan(dur, null);
+    const noRule = sample(plan2NoAim, nF);
+    A.__cpeAimOff = false;
+    const pWith = peakTurn(withRule), pNo = peakTurn(noRule);
+    // M8's own number: how much does the aim system actually MOVE the gaze (with vs. without, same
+    // frame), not just the frame-to-frame RATE M7 checks — proves M7's 0% regression is "aim reaims
+    // substantially without adding jitter", not "aim has no effect at all" (a witness that cannot
+    // fail is not a witness).
+    let maxDivergeDeg = 0, maxDivergeAt = 0, sumDivergeDeg = 0;
+    for (let i = 0; i < nF; i++) {
+      const p0 = withRule[i], p1 = noRule[i];
+      const ax = p0.tx - p0.x, ay = p0.ty - p0.y, az = p0.tz - p0.z, al = Math.hypot(ax, ay, az) || 1;
+      const bx = p1.tx - p1.x, by = p1.ty - p1.y, bz = p1.tz - p1.z, bl = Math.hypot(bx, by, bz) || 1;
+      const d = (ax * bx + ay * by + az * bz) / (al * bl);
+      const ang = Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI;
+      sumDivergeDeg += ang;
+      if (ang > maxDivergeDeg) { maxDivergeDeg = ang; maxDivergeAt = i / (nF - 1); }
+    }
+    out.jitter = { fps, dur, nF, peakWithDeg: pWith.peak, peakWithAt: pWith.at,
+                   peakNoRuleDeg: pNo.peak, peakNoRuleAt: pNo.at,
+                   maxDivergeDeg, maxDivergeAt, meanDivergeDeg: sumDivergeDeg / nF };
+
     return out;
   });
 
@@ -120,6 +164,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   P('M6 W-RULE-FIRES §CPE_AIM_DEPTH actually fires at least once during a buildup walk', fired,
     `firedCount(on)=${res.onSamples.filter(s => s.fired).length}/21 ` +
     `firedCount(off)=${res.offSamples.filter(s => s.fired).length}/21`);
+
+  // M7/M8 — user: "Cam may fast turn, but not jitter around." peakWith must not REGRESS against the
+  // same walk with every aim rule suppressed, beyond the SAME 15% tolerance witness_cpe_hose.js's own
+  // A2 already established for this exact idiom (non-buildup) — reused, not re-invented.
+  const j = res.jitter;
+  const regressionPct = j.peakNoRuleDeg > 0 ? ((j.peakWithDeg - j.peakNoRuleDeg) / j.peakNoRuleDeg) * 100 : 0;
+  P('M7 W-NO-JITTER peak gaze change/frame does not regress beyond A2\'s own 15% tolerance', regressionPct <= 15,
+    `peakWith=${j.peakWithDeg.toFixed(2)}deg/frame(at t=${j.peakWithAt.toFixed(2)}) ` +
+    `peakNoRule=${j.peakNoRuleDeg.toFixed(2)}deg/frame(at t=${j.peakNoRuleAt.toFixed(2)}) ` +
+    `regression=${regressionPct.toFixed(1)}% (tol 15%, ${j.fps}fps ${j.dur}s ${j.nF} frames, buildup ON, candidate1+eyebias+candidate2 all active)`);
+
+  P('M8 W-REAIM-REAL the aim system measurably re-aims the gaze (M7\'s 0% is "no added jitter", not "no effect")',
+    j.maxDivergeDeg > 2,
+    `maxDiverge(with vs without, same frame)=${j.maxDivergeDeg.toFixed(2)}deg at t=${j.maxDivergeAt.toFixed(2)} ` +
+    `meanDiverge=${j.meanDivergeDeg.toFixed(2)}deg across the whole film`);
 
   console.log('\nsample on-probes (e3, restricted, placedElems, fired, w):');
   res.onSamples.forEach((s, i) => console.log(`  e3=${(i/20).toFixed(2)} restricted=${s.restricted} placedElems=${s.placedElems} fired=${s.fired} w=${s.w != null ? s.w.toFixed(3) : 'n/a'}`));
