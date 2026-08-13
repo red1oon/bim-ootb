@@ -5031,10 +5031,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
   // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
   // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
-  var EFFECTS_V = 'v19 (' +
-    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides LOS/§CPE_AIM_DENSITY outright ' +
-      '(_buildPinZones/_pinLookAtAt inside _beat3Pose) — was live in v18\'s shipped code, this ' +
-      'string just never said so; ' +
+  var EFFECTS_V = 'v20 (' +
+    '§CPE_AIM_SIMPLIFY §CPE_AIM_DENSITY RETIRED (was: turn toward nearest mass when outside the ' +
+      'building with nothing substantial near — a third, independent trigger the user\'s own model ' +
+      'never asked for, and the likely source of reported "facing sky" swings); §CPE_AIM_DEPTH is ' +
+      'now the SOLE exception to path-follow, and its trigger changed from omnidirectional ' +
+      '_aimSoftDensity (fired on ordinary flanking-wall proximity, e.g. mid-corridor) to a single ' +
+      'forward raycast along the walk\'s own look-ahead direction (_aimForwardClear) — long hit stays ' +
+      'on path regardless of flanking walls, short hit (dead end / storey-crossing pocket) triggers ' +
+      'the existing far-facade search unchanged; ' +
+    '§CPE_AIM_PIN a pinned band\'s Voronoi zone of the walk overrides path-follow/depth outright ' +
+      '(_buildPinZones/_pinLookAtAt inside _beat3Pose); ' +
     '§CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; ' +
     '§CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; ' +
     '§CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; ' +
@@ -5944,21 +5951,13 @@ async function setupEffects(A, renderer, scene, camera) {
       return n;
     }
 
-    // ══ §CPE_AIM_DENSITY — outside the perimeter with nothing near, face the mass ═══════════════
-    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DENSITY. User directive 2026-07-28:
-    //   "when the rope passes the final building perimeter and no substantial building part nearby,
-    //    then camera turns perpendicular towards the densest nearest part of the building."
-    //
-    // WHY: the walk gaze is a LOOK-AHEAD along the path. §CPE_HOSE lets a stretch be flung far
-    // outside the building, and out there the look-ahead points at empty ground for seconds of film.
-    // This gives those stretches a subject. It only ever changes where the camera LOOKS — never
-    // where it is; the authored path is untouched (§CPE_BANDS rule 8, authored is authored).
-    //
-    // Both trigger terms are CONTINUOUS, and that is a design decision, not an accident: a boolean
-    // trigger would switch the gaze on in one frame, which is exactly the discontinuity
-    // §CPE_JERK_DEFINITION and §CPE_EVEN_TURN exist to kill. Ramping on the measured quantities
-    // themselves means the blend is smooth in position by construction, with no hysteresis state to
-    // get stuck in and nothing to tune.
+    // ══ §CPE_AIM_GRID — coarse occupancy grid, the shared data §CPE_AIM_DEPTH's subject search reads
+    // (§CPE_AIM_SIMPLIFY, 2026-08-13): originally built for §CPE_AIM_DENSITY (user directive
+    // 2026-07-28, "when the rope passes the final building perimeter and no substantial building part
+    // nearby, then camera turns perpendicular towards the densest nearest part of the building"), which
+    // has since been RETIRED (see its marker a few lines below, above _aimDepthWeight's own section).
+    // This grid itself stays — §CPE_AIM_DEPTH's subject search (`_aimDepthSubject`) is the sole
+    // remaining reader.
     var _aimCells = null;
     // Coarse occupancy grid over the SAME element centroids §CPE_NOISE_LAW already reads — reuse,
     // never a second proximity system (the same rule that made _densityAt reuse _densPoints).
@@ -5976,7 +5975,7 @@ async function setupEffects(A, renderer, scene, camera) {
       for (var i = 0; i < pts.length; i++) {
         var kx = Math.floor(pts[i][0] / cs), ky = Math.floor(pts[i][1] / cs), kz = Math.floor(pts[i][2] / cs);
         var key = kx + ',' + ky + ',' + kz, c = map[key];
-        // zMin/zMax: purely additive (§CPE_AIM_DENSITY only ever reads n/x/y/z, unaffected). Lets
+        // zMin/zMax: purely additive to the base n/x/y/z fields. Lets
         // §CPE_AIM_DEPTH tell a wall-like cell (points spread over height) from a floor/ceiling-like
         // one (flat, near-zero height spread) without a second data pass — see zSpan below.
         if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; cells.push(c); }
@@ -5994,7 +5993,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var pts = _densPoints();
       _aimCells = _aimGridFrom(pts);
       console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + Math.max(2, envelope / 8).toFixed(1) +
-        'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DENSITY)');
+        'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DEPTH)');
       return _aimCells;
     }
     // §CPE_AIM_DEPTH_BUILDUP candidate 2 — the grid over ONLY elements placed by cursorMs, per
@@ -6032,249 +6031,61 @@ async function setupEffects(A, renderer, scene, camera) {
     // because every cell's weight varies smoothly with distance and no cell ever "wins".
     // The cubed distance term is what keeps it selective: without it the average drifts toward the
     // centroid of the whole site and stops being the NEAREST part.
-    // §CPE_AIM_DEPTH_BUILDUP fix (candidate 1, 2026-08-13): user-reported live — during a buildup
-    // bake the gaze turns to face a nearby wall/ceiling instead of a deep open hall. Root cause
-    // (bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP, converged diagnosis): this
-    // is the ACTIVE aim rule during buildup (its sibling §CPE_AIM_DEPTH is buildup-gated off), and
-    // unlike that sibling it carried NO facade filter — every cell in the grid, floor/ceiling/roof
-    // included, competed on density alone. Reuses §CPE_AIM_DEPTH_VERTICALITY's own tested classifier
-    // (same `zSpan` field §CPE_AIM_GRID already tracks, zero new data): a cell whose points barely
-    // spread in height is a floor/ceiling/roof slab, not a facade, and is excluded from the pick.
-    // Scope, honestly: this removes flat near cells (matches "faces ceiling"/roof-truss reports); it
-    // does NOT reweight near-vs-far for a genuine vertical wall — that is §CPE_AIM_DEPTH_BUILDUP's
-    // still-open candidate 2, unchanged by this edit.
-    function _aimSubject(pIfc) {
-      var cells = _aimGrid();
-      if (!cells.length) return null;
-      var scale = Math.max(1, envelope * 0.5);
-      var minZSpan = Math.max(2, envelope / 8) * 0.3;   // same derivation as _aimDepthSubject's
-      var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
-      for (var i = 0; i < cells.length; i++) {
-        var c = cells[i];
-        if (c.zSpan < minZSpan) continue;               // floor/ceiling/roof-like — not a facade
-        var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz) / scale;
-        var w = c.n / ((1 + d) * (1 + d) * (1 + d));
-        sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
-      }
-      if (sw <= 1e-9) return null;
-      return { x: sx / sw, y: sy / sw, z: sz / sw, n: Math.round(sn / sw) };
-    }
-    // How far OUTSIDE the ARC footprint this point is, in metres (0 while inside). The perimeter is
-    // the building's own bbox — the same arcBbox the orbit radius and the tube thickness derive from.
-    function _aimOutsideM(pIfc) {
-      if (!arcBbox) return 0;
-      var ox = Math.max(arcBbox.xMin - pIfc.ix, 0, pIfc.ix - arcBbox.xMax);
-      var oy = Math.max(arcBbox.yMin - pIfc.iy, 0, pIfc.iy - arcBbox.yMax);
-      return Math.hypot(ox, oy);
-    }
-    // The blend weight, 0..1. Product of two smoothsteps so BOTH conditions must hold — outside the
-    // perimeter AND nothing substantial near — exactly as the directive states them.
-    var _AIM_NEAR_FRAC = 0.12;    // near-radius as a fraction of envelope (derived, not a metre value)
-    var _AIM_DENS_FLOOR = 12;     // "substantial": the soft element weight within the near radius
-                                  // below which the neighbourhood counts as empty. Reported in the
-                                  // witness so it can be argued with from a number, not from taste.
-    // Soft density, for the same reason _aimSubject averages rather than picks: _densityAt is a HARD
-    // count inside a radius, so it steps by whole elements as they cross the boundary, and against a
-    // floor of 12 each step is an ~8% jump in the blend weight — a visible stutter in the gaze on a
-    // path that is merely passing by. The kernel makes an element fade in as it approaches instead
-    // of appearing, which is the same continuity argument applied one level down.
-    // `pts` override — §CPE_AIM_DEPTH_BUILDUP candidate 2 reuses this over a placed-only subset;
-    // omitted (the original, every existing caller) it is the whole-building set, unchanged.
-    function _aimSoftDensity(p, R, pts) {
-      pts = pts || _densPoints();
-      if (!pts.length || typeof A.three2ifc !== 'function') return 0;
-      var q = A.three2ifc(p.x, p.y, p.z), R2 = R * R, acc = 0;
-      for (var i = 0; i < pts.length; i++) {
-        var dx = pts[i][0] - q.ix, dy = pts[i][1] - q.iy, dz = pts[i][2] - q.iz;
-        var u = (dx * dx + dy * dy + dz * dz) / R2;
-        if (u >= 1) continue;
-        var g = 1 - u;
-        acc += g * g;
-      }
-      return acc;
-    }
-    var _aimLast = { logged: 0 };
-    function _aimWeight(p) {
-      if (typeof A.three2ifc !== 'function') return 0;
-      var pIfc = A.three2ifc(p.x, p.y, p.z);
-      var outM = _aimOutsideM(pIfc);
-      if (outM <= 0) return 0;                       // inside the perimeter: never fires
-      var wOut = _cinemaSmoothstep(Math.min(1, outM / Math.max(1, envelope * 0.15)));
-      var R = Math.max(3, envelope * _AIM_NEAR_FRAC);
-      var dens = _aimSoftDensity(p, R);
-      var wEmpty = 1 - _cinemaSmoothstep(Math.min(1, dens / _AIM_DENS_FLOOR));
-      return { w: wOut * wEmpty, outM: outM, dens: dens, R: R, pIfc: pIfc };
-    }
-    // Aim the gaze at the subject with the ALONG-PATH component projected out — that is what
-    // "perpendicular" means concretely: the camera turns side-on to its own travel and faces the
-    // mass. If the subject is dead ahead or dead behind the projection degenerates, and the honest
-    // answer is to look straight at it rather than to invent a sideways stare.
-    // ══ Probe the walk once, smooth the series, interpolate per pose. ═══════════════════════════
-    // Same idiom §CPE_NOISE_LAW already uses (32 probes interpolated across the cost samples), and
-    // adopted here for the same reason plus a measured one. The probe found a 23.9°/frame gaze
-    // spike mid-walk (t≈0.43) against 15.8 without the rule — an 8-frame swing where the weight and
-    // the subject both moved fast at once. Both are FIELDS ALONG THE PATH, so the fix belongs where
-    // this file already puts it: sample the field, smooth it, read it back — bounding the RATE, not
-    // just the range, exactly as §CPE_PACE_LOS's own amendment argues ("graceful, not just bounded").
-    // The 5-tap binomial pass removes anything narrower than ~1/16 of the walk. It also makes the
-    // per-pose cost a lerp instead of a full density scan, which matters at bake rates.
-    var _aimSeries = null;
-    function _aimBuild() {
-      var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
-      for (i = 0; i <= K; i++) {
-        var p = _outPos(i / K);
-        var A0 = _aimWeight(p);
-        var wv = (A0 && A0.w) ? A0.w : 0;
-        var sub = (A0 && A0.w > 1e-4) ? _aimSubject(A0.pIfc) : null;
-        ws.push(wv);
-        hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
-        // Where the weight is zero the subject is irrelevant but must still be CONTINUOUS through
-        // the smoothing pass, so carry the last known one rather than a hole.
-        var prevN = sx.length - 1;
-        sx.push(sub ? sub.x : (prevN >= 0 ? sx[prevN] : 0));
-        sy.push(sub ? sub.y : (prevN >= 0 ? sy[prevN] : 0));
-        sz.push(sub ? sub.z : (prevN >= 0 ? sz[prevN] : 0));
-      }
-      function smooth(a) {
-        var o = [], k = [1, 4, 6, 4, 1], n = a.length;
-        for (var j = 0; j < n; j++) {
-          var acc = 0, wsum = 0;
-          for (var m = -2; m <= 2; m++) {
-            var idx = j + m;
-            if (idx < 0 || idx >= n) continue;
-            acc += a[idx] * k[m + 2]; wsum += k[m + 2];
-          }
-          o.push(acc / wsum);
-        }
-        return o;
-      }
-      // Two passes: one binomial pass still left a visible step at the trigger edge on Duplex.
-      // §CPE_AIM_LATCH — running max, same as the depth rule's series: the aim can strengthen but
-      // never weaken, so leaving the dense pocket no longer slides the gaze back to look-ahead.
-      _aimSeries = { K: K, has: hasS, w: _aimLatch(smooth(smooth(ws))),
-                     x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
-      var wMax = 0, wN = 0;
-      for (i = 0; i <= K; i++) { if (_aimSeries.w[i] > wMax) wMax = _aimSeries.w[i]; if (_aimSeries.w[i] > 0.01) wN++; }
-      console.log('§CPE_AIM_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
-        ' maxBlend=' + wMax.toFixed(2) + ' — the weight and the subject are FIELDS along the walk, ' +
-        'sampled and rate-limited here rather than evaluated raw per frame');
-    }
-    function _aimAt(e3) {
-      if (!_aimSeries) _aimBuild();
-      var S = _aimSeries, u = Math.max(0, Math.min(1, e3)) * S.K;
-      var j = Math.min(S.K - 1, Math.floor(u)), f = u - j;
-      return { w: S.w[j] * (1 - f) + S.w[j + 1] * f,
-               // §CPE_STICK_HOLD: nearest-probe presence, deliberately NOT interpolated — `has` is a
-               // yes/no fact about whether a subject was found, not a quantity to average.
-               has: (f < 0.5 ? S.has[j] : S.has[j + 1]),
-               x: S.x[j] * (1 - f) + S.x[j + 1] * f,
-               y: S.y[j] * (1 - f) + S.y[j + 1] * f,
-               z: S.z[j] * (1 - f) + S.z[j + 1] * f };
-    }
-    function _aimApply(p, T, lx, ly, lz, e3, boost) {
-      // Test-only control switch (same pattern as time_machine's window.__forceFull): the witness
-      // needs the SAME plan with the rule suppressed, so that the only difference between the two
-      // measurements is the rule itself. No production effect — nothing sets it in the app.
-      if (A.__cpeAimOff) return null;
-      if (typeof A.ifc2three !== 'function' || typeof A.three2ifc !== 'function') return null;
-      var A0 = _aimAt(e3 == null ? 0 : e3);
-      // §CPE_STICK_HOLD: the boost has to be considered HERE, not only at `var w` below — this early
-      // return fired first and silently discarded it (MEASURED: 0.02 deg of turn across a parked
-      // 18-sample stop). `has` gates it so a hold can only ever strengthen an aim that has a REAL
-      // subject at this point on the path; where the series never found one, the boost stays off
-      // rather than aiming the camera at a carried-forward or origin coordinate.
-      if (!A0 || !(Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0)) > 1e-3)) return null;
-      var subj = { x: A0.x, y: A0.y, z: A0.z, n: 0 };
-      var s3 = A.ifc2three(subj.x, subj.y, subj.z);
-      var vx = s3.x - p.x, vy = s3.y - p.y, vz = s3.z - p.z;
-      var vL = Math.hypot(vx, vy, vz) || 1;
-      vx /= vL; vy /= vL; vz /= vL;
-      var dot = vx * T.x + vy * T.y + vz * T.z;
-      // ⚠ THE PROJECTION MUST FADE, NOT SWITCH — measured, twice. A full projection
-      // `v - T(v·T)` is discontinuous in DIRECTION exactly where the subject crosses the travel
-      // axis: the residual shrinks to zero and re-emerges pointing the opposite way, so
-      // renormalising it flips the gaze ~180° in one frame. The first cut hid that behind a hard
-      // `pL < 0.2 → look straight at it` fallback, which is itself a switch. Witness A2 measured
-      // both: 78.5°/frame with the argmax subject, and 95.2°/frame after that was smoothed — the
-      // subject was never the cause, this was. (Recorded rather than silently fixed: "don't invent
-      // a root cause to match a feeling" cuts both ways — the first hypothesis was wrong and the
-      // number said so.)
-      //
-      // Scaling the projection by how far off-axis the subject is removes the flip by construction:
-      // k→0 when the subject lies along travel (look straight at it — there is no meaningful
-      // "perpendicular" there), k→1 when it is well off-axis (fully side-on, the directive's
-      // "perpendicular"). Nothing vanishing is ever renormalised.
-      var perpMag = Math.sqrt(Math.max(0, 1 - dot * dot));      // |v - T(v·T)| for unit v, T
-      var k = _cinemaSmoothstep(Math.min(1, perpMag / 0.35));
-      var px = vx - T.x * dot * k, py = vy - T.y * dot * k, pz = vz - T.z * dot * k;
-      var pL = Math.hypot(px, py, pz) || 1;
-      var degenerate = k < 0.05;
-      px /= pL; py /= pL; pz /= pL;
-      // ⚠ THE RULE MUST BE GONE BY THE SEAM — measured, and it was the biggest number in the file.
-      // The probe put the peak at t=0.8706 against `beats.out=0.8700`: the walk→orbit hand-off. The
-      // walk's own gaze at e3=1 is what Beat 4 was designed to pick up (§CINEMA_BEAT_OVERLAP); an
-      // aim rule still holding the gaze side-on at that instant hands the orbit a direction it never
-      // agreed to, and the seam snaps — 88.4°/frame, against 15.8 without the rule. Taper over the
-      // SAME window the orbit hand-off itself uses, so by the time Beat 4 takes over the gaze is
-      // exactly what it would have been with no rule at all. Not a new constant: CINEMA_TURN_OVERLAP
-      // is the existing hand-off window.
-      // §CPE_AIM_LATCH (2026-08-01) — THE OUTGOING TAPER IS GONE. It used to force this rule to zero
-      // across the final CINEMA_TURN_OVERLAP of the walk. User: "the turning should be thruout, till
-      // the end of clip as that overwrites the last part forceful turn which we why we introduced
-      // this in the first place" — i.e. the taper was disabling the rule exactly where the rule was
-      // needed, and the reasoning is theirs: "the last spin is all a 'straight circle'", so on the
-      // orbit perpendicular-to-travel IS radially inward and the aim law and Beat 4 AGREE.
-      //
-      // ⚠ The 88.4 deg/frame snap this taper was measured to fix is REAL and is NOT ignored — it is
-      // fixed at its actual cause instead. That snap came from Beat 4 starting its gaze blend at the
-      // hardcoded (odx,0,odz) on the claim that "(odx,odz) IS the direction Beat 3 ends on", which
-      // stops being true the moment this rule still governs at e3=1. Beat 4 now starts from
-      // _beat3EndDir — Beat 3's REAL final gaze, sampled from _beat3Pose(1) — so the hand-off is
-      // continuous by construction rather than by switching this rule off before it.
-      var w = Math.max(A0.w, (A0.has > 0.5 ? (boost || 0) : 0));
-      if (!(w > 1e-3)) return null;
-      var ax = lx + (px - lx) * w, ay = ly + (py - ly) * w, az = lz + (pz - lz) * w;
-      var aL = Math.hypot(ax, ay, az) || 1;
-      var nowA = (typeof performance !== 'undefined') ? performance.now() : 0;
-      if (nowA - _aimLast.logged > 500) {
-        _aimLast.logged = nowA;
-        console.log('§CPE_AIM_DENSITY e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
-          ' floor=' + _AIM_DENS_FLOOR + ' subject=(' + subj.x.toFixed(1) + ',' +
-          subj.y.toFixed(1) + ',' + subj.z.toFixed(1) + ')' +
-          ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
-          ' blend=' + w.toFixed(2) + ' seamTaper=none(§CPE_AIM_LATCH)' + (degenerate ? ' DEGENERATE (subject along travel — looking straight at it)' : ''));
-      }
-      return { x: ax / aL, y: ay / aL, z: az / aL };
-    }
+    // §CPE_AIM_DENSITY_RETIRED (2026-08-13, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+    // §CPE_AIM_SIMPLIFY): this whole rule (_aimSubject/_aimOutsideM/_aimSoftDensity/_aimWeight/
+    // _aimBuild/_aimAt/_aimApply — "turn perpendicular toward the nearest mass whenever outside the
+    // building with nothing substantial near") is REMOVED, not disabled. User, after a live
+    // HHS_Office bake required snatching the stick twice to recover the path: "make formula rather
+    // simple: 1. Follow path of camera. 2. Look for depth... 2. is the only exception to 1." This
+    // rule was a THIRD, independent trigger the user's own model never asked for, and its omni-
+    // directional "nearest mass" pick is the most likely source of the reported "facing sky" swings
+    // (a roof/upper-floor cluster is often the nearest mass by pure distance). It also targeted the
+    // building-approach case only, which the user confirmed is redundant: "for outside building, the
+    // last after stop is already building facing" — Beat 4/5's turn-to-pivot + orbit already faces
+    // the building at the end, with no density term involved. §CPE_AIM_DEPTH below is now the ONLY
+    // exception to path-follow, and its own trigger was tightened in the same session (see its
+    // header) to stop firing on ordinary flanking-wall proximity, e.g. mid-corridor.
 
-    // ══ §CPE_AIM_DEPTH — surrounded by close surfaces, face the FURTHEST dense one ═══════════════
-    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH. User directive 2026-07-31:
-    //   "if it is flying into area with a floor, a left side wall and front wall, it turns to face
-    //    which is further" ... "must be logical as stated to also X depth distance where if it is
-    //    near a wall along a corridor it wont face dense fleeting but look to a more distance facade."
+    // ══ §CPE_AIM_DEPTH — the SOLE exception to path-follow (§CPE_AIM_SIMPLIFY, 2026-08-13) ══════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH + §CPE_AIM_SIMPLIFY. Original
+    // directive, 2026-07-31: "if it is flying into area with a floor, a left side wall and front
+    // wall, it turns to face which is further" ... "if near a wall along a corridor it wont face
+    // dense fleeting but look to a more distance facade." Re-confirmed and simplified, 2026-08-13,
+    // after a live HHS_Office bake needed the stick snatched back twice to recover the path: "1.
+    // Follow path of camera. 2. Look for depth... 2. is the only exception to 1." §CPE_AIM_DENSITY,
+    // the rule that used to run alongside this one (turn toward the nearest mass whenever outside
+    // the building with nothing substantial near), is RETIRED — see the marker where it used to live,
+    // above _aimGrid. Nothing else stands between the walk's own look-ahead and the orbit hand-off.
     //
-    // WHY: §CPE_AIM_DENSITY (above) fires OUTSIDE the building with nothing near — this is its mirror
-    // case: INSIDE/close, surrounded by near surfaces (a corridor, a corner). The walk's own
-    // look-ahead can aim straight at a close wall a metre away — an ugly "nose against the wall"
-    // frame, and a jerk hazard in its own right: a near subject sweeps across the frame far faster
-    // than a distant one for the same camera translation (angular rate ~ v/d). Favouring the FAR
-    // facade over the near "fleeting" one is not merely aesthetic — it is the same angular-rate
-    // argument §CPE_EVEN_TURN already rests on, applied to WHICH subject is chosen rather than how
-    // fast the camera moves.
+    // WHY this rule alone: the walk's own look-ahead can aim straight at a close wall a metre away —
+    // an ugly "nose against the wall" frame, and a jerk hazard in its own right (a near subject
+    // sweeps across the frame far faster than a distant one for the same camera translation, angular
+    // rate ~ v/d). Favouring the FAR facade over the near "fleeting" one is the same angular-rate
+    // argument §CPE_EVEN_TURN already rests on, applied to WHICH subject is chosen.
     //
-    // Reuses §CPE_AIM_DENSITY's grid (_aimGrid/_densPoints) — one proximity system, not two — with an
-    // INVERTED distance term: that rule weights n/(1+d)^3 (favour NEAR); this weights n*d (favour
-    // FAR), because the two rules solve opposite problems off the same data. Weighted centroid, not
-    // argmax — same "the subject must move continuously with the camera" lesson §CPE_AIM_DENSITY's
-    // own comment records (measured: an argmax subject bought a 78.5°/frame whip).
+    // Reuses _aimGrid/_densPoints (built once per plan) for the SUBJECT search below, weight = n*d
+    // (favour FAR) — unchanged by this session. Weighted centroid, not argmax — "the subject must
+    // move continuously with the camera" (measured: an argmax subject bought a 78.5°/frame whip).
+    //
+    // §CPE_AIM_DEPTH_FWD_CLEAR (2026-08-13) — the TRIGGER changed, the search did not. It used to be
+    // _aimSoftDensity in a SPHERE around the camera: flanking corridor walls on both sides read as
+    // "surrounded" exactly like a real dead end, so an ordinary walk down a hall could fire this rule
+    // and turn the camera off the path mid-corridor — contradicting the user's own stated intent
+    // ("when user makes a path thru a corridor hall, it doesn't want the cam to be looking away other
+    // than the path"). The real signal is not "is there mass nearby", it is "does the path's OWN
+    // forward view stay open" — so the trigger is now a single raycast along the walk's own
+    // look-ahead direction (`_lookAhead`, the same point the default rule already aims at): a long
+    // hit means the corridor/hall keeps running, stay on path regardless of how close the flanking
+    // walls are; a short hit means the view ahead itself is about to end (a dead end, or a
+    // storey-crossing pocket with a mix of walls), and only then does the rule turn toward depth.
     var _AIM_DEPTH_CLOSE_FRAC = 0.05;   // "adjacent, would be fleeting" radius, a fraction of envelope
-                                        // — deliberately TIGHTER than §CPE_AIM_DENSITY's 0.12 "near":
-                                        // that radius means "nothing substantial", this one means
-                                        // "close enough to whip past", a smaller, stricter scale.
+                                        // — the SUBJECT SEARCH's own exclusion radius, unchanged.
     var _AIM_DEPTH_SEARCH_FRAC = 0.30;  // how far out still counts as "a nearby facade" — bounds the
                                         // search to the room/corridor scale, not a site-wide reach.
-    var _AIM_DEPTH_DENS_FLOOR = 10;     // "surrounded": soft density at CLOSE range above which the
-                                        // neighbourhood counts as boxed-in — mirrors _AIM_DENS_FLOOR.
+    var _AIM_DEPTH_FWD_CLEAR_FRAC = 0.06;  // how far ahead along the look-ahead direction still
+                                        // counts as "open" before the rule fires — deliberately
+                                        // smaller than SEARCH_FRAC (that bounds where to look FOR a
+                                        // subject once triggered; this bounds when to trigger at all).
     // §CPE_AIM_DEPTH_SCALE (2026-07-31, MEASURED live on Hospital, envelope=147m): a pure
     // envelope-fraction radius is corridor-scale on a small building (Duplex, envelope~15m → 0.75m)
     // but ~7.4m/44m (close/search) on a large one — big enough that "boxed in" was true almost
@@ -6285,6 +6096,29 @@ async function setupEffects(A, renderer, scene, camera) {
     // buildings (where it was already correct), it just can no longer balloon on large ones.
     var _AIM_DEPTH_CLOSE_MIN_M = 1.5, _AIM_DEPTH_CLOSE_MAX_M = 4.5;
     var _AIM_DEPTH_SEARCH_MIN_M = 4.0, _AIM_DEPTH_SEARCH_MAX_M = 18.0;
+    var _AIM_DEPTH_FWD_CLEAR_MIN_M = 3.0, _AIM_DEPTH_FWD_CLEAR_MAX_M = 8.0;   // corridor/hall scale —
+                                        // same absolute-clamp reasoning as the close/search radii
+                                        // above: an envelope fraction alone over/undershoots on very
+                                        // small/large buildings (§CPE_AIM_DEPTH_SCALE, unchanged).
+    // Single ray along the walk's own look-ahead direction — same BVH raycaster/mesh set _cinemaFan
+    // already uses (§INTERIOR_PACING's own header: "the ONLY where-is-open-space source"), extended
+    // to a full 3D direction rather than horizontal-only _cinemaLookDist, because a walk can climb
+    // toward a ceiling (a storey crossing), not just turn a corner. `_cinemaFanMeshes()` only returns
+    // `.visible` meshes, so this is buildup-safe for free — unbuilt elements aren't in the scene to
+    // hit, the same reason _cinemaFan/_cinemaLookDist already work correctly during a bake.
+    function _aimForwardClear(p, e3) {
+      var ah = _lookAhead(p, e3);
+      var dx = ah.x - p.x, dy = ah.y - p.y, dz = ah.z - p.z, dL = Math.hypot(dx, dy, dz);
+      if (dL < 1e-6) return CINEMA_FAN_FAR;
+      var meshes = _cinemaFanMeshes();
+      if (!meshes.length) return CINEMA_FAN_FAR;
+      if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
+      _cineFanRay.set(new THREE.Vector3(p.x, p.y, p.z), new THREE.Vector3(dx / dL, dy / dL, dz / dL));
+      _cineFanRay.far = CINEMA_FAN_FAR;
+      var hits = null;
+      try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return CINEMA_FAN_FAR; }
+      return (hits && hits.length) ? hits[0].distance : CINEMA_FAN_FAR;
+    }
     // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — buildup-aware instead of buildup-off. The
     // old guard (kept below in spirit, not in code) skipped this rule entirely during buildup because
     // the subject grid was the WHOLE finished building with no notion of what §CPE_BUILDUP had
@@ -6317,9 +6151,10 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       var pIfc = A.three2ifc(p.x, p.y, p.z);
       var Rclose = Math.max(_AIM_DEPTH_CLOSE_MIN_M, Math.min(_AIM_DEPTH_CLOSE_MAX_M, envelope * _AIM_DEPTH_CLOSE_FRAC));
-      var dens = _aimSoftDensity(p, Rclose, placedPts || undefined);
-      var w = _cinemaSmoothstep(Math.min(1, dens / _AIM_DEPTH_DENS_FLOOR));
-      return { w: w, dens: dens, R: Rclose, pIfc: pIfc, cells: placedPts ? _aimGridFrom(placedPts) : null };
+      var clearM = Math.max(_AIM_DEPTH_FWD_CLEAR_MIN_M, Math.min(_AIM_DEPTH_FWD_CLEAR_MAX_M, envelope * _AIM_DEPTH_FWD_CLEAR_FRAC));
+      var fwdClear = _aimForwardClear(p, e3 == null ? 0 : e3);
+      var w = 1 - _cinemaSmoothstep(Math.min(1, fwdClear / clearM));
+      return { w: w, fwdClear: fwdClear, clearM: clearM, R: Rclose, pIfc: pIfc, cells: placedPts ? _aimGridFrom(placedPts) : null };
     }
     // Weighted centroid over cells BEYOND the close radius (excludes the very thing that triggered
     // this — the adjacent, fleeting wall) and within a bounded search bubble, weight = count * distance
@@ -6438,8 +6273,8 @@ async function setupEffects(A, renderer, scene, camera) {
       if (!A0) return { fired: false, buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
       var sub = A0.w > 1e-4 ? _aimDepthSubject(A0.pIfc, A0.R, A0.cells) : null;
       var placedN = A0.cells ? A0.cells.reduce(function(s, c) { return s + c.n; }, 0) : null;
-      return { fired: !!sub, w: A0.w, dens: A0.dens, subject: sub, restricted: !!A0.cells,
-               placedElems: placedN, cellCount: A0.cells ? A0.cells.length : null,
+      return { fired: !!sub, w: A0.w, fwdClear: A0.fwdClear, clearM: A0.clearM, subject: sub,
+               restricted: !!A0.cells, placedElems: placedN, cellCount: A0.cells ? A0.cells.length : null,
                buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
     };
     var _aimDepthLast = { logged: 0 };
@@ -6487,7 +6322,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (nowA - _aimDepthLast.logged > 500) {
         _aimDepthLast.logged = nowA;
         console.log('§CPE_AIM_DEPTH e3=' + (e3 == null ? '?' : e3.toFixed(3)) +
-          ' floor=' + _AIM_DEPTH_DENS_FLOOR + ' subject=(' + A0.x.toFixed(1) + ',' +
+          ' trigger=fwdClear subject=(' + A0.x.toFixed(1) + ',' +
           A0.y.toFixed(1) + ',' + A0.z.toFixed(1) + ')' +
           ' perpDeg=' + (Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toFixed(1) +
           ' blend=' + w.toFixed(2) + ' seamTaper=' + wSeam.toFixed(2) + ' openTaper=' + wOpen2.toFixed(2));
@@ -7137,47 +6972,37 @@ async function setupEffects(A, renderer, scene, camera) {
           var _ll = Math.hypot(_lx, _ly, _lz) || 1;
           _lx /= _ll; _ly /= _ll; _lz /= _ll;
         }
-        // §CPE_AIM_PIN: a pin at THIS e3's band wins outright — no LOS, no density, no depth. Spec
+        // §CPE_AIM_PIN: a pin at THIS e3's band wins outright — no path-follow, no depth. Spec
         // Part C open question 1's own recommendation, built as the default (flagged in the DONE
         // block as not explicitly user-confirmed, same treatment §CPE_VIEWFINDER's fps question
-        // got): "the pin always wins locally at its own band, with LOS/density resuming immediately
-        // after, no bleed into neighbours." Checked BEFORE §CPE_AIM_DENSITY/DEPTH below so a pinned
-        // zone never even calls them — the "no bleed" guarantee comes from `_pinLookAtAt` itself
-        // (a Voronoi partition by band, see its own comment), not from a blend weight here.
+        // got): "the pin always wins locally at its own band, resuming immediately after, no bleed
+        // into neighbours." Checked BEFORE §CPE_AIM_DEPTH below so a pinned zone never even calls
+        // it — the "no bleed" guarantee comes from `_pinLookAtAt` itself (a Voronoi partition by
+        // band, see its own comment), not from a blend weight here.
         var _pin = _pinLookAtAt(e3);
         if (_pin) {
           var _pdx = _pin.x - p3.x, _pdy = _pin.y - p3.y, _pdz = _pin.z - p3.z;
           var _pdL = Math.hypot(_pdx, _pdy, _pdz) || 1;
           _lx = _pdx / _pdL; _ly = _pdy / _pdL; _lz = _pdz / _pdL;
         } else {
-        // §CPE_AIM_DENSITY: applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS
-        // at e3=0, where its own weight is 0 anyway — the settle is inside the building) and BEFORE
-        // the orbit hand-off below, which must stay the last word on the gaze at the end of the walk.
-        // Travel direction is the path's own derivative, not the gaze: "perpendicular" is defined
-        // against where the camera is GOING, which is the only reading that survives the camera
-        // already having turned to look at something.
-        // ⚠ The travel direction is the local TREND, not the instantaneous tangent — measured, third
-        // and last cause of the A2 spike. A perpendicular aim is defined RELATIVE to T, so it
-        // inherits T's own rate of turn: at a corner in the (hosed, therefore possibly sharp) walk
-        // the tangent swings fast, and a gaze locked square to it swings just as fast. The probe
-        // showed this surviving both earlier fixes unchanged at ~24°/frame around t=0.437, where the
-        // camera was crawling at 0.09 m/frame — a lot of turn for very little travel, which is the
-        // signature of the tangent and not of the subject. A finite difference over ~3% of the walk
-        // reads "where the camera is generally heading" instead, which is what "perpendicular to
-        // travel" means to a viewer anyway.
+        // §CPE_AIM_DEPTH (§CPE_AIM_SIMPLIFY, 2026-08-13): the ONLY exception to path-follow —
+        // §CPE_AIM_DENSITY, which used to run here first, is retired (see its marker above _aimGrid).
+        // Applied AFTER the seam blend (so it can never reopen §CPE_SEAM_CONTINUOUS at e3=0, where
+        // its own weight is 0 anyway) and BEFORE the orbit hand-off below, which must stay the last
+        // word on the gaze at the end of the walk. Travel direction is the path's own derivative, not
+        // the gaze: "perpendicular" is defined against where the camera is GOING.
+        // ⚠ The travel direction is the local TREND, not the instantaneous tangent — measured cause
+        // of a prior gaze spike. A perpendicular aim is defined RELATIVE to T, so it inherits T's own
+        // rate of turn: at a corner in the (hosed, therefore possibly sharp) walk the tangent swings
+        // fast, and a gaze locked square to it swings just as fast. A finite difference over ~3% of
+        // the walk reads "where the camera is generally heading" instead, which is what "perpendicular
+        // to travel" means to a viewer anyway.
         var _eps = 1 / 32;
         var _pA = _outPos(Math.max(0, e3 - _eps)), _pB = _outPos(Math.min(1, e3 + _eps));
         var _tvx = _pB.x - _pA.x, _tvy = _pB.y - _pA.y, _tvz = _pB.z - _pA.z;
         var _tvL = Math.hypot(_tvx, _tvy, _tvz);
         if (_tvL > 1e-6) {
           var _travelDir = { x: _tvx / _tvL, y: _tvy / _tvL, z: _tvz / _tvL };
-          var _aim = _aimApply(p3, _travelDir, _lx, _ly, _lz, e3, _hBoost);
-          if (_aim) { _lx = _aim.x; _ly = _aim.y; _lz = _aim.z; }
-          // §CPE_AIM_DEPTH: the mirror rule, opposite trigger (surrounded/close, not outside/empty —
-          // see the block above). Applied on the (possibly already §CPE_AIM_DENSITY-blended) gaze so
-          // the two compose rather than race; their triggers are near-disjoint by construction (one
-          // needs low density nearby, the other needs high density AT CLOSE RANGE), so in practice at
-          // most one is ever non-zero at a given pose.
           var _aimD = _aimDepthApply(p3, _travelDir, _lx, _ly, _lz, e3, _openU, _hBoost);
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
@@ -7502,7 +7327,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // as its own comment claimed. Re-tapering would undo the user's "the turning should be thruout,
     // till the end of clip", so the swing is bounded at its cause instead.
     //
-    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DENSITY and §CPE_AIM_DEPTH, all
+    // The law: the composed gaze — look-ahead, seam blend, §CPE_AIM_DEPTH's exception, all
     // of it — is sampled in TIME and rate-limited to CINEMA_TURN_DPS, the rate the spin, the orbit
     // lap and the walk's own turn charge are ALREADY priced at. Not a new constant, and not a new
     // opinion about how fast a camera should turn: it is the number this film already uses
