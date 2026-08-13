@@ -8,7 +8,14 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1021';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1022';   // bump on each deploy; per-change detail is the git commit message.
+// v1022 (2026-08-13) §SUN_SHADOW_DROWNED: effects.js §PHOTO_AO denoiseRadius 12->7, denoiseSamples
+// 8->5 — "ever so slight" step up from Alt+G's own never-bumped 6/4 baseline (not a full revert),
+// user's own call after the full-revert-to-6 witness measured +9.9% beam-foot shadow contrast but
+// risked reintroducing #1331's pre-fix dark/noisy-indoors complaint at the far end. Bump so
+// returning browsers get the new denoise pair instead of the old always-8/12 one. Collided with
+// #1338's independent same-day v1021 bump (§GROUNDED_OVERRIDE_FIX, kept below) — took one past it,
+// per this file's own KEEP-BOTH/take-the-higher merge convention.
 // v1021 (2026-08-13) §GROUNDED_OVERRIDE_FIX: time_machine.js's _midairRepair/_midairAudit no longer
 // let "grounded" override a real detected floating violation — bump so returning browsers actually
 // regenerate the 1,105-element-wider repair instead of replaying a cached pre-fix schedule.
