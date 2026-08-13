@@ -4577,7 +4577,7 @@
     if (!G.ok) return out;
     out.orphans = G.orphans;
     for (var i = 0; i < items.length; i++) {
-      var list = G.contacts[i]; if (!list || G.grounded[i]) continue;
+      var list = G.contacts[i]; if (!list) continue;   // §GROUNDED_OVERRIDE_FIX (2026-08-13): a real later contact must be checked even when I have nothing below MY OWN footprint
       var first = Infinity;
       for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
       if (first > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
@@ -4615,7 +4615,7 @@
     while (stats.sweeps < 12) {
       stats.sweeps++; changed = 0;
       for (i = 0; i < n; i++) {
-        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        var list2 = contacts[i]; if (!list2) continue;   // §GROUNDED_OVERRIDE_FIX
         first = Infinity;
         for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
         if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
@@ -4653,7 +4653,7 @@
     stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
     stats.residual = 0; stats.strictResidual = 0;
     for (i = 0; i < n; i++) {
-      var lstF = contacts[i]; if (!lstF || grounded[i]) continue;
+      var lstF = contacts[i]; if (!lstF) continue;   // §GROUNDED_OVERRIDE_FIX
       var fS = Infinity, fE = Infinity;
       for (k = 0; k < lstF.length; k++) { var sF = items[lstF[k]].s, eF = items[lstF[k]].e;
         if (sF < fS) fS = sF; if (eF < fE) fE = eF; }
@@ -4769,6 +4769,25 @@
       contacts[i] = list;
       if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
     }
+    // ══ §GROUNDED_OVERRIDE_FIX (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — user
+    // report: "THINGS STILL HANGING IN MID AIR") ═════════════════════════════════════════════════
+    // `grounded[i]` means "nothing shares MY OWN exact XY footprint below me" — true for a genuine
+    // ground-floor slab, but ALSO true for any element whose real support/carrier simply doesn't
+    // overlap its own tight bbox (a column whose footing is a hair narrower, a beam whose neighbour
+    // sits one grid cell over). The repair loop below used to SKIP every grounded element outright
+    // (`if (!list2 || grounded[i]) continue`), so an element with a REAL, later-appearing contact
+    // (`list` non-null) was silently exempted from ever being checked — "grounded" was overriding a
+    // detected violation instead of only covering the case where there is genuinely nothing to check
+    // (`!list`, unchanged, still skipped — that population is `orphans`, tracked separately).
+    // MEASURED, all 7 buildings, before this fix (grounded exempted these from EVERY audit, so
+    // witness_midair_zero's "0 floating" was checking the wrong question for all of them): Hospital
+    // 460, Terminal 236, LTU_AHouse 254, JKR 57, Clinic 79, HHS 15, Duplex 4 — 1,105 elements total,
+    // worst gaps up to 878.8d (LTU_AHouse) and 172.3d (Hospital), real elements starting hundreds of
+    // days before anything they geometrically touch even appears on screen.
+    // The fix is one condition, three call sites (`_contactGraph`'s two consumers below plus
+    // `_midairAudit` above, which the 🔓→🔒 lock gate reads): `grounded[i]` no longer overrides a
+    // present contact list. `grounded` stays exactly as informative as before for elements that
+    // truly have none (`!list`) — this only stops it from REPRIEVING a real detected violation.
     var movedFlag = new Uint8Array(n), first, d, changed;
     // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
     // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
@@ -4790,7 +4809,7 @@
     while (stats.sweeps < 12) {
       stats.sweeps++; changed = 0;
       for (i = 0; i < n; i++) {
-        var list2 = contacts[i]; if (!list2 || grounded[i]) continue;
+        var list2 = contacts[i]; if (!list2) continue;   // §GROUNDED_OVERRIDE_FIX
         first = Infinity;
         for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
         if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
@@ -4804,7 +4823,7 @@
       if (!changed) break;
     }
     for (i = 0; i < n; i++) {                                      // honest residual after the cap
-      var list3 = contacts[i]; if (!list3 || grounded[i]) continue;
+      var list3 = contacts[i]; if (!list3) continue;   // §GROUNDED_OVERRIDE_FIX
       first = Infinity;
       for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
       if (first > items[i].s + 1) stats.residual++;
@@ -7705,7 +7724,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 16;   // §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS (2026-08-13): _twoTierRemap's Tier-2 push is now a per-element clamp to t1EndZ[z] instead of a uniform zone shift (MEP Final occupancy 22%->~69-105%, no more dead-air window inflation), and the real generation path now runs the crew's shift at rates.js SHIFT_HOURS (default 24, was hardcoded 8) — user ruling: "24hr is our default, import and JSON setting can import as we align to standard model". MEASURED Hospital totalDays 2019.6(v15, live) -> 369.2 (v16, all 7 buildings shrank 1.7x-5.5x, see prompts/4D_SCHEDULE_PERFECTION.md). A building materialized under v15 replays the old span/order forever regardless of deployed code without this bump.
+  var _GANTT_CACHE_VERSION = 17;   // §GROUNDED_OVERRIDE_FIX (2026-08-13, user report "THINGS STILL HANGING IN MID AIR"): _midairRepair/_midairAudit no longer let the "grounded" (nothing below in my own footprint) classification override a REAL, later-appearing contact — 1,105 elements across all 7 buildings were silently exempted from ever being checked (worst gaps: LTU_AHouse 878.8d, Hospital 172.3d). See _midairRepair's own header for the full measurement and the three fixed call sites. A building materialized under v16 replays the old (silently-still-floating) order forever regardless of deployed code without this bump.
+  // v16: §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS (2026-08-13): _twoTierRemap's Tier-2 push is now a per-element clamp to t1EndZ[z] instead of a uniform zone shift (MEP Final occupancy 22%->~69-105%, no more dead-air window inflation), and the real generation path now runs the crew's shift at rates.js SHIFT_HOURS (default 24, was hardcoded 8) — user ruling: "24hr is our default, import and JSON setting can import as we align to standard model". MEASURED Hospital totalDays 2019.6(v15, live) -> 369.2 (v16, all 7 buildings shrank 1.7x-5.5x, see prompts/4D_SCHEDULE_PERFECTION.md).
                                    // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
                                    // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
                                    // v12 was §HOSTED_BEFORE_HOST (2026-08-12, #1319): hostGate added to computeSchedule — a hosted element now waits for its host's finish. Missed on first landing (this constant's own v11 comment says "MUST bump on every change to computeSchedule's gating", and #1319 changed exactly that, same day, without bumping it) — a building materialized under v11 kept replaying the pre-fix order regardless of deployed code. This bump is that fix's second half.

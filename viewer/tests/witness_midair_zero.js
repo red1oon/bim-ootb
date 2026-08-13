@@ -147,8 +147,19 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // — the SAME accepted trade-off class this witness already locks (W-MZ-8's own header), not a new
 // one. W-MZ-2 (the acceptance bar: floating==0) is UNCHANGED on all 7 buildings — re-verify that
 // first if this baseline ever needs updating again.
-const FLOAT_AFTER_BASELINE = { Terminal: 103, Hospital: 135, Duplex: 9, HHS_Office_Federated: 11,
-  Clinic: 367, LTU_AHouse: 1142, JKR: 151 };
+// §GROUNDED_OVERRIDE_FIX (2026-08-13, user report "THINGS STILL HANGING IN MID AIR"): _midairRepair
+// (and _midairAudit, the 🔓→🔒 lock gate's judge) used to SKIP every "grounded" element outright,
+// even when it had a real, later-appearing contact — 1,105 elements across all 7 buildings were
+// silently exempted from ever being checked at all (worst gaps: LTU_AHouse 878.8d, Hospital 172.3d).
+// Fixed at time_machine.js's _contactGraph consumers (three call sites, one condition each) — see
+// that function's own header for the full measurement. Now that the repair actually SEES and FIXES
+// this population, W-MZ-8's cost rises again, same accepted class, bigger because the repair does
+// more real work: Terminal 103->141, Hospital 135->210, HHS 11->31, Clinic 367->420,
+// LTU_AHouse 1142->1534, JKR 151->348 (Duplex unmoved, 9->9 — it has no grounded-hidden population).
+// W-MZ-2/W-MZ-3/W-MZ-4 UNCHANGED (0/0/locked) on all 7 — the acceptance bar itself did not move,
+// it is simply now checking 1,105 more real elements than it silently used to skip.
+const FLOAT_AFTER_BASELINE = { Terminal: 141, Hospital: 210, Duplex: 9, HHS_Office_Federated: 31,
+  Clinic: 420, LTU_AHouse: 1534, JKR: 348 };
 const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
   LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
