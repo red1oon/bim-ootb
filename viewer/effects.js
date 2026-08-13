@@ -3506,11 +3506,111 @@ async function setupEffects(A, renderer, scene, camera) {
         depthTest: false, depthWrite: false, blending: THREE.NoBlending
       });
       var copyQuad = new passMod.FullScreenQuad(copyMat);
+
+      // §SUN_SHADOW_RESTORE (2026-08-14, prompts/PHOTOREAL_STILL_RENDER.md §SUN_SHADOW_DROWNED):
+      // N8AO's denoiseRadius=7 blur (untouched — user ruling "denoise is already perfect, don't
+      // disturb it") smears the composited image across the sun-cast shadow's boundary the same as
+      // it legitimately smooths ordinary AO contact-shadow noise elsewhere. The frozen pre-AO TAA
+      // beauty (readBuffer) still has that boundary crisp — it is never destroyed by this adapter
+      // (see the §PHOTO_AO comment trail above). Fix: reconstruct world position per-pixel from
+      // n8's own depth texture (already computed, camera frozen so it's stable for all
+      // STILL_AO_FRAMES) + camera inverse-projection/view, transform into A.sun.shadow.camera's
+      // clip space via A.sun.shadow.matrix (three.js's own light-space transform, computed once at
+      // staging — untouched), and sample A.sun.shadow.map.texture the same way three.js's own basic
+      // (non-PCF) getShadow() shader chunk does — mirrored from
+      // viewer/lib/three.module.min.js's `shadowmap_pars_fragment` ShaderChunk, not hand-derived:
+      // `shadowCoord.z += shadowBias; shadow = step(shadowCoord.z, texture2D(shadowMap,
+      // shadowCoord.xy).r)`. A screen-space neighbor tap on this raw, unblurred shadow term (not
+      // the AO term) finds where it changes sharply — the true sun-shadow BOUNDARY, not its
+      // interior and not an ordinary AO contact crease (those never touch A.sun.shadow.matrix's
+      // frustum test at all, so they read a uniform, edge-free shadow term and get zero mask). That
+      // mask blends the AO-composited color back toward the pre-AO sharp color, restoring edge
+      // sharpness. N8AOPass itself is redirected to render into a scratch target (aoScratchRT)
+      // instead of the real writeBuffer ONLY when this restore path is live, so the mask/blend
+      // shader can write directly into writeBuffer with no read/write feedback loop and no extra
+      // copy pass — one new full-screen shader draw total, only during the AO-converge frames.
+      var STILL_SHADOW_RESTORE_ENABLED = true;
+      var STILL_SHADOW_RESTORE_KERNEL_PX = 4;   // screen-space neighbor-tap radius, texels — wide
+                                                 // enough to counter denoiseRadius=7's blur footprint
+      var STILL_SHADOW_RESTORE_STRENGTH = 1.0;  // 1.0 = fully restore sharp color at a detected edge
+      var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null;
+      if (STILL_SHADOW_RESTORE_ENABLED) {
+        var _srFrag = [
+          'uniform sampler2D tAO;',
+          'uniform sampler2D tSharp;',
+          'uniform sampler2D tDepth;',
+          'uniform sampler2D tShadowMap;',
+          'uniform mat4 shadowMatrix;',
+          'uniform mat4 projectionMatrixInv;',
+          'uniform mat4 viewMatrixInv;',
+          'uniform vec2 resolution;',
+          'uniform float shadowBias;',
+          'uniform float strength;',
+          'uniform float kernelPx;',
+          'varying vec2 vUv;',
+          // Mirrors three.js shadowmap_pars_fragment's basic (non-PCF) getShadow(): world pos from
+          // depth, into light clip space via shadowMatrix, compare against the shadow map depth.
+          'float shadowAt(vec2 uv) {',
+          '  float d = texture2D(tDepth, uv).r;',
+          '  if (d >= 1.0) return 1.0;',                       // sky/background — never a shadow edge
+          '  vec4 ndc = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);',
+          '  vec4 viewPos = projectionMatrixInv * ndc; viewPos /= viewPos.w;',
+          '  vec4 worldPos = viewMatrixInv * viewPos;',
+          '  vec4 sc = shadowMatrix * worldPos; sc.xyz /= sc.w;',
+          '  if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;',
+          '  sc.z += shadowBias;',
+          '  return step(sc.z, texture2D(tShadowMap, sc.xy).r);',
+          '}',
+          'void main() {',
+          '  float sC = shadowAt(vUv);',
+          '  vec2 o = (1.0 / resolution) * kernelPx;',
+          '  float edge = 0.0;',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x, 0.0))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x, 0.0))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(0.0,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(0.0, -o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x,  o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x, -o.y))));',
+          '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x, -o.y))));',
+          '  vec4 aoColor = texture2D(tAO, vUv);',
+          '  vec4 sharpColor = texture2D(tSharp, vUv);',
+          '  gl_FragColor = mix(aoColor, sharpColor, edge * strength);',
+          '}'
+        ].join('\n');
+        shadowRestoreMat = new THREE.ShaderMaterial({
+          uniforms: {
+            tAO: { value: null }, tSharp: { value: null }, tDepth: { value: null },
+            tShadowMap: { value: null },
+            shadowMatrix: { value: new THREE.Matrix4() },
+            projectionMatrixInv: { value: new THREE.Matrix4() },
+            viewMatrixInv: { value: new THREE.Matrix4() },
+            resolution: { value: new THREE.Vector2(rt.width, rt.height) },
+            shadowBias: { value: 0 },
+            strength: { value: STILL_SHADOW_RESTORE_STRENGTH },
+            kernelPx: { value: STILL_SHADOW_RESTORE_KERNEL_PX }
+          },
+          vertexShader: copyMod.CopyShader.vertexShader,  // same uv-passthrough as copyMat above
+          fragmentShader: _srFrag,
+          depthTest: false, depthWrite: false, blending: THREE.NoBlending
+        });
+        shadowRestoreQuad = new passMod.FullScreenQuad(shadowRestoreMat);
+        aoScratchRT = new THREE.WebGLRenderTarget(rt.width, rt.height,
+          { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
+        console.log('§SUN_SHADOW_RESTORE_INIT_OK kernelPx=' + STILL_SHADOW_RESTORE_KERNEL_PX +
+          ' strength=' + STILL_SHADOW_RESTORE_STRENGTH);
+      }
+
       var adapter = {
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
                                // zero-cost-when-off discipline everything else in this file follows
         needsSwap: true, clear: false, renderToScreen: false,
-        setSize: function(w, h) { n8.setSize(w, h); _stillAODepthDirty = true; },
+        setSize: function(w, h) {
+          n8.setSize(w, h);
+          _stillAODepthDirty = true;
+          if (aoScratchRT) aoScratchRT.setSize(w, h);
+          if (shadowRestoreMat) shadowRestoreMat.uniforms.resolution.value.set(w, h);
+        },
         render: function(renderer2, writeBuffer, readBuffer) {
           if (_stillAODepthDirty) {
             // Depth prime: ONE real scene render into n8ao's beauty target — we need its DEPTH
@@ -3532,12 +3632,38 @@ async function setupEffects(A, renderer, scene, camera) {
           copyQuad.render(renderer2);
           renderer2.autoClear = oldAutoClear;
           n8.renderToScreen = false;
-          n8.render(renderer2, writeBuffer, readBuffer);
+          // §SUN_SHADOW_RESTORE: only reroute N8AO's output into the scratch target (and pay for
+          // the extra mask/blend pass) when a real sun shadow is actually available to restore —
+          // otherwise this is byte-identical to the pre-existing n8.render(..., writeBuffer, ...).
+          // A._sunShadowRestoreEnabled is a live, runtime-toggleable override (default true) — same
+          // shape as A._shadowOn etc — so a same-session witness A/B can flip it after AO has
+          // already converged (n8's own accumulation is untouched by this pass's output routing)
+          // without needing two separate page loads / two separate builds.
+          var canRestore = STILL_SHADOW_RESTORE_ENABLED && A._sunShadowRestoreEnabled !== false &&
+            shadowRestoreMat && A.sun && A.sun.castShadow && A.sun.shadow && A.sun.shadow.map;
+          if (canRestore) {
+            n8.render(renderer2, aoScratchRT, readBuffer);
+            var u = shadowRestoreMat.uniforms;
+            u.tAO.value = aoScratchRT.texture;
+            u.tSharp.value = readBuffer.texture;
+            u.tDepth.value = n8.beautyRenderTarget.depthTexture;
+            u.tShadowMap.value = A.sun.shadow.map.texture;
+            u.shadowMatrix.value.copy(A.sun.shadow.matrix);
+            u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
+            u.viewMatrixInv.value.copy(camera.matrixWorld);
+            u.shadowBias.value = A.sun.shadow.bias;
+            renderer2.setRenderTarget(writeBuffer);
+            shadowRestoreQuad.render(renderer2);
+          } else {
+            n8.render(renderer2, writeBuffer, readBuffer);
+          }
         }
       };
       A._composer.insertPass(adapter, 1);  // directly after the TAA pass, before (disabled) SSAO/Outline + OutputPass
       A._stillAOPass = n8;                 // diagnostics/tests — closure state is otherwise invisible
       A._stillAOAdapter = adapter;
+      A._shadowRestoreMat = shadowRestoreMat;  // §SUN_SHADOW_RESTORE diagnostics/witness
+      if (A._sunShadowRestoreEnabled === undefined) A._sunShadowRestoreEnabled = true;
       // §PHOTO_AO_STREAM re-assert (same landmine as §GI_POC_STALE_FIX): anything that changes the
       // scene while the still is frozen-with-AO (streaming, xray, selection) goes through
       // A.markDirty — chain onto it (effects_gi_poc.js wraps it the same way; the wraps compose)

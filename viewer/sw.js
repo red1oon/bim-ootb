@@ -8,7 +8,15 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1024';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1025';   // bump on each deploy; per-change detail is the git commit message.
+// v1025 (2026-08-14) §SUN_SHADOW_RESTORE: effects.js _buildStillAO() adapter gains a mask/blend pass
+// that reconstructs world position from N8AO's own depth texture, samples A.sun.shadow.map the same
+// way three.js's own basic getShadow() shader chunk does, edge-detects the raw shadow term, and
+// blends the AO-composited image back toward the pre-AO sharp TAA beauty at detected sun-shadow
+// BOUNDARIES only — restores the contrast N8AO's denoiseRadius=7 blur (untouched, PR #1343) was
+// smearing across the sun-cast shadow edge. Witnessed: +18.7% contrast at a real Clinic sun-shadow
+// boundary, 40x tighter near-edge-vs-far-from-edge diff ratio (no bleed into ordinary AO contact
+// corners). Bump so returning browsers get the restore pass instead of the old AO-only composite.
 // v1022 (2026-08-13) §SUN_SHADOW_DROWNED: effects.js §PHOTO_AO denoiseRadius 12->7, denoiseSamples
 // 8->5 — "ever so slight" step up from Alt+G's own never-bumped 6/4 baseline (not a full revert),
 // user's own call after the full-revert-to-6 witness measured +9.9% beam-foot shadow contrast but
