@@ -8918,6 +8918,25 @@
     return out;
   };
 
+  // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — per-guid completion time, bim-compiler
+  // prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP. The aim system (effects.js) needs to know
+  // whether a SPECIFIC element is placed by a given cursor, not just how many ops are done in total
+  // (tmWorkSchedule/tmPlacedCount above) — otherwise its candidate-facade search during a buildup
+  // bake can still pick unbuilt geometry. One pass, read-only, same guid-extraction every other _ops
+  // reader in this file already uses (tmGroundSchedule, tmOrderByCameraPath) — not a new convention.
+  // MIN, not last-write: if a guid is touched by more than one op (uncommon but not assumed absent),
+  // it counts as placed from its EARLIEST completion, matching "when does this first become real".
+  window.tmGuidEndTs = function() {
+    var out = Object.create(null);
+    for (var i = 0; i < _ops.length; i++) {
+      var op = _ops[i];
+      var g = op.output_guid || (op.input_guids && op.input_guids.length ? op.input_guids[0] : null);
+      if (!g) continue;
+      if (!(g in out) || op.end_ts < out[g]) out[g] = op.end_ts;
+    }
+    return out;
+  };
+
   // §PHASE_LENS exposure: let other modules (Find panel Phase axis) lazily
   // trigger the REAL timeline generator. Does NOT alter injectGantt's logic —
   // just exposes it. §GANTT_REFOLD_HANG: injectGantt is async now — this returns a

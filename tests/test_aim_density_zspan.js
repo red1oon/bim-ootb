@@ -101,8 +101,11 @@ else {
 }
 
 // W3 — HONEST SCOPE CHECK: two genuinely vertical cells (both pass the zSpan filter), one near, one
-// far — the fix must NOT claim to solve this; the near one is expected to still win (candidate 2's
-// job, not this fix's). Reuses the same near-wall/far-wall shape as tests/test_aim_depth.js.
+// far — `_aimSubject` itself (this file's subject) is still near-favouring by design and must NOT
+// claim to fix this. In production the boxed-in case is now handled by a DIFFERENT, already-correct
+// rule taking over: candidate 2 (2026-08-13) made `_aimDepthSubject` — which already excluded the
+// close cell and favoured the far one, see test_aim_depth.js — buildup-aware, so it now fires instead
+// of this one when boxed in. Reuses the same near-wall/far-wall shape as tests/test_aim_depth.js.
 measured++;
 var pts2 = [];
 for (var lz = 0; lz <= 3; lz += 0.3) for (var ly = -2; ly <= 2; ly += 0.3) pts2.push([3, ly, lz]);   // near wall, tall
@@ -114,7 +117,7 @@ var dFar2 = Math.hypot(subj2.x - 20, subj2.y - 0, subj2.z - 1.5);
 console.log('§W-AIM-DENSITY-SCOPE (two real walls, near vs far — zSpan filter does not apply to either) ' +
   'subject=(' + subj2.x.toFixed(2) + ',' + subj2.y.toFixed(2) + ',' + subj2.z.toFixed(2) + ')' +
   ' distToNear=' + dNear2.toFixed(2) + 'm distToFar=' + dFar2.toFixed(2) + 'm' +
-  (dNear2 < dFar2 ? '  still picks NEAR wall — CONFIRMS this fix does not touch near-vs-far (candidate 2 still open)' : '  picked far wall — unexpected, re-check the claim above'));
+  (dNear2 < dFar2 ? '  still picks NEAR wall — CONFIRMS this rule does not touch near-vs-far (handled by _aimDepthSubject taking over instead, see candidate 2)' : '  picked far wall — unexpected, re-check the claim above'));
 // not scored RED either way — this is a scope statement, not a pass/fail gate on THIS fix
 
 console.log('§VERDICT ' + (RED ? 'RED' : 'GREEN') + ' — ' + RED + ' of ' + measured +

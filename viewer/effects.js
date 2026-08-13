@@ -5903,7 +5903,10 @@ async function setupEffects(A, renderer, scene, camera) {
       if (_densPts) return _densPts;
       _densPts = [];
       try {
-        var rows = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms');
+        // guid appended as a 4th element (index 3) — every existing reader only ever indexes 0/1/2,
+        // so this is additive. §CPE_AIM_DEPTH_BUILDUP candidate 2 is the first reader of it, to cross-
+        // reference a point against §CPE_BUILDUP's own per-element completion time (tmGuidEndTs()).
+        var rows = A.dbQuery('SELECT center_x, center_y, center_z, guid FROM element_transforms');
         for (var i = 0; i < rows.length; i++) _densPts.push(rows[i]);
       } catch (e) {}
       return _densPts;
@@ -5947,14 +5950,16 @@ async function setupEffects(A, renderer, scene, camera) {
     var _aimCells = null;
     // Coarse occupancy grid over the SAME element centroids §CPE_NOISE_LAW already reads — reuse,
     // never a second proximity system (the same rule that made _densityAt reuse _densPoints).
-    function _aimGrid() {
-      if (_aimCells) return _aimCells;
-      _aimCells = [];
-      var pts = _densPoints();
-      if (!pts.length) return _aimCells;
-      // Cell size derived from the building, not picked: an eighth of the envelope gives ~8x8 cells
-      // across the footprint — coarse enough that a cell means "a part of the building" rather than
-      // "an element", fine enough to distinguish a wing from the whole.
+    // Cell size derived from the building, not picked: an eighth of the envelope gives ~8x8 cells
+    // across the footprint — coarse enough that a cell means "a part of the building" rather than
+    // "an element", fine enough to distinguish a wing from the whole.
+    //
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13): extracted from the old _aimGrid() body so it
+    // can be reused over a FILTERED point set (see _aimGridPlaced below), not just the whole-building
+    // one — one gridding routine, two callers, never two implementations to keep in sync.
+    function _aimGridFrom(pts) {
+      var cells = [];
+      if (!pts.length) return cells;
       var cs = Math.max(2, envelope / 8), map = {};
       for (var i = 0; i < pts.length; i++) {
         var kx = Math.floor(pts[i][0] / cs), ky = Math.floor(pts[i][1] / cs), kz = Math.floor(pts[i][2] / cs);
@@ -5962,17 +5967,44 @@ async function setupEffects(A, renderer, scene, camera) {
         // zMin/zMax: purely additive (§CPE_AIM_DENSITY only ever reads n/x/y/z, unaffected). Lets
         // §CPE_AIM_DEPTH tell a wall-like cell (points spread over height) from a floor/ceiling-like
         // one (flat, near-zero height spread) without a second data pass — see zSpan below.
-        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; _aimCells.push(c); }
+        if (!c) { c = map[key] = { n: 0, x: 0, y: 0, z: 0, zMin: pts[i][2], zMax: pts[i][2] }; cells.push(c); }
         c.n++; c.x += pts[i][0]; c.y += pts[i][1]; c.z += pts[i][2];
         if (pts[i][2] < c.zMin) c.zMin = pts[i][2];
         if (pts[i][2] > c.zMax) c.zMax = pts[i][2];
       }
-      for (var j = 0; j < _aimCells.length; j++) {
-        var q = _aimCells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n; q.zSpan = q.zMax - q.zMin;
+      for (var j = 0; j < cells.length; j++) {
+        var q = cells[j]; q.x /= q.n; q.y /= q.n; q.z /= q.n; q.zSpan = q.zMax - q.zMin;
       }
-      console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + cs.toFixed(1) +
+      return cells;
+    }
+    function _aimGrid() {
+      if (_aimCells) return _aimCells;
+      var pts = _densPoints();
+      _aimCells = _aimGridFrom(pts);
+      console.log('§CPE_AIM_GRID cells=' + _aimCells.length + ' cellSize=' + Math.max(2, envelope / 8).toFixed(1) +
         'm elems=' + pts.length + ' (subject search space for §CPE_AIM_DENSITY)');
       return _aimCells;
+    }
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 — the grid over ONLY elements placed by cursorMs, per
+    // tmGuidEndTs()'s per-guid completion times. No caching here (unlike _aimGrid's _aimCells): the
+    // cursor differs at every probe in §CPE_AIM_DEPTH_BUILDUP's own K=64 series, so each probe needs
+    // its own filtered grid — cheap (one pass over the point list) at that probe count.
+    var _bkGuidEnds = null, _bkGuidEndsTried = false;
+    function _aimGuidEnds() {
+      if (_bkGuidEndsTried) return _bkGuidEnds;
+      _bkGuidEndsTried = true;
+      _bkGuidEnds = (typeof window.tmGuidEndTs === 'function') ? window.tmGuidEndTs() : null;
+      return _bkGuidEnds;
+    }
+    function _aimPlacedPoints(cursorMs) {
+      var ends = _aimGuidEnds();
+      if (!ends) return null;   // degrade: no completion data — caller falls back to unrestricted
+      var pts = _densPoints(), out = [];
+      for (var i = 0; i < pts.length; i++) {
+        var g = pts[i][3], e = g ? ends[g] : undefined;
+        if (e !== undefined && e <= cursorMs) out.push(pts[i]);
+      }
+      return out;
     }
     // "the densest NEAREST part" — both words are in the directive, so the score carries both:
     // element count divided by distance in envelope units. A big far wing loses to a solid near one,
@@ -6034,8 +6066,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // floor of 12 each step is an ~8% jump in the blend weight — a visible stutter in the gaze on a
     // path that is merely passing by. The kernel makes an element fade in as it approaches instead
     // of appearing, which is the same continuity argument applied one level down.
-    function _aimSoftDensity(p, R) {
-      var pts = _densPoints();
+    // `pts` override — §CPE_AIM_DEPTH_BUILDUP candidate 2 reuses this over a placed-only subset;
+    // omitted (the original, every existing caller) it is the whole-building set, unchanged.
+    function _aimSoftDensity(p, R, pts) {
+      pts = pts || _densPoints();
       if (!pts.length || typeof A.three2ifc !== 'function') return 0;
       var q = A.three2ifc(p.x, p.y, p.z), R2 = R * R, acc = 0;
       for (var i = 0; i < pts.length; i++) {
@@ -6239,29 +6273,50 @@ async function setupEffects(A, renderer, scene, camera) {
     // buildings (where it was already correct), it just can no longer balloon on large ones.
     var _AIM_DEPTH_CLOSE_MIN_M = 1.5, _AIM_DEPTH_CLOSE_MAX_M = 4.5;
     var _AIM_DEPTH_SEARCH_MIN_M = 4.0, _AIM_DEPTH_SEARCH_MAX_M = 18.0;
-    function _aimDepthWeight(p) {
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — buildup-aware instead of buildup-off. The
+    // old guard (kept below in spirit, not in code) skipped this rule entirely during buildup because
+    // the subject grid was the WHOLE finished building with no notion of what §CPE_BUILDUP had
+    // actually revealed by a given frame. Fix: derive the SAME cursor the real bake/preview would ask
+    // for at this probe's e3 (window.tmFollowTimeline / APP.buildupTAt / APP.buildupCursorAt — never
+    // a second, independently-derived clock), and restrict the candidate search to elements placed by
+    // it (tmGuidEndTs, above). Degrade, not disable: if Time Machine isn't armed yet (e.g. a scrub
+    // before the first real Play — §CPE_SCRUB_BUILDUP_SYNC's own documented gap) or the running
+    // time_machine.js is old enough to lack tmGuidEndTs, this returns null for that probe exactly as
+    // the old unconditional guard did — never faces unbuilt geometry by falling back to the whole
+    // building.
+    function _aimBuildupCursorAt(e3) {
+      if (typeof window.tmFollowTimeline !== 'function' || typeof window.APP === 'undefined' ||
+          typeof window.APP.buildupCursorAt !== 'function') return null;
+      var bk;
+      try { bk = window.tmFollowTimeline(); } catch (e) { bk = null; }
+      if (!bk) return null;
+      var bkT = (typeof window.APP.buildupTAt === 'function') ? window.APP.buildupTAt(e3, { beats: { rise: tR } }) : e3;
+      return window.APP.buildupCursorAt(bkT, bk);
+    }
+    function _aimDepthWeight(p, e3) {
       if (typeof A.three2ifc !== 'function') return 0;
-      // §CPE_AIM_DEPTH_BUILDUP_GUARD (2026-07-31, user-reported live: "turning when buildup has not
-      // shown any construction yet"): the subject grid (_aimGrid/_densPoints) is the WHOLE finished
-      // building, computed once at edit time — it has no notion of what §CPE_BUILDUP has actually
-      // revealed by a given frame (that cursor only exists inside cinema_maxq.js's bake loop, after
-      // this rule has already run). Rather than face unbuilt geometry, skip the rule entirely while
-      // buildup is on, until subject-selection is restructured to run per-frame with the real cursor
-      // (see prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP — not yet built). Falls back to the
-      // plain look-ahead, exactly as if this rule did not exist for that film.
-      if (A._cinemaPathEdit && A._cinemaPathEdit.buildup) return null;
+      var buildupOn = !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup);
+      var placedPts = null, cursorMs = null;
+      if (buildupOn) {
+        cursorMs = _aimBuildupCursorAt(e3 == null ? 0 : e3);
+        if (cursorMs == null) return null;               // degrade: no cursor available yet
+        placedPts = _aimPlacedPoints(cursorMs);
+        if (placedPts == null) return null;               // degrade: no per-guid completion data
+      }
       var pIfc = A.three2ifc(p.x, p.y, p.z);
       var Rclose = Math.max(_AIM_DEPTH_CLOSE_MIN_M, Math.min(_AIM_DEPTH_CLOSE_MAX_M, envelope * _AIM_DEPTH_CLOSE_FRAC));
-      var dens = _aimSoftDensity(p, Rclose);
+      var dens = _aimSoftDensity(p, Rclose, placedPts || undefined);
       var w = _cinemaSmoothstep(Math.min(1, dens / _AIM_DEPTH_DENS_FLOOR));
-      return { w: w, dens: dens, R: Rclose, pIfc: pIfc };
+      return { w: w, dens: dens, R: Rclose, pIfc: pIfc, cells: placedPts ? _aimGridFrom(placedPts) : null };
     }
     // Weighted centroid over cells BEYOND the close radius (excludes the very thing that triggered
     // this — the adjacent, fleeting wall) and within a bounded search bubble, weight = count * distance
     // — reward mass AND depth jointly, so a distant sparse cell and a near-ish empty direction both
     // lose to a real facade that is actually further away.
-    function _aimDepthSubject(pIfc, Rclose) {
-      var cells = _aimGrid();
+    // `cellsOverride` — §CPE_AIM_DEPTH_BUILDUP candidate 2: the placed-only grid from _aimDepthWeight
+    // above, when buildup is on. Omitted (every other caller), the original whole-building _aimGrid().
+    function _aimDepthSubject(pIfc, Rclose, cellsOverride) {
+      var cells = cellsOverride || _aimGrid();
       if (!cells.length) return null;
       var Rsearch = Math.max(Rclose * 2, Math.min(_AIM_DEPTH_SEARCH_MAX_M, Math.max(_AIM_DEPTH_SEARCH_MIN_M, envelope * _AIM_DEPTH_SEARCH_FRAC)));
       // §CPE_AIM_DEPTH_VERTICALITY (2026-07-31, MEASURED — the first cut's own witness caught this):
@@ -6312,9 +6367,9 @@ async function setupEffects(A, renderer, scene, camera) {
       var K = 64, i, ws = [], hasS = [], sx = [], sy = [], sz = [];
       for (i = 0; i <= K; i++) {
         var p = _outPos(i / K);
-        var A0 = _aimDepthWeight(p);
+        var A0 = _aimDepthWeight(p, i / K);
         var wv = (A0 && A0.w) ? A0.w : 0;
-        var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R) : null;
+        var sub = (A0 && A0.w > 1e-4) ? _aimDepthSubject(A0.pIfc, A0.R, A0.cells) : null;
         if (A0 && A0.w > 1e-4 && !sub) wv = 0;   // no candidate facade in the bubble → don't trigger
         ws.push(wv);
         hasS.push(sub ? 1 : 0);     // §CPE_STICK_HOLD: where a REAL subject exists (boost gate)
@@ -6340,8 +6395,14 @@ async function setupEffects(A, renderer, scene, camera) {
                           x: smooth(smooth(sx)), y: smooth(smooth(sy)), z: smooth(smooth(sz)) };
       var wMax = 0, wN = 0;
       for (i = 0; i <= K; i++) { if (_aimDepthSeries.w[i] > wMax) wMax = _aimDepthSeries.w[i]; if (_aimDepthSeries.w[i] > 0.01) wN++; }
+      // §CPE_AIM_DEPTH_BUILDUP candidate 2: report whether buildup-aware restriction actually engaged
+      // this build, and on how many of the K probes — the number a live bake log should be read
+      // against, not just "buildup was checked".
+      var buildupOn = !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup);
+      var cursorOk = buildupOn ? (_aimBuildupCursorAt(0) != null) : null;
       console.log('§CPE_AIM_DEPTH_SERIES probes=' + (K + 1) + ' smoothed=2x5tap active=' + wN + '/' + (K + 1) +
-        ' maxBlend=' + wMax.toFixed(2) + ' — mirror of §CPE_AIM_SERIES, opposite trigger (boxed-in, not empty)');
+        ' maxBlend=' + wMax.toFixed(2) + ' — mirror of §CPE_AIM_SERIES, opposite trigger (boxed-in, not empty)' +
+        (buildupOn ? ' buildupAware=' + (cursorOk ? 'yes(restricted to placed elements)' : 'DEGRADED(no TM cursor yet, guard behaves as before)') : ''));
     }
     function _aimDepthAt(e3) {
       if (!_aimDepthSeries) _aimDepthBuild();
@@ -6355,6 +6416,20 @@ async function setupEffects(A, renderer, scene, camera) {
                y: S.y[j] * (1 - f) + S.y[j + 1] * f,
                z: S.z[j] * (1 - f) + S.z[j + 1] * f };
     }
+    // §CPE_AIM_DEPTH_BUILDUP candidate 2 — read-only test/debug probe, same precedent as
+    // cinema_path_editor.js's own `_probe*` hooks: exercises the REAL functions (never a
+    // re-implementation) so a witness can assert against the product path directly.
+    A._probeAimDepth = function(e3) {
+      e3 = e3 == null ? 0 : e3;
+      var p = _outPos(e3);
+      var A0 = _aimDepthWeight(p, e3);
+      if (!A0) return { fired: false, buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
+      var sub = A0.w > 1e-4 ? _aimDepthSubject(A0.pIfc, A0.R, A0.cells) : null;
+      var placedN = A0.cells ? A0.cells.reduce(function(s, c) { return s + c.n; }, 0) : null;
+      return { fired: !!sub, w: A0.w, dens: A0.dens, subject: sub, restricted: !!A0.cells,
+               placedElems: placedN, cellCount: A0.cells ? A0.cells.length : null,
+               buildupOn: !!(A._cinemaPathEdit && A._cinemaPathEdit.buildup) };
+    };
     var _aimDepthLast = { logged: 0 };
     function _aimDepthApply(p, T, lx, ly, lz, e3, openU, boost) {
       // Same test-only switch as §CPE_AIM_DENSITY — no production effect, nothing sets it in the app.
