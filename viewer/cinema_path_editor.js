@@ -1374,6 +1374,46 @@
   // QUESTION named this "deliberately DEFERRED future work", not dropped. Restoring it now: the
   // #1177 regression's actual invariant (main camera/controls untouched by any scrub) is preserved —
   // this only ever writes `_state.vfCam`, which #1177 never touched in the first place.
+  // §CPE_POV_MARKER (2026-08-13) — user: "put a red cam object that synch along the yellow path in
+  // the canvas to indicate where the cam position is at and its facing angle during pov preview."
+  // §CPE_SCRUB_POV_ONLY parks the main canvas camera on purpose while B/scrub drives the actual
+  // pose — this is the one case the main canvas otherwise shows nothing moving at all. A small red
+  // cone at the flying camera's position, oriented toward its look-at target.
+  //
+  // Purely additive, same lifecycle every other editor-drawn object in this file already has:
+  // created into `_state.objs` (so `_clearScene()` — called by every `_redrawScene()` and by
+  // `finish()` — disposes it exactly like the tube/handles/bars, no new teardown code needed) and
+  // re-created lazily if missing/detached rather than hooked into that teardown directly, the same
+  // "still there next frame" contract _applyVFPose/_applyCameraPose themselves already rely on.
+  // Touches no existing canvas/camera/panel code — new mesh only.
+  function _syncPovMarker(p) {
+    if (!p) return;
+    var a = A();
+    if (!a.scene || typeof THREE === 'undefined') return;
+    if (!_state.povMarker || !_state.povMarker.parent) {
+      var env = (_state.plan && _state.plan.envelope) || 50;
+      var mr = Math.max(0.3, Math.min(2.5, env / 40));   // same envelope-clamp shape as _redrawScene's tube radius
+      var g = new THREE.ConeGeometry(mr, mr * 2.2, 10);
+      var m = new THREE.MeshBasicMaterial({ color: 0xff1744, transparent: true, opacity: 0.9,
+                                            depthTest: false, depthWrite: false });
+      var o = new THREE.Mesh(g, m);
+      o.renderOrder = 1005;   // above the path tube/handles (1002-1004) — this is the playhead itself
+      a.scene.add(o);
+      _state.objs.push(o);
+      _state.povMarker = o;
+    }
+    var mk = _state.povMarker;
+    mk.position.set(p.x, p.y, p.z);
+    // ConeGeometry's tip points +Y by default; align +Y with the gaze direction so the tip is the
+    // facing angle, not just a dot at the position.
+    var dir = new THREE.Vector3(p.tx - p.x, p.ty - p.y, p.tz - p.z);
+    if (dir.lengthSq() > 1e-9) {
+      dir.normalize();
+      mk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    }
+    if (a.markDirty) a.markDirty();
+  }
+
   // §CPE_SCRUB_POV_ONLY — extracted from _scrubTo so the scrub-play button can drive ONLY B
   // (never the main camera), same invariant _scrubTo's own drag path already honours.
   function _applyVFPose(tn) {
@@ -1384,6 +1424,7 @@
       var a = A();
       if (a.markDirty) a.markDirty();
     }
+    if (p) _syncPovMarker(p);
     return p;
   }
 
@@ -3385,6 +3426,14 @@
                    speed: _state.speed, baseTotal: _state.baseTotal, baseOutSec: _state.baseOutSec };
         },
         _probeOverride: function() { return _state ? _buildOverride() : null; },
+        // §CPE_POV_MARKER — read off the REAL mesh's transform, never a re-derivation, same
+        // "product path, not a re-implementation" precedent as _probePipe/_probeHandles below.
+        _probePovMarker: function() {
+          if (!_state || !_state.povMarker || !_state.povMarker.parent) return null;
+          var mk = _state.povMarker, up = new THREE.Vector3(0, 1, 0).applyQuaternion(mk.quaternion);
+          return { x: mk.position.x, y: mk.position.y, z: mk.position.z,
+                   dirx: up.x, diry: up.y, dirz: up.z, visible: mk.visible };
+        },
         // §CPE_STICK_RED_BAR's G-RN-4c: the BAR is a separate mesh from the handles, so it needs its
         // own read-only probe or "red bar, blue dots" is asserted on half the evidence.
         _probeBars: function() {
