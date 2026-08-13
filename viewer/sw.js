@@ -8,10 +8,17 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1020';   // bump on each deploy; per-change detail is the git commit message.
-// v1020 (2026-08-13) §GROUNDED_OVERRIDE_FIX: time_machine.js's _midairRepair/_midairAudit no longer
+const CACHE_VERSION = 'v1021';   // bump on each deploy; per-change detail is the git commit message.
+// v1021 (2026-08-13) §GROUNDED_OVERRIDE_FIX: time_machine.js's _midairRepair/_midairAudit no longer
 // let "grounded" override a real detected floating violation — bump so returning browsers actually
 // regenerate the 1,105-element-wider repair instead of replaying a cached pre-fix schedule.
+// Collided with #1337's independent same-day v1020 bump (glow-lens soft-edge/shape-fit, kept below)
+// — took one past it, per this file's own KEEP-BOTH/take-the-higher merge convention.
+// v1020 (2026-08-13) §GLOW_LENS_SOFT_EDGE + §GLOW_LENS_SHAPE_FIT: still-render fixture glow quads
+// (effects.js _glowLensOn) now use a feathered-rectangle canvas texture instead of a flat
+// untextured plane, and split round-ish fixtures (bbox aspect < 1.25) onto the round soft texture
+// instead of forcing every fixture into a rectangle — bump so returning browsers get the softened/
+// shape-fit look instead of the old hard-edged one.
 // v1019 (2026-08-13) §NIGHT_LIGHT_NEARFIELD: tools.js NIGHT_LIGHT_DECAY 1.5->1.0 — real
 // PointLights were blowing out to a flat highlight right up close under ACES tonemapping (bright
 // from afar, "not evident" close up) — bump so returning browsers get the retuned falloff.
