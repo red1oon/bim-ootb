@@ -1,14 +1,24 @@
 #!/usr/bin/env node
-/* ⚠ WITNESS — §CPE_AIM_DEPTH_BUILDUP candidate 1 (2026-08-13). Spec: bim-compiler
+/* ⚠ WITNESS — §CPE_AIM_DEPTH_BUILDUP candidate 1, both parts (2026-08-13). Spec: bim-compiler
  * prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP. User-reported, live buildup bake: "it chose
  * to turn to see the empty sky instead of down at more better space corridors halls" and "it chooses
  * to face up close empty wall when the room is right behind to have more density*depth value."
+ * Confirmed independently on Terminal, same session: "it kept facing the ceiling due to large
+ * density of roof tiles perhaps... it should be noise bias to the ground objects or eye level to be
+ * more meaningful."
  *
  * NAMES THE ISSUE: §CPE_AIM_DENSITY (`_aimSubject`) is the aim rule active during buildup (its
  * sibling §CPE_AIM_DEPTH is gated off during buildup). Unlike that sibling, it carried NO facade
- * filter — a flat, near, dense floor/ceiling/roof cell competed for the pick on density alone,
- * exactly matching "faces the ceiling" reports. The fix reuses §CPE_AIM_DEPTH_VERTICALITY's own
- * `zSpan` classifier (a cell whose points barely spread in height is a slab, not a facade).
+ * filter and no height preference — a flat, near, dense floor/ceiling/roof cell competed for the
+ * pick on density alone, and even a cell with SOME height variance but far overhead (a sloped roof/
+ * truss cluster) could still out-score a genuine hall further away.
+ *
+ * TWO fixes, both replicated below:
+ *   1. zSpan facade filter — reuses §CPE_AIM_DEPTH_VERTICALITY's classifier, excludes near-FLAT
+ *      cells (a true floor/ceiling slab) outright.
+ *   2. eye-level bias — a CONTINUOUS weight applied on top, for the case the binary filter above
+ *      cannot catch: a cell with enough height variance to pass zSpan but still clearly overhead.
+ *      Never zero (a genuinely tall facade still has mass near eye level and stays competitive).
  *
  * Pure-math replica of _aimGrid/_aimSubject from viewer/effects.js (same whitebox convention as
  * tests/test_aim_depth.js) — synthetic point cloud, no browser/THREE needed.
@@ -16,6 +26,8 @@
  * Read the §-log lines. Exit code alone is not evidence.
  */
 'use strict';
+
+function cinemaSmoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 
 function buildGrid(pts, envelope) {
   var cs = Math.max(2, envelope / 8), map = {}, cells = [];
@@ -32,17 +44,23 @@ function buildGrid(pts, envelope) {
   }
   return cells;
 }
-// Replica of the FIXED _aimSubject (zSpan filter). `filtered=false` replays the OLD, unfixed formula
-// as the control — the exact code path the user's report was measured against.
-function aimSubject(pIfc, cells, envelope, filtered) {
+var EYE_FLOOR = 0.3;
+// Replica of _aimSubject. `variant`: 'raw' = shipped bug (neither fix); 'zspan' = candidate 1 part 1
+// only; 'eye' = both parts, the current shipped formula.
+function aimSubject(pIfc, cells, envelope, variant) {
   var scale = Math.max(1, envelope * 0.5);
   var minZSpan = Math.max(2, envelope / 8) * 0.3;
+  var eyeScale = Math.max(3, Math.min(8, envelope * 0.08));
   var sx = 0, sy = 0, sz = 0, sw = 0;
   for (var i = 0; i < cells.length; i++) {
     var c = cells[i];
-    if (filtered && c.zSpan < minZSpan) continue;
+    if (variant !== 'raw' && c.zSpan < minZSpan) continue;
     var d = Math.hypot(c.x - pIfc.x, c.y - pIfc.y, c.z - pIfc.z) / scale;
     var w = c.n / ((1 + d) * (1 + d) * (1 + d));
+    if (variant === 'eye') {
+      var dz = Math.abs(c.z - pIfc.z);
+      w *= EYE_FLOOR + (1 - EYE_FLOOR) * (1 - cinemaSmoothstep(Math.min(1, dz / eyeScale)));
+    }
     sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w;
   }
   if (sw <= 1e-9) return null;
@@ -72,22 +90,22 @@ console.log('§CPE_AIM_DENSITY_ZSPAN_WITNESS pts=' + pts.length + ' cells=' + ce
 
 var RED = 0, measured = 0;
 
-// W1 — CONTROL: the OLD (unfiltered) formula picks the near flat roof cell, reproducing the bug.
+// W1 — CONTROL: the RAW (neither fix) formula picks the near flat roof cell, reproducing the bug.
 measured++;
-var subjOld = aimSubject(camIfc, cells, ENVELOPE, false);
+var subjOld = aimSubject(camIfc, cells, ENVELOPE, 'raw');
 var dRoofOld = Math.hypot(subjOld.x - 8, subjOld.y - 0, subjOld.z - 6.1);
 var dHallOld = Math.hypot(subjOld.x - 22, subjOld.y - 0, subjOld.z - 4);
 var pickedRoofOld = dRoofOld < dHallOld;
-console.log('§W-AIM-DENSITY-CONTROL (unfiltered, the shipped bug) subject=(' + subjOld.x.toFixed(2) + ',' +
+console.log('§W-AIM-DENSITY-CONTROL (raw, the shipped bug) subject=(' + subjOld.x.toFixed(2) + ',' +
   subjOld.y.toFixed(2) + ',' + subjOld.z.toFixed(2) + ') distToRoof=' + dRoofOld.toFixed(2) +
   'm distToHall=' + dHallOld.toFixed(2) + 'm' +
   (pickedRoofOld ? '  PICKED ROOF (near, flat — reproduces "faces the ceiling")' : '  picked hall — bug did not reproduce, scenario needs revisiting'));
 if (!pickedRoofOld) { RED++; console.log('§W-AIM-DENSITY-CONTROL FAIL — control scenario does not reproduce the reported bug, fix below is unverified'); }
 
-// W2 — THE FIX: with the zSpan filter, the flat roof cell is excluded; the subject must move toward
-// the hall, away from where the old formula put it.
+// W2 — FIX PART 1: with the zSpan filter, the flat roof cell is excluded; the subject must move
+// toward the hall, away from where the raw formula put it.
 measured++;
-var subjNew = aimSubject(camIfc, cells, ENVELOPE, true);
+var subjNew = aimSubject(camIfc, cells, ENVELOPE, 'zspan');
 if (!subjNew) { RED++; console.log('§W-AIM-DENSITY-FIXED FAIL — no candidate subject at all once roof cells are excluded'); }
 else {
   var dRoofNew = Math.hypot(subjNew.x - 8, subjNew.y - 0, subjNew.z - 6.1);
@@ -108,7 +126,7 @@ var pts2 = [];
 for (var lz = 0; lz <= 3; lz += 0.3) for (var ly = -2; ly <= 2; ly += 0.3) pts2.push([3, ly, lz]);   // near wall, tall
 for (var fz = 0; fz <= 3; fz += 0.3) for (var fy = -2; fy <= 2; fy += 0.3) pts2.push([20, fy, fz]);  // far wall, tall
 var cells2 = buildGrid(pts2, ENVELOPE);
-var subj2 = aimSubject({ x: 0, y: 0, z: 1.5 }, cells2, ENVELOPE, true);
+var subj2 = aimSubject({ x: 0, y: 0, z: 1.5 }, cells2, ENVELOPE, 'zspan');
 var dNear2 = Math.hypot(subj2.x - 3, subj2.y - 0, subj2.z - 1.5);
 var dFar2 = Math.hypot(subj2.x - 20, subj2.y - 0, subj2.z - 1.5);
 console.log('§W-AIM-DENSITY-SCOPE (two real walls, near vs far — zSpan filter does not apply to either) ' +
@@ -116,6 +134,46 @@ console.log('§W-AIM-DENSITY-SCOPE (two real walls, near vs far — zSpan filter
   ' distToNear=' + dNear2.toFixed(2) + 'm distToFar=' + dFar2.toFixed(2) + 'm' +
   (dNear2 < dFar2 ? '  still picks NEAR wall — CONFIRMS this fix does not touch near-vs-far (candidate 2 still open)' : '  picked far wall — unexpected, re-check the claim above'));
 // not scored RED either way — this is a scope statement, not a pass/fail gate on THIS fix
+
+// ── W4/W5 — Terminal's own report: a SLOPED roof/truss cluster (enough height variance to PASS the
+// zSpan filter — a real truss is not perfectly flat) vs. a genuine hall at eye level, further away.
+// This is the case zSpan alone cannot catch; only the eye-level bias can.
+var camIfc3 = { x: 0, y: 0, z: 6 };
+var pts3 = [];
+// Sloped truss cluster: near (8m), dense, centred ~z=13.5 (7.5m above the camera's eye height) — well
+// overhead — but spans z=12.0..14.9 (zSpan=2.9m), ABOVE minZSpan(2.25m for this envelope), so it
+// passes the flat-cell filter and must be handled by the eye-level term instead.
+for (var tx = 6; tx <= 10; tx += 0.4) for (var ty = -4; ty <= 4; ty += 0.4) for (var tz = 12.0; tz <= 14.9; tz += 1.45) pts3.push([tx, ty, tz]);
+// Genuine hall: 22m away, sparser, spans floor-to-ceiling (0..8m) — its average height (~4m) is close
+// to the camera's own eye level (6m).
+for (var hz3 = 0; hz3 <= 8; hz3 += 0.5) for (var hy3 = -5; hy3 <= 5; hy3 += 0.8) pts3.push([22, hy3, hz3]);
+var cells3 = buildGrid(pts3, ENVELOPE);
+var trussCells = cells3.filter(function (c) { return c.x < 15; });
+console.log('§CPE_AIM_DENSITY_EYE_WITNESS trussCells=' + trussCells.length +
+  ' zSpan~' + (trussCells[0] ? trussCells[0].zSpan.toFixed(2) : '?') +
+  'm (must be >= minZSpan to prove this is the zSpan-passes case) camEyeZ=' + camIfc3.z);
+
+measured++;
+var subjZspanOnly = aimSubject(camIfc3, cells3, ENVELOPE, 'zspan');
+var dTrussA = Math.hypot(subjZspanOnly.x - 8, subjZspanOnly.y - 0, subjZspanOnly.z - 13.5);
+var dHallA = Math.hypot(subjZspanOnly.x - 22, subjZspanOnly.y - 0, subjZspanOnly.z - 4);
+var pickedTrussA = dTrussA < dHallA;
+console.log('§W-AIM-DENSITY-EYE-CONTROL (zSpan-filter only, no eye bias) subject=(' + subjZspanOnly.x.toFixed(2) +
+  ',' + subjZspanOnly.y.toFixed(2) + ',' + subjZspanOnly.z.toFixed(2) + ') distToTruss=' + dTrussA.toFixed(2) +
+  'm distToHall=' + dHallA.toFixed(2) + 'm' +
+  (pickedTrussA ? '  PICKED TRUSS (zSpan filter alone does not catch this — matches Terminal report)' : '  picked hall — zSpan alone was already enough here'));
+if (!pickedTrussA) { RED++; console.log('§W-AIM-DENSITY-EYE-CONTROL FAIL — scenario does not reproduce the zSpan-insufficient case, fix below is unverified'); }
+
+measured++;
+var subjEye = aimSubject(camIfc3, cells3, ENVELOPE, 'eye');
+var dTrussB = Math.hypot(subjEye.x - 8, subjEye.y - 0, subjEye.z - 13.5);
+var dHallB = Math.hypot(subjEye.x - 22, subjEye.y - 0, subjEye.z - 4);
+var movedTowardHallEye = dHallB < dHallA;
+console.log('§W-AIM-DENSITY-EYE-FIXED (zSpan + eye-level bias) subject=(' + subjEye.x.toFixed(2) + ',' +
+  subjEye.y.toFixed(2) + ',' + subjEye.z.toFixed(2) + ') distToTruss=' + dTrussB.toFixed(2) +
+  'm distToHall=' + dHallB.toFixed(2) + 'm' +
+  (movedTowardHallEye ? '  MOVED TOWARD HALL (fixed)' : '  did not move toward hall — eye bias had no effect'));
+if (!movedTowardHallEye) { RED++; }
 
 console.log('§VERDICT ' + (RED ? 'RED' : 'GREEN') + ' — ' + RED + ' of ' + measured +
   ' witnesses violated. See bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP.');

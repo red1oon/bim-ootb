@@ -5999,17 +5999,38 @@ async function setupEffects(A, renderer, scene, camera) {
     // Scope, honestly: this removes flat near cells (matches "faces ceiling"/roof-truss reports); it
     // does NOT reweight near-vs-far for a genuine vertical wall — that is §CPE_AIM_DEPTH_BUILDUP's
     // still-open candidate 2, unchanged by this edit.
+    // §CPE_AIM_DEPTH_BUILDUP fix, part 2 (2026-08-13): user, live on Terminal — "it kept facing the
+    // ceiling due to large density of roof tiles perhaps... it should be noise bias to the ground
+    // objects or eye level to be more meaningful." The zSpan filter above excludes near-FLAT cells
+    // (a true floor/ceiling slab); it does NOT catch a cell that has some height variance but is
+    // still clearly OVERHEAD — a sloped roof/truss cluster with a couple of metres of its own
+    // internal height spread still passes `zSpan >= minZSpan` and can still out-density a genuine
+    // hall further away. A continuous eye-level preference catches that case the binary filter can't:
+    // cells near the camera's own height keep full weight, cells far above or below it fade — never
+    // to zero (a genuinely tall, deep facade still has mass near eye level and stays competitive),
+    // smoothstep for the same "no cuts" reason every weight in this file is continuous.
+    var _AIM_EYE_SCALE_MIN_M = 3, _AIM_EYE_SCALE_MAX_M = 8;   // ~1-2 storeys; absolute clamp, same
+                                                               // §CPE_AIM_DEPTH_SCALE reasoning as the
+                                                               // close/search radii below — an envelope
+                                                               // fraction alone over- or under-shoots on
+                                                               // very small/large buildings.
+    var _AIM_EYE_FLOOR = 0.3;   // weight never drops below this fraction even far off eye-level —
+                                // a bias, not an exclusion; roof mass can still win if it is the
+                                // only thing around, just not by default over something at eye level.
     function _aimSubject(pIfc) {
       var cells = _aimGrid();
       if (!cells.length) return null;
       var scale = Math.max(1, envelope * 0.5);
       var minZSpan = Math.max(2, envelope / 8) * 0.3;   // same derivation as _aimDepthSubject's
+      var eyeScale = Math.max(_AIM_EYE_SCALE_MIN_M, Math.min(_AIM_EYE_SCALE_MAX_M, envelope * 0.08));
       var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
       for (var i = 0; i < cells.length; i++) {
         var c = cells[i];
         if (c.zSpan < minZSpan) continue;               // floor/ceiling/roof-like — not a facade
         var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz) / scale;
         var w = c.n / ((1 + d) * (1 + d) * (1 + d));
+        var dz = Math.abs(c.z - pIfc.iz);
+        w *= _AIM_EYE_FLOOR + (1 - _AIM_EYE_FLOOR) * (1 - _cinemaSmoothstep(Math.min(1, dz / eyeScale)));
         sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
       }
       if (sw <= 1e-9) return null;
