@@ -8,7 +8,12 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1020';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1021';   // bump on each deploy; per-change detail is the git commit message.
+// v1021 (2026-08-13) §SUN_SHADOW_DROWNED: effects.js §PHOTO_AO denoiseRadius 12->7, denoiseSamples
+// 8->5 — "ever so slight" step up from Alt+G's own never-bumped 6/4 baseline (not a full revert),
+// user's own call after the full-revert-to-6 witness measured +9.9% beam-foot shadow contrast but
+// risked reintroducing #1331's pre-fix dark/noisy-indoors complaint at the far end. Bump so
+// returning browsers get the new denoise pair instead of the old always-8/12 one.
 // v1020 (2026-08-13) §GLOW_LENS_SOFT_EDGE + §GLOW_LENS_SHAPE_FIT: still-render fixture glow quads
 // (effects.js _glowLensOn) now use a feathered-rectangle canvas texture instead of a flat
 // untextured plane, and split round-ish fixtures (bbox aspect < 1.25) onto the round soft texture

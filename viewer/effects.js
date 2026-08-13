@@ -3483,9 +3483,20 @@ async function setupEffects(A, renderer, scene, camera) {
       n8.configuration.distanceFalloff = 0.2;     // n8ao's documented value for screenSpaceRadius mode
       n8.configuration.intensity = STILL_AO_INTENSITY;
       n8.configuration.aoSamples = 8;
-      n8.configuration.denoiseSamples = 8;        // §PHOTO_AO_DARK: 4→8, toward n8ao's own library
-      n8.configuration.denoiseRadius = 12;        // default (8/12) — cuts residual noise, free at
-                                                   // still/bake (offline accumulate, not real-time)
+      // §SUN_SHADOW_DROWNED (2026-08-13): user, watching a Clinic Alt+C bake, "the sun's cast
+      // shadow loses its corner where it meets roof beams" at the sun-arc's high-elevation start —
+      // then, after ruling out shadow-map/indoor-outdoor causes: "the new alt-G noise adding to
+      // alt-S during daytime... drowns out the shadows" and confirmed via code read that Alt+G
+      // (effects_gi_poc.js) never got #1331's denoise bump — it is STILL denoiseSamples=4/
+      // denoiseRadius=6 there (n8ao's own "moving camera gets noise cancellation from motion for
+      // free" case), only Alt+S/Alt+C's static 24-frame converge got doubled to 8/12. Witnessed:
+      // reverting to Alt+G's 6 alone measured +9.9% contrast at a real Clinic exterior beam-foot
+      // shadow junction (123.75->135.97, prompts/PHOTOREAL_STILL_RENDER.md §SUN_SHADOW_DROWNED).
+      // User's own call: not a full revert (risks reintroducing the pre-#1331 dark/noisy-indoors
+      // complaint that #1331 shipped to fix) — "ever so slight" step up from Alt+G's 6/4, not a
+      // midpoint. 4->5, 6->7: visibly closer to Alt+G's baseline than to the current 8/12.
+      n8.configuration.denoiseSamples = 5;
+      n8.configuration.denoiseRadius = 7;
       n8.configuration.halfRes = false;           // still-frame quality
       n8.renderToScreen = false;
       var copyMat = new THREE.ShaderMaterial({
@@ -3574,7 +3585,8 @@ async function setupEffects(A, renderer, scene, camera) {
       ao.adapter.enabled = true;
       var sig = _camSig(), f = 0, renderMs = 0;
       console.log('§PHOTO_AO start frames=' + STILL_AO_FRAMES + ' radius=' + STILL_AO_RADIUS +
-        ' intensity=' + STILL_AO_INTENSITY + ' (still-only fold — Alt+G untouched)');
+        ' intensity=' + STILL_AO_INTENSITY + ' denoiseRadius=' + ao.pass.configuration.denoiseRadius +
+        ' denoiseSamples=' + ao.pass.configuration.denoiseSamples + ' (still-only fold — Alt+G untouched)');
       (function stepAO() {
         _stillAORAF = null;
         if (!A._stillRefineActive || !ao.adapter.enabled) return;  // torn down mid-phase
