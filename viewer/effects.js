@@ -5988,13 +5988,26 @@ async function setupEffects(A, renderer, scene, camera) {
     // because every cell's weight varies smoothly with distance and no cell ever "wins".
     // The cubed distance term is what keeps it selective: without it the average drifts toward the
     // centroid of the whole site and stops being the NEAREST part.
+    // §CPE_AIM_DEPTH_BUILDUP fix (candidate 1, 2026-08-13): user-reported live — during a buildup
+    // bake the gaze turns to face a nearby wall/ceiling instead of a deep open hall. Root cause
+    // (bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP, converged diagnosis): this
+    // is the ACTIVE aim rule during buildup (its sibling §CPE_AIM_DEPTH is buildup-gated off), and
+    // unlike that sibling it carried NO facade filter — every cell in the grid, floor/ceiling/roof
+    // included, competed on density alone. Reuses §CPE_AIM_DEPTH_VERTICALITY's own tested classifier
+    // (same `zSpan` field §CPE_AIM_GRID already tracks, zero new data): a cell whose points barely
+    // spread in height is a floor/ceiling/roof slab, not a facade, and is excluded from the pick.
+    // Scope, honestly: this removes flat near cells (matches "faces ceiling"/roof-truss reports); it
+    // does NOT reweight near-vs-far for a genuine vertical wall — that is §CPE_AIM_DEPTH_BUILDUP's
+    // still-open candidate 2, unchanged by this edit.
     function _aimSubject(pIfc) {
       var cells = _aimGrid();
       if (!cells.length) return null;
       var scale = Math.max(1, envelope * 0.5);
+      var minZSpan = Math.max(2, envelope / 8) * 0.3;   // same derivation as _aimDepthSubject's
       var sx = 0, sy = 0, sz = 0, sw = 0, sn = 0;
       for (var i = 0; i < cells.length; i++) {
         var c = cells[i];
+        if (c.zSpan < minZSpan) continue;               // floor/ceiling/roof-like — not a facade
         var d = Math.hypot(c.x - pIfc.ix, c.y - pIfc.iy, c.z - pIfc.iz) / scale;
         var w = c.n / ((1 + d) * (1 + d) * (1 + d));
         sx += c.x * w; sy += c.y * w; sz += c.z * w; sw += w; sn += c.n * w;
