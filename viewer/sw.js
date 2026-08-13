@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1023';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1024';   // bump on each deploy; per-change detail is the git commit message.
 // v1022 (2026-08-13) §SUN_SHADOW_DROWNED: effects.js §PHOTO_AO denoiseRadius 12->7, denoiseSamples
 // 8->5 — "ever so slight" step up from Alt+G's own never-bumped 6/4 baseline (not a full revert),
 // user's own call after the full-revert-to-6 witness measured +9.9% beam-foot shadow contrast but

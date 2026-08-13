@@ -158,8 +158,16 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // LTU_AHouse 1142->1534, JKR 151->348 (Duplex unmoved, 9->9 — it has no grounded-hidden population).
 // W-MZ-2/W-MZ-3/W-MZ-4 UNCHANGED (0/0/locked) on all 7 — the acceptance bar itself did not move,
 // it is simply now checking 1,105 more real elements than it silently used to skip.
-const FLOAT_AFTER_BASELINE = { Terminal: 141, Hospital: 210, Duplex: 9, HHS_Office_Federated: 31,
-  Clinic: 420, LTU_AHouse: 1534, JKR: 348 };
+// §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): stair flights
+// are now real DAG/geoGate support sources (previously invisible to structIdxGrid/grid), so the
+// generative schedule feeding this repair changed on every building that carries stairs of this
+// shape — Terminal/Duplex/Clinic improved (141->136, 9->8, 420->407), Hospital/LTU_AHouse/JKR grew
+// (210->211, 1534->1561, 348->358, more real cross-element dependencies now tracked). HHS unmoved
+// (31). W-MZ-2/3/4 all held at their prior values — the acceptance bar itself did not regress,
+// only this observability counter moved, same accepted class as §GROUNDED_OVERRIDE_FIX's own
+// W-MZ-8 update above.
+const FLOAT_AFTER_BASELINE = { Terminal: 136, Hospital: 211, Duplex: 8, HHS_Office_Federated: 31,
+  Clinic: 407, LTU_AHouse: 1561, JKR: 358 };
 const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
   LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
