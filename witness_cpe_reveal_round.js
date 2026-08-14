@@ -193,6 +193,38 @@ const _watchdog = setTimeout(() => { console.log('\n§W-CPE-REVEAL-ROUND TIMEOUT
       ' (tV=' + topoutTest.tV.toFixed(3) + ')');
   }
 
+  // ── W-REVEAL-PREVIEW-REPLAN: real defect found live (user, 2026-08-14: "Preview also do not go
+  // 2nd round" / "the pov timeline numbering did double but the alt-c still remains not"). Root
+  // cause: the reveal checkbox's change handler only called _markPreviewStale() (bumps a counter),
+  // never _replanFilm() (the only thing that rebuilds _state.plan) — unlike buildup/roomTitle, reveal
+  // changes the PLAN'S OWN beat boundaries, so poseAt/buildupTopoutU kept reading the stale pre-toggle
+  // plan until an unrelated edit (a band drag) happened to trigger a replan. Checks the EDITOR'S OWN
+  // live _state.plan (via the exposed _probePlanRef test hook), NOT a freshly-built plan the way the
+  // topout test above does — that distinction is exactly what this bug hid. ──
+  const previewReplanTest = await pg.evaluate(async () => {
+    const A = window.APP;
+    let plan; try { plan = A.cinemaPathPlan(15); } catch (e) { return { ok: false, reason: 'cinemaPathPlan failed: ' + e.message }; }
+    const openPromise = A.cinemaPathEditor.open({ plan: plan, durationSec: 15, fps: 15 });
+    await new Promise(r => setTimeout(r, 400));
+    const beforeToggle = A.cinemaPathEditor._probePlanRef();
+    const beforeWidth = beforeToggle ? (beforeToggle.beats.reveal - beforeToggle.beats.out) : null;
+    document.getElementById('cpe-reveal').click();     // toggle ON — NO band drag, NO other edit
+    await new Promise(r => setTimeout(r, 50));
+    const afterToggle = A.cinemaPathEditor._probePlanRef();   // the editor's LIVE plan, same one Preview flies
+    document.getElementById('cpe-cancel').click();
+    if (!afterToggle) return { ok: false, reason: 'no _state.plan after toggle' };
+    return { ok: true, beforeWidth, tO: afterToggle.beats.out, tV: afterToggle.beats.reveal };
+  });
+  chk('preview-replan probe ran', previewReplanTest.ok, previewReplanTest.reason || '');
+  if (previewReplanTest.ok) {
+    chk('before toggle: editor\'s live plan has the round at zero width (reveal was off)',
+      previewReplanTest.beforeWidth === 0, 'got=' + previewReplanTest.beforeWidth);
+    chk('checking Reveal alone (no band drag) immediately widens the EDITOR\'S OWN live plan — ' +
+      'the exact plan Preview flies, not a freshly-built one',
+      previewReplanTest.tV > previewReplanTest.tO,
+      'tO=' + previewReplanTest.tO.toFixed(3) + ' tV=' + previewReplanTest.tV.toFixed(3));
+  }
+
   // ── W-REVEAL-VISUAL: the visual layer (A.cpeRevealVisualAt / A.cpeRevealApplyVisual) — full hide
   // via the existing A.filterDiscs, phase-correct at each point in the round, snapshot/restore of a
   // PRE-EXISTING filter (not a blind "show everything"), and skips redundant scene traversal. ──

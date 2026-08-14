@@ -3277,6 +3277,16 @@
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
         _markPreviewStale();
+        // §CPE_DISCIPLINE_REVEAL — real bug found live (user, 2026-08-14: "Preview also do not go
+        // 2nd round" / "the pov timeline numbering did double but the alt-c still remains not").
+        // _markPreviewStale() only bumps a counter; it does NOT rebuild _state.plan. Unlike
+        // buildup/roomTitle (flags read live by their own draw code), reveal changes the PLAN'S OWN
+        // BEAT BOUNDARIES (tV/tR) — poseAt/buildupTopoutU read _state.plan directly, so without an
+        // explicit _replanFilm() here, the next preview click keeps flying the STALE pre-toggle plan
+        // (reveal effectively off) until some unrelated edit (a band drag) happens to trigger one.
+        // Duration LABELS (_buildOverride()._total, called fresh each time) looked right regardless —
+        // that's the "numbering did double but the camera still remains not" split exactly.
+        _replanFilm(); _redrawScene(); _renderClock();
         console.log('§CPE_REVEAL ' + (_state.reveal ? 'ON' : 'off') +
           ' — extra retrace round, ARC/STR hides to reveal MEP/other disciplines' +
           ' (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
