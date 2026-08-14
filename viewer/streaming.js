@@ -2457,12 +2457,17 @@ function setupStreaming(A) {
     const toRemove = A.collectMeshes(o => o.isMesh || o.isInstancedMesh || o.isBatchedMesh);
     toRemove.forEach(obj => {
       A.scene.remove(obj);
+      // §MEMLEAK_BVH_DISPOSE: three-mesh-bvh's `geometry.boundsTree` is a monkey-patched
+      // property (loader.js) sitting outside BufferGeometry's own 'dispose' event chain —
+      // plain geometry.dispose() does NOT free it. Must call disposeBoundsTree() first.
+      if (obj.geometry && obj.geometry.boundsTree && obj.geometry.disposeBoundsTree) obj.geometry.disposeBoundsTree();
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) obj.material.dispose();
     });
     // Dispose cached geometry BLOBs — these are the raw BufferGeometry objects
     // that back all scene meshes. Safe to dispose now that meshes are removed.
     for (const geo of Object.values(A.meshCache)) {
+      if (geo && geo.boundsTree && geo.disposeBoundsTree) geo.disposeBoundsTree();
       if (geo && geo.dispose) geo.dispose();
     }
     A.meshCache = {};
