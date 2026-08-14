@@ -643,8 +643,18 @@
     // multiplier: a hold is authored seconds, not distance to be priced.
     var holdSec = 0;
     for (var i = 0; i < s.bands.length; i++) holdSec += +(s.bands[i].hold || 0);
-    return { len: len, outSec: outSec + holdSec, holdSec: holdSec,
-             total: s.baseTotal - s.baseOutSec + outSec + holdSec };
+    // §CPE_DISCIPLINE_REVEAL — an ESTIMATE (same shape as effects.js's authoritative _natSec.reveal:
+    // there-and-back at the walk's own pace + ~2s/discipline + a final 2s together), so the total
+    // this panel shows/bakes to GROWS to fit the round instead of squeezing it out of the existing
+    // runtime. Exact seconds are computed authoritatively in effects.js at plan-build time — this
+    // only needs to be close enough that nFrames (cinema_maxq.js) allocates real frames for it.
+    var revealSec = 0;
+    if (s.reveal) {
+      var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
+      if (discs.length) revealSec = 2 * len / s.speed + (2 * discs.length + 2);
+    }
+    return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
+             total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
   }
   function _buildOverride() {
     var s = _state, nat = _naturalDuration();
@@ -839,7 +849,7 @@
           // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
           // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
           '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
-          'Reveal</label> <span style="color:#666">(discipline ghost-parade — spec only, not yet live)</span></div>' +
+          'Reveal</label> <span style="color:#666">(extra retrace round + pause before the finale — the ghost/reveal visuals are not built yet)</span></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -3249,16 +3259,19 @@
         if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
         _renderWhole(); _syncButtons();
       });
-      // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel-side wiring only. The
-      // flag round-trips through _buildOverride/_pathsSave/_pathsApply exactly like roomTitle, and
-      // cinema_maxq.js captures it at bake time, but NO render/pacing behavior is built yet — Open
-      // Question 1 (render approach for the ARCH/STR ghost) is still unresolved. Checking this box
-      // today changes nothing visible in the bake; the hint text next to it says so.
+      // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — geometry/timeline
+      // stage is real: checking this box inserts an extra retrace round (last stick -> first stick
+      // -> last stick, plus a tail pause) into the bake, effects.js's _cinemaPathPlan/poseAt. The
+      // ghost/hide/shadow VISUALS (20% ARC/STR fade, per-discipline full-reveal, sunlight-through)
+      // are NOT built yet — Open Question 1 (render approach) is still unresolved. The hint text next
+      // to the checkbox says so; do not let this comment or that text drift out of sync with which
+      // half is actually built.
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
         _markPreviewStale();
         console.log('§CPE_REVEAL ' + (_state.reveal ? 'ON' : 'off') +
-          ' — panel flag only, no render mechanism built yet (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
+          ' — extra retrace round (geometry/timeline only, real); ghost/reveal visuals not built yet' +
+          ' (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         _renderWhole(); _syncButtons();
       });
       // Seeded from state, not left on the markup's first <option>: a plan re-opened from
