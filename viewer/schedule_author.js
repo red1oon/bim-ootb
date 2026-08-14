@@ -202,6 +202,19 @@
     return out;
   }
 
+  // §GANTT_SCHEDULE_STALE (4D_SCHEDULE_PERFECTION.md §GANTT_SHIFT_HOURS_DESYNC follow-up): the
+  // authored `schedules` table had NO staleness signal at all, unlike kernel_ops (canvas), which
+  // self-heals via _genVersion/_GANTT_CACHE_VERSION. Once a Gantt schedule was materialized it was
+  // NEVER re-derived, however much the underlying scheduling code (computeSchedule's gates, the
+  // display remap) changed since — a building's Gantt panel could be showing a schedule authored
+  // weeks ago under different code while canvas plays fresh, current placements. gen_version closes
+  // that gap the same way _GANTT_CACHE_VERSION already does for kernel_ops. Safe no-op if present.
+  function _ensureSchedulesGenVersion(db) {
+    db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+    if (_cols(db, 'schedules').indexOf('gen_version') >= 0) return;
+    try { db.run('ALTER TABLE schedules ADD COLUMN gen_version INTEGER'); } catch (e) {}
+  }
+
   // Some shipped building DBs carry a LEGACY-thin `tasks` table
   // (task_id, schedule_id, name, start_date, finish_date, duration_days, status) that the read-path
   // `_cap` cannot consume (its query selects schedule_start/is_summary → errors → generative
@@ -360,7 +373,7 @@
     var rolled = SG.deriveZones(elements, schedule);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
 
-    db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+    _ensureSchedulesGenVersion(db);
     _ensureWideTasks(db);
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
     db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
@@ -370,7 +383,7 @@
     db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
     db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
     db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
-    db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start]);
+    db.run('INSERT INTO schedules VALUES (?,?,?,?,?)', [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null]);
 
     var rootId = 'TASK_ROOT';
     var minStart = Math.min.apply(null, rolled.zones.map(function (z) { return z.start; }));
@@ -444,7 +457,7 @@
     var qsRates = opts.rates || (global.RATES) || {};
 
     // Ensure the IFC-native 4D tables exist (mirror import_db_builder.js DDL exactly).
-    db.run('CREATE TABLE IF NOT EXISTS schedules (schedule_id TEXT PRIMARY KEY, name TEXT, status TEXT, created_date TEXT)');
+    _ensureSchedulesGenVersion(db);
     _ensureWideTasks(db);   // migrate any legacy-thin tasks table → the widened DDL `_cap` reads
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
     var _frag = _classFragmentation(db, qsRates);
@@ -555,7 +568,7 @@
         ' (overlaps ' + Math.max(0, p.widthDays - p.lagDays) + 'd of the PREVIOUS phase\'s tail)');
     });
 
-    db.run('INSERT INTO schedules VALUES (?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start]);
+    db.run('INSERT INTO schedules VALUES (?,?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null]);
 
     // ROOT summary task (is_summary=1 → excluded from _cap leaf window; spans the whole project).
     // In blank mode dates are NULL (the user originates them via scheduleDefault/the wizard).
@@ -624,13 +637,25 @@
     return { ok: true, guid: guid, taskId: taskId };
   }
 
-  // activeSchedule(db) — detect the schedule the wizard should EDIT. A model dropped from Bonsai/Revit
-  // arrives WITH a native IFC schedule (import_worker captures IfcWorkSchedule/IfcTask into these same
-  // tables, keyed by IFC GlobalId — NOT 'SCH_AUTHORED'). So the wizard must recognize an imported
-  // (captured) schedule and edit IT, never rule-generate a competing one (_cap reads ALL schedule_ids
-  // → two schedules = a doubled timeline). Priority: the user's own SCH_AUTHORED draft, else the
-  // imported schedule. Returns {id, name, taskCount, authored, captured} or null when no dated schedule.
-  function activeSchedule(db) {
+  // activeSchedule(db, opts) — detect the schedule the wizard should EDIT. A model dropped from
+  // Bonsai/Revit arrives WITH a native IFC schedule (import_worker captures IfcWorkSchedule/IfcTask
+  // into these same tables, keyed by IFC GlobalId — NOT 'SCH_AUTHORED'). So the wizard must recognize
+  // an imported (captured) schedule and edit IT, never rule-generate a competing one (_cap reads ALL
+  // schedule_ids → two schedules = a doubled timeline). Priority: the user's own SCH_AUTHORED draft,
+  // else the imported schedule. Returns {id, name, taskCount, authored, captured, stale, hasBaseline,
+  // safeToRegen} or null when no dated schedule.
+  //
+  // §GANTT_SCHEDULE_STALE — opts.currentGenVersion (optional): when passed, flags whether a
+  // non-captured schedule was materialized under an older scheduling-code version than the caller's
+  // current one (gen_version missing entirely counts as stale — it predates this tracking, which
+  // itself means real fixes since have never reached it). A captured (imported) schedule is NEVER
+  // flagged stale — it must not be auto-touched, full stop, same rule this function already enforced
+  // via `captured`. safeToRegen additionally requires no baseline (`task_baseline`) has been set for
+  // it — once the user has committed to a schedule as their real plan (⚑ Set Baseline), it is their
+  // edited product and must not be silently discarded merely because the code moved on. Callers that
+  // omit opts.currentGenVersion get stale=false/safeToRegen=false always — fully backward compatible.
+  function activeSchedule(db, opts) {
+    opts = opts || {};
     var r;
     try {
       r = db.exec("SELECT schedule_id, COUNT(*) AS n FROM tasks " +
@@ -642,18 +667,37 @@
       return { id: row[0], taskCount: row[1], authored: row[0] === 'SCH_AUTHORED' };
     });
     try {
-      var nr = db.exec("SELECT schedule_id, name FROM schedules");
+      var nr = db.exec("SELECT schedule_id, name, gen_version FROM schedules");
       if (nr.length && nr[0].values.length) {
-        var nm = {}; nr[0].values.forEach(function (x) { nm[x[0]] = x[1]; });
-        list.forEach(function (s) { s.name = nm[s.id] || s.id; });
+        var nm = {}, gv = {};
+        nr[0].values.forEach(function (x) { nm[x[0]] = x[1]; gv[x[0]] = x[2]; });
+        list.forEach(function (s) { s.name = nm[s.id] || s.id; s.genVersion = gv[s.id] != null ? gv[s.id] : null; });
       }
-    } catch (e) {}
+    } catch (e) {
+      // Pre-§GANTT_SCHEDULE_STALE building: schedules table predates the gen_version column.
+      list.forEach(function (s) { s.genVersion = null; });
+    }
     list.forEach(function (s) { if (!s.name) s.name = s.id; });
     var authored = list.filter(function (s) { return s.authored; })[0];
     var pick = authored || list[0];
     pick.captured = !pick.authored;
+    if (!pick.captured && opts.currentGenVersion != null) {
+      pick.stale = (pick.genVersion == null) || (pick.genVersion < opts.currentGenVersion);
+    } else {
+      pick.stale = false;
+    }
+    pick.hasBaseline = false;
+    if (pick.stale) {
+      try {
+        var br = db.exec('SELECT COUNT(*) AS n FROM task_baseline WHERE schedule_id=?', [pick.id]);
+        pick.hasBaseline = !!(br.length && br[0].values.length && br[0].values[0][0] > 0);
+      } catch (e) {}
+    }
+    pick.safeToRegen = pick.stale && !pick.hasBaseline;
     console.log('§AUTHOR_DETECT schedules=' + list.length + ' active=' + pick.id +
-      ' captured=' + pick.captured + ' tasks=' + pick.taskCount);
+      ' captured=' + pick.captured + ' tasks=' + pick.taskCount +
+      (opts.currentGenVersion != null ? ' genVersion=' + pick.genVersion + ' current=' + opts.currentGenVersion +
+        ' stale=' + pick.stale + ' hasBaseline=' + pick.hasBaseline + ' safeToRegen=' + pick.safeToRegen : ''));
     return pick;
   }
 

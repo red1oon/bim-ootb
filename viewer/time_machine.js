@@ -5600,14 +5600,36 @@
     _taskIndexFor = key;
     _taskIndex = { ok: false, guidTask: {}, tasks: {}, scheduleId: null, n: 0 };
     if (!app || !app.db) return null;
-    var db = app.db, sched = null;
+    var db = app.db, sched = null, SA = null;
     try {
-      var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-      if (SA && SA.activeSchedule) sched = SA.activeSchedule(db);
+      SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+      if (SA && SA.activeSchedule) sched = SA.activeSchedule(db, { currentGenVersion: _GANTT_CACHE_VERSION });
     } catch (e) { sched = null; }
     if (!sched || !sched.id) {
       console.log('§GANTT_BAR_IDENTITY schedule=none bars stay non-editable (no authored schedule)');
       return null;
+    }
+    // §GANTT_SCHEDULE_STALE (4D_SCHEDULE_PERFECTION.md §GANTT_SHIFT_HOURS_DESYNC follow-up): the
+    // authored Gantt had no equivalent of kernel_ops's _genVersion self-heal — once materialized it
+    // was frozen forever regardless of how much the scheduling code changed since. Re-materialize in
+    // place, same real UI opts shape as _materializeNativeSchedule/generateGanttSchedule, BEFORE the
+    // task index is built from it. sched.safeToRegen already excludes captured (imported) schedules
+    // and anything with a baseline set (the user's committed, edited product) — see activeSchedule's
+    // own header for the exact contract.
+    if (sched.safeToRegen && SA.materializeZones) {
+      console.log('§GANTT_SCHEDULE_STALE_REGEN id=' + sched.id + ' genVersion=' + sched.genVersion +
+        ' current=' + _GANTT_CACHE_VERSION + ' — re-materializing in place');
+      try {
+        var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
+        var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
+        var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
+          scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION });
+        if ((!rres || !rres.ok) && SA.materializeDefault) {
+          rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
+            genVersion: _GANTT_CACHE_VERSION });
+        }
+        console.log('§GANTT_SCHEDULE_STALE_REGEN_RESULT ok=' + !!(rres && rres.ok));
+      } catch (e) { console.log('§GANTT_SCHEDULE_STALE_REGEN_FAIL ' + e.message); }
     }
     try {
       var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish FROM tasks ' +
@@ -6725,8 +6747,8 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt });
-    if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false });
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION });
+    if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION });
     console.log('§GANTT_PREMATERIALIZE ' + (res.ok
       ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
       : 'failed reason=' + (res.reason || 'unknown') + ' — legacy auto-generate fallback will handle it'));
@@ -6765,10 +6787,10 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt });
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION });
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
-      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false }) : { ok: false };
+      res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION }) : { ok: false };
     }
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
