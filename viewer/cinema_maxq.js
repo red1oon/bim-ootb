@@ -1070,15 +1070,14 @@
         }
         _buildup = !!_ov.buildup;
         _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
-        // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — the retrace
-        // round itself is real (effects.js's _cinemaPathPlan/poseAt inserts it via this same
-        // _ov.reveal flag, transparently to this file — plan.poseAt already returns the extended
-        // film). _reveal is captured here only for logging/future ghost-visual wiring, not because
-        // this file's own bake loop needs to branch on it. Ghost/hide/shadow VISUALS (20% ARC/STR
-        // fade, per-discipline full-reveal, sunlight-through) are NOT built yet — Open Question 1.
+        // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — both the round
+        // and its visuals are real. effects.js's _cinemaPathPlan/poseAt inserts the retrace via this
+        // same _ov.reveal flag, transparently to this file (plan.poseAt already returns the extended
+        // film); A.cpeRevealApplyVisual(plan,_tn), called from the per-frame loop below, drives the
+        // ARC/STR hide via A.filterDiscs. _reveal itself is only captured here for logging.
         _reveal = !!_ov.reveal;
-        if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round is real (extra frames baked); ' +
-          'ghost/reveal visuals not built yet (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
+        if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round + ARC/STR reveal are real ' +
+          '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
         // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
         // differently by accident.
@@ -1291,6 +1290,10 @@
               (_ggO == null ? '' : ' groundOpacity=' + _ggO.toFixed(3)));
           }
         }
+        // §CPE_DISCIPLINE_REVEAL Mechanism C — pure function of (plan, tNorm), same call the preview
+        // loop makes (cinema_path_editor.js's _previewFly) so bake and preview cannot diverge. No-op
+        // (returns immediately, does nothing) when reveal is off or tNorm is outside the round.
+        if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tn);
         A.startStillRefine();
         // §SUN_ARC_STOMP_FIX (found live, 2026-08-11 — user report "not high noon" on a real
         // HHS_Office_Federated bake): startStillRefine() calls _applyPhotoStaging() synchronously,
@@ -1443,6 +1446,9 @@
       // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
       // user into normal navigation for the rest of the session.
       try { _ghostGroundRestore(); } catch (eGG) {}
+      // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
+      // user into normal navigation. plan=null is the explicit "force restore" signal.
+      try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       _workPacingReset();
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
@@ -1494,6 +1500,7 @@
       // bake would look like a corrupted schedule to the next person who opens the timeline.
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
       try { _ghostGroundRestore(); } catch (e4) {}
+      try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { _workPacingReset(); } catch (e5) {}
       // Recoverability FIRST: clearing the store can itself block for seconds behind the very
       // zombie connection that failed this run, and until these flags reset the next Alt+C is

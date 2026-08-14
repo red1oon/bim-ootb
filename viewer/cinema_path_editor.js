@@ -849,7 +849,7 @@
           // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
           // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
           '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
-          'Reveal</label> <span style="color:#666">(extra retrace round + pause before the finale — the ghost/reveal visuals are not built yet)</span></div>' +
+          'Reveal</label> <span style="color:#666">(retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale)</span></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -2410,6 +2410,10 @@
         _state.scrubTn = tn;
         _renderScrub();
         if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
+        // §CPE_DISCIPLINE_REVEAL Mechanism C (user, 2026-08-14: "during preview, it can also go along
+        // so user confident it is working") — pure function of (plan, tNorm), the SAME call the bake
+        // loop makes (cinema_maxq.js), so preview and bake cannot diverge. No-op when reveal is off.
+        if (s.reveal && a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(s.plan, tn);
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2459,6 +2463,10 @@
         if (a.buildupPacingReset) a.buildupPacingReset();
         if (a.roomTitleLiveStop) a.roomTitleLiveStop();
         if (a.dayCounterLiveStop) a.dayCounterLiveStop();
+        // §CPE_DISCIPLINE_REVEAL: same exit contract as ghostGroundRestore above — a rehearsal that
+        // ended mid-round (or right at it) must not leave ARC/STR hidden for the editing session that
+        // follows. plan=null is the explicit "force restore" signal cpeRevealApplyVisual reads.
+        if (a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;
@@ -3131,7 +3139,7 @@
         roomTitle: false,
         origRoomTitle: false,
         // §CPE_DISCIPLINE_REVEAL: off by default, same reasoning as roomTitle — a deliberate choice,
-        // not a default-on behavior. Mechanism not built yet (see checkbox hint + spec file).
+        // not a default-on behavior (extra film time + a real visual change, see checkbox hint).
         reveal: false,
         origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
@@ -3259,18 +3267,18 @@
         if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
         _renderWhole(); _syncButtons();
       });
-      // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — geometry/timeline
-      // stage is real: checking this box inserts an extra retrace round (last stick -> first stick
-      // -> last stick, plus a tail pause) into the bake, effects.js's _cinemaPathPlan/poseAt. The
-      // ghost/hide/shadow VISUALS (20% ARC/STR fade, per-discipline full-reveal, sunlight-through)
-      // are NOT built yet — Open Question 1 (render approach) is still unresolved. The hint text next
-      // to the checkbox says so; do not let this comment or that text drift out of sync with which
-      // half is actually built.
+      // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — checking this box
+      // inserts an extra retrace round (last stick -> first stick -> last stick, plus a tail pause)
+      // into the bake AND preview (effects.js's _cinemaPathPlan/poseAt for the camera, A.cpeReveal
+      // ApplyVisual/A.filterDiscs for hiding ARC/STR — full hide, not a translucent fade: checked
+      // live, ~80% of ARC/STR geometry is batched/instanced with materials shared across disciplines
+      // by colour, so a scoped translucent ghost would need per-instance shader work; full hide
+      // reuses existing code and gets the sunlight-through effect for free).
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
         _markPreviewStale();
         console.log('§CPE_REVEAL ' + (_state.reveal ? 'ON' : 'off') +
-          ' — extra retrace round (geometry/timeline only, real); ghost/reveal visuals not built yet' +
+          ' — extra retrace round, ARC/STR hides to reveal MEP/other disciplines' +
           ' (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         _renderWhole(); _syncButtons();
       });
