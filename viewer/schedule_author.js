@@ -349,7 +349,14 @@
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var maxCrews = {};
     for (var res in laborRates) if (laborRates[res].max_crews) maxCrews[res] = laborRates[res].max_crews;
-    var schedule = SG.computeSchedule(elements, 0, 1, maxCrews);
+    // §GANTT_SHIFT_HOURS_DESYNC (4D_SCHEDULE_PERFECTION.md) — this call used to omit shiftHours,
+    // silently taking computeSchedule's internal 8h/day default while the real canvas movie
+    // (time_machine.js injectGantt) runs at rates.js SHIFT_HOURS (default 24). Gantt bars were
+    // authored 3x slower than the canvas actually plays, so elements visibly appear before their
+    // own bar starts. opts.shiftHours undefined leaves computeSchedule's own 8h default untouched
+    // (witnesses/probes that never pass it stay byte-identical) — only callers that pass it (the
+    // real UI paths, below) change.
+    var schedule = SG.computeSchedule(elements, 0, 1, maxCrews, opts.shiftHours);
     var rolled = SG.deriveZones(elements, schedule);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
 

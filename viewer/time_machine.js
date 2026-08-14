@@ -6724,7 +6724,8 @@
     if (act) return false;                       // schedule exists — injectGantt absorbs it, one pass
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt });
     if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false });
     console.log('§GANTT_PREMATERIALIZE ' + (res.ok
       ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
@@ -6763,7 +6764,8 @@
     // the ruler to shift the whole project to a different start, same as any other edit.
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate });
+    var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt });
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
       res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false }) : { ok: false };
