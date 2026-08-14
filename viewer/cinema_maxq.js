@@ -934,7 +934,7 @@
     // Set from the editor's override below. `poseAt` is the ONE place the window is applied, so
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
-    var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null;
+    var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
     var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
@@ -1070,6 +1070,12 @@
         }
         _buildup = !!_ov.buildup;
         _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
+        // §CPE_DISCIPLINE_REVEAL — captured for future Mechanism A/B render logic
+        // (prompts/CINEMA_DISCIPLINE_REVEAL.md), not yet acted on: no ghost/pacing code exists yet
+        // (spec Open Question 1 unresolved). Logged so an ON flag is never silently swallowed.
+        _reveal = !!_ov.reveal;
+        if (_reveal) console.log('§CPE_REVEAL flag=on — no render mechanism built yet ' +
+          '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md), bake proceeds unaffected');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
         // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
         // differently by accident.

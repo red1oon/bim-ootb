@@ -673,6 +673,7 @@
       clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
       buildup: !!s.buildup,
       roomTitle: !!s.roomTitle,
+      reveal: !!s.reveal,
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       // §CPE_STICK_HOLD: the TRAVEL part of the walk scales with the user's total, the authored hold
@@ -723,6 +724,8 @@
     if (_state.buildup !== _state.origBuildup) return true;
     if (_state.roomTitle) return true;
     if (_state.roomTitle !== _state.origRoomTitle) return true;
+    if (_state.reveal) return true;
+    if (_state.reveal !== _state.origReveal) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -830,7 +833,13 @@
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
           'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
         '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
-          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span></div>' +
+          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span> ' +
+          // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so far.
+          // Checkbox + state round-trip through save/restore, same as every sibling here; the actual
+          // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
+          // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
+          '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
+          'Reveal</label> <span style="color:#666">(discipline ghost-parade — spec only, not yet live)</span></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -2114,7 +2123,7 @@
     var tm = null;
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
-      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle },
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal },
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
       tmCursor: tm ? tm.cursor : null,
@@ -2144,7 +2153,8 @@
         ' buildup=' + (rec.meta.buildup ? 1 : 0) + ' total=' + rec.meta.totalSec.toFixed(1) + 's' +
         ' — IndexedDB working store; cinema_path TABLE written separately so it travels with the .db');
       console.log('§CPE_PANEL_STATE saved buildup=' + (ps.checkboxes.buildup ? 1 : 0) +
-        ' roomTitle=' + (ps.checkboxes.roomTitle ? 1 : 0) + ' dayCounter=' + ps.dayCounter +
+        ' roomTitle=' + (ps.checkboxes.roomTitle ? 1 : 0) + ' reveal=' + (ps.checkboxes.reveal ? 1 : 0) +
+        ' dayCounter=' + ps.dayCounter +
         ' tmActive=' + (ps.tmActive ? 1 : 0) +
         ' tmCursor=' + (ps.tmCursor != null ? ps.tmCursor : 'n/a') +
         ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
@@ -2161,7 +2171,8 @@
   // bare DOM mutation the rest of the app cannot see. The dayEl seeding at wiring time already did
   // this for the select; the sibling checkboxes never got it — this closes that gap.
   function _syncPanelControls() {
-    [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle]].forEach(function(p) {
+    [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
+     ['cpe-reveal', !!_state.reveal]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
@@ -2177,10 +2188,12 @@
     if (ps.checkboxes) {
       _state.buildup = !!ps.checkboxes.buildup;
       _state.roomTitle = !!ps.checkboxes.roomTitle;
+      _state.reveal = !!ps.checkboxes.reveal;
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
       _state.origRoomTitle = _state.roomTitle;
+      _state.origReveal = _state.reveal;
     }
     if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
     _syncPanelControls();
@@ -2202,7 +2215,8 @@
       }
     }
     console.log('§CPE_PANEL_STATE restored buildup=' + (_state.buildup ? 1 : 0) +
-      ' roomTitle=' + (_state.roomTitle ? 1 : 0) + ' dayCounter=' + (_state.dayCounter || 'tr') +
+      ' roomTitle=' + (_state.roomTitle ? 1 : 0) + ' reveal=' + (_state.reveal ? 1 : 0) +
+      ' dayCounter=' + (_state.dayCounter || 'tr') +
       ' tmCursor=' + cursorNote + ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
   }
   // Loading REPLACES the authored state, and only when asked — never on open. The spec left that as
@@ -2230,6 +2244,7 @@
     _state.clipOut = ov.clip ? ov.clip.out : 1;
     _state.buildup = !!ov.buildup;
     _state.roomTitle = !!ov.roomTitle;
+    _state.reveal = !!ov.reveal;
     _state.dayCounter = ov.dayCounter || 'tr';   // older saved plans predate the choice — top right
     _state.userTotal = ov._total;
     _state.held = null;
@@ -2249,7 +2264,7 @@
     console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
       ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
       ' buildup=' + (_state.buildup ? 1 : 0) + ' roomTitle=' + (_state.roomTitle ? 1 : 0) +
-      ' dayCounter=' + (_state.dayCounter || 'tr') +
+      ' reveal=' + (_state.reveal ? 1 : 0) + ' dayCounter=' + (_state.dayCounter || 'tr') +
       ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
       ' — re-staged (§CPE_PATH_NOT_PORTABLE): Ctrl+S now writes this path; Ctrl+Z restores what you had before loading');
     _markPreviewStale();
@@ -3105,6 +3120,10 @@
         // (RESUME_CPE_ROOM_TITLE.md).
         roomTitle: false,
         origRoomTitle: false,
+        // §CPE_DISCIPLINE_REVEAL: off by default, same reasoning as roomTitle — a deliberate choice,
+        // not a default-on behavior. Mechanism not built yet (see checkbox hint + spec file).
+        reveal: false,
+        origReveal: false,
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
@@ -3228,6 +3247,18 @@
         var _a = A();
         if (_state.roomTitle && typeof _a.friendlyName !== 'function' && typeof _a.loadNavigate === 'function') _a.loadNavigate();
         if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
+        _renderWhole(); _syncButtons();
+      });
+      // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel-side wiring only. The
+      // flag round-trips through _buildOverride/_pathsSave/_pathsApply exactly like roomTitle, and
+      // cinema_maxq.js captures it at bake time, but NO render/pacing behavior is built yet — Open
+      // Question 1 (render approach for the ARCH/STR ghost) is still unresolved. Checking this box
+      // today changes nothing visible in the bake; the hint text next to it says so.
+      document.getElementById('cpe-reveal').addEventListener('change', function(e) {
+        _state.reveal = !!e.target.checked;
+        _markPreviewStale();
+        console.log('§CPE_REVEAL ' + (_state.reveal ? 'ON' : 'off') +
+          ' — panel flag only, no render mechanism built yet (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         _renderWhole(); _syncButtons();
       });
       // Seeded from state, not left on the markup's first <option>: a plan re-opened from
