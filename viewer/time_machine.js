@@ -4052,65 +4052,102 @@
   // acyclic support relation — the DAG's own convergence argument). Note the generative times
   // already satisfy this physics (§SUPPORT_CHECK floating baselines), so on an unshifted timeline
   // this pass pushes at most the known raw floating tail.
+  //
+  // §TIER_REGATE_WORKLIST (2026-08-14, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — the
+  // dedicated follow-up SESSION 7 named: "_tierAuditRegate's full-array-rescan fixpoint is the
+  // dominant cost of the ENTIRE 4D generation pipeline on large/complex buildings" — 15,466ms of
+  // Terminal's 19,773ms _twoTierRemap total, ~78-90% of whole-building 4D-gen wall time).
+  // Every branch below (bearing pool, else hang pool, else the §HANG_NEAREST big-sink fallback)
+  // reads ONLY static geometry (bz/tz/x/y/cls/seq) — never s/e — so a target's qualifying
+  // candidate SET is fixed for the life of one _twoTierRemap call. This function precomputes that
+  // set once per element (`cand[guid]`) and its inverse (`dependents[guid]` — who reads this
+  // guid's `.e`), then walks a WORKLIST instead of rescanning every element every sweep: only a
+  // target whose OWN candidate just moved is re-checked. Same longest-path-over-a-DAG relaxation
+  // the old full-rescan loop performed (same EPS/GAP physics, same -1ms tolerance, same exempt
+  // semantics — an exempt guid is never pushed but still counts as a candidate for others) — DAG
+  // confluence (already invoked above for convergence) also makes the fixpoint ORDER-INDEPENDENT,
+  // so a worklist reaches the identical final schedule without redoing untouched elements.
+  // A/B'd byte-identical (every guid's final .s/.e) against the old full-rescan version on all 7
+  // shipped buildings via scripts/probe_tier_regate_worklist.js — 6.1x Terminal (13,315ms->
+  // 2,199ms), 8.0x LTU_AHouse (40,229ms->5,013ms), 3.0-5.4x the other 5. Not assumed, measured.
+  // CACHE: the candidate index is built once per `items` array and cached on the FUNCTION OBJECT
+  // itself via a WeakMap (not a module-scope var), so a standalone copy of this ONE function —
+  // witnesses/probes slice-and-vm it out of time_machine.js by name, e.g. witness_midair_zero.js —
+  // still gets the cache with zero changes on their end; a module-scope var would vanish from that
+  // slice and ReferenceError. `_twoTierRemap` calls this up to 7 times (1 dryRun + up to 6
+  // iterated) per generate; entries fall out of scope for GC the moment a caller drops the array,
+  // and a fresh `_buildXrayElements()` array (every real generate) naturally misses and rebuilds.
   function _tierAuditRegate(items, exempt, dryRun) {
-    var EPS = 0.05, GAP = 0.5;
-    var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
-    var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
-    var cellsOf = function (e) {
-      var o = [], gi, gj;
-      for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
-        for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
-      return o;
-    };
-    var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
-    var structGrid = {}, wallGrid = {};
-    items.forEach(function (e) {
-      var cs = null;
-      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
-      else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
-      if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
-    });
-    // per-element max qualifying-support end — auditFloating's se, on live item times
-    var seFor = function (T) {
-      var se = 0, hasBearing = false, seen = {}, cs = cellsOf(T), p, c, k, arr, S;
-      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
-      for (p = 0; p < pools.length; p++) {
-        for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
-          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
-            if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) {
-              hasBearing = true;
-              if (S.e > se) se = S.e; } } }
-      }
-      if (!hasBearing && T.seq > 4) {      // hangs — gate against the carrier above instead
-        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
-        var tWall = T.cls.indexOf('IfcWall') === 0;
-        var hasHang = false, seenH = {};
-        for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-          for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
-            if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
-                !(tPool && T.bz < S.bz - EPS) &&
-                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
-                  T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
-                xyOverlap(S, T)) {
-              hasHang = true;
-              if (S.e > se) se = S.e; } } }
-        // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
-        // co-planar GAP band, exactly what the scheduler/audit gate them on.
-        if (!hasHang && !tPool && !tWall &&
-            (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
-          var nbA = Infinity, seenN = {};
+    _tierAuditRegate._cache = _tierAuditRegate._cache || new WeakMap();
+    var idx = _tierAuditRegate._cache.get(items);
+    if (!idx) {
+      var EPS = 0.05, GAP = 0.5;
+      var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
+      var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
+      var cellsOf = function (e) {
+        var o = [], gi, gj;
+        for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
+          for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
+        return o;
+      };
+      var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
+      var structGrid = {}, wallGrid = {};
+      items.forEach(function (e) {
+        var cs = null;
+        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
+        else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
+        if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
+      });
+      var cand = {}, dependents = {};
+      items.forEach(function (T) {
+        var cs = cellsOf(T), p, c, k, arr, S;
+        var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+        var bearing = [], seen = {};
+        for (p = 0; p < pools.length; p++) {
+          for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+              if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) bearing.push(S); } }
+        }
+        var finalSet = bearing;
+        if (!bearing.length && T.seq > 4) {      // hangs — gate against the carrier above instead
+          var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+          var tWall = T.cls.indexOf('IfcWall') === 0;
+          var hang = [], seenH = {};
           for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
-              if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
-          if (nbA < Infinity) {
-            var seenP = {};
+            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
+              if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
+                  !(tPool && T.bz < S.bz - EPS) &&
+                  !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                    T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
+                  xyOverlap(S, T)) hang.push(S); } }
+          finalSet = hang;
+          // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
+          // co-planar GAP band, exactly what the scheduler/audit gate them on.
+          if (!hang.length && !tPool && !tWall &&
+              (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
+            var nbA = Infinity, seenN = {};
             for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
-                if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) {
-                  if (S.e > se) se = S.e; } } }
+              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
+                if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
+            var near = [];
+            if (nbA < Infinity) {
+              var seenP = {};
+              for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
+                for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
+                  if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) near.push(S); } }
+            }
+            finalSet = near;
           }
         }
-      }
+        cand[T.guid] = finalSet;
+        finalSet.forEach(function (S) { (dependents[S.guid] = dependents[S.guid] || []).push(T); });
+      });
+      idx = { cand: cand, dependents: dependents };
+      _tierAuditRegate._cache.set(items, idx);
+    }
+    var seFromCand = function (list) {     // max end among a target's precomputed candidates
+      var se = 0;
+      for (var i = 0; i < list.length; i++) if (list[i].e > se) se = list[i].e;
       return se;
     };
     // dryRun: one non-mutating pass over CURRENT times → the set of guids violating audit-se.
@@ -4119,34 +4156,42 @@
     // MEASURED 2026-08-11 clinic_cycle.log: chasing it pushed 43k times across 400 sweeps without
     // converging, the whole building drifting together). Those elements are EXEMPT from pushing —
     // they ride their group shifts, keeping exactly their raw-relative wrongness, never more.
-    // Every edge this pass DOES enforce was satisfied by the raw generative simultaneously, so the
-    // enforced constraint subgraph provably admits a schedule → the fixpoint exists and monotone
-    // pushes reach it (no cycle-chasing possible by construction).
     if (dryRun) {
       var fset = {}, fn = 0;
       items.forEach(function (T) {
-        var se0 = seFor(T);
+        var se0 = seFromCand(idx.cand[T.guid] || []);
         if (se0 > 0 && T.s < se0 - 1) { fset[T.guid] = 1; fn++; }
       });
       return { floatSet: fset, n: fn };
     }
-    var pushed = 0, sweeps = 0;
-    for (; sweeps < 64; sweeps++) {
-      var moved = 0;
-      items.forEach(function (T) {
-        if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
-        var se = seFor(T);
-        if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
-          var dur = Math.max(60000, T.e - T.s);
-          T.s = se; T.e = se + dur;
-          pushed++; moved++;
+    // worklist: start with every non-exempt element (the unavoidable first O(n) pass, same as the
+    // old loop's sweep 1), then only re-check a target when one of ITS OWN candidates was just
+    // pushed — not the whole array, every sweep.
+    var pushed = 0, checks = 0, queue = [], inQ = {};
+    items.forEach(function (T) {
+      if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
+      queue.push(T); inQ[T.guid] = 1;
+    });
+    var qi = 0;
+    while (qi < queue.length) {
+      var T = queue[qi++]; inQ[T.guid] = 0; checks++;
+      var se = seFromCand(idx.cand[T.guid] || []);
+      if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
+        var dur = Math.max(60000, T.e - T.s);
+        T.s = se; T.e = se + dur;
+        pushed++;
+        var deps = idx.dependents[T.guid];
+        if (deps) for (var i = 0; i < deps.length; i++) {
+          var D = deps[i];
+          if (exempt && exempt[D.guid]) continue;
+          if (!inQ[D.guid]) { inQ[D.guid] = 1; queue.push(D); }
         }
-      });
-      if (!moved) break;
+      }
     }
-    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' sweeps=' + (sweeps + 1) +
-      ' (audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
-    return { pushed: pushed, sweeps: sweeps };
+    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' checks=' + checks +
+      ' items=' + items.length +
+      ' (worklist audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
+    return { pushed: pushed, sweeps: checks };   // `sweeps` kept as the field name _twoTierRemap aggregates; now a worklist check count, not a full-array-sweep count
   }
 
   // ── §PHASE_OVERLAP_SUPPORT_GUARD — the support-order sweep, now a NAMED shared pass ──────────
@@ -7628,7 +7673,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 18;   // §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): IfcStairFlight elements are now real geoGate/DAG support sources (schedule_gate.js structIdxGrid/grid) — previously invisible to anything resting on them (a mid-landing, a floor above), so the raw generative schedule this repair chain runs on changed for every building with stairs of this shape. HHS's Day-50 landing report closes near-exactly (FINAL display gap -40.85d -> -0.11d). A building materialized under v17 replays the old (stair-support-blind) order forever regardless of deployed code without this bump.
+  var _GANTT_CACHE_VERSION = 19;   // §TIER_REGATE_WORKLIST (2026-08-14): _tierAuditRegate rewritten full-array-rescan -> worklist/dirty-queue, A/B'd byte-identical on all 7 buildings (scripts/probe_tier_regate_worklist.js) but the ALGORITHM changed, so a building materialized under v18 must be regenerated to pick up the new code path even though its output is provably the same. Previous: §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): IfcStairFlight elements are now real geoGate/DAG support sources (schedule_gate.js structIdxGrid/grid) — previously invisible to anything resting on them (a mid-landing, a floor above), so the raw generative schedule this repair chain runs on changed for every building with stairs of this shape. HHS's Day-50 landing report closes near-exactly (FINAL display gap -40.85d -> -0.11d). A building materialized under v17 replays the old (stair-support-blind) order forever regardless of deployed code without this bump.
   // v16: §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS (2026-08-13): _twoTierRemap's Tier-2 push is now a per-element clamp to t1EndZ[z] instead of a uniform zone shift (MEP Final occupancy 22%->~69-105%, no more dead-air window inflation), and the real generation path now runs the crew's shift at rates.js SHIFT_HOURS (default 24, was hardcoded 8) — user ruling: "24hr is our default, import and JSON setting can import as we align to standard model". MEASURED Hospital totalDays 2019.6(v15, live) -> 369.2 (v16, all 7 buildings shrank 1.7x-5.5x, see prompts/4D_SCHEDULE_PERFECTION.md).
                                    // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
                                    // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
