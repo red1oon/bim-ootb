@@ -4699,6 +4699,12 @@ async function setupEffects(A, renderer, scene, camera) {
   var CINEMA_WALK_MPS     = 2.3;   // interior pace — was 1.3
   var CINEMA_PULLBACK_MPS = 6.5;   // exterior recede: flying, not walking
   var CINEMA_DIVE_MPS     = 20;    // the approach is a fly-IN; dive distances run 20-150m
+  // §CPE_DISCIPLINE_REVEAL pull-out beat (restructure 2026-08-14, bim-compiler prompts/
+  // CINEMA_DISCIPLINE_REVEAL.md — see that file's dated section for the full spec). Author's own
+  // call, documented there, not user-dictated: 1.5s, matching this file's other beat granularities
+  // (the tail's own 2s/discipline slot). Distance is DERIVED from the existing CINEMA_PULLBACK_MPS
+  // constant (reused, not a new speed invented) — dist = CINEMA_REVEAL_PULLOUT_SEC * CINEMA_PULLBACK_MPS.
+  var CINEMA_REVEAL_PULLOUT_SEC = 1.5;
   // §CPE_NOISE_LAW — the user's ONE pacing dial ("have a speed range… don't overdo it"), and the
   // only knob the noise ratio is allowed to have. Declared here, at module scope, because the law
   // governs EVERY beat: the dive's cost table (built with the plan) and the walk's blended cost
@@ -4878,32 +4884,98 @@ async function setupEffects(A, renderer, scene, camera) {
     for (_imId in (A._instanceMeta || {})) A._instanceMeta[_imId].forEach(function(m) { bump(m.disc); });
     return Object.keys(counts);
   };
-  // §CPE_DISCIPLINE_REVEAL — pure function of (plan, tNorm): which visual phase, if any, this
-  // instant of the retrace round falls in. Called identically from the bake loop (cinema_maxq.js)
-  // and the preview loop (cinema_path_editor.js's _previewFly) so the two can never diverge — same
-  // "one poseAt, no state leakage either direction" property this file already relies on elsewhere
-  // (§CPE_AIM_SIMPLIFY). Backward leg (plain retrace) and outside-the-round both return null — ARC/STR
-  // stays solid; only the forward leg (full hide, all discs together) and the tail (cycle one at a
-  // time, then all together) actually change anything. Full HIDE, not partial opacity — checked live
-  // (Duplex, 2026-08-14): ~80% of ARC/STR geometry is batched/instanced with materials SHARED across
-  // disciplines by colour, not owned per-discipline, so a translucent ghost scoped to ARC/STR alone
-  // would need per-instance shader work; A.filterDiscs's existing .visible=false hide sidesteps that
-  // entirely AND gets the "sunlight plays through" effect for free (Three.js excludes invisible
-  // objects from the shadow pass).
+  // §CPE_DISCIPLINE_REVEAL_PULLOUT (restructure 2026-08-14, bim-compiler prompts/
+  // CINEMA_DISCIPLINE_REVEAL.md's dated section — supersedes the there-and-back Mechanism C shape).
+  // pure function of (plan, tNorm): which visual phase, if any, this instant falls in. Called
+  // identically from the bake loop (cinema_maxq.js) and the preview loop (cinema_path_editor.js's
+  // _previewFly) so the two can never diverge — same "one poseAt, no state leakage either direction"
+  // property this file already relies on elsewhere (§CPE_AIM_SIMPLIFY).
+  // Four zones inside [b.out, b.rise]:
+  //   pull-out  (b.out .. b.pullout)  — plain, no override (author's call, see spec file: a short
+  //                                     transition beat, not part of either "round").
+  //   round 2   (b.pullout .. b.reveal) — 'ghost': ARC/STR fully hidden, every non-ARC/STR discipline
+  //                                     shown together — UNCHANGED from the original ghost phase.
+  //   rise/tail (b.reveal .. b.rise, first rv.tailSec seconds) — 'tail-one'/'tail-all': the disc
+  //             parade, folded into the EXISTING rise beat's own time budget (see poseAt below —
+  //             the camera motion there is the unmodified _beat4Pose, never a new motion).
+  //   rise proper (remainder of b.reveal..b.rise) — null: ARC/STR solid again, normal room titles.
   A.cpeRevealVisualAt = function(plan, tNorm) {
     var b = plan && plan.beats, rv = plan && plan.reveal;
     if (!b || !rv || !rv.discs || !rv.discs.length || !(b.reveal > b.out)) return null;
-    if (tNorm <= b.out || tNorm >= b.reveal) return null;
-    var totalSec = Math.max(1e-6, rv.backSec + rv.fwdSec + rv.tailSec);
-    var w = (tNorm - b.out) / Math.max(1e-6, b.reveal - b.out);
-    var backW = rv.backSec / totalSec, fwdEndW = (rv.backSec + rv.fwdSec) / totalSec;
-    if (w <= backW) return null;
-    if (w <= fwdEndW) return { phase: 'ghost', discs: rv.discs.slice() };
-    var tailW = (w - fwdEndW) / Math.max(1e-6, 1 - fwdEndW);
-    var tailSec = tailW * rv.tailSec, perDisc = 2, n = rv.discs.length;
-    var idx = Math.floor(tailSec / perDisc);
+    if (tNorm <= b.out) return null;
+    var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
+    if (tNorm <= tP) return null;                              // pull-out: plain, no ghost
+    if (tNorm <= b.reveal) return { phase: 'ghost', discs: rv.discs.slice() };  // round 2
+    if (!(b.rise > b.reveal)) return null;
+    var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
+    if (!(riseSpanSec > 0)) return null;
+    var wSec = (tNorm - b.reveal) / (b.rise - b.reveal) * riseSpanSec;
+    if (wSec >= rv.tailSec) return null;                        // rise proper: ARC/STR solid again
+    var perDisc = 2, n = rv.discs.length;
+    var idx = Math.floor(wSec / perDisc);
     if (idx >= n) return { phase: 'tail-all', discs: rv.discs.slice() };
     return { phase: 'tail-one', discs: [rv.discs[idx]] };
+  };
+  // §CPE_DISCIPLINE_REVEAL — a discipline code's human-readable label, reused (not invented) from
+  // A.PHASE_MAP (config.js), which already carries friendly names for the common trades
+  // ('3-Electrical', '3-Fire Protection', ...) keyed by the SAME discipline codes A.DISC_COLORS/
+  // cpeRevealDiscsPresent use. Strips the leading "N-" sort prefix. A discipline PHASE_MAP has no
+  // entry for (SAN/VENT/HEAT/VOID are real DISC_COLORS codes with none) degrades to the raw code,
+  // never a fabricated label.
+  A.cpeRevealDiscLabel = function(d) {
+    var p = A.PHASE_MAP && A.PHASE_MAP[d];
+    return (p && p.phase) ? p.phase.replace(/^\d+-/, '') : d;
+  };
+  // §CPE_DISCIPLINE_REVEAL — "good touch" nice-to-have (spec file, 2026-08-14 restructure): a
+  // discipline's live element COUNT, and a ROUGH cost estimate reusing A.MATERIAL_COSTS' EXISTING
+  // per-ifc_class rates as-is (no new rate invented). This is COUNT × rate per class, summed — NOT
+  // the unit-aware linear/area BOQ calculation boq_charts.html already does (bbox-derived length/
+  // area quantities via qto_cache) — that is real, more accurate, separate work, named as a
+  // follow-on in the spec file rather than reproduced here. Queried once per plan build (cheap:
+  // rarely more than a dozen disciplines) via the SAME A.dbQuery elements_meta pattern
+  // cpe_room_title.js's _storeyLadderForGroups already uses, cached on plan.reveal so the tail's
+  // per-frame caption draw never re-queries the DB.
+  A.cpeRevealDiscQtyCost = function(discs) {
+    var out = {};
+    if (!discs || !discs.length || typeof A.dbQuery !== 'function') return out;
+    discs.forEach(function(d) { out[d] = { count: 0, cost: 0 }; });
+    try {
+      var inList = discs.map(function(d) { return "'" + d.replace(/'/g, "''") + "'"; }).join(',');
+      var rows = A.dbQuery('SELECT discipline, ifc_class, COUNT(*) FROM elements_meta ' +
+        'WHERE discipline IN (' + inList + ') GROUP BY discipline, ifc_class');
+      (rows || []).forEach(function(r) {
+        var d = r[0], cls = r[1], n = +r[2];
+        if (!out[d]) return;
+        out[d].count += n;
+        var mc = A.MATERIAL_COSTS[cls];
+        if (mc) out[d].cost += n * mc.rate;   // rough: per-element rate, not the unit-aware qty BOQ uses
+      });
+    } catch (e) { console.warn('§CPE_REVEAL_DISC_QTY_COST query failed: ' + e.message); }
+    return out;
+  };
+  // §CPE_DISCIPLINE_REVEAL — pure function of (plan, tNorm): the caption that REPLACES the room
+  // title during the tail's disc-parade slots ('tail-one'/'tail-all'). Returns null everywhere else
+  // (round 1, pull-out, round 2, rise proper) so the caller falls through to the NORMAL room-title
+  // lookup — room titles are untouched outside the tail, per the spec's item 3. Called identically
+  // from the bake (cinema_maxq.js) and the preview tick (cpe_room_title.js's roomTitleLiveTick), same
+  // "one pure function, two callers" discipline as cpeRevealVisualAt/cpeRevealApplyVisual above.
+  A.cpeRevealCaptionAt = function(plan, tNorm) {
+    var vis = A.cpeRevealVisualAt ? A.cpeRevealVisualAt(plan, tNorm) : null;
+    if (!vis || (vis.phase !== 'tail-one' && vis.phase !== 'tail-all')) return null;
+    var rv = plan.reveal, qc = rv && rv.qtyCost;
+    var name;
+    if (vis.phase === 'tail-all') {
+      name = 'All Disciplines';
+    } else {
+      var d = vis.discs[0];
+      name = A.cpeRevealDiscLabel(d);
+      var q = qc && qc[d];
+      if (q && q.count) {
+        name += ' — ' + q.count + ' element' + (q.count === 1 ? '' : 's');
+        if (q.cost > 0) name += ', ~' + Math.round(q.cost).toLocaleString();
+      }
+    }
+    return { name: name, opacity: 1 };
   };
   // Applies the state above to the live scene via A.filterDiscs (panels.js §NAV_FIND_002) — reused
   // as-is, not forked. Snapshots whatever discipline filter the user already had active (Role filter,
@@ -6743,24 +6815,31 @@ async function setupEffects(A, renderer, scene, camera) {
     }
     var _settleHoldSec = (_cpeBands && _cpeBands.length && isFinite(+_cpeBands[0].hold)) ? Math.max(0, +_cpeBands[0].hold) : 0;
     var _walkTurnDegVal = _walkTurnDeg();
-    // ══ §CPE_DISCIPLINE_REVEAL Mechanism C — the retrace reveal round ═════════════════════════════
-    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md §Mechanism C. A.cpeRevealDiscsPresent
-    // (defined once, outer scope, below) is shared with cinema_path_editor.js's own duration
-    // estimate (_naturalDuration) — one discipline-count implementation, not two kept in sync by
-    // hand.
-    var _revealBackSec = 0, _revealFwdSec = 0, _revealTailSec = 0, _revealDiscs = [];
+    // ══ §CPE_DISCIPLINE_REVEAL_PULLOUT — the pull-out + repeated-lap restructure (2026-08-14) ═════
+    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md, dated section "pull-out restructure".
+    // Supersedes the there-and-back Mechanism C shape: NO backward retrace. Camera arrives at the
+    // last stick (tO, end of round 1), does a brief pull-out (tP), then flies the SAME path again
+    // forward (round 2, tV), then the disc-parade tail — folded into the EXISTING rise beat's own
+    // time budget, not a separate beat (see _natSec.rise below and poseAt). A.cpeRevealDiscsPresent
+    // (outer scope) is shared with cinema_path_editor.js's own duration estimate (_naturalDuration)
+    // — one discipline-count implementation, not two kept in sync by hand.
+    var _revealPulloutSec = 0, _revealRoundSec = 0, _revealTailSec = 0, _revealDiscs = [], _revealQtyCost = {};
     if (_cpeReveal) {
       _revealDiscs = A.cpeRevealDiscsPresent();
       if (_revealDiscs.length) {
-        // Same pace as the outbound walk (CINEMA_WALK_MPS/totalLen, already computed above for
-        // _natSec.out below) — there-and-back, no authored holds replayed (not requested). Tail:
-        // ~2s/discipline + a final 2s all-together, per the user's own 2026-08-14 pacing quote.
-        _revealBackSec = totalLen / CINEMA_WALK_MPS;
-        _revealFwdSec = totalLen / CINEMA_WALK_MPS;
+        // Pull-out: fixed 1.5s (CINEMA_REVEAL_PULLOUT_SEC, author's call — see the constant's own
+        // comment). Round 2: same pace as the outbound walk, ONE lap forward only — no there-and-back,
+        // no authored holds replayed (matches the original Mechanism C's own "not requested" note).
+        // Tail: ~2s/discipline + a final 2s all-together — KEPT (see spec file's dated section for why
+        // the all-together slot was kept rather than dropped: the user asked for it repeatedly
+        // elsewhere in this file's own history, e.g. the ORIGIN ask and the Mechanism B pacing quote).
+        _revealPulloutSec = CINEMA_REVEAL_PULLOUT_SEC;
+        _revealRoundSec = totalLen / CINEMA_WALK_MPS;
         _revealTailSec = 2 * _revealDiscs.length + 2;
-        console.log('§CPE_REVEAL_ROUND on backSec=' + _revealBackSec.toFixed(1) + ' fwdSec=' +
-          _revealFwdSec.toFixed(1) + ' tailSec=' + _revealTailSec.toFixed(1) + ' discs=[' +
-          _revealDiscs.join(',') + '] totalSec=' + (_revealBackSec + _revealFwdSec + _revealTailSec).toFixed(1));
+        _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
+        console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' round2Sec=' +
+          _revealRoundSec.toFixed(1) + ' tailSec=' + _revealTailSec.toFixed(1) + ' discs=[' +
+          _revealDiscs.join(',') + '] totalSec=' + (_revealPulloutSec + _revealRoundSec + _revealTailSec).toFixed(1));
       } else {
         console.log('§CPE_REVEAL_ROUND skipped — no non-ARC/STR discipline present in this building');
       }
@@ -6791,13 +6870,17 @@ async function setupEffects(A, renderer, scene, camera) {
       // ("constant speed"): speed is constant EXCEPT at authored holds, which is the point of them.
       out:   (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS) *
              (1 + (CINEMA_PACE_SWING - 1) * _walkBusy) + _holdTotal,
-      // §CPE_DISCIPLINE_REVEAL: never part of the user-typed total-seconds override system (no field
-      // for it in the panel) — always this measured value, computed just above, 0 when off/empty.
-      reveal: _revealBackSec + _revealFwdSec + _revealTailSec,
+      // §CPE_DISCIPLINE_REVEAL_PULLOUT: none of pullout/reveal(round2)/tail are ever part of the
+      // user-typed total-seconds override system (no field for any of them in the panel) — always
+      // these measured values, computed just above, 0 when off/empty.
+      pullout: _revealPulloutSec,
+      reveal: _revealRoundSec,          // round 2's own seconds — the repeated forward lap only
+      tail:   _revealTailSec,           // folded into `rise` below, not its own beat boundary
       rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
       orbit: 360 / CINEMA_TURN_DPS
     };
-    var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.reveal + _natSec.rise + _natSec.orbit;
+    var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.pullout + _natSec.reveal +
+                    _natSec.tail + _natSec.rise + _natSec.orbit;
     // Whitebox proof for §CPE_WALK_BUDGET_NOISE_BLIND — every term the formula reads, printed
     // together so a witness can recompute `out` from this line alone and compare against
     // _natSec.out, rather than trusting the arithmetic happened as claimed.
@@ -6824,7 +6907,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // uniformly" true by construction.
     var _useSec = _cpeSecOverride
       ? { dive: CINEMA_DIVE_SEC, spin: CINEMA_SPIN_SEC, out: CINEMA_OUT_SEC, rise: CINEMA_RISE_SEC,
-          orbit: _natSec.orbit, reveal: _natSec.reveal }
+          orbit: _natSec.orbit, reveal: _natSec.reveal, pullout: _natSec.pullout, tail: _natSec.tail }
       : _natSec;
     // The pose Beat 2 ends on: level, on the spin's final bearing. Beat 3 must START here.
     var _handYaw = yaw0 + dYaw;
@@ -6839,19 +6922,42 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_SEAM_CONTINUOUS openDeg=' + _openDeg.toFixed(1) + ' openU=' + _openU.toFixed(4) +
       ' (~' + (_openU * _useSec.out).toFixed(2) + 's of the ' + _useSec.out.toFixed(1) +
       's walk) handoffYawDeg=' + (_handYaw * 180 / Math.PI).toFixed(1));
-    var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.reveal + _useSec.rise + _useSec.orbit;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT — the tail's seconds fold into the RISE beat's SHAPE budget
+    // (`_riseFolded`, used only for `_shapeTotal`/tR below) without ever mutating `_useSec.rise`
+    // itself. This is what makes the tail's slow-down "blend into" the EXISTING pull-back/rise
+    // motion (spec's own words) instead of inventing a second camera behaviour: poseAt's Beat 4
+    // branch runs the SAME unmodified _beat4Pose/_cinemaEaseFloored formula across the now-larger
+    // [tV,tR] span, so the SAME pull-back distance is covered over MORE time — average speed is
+    // measurably, continuously lower for exactly as long as captions are cycling (never frozen —
+    // "not pause"), then the beat naturally regains its normal pace for the true rise/orbit hand-off.
+    // ⚠ BUG FOUND WHILE TRACING THIS (not shipped): mutating `_useSec.rise` in place — the first cut
+    // of this fold — silently poisoned the round-trip the editor depends on. `plan.sec.rise` feeds
+    // cinema_path_editor.js's `s.baseSec.rise`, which `_buildOverride()` echoes straight back as the
+    // NEXT plan's `riseSec` override; on every REOPEN of an already-saved reveal=ON path (the plan
+    // handed to the editor already has _cpeReveal true, per `A._cinemaPathEdit`), that echoed value
+    // would already be folded, and folding it AGAIN here double-counts the tail — measurably growing
+    // the rise beat on every re-edit. `_riseFolded` keeps the fold entirely local to `_shapeTotal`/tR;
+    // `_useSec.rise` (and therefore `sec.rise`/`naturalSec.rise`) stays the TRUE unfolded pull-back
+    // budget always, safe to round-trip through the override channel any number of times.
+    var _riseFolded = _useSec.rise + (_useSec.tail || 0);
+    var _shapeTotal = _useSec.dive + _useSec.spin + _useSec.out + _useSec.pullout + _useSec.reveal +
+                       _riseFolded + _useSec.orbit;
     var tD = _useSec.dive / _shapeTotal;
     var tS = tD + _useSec.spin / _shapeTotal;
     var tO = tS + _useSec.out / _shapeTotal;
-    // §CPE_DISCIPLINE_REVEAL: tV is the reveal round's own end boundary. useSec.reveal is 0 when off
-    // or when the building has no non-ARC/STR discipline, which makes tV===tO exactly — the new
-    // poseAt branch below becomes zero-width and unreachable, and tR (below) is unchanged from
-    // today's formula, so an off/empty-building film is byte-identical to before this feature existed.
-    var tV = tO + _useSec.reveal / _shapeTotal;
-    var tR = tV + _useSec.rise / _shapeTotal;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: tP is the pull-out sub-beat's own end boundary; tV is round
+    // 2's own end boundary (the SECOND arrival at the last stick — the real "STOP", per the spec).
+    // useSec.pullout/reveal are both 0 when off or when the building has no non-ARC/STR discipline,
+    // which makes tP===tV===tO exactly — every poseAt branch below becomes zero-width and
+    // unreachable, and tR (below) folds in a 0 tail too, so an off/empty-building film is
+    // byte-identical to before this feature existed (Guardrail 2).
+    var tP = tO + _useSec.pullout / _shapeTotal;
+    var tV = tP + _useSec.reveal / _shapeTotal;
+    var tR = tV + _riseFolded / _shapeTotal;   // folded (includes the tail) — see _riseFolded above
     console.log('§CINEMA_PACING natural=' + _natTotal.toFixed(1) + 's = dive ' + _natSec.dive.toFixed(1) +
       ' + spin ' + _natSec.spin.toFixed(1) + ' + walk ' + _natSec.out.toFixed(1) +
-      ' + reveal ' + _natSec.reveal.toFixed(1) +
+      ' + pullout ' + _natSec.pullout.toFixed(1) + ' + round2 ' + _natSec.reveal.toFixed(1) +
+      ' + tail ' + _natSec.tail.toFixed(1) +
       ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
       '  (walk ' + totalLen.toFixed(1) + 'm @' + CINEMA_WALK_MPS + 'm/s, dive ' + diveDist.toFixed(1) +
       'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + CINEMA_PULLBACK_MPS +
@@ -6860,7 +6966,8 @@ async function setupEffects(A, renderer, scene, camera) {
       _spinBusyMult.toFixed(2) + ' busy)' +
       ' override=' + _cpeSecOverride + ' running=' + durationSec.toFixed(1) + 's');
     console.log('§CINEMA_BEATS dive=' + tD.toFixed(3) + ' spin=' + tS.toFixed(3) + ' out=' + tO.toFixed(3) +
-      ' reveal=' + tV.toFixed(3) + ' rise=' + tR.toFixed(3) + ' turnOverlap=' + CINEMA_TURN_OVERLAP +
+      ' pullout=' + tP.toFixed(3) + ' round2=' + tV.toFixed(3) + ' rise=' + tR.toFixed(3) +
+      ' turnOverlap=' + CINEMA_TURN_OVERLAP +
       ' (dur=' + durationSec.toFixed(1) + 's) route=' + outRoute +
       ' waypoints=' + outWp.length + ' pathLen=' + totalLen.toFixed(1) +
       ' spinDeg=' + Math.round(dYaw * 180 / Math.PI));
@@ -7076,13 +7183,18 @@ async function setupEffects(A, renderer, scene, camera) {
         return { x: p3f.x, y: p3f.y, z: p3f.z,
                  tx: p3f.x + g3.x * 20, ty: p3f.y + g3.y * 20, tz: p3f.z + g3.z * 20 };
       }
+      if (tNorm <= tP) {
+        // ── §CPE_DISCIPLINE_REVEAL_PULLOUT: the brief pull-out/dolly-back sub-beat, ONLY when
+        // _cpeReveal is on. tP===tO (zero-width, unreachable — the tNorm<=tO branch above already
+        // caught everything up to here) whenever reveal is off or the building has no non-ARC/STR
+        // discipline, so an off/empty-building film never enters this branch and is byte-identical
+        // to before this feature existed.
+        return _pullOutPose((tNorm - tO) / Math.max(1e-6, tP - tO));
+      }
       if (tNorm <= tV) {
-        // ── §CPE_DISCIPLINE_REVEAL Mechanism C: the retrace reveal round, inserted between the walk
-        // and the turn-and-rise ONLY when _cpeReveal is on. tV===tO (zero-width, unreachable — the
-        // tNorm<=tO branch above already caught everything up to here) whenever reveal is off or the
-        // building has no non-ARC/STR discipline, so an off/empty-building film never enters this
-        // branch and is byte-identical to before this feature existed.
-        return _revealPose((tNorm - tO) / Math.max(1e-6, tV - tO));
+        // ── §CPE_DISCIPLINE_REVEAL_PULLOUT: round 2 — the SAME path flown again, forward only, no
+        // retrace. tV===tP (zero-width, unreachable) under the same off/empty conditions as tP above.
+        return _revealPose((tNorm - tP) / Math.max(1e-6, tV - tP));
       }
       if (tNorm <= tR) {
         // ── Beat 4: turn around to face the building and rise onto the orbit band. Ends EXACTLY
@@ -7090,7 +7202,12 @@ async function setupEffects(A, renderer, scene, camera) {
         // did not, and measured a ~10.8m single-frame step at t≈0.80). The look-at picks up from
         // CINEMA_TURN_OVERLAP_MAX (where Beat 3 left it) rather than restarting at 0 — see above.
         // Boundary is tV, not tO — tV===tO when the reveal round is off/empty, so this formula
-        // reduces to today's exactly when there's nothing inserted before it.
+        // reduces to today's exactly when there's nothing inserted before it. §CPE_DISCIPLINE_
+        // REVEAL_PULLOUT (2026-08-14): this code is UNCHANGED from before the restructure — the
+        // disc-parade tail is folded into [tV,tR]'s own (now larger) time budget rather than a new
+        // beat, so the SAME e4/_beat4Pose formula covers the same pull-back distance over more
+        // seconds, which is the tail's entire "slows down" effect (see _useSec.rise's own comment
+        // above — no new camera motion invented for the tail).
         var e4 = _cinemaEaseFloored((tNorm - tV) / Math.max(1e-6, tR - tV));
         var p4f = _beat4Pose(e4);
         // §CPE_GAZE_CONSTANT_RATE spans Beat 3 AND Beat 4 — see _gazeRateBuild. MEASURED: limiting
@@ -7104,14 +7221,15 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       return _tailPose(tNorm);
     }
-    // ══ §CPE_DISCIPLINE_REVEAL Mechanism C — the retrace reveal round ═════════════════════════════
-    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md §Mechanism C. Position reuses _outPos(f)
-    // — the SAME curve Beat 3 walks — sampled backward then forward; no reverse-path utility needed
-    // or built (none existed, per that spec's own research). Deliberately does NOT reuse _beat3Pose's
+    // ══ §CPE_DISCIPLINE_REVEAL_PULLOUT — pull-out + repeated forward lap (2026-08-14) ══════════════
+    // Spec: bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md, dated "pull-out restructure" section.
+    // Supersedes the old Mechanism C there-and-back: no backward retrace exists any more. Position
+    // reuses _outPos(f) — the SAME curve Beat 3 walks. Deliberately does NOT reuse _beat3Pose's
     // hold/pin/aim-depth machinery — kept isolated per this file's header rule ("touches
-    // _cinemaPathPlan as little as possible"). Generic gaze-blend helper (same yaw/pitch-lerp
-    // technique _cinemaGazeBlend already uses, generalized to an explicit target direction instead of
-    // always the pivot — this round looks along the WALK, not at the building centre).
+    // _cinemaPathPlan as little as possible"), same reasoning the original build already established.
+    // Generic gaze-blend helper (same yaw/pitch-lerp technique _cinemaGazeBlend already uses,
+    // generalized to an explicit target direction instead of always the pivot — this round looks
+    // along the WALK, not at the building centre).
     function _dirBlend(px, py, pz, axd, ayd, azd, bxd, byd, bzd, w) {
       var yawA = Math.atan2(azd, axd), pitA = Math.atan2(ayd, Math.hypot(axd, azd));
       var yawB = Math.atan2(bzd, bxd), pitB = Math.atan2(byd, Math.hypot(bxd, bzd));
@@ -7129,57 +7247,59 @@ async function setupEffects(A, renderer, scene, camera) {
       if (vL < 1e-6) return { x: _beat3EndDir.x, y: _beat3EndDir.y, z: _beat3EndDir.z };
       return { x: vx / vL, y: vy / vL, z: vz / vL };
     }
-    // §CPE_GAZE_CONSTANT_RATE interaction (found while witnessing this beat, real MEASURED jump —
-    // not assumed): Beat 3/4's ACTUAL rendered gaze at tO/tV is the RATE-LIMITED signal
-    // (_gazeRateAt(_spanFracOf(tNorm))), not the raw _beat3EndDir — the limiter can lag behind the
-    // raw signal on a fast turn. Anchoring this beat's seam blends to raw _beat3EndDir measured a
-    // 63deg instantaneous jump at the tO seam on Duplex (witness_cpe_reveal_round.js). Anchor to what
-    // is ACTUALLY on screen at that instant instead.
+    // §CPE_GAZE_CONSTANT_RATE interaction (found while witnessing the original build, real MEASURED
+    // jump — not assumed): Beat 3/4's ACTUAL rendered gaze at a beat boundary is the RATE-LIMITED
+    // signal (_gazeRateAt(_spanFracOf(tNorm))), not the raw _beat3EndDir — the limiter can lag behind
+    // the raw signal on a fast turn. Anchoring seam blends to raw _beat3EndDir measured a 63deg
+    // instantaneous jump at the tO seam on Duplex (witness_cpe_reveal_round.js). Anchor to what is
+    // ACTUALLY on screen at that instant instead.
     function _revealSeamDir(tNorm) {
       var g = _gazeRateAt(_spanFracOf(tNorm));
       return g || _beat3EndDir;
     }
-    // First-guess tuning knob (flagged in the spec, not measured yet) — the fraction of each leg
-    // spent blending across a seam instead of pure travel-tangent gaze: reveal-start (Beat 3's
-    // actual rendered ending gaze -> looking back), the turnaround (back -> forward), and the forward
-    // leg's own end (travel-tangent -> Beat 4's actual e4=0 gaze), so the tail's hold and the Beat 4
-    // hand-off both pick up with zero kink.
+    // First-guess tuning knob (flagged in the original spec, not re-measured for this restructure) —
+    // the fraction of round 2 spent blending across its END seam (travel-tangent -> Beat 4's actual
+    // e4=0 gaze) instead of pure travel-tangent gaze, so Beat 4's hand-off picks up with zero kink.
     var CPE_REVEAL_SEAM_FRAC = 0.08;
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: the pull-out sub-beat (tO..tP). Author's own call (documented
+    // in the spec file, not user-dictated): a straight dolly-back along the NEGATIVE of the "angle of
+    // attack" — with gaze held CONSTANT (still looking forward along that same direction, i.e. toward
+    // where round 2 will re-enter). No gaze blend: this is the simplest defensible pull-out (position
+    // retreats, look direction doesn't change), and round 2 begins with a clean CUT back to the first
+    // stick regardless (see _revealPose below) — smoothing gaze across a position cut that is about
+    // to happen anyway would not read as continuous motion, so none is attempted here.
+    // ⚠ BUG FOUND BY THE WITNESS (not assumed correct on paper, same discipline the original build's
+    // own comments describe): the "angle of attack" direction is the RATE-LIMITED gaze Beat 3 ACTUALLY
+    // renders at tO (_revealSeamDir(tO)), not the raw _beat3EndDir — witness_cpe_reveal_pullout.js
+    // measured a 78.85deg gap between them on HHS_Office_Federated (the limiter had visibly lagged the
+    // raw signal on the walk's final turn). Anchoring to raw _beat3EndDir would have opened the
+    // pull-out on a direction that instantly snaps away from what was actually on screen the frame
+    // before — exactly the class of bug §CPE_GAZE_CONSTANT_RATE and _revealSeamDir already exist to
+    // prevent elsewhere in this same file. Fixed before this was ever shipped.
+    function _pullOutPose(w) {
+      w = Math.max(0, Math.min(1, w));
+      var pt = _outPos(1);                      // the last stick — where round 1 arrives
+      var dir = _revealSeamDir(tO);              // the "angle of attack" — the gaze ACTUALLY on screen at tO
+      var dist = CINEMA_REVEAL_PULLOUT_SEC * CINEMA_PULLBACK_MPS;   // derived, reuses the pull-back rate
+      var e = _cinemaEaseFloored(w);
+      var px = pt.x - dir.x * dist * e, py = pt.y - dir.y * dist * e, pz = pt.z - dir.z * dist * e;
+      return { x: px, y: py, z: pz, tx: px + dir.x * 20, ty: py + dir.y * 20, tz: pz + dir.z * 20 };
+    }
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: round 2 (tP..tV) — the SAME path flown again, forward only
+    // (0->1), no there-and-back. Starts with a clean CUT from the pull-out's retreated position back
+    // to the first stick ("resume as stick start to stop another round", the user's own words) — only
+    // the END is seam-blended, into Beat 4's actual e4=0 gaze, matching every other beat seam in this
+    // file (§CPE_GAZE_CONSTANT_RATE).
     function _revealPose(w) {
       w = Math.max(0, Math.min(1, w));
-      var totalSec = Math.max(1e-6, _revealBackSec + _revealFwdSec + _revealTailSec);
-      var backW = _revealBackSec / totalSec, fwdEndW = (_revealBackSec + _revealFwdSec) / totalSec;
-      var endDir = _revealSeamDir(tV);
-      if (w > fwdEndW) {
-        // Tail: holds at f=1 (the last stick) while disciplines cycle. Gaze holds at endDir — the
-        // SAME rate-limited direction Beat 4 actually renders at its own e4=0 — so the hand-off into
-        // Beat 4 is exact, matching every other beat seam in this file.
-        var pt = _outPos(1);
-        return { x: pt.x, y: pt.y, z: pt.z, tx: pt.x + endDir.x * 20,
-                 ty: pt.y + endDir.y * 20, tz: pt.z + endDir.z * 20 };
+      var e = _cinemaEaseFloored(w);
+      var p = _outPos(e), dv = _revealTravelDir(e, 1);
+      if (w > 1 - CPE_REVEAL_SEAM_FRAC) {
+        var endDir = _revealSeamDir(tV);
+        return _dirBlend(p.x, p.y, p.z, dv.x, dv.y, dv.z, endDir.x, endDir.y, endDir.z,
+          _cinemaSmoothstep((w - (1 - CPE_REVEAL_SEAM_FRAC)) / CPE_REVEAL_SEAM_FRAC));
       }
-      if (w <= backW) {
-        var startDir = _revealSeamDir(tO);
-        var wb = backW > 0 ? w / backW : 1, eb = _cinemaEaseFloored(wb);
-        var f = 1 - eb, p = _outPos(f), dv = _revealTravelDir(f, -1);
-        if (wb < CPE_REVEAL_SEAM_FRAC) {
-          return _dirBlend(p.x, p.y, p.z, startDir.x, startDir.y, startDir.z,
-            dv.x, dv.y, dv.z, _cinemaSmoothstep(wb / CPE_REVEAL_SEAM_FRAC));
-        }
-        return { x: p.x, y: p.y, z: p.z, tx: p.x + dv.x * 20, ty: p.y + dv.y * 20, tz: p.z + dv.z * 20 };
-      }
-      var wf = (fwdEndW > backW) ? (w - backW) / (fwdEndW - backW) : 1, ef = _cinemaEaseFloored(wf);
-      var pf = _outPos(ef), dvf = _revealTravelDir(ef, 1);
-      if (wf < CPE_REVEAL_SEAM_FRAC) {
-        var backEndDir = _revealTravelDir(0, -1);
-        return _dirBlend(pf.x, pf.y, pf.z, backEndDir.x, backEndDir.y, backEndDir.z,
-          dvf.x, dvf.y, dvf.z, _cinemaSmoothstep(wf / CPE_REVEAL_SEAM_FRAC));
-      }
-      if (wf > 1 - CPE_REVEAL_SEAM_FRAC) {
-        return _dirBlend(pf.x, pf.y, pf.z, dvf.x, dvf.y, dvf.z, endDir.x, endDir.y, endDir.z,
-          _cinemaSmoothstep((wf - (1 - CPE_REVEAL_SEAM_FRAC)) / CPE_REVEAL_SEAM_FRAC));
-      }
-      return { x: pf.x, y: pf.y, z: pf.z, tx: pf.x + dvf.x * 20, ty: pf.y + dvf.y * 20, tz: pf.z + dvf.z * 20 };
+      return { x: p.x, y: p.y, z: p.z, tx: p.x + dv.x * 20, ty: p.y + dv.y * 20, tz: p.z + dv.z * 20 };
     }
     function _beat4Pose(e4) {
         var turnW4 = CINEMA_TURN_OVERLAP_MAX + (1 - CINEMA_TURN_OVERLAP_MAX) * _cinemaSmoothstep(e4);
@@ -7794,11 +7914,16 @@ async function setupEffects(A, renderer, scene, camera) {
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
              pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
-             beats: { dive: tD, spin: tS, out: tO, reveal: tV, rise: tR },
-             // §CPE_DISCIPLINE_REVEAL — the pacing info A.cpeRevealVisualAt(plan, tNorm) needs to
-             // compute which visual phase a given tNorm falls in, exposed here rather than recomputed
-             // (or duplicated) outside this closure.
-             reveal: { discs: _revealDiscs, backSec: _revealBackSec, fwdSec: _revealFwdSec, tailSec: _revealTailSec },
+             beats: { dive: tD, spin: tS, out: tO, pullout: tP, reveal: tV, rise: tR },
+             // §CPE_DISCIPLINE_REVEAL_PULLOUT — the pacing info A.cpeRevealVisualAt(plan, tNorm) and
+             // A.cpeRevealCaptionAt(plan, tNorm) need to compute which visual phase/caption a given
+             // tNorm falls in, exposed here rather than recomputed (or duplicated) outside this
+             // closure. `riseSec` is the UNFOLDED pull-back budget (matches beats.rise minus the
+             // folded tail) — cpeRevealVisualAt needs it separately to find the tail/rise-proper split
+             // inside the now-larger [tV,tR] span. `qtyCost` is the "good touch" nice-to-have (see
+             // A.cpeRevealDiscQtyCost's own comment) — {} when the DB query is unavailable/failed.
+             reveal: { discs: _revealDiscs, pulloutSec: _revealPulloutSec, roundSec: _revealRoundSec,
+                       tailSec: _revealTailSec, riseSec: _useSec.rise, qtyCost: _revealQtyCost },
              // §CINEMA_PATH_EDITOR: the editor's table renders `waypoints` (authored control points,
              // NOT the rounded flown polyline) and re-times off `pathLen`. `sec` echoes the beat
              // seconds actually in force for this plan so the editor never has to guess them back
@@ -7820,7 +7945,8 @@ async function setupEffects(A, renderer, scene, camera) {
                         lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
              }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
-             sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, reveal: _useSec.reveal, rise: _useSec.rise },
+             sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, pullout: _useSec.pullout,
+                    reveal: _useSec.reveal, rise: _useSec.rise },
              naturalSec: _natSec, naturalTotal: _natTotal,
              eyeM: CINEMA_EYE_M, lookdownDeg: CINEMA_LOOKDOWN_DEG, durationSec: durationSec,
              indoor: true, poseAt: poseAt,

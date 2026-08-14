@@ -643,15 +643,19 @@
     // multiplier: a hold is authored seconds, not distance to be priced.
     var holdSec = 0;
     for (var i = 0; i < s.bands.length; i++) holdSec += +(s.bands[i].hold || 0);
-    // §CPE_DISCIPLINE_REVEAL — an ESTIMATE (same shape as effects.js's authoritative _natSec.reveal:
-    // there-and-back at the walk's own pace + ~2s/discipline + a final 2s together), so the total
-    // this panel shows/bakes to GROWS to fit the round instead of squeezing it out of the existing
-    // runtime. Exact seconds are computed authoritatively in effects.js at plan-build time — this
-    // only needs to be close enough that nFrames (cinema_maxq.js) allocates real frames for it.
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT — an ESTIMATE (same shape as effects.js's authoritative
+    // pullout+reveal(round2)+tail seconds: a short pull-out + ONE lap at the walk's own pace + ~2s/
+    // discipline + a final 2s together — see bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's
+    // 2026-08-14 pull-out-restructure section), so the total this panel shows/bakes to GROWS to fit
+    // the round instead of squeezing it out of the existing runtime. Exact seconds are computed
+    // authoritatively in effects.js at plan-build time — this only needs to be close enough that
+    // nFrames (cinema_maxq.js) allocates real frames for it. `1.5` mirrors effects.js's
+    // CINEMA_REVEAL_PULLOUT_SEC constant — duplicated here as a literal, same precedent this
+    // estimate already followed for the tail's `2 * discs.length + 2` before this restructure.
     var revealSec = 0;
     if (s.reveal) {
       var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
-      if (discs.length) revealSec = 2 * len / s.speed + (2 * discs.length + 2);
+      if (discs.length) revealSec = 1.5 + len / s.speed + (2 * discs.length + 2);
     }
     return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
              total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
@@ -2344,8 +2348,15 @@
     // §CPE_ROOM_TITLE — live preview overlay, built ONCE per rehearsal against the film's real
     // duration in seconds (poseAt's tNorm domain is 0..1 over the WHOLE plan; `dur` above is just
     // this rehearsal's playback speed, not the film's real length).
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: the tail's disc-parade caption needs the SAME live-canvas tick
+    // running even when room titles are OFF — reveal is its own checkbox. `roomTitleLiveStart` is
+    // still called (with totalSec=0, an effectively-empty timeline — roomTitleBuildTimeline's own
+    // sampling loop runs a single near-zero-width pass) purely to RESET the module's `_liveSegs` for
+    // this run; without this a PRIOR run's real room-title segments could leak into this one's
+    // rise-proper/round-2 stretches, showing stale captions the user just turned off.
+    var _titleOn = !!(s.roomTitle || s.reveal);
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
-    if (s.roomTitle && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
+    if (_titleOn && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
     // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
     // shipped and NOTHING called them: the counter only ever existed in the exported bytes, so the
     // user could not see their own choice until a 20-minute bake finished. Wired here so the corner
@@ -2409,7 +2420,11 @@
         // was missing from step() even though _scrubTo (the drag path) always had both.
         _state.scrubTn = tn;
         _renderScrub();
-        if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
+        // §CPE_DISCIPLINE_REVEAL_PULLOUT: plan/tn ride along so roomTitleLiveTick can check the
+        // tail's disc-parade caption override (A.cpeRevealCaptionAt) before falling back to the
+        // normal room-title lookup — same call the bake loop makes. Gated on _titleOn (roomTitle OR
+        // reveal), not roomTitle alone — see that flag's own comment above.
+        if (_titleOn && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec, s.plan, tn);
         // §CPE_DISCIPLINE_REVEAL Mechanism C (user, 2026-08-14: "during preview, it can also go along
         // so user confident it is working") — pure function of (plan, tNorm), the SAME call the bake
         // loop makes (cinema_maxq.js), so preview and bake cannot diverge. No-op when reveal is off.

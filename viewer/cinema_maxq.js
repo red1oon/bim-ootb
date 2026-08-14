@@ -156,17 +156,24 @@
                                          // used only when a plan carries no beats (older cache).
   function _buildupTopoutU(plan) {
     // §CPE_DISCIPLINE_REVEAL (2026-08-14, real defect found on a Hospital bake — user: "2nd round
-    // seems to cut over way before the stop stick without finishing the full buildup"). The retrace
+    // seems to cut over way before the stop stick without finishing the full buildup"). The reveal
     // round exists to show off the FINISHED building; topping out at plan.beats.rise (orbit start,
     // unchanged from §CPE_BUILDUP_TOPOUT above) leaves buildup only ~tO/tR complete when the round
-    // BEGINS, since the round itself now sits between tO and tR and pushed tR back. Whenever the
-    // round is active (plan.beats.reveal > plan.beats.out — zero-width, i.e. equal, when reveal is
-    // off or the building has no non-ARC/STR discipline, per Mechanism C's own Guardrail 2), topout
-    // moves to plan.beats.out (the stop stick, the round's own start) instead — every non-reveal film
-    // keeps today's plan.beats.rise behavior byte-identical.
+    // BEGINS, since the round itself now sits between tO and tR and pushed tR back.
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT (2026-08-14, pull-out restructure) — per the spec file's own
+    // wording, buildup's 100%-complete moment moves to the END of the pull-out sub-beat (tP), not the
+    // instant of arrival (tO): completing exactly AT arrival was itself the bug this restructure
+    // fixes (the user's "way before" complaint), and completing "way after" (the pre-#1353 bug) is
+    // the other failure mode this must not reintroduce — tP sits deliberately between the two.
+    // `plan.beats.pullout` degrades to `plan.beats.out` (DEGRADE, DON'T DISABLE — this lane's own
+    // rule, see §GHOST_GROUND's comment) for an older cached plan built before this restructure.
     if (plan && plan.beats && plan.beats.reveal > plan.beats.out &&
         plan.beats.out > 0 && plan.beats.out < 1) {
-      return { u: plan.beats.out, src: 'plan.beats.out (reveal round active)' };
+      var _tp = (plan.beats.pullout != null && plan.beats.pullout > plan.beats.out &&
+                 plan.beats.pullout < 1) ? plan.beats.pullout : plan.beats.out;
+      var _src = (_tp === plan.beats.pullout) ? 'plan.beats.pullout (reveal round active)'
+                                               : 'plan.beats.out (reveal round active, no pullout on plan)';
+      return { u: _tp, src: _src };
     }
     if (plan && plan.beats && plan.beats.rise > 0 && plan.beats.rise < 1) {
       return { u: plan.beats.rise, src: 'plan.beats.rise' };
@@ -1384,7 +1391,15 @@
         // state its own health at the end instead of leaving a degraded film to look identical to
         // a good one.
         if (!ok) { _unconverged++; console.warn('§MAXQ_FRAME_TIMEOUT i=' + i + ' — capturing as-is (UNCONVERGED, count=' + _unconverged + ')'); }
-        var _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
+        // §CPE_DISCIPLINE_REVEAL_PULLOUT: the tail's disc-parade caption REPLACES the room title for
+        // exactly its slots ('tail-one'/'tail-all') — pure function of (plan, tNorm), checked FIRST so
+        // it can override; returns null everywhere else (round 1, pull-out, round 2, rise proper), in
+        // which case the normal room-title lookup below runs untouched. Same call the preview tick
+        // makes (cpe_room_title.js's roomTitleLiveTick) so bake and preview cannot diverge.
+        var _titleInfo = (A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, _tn) : null;
+        if (!_titleInfo) {
+          _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
+        }
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB

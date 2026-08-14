@@ -8,7 +8,13 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1028';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1029';   // bump on each deploy; per-change detail is the git commit message.
+// v1029 (2026-08-15) §CPE_DISCIPLINE_REVEAL_PULLOUT: the there-and-back retrace round replaced with
+// a pull-out + a single repeated forward lap (effects.js/cinema_maxq.js/cinema_path_editor.js/
+// cpe_room_title.js). New beat boundary plan.beats.pullout; A.cpeRevealCaptionAt (new) swaps the
+// room title to the discipline name during the tail's own slots; buildup topout now completes at
+// the end of the pull-out, not the instant of arrival. See bim-compiler prompts/
+// CINEMA_DISCIPLINE_REVEAL.md's dated "session 3" section for the full design/witness record.
 // v1028 (2026-08-14) §GANTT_SCHEDULE_STALE: the authored Gantt (schedules/tasks/task_elements) had
 // NO staleness signal at all, unlike kernel_ops (canvas), which self-heals via _genVersion/
 // _GANTT_CACHE_VERSION. Once materialized, a building's Gantt panel was frozen forever — never
