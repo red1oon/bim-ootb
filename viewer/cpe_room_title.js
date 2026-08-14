@@ -854,7 +854,12 @@ function setupCpeRoomTitle(A) {
   };
 
   // Called every preview frame with the ABSOLUTE seconds along the (unclipped) film timeline.
-  A.roomTitleLiveTick = function(tSec) {
+  // §CPE_DISCIPLINE_REVEAL_PULLOUT (2026-08-14, pull-out restructure) — `plan`/`tNorm` are optional,
+  // backward-compatible extra args: when supplied, A.cpeRevealCaptionAt(plan, tNorm) is checked FIRST
+  // so the tail's disc-parade caption can override the normal room title, exactly the same override
+  // cinema_maxq.js's bake loop applies before ITS own A.roomTitleOpacityAt call — one pure function,
+  // two callers, so preview and bake can never disagree about when the caption swaps.
+  A.roomTitleLiveTick = function(tSec, plan, tNorm) {
     var c = _ensureLiveCanvas();
     if (!c) return;
     var src = A.renderer.domElement, r = src.getBoundingClientRect();
@@ -864,7 +869,8 @@ function setupCpeRoomTitle(A) {
     c.style.width = r.width + 'px'; c.style.height = r.height + 'px';
     var ctx = c.getContext('2d');
     ctx.clearRect(0, 0, c.width, c.height);
-    var info = A.roomTitleOpacityAt(_liveSegs, tSec);
+    var info = (plan != null && tNorm != null && A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, tNorm) : null;
+    if (!info) info = A.roomTitleOpacityAt(_liveSegs, tSec);
     if (info) A.roomTitleCompositeOntoCanvas(ctx, c.width, c.height, info.name, info.opacity);
   };
 
