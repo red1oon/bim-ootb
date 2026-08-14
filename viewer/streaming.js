@@ -372,9 +372,19 @@ function setupStreaming(A) {
       IfcWallStandardCase:    { r: 0.92, g: 0.91, b: 0.88, rough: 0.75, metal: 0.00 },  // painted plaster
       IfcSlab:                { r: 0.72, g: 0.70, b: 0.68, rough: 0.90, metal: 0.00 },  // cast concrete
       IfcColumn:              { r: 0.65, g: 0.64, b: 0.62, rough: 0.80, metal: 0.05 },  // reinforced concrete
-      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65 },  // steel I-beam
-      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60 },  // steel section
-      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70 },  // steel plate
+      // §HOSPITAL_BLUE_TINT (2026-08-14 session 2, CINEMA_DISCIPLINE_REVEAL.md): these 3 + IfcRailing
+      // below are the 4 highest `metal` values in this whole table — envInt overrides the global
+      // envMapIntensity=0.6 (streaming.js _getMaterial, below) down to 0.18 for JUST these 4 classes.
+      // Measured+analytically confirmed root cause: the sky's own PMREM-reflected colour is strongly,
+      // legitimately blue (A.updateSky(45,180) + Sky.js's configured rayleigh=2/turbidity=4 — computed
+      // directly from that formula, zenith sat=0.767; live-rendered probe at these classes' own
+      // roughness/reflection angle: sat=0.141), and these classes' unusually high metalness (0.55-0.70,
+      // vs 0.35-0.50 for every other reflective MEP/steel class in this table) lets that real sky
+      // colour dominate the final hue over the REAL, correctly-trusted IFC albedo underneath (never
+      // touched here — only the reflection strength is dialled back for these classes).
+      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65, envInt: 0.18 },  // steel I-beam
+      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60, envInt: 0.18 },  // steel section
+      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70, envInt: 0.18 },  // steel plate
       IfcFooting:             { r: 0.60, g: 0.58, b: 0.56, rough: 0.95, metal: 0.00 },  // foundation
       IfcPile:                { r: 0.58, g: 0.56, b: 0.54, rough: 0.95, metal: 0.00 },  // deep foundation
       // ── Envelope ──
@@ -386,7 +396,7 @@ function setupStreaming(A) {
       IfcWindow:              { r: 0.70, g: 0.82, b: 0.88, rough: 0.05, metal: 0.00 },  // glass
       // ── Circulation ──
       IfcStair:               { r: 0.68, g: 0.66, b: 0.63, rough: 0.80, metal: 0.00 },  // concrete/stone
-      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55 },  // brushed-steel warm grey (was blue-leaning, §Findings 2026-08-14 stair "boring blue" cause)
+      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55, envInt: 0.18 },  // brushed-steel warm grey (was blue-leaning, §Findings 2026-08-14 stair "boring blue" cause). §HOSPITAL_BLUE_TINT envInt: metal alone measured NOT to move this class's blue hue (near-achromatic base — F0=0.04 dielectric reflectance alone already carried it), envMapIntensity is the lever that actually works here.
       IfcRamp:                { r: 0.70, g: 0.68, b: 0.65, rough: 0.85, metal: 0.00 },  // concrete ramp
       // ── Furniture/fittings ──
       IfcFurniture:           { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
@@ -544,7 +554,11 @@ function setupStreaming(A) {
     opts.roughness = Math.max(0.08, _rough * 0.75);
     opts.metalness = stdMat ? stdMat.metal : 0.08; // §refl: slight metal lift gives surfaces real specular response
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
-    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.6; } // §refl: 0.3->0.6 — more realistic reflection emphasis
+    // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
+    // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
+    // whose unusually high metalness otherwise lets the sky's real, strongly-blue PMREM reflection
+    // dominate the hue over their own correctly-trusted real IFC albedo — see STD_MAT comments above.
+    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = (stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6; }
     const mat = new THREE.MeshStandardMaterial(opts);
     // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
     // the real photo texture takes over that job, stacking both would double-bump the normal
@@ -2457,12 +2471,17 @@ function setupStreaming(A) {
     const toRemove = A.collectMeshes(o => o.isMesh || o.isInstancedMesh || o.isBatchedMesh);
     toRemove.forEach(obj => {
       A.scene.remove(obj);
+      // §MEMLEAK_BVH_DISPOSE: three-mesh-bvh's `geometry.boundsTree` is a monkey-patched
+      // property (loader.js) sitting outside BufferGeometry's own 'dispose' event chain —
+      // plain geometry.dispose() does NOT free it. Must call disposeBoundsTree() first.
+      if (obj.geometry && obj.geometry.boundsTree && obj.geometry.disposeBoundsTree) obj.geometry.disposeBoundsTree();
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) obj.material.dispose();
     });
     // Dispose cached geometry BLOBs — these are the raw BufferGeometry objects
     // that back all scene meshes. Safe to dispose now that meshes are removed.
     for (const geo of Object.values(A.meshCache)) {
+      if (geo && geo.boundsTree && geo.disposeBoundsTree) geo.disposeBoundsTree();
       if (geo && geo.dispose) geo.dispose();
     }
     A.meshCache = {};

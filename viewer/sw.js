@@ -8,7 +8,18 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1027';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1028';   // bump on each deploy; per-change detail is the git commit message.
+// v1028 (2026-08-14) §GANTT_SCHEDULE_STALE: the authored Gantt (schedules/tasks/task_elements) had
+// NO staleness signal at all, unlike kernel_ops (canvas), which self-heals via _genVersion/
+// _GANTT_CACHE_VERSION. Once materialized, a building's Gantt panel was frozen forever — never
+// re-derived however much the scheduling code (gates, display remap, §GANTT_SHIFT_HOURS_DESYNC
+// itself) changed since, while canvas kept rendering fresh placements. schedules.gen_version now
+// mirrors that same self-heal: a non-captured (synthetic SCH_AUTHORED), non-baselined schedule
+// materialized under an older gen_version is re-materialized in place the next time the Gantt
+// drawer builds its task index (buildTaskIndex, time_machine.js). Captured (imported) schedules and
+// anything with a baseline set are NEVER touched — verified with 6 direct cases (fresh/unstamped/
+// stale/baselined/re-stamped/captured), all match spec exactly. See
+// prompts/4D_SCHEDULE_PERFECTION.md §GANTT_SCHEDULE_STALE.
 // v1027 (2026-08-14) §GANTT_SHIFT_HOURS_DESYNC: schedule_author.js materializeZones() was calling
 // computeSchedule() without shiftHours, silently taking the internal 8h/day default while the real
 // canvas movie (time_machine.js injectGantt) runs at rates.js SHIFT_HOURS (24h) — Gantt bars authored

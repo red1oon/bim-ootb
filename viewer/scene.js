@@ -196,6 +196,22 @@ async function setupScene(A) {
   _pmrem.compileCubemapShader();
   var _sky = null;
   var _sunVec = new THREE.Vector3();
+  // §MEMLEAK_PMREM_DISPOSE (2026-08-14): _pmrem.fromScene() allocates a brand-new
+  // WebGLRenderTarget (backing texture + framebuffer) on every call — it is NOT reused/pooled
+  // internally by THREE.PMREMGenerator, and three.js never garbage-collects WebGL resources on
+  // its own. Every prior caller here did `A._envMap = envRT.texture` with no reference kept to
+  // `envRT` itself, so the old render target was silently orphaned on the GPU every time. Measured
+  // via renderer.info.memory.textures in a live headless run (8 calls to A.updateSky(), 2s throttle
+  // apart): texture count climbed 2->10, i.e. +1 leaked GPU texture per call, unbounded — see
+  // prompts/VIEWER_MEMORY_LEAK.md in bim-compiler for the full before/after numbers. Track the
+  // current render target here (not just its .texture) so every future regen can dispose the
+  // previous one first.
+  var _envRT = null;
+  function _setEnvMap(newRT) {
+    if (_envRT && _envRT !== newRT) _envRT.dispose();
+    _envRT = newRT;
+    A._envMap = newRT ? newRT.texture : null;
+  }
   try {
     var _skyMod = await import('./lib/Sky.js');
     if (!_skyMod.Sky) throw new Error('Sky class not exported');
@@ -266,8 +282,7 @@ async function setupScene(A) {
           // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
           // is unaffected — this flag is only ever true during a staged photoshoot.
           if (!A._envMapHdriActive) {
-            var envRT = _pmrem.fromScene(_sky);
-            A._envMap = envRT.texture;
+            _setEnvMap(_pmrem.fromScene(_sky));
           } else {
             console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
           }
@@ -290,8 +305,7 @@ async function setupScene(A) {
   // Also generate initial env map synchronously
   try {
     if (_sky) {
-      var _initRT = _pmrem.fromScene(_sky);
-      A._envMap = _initRT.texture;
+      _setEnvMap(_pmrem.fromScene(_sky));
       // §S276b: Don't set scene.environment — it overrides ground material.
       // Building materials get envMap via streaming.js _getMaterial().
       console.log('§ENV_MAP Sky-based atmospheric env map ready (per-material, not scene.environment)');
@@ -311,8 +325,7 @@ async function setupScene(A) {
       envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       envScene2.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
       envScene2.add(new THREE.AmbientLight(0xffffff, 1));
-      var envRT2 = _pmrem.fromScene(envScene2, 0.04);
-      A._envMap = envRT2.texture;
+      _setEnvMap(_pmrem.fromScene(envScene2, 0.04));
       envGeo.dispose();
       console.log('§ENV_MAP vertex-color gradient fallback applied');
     }
