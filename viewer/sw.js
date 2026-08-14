@@ -8,7 +8,18 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1026';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1027';   // bump on each deploy; per-change detail is the git commit message.
+// v1027 (2026-08-14) §GANTT_SHIFT_HOURS_DESYNC: schedule_author.js materializeZones() was calling
+// computeSchedule() without shiftHours, silently taking the internal 8h/day default while the real
+// canvas movie (time_machine.js injectGantt) runs at rates.js SHIFT_HOURS (24h) — Gantt bars authored
+// ~3x slower than canvas actually plays. Fixed (#1355): materializeZones forwards opts.shiftHours
+// (undefined stays byte-identical, witnesses unaffected); the two real UI entry points now pass
+// window.SHIFT_HOURS. Measured Hospital: old call span 88d (8h default) -> fixed call span 30d (24h),
+// 2.93x. Does NOT touch kernel_ops/canvas — _GANTT_CACHE_VERSION unchanged. Bumping THIS version only
+// so the browser actually fetches the fixed JS on next load (schedules/tasks tables are the
+// user-editable product and are never auto-regenerated once materialized — see
+// prompts/4D_SCHEDULE_PERFECTION.md). Landed as a follow-up commit — #1355 squash-merged before this
+// bump's push reached it (the sw.js-orphan-on-late-push landmine this project already documents).
 // v1026 (2026-08-14) §TIER_REGATE_WORKLIST: time_machine.js _tierAuditRegate rewritten from a
 // full-array-rescan fixpoint to a worklist/dirty-queue (SESSION 7's named, measured, not-fixed
 // bottleneck — 15,466ms of Terminal's 19,773ms 4D-gen wall time). A/B'd byte-identical against the
