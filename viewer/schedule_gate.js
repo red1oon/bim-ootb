@@ -749,8 +749,12 @@
       var slot = claimCrew(el.resource);
       // §4D_BAND_MONOTONIC: the "upper floors gets walled first" half — the cross-storey term.
       var bg = bandGate(el);
-      var start = Math.max(geoGate(el), wallGate(el), hangGate(el), openingGate(el), hostGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL + §HOSTED_BEFORE_HOST
-      if (bg > baseMs && bg >= Math.max(geoGate(el), wallGate(el), tg)) _bmGatedB++;
+      // §PERF_GATE_DEDUP (2026-08-14): geoGate/wallGate are pure (read-only over the grids built so
+      // far), so the audit line below reuses these instead of re-scanning the same grid cells twice
+      // per element — same values, half the grid work, byte-identical decisions.
+      var gg = geoGate(el), wg = wallGate(el);
+      var start = Math.max(gg, wg, hangGate(el), openingGate(el), hostGate(el), tg, bg, slot.time);   // §4D_WALLS_BEFORE_ROOF M5 + §DEQ_V1 + §DOOR_WINDOW_HOST_WALL + §HOSTED_BEFORE_HOST
+      if (bg > baseMs && bg >= Math.max(gg, wg, tg)) _bmGatedB++;
       var end = place(el, start);
       if (bg > baseMs && start - bg > _bmMaxLagMs) _bmMaxLagMs = start - bg;
       bandCommit(el, end);
