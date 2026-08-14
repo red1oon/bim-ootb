@@ -4878,6 +4878,59 @@ async function setupEffects(A, renderer, scene, camera) {
     for (_imId in (A._instanceMeta || {})) A._instanceMeta[_imId].forEach(function(m) { bump(m.disc); });
     return Object.keys(counts);
   };
+  // §CPE_DISCIPLINE_REVEAL — pure function of (plan, tNorm): which visual phase, if any, this
+  // instant of the retrace round falls in. Called identically from the bake loop (cinema_maxq.js)
+  // and the preview loop (cinema_path_editor.js's _previewFly) so the two can never diverge — same
+  // "one poseAt, no state leakage either direction" property this file already relies on elsewhere
+  // (§CPE_AIM_SIMPLIFY). Backward leg (plain retrace) and outside-the-round both return null — ARC/STR
+  // stays solid; only the forward leg (full hide, all discs together) and the tail (cycle one at a
+  // time, then all together) actually change anything. Full HIDE, not partial opacity — checked live
+  // (Duplex, 2026-08-14): ~80% of ARC/STR geometry is batched/instanced with materials SHARED across
+  // disciplines by colour, not owned per-discipline, so a translucent ghost scoped to ARC/STR alone
+  // would need per-instance shader work; A.filterDiscs's existing .visible=false hide sidesteps that
+  // entirely AND gets the "sunlight plays through" effect for free (Three.js excludes invisible
+  // objects from the shadow pass).
+  A.cpeRevealVisualAt = function(plan, tNorm) {
+    var b = plan && plan.beats, rv = plan && plan.reveal;
+    if (!b || !rv || !rv.discs || !rv.discs.length || !(b.reveal > b.out)) return null;
+    if (tNorm <= b.out || tNorm >= b.reveal) return null;
+    var totalSec = Math.max(1e-6, rv.backSec + rv.fwdSec + rv.tailSec);
+    var w = (tNorm - b.out) / Math.max(1e-6, b.reveal - b.out);
+    var backW = rv.backSec / totalSec, fwdEndW = (rv.backSec + rv.fwdSec) / totalSec;
+    if (w <= backW) return null;
+    if (w <= fwdEndW) return { phase: 'ghost', discs: rv.discs.slice() };
+    var tailW = (w - fwdEndW) / Math.max(1e-6, 1 - fwdEndW);
+    var tailSec = tailW * rv.tailSec, perDisc = 2, n = rv.discs.length;
+    var idx = Math.floor(tailSec / perDisc);
+    if (idx >= n) return { phase: 'tail-all', discs: rv.discs.slice() };
+    return { phase: 'tail-one', discs: [rv.discs[idx]] };
+  };
+  // Applies the state above to the live scene via A.filterDiscs (panels.js §NAV_FIND_002) — reused
+  // as-is, not forked. Snapshots whatever discipline filter the user already had active (Role filter,
+  // Find isolate, ...) on first entering the round, and restores EXACTLY that on exit — never a blind
+  // "show everything" that would clobber an unrelated filter the user had running before the bake/
+  // preview started. Skips the (scene-traversing) _applyDiscVisibility call entirely when nothing
+  // actually changed since the last tick — cheap to call every frame.
+  A._cpeRevealSavedHidden = null;
+  A._cpeRevealVisualKey = null;
+  A.cpeRevealApplyVisual = function(plan, tNorm) {
+    if (typeof A.filterDiscs !== 'function' || !A.hiddenDiscs) return;
+    var st = plan ? A.cpeRevealVisualAt(plan, tNorm) : null;
+    var key = st ? (st.phase + ':' + st.discs.join(',')) : '';
+    if (A._cpeRevealVisualKey === key) return;
+    if (!st) {
+      if (A._cpeRevealSavedHidden) {
+        A.hiddenDiscs.clear();
+        A._cpeRevealSavedHidden.forEach(function(d) { A.hiddenDiscs.add(d); });
+        if (A._applyDiscVisibility) A._applyDiscVisibility();
+        A._cpeRevealSavedHidden = null;
+      }
+    } else {
+      if (!A._cpeRevealSavedHidden) A._cpeRevealSavedHidden = new Set(A.hiddenDiscs);
+      A.filterDiscs(st.discs);
+    }
+    A._cpeRevealVisualKey = key;
+  };
   function _cpeBandEnds(b) {
     var h = b.len / 2;
     return [{ x: b.c.x - b.d.x * h, y: b.c.y - b.d.y * h, z: b.c.z - b.d.z * h },
@@ -7742,6 +7795,10 @@ async function setupEffects(A, renderer, scene, camera) {
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
              pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
              beats: { dive: tD, spin: tS, out: tO, reveal: tV, rise: tR },
+             // §CPE_DISCIPLINE_REVEAL — the pacing info A.cpeRevealVisualAt(plan, tNorm) needs to
+             // compute which visual phase a given tNorm falls in, exposed here rather than recomputed
+             // (or duplicated) outside this closure.
+             reveal: { discs: _revealDiscs, backSec: _revealBackSec, fwdSec: _revealFwdSec, tailSec: _revealTailSec },
              // §CINEMA_PATH_EDITOR: the editor's table renders `waypoints` (authored control points,
              // NOT the rounded flown polyline) and re-times off `pathLen`. `sec` echoes the beat
              // seconds actually in force for this plan so the editor never has to guess them back

@@ -148,6 +148,69 @@ const _watchdog = setTimeout(() => { console.log('\n§W-CPE-REVEAL-ROUND TIMEOUT
   chk('§CPE_GAZE_CONSTANT_RATE has no NaN/Infinity after the tV fix', gazeRateLog.length > 0 &&
     !gazeRateLog.some(l => /NaN|Infinity/.test(l)), gazeRateLog.slice(-1)[0] || 'not found');
 
+  // ── W-REVEAL-VISUAL: the visual layer (A.cpeRevealVisualAt / A.cpeRevealApplyVisual) — full hide
+  // via the existing A.filterDiscs, phase-correct at each point in the round, snapshot/restore of a
+  // PRE-EXISTING filter (not a blind "show everything"), and skips redundant scene traversal. ──
+  const visTest = await pg.evaluate(async () => {
+    const A = window.APP;
+    let plan; try { plan = A.cinemaPathPlan(15); } catch (e) { return { ok: false, reason: 'cinemaPathPlan failed: ' + e.message }; }
+    const openPromise = A.cinemaPathEditor.open({ plan: plan, durationSec: 15, fps: 15 });
+    await new Promise(r => setTimeout(r, 400));
+    document.getElementById('cpe-reveal').click();
+    await new Promise(r => setTimeout(r, 50));
+    document.getElementById('cpe-ok').click();
+    const res = await openPromise;
+    const plan2 = A.cinemaPathPlan(res.durationSec, res.override);
+    const tO = plan2.beats.out, tV = plan2.beats.reveal;
+    const eps = 1e-4;
+    const phaseAt = (frac) => A.cpeRevealVisualAt(plan2, tO + (tV - tO) * frac);
+    // Boundaries derived from the plan's own reveal info, not guessed: backW/fwdEndW split the
+    // round into back/fwd/tail exactly as A.cpeRevealVisualAt itself computes them.
+    const rv = plan2.reveal, totalSec = rv.backSec + rv.fwdSec + rv.tailSec;
+    const fwdEndW = (rv.backSec + rv.fwdSec) / totalSec;
+    const phases = { back: phaseAt(0.02), fwd: phaseAt(0.45),
+      tailStart: phaseAt(fwdEndW + 0.03), tailAll: phaseAt(0.99), outside: A.cpeRevealVisualAt(plan2, tO - eps) };
+    // A PRE-EXISTING filter (simulates a Role/Find isolate already active) — the round must restore
+    // exactly THIS on exit, not blindly show everything.
+    A.filterDiscs(['STR']);
+    const preExisting = Array.from(A.hiddenDiscs).sort();
+    let applyCalls = 0;
+    const origApply = A._applyDiscVisibility;
+    A._applyDiscVisibility = function() { applyCalls++; return origApply.apply(this, arguments); };
+    A.cpeRevealApplyVisual(plan2, tO + (tV - tO) * 0.45);   // forward-leg ghost
+    const hiddenDuringGhost = Array.from(A.hiddenDiscs).sort();
+    const callsAfterFirst = applyCalls;
+    A.cpeRevealApplyVisual(plan2, tO + (tV - tO) * 0.451);  // same phase/discs, tiny tNorm change — must be a no-op
+    const callsAfterRepeat = applyCalls;
+    A.cpeRevealApplyVisual(null, 0);                        // force restore
+    const hiddenAfterRestore = Array.from(A.hiddenDiscs).sort();
+    A._applyDiscVisibility = origApply;
+    A.filterDiscs(null);   // clean up this witness's own probe filter
+    return { ok: true, phases, preExisting, hiddenDuringGhost, callsAfterFirst, callsAfterRepeat, hiddenAfterRestore };
+  });
+  chk('visual layer probe ran', visTest.ok, visTest.reason || '');
+  if (visTest.ok) {
+    chk('backward leg: no visual override (ARC/STR stays solid)', visTest.phases.back === null, JSON.stringify(visTest.phases.back));
+    chk('outside the round: no visual override', visTest.phases.outside === null, JSON.stringify(visTest.phases.outside));
+    chk('forward leg: phase=ghost, all discs shown together', visTest.phases.fwd &&
+      visTest.phases.fwd.phase === 'ghost' && JSON.stringify(visTest.phases.fwd.discs) === '["MEP"]',
+      JSON.stringify(visTest.phases.fwd));
+    chk('tail (early): phase=tail-one, exactly one discipline', visTest.phases.tailStart &&
+      visTest.phases.tailStart.phase === 'tail-one' && visTest.phases.tailStart.discs.length === 1,
+      JSON.stringify(visTest.phases.tailStart));
+    chk('tail (late): phase=tail-all, every discipline together', visTest.phases.tailAll &&
+      visTest.phases.tailAll.phase === 'tail-all' && JSON.stringify(visTest.phases.tailAll.discs) === '["MEP"]',
+      JSON.stringify(visTest.phases.tailAll));
+    chk('forward-leg apply hides ARC+STR, leaves MEP visible', JSON.stringify(visTest.hiddenDuringGhost) === '["ARC","STR"]',
+      'got=' + JSON.stringify(visTest.hiddenDuringGhost));
+    chk('a real scene traversal happened on the first apply', visTest.callsAfterFirst > 0, 'calls=' + visTest.callsAfterFirst);
+    chk('a same-phase re-apply skips the (expensive) scene traversal', visTest.callsAfterRepeat === visTest.callsAfterFirst,
+      'before=' + visTest.callsAfterFirst + ' after=' + visTest.callsAfterRepeat);
+    chk('restore brings back the PRE-EXISTING filter exactly, not a blind "show all"',
+      JSON.stringify(visTest.hiddenAfterRestore) === JSON.stringify(visTest.preExisting),
+      'preExisting=' + JSON.stringify(visTest.preExisting) + ' afterRestore=' + JSON.stringify(visTest.hiddenAfterRestore));
+  }
+
   chk('zero pageerrors through the whole run', errs.length === 0, errs.join(' | '));
 
   await br.close();
