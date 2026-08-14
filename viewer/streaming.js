@@ -335,7 +335,34 @@ function setupStreaming(A) {
     return '';
   };
 
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant) {
+  // §MEP_DISC_TINT (2026-08-14): family-name classifier for the 3 IFC2x3 generic-MEP classes
+  // (see DISC_TINT_CLASSES below). Needed because `elements_meta.discipline` is flat "MEP" for
+  // ALL of HHS_Office_Federated's 3390 unassigned elements (confirmed by direct DB query) — no
+  // FP/ACMV/PLB/ELEC breakdown at the discipline-column level, so a discipline-only tint would
+  // just swap flat blue for flat green. The real trade IS recoverable from the authored Revit
+  // family name (e.g. "M_Sprinkler...", "M_Supply Diffuser...", "Rectangular Duct"), which is
+  // real BIM-authored data, not invented. Returns { code, r, g, b } sourced from EITHER an
+  // existing A.DISC_COLORS hex or an existing STD_MAT preset already defined in this file/config
+  // — no new colour values — or null if the name doesn't match a known family pattern (falls
+  // back to the flat discipline tint below). `code` doubles as a bucket-key discriminator
+  // (§S260's batch/merge buckets group by storey|disc|rgba|matVariant, none of which vary
+  // between e.g. a duct and a pipe sharing the same NULL rgba + "MEP" discipline — without
+  // `code` in the key, one shared BatchedMesh material would wrongly paint both the same colour).
+  A._mepNameHint = function(name) {
+    if (!name) return null;
+    if (/duct/i.test(name)) return { code: 'DUCT', r: 0.55, g: 0.58, b: 0.55 };  // STD_MAT.IfcDuct — galvanized sheet-metal grey
+    if (/sprinkler/i.test(name)) return _hexToRgb('FP', 0xcc8844);               // DISC_COLORS.FP — brick/orange
+    if (/diffuser|grille|grill|exhaust/i.test(name)) return _hexToRgb('ACMV', 0xcc4444); // DISC_COLORS.ACMV — red, air terminals
+    if (/dwv|sanitary/i.test(name)) return _hexToRgb('SAN', 0xaa44aa);           // DISC_COLORS.SAN — magenta
+    if (/pipe/i.test(name)) return _hexToRgb('PLB', 0x8844cc);                  // DISC_COLORS.PLB — purple
+    if (/light|sconce|pendant|lamp/i.test(name)) return _hexToRgb('ELEC', 0xcccc44); // DISC_COLORS.ELEC — yellow
+    return null;
+  };
+  function _hexToRgb(code, hex) {
+    return { code: code, r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 };
+  }
+
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -359,7 +386,7 @@ function setupStreaming(A) {
       IfcWindow:              { r: 0.70, g: 0.82, b: 0.88, rough: 0.05, metal: 0.00 },  // glass
       // ── Circulation ──
       IfcStair:               { r: 0.68, g: 0.66, b: 0.63, rough: 0.80, metal: 0.00 },  // concrete/stone
-      IfcRailing:             { r: 0.40, g: 0.42, b: 0.45, rough: 0.35, metal: 0.55 },  // metal railing
+      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55 },  // brushed-steel warm grey (was blue-leaning, §Findings 2026-08-14 stair "boring blue" cause)
       IfcRamp:                { r: 0.70, g: 0.68, b: 0.65, rough: 0.85, metal: 0.00 },  // concrete ramp
       // ── Furniture/fittings ──
       IfcFurniture:           { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
@@ -391,6 +418,14 @@ function setupStreaming(A) {
       IfcBuildingElementProxy:{ r: 0.00, g: 0.78, b: 0.78, rough: 0.50, metal: 0.10 },  // teal
       IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 },  // elevator
     };
+
+    // §MEP_DISC_TINT: the 3 IFC2x3 generic-MEP classes with no per-trade colour of their own —
+    // confirmed by direct DB query (HHS_Office_Federated: 1381+1284+725=3390, exactly its whole
+    // NULL-material MEP count) as the actual source of "everything reads flat blue-grey metal."
+    // Deliberately NOT the other IfcFlow* classes (Controller/MovingDevice/TreatmentDevice/
+    // EnergyConversionDevice above) — those already carry distinct, non-blue STD_MAT colours
+    // (red valve, greenish device) and tinting them too would overwrite an already-correct look.
+    var DISC_TINT_CLASSES = { IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1 };
 
     // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
     // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
@@ -461,7 +496,7 @@ function setupStreaming(A) {
     };
 
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '');
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -474,6 +509,28 @@ function setupStreaming(A) {
     var stdMat = (ifcClass && STD_MAT[ifcClass]) ? STD_MAT[ifcClass] : null;
     if (!rgbaStr && stdMat) {
       r = stdMat.r; g = stdMat.g; b = stdMat.b;
+      // §MEP_DISC_TINT (2026-08-14, CINEMA_DISCIPLINE_REVEAL.md §Findings): IFC2x3's 3 generic
+      // flow classes carry no trade info in the class name, so fire/plumbing/HVAC/etc all fell
+      // into one identical flat blue-grey metal look when unassigned (confirmed: HHS's whole MEP
+      // discipline, 3390/3399 elements, NULL material_rgba, all landing here). Swap the flat
+      // fallback hue for the real trade colour outright (full replace, not a wash — user's
+      // explicit call: "replace color for color", not a blend). Roughness/metalness stay from
+      // STD_MAT, so the metallic PBR read is unchanged, only the hue moves.
+      if (DISC_TINT_CLASSES[ifcClass]) {
+        if (mepHint) {
+          // Preferred: family-name hint (§_mepNameHint) — HHS's `elements_meta.discipline` is
+          // flat "MEP" for every one of these 3390 elements (confirmed by direct DB query), so
+          // the discipline column alone can't tell a duct from a sprinkler from a light fixture.
+          // The real trade IS recoverable from the authored Revit family name — real BIM data.
+          r = mepHint.r; g = mepHint.g; b = mepHint.b;
+        } else if (discipline && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
+          // Fallback: discipline-column tint, for buildings/classes the name hint doesn't match.
+          var _dHex = A.DISC_COLORS[discipline];
+          r = ((_dHex >> 16) & 255) / 255;
+          g = ((_dHex >> 8) & 255) / 255;
+          b = (_dHex & 255) / 255;
+        }
+      }
     }
     // §S260d: Gentler near-white taming — let ACES tone mapping handle the rest
     if (r > 0.85 && g > 0.85 && b > 0.85) { r *= 0.92; g *= 0.92; b *= 0.92; }
@@ -998,6 +1055,7 @@ function setupStreaming(A) {
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
         matVariant: A._entourageVariant(ifcClass, elementName),
+        mepHint: A._mepNameHint(elementName),
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
@@ -1214,8 +1272,10 @@ function setupStreaming(A) {
           const el = elements[li];
           // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
           // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
-          // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
+          // §MEP_DISC_TINT: mepHint's `code` appended too, so e.g. duct vs pipe (same NULL rgba,
+          // same "MEP" disc, same '' matVariant) don't merge into one shared-colour BatchedMesh.
+          // Positional key.split('|') consumers read parts[0..2] only — trailing fields are inert.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '');
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -1225,7 +1285,7 @@ function setupStreaming(A) {
         }
       } else {
         // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -1278,7 +1338,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1357,7 +1417,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint);
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -1479,7 +1539,8 @@ function setupStreaming(A) {
         if (mergedNorm) mergedGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
         mergedGeo.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
 
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, null);
+        var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -1627,7 +1688,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint);
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -1649,7 +1710,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint);
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -1795,15 +1856,16 @@ function setupStreaming(A) {
       var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
       var storey = row[10] || '', ifcClass = row[11] || '';
       var matVariant = A._entourageVariant(ifcClass, row[12]);
+      var mepHint = A._mepNameHint(row[12]);
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
 
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '');
+      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '');
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint });
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -1825,7 +1887,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint);
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
