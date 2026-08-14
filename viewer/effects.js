@@ -3532,7 +3532,14 @@ async function setupEffects(A, renderer, scene, camera) {
       var STILL_SHADOW_RESTORE_ENABLED = true;
       var STILL_SHADOW_RESTORE_KERNEL_PX = 4;   // screen-space neighbor-tap radius, texels — wide
                                                  // enough to counter denoiseRadius=7's blur footprint
+                                                 // at NORMAL sun incidence. §SUN_SHADOW_GRAZE_SCALE
+                                                 // below widens this per-pixel when the sun grazes
+                                                 // the surface (low N.L) — see kScale in the shader.
       var STILL_SHADOW_RESTORE_STRENGTH = 1.0;  // 1.0 = fully restore sharp color at a detected edge
+      var STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE = 4.0;  // cap on how far kScale can widen kernelPx —
+                                                 // bounds worst-case tap cost (8 taps * this factor)
+                                                 // and keeps the mask from smearing across unrelated
+                                                 // geometry at near-90 deg grazing incidence
       var shadowRestoreMat = null, shadowRestoreQuad = null, aoScratchRT = null;
       if (STILL_SHADOW_RESTORE_ENABLED) {
         var _srFrag = [
@@ -3547,6 +3554,8 @@ async function setupEffects(A, renderer, scene, camera) {
           'uniform float shadowBias;',
           'uniform float strength;',
           'uniform float kernelPx;',
+          'uniform float kernelMaxScale;',
+          'uniform vec3 sunDir;',   // world-space direction FROM the surface TOWARD the sun
           'varying vec2 vUv;',
           // Mirrors three.js shadowmap_pars_fragment's basic (non-PCF) getShadow(): world pos from
           // depth, into light clip space via shadowMatrix, compare against the shadow map depth.
@@ -3561,9 +3570,28 @@ async function setupEffects(A, renderer, scene, camera) {
           '  sc.z += shadowBias;',
           '  return step(sc.z, texture2D(tShadowMap, sc.xy).r);',
           '}',
+          'vec3 worldPosAt(vec2 uv) {',
+          '  float d = texture2D(tDepth, uv).r;',
+          '  vec4 ndc = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);',
+          '  vec4 viewPos = projectionMatrixInv * ndc; viewPos /= viewPos.w;',
+          '  return (viewMatrixInv * viewPos).xyz;',
+          '}',
           'void main() {',
           '  float sC = shadowAt(vUv);',
-          '  vec2 o = (1.0 / resolution) * kernelPx;',
+          // §SUN_SHADOW_GRAZE_SCALE (2026-08-14): kernelPx=4 was tuned against a near-face-on wall
+          // boundary — a horizontal slab lit at low sun elevation has the SAME world-space shadow-map
+          // texel width, but the light hits it at near-grazing incidence (low N.L), which is where
+          // §PHOTO_SHADOW_BIAS already widens worldBias to ~2m to avoid acne (grazeElev-scaled, see
+          // _reassertPhotoShadowCoverage). The restore kernel had no equivalent scaling — it stayed a
+          // flat 4px everywhere, so it under-searches exactly where the boundary is widest. Reconstruct
+          // a screen-space normal via derivatives of the depth-reconstructed world position (no extra
+          // normal buffer needed — cheap, and correct per-PIXEL, unlike a single per-frame sun-elevation
+          // scalar: a wall and a slab can both be in frame at the same elevation with very different N.L).
+          '  vec3 wp0 = worldPosAt(vUv);',
+          '  vec3 nrm = normalize(cross(dFdx(wp0), dFdy(wp0)));',
+          '  float NdotL = abs(dot(nrm, normalize(sunDir)));',
+          '  float kScale = clamp(1.0 / max(NdotL, 1.0 / kernelMaxScale), 1.0, kernelMaxScale);',
+          '  vec2 o = (1.0 / resolution) * kernelPx * kScale;',
           '  float edge = 0.0;',
           '  edge = max(edge, abs(sC - shadowAt(vUv + vec2( o.x, 0.0))));',
           '  edge = max(edge, abs(sC - shadowAt(vUv + vec2(-o.x, 0.0))));',
@@ -3588,17 +3616,21 @@ async function setupEffects(A, renderer, scene, camera) {
             resolution: { value: new THREE.Vector2(rt.width, rt.height) },
             shadowBias: { value: 0 },
             strength: { value: STILL_SHADOW_RESTORE_STRENGTH },
-            kernelPx: { value: STILL_SHADOW_RESTORE_KERNEL_PX }
+            kernelPx: { value: STILL_SHADOW_RESTORE_KERNEL_PX },
+            kernelMaxScale: { value: STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE },
+            sunDir: { value: new THREE.Vector3(0, 1, 0) }
           },
           vertexShader: copyMod.CopyShader.vertexShader,  // same uv-passthrough as copyMat above
           fragmentShader: _srFrag,
-          depthTest: false, depthWrite: false, blending: THREE.NoBlending
+          depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+          extensions: { derivatives: true }  // dFdx/dFdy for §SUN_SHADOW_GRAZE_SCALE's screen-space normal
         });
         shadowRestoreQuad = new passMod.FullScreenQuad(shadowRestoreMat);
         aoScratchRT = new THREE.WebGLRenderTarget(rt.width, rt.height,
           { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
         console.log('§SUN_SHADOW_RESTORE_INIT_OK kernelPx=' + STILL_SHADOW_RESTORE_KERNEL_PX +
-          ' strength=' + STILL_SHADOW_RESTORE_STRENGTH);
+          ' strength=' + STILL_SHADOW_RESTORE_STRENGTH + ' kernelMaxScale=' + STILL_SHADOW_RESTORE_KERNEL_MAX_SCALE +
+          ' (§SUN_SHADOW_GRAZE_SCALE — kernel now widens per-pixel at grazing sun incidence)');
       }
 
       var adapter = {
@@ -3652,6 +3684,14 @@ async function setupEffects(A, renderer, scene, camera) {
             u.projectionMatrixInv.value.copy(camera.projectionMatrixInverse);
             u.viewMatrixInv.value.copy(camera.matrixWorld);
             u.shadowBias.value = A.sun.shadow.bias;
+            // §SUN_SHADOW_GRAZE_SCALE: direction FROM the scene TOWARD the sun, world-space — the
+            // shader takes abs(dot(surfaceNormal, this)), so the sign convention doesn't matter,
+            // only the axis. Recomputed every frame since §SUN_ARC_STEP moves the sun during a bake.
+            var _sunTx = A.sun.target ? A.sun.target.position.x : 0;
+            var _sunTy = A.sun.target ? A.sun.target.position.y : 0;
+            var _sunTz = A.sun.target ? A.sun.target.position.z : 0;
+            u.sunDir.value.set(A.sun.position.x - _sunTx, A.sun.position.y - _sunTy,
+              A.sun.position.z - _sunTz).normalize();
             renderer2.setRenderTarget(writeBuffer);
             shadowRestoreQuad.render(renderer2);
           } else {
