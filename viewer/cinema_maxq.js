@@ -1070,12 +1070,15 @@
         }
         _buildup = !!_ov.buildup;
         _roomTitle = !!_ov.roomTitle; // §CPE_ROOM_TITLE — off unless the editor's checkbox set it
-        // §CPE_DISCIPLINE_REVEAL — captured for future Mechanism A/B render logic
-        // (prompts/CINEMA_DISCIPLINE_REVEAL.md), not yet acted on: no ghost/pacing code exists yet
-        // (spec Open Question 1 unresolved). Logged so an ON flag is never silently swallowed.
+        // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — the retrace
+        // round itself is real (effects.js's _cinemaPathPlan/poseAt inserts it via this same
+        // _ov.reveal flag, transparently to this file — plan.poseAt already returns the extended
+        // film). _reveal is captured here only for logging/future ghost-visual wiring, not because
+        // this file's own bake loop needs to branch on it. Ghost/hide/shadow VISUALS (20% ARC/STR
+        // fade, per-discipline full-reveal, sunlight-through) are NOT built yet — Open Question 1.
         _reveal = !!_ov.reveal;
-        if (_reveal) console.log('§CPE_REVEAL flag=on — no render mechanism built yet ' +
-          '(spec: prompts/CINEMA_DISCIPLINE_REVEAL.md), bake proceeds unaffected');
+        if (_reveal) console.log('§CPE_REVEAL flag=on — retrace round is real (extra frames baked); ' +
+          'ghost/reveal visuals not built yet (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         // §CPE_DAY_COUNTER_POS — the editor's corner choice. Absent (an older saved plan, or a bake
         // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
         // differently by accident.
