@@ -4,6 +4,30 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.45.0](https://github.com/red1oon/bim-ootb/compare/v1.44.0...v1.45.0) (2026-08-14)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_AIM_DEPTH_BUILDUP candidate 2 — buildup-aware depth aim ([#1342](https://github.com/red1oon/bim-ootb/issues/1342)) ([9716a04](https://github.com/red1oon/bim-ootb/commit/9716a04f7b0d061af192105bebb71d86b30b451e))
+* **cpe:** §CPE_DISCIPLINE_REVEAL panel wiring — Reveal checkbox beside room titles ([#1349](https://github.com/red1oon/bim-ootb/issues/1349)) ([cfe5329](https://github.com/red1oon/bim-ootb/commit/cfe5329876b076dd03206b89d3ddb1f39a52923f))
+* **cpe:** §CPE_POV_MARKER — red camera gizmo on the main canvas during POV preview ([#1341](https://github.com/red1oon/bim-ootb/issues/1341)) ([3702d1e](https://github.com/red1oon/bim-ootb/commit/3702d1ec4e260b66c51f7291664ad19fe67b7dea))
+
+
+### 🐛 Fixes
+
+* **4d:** §GROUNDED_OVERRIDE_FIX — grounded classification was silently exempting real floaters ([#1338](https://github.com/red1oon/bim-ootb/issues/1338)) ([1515169](https://github.com/red1oon/bim-ootb/commit/15151698d350a805daca07e2251fbb08f6608acc))
+* **4d:** §STAIR_FLIGHT_GRID_VISIBILITY — stair flights are now real geoGate/DAG support sources ([#1345](https://github.com/red1oon/bim-ootb/issues/1345)) ([a2c30ee](https://github.com/red1oon/bim-ootb/commit/a2c30ee3b1f2e18d4be0999366236ce459a11bf9))
+* **cpe:** §CPE_AIM_DEPTH_BUILDUP candidate 1 — zSpan facade filter on _aimSubject ([#1340](https://github.com/red1oon/bim-ootb/issues/1340)) ([fd2faaa](https://github.com/red1oon/bim-ootb/commit/fd2faaa9c9a568034ec6ec1623a63b8e4489578e))
+* **cpe:** §CPE_AIM_SIMPLIFY — retire §CPE_AIM_DENSITY, §CPE_AIM_DEPTH trigger is now forward-clearance ([#1344](https://github.com/red1oon/bim-ootb/issues/1344)) ([6ab068c](https://github.com/red1oon/bim-ootb/commit/6ab068c062c0780995aecdf562c391cb40a37007))
+* **viewer:** §SUN_SHADOW_RESTORE — restore sun-shadow edge contrast N8AO's denoise was smearing ([#1346](https://github.com/red1oon/bim-ootb/issues/1346)) ([e97a772](https://github.com/red1oon/bim-ootb/commit/e97a7728a4d176a8a703baf075997c75da4f52aa))
+* **viewer:** N8AO denoise 12/8-&gt;7/5 — outdoor sun-shadow corner was drowned by the indoor noise fix ([#1343](https://github.com/red1oon/bim-ootb/issues/1343)) ([b71771d](https://github.com/red1oon/bim-ootb/commit/b71771dc551dfe211d7a2ca6c76999a702e96fb6))
+
+
+### ⚡ Performance
+
+* **4d:** _tierAuditRegate — full-array-rescan fixpoint -&gt; worklist/dirty-queue ([#1348](https://github.com/red1oon/bim-ootb/issues/1348)) ([6cd8c52](https://github.com/red1oon/bim-ootb/commit/6cd8c52f03402f1396cc5a9f9c2dd42f515577c4))
+
 ## [1.44.0](https://github.com/red1oon/bim-ootb/compare/v1.43.0...v1.44.0) (2026-08-12)
 
 
