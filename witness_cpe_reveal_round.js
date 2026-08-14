@@ -148,6 +148,51 @@ const _watchdog = setTimeout(() => { console.log('\n§W-CPE-REVEAL-ROUND TIMEOUT
   chk('§CPE_GAZE_CONSTANT_RATE has no NaN/Infinity after the tV fix', gazeRateLog.length > 0 &&
     !gazeRateLog.some(l => /NaN|Infinity/.test(l)), gazeRateLog.slice(-1)[0] || 'not found');
 
+  // ── W-REVEAL-TOPOUT: real defect found on a Hospital bake (user, 2026-08-14: "2nd round seems to
+  // cut over way before the stop stick without finishing the full buildup") — buildup was topping out
+  // at plan.beats.rise (orbit start, AFTER the whole round), not plan.beats.out (the stop stick, the
+  // round's own start), so round 2 played over a still-under-construction building. Fixed in
+  // _buildupTopoutU; reveal-off films must be byte-identical to before (regression). ──
+  const topoutTest = await pg.evaluate(async () => {
+    const A = window.APP;
+    // ov=null (explicit) is "derived, ignore any staged edit" per A.cinemaPathPlan's own wrapper
+    // comment — earlier test blocks in this same page session (onTest/visTest) OK'd a reveal=true
+    // edit, which STAYS staged in A._cinemaPathEdit; A.cinemaPathPlan(15) with NO second arg at all
+    // would silently inherit that stale staged override instead of a true "reveal off" baseline.
+    let plan; try { plan = A.cinemaPathPlan(15, null); } catch (e) { return { ok: false, reason: 'cinemaPathPlan failed: ' + e.message }; }
+    // Reveal OFF (regression) — topout must still be plan.beats.rise, buildup still ramping at tO.
+    const offTop = A.buildupTopoutU(plan);
+    const offAtOut = A.buildupTAt(plan.beats.out, plan);
+    // Reveal ON — topout must move to plan.beats.out, buildup must be FULLY complete by then.
+    const openPromise = A.cinemaPathEditor.open({ plan: plan, durationSec: 15, fps: 15 });
+    await new Promise(r => setTimeout(r, 400));
+    document.getElementById('cpe-reveal').click();
+    await new Promise(r => setTimeout(r, 50));
+    document.getElementById('cpe-ok').click();
+    const res = await openPromise;
+    const plan2 = A.cinemaPathPlan(res.durationSec, res.override);
+    const onTop = A.buildupTopoutU(plan2);
+    const buildupAtStop = A.buildupTAt(plan2.beats.out, plan2);       // round 2 START (the stop stick)
+    const buildupAtTail = A.buildupTAt(plan2.beats.reveal, plan2);    // round 2 END (right before rise)
+    return { ok: true, offTop, offAtOut, onTop, buildupAtStop, buildupAtTail,
+      tO: plan2.beats.out, tV: plan2.beats.reveal, tR: plan2.beats.rise };
+  });
+  chk('topout probe ran', topoutTest.ok, topoutTest.reason || '');
+  if (topoutTest.ok) {
+    chk('reveal OFF: topout src = plan.beats.rise (unchanged default, regression check)', topoutTest.offTop.src === 'plan.beats.rise',
+      'got=' + topoutTest.offTop.src);
+    chk('reveal OFF: buildup still ramping (not 1) at the stop stick, matching original §CPE_BUILDUP_TOPOUT',
+      topoutTest.offAtOut < 1, 'got=' + topoutTest.offAtOut.toFixed(3));
+    chk('reveal ON: topout moved to plan.beats.out (the stop stick)',
+      topoutTest.onTop.src.indexOf('plan.beats.out') === 0, 'got=' + topoutTest.onTop.src);
+    chk('reveal ON: buildup is FULLY complete (=1) right as round 2 begins',
+      topoutTest.buildupAtStop === 1, 'got=' + topoutTest.buildupAtStop.toFixed(4) +
+      ' (tO=' + topoutTest.tO.toFixed(3) + ')');
+    chk('reveal ON: buildup stays complete through round 2\'s own tail',
+      topoutTest.buildupAtTail === 1, 'got=' + topoutTest.buildupAtTail.toFixed(4) +
+      ' (tV=' + topoutTest.tV.toFixed(3) + ')');
+  }
+
   // ── W-REVEAL-VISUAL: the visual layer (A.cpeRevealVisualAt / A.cpeRevealApplyVisual) — full hide
   // via the existing A.filterDiscs, phase-correct at each point in the round, snapshot/restore of a
   // PRE-EXISTING filter (not a blind "show everything"), and skips redundant scene traversal. ──

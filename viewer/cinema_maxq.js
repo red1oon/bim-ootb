@@ -155,6 +155,19 @@
   var BUILDUP_TOPOUT_FALLBACK_U = 0.92;  // ≈ the orbit boundary on measured plans (Hospital 0.929),
                                          // used only when a plan carries no beats (older cache).
   function _buildupTopoutU(plan) {
+    // §CPE_DISCIPLINE_REVEAL (2026-08-14, real defect found on a Hospital bake — user: "2nd round
+    // seems to cut over way before the stop stick without finishing the full buildup"). The retrace
+    // round exists to show off the FINISHED building; topping out at plan.beats.rise (orbit start,
+    // unchanged from §CPE_BUILDUP_TOPOUT above) leaves buildup only ~tO/tR complete when the round
+    // BEGINS, since the round itself now sits between tO and tR and pushed tR back. Whenever the
+    // round is active (plan.beats.reveal > plan.beats.out — zero-width, i.e. equal, when reveal is
+    // off or the building has no non-ARC/STR discipline, per Mechanism C's own Guardrail 2), topout
+    // moves to plan.beats.out (the stop stick, the round's own start) instead — every non-reveal film
+    // keeps today's plan.beats.rise behavior byte-identical.
+    if (plan && plan.beats && plan.beats.reveal > plan.beats.out &&
+        plan.beats.out > 0 && plan.beats.out < 1) {
+      return { u: plan.beats.out, src: 'plan.beats.out (reveal round active)' };
+    }
     if (plan && plan.beats && plan.beats.rise > 0 && plan.beats.rise < 1) {
       return { u: plan.beats.rise, src: 'plan.beats.rise' };
     }
