@@ -948,7 +948,7 @@ function setupTools(A) {
     return NIGHT_AMBER;
   };
   var NIGHT_LIGHT_RANGE = 0; // §S277d: 0 = infinite range — no artificial cutoff, inverse-square does the physics (restores overhang/doorway/corridor spillover when outside)
-  var NIGHT_LIGHT_INTENSITY = 2.5; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08 (user: still too bright to make out individual PLs)
+  var NIGHT_LIGHT_INTENSITY = 2.0; // §S277d, reduced 8.0->6.5->4.5->2.5 2026-08-08, ->2.0 2026-08-14 (user: -20%, indoor MEP-reveal bake still reads too bright)
   // §NIGHT_LIGHT_NEARFIELD (2026-08-13, user: "bright lighting up surrounding when afar, but when
   // near not evident"). Confirmed against three.module.min.js's own shader (not guessed):
   // `getDistanceAttenuation` = 1 / max(pow(lightDistance, decayExponent), 0.01) — no lower
