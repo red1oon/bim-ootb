@@ -1407,11 +1407,24 @@
         var isFrontier = !!frontier[g];
         var isPlaced = !!placed[g];
         var isRecent = recent[g] !== undefined;
+        // §XRAY_STAGING_REMOVED (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+        // §HOSPITAL_LIGHTING_STILL_FLOATING — user directive: "remove that staging stage!!!" after
+        // "on Day 5... hanging MEP elements started hanging in mid air"). §Z_STACK_XRAY_STAGING
+        // (2026-08-03) used to show a placed-but-not-yet-fully-supported element as a translucent
+        // ghost instead of solid — a deliberate "still under construction" visual. That ghost IS a
+        // real element appearing before its support finishes, i.e. exactly the mid-air look, just
+        // translucent instead of opaque. It also only ever applied to obj.isMesh — BatchedMesh/
+        // InstancedMesh (where the bulk of MEP actually renders) got NO such gating at all and
+        // showed the same unsupported population fully SOLID, worse than the ghost. Folding the
+        // same one condition into `showReal` here removes the ghost path entirely and closes the
+        // BatchedMesh/InstancedMesh gap the same way, in one place: nothing appears until its own
+        // support is actually finished, full stop — never a ghost, never an early solid.
+        var isStagedNow = !isFrontier && (_tmXraySolidifyTs[g] !== undefined && cursorMs < _tmXraySolidifyTs[g]);
         // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
         // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
         var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !_dlodInView(g);
         if (hideForProxy) _perfHideForProxy++;
-        var showReal = (isRecent || isPlaced) && !hideForProxy;
+        var showReal = (isRecent || isPlaced) && !hideForProxy && !isStagedNow;
 
         // Visibility + highlighting
         if (isFrontier) {
@@ -1423,49 +1436,13 @@
             // Cyan flash (first 15%) then orange glow during install
             var fColor = ft < 0.15 ? 0x44ffff : 0xff8c00;
             applyHighlight(obj, fColor, 0.85, 0.4);
-            // §Z_STACK_XRAY_STAGING: a backward scrub can re-enter frontier for an element that was
-            // staged at a later cursor — clear the stale flag so the next placed-tick re-evaluates
-            // the ghost fresh instead of trusting a flag left over from a different cursor position.
-            obj._tm_xrayStaged = false;
           }
         } else if (showReal) {
           obj.visible = true;
-          // §Z_STACK_XRAY_STAGING (prompts/GANTT_ACCURACY.md §Z_STACK_XRAY_STAGING) — placed at its
-          // scheduled time, but not all support carriers have finished: ghost it instead of solid.
-          // Reuses applyHighlight/restoreMaterial's own clone+restore (grey, 0.3 opacity, 0 emissive
-          // so it reads as plain translucency, not the frontier glow) rather than a new mechanism.
-          // Material is touched ONLY on the entry/exit tick (not every tick) — clearHighlight() at
-          // the top of renderAtTime skips _tm_xrayStaged objects on purpose (see clearHighlight),
-          // so a large sustained staged population does not pay a clone/dispose cost every tick.
-          // Gated on obj.isMesh — same guard the frontier branch above uses before its own
-          // applyHighlight call, since applyHighlight touches obj.material (a plain Object3D with a
-          // guid but no material would crash there, exactly why frontier already gates on it).
-          if (obj.isMesh) {
-            var _xrTs = _tmXraySolidifyTs[g];
-            var _xrStagedNow = (_xrTs !== undefined && cursorMs < _xrTs);
-            if (_xrStagedNow) {
-              if (!obj._tm_xrayStaged) {
-                _wbMat('XRAY_STAGED', obj);
-                applyHighlight(obj, 0x888888, 0.3, 0);
-                obj._tm_xrayStaged = true;
-              }
-            } else {
-              if (obj._tm_xrayStaged) {
-                _tmXraySolidifiedN++;
-                if (_tmXraySolidifiedN % 25 === 0 || _tmXraySolidifiedN === _tmXrayStagedTotal) {
-                  console.log('§XRAY_STAGED n=' + _tmXrayStagedTotal + ' solidified=' + _tmXraySolidifiedN);
-                }
-                obj._tm_xrayStaged = false;
-              }
-              if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
-            }
-          } else if (obj._tm_highlighted) {
-            _wbMat('RESTORE', obj); restoreMaterial(obj);
-          }
+          if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
         } else {
           obj.visible = false;
           if (obj._tm_highlighted) restoreMaterial(obj);
-          obj._tm_xrayStaged = false;   // §Z_STACK_XRAY_STAGING: scrubbed before its own reveal — not staged
         }
 
         // Shadow + camera (merged — was 3 separate traversals)
@@ -1521,7 +1498,11 @@
           var bg = bmetas[bi].guid;
           var sid = bmetas[bi].slotId;
           var bHideForProxy = _dlodOn && !!placed[bg] && !frontier[bg] && recent[bg] === undefined && !_dlodInView(bg);
-          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy) {
+          // §XRAY_STAGING_REMOVED — same gate as the single-mesh branch: this population (mostly
+          // MEP, batched for performance) previously had NO staging check at all and showed fully
+          // solid before its own support finished — the worse half of the bug this removal closes.
+          var bStaged = !frontier[bg] && (_tmXraySolidifyTs[bg] !== undefined && cursorMs < _tmXraySolidifyTs[bg]);
+          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
             if (frontier[bg]) {
@@ -1587,7 +1568,9 @@
         for (var mi = 0; mi < metas.length; mi++) {
           var ig = metas[mi].guid;
           var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !_dlodInView(ig);
-          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy) {
+          // §XRAY_STAGING_REMOVED — same gate as the single-mesh/BatchedMesh branches.
+          var iStaged = !frontier[ig] && (_tmXraySolidifyTs[ig] !== undefined && cursorMs < _tmXraySolidifyTs[ig]);
+          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
