@@ -481,25 +481,38 @@ function setupStreaming(A) {
     // specifically when staged, never in plain nav (uTriActive gates it to staging only).
     // Fix: normFactorRGB is the PER-CHANNEL inverse mean (removes the cast entirely, each
     // channel now genuinely centres at 1.0) instead of a single scalar broadcast to all three.
+    // §TRINORM_LINEAR (2026-08-16 — PHOTOREAL_STILL_RENDER.md §ONGOING_TINT root cause): every
+    // normFactor above (scalar AND per-channel) was derived from the JPG's raw sRGB byte means,
+    // but the shader multiply happens in LINEAR light — these textures are flagged
+    // SRGBColorSpace, so the GPU decodes them BEFORE texture2D() returns. In linear space the
+    // real means are far lower (metal 0.205/0.248/0.294, not 0.490/0.535/0.578), so the sRGB-
+    // derived factors under-normalize ~2.0-2.4x: the "centred at 1.0" product actually centred
+    // at ~0.42-0.53, and the contrast line `(x-1.0)*boost+1.0` then clamps every texel below
+    // 1-1/boost to LITERAL ZERO (metal boost 1.9 → 41% of texels → multiply-by-0 → pure-black
+    // pixels on every metal-class element under Alt+S, with a blue-dominant residue on the rest
+    // because the R factor over-crushes red hardest — the reported "bluish, darker" piping and
+    // the black valve pixels are both exactly this). normFactorRGB below is now the inverse of
+    // the LINEAR mean (sRGB-decoded before averaging); measured multiply now centres at 1.000
+    // per channel with 0.00% of texels clamping to zero, at unchanged contrastBoost.
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
       tileMeters: 2.5,     // world units per texture repeat
-      normFactorRGB: [1.3835, 1.3835, 1.3835],  // grayscale texture — identical to the old scalar
+      normFactorRGB: [2.0755, 2.0755, 2.0755],  // §TRINORM_LINEAR — inverse LINEAR mean (grayscale tex)
       contrastBoost: 1.6
     };
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
       tileMeters: 2.0,
-      normFactorRGB: [1.3426, 1.3375, 1.3654],  // near-neutral texture, minor per-channel correction
+      normFactorRGB: [1.9428, 1.9262, 2.0172],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.5
     };
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
-      normFactorRGB: [2.0406, 1.8679, 1.7290],  // real per-channel fix — was scalar 1.870 (1/0.535)
+      normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
     };
     var TRIPLANAR_MAT = {
