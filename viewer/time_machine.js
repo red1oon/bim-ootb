@@ -4250,7 +4250,25 @@
       // not re-guessed. Unlike the rejected judge-side bound, widening the REPAIR's search radius can
       // only ever find MORE of what the judge already accepts as real — it cannot create a single new
       // orphan (orphan/grounded counts come from _contactGraph alone, untouched by this function).
-      var _ogHangGap = 9.5;
+      // §OG_HANG_UNBOUND (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+      // §CARRIER_DEDUP_DERISK_STUDY): the flat 9.5m band above was itself a mismatch — both the
+      // judge (_contactGraph) and the generative path's own hangGate() are unbounded above (a real
+      // carrier can sit any distance up through a void); "9.5m" was only ever a MEASURED empirical
+      // range on the buildings checked, never hangGate's actual enforced radius, so this repair was
+      // still missing real carriers further away. §OG_HANG_WINDOW_BOUND (shipped same day) already
+      // refuses any push that would exit the target's own Gantt task window regardless of distance,
+      // so a distance cap on the SEARCH itself no longer earns its keep as a safety net — it only
+      // hides real carriers now. Restructured to mirror hangGate's own two-tier shape exactly
+      // (schedule_gate.js hangGate(), §HANG_NEAREST): tier 1 is the tight direct-mount band (±GAP,
+      // the ORIGINAL pre-§OG_HANG_BAND behavior); tier 2, only when tier 1 finds nothing, is an
+      // unbounded nearest-plane search — find the closest real carrier above, then take the latest
+      // finish among carriers co-planar with it, the identical two-step hangGate's own fallback
+      // uses. Not BIG-only (unlike hangGate's fallback) — that restriction exists there to bound
+      // cost on the FULL generative pass; this repair only ever runs on the much smaller
+      // already-scheduled/still-floating population.
+      var _ogMaxTz = 0;
+      _allScheduled.forEach(function (e) { if (e.tz > _ogMaxTz) _ogMaxTz = e.tz; });
+      var _ogCellsQueryTopFar = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz + _ogEPS, _ogMaxTz); };
       // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
       // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
       // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
@@ -4293,7 +4311,7 @@
       // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
       // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
       // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
-      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogHangGap, e.tz + _ogHangGap); };
+      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
       var _ogPushed = 0, _ogSweeps = 0;
       for (; _ogSweeps < 16; _ogSweeps++) {
         var _ogMoved = 0;
@@ -4350,8 +4368,35 @@
               if (harr) for (var hj = 0; hj < harr.length; hj++) {
                 var H = harr[hj];
                 if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
-                if (H.bz >= T.tz - _ogHangGap && H.bz <= T.tz + _ogHangGap && H.tz > T.tz + _ogEPS &&
+                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
                     _ogXY(H, T) && H.e > lastEnd) { lastEnd = H.e; _ogFromHang = true; }
+              }
+            }
+            // §OG_HANG_UNBOUND tier 2 — only when the direct-mount band above found nothing.
+            // Same two-step shape as hangGate's §HANG_NEAREST fallback: find the nearest real
+            // carrier plane above (unbounded reach), then take the latest finish among carriers
+            // co-planar with THAT plane (within GAP of it) — not just the single nearest element.
+            if (!_ogFromHang) {
+              var fcells = _ogCellsQueryTopFar(T), nb = Infinity;
+              for (var fi = 0; fi < fcells.length; fi++) {
+                var farr = _ogStructGrid[fcells[fi]];
+                if (farr) for (var fj = 0; fj < farr.length; fj++) {
+                  var F = farr[fj];
+                  if (F.guid === T.guid) continue;
+                  if (F.bz > T.tz + _ogGAP && F.bz < nb && _ogXY(F, T)) nb = F.bz;
+                }
+              }
+              if (nb < Infinity) {
+                for (var fi2 = 0; fi2 < fcells.length; fi2++) {
+                  var farr2 = _ogStructGrid[fcells[fi2]];
+                  if (farr2) for (var fj2 = 0; fj2 < farr2.length; fj2++) {
+                    var F2 = farr2[fj2];
+                    if (F2.guid === T.guid) continue;
+                    if (F2.bz > T.tz + _ogGAP && F2.bz <= nb + _ogGAP && _ogXY(F2, T) && F2.e > lastEnd) {
+                      lastEnd = F2.e; _ogFromHang = true;
+                    }
+                  }
+                }
               }
             }
           }
@@ -7805,7 +7850,10 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 24;   // §GANTT_GAP_CLAMP_SPREAD (2026-08-15): the per-task rescale's
+  var _GANTT_CACHE_VERSION = 25;   // §OG_HANG_UNBOUND (2026-08-15): _ogSupportSweep's hang repair
+  // now searches unbounded above (was capped 9.5m) — a kernel_ops table materialized under v24 or
+  // earlier keeps replaying elements left floating that this version now repairs.
+  // §GANTT_GAP_CLAMP_SPREAD (2026-08-15): the per-task rescale's
   // gap-clamp+pad spread changes every element's display date — a kernel_ops table materialized
   // under v23 or earlier keeps replaying the old value-based-only positions forever without this
   // bump, regardless of the code fix being deployed.
