@@ -10,3 +10,9 @@ Source URL pattern:
 
 CC0: free for any use, commercial or private, no permission/credit needed. This NOTICE
 is courtesy attribution only.
+
+Matching normal/roughness maps (§GROUND_DETAIL, 2026-08-16), same assets, same license (CC0 1.0):
+
+  grass_nor_1k.jpg / grass_rough_1k.jpg  <- aerial_grass_rock  (nor_gl + rough, 1k jpg)
+  earth_nor_1k.jpg / earth_rough_1k.jpg  <- aerial_ground_rock (nor_gl + rough, 1k jpg)
+  paved_nor_1k.jpg / paved_rough_1k.jpg  <- concrete_floor_01  (nor_gl + rough, 1k jpg)
