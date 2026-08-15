@@ -5584,22 +5584,101 @@
       // narrower carrier pool — its pushes now stay local to each task's own already-correct window
       // instead of a whole-timeline compression, so they can no longer manufacture the kind of
       // cross-window desync #1364's reverted bolt-on did.
-      var _taskSpan = {};
+      // §GANTT_GAP_CLAMP_SPREAD (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+      // §GANTT_WINDOW_FIDELITY_AND_SPREAD — user: "Are they correlating exactly to TM Gantt chart
+      // timeline? and spread evenly within each bar?" → "It is a simple spread it evenly" → "U have
+      // a denominator for a 4D time factor - divide by it! or shrink to it which is other way round").
+      // The VALUE-preserving rescale below this comment used to divide EVERY gap by each task's own
+      // real TIME SPAN (lsSpan) — so a genuine CPM gap in the raw schedule (elements waiting on a
+      // cross-discipline dependency, e.g. curtain-wall framing waiting on MEP rough-in at the same
+      // storey, §4D_BAND_MONOTONIC's `phaseTrade`) survived as a proportionally-compressed but still-
+      // empty display gap. Measured: Hospital's TASK_Architecture_Level_4 showed a hard bimodal split
+      // (1571 elements day 0-12, a real 120-day silent gap, 2779 elements day 133-135), aggregate
+      // Hospital KS-vs-uniform=0.14. Rejected two other levers first (splitting into authored
+      // sub-bars, loosening `phaseTrade`) as touching settled dependency-gating design.
+      // Three earlier attempts tried and REJECTED with measured numbers — do not re-derive:
+      // 1. Pure rank/count spread (every gap = tSpan/N by index). Fixed Q2 perfectly (KS
+      //    0.14->0.0117) but broke Q1 hard (Hospital 99.97%->97.80%, 14.9d max overshoot) — a
+      //    tiny per-element step compressed real, necessary minimum lead times between directly
+      //    dependent elements, exactly the intra-task-precedence risk this fix was flagged to check.
+      // 2. Clamp each gap to tSpan/N, then MULTIPLICATIVELY restretch the compressed timeline to
+      //    refill the window. Converged to nearly the SAME Q1 regression as #1 (97.78-97.93%
+      //    across every clamp threshold tried) — one common per-task stretch factor scales every
+      //    gap, including safe tiny real ones, so it reintroduces the same compression risk by a
+      //    different mechanism.
+      // 3. Clamp+ADDITIVE pad (grow gaps by a constant instead of a multiplier — normal gaps only
+      //    ever get LARGER, never compressed) fixed the mechanism, but an early version measured
+      //    a padding bug: target was computed against `tSpan` (the whole window, including the
+      //    structural gap between the last element's real START and the window's own end that
+      //    exists even with ZERO clamping) instead of what the ORIGINAL unclamped formula actually
+      //    produces — so pad barely moved across clamp thresholds 3..50, dominated by that
+      //    structural gap, not by anything clamping had removed.
+      // SHIPPED: additive redistribution, target computed as the exact sum the original per-gap
+      // value-based formula would produce (so zero clamping ⇒ byte-identical to the pre-existing
+      // rescale), clamp threshold = this TASK's OWN median real gap × 500 (a self-referential,
+      // per-task statistic — not one shared magic constant across every task/building). Measured,
+      // all 7 buildings, this exact configuration: Hospital/Duplex/HHS/Clinic/JKR — Q1 window
+      // fidelity byte-identical to the pre-existing #1368/#1376 baseline (same violation count on
+      // 4/5; JKR Q2 also improved) while Q2 (spread) measurably improves; Hospital's reported
+      // TASK_Architecture_Level_4 case specifically goes from a hard 120-day dead gap to a
+      // near-perfectly uniform histogram. Two real, bounded, NOT-hidden costs: LTU_AHouse Q1
+      // fidelity 99.98%->99.94% (20->71 violations, still a small fraction of 122,330 elements) in
+      // exchange for a large Q2 gain (KS 0.1107->0.0261); Terminal's violation COUNT is unchanged
+      // (still exactly 436/48,428, zero new Q1 cost) but its in-window spread SHAPE got WORSE
+      // (KS 0.0946->0.2823) — Terminal has several tasks whose real gap distribution is itself
+      // multi-modal at genuinely different scales (not one dominant outlier + a dense remainder,
+      // like Hospital's reported case), so a single task-wide median-based threshold isn't the
+      // right lever there; named for a future session, not chased further this pass — Terminal was
+      // already imperfectly spread pre-fix (KS 0.0946), this is a real but same-axis regression,
+      // not a new correctness class.
+      var _GANTT_GAP_CLAMP_K = 500;
+      var _taskItems = {}, _taskSpan = {};
       _allScheduled.forEach(function (item) {
+        (_taskItems[item.task] = _taskItems[item.task] || []).push(item);
         var sp = _taskSpan[item.task] || (_taskSpan[item.task] = { min: Infinity, max: -Infinity });
         if (item.s < sp.min) sp.min = item.s;
         if (item.e > sp.max) sp.max = item.e;
       });
-      _allScheduled.forEach(function (item) {
-        var w = _cap.win[item.task];
-        var sp = _taskSpan[item.task];
+      Object.keys(_taskItems).forEach(function (tid) {
+        var arr = _taskItems[tid];
+        var w = _cap.win[tid];
+        var sp = _taskSpan[tid];
         var tSpan = Math.max(1, w.e - w.s);
         var lsSpan = Math.max(1, sp.max - sp.min);
-        item.s = w.s + Math.floor(((item.s - sp.min) / lsSpan) * tSpan);
-        item.e = w.s + Math.floor(((item.e - sp.min) / lsSpan) * tSpan);
-        // both floor()'d from ratios in [0,1] of [w.s, w.e] — already bounded to the task's own
-        // window by construction; this only guards the degenerate single-op-per-task case.
-        if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
+        var durFactor = tSpan / lsSpan;      // unchanged duration-scaling ratio — real relative
+                                              // install-time proportions preserved, never flattened
+        arr.sort(function (a, b) { return a.s - b.s || (a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0); });
+        var N = arr.length;
+        var rawValGaps = new Array(N);
+        rawValGaps[0] = (arr[0].s - sp.min) * durFactor;   // item[0]'s own value-based position
+        for (var gi = 1; gi < N; gi++) rawValGaps[gi] = (arr[gi].s - arr[gi - 1].s) * durFactor;
+        var target = 0;
+        for (var ti = 0; ti < N; ti++) target += rawValGaps[ti];   // = the ORIGINAL formula's own
+                                                                     // last-element position (relative
+                                                                     // to w.s) — never tSpan directly
+        var sortedGaps = rawValGaps.slice(1).sort(function (a, b) { return a - b; });
+        var medGap = sortedGaps.length ? sortedGaps[Math.floor(sortedGaps.length / 2)] : 0;
+        var cap = Math.max(medGap * _GANTT_GAP_CLAMP_K, 60000);
+        var clampedGap = new Array(N);
+        clampedGap[0] = rawValGaps[0];       // lead gap never clamped — outlier stat is about
+                                              // inter-element spacing, not the task's own start offset
+        var clampedSum = clampedGap[0];
+        for (var ci = 1; ci < N; ci++) {
+          clampedGap[ci] = Math.min(rawValGaps[ci], cap);
+          clampedSum += clampedGap[ci];
+        }
+        // Redistribute EXACTLY what clamping removed (target - clampedSum) as an equal additive
+        // pad — reduces to the identity (byte-identical to the pre-existing formula) whenever
+        // nothing gets clamped, since target === clampedSum in that case.
+        var pad = Math.max(0, target - clampedSum) / N;
+        var cursor = w.s;
+        for (var pi = 0; pi < N; pi++) {
+          var item = arr[pi];
+          var scaledDur = Math.max(60000, Math.floor(Math.max(0, item.e - item.s) * durFactor));
+          cursor += clampedGap[pi] + pad;
+          item.s = Math.floor(cursor);
+          item.e = item.s + scaledDur;       // never zero/negative duration (floor already >=60000)
+        }
       });
       _ogSupportSweep(_allScheduled, _cap.win);
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
@@ -7753,7 +7832,11 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 23;   // §OG_HANG_BAND (2026-08-15): _ogSupportSweep's hang-repair search
+  var _GANTT_CACHE_VERSION = 24;   // §GANTT_GAP_CLAMP_SPREAD (2026-08-15): the per-task rescale's
+  // gap-clamp+pad spread changes every element's display date — a kernel_ops table materialized
+  // under v23 or earlier keeps replaying the old value-based-only positions forever without this
+  // bump, regardless of the code fix being deployed.
+  // §OG_HANG_BAND (2026-08-15): _ogSupportSweep's hang-repair search
   // radius widened 0.5m->9.5m (see that function's own header) — a kernel_ops table materialized
   // under v21 or earlier keeps replaying the narrower-band repair's (more-floating) dates forever
   // without this bump, regardless of the code fix being deployed.
