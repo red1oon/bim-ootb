@@ -8,11 +8,14 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1042';   // bump on each deploy; per-change detail is the git commit message.
-// v1042 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
+const CACHE_VERSION = 'v1043';   // bump on each deploy; per-change detail is the git commit message.
+// v1043 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
 // (schedule_author.js displayRemap hook + time_machine.js _tmDisplayRemap), strict-bar sweep skipped
 // on display-authored schedules, §CJP live census in the §CROSSTASK_JUDGE_PARITY log line.
 // _GANTT_CACHE_VERSION 26->27. Probe §EXP8 Hospital: floating 664 -> 63, fidelity 97.03 -> 99.95.
+// Collided with #1389's independent v1042 — took one past it, per the KEEP-BOTH convention.
+// v1042 (2026-08-16) §STAGED_PL_CUT: night point-light intensity halved during Alt+S/Alt+C staging
+// only (effects.js?v=20, tools.js?v=41) — user directive, restores ground-slab shadow play in bakes.
 // v1041 (2026-08-16) §GROUND_DETAIL: ground normal/roughness maps + detail multiply + blotch
 // (tools.js?v=40, ground_config.json?v=2, 6 new textures/ground/*.jpg). Collided with #1387's
 // independent v1040 — took one past it, per this file's KEEP-BOTH/take-the-higher convention.

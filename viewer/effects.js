@@ -3305,6 +3305,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // the COLOUR override (the actual warm-dusk tint) stays dusk-mood-only.
     _photoNightWasOn = !!A._nightMode;
     _photoDuskMoodApplied = _duskMood;  // teardown reads this snapshot, not the live flag
+    // §STAGED_PL_CUT — set BEFORE toggleNightMode builds the ~200 fixture point lights, so they
+    // are born at the cut intensity (the §NIGHT_STILL_LIGHTS boost branch alone was proven to not
+    // fire on this path — witness 2026-08-16). Reset unconditionally in _removePhotoStaging.
+    A._nightPLScale = A._nightPLScaleStill || 1;
     if (!_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
       if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
@@ -3393,6 +3397,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // are real illumination, not mood) — teardown must undo it unconditionally too, or it sticks
     // on after every Alt+S exit outside dusk mode.
     if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();
+    // §STAGED_PL_CUT — unconditional reset (the boost-branch reset alone was proven unreachable
+    // on this path); if night mode stays on (user had it on pre-staging), rebuild at nav intensity.
+    A._nightPLScale = 1.0;
+    if (_photoNightWasOn && typeof A._nightUpdateLights === 'function' && A._nightLights && A._nightLights.length) A._nightUpdateLights();
     _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
@@ -3870,6 +3878,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
+      A._nightPLScale = 1.0;   // §STAGED_PL_CUT — nav Night Mode back to full tuned intensity
       if (A._nightLights && A._nightLights.length) A._nightUpdateLights();
     }
     // §PHOTO_SSGI: same rule — a fold-engaged SSGI must not outlive the still (a pre-existing
@@ -4435,9 +4444,11 @@ async function setupEffects(A, renderer, scene, camera) {
         A._nightLights && A._nightLights.length && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsStill;
       A._nightNearFadeFloor = A._nightNearFadeFloorStill;   // §NIGHT_NEAR_FADE — no proximity penalty
+      A._nightPLScale = A._nightPLScaleStill || 1;          // §STAGED_PL_CUT — staging-only intensity cut
       A._nightUpdateLights();
       console.log('§NIGHT_STILL_LIGHTS raised to ' + A._nightLights.length +
-        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3) for the still');
+        ' lights, near-fade floor ' + A._nightNearFadeFloorStill + ' (was 0.3), plScale ' +
+        A._nightPLScale + ' (§STAGED_PL_CUT) for the still');
     }
     A._composerEnabled = true;   // teardown RECOMPUTES from SSAO/Outline state (§GI_HANDOFF_GHOST_FIX) — no save needed
     A._taaPass.accumulate = true;
