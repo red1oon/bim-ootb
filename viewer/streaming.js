@@ -421,20 +421,24 @@ function setupStreaming(A) {
       IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30, envInt: 0.05 },
       IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30, envInt: 0.05 },
       IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30, envInt: 0.05 },
-      IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20 },  // red valve
-      IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30 },
-      IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20 },
-      IfcEnergyConversionDevice: { r: 0.45, g: 0.55, b: 0.50, rough: 0.50, metal: 0.25 },
-      IfcLightFixture:        { r: 0.80, g: 0.75, b: 0.50, rough: 0.25, metal: 0.30 },  // brass/chrome
-      IfcSanitaryTerminal:    { r: 0.88, g: 0.88, b: 0.85, rough: 0.15, metal: 0.05 },  // ceramic
-      IfcAirTerminal:         { r: 0.55, g: 0.65, b: 0.70, rough: 0.40, metal: 0.30 },
-      IfcFireSuppressionTerminal: { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.30 }, // red
-      IfcValve:               { r: 0.55, g: 0.50, b: 0.45, rough: 0.40, metal: 0.45 },
-      IfcAlarm:               { r: 0.75, g: 0.25, b: 0.25, rough: 0.50, metal: 0.20 },  // red
-      IfcElectricAppliance:   { r: 0.60, g: 0.65, b: 0.55, rough: 0.50, metal: 0.15 },
+      // §MEP_ENVINT_ALL (2026-08-15): every remaining MEP terminal/device class gets the same
+      // envInt=0.05 as the pipe/duct/beam block above -- these had NONE, still full-strength
+      // reflection (0.6, uncapped), which is exactly why real reds (valve/alarm/fire-suppression)
+      // were reading dark/desaturated instead of vivid. Same lever, same value, whole category.
+      IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20, envInt: 0.05 },  // red valve
+      IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30, envInt: 0.05 },
+      IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20, envInt: 0.05 },
+      IfcEnergyConversionDevice: { r: 0.45, g: 0.55, b: 0.50, rough: 0.50, metal: 0.25, envInt: 0.05 },
+      IfcLightFixture:        { r: 0.80, g: 0.75, b: 0.50, rough: 0.25, metal: 0.30, envInt: 0.05 },  // brass/chrome
+      IfcSanitaryTerminal:    { r: 0.88, g: 0.88, b: 0.85, rough: 0.15, metal: 0.05, envInt: 0.05 },  // ceramic
+      IfcAirTerminal:         { r: 0.55, g: 0.65, b: 0.70, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFireSuppressionTerminal: { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.30, envInt: 0.05 }, // red
+      IfcValve:               { r: 0.55, g: 0.50, b: 0.45, rough: 0.40, metal: 0.45, envInt: 0.05 },
+      IfcAlarm:               { r: 0.75, g: 0.25, b: 0.25, rough: 0.50, metal: 0.20, envInt: 0.05 },  // red
+      IfcElectricAppliance:   { r: 0.60, g: 0.65, b: 0.55, rough: 0.50, metal: 0.15, envInt: 0.05 },
       // ── Proxy/other ──
-      IfcBuildingElementProxy:{ r: 0.00, g: 0.78, b: 0.78, rough: 0.50, metal: 0.10 },  // teal
-      IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 },  // elevator
+      IfcBuildingElementProxy:{ r: 0.00, g: 0.78, b: 0.78, rough: 0.50, metal: 0.10, envInt: 0.05 },  // teal
+      IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50, envInt: 0.05 },  // elevator
     };
 
     // §MEP_DISC_TINT: the 3 IFC2x3 generic-MEP classes with no per-trade colour of their own —
