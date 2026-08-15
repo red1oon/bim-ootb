@@ -132,16 +132,18 @@ async function main() {
   // §GANTT_GAP_CLAMP_SPREAD rescale, verbatim (time_machine.js injectGantt _cap overlay) — each gap
   // gets its real value-scaled size OR the fair rank/count share, whichever is SMALLER (only
   // abnormal dead-air gaps get clamped; normal real gaps stay byte-identical to the original).
-  const rescaled = _allScheduled.map(o => Object.assign({}, o));
+  // §CHASE_TO_ZERO_WINDOW_AUTHORING (2026-08-16): the shipped rescale, extracted into a function so
+  // the EXP5 family can re-run the WHOLE pipeline under candidate window authorings. Body verbatim.
+  function applyGapClampRescale(items, win) {
   const _taskItems = {}, _taskSpan = {};
-  rescaled.forEach(function (item) {
+  items.forEach(function (item) {
     (_taskItems[item.task] = _taskItems[item.task] || []).push(item);
     const sp = _taskSpan[item.task] || (_taskSpan[item.task] = { min: Infinity, max: -Infinity });
     if (item.s < sp.min) sp.min = item.s;
     if (item.e > sp.max) sp.max = item.e;
   });
   Object.keys(_taskItems).forEach(function (tid) {
-    const arr = _taskItems[tid], w = taskWin[tid], sp = _taskSpan[tid];
+    const arr = _taskItems[tid], w = win[tid], sp = _taskSpan[tid];
     const tSpan = Math.max(1, w.e - w.s), lsSpan = Math.max(1, sp.max - sp.min);
     const durFactor = tSpan / lsSpan;
     arr.sort(function (a, b) { return a.s - b.s || (a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0); });
@@ -180,6 +182,9 @@ async function main() {
       item.e = item.s + scaledDur;
     }
   });
+  }
+  const rescaled = _allScheduled.map(o => Object.assign({}, o));
+  applyGapClampRescale(rescaled, taskWin);
 
   const preRepair = floatingCensus(rescaled.map(o => Object.assign({}, o)));
   console.log('§CAP_PRE_REPAIR_FLOATING midair=' + preRepair.midair + ' byClass=' + JSON.stringify(preRepair.byClass));
@@ -446,5 +451,87 @@ async function main() {
     ' orphans=' + exp3Post.orphans + ' grounded=' + exp3Post.grounded +
     ' ok=' + (exp3ForRepair.length - exp3Post.midair - exp3Post.orphans - exp3Post.grounded));
   console.log('§EXP3_FINAL_BYCLASS ' + JSON.stringify(exp3Post.byClass));
+
+  // ══ §CHASE_TO_ZERO_WINDOW_AUTHORING (2026-08-16) — EXP5 family. The §CROSSTASK_JUDGE_PARITY
+  // residual is 100% WINDOW_BLOCKED, so zero requires the BARS to change, not the elements'
+  // relation to their bars. Both candidates run the FULL shipped pipeline (clamp rescale ->
+  // _ogSupportSweep -> _cjpJudgeParity) — the third-lever lesson: nothing is judged mid-pipe. ═════
+  function runPipeline(base, win) {
+    const items = base.map(o => Object.assign({}, o));
+    applyGapClampRescale(items, win);
+    _ogSupportSweep(items, win);
+    _cjpJudgeParity(items, win);
+    return items;
+  }
+  function measureWin(items, win) {
+    const c = floatingCensus(items.map(o => Object.assign({}, o)));
+    let inW = 0, outW = 0;
+    items.forEach(it => { const w = win[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW++; else outW++; });
+    return { c, inW, outW };
+  }
+  const DAY5 = 86400000;
+
+  // EXP5a — minimal authored-END extension, whole-pipeline fixpoint. Only ends move, only where a
+  // WINDOW_BLOCKED element measurably needs it, day-quantized, iterated because an extension
+  // changes that task's own rescale (durFactor) and can move other tasks' first-contact times.
+  {
+    const win5 = {}; Object.keys(taskWin).forEach(t => win5[t] = { s: taskWin[t].s, e: taskWin[t].e });
+    const extTotals = {};
+    let iter = 0, final = null, converged = false;
+    for (; iter < 8; iter++) {
+      const items = runPipeline(_allScheduled, win5);
+      const m = measureWin(items, win5);
+      const G5 = _contactGraph(items);
+      const ext = {}; let blocked = 0; const gapDays = [];
+      for (let i = 0; i < items.length; i++) {
+        const list = G5.contacts[i]; if (!list) continue;
+        const T = items[i];
+        let first = Infinity;
+        for (const k of list) { if (items[k].s < first) first = items[k].s; }
+        if (first <= T.s + 1) continue;
+        const w = win5[T.task]; if (!w) continue;
+        const dur = Math.max(60000, T.e - T.s);
+        const need = (first + dur) - w.e;
+        if (need > 0) { blocked++; gapDays.push(need / DAY5); ext[T.task] = Math.max(ext[T.task] || 0, need); }
+      }
+      if (iter === 0 && gapDays.length) {
+        gapDays.sort((a, b) => a - b);
+        const gN = gapDays.length;
+        console.log('§EXP5_DIAG blockedNeedingExt=' + blocked + ' tasks=' + Object.keys(ext).length +
+          ' needDays p50=' + gapDays[Math.floor(gN * 0.5)].toFixed(1) +
+          ' p90=' + gapDays[Math.floor(gN * 0.9)].toFixed(1) + ' max=' + gapDays[gN - 1].toFixed(1));
+        console.log('§EXP5_DIAG_TASKS ' + JSON.stringify(Object.entries(ext).map(e => [e[0], (e[1] / DAY5).toFixed(1)]).sort((a, b) => b[1] - a[1]).slice(0, 8)));
+      }
+      console.log('§EXP5A_ITER ' + iter + ' floating=' + m.c.midair + ' blockedNeedingExt=' + blocked +
+        ' inWindow=' + m.inW + ' outWindow=' + m.outW);
+      final = m;
+      if (!blocked) { converged = true; break; }
+      Object.keys(ext).forEach(t => {
+        const addDays = Math.ceil(ext[t] / DAY5);
+        win5[t].e += addDays * DAY5;
+        extTotals[t] = (extTotals[t] || 0) + addDays;
+      });
+    }
+    const extList = Object.entries(extTotals).sort((a, b) => b[1] - a[1]);
+    let maxE0 = 0, maxE1 = 0;
+    Object.keys(taskWin).forEach(t => { if (taskWin[t].e > maxE0) maxE0 = taskWin[t].e; });
+    Object.keys(win5).forEach(t => { if (win5[t].e > maxE1) maxE1 = win5[t].e; });
+    console.log('§EXP5A_FINAL floating=' + final.c.midair + ' converged=' + converged + ' iters=' + (iter + 1) +
+      ' tasksExtended=' + extList.length + ' inWindow=' + final.inW + ' outWindow=' + final.outW +
+      ' totalDaysDelta=' + Math.round((maxE1 - maxE0) / DAY5) +
+      ' orphans=' + final.c.orphans + ' grounded=' + final.c.grounded);
+    console.log('§EXP5A_EXT_DAYS_BYTASK ' + JSON.stringify(extList.slice(0, 8)));
+  }
+
+  // EXP5b — EXP3 revisited WITH the parity layer: windows derived FROM the repaired raw times,
+  // then the full shipped pipeline. preZoneItems/taskWin2/zoneTaskId2 come from the EXP3 block.
+  {
+    const base5b = preZoneItems.map(o => Object.assign({}, o, { task: zoneTaskId2[o.zoneId] }));
+    const items = runPipeline(base5b, taskWin2);
+    const m = measureWin(items, taskWin2);
+    console.log('§EXP5B_FINAL floating=' + m.c.midair + ' inWindow=' + m.inW + ' outWindow=' + m.outW +
+      ' orphans=' + m.c.orphans + ' grounded=' + m.c.grounded);
+    console.log('§EXP5B_FINAL_BYCLASS ' + JSON.stringify(m.c.byClass));
+  }
 }
 main().catch(e => { console.error(e); process.exit(1); });
