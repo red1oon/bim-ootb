@@ -28,8 +28,11 @@ function buildFn(srcParts, ret) {
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
 const _ogSupportSweep = buildFn([sliceFn(tmSrc, '_ogSupportSweep')], '_ogSupportSweep');
+const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
 const _TIER1_ORDER_LINE = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];";
-const _midairRepair = buildFn([_TIER1_ORDER_LINE, sliceFn(tmSrc, '_midairRepair')], '_midairRepair');
+// §MIDAIR_REPAIR_CONTACTGRAPH_DEDUP (bim-ootb PR #1378): _midairRepair now calls _contactGraph
+// instead of inlining its own copy, so this standalone build needs _contactGraph's source too.
+const _midairRepair = buildFn([_TIER1_ORDER_LINE, sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairRepair')], '_midairRepair');
 
 function _slug(name) { return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
 
@@ -242,6 +245,70 @@ async function main() {
   console.log('§CAP_WINDOW_FIDELITY inWindow=' + inWindow + '/' + totalWin + ' pct=' +
     (100 * inWindow / totalWin).toFixed(2) + ' outWindow=' + outWindow);
   console.log('§CAP_WINDOW_FIDELITY_OUT_BYCLASS ' + JSON.stringify(outByClass));
+
+  // ══ §CROSSTASK_JUDGE_PARITY Step 1 (2026-08-16, 4D_SCHEDULE_PERFECTION.md) — residual
+  // decomposition: WHY does each post-repair floating element stay floating? Two axes:
+  //   reachability — REACHABLE (first-contact start + own dur fits own window) / WINDOW_BLOCKED /
+  //                  ALREADY_OUT (element already sits outside its window);
+  //   role — GROUND_CARRIER (grounded && seq<=4 && every contact merely STANDS ON it —
+  //          S.bz >= T.tz - GAP, the judge's role-blind carrier-above clause) vs rest;
+  //   pool — first contact inside vs outside _ogSupportSweep's carrier pool. ══════════════════════
+  {
+    const GAPc = ScheduleGate.GAP;
+    const inPool = S => (S.seq <= 4 || (S.cls === 'IfcSlab' && S.seq > 4) || S.cls.indexOf('IfcWall') === 0);
+    const Gd = postRepair.G;
+    const reach = { REACHABLE: 0, WINDOW_BLOCKED: 0, ALREADY_OUT: 0 };
+    let groundCarrier = 0, poolIn = 0, poolOut = 0;
+    const gcByClass = {}, reachByClass = {};
+    for (let i = 0; i < forRepair.length; i++) {
+      const list = Gd.contacts[i]; if (!list) continue;
+      const T = forRepair[i];
+      let first = Infinity, firstIdx = -1;
+      for (const k of list) { if (forRepair[k].s < first) { first = forRepair[k].s; firstIdx = k; } }
+      if (first <= T.s + 1) continue;                       // not floating
+      const w = taskWin[T.task];
+      const dur = Math.max(60000, T.e - T.s);
+      let cat;
+      if (!w || T.s < w.s || T.e > w.e) cat = 'ALREADY_OUT';
+      else if (first + dur <= w.e) cat = 'REACHABLE';
+      else cat = 'WINDOW_BLOCKED';
+      reach[cat]++;
+      (reachByClass[cat] = reachByClass[cat] || {})[T.cls] = (reachByClass[cat][T.cls] || 0) + 1;
+      let allStandOn = true;
+      for (const k of list) { if (forRepair[k].bz < T.tz - GAPc) { allStandOn = false; break; } }
+      if (Gd.grounded[i] && T.seq <= 4 && allStandOn) { groundCarrier++; gcByClass[T.cls] = (gcByClass[T.cls] || 0) + 1; }
+      if (inPool(forRepair[firstIdx])) poolIn++; else poolOut++;
+    }
+    console.log('§CJP_DECOMP reach=' + JSON.stringify(reach) + ' groundCarrier=' + groundCarrier +
+      ' firstContactPool in=' + poolIn + ' out=' + poolOut);
+    console.log('§CJP_DECOMP_GROUND_BYCLASS ' + JSON.stringify(gcByClass));
+    Object.keys(reachByClass).forEach(cat =>
+      console.log('§CJP_DECOMP_' + cat + '_BYCLASS ' + JSON.stringify(reachByClass[cat])));
+  }
+
+  // ══ §CROSSTASK_JUDGE_PARITY Step 2 — EXP4: window-bounded judge-parity fixpoint AFTER
+  // _ogSupportSweep. The EXACT judge rule (§MIDAIR_REPAIR's weakest rule: an element may not appear
+  // before the first element it physically touches), pushed monotone-later only, clamped to the
+  // element's OWN task window (§OG_HANG_WINDOW_BOUND discipline — the thing the rejected 2026-08-13
+  // _midairRepair swap lacked). Never touches an element already out of window. ════════════════════
+  {
+    // sliced from the SHIPPED time_machine.js — the probe measures the real function, never a copy
+    const exp4 = forRepair.map(o => Object.assign({}, o));
+    const r4 = _cjpJudgeParity(exp4, taskWin);
+    const pushed = r4.pushed, sweeps = r4.sweeps;
+    const exp4Census = floatingCensus(exp4.map(o => Object.assign({}, o)));
+    let inW4 = 0, outW4 = 0;
+    exp4.forEach(function (item) {
+      const w = taskWin[item.task]; if (!w) return;
+      if (item.s >= w.s && item.e <= w.e) inW4++; else outW4++;
+    });
+    console.log('§EXP4_PUSH pushed=' + pushed + ' sweeps=' + sweeps);
+    console.log('§EXP4_FINAL total=' + exp4Census.midair + '/' + exp4.length +
+      ' orphans=' + exp4Census.orphans + ' grounded=' + exp4Census.grounded);
+    console.log('§EXP4_FINAL_BYCLASS ' + JSON.stringify(exp4Census.byClass));
+    console.log('§EXP4_WINDOW_FIDELITY inWindow=' + inW4 + '/' + (inW4 + outW4) + ' pct=' +
+      (100 * inW4 / Math.max(1, inW4 + outW4)).toFixed(2) + ' outWindow=' + outW4);
+  }
 
   // Q2 — distribution of normalized position within the bar for in-window elements
   const normPositions = normItems.map(function (o) { return o.x; }).sort(function (a, b) { return a - b; });
