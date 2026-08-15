@@ -351,7 +351,7 @@ function setupStreaming(A) {
   A._mepNameHint = function(name) {
     if (!name) return null;
     if (/duct/i.test(name)) return { code: 'DUCT', r: 0.55, g: 0.58, b: 0.55 };  // STD_MAT.IfcDuct — galvanized sheet-metal grey
-    if (/sprinkler/i.test(name)) return _hexToRgb('FP', 0xcc8844);               // DISC_COLORS.FP — brick/orange
+    if (/sprinkler|groove|coupling|victaulic/i.test(name)) return _hexToRgb('FP', 0xcc8844); // DISC_COLORS.FP — brick/orange. Grooved/Victaulic couplings are the standard FP sprinkler-pipe joint (same trade as sprinkler heads) — were falling through to the flat blue-grey IfcFlowFitting default (user report 2026-08-15: "the nice red groove tooling joints are replaced as blue")
     if (/diffuser|grille|grill|exhaust/i.test(name)) return _hexToRgb('ACMV', 0xcc4444); // DISC_COLORS.ACMV — red, air terminals
     if (/dwv|sanitary/i.test(name)) return _hexToRgb('SAN', 0xaa44aa);           // DISC_COLORS.SAN — magenta
     if (/pipe/i.test(name)) return _hexToRgb('PLB', 0x8844cc);                  // DISC_COLORS.PLB — purple
@@ -560,6 +560,14 @@ function setupStreaming(A) {
     // dominate the hue over their own correctly-trusted real IFC albedo — see STD_MAT comments above.
     if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = (stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6; }
     const mat = new THREE.MeshStandardMaterial(opts);
+    // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
+    // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
+    // during Alt+S/Alt+G, with no awareness of this per-class envInt tuning above — so the SAME
+    // blue-sky-reflection this envInt was set to fight comes back 3x stronger specifically during a
+    // photoreal capture (user report 2026-08-15: beams/railings/plates/members "already nice" in
+    // plain nav, "too much bluish" in the baked MP4 — exactly the Alt+S-only symptom this explains).
+    // Flag so the boost pass can exempt materials that were already hand-tuned for this exact issue.
+    if (stdMat && stdMat.envInt != null) mat.userData._photoEnvExempt = true;
     // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
     // the real photo texture takes over that job, stacking both would double-bump the normal
     // with two uncorrelated patterns.

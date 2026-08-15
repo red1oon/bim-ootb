@@ -2668,7 +2668,12 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!_photoMatBoostActive || !A._matCache) return;
     Object.keys(A._matCache).forEach(function(k) {
       var m = A._matCache[k];
-      if (!m || (m.userData && m.userData._photoBoosted) || typeof m.envMapIntensity !== 'number') return;
+      if (!m || (m.userData && (m.userData._photoBoosted || m.userData._photoEnvExempt)) ||
+          typeof m.envMapIntensity !== 'number') return;
+      // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): _photoEnvExempt (streaming.js's per-class
+      // §HOSPITAL_BLUE_TINT envInt override) skips this blanket boost entirely — that override was
+      // already hand-tuned to fight the sky's blue PMREM reflection on these specific classes;
+      // re-boosting on top of it undid the tuning specifically during Alt+S/Alt+G captures.
       var isMetal = typeof m.metalness === 'number' && m.metalness > PHOTO_METAL_THRESHOLD;
       var isGlossy = isMetal || (typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX);
       if (isGlossy) {
