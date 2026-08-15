@@ -382,9 +382,9 @@ function setupStreaming(A) {
       // vs 0.35-0.50 for every other reflective MEP/steel class in this table) lets that real sky
       // colour dominate the final hue over the REAL, correctly-trusted IFC albedo underneath (never
       // touched here — only the reflection strength is dialled back for these classes).
-      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65, envInt: 0.18 },  // steel I-beam
-      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60, envInt: 0.18 },  // steel section
-      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70, envInt: 0.18 },  // steel plate
+      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65, envInt: 0.05 },  // steel I-beam
+      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60, envInt: 0.05 },  // steel section
+      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70, envInt: 0.05 },  // steel plate
       IfcFooting:             { r: 0.60, g: 0.58, b: 0.56, rough: 0.95, metal: 0.00 },  // foundation
       IfcPile:                { r: 0.58, g: 0.56, b: 0.54, rough: 0.95, metal: 0.00 },  // deep foundation
       // ── Envelope ──
@@ -396,7 +396,7 @@ function setupStreaming(A) {
       IfcWindow:              { r: 0.70, g: 0.82, b: 0.88, rough: 0.05, metal: 0.00 },  // glass
       // ── Circulation ──
       IfcStair:               { r: 0.68, g: 0.66, b: 0.63, rough: 0.80, metal: 0.00 },  // concrete/stone
-      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55, envInt: 0.18 },  // brushed-steel warm grey (was blue-leaning, §Findings 2026-08-14 stair "boring blue" cause). §HOSPITAL_BLUE_TINT envInt: metal alone measured NOT to move this class's blue hue (near-achromatic base — F0=0.04 dielectric reflectance alone already carried it), envMapIntensity is the lever that actually works here.
+      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55, envInt: 0.05 },  // brushed-steel warm grey (was blue-leaning, §Findings 2026-08-14 stair "boring blue" cause). §HOSPITAL_BLUE_TINT envInt: metal alone measured NOT to move this class's blue hue (near-achromatic base — F0=0.04 dielectric reflectance alone already carried it), envMapIntensity is the lever that actually works here.
       IfcRamp:                { r: 0.70, g: 0.68, b: 0.65, rough: 0.85, metal: 0.00 },  // concrete ramp
       // ── Furniture/fittings ──
       IfcFurniture:           { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
@@ -407,20 +407,20 @@ function setupStreaming(A) {
       // the GLOBAL default 0.6 — which _reassertPhotoMatBoost then tripled to 1.8 during Alt+S/Alt+G,
       // 10x higher than the beam/railing classes' already-tuned 0.18. User report 2026-08-15: "the
       // piping, from nice grey become all bluish." Same fix, same value, extended to this block.
-      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45, envInt: 0.18 },  // galvanized
-      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.18 },
-      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.18 },
-      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40, envInt: 0.18 },  // sheet metal
-      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.18 },
-      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.18 },
-      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35, envInt: 0.18 },
+      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45, envInt: 0.05 },  // galvanized
+      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.05 },
+      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.05 },
+      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40, envInt: 0.05 },  // sheet metal
+      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.05 },
+      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.05 },
+      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35, envInt: 0.05 },
       // ── MEP: terminals + devices ──
       // These 3 are DISC_TINT_CLASSES (below) — when null, they get swapped to a real trade colour
       // (orange/red/purple/etc, not this flat blue-grey). envInt keeps that trade colour from being
       // blue-washed by the Alt+S reflection boost same as the pipe/duct block above.
-      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30, envInt: 0.18 },
-      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30, envInt: 0.18 },
-      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30, envInt: 0.18 },
+      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30, envInt: 0.05 },
       IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20 },  // red valve
       IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30 },
       IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20 },
