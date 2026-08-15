@@ -4723,42 +4723,15 @@
     var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
     if (!items || !items.length) return stats;
     var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
-    if (!SG || !SG.CELL) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
-    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
-    var n = items.length, i, j, k, c, S, T, arr, cs;
-    var grid = {};
-    function cellsOf(e) {
-      var o = [], a, b;
-      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
-        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
-      return o;
-    }
-    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
-    // contact graph + ground layer, built ONCE (geometry does not change as times shift)
-    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
-    for (i = 0; i < n; i++) {
-      T = items[i]; cs = cellsOf(T);
-      var lowest = Infinity, list = null;
-      for (c = 0; c < cs.length; c++) {
-        arr = grid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) {
-          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
-          S = items[j];
-          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
-          stamp[j] = i + 1;
-          if (S.bz < lowest) lowest = S.bz;
-          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
-              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
-              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
-            (list || (list = [])).push(j);
-          }
-        }
-      }
-      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
-      contacts[i] = list;
-      if (grounded[i]) stats.grounded++; else if (!list) stats.orphans++;
-    }
+    // §MIDAIR_REPAIR_CONTACTGRAPH_DEDUP (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+    // §CARRIER_DEDUP_DERISK_STUDY): this used to be a byte-identical inlined copy of _contactGraph's
+    // own grid-build + contact-scan + grounded computation — same predicate, same GAP/EPS, drifted
+    // from nothing but duplication. Call the one real implementation instead.
+    var G = _contactGraph(items);
+    if (!G.ok) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
+    var n = items.length, i, k;
+    var contacts = G.contacts;
+    stats.orphans = G.orphans; stats.grounded = G.groundedN;
     // ══ §GROUNDED_OVERRIDE_FIX (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — user
     // report: "THINGS STILL HANGING IN MID AIR") ═════════════════════════════════════════════════
     // `grounded[i]` means "nothing shares MY OWN exact XY footprint below me" — true for a genuine
