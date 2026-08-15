@@ -85,9 +85,18 @@ const tierOrderLine = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Ar
 // measuring a single building — since #1313 landed. Sliced optionally, exactly as
 // bim-compiler/scripts/probe_arch_start.js does, so older revisions still run unchanged.
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
+// §SCHEDULE_CLASSIFY_DEDUP (2026-08-15) added _classifyNameOverride/_classifyRule — the shared
+// pair _buildXrayElements' local matchNameOverride/matchRule now delegate to. Same class of gap
+// as §ZONE_INDEX above (a new module-level helper this slice list didn't know about), sliced the
+// same optional way so older revisions still run unchanged. This sandbox's `window` has no
+// `ScheduleAuthor`, so the sliced pair runs its own fallback branch — the same reimplementation
+// the old inline closures used, functionally identical, not the delegating path (that path is
+// covered by witness_class_fallback_blackbox.js instead).
+const classifyParts = [sliceFn(tmSrc, '_classifyNameOverride', 0, true), sliceFn(tmSrc, '_classifyRule', 0, true)].filter(Boolean);
 const sliced = [tierOrderLine,
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
+  classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
   sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
@@ -95,7 +104,8 @@ const sliced = [tierOrderLine,
   sliceFn(tmSrc, '_midairAudit'), sliceFn(tmSrc, '_midairRepair', _mrCount - 1)].join('\n');
 console.log('§MIDAIR_SLICE _midairRepairDefs=' + _mrCount + ' slicing #' + (_mrCount - 1) +
   ' (the LAST definition — what declaration hoisting makes the browser run)' +
-  ' zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)'));
+  ' zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
+  ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)'));
 
 // W-MZ-5 — the repair must be called on the kernel_ops path, not merely defined
 assert(/_twoTierRemap\(_twItems\);[\s\S]{0,600}_midairRepair\(_twItems\)/.test(tmSrc),

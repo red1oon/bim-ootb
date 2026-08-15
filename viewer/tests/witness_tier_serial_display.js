@@ -86,6 +86,10 @@ const sliced = [
   sliceFn(tmSrc, '_zoneIndexBuild'),
   sliceFn(tmSrc, '_zoneIndex'),
   sliceFn(tmSrc, '_zoneOf'),
+  // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15): _buildXrayElements' local matchNameOverride/matchRule
+  // now delegate to this shared pair — same idiom, rides along verbatim.
+  sliceFn(tmSrc, '_classifyNameOverride'),
+  sliceFn(tmSrc, '_classifyRule'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_tier1Extents'),
