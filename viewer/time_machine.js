@@ -5503,7 +5503,7 @@
       var _covered = 0;
       var _elByGuid = {};
       elements.forEach(function(el) { _elByGuid[el.guid] = el; });
-      var _allScheduled = [], _lsMin = Infinity, _leMax = -Infinity;
+      var _allScheduled = [];
       var _allOps = db.exec("SELECT output_guid, parameters, timestamp FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
       if (_allOps.length && _allOps[0].values.length) {
         _allOps[0].values.forEach(function(row) {
@@ -5515,8 +5515,6 @@
           var p; try { p = JSON.parse(row[1]) || {}; } catch (e) { p = {}; }
           var _ls = row[2] || 0;
           var _le = p._end_ts || (_ls + 60000);
-          if (_ls < _lsMin) _lsMin = _ls;
-          if (_le > _leMax) _leMax = _le;
           // §GANTT_PHASE_CLOBBER (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md —
           // Witness: W-PHASE-KEY / witness_gantt_phase_palette.js). This line used to be
           // `p.phase = w.name`, i.e. it wrote the TASK NAME into the field the whole drawer keys
@@ -5543,14 +5541,42 @@
           _covered++;
         });
       }
-      // ONE global affine into the captured window — floor() is monotone, so support margins keep
-      // their sign; only the 60s zero-duration fixup below can graze a margin after extreme
-      // compression, which the verification sweep right after repairs (expected ≈0 pushes).
-      var _capSpan = Math.max(1, _cap.projEnd - _cap.base);
-      var _lsSpan = Math.max(1, _leMax - _lsMin);
+      // §GANTT_TASK_WINDOW_FIDELITY (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+      // §HOSPITAL_LIGHTING_STILL_FLOATING — user directive: "if it is not in that single source of
+      // truth [the Gantt/task JSON], it does not happen, yet"). This REPLACES Option A's ONE GLOBAL
+      // affine (2026-08-11, see the header above — kept verbatim for the history, now superseded).
+      // Option A's own global rescale never actually used `w.s`/`w.e` (each task's OWN authored
+      // schedule_start/schedule_finish) for placement at all — it only read them for the overall
+      // min/max span and the task-name overlay. Every element was positioned by where its OLD
+      // generative timestamp fell in a GLOBAL min→max compression, with no mechanical tie to its
+      // own task's window — an element authored for "Superstructure — Level 3" could land anywhere
+      // in the whole captured span. Measured live: this is exactly why the movie read as untied from
+      // the Gantt chart. Fixed at the source: each element is now rescaled WITHIN its own task's
+      // window only, preserving its pre-existing relative order among that task's own covered
+      // elements (monotone per-task, same floor() reasoning Option A used globally).
+      // Known, accepted cost — same one Option A was built to avoid, now scoped correctly instead of
+      // hidden: a structural dependency that crosses two tasks with overlapping/conflicting authored
+      // windows can still show a real violation. That is now an honest signal pointing at the task
+      // AUTHORING (materializeZones' own CPM windows), not a display-layer artifact to paper over.
+      // _ogSupportSweep (unchanged, runs next) still catches and reports what it can within its own
+      // narrower carrier pool — its pushes now stay local to each task's own already-correct window
+      // instead of a whole-timeline compression, so they can no longer manufacture the kind of
+      // cross-window desync #1364's reverted bolt-on did.
+      var _taskSpan = {};
       _allScheduled.forEach(function (item) {
-        item.s = _cap.base + Math.floor(((item.s - _lsMin) / _lsSpan) * _capSpan);
-        item.e = _cap.base + Math.floor(((item.e - _lsMin) / _lsSpan) * _capSpan);
+        var sp = _taskSpan[item.task] || (_taskSpan[item.task] = { min: Infinity, max: -Infinity });
+        if (item.s < sp.min) sp.min = item.s;
+        if (item.e > sp.max) sp.max = item.e;
+      });
+      _allScheduled.forEach(function (item) {
+        var w = _cap.win[item.task];
+        var sp = _taskSpan[item.task];
+        var tSpan = Math.max(1, w.e - w.s);
+        var lsSpan = Math.max(1, sp.max - sp.min);
+        item.s = w.s + Math.floor(((item.s - sp.min) / lsSpan) * tSpan);
+        item.e = w.s + Math.floor(((item.e - sp.min) / lsSpan) * tSpan);
+        // both floor()'d from ratios in [0,1] of [w.s, w.e] — already bounded to the task's own
+        // window by construction; this only guards the degenerate single-op-per-task case.
         if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
       _ogSupportSweep(_allScheduled);
@@ -7705,7 +7731,11 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 20;   // §CAP_SHADOW_FIX (2026-08-15): every kernel_ops materialized under
+  var _GANTT_CACHE_VERSION = 21;   // §GANTT_TASK_WINDOW_FIDELITY (2026-08-15): the captured overlay's
+  // affine changed from ONE global rescale to a PER-TASK rescale — every element's placement moves,
+  // on every building with a captured/materialized schedule. A kernel_ops table materialized under
+  // v20 replays the old global-affine dates forever without this bump. Previous: §CAP_SHADOW_FIX
+  // (2026-08-15): every kernel_ops materialized under
   // v19 or earlier was ALWAYS produced by the crash-fallback path (injectGantt's `_cap` overlay could
   // never run — see the fix note ~30 lines below, at the `_capacityCd` rename). Its data is not wrong
   // (the fallback used the already-correct generative timeline), but nobody has ever actually seen the
