@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1039';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1040';   // bump on each deploy; per-change detail is the git commit message.
+// v1040 (2026-08-16) §CROSSTASK_JUDGE_PARITY: time_machine.js _cjpJudgeParity after _ogSupportSweep
+// — window-bounded judge-rule repair, captured floating 3090 -> 656 across the 7 buildings.
+// Collided with the independent same-day v1039 bump on main (#1385/#1386) — took one past it, per
+// this file's own KEEP-BOTH/take-the-higher merge convention.
 // v1031 (2026-08-15) streaming.js envInt: beam/railing->0, +13 remaining MEP device classes->0.05
 // (a prior PR's version bump for this same change was lost in a squash-merge race -- see git log).
 // v1030 (2026-08-15) §PIPE_DUCT_BLUE_TINT / §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (bim-ootb PRs #1367,
