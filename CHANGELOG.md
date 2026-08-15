@@ -4,6 +4,29 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.46.0](https://github.com/red1oon/bim-ootb/compare/v1.45.0...v1.46.0) (2026-08-15)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_DISCIPLINE_REVEAL Mechanism C — retrace reveal round, geometry/timeline stage ([#1350](https://github.com/red1oon/bim-ootb/issues/1350)) ([9eeb24f](https://github.com/red1oon/bim-ootb/commit/9eeb24ff85036597c501af963adc67bd2cf4b591))
+* **cpe:** §CPE_DISCIPLINE_REVEAL Mechanism C — visual layer (ARC/STR full hide, per-discipline tail) ([#1352](https://github.com/red1oon/bim-ootb/issues/1352)) ([18959f2](https://github.com/red1oon/bim-ootb/commit/18959f234092f54ed3daf6864c18ded23a1a18d5))
+* **cpe:** Discipline Reveal — pull-out + repeated-lap restructure ([#1362](https://github.com/red1oon/bim-ootb/issues/1362)) ([2b86a47](https://github.com/red1oon/bim-ootb/commit/2b86a47af47a72230d1bde2792ae57d4edf23fdc))
+
+
+### 🐛 Fixes
+
+* **4d:** §CAP_SHADOW_FIX — injectGantt's _cap var shadowing crashed the captured-schedule overlay every run, silently ([#1364](https://github.com/red1oon/bim-ootb/issues/1364)) ([a19e7d5](https://github.com/red1oon/bim-ootb/commit/a19e7d588c08e87da70c815540ea621055d102b9))
+* **4d:** §GANTT_SCHEDULE_STALE — authored Gantt never re-derived, unlike canvas ([#1359](https://github.com/red1oon/bim-ootb/issues/1359)) ([e44412c](https://github.com/red1oon/bim-ootb/commit/e44412c3418ad55ea96e314df15151199e18491f))
+* **4d:** §GANTT_SHIFT_HOURS_DESYNC — Gantt bars authored at 8h/day, canvas plays at 24h/day ([#1355](https://github.com/red1oon/bim-ootb/issues/1355)) ([e75c154](https://github.com/red1oon/bim-ootb/commit/e75c1548b7ed9d6b957c02c096606faed5341a69))
+* **cpe:** §CPE_DISCIPLINE_REVEAL — buildup must top out at the stop stick, not the orbit ([#1353](https://github.com/red1oon/bim-ootb/issues/1353)) ([13de1cf](https://github.com/red1oon/bim-ootb/commit/13de1cf017e145a47f3e504cfda80e3368a4824c))
+* **cpe:** §CPE_DISCIPLINE_REVEAL — Reveal checkbox must replan before Preview, not just after a bake ([#1354](https://github.com/red1oon/bim-ootb/issues/1354)) ([1ae29ce](https://github.com/red1oon/bim-ootb/commit/1ae29cefd8e5b616a76473b9604a38271c71356b))
+* **mep:** §MEP_DISC_TINT — MEP flow fallback + railing colour, was flat blue-grey ([#1356](https://github.com/red1oon/bim-ootb/issues/1356)) ([511836b](https://github.com/red1oon/bim-ootb/commit/511836b1fa3e365442cf52fca49ef40216066011))
+* **night:** reduce NIGHT_LIGHT_INTENSITY 2.5-&gt;2.0 (-20%) ([#1358](https://github.com/red1oon/bim-ootb/issues/1358)) ([b2d96dc](https://github.com/red1oon/bim-ootb/commit/b2d96dcc8720927578636f3cdae6cef3b8a91b1f))
+* **photo:** per-pixel grazing-incidence kernel scale for sun-shadow restore ([#1363](https://github.com/red1oon/bim-ootb/issues/1363)) ([3de6b49](https://github.com/red1oon/bim-ootb/commit/3de6b4945074433a1165123f2e046f198390459a))
+* **scene:** dispose orphaned PMREM env-map render targets, BVH on clearStreamed ([#1360](https://github.com/red1oon/bim-ootb/issues/1360)) ([562df87](https://github.com/red1oon/bim-ootb/commit/562df87348ea396223b81bba663c1d7a2b32df01))
+* **viewer:** §HOSPITAL_BLUE_TINT — steel/railing envMapIntensity, was letting real sky dominate real colour ([#1361](https://github.com/red1oon/bim-ootb/issues/1361)) ([161f46c](https://github.com/red1oon/bim-ootb/commit/161f46c26d32586ba637a74c73ebb3a188a4b5e3))
+
 ## [1.45.0](https://github.com/red1oon/bim-ootb/compare/v1.44.0...v1.45.0) (2026-08-14)
 
 
