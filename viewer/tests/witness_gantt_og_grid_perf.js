@@ -144,7 +144,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     const origS = {};
     _allScheduled.forEach(function (e) { origS[e.guid] = e.s; });   // capture BEFORE the block mutates in place
 
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
+    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, taskWin: undefined, console: console, Math: Math };
     vm.createContext(sandbox);
     vm.runInContext(block, sandbox);
     const realPushedIds = {};
@@ -168,7 +168,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
       "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
     db.close();
     const _allScheduled = realScheduledFrom(r[0].values, matchRule, rules);
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
+    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, taskWin: undefined, console: console, Math: Math };
     vm.createContext(sandbox);
     const t0 = process.hrtime.bigint();
     vm.runInContext(block, sandbox);

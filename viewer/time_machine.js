@@ -4213,7 +4213,7 @@
   // witness_gantt_og_grid_perf once already, 2026-08-07..11).
   // _allScheduled: [{guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq,...}] — mutated in place (including a
   // bz-ascending sort); s only ever moves LATER (push after real support), duration preserved.
-  function _ogSupportSweep(_allScheduled) {
+  function _ogSupportSweep(_allScheduled, taskWin) {
       // §PHASE_OVERLAP_SUPPORT_GUARD global pass (see header above). isCarrier/CELL/EPS/GAP are the
       // SAME role-blind support predicate this file already uses for the generative path
       // (audit_support_roleblind.js / §SUPPORT_CHECK above) — not a new definition. Processing in
@@ -4342,6 +4342,7 @@
             }
           }
           if (!lastEnd && envEnd) lastEnd = envEnd;   // tier 2 binds only with zero tier-1 carriers
+          var _ogFromHang = false;
           if (!hasBearing && T.seq > 4) {          // hangs — gate on the carrier above instead
             var hcells = _ogCellsQueryTop(T), hseen = {};
             for (var hi = 0; hi < hcells.length; hi++) {
@@ -4350,15 +4351,30 @@
                 var H = harr[hj];
                 if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
                 if (H.bz >= T.tz - _ogHangGap && H.bz <= T.tz + _ogHangGap && H.tz > T.tz + _ogEPS &&
-                    _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
+                    _ogXY(H, T) && H.e > lastEnd) { lastEnd = H.e; _ogFromHang = true; }
               }
             }
           }
           if (lastEnd && T.s < lastEnd) {
             var dur = Math.max(60000, T.e - T.s);
-            T.s = lastEnd + 1;
-            T.e = T.s + dur;
-            _ogPushed++; _ogMoved++;
+            // §OG_HANG_WINDOW_BOUND (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+            // §GANTT_WINDOW_FIDELITY_AND_SPREAD): §OG_HANG_BAND's widened 9.5m hang radius can now
+            // reach a real carrier far enough away that the honest push would land the target OUTSIDE
+            // its own authored task window — measured on LTU_AHouse: 526 elements, overshoot up to
+            // 79.1 days (was 16 elements, max 0.8d, before the widened radius). The ORIGINAL 0.5m
+            // bearing push never did this on any measured building — bearing pushes stay unbounded,
+            // unchanged. Per the user's own ruling ("if it is not in that single source of truth, it
+            // does not happen, yet"), a hang-repair that would violate the window does not apply —
+            // the element stays honestly floating (as it was before §OG_HANG_BAND) rather than being
+            // pushed to a fabricated, window-compliant-looking date that isn't the real dependency.
+            var _ogW = taskWin && taskWin[T.task];
+            if (_ogFromHang && _ogW && lastEnd + 1 + dur > _ogW.e) {
+              // real carrier sits outside this task's window — no push, no invented substitute date
+            } else {
+              T.s = lastEnd + 1;
+              T.e = T.s + dur;
+              _ogPushed++; _ogMoved++;
+            }
           }
         });
         if (!_ogMoved) break;
@@ -5585,7 +5601,7 @@
         // window by construction; this only guards the degenerate single-op-per-task case.
         if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
-      _ogSupportSweep(_allScheduled);
+      _ogSupportSweep(_allScheduled, _cap.win);
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
       // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
@@ -7737,10 +7753,14 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 22;   // §OG_HANG_BAND (2026-08-15): _ogSupportSweep's hang-repair search
+  var _GANTT_CACHE_VERSION = 23;   // §OG_HANG_BAND (2026-08-15): _ogSupportSweep's hang-repair search
   // radius widened 0.5m->9.5m (see that function's own header) — a kernel_ops table materialized
   // under v21 or earlier keeps replaying the narrower-band repair's (more-floating) dates forever
   // without this bump, regardless of the code fix being deployed.
+  // v22->23: §OG_HANG_WINDOW_BOUND — the widened hang-repair now refuses a push that would land an
+  // element outside its own task's authored window (see _ogSupportSweep's own header). A kernel_ops
+  // table materialized under v22 keeps the wider-but-window-violating dates (up to 79d off on
+  // LTU_AHouse) without this bump.
   // §GANTT_TASK_WINDOW_FIDELITY (2026-08-15): the captured overlay's
   // affine changed from ONE global rescale to a PER-TASK rescale — every element's placement moves,
   // on every building with a captured/materialized schedule. A kernel_ops table materialized under

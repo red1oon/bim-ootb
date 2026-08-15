@@ -103,7 +103,7 @@ function runGuard(scheduled, unboundedVariant) {
   }
   const origS = {};
   copy.forEach(e => { origS[e.guid] = e.s; });   // by guid — the block SORTS the array in place
-  const sandbox = { _allScheduled: copy, ScheduleGate: { CELL: 4 }, console: { log: function () {} }, Math: Math };
+  const sandbox = { _allScheduled: copy, ScheduleGate: { CELL: 4 }, taskWin: undefined, console: { log: function () {} }, Math: Math };
   vm.createContext(sandbox);
   vm.runInContext(block, sandbox);
   const pushed = {};
