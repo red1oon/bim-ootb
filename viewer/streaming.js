@@ -402,17 +402,25 @@ function setupStreaming(A) {
       IfcFurniture:           { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
       IfcFurnishingElement:   { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
       // ── MEP: pipes + ducts ──
-      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45 },  // galvanized
-      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45 },
-      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45 },
-      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40 },  // sheet metal
-      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40 },
-      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40 },
-      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35 },
+      // §PIPE_DUCT_BLUE_TINT (2026-08-15, same mechanism as §HOSPITAL_BLUE_TINT above, just never
+      // applied to this block): none of these 7 classes had an envInt override, so they all sat on
+      // the GLOBAL default 0.6 — which _reassertPhotoMatBoost then tripled to 1.8 during Alt+S/Alt+G,
+      // 10x higher than the beam/railing classes' already-tuned 0.18. User report 2026-08-15: "the
+      // piping, from nice grey become all bluish." Same fix, same value, extended to this block.
+      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45, envInt: 0.18 },  // galvanized
+      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.18 },
+      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.18 },
+      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40, envInt: 0.18 },  // sheet metal
+      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.18 },
+      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.18 },
+      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35, envInt: 0.18 },
       // ── MEP: terminals + devices ──
-      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30 },
-      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30 },
-      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30 },
+      // These 3 are DISC_TINT_CLASSES (below) — when null, they get swapped to a real trade colour
+      // (orange/red/purple/etc, not this flat blue-grey). envInt keeps that trade colour from being
+      // blue-washed by the Alt+S reflection boost same as the pipe/duct block above.
+      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30, envInt: 0.18 },
+      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30, envInt: 0.18 },
+      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30, envInt: 0.18 },
       IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20 },  // red valve
       IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30 },
       IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20 },
