@@ -239,7 +239,15 @@ async function setupScene(A) {
     var theta = THREE.MathUtils.degToRad(azimuth);
     _sunVec.setFromSphericalCoords(1, phi, theta);
     // §S276b: Update sky shader — never hide, Preetham darkens naturally below horizon.
-    if (_sky && _sky.visible) {
+    // §SKY_SUNPOS_INIT (2026-08-16): the uniform copy must NOT be gated on _sky.visible. The
+    // Sky shader ships with a default sunPosition of (0,0,0), and the init-time
+    // A.updateSky(45,180) call runs while the sky is still hidden — with the old
+    // `if (_sky && _sky.visible)` guard that skipped the copy, so any path that later flips
+    // _sky.visible=true WITHOUT calling updateSky (Alt+S non-dusk staging since #1379) rendered
+    // the Preetham shader with a zero sun vector: fully black sky, live-reproduced (sky band
+    // 192/192 black px, uniform read back [0,0,0]). Copying a uniform on a hidden object is
+    // free — keep it unconditionally in sync so "make visible" is always safe.
+    if (_sky) {
       _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
     }
     // Update directional light to match sky sun
