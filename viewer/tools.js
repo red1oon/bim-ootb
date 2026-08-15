@@ -875,6 +875,16 @@ function setupTools(A) {
   A._nightStillBoost = true;       // re-armed 2026-08-07 — see effects.js §NIGHT_STILL_LIGHTS
   A._nightNearFadeFloor = 0.3;     // navigation: a light at the eye dims to 30% (anti-blowout)
   A._nightNearFadeFloorStill = 1.0;// still: no proximity penalty at all
+  // §STAGED_PL_CUT (2026-08-16, user directive: staged lighting "too bright … reduce PLs or
+  // intensity. As it also wipe out the ground slab shadow play during alt-c movie baking"):
+  // point lights never cast shadows (NIGHT_AND_FIXTURE_LIGHTING.md §RAM), so during Alt+S/Alt+C
+  // staging their light is pure additive shadow-fill on every slab in range — additive light is
+  // exactly what collapses the lit/shadow ratio (§GROUND_ALBEDO's own multiplicative-vs-additive
+  // analysis). NIGHT_LIGHT_INTENSITY's history is all "too bright" cuts (8.0→6.5→4.5→2.5→2.0)
+  // yet nav Night Mode is now tuned and liked — so this cut is STAGING-SCOPED only: 0.5× during
+  // the still/bake boost, reset to 1.0 at teardown. Nav Night Mode is byte-identical.
+  A._nightPLScale = 1.0;           // CURRENT multiplier on every night PL's intensity
+  A._nightPLScaleStill = 0.5;      // staging (Alt+S/Alt+C) value — §STAGED_PL_CUT
   // §NIGHT_LIGHT_MIX (2026-07-27, user: "if we can have a mix of amber, and bluish etc").
   // One flat 0xffe4b5 for every fixture is what makes a lit building read as a single lamp repeated
   // N times. Real interiors mix colour temperature by FITTING TYPE, so derive it from the fitting
@@ -1543,7 +1553,7 @@ function setupTools(A) {
       // to protect and where the whole point is that the fixture you are standing under reads as
       // lit. A._nightNearFadeFloor is raised by startStillRefine alongside the light count.
       var floor = A._nightNearFadeFloor;
-      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade);
+      var intensity = NIGHT_LIGHT_INTENSITY * (floor + (1 - floor) * fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
       stillWanted.add(f.pos);
       var light = A._nightLightByPos.get(f.pos);
       if (light) {
