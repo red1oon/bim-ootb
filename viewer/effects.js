@@ -3222,7 +3222,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
     // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
     var _duskMood = !!A._photoDuskMood;
-    if (A._sky) { A._sky.visible = true; }
+    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: "sky also has to be fixed... to correlate with
+    // the shadows"): the sky dome's visual sun-disc position (Sky.js `sunPosition` uniform) is a
+    // SEPARATE value from the real A.sun light, and scene.js's updateSky() only refreshes it while
+    // `_sky.visible` is already true (see scene.js ~line 242) — so a sky that's been hidden the
+    // whole time (nav default) shows a STALE/shader-default sun position the first time staging
+    // makes it visible, while the real shadows come from wherever A.sun actually is. Sync it here,
+    // unconditionally, independent of dusk mode.
+    if (A._sky) {
+      A._sky.visible = true;
+      if (A._sky.material && A._sky.material.uniforms && A._sky.material.uniforms['sunPosition']) {
+        A._sky.material.uniforms['sunPosition'].value.copy(A.sun.position).normalize();
+      }
+    }
     if (_duskMood && A.updateSky) { A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
     // §PHOTO_SKY_DRAMA (user ask: "more dramatic sky... reddish clouds in the distance"): Preetham
     // (Sky.js) is a clear-sky atmospheric-scattering model — push turbidity/rayleigh/mie further
@@ -3257,22 +3269,35 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoMatBoostActive = true;
     _reassertPhotoMatBoost();
     _enablePhotoShadows();  // real/current sun position (unless _duskMood) — see §PHOTO_SUN_SEPARATION
-    // §PHOTO_SUN_SEPARATION: forced night-mode-then-warm-evening-tint override is dusk-mood only
-    // now (see flag above) — plain-daylight default leaves night mode, sun/ambient/hemi
-    // intensity+colour, and exposure exactly whatever the user already has.
+    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: beam/railing went dark/no-sheen after the
+    // separation shipped — "we switched something else off?"). Root cause: toggleNightMode()
+    // isn't only a colour toggle, it also loads ~200 supplementary point lights (fixture glow) —
+    // real illumination that specular-lit beam/railing (envInt:0, so they get ZERO reflection
+    // contribution by design — see the earlier §HOSPITAL_BLUE_TINT fix — and were leaning on these
+    // point lights for their visible sheen). Dropping the whole toggle call to kill the WARM TINT
+    // also silently killed that illumination. Fix: split the two concerns apart. The point-light
+    // toggle + intensity/exposure restore run UNCONDITIONALLY (real illumination, not mood) — only
+    // the COLOUR override (the actual warm-dusk tint) stays dusk-mood-only.
     _photoNightWasOn = !!A._nightMode;
     _photoDuskMoodApplied = _duskMood;  // teardown reads this snapshot, not the live flag
-    if (_duskMood && !_photoNightWasOn && A.toggleNightMode) {
-      A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
-      if (A._nightSaved) {  // undo the moonlight override, but land on a deliberate warm evening
-                             // tint (§PHOTO_WARM_SUN) instead of plain neutral-daytime restore
+    if (!_photoNightWasOn && A.toggleNightMode) {
+      A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow — real light sources
+      if (A._nightSaved) {  // always undo the moonlight override (dark intensities) — never mood
         A.sun.intensity = A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE;
-        A.sun.color.setHex(PHOTO_SUN_COLOR);
         A.ambient.intensity = A._nightSaved.ambI * PHOTO_AMBIENT_INTENSITY_SCALE;
-        A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
-        A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
         A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
+        // Colour is the actual mood — warm dusk tint only with the flag on; real pre-toggle
+        // colours (not PHOTO_*_COLOR) otherwise, so plain-daylight stays plain-daylight-coloured.
+        if (_duskMood) {
+          A.sun.color.setHex(PHOTO_SUN_COLOR);
+          A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
+          A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
+        } else {
+          A.sun.color.setHex(A._nightSaved.sunColor);
+          A.ambient.color.setHex(A._nightSaved.ambColor);
+          A.hemi.color.setHex(A._nightSaved.hemiSky);
+        }
         var _fill = A.ambient.intensity + A.hemi.intensity;
         console.log('§MOVIE_SHADOW_TM sun=' + A.sun.intensity.toFixed(3) +
           ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
@@ -3339,7 +3364,10 @@ async function setupEffects(A, renderer, scene, camera) {
     A._envMapHdriActive = false;  // §ALT_FRAME_LUMINANCE: scene.js's throttled regen is safe again
     // §PHOTO_SUN_SEPARATION: only undo the night-mode force-on if THIS staging cycle actually
     // applied dusk mood (snapshot, not the live flag — the user may have flipped it mid-session).
-    if (_photoDuskMoodApplied && !_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();
+    // §PHOTO_SUN_SEPARATION_FIX: night mode is force-toggled on UNCONDITIONALLY now (point lights
+    // are real illumination, not mood) — teardown must undo it unconditionally too, or it sticks
+    // on after every Alt+S exit outside dusk mode.
+    if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();
     _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
