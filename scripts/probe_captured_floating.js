@@ -106,6 +106,22 @@ async function main() {
   }).filter(Boolean);
   console.log('§CAP_SCHEDULED n=' + _allScheduled.length);
 
+  if (process.env.RAW_TASK_DUMP) {
+    const tgt = process.env.RAW_TASK_DUMP;
+    const zw = taskWin[tgt];
+    const raw = _allScheduled.filter(o => o.task === tgt);
+    const rawS = raw.map(o => o.s).sort((a, b) => a - b);
+    console.log('§RAW_TASK_DUMP task=' + tgt + ' n=' + raw.length +
+      ' zoneWindow=[' + new Date(zw.s).toISOString().slice(0,10) + '..' + new Date(zw.e).toISOString().slice(0,10) + ']' +
+      ' rawSMin=' + new Date(rawS[0]).toISOString().slice(0,10) +
+      ' rawSMax=' + new Date(rawS[rawS.length-1]).toISOString().slice(0,10));
+    // day-resolution histogram of raw start times across the zone's own [start,end]
+    const dayBuckets = {};
+    raw.forEach(o => { const d = Math.round((o.s - zw.s) / 86400000); dayBuckets[d] = (dayBuckets[d] || 0) + 1; });
+    const days = Object.keys(dayBuckets).map(Number).sort((a, b) => a - b);
+    console.log('§RAW_TASK_DUMP_DAYS ' + JSON.stringify(days.map(d => [d, dayBuckets[d]])));
+  }
+
   // PRE-repair, RAW generative floating (sanity baseline, no rescale/no repair)
   const rawCensus = floatingCensus(_allScheduled.map(o => Object.assign({}, o)));
   console.log('§CAP_RAW_FLOATING midair=' + rawCensus.midair + ' orphans=' + rawCensus.orphans);
@@ -129,10 +145,25 @@ async function main() {
   const preRepair = floatingCensus(rescaled.map(o => Object.assign({}, o)));
   console.log('§CAP_PRE_REPAIR_FLOATING midair=' + preRepair.midair + ' byClass=' + JSON.stringify(preRepair.byClass));
 
+  // PRE-repair (post-rescale, before _ogSupportSweep) spread for the one task whose POST-repair
+  // spread was starkly bimodal [1571,0,0,0,0,0,0,0,0,2779] — does the gap already exist before any
+  // repair push, or does _ogSupportSweep itself CREATE the gap?
+  if (process.env.SPREAD_PRE_TASK) {
+    const tgt = process.env.SPREAD_PRE_TASK;
+    const w0 = taskWin[tgt];
+    const xs0 = rescaled.filter(o => o.task === tgt).map(o => (o.s - w0.s) / Math.max(1, w0.e - w0.s));
+    const b0 = new Array(12).fill(0);
+    xs0.forEach(x => b0[Math.max(0, Math.min(11, Math.floor(x * 10) + 1))]++);
+    console.log('§CAP_SPREAD_PRE_REPAIR task=' + tgt + ' n=' + xs0.length + ' hist(<0,0-1,1-2,...,9-10,>1)=' + JSON.stringify(b0));
+    const byClsPre = {};
+    rescaled.filter(o => o.task === tgt).forEach(o => { byClsPre[o.cls] = (byClsPre[o.cls] || 0) + 1; });
+    console.log('§CAP_SPREAD_PRE_REPAIR_BYCLASS task=' + tgt + ' ' + JSON.stringify(byClsPre));
+  }
+
   // _ogSupportSweep repair (mutates rescaled in place, sorts by bz)
   const beforeByGuid = {}; rescaled.forEach(o => beforeByGuid[o.guid] = o.s);
   const forRepair = rescaled.map(o => Object.assign({}, o));
-  _ogSupportSweep(forRepair);
+  _ogSupportSweep(forRepair, taskWin);
   const postRepair = floatingCensus(forRepair);
   console.log('§CAP_POST_REPAIR_FLOATING total=' + postRepair.midair + '/' + forRepair.length +
     ' orphans=' + postRepair.orphans + ' grounded=' + postRepair.grounded + ' ok=' + (forRepair.length - postRepair.midair - postRepair.orphans - postRepair.grounded));
@@ -144,6 +175,88 @@ async function main() {
   });
   console.log('§CAP_PUSH_STATS pushed=' + pushedN + ' maxShiftDays=' + (maxShiftMs / 86400000).toFixed(1) +
     ' meanShiftDays=' + (pushedN ? (shiftSum / pushedN / 86400000).toFixed(2) : 0) + ' maxShiftGuid=' + maxShiftGuid);
+
+  // ══ §GANTT_WINDOW_FIDELITY_AND_SPREAD — Q1: does the FINAL (post-_ogSupportSweep) display date
+  // still sit inside its own task's authored [schedule_start, schedule_finish]? Same population/
+  // same taskWin map §GANTT_TASK_WINDOW_FIDELITY (PR #1368) measured 97.87%/62063/63415 against,
+  // re-measured here AFTER §OG_HANG_BAND (PR #1375) widened _ogSupportSweep's push reach. ══════════
+  let inWindow = 0, outWindow = 0; const outByClass = {};
+  const normItems = []; // Q2: {x: normalized start pos, cls, task, dur: element's own s..e span vs task span}
+  const overshootDays = [];
+  forRepair.forEach(function (item) {
+    const w = taskWin[item.task]; if (!w) return;
+    if (item.s >= w.s && item.e <= w.e) {
+      inWindow++;
+      const span = Math.max(1, w.e - w.s);
+      normItems.push({ x: (item.s - w.s) / span, cls: item.cls, task: item.task,
+        elemDurFracOfTask: (item.e - item.s) / span });
+    } else {
+      outWindow++; outByClass[item.cls] = (outByClass[item.cls] || 0) + 1;
+      const over = Math.max(0, item.e - w.e, w.s - item.s) / 86400000;
+      overshootDays.push(over);
+    }
+  });
+  if (overshootDays.length) {
+    overshootDays.sort((a, b) => a - b);
+    const osN = overshootDays.length;
+    console.log('§CAP_OVERSHOOT_DAYS n=' + osN + ' p50=' + overshootDays[Math.floor(osN * 0.5)].toFixed(2) +
+      ' p90=' + overshootDays[Math.floor(osN * 0.9)].toFixed(2) + ' max=' + overshootDays[osN - 1].toFixed(2));
+  }
+  const totalWin = inWindow + outWindow;
+  console.log('§CAP_WINDOW_FIDELITY inWindow=' + inWindow + '/' + totalWin + ' pct=' +
+    (100 * inWindow / totalWin).toFixed(2) + ' outWindow=' + outWindow);
+  console.log('§CAP_WINDOW_FIDELITY_OUT_BYCLASS ' + JSON.stringify(outByClass));
+
+  // Q2 — distribution of normalized position within the bar for in-window elements
+  const normPositions = normItems.map(function (o) { return o.x; }).sort(function (a, b) { return a - b; });
+  const n = normPositions.length;
+  const mean = normPositions.reduce(function (a, b) { return a + b; }, 0) / n;
+  const median = n % 2 ? normPositions[(n - 1) / 2] : (normPositions[n / 2 - 1] + normPositions[n / 2]) / 2;
+  const variance = normPositions.reduce(function (a, x) { return a + (x - mean) * (x - mean); }, 0) / n;
+  const stddev = Math.sqrt(variance);
+  const buckets = new Array(10).fill(0);
+  normPositions.forEach(function (x) { buckets[Math.min(9, Math.floor(x * 10))]++; });
+  // one-sample KS statistic vs Uniform(0,1): D = max(D+, D-) over the sorted sample
+  let dPlus = 0, dMinus = 0;
+  for (let i = 0; i < n; i++) {
+    const cdfEmpUpper = (i + 1) / n, cdfEmpLower = i / n, x = normPositions[i];
+    if (cdfEmpUpper - x > dPlus) dPlus = cdfEmpUpper - x;
+    if (x - cdfEmpLower > dMinus) dMinus = x - cdfEmpLower;
+  }
+  const ks = Math.max(dPlus, dMinus);
+  console.log('§CAP_SPREAD n=' + n + ' mean=' + mean.toFixed(4) + ' median=' + median.toFixed(4) +
+    ' stddev=' + stddev.toFixed(4) + ' ks_vs_uniform=' + ks.toFixed(4));
+  console.log('§CAP_SPREAD_HISTOGRAM ' + JSON.stringify(buckets.map(function (c, i) {
+    return { bucket: (i / 10).toFixed(1) + '-' + ((i + 1) / 10).toFixed(1), count: c, pct: (100 * c / n).toFixed(2) };
+  })));
+
+  // WHICH classes/tasks dominate the two extreme buckets vs the sparse middle?
+  const frontBucket = {}, backBucket = {}, midBucket = {};
+  const frontTasks = {}, backTasks = {};
+  normItems.forEach(function (o) {
+    if (o.x < 0.1) { frontBucket[o.cls] = (frontBucket[o.cls] || 0) + 1; frontTasks[o.task] = (frontTasks[o.task] || 0) + 1; }
+    else if (o.x >= 0.9) { backBucket[o.cls] = (backBucket[o.cls] || 0) + 1; backTasks[o.task] = (backTasks[o.task] || 0) + 1; }
+    else if (o.x >= 0.4 && o.x < 0.6) { midBucket[o.cls] = (midBucket[o.cls] || 0) + 1; }
+  });
+  function top(obj, k) { return Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, k); }
+  console.log('§CAP_SPREAD_FRONT_BYCLASS(top8) ' + JSON.stringify(top(frontBucket, 8)));
+  console.log('§CAP_SPREAD_BACK_BYCLASS(top8) ' + JSON.stringify(top(backBucket, 8)));
+  console.log('§CAP_SPREAD_MID_BYCLASS(top8) ' + JSON.stringify(top(midBucket, 8)));
+  console.log('§CAP_SPREAD_FRONT_BYTASK(top6) ' + JSON.stringify(top(frontTasks, 6)));
+  console.log('§CAP_SPREAD_BACK_BYTASK(top6) ' + JSON.stringify(top(backTasks, 6)));
+
+  // Per-task spread: for a handful of the LARGEST tasks by element count, is EACH ONE individually
+  // U-shaped, or is the aggregate U-shape an artifact of averaging many differently-shaped tasks?
+  const byTask = {};
+  normItems.forEach(function (o) { (byTask[o.task] || (byTask[o.task] = [])).push(o.x); });
+  const taskSizes = Object.entries(byTask).map(function (e) { return [e[0], e[1].length]; })
+    .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 6);
+  taskSizes.forEach(function (e) {
+    const xs = byTask[e[0]];
+    const b10 = new Array(10).fill(0);
+    xs.forEach(function (x) { b10[Math.min(9, Math.floor(x * 10))]++; });
+    console.log('§CAP_SPREAD_PER_TASK task=' + e[0] + ' n=' + e[1] + ' hist=' + JSON.stringify(b10));
+  });
 
   // For floating IfcBuildingElementProxy: does an edge exist between ITS task and its first-
   // contact's task? This is the direct test of the "missing cross-zone CPM edge" hypothesis.
@@ -224,7 +337,7 @@ async function main() {
   const exp3PreRepair = floatingCensus(exp3Items.map(o => Object.assign({}, o)));
   console.log('§EXP3_PRE_OGSWEEP_FLOATING midair=' + exp3PreRepair.midair);
   const exp3ForRepair = exp3Items.map(o => Object.assign({}, o));
-  _ogSupportSweep(exp3ForRepair);
+  _ogSupportSweep(exp3ForRepair, taskWin2);
   const exp3Post = floatingCensus(exp3ForRepair);
   console.log('§EXP3_FINAL total=' + exp3Post.midair + '/' + exp3ForRepair.length +
     ' orphans=' + exp3Post.orphans + ' grounded=' + exp3Post.grounded +
