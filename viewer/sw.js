@@ -8,7 +8,10 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1040';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1041';   // bump on each deploy; per-change detail is the git commit message.
+// v1041 (2026-08-16) §GROUND_DETAIL: ground normal/roughness maps + detail multiply + blotch
+// (tools.js?v=40, ground_config.json?v=2, 6 new textures/ground/*.jpg). Collided with #1387's
+// independent v1040 — took one past it, per this file's KEEP-BOTH/take-the-higher convention.
 // v1040 (2026-08-16) §CROSSTASK_JUDGE_PARITY: time_machine.js _cjpJudgeParity after _ogSupportSweep
 // — window-bounded judge-rule repair, captured floating 3090 -> 656 across the 7 buildings.
 // Collided with the independent same-day v1039 bump on main (#1385/#1386) — took one past it, per

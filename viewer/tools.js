@@ -93,13 +93,24 @@ function setupTools(A) {
   // §S280g: Ground texture engine — config-driven (ground_config.json), selectable in the
   // Palette/Sunglass panel. Default applies when Shadow is turned ON. Static photo on the
   // existing ground plane → zero per-frame cost. See docs/GROUND_SHADOW_BAKING.md §2.A.
+  // §GROUND_DETAIL (2026-08-16, user: "suggest something about the ground surface material. It is
+  // not that realistic"): the ground was a single 1k diffuse tiled 64x over the 50km plane —
+  // ~0.8m per texel underfoot, no normal/roughness response, visible 780m tiling. Three additions,
+  // all data-driven from this config: (1) matching Poly Haven nor_gl/rough 1k maps per option
+  // (same CC0 source the diffuse came from — textures/ground/NOTICE.txt) so sunlight shows
+  // relief; (2) a fine second sample of the SAME diffuse multiplied in as luminance detail
+  // (~3m tile; detailMean is the diffuse's measured LINEAR luminance mean — §TRINORM_LINEAR
+  // lesson, never normalize by sRGB means — so the multiply is brightness-neutral);
+  // (3) a §PHOTO_PAINT-style two-scale blotch (90m patch + 7m freckle, subtle 0.86..1.10) to
+  // break the tile repetition. (2)+(3) live in one onBeforeCompile on the ground material
+  // (_installGroundShader below).
   A._groundCfgDefault = {
     default: 'grass', repeat: 64, anisotropy: 8,
     options: [
       { key: 'none',  label: 'None',  src: null },
-      { key: 'grass', label: 'Grass', src: 'textures/ground/grass_1k.jpg' },
-      { key: 'earth', label: 'Earth', src: 'textures/ground/earth_1k.jpg' },
-      { key: 'paved', label: 'Paved', src: 'textures/ground/paved_1k.jpg' }
+      { key: 'grass', label: 'Grass', src: 'textures/ground/grass_1k.jpg', nor: 'textures/ground/grass_nor_1k.jpg', rough: 'textures/ground/grass_rough_1k.jpg', detailMean: 0.1262 },
+      { key: 'earth', label: 'Earth', src: 'textures/ground/earth_1k.jpg', nor: 'textures/ground/earth_nor_1k.jpg', rough: 'textures/ground/earth_rough_1k.jpg', detailMean: 0.1599 },
+      { key: 'paved', label: 'Paved', src: 'textures/ground/paved_1k.jpg', nor: 'textures/ground/paved_nor_1k.jpg', rough: 'textures/ground/paved_rough_1k.jpg', detailMean: 0.1629 }
     ]
   };
   A._groundConfig = null;
@@ -110,7 +121,7 @@ function setupTools(A) {
 
   A._loadGroundConfig = function() {
     if (A._groundConfig) return Promise.resolve(A._groundConfig);
-    return fetch('ground_config.json?v=1')
+    return fetch('ground_config.json?v=2')
       .then(function(r) { return r.json(); })
       .then(function(j) { A._groundConfig = j; return j; })
       .catch(function(e) {
@@ -159,6 +170,48 @@ function setupTools(A) {
     A.ground.material.needsUpdate = true;
   };
 
+  // §GROUND_DETAIL shader patch — installed ONCE on the ground material; #ifdef USE_MAP so the
+  // 'none' (map=null) compile is untouched. Plain property for the shader ref, never userData
+  // (§TRIPLANAR_CLONE_BOMB). detailMean is re-pushed on every texture switch from live state, so
+  // a silent recompile self-heals exactly like §TRIPLANAR_RECOMPILE_FIX.
+  A._groundDetailMean = 0.16;
+  A._installGroundShader = function() {
+    var mat = A.ground && A.ground.material;
+    if (!mat || mat._groundShaderInstalled) return;
+    mat._groundShaderInstalled = true;
+    mat.onBeforeCompile = function(shader) {
+      shader.uniforms.uGndDetailMean = { value: A._groundDetailMean };
+      shader.uniforms.uGndDetailStr = { value: 0.5 };
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', [
+          '#include <common>',
+          'uniform float uGndDetailMean;',
+          'uniform float uGndDetailStr;'
+        ].join('\n'))
+        .replace('#include <map_fragment>', [
+          '#include <map_fragment>',
+          '#ifdef USE_MAP',
+          '{',
+          // fine second sample of the same diffuse: ~3m tile (base tile 50000/64 = 781m, x256).
+          // Luminance-only, normalized by the texture's measured LINEAR mean -> brightness-neutral.
+          '  vec3 gndD = texture2D(map, vMapUv * 256.0).rgb;',
+          '  float gndLum = dot(gndD, vec3(0.2126, 0.7152, 0.0722)) / max(uGndDetailMean, 1e-4);',
+          '  diffuseColor.rgb *= mix(1.0, gndLum, uGndDetailStr);',
+          // two-scale blotch to break the 781m tiling: 90m weathering patch + 7m freckle, subtle.
+          '  vec2 gndM = vMapUv * 781.25;',
+          '  float gndPa = fract(sin(dot(floor(gndM / 90.0), vec2(12.9898, 78.233))) * 43758.5453);',
+          '  float gndPb = fract(sin(dot(floor(gndM / 7.0), vec2(39.201, 61.789))) * 24634.6345);',
+          '  float gndB = mix(gndPa, gndPb, 0.35);',
+          '  diffuseColor.rgb *= mix(vec3(0.86, 0.86, 0.85), vec3(1.10, 1.09, 1.06), gndB);',
+          '}',
+          '#endif'
+        ].join('\n'));
+      mat._groundShader = shader;
+      shader.uniforms.uGndDetailMean.value = A._groundDetailMean;
+    };
+    mat.needsUpdate = true;
+  };
+
   A._applyGroundTexture = function(key) {
     if (!A.ground) return;
     A._groundTexKey = key;
@@ -166,6 +219,9 @@ function setupTools(A) {
     var opt = (cfg.options || []).filter(function(o) { return o.key === key; })[0];
     if (!opt || !opt.src) {                 // 'none' → clear map, restore flat color
       A.ground.material.map = null;
+      A.ground.material.normalMap = null;
+      A.ground.material.roughnessMap = null;
+      A.ground.material.needsUpdate = true;
       A._setGroundColor(A._groundSolidColor);
       console.log('§GROUND_MAP key=none map=cleared color=0x' + A._groundSolidColor.toString(16));
       if (A._refreshGroundBtns) A._refreshGroundBtns();
@@ -173,20 +229,42 @@ function setupTools(A) {
       return;
     }
     var repeat = cfg.repeat || 64, aniso = cfg.anisotropy || 8;
+    // §GROUND_DETAIL: nor/rough are linear data maps — same wrap/repeat as the diffuse, NO
+    // SRGBColorSpace (that transfer is for colour only; §TRINORM_LINEAR class of mistake).
+    function _dataTex(cacheKey, src, cb) {
+      if (!src) { cb(null); return; }
+      if (A._groundTexCache[cacheKey]) { cb(A._groundTexCache[cacheKey]); return; }
+      new THREE.TextureLoader().load(src, function(t) {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeat, repeat);
+        try { t.anisotropy = Math.min(aniso, A.renderer.capabilities.getMaxAnisotropy()); } catch(e) {}
+        A._groundTexCache[cacheKey] = t; cb(t);
+      }, undefined, function() { console.warn('§GROUND_MAP data-map load FAIL ' + src); cb(null); });
+    }
     function applyTex(tex) {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeat, repeat);
       if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
       else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
       try { tex.anisotropy = Math.min(aniso, A.renderer.capabilities.getMaxAnisotropy()); } catch(e) {}
+      A._installGroundShader();
       A.ground.material.map = tex;
-      A._setGroundColor(A._groundSolidColor);  // photo true (or dimmed at night)
-      A.ground.material.needsUpdate = true;
-      A.ground.visible = true;                 // preview even if shadow is off
-      A._calcGroundY();
-      console.log('§GROUND_MAP key=' + key + ' src=' + opt.src + ' repeat=' + repeat + ' aniso=' + (tex.anisotropy || 0));
-      if (A._refreshGroundBtns) A._refreshGroundBtns();
-      if (A.markDirty) A.markDirty();
+      A._groundDetailMean = opt.detailMean || 0.16;
+      if (A.ground.material._groundShader) A.ground.material._groundShader.uniforms.uGndDetailMean.value = A._groundDetailMean;
+      _dataTex(key + ':nor', opt.nor, function(nt) {
+        A.ground.material.normalMap = nt;
+        _dataTex(key + ':rough', opt.rough, function(rt) {
+          A.ground.material.roughnessMap = rt;
+          A._setGroundColor(A._groundSolidColor);  // photo true (or dimmed at night)
+          A.ground.material.needsUpdate = true;
+          A.ground.visible = true;                 // preview even if shadow is off
+          A._calcGroundY();
+          console.log('§GROUND_MAP key=' + key + ' src=' + opt.src + ' repeat=' + repeat + ' aniso=' + (tex.anisotropy || 0) +
+            ' nor=' + (nt ? 'ok' : 'none') + ' rough=' + (rt ? 'ok' : 'none') + ' detailMean=' + A._groundDetailMean);
+          if (A._refreshGroundBtns) A._refreshGroundBtns();
+          if (A.markDirty) A.markDirty();
+        });
+      });
     }
     if (A._groundTexCache[key]) { applyTex(A._groundTexCache[key]); return; }
     var loader = new THREE.TextureLoader();
