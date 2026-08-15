@@ -157,6 +157,9 @@ function countEarly(pairs, get) {
   const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
     (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
     sliceFn(tmSrc, '_zoneOf') || '',
+    // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15): _buildXrayElements' local matchNameOverride/matchRule
+    // now delegate to this shared pair — rides along verbatim, same idiom as the zone helpers above.
+    sliceFn(tmSrc, '_classifyNameOverride'), sliceFn(tmSrc, '_classifyRule'),
     sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
     sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
     sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),

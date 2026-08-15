@@ -81,10 +81,15 @@ if (tmSrc.indexOf(tierOrderLine) < 0) { assert(false, 'W-KOS-0c _TIER1_ORDER con
 // day. Found 2026-08-12 while landing §ARCH_START_TEMPO / M1 — which bumps the very constant this
 // witness guards, so a dead one here is not something to leave for later.
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', true), sliceFn(tmSrc, '_zoneIndex', true)].filter(Boolean);
+// §SCHEDULE_CLASSIFY_DEDUP (2026-08-15): same class of gap as §ZONE_INDEX above — a new
+// module-level helper (_classifyNameOverride/_classifyRule) _buildXrayElements now delegates to
+// that this slice list didn't know about. Sliced the same optional way.
+const classifyParts = [sliceFn(tmSrc, '_classifyNameOverride', true), sliceFn(tmSrc, '_classifyRule', true)].filter(Boolean);
 const sliced = [
   tierOrderLine,
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', true) || '',
+  classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_kernelOpsSchedStale'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),

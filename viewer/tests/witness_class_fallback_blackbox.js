@@ -8,16 +8,25 @@
 // ({phase:'Architecture', sequence:6, resource:null}) lets any unrecognized ifc_class sail
 // through the schedule unflagged. Found live 2026-08-04 on real Hospital data:
 // IfcDistributionControlElement (861 elements) and IfcSwitchingDevice (113 elements) both
-// silently fall through in ALL THREE independent matchRule copies this codebase carries
-// (schedule_author.js:17, and two closures inside time_machine.js). A prior black-box witness
-// (witness_gantt_ops_blackbox.js) proved a DIFFERENT leak (a bookkeeping op polluting playback
-// bounds) using a SYNTHETIC 40-element fixture — it never touched real class data, which is
-// exactly why this gap went unnoticed. This witness is the general-purpose tool that was
-// actually asked for: it runs the REAL functions (required or sliced from the shipped files,
-// never reimplemented) against the REAL ifc_class population of REAL extracted building DBs,
-// and FAILS — no silent pass — on any of:
+// silently fall through. Originally this codebase carried THREE independent matchRule copies
+// (schedule_author.js:17, and two separate closures inside time_machine.js) that could silently
+// diverge from each other. §SCHEDULE_CLASSIFY_DEDUP (2026-08-15, bim-compiler prompts/
+// 4D_SCHEDULE_PERFECTION.md) collapsed the two time_machine.js closures into ONE shared pair
+// (_classifyNameOverride/_classifyRule) that delegates to schedule_author.js's canonical,
+// already-exported matchNameOverride/matchRule — with the old algorithm kept only as a fallback
+// for the (should-never-happen) case ScheduleAuthor failed to load. This witness now proves BOTH
+// halves of that: the delegating path agrees with the canonical implementation (should be true
+// by construction — this guards against a wiring bug), AND the fallback path — dead code unless
+// a script load fails — still agrees too, so it can't silently rot into a fourth divergent copy.
+// A prior black-box witness (witness_gantt_ops_blackbox.js) proved a DIFFERENT leak (a
+// bookkeeping op polluting playback bounds) using a SYNTHETIC 40-element fixture — it never
+// touched real class data, which is exactly why this gap went unnoticed. This witness is the
+// general-purpose tool that was actually asked for: it runs the REAL functions (required or
+// sliced from the shipped files, never reimplemented) against the REAL ifc_class population of
+// REAL extracted building DBs, and FAILS — no silent pass — on any of:
 //   G-A: a real class present in real data resolves to resource===null in ANY copy
-//   G-B: the three copies disagree with each other on phase for the same real class
+//   G-B: the three code paths (author.js canonical, TM delegating, TM fallback) disagree with
+//        each other on phase for the same real class
 //   G-C: any element in the DB is left completely unaccounted for by the audit
 // Run: node witness_class_fallback_blackbox.js  (reads buildings/ next to this repo checkout,
 // or set BLD_DIR to point elsewhere — DBs are OCI-distributed, not git-tracked, so a fresh
@@ -55,9 +64,12 @@ function hasExplicitRule(cls) {
   return false;
 }
 
-// ── Copies 2 & 3: time_machine.js — two independent closures, sliced by balanced braces (not
-// reimplemented) since neither is exported. A brace-counter, not a fixed line span, so this
-// stays correct even if the surrounding function grows/shrinks. ──
+// ── TM (shared): time_machine.js's _classifyNameOverride/_classifyRule, sliced by balanced
+// braces (not reimplemented) since neither is exported. A brace-counter, not a fixed line span,
+// so this stays correct even if the surrounding function grows/shrinks. Run TWICE: once with a
+// real `window.ScheduleAuthor` present (the delegating path — what production always exercises
+// past initial page load, both TM call sites go through this) and once without (the fallback
+// path — dead code unless a script load fails). Both must still agree with Copy 1. ──
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function extractBalanced(src, startIdx) {
   let depth = 0, i = startIdx, seenOpen = false;
@@ -67,25 +79,32 @@ function extractBalanced(src, startIdx) {
   }
   throw new Error('unbalanced braces from ' + startIdx);
 }
-function sliceMatcherPair(src, fromIdx) {
-  const noIdx = src.indexOf('function matchNameOverride(cls, name) {', fromIdx);
-  if (noIdx < 0) throw new Error('matchNameOverride not found from ' + fromIdx);
+function sliceClassifyPair(src) {
+  const noIdx = src.indexOf('function _classifyNameOverride(cls, name, nameOverrides) {');
+  if (noIdx < 0) throw new Error('_classifyNameOverride not found');
   const noBody = extractBalanced(src, noIdx);
-  const mrIdx = src.indexOf('function matchRule(cls, name) {', noIdx + noBody.length);
-  if (mrIdx < 0) throw new Error('matchRule not found after its matchNameOverride at ' + noIdx);
+  const secondNoIdx = src.indexOf('function _classifyNameOverride(cls, name, nameOverrides) {', noIdx + 1);
+  const mrIdx = src.indexOf('function _classifyRule(cls, name, rules, dflt, nameOverrides) {', noIdx + noBody.length);
+  if (mrIdx < 0) throw new Error('_classifyRule not found after its _classifyNameOverride');
   const mrBody = extractBalanced(src, mrIdx);
-  return noBody + '\n' + mrBody;
+  return { pair: noBody + '\n' + mrBody, secondNoIdx };
 }
-function mkMatcher(logic) {
-  const sandbox = { SR: SEQUENCE_RULES, SD: SEQUENCE_DEFAULT, NO: NAME_OVERRIDES };
-  vm.runInNewContext(logic + '\nglobalThis.__matchRule = matchRule;', sandbox);
+function mkMatcher(pair, withScheduleAuthor) {
+  const sandbox = {
+    window: withScheduleAuthor ? { ScheduleAuthor } : {}, console,
+    SR: SEQUENCE_RULES, SD: SEQUENCE_DEFAULT, NO: NAME_OVERRIDES
+  };
+  vm.runInNewContext(
+    pair + '\nglobalThis.__matchRule = function(cls, name) { return _classifyRule(cls, name, SR, SD, NO); };',
+    sandbox
+  );
   return sandbox.__matchRule;
 }
-const firstNoIdx = tmSrc.indexOf('function matchNameOverride(cls, name) {');
-const secondNoIdx = tmSrc.indexOf('function matchNameOverride(cls, name) {', firstNoIdx + 1);
-assert(firstNoIdx >= 0 && secondNoIdx > firstNoIdx, 'G-0 time_machine.js still carries exactly two matchRule/matchNameOverride closures (found at least 2)');
-const matchRule2 = mkMatcher(sliceMatcherPair(tmSrc, 0));
-const matchRule3 = mkMatcher(sliceMatcherPair(tmSrc, firstNoIdx + 1));
+const sliced = sliceClassifyPair(tmSrc);
+assert(sliced.secondNoIdx < 0,
+  'G-0 time_machine.js carries exactly ONE _classifyNameOverride/_classifyRule pair (dedup held, not regressed back to per-site copies)');
+const matchRuleTM = mkMatcher(sliced.pair, true);
+const matchRuleTMFallback = mkMatcher(sliced.pair, false);
 
 // ── Real building DBs — OCI-distributed, not git-tracked; point BLD_DIR at wherever they're
 // actually checked out (default: sibling of this worktree's parent checkout, ~/bim-ootb). ──
@@ -109,12 +128,12 @@ const BUILDINGS = (process.env.BLDS || 'Hospital,Terminal,LTU_AHouse,Duplex').sp
     db.close();
 
     console.log(`\n=== ${BLD} — ${rows.length} distinct classes, ${totalElements} elements ===`);
-    console.log('  class'.padEnd(34) + 'count'.padEnd(8) + 'author.js'.padEnd(20) + 'TM#1'.padEnd(20) + 'TM#2'.padEnd(20) + 'agree?');
+    console.log('  class'.padEnd(34) + 'count'.padEnd(8) + 'author.js'.padEnd(20) + 'TM(deleg)'.padEnd(20) + 'TM(fallback)'.padEnd(20) + 'agree?');
 
     let auditedThisBuilding = 0;
     rows.forEach(([cls, sampleName, count]) => {
       auditedThisBuilding += count;
-      const r1 = matchRule1(cls, sampleName), r2 = matchRule2(cls, sampleName), r3 = matchRule3(cls, sampleName);
+      const r1 = matchRule1(cls, sampleName), r2 = matchRuleTM(cls, sampleName), r3 = matchRuleTMFallback(cls, sampleName);
       const agree = r1.phase === r2.phase && r2.phase === r3.phase;
       const explicit = hasExplicitRule(cls);
       const silentFallback = !explicit; // no rule matched at all -> hit the generic default unflagged
@@ -139,8 +158,8 @@ const BUILDINGS = (process.env.BLDS || 'Hospital,Terminal,LTU_AHouse,Duplex').sp
     `G-A no real class silently matches NO rule at all (hitting the generic default unflagged) — hits=${allFallbackHits.length}` +
     (allFallbackHits.length ? '  [' + allFallbackHits.map(h => `${h.BLD}:${h.cls}(n=${h.count})`).join(', ') + ']' : ''));
   assert(allDisagreements.length === 0,
-    `G-B all three matchRule copies agree on phase for every real class — disagreements=${allDisagreements.length}` +
-    (allDisagreements.length ? '  [' + allDisagreements.map(d => `${d.BLD}:${d.cls} author=${d.r1} TM#1=${d.r2} TM#2=${d.r3}`).join(', ') + ']' : ''));
+    `G-B all three code paths (author.js, TM-delegating, TM-fallback) agree on phase for every real class — disagreements=${allDisagreements.length}` +
+    (allDisagreements.length ? '  [' + allDisagreements.map(d => `${d.BLD}:${d.cls} author=${d.r1} TM(deleg)=${d.r2} TM(fallback)=${d.r3}`).join(', ') + ']' : ''));
   assert(grandTotalAudited === grandTotalElements, `G-D grand total: ${grandTotalAudited}/${grandTotalElements} elements audited across all buildings`);
 
   console.log(`\n§BLACKBOX_CLASS_AUDIT SUMMARY pass=${pass} fail=${fail}`);

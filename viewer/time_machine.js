@@ -3484,6 +3484,46 @@
     return { total: loadPathOverrides, seedCount: lpSeed.length, m4Count: m4Promoted, guids: lpGuids };
   }
 
+  // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §SCHEDULE_CLASSIFY_DEDUP — Witness: witness_class_fallback_blackbox.js). Before this,
+  // matchNameOverride/matchRule were two BYTE-IDENTICAL closures, one inside _buildXrayElements
+  // and one inside injectGantt — on top of the canonical, already-exported implementation
+  // schedule_author.js carries (window.ScheduleAuthor.matchNameOverride/matchRule), same pattern
+  // the §TM_DURATION_SYNC comment above _installSecs already used for install-time. ONE shared
+  // pair now, delegating to ScheduleAuthor when loaded (always true past initial page load — this
+  // is only ever called from schedule generation, never at script-eval time) with the same
+  // algorithm kept as a fallback for the ScheduleAuthor-not-loaded case, matching this file's own
+  // established convention (see _installSecs's wrapper a few hundred lines below). Both call
+  // sites keep their own local matchNameOverride(cls,name)/matchRule(cls,name) wrappers — same
+  // names, same signatures — so this is a pure body-swap, not a call-site rewrite.
+  function _classifyNameOverride(cls, name, nameOverrides) {
+    if (window.ScheduleAuthor && window.ScheduleAuthor.matchNameOverride) {
+      return window.ScheduleAuthor.matchNameOverride(cls, name, nameOverrides);
+    }
+    if (!name || !nameOverrides) return null;
+    for (var i = 0; i < nameOverrides.length; i++) {
+      var ov = nameOverrides[i];
+      if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
+      if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
+      if (ov._re && ov._re.test(name)) return ov;
+    }
+    return null;
+  }
+  function _classifyRule(cls, name, rules, dflt, nameOverrides) {
+    if (!cls) return dflt;
+    var ov = _classifyNameOverride(cls, name, nameOverrides);
+    if (ov) return ov;
+    if (window.ScheduleAuthor && window.ScheduleAuthor.matchRule) {
+      return window.ScheduleAuthor.matchRule(cls, rules, dflt);
+    }
+    var bestKey = null, bestLen = 0;
+    for (var key in rules) {
+      if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
+    }
+    if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
+    return bestKey ? rules[bestKey] : dflt;
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // ── §ZONE_INDEX (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §ZONE_INDEX —
   // Witness: viewer/tests/witness_zone_index.js W-ZONE) ────────────────────────────────────────
@@ -3648,28 +3688,11 @@
     var SR = window.SEQUENCE_RULES || {};
     var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
     var NO = window.SEQUENCE_NAME_OVERRIDES || [];
-    function matchNameOverride(cls, name) {
-      if (!name) return null;
-      for (var i = 0; i < NO.length; i++) {
-        var ov = NO[i];
-        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
-        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
-        if (ov._re && ov._re.test(name)) return ov;
-      }
-      return null;
-    }
-    function matchRule(cls, name) {
-      if (!cls) return SD;
-      var ov = matchNameOverride(cls, name);
-      if (ov) return ov;
-      var bestKey = null, bestLen = 0;
-      for (var key in SR) {
-        if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
-      }
-      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
-      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
-      return bestKey ? SR[bestKey] : SD;
-    }
+    // §SCHEDULE_CLASSIFY_DEDUP — body delegates to the one shared pair above (_classifyNameOverride/
+    // _classifyRule), which itself defers to schedule_author.js's canonical, already-exported
+    // matchNameOverride/matchRule. Local name/signature unchanged so nothing below this line moves.
+    function matchNameOverride(cls, name) { return _classifyNameOverride(cls, name, NO); }
+    function matchRule(cls, name) { return _classifyRule(cls, name, SR, SD, NO); }
     var r;
     try {
       r = db.exec(
@@ -4957,28 +4980,9 @@
     // from genuinely structural plates/members (e.g. Terminal's Metal Deck IfcPlate, seq 4 is correct
     // there) — name is the only extracted signal. Checked BEFORE the class lookup, never replacing it:
     // an element that matches no override keeps its plain class-default seq.
-    function matchNameOverride(cls, name) {
-      if (!name) return null;
-      for (var i = 0; i < NO.length; i++) {
-        var ov = NO[i];
-        if (ov.classes && ov.classes.indexOf(cls) < 0) continue;
-        if (!ov._re) { try { ov._re = new RegExp(ov.pattern, ov.flags || 'i'); } catch (e) { ov._re = null; } }
-        if (ov._re && ov._re.test(name)) return ov;
-      }
-      return null;
-    }
-    function matchRule(cls, name) {
-      if (!cls) return SD;
-      var ov = matchNameOverride(cls, name);
-      if (ov) return ov;
-      var bestKey = null, bestLen = 0;
-      for (var key in SR) {
-        if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
-      }
-      // §CLASS_UNMATCHED_FALLBACK (2026-08-04) — see schedule_author.js's matchRule for the finding.
-      if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + SD.phase);
-      return bestKey ? SR[bestKey] : SD;
-    }
+    // §SCHEDULE_CLASSIFY_DEDUP — same shared pair as _buildXrayElements above, see that comment.
+    function matchNameOverride(cls, name) { return _classifyNameOverride(cls, name, NO); }
+    function matchRule(cls, name) { return _classifyRule(cls, name, SR, SD, NO); }
     // §TM_DURATION_SYNC (viewer/schedule_author.js commit d35366a §LABOR_QUANTITY_WEIGHT): this used
     // to be a hand-duplicated copy of the per-unit-rate formula with NO fragmentation/area-weighting —
     // Terminal's 33,324 "Metal Deck" IfcPlate fragments (avg 0.074 m² each) each got a full per-element
