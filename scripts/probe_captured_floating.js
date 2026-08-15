@@ -132,16 +132,18 @@ async function main() {
   // §GANTT_GAP_CLAMP_SPREAD rescale, verbatim (time_machine.js injectGantt _cap overlay) — each gap
   // gets its real value-scaled size OR the fair rank/count share, whichever is SMALLER (only
   // abnormal dead-air gaps get clamped; normal real gaps stay byte-identical to the original).
-  const rescaled = _allScheduled.map(o => Object.assign({}, o));
+  // §CHASE_TO_ZERO_WINDOW_AUTHORING (2026-08-16): the shipped rescale, extracted into a function so
+  // the EXP5 family can re-run the WHOLE pipeline under candidate window authorings. Body verbatim.
+  function applyGapClampRescale(items, win) {
   const _taskItems = {}, _taskSpan = {};
-  rescaled.forEach(function (item) {
+  items.forEach(function (item) {
     (_taskItems[item.task] = _taskItems[item.task] || []).push(item);
     const sp = _taskSpan[item.task] || (_taskSpan[item.task] = { min: Infinity, max: -Infinity });
     if (item.s < sp.min) sp.min = item.s;
     if (item.e > sp.max) sp.max = item.e;
   });
   Object.keys(_taskItems).forEach(function (tid) {
-    const arr = _taskItems[tid], w = taskWin[tid], sp = _taskSpan[tid];
+    const arr = _taskItems[tid], w = win[tid], sp = _taskSpan[tid];
     const tSpan = Math.max(1, w.e - w.s), lsSpan = Math.max(1, sp.max - sp.min);
     const durFactor = tSpan / lsSpan;
     arr.sort(function (a, b) { return a.s - b.s || (a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0); });
@@ -180,6 +182,9 @@ async function main() {
       item.e = item.s + scaledDur;
     }
   });
+  }
+  const rescaled = _allScheduled.map(o => Object.assign({}, o));
+  applyGapClampRescale(rescaled, taskWin);
 
   const preRepair = floatingCensus(rescaled.map(o => Object.assign({}, o)));
   console.log('§CAP_PRE_REPAIR_FLOATING midair=' + preRepair.midair + ' byClass=' + JSON.stringify(preRepair.byClass));
@@ -446,5 +451,249 @@ async function main() {
     ' orphans=' + exp3Post.orphans + ' grounded=' + exp3Post.grounded +
     ' ok=' + (exp3ForRepair.length - exp3Post.midair - exp3Post.orphans - exp3Post.grounded));
   console.log('§EXP3_FINAL_BYCLASS ' + JSON.stringify(exp3Post.byClass));
+
+  // ══ §CHASE_TO_ZERO_WINDOW_AUTHORING (2026-08-16) — EXP5 family. The §CROSSTASK_JUDGE_PARITY
+  // residual is 100% WINDOW_BLOCKED, so zero requires the BARS to change, not the elements'
+  // relation to their bars. Both candidates run the FULL shipped pipeline (clamp rescale ->
+  // _ogSupportSweep -> _cjpJudgeParity) — the third-lever lesson: nothing is judged mid-pipe. ═════
+  function runPipeline(base, win) {
+    const items = base.map(o => Object.assign({}, o));
+    applyGapClampRescale(items, win);
+    _ogSupportSweep(items, win);
+    _cjpJudgeParity(items, win);
+    return items;
+  }
+  function measureWin(items, win) {
+    const c = floatingCensus(items.map(o => Object.assign({}, o)));
+    let inW = 0, outW = 0;
+    items.forEach(it => { const w = win[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW++; else outW++; });
+    return { c, inW, outW };
+  }
+  const DAY5 = 86400000;
+
+  // EXP5a — minimal authored-END extension, whole-pipeline fixpoint. Only ends move, only where a
+  // WINDOW_BLOCKED element measurably needs it, day-quantized, iterated because an extension
+  // changes that task's own rescale (durFactor) and can move other tasks' first-contact times.
+  {
+    const win5 = {}; Object.keys(taskWin).forEach(t => win5[t] = { s: taskWin[t].s, e: taskWin[t].e });
+    const extTotals = {};
+    let iter = 0, final = null, converged = false;
+    for (; iter < 8; iter++) {
+      const items = runPipeline(_allScheduled, win5);
+      const m = measureWin(items, win5);
+      const G5 = _contactGraph(items);
+      const ext = {}; let blocked = 0; const gapDays = [];
+      for (let i = 0; i < items.length; i++) {
+        const list = G5.contacts[i]; if (!list) continue;
+        const T = items[i];
+        let first = Infinity;
+        for (const k of list) { if (items[k].s < first) first = items[k].s; }
+        if (first <= T.s + 1) continue;
+        const w = win5[T.task]; if (!w) continue;
+        const dur = Math.max(60000, T.e - T.s);
+        const need = (first + dur) - w.e;
+        if (need > 0) { blocked++; gapDays.push(need / DAY5); ext[T.task] = Math.max(ext[T.task] || 0, need); }
+      }
+      if (iter === 0 && gapDays.length) {
+        gapDays.sort((a, b) => a - b);
+        const gN = gapDays.length;
+        console.log('§EXP5_DIAG blockedNeedingExt=' + blocked + ' tasks=' + Object.keys(ext).length +
+          ' needDays p50=' + gapDays[Math.floor(gN * 0.5)].toFixed(1) +
+          ' p90=' + gapDays[Math.floor(gN * 0.9)].toFixed(1) + ' max=' + gapDays[gN - 1].toFixed(1));
+        console.log('§EXP5_DIAG_TASKS ' + JSON.stringify(Object.entries(ext).map(e => [e[0], (e[1] / DAY5).toFixed(1)]).sort((a, b) => b[1] - a[1]).slice(0, 8)));
+      }
+      console.log('§EXP5A_ITER ' + iter + ' floating=' + m.c.midair + ' blockedNeedingExt=' + blocked +
+        ' inWindow=' + m.inW + ' outWindow=' + m.outW);
+      final = m;
+      if (!blocked) { converged = true; break; }
+      Object.keys(ext).forEach(t => {
+        const addDays = Math.ceil(ext[t] / DAY5);
+        win5[t].e += addDays * DAY5;
+        extTotals[t] = (extTotals[t] || 0) + addDays;
+      });
+    }
+    const extList = Object.entries(extTotals).sort((a, b) => b[1] - a[1]);
+    let maxE0 = 0, maxE1 = 0;
+    Object.keys(taskWin).forEach(t => { if (taskWin[t].e > maxE0) maxE0 = taskWin[t].e; });
+    Object.keys(win5).forEach(t => { if (win5[t].e > maxE1) maxE1 = win5[t].e; });
+    console.log('§EXP5A_FINAL floating=' + final.c.midair + ' converged=' + converged + ' iters=' + (iter + 1) +
+      ' tasksExtended=' + extList.length + ' inWindow=' + final.inW + ' outWindow=' + final.outW +
+      ' totalDaysDelta=' + Math.round((maxE1 - maxE0) / DAY5) +
+      ' orphans=' + final.c.orphans + ' grounded=' + final.c.grounded);
+    console.log('§EXP5A_EXT_DAYS_BYTASK ' + JSON.stringify(extList.slice(0, 8)));
+  }
+
+  // EXP5b — EXP3 revisited WITH the parity layer: windows derived FROM the repaired raw times,
+  // then the full shipped pipeline. preZoneItems/taskWin2/zoneTaskId2 come from the EXP3 block.
+  {
+    const base5b = preZoneItems.map(o => Object.assign({}, o, { task: zoneTaskId2[o.zoneId] }));
+    const items = runPipeline(base5b, taskWin2);
+    const m = measureWin(items, taskWin2);
+    console.log('§EXP5B_FINAL floating=' + m.c.midair + ' inWindow=' + m.inW + ' outWindow=' + m.outW +
+      ' orphans=' + m.c.orphans + ' grounded=' + m.c.grounded);
+    console.log('§EXP5B_FINAL_BYCLASS ' + JSON.stringify(m.c.byClass));
+  }
+
+  // ══ EXP6 — BROWSER-FAITHFUL captured pipeline (2026-08-16, §CHASE_TO_ZERO_WINDOW_AUTHORING
+  // correction from the user's live Hospital log). Everything above feeds the rescale from
+  // computeSchedule's RAW times — but the real injectGantt overlay reads kernel_ops timestamps,
+  // which carry the TWO-TIER DISPLAY timeline (_twoTierRemap + _midairRepair, §TIER_SERIAL 420d on
+  // Hospital), while task windows are authored from the RAW schedule (334d). Live divergence proof:
+  // browser §PHASE_OVERLAP_SUPPORT_GUARD pushed=4117 vs this probe's raw-fed 1152. This section
+  // reproduces the REAL input using witness_midair_zero.js's validated display-timeline recipe. ════
+  {
+    const vm = require('vm');
+    function sliceAt(src, name, which, optional) {
+      let from = 0;
+      for (let pass = 0; pass <= (which || 0); pass++) {
+        const idx = src.indexOf('function ' + name + '(', from);
+        if (idx < 0) { if (optional) return null; throw new Error(name + ' not found'); }
+        let depth = 0, i = idx, seenOpen = false;
+        for (; i < src.length; i++) {
+          if (src[i] === '{') { depth++; seenOpen = true; }
+          else if (src[i] === '}') { depth--; if (seenOpen && depth === 0) break; }
+        }
+        if (pass === (which || 0)) return src.slice(idx, i + 1);
+        from = i + 1;
+      }
+    }
+    let mrCount = 0, mrFrom = 0;
+    for (;;) { const k = tmSrc.indexOf('function _midairRepair(', mrFrom); if (k < 0) break; mrCount++; mrFrom = k + 1; }
+    const zoneParts = [sliceAt(tmSrc, '_zoneIndexBuild', 0, true), sliceAt(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
+    const classifyParts = [sliceAt(tmSrc, '_classifyNameOverride', 0, true), sliceAt(tmSrc, '_classifyRule', 0, true)].filter(Boolean);
+    const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
+      (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
+      sliceAt(tmSrc, '_zoneOf', 0, true) || '', classifyParts[0] || '', classifyParts[1] || '',
+      sliceAt(tmSrc, '_promoteRoofLoadPath'), sliceAt(tmSrc, '_buildXrayElements'),
+      sliceAt(tmSrc, '_tier1Extents'), sliceAt(tmSrc, '_tier1Serialize'),
+      sliceAt(tmSrc, '_tier1Protrusion'), sliceAt(tmSrc, '_tierAuditRegate'),
+      sliceAt(tmSrc, '_twoTierRemap'), sliceAt(tmSrc, '_contactGraph'),
+      sliceAt(tmSrc, '_midairRepair', mrCount - 1)].join('\n');
+    const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
+      window: { SEQUENCE_RULES: RATES.SEQUENCE_RULES, SEQUENCE_DEFAULT: RATES.SEQUENCE_DEFAULT,
+        SEQUENCE_NAME_OVERRIDES: RATES.SEQUENCE_NAME_OVERRIDES },
+      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }) };
+    vm.createContext(sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__remap = _twoTierRemap; this.__repair = _midairRepair;', sandbox);
+    const els6 = sandbox.__bxe();
+    const nameOf = {};
+    const nr = db.exec("SELECT guid, ifc_class, COALESCE(element_name,'') FROM elements_meta");
+    if (nr.length) nr[0].values.forEach(v => { nameOf[v[0]] = v[2]; });
+    const frag = ScheduleAuthor._classFragmentation(db, RATES.RATES);
+    const lin = ScheduleAuthor._linearWeighting(db, RATES.RATES);
+    const geoEls = els6.filter(e => !(e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z));
+    geoEls.forEach(e => {
+      const rule = ScheduleAuthor.matchNameOverride(e.cls, nameOf[e.guid] || '', RATES.SEQUENCE_NAME_OVERRIDES) ||
+        ScheduleAuthor.matchRule(e.cls, RATES.SEQUENCE_RULES, RATES.SEQUENCE_DEFAULT);
+      if (!e.phase) e.phase = rule.phase;
+      e.resource = rule.resource || '_DEFAULT';
+      const realQty = (frag.fragmented[e.cls] && frag.area[e.guid] != null) ? frag.area[e.guid] : null;
+      const span = Math.max(e.x1 - e.x0, e.y1 - e.y0, e.top_z - e.base_z);
+      const avgLen = lin.avgLength[e.cls];
+      const lengthRatio = (realQty == null && span > 0 && avgLen > 0) ? span / avgLen : null;
+      e.installSecs = ScheduleAuthor._installSecs(e.cls, rule, RATES.LABOR_RATES, realQty, lengthRatio);
+    });
+    const sched6 = ScheduleGate.computeSchedule(geoEls, 0, 1, maxCrews, SHIFT_HOURS);
+    // windows from RAW schedule — materializeZones semantics (what the browser's tasks table holds)
+    const rolled6 = ScheduleGate.deriveZones(geoEls, sched6);
+    const minStart6 = Math.min.apply(null, rolled6.zones.map(z => z.start));
+    const zoneTaskId6 = {}, taskWin6 = {};
+    rolled6.zones.forEach(function (z) {
+      const tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
+      zoneTaskId6[z.id] = tid;
+      const sD = Math.round((z.start - minStart6) / DAY5);
+      let eD = Math.round((z.end - minStart6) / DAY5);
+      if (eD <= sD) eD = sD + 1;
+      taskWin6[tid] = { s: minStart6 + sD * DAY5, e: minStart6 + eD * DAY5 };
+    });
+    // DISPLAY timeline (what kernel_ops actually carries): two-tier remap + midair repair
+    const disp = geoEls.map(e => ({ guid: e.guid, s: sched6[e.guid].start, e: sched6[e.guid].end,
+      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
+      cls: e.cls, seq: e.seq, phase: e.phase, storey: e.storey }));
+    sandbox.__items = disp;
+    vm.runInContext('this.__remap(this.__items); this.__repair(this.__items);', sandbox);
+    let noTask = 0;
+    const cap6 = disp.map(o => {
+      const zid = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
+      const tid = zoneTaskId6[zid];
+      if (!tid) { noTask++; return null; }
+      return Object.assign({}, o, { task: tid, zoneId: zid });
+    }).filter(Boolean);
+    console.log('§EXP6_INPUT n=' + cap6.length + ' noTask=' + noTask +
+      ' displaySpanDays=' + Math.round((Math.max.apply(null, disp.map(o => o.e)) - Math.min.apply(null, disp.map(o => o.s))) / DAY5) +
+      ' rawWindowSpanDays=' + Math.round((Math.max.apply(null, Object.values(taskWin6).map(w => w.e)) - minStart6) / DAY5));
+    const rawC6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
+    console.log('§EXP6_DISPLAY_FLOATING midair=' + rawC6.midair + ' orphans=' + rawC6.orphans + ' (pre-overlay, the kernel_ops truth)');
+    applyGapClampRescale(cap6, taskWin6);
+    const preC6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
+    console.log('§EXP6_PRE_REPAIR_FLOATING midair=' + preC6.midair);
+    const sweep6 = _ogSupportSweep(cap6, taskWin6);
+    console.log('§EXP6_OGSWEEP pushed=' + sweep6.pushed + ' sweeps=' + sweep6.sweeps + ' (live browser said 4117/2 on Hospital)');
+    const postSweep6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
+    console.log('§EXP6_POST_SWEEP_FLOATING midair=' + postSweep6.midair + ' byClass=' + JSON.stringify(postSweep6.byClass));
+    const r6 = _cjpJudgeParity(cap6, taskWin6);
+    const final6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
+    let inW6 = 0, outW6 = 0;
+    cap6.forEach(it => { const w = taskWin6[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW6++; else outW6++; });
+    console.log('§EXP6_FINAL floating=' + final6.midair + '/' + cap6.length + ' parityPushed=' + r6.pushed +
+      ' (live said 542) inWindow=' + inW6 + ' outWindow=' + outW6 +
+      ' orphans=' + final6.orphans + ' grounded=' + final6.grounded);
+    console.log('§EXP6_FINAL_BYCLASS ' + JSON.stringify(final6.byClass));
+
+    // ── EXP7 — author the windows FROM the display timeline (the schedule the movie actually
+    // plays), so windows and element times describe ONE schedule instead of two. Same overlay
+    // pipeline afterwards. Prediction: rescale ≈ identity, floating → ~0, fidelity → ~100%. ────────
+    const dispMap = {};
+    disp.forEach(o => { dispMap[o.guid] = { start: o.s, end: o.e }; });
+    const rolled7 = ScheduleGate.deriveZones(geoEls, dispMap);
+    const minStart7 = Math.min.apply(null, rolled7.zones.map(z => z.start));
+    const zoneTaskId7 = {}, taskWin7 = {};
+    rolled7.zones.forEach(function (z) {
+      const tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
+      zoneTaskId7[z.id] = tid;
+      const sD = Math.round((z.start - minStart7) / DAY5);
+      let eD = Math.round((z.end - minStart7) / DAY5);
+      if (eD <= sD) eD = sD + 1;
+      taskWin7[tid] = { s: minStart7 + sD * DAY5, e: minStart7 + eD * DAY5 };
+    });
+    const cap7 = disp.map(o => {
+      const zid = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
+      const tid = zoneTaskId7[zid];
+      return tid ? Object.assign({}, o, { task: tid, zoneId: zid }) : null;
+    }).filter(Boolean);
+    applyGapClampRescale(cap7, taskWin7);
+    const preC7 = floatingCensus(cap7.map(o => Object.assign({}, o)));
+    const sweep7 = _ogSupportSweep(cap7, taskWin7);
+    const r7 = _cjpJudgeParity(cap7, taskWin7);
+    const final7 = floatingCensus(cap7.map(o => Object.assign({}, o)));
+    let inW7 = 0, outW7 = 0;
+    cap7.forEach(it => { const w = taskWin7[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW7++; else outW7++; });
+    console.log('§EXP7_FINAL floating=' + final7.midair + '/' + cap7.length +
+      ' preRepair=' + preC7.midair + ' sweepPushed=' + sweep7.pushed + ' parityPushed=' + r7.pushed +
+      ' inWindow=' + inW7 + ' outWindow=' + outW7 + ' totalDays=' +
+      Math.round((Math.max.apply(null, Object.values(taskWin7).map(w => w.e)) - minStart7) / DAY5));
+    console.log('§EXP7_FINAL_BYCLASS ' + JSON.stringify(final7.byClass));
+
+    // ── EXP8 — consistent windows (from display timeline), NO _ogSupportSweep: rescale → parity
+    // only. The sweep enforces the STRICT end-based bar (§SUPPORT_CHECK), which §MIDAIR_REPAIR's
+    // header deliberately does NOT enforce on the display timeline ("a slab arriving over a glowing
+    // half-built column is resting, not hanging") — on a consistent-window overlay its ~24k pushes
+    // are the main source of out-of-window overshoot. Does dropping it reach ~0/~100%? ─────────────
+    const cap8 = disp.map(o => {
+      const zid = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
+      const tid = zoneTaskId7[zid];
+      return tid ? Object.assign({}, o, { task: tid, zoneId: zid }) : null;
+    }).filter(Boolean);
+    applyGapClampRescale(cap8, taskWin7);
+    const preC8 = floatingCensus(cap8.map(o => Object.assign({}, o)));
+    const r8 = _cjpJudgeParity(cap8, taskWin7);
+    const final8 = floatingCensus(cap8.map(o => Object.assign({}, o)));
+    let inW8 = 0, outW8 = 0;
+    cap8.forEach(it => { const w = taskWin7[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW8++; else outW8++; });
+    console.log('§EXP8_FINAL floating=' + final8.midair + '/' + cap8.length +
+      ' preRepair=' + preC8.midair + ' parityPushed=' + r8.pushed +
+      ' inWindow=' + inW8 + ' outWindow=' + outW8);
+    console.log('§EXP8_FINAL_BYCLASS ' + JSON.stringify(final8.byClass));
+  }
 }
 main().catch(e => { console.error(e); process.exit(1); });

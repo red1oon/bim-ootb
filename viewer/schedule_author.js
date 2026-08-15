@@ -215,6 +215,16 @@
     try { db.run('ALTER TABLE schedules ADD COLUMN gen_version INTEGER'); } catch (e) {}
   }
 
+  // §ZONE_DISPLAY_AUTHORING (2026-08-16, 4D_SCHEDULE_PERFECTION.md §CHASE_TO_ZERO_WINDOW_AUTHORING):
+  // marks a schedule whose task windows were derived from the DISPLAY timeline (opts.displayRemap
+  // below) rather than the raw generative schedule. The captured overlay reads this to skip the
+  // strict end-bar repair (_ogSupportSweep) that only existed because windows and movie described
+  // two different schedules. Guarded ALTER, same shape as gen_version above.
+  function _ensureSchedulesDisplayAuthored(db) {
+    if (_cols(db, 'schedules').indexOf('display_authored') >= 0) return;
+    try { db.run('ALTER TABLE schedules ADD COLUMN display_authored INTEGER'); } catch (e) {}
+  }
+
   // Some shipped building DBs carry a LEGACY-thin `tasks` table
   // (task_id, schedule_id, name, start_date, finish_date, duration_days, status) that the read-path
   // `_cap` cannot consume (its query selects schedule_start/is_summary → errors → generative
@@ -370,10 +380,29 @@
     // (witnesses/probes that never pass it stay byte-identical) — only callers that pass it (the
     // real UI paths, below) change.
     var schedule = SG.computeSchedule(elements, 0, 1, maxCrews, opts.shiftHours);
+    // §ZONE_DISPLAY_AUTHORING (2026-08-16, 4D_SCHEDULE_PERFECTION.md §CHASE_TO_ZERO_WINDOW_AUTHORING):
+    // the movie plays the DISPLAY timeline (time_machine's two-tier remap + midair repair over this
+    // raw schedule), but task windows were authored from the RAW schedule — two different schedules,
+    // measured live 2026-08-16 (Hospital: display span 420d vs windows 334d; the captured overlay
+    // then manufactured 2211 violations from a 0-floating input). opts.displayRemap — supplied by
+    // time_machine at the real UI call sites, so the remap physics stays single-source there — maps
+    // (elements, rawSchedule) -> the display schedule; windows derived from it describe the SAME
+    // timeline the movie plays. Callers that omit it (probes/witnesses/legacy) stay byte-identical.
+    var _displayAuthored = 0;
+    if (typeof opts.displayRemap === 'function') {
+      try {
+        var _dr = opts.displayRemap(elements, schedule);
+        if (_dr) {
+          schedule = _dr; _displayAuthored = 1;
+          console.log('§ZONE_DISPLAY_AUTHORING task windows derived from the DISPLAY timeline (n=' + Object.keys(_dr).length + ')');
+        }
+      } catch (e) { console.log('§ZONE_DISPLAY_AUTHORING_FAIL ' + e.message + ' — raw-schedule windows kept'); }
+    }
     var rolled = SG.deriveZones(elements, schedule);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
 
     _ensureSchedulesGenVersion(db);
+    _ensureSchedulesDisplayAuthored(db);
     _ensureWideTasks(db);
     db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
     db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
@@ -383,7 +412,8 @@
     db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
     db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
     db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
-    db.run('INSERT INTO schedules VALUES (?,?,?,?,?)', [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null]);
+    db.run('INSERT INTO schedules (schedule_id,name,status,created_date,gen_version,display_authored) VALUES (?,?,?,?,?,?)',
+      [schedId, 'Authored Schedule (zone detail)', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null, _displayAuthored]);
 
     var rootId = 'TASK_ROOT';
     var minStart = Math.min.apply(null, rolled.zones.map(function (z) { return z.start; }));
@@ -568,7 +598,8 @@
         ' (overlaps ' + Math.max(0, p.widthDays - p.lagDays) + 'd of the PREVIOUS phase\'s tail)');
     });
 
-    db.run('INSERT INTO schedules VALUES (?,?,?,?,?)', [schedId, 'Authored Schedule', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null]);
+    db.run('INSERT INTO schedules (schedule_id,name,status,created_date,gen_version) VALUES (?,?,?,?,?)',
+      [schedId, 'Authored Schedule', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null]);
 
     // ROOT summary task (is_summary=1 → excluded from _cap leaf window; spans the whole project).
     // In blank mode dates are NULL (the user originates them via scheduleDefault/the wizard).

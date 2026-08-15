@@ -4470,11 +4470,52 @@
       }
       if (!moved) break;
     }
-    if (pushed) console.log('§CROSSTASK_JUDGE_PARITY pushed=' + pushed + ' sweeps=' + sweeps +
+    // §CJP_LIVE_CENSUS (2026-08-16): the user-facing truth this pass leaves behind, computed from
+    // the SAME contact graph (no extra scan) — without this line a live session cannot say how much
+    // floating actually remains (the 2026-08-16 "still lots of floating" report had no number).
+    var floating = 0, blocked = 0;
+    for (var ci = 0; ci < items.length; ci++) {
+      var cl = G.contacts[ci]; if (!cl) continue;
+      var Tc = items[ci], cf = Infinity;
+      for (var ck = 0; ck < cl.length; ck++) { var cs = items[cl[ck]].s; if (cs < cf) cf = cs; }
+      if (cf > Tc.s + 1) {
+        floating++;
+        var cw = taskWin && taskWin[Tc.task];
+        if (cw && cf + Math.max(60000, Tc.e - Tc.s) > cw.e) blocked++;
+      }
+    }
+    console.log('§CROSSTASK_JUDGE_PARITY pushed=' + pushed + ' sweeps=' + sweeps +
       ' maxShiftDays=' + (maxShift / 86400000).toFixed(1) +
+      ' floating=' + floating + '/' + items.length + ' windowBlocked=' + blocked +
       ' ms=' + Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0) +
       ' — judge-rule floating repaired within each element\'s own task window');
-    return { pushed: pushed, sweeps: sweeps };
+    return { pushed: pushed, sweeps: sweeps, floating: floating, windowBlocked: blocked };
+  }
+
+  // §ZONE_DISPLAY_AUTHORING (2026-08-16, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §CHASE_TO_ZERO_WINDOW_AUTHORING) — the displayRemap hook handed to ScheduleAuthor.materializeZones
+  // by every real UI call site in this file. The Gantt's task windows used to be derived from the RAW
+  // computeSchedule output while the movie plays the TWO-TIER DISPLAY timeline (_twoTierRemap +
+  // _midairRepair) — two different schedules; measured live 2026-08-16 on Hospital: display span 420d
+  // vs authored windows 334d, and the captured overlay manufactured 2211 order violations out of a
+  // 0-floating kernel_ops input. This hook maps the raw schedule through the SAME two functions the
+  // kernel_ops write path runs — one physics, no copy — so authored windows and the movie describe
+  // ONE schedule. Probe §EXP7/§EXP8 (probe_captured_floating.js, browser-faithful pipeline):
+  // Hospital floating 664 -> 63, window fidelity 97.03% -> 99.95%.
+  function _tmDisplayRemap(elements, schedule) {
+    var items = [];
+    elements.forEach(function (el) {
+      var st = schedule[el.guid]; if (!st) return;
+      items.push({ guid: el.guid, s: st.start, e: st.end, bz: el.base_z, tz: el.top_z,
+        x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
+        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey });
+    });
+    if (!items.length) return null;
+    _twoTierRemap(items);
+    _midairRepair(items);
+    var out = {};
+    items.forEach(function (it) { out[it.guid] = { start: it.s, end: it.e }; });
+    return out;
   }
 
   // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
@@ -5697,6 +5738,10 @@
       // right lever there; named for a future session, not chased further this pass — Terminal was
       // already imperfectly spread pre-fix (KS 0.0946), this is a real but same-axis regression,
       // not a new correctness class.
+      // §ZONE_DISPLAY_AUTHORING (2026-08-16): extracted into the named _capWindowRescale so
+      // witnesses/probes can slice the SHIPPED rescale instead of maintaining copies — body verbatim.
+      _capWindowRescale(_allScheduled, _cap.win);
+      function _capWindowRescale(_allScheduled, _win) {
       var _GANTT_GAP_CLAMP_K = 500;
       var _taskItems = {}, _taskSpan = {};
       _allScheduled.forEach(function (item) {
@@ -5707,7 +5752,7 @@
       });
       Object.keys(_taskItems).forEach(function (tid) {
         var arr = _taskItems[tid];
-        var w = _cap.win[tid];
+        var w = _win[tid];
         var sp = _taskSpan[tid];
         var tSpan = Math.max(1, w.e - w.s);
         var lsSpan = Math.max(1, sp.max - sp.min);
@@ -5746,7 +5791,27 @@
           item.e = item.s + scaledDur;       // never zero/negative duration (floor already >=60000)
         }
       });
-      _ogSupportSweep(_allScheduled, _cap.win);
+      }
+      // §ZONE_DISPLAY_AUTHORING (2026-08-16): when the task windows were authored FROM the display
+      // timeline (schedules.display_authored=1, written by materializeZones' displayRemap path),
+      // the strict end-bar sweep is SKIPPED. _ogSupportSweep enforces "start after the carrier
+      // FINISHES" — a bar §MIDAIR_REPAIR's own header deliberately does NOT enforce on the display
+      // timeline (a frontier-glowing half-built support reads as resting, not hanging) — and it
+      // only existed here because windows and movie described two different schedules. Measured on
+      // the browser-faithful probe (§EXP7 vs §EXP8, Hospital): keeping the sweep = 1781 elements
+      // pushed OUT of their own bars (97.2% fidelity); skipping it = 31 out (99.95%), floating
+      // 79 -> 63. Imported/legacy/edited-window schedules (flag absent or 0) keep the sweep —
+      // their windows are not the display envelope, so the old repair still earns its keep there.
+      var _cjpDisplayAuthored = false;
+      try {
+        var _daR = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
+        _cjpDisplayAuthored = !!(_daR.length && _daR[0].values.length);
+      } catch (e) { /* legacy DB without the column — sweep stays */ }
+      if (_cjpDisplayAuthored) {
+        console.log('§OG_SWEEP_SKIP display-authored windows — strict end-bar repair not applied (weak-bar parity below is the acceptance bar)');
+      } else {
+        _ogSupportSweep(_allScheduled, _cap.win);
+      }
       _cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
@@ -5825,7 +5890,8 @@
         var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
         var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
         var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
-          scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION });
+          scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION,
+          displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
         if ((!rres || !rres.ok) && SA.materializeDefault) {
           rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
             genVersion: _GANTT_CACHE_VERSION });
@@ -6949,7 +7015,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION });
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
     if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION });
     console.log('§GANTT_PREMATERIALIZE ' + (res.ok
       ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
@@ -6989,7 +7055,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION });
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
       res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION }) : { ok: false };
@@ -7899,7 +7965,11 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 26;   // §CROSSTASK_JUDGE_PARITY (2026-08-16): window-bounded judge-rule
+  var _GANTT_CACHE_VERSION = 27;   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
+                                   // the DISPLAY timeline + strict-bar sweep skipped on that path —
+                                   // one schedule for movie and Gantt. Bump re-materializes stale
+                                   // authored Gantts + regenerates kernel_ops under the new windows.
+                                   // Prior: 26 §CROSSTASK_JUDGE_PARITY (2026-08-16): window-bounded judge-rule
                                    // repair after _ogSupportSweep — captured floating 3090 -> 656.
                                    // Prior: 25 §OG_HANG_UNBOUND (2026-08-15): _ogSupportSweep's hang repair
   // now searches unbounded above (was capped 9.5m) — a kernel_ops table materialized under v24 or
