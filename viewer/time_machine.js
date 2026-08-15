@@ -5554,24 +5554,6 @@
         if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
       _ogSupportSweep(_allScheduled);
-      // §CAP_SHADOW_FIX floating-guarantee close (2026-08-15, same fix as the `_capacityCd` rename
-      // above — this branch was NEVER reachable before that fix, so this gap was never exercised
-      // either): `_ogSupportSweep`'s own carrier pool is deliberately narrow (structure ∪ promoted
-      // slabs ∪ walls-for-promoted-slabs — see its header, "one physics" with auditFloating/
-      // _buildXraySupportCache, NOT with `_contactGraph`). Measured on Hospital the moment this
-      // branch first ran for real: 11 IfcLightFixture/IfcElectricAppliance/IfcSwitchingDevice
-      // elements appear before their real (non-structural) support — exactly the population
-      // §GROUNDED_OVERRIDE_FIX (#1338) already taught `_contactGraph`/`_midairRepair` to catch on
-      // the generative path, never ported here. Rather than widen `_ogSupportSweep`'s pool (risking
-      // the documented §XRAY_EDGES staged=0 invariant it shares with auditFloating/
-      // _buildXraySupportCache), close the gap the same way the generative path already guarantees
-      // zero-floating: run the SAME, already-witnessed full-population repair as a final pass. The
-      // monotone affine above preserves whatever order kernel_ops already had (§MIDAIR_REPAIR ran
-      // once already, earlier in this same injectGantt() call, before this overlay), so this is
-      // expected to be a near-no-op on most buildings — it only catches what compression/rescale or
-      // this overlay's narrower sweep actually disturbed. `_allScheduled` items already carry every
-      // field `_midairRepair` needs (guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq).
-      _midairRepair(_allScheduled);
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
       // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
