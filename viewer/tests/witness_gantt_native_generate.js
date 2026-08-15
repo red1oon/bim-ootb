@@ -30,7 +30,18 @@ function sliceFn(src, name) {
   }
   throw new Error('unbalanced braces for ' + name);
 }
-const sliced = sliceFn(tmSrc, 'generateGanttSchedule');
+// generateGanttSchedule references two module-level names this single-function slice lacks:
+//   _GANTT_CACHE_VERSION (since §GANTT_SCHEDULE_STALE 2026-08-14 — this witness has thrown
+//   ReferenceError and exited before asserting anything since then, verified on unmodified main
+//   2026-08-16) — read the REAL value out of the source, never a hand-typed copy to drift; and
+//   _tmDisplayRemap (§ZONE_DISPLAY_AUTHORING 2026-08-16) — stubbed to null here: the remap's own
+//   behavior is witnessed end-to-end in witness_zone_display_authoring.js, this witness owns the
+//   native-generate wiring only, and a null remap takes materializeZones' legacy branch.
+const _verMatch = tmSrc.match(/var _GANTT_CACHE_VERSION = (\d+);/);
+if (!_verMatch) throw new Error('_GANTT_CACHE_VERSION not found in time_machine.js');
+const sliced = 'var _GANTT_CACHE_VERSION = ' + _verMatch[1] + ';\n' +
+  'var _tmDisplayRemap = function () { return null; };\n' +
+  sliceFn(tmSrc, 'generateGanttSchedule');
 
 function loadRules() {
   var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
