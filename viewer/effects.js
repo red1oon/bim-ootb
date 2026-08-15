@@ -3222,19 +3222,16 @@ async function setupEffects(A, renderer, scene, camera) {
     // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
     // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
     var _duskMood = !!A._photoDuskMood;
-    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16, user: "sky also has to be fixed... to correlate with
-    // the shadows"): the sky dome's visual sun-disc position (Sky.js `sunPosition` uniform) is a
-    // SEPARATE value from the real A.sun light, and scene.js's updateSky() only refreshes it while
-    // `_sky.visible` is already true (see scene.js ~line 242) — so a sky that's been hidden the
-    // whole time (nav default) shows a STALE/shader-default sun position the first time staging
-    // makes it visible, while the real shadows come from wherever A.sun actually is. Sync it here,
-    // unconditionally, independent of dusk mode.
-    if (A._sky) {
-      A._sky.visible = true;
-      if (A._sky.material && A._sky.material.uniforms && A._sky.material.uniforms['sunPosition']) {
-        A._sky.material.uniforms['sunPosition'].value.copy(A.sun.position).normalize();
-      }
-    }
+    // §PHOTO_SUN_SEPARATION_FIX (2026-08-16): a direct A.sun.position->sunPosition uniform sync
+    // was attempted here to fix a sky/shadow mismatch, but shipped WITHOUT live verification and
+    // caused a real regression (sky rendered fully black in production) — REVERTED. The mismatch
+    // this was trying to fix is still real and still open; the fix needs to be re-derived and
+    // actually tested live before shipping again, not guessed at under time pressure. Do not
+    // re-add a raw position->uniform copy without checking what Sky.js's sunPosition uniform
+    // actually expects (scene.js's own updateSky() builds it via
+    // setFromSphericalCoords(1,...), not by normalizing A.sun.position — those may not be
+    // equivalent depending on whether A.sun.position carries any offset beyond a pure direction).
+    if (A._sky) { A._sky.visible = true; }
     if (_duskMood && A.updateSky) { A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
     // §PHOTO_SKY_DRAMA (user ask: "more dramatic sky... reddish clouds in the distance"): Preetham
     // (Sky.js) is a clear-sky atmospheric-scattering model — push turbidity/rayleigh/mie further
