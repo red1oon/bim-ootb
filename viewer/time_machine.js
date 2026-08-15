@@ -5267,10 +5267,18 @@
     for (var _cd in _crewWorkDays) {
       var _cdr = LR[_cd]; if (!_cdr) continue;
       var _crews = _maxCrews[_cd] || 1;
-      var _cap = _crews * projectDays;
+      // §CAP_SHADOW_FIX (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+      // §HOSPITAL_LIGHTING_STILL_FLOATING): this used to be `var _cap = _crews * projectDays`. `var`
+      // is function-scoped, and injectGantt() ALSO declares `_cap` (the captured-native-schedule
+      // descriptor object) earlier at this function's top — same name, same scope, so this line
+      // silently clobbered it with a number on every run. The overlay 250 lines below then threw
+      // `_cap.guidTask[g]` on a NUMBER, on the FIRST covered guid, every time — caught by injectGantt's
+      // own outer .catch (§GANTT_CACHE_ERR), invisible unless you read the log. Renamed so the two
+      // never collide again.
+      var _capacityCd = _crews * projectDays;
       _cdLog.push(_cd + ' demand=' + _crewWorkDays[_cd].toFixed(1) + 'cd crews=' + _crews +
         (_cdr.max_crews_fixed != null ? '(FIXED)' : '') +
-        ' capacity=' + _cap.toFixed(0) + 'cd util=' + (_cap ? (100 * _crewWorkDays[_cd] / _cap).toFixed(1) : '?') + '%');
+        ' capacity=' + _capacityCd.toFixed(0) + 'cd util=' + (_capacityCd ? (100 * _crewWorkDays[_cd] / _capacityCd).toFixed(1) : '?') + '%');
     }
     console.log('§CREW_DEMAND projectDays=' + projectDays + ' — ' + _cdLog.join(' | ') +
       ' (util>100% = that trade cannot fit and wants more crews; set max_crews_fixed in ' +
@@ -5546,6 +5554,24 @@
         if (item.e <= item.s) item.e = item.s + 60000;   // never zero/negative duration
       });
       _ogSupportSweep(_allScheduled);
+      // §CAP_SHADOW_FIX floating-guarantee close (2026-08-15, same fix as the `_capacityCd` rename
+      // above — this branch was NEVER reachable before that fix, so this gap was never exercised
+      // either): `_ogSupportSweep`'s own carrier pool is deliberately narrow (structure ∪ promoted
+      // slabs ∪ walls-for-promoted-slabs — see its header, "one physics" with auditFloating/
+      // _buildXraySupportCache, NOT with `_contactGraph`). Measured on Hospital the moment this
+      // branch first ran for real: 11 IfcLightFixture/IfcElectricAppliance/IfcSwitchingDevice
+      // elements appear before their real (non-structural) support — exactly the population
+      // §GROUNDED_OVERRIDE_FIX (#1338) already taught `_contactGraph`/`_midairRepair` to catch on
+      // the generative path, never ported here. Rather than widen `_ogSupportSweep`'s pool (risking
+      // the documented §XRAY_EDGES staged=0 invariant it shares with auditFloating/
+      // _buildXraySupportCache), close the gap the same way the generative path already guarantees
+      // zero-floating: run the SAME, already-witnessed full-population repair as a final pass. The
+      // monotone affine above preserves whatever order kernel_ops already had (§MIDAIR_REPAIR ran
+      // once already, earlier in this same injectGantt() call, before this overlay), so this is
+      // expected to be a near-no-op on most buildings — it only catches what compression/rescale or
+      // this overlay's narrower sweep actually disturbed. `_allScheduled` items already carry every
+      // field `_midairRepair` needs (guid,s,e,bz,tz,x0,x1,y0,y1,cls,seq).
+      _midairRepair(_allScheduled);
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
       // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
@@ -7697,7 +7723,13 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 19;   // §TIER_REGATE_WORKLIST (2026-08-14): _tierAuditRegate rewritten full-array-rescan -> worklist/dirty-queue, A/B'd byte-identical on all 7 buildings (scripts/probe_tier_regate_worklist.js) but the ALGORITHM changed, so a building materialized under v18 must be regenerated to pick up the new code path even though its output is provably the same. Previous: §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): IfcStairFlight elements are now real geoGate/DAG support sources (schedule_gate.js structIdxGrid/grid) — previously invisible to anything resting on them (a mid-landing, a floor above), so the raw generative schedule this repair chain runs on changed for every building with stairs of this shape. HHS's Day-50 landing report closes near-exactly (FINAL display gap -40.85d -> -0.11d). A building materialized under v17 replays the old (stair-support-blind) order forever regardless of deployed code without this bump.
+  var _GANTT_CACHE_VERSION = 20;   // §CAP_SHADOW_FIX (2026-08-15): every kernel_ops materialized under
+  // v19 or earlier was ALWAYS produced by the crash-fallback path (injectGantt's `_cap` overlay could
+  // never run — see the fix note ~30 lines below, at the `_capacityCd` rename). Its data is not wrong
+  // (the fallback used the already-correct generative timeline), but nobody has ever actually seen the
+  // captured/native-IFC-schedule overlay run. Bump so every session regenerates once under the fixed
+  // code and that path finally gets exercised for real, not silently skipped forever. Previous:
+  // §TIER_REGATE_WORKLIST (2026-08-14): _tierAuditRegate rewritten full-array-rescan -> worklist/dirty-queue, A/B'd byte-identical on all 7 buildings (scripts/probe_tier_regate_worklist.js) but the ALGORITHM changed, so a building materialized under v18 must be regenerated to pick up the new code path even though its output is provably the same. Previous: §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): IfcStairFlight elements are now real geoGate/DAG support sources (schedule_gate.js structIdxGrid/grid) — previously invisible to anything resting on them (a mid-landing, a floor above), so the raw generative schedule this repair chain runs on changed for every building with stairs of this shape. HHS's Day-50 landing report closes near-exactly (FINAL display gap -40.85d -> -0.11d). A building materialized under v17 replays the old (stair-support-blind) order forever regardless of deployed code without this bump.
   // v16: §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS (2026-08-13): _twoTierRemap's Tier-2 push is now a per-element clamp to t1EndZ[z] instead of a uniform zone shift (MEP Final occupancy 22%->~69-105%, no more dead-air window inflation), and the real generation path now runs the crew's shift at rates.js SHIFT_HOURS (default 24, was hardcoded 8) — user ruling: "24hr is our default, import and JSON setting can import as we align to standard model". MEASURED Hospital totalDays 2019.6(v15, live) -> 369.2 (v16, all 7 buildings shrank 1.7x-5.5x, see prompts/4D_SCHEDULE_PERFECTION.md).
                                    // v14 was §CURTAIN_WALL_OPENING (2026-08-12): openingGate gained a curtain-wall fallback pool (IfcCurtainWall/IfcPlate/IfcMember) for openings with no IfcWall* host — HHS_Office_Federated had 34 of 133 openings ungated, Level 3's glass doors starting up to 9.5d before the façade they sit in. computeSchedule's gating changed ⇒ this constant MUST move with it, or a building already materialized under v13 replays the ungated order forever. NOTE this landed as v13 on its own branch and became v14 on merge: §ARCH_START_TEMPO/M1 (#1323) took v13 concurrently. Two independent gating changes on the same day = two bumps, never a shared one — the whole point of the constant is that a cache entry maps to exactly one algorithm.
                                    // v13 was §ARCH_START_TEMPO / M1 (2026-08-12): the 8-hour crew day. schedule_gate.js place() no longer spends installSecs as continuous 24-h wall clock — a crew gets 8 productive hours per calendar day (24/7 calendar unchanged) and the rest rolls over — so EVERY generated start/end moves and the programme is ~3x longer. A building materialized under v12 replays the old 24-h-shift timeline forever, no matter what code is deployed.
