@@ -464,25 +464,42 @@ function setupStreaming(A) {
     // `(triDiffuse - 1.0) * uTriContrast + 1.0` shader line below) — same average brightness,
     // more visible grain/streak. Metal gets the strongest boost (brushed-streak highlights are
     // the most visually distinctive of the three); concrete/plaster more modest.
+    // §TRIPLANAR_CAST_FIX (2026-08-15, real bug found+fixed — PHOTOREAL_STILL_RENDER.md
+    // §HOSPITAL_META_DB_STALE resume block): normFactor above was always a single scalar
+    // (1/overall-luminance), which only re-centers BRIGHTNESS — it silently preserves any
+    // per-channel colour cast the source texture already has, and contrastBoost then AMPLIFIES
+    // that cast along with the intended grain (same formula, `(value-1.0)*boost+1.0` doesn't
+    // distinguish "real grain" from "systematic tint"). Measured directly
+    // (`textures/materials/*_color_1k.jpg`, mean RGB, 1024x1024): concrete is exactly
+    // grayscale (R=G=B=0.7228, no cast, scalar factor is exact and correct, untouched here).
+    // plaster is 2% off (0.7448/0.7477/0.7324, essentially neutral). metal is NOT: mean RGB
+    // (0.4901, 0.5353, 0.5784) — B is 18% above R — a real, systematic blue-grey cast, not
+    // grain, and metal's contrastBoost (1.9, the strongest of the 3 groups) was amplifying it
+    // on every metal-class element (IfcBeam/Railing/Pipe*/Duct*/CableCarrier*/Flow*) during
+    // Alt+S/Alt+G, independent of and in addition to that element's own real IFC colour —
+    // this is why a correctly red-albedo pipe fitting or cream-albedo beam read cooler/greyer
+    // specifically when staged, never in plain nav (uTriActive gates it to staging only).
+    // Fix: normFactorRGB is the PER-CHANNEL inverse mean (removes the cast entirely, each
+    // channel now genuinely centres at 1.0) instead of a single scalar broadcast to all three.
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
       tileMeters: 2.5,     // world units per texture repeat
-      normFactor: 1.384,   // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      normFactorRGB: [1.3835, 1.3835, 1.3835],  // grayscale texture — identical to the old scalar
       contrastBoost: 1.6
     };
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
       tileMeters: 2.0,
-      normFactor: 1.348,   // 1 / 0.742
+      normFactorRGB: [1.3426, 1.3375, 1.3654],  // near-neutral texture, minor per-channel correction
       contrastBoost: 1.5
     };
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
-      normFactor: 1.870,   // 1 / 0.535
+      normFactorRGB: [2.0406, 1.8679, 1.7290],  // real per-channel fix — was scalar 1.870 (1/0.535)
       contrastBoost: 1.9
     };
     var TRIPLANAR_MAT = {
@@ -632,7 +649,7 @@ function setupStreaming(A) {
       var _diffuseTex = _triTex(triMat.diffuse, true);
       var _roughTex = _triTex(triMat.roughness, false);
       var _triUvScale = 1.0 / triMat.tileMeters;
-      var _triNorm = triMat.normFactor;
+      var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
       mat.onBeforeCompile = function(shader) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
@@ -686,7 +703,7 @@ function setupStreaming(A) {
             'uniform sampler2D uTriRoughness;',
             'uniform float uTriActive;',
             'uniform float uTriScale;',
-            'uniform float uTriNorm;',
+            'uniform vec3 uTriNorm;',   // §TRIPLANAR_CAST_FIX — per-channel, was a scalar
             'uniform float uTriContrast;',
             'uniform float uPaintSeed;'
           ].join('\n'))
@@ -808,6 +825,127 @@ function setupStreaming(A) {
     return mat;
   };
 
+  // §RED_GREY_MYSTERY (2026-08-15, prompts/PHOTOREAL_STILL_RENDER.md §RED_GREY_MYSTERY — ROOT
+  // CAUSE FOUND): a real, non-null-coloured element (Hospital IfcValve guid
+  // 0HuLVU0hf5gxwY8y9yDvc0, and likely others — unmeasured how widespread) still renders literal
+  // [0,0,0] under Alt+S on ~43% of its own screen area, traced all the way down to the shader's
+  // `normal` variable itself: some source vertices in the `normal` BufferAttribute have magnitude
+  // ~0 (confirmed directly, CPU-side, on this element: 24 of 129,162 vertices in its shared
+  // BatchedMesh buffer). `normalize(vec3(0))` in GLSL is 0/0 = NaN, and NaN poisons every
+  // subsequent lighting term it touches (ambient/hemi/direct all multiply through it), which is
+  // why the affected fragments are LITERAL [0,0,0] regardless of how bright the scene is — proven
+  // by directly disabling AO, shadow-restore, the sun shadow map, triplanar, and env reflection
+  // one at a time (raw single-frame renders, not the TAA-accumulated composite) with zero change
+  // to the black-pixel count each time, then confirming the base albedo (diffuseColor, pre-
+  // lighting) is 0% black and an unlit MeshBasicMaterial swap is 0% black too — so it is neither a
+  // colour-data bug nor a geometry-coverage bug, only the normal-dependent lighting stage.
+  // Attempted fix #1 (recompute a face normal per degenerate vertex from its own triangle's
+  // positions) does NOT work here: checked directly, every one of this element's 24 degenerate
+  // vertices belongs ONLY to triangles that are THEMSELVES zero-area (duplicate/collinear
+  // positions — a genuine tessellation defect, not just a missing-normal bug), so recomputing from
+  // the same triangle gives zero again. Fix actually used: nearest-VALID-vertex fallback — when no
+  // triangle referencing a degenerate vertex has real area, copy the normal from whichever OTHER
+  // vertex in the SAME geometry buffer sits closest to it by position (these are near-duplicate
+  // points from the same collapsed tessellation, so a spatially-adjacent valid vertex is almost
+  // always right there). Runs ONCE, after streaming finishes (see the `A.streaming = false`
+  // branch in streamTick below) — cheap (a few dozen degenerate vertices expected per building,
+  // most meshes have zero and short-circuit immediately) and self-contained: no extraction
+  // re-run, no DB change, matches this project's existing "self-heal at the point of consumption"
+  // pattern rather than a migration script (this is mesh geometry, not DB rows).
+  A._repairDegenerateNormals = function() {
+    var t0 = performance.now();
+    var meshesScanned = 0, meshesAffected = 0, degenTotal = 0, fixedFromFace = 0, fixedFromNeighbor = 0, unfixed = 0;
+    var _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _vc = new THREE.Vector3();
+    var _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _cr = new THREE.Vector3();
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh)) return;
+      var geom = o.geometry;
+      if (!geom) return;
+      var nAttr = geom.getAttribute('normal');
+      var pAttr = geom.getAttribute('position');
+      var idx = geom.index;
+      if (!nAttr || !pAttr || !idx) return;  // repair needs triangle topology; skip non-indexed
+      meshesScanned++;
+      var narr = nAttr.array, parr = pAttr.array, iarr = idx.array;
+      var n = nAttr.count;
+      var degen = [];
+      for (var vi = 0; vi < n; vi++) {
+        var x = narr[vi*3], y = narr[vi*3+1], z = narr[vi*3+2];
+        if (x*x + y*y + z*z < 0.01) degen.push(vi);  // magnitude < 0.1
+      }
+      if (!degen.length) return;
+      // §RED_GREY_MYSTERY safety valve: a mesh with a LARGE fraction of degenerate normals points
+      // at something worse than a handful of collapsed triangles (e.g. a whole-mesh decode
+      // failure) — repairing individual points would be papering over a bigger problem. Skip and
+      // report instead of guessing at a fix.
+      if (degen.length / n > 0.05) {
+        console.warn('§NORMAL_REPAIR_SKIP mesh=' + o.id + ' degen=' + degen.length + '/' + n +
+          ' (>5% — likely a different/larger defect, not repairing)');
+        return;
+      }
+      meshesAffected++;
+      degenTotal += degen.length;
+      var stillBroken = [];
+      for (var di = 0; di < degen.length; di++) {
+        var dvi = degen[di];
+        var fixed = false;
+        for (var ii = 0; ii < iarr.length; ii += 3) {
+          var a = iarr[ii], b = iarr[ii+1], c = iarr[ii+2];
+          if (a !== dvi && b !== dvi && c !== dvi) continue;
+          _va.set(parr[a*3], parr[a*3+1], parr[a*3+2]);
+          _vb.set(parr[b*3], parr[b*3+1], parr[b*3+2]);
+          _vc.set(parr[c*3], parr[c*3+1], parr[c*3+2]);
+          _e1.subVectors(_vb, _va); _e2.subVectors(_vc, _va);
+          _cr.crossVectors(_e1, _e2);
+          var len = _cr.length();
+          if (len > 1e-8) {
+            _cr.multiplyScalar(1 / len);
+            narr[dvi*3] = _cr.x; narr[dvi*3+1] = _cr.y; narr[dvi*3+2] = _cr.z;
+            fixed = true; fixedFromFace++;
+            break;
+          }
+        }
+        if (!fixed) stillBroken.push(dvi);
+      }
+      // Nearest-valid-vertex fallback for anything whose own triangles are ALL degenerate
+      // (confirmed the actual case for Hospital's IfcValve 0HuLVU0hf5gxwY8y9yDvc0 — every one of
+      // its 24 degenerate vertices sits on a zero-area triangle, so face-recompute above can't
+      // reach them).
+      for (var sbi = 0; sbi < stillBroken.length; sbi++) {
+        var bvi = stillBroken[sbi];
+        var bx = parr[bvi*3], by = parr[bvi*3+1], bz = parr[bvi*3+2];
+        var bestVi = -1, bestD2 = Infinity;
+        for (var ovi = 0; ovi < n; ovi++) {
+          var nx = narr[ovi*3], ny = narr[ovi*3+1], nz = narr[ovi*3+2];
+          if (nx*nx + ny*ny + nz*nz < 0.9) continue;  // only trust an already-valid (~unit) normal
+          var dx = parr[ovi*3] - bx, dy = parr[ovi*3+1] - by, dz = parr[ovi*3+2] - bz;
+          var d2 = dx*dx + dy*dy + dz*dz;
+          if (d2 < bestD2) { bestD2 = d2; bestVi = ovi; }
+        }
+        if (bestVi >= 0) {
+          narr[bvi*3] = narr[bestVi*3]; narr[bvi*3+1] = narr[bestVi*3+1]; narr[bvi*3+2] = narr[bestVi*3+2];
+          fixedFromNeighbor++;
+        } else {
+          unfixed++;  // whole mesh has no valid normal at all — nothing to borrow from
+        }
+      }
+      // §NORMAL_REPAIR_GPU_UPLOAD: neither `nAttr.needsUpdate = true` on the existing attribute
+      // NOR swapping in a brand-new BufferAttribute object changed a single rendered pixel, even
+      // though the JS-side array reads back correctly patched both times (confirmed live,
+      // separately). That means WebGLRenderer's cached GPU state for this geometry (VAO/binding
+      // cache, keyed by geometry.id which never changes here) is the thing not being invalidated.
+      // Force it: drop the renderer's cached properties for this geometry entirely so it rebuilds
+      // buffers/bindings from scratch on the next draw — the documented way to invalidate GPU
+      // state three.js doesn't auto-detect from an attribute-array mutation alone.
+      geom.setAttribute('normal', new THREE.BufferAttribute(narr, 3));
+      if (A.renderer && A.renderer.properties) { A.renderer.properties.remove(geom); }
+    });
+    console.log('§NORMAL_REPAIR meshesScanned=' + meshesScanned + ' meshesAffected=' + meshesAffected +
+      ' degenTotal=' + degenTotal + ' fixedFromFace=' + fixedFromFace +
+      ' fixedFromNeighbor=' + fixedFromNeighbor + ' unfixed=' + unfixed +
+      ' ms=' + (performance.now() - t0).toFixed(1));
+  };
+
   A.streamTick = function() {
     // §S260: Range mode uses async _rangeDb — libDb may be null, that's OK
     // _streamPaused = async geometry fetch in progress, skip this tick
@@ -837,6 +975,11 @@ function setupStreaming(A) {
           A._bboxCleared = false;
         }
         A.streaming = false;
+        // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
+        // broken normal data, confirmed by direct readback) but does NOT change the rendered
+        // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
+        // The real cause is still open — see prompts/PHOTOREAL_STILL_RENDER.md §RED_GREY_MYSTERY.
+        // A._repairDegenerateNormals();
         if (A.activeBuilding) {
           A.buildingsRendered.add(A.activeBuilding);
           A.populateStoreys(A.activeBuilding);

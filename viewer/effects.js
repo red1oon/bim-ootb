@@ -2917,6 +2917,9 @@ async function setupEffects(A, renderer, scene, camera) {
     })();
   }
   var _photoNightWasOn = false, _photoSkyWasVisible = false;
+  var _photoDuskMoodApplied = false;  // §PHOTO_SUN_SEPARATION: snapshot of A._photoDuskMood at
+                                       // staging time, so teardown restores exactly what staging
+                                       // actually did even if the flag changes mid-session.
   var _photoStagingOn = false;  // §PHOTO_DOUBLE_APPLY_GUARD — staging applied once per photo cycle
   A._photoStagingOn = false;    // public mirror — with Stage-2 auto-arm disabled (§AUTO_STAGE2_DISABLED)
                                 // soft-park is signalled by kept-alive staging alone, and main.js's
@@ -3207,24 +3210,33 @@ async function setupEffects(A, renderer, scene, camera) {
       _photoSunPosSaved = A.sun.position.clone();
       _photoSunTargetSaved = A.sun.target.position.clone();
     }
-    if (A._sky && A.updateSky) { A._sky.visible = true; A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
+    // §PHOTO_SUN_SEPARATION (2026-08-15, user: "Sun should be a separation of concern" — the sun's
+    // position/colour/intensity is no longer FORCED by staging by default. Alt+S used to always
+    // hard-reset the sun to a fixed 6°-elevation dusk (PHOTO_SUN_ELEVATION/PHOTO_SUN_AZIMUTH,
+    // still used by the Alt+C movie sun-arc — untouched, see §SUN_ARC above) on every press,
+    // regardless of whatever real time-of-day/sun position was already active — the
+    // saved/restored _photoSunPosSaved/_photoSunTargetSaved below is proof a real prior position
+    // always existed, it was just being thrown away. NEW DEFAULT: leave A.sun exactly where it
+    // already is (plain daylight look). User asked to keep the OLD dusk-mood look reachable for
+    // A/B comparison, not deleted — set `APP._photoDuskMood = true` before pressing Alt+S to get
+    // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
+    // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
+    var _duskMood = !!A._photoDuskMood;
+    if (A._sky) { A._sky.visible = true; }
+    if (_duskMood && A.updateSky) { A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
     // §PHOTO_SKY_DRAMA (user ask: "more dramatic sky... reddish clouds in the distance"): Preetham
-    // (Sky.js) is a clear-sky atmospheric-scattering model — it has no cloud geometry/texture at
-    // all, so literal cloud SHAPES aren't something this shader can produce (a separate textured-
-    // layer feature, not attempted here). What IS real and cheap: push the same uniforms scene.js
-    // sets once at startup (turbidity/rayleigh/mie) further for the photoshoot only, richer/more
-    // saturated toward the reddish end — scoped here, not touched globally, so normal daytime
-    // navigation is unaffected.
-    if (A._sky) {
+    // (Sky.js) is a clear-sky atmospheric-scattering model — push turbidity/rayleigh/mie further
+    // for the photoshoot only. Dusk-mood only — see §PHOTO_SUN_SEPARATION above.
+    if (_duskMood && A._sky) {
       var _su = A._sky.material.uniforms;
       _photoSkyUniSaved = {
         turbidity: _su['turbidity'].value, rayleigh: _su['rayleigh'].value,
         mieCoefficient: _su['mieCoefficient'].value, mieDirectionalG: _su['mieDirectionalG'].value
       };
-      _su['turbidity'].value = 8;         // more haze/color depth (was 4)
-      _su['rayleigh'].value = 3.2;        // richer red/orange scatter (was 2)
-      _su['mieCoefficient'].value = 0.012; // denser sun-glow bloom in the sky itself (was 0.005)
-      _su['mieDirectionalG'].value = 0.9;  // tighter forward-scatter, punchier horizon glow (was 0.8)
+      _su['turbidity'].value = 8;
+      _su['rayleigh'].value = 3.2;
+      _su['mieCoefficient'].value = 0.012;
+      _su['mieDirectionalG'].value = 0.9;
     }
     // §PHOTO_SUN_REFLECTION fix 2: keep the lensflare's own brightness independent of the
     // photoshoot's exposure cut (see comment above PHOTO_SUN_ELEVATION).
@@ -3244,24 +3256,23 @@ async function setupEffects(A, renderer, scene, camera) {
     _photoEnvBoostedMats = [];
     _photoMatBoostActive = true;
     _reassertPhotoMatBoost();
-    _enablePhotoShadows();  // called AFTER updateSky — see note in _enablePhotoShadows
+    _enablePhotoShadows();  // real/current sun position (unless _duskMood) — see §PHOTO_SUN_SEPARATION
+    // §PHOTO_SUN_SEPARATION: forced night-mode-then-warm-evening-tint override is dusk-mood only
+    // now (see flag above) — plain-daylight default leaves night mode, sun/ambient/hemi
+    // intensity+colour, and exposure exactly whatever the user already has.
     _photoNightWasOn = !!A._nightMode;
-    if (!_photoNightWasOn && A.toggleNightMode) {
+    _photoDuskMoodApplied = _duskMood;  // teardown reads this snapshot, not the live flag
+    if (_duskMood && !_photoNightWasOn && A.toggleNightMode) {
       A.toggleNightMode();  // amber fixture glow (synthetic fallback) + window glow
       if (A._nightSaved) {  // undo the moonlight override, but land on a deliberate warm evening
                              // tint (§PHOTO_WARM_SUN) instead of plain neutral-daytime restore
         A.sun.intensity = A._nightSaved.sunI * PHOTO_SUN_INTENSITY_SCALE;
         A.sun.color.setHex(PHOTO_SUN_COLOR);
-        // §PHOTO_HEMI_FILL: boosted above the daytime baseline (not just restored to it) — see
-        // comment above PHOTO_HEMI_INTENSITY_SCALE for why the ground needs this specifically.
         A.ambient.intensity = A._nightSaved.ambI * PHOTO_AMBIENT_INTENSITY_SCALE;
         A.ambient.color.setHex(PHOTO_AMBIENT_COLOR);
         A.hemi.intensity = A._nightSaved.hemiI * PHOTO_HEMI_INTENSITY_SCALE;
         A.hemi.color.setHex(PHOTO_HEMI_SKY_COLOR);
         A.renderer.toneMappingExposure = A._nightSaved.exposure * PHOTO_EXPOSURE_SCALE * PHOTO_EXPOSURE_LIFT;
-        // §MOVIE_SHADOW_TM: shadow strength is sun/(ambient+hemi). Logged so it can be checked
-        // against TM's own numbers numerically instead of by eye (FUNDAMENTAL LAW — code and maths
-        // is the truth, never screenshots). TM native = 4.4/(0.785+1.257) = 2.155.
         var _fill = A.ambient.intensity + A.hemi.intensity;
         console.log('§MOVIE_SHADOW_TM sun=' + A.sun.intensity.toFixed(3) +
           ' ambient=' + A.ambient.intensity.toFixed(3) + ' hemi=' + A.hemi.intensity.toFixed(3) +
@@ -3326,7 +3337,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // only the active pointer reverts (normal navigation keeps its existing sky-derived look).
     if (_photoEnvMapSaved !== null) { A._envMap = _photoEnvMapSaved; _photoEnvMapSaved = null; }
     A._envMapHdriActive = false;  // §ALT_FRAME_LUMINANCE: scene.js's throttled regen is safe again
-    if (!_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();  // restores its own saved state
+    // §PHOTO_SUN_SEPARATION: only undo the night-mode force-on if THIS staging cycle actually
+    // applied dusk mood (snapshot, not the live flag — the user may have flipped it mid-session).
+    if (_photoDuskMoodApplied && !_photoNightWasOn && A.toggleNightMode) A.toggleNightMode();
+    _photoDuskMoodApplied = false;
     if (!_photoSkyWasVisible && A._sky) A._sky.visible = false;
     if (A.sun && _photoSunPosSaved) {
       A.sun.position.copy(_photoSunPosSaved);
