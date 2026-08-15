@@ -4429,6 +4429,54 @@
       return { pushed: _ogPushed, sweeps: _ogSweeps };
   }
 
+  // ══ §CROSSTASK_JUDGE_PARITY (2026-08-16, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════
+  // Runs AFTER _ogSupportSweep on the captured path. Closes the judge/repair mismatch that stranded
+  // 3090 elements floating across the 7 shipped buildings: the judge (_contactGraph/_midairAudit,
+  // the 🔓→🔒 lock rule) is class-blind and pool-blind, but _ogSupportSweep can only ever push past
+  // its NARROW carrier pool (seq<=4 ∪ promoted slabs, walls for promoted slabs) — so an element
+  // whose only real contacts live outside that pool (a fitting on a proxy, a tread on a stringer —
+  // the exact §MIDAIR_REPAIR (a)-population) is flagged floating forever and repaired never.
+  // This pass is §MIDAIR_REPAIR's already-shipped weakest rule — AN ELEMENT MAY NOT APPEAR BEFORE
+  // THE FIRST ELEMENT IT PHYSICALLY TOUCHES APPEARS — applied to the captured timeline WITH the
+  // §OG_HANG_WINDOW_BOUND discipline the rejected 2026-08-13 _midairRepair swap lacked (its failure
+  // was exactly window-crossing desync, 100-300d): a push lands ONLY when the element's whole
+  // rescheduled span stays inside its OWN task's authored window; an element already outside its
+  // window is never pushed further out; anything else stays honestly floating (WINDOW_BLOCKED —
+  // a real task-authoring conflict, §CPM_GENERATOR_UPSTREAM_SPEC's territory, never papered over).
+  // Monotone-later pushes reusing existing start values, fixpoint-swept, bounded — same
+  // termination argument as _midairRepair's own. MEASURED (probe_captured_floating.js §EXP4, all 7
+  // buildings, 2026-08-16): floating 3090 -> 656 (-78.8%), window fidelity byte-identical on every
+  // building, orphans/grounded untouched (the judge itself is never modified here).
+  function _cjpJudgeParity(items, taskWin) {
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var G = _contactGraph(items);
+    if (!G.ok) return { pushed: 0, sweeps: 0 };
+    var pushed = 0, sweeps = 0, maxShift = 0;
+    for (; sweeps < 16; sweeps++) {
+      var moved = 0;
+      for (var i = 0; i < items.length; i++) {
+        var list = G.contacts[i]; if (!list) continue;
+        var T = items[i];
+        var first = Infinity;
+        for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
+        if (first <= T.s + 1) continue;                    // not floating
+        var w = taskWin && taskWin[T.task]; if (!w) continue;
+        if (T.s < w.s || T.e > w.e) continue;              // already out of window — never worsen
+        var dur = Math.max(60000, T.e - T.s);
+        if (first + dur > w.e) continue;                   // WINDOW_BLOCKED — honest floating
+        var d = first - T.s;
+        T.s = first; T.e = T.s + dur;
+        pushed++; moved++; if (d > maxShift) maxShift = d;
+      }
+      if (!moved) break;
+    }
+    if (pushed) console.log('§CROSSTASK_JUDGE_PARITY pushed=' + pushed + ' sweeps=' + sweeps +
+      ' maxShiftDays=' + (maxShift / 86400000).toFixed(1) +
+      ' ms=' + Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0) +
+      ' — judge-rule floating repaired within each element\'s own task window');
+    return { pushed: pushed, sweeps: sweeps };
+  }
+
   // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
   // supports (audit physics) → verify strictness; iterate (bounded). Converges structurally:
   // shifts never break Tier-1 internal order, regate pushes only ever move later and only enforce
@@ -5699,6 +5747,7 @@
         }
       });
       _ogSupportSweep(_allScheduled, _cap.win);
+      _cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
       // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
@@ -7850,7 +7899,9 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 25;   // §OG_HANG_UNBOUND (2026-08-15): _ogSupportSweep's hang repair
+  var _GANTT_CACHE_VERSION = 26;   // §CROSSTASK_JUDGE_PARITY (2026-08-16): window-bounded judge-rule
+                                   // repair after _ogSupportSweep — captured floating 3090 -> 656.
+                                   // Prior: 25 §OG_HANG_UNBOUND (2026-08-15): _ogSupportSweep's hang repair
   // now searches unbounded above (was capped 9.5m) — a kernel_ops table materialized under v24 or
   // earlier keeps replaying elements left floating that this version now repairs.
   // §GANTT_GAP_CLAMP_SPREAD (2026-08-15): the per-task rescale's
