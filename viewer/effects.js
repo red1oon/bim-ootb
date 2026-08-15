@@ -565,11 +565,44 @@ async function setupEffects(A, renderer, scene, camera) {
       s.sprite.visible = true;
     });
   }
+  // §LTU_SUBSURFACE_BBOX (2026-08-16, prompts/CINEMA_PATH_EDITOR.md): both bbox helpers below used
+  // raw MIN/MAX(center_z), so a handful of junk-placement rows (LTU: 13 IfcColumn at −5.6…−45.6m,
+  // tagged to ABOVE-ground storeys — export garbage, not a basement) sank the orbit pivot
+  // (pivot.y = zMin + 0.35·span) ~30m underground and Beat 4/5 flew below the slab. Fence: rows
+  // outside p01 − 0.25·(p99−p01) … p99 + 0.25·(p99−p01) of the SAME filtered set are excluded from
+  // the aggregate (whole row — a z-junk row shouldn't vote on x/y either). Measured before shipping:
+  // healthy buildings are BIT-IDENTICAL through their active path (Hospital ARC+IFC, Terminal ARC:
+  // excluded=0, raw==fenced), LTU excludes exactly the 13 junk rows (ARC pivot −23.90 → +3.64).
+  // Skipped entirely (raw behavior) for tiny sets (n<100) or degenerate span, where percentiles
+  // aren't meaningful. DB rows themselves are untouched — presentation-layer exclusion only.
+  function _bboxZFenced(selectFrom, whereClause) {
+    var glue = whereClause ? whereClause + ' AND ' : 'WHERE ';
+    var raw = A.dbQuery('SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z) ' + selectFrom + ' ' + whereClause);
+    if (!raw.length || raw[0][0] == null) return null;
+    var out = { xMin: raw[0][0], xMax: raw[0][1], yMin: raw[0][2], yMax: raw[0][3], zMin: raw[0][4], zMax: raw[0][5] };
+    try {
+      var n = A.dbQuery('SELECT COUNT(*) ' + selectFrom + ' ' + whereClause)[0][0];
+      if (n >= 100) {
+        var p01 = A.dbQuery('SELECT et.center_z ' + selectFrom + ' ' + whereClause + ' ORDER BY et.center_z LIMIT 1 OFFSET ' + Math.floor(n / 100))[0][0];
+        var p99 = A.dbQuery('SELECT et.center_z ' + selectFrom + ' ' + whereClause + ' ORDER BY et.center_z LIMIT 1 OFFSET ' + Math.min(n - 1, Math.floor(n * 99 / 100)))[0][0];
+        var span = p99 - p01;
+        if (span > 0) {
+          var lo = p01 - 0.25 * span, hi = p99 + 0.25 * span;
+          if (out.zMin < lo || out.zMax > hi) {
+            var f = A.dbQuery('SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z), COUNT(*) ' + selectFrom + ' ' + glue + 'et.center_z >= ' + lo + ' AND et.center_z <= ' + hi);
+            if (f.length && f[0][0] != null) {
+              console.log('§CINEMA_BBOX_FENCE excluded=' + (n - f[0][6]) + '/' + n + ' rawZ=[' + out.zMin.toFixed(2) + ',' + out.zMax.toFixed(2) + '] fencedZ=[' + f[0][4].toFixed(2) + ',' + f[0][5].toFixed(2) + '] fence=[' + lo.toFixed(2) + ',' + hi.toFixed(2) + ']');
+              out = { xMin: f[0][0], xMax: f[0][1], yMin: f[0][2], yMax: f[0][3], zMin: f[0][4], zMax: f[0][5] };
+            }
+          }
+        }
+      }
+    } catch (e) { /* fence is best-effort — raw bbox stands */ }
+    return out;
+  }
   function _buildingBBoxIfc() {
     if (!A.dbQuery) return null;
-    var r = A.dbQuery('SELECT MIN(center_x), MAX(center_x), MIN(center_y), MAX(center_y), MIN(center_z), MAX(center_z) FROM element_transforms');
-    if (!r.length || r[0][0] == null) return null;
-    return { xMin: r[0][0], xMax: r[0][1], yMin: r[0][2], yMax: r[0][3], zMin: r[0][4], zMax: r[0][5] };
+    return _bboxZFenced('FROM element_transforms et', '');
   }
   // §CINEMA_ARC_BBOX (2026-07-16, user ask: "ignore any non ARC elements outside frame" —
   // "solves LTU too far"): the whole-building bbox above includes every discipline, including
@@ -579,12 +612,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // no hardcoding (a building with zero ARC rows falls back to the whole-building bbox below).
   function _buildingBBoxArc() {
     if (!A.dbQuery) return null;
-    var r = A.dbQuery(
-      "SELECT MIN(et.center_x), MAX(et.center_x), MIN(et.center_y), MAX(et.center_y), MIN(et.center_z), MAX(et.center_z) " +
-      "FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid WHERE em.discipline = 'ARC'"
-    );
-    if (!r.length || r[0][0] == null) return null;
-    return { xMin: r[0][0], xMax: r[0][1], yMin: r[0][2], yMax: r[0][3], zMin: r[0][4], zMax: r[0][5] };
+    return _bboxZFenced('FROM element_transforms et JOIN elements_meta em ON et.guid = em.guid', "WHERE em.discipline = 'ARC'");
   }
   function _disposePhotoProps() {
     _photoUplights.forEach(function(l) { A.scene.remove(l); });
