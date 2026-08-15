@@ -76,6 +76,10 @@ function realScheduledFrom(rows, matchRule, rules) {
 //   wall pool offered to promoted slabs only; hang-carrier fallback for bearingless seq>4.
 function bruteForcePush(elements) {
   const EPS = 0.05, GAP = 0.5;
+  // §OG_HANG_BAND (2026-08-15, time_machine.js _ogSupportSweep): the hang/carrier-above search
+  // (bearingless seq>4 fallback) widened from GAP=0.5 to 9.5 — reused, not re-guessed, the same
+  // measured band this codebase already cited once (§HANG_NEAREST, 0.5-9.5m). Bearing stays at GAP.
+  const HANG_GAP = 9.5;
   const xy = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
   const work = elements.map(function (e) { return { guid: e.guid, s: e.s, e: e.e, cls: e.cls, seq: e.seq, bz: e.bz, tz: e.tz, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 }; });
   work.sort(function (a, b) { return a.bz - b.bz; });
@@ -104,7 +108,7 @@ function bruteForcePush(elements) {
       if (!hasBearing && T.seq > 4) {
         for (let i = 0; i < work.length; i++) {
           const H = work[i]; if (H.guid === T.guid || !(H.seq <= 4 || (H.cls === 'IfcSlab' && H.seq > 4))) continue;   // §PROMOTED_CARRIER_POOL: hang pool == struct pool (audit parity)
-          if (H.bz >= T.tz - GAP && H.bz <= T.tz + GAP && H.tz > T.tz + EPS && xy(H, T) && H.e > lastEnd) lastEnd = H.e;
+          if (H.bz >= T.tz - HANG_GAP && H.bz <= T.tz + HANG_GAP && H.tz > T.tz + EPS && xy(H, T) && H.e > lastEnd) lastEnd = H.e;
         }
       }
       if (lastEnd && T.s < lastEnd) {

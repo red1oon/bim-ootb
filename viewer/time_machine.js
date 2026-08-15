@@ -4209,6 +4209,25 @@
       // now gated on the TARGET being a promoted slab.
       var _ogCELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
       var _ogEPS = 0.05, _ogGAP = 0.5;
+      // §OG_HANG_BAND (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+      // §HOSPITAL_LIGHTING_STILL_FLOATING — captured-path repair vs judge parity, same doctrine as
+      // §4D_LAYER_TRUTH/§GROUNDED_OVERRIDE_FIX/§OG_BEARING_BOUND: guard and judge must share one
+      // physics). _contactGraph's hang/carrier-above relation (the JUDGE _midairAudit reads) has NO
+      // upper Z bound by design — measured+kept in §DAY_GAP_TAIL (bounding IT strands elements as
+      // orphans, 3-40x blowup, rejected on its own numbers). But _ogSupportSweep's OWN hang-repair
+      // query below reused the tight bearing tolerance (_ogGAP=0.5m, meant for near-zero physical
+      // touching gaps) as its search radius too — so it could only ever REPAIR a hang relation whose
+      // carrier's underside sits within 0.5m of the target's top, while the judge (correctly) accepts
+      // real carrier-above relations much further away (a ceiling-hung/embedded item's true structural
+      // carrier is routinely several metres up through a void). MEASURED on Hospital's still-floating
+      // IfcBuildingElementProxy population (post-repair, hang-classified, 821 elements): the real
+      // carrier the judge picks sits p25=1.05m p50=2.00m p90=3.75m max=10.62m above the target —
+      // 812/821 (99%) within 9.5m — the SAME band this codebase already measured and cited once before
+      // for the identical relation (§HANG_NEAREST, "0.5-9.5m, Hospital ducts p50 1.22m") — reused here,
+      // not re-guessed. Unlike the rejected judge-side bound, widening the REPAIR's search radius can
+      // only ever find MORE of what the judge already accepts as real — it cannot create a single new
+      // orphan (orphan/grounded counts come from _contactGraph alone, untouched by this function).
+      var _ogHangGap = 9.5;
       // §OG_GRID_Z_BAND (2026-08-05, measured not guessed — 4D_SCHEDULE_PERFECTION.md §Open Decisions
       // named this block "NOT yet measured, prime suspect"). The grid used to bucket by XY only, so
       // a small-footprint TALL building stacks every floor's structural elements into the SAME cell —
@@ -4251,7 +4270,7 @@
       // hang-carrier, swept to fixpoint (≤16, monotone pushes, acyclic relation).
       // Hang lookup queries the target's TOP z-neighborhood (carrier underside within ±GAP of T.tz,
       // carrier top strictly above T.tz — the same antisymmetric predicate as schedule_gate.js).
-      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogGAP, e.tz + _ogGAP); };
+      var _ogCellsQueryTop = function (e) { return _ogCellsFor(e.x0, e.x1, e.y0, e.y1, e.tz - _ogHangGap, e.tz + _ogHangGap); };
       var _ogPushed = 0, _ogSweeps = 0;
       for (; _ogSweeps < 16; _ogSweeps++) {
         var _ogMoved = 0;
@@ -4307,7 +4326,7 @@
               if (harr) for (var hj = 0; hj < harr.length; hj++) {
                 var H = harr[hj];
                 if (H.guid === T.guid || hseen[H.guid]) continue; hseen[H.guid] = 1;
-                if (H.bz >= T.tz - _ogGAP && H.bz <= T.tz + _ogGAP && H.tz > T.tz + _ogEPS &&
+                if (H.bz >= T.tz - _ogHangGap && H.bz <= T.tz + _ogHangGap && H.tz > T.tz + _ogEPS &&
                     _ogXY(H, T) && H.e > lastEnd) lastEnd = H.e;
               }
             }
@@ -7714,7 +7733,11 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 21;   // §GANTT_TASK_WINDOW_FIDELITY (2026-08-15): the captured overlay's
+  var _GANTT_CACHE_VERSION = 22;   // §OG_HANG_BAND (2026-08-15): _ogSupportSweep's hang-repair search
+  // radius widened 0.5m->9.5m (see that function's own header) — a kernel_ops table materialized
+  // under v21 or earlier keeps replaying the narrower-band repair's (more-floating) dates forever
+  // without this bump, regardless of the code fix being deployed.
+  // §GANTT_TASK_WINDOW_FIDELITY (2026-08-15): the captured overlay's
   // affine changed from ONE global rescale to a PER-TASK rescale — every element's placement moves,
   // on every building with a captured/materialized schedule. A kernel_ops table materialized under
   // v20 replays the old global-affine dates forever without this bump. Previous: §CAP_SHADOW_FIX
