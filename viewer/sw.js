@@ -8,7 +8,13 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1029';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1030';   // bump on each deploy; per-change detail is the git commit message.
+// v1030 (2026-08-15) §PIPE_DUCT_BLUE_TINT / §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (bim-ootb PRs #1367,
+// #1369) shipped without a viewer.html script-version bump, so an already-cached browser kept
+// serving pre-fix effects.js/streaming.js under the same ?v= URL — user report "why is this still
+// blue" after both fixes were confirmed merged. Fix is the viewer.html bump (effects.js?v=17->18,
+// streaming.js?v=59->60) in this same commit; CACHE_VERSION bumped alongside per this project's own
+// standing convention (every deploy bumps it) so the offline precache path is refreshed too.
 // v1029 (2026-08-15) §CPE_DISCIPLINE_REVEAL_PULLOUT: the there-and-back retrace round replaced with
 // a pull-out + a single repeated forward lap (effects.js/cinema_maxq.js/cinema_path_editor.js/
 // cpe_room_title.js). New beat boundary plan.beats.pullout; A.cpeRevealCaptionAt (new) swaps the
