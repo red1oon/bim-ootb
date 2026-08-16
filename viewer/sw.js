@@ -8,7 +8,15 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1047';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1048';   // bump on each deploy; per-change detail is the git commit message.
+// v1048 (2026-08-16) bim-compiler prompts/4D_GANTT_TM_REFACTOR.md S1-S4 closeout: §S1_BAND_RANK
+// (cpm_schedule.js buildGraph — E4 storey hammocks + straggler group-key use 3m z-bands, not
+// per-storey-name rank, PR #1401); §S2_TUKEY_ENVELOPE (time_machine.js _tmDisplayRemap — task bars
+// are a classification-free Tukey-fenced robust envelope over ALL group members' true times,
+// replacing the straggler-classification min/max clip, PR #1402); §S4_RAW_SCHEDULE_REUSE
+// (time_machine.js injectGantt skips a redundant computeSchedule call when materializeZones already
+// computed it, PR #1404). _GANTT_CACHE_VERSION 29->30 — any building already materialized under the
+// old E4/bar-shape formulas will regenerate on next activation rather than replay stale schedules.
 // v1047 (2026-08-16) §ZONE_WINDOW_DAGWINS_CLIP: task bars = non-straggler envelopes (user:
 // "schedule looks gibberish" — every Hospital bar ran to project end, smeared by 11,215 dag-wins
 // stragglers); §CAP_RESCALE_SKIP: display-authored windows never re-spaced (views, not a second
