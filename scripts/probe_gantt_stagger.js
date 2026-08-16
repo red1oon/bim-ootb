@@ -17,17 +17,28 @@ async function main() {
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage();
   const lines = [];
-  page.on('console', m => { const t = m.text(); if (t.indexOf('§') >= 0) lines.push(t); });
+  // §S4_ACTIVATION_TIMING (4D_GANTT_TM_REFACTOR.md §STAGES S4) — forward the activation-timing/
+  // write-loop lines to stdout as they arrive (previously only pushed to the internal `lines` array
+  // and never printed — a real gap, this fixes it for the timing-relevant subset without flooding
+  // stdout with every § line the activation logs).
+  const TIMING_RE = /§(S4_ACTIVATION|S4_RAW_SCHEDULE_REUSE|WRITE_LOOP_TIMING|CPM_DISPLAY_REUSE|GANTT_SOURCE|4D_COVERAGE|TM_OPS_CHECK|GANTT_CACHE)/;
+  page.on('console', m => {
+    const t = m.text();
+    if (t.indexOf('§') >= 0) lines.push(t);
+    if (TIMING_RE.test(t)) console.log('[activation] ' + t);
+  });
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => typeof window.toggleTimeMachine === 'function', { timeout: 180000 });
   await page.waitForFunction(() => window.APP && window.APP.db, { timeout: 240000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 15000));
+  const _actT0 = Date.now();
   await page.evaluate(() => window.toggleTimeMachine());
   const deadline = Date.now() + 300000;
   while (Date.now() < deadline) {
     if (lines.some(l => l.indexOf('§TIME_MACHINE ON') >= 0)) break;
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 200));
   }
+  console.log('§S4_ACTIVATION_WALLCLOCK ms=' + (Date.now() - _actT0) + ' BLD=' + BLD + ' MODE=' + (MODE ? 'legacy' : 'cpm'));
   const rows = await page.evaluate(() => {
     const r = window.APP.db.exec("SELECT t.task_id, t.schedule_start, t.schedule_finish, COUNT(te.guid) " +
       "FROM tasks t LEFT JOIN task_elements te ON te.task_id=t.task_id " +

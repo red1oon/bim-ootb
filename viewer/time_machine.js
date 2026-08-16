@@ -4603,7 +4603,26 @@
   // kernel_ops write path runs — one physics, no copy — so authored windows and the movie describe
   // ONE schedule. Probe §EXP7/§EXP8 (probe_captured_floating.js, browser-faithful pipeline):
   // Hospital floating 664 -> 63, window fidelity 97.03% -> 99.95%.
+  // §S4_RAW_SCHEDULE_REUSE (2026-08-16, 4D_GANTT_TM_REFACTOR.md §MODEL M4 + §STAGES S4) — mirrors
+  // the EXISTING §CPM_DISPLAY_ONE_TRUTH display-timeline cache (_displayTimeline._last) one level
+  // earlier: the RAW crew-leveled schedule itself. On a cold open, materializeZones
+  // (schedule_author.js) computes its OWN ScheduleGate.computeSchedule call FIRST
+  // (§GANTT_PREMATERIALIZE) and hands it to THIS hook as `schedule` — injectGantt's own later
+  // computeSchedule call (needed only to feed _sched into §SUPPORT_CHECK's auditFloating) is
+  // measured dead work when this covers the same elements (§S4_ACTIVATION_TIMING: ~1.6s on
+  // Hospital-63k). A NEW, additive, ONE-SHOT cache (cleared on consumption, same one-shot
+  // discipline as _displayTimeline._last so a rates/shift edit is never served stale) — does not
+  // touch computeSchedule's own body or the existing display-timeline reuse contract.
+  var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
   function _tmDisplayRemap(elements, schedule) {
+    (function () {
+      var map = {}, n = 0;
+      elements.forEach(function (el) {
+        var st = schedule[el.guid];
+        if (st) { map[el.guid] = { start: st.start, end: st.end }; n++; }
+      });
+      _rawScheduleRemember = { map: map, n: n };
+    })();
     var items = [];
     elements.forEach(function (el) {
       var st = schedule[el.guid]; if (!st) return;
@@ -5210,6 +5229,13 @@
     var app = A();
     if (!app || !app.db) return false;
     var db = app.db;
+    // §S4_ACTIVATION_TIMING (4D_GANTT_TM_REFACTOR.md §STAGES S4, measure-first per M4) — additive
+    // profiling only, no behavior change. Bracket the phases inside the ~20s Hospital-63k activation
+    // budget the diagnosis only partly itemized (§WRITE_LOOP_TIMING=7.19s + "computeSchedule+geo-
+    // order ~1.5-2s", leaving ~11-12s unaccounted) so the real dominant cost can be MEASURED before
+    // any call is skipped, per M4's own "measure per-chunk cost before touching" instruction.
+    var _s4T0 = performance.now(), _s4Marks = [];
+    function _s4Mark(label) { _s4Marks.push(label + '=' + (performance.now() - _s4T0).toFixed(0)); }
 
     db.run('CREATE TABLE IF NOT EXISTS kernel_ops (' +
       'id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL,' +
@@ -5332,6 +5358,7 @@
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
     if (!r.length || !r[0].values.length) return false;
+    _s4Mark('elemQuery');
 
     var totalDbElements = r[0].values.length;
 
@@ -5581,9 +5608,30 @@
     // its physics.
     var _geoElements = elements.filter(function (el) { return !el.noGeo; });
     var _noGeoN = elements.length - _geoElements.length;
-    var _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
-      ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews, _shiftHours) : null;
+    // §S4_RAW_SCHEDULE_REUSE: if the materializeZones hook already computed this same element set's
+    // raw schedule earlier in this generation cycle (cold-open ordering — §GANTT_PREMATERIALIZE
+    // runs before injectGantt), reuse it instead of recomputing computeSchedule a second time.
+    // Coverage-checked exactly like §CPM_DISPLAY_ONE_TRUTH's own reuse test (>=99.9% guid hit rate)
+    // so a different building's stale cache can never be mistaken for a match. Falls through to a
+    // real computeSchedule call, byte-identical to pre-S4 behavior, on any miss.
+    var _sched = null, _rawHits = 0, _rawMisses = 0;
+    if (_rawScheduleRemember && _rawScheduleRemember.n > 0) {
+      for (var _rgi = 0; _rgi < _geoElements.length; _rgi++) {
+        if (_rawScheduleRemember.map[_geoElements[_rgi].guid]) _rawHits++; else _rawMisses++;
+      }
+      if (_rawHits > 0 && _rawHits >= 0.999 * (_rawHits + _rawMisses)) {
+        _sched = _rawScheduleRemember.map;
+        console.log('§S4_RAW_SCHEDULE_REUSE hits=' + _rawHits + ' misses=' + _rawMisses +
+          ' — skipped a second computeSchedule call (materializeZones already computed this raw schedule)');
+      }
+      _rawScheduleRemember = null;   // one-shot, same discipline as _displayTimeline._last
+    }
+    if (!_sched) {
+      _sched = (typeof ScheduleGate !== 'undefined' && ScheduleGate.computeSchedule)
+        ? ScheduleGate.computeSchedule(_geoElements, baseMs, scaleFactor, _maxCrews, _shiftHours) : null;
+    }
     if (!_sched) { console.warn('§SUPPORT_CHECK ScheduleGate.js not loaded — generated 4D aborted'); return false; }
+    _s4Mark('computeSchedule');
     // §TIER_SERIAL (2026-08-11): the DISPLAYED timeline is the two-tier remap of computeSchedule's
     // output — backbone phases strictly serial, everything else one support-gated concurrent pool
     // (full doctrine on _twoTierRemap above). _sched itself stays RAW: §SUPPORT_CHECK/§ROOF_GATE
@@ -5597,6 +5645,7 @@
         storey: el.storey };   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
     });
     var _twStats = _displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
+    _s4Mark('displayTimeline');
     var _disp = {};
     _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e }; });
     var _schedEnd = baseMs;
@@ -5617,6 +5666,7 @@
       if (s.end > _projEnd) _projEnd = s.end;
     });
     _gStmt.free();
+    _s4Mark('insertLoop');
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
 
@@ -5633,6 +5683,7 @@
     // ZERO support candidates for — previously silent false-pass. Floating count/gating unchanged.
     var _unchecked = [];
     var _float = ScheduleGate.auditFloating(_geoElements, _sched, null, null, _unchecked);
+    _s4Mark('supportCheck');
     console.log('§SUPPORT_CHECK floating=' + _float + '/' + _auditN + ' (ALL classes, bearing-below + hang-carrier) gated=' + elements.length + ' (0=solved)');
     console.log('§SUPPORT_UNCHECKED_SUMMARY n=' + _unchecked.length + '/' + _auditN +
       ' bigVol>' + (ScheduleGate.BIG_ELEMENT_VOL || 1.556) + 'm³ zero-candidate' +
@@ -5747,6 +5798,8 @@
         }
       });
     }
+    _s4Mark('generativeBranchEnd');
+    console.log('§S4_ACTIVATION_TIMING ' + _s4Marks.join(' '));
     console.log('§GANTT injected=' + count + ' dbElements=' + totalDbElements +
       ' sceneMeshGUIDs=' + sceneGuids +
       ', bands=' + storeyNames.length + ', serialClockDays=' + projectDays + ', scale=' + scaleFactor.toFixed(2) +
@@ -6008,6 +6061,7 @@
         _ogSupportSweep(_allScheduled, _cap.win);
       }
       _cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
+      _s4Mark('capBranchPreWrite');
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
       // ms=2044.9 synchronous freeze on LTU (live log 2026-08-10). _writeScheduledChunked writes the
@@ -6015,6 +6069,8 @@
       // a macrotask every _TM_CHUNK=2500 rows so the tab stays responsive. Witness:
       // viewer/tests/witness_gantt_refold_yield.js (identity gate: chunked rows == sync rows).
       await _writeScheduledChunked(db, _allScheduled);
+      _s4Mark('capBranchWrite');
+      console.log('§S4_ACTIVATION_TIMING_CAP ' + _s4Marks.join(' '));
       _capActive = true;
       _coveredCount = _covered;
       _coveragePct = totalDbElements ? Math.round(_covered / totalDbElements * 100) : 0;
@@ -8298,8 +8354,10 @@
     if (app && app.status) app.status.textContent = msg;
   }
 
+  var _s4ActT0 = 0;   // §S4_ACTIVATION_TIMING — shared with _finishActivate below (measure-first, additive only)
   function activate() {
     if (_active) return;
+    _s4ActT0 = performance.now();
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
     _ganttAutoGenAttempted = false;   // §GANTT_EDIT_LOCK — allow one fresh auto-generate attempt
     _ganttSelected = {}; _marquee = null; _groupDrag = null;   // §GANTT_GROUP_MOVE — stale selection from a prior building must never apply here
@@ -8441,7 +8499,9 @@
         // native schedule is materialized FIRST, so the single injectGantt run absorbs it, bars carry
         // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
         // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
+        console.log('§S4_ACTIVATION_TIMING_MID beforeMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
         _materializeNativeSchedule(app);
+        console.log('§S4_ACTIVATION_TIMING_MID afterMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
         if (!(await injectGantt())) {
           if (st) st.textContent = 'No elements found in database';
           viewerStatus('Time Machine: no elements found');
@@ -8449,10 +8509,13 @@
           resolve(false);
           return;
         }
+        console.log('§S4_ACTIVATION_TIMING_MID afterInjectGantt=' + (performance.now() - _s4ActT0).toFixed(0));
         _ops = loadOps(); _ganttDirty = true;
+        console.log('§S4_ACTIVATION_TIMING_MID afterLoadOps=' + (performance.now() - _s4ActT0).toFixed(0) + ' n=' + _ops.length);
         if (!_ops.length) { resolve(false); return; }
         // §S260c: Cache the newly computed schedule to IDB
         cachePut('gantt', _ops);
+        console.log('§S4_ACTIVATION_TIMING_MID afterCachePut=' + (performance.now() - _s4ActT0).toFixed(0));
         console.log('§GANTT_CACHE_SAVE ops=' + _ops.length);
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
       }
@@ -8505,8 +8568,15 @@
     // there), so this is the ONE place, keyed off the _ops that actually ended up loaded regardless
     // of source (generated fallback or captured IFC 4D — schedMap is read from _ops, not from
     // injectGantt's own locals). Read-only: one SELECT + one pass over _ops, no db writes.
+    // §S4_ACTIVATION_TIMING (measure-first, additive only) — the ~10s tail AFTER injectGantt()
+    // returns (loadOps/cachePut/_finishActivate) was completely unmeasured before this; bracket it.
+    var _s4fa = [];
+    function _s4faMark(l) { _s4fa.push(l + '=' + (performance.now() - _s4ActT0).toFixed(0)); }
+    _s4faMark('finishActivateStart');
     _tmRebuildXrayCache();
+    _s4faMark('xrayCache');
     computeDays();
+    _s4faMark('computeDays');
     saveVisibility();
     // §S262: DLOD runs independently — camera distance drives promote/demote, TM drives visibility. No pause needed.
     console.log('§MOBILE_TM_TOGGLE method=setVisibleAt|setMatrixAt mobile=' + !!app._isMobile + ' dlod=' + !!app._useDlodPath);
@@ -8515,9 +8585,13 @@
     _panel.style.display = 'flex';
     switchMode('DAY');
     renderAtTime(_projectEnd); // §S260c: initial render so Gantt + status populate immediately
+    _s4faMark('renderAtTime');
     updateStatus();
     if (_ganttVisible) drawGanttMini();
+    _s4faMark('ganttMini');
     if (_dashVisible) drawDashboard();
+    _s4faMark('dashboard');
+    console.log('§S4_ACTIVATION_TIMING_FINISH ' + _s4fa.join(' ') + ' totalSinceActivate=' + (performance.now() - _s4ActT0).toFixed(0));
     // §S2 — the ⚖ variance drawer only offers itself when this building HAS a folded twin (a C_Project with the
     // PlannedAmt↔CommittedAmt pair). No twin → no button, no drawer (user: "don't trigger it when no such info").
     _loadTwin().then(function (t) {
