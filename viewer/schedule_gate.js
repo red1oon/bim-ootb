@@ -169,41 +169,48 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
-  // ══ §GROUNDWORK_SLAB (2026-08-16, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S9 / M5 v2) ═══
+  // ══ §GROUNDWORK_SLAB (2026-08-16, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S9 / M5 v4) ═══
   // groundworkSlabs(els) -> { guid: 1 } for every IfcSlab/IfcBeam currently classified
-  // Superstructure that is GROUNDWORK, not deck/frame: (1) its 3m z-band (the shipped §GANTT
-  // quantum) is the building's LOWEST band containing any Superstructure element — "ground"
-  // extracted per building, no assumed datum; (2) FIXPOINT membership: it joins the set when every
-  // bearing-below contact (this module's own EPS/GAP bearing predicate — the judge's) is
-  // Substructure-phase OR already in the set — grade beams join first (they bear on piles/footings
-  // only), the plate joins next (it bears on piles + grade beams). A deck slab bears on frame
-  // beams (Superstructure, higher band, never members) and a frame beam bears on columns —
-  // neither ever joins. The SEQUENCE_RULES class defaults (IfcBeam seq 3 / IfcSlab seq 4,
-  // Superstructure) are FRAME logic, right for upper floors — a slab-on-grade or grade beam
-  // sequenced by them appears with the steel all round it, the user-reported symptom. Same
-  // shared-pure-function status as hostPairs: one definition, both element recipes call it, so
-  // zone authoring, task bars, milestones (E3's Substructure→Superstructure chain then orders
-  // groundwork-before-frame with zero solver changes) and the movie stay one truth. Pure
-  // geometry — no timing read.
+  // Superstructure that is GROUNDWORK, not deck/frame. Two membership routes, both extracted:
+  //  (a) ZERO structural bearings (slab-on-grade over soil): joins iff its 3m z-band (the shipped
+  //      §GANTT quantum) equals the LOWEST band among the candidate classes themselves (IfcSlab/
+  //      IfcBeam Superstructure — NOT all Superstructure: measured live, 3 stray IfcColumn bases
+  //      one band below Terminal's plate voided every candidate, and band quantization shifts
+  //      between z-datums; keying on the candidate population is frame-invariant).
+  //  (b) HAS structural bearings: FIXPOINT — joins when every structure-pool bearing-below contact
+  //      (seq<=4 / IfcWall* / promoted slab / stair flight — the module's own bearing definition;
+  //      under-slab MEP never counts, a pipe cannot bear a slab) is Substructure-phase or already
+  //      a member. Grade beams join first (they bear on piles/footings), the plate joins next
+  //      (piles + grade beams), toppings join off the plate. A deck slab bears on frame beams and
+  //      a frame beam on columns — columns are not candidates, so neither ever joins.
+  // The SEQUENCE_RULES class defaults (IfcBeam seq 3 / IfcSlab seq 4, Superstructure) are FRAME
+  // logic, right for upper floors — groundwork sequenced by them appears with the steel all round
+  // it, the user-reported symptom. Same shared-pure-function status as hostPairs: one definition,
+  // both element recipes call it, so zone authoring, task bars, milestones (E3's existing
+  // Substructure→Superstructure chain then orders groundwork-before-frame with zero solver
+  // changes) and the movie stay one truth. Pure geometry — no timing read.
   function groundworkSlabs(els) {
     var out = {}, idx = {}, t, e, cs, c, k, S;
-    var minSupBand = Infinity;
+    function isStructBearing(s2) {
+      return s2.seq <= 4 || (s2.cls && s2.cls.indexOf('IfcWall') === 0) ||
+             (s2.cls === 'IfcSlab' && s2.seq > 4) || s2.cls === 'IfcStairFlight';
+    }
+    function isCand(e2) {
+      return (e2.cls === 'IfcSlab' || e2.cls === 'IfcBeam') && e2.phase === 'Superstructure';
+    }
+    // v6: the ground window is PER CANDIDATE CLASS and DATUM-INVARIANT. Two measured traps led
+    // here: (v5) Terminal's grade beams base one 3m band below the plate, so one shared minimum
+    // starved the plate — the ground reference must be each class's own; and (v6) the viewer
+    // rebases the z-datum in its in-memory DB, so floor(z/3) BIN EQUALITY gave 233 members on the
+    // raw datum and 29 on the shifted one for the SAME building — the same 3m quantum must be
+    // applied as a continuous window above the class's own minimum base_z, not as a bin boundary.
+    var minZByCls = {};
     for (t = 0; t < els.length; t++) {
-      e = els[t];
-      if (e.phase === 'Superstructure') {
-        var b = Math.floor(e.base_z / 3);
-        if (b < minSupBand) minSupBand = b;
+      if (isCand(els[t])) {
+        if (!(els[t].cls in minZByCls) || els[t].base_z < minZByCls[els[t].cls]) minZByCls[els[t].cls] = els[t].base_z;
       }
     }
-    if (!isFinite(minSupBand)) return out;
-    // M5 v3: only a STRUCTURE-POOL element can make a candidate a deck — the module's own bearing
-    // definition (seq<=4, IfcWall*, promoted slab = IfcSlab seq>4, stair flight). Under-slab
-    // services (MEP seq 7/9 — measured 905 such pairs under Terminal's plate) are real contacts
-    // (E1's SS edge keeps that physical order) but cannot BEAR a slab, so they never disqualify.
-    function isStructBearing(S) {
-      return S.seq <= 4 || (S.cls && S.cls.indexOf('IfcWall') === 0) ||
-             (S.cls === 'IfcSlab' && S.seq > 4) || S.cls === 'IfcStairFlight';
-    }
+    if (!('IfcSlab' in minZByCls) && !('IfcBeam' in minZByCls)) return out;
     for (t = 0; t < els.length; t++) {
       e = els[t];
       if (e.phase === 'Substructure') continue;   // only non-Substructure can disqualify a bearing
@@ -211,12 +218,11 @@
       cs = cellsOf(e);
       for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t);
     }
-    // candidates + their potentially-disqualifying bearing-below contact lists, computed once
+    // candidates + their potentially-disqualifying structural bearing lists, computed once
     var cand = [], bearings = [];
     for (t = 0; t < els.length; t++) {
       e = els[t];
-      if ((e.cls !== 'IfcSlab' && e.cls !== 'IfcBeam') || e.phase !== 'Superstructure') continue;
-      if (Math.floor(e.base_z / 3) !== minSupBand) continue;
+      if (!isCand(e)) continue;
       var bl = [], seen = {};
       cs = cellsOf(e);
       for (c = 0; c < cs.length; c++) {
@@ -228,6 +234,11 @@
           if (S.base_z < e.base_z - EPS && S.top_z >= e.base_z - GAP && overlap(S, e)) bl.push(arr[k]);
         }
       }
+      // route (a): no structural bearing — within one 3m quantum of its own class's lowest base
+      if (!bl.length) {
+        if (e.base_z <= minZByCls[e.cls] + 3) out[e.guid] = 1;
+        continue;
+      }
       cand.push(t); bearings.push(bl);
     }
     var changed = true;
@@ -238,7 +249,8 @@
         if (out[e.guid]) continue;
         var blocked = false;
         for (k = 0; k < bearings[t].length; k++) {
-          if (!out[els[bearings[t][k]].guid]) { blocked = true; break; }
+          S = els[bearings[t][k]];
+          if (S.phase !== 'Substructure' && !out[S.guid]) { blocked = true; break; }
         }
         if (!blocked) { out[e.guid] = 1; changed = true; }
       }
