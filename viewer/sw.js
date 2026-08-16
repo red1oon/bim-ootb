@@ -8,7 +8,20 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1049';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1050';   // bump on each deploy; per-change detail is the git commit message.
+// v1050 (2026-08-16) §MIRROR_ROOM_PROBE: Alt+S glossy/metal materials reflect a real one-time
+// CubeCamera capture of the actual scene (a room-representative point, same pivot heuristic
+// _cinemaPathPlan uses) instead of only the static sky/HDRI — user: "what does it take for
+// mirrors to truly reflect... try the single room-representative probe first" (effects.js?v=23).
+// A per-element name-keyword mirror boost was attempted and DROPPED (not shipped): A._matCache
+// only covers instanced/merged-tracked elements — Clinic's real "M_Mirror" elements render via
+// the batched path and never register a matCache entry, so there's nothing for a per-element
+// boost to attach to; fixing that needs a batched-mesh-aware path, out of scope here. Real bug
+// found+fixed in the same pass: dispose+rebuild every Alt+S cycle leaked +1 texture/cycle
+// (compounding, C1/C2/C3 measured 25,1,1) — fixed by building the probe ONCE and reusing it
+// across cycles (only disposed on a real building switch), same discipline as A._camLight.
+// v1049 (2026-08-16) §S6_CREW_PASS: crew-aware CPM forward pass (serial SGS), §CREW_FEASIBILITY +
+// §CREW_SPREAD_FLOOR fleet gates (#1406) — unrelated to this change.
 // v1048 (2026-08-16) bim-compiler prompts/4D_GANTT_TM_REFACTOR.md S1-S4 closeout: §S1_BAND_RANK
 // (cpm_schedule.js buildGraph — E4 storey hammocks + straggler group-key use 3m z-bands, not
 // per-storey-name rank, PR #1401); §S2_TUKEY_ENVELOPE (time_machine.js _tmDisplayRemap — task bars
