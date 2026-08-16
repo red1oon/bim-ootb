@@ -23,7 +23,7 @@ const ScheduleAuthor = require(path.join(repo, 'viewer', 'schedule_author.js'));
 require(path.join(repo, 'viewer', 'schedule_gate.js'));   // registers globalThis.ScheduleGate for the recipe
 
 // Spot rows: expected center_z = extracted-truth + modal offset (−14.659), written by
-// gen_terminal_meta_patch.js on 2026-08-16. Pre-patch served values were 13.0967 / 17.0967
+// scripts/gen_meta_transform_patch.js (was gen_terminal_meta_patch.js, removed 2026-08-17). Pre-patch served values were 13.0967 / 17.0967
 // (≈4.09m too low — part of the corrupted tail).
 const SPOT = [
   { guid: '0XfFSNafP5APj2WZXUWDV5', z: 13.188841 },

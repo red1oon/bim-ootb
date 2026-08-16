@@ -19,6 +19,8 @@
 //          restores from; the full 125,698-row check against extracted itself is a bench check,
 //          logged in §S11_RESULTS, not runnable from a DB-less worktree)
 // W-S11-C  zero rows at center_z EXACTLY 0 (3,105 before)
+// Patch is produced by scripts/gen_meta_transform_patch.js (generic, fleet-wide); the LTU-specific
+// gen_ltu_meta_patch.js it replaced is gone.
 // W-S11-D  idempotence — re-applying the patch here updates 0 rows and changes no verdict
 'use strict';
 const fs = require('fs');
@@ -30,7 +32,10 @@ const initSqlJs = require(path.join(repo, 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleAuthor = require(path.join(repo, 'viewer', 'schedule_author.js'));
 require(path.join(repo, 'viewer', 'schedule_gate.js'));   // registers globalThis.ScheduleGate for the recipe
 
-const EPS = 0.05;                       // ScheduleGate.EPS, mirrored
+// The repair selection runs at HALF ScheduleGate.EPS (see scripts/gen_meta_transform_patch.js), so
+// the post-patch invariant is asserted at that same 0.025 — checking at 0.05 would pass without
+// proving the tightening that closed the last 49 rows.
+const EPS = 0.025;                      // ScheduleGate.EPS / 2 — the repair threshold, mirrored
 const PATCH = path.join(repo, 'buildings', 'patches', 'LTU_AHouse_meta.db.sql');
 
 // Post-repair targets, measured 2026-08-17. The probe world (LTU_AHouse_extracted.db) gives
