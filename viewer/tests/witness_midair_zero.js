@@ -107,9 +107,16 @@ console.log('§MIDAIR_SLICE _midairRepairDefs=' + _mrCount + ' slicing #' + (_mr
   ' zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
   ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)'));
 
-// W-MZ-5 — the repair must be called on the kernel_ops path, not merely defined
-assert(/_twoTierRemap\(_twItems\);[\s\S]{0,600}_midairRepair\(_twItems\)/.test(tmSrc),
-  'W-MZ-5 _midairRepair called on the kernel_ops path, right after _twoTierRemap (a defined-but-uncalled repair is a silent no-op)');
+// W-MZ-5 — the repair must be reachable from the kernel_ops path, not merely defined.
+// §CPM_DISPLAY (2026-08-16): the kernel_ops path now calls the single shared _displayTimeline,
+// whose legacy branch still runs _twoTierRemap then _midairRepair (the wiring this assert always
+// guarded), and whose CPM branch replaces both with the one-DAG pass + an inline _midairAudit
+// (midair impossible by construction, printed in §CPM_DISPLAY). Assert BOTH links of that chain
+// so neither the seam call nor the legacy repair pair can silently drop out.
+assert(/_displayTimeline\(_twItems\)/.test(tmSrc),
+  'W-MZ-5a kernel_ops path calls _displayTimeline (the single display-timeline source)');
+assert(/function _displayTimeline\(items\) \{[\s\S]{0,2600}_twoTierRemap\(items\);[\s\S]{0,200}_midairRepair\(items\)/.test(tmSrc),
+  'W-MZ-5b _displayTimeline legacy branch still runs _twoTierRemap then _midairRepair (a defined-but-uncalled repair is a silent no-op)');
 // W-MZ-6 — the LOCK gate must judge by the same rule the generator enforces, or a planner's drag
 // re-creates exactly the hangings the generated film has none of and the lock is still granted.
 const _vgi = tmSrc.slice(tmSrc.indexOf('function verifyGanttIntegrity()'));

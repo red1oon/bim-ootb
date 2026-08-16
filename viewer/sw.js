@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1045';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1046';   // bump on each deploy; per-change detail is the git commit message.
+// v1046 (2026-08-16) §CPM_DISPLAY: time_machine.js display timeline authored by cpm_schedule.js
+// one-DAG forward pass (support/host/discipline/storey edges, SCC-condensed) at BOTH consumers
+// (kernel_ops write + materializeZones displayRemap) — floating 0 by construction, ?cpm4d=0 reverts.
+// cpm_schedule.js added to precache; _GANTT_CACHE_VERSION 27->28 regenerates cached schedules.
 // v1045 (2026-08-16) §CPE_DISCIPLINE_REVEAL_FLYBACK/§_ORDER/§_FADE: the pull-out->round-2 teleport
 // cut replaced with a fast eased retrace fly-back (new plan.beats.flyback boundary); tail-parade
 // discipline order now sorted ascending by real avg element bbox volume (element_transforms.bbox_x/
@@ -310,6 +314,7 @@ const PRECACHE_ASSETS = [
   'clash_snag.js',
   'precision_cam.js',
   'schedule_gate.js',
+  'cpm_schedule.js',
   'time_machine.js',
   'dlod_nav.js',
   'schedule_author.js',

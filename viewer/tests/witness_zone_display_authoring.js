@@ -70,6 +70,7 @@ let mrCount = 0, mrFrom = 0;
 for (;;) { const k = tmSrc.indexOf('function _midairRepair(', mrFrom); if (k < 0) break; mrCount++; mrFrom = k + 1; }
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
 const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
+  'var _CPM_DISPLAY = false;',   // §CPM_DISPLAY: legacy branch under test here; CPM branch = W-ZDA-6 below,
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
@@ -77,7 +78,9 @@ const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architec
   sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
   sliceFn(tmSrc, '_midairRepair', mrCount - 1),
   sliceFn(tmSrc, '_ogSupportSweep'), sliceFn(tmSrc, '_cjpJudgeParity'),
-  sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
+  sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_displayTimeline'), sliceFn(tmSrc, '_displayTimelineRemember'),
+  sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
 const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
   ScheduleGate: ScheduleGate, Math: Math };
 vm.createContext(sandbox);
@@ -187,6 +190,25 @@ async function main() {
       ' outWindow ' + baseWin.outW + ' -> ' + nextWin.outW);
     assert(nextFloat <= baseFloat, 'W-ZDA-4a floating not worse under display-authored windows (' + baseFloat + ' -> ' + nextFloat + ')');
     assert(nextWin.outW <= baseWin.outW, 'W-ZDA-4b window fidelity not worse (outWindow ' + baseWin.outW + ' -> ' + nextWin.outW + ')');
+    // W-ZDA-6 (§CPM_DISPLAY, 2026-08-16): the CPM branch of _displayTimeline authors a 0-midair
+    // display timeline through the SAME hook (proves the wiring, not just the module).
+    console.log = quiet;
+    const cpmSandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
+      ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
+      CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
+    vm.createContext(cpmSandbox);
+    vm.runInContext(sliced.replace('var _CPM_DISPLAY = false;', 'var _CPM_DISPLAY = true;') +
+      '\nthis.__remapHook = _tmDisplayRemap; this.__cg = _contactGraph;', cpmSandbox);
+    const cpmDisp = cpmSandbox.__remapHook(elements, rawSched);
+    const cpmItems = elements.map(el => {
+      const st = cpmDisp[el.guid]; if (!st) return null;
+      return { guid: el.guid, s: st.start, e: st.end, bz: el.bz, tz: el.tz,
+        x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, cls: el.cls, seq: el.seq };
+    }).filter(Boolean);
+    const cpmFloat = census(cpmItems);
+    console.log = ql;
+    console.log('  §ZDA_CPM_DISPLAY ' + B + ' midair=' + cpmFloat + ' (legacy display path above: ' + nextFloat + ')');
+    assert(cpmFloat === 0, 'W-ZDA-6 CPM display timeline has 0 midair through the shipped hook (got ' + cpmFloat + ')');
     dbA.close(); dbB.close();
   }
   console.log('\n§ZDA_WITNESS_SUMMARY pass=' + pass + ' fail=' + fail);
