@@ -4,6 +4,47 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.47.0](https://github.com/red1oon/bim-ootb/compare/v1.46.0...v1.47.0) (2026-08-16)
+
+
+### ✨ Features
+
+* **ground:** §GROUND_DETAIL — normal+roughness maps, fine detail multiply, anti-tiling blotch ([#1388](https://github.com/red1oon/bim-ootb/issues/1388)) ([4ef1755](https://github.com/red1oon/bim-ootb/commit/4ef1755e4ea030ccc39692715fcf5a323e676cca))
+
+
+### 🐛 Fixes
+
+* **4d:** §CJP_DAY_ROUNDING_TOL — chase-to-zero thread 2, fleet floating 265 -&gt; 133 (-49.8%) ([#1395](https://github.com/red1oon/bim-ootb/issues/1395)) ([0ee2ca0](https://github.com/red1oon/bim-ootb/commit/0ee2ca02440b3df7fd0ebd079b7bc2b66c5c2d7d))
+* **4d:** §CROSSTASK_JUDGE_PARITY — window-bounded judge-rule repair after _ogSupportSweep, captured floating 3090 -&gt; 656 across 7 buildings ([#1387](https://github.com/red1oon/bim-ootb/issues/1387)) ([7f02b31](https://github.com/red1oon/bim-ootb/commit/7f02b31d1c533ff9152b55d898cb7ba876c9067b))
+* **4d:** §GANTT_GAP_CLAMP_SPREAD — spread elements evenly within their Gantt bar without breaking window fidelity ([#1377](https://github.com/red1oon/bim-ootb/issues/1377)) ([4b052b8](https://github.com/red1oon/bim-ootb/commit/4b052b80b8f3a074512a0e848240e83b05ea0166))
+* **4d:** §GANTT_TASK_WINDOW_FIDELITY — place captured elements within their OWN task's window, not a global rescale ([#1368](https://github.com/red1oon/bim-ootb/issues/1368)) ([ff12293](https://github.com/red1oon/bim-ootb/commit/ff12293fb1bd03f4763c233d5235904ae750cb36))
+* **4d:** §OG_HANG_BAND — widen _ogSupportSweep's hang-repair radius 0.5m-&gt;9.5m ([#1375](https://github.com/red1oon/bim-ootb/issues/1375)) ([07fe42e](https://github.com/red1oon/bim-ootb/commit/07fe42ef09ce5ea7caf75367af202cc528db3945))
+* **4d:** §OG_HANG_UNBOUND — _ogSupportSweep's hang search now unbounded, matches hangGate/judge ([#1382](https://github.com/red1oon/bim-ootb/issues/1382)) ([b8e669c](https://github.com/red1oon/bim-ootb/commit/b8e669cb6afee577f2ca227d6eba57a13a037970))
+* **4d:** §OG_HANG_WINDOW_BOUND — hang-repair push must not exit its own task window ([#1376](https://github.com/red1oon/bim-ootb/issues/1376)) ([77f8234](https://github.com/red1oon/bim-ootb/commit/77f82344e4959146c46252ea576c4e7a0342669f))
+* **4d:** §ZONE_DISPLAY_AUTHORING — one schedule for movie and Gantt; real floating 2741 -&gt; 265 ([#1390](https://github.com/red1oon/bim-ootb/issues/1390)) ([164bd86](https://github.com/red1oon/bim-ootb/commit/164bd86cc2b4c1ffcfbbfc6736dc5a8d3b493065))
+* **4d:** remove §Z_STACK_XRAY_STAGING ghost — nothing appears until its support is actually finished ([#1372](https://github.com/red1oon/bim-ootb/issues/1372)) ([d6972fe](https://github.com/red1oon/bim-ootb/commit/d6972fe71f2450e87ac3e1833b008d7d7b008028))
+* **4d:** revert PR [#1364](https://github.com/red1oon/bim-ootb/issues/1364)'s _midairRepair bolt-on — desynced the captured schedule from its own Gantt-authored dates ([#1365](https://github.com/red1oon/bim-ootb/issues/1365)) ([235267a](https://github.com/red1oon/bim-ootb/commit/235267a10e242f4cd328f432815f894d8798b859))
+* **cinema:** §LTU_SUBSURFACE_BBOX — percentile z-fence on the building bbox; junk rows no longer sink the orbit underground ([#1386](https://github.com/red1oon/bim-ootb/issues/1386)) ([412e8df](https://github.com/red1oon/bim-ootb/commit/412e8df518d473e74446a25a72fe4b4431a85d2d))
+* **cpe:** Discipline Reveal — smooth pull-out-&gt;round-2 seam, sort discs, fade tail transitions ([#1394](https://github.com/red1oon/bim-ootb/issues/1394)) ([ac8f41c](https://github.com/red1oon/bim-ootb/commit/ac8f41cd96e06f9227c1437cfa5a556b32a7342d))
+* **data:** §HOSPITAL_COLOUR_BACKFILL — self-heal patch colours stale cached Hospital meta (23 classes, empty-guarded) ([#1385](https://github.com/red1oon/bim-ootb/issues/1385)) ([923f6e8](https://github.com/red1oon/bim-ootb/commit/923f6e8cb497ef53c224bc270ca409ef36823cf2))
+* **photo:** §ALTS_MEM_HOG — real Alt+S exit now disposes the photo-prop tree, not just hides it ([#1391](https://github.com/red1oon/bim-ootb/issues/1391)) ([81d2ecd](https://github.com/red1oon/bim-ootb/commit/81d2ecdfb71beb07ad9546333b7b489d061e43f2))
+* **photo:** §GROUND_EARTH_DEFAULT — Alt+S/Alt+C bake ground back to 'earth', Shadow cycle leads with it ([#1393](https://github.com/red1oon/bim-ootb/issues/1393)) ([6cce8ae](https://github.com/red1oon/bim-ootb/commit/6cce8ae54b3ab92c71540cc5672bb3cc16cf66ed))
+* **photo:** §SKY_SUNPOS_INIT — black sky on Alt+S: sunPosition uniform never initialized while sky hidden ([#1384](https://github.com/red1oon/bim-ootb/issues/1384)) ([0050d1c](https://github.com/red1oon/bim-ootb/commit/0050d1c97029c745e648c6ae5b822dd7fa13b99f))
+* **photo:** §STAGED_PL_CUT — halve night point-light intensity during Alt+S/Alt+C staging only ([#1389](https://github.com/red1oon/bim-ootb/issues/1389)) ([de0eb45](https://github.com/red1oon/bim-ootb/commit/de0eb4596d84267f6b798bcc762d50fcce6f5a64))
+* **photo:** §TRINORM_LINEAR — triplanar normFactor was sRGB-derived, applied in linear; metal crushed to literal black ([#1383](https://github.com/red1oon/bim-ootb/issues/1383)) ([32a39a6](https://github.com/red1oon/bim-ootb/commit/32a39a6a1b19ced38b3987f39556aaef1a02bbbd))
+* **photo:** cut residual reflection on metal further, 0.18-&gt;0.05 ([#1371](https://github.com/red1oon/bim-ootb/issues/1371)) ([719462c](https://github.com/red1oon/bim-ootb/commit/719462c3ce576c465cdcde9156ea02b6b5ae53b2))
+* **photo:** extend blue-tint fix to pipes, ducts, and MEP joints ([#1369](https://github.com/red1oon/bim-ootb/issues/1369)) ([878153b](https://github.com/red1oon/bim-ootb/commit/878153bf1090f8fe553ed7e0989c5125fae73964))
+* **photo:** recover the 13 MEP classes a squash-merge race dropped, zero out beam/railing ([#1373](https://github.com/red1oon/bim-ootb/issues/1373)) ([832dc1d](https://github.com/red1oon/bim-ootb/commit/832dc1d7ae4cc15b9ce39cc02d6eb300bbda9108))
+* **photo:** restore fixture illumination + sync sky to real sun after mood separation ([#1380](https://github.com/red1oon/bim-ootb/issues/1380)) ([80c2b35](https://github.com/red1oon/bim-ootb/commit/80c2b3515e5d1774cb25e8904b502dfde456c61f))
+* **photo:** revert sky-sync regression — sky was rendering black ([#1381](https://github.com/red1oon/bim-ootb/issues/1381)) ([1516eef](https://github.com/red1oon/bim-ootb/commit/1516eeff11f09f3d50d8431d09d54adae2fd4a07))
+* **photo:** stop double-boosting the sky's blue reflection on steel/rail materials ([#1367](https://github.com/red1oon/bim-ootb/issues/1367)) ([335acda](https://github.com/red1oon/bim-ootb/commit/335acdaaa414e96955bf7d48d64e6f1b20317e56))
+* **photo:** TAA jitter mismatch + decouple Alt+S sun from forced dusk mood ([#1379](https://github.com/red1oon/bim-ootb/issues/1379)) ([4f8a5c5](https://github.com/red1oon/bim-ootb/commit/4f8a5c57aaa3e0b551dfa382be2a916cda676155))
+
+
+### ♻️ Refactors
+
+* **4d:** §SCHEDULE_CLASSIFY_DEDUP — collapse time_machine.js's two matchRule copies ([#1374](https://github.com/red1oon/bim-ootb/issues/1374)) ([bb85dcb](https://github.com/red1oon/bim-ootb/commit/bb85dcb5cdf26370427766941f8266843595d5af))
+
 ## [1.46.0](https://github.com/red1oon/bim-ootb/compare/v1.45.0...v1.46.0) (2026-08-15)
 
 
