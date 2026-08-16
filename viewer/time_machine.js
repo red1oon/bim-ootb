@@ -6943,6 +6943,18 @@
   // out of THIS source and test the shipped function rather than a hand-copied duplicate (the copy
   // problem this codebase already paid for three times with the support predicate).
   function _retimeSpan(opS, opE, oS, oE, nS, nE) {
+    // §S7_OUTLIER_DELTA (4D_GANTT_TM_REFACTOR.md §S7, measured live 2026-08-16: Terminal roof task
+    // n=11,004 had 440 ops outside its drawn bar; a drag collapsed 437 to the 60s floor and
+    // INVERTED 217 — end before start by up to -3.6h — because the affine map below assumes
+    // containment and extrapolates-then-clamps an outsider). An op outside the OLD window is a
+    // dag-wins Tukey outlier the bar deliberately excludes (M2: "counted, never hidden") — the
+    // edit-side rule is the same doctrine: never squeeze it into the window. It gets the window's
+    // uniform START delta with its TRUE duration preserved (a move shifts it with the task; a
+    // right-edge resize leaves it untouched, since nS==oS ⇒ delta 0).
+    if (opS < oS - 1 || opE > oE + 1) {
+      var ds = nS - oS;
+      return { s: Math.round(opS + ds), e: Math.round(opE + ds) };
+    }
     var oSpan = Math.max(1, oE - oS), nSpan = Math.max(1, nE - nS);
     var s = Math.round(nS + ((opS - oS) / oSpan) * nSpan);
     var e = Math.round(nS + ((opE - oS) / oSpan) * nSpan);
@@ -6958,6 +6970,11 @@
     var opByGuid = {}, i;
     for (i = 0; i < _ops.length; i++) if (_ops[i].output_guid) opByGuid[_ops[i].output_guid] = _ops[i];
     var rows = 0, t0 = (window.performance || Date).now();
+    // §RETIME_OUTLIER_AUDIT (4D_GANTT_TM_REFACTOR.md §S7 step 1 — measure, don't assume): count,
+    // per commit, the ops whose TRUE times sit outside their task's OLD drawn window (the Tukey
+    // outliers M2 deliberately leaves riding outside the bar) and what duration _retimeSpan hands
+    // each one back. collapsed = duration crushed to the 60s floor; inverted = end before start.
+    var audOutside = 0, audCollapsed = 0, audInverted = 0, audMinDur = Infinity, audMaxDur = -Infinity;
     db.run('BEGIN');
     moved.forEach(function (m) {
       var bar = barsByTask[m.id]; if (!bar || !bar.guids || !bar.guids.length) return;
@@ -6966,7 +6983,16 @@
       var oS = bar.startTs, oE = bar.endTs, oSpan = Math.max(1, oE - oS), nSpan = nE - nS;
       for (var gi = 0; gi < bar.guids.length; gi++) {
         var g = bar.guids[gi], op = opByGuid[g]; if (!op) continue;
+        var wasOutside = (op.start_ts < oS - 1 || op.end_ts > oE + 1);
         var r = _retimeSpan(op.start_ts, op.end_ts, oS, oE, nS, nE);
+        if (wasOutside) {
+          audOutside++;
+          var audDur = r.e - r.s;
+          if (audDur <= 60000) audCollapsed++;
+          if (audDur < 0) audInverted++;
+          if (audDur < audMinDur) audMinDur = audDur;
+          if (audDur > audMaxDur) audMaxDur = audDur;
+        }
         op.start_ts = r.s; op.end_ts = r.e;
         op.parameters._end_ts = r.e;
         upd.run([r.s, JSON.stringify(op.parameters), g]);
@@ -6977,6 +7003,10 @@
     upd.free();
     console.log('§GANTT_RETIME tasks=' + moved.length + ' rows=' + rows +
       ' ms=' + ((window.performance || Date).now() - t0).toFixed(1));
+    console.log('§RETIME_OUTLIER_AUDIT outsideOldWindow=' + audOutside + ' collapsed60s=' + audCollapsed +
+      ' inverted=' + audInverted +
+      (audOutside ? ' outlierDurMs=[' + audMinDur + ',' + audMaxDur + ']' : '') +
+      ' — outliers ride outside their bar (M2); collapse/inversion here is the §S7 edit-path defect');
     return rows;
   }
 
@@ -7074,6 +7104,20 @@
     drawGanttMini();
     renderAtTime(_cursor);
   }
+  // Test hooks (diagnostic only, same contract as __tmZoneProbe) — §S7's live drag reproduction:
+  // a headless probe needs the real commit path and the real computed bars, not a DOM gesture.
+  window.__tmGanttDrag = function (taskId, mode, deltaDays) {
+    for (var i = 0; i < _ganttTasks.length; i++) {
+      if (_ganttTasks[i].taskId === taskId) { commitGanttDrag(_ganttTasks[i], mode, deltaDays); return true; }
+    }
+    return false;
+  };
+  window.__tmGanttWindows = function () {   // NOT __tmGanttBars — drawGanttMini owns that name (rects)
+    return _ganttTasks.map(function (g) {
+      return { taskId: g.taskId, storey: g.storey, phase: g.phase, startTs: g.startTs, endTs: g.endTs,
+               n: g.guids ? g.guids.length : 0 };
+    });
+  };
 
   // §TM_RULER_SHIFT — drag the day ruler to move the WHOLE project's start/finish. Same shape as
   // commitGanttDrag (snapshot every leaf task's before-state + every touched guid's before-state

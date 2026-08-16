@@ -8,7 +8,10 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1050';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1051';   // bump on each deploy; per-change detail is the git commit message.
+// v1051 (2026-08-16) §S7_OUTLIER_DELTA: Gantt drag/resize no longer collapses (437/gesture) or
+// INVERTS (217/gesture) the ops riding outside their task's drawn Tukey bar — outsiders get the
+// window's uniform start delta with true duration preserved (time_machine.js, 4D_GANTT_TM_REFACTOR.md §S7).
 // v1050 (2026-08-16) §MIRROR_ROOM_PROBE: Alt+S glossy/metal materials reflect a real one-time
 // CubeCamera capture of the actual scene (a room-representative point, same pivot heuristic
 // _cinemaPathPlan uses) instead of only the static sky/HDRI — user: "what does it take for
