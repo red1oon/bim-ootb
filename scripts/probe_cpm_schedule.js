@@ -116,7 +116,7 @@ async function runBuilding(SQL, RATES, name) {
     const st = schedule[el.guid]; if (!st) return null;
     return { guid: el.guid, cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey,
              x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, bz: el.bz, tz: el.tz,
-             s: st.start, e: st.end };
+             s: st.start, e: st.end, resource: el.resource };   // §S6_CREW_PASS
   }).filter(Boolean);
   console.log('§CPM_BUILDING ' + name + ' n=' + items.length);
 
@@ -138,12 +138,73 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPM_RAW_FLOATING midair=' + rawCensus.midair + ' structural=' + structuralCount(rawCensus.byClass) +
     ' orphans=' + rawCensus.orphans);
 
-  // THE CPM PASS.
-  const res = CpmSchedule.run(items);
+  // THE CPM PASS (§S6_CREW_PASS: same per-resource caps computeSchedule ran on).
+  const res = CpmSchedule.run(items, { maxCrews });
   if (!res.ok) throw new Error('CPM run failed: ' + res.error);
   const cpmItems = items.map(function (o, i) {
     return Object.assign({}, o, { s: res.solution.times[i].s, e: res.solution.times[i].e });
   });
+
+  // §CREW_FEASIBILITY (4D_GANTT_TM_REFACTOR.md §S2_REVIEW_VERDICT S6 acceptance 1) — the invariant
+  // the tail compression broke: per resource, concurrently-running elements must not exceed
+  // max_crews. Tolerance = the day-rounding quantum: a resource only VIOLATES when its integrated
+  // over-cap exposure exceeds one day (boundary/SCC-equality overlaps inside a day are absorbed).
+  // Printed for RAW and CPM so the before/after is in the same log.
+  function crewFeasibility(list, label) {
+    const byRes = {};
+    list.forEach(o => { (byRes[o.resource] = byRes[o.resource] || []).push(o); });
+    let violations = 0; const detail = [];
+    Object.keys(byRes).sort().forEach(function (r) {
+      const cap = maxCrews[r] || 3;   // schedule_gate.js MAX_CREWS_DEFAULT, mirrored
+      const ev = [];
+      byRes[r].forEach(o => { ev.push([o.s, 1]); ev.push([o.e, -1]); });
+      ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);   // half-open: ends before starts at same t
+      let cur = 0, mx = 0, overMs = 0, lastT = null;
+      for (const [t, d] of ev) {
+        if (cur > cap && lastT != null) overMs += t - lastT;
+        lastT = t; cur += d; if (cur > mx) mx = cur;
+      }
+      if (overMs > DAY_MS) { violations++; detail.push(r + ' cap=' + cap + ' maxConc=' + mx + ' overDays=' + (overMs / DAY_MS).toFixed(1)); }
+    });
+    console.log('§CREW_FEASIBILITY_' + label + ' resources=' + Object.keys(byRes).length +
+      ' violations=' + violations + (detail.length ? ' detail=' + JSON.stringify(detail.slice(0, 8)) : '') +
+      ' ' + (violations === 0 ? 'PASS' : 'FAIL'));
+    return violations;
+  }
+  crewFeasibility(items, 'RAW');
+  const crewViol = crewFeasibility(cpmItems, 'CPM');
+
+  // §CREW_SPREAD_FLOOR (S6 acceptance 2) — a large task-group's span must be at least its own
+  // crew-arithmetic floor: max over its resources of (Σ crew-leveled duration ÷ that resource's
+  // cap). Computed from the data, not assumed; tolerance 1 day (the rounding quantum).
+  {
+    const byGrp = {};
+    cpmItems.forEach(function (o) {
+      if (!o.storey) return;
+      const k = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
+      const g = byGrp[k] || (byGrp[k] = { s: Infinity, e: -Infinity, n: 0, durByRes: {} });
+      if (o.s < g.s) g.s = o.s;
+      if (o.e > g.e) g.e = o.e;
+      g.n++;
+      g.durByRes[o.resource] = (g.durByRes[o.resource] || 0) + Math.max(0, o.e - o.s);
+    });
+    let floorViol = 0; const fDetail = [];
+    Object.keys(byGrp).forEach(function (k) {
+      const g = byGrp[k]; if (g.n < 1000) return;
+      let floorMs = 0, floorRes = null;
+      Object.keys(g.durByRes).forEach(function (r) {
+        const f = g.durByRes[r] / (maxCrews[r] || 3);
+        if (f > floorMs) { floorMs = f; floorRes = r; }
+      });
+      const spanMs = g.e - g.s;
+      const ok = spanMs >= floorMs - DAY_MS;
+      if (!ok) floorViol++;
+      fDetail.push(k + ' n=' + g.n + ' span=' + (spanMs / DAY_MS).toFixed(1) + 'd floor=' +
+        (floorMs / DAY_MS).toFixed(1) + 'd(' + floorRes + ') ' + (ok ? 'ok' : 'VIOL'));
+    });
+    console.log('§CREW_SPREAD_FLOOR groups(n>=1000)=' + fDetail.length + ' violations=' + floorViol +
+      ' ' + JSON.stringify(fDetail) + ' ' + (floorViol === 0 ? 'PASS' : 'FAIL'));
+  }
 
   // §CPM_FLOATING — the judge on CPM output.
   const census = floatingCensus(cpmItems);
@@ -255,11 +316,13 @@ async function runBuilding(SQL, RATES, name) {
     ' build=' + res.ms.build + ' solve=' + res.ms.solve + ') tierAuditRegateMs=' + (tR1 - tR0) +
     ' regatePushed=' + reg.pushed + ' speedup=' + ((tR1 - tR0) / Math.max(1, res.ms.total)).toFixed(2) + 'x');
 
-  const pass = census.midair === 0 && storeyRes.violations === 0;
+  const pass = census.midair === 0 && storeyRes.violations === 0 && crewViol === 0;
   console.log('§CPM_ACCEPT ' + name + ' floating=' + census.midair + ' structural=' + structural +
     ' storeyViolations=' + storeyRes.violations + '/' + (storeyRes.storeys - 1) +
+    ' crewFeasViolations=' + crewViol +
     ' cycleDrops=' + JSON.stringify(res.solution.drops) + ' ' + (pass ? 'PASS' : 'FAIL'));
   return { name, midair: census.midair, structural, storeyViolations: storeyRes.violations,
+           crewViol,
            rawMidair: rawCensus.midair, cpmMs: res.ms.total, regateMs: tR1 - tR0, parity: mismatch === 0 };
 }
 
@@ -273,9 +336,10 @@ async function main() {
   for (const name of FLEET) out.push(await runBuilding(SQL, RATES, name));
   let fails = 0;
   console.log('§CPM_FLEET ' + JSON.stringify(out.map(function (r) {
-    if (r.midair !== 0 || r.storeyViolations !== 0 || !r.parity) fails++;
+    if (r.midair !== 0 || r.storeyViolations !== 0 || !r.parity || r.crewViol !== 0) fails++;
     return [r.name, 'raw=' + r.rawMidair, 'cpm=' + r.midair, 'str=' + r.structural,
-            'storeyViol=' + r.storeyViolations, 'cpmMs=' + r.cpmMs, 'regateMs=' + r.regateMs];
+            'storeyViol=' + r.storeyViolations, 'crewViol=' + r.crewViol,
+            'cpmMs=' + r.cpmMs, 'regateMs=' + r.regateMs];
   })));
   console.log('§CPM_FLEET_VERDICT buildings=' + out.length + ' fails=' + fails + ' ' + (fails === 0 ? 'PASS' : 'FAIL'));
   process.exit(fails === 0 ? 0 : 1);

@@ -72,12 +72,37 @@ async function runBuilding(SQL, RATES, name) {
     const st = schedule[el.guid]; if (!st) return null;
     return { guid: el.guid, cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey,
              x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, bz: el.bz, tz: el.tz,
-             s: st.start, e: st.end };
+             s: st.start, e: st.end, resource: el.resource };   // §S6_CREW_PASS
   }).filter(Boolean);
   console.log('§CPMDP_BUILDING ' + name + ' n=' + items.length);
-  const res = CpmSchedule.run(items);
+  const res = CpmSchedule.run(items, { maxCrews });
   if (!res.ok) throw new Error('CPM failed');
   items.forEach((o, i) => { o.s = res.solution.times[i].s; o.e = res.solution.times[i].e; });
+
+  // §CREW_FEASIBILITY (4D_GANTT_TM_REFACTOR.md §S6 acceptance 1) on the CPM-authored schedule this
+  // display path plays: per resource, integrated over-cap exposure must stay within the 1-day
+  // rounding quantum.
+  let crewViol = 0;
+  {
+    const byRes = {};
+    items.forEach(o => { (byRes[o.resource] = byRes[o.resource] || []).push(o); });
+    const detail = [];
+    Object.keys(byRes).sort().forEach(function (r) {
+      const cap = maxCrews[r] || 3;   // schedule_gate.js MAX_CREWS_DEFAULT, mirrored
+      const ev = [];
+      byRes[r].forEach(o => { ev.push([o.s, 1]); ev.push([o.e, -1]); });
+      ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      let cur = 0, mx = 0, overMs = 0, lastT = null;
+      for (const [t, d] of ev) {
+        if (cur > cap && lastT != null) overMs += t - lastT;
+        lastT = t; cur += d; if (cur > mx) mx = cur;
+      }
+      if (overMs > 86400000) { crewViol++; detail.push(r + ' cap=' + cap + ' maxConc=' + mx + ' overDays=' + (overMs / 86400000).toFixed(1)); }
+    });
+    console.log('§CREW_FEASIBILITY_CPMDP violations=' + crewViol +
+      (detail.length ? ' detail=' + JSON.stringify(detail.slice(0, 8)) : '') +
+      ' ' + (crewViol === 0 ? 'PASS' : 'FAIL'));
+  }
 
   // §ZONE_DISPLAY_AUTHORING with the CPM display schedule: deriveZones + day-rounded windows
   // (materializeZones' own construction, verbatim from probe_captured_floating.js).
@@ -161,10 +186,11 @@ async function runBuilding(SQL, RATES, name) {
     ' outlierOutside=' + outlierOutside + '/' + clamped + ' nonOutlierOutside=' + otherOut +
     ' (bar: outside <= Tukey-outlier count; nonOutlier outside must be 0)');
 
-  const pass = final.midair === 0 && otherOut === 0;
-  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' nonOutlierOutside=' + otherOut + ' ' + (pass ? 'PASS' : 'FAIL'));
+  const pass = final.midair === 0 && otherOut === 0 && crewViol === 0;
+  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' nonOutlierOutside=' + otherOut +
+    ' crewFeasViolations=' + crewViol + ' ' + (pass ? 'PASS' : 'FAIL'));
   return { name, final: final.midair, pre: preRescale.midair, post: postRescale.midair,
-           outlierOutside, otherOut };
+           outlierOutside, otherOut, crewViol };
 }
 
 async function main() {
@@ -176,9 +202,10 @@ async function main() {
   const out = [];
   for (const name of FLEET) out.push(await runBuilding(SQL, RATES, name));
   let fails = 0;
-  out.forEach(r => { if (r.final !== 0 || r.otherOut !== 0) fails++; });
+  out.forEach(r => { if (r.final !== 0 || r.otherOut !== 0 || r.crewViol !== 0) fails++; });
   console.log('§CPMDP_FLEET ' + JSON.stringify(out.map(r => [r.name, 'pre=' + r.pre, 'post=' + r.post,
-    'final=' + r.final, 'outlierOutside=' + r.outlierOutside, 'otherOut=' + r.otherOut])));
+    'final=' + r.final, 'outlierOutside=' + r.outlierOutside, 'otherOut=' + r.otherOut,
+    'crewViol=' + r.crewViol])));
   console.log('§CPMDP_FLEET_VERDICT buildings=' + out.length + ' fails=' + fails + ' ' + (fails === 0 ? 'PASS' : 'FAIL'));
   process.exit(fails === 0 ? 0 : 1);
 }

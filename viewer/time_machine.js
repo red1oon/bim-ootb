@@ -4558,7 +4558,17 @@
       }
     }
     if (_CPM_DISPLAY && typeof CpmSchedule !== 'undefined' && CpmSchedule.run) {
-      var r = CpmSchedule.run(items);
+      // §S6_CREW_PASS (4D_GANTT_TM_REFACTOR.md §S2_REVIEW_VERDICT S6): hand the solve the SAME
+      // per-resource crew caps computeSchedule runs on (max_crews_fixed wins over max_crews —
+      // injectGantt's own §CREW_DEMAND rule), so precedence-displaced work is re-paced by real
+      // crew capacity in-pass instead of landing simultaneously at the schedule tail.
+      var _dtLR = (typeof window !== 'undefined' && window.LABOR_RATES) || {};
+      var _dtMaxCrews = {};
+      for (var _dtR in _dtLR) {
+        if (_dtLR[_dtR].max_crews_fixed != null) _dtMaxCrews[_dtR] = _dtLR[_dtR].max_crews_fixed;
+        else if (_dtLR[_dtR].max_crews) _dtMaxCrews[_dtR] = _dtLR[_dtR].max_crews;
+      }
+      var r = CpmSchedule.run(items, { maxCrews: _dtMaxCrews });
       if (r && r.ok) {
         for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; }
         var aud = _midairAudit(items);
@@ -4628,7 +4638,8 @@
       var st = schedule[el.guid]; if (!st) return;
       items.push({ guid: el.guid, s: st.start, e: st.end, bz: el.base_z, tz: el.top_z,
         x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
-        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey });
+        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey,
+        resource: el.resource });   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     if (!items.length) return null;
     _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path (times only)
@@ -5642,7 +5653,8 @@
       return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
         bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
         cls: el.cls, seq: el.seq, phase: el.phase,
-        storey: el.storey };   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
+        storey: el.storey,   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
+        resource: el.resource };   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     var _twStats = _displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
     _s4Mark('displayTimeline');
@@ -8216,7 +8228,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 30;   // §S1_BAND_RANK + §S2_TUKEY_ENVELOPE + §S4_RAW_SCHEDULE_REUSE (4D_GANTT_TM_REFACTOR.md)
+  var _GANTT_CACHE_VERSION = 31;   // §S6_CREW_PASS (4D_GANTT_TM_REFACTOR.md) — crew-aware forward pass reshapes every schedule
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —

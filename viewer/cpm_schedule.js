@@ -331,11 +331,31 @@
     return { comp: comp, sizes: sizes };
   }
 
-  // solve(items, graph) — SCC condensation + ONE forward pass. Returns per-element {s,e} + stats.
-  function solve(items, graph) {
+  // solve(items, graph, opts) — SCC condensation + ONE crew-aware forward pass (serial
+  // schedule-generation scheme). Returns per-element {s,e} + stats.
+  //
+  // §S6_CREW_PASS (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S2_REVIEW_VERDICT S6): E5's TIMES
+  // stop being the lower bound. They were computed by computeSchedule at RAW dates — once the
+  // precedence gates displace work (Terminal roof: 10,950 elements moved from day ~37 to day ~130),
+  // nothing re-enforced "this trade has N crews" at the new date, so the tail built at effectively
+  // infinite crew capacity (10,950 starts inside 0.4 days, §CREW_FEASIBILITY massively violated).
+  // The fix: the SAME greedy crew-slot allocator computeSchedule already runs (schedule_gate.js
+  // §CREW-CAP — per-resource slot array, claim-earliest-slot, cap = maxCrews[resource] with the
+  // same MAX_CREWS_DEFAULT=3 fallback) claims slots INSIDE this topological pass. Ready components
+  // come off a priority queue keyed (earliest precedence-feasible time, bz, guid — deterministic);
+  // finalizing an element sets start = max(precedence bound, earliest slot of its resource pool),
+  // then advances the claimed slot by the element's real crew-leveled duration (e-s, still
+  // computeSchedule's own — durations stay E5's, only its TIMES retire). Delays only, so every
+  // edge lower bound stays satisfied — floating-0 by construction is preserved. O((V+E)·log V).
+  // Contracted pure-physics SCCs keep ONE shared start (the judge's own equality contract): each
+  // member reserves its own slot, the shared start is the latest reservation, and a member that
+  // finds its pool exhausted by its own SCC is counted in drops.crewOverCapScc — never hidden.
+  function solve(items, graph, opts) {
+    var maxCrews = opts && opts.maxCrews;
     var n = graph.nElements, total = graph.nNodes, out = graph.out;
     var i, u, k, e, os;
-    var drops = { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
+    var drops = { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0,
+                  crewOverCapScc: 0 };
 
     // Round 1 — cycles containing tidiness edges (E3/E4 hammocks + milestone membership) lose
     // exactly those edges inside the cycle; physics edges are never dropped here.
@@ -362,18 +382,49 @@
       if (scc.sizes[i] > 1) { drops.contractedSccs++; drops.contractedNodes += scc.sizes[i]; }
     }
 
-    // Kahn over the CONDENSATION: every node of a component shares one earliest-start (an SS
-    // physics edge inside it holds with equality — the judge's own tolerance accepts that; FS
-    // edges inside it are the counted cost of the break, never hidden).
+    // Crew-aware Kahn over the CONDENSATION (§S6_CREW_PASS): every node of a component shares one
+    // earliest-start (an SS physics edge inside it holds with equality — the judge's own tolerance
+    // accepts that; FS edges inside it are the counted cost of the break, never hidden). The base
+    // epoch is the raw schedule's own earliest start (extracted, not invented) — E5's per-element
+    // TIMES no longer seed ES.
+    var base = Infinity;
+    for (i = 0; i < n; i++) if (items[i].s < base) base = items[i].s;
+    if (!isFinite(base)) base = 0;
     var ES = new Float64Array(total), DUR = new Float64Array(total);
-    for (i = 0; i < n; i++) { ES[i] = items[i].s; DUR[i] = Math.max(0, items[i].e - items[i].s); }
+    for (i = 0; i < total; i++) ES[i] = base;
+    for (i = 0; i < n; i++) DUR[i] = Math.max(0, items[i].e - items[i].s);
+    // Crew pools — same shape, same claim-earliest-slot rule, same default as schedule_gate.js's
+    // own claimCrew (§CREW-CAP: MAX_CREWS_DEFAULT = 3; an element without a resource pools under
+    // the same single 'undefined' key computeSchedule uses).
+    function crewCapFor(resource) {
+      if (typeof maxCrews === 'number') return maxCrews;
+      if (maxCrews && maxCrews[resource]) return maxCrews[resource];
+      return 3;   // schedule_gate.js MAX_CREWS_DEFAULT, mirrored not invented
+    }
+    var crews = {};
+    function poolOf(resource) {
+      return crews[resource] || (crews[resource] = new Array(crewCapFor(resource)).fill(base));
+    }
     var compES = new Float64Array(nComp);
+    for (i = 0; i < nComp; i++) compES[i] = base;
     var compNodes = new Array(nComp);
     for (u = 0; u < total; u++) {
       var c = comp[u];
       (compNodes[c] || (compNodes[c] = [])).push(u);
-      if (ES[u] > compES[c]) compES[c] = ES[u];
     }
+    // Deterministic priority key per component: (compES at readiness, min member bz, min member
+    // guid, comp id). Milestone-only components sort FIRST at equal time (bz -Infinity): they are
+    // dur-0 gates with no crew claim, and releasing them eagerly keeps the ready set maximal so
+    // slots go to the lowest precedence-feasible WORK first.
+    var compBz = new Float64Array(nComp), compGuid = new Array(nComp);
+    for (i = 0; i < nComp; i++) { compBz[i] = Infinity; compGuid[i] = null; }
+    for (u = 0; u < n; u++) {
+      var cb = comp[u];
+      if (items[u].bz < compBz[cb]) compBz[cb] = items[u].bz;
+      var g0 = String(items[u].guid);
+      if (compGuid[cb] === null || g0 < compGuid[cb]) compGuid[cb] = g0;
+    }
+    for (i = 0; i < nComp; i++) if (compGuid[i] === null) { compBz[i] = -Infinity; compGuid[i] = ''; }
     var indeg = new Int32Array(nComp);
     for (u = 0; u < total; u++) {
       os = out[u]; if (!os) continue;
@@ -382,16 +433,94 @@
         if (!e.dropped && comp[e.to] !== comp[u]) indeg[comp[e.to]]++;
       }
     }
-    var q = [], head = 0, processed = 0;
-    for (i = 0; i < nComp; i++) if (!indeg[i]) q.push(i);
-    while (head < q.length) {
-      var cu = q[head++]; processed++;
+    // Binary min-heap of ready components. compES is FINAL at push time (indeg 0 = every
+    // predecessor finalized), so the key never moves while queued.
+    var heap = [];
+    function heapLess(a, b) {
+      if (compES[a] !== compES[b]) return compES[a] < compES[b];
+      if (compBz[a] !== compBz[b]) return compBz[a] < compBz[b];
+      if (compGuid[a] !== compGuid[b]) return compGuid[a] < compGuid[b];
+      return a < b;
+    }
+    function heapPush(v) {
+      heap.push(v);
+      var ci = heap.length - 1;
+      while (ci > 0) {
+        var pi = (ci - 1) >> 1;
+        if (heapLess(heap[ci], heap[pi])) { var t = heap[ci]; heap[ci] = heap[pi]; heap[pi] = t; ci = pi; }
+        else break;
+      }
+    }
+    function heapPop() {
+      var top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        var ci = 0;
+        for (;;) {
+          var l = 2 * ci + 1, r = l + 1, m = ci;
+          if (l < heap.length && heapLess(heap[l], heap[m])) m = l;
+          if (r < heap.length && heapLess(heap[r], heap[m])) m = r;
+          if (m === ci) break;
+          var t2 = heap[ci]; heap[ci] = heap[m]; heap[m] = t2; ci = m;
+        }
+      }
+      return top;
+    }
+    var processed = 0;
+    for (i = 0; i < nComp; i++) if (!indeg[i]) heapPush(i);
+    function memberOrder(a, b) {   // deterministic within-component claim order
+      if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
+      var ga = String(items[a].guid), gb = String(items[b].guid);
+      return ga < gb ? -1 : (ga > gb ? 1 : 0);
+    }
+    while (heap.length) {
+      var cu = heapPop(); processed++;
       var members = compNodes[cu], contracted = members.length > 1;
       var es = compES[cu];
-      for (k = 0; k < members.length; k++) {
-        u = members[k];
+      if (!contracted) {
+        u = members[0];
+        if (u < n) {   // element: claim a crew slot; milestone: pure gate, no claim
+          var pool1 = poolOf(items[u].resource), idx1 = 0;
+          for (k = 1; k < pool1.length; k++) if (pool1[k] < pool1[idx1]) idx1 = k;
+          es = Math.max(es, pool1[idx1]);
+          pool1[idx1] = es + DUR[u];
+        }
         ES[u] = es;
-        if (contracted) {
+      } else {
+        // Contracted pure-physics SCC (element-only by construction — round 1 dropped every
+        // tidiness edge inside cycles): reserve one slot per member, shared start = the latest
+        // reservation, then commit every slot to sharedStart + that member's duration.
+        var mem = members.slice().sort(memberOrder);
+        var picks = [], usedByPool = {};
+        for (k = 0; k < mem.length; k++) {
+          u = mem[k];
+          var r1 = items[u].resource, pool2 = poolOf(r1);
+          var used = usedByPool[r1] || (usedByPool[r1] = {});
+          var idx2 = -1;
+          for (var si = 0; si < pool2.length; si++)
+            if (!used[si] && (idx2 < 0 || pool2[si] < pool2[idx2])) idx2 = si;
+          if (idx2 < 0) {
+            // pool exhausted by this SCC alone — cap physically cannot hold under the shared-start
+            // contract; reuse the earliest slot and COUNT it (never hidden)
+            drops.crewOverCapScc++;
+            idx2 = 0;
+            for (si = 1; si < pool2.length; si++) if (pool2[si] < pool2[idx2]) idx2 = si;
+            picks.push({ u: u, r: r1, idx: idx2, reuse: true });
+          } else {
+            used[idx2] = 1;
+            if (pool2[idx2] > es) es = pool2[idx2];
+            picks.push({ u: u, r: r1, idx: idx2 });
+          }
+        }
+        for (k = 0; k < picks.length; k++) {
+          var p1 = picks[k], pool3 = poolOf(p1.r);
+          var end1 = es + DUR[p1.u];
+          if (end1 > pool3[p1.idx]) pool3[p1.idx] = end1;
+          ES[p1.u] = es;
+        }
+        for (k = 0; k < members.length; k++) {
+          u = members[k];
+          if (u >= n) ES[u] = es;   // defensive: no milestone survives in a round-2 SCC
           // count internal FS violations honestly (S finishes after T starts, same instant)
           os = out[u];
           if (os) for (var k2 = 0; k2 < os.length; k2++) {
@@ -409,7 +538,7 @@
           var b = e.kind === FS ? ef : ES[u];
           if (b > ES[e.to]) ES[e.to] = b;
           if (ES[e.to] > compES[cv]) compES[cv] = ES[e.to];
-          if (--indeg[cv] === 0) q.push(cv);
+          if (--indeg[cv] === 0) heapPush(cv);
         }
       }
     }
@@ -424,15 +553,17 @@
              makespanDays: (makespanE - makespanS) / 86400000 };
   }
 
-  // run(items) — contact graph + build + solve, with per-phase §CPM timing stats.
-  function run(items) {
+  // run(items, opts) — contact graph + build + solve, with per-phase §CPM timing stats.
+  // opts.maxCrews: per-resource crew caps ({resource: N} or a uniform number) for §S6_CREW_PASS —
+  // same lookup shape computeSchedule takes (LABOR_RATES[r].max_crews_fixed ?? max_crews).
+  function run(items, opts) {
     var t0 = Date.now();
     var G = contactGraph(items);
     var t1 = Date.now();
     if (!G.ok) return { ok: false, error: 'ScheduleGate not loaded' };
     var graph = buildGraph(items, G);
     var t2 = Date.now();
-    var sol = solve(items, graph);
+    var sol = solve(items, graph, opts);
     var t3 = Date.now();
     console.log('§CPM_RUN n=' + items.length + ' nodes=' + graph.nNodes +
       ' edges={E1:' + graph.counts.e1 + ',E2host:' + graph.counts.e2h + ',E2open:' + graph.counts.e2o +
@@ -441,6 +572,7 @@
       ' cycleDrops={E3:' + sol.drops.e3 + ',E4:' + sol.drops.e4 + ',member:' + sol.drops.member +
       ',contractedSccs:' + sol.drops.contractedSccs + ',contractedNodes:' + sol.drops.contractedNodes +
       ',fsViolInScc:' + sol.drops.fsViolInScc + '}' +
+      ' crewOverCapScc=' + sol.drops.crewOverCapScc +
       ' makespanDays=' + sol.makespanDays.toFixed(1) +
       ' ms={contact:' + (t1 - t0) + ',build:' + (t2 - t1) + ',solve:' + (t3 - t2) + ',total:' + (t3 - t0) + '}');
     return { ok: true, G: G, graph: graph, solution: sol,
