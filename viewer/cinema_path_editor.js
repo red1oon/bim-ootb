@@ -644,18 +644,19 @@
     var holdSec = 0;
     for (var i = 0; i < s.bands.length; i++) holdSec += +(s.bands[i].hold || 0);
     // §CPE_DISCIPLINE_REVEAL_PULLOUT — an ESTIMATE (same shape as effects.js's authoritative
-    // pullout+reveal(round2)+tail seconds: a short pull-out + ONE lap at the walk's own pace + ~2s/
-    // discipline + a final 2s together — see bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's
-    // 2026-08-14 pull-out-restructure section), so the total this panel shows/bakes to GROWS to fit
-    // the round instead of squeezing it out of the existing runtime. Exact seconds are computed
-    // authoritatively in effects.js at plan-build time — this only needs to be close enough that
-    // nFrames (cinema_maxq.js) allocates real frames for it. `1.5` mirrors effects.js's
-    // CINEMA_REVEAL_PULLOUT_SEC constant — duplicated here as a literal, same precedent this
-    // estimate already followed for the tail's `2 * discs.length + 2` before this restructure.
+    // pullout+flyback+reveal(round2)+tail seconds: a short pull-out + a fast retrace fly-back + ONE
+    // lap at the walk's own pace + ~2s/discipline + a final 2s together — see bim-compiler prompts/
+    // CINEMA_DISCIPLINE_REVEAL.md's 2026-08-14 pull-out-restructure and 2026-08-16 fly-back sections),
+    // so the total this panel shows/bakes to GROWS to fit the round instead of squeezing it out of the
+    // existing runtime. Exact seconds are computed authoritatively in effects.js at plan-build time —
+    // this only needs to be close enough that nFrames (cinema_maxq.js) allocates real frames for it.
+    // `1.5` mirrors effects.js's CINEMA_REVEAL_PULLOUT_SEC constant, `6.5` mirrors CINEMA_PULLBACK_MPS
+    // (the fly-back's own pace) — both duplicated here as literals, same precedent this estimate
+    // already followed for the tail's `2 * discs.length + 2` before this restructure.
     var revealSec = 0;
     if (s.reveal) {
       var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
-      if (discs.length) revealSec = 1.5 + len / s.speed + (2 * discs.length + 2);
+      if (discs.length) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
     }
     return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
              total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
