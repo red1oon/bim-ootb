@@ -669,6 +669,45 @@ async function main() {
     storeyOrderReport(disp.map(function (o) {
       return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
     }), 'POST_REMAP_LEVEL');
+    // §STOREY_PHASE_ORDER (2026-08-17) — the storey report's p50 is taken over ALL of a storey's
+    // elements, so a storey whose mix is 58% MEP and one that is mostly structure are compared on
+    // different things: a global phase ordering alone will make the MEP-heavy storey's median look
+    // late and register as an "inversion" with nothing actually out of order. This dump asks the
+    // question the aggregate cannot: WITHIN one phase, is p50 start still monotonic in z? If yes,
+    // the inversion is a mix artifact of the metric; if no, the ordering is genuinely broken.
+    if (process.env.STOREY_PHASE_TABLE) {
+      // Run the SAME table on the raw pre-remap starts and on the post-remap ones, so the answer
+      // to "does the remap break it or was it already broken" is one diff instead of two runs.
+      [['RAW', function (o) { return _preRemapS[o.guid]; }],
+       ['POST_REMAP', function (o) { return o.s; }]].forEach(function (mode) {
+      const startOf = mode[1];
+      const byKey = {};
+      disp.forEach(function (o) {
+        const k = (o.phase || '_NONE') + '||' + ScheduleGate.collapsePhase(o.storey);
+        (byKey[k] = byKey[k] || { s: [], z: [] }).s.push(startOf(o));
+        byKey[k].z.push(o.bz);
+      });
+      const gmin = Math.min.apply(null, disp.map(startOf));
+      const phases = {};
+      Object.keys(byKey).forEach(function (k) {
+        const parts = k.split('||'), ph = parts[0], st = parts[1], g = byKey[k];
+        const ss = g.s.slice().sort(function (a, b) { return a - b; });
+        (phases[ph] = phases[ph] || []).push({ st: st, n: ss.length,
+          z: g.z.reduce(function (a, b) { return a + b; }, 0) / g.z.length,
+          p50: Math.round((ss[Math.floor(ss.length / 2)] - gmin) / DAY5) });
+      });
+      Object.keys(phases).sort().forEach(function (ph) {
+        const rows = phases[ph].filter(function (r) { return r.st !== 'Unknown' && r.n >= 20; })
+          .sort(function (a, b) { return a.z - b.z; });
+        let v = 0, worst = 0;
+        for (let i = 1; i < rows.length; i++)
+          if (rows[i].p50 < rows[i - 1].p50) { v++; worst = Math.max(worst, rows[i - 1].p50 - rows[i].p50); }
+        console.log('§STOREY_PHASE_ORDER ' + mode[0] + ' phase=' + ph + ' storeys=' + rows.length +
+          ' violations=' + v + '/' + Math.max(0, rows.length - 1) + ' worst=' + worst + 'd ' +
+          JSON.stringify(rows.map(function (r) { return [r.st, r.z.toFixed(1), r.n, r.p50]; })));
+      });
+      });
+    }
     // §STOREY_ORDER_L1_DIAG — who exactly moved, and by how much, within raw storey "Level 1"?
     {
       const l1 = disp.filter(function (o) { return o.storey === 'Level 1'; })
