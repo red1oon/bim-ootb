@@ -75,6 +75,52 @@ async function main() {
     ' overlapDaysSum=' + overlapDaysSum.toFixed(0) +
     ' parallelism=' + (sumSpan / Math.max(1, total)).toFixed(2) + 'x totalDays=' + total.toFixed(0) +
     ' tasks=' + tasks.length);
+
+  // §LAYER_BUILDUP (M3, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §MODEL M3 + §STAGES S3) — the
+  // user's "uniform layer by layer build up" complaint, as a number: OPS, not tasks. Query
+  // kernel_ops ELEMENT_PLACE (the movie's own true physics times — M3: playback does not change)
+  // joined to each element's real Z, banded into the same 3m z-band quantum M1's bandRank uses
+  // (floor(centerZ/3m), the shipped §GANTT banding precedent). Acceptance: per band, the MEDIAN op
+  // start must be monotone non-decreasing with band rank, tolerance 1 day (the window rounding
+  // quantum) — violations must be 0 on Terminal AND Hospital.
+  const opRows = await page.evaluate(() => {
+    const r = window.APP.db.exec(
+      "SELECT k.timestamp, COALESCE(t.center_z, 0) as cz " +
+      "FROM kernel_ops k JOIN elements_meta m ON m.guid = k.output_guid " +
+      "LEFT JOIN element_transforms t ON t.guid = m.guid " +
+      "WHERE k.op_type='ELEMENT_PLACE' AND (k.undone IS NULL OR k.undone=0)");
+    return r.length ? r[0].values : [];
+  });
+  if (opRows.length) {
+    const opT0 = Math.min(...opRows.map(r => r[0]));
+    const bandsOf = {};
+    opRows.forEach(r => {
+      const band = Math.floor(r[1] / 3);
+      (bandsOf[band] = bandsOf[band] || []).push((r[0] - opT0) / D);
+    });
+    const bandKeys = Object.keys(bandsOf).map(Number).sort((a, b) => a - b);
+    const medians = bandKeys.map(b => {
+      const arr = bandsOf[b].slice().sort((a, c) => a - c);
+      return { band: b, n: arr.length, median: arr[Math.floor(arr.length * 0.5)] };
+    });
+    let layerViol = 0, layerDetail = [];
+    for (let i = 1; i < medians.length; i++) {
+      if (medians[i].median < medians[i - 1].median - 1) {   // 1-day tolerance, §MODEL M3
+        layerViol++;
+        if (layerDetail.length < 10) layerDetail.push('band' + medians[i - 1].band + '(n=' + medians[i - 1].n +
+          ',med=' + medians[i - 1].median.toFixed(1) + 'd)>band' + medians[i].band + '(n=' + medians[i].n +
+          ',med=' + medians[i].median.toFixed(1) + 'd)');
+      }
+    }
+    console.log('§LAYER_BUILDUP_TABLE ' + JSON.stringify(medians.map(m => [m.band, m.n, m.median.toFixed(1)])));
+    console.log('§LAYER_BUILDUP MODE=' + (MODE ? 'legacy' : 'cpm') + ' BLD=' + BLD +
+      ' violations=' + layerViol + '/' + (medians.length - 1) + ' bands=' + medians.length + ' ops=' + opRows.length +
+      (layerDetail.length ? ' detail=' + JSON.stringify(layerDetail) : '') +
+      ' ' + (layerViol === 0 ? 'PASS' : 'FAIL'));
+  } else {
+    console.log('§LAYER_BUILDUP_SKIP no ELEMENT_PLACE ops found in kernel_ops');
+  }
+
   await browser.close(); server.kill(); process.exit(0);
 }
 main().catch(e => { console.error('ERR ' + (e && e.stack || e)); process.exit(2); });
