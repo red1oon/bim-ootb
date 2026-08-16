@@ -81,29 +81,36 @@ async function runBuilding(SQL, RATES, name) {
 
   // §ZONE_DISPLAY_AUTHORING with the CPM display schedule: deriveZones + day-rounded windows
   // (materializeZones' own construction, verbatim from probe_captured_floating.js).
-  // §ZONE_WINDOW_DAGWINS_CLIP mirror: straggler times clamped into their group's non-straggler
-  // envelope for WINDOW AUTHORING ONLY (the played items keep true physics times).
-  const stragOf = res.graph.stragglerOf;
-  const envByG = {};
+  // §ZONE_WINDOW_DAGWINS_CLIP mirror (M2, 4D_GANTT_TM_REFACTOR.md) — Tukey-fenced robust envelope
+  // over ALL members' times (classification-free), mirroring time_machine.js's own _tmDisplayRemap
+  // formula verbatim. Percentile convention: sorted[Math.floor(n*p)] (matches storeyOrderReport).
   const gkOf = o => (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
-  items.forEach((o, i) => {
-    if (stragOf[i]) return;
-    const k = gkOf(o), e2 = envByG[k] || (envByG[k] = { min: Infinity, max: -Infinity });
-    if (o.s < e2.min) e2.min = o.s;
-    if (o.e > e2.max) e2.max = o.e;
+  const groupsByG = {};
+  items.forEach(o => {
+    const k = gkOf(o), g = groupsByG[k] || (groupsByG[k] = { starts: [], ends: [] });
+    g.starts.push(o.s); g.ends.push(o.e);
+  });
+  function tukeyBound(arr, lowSide) {
+    const s = arr.slice().sort((a, b) => a - b);
+    const n = s.length, q1 = s[Math.floor(n * 0.25)], q3 = s[Math.floor(n * 0.75)], iqr = q3 - q1;
+    return lowSide ? Math.max(s[0], q1 - 1.5 * iqr) : Math.min(s[n - 1], q3 + 1.5 * iqr);
+  }
+  const barByG = {};
+  Object.keys(groupsByG).forEach(k => {
+    const g = groupsByG[k], lo = tukeyBound(g.starts, true), hi = tukeyBound(g.ends, false);
+    barByG[k] = { lo, hi: Math.max(hi, lo) };
   });
   const dispSchedule = {};
   let clamped = 0;
-  items.forEach((o, i) => {
+  const outlierGuid = {};
+  items.forEach(o => {
+    const b = barByG[gkOf(o)];
     let st = o.s, en = o.e;
-    if (stragOf[i]) {
-      const e2 = envByG[gkOf(o)];
-      if (e2 && e2.max > e2.min) {
-        st = Math.min(Math.max(st, e2.min), e2.max);
-        en = Math.min(Math.max(en, e2.min), e2.max);
-        if (en <= st) { st = Math.max(e2.min, e2.max - 60000); en = e2.max; }
-        clamped++;
-      }
+    if (b) {
+      let nst = Math.min(Math.max(st, b.lo), b.hi), nen = Math.min(Math.max(en, b.lo), b.hi);
+      if (nen <= nst) { nst = Math.max(b.lo, b.hi - 60000); nen = b.hi; }
+      if (nst !== st || nen !== en) { clamped++; outlierGuid[o.guid] = 1; }
+      st = nst; en = nen;
     }
     dispSchedule[o.guid] = { start: st, end: en };
   });
@@ -138,25 +145,26 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPMDP_FINAL floating=' + final.midair + ' windowBlocked=' + cjp.windowBlocked +
     ' cjpPushed=' + cjp.pushed + ' byClass=' + JSON.stringify(final.byClass));
 
-  // Window fidelity of the played timeline vs its own authored windows. A dag-wins straggler
-  // legitimately rides OUTSIDE its bar (§ZONE_WINDOW_DAGWINS_CLIP — counted, never hidden);
-  // any NON-straggler outside its window is a real defect and must be 0.
-  const stragGuid = {};
-  items.forEach((o, i) => { if (stragOf[i]) stragGuid[o.guid] = 1; });
-  let inWin = 0, stragOut = 0, otherOut = 0;
+  // Window fidelity of the played timeline vs its own authored windows. A Tukey outlier
+  // legitimately rides OUTSIDE its bar (§ZONE_WINDOW_DAGWINS_CLIP M2 — counted, never hidden);
+  // the hard bar (4D_GANTT_TM_REFACTOR.md §STAGES S2): elements outside their bar <= the
+  // Tukey-outlier count. Set-membership check (stricter, implies the count bar): any element
+  // outside its window that was NOT flagged an outlier during fencing is a real defect, must be 0.
+  let inWin = 0, outlierOutside = 0, otherOut = 0;
   rescaled.forEach(function (o) {
     const w = taskWin[o.task]; if (!w) return;
     if (o.s >= w.s && o.e <= w.e) inWin++;
-    else if (stragGuid[o.guid]) stragOut++;
+    else if (outlierGuid[o.guid]) outlierOutside++;
     else otherOut++;
   });
-  console.log('§CPMDP_WINDOW_FIDELITY inWindow=' + inWin + '/' + (inWin + stragOut + otherOut) +
-    ' stragglerOutside=' + stragOut + ' nonStragglerOutside=' + otherOut + ' (bar: nonStraggler must be 0)');
+  console.log('§CPMDP_WINDOW_FIDELITY inWindow=' + inWin + '/' + (inWin + outlierOutside + otherOut) +
+    ' outlierOutside=' + outlierOutside + '/' + clamped + ' nonOutlierOutside=' + otherOut +
+    ' (bar: outside <= Tukey-outlier count; nonOutlier outside must be 0)');
 
   const pass = final.midair === 0 && otherOut === 0;
-  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' nonStragglerOutside=' + otherOut + ' ' + (pass ? 'PASS' : 'FAIL'));
+  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' nonOutlierOutside=' + otherOut + ' ' + (pass ? 'PASS' : 'FAIL'));
   return { name, final: final.midair, pre: preRescale.midair, post: postRescale.midair,
-           stragOut, otherOut };
+           outlierOutside, otherOut };
 }
 
 async function main() {
@@ -170,7 +178,7 @@ async function main() {
   let fails = 0;
   out.forEach(r => { if (r.final !== 0 || r.otherOut !== 0) fails++; });
   console.log('§CPMDP_FLEET ' + JSON.stringify(out.map(r => [r.name, 'pre=' + r.pre, 'post=' + r.post,
-    'final=' + r.final, 'stragOut=' + r.stragOut, 'otherOut=' + r.otherOut])));
+    'final=' + r.final, 'outlierOutside=' + r.outlierOutside, 'otherOut=' + r.otherOut])));
   console.log('§CPMDP_FLEET_VERDICT buildings=' + out.length + ' fails=' + fails + ' ' + (fails === 0 ? 'PASS' : 'FAIL'));
   process.exit(fails === 0 ? 0 : 1);
 }
