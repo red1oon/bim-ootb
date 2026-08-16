@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1048';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1049';   // bump on each deploy; per-change detail is the git commit message.
 // v1048 (2026-08-16) bim-compiler prompts/4D_GANTT_TM_REFACTOR.md S1-S4 closeout: §S1_BAND_RANK
 // (cpm_schedule.js buildGraph — E4 storey hammocks + straggler group-key use 3m z-bands, not
 // per-storey-name rank, PR #1401); §S2_TUKEY_ENVELOPE (time_machine.js _tmDisplayRemap — task bars
