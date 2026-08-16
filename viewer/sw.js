@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1053';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1054';   // bump on each deploy; per-change detail is the git commit message.
 // v1051 (2026-08-16) §S7_OUTLIER_DELTA: Gantt drag/resize no longer collapses (437/gesture) or
 // INVERTS (217/gesture) the ops riding outside their task's drawn Tukey bar — outsiders get the
 // window's uniform start delta with true duration preserved (time_machine.js, 4D_GANTT_TM_REFACTOR.md §S7).
