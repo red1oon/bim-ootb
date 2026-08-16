@@ -4505,6 +4505,76 @@
     return { pushed: pushed, sweeps: sweeps, floating: floating, windowBlocked: blocked };
   }
 
+  // ══ §CPM_DISPLAY (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
+  // §STAGE4_RETIREMENT_PROPOSAL step 1) — the display timeline is authored by ONE dependency-DAG
+  // forward pass (viewer/cpm_schedule.js: contact-graph support edges + host/opening + discipline +
+  // storey hammocks + crew lower bound, SCC-condensed Kahn), replacing the _twoTierRemap +
+  // _midairRepair repair chain at BOTH consumers of this one function (kernel_ops write + the
+  // materializeZones displayRemap hook), so the movie, the Gantt windows, and the progress needle
+  // describe the SAME schedule by construction — floating impossible instead of chased.
+  // Measured fleet-wide before wiring (probe_cpm_schedule.js, all 7 buildings): floating 0/7,
+  // storey order improves-or-matches RAW everywhere, Terminal 387ms vs 1,467ms for ONE
+  // _tierAuditRegate call. ?cpm4d=0 reverts to the legacy repair chain (A/B lever, same physics
+  // constants either way). Old passes stay in the file until their staged retirement PRs.
+  var _CPM_DISPLAY = (function () {
+    try { return new URLSearchParams(location.search).get('cpm4d') !== '0'; }
+    catch (e) { return true; }
+  })();
+  function _displayTimeline(items) {
+    // §CPM_DISPLAY_ONE_TRUTH: on a cold open the materializeZones hook computes FIRST
+    // (§GANTT_PREMATERIALIZE) and the kernel_ops seam runs SECOND — measured live on Terminal
+    // (2026-08-16): the two consumers' element recipes (schedule_author's vs this file's) produce
+    // timelines 151.2d vs 121.2d, 36/72 windows duration-mismatched, §CROSSTASK floating 9. So:
+    // whichever consumer computes first is THE schedule; the partner call of the same generation
+    // cycle CONSUMES it here (one-shot — the next cycle recomputes fresh, so a rates/shift edit is
+    // never served stale). Coverage is the fingerprint: a different building's guids miss.
+    var _cache = _displayTimeline._last;
+    if (_cache) {
+      var _rh = 0, _rm = 0, _ri;
+      for (_ri = 0; _ri < items.length; _ri++) { if (_cache.map[items[_ri].guid]) _rh++; else _rm++; }
+      if (_rh > 0 && _rh >= 0.999 * (_rh + _rm)) {
+        for (_ri = 0; _ri < items.length; _ri++) {
+          var _rc = _cache.map[items[_ri].guid];
+          if (_rc) { items[_ri].s = _rc.start; items[_ri].e = _rc.end; }
+        }
+        _displayTimeline._last = null;
+        var _raud = _midairAudit(items);
+        console.log('§CPM_DISPLAY_REUSE hits=' + _rh + ' misses=' + _rm + ' midair=' + _raud.midair +
+          ' — this consumer replays the SAME timeline its partner authored (one truth, no second recipe)');
+        return { cpm: 'reuse', midair: _raud.midair, stats: null };
+      }
+    }
+    if (_CPM_DISPLAY && typeof CpmSchedule !== 'undefined' && CpmSchedule.run) {
+      var r = CpmSchedule.run(items);
+      if (r && r.ok) {
+        for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; }
+        var aud = _midairAudit(items);
+        _displayTimelineRemember(items);
+        console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
+          ' midair=' + aud.midair + ' orphans=' + aud.orphans +
+          ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
+        return { cpm: true, midair: aud.midair, stats: r };
+      }
+      console.warn('§CPM_DISPLAY_FALLBACK CpmSchedule.run failed — legacy repair chain used');
+    }
+    var tw = _twoTierRemap(items);
+    _midairRepair(items);
+    _displayTimelineRemember(items);
+    return { cpm: false, stats: tw };
+  }
+  // §CPM_DISPLAY_ONE_TRUTH: the LAST computed display timeline, guid-keyed. materializeZones'
+  // displayRemap hook serves THIS map when it covers the request — the kernel_ops movie and the
+  // authored task windows then describe literally the same schedule, instead of two near-identical
+  // recipes (time_machine's element build vs schedule_author's) re-deriving it 30 days apart
+  // (measured live on Terminal, 2026-08-16: makespan 151.2d vs 121.2d, 36/72 task windows
+  // duration-mismatched, §CROSSTASK_JUDGE_PARITY floating 9). Coverage is the fingerprint — a
+  // different building's guids simply miss and fall through to the compute path.
+  function _displayTimelineRemember(items) {
+    var map = {};
+    for (var i = 0; i < items.length; i++) map[items[i].guid] = { start: items[i].s, end: items[i].e };
+    _displayTimeline._last = { map: map, n: items.length };
+  }
+
   // §ZONE_DISPLAY_AUTHORING (2026-08-16, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
   // §CHASE_TO_ZERO_WINDOW_AUTHORING) — the displayRemap hook handed to ScheduleAuthor.materializeZones
   // by every real UI call site in this file. The Gantt's task windows used to be derived from the RAW
@@ -4524,8 +4594,7 @@
         cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey });
     });
     if (!items.length) return null;
-    _twoTierRemap(items);
-    _midairRepair(items);
+    _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path
     var out = {};
     items.forEach(function (it) { out[it.guid] = { start: it.s, end: it.e }; });
     return out;
@@ -5463,10 +5532,7 @@
         cls: el.cls, seq: el.seq, phase: el.phase,
         storey: el.storey };   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
     });
-    var _twStats = _twoTierRemap(_twItems);
-    // §MIDAIR_REPAIR (2026-08-12) — last stop before kernel_ops: nothing may appear before the
-    // first thing it touches appears. Class-blind, pool-blind, later-only. See its own header.
-    _midairRepair(_twItems);
+    var _twStats = _displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
     var _disp = {};
     _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e }; });
     var _schedEnd = baseMs;
@@ -5763,10 +5829,42 @@
         if (item.s < sp.min) sp.min = item.s;
         if (item.e > sp.max) sp.max = item.e;
       });
+      // §CAP_RESCALE_IDENTITY (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
+      // §STAGE4_RETIREMENT_PROPOSAL step 1): a window authored FROM these same element times
+      // (§ZONE_DISPLAY_AUTHORING / §CPM_DISPLAY) is a VIEW of the schedule, not a second schedule —
+      // re-spacing inside it can only damage the contact order it was derived from (measured,
+      // probe_cpm_display_path.js on Terminal: rescale alone turned a 0-floating CPM timeline into
+      // 4,712 violations). A task is IDENTITY when its window equals its elements' own envelope
+      // within the window's OWN day-rounding quantum (the same derived bound §CJP_DAY_ROUNDING_TOL
+      // uses) — skipped, times replay verbatim. A bar a planner actually moved/resized fails the
+      // guard and still rescales, so Gantt edits keep reaching the movie.
+      // The guard compares DURATIONS, not absolute ms — kernel_ops element times and the tasks
+      // table's calendar dates live in different time origins (the rescale is also the re-basing
+      // step), so an absolute-ms compare never matches in the browser (measured live: 0/72).
+      // An identity task is re-based with a pure per-task AFFINE map (anchor to w.s, scale by
+      // durFactor≈1) — the element ORDER and relative spacing survive byte-exact, which is the
+      // whole point; only a bar a planner actually RESIZED (duration changed >1 day) still takes
+      // the gap-clamp re-spacing below.
+      var _identD = 86400000, _identSkipped = 0, _identRescaled = 0;
       Object.keys(_taskItems).forEach(function (tid) {
         var arr = _taskItems[tid];
         var w = _win[tid];
         var sp = _taskSpan[tid];
+        // tolerance = 2 days: a display-authored window is the floor(start)/ceil(end) DAY
+        // ENVELOPE of these times (§ZONE_ENVELOPE_DAYS), so its duration legitimately exceeds the
+        // element span by up to one day at each edge — the quantum is the window's own rounding,
+        // never a tuned constant.
+        if (w && Math.abs((w.e - w.s) - (sp.max - sp.min)) <= 2 * _identD) {
+          _identSkipped++;
+          var _af = (w.e - w.s) / Math.max(1, sp.max - sp.min);
+          for (var _ai = 0; _ai < arr.length; _ai++) {
+            var _it = arr[_ai], _dur = Math.max(0, _it.e - _it.s);
+            _it.s = w.s + Math.floor((_it.s - sp.min) * _af);
+            _it.e = _it.s + Math.max(60000, Math.floor(_dur * _af));
+          }
+          return;
+        }
+        _identRescaled++;
         var tSpan = Math.max(1, w.e - w.s);
         var lsSpan = Math.max(1, sp.max - sp.min);
         var durFactor = tSpan / lsSpan;      // unchanged duration-scaling ratio — real relative
@@ -5804,6 +5902,7 @@
           item.e = item.s + scaledDur;       // never zero/negative duration (floor already >=60000)
         }
       });
+      console.log('§CAP_RESCALE_IDENTITY tasks=' + _identSkipped + '/' + (_identSkipped + _identRescaled) + ' affine-rebased shape-exact (window duration==own envelope duration); reSpaced=' + _identRescaled);
       }
       // §ZONE_DISPLAY_AUTHORING (2026-08-16): when the task windows were authored FROM the display
       // timeline (schedules.display_authored=1, written by materializeZones' displayRemap path),
@@ -7978,7 +8077,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 27;   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
+  var _GANTT_CACHE_VERSION = 28;   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
+  // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
                                    // one schedule for movie and Gantt. Bump re-materializes stale
                                    // authored Gantts + regenerates kernel_ops under the new windows.

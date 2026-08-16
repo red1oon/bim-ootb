@@ -428,7 +428,19 @@
     rolled.zones.forEach(function (z) {
       var tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
       zoneTaskId[z.id] = tid;
-      var sDays = Math.round((z.start - minStart) / 86400000), eDays = Math.round((z.end - minStart) / 86400000);
+      // §ZONE_ENVELOPE_DAYS (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
+      // §STAGE4 step 1): a display-authored window is the day-grid ENVELOPE of its own display
+      // times (floor start, ceil end) — the bar then BOUNDS what plays, so the Gantt needle is the
+      // truth of appearance with no sub-day protrusion. Raw-authored schedules keep Math.round
+      // (byte-identical legacy behavior).
+      var sDays, eDays;
+      if (_displayAuthored) {
+        sDays = Math.floor((z.start - minStart) / 86400000);
+        eDays = Math.ceil((z.end - minStart) / 86400000);
+      } else {
+        sDays = Math.round((z.start - minStart) / 86400000);
+        eDays = Math.round((z.end - minStart) / 86400000);
+      }
       if (eDays <= sDays) eDays = sDays + 1;
       // §ZONE_EDGE_LEAD: remember the ROUNDED day numbers actually written. The edge lags below are
       // derived from these, not re-rounded independently from raw ms — rounding dates and lags
