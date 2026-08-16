@@ -3454,7 +3454,23 @@ async function setupEffects(A, renderer, scene, camera) {
       _su2['mieDirectionalG'].value = _photoSkyUniSaved.mieDirectionalG;
       _photoSkyUniSaved = null;
     }
-    _showPhotoProps(false);
+    // §ALTS_MEM_HOG (2026-08-16, measured via headless probe — prompts/PHOTOREAL_STILL_RENDER.md
+    // ▶RESUME item 3): was `_showPhotoProps(false)`, which only sets .visible=false on
+    // _photoUplights/_photoSkyline/_photoSkylineLights and does nothing at all for _photoSparkles
+    // (they stay exactly as the last accumulation frame's sun-glint test left them — up to a few
+    // visibly ON in normal daylight nav). Neither path disposes anything — the whole photo-prop
+    // tree (up to ~30 PointLights, 40 skyline-box meshes, 1 window-sparkle Points cloud, ~24 glint
+    // sprites) stays allocated forever after a REAL Alt+S exit, only freed later by a building
+    // switch (_showPhotoProps(true)'s own rebuild guard). Measured on HHS_Office_Federated,
+    // headless: renderer.info after startStillRefine()->stopStillRefine(true,false) never returned
+    // to baseline — textures +22, geometries +52, programs +36, scene.children +42 net, all
+    // surviving the "real exit" path (this function only runs when keepStaging is NOT set — a
+    // camera-move soft-park skips it entirely, so this is never the reuse-for-perf case).
+    // _disposePhotoProps() is the exact function _showPhotoProps(true) already calls to rebuild on
+    // a building switch — reusing it here on real exit correctly frees the GPU resources AND fixes
+    // the stray-visible-sparkle bug, at the cost of a rebuild on the next Alt+S press (cheap: a
+    // handful of dbQuery calls + <50 objects, not the streaming-heavy path).
+    _disposePhotoProps();
     console.log('§PHOTO_STAGING off');
   }
   // §STILL_REFINE_FREEZE (2026-07-15, user-observed): on a real GPU, 16 samples finish in
