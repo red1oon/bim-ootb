@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1043';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1044';   // bump on each deploy; per-change detail is the git commit message.
+// v1044 (2026-08-16) §GROUND_EARTH_DEFAULT: Alt+S/Alt+C bake staging ground texture switched from
+// 'paved' back to 'earth' (effects.js?v=21) — user: "more realistic even surface feel", avoids
+// paved's rectangular slab-joint relief entirely. Shadow-mode toggle cycle reordered so 'earth' is
+// the first real choice (tools.js?v=42 _SG_CYCLE, panels.js?v=44 swatch row + tooltip).
 // v1043 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
 // (schedule_author.js displayRemap hook + time_machine.js _tmDisplayRemap), strict-bar sweep skipped
 // on display-authored schedules, §CJP live census in the §CROSSTASK_JUDGE_PARITY log line.
