@@ -8216,7 +8216,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 29;   // §ZONE_WINDOW_DAGWINS_CLIP + §CAP_RESCALE_SKIP + §CPM_DISPLAY_EPOCH
+  var _GANTT_CACHE_VERSION = 30;   // §S1_BAND_RANK + §S2_TUKEY_ENVELOPE + §S4_RAW_SCHEDULE_REUSE (4D_GANTT_TM_REFACTOR.md)
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
