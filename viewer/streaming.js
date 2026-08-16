@@ -540,7 +540,23 @@ function setupStreaming(A) {
       // ── IFC2x3 generic-MEP convention (Clinic/LTU/HHS export these instead of the above) ──
       IfcFlowSegment: _TRI_METAL,
       IfcFlowTerminal: _TRI_METAL,
-      IfcFlowFitting: _TRI_METAL
+      IfcFlowFitting: _TRI_METAL,
+      // §TRIPLANAR_MEP_GAPS (PHOTOREAL_STILL_RENDER.md ▶RESUME item 2, user: "it replaces
+      // selectively in some piping but not exactly similar next to it"). Real MEP runs mix inline
+      // devices (valves/dampers/pumps/gauges) between segments/fittings — those classes carried no
+      // triplanar entry, so an untextured device sitting between two grain-streaked pipe/duct
+      // segments on the SAME run read flat/plain right next to its textured neighbours, exactly the
+      // "selective" symptom. IfcValve found the same way as the other 4 (STD_MAT metal>0.3, same as
+      // the group comment above) but had no triplanar entry either — Terminal alone carries 111 of
+      // them, a real gap, not a hypothetical one; confirmed via elements_meta counts before adding
+      // (Clinic: IfcFlowController 369, IfcFlowMovingDevice 13, IfcFlowStorageDevice 1; Terminal:
+      // IfcFlowController 21, IfcValve 111). IfcFlowInstrument has zero real occurrences in any
+      // building checked but is added anyway for schema completeness, same as its siblings.
+      IfcFlowController: _TRI_METAL,
+      IfcFlowMovingDevice: _TRI_METAL,
+      IfcFlowInstrument: _TRI_METAL,
+      IfcFlowStorageDevice: _TRI_METAL,
+      IfcValve: _TRI_METAL
     };
 
     const key = rgbaStr || '_default';

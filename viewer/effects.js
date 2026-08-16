@@ -2596,6 +2596,47 @@ async function setupEffects(A, renderer, scene, camera) {
   // streaming.js's own STD_MAT table already uses for "metal" elsewhere), not every surface.
   var PHOTO_METAL_THRESHOLD = 0.3;
   var PHOTO_METAL_ROUGHNESS_SCALE = 0.4;  // tighter/brighter specular highlight (was 0.6)
+  // ══ §MIRROR_TRUE_REFLECT (PHOTOREAL_STILL_RENDER.md ▶RESUME item 1) — mirrors are IfcFlowTerminal,
+  // and STD_MAT.IfcFlowTerminal carries envInt:0.05 (§HOSPITAL_BLUE_TINT/§PIPE_DUCT_BLUE_TINT — a
+  // fix meant to kill a blue-sky-tint on pipes/ducts, applied class-wide). That sets
+  // mat.userData._photoEnvExempt=true in streaming.js's _getMaterial(), which is
+  // _reassertPhotoMatBoost's very FIRST early-return guard below — mirrors get swept up in a fix
+  // meant for a different fixture and never get boosted, never get room-probe-eligible, never get a
+  // true-mirror roughness. Confirmed exclusive by direct DB query (Clinic): the 22 real
+  // "M_Mirror:Mirror 600mm x 900mm" elements carry material_rgba 0.843,0.843,0.843,1.000 — not
+  // shared with any other IfcFlowTerminal fixture in the building (grab bars/lights/exit signs/etc
+  // all carry distinct rgba values). streaming.js _getMaterial's cacheKey includes rgba+class, so
+  // this is a genuinely exclusive material — excluding it from the exemption cannot leak into
+  // diffusers/grilles/any other fixture sharing the class. Lookup uses the same
+  // name-keyword-query-via-elements_meta pattern as §PHOTO_EMBER's EMBER_WORDS, cached per building.
+  var _mirrorMatSet = null, _mirrorMatBuilding = null;
+  function _mirrorReflectMats() {
+    if (_mirrorMatSet && _mirrorMatBuilding === A.activeBuilding) return _mirrorMatSet;
+    _mirrorMatSet = Object.create(null);
+    _mirrorMatBuilding = A.activeBuilding;
+    if (typeof A.dbQuery !== 'function' || !A.guidMap || !A.collectMeshes) return _mirrorMatSet;
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class='IfcFlowTerminal' AND lower(element_name) LIKE '%mirror%'") || [];
+    } catch (e) { console.warn('§MIRROR_TRUE_REFLECT query failed: ' + e.message); return _mirrorMatSet; }
+    if (!rows.length) { console.log('§MIRROR_TRUE_REFLECT bld=' + A.activeBuilding + ' no mirrors — nothing to fix'); return _mirrorMatSet; }
+    var want = Object.create(null);
+    for (var i = 0; i < rows.length; i++) want[rows[i][0]] = 1;
+    var ids = Object.create(null), hits = 0;
+    for (var k in A.guidMap) if (want[A.guidMap[k]]) { ids[parseInt(String(k).split('_')[0], 10)] = 1; hits++; }
+    var meshes = 0, mats = 0;
+    A.collectMeshes(function(o) { return o.isMesh; }).forEach(function(o) {
+      if (!ids[o.id]) return;
+      meshes++;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function(m) {
+        if (!m || _mirrorMatSet[m.uuid]) return;
+        _mirrorMatSet[m.uuid] = m; mats++;
+      });
+    });
+    console.log('§MIRROR_TRUE_REFLECT bld=' + A.activeBuilding + ' guids=' + rows.length +
+      ' guidMapHits=' + hits + ' meshes=' + meshes + ' materials=' + mats);
+    return _mirrorMatSet;
+  }
   // §PHOTO_HEMI_FILL (user ask, "Ground still too dark"): re-read _setGroundColor (tools.js) and
   // found the actual bug — when the ground has a texture map (which it does, 'paved'), that
   // function IGNORES whatever hex tint is passed and forces plain WHITE (full brightness, no
@@ -2701,24 +2742,29 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   function _reassertPhotoMatBoost() {
     if (!_photoMatBoostActive || !A._matCache) return;
+    var mirrorMats = _mirrorReflectMats();  // §MIRROR_TRUE_REFLECT — cached per building, cheap to call every tick
     Object.keys(A._matCache).forEach(function(k) {
       var m = A._matCache[k];
-      if (!m || (m.userData && (m.userData._photoBoosted || m.userData._photoEnvExempt)) ||
+      if (!m) return;
+      var isMirror = !!mirrorMats[m.uuid];  // §MIRROR_TRUE_REFLECT — exclusive material, bypasses the exemption below
+      if ((m.userData && (m.userData._photoBoosted || (m.userData._photoEnvExempt && !isMirror))) ||
           typeof m.envMapIntensity !== 'number') return;
       // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): _photoEnvExempt (streaming.js's per-class
       // §HOSPITAL_BLUE_TINT envInt override) skips this blanket boost entirely — that override was
       // already hand-tuned to fight the sky's blue PMREM reflection on these specific classes;
       // re-boosting on top of it undid the tuning specifically during Alt+S/Alt+G captures.
       var isMetal = typeof m.metalness === 'number' && m.metalness > PHOTO_METAL_THRESHOLD;
-      var isGlossy = isMetal || (typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX);
+      var isGlossy = isMirror || isMetal || (typeof m.roughness === 'number' && m.roughness <= PHOTO_GLOSSY_ROUGHNESS_MAX);
       if (isGlossy) {
         m.userData._photoOrigEnvMapIntensity = m.envMapIntensity;
         m.envMapIntensity = m.envMapIntensity * PHOTO_ENVMAP_BOOST;
         m.userData._photoRoomProbeEligible = true;  // §MIRROR_ROOM_PROBE — read every tick by _reassertPhotoEnvMap above
       }
-      if (isMetal) {
+      if (isMetal || isMirror) {
         m.userData._photoOrigRoughness = m.roughness;
-        m.roughness = Math.max(0.05, m.roughness * PHOTO_METAL_ROUGHNESS_SCALE);
+        // §MIRROR_TRUE_REFLECT: a real mirror is near-perfect specular, not tightened-metal —
+        // force near-zero roughness instead of the metal scale-down.
+        m.roughness = isMirror ? 0.03 : Math.max(0.05, m.roughness * PHOTO_METAL_ROUGHNESS_SCALE);
       }
       m.userData._photoBoosted = true;
       m.needsUpdate = true;
