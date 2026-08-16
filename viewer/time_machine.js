@@ -5441,6 +5441,22 @@
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
       NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
 
+    // §GROUNDWORK_SLAB (4D_GANTT_TM_REFACTOR.md §S9 / M5) — ONE shared definition
+    // (ScheduleGate.groundworkSlabs), applied by BOTH element recipes (schedule_author's
+    // _buildScheduleElements applies the same call) so authored zones/tasks and this movie recipe
+    // reclassify the SAME slabs: a slab-on-grade (bears on grade/piles/footings only, in the
+    // building's lowest Superstructure band) is Substructure work — E3's phase chain then orders
+    // plate-before-steel at its level with zero solver changes. seq/resource unchanged.
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.groundworkSlabs) {
+      var _gw = ScheduleGate.groundworkSlabs(elements), _gwN = 0, _gwLevels = {};
+      elements.forEach(function (el) {
+        if (_gw[el.guid]) { el.phase = 'Substructure'; _gwN++; _gwLevels[el.storey || '_'] = 1; }
+      });
+      if (_gwN) console.log('§GROUNDWORK_SLAB recipe=time_machine n=' + _gwN +
+        ' levels=' + JSON.stringify(Object.keys(_gwLevels)) +
+        ' — slab-on-grade reclassified Substructure (bears on grade/piles/footings only, lowest Superstructure band)');
+    }
+
     // §4D_ROOF_LOAD_PATH M1 + §4D_WALLS_BEFORE_ROOF M4 — roof/load-path promotion, shared
     // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
     // when the two inline copies were consolidated 2026-08-10).
@@ -8272,7 +8288,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 31;   // §S6_CREW_PASS (4D_GANTT_TM_REFACTOR.md) — crew-aware forward pass reshapes every schedule
+  var _GANTT_CACHE_VERSION = 32;   // §GROUNDWORK_SLAB (4D_GANTT_TM_REFACTOR.md §S9) — grade slab+beam reclassification reshapes ground-level schedule
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —

@@ -169,6 +169,94 @@
     return o;
   }
   function overlap(a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; }
+  // ══ §GROUNDWORK_SLAB (2026-08-16, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S9 / M5 v4) ═══
+  // groundworkSlabs(els) -> { guid: 1 } for every IfcSlab/IfcBeam currently classified
+  // Superstructure that is GROUNDWORK, not deck/frame. Two membership routes, both extracted:
+  //  (a) ZERO structural bearings (slab-on-grade over soil): joins iff its 3m z-band (the shipped
+  //      §GANTT quantum) equals the LOWEST band among the candidate classes themselves (IfcSlab/
+  //      IfcBeam Superstructure — NOT all Superstructure: measured live, 3 stray IfcColumn bases
+  //      one band below Terminal's plate voided every candidate, and band quantization shifts
+  //      between z-datums; keying on the candidate population is frame-invariant).
+  //  (b) HAS structural bearings: FIXPOINT — joins when every structure-pool bearing-below contact
+  //      (seq<=4 / IfcWall* / promoted slab / stair flight — the module's own bearing definition;
+  //      under-slab MEP never counts, a pipe cannot bear a slab) is Substructure-phase or already
+  //      a member. Grade beams join first (they bear on piles/footings), the plate joins next
+  //      (piles + grade beams), toppings join off the plate. A deck slab bears on frame beams and
+  //      a frame beam on columns — columns are not candidates, so neither ever joins.
+  // The SEQUENCE_RULES class defaults (IfcBeam seq 3 / IfcSlab seq 4, Superstructure) are FRAME
+  // logic, right for upper floors — groundwork sequenced by them appears with the steel all round
+  // it, the user-reported symptom. Same shared-pure-function status as hostPairs: one definition,
+  // both element recipes call it, so zone authoring, task bars, milestones (E3's existing
+  // Substructure→Superstructure chain then orders groundwork-before-frame with zero solver
+  // changes) and the movie stay one truth. Pure geometry — no timing read.
+  function groundworkSlabs(els) {
+    var out = {}, idx = {}, t, e, cs, c, k, S;
+    function isStructBearing(s2) {
+      return s2.seq <= 4 || (s2.cls && s2.cls.indexOf('IfcWall') === 0) ||
+             (s2.cls === 'IfcSlab' && s2.seq > 4) || s2.cls === 'IfcStairFlight';
+    }
+    function isCand(e2) {
+      return (e2.cls === 'IfcSlab' || e2.cls === 'IfcBeam') && e2.phase === 'Superstructure';
+    }
+    // v6: the ground window is PER CANDIDATE CLASS and DATUM-INVARIANT. Two measured traps led
+    // here: (v5) Terminal's grade beams base one 3m band below the plate, so one shared minimum
+    // starved the plate — the ground reference must be each class's own; and (v6) the viewer
+    // rebases the z-datum in its in-memory DB, so floor(z/3) BIN EQUALITY gave 233 members on the
+    // raw datum and 29 on the shifted one for the SAME building — the same 3m quantum must be
+    // applied as a continuous window above the class's own minimum base_z, not as a bin boundary.
+    var minZByCls = {};
+    for (t = 0; t < els.length; t++) {
+      if (isCand(els[t])) {
+        if (!(els[t].cls in minZByCls) || els[t].base_z < minZByCls[els[t].cls]) minZByCls[els[t].cls] = els[t].base_z;
+      }
+    }
+    if (!('IfcSlab' in minZByCls) && !('IfcBeam' in minZByCls)) return out;
+    for (t = 0; t < els.length; t++) {
+      e = els[t];
+      if (e.phase === 'Substructure') continue;   // only non-Substructure can disqualify a bearing
+      if (!isStructBearing(e)) continue;
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t);
+    }
+    // candidates + their potentially-disqualifying structural bearing lists, computed once
+    var cand = [], bearings = [];
+    for (t = 0; t < els.length; t++) {
+      e = els[t];
+      if (!isCand(e)) continue;
+      var bl = [], seen = {};
+      cs = cellsOf(e);
+      for (c = 0; c < cs.length; c++) {
+        var arr = idx[cs[c]]; if (!arr) continue;
+        for (k = 0; k < arr.length; k++) {
+          S = els[arr[k]];
+          if (S.guid === e.guid || seen[arr[k]]) continue;
+          seen[arr[k]] = 1;
+          if (S.base_z < e.base_z - EPS && S.top_z >= e.base_z - GAP && overlap(S, e)) bl.push(arr[k]);
+        }
+      }
+      // route (a): no structural bearing — within one 3m quantum of its own class's lowest base
+      if (!bl.length) {
+        if (e.base_z <= minZByCls[e.cls] + 3) out[e.guid] = 1;
+        continue;
+      }
+      cand.push(t); bearings.push(bl);
+    }
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (t = 0; t < cand.length; t++) {
+        e = els[cand[t]];
+        if (out[e.guid]) continue;
+        var blocked = false;
+        for (k = 0; k < bearings[t].length; k++) {
+          S = els[bearings[t][k]];
+          if (S.phase !== 'Substructure' && !out[S.guid]) { blocked = true; break; }
+        }
+        if (!blocked) { out[e.guid] = 1; changed = true; }
+      }
+    }
+    return out;
+  }
   // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══
   // MEASURED (witness_curtain_wall_opening's own G-CWO-DISPLAY, left non-asserting on purpose so a
   // fix could promote it): openingGate holds PERFECTLY on the generative timeline — rawEARLY 0.0% on
@@ -1074,7 +1162,7 @@
   // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
   // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
   // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, openingPairs: openingPairs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
