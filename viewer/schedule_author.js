@@ -317,7 +317,7 @@
       return best;
     }
 
-    return r[0].values.map(function (row) {
+    var _bseList = r[0].values.map(function (row) {
       var guid = row[0], cls = row[1], name = row[2], rawStorey = row[3];
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
       var storey = assignStoreyByZ(rawStorey, cz);
@@ -344,6 +344,28 @@
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     }).filter(function (e) { return !e.noGeo; });
+    _reclassGroundworkSlabs(_bseList, 'schedule_author');
+    return _bseList;
+  }
+
+  // §GROUNDWORK_SLAB (4D_GANTT_TM_REFACTOR.md §S9 / M5) — ONE shared definition
+  // (ScheduleGate.groundworkSlabs), applied identically by both element recipes (this one and
+  // time_machine.js's inline builder) so authored zones/tasks and the movie reclassify the SAME
+  // slabs. Mutates phase in place; seq/resource unchanged (CONCRETE_GANG already).
+  function _reclassGroundworkSlabs(list, who) {
+    // schedule_gate.js self-registers on its own wrapper global (globalThis in node, window in the
+    // browser) — this module's IIFE param is self||this, which in node is NOT globalThis, so check both.
+    var SG = (global && global.ScheduleGate) ||
+             (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) ||
+             (typeof window !== 'undefined' && window.ScheduleGate) || null;
+    if (!SG || !SG.groundworkSlabs) return;
+    var gw = SG.groundworkSlabs(list), n = 0, levels = {};
+    for (var i = 0; i < list.length; i++) {
+      if (gw[list[i].guid]) { list[i].phase = 'Substructure'; n++; levels[list[i].storey || '_'] = 1; }
+    }
+    if (n) console.log('§GROUNDWORK_SLAB recipe=' + who + ' n=' + n +
+      ' levels=' + JSON.stringify(Object.keys(levels)) +
+      ' — slab-on-grade reclassified Substructure (bears on grade/piles/footings only, lowest Superstructure band)');
   }
 
   // materializeZones(db, rules, opts) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up): the
