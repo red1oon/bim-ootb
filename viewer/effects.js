@@ -2689,7 +2689,14 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!A._matCache || !A._envMap) return;
     Object.keys(A._matCache).forEach(function(k) {
       var m = A._matCache[k];
-      if (m && 'envMap' in m && m.envMap !== A._envMap) { m.envMap = A._envMap; m.needsUpdate = true; }
+      if (!m || !('envMap' in m)) return;
+      // §MIRROR_ROOM_PROBE: glossy/metal + mirror materials (flagged once by _reassertPhotoMatBoost
+      // below) reflect the local room-probe capture instead of the static sky, once it's built —
+      // this function already runs every accumulation tick, so it naturally upgrades them from the
+      // sky fallback to the real probe the moment _buildRoomProbe() finishes, no separate loop needed.
+      var target = (m.userData && m.userData._photoRoomProbeEligible && _roomProbeRT)
+        ? _roomProbeRT.texture : A._envMap;
+      if (m.envMap !== target) { m.envMap = target; m.needsUpdate = true; }
     });
   }
   function _reassertPhotoMatBoost() {
@@ -2707,6 +2714,7 @@ async function setupEffects(A, renderer, scene, camera) {
       if (isGlossy) {
         m.userData._photoOrigEnvMapIntensity = m.envMapIntensity;
         m.envMapIntensity = m.envMapIntensity * PHOTO_ENVMAP_BOOST;
+        m.userData._photoRoomProbeEligible = true;  // §MIRROR_ROOM_PROBE — read every tick by _reassertPhotoEnvMap above
       }
       if (isMetal) {
         m.userData._photoOrigRoughness = m.roughness;
@@ -3154,6 +3162,71 @@ async function setupEffects(A, renderer, scene, camera) {
     });
     return _hdriReadyPromise;
   }
+  // §MIRROR_ROOM_PROBE (2026-08-16, user: "what does it take for mirrors to truly reflect... you
+  // may try the single room-representative probe first"): glossy/metal materials only ever
+  // reflected the static sky/HDRI env map (A._envMap) — no local reflection of the actual scene
+  // existed anywhere (grepped: no CubeCamera/Reflector/WebGLCubeRenderTarget before this). One
+  // CubeCamera capture at a representative interior point — same "35% up from the lowest point"
+  // heuristic _cinemaPathPlan's own pivot already uses to land inside the building rather than at
+  // its exact geometric bbox centre (often void/roof) — 6 renders, ONE-TIME per staging session
+  // (this is a frozen still, not real-time navigation), used as envMap for the isGlossy set
+  // (_reassertPhotoMatBoost) in place of the sky.
+  //
+  // A per-element "real mirror" boost (name-keyword vocabulary, e.g. Clinic's own
+  // IfcFlowTerminal "M_Mirror:Mirror 600mm x 900mm" — IFC class is inconsistent, not a distinct
+  // mirror class) was ATTEMPTED and DROPPED, not shipped: A._matCache (what this whole boost/
+  // envmap system reads) only holds materials for INSTANCED/MERGED-tracked elements. Clinic's 22
+  // mirror elements render via the BATCHED path instead (confirmed live — the user's own pasted
+  // console log shows `§BATCHED_PICK batchId=2`), which shares ONE vertex-coloured material per
+  // batch and never registers a `color|class|discipline` entry in _matCache at all — so a
+  // per-element mirror boost has NOTHING to attach to for THIS class of element, regardless of how
+  // the guid lookup is written. Fixing that needs a batched-mesh-aware boost path, a materially
+  // bigger change than "try the room probe first" — named here, not built. Generic glossy/metal
+  // materials (pipes, railings, ducts) are NOT affected by this gap in the common case: they're
+  // typically large-count/merged/instanced and DO show up in A._matCache normally (verified live
+  // on Terminal's real pipe classes — see §MIRROR_ROOM_PROBE_PIPE_CHECK below).
+  // §MIRROR_ROOM_PROBE_REUSE (2026-08-16, real bug found+fixed via a headless bisection — dispose+
+  // rebuild every Alt+S cycle leaked +1 texture/cycle, compounding: measured C1/C2/C3 exit deltas
+  // 25,1,1. Isolating a bare `new WebGLCubeRenderTarget().dispose()` loop OUTSIDE the real staging
+  // pipeline showed NO growth (stable), so the leak is specific to disposing the RT while it's
+  // real staged materials' active envMap — most likely a material still holding the (about to be
+  // disposed) texture reference across a stray render triggers three.js to silently re-upload a
+  // fresh GL texture no code then tracks/disposes. Disabling just the build call made the leak
+  // disappear entirely (confirms the RT lifecycle, not the material-boost logic, is the cause).
+  // Fix: never dispose+rebuild on a normal Alt+S cycle — build ONCE, keep it alive, just re-render
+  // its 6 faces on each staging press (same "created once, reused across sessions" discipline this
+  // file already uses for A._camLight). Only disposed on a real building switch.
+  var _roomProbeRT = null, _roomProbeCam = null, _roomProbeBuilding = null;
+  function _buildRoomProbe() {
+    var bbox = _buildingBBoxIfc();
+    if (!bbox || !A.ifc2three || !A.renderer || !A.scene) return;
+    if (_roomProbeRT && _roomProbeBuilding !== A.activeBuilding) _disposeRoomProbe();
+    var lo = A.ifc2three(bbox.xMin, bbox.yMin, bbox.zMin);
+    var hi = A.ifc2three(bbox.xMax, bbox.yMax, bbox.zMax);
+    var pos = {
+      x: (lo.x + hi.x) / 2,
+      y: Math.min(lo.y, hi.y) + Math.abs(hi.y - lo.y) * 0.35,
+      z: (lo.z + hi.z) / 2
+    };
+    var envelope = Math.max(Math.abs(hi.x - lo.x), Math.abs(hi.z - lo.z), 50);
+    var isNew = !_roomProbeRT;
+    if (isNew) {
+      _roomProbeRT = new THREE.WebGLCubeRenderTarget(128);
+      _roomProbeCam = new THREE.CubeCamera(0.5, envelope * 3, _roomProbeRT);
+      _roomProbeBuilding = A.activeBuilding;
+    }
+    _roomProbeCam.position.set(pos.x, pos.y, pos.z);
+    _roomProbeCam.update(A.renderer, A.scene);
+    console.log('§MIRROR_ROOM_PROBE ' + (isNew ? 'built' : 'reused') + ' pos=(' + pos.x.toFixed(1) +
+      ',' + pos.y.toFixed(1) + ',' + pos.z.toFixed(1) + ') envelope=' + envelope.toFixed(1) + ' size=128');
+  }
+  function _disposeRoomProbe() {
+    if (!_roomProbeRT) return;
+    _roomProbeRT.dispose();
+    _roomProbeRT = null;
+    _roomProbeCam = null;
+    _roomProbeBuilding = null;
+  }
   function _applyPhotoStaging() {
     // §GROUND_WETNESS_REFIRE_FIX (2026-07-17, live user repro: worked once, then "cannot
     // replicate" on another building, back on the original — still couldn't, "but bit slightly"):
@@ -3385,6 +3458,12 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CAM_LIGHT on intensity=' + CAM_LIGHT_INTENSITY + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
     _showPhotoProps(true);
+    // §MIRROR_ROOM_PROBE: built LAST, after ground/lights/props are all in their staged state, so
+    // the capture reflects the real staged look. The FIRST _reassertPhotoMatBoost() call above (at
+    // the top of this function) already ran before this exists — those materials fall back to the
+    // sky env map for one tick, then upgrade to this probe on the next accumulation frame via
+    // _reassertPhotoEnvMap (which runs every tick regardless of the once-only boost flag).
+    _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
   function _teardownPhotoStaging() {
@@ -3432,6 +3511,12 @@ async function setupEffects(A, renderer, scene, camera) {
         delete m.userData._photoOrigRoughness;
       }
       delete m.userData._photoBoosted;
+      // §MIRROR_ROOM_PROBE: drop back to the sky env map — same "restore what you borrowed" rule
+      // as everything else here. The probe's RT itself is DELIBERATELY NOT disposed here (see
+      // §MIRROR_ROOM_PROBE_REUSE above) — it stays alive, reused on the next Alt+S press, only
+      // freed by _buildRoomProbe() itself on a real building switch.
+      delete m.userData._photoRoomProbeEligible;
+      if (A._envMap) m.envMap = A._envMap;
       m.needsUpdate = true;
     });
     _photoEnvBoostedMats = [];
