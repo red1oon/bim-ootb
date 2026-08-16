@@ -145,14 +145,29 @@
       if (L) { var a = lvlAgg[L] || (lvlAgg[L] = { sum: 0, c: 0 }); a.sum += items[i].bz; a.c++; }
     }
     var levels = Object.keys(lvlAgg).sort(function (a, b) { return lvlAgg[a].sum / lvlAgg[a].c - lvlAgg[b].sum / lvlAgg[b].c; });
-    var lvlRank = {}; levels.forEach(function (L, r) { lvlRank[L] = r; });
 
-    // Group key = lexicographic (levelRank, phaseRank) as one int; phaseRank = Tier-1 chain index,
-    // Tier-2 = 3. Every hammock gate points to a strictly LARGER key than its own.
+    // M1 (4D_GANTT_TM_REFACTOR.md) — a LEVEL, to the gates, is a physical 3-metre z-band, not a
+    // storey name. Precedent: the shipped §GANTT banding (time_machine.js `band: Math.floor(cz/3)`)
+    // and §4D_BAND_MONOTONIC's own band-rank gate — same quantum, reused here, not invented.
+    // bandOfLevel = floor(meanZ/3m); bandRank = dense rank of the distinct band values PRESENT
+    // (ascending), so federated pseudo-levels sharing one physical storey (Terminal's Kedai/Jalan/
+    // Tanah cluster) collapse onto the SAME bandRank and are never chained to each other by E4.
+    var bandOfLevel = {};
+    levels.forEach(function (L) { bandOfLevel[L] = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3); });
+    var bandValues = [];
+    levels.forEach(function (L) { if (bandValues.indexOf(bandOfLevel[L]) < 0) bandValues.push(bandOfLevel[L]); });
+    bandValues.sort(function (a, b) { return a - b; });
+    var bandRankOfBand = {}; bandValues.forEach(function (b, r) { bandRankOfBand[b] = r; });
+    var bandRank = {}; levels.forEach(function (L) { bandRank[L] = bandRankOfBand[bandOfLevel[L]]; });
+
+    // Group key = lexicographic (bandRank, phaseRank) as one int; phaseRank = Tier-1 chain index,
+    // Tier-2 = 3. Every hammock gate points to a strictly LARGER key than its own. bandRank (not
+    // per-name lvlRank) is the M1 straggler group-key so cross-ladder ancestry inside one physical
+    // band stops manufacturing false stragglers.
     function phaseRank(P) { var t = TIER1_ORDER.indexOf(P); return t >= 0 ? t : 3; }
     function groupKeyOf(i2) {
       if (!lvlOf[i2]) return -1;
-      return lvlRank[lvlOf[i2]] * 8 + phaseRank(items[i2].phase || '_UNPHASED');
+      return bandRank[lvlOf[i2]] * 8 + phaseRank(items[i2].phase || '_UNPHASED');
     }
 
     // §CPM_STRAGGLER_MEMBERSHIP propagation: maxAncKey over the PHYSICS-ONLY condensation
@@ -245,17 +260,31 @@
       });
     });
 
-    // E4 — storey hammocks per phase: M(P, level k) -> elements of (P, next level where P present).
+    // E4 — storey hammocks per phase, band-to-band (M1, THE MISSING/CORRECTED EDGE): every M(L,P)
+    // with L in band b -> elements of (P, L') for every L' in the next PRESENT band. Levels sharing
+    // one band are parallel sub-buildings (e.g. Terminal's Kedai shop block vs the main hall) and
+    // are NEVER chained to each other — only band-to-band edges exist.
     var phases = {};
     Object.keys(groups).forEach(function (key) {
       var cut = key.indexOf('||');
       (phases[key.slice(cut + 2)] = phases[key.slice(cut + 2)] || []).push(key.slice(0, cut));
     });
     Object.keys(phases).forEach(function (P) {
-      var ls = phases[P].sort(function (a, b) { return lvlRank[a] - lvlRank[b]; });
-      for (var p = 0; p + 1 < ls.length; p++) {
-        var m = milestone(ls[p], P), succ = groups[ls[p + 1] + '||' + P];
-        for (var k = 0; k < succ.length; k++) addEdge(m, succ[k], FS, 4, 'e4');
+      var byBand = {};
+      phases[P].forEach(function (L) {
+        var br = bandRank[L];
+        (byBand[br] = byBand[br] || []).push(L);
+      });
+      var bandRanksPresent = Object.keys(byBand).map(Number).sort(function (a, b) { return a - b; });
+      for (var p = 0; p + 1 < bandRanksPresent.length; p++) {
+        var fromLevels = byBand[bandRanksPresent[p]], toLevels = byBand[bandRanksPresent[p + 1]];
+        fromLevels.forEach(function (L) {
+          var m = milestone(L, P);
+          toLevels.forEach(function (L2) {
+            var succ = groups[L2 + '||' + P];
+            for (var k = 0; k < succ.length; k++) addEdge(m, succ[k], FS, 4, 'e4');
+          });
+        });
       }
     });
 
