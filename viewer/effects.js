@@ -2766,6 +2766,21 @@ async function setupEffects(A, renderer, scene, camera) {
         // force near-zero roughness instead of the metal scale-down.
         m.roughness = isMirror ? 0.03 : Math.max(0.05, m.roughness * PHOTO_METAL_ROUGHNESS_SCALE);
       }
+      // §MIRROR_TRUE_REFLECT_METALNESS (found live 2026-08-16+1 — the roughness-only fix above
+      // shipped but user reported "still not reflection in mirror"): STD_MAT.IfcFlowTerminal's
+      // metal:0.30 was never touched by the fix above. MeshStandardMaterial's PBR split is driven
+      // by metalness, not roughness — at metalness 0.3 the BRDF still blends ~70% diffuse albedo
+      // into the output (diffuseColor = albedo*(1-metalness)), so even a perfectly sharp, boosted
+      // envMap reflection reads as a faint sheen on top of a mostly-flat grey surface, not a mirror
+      // image. Roughness alone controls how BLURRY a reflection is, not how STRONG it is relative
+      // to diffuse — the two are independent PBR parameters, and only one was fixed. Force
+      // near-1.0 metalness for mirrors specifically (glass/other glossy classes keep their real
+      // metalness — this is mirror-only, gated by the same `isMirror` exclusivity as the rest of
+      // this fix).
+      if (isMirror) {
+        m.userData._photoOrigMetalness = m.metalness;
+        m.metalness = 0.95;
+      }
       m.userData._photoBoosted = true;
       m.needsUpdate = true;
       if (isGlossy) _photoEnvBoostedMats.push(m);
@@ -3555,6 +3570,12 @@ async function setupEffects(A, renderer, scene, camera) {
       if (m.userData._photoOrigRoughness !== undefined) {
         m.roughness = m.userData._photoOrigRoughness;
         delete m.userData._photoOrigRoughness;
+      }
+      // §MIRROR_TRUE_REFLECT_METALNESS: undo the forced near-1.0 metalness, same restore
+      // discipline as roughness/envMapIntensity above.
+      if (m.userData._photoOrigMetalness !== undefined) {
+        m.metalness = m.userData._photoOrigMetalness;
+        delete m.userData._photoOrigMetalness;
       }
       delete m.userData._photoBoosted;
       // §MIRROR_ROOM_PROBE: drop back to the sky env map — same "restore what you borrowed" rule
