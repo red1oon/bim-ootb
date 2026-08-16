@@ -81,8 +81,33 @@ async function runBuilding(SQL, RATES, name) {
 
   // §ZONE_DISPLAY_AUTHORING with the CPM display schedule: deriveZones + day-rounded windows
   // (materializeZones' own construction, verbatim from probe_captured_floating.js).
+  // §ZONE_WINDOW_DAGWINS_CLIP mirror: straggler times clamped into their group's non-straggler
+  // envelope for WINDOW AUTHORING ONLY (the played items keep true physics times).
+  const stragOf = res.graph.stragglerOf;
+  const envByG = {};
+  const gkOf = o => (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
+  items.forEach((o, i) => {
+    if (stragOf[i]) return;
+    const k = gkOf(o), e2 = envByG[k] || (envByG[k] = { min: Infinity, max: -Infinity });
+    if (o.s < e2.min) e2.min = o.s;
+    if (o.e > e2.max) e2.max = o.e;
+  });
   const dispSchedule = {};
-  items.forEach(o => dispSchedule[o.guid] = { start: o.s, end: o.e });
+  let clamped = 0;
+  items.forEach((o, i) => {
+    let st = o.s, en = o.e;
+    if (stragOf[i]) {
+      const e2 = envByG[gkOf(o)];
+      if (e2 && e2.max > e2.min) {
+        st = Math.min(Math.max(st, e2.min), e2.max);
+        en = Math.min(Math.max(en, e2.min), e2.max);
+        if (en <= st) { st = Math.max(e2.min, e2.max - 60000); en = e2.max; }
+        clamped++;
+      }
+    }
+    dispSchedule[o.guid] = { start: st, end: en };
+  });
+  console.log('§CPMDP_DAGWINS_CLIP clamped=' + clamped);
   const rolled = ScheduleGate.deriveZones(elements, dispSchedule);
   const minStart = Math.min.apply(null, rolled.zones.map(z => z.start));
   const taskWin = {}, guidTask = {};
@@ -102,9 +127,10 @@ async function runBuilding(SQL, RATES, name) {
   const preRescale = floatingCensus(scheduled.map(o => Object.assign({}, o)));
   console.log('§CPMDP_PRE_RESCALE floating=' + preRescale.midair + ' orphans=' + preRescale.orphans);
 
-  // _cap overlay: rescale into the (self-derived) windows, §OG skip (display-authored), judge parity.
+  // _cap overlay, display-authored path: §CAP_RESCALE_SKIP (windows are views — no reconcile),
+  // §OG skip, judge parity only.
   const rescaled = scheduled.map(o => Object.assign({}, o));
-  applyCapWindowRescale(rescaled, taskWin);
+  console.log('§CAP_RESCALE_SKIP mirror (display-authored)');
   const postRescale = floatingCensus(rescaled.map(o => Object.assign({}, o)));
   console.log('§CPMDP_POST_RESCALE floating=' + postRescale.midair + ' byClass=' + JSON.stringify(postRescale.byClass));
   const cjp = _cjpJudgeParity(rescaled, taskWin);
@@ -112,19 +138,25 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPMDP_FINAL floating=' + final.midair + ' windowBlocked=' + cjp.windowBlocked +
     ' cjpPushed=' + cjp.pushed + ' byClass=' + JSON.stringify(final.byClass));
 
-  // Window fidelity of the played timeline vs its own authored windows (the needle-vs-appearance bar).
-  let inWin = 0, outWin = 0;
+  // Window fidelity of the played timeline vs its own authored windows. A dag-wins straggler
+  // legitimately rides OUTSIDE its bar (§ZONE_WINDOW_DAGWINS_CLIP — counted, never hidden);
+  // any NON-straggler outside its window is a real defect and must be 0.
+  const stragGuid = {};
+  items.forEach((o, i) => { if (stragOf[i]) stragGuid[o.guid] = 1; });
+  let inWin = 0, stragOut = 0, otherOut = 0;
   rescaled.forEach(function (o) {
     const w = taskWin[o.task]; if (!w) return;
-    if (o.s >= w.s && o.e <= w.e) inWin++; else outWin++;
+    if (o.s >= w.s && o.e <= w.e) inWin++;
+    else if (stragGuid[o.guid]) stragOut++;
+    else otherOut++;
   });
-  console.log('§CPMDP_WINDOW_FIDELITY inWindow=' + inWin + '/' + (inWin + outWin) +
-    ' pct=' + (100 * inWin / Math.max(1, inWin + outWin)).toFixed(2));
+  console.log('§CPMDP_WINDOW_FIDELITY inWindow=' + inWin + '/' + (inWin + stragOut + otherOut) +
+    ' stragglerOutside=' + stragOut + ' nonStragglerOutside=' + otherOut + ' (bar: nonStraggler must be 0)');
 
-  const pass = final.midair === 0;
-  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' ' + (pass ? 'PASS' : 'FAIL'));
+  const pass = final.midair === 0 && otherOut === 0;
+  console.log('§CPMDP_ACCEPT ' + name + ' finalFloating=' + final.midair + ' nonStragglerOutside=' + otherOut + ' ' + (pass ? 'PASS' : 'FAIL'));
   return { name, final: final.midair, pre: preRescale.midair, post: postRescale.midair,
-           fidelity: (100 * inWin / Math.max(1, inWin + outWin)).toFixed(2) };
+           stragOut, otherOut };
 }
 
 async function main() {
@@ -136,9 +168,9 @@ async function main() {
   const out = [];
   for (const name of FLEET) out.push(await runBuilding(SQL, RATES, name));
   let fails = 0;
-  out.forEach(r => { if (r.final !== 0) fails++; });
+  out.forEach(r => { if (r.final !== 0 || r.otherOut !== 0) fails++; });
   console.log('§CPMDP_FLEET ' + JSON.stringify(out.map(r => [r.name, 'pre=' + r.pre, 'post=' + r.post,
-    'final=' + r.final, 'fid=' + r.fidelity + '%'])));
+    'final=' + r.final, 'stragOut=' + r.stragOut, 'otherOut=' + r.otherOut])));
   console.log('§CPMDP_FLEET_VERDICT buildings=' + out.length + ' fails=' + fails + ' ' + (fails === 0 ? 'PASS' : 'FAIL'));
   process.exit(fails === 0 ? 0 : 1);
 }
