@@ -1,10 +1,10 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-16T16:38:24.793Z",
+  "generated_at": "2026-08-16T16:58:29.187Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-ltu-meta-repair",
-    "sha": "6f5c486be416942b0146610ff57be4d52782269b",
+    "worktree": "/tmp/wt-fleet-pair-audit",
+    "sha": "d5c0eb72dcab93f6446c6a8cf27d2f885840cf29",
     "behind_origin_main": 0,
     "ahead_origin_main": 1,
     "clean": true,
@@ -20,14 +20,17 @@
   },
   "artifact": {
     "file": "buildings/patches/LTU_AHouse_meta.db.sql",
-    "bytes": 2273,
-    "md5": "af362186ede775e4b45dbbbf11a9ee88",
-    "md5_b64": "rzYhhu3ndeS0Xbu/EanuiA==",
+    "bytes": 2584,
+    "md5": "80f976c4fde463e156f4294e6ccd7781",
+    "md5_b64": "gPl2xP3kY+FW9ClObM13gQ==",
     "object": "buildings/patches/LTU_AHouse_meta.db.sql",
     "content_type": "application/sql"
   },
   "target": {
-    "exists": false
+    "exists": true,
+    "etag": "1dd06cf3-013d-47c5-bf07-59372aa888b1",
+    "size": "2273",
+    "last-modified": "Sun, 16 Aug 2026 16:38:26 GMT"
   },
   "verification": {
     "cmd": "node scripts/verify_ltu_meta_transform_repair.js",
@@ -44,8 +47,8 @@
   "verdict": "PASS",
   "failures": [],
   "uploaded": {
-    "at": "2026-08-16T16:38:27.581Z",
-    "etag": "1dd06cf3-013d-47c5-bf07-59372aa888b1",
+    "at": "2026-08-16T16:58:35.036Z",
+    "etag": "ede06892-26b7-41b2-a05b-2eeea5106e3d",
     "verified": true
   }
 }
