@@ -56,6 +56,45 @@ function floatingCensus(items) {
   return { midair, orphans: G.orphans, grounded: G.groundedN, byClass, guids, G };
 }
 
+// §STOREY_ORDER_REPORT (2026-08-16) — user report: "storey by storey build up not adhered to".
+// items: [{storey, bz, s}]. Storeys ordered by REAL mean base_z (extracted geometry, never
+// invented) — p10/p50 START DAY per storey, then a monotonicity check across that real elevation
+// order. Shared by the RAW (pre-remap) and FINAL (post-overlay) call sites so the two are directly
+// comparable — same math, different pipeline stage.
+const DAY_MS = 86400000;
+function storeyOrderReport(items, label) {
+  const byStorey = {};
+  items.forEach(function (o) {
+    const key = o.storey || '_NONE';
+    const g = byStorey[key] || (byStorey[key] = { zs: [], starts: [] });
+    g.zs.push(o.bz);
+    g.starts.push(o.s);
+  });
+  const globalMin = Math.min.apply(null, items.map(function (o) { return o.s; }));
+  const rows = Object.keys(byStorey).map(function (k) {
+    const g = byStorey[k];
+    const meanZ = g.zs.reduce(function (a, b) { return a + b; }, 0) / g.zs.length;
+    const starts = g.starts.slice().sort(function (a, b) { return a - b; });
+    const n = starts.length;
+    const p10 = Math.round((starts[Math.floor(n * 0.10)] - globalMin) / DAY_MS);
+    const p50 = Math.round((starts[Math.floor(n * 0.50)] - globalMin) / DAY_MS);
+    return { storey: k, z: meanZ, n: n, p10: p10, p50: p50 };
+  }).sort(function (a, b) { return a.z - b.z; });
+  let violations = 0, worst = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].p50 < rows[i - 1].p50) {
+      violations++;
+      worst = Math.max(worst, rows[i - 1].p50 - rows[i].p50);
+    }
+  }
+  console.log('§STOREY_ORDER_TABLE_' + label + ' ' + JSON.stringify(rows.map(function (r) {
+    return [r.storey, r.z.toFixed(1), r.n, r.p10, r.p50];
+  })));
+  console.log('§STOREY_ORDER_REPORT_' + label + ' violations=' + violations + '/' + (rows.length - 1) +
+    ' worstInversionDays=' + worst + ' storeys=' + rows.length);
+  return { violations, worst, storeys: rows.length };
+}
+
 async function main() {
   const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   const dbPath = path.join(BLD_DIR, ONLY + '.db');
@@ -78,6 +117,19 @@ async function main() {
   const schedule = ScheduleGate.computeSchedule(elements, 0, 1, maxCrews, SHIFT_HOURS);
   const rolled = ScheduleGate.deriveZones(elements, schedule);
   console.log('§CAP_ZONES n=' + rolled.zones.length + ' edges=' + rolled.edges.length);
+
+  // RAW baseline for §STOREY_ORDER_REPORT — computeSchedule's own §4D_BAND_MONOTONIC ladder is
+  // supposed to enforce this at the per-element level BEFORE any remap/repair/overlay touches it.
+  // Two granularities: RAW_SUBSTOREY is the label the movie actually renders per-element (e.g.
+  // "Level 4 TOS" vs "Level 4" vs "Level 4 Ceiling" kept separate); RAW_LEVEL collapses those onto
+  // the §4D_BAND_MONOTONIC gate's own granularity (ScheduleGate.collapsePhase) so a violation there
+  // is a genuine ladder break, not just TOS-races-ahead-of-Ceiling sub-storey sequencing.
+  storeyOrderReport(elements.map(function (e) {
+    return { storey: e.storey, bz: e.bz, s: schedule[e.guid].start };
+  }), 'RAW_SUBSTOREY');
+  storeyOrderReport(elements.map(function (e) {
+    return { storey: ScheduleGate.collapsePhase(e.storey), bz: e.bz, s: schedule[e.guid].start };
+  }), 'RAW_LEVEL');
 
   // materializeZones' own task-id + window construction, verbatim (schedule_author.js:397-411)
   const minStart = Math.min.apply(null, rolled.zones.map(z => z.start));
@@ -610,8 +662,33 @@ async function main() {
     const disp = geoEls.map(e => ({ guid: e.guid, s: sched6[e.guid].start, e: sched6[e.guid].end,
       bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
       cls: e.cls, seq: e.seq, phase: e.phase, storey: e.storey }));
+    const _preRemapS = {}; disp.forEach(function (o) { _preRemapS[o.guid] = o.s; });
     sandbox.__items = disp;
-    vm.runInContext('this.__remap(this.__items); this.__repair(this.__items);', sandbox);
+    vm.runInContext('this.__remap(this.__items);', sandbox);
+    // §STOREY_ORDER_REPORT — split remap vs repair to localize suspect (c) inside DISPLAY.
+    storeyOrderReport(disp.map(function (o) {
+      return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
+    }), 'POST_REMAP_LEVEL');
+    // §STOREY_ORDER_L1_DIAG — who exactly moved, and by how much, within raw storey "Level 1"?
+    {
+      const l1 = disp.filter(function (o) { return o.storey === 'Level 1'; })
+        .map(function (o) { return Object.assign({}, o, { delta: Math.round((o.s - _preRemapS[o.guid]) / DAY5) }); })
+        .sort(function (a, b) { return b.delta - a.delta; });
+      console.log('§STOREY_ORDER_L1_DIAG n=' + l1.length + ' top=' + JSON.stringify(
+        l1.slice(0, 8).map(function (o) { return [o.guid, o.cls, o.phase, o.delta, o._t1Straggler || false]; })));
+      const byPhaseDelta = {};
+      l1.forEach(function (o) {
+        const p = byPhaseDelta[o.phase] || (byPhaseDelta[o.phase] = { n: 0, sumDelta: 0, maxDelta: -Infinity });
+        p.n++; p.sumDelta += o.delta; if (o.delta > p.maxDelta) p.maxDelta = o.delta;
+      });
+      console.log('§STOREY_ORDER_L1_BYPHASE ' + JSON.stringify(Object.entries(byPhaseDelta).map(function (e) {
+        return [e[0], e[1].n, Math.round(e[1].sumDelta / e[1].n), e[1].maxDelta];
+      })));
+    }
+    vm.runInContext('this.__repair(this.__items);', sandbox);
+    storeyOrderReport(disp.map(function (o) {
+      return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
+    }), 'DISPLAY_LEVEL');
     let noTask = 0;
     const cap6 = disp.map(o => {
       const zid = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
@@ -686,6 +763,11 @@ async function main() {
     }).filter(Boolean);
     applyGapClampRescale(cap8, taskWin7);
     const preC8 = floatingCensus(cap8.map(o => Object.assign({}, o)));
+    // §STOREY_ORDER_REPORT PRE_PARITY — after window-authoring + gap-clamp rescale, BEFORE
+    // _cjpJudgeParity. Isolates suspect (b) (spread/rescale) from suspect (a) (parity pushes).
+    storeyOrderReport(cap8.map(function (o) {
+      return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
+    }), 'PRE_PARITY_LEVEL');
     const r8 = _cjpJudgeParity(cap8, taskWin7);
     const final8 = floatingCensus(cap8.map(o => Object.assign({}, o)));
     let inW8 = 0, outW8 = 0;
@@ -694,6 +776,14 @@ async function main() {
       ' preRepair=' + preC8.midair + ' parityPushed=' + r8.pushed +
       ' inWindow=' + inW8 + ' outWindow=' + outW8);
     console.log('§EXP8_FINAL_BYCLASS ' + JSON.stringify(final8.byClass));
+
+    // §STOREY_ORDER_REPORT (2026-08-16) FINAL — same math as the RAW call above, run on the
+    // FINAL overlay times (post-_cjpJudgeParity cap8, the EXP8 winner). Comparing RAW vs FINAL
+    // isolates whether §4D_BAND_MONOTONIC's ladder survives the remap/repair/window/parity chain.
+    storeyOrderReport(cap8, 'FINAL_SUBSTOREY');
+    storeyOrderReport(cap8.map(function (o) {
+      return Object.assign({}, o, { storey: ScheduleGate.collapsePhase(o.storey) });
+    }), 'FINAL_LEVEL');
   }
 }
 main().catch(e => { console.error(e); process.exit(1); });
