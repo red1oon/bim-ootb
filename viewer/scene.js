@@ -535,6 +535,7 @@ async function setupScene(A) {
         var db = req2.result;
         if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
         if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+        if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
       };
       req2.onsuccess = function() {
         console.log('[S203] §IDB_VERSION_FALLBACK_OK opened at stored version (unversioned)');
@@ -550,17 +551,20 @@ async function setupScene(A) {
   A.openCacheDB = function() {
     return new Promise((resolve, reject) => {
       try {
-        const req = indexedDB.open(A.CACHE_DB_NAME, 2);
+        const req = indexedDB.open(A.CACHE_DB_NAME, 3);
         req.onupgradeneeded = function(e) {
           var db = req.result;
           if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
           // v2: timestamps store for LRU eviction
           if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+          // v3 (CPE_4D_PERF_MEM_STUDY.md §R6a): etag/content-length per cached key, so cachedFetch
+          // can tell a stale cache entry from a fresh one instead of trusting it forever.
+          if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = function() {
           if (req.error && req.error.name === 'VersionError') {
-            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 2 — falling back to unversioned open');
+            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 3 — falling back to unversioned open');
             _openCacheDbUnversioned(resolve);
             return;
           }
@@ -607,11 +611,17 @@ async function setupScene(A) {
       var toRemove = forceN ? entries.slice(0, Math.min(forceN, entries.length))
                             : entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
       if (toRemove.length > 0) {
+        // §R6a: drop the revalidation comparator alongside the evicted blob, or it's an orphaned
+        // record forever (harmless to correctness — a stale-keyed comparator is just never read
+        // again — but still cleanup debt). Same store-existence guard as the write path.
+        var _hasRevalStore2 = cacheDb.objectStoreNames.contains('revalidation');
         await new Promise(function(done) {
-          var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+          var stores2 = _hasRevalStore2 ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+          var tx3 = cacheDb.transaction(stores2, 'readwrite');
           for (var j = 0; j < toRemove.length; j++) {
             tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
             tx3.objectStore('timestamps').delete(toRemove[j].key);
+            if (_hasRevalStore2) tx3.objectStore('revalidation').delete(toRemove[j].key);
           }
           tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
         });
@@ -1113,6 +1123,58 @@ async function setupScene(A) {
     document.body.appendChild(input); input.click();
   };
 
+  // §R6a (CPE_4D_PERF_MEM_STUDY.md): a cache HIT alone is not proof the cached blob is still
+  // current — cachedFetch used to trust it forever, so a re-uploaded building DB never reached a
+  // returning user. Compares a cheap HEAD's ETag/Content-Length against what was stored at cache
+  // write time. Fails OPEN on every uncertain path (no stored comparator, network error, timeout,
+  // missing headers) — "skip revalidation, trust the cache" is the same behaviour this file had
+  // before this function existed, never a regression, only ever a stale-cache correction.
+  A._revalidateCache = async function(url, key, cacheDb) {
+    var fname = url.split('/').pop();
+    var stored;
+    try {
+      stored = await new Promise(function(resolve) {
+        var tx = cacheDb.transaction('revalidation', 'readonly');
+        var req = tx.objectStore('revalidation').get(key);
+        req.onsuccess = function() { resolve(req.result); };
+        req.onerror = function() { resolve(null); };
+      });
+    } catch (e) { stored = null; }
+    if (!stored || (!stored.etag && !stored.contentLength)) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-stored-comparator`);
+      return true;
+    }
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, 4000);
+    var resp;
+    try {
+      resp = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=${e.name === 'AbortError' ? 'timeout' : 'network-fail'}`);
+      return true;
+    }
+    clearTimeout(timer);
+    if (!resp.ok) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=head-status-${resp.status}`);
+      return true;
+    }
+    var liveEtag = resp.headers.get('ETag');
+    var liveLen = resp.headers.get('Content-Length');
+    if (stored.etag && liveEtag) {
+      if (stored.etag === liveEtag) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} etag=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.etag} new=${liveEtag}`);
+      return false;
+    }
+    if (stored.contentLength && liveLen) {
+      if (String(stored.contentLength) === String(liveLen)) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} contentLength=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.contentLength} new=${liveLen}`);
+      return false;
+    }
+    console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-comparable-header`);
+    return true;
+  };
+
   A.cachedFetch = async function(url) {
     // §CACHE_KEY (W-DB-CACHE-KEY — prompts/HISTORY_PERSIST_RECALL.md §VERIFY-FIRST ITEM 1): look the
     // blob up under the CANONICAL key, not the raw url. The landing opens a building with the absolute
@@ -1131,16 +1193,21 @@ async function setupScene(A) {
           req.onerror = () => resolve(null);
         });
         if (cached) {
-          // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
-          // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
-          A._cacheHitLogged = A._cacheHitLogged || {};
-          if (!A._cacheHitLogged[key]) {
-            A._cacheHitLogged[key] = 1;
-            console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          // §R6a: a cache hit is provisional until revalidated — a STALE verdict falls through to
+          // the normal fetch+write path below exactly as a cache miss would.
+          var _fresh = await A._revalidateCache(url, key, cacheDb);
+          if (_fresh) {
+            // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
+            // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
+            A._cacheHitLogged = A._cacheHitLogged || {};
+            if (!A._cacheHitLogged[key]) {
+              A._cacheHitLogged[key] = 1;
+              console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+            }
+            // Update LRU timestamp on hit
+            try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
+            return cached;
           }
-          // Update LRU timestamp on hit
-          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
-          return cached;
         }
         // §CACHE_KEY_LEGACY (W-DB-CACHE-KEY): profiles that cached BEFORE this fix hold the blob under
         // the raw url. Adopt it in place rather than making every existing user pay one more 251MB
@@ -1230,12 +1297,22 @@ async function setupScene(A) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
+        // §R6a: store the comparator ALONGSIDE the blob, same transaction — a write and its own
+        // freshness marker must never disagree. Profiles stuck on the unversioned-fallback open
+        // (VersionError path, §IDB_VERSION_MISMATCH) never got the 'revalidation' store created —
+        // guard with objectStoreNames.contains, since listing a non-existent store in
+        // db.transaction([...]) throws synchronously and would break the whole write.
+        var _hasRevalStore = cacheDb.objectStoreNames.contains('revalidation');
         // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
         var _attemptWrite = function() {
           return new Promise(function(resolve) {
             var _writeOk = false;
-            const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+            const stores = _hasRevalStore ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+            const tx = cacheDb.transaction(stores, 'readwrite');
             tx.objectStore('timestamps').put(Date.now(), key);
+            if (_hasRevalStore) {
+              tx.objectStore('revalidation').put({ etag: resp.headers.get('ETag') || null, contentLength: resp.headers.get('Content-Length') || null }, key);
+            }
             const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
             req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
             req.onerror = function() {
