@@ -4447,7 +4447,20 @@
   // termination argument as _midairRepair's own. MEASURED (probe_captured_floating.js §EXP4, all 7
   // buildings, 2026-08-16): floating 3090 -> 656 (-78.8%), window fidelity byte-identical on every
   // building, orphans/grounded untouched (the judge itself is never modified here).
+  // §CJP_DAY_ROUNDING_TOL (2026-08-16, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md thread 2,
+  // §CJP_DECOMP_EXP8 measurement) — a task window's own end (taskWin[t].e) is ALREADY rounded to a
+  // whole day (materializeZones: `Math.round((z.end-minStart)/86400000)`), but the WINDOW_BLOCKED
+  // check below compared it against an element's exact-millisecond real end with zero tolerance.
+  // MEASURED per-task decomposition on 3 buildings: Clinic 82/91 (90%) of its residual floating had
+  // avgGapDays <1 (TASK_Substructure_First_Floor alone: n=38, avgGapDays=0.1, on a 4-day window) —
+  // a sub-day rounding artifact against the window's own quantum, not a real authoring conflict.
+  // Fix: the window's rounded end already means "through the end of that calendar day" — allow a
+  // push whose result lands within that same day, exactly the quantum the window itself was rounded
+  // to (not an invented fudge factor). Genuinely-undersized windows (gaps of many days, e.g.
+  // Hospital's TASK_Superstructure_Level_2, avgGapDays=52 on an 11-day window) are UNCHANGED — still
+  // correctly WINDOW_BLOCKED, one day of slack cannot paper over a real conflict.
   function _cjpJudgeParity(items, taskWin) {
+    var _CJP_DAY_TOL = 86400000;
     var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     var G = _contactGraph(items);
     if (!G.ok) return { pushed: 0, sweeps: 0 };
@@ -4463,7 +4476,7 @@
         var w = taskWin && taskWin[T.task]; if (!w) continue;
         if (T.s < w.s || T.e > w.e) continue;              // already out of window — never worsen
         var dur = Math.max(60000, T.e - T.s);
-        if (first + dur > w.e) continue;                   // WINDOW_BLOCKED — honest floating
+        if (first + dur > w.e + _CJP_DAY_TOL) continue;     // WINDOW_BLOCKED — honest floating
         var d = first - T.s;
         T.s = first; T.e = T.s + dur;
         pushed++; moved++; if (d > maxShift) maxShift = d;
@@ -4481,7 +4494,7 @@
       if (cf > Tc.s + 1) {
         floating++;
         var cw = taskWin && taskWin[Tc.task];
-        if (cw && cf + Math.max(60000, Tc.e - Tc.s) > cw.e) blocked++;
+        if (cw && cf + Math.max(60000, Tc.e - Tc.s) > cw.e + _CJP_DAY_TOL) blocked++;
       }
     }
     console.log('§CROSSTASK_JUDGE_PARITY pushed=' + pushed + ' sweeps=' + sweeps +

@@ -777,6 +777,43 @@ async function main() {
       ' inWindow=' + inW8 + ' outWindow=' + outW8);
     console.log('§EXP8_FINAL_BYCLASS ' + JSON.stringify(final8.byClass));
 
+    // §CJP_DECOMP_EXP8 (2026-08-16, thread 2 of §STOREY_ORDER_REPORT's handoff — distinct from the
+    // older §CJP_DECOMP block above, which runs on the superseded EXP1 raw-fed pipeline, not EXP8)
+    // — per-TASK breakdown of the remaining WINDOW_BLOCKED population on the FINAL
+    // (post-_cjpJudgeParity) cap8 state, reusing final8's own contact graph (same clone order, zero
+    // extra scan). For each still-floating element, names the exact task window it's blocked against
+    // and the gap (days by which pushing it to its real first-contact would overrun that task's
+    // authored end) — the number a coverage-rounding or per-task end-nudge fix would need to close.
+    {
+      const G8 = final8.G;
+      const byTask = {};
+      let noWin = 0;
+      for (let i = 0; i < cap8.length; i++) {
+        const list = G8.contacts[i]; if (!list) continue;
+        const T = cap8[i];
+        let first = Infinity;
+        for (const k of list) { const s = cap8[k].s; if (s < first) first = s; }
+        if (first <= T.s + 1) continue; // not floating
+        const w = taskWin7[T.task]; if (!w) { noWin++; continue; }
+        const dur = Math.max(60000, T.e - T.s);
+        const gapDays = ((first + dur) - w.e) / DAY5;
+        const g = byTask[T.task] || (byTask[T.task] = { n: 0, sumGap: 0, maxGap: -Infinity, cls: {} });
+        g.n++; g.sumGap += gapDays; if (gapDays > g.maxGap) g.maxGap = gapDays;
+        g.cls[T.cls] = (g.cls[T.cls] || 0) + 1;
+      }
+      const rows = Object.entries(byTask).map(function (e) {
+        const t = e[0], g = e[1], w = taskWin7[t];
+        return { task: t, n: g.n, avgGapDays: (g.sumGap / g.n), maxGapDays: g.maxGap,
+          winDays: Math.round((w.e - w.s) / DAY5), cls: g.cls };
+      }).sort(function (a, b) { return b.n - a.n; });
+      const totalN = rows.reduce(function (a, r) { return a + r.n; }, 0);
+      console.log('§CJP_DECOMP_EXP8 n_tasks=' + rows.length + ' total=' + totalN + ' noWindow=' + noWin);
+      rows.slice(0, 15).forEach(function (r) {
+        console.log('§CJP_DECOMP_EXP8_TASK ' + r.task + ' n=' + r.n + ' avgGapDays=' + r.avgGapDays.toFixed(1) +
+          ' maxGapDays=' + r.maxGapDays.toFixed(1) + ' winDays=' + r.winDays + ' cls=' + JSON.stringify(r.cls));
+      });
+    }
+
     // §STOREY_ORDER_REPORT (2026-08-16) FINAL — same math as the RAW call above, run on the
     // FINAL overlay times (post-_cjpJudgeParity cap8, the EXP8 winner). Comparing RAW vs FINAL
     // isolates whether §4D_BAND_MONOTONIC's ladder survives the remap/repair/window/parity chain.
