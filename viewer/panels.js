@@ -1571,7 +1571,7 @@ function setupPanels(A) {
       var row = document.createElement('div');
       row.id = 'drawer-row-shadow';
       row.className = 'bim-drawer-row';
-      row.title = 'Shadow + Ground — cycle Off → Grass → Earth → Paved';
+      row.title = 'Shadow + Ground — cycle Off → Earth → Grass → Paved';
 
       var cloudBtn = document.createElement('button');
       cloudBtn.id = 'shadow-ground-cloud-btn';
@@ -1585,7 +1585,7 @@ function setupPanels(A) {
       cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
       row.appendChild(cloudBtn);
 
-      var _keys = ['grass', 'earth', 'paved'];
+      var _keys = ['earth', 'grass', 'paved'];  // §GROUND_EARTH_DEFAULT — matches _SG_CYCLE order
       var _boxes = {};
       _keys.forEach(function(key) {
         var box = document.createElement('span');

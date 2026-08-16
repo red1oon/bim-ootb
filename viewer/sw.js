@@ -8,14 +8,20 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1044';   // bump on each deploy; per-change detail is the git commit message.
-// v1044 (2026-08-16) §CPE_DISCIPLINE_REVEAL_FLYBACK/§_ORDER/§_FADE: the pull-out->round-2 teleport
+const CACHE_VERSION = 'v1045';   // bump on each deploy; per-change detail is the git commit message.
+// v1045 (2026-08-16) §CPE_DISCIPLINE_REVEAL_FLYBACK/§_ORDER/§_FADE: the pull-out->round-2 teleport
 // cut replaced with a fast eased retrace fly-back (new plan.beats.flyback boundary); tail-parade
 // discipline order now sorted ascending by real avg element bbox volume (element_transforms.bbox_x/
 // y/z), MEP forced last, "All Disciplines" capstone unchanged; tail-parade boundaries get a brief
 // overlap window (filterDiscs has no opacity channel — documented as an honest approximation, not a
-// literal fade) instead of an instant swap (effects.js?v=20->21, cinema_path_editor.js?v=14->15).
+// literal fade) instead of an instant swap (effects.js?v=21->22, cinema_path_editor.js?v=14->15).
 // See bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's 2026-08-16 dated section for the full spec.
+// Collided with #1393's independent v1044 (§GROUND_EARTH_DEFAULT) — took one past it, per this
+// file's own KEEP-BOTH/take-the-higher merge convention.
+// v1044 (2026-08-16) §GROUND_EARTH_DEFAULT: Alt+S/Alt+C bake staging ground texture switched from
+// 'paved' back to 'earth' (effects.js?v=21) — user: "more realistic even surface feel", avoids
+// paved's rectangular slab-joint relief entirely. Shadow-mode toggle cycle reordered so 'earth' is
+// the first real choice (tools.js?v=42 _SG_CYCLE, panels.js?v=44 swatch row + tooltip).
 // v1043 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
 // (schedule_author.js displayRemap hook + time_machine.js _tmDisplayRemap), strict-bar sweep skipped
 // on display-authored schedules, §CJP live census in the §CROSSTASK_JUDGE_PARITY log line.

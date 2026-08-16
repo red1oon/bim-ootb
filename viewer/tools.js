@@ -791,7 +791,11 @@ function setupTools(A) {
   // which only needs to swap the ground texture — shadow map itself doesn't change).
   A._shadowOn = false;
   A._shadowGroundKey = 'off';                 // 'off' | 'grass' | 'earth' | 'paved'
-  var _SG_CYCLE = ['off', 'grass', 'earth', 'paved'];
+  // §GROUND_EARTH_DEFAULT (2026-08-16, user: "more realistic even surface feel" — 'earth' has no
+  // rectangular slab-joint relief the way 'paved' does): 'earth' is now the first real choice the
+  // Shadow toggle lands on, matching the same default the Alt+S/Alt+C bake staging switched to
+  // (effects.js _applyPhotoStaging). Was ['off','grass','earth','paved'].
+  var _SG_CYCLE = ['off', 'earth', 'grass', 'paved'];
   A.toggleShadow = function() {
     var prev = A._shadowGroundKey || 'off';
     var next = _SG_CYCLE[(_SG_CYCLE.indexOf(prev) + 1) % _SG_CYCLE.length];

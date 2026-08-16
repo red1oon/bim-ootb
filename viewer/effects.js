@@ -3187,10 +3187,16 @@ async function setupEffects(A, renderer, scene, camera) {
       A.ground.visible = true;
       A._calcGroundY();
       // §PHOTO_GROUND_LIT (user ask, "It is almost black"): was 'earth' + a dark 0x6a5238 tint —
-      // too dark once the evening exposure/ambient cuts also apply on top of it. Switched to the
-      // existing 'paved' texture (same real asset Shadow mode already uses — concrete look, per
-      // user's own suggestion) with a much brighter warm tint. Fancier grass+paved-rectangle
-      // pattern is a separate later experiment, not needed just to fix "too dark."
+      // too dark once the evening exposure/ambient cuts also apply on top of it. Switched to
+      // 'paved' (same real asset Shadow mode already uses — concrete look, per user's own
+      // suggestion) with a much brighter warm tint.
+      // §GROUND_EARTH_DEFAULT (2026-08-16, user: "more realistic even surface feel" — 'paved'
+      // carries concrete_floor_01's rectangular slab-joint relief, which is what the §GROUND_DETAIL
+      // normal map (#1388) was amplifying through lighting; 'earth' has no such hard rectangular
+      // structure). Back to 'earth' for the movie/still bake default — the ORIGINAL "too dark"
+      // complaint this section's own §GROUND_ALBEDO gain already fixed (earth's measured mean
+      // 0.1599 vs paved's 0.155 GROUND_TEX_AVG_LUM below — near-identical, so the same gain still
+      // lands at the same real-dry-ground target albedo, no recalibration needed).
       // §GROUND_ALBEDO (2026-07-28, user: "the Alt+S evening ground is too dark… albedo, try it") —
       // Witness: W-GROUND-ALBEDO. Set BEFORE _applyGroundTexture, because that function calls
       // _setGroundColor itself (with the remembered solid colour) as soon as the texture lands.
@@ -3199,7 +3205,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // for the A/B the user asked for: APP._photoGroundAlbedoGain = 1.0 (default look) / 2.3 / 3.5,
       // then Alt+S again. See tools.js §GROUND_ALBEDO for why a gain and not more fill light.
       A._groundAlbedoGain = A._photoGroundAlbedoGain;
-      A._applyGroundTexture('paved');
+      A._applyGroundTexture('earth');
       if (A._setGroundColor) A._setGroundColor(0xd9c39a);  // bright warm sunlit-concrete tone
       console.log('§GROUND_ALBEDO gain=' + A._groundAlbedoGain.toFixed(2) + ' texAvgLum=' +
         GROUND_TEX_AVG_LUM.toFixed(3) + ' effAlbedo=' + (GROUND_TEX_AVG_LUM * A._groundAlbedoGain).toFixed(3) +
@@ -5505,7 +5511,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // that: §CPE_AIM_PIN (Part C) added real behaviour here (`_buildPinZones`/`_pinLookAtAt` inside
   // `_beat3Pose`) but this string was never bumped for it, breaking the file's own "bump on EVERY
   // behaviour change" rule for one release. Fixed now, not left for a future session to rediscover.
-  var EFFECTS_V = 'v21 (' +
+  var EFFECTS_V = 'v22 (' +
     '§CPE_DISCIPLINE_REVEAL_FLYBACK new fast eased retrace sub-beat replaces the pull-out->round-2 ' +
       'teleport cut; §CPE_DISCIPLINE_REVEAL_ORDER discs sorted ascending by real avg bbox volume, ' +
       'MEP forced last; §CPE_DISCIPLINE_REVEAL_FADE tail-parade boundaries get a brief overlap ' +
