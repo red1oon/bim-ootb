@@ -4533,15 +4533,28 @@
       var _rh = 0, _rm = 0, _ri;
       for (_ri = 0; _ri < items.length; _ri++) { if (_cache.map[items[_ri].guid]) _rh++; else _rm++; }
       if (_rh > 0 && _rh >= 0.999 * (_rh + _rm)) {
+        // §CPM_DISPLAY_EPOCH: the two consumers anchor computeSchedule differently (the hook at 0,
+        // the seam at baseMs/_cap.base) — a verbatim replay would land ops in the wrong epoch
+        // (1970 for any uncovered element). Rigid-shift the cached timeline so its earliest start
+        // lands on the requester's own earliest RAW start: relative structure (the schedule) is
+        // untouched, only the calendar anchor moves.
+        var _reqMin = Infinity;
+        for (_ri = 0; _ri < items.length; _ri++) if (items[_ri].s < _reqMin) _reqMin = items[_ri].s;
+        var _delta = (isFinite(_reqMin) && isFinite(_cache.minS)) ? (_reqMin - _cache.minS) : 0;
+        var _rstrag = {};
         for (_ri = 0; _ri < items.length; _ri++) {
           var _rc = _cache.map[items[_ri].guid];
-          if (_rc) { items[_ri].s = _rc.start; items[_ri].e = _rc.end; }
+          if (_rc) {
+            items[_ri].s = _rc.start + _delta; items[_ri].e = _rc.end + _delta;
+            if (_rc.str) _rstrag[items[_ri].guid] = 1;
+          }
         }
         _displayTimeline._last = null;
         var _raud = _midairAudit(items);
         console.log('§CPM_DISPLAY_REUSE hits=' + _rh + ' misses=' + _rm + ' midair=' + _raud.midair +
+          ' epochShiftDays=' + (_delta / 86400000).toFixed(1) +
           ' — this consumer replays the SAME timeline its partner authored (one truth, no second recipe)');
-        return { cpm: 'reuse', midair: _raud.midair, stats: null };
+        return { cpm: 'reuse', midair: _raud.midair, stats: null, strag: _rstrag };
       }
     }
     if (_CPM_DISPLAY && typeof CpmSchedule !== 'undefined' && CpmSchedule.run) {
@@ -4549,17 +4562,19 @@
       if (r && r.ok) {
         for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; }
         var aud = _midairAudit(items);
-        _displayTimelineRemember(items);
+        _displayTimelineRemember(items, r.graph.stragglerOf);
         console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
           ' midair=' + aud.midair + ' orphans=' + aud.orphans +
           ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
-        return { cpm: true, midair: aud.midair, stats: r };
+        var _cstrag = {};
+        for (var _ci = 0; _ci < items.length; _ci++) if (r.graph.stragglerOf[_ci]) _cstrag[items[_ci].guid] = 1;
+        return { cpm: true, midair: aud.midair, stats: r, strag: _cstrag };
       }
       console.warn('§CPM_DISPLAY_FALLBACK CpmSchedule.run failed — legacy repair chain used');
     }
     var tw = _twoTierRemap(items);
     _midairRepair(items);
-    _displayTimelineRemember(items);
+    _displayTimelineRemember(items, null);
     return { cpm: false, stats: tw };
   }
   // §CPM_DISPLAY_ONE_TRUTH: the LAST computed display timeline, guid-keyed. materializeZones'
@@ -4569,10 +4584,13 @@
   // (measured live on Terminal, 2026-08-16: makespan 151.2d vs 121.2d, 36/72 task windows
   // duration-mismatched, §CROSSTASK_JUDGE_PARITY floating 9). Coverage is the fingerprint — a
   // different building's guids simply miss and fall through to the compute path.
-  function _displayTimelineRemember(items) {
-    var map = {};
-    for (var i = 0; i < items.length; i++) map[items[i].guid] = { start: items[i].s, end: items[i].e };
-    _displayTimeline._last = { map: map, n: items.length };
+  function _displayTimelineRemember(items, stragglerOf) {
+    var map = {}, minS = Infinity;
+    for (var i = 0; i < items.length; i++) {
+      map[items[i].guid] = { start: items[i].s, end: items[i].e, str: stragglerOf ? stragglerOf[i] : 0 };
+      if (items[i].s < minS) minS = items[i].s;
+    }
+    _displayTimeline._last = { map: map, n: items.length, minS: minS };
   }
 
   // §ZONE_DISPLAY_AUTHORING (2026-08-16, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
@@ -4594,9 +4612,47 @@
         cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey });
     });
     if (!items.length) return null;
-    _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path
+    var _dtRes = _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path
     var out = {};
-    items.forEach(function (it) { out[it.guid] = { start: it.s, end: it.e }; });
+    // §ZONE_WINDOW_DAGWINS_CLIP (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
+    // — user live report: "the schedule looks gibberish", measured: every Hospital task bar ran to
+    // project end because each (phase, level) group's min/max envelope was smeared by its dag-wins
+    // stragglers, 11,215/63,415 physics-forced-late elements). For WINDOW AUTHORING ONLY, a
+    // straggler's time is clamped into its group's non-straggler envelope, so the bar shows the
+    // group's own coherent block — the shipped pre-CPM semantics exactly (`_tier1Extents` always
+    // excluded `_t1Straggler` from serialization extents). The movie/ops keep TRUE physics times:
+    // a straggler appears after its bar, §TIER_DAG_WINS doctrine — counted, never hidden.
+    var _strag = _dtRes && _dtRes.strag;
+    if (_strag) {
+      var _SGw = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+      var _env = {}, _gkOf = function (it) {
+        return (it.phase || '_UNPHASED') + '||' + (_SGw && _SGw.collapsePhase ? _SGw.collapsePhase(it.storey) : (it.storey || ''));
+      };
+      items.forEach(function (it) {
+        if (_strag[it.guid]) return;
+        var k = _gkOf(it), e2 = _env[k] || (_env[k] = { min: Infinity, max: -Infinity });
+        if (it.s < e2.min) e2.min = it.s;
+        if (it.e > e2.max) e2.max = it.e;
+      });
+      var _clamped = 0;
+      items.forEach(function (it) {
+        var st = it.s, en = it.e;
+        if (_strag[it.guid]) {
+          var e2 = _env[_gkOf(it)];
+          if (e2 && e2.max > e2.min) {
+            st = Math.min(Math.max(st, e2.min), e2.max);
+            en = Math.min(Math.max(en, e2.min), e2.max);
+            if (en <= st) { st = Math.max(e2.min, e2.max - 60000); en = e2.max; }
+            _clamped++;
+          }
+        }
+        out[it.guid] = { start: st, end: en };
+      });
+      console.log('§ZONE_WINDOW_DAGWINS_CLIP clamped=' + _clamped +
+        ' (straggler times clamped into their group envelope for WINDOW AUTHORING ONLY — ops/movie keep true physics times)');
+    } else {
+      items.forEach(function (it) { out[it.guid] = { start: it.s, end: it.e }; });
+    }
     return out;
   }
 
@@ -5685,8 +5741,9 @@
     }
     console.log('§GANTT injected=' + count + ' dbElements=' + totalDbElements +
       ' sceneMeshGUIDs=' + sceneGuids +
-      ', bands=' + storeyNames.length + ', ' + projectDays + ' days, scale=' + scaleFactor.toFixed(2) +
-      ', start=' + startDate.toLocaleDateString() + ' end=' + endDate.toLocaleDateString());
+      ', bands=' + storeyNames.length + ', serialClockDays=' + projectDays + ', scale=' + scaleFactor.toFixed(2) +
+      ', anchor=' + new Date(baseMs).toLocaleDateString() + ' end=' + endDate.toLocaleDateString() +
+      ' (anchor=real ops epoch; serialClockDays sizes the degenerate-project floor, not the axis)');
 
     // ── T3 §3.1/§3.3: overlay captured task names + the captured project window onto covered
     // elements. The generative pass above already laid every element on the real-start epoch
@@ -5819,7 +5876,24 @@
       // not a new correctness class.
       // §ZONE_DISPLAY_AUTHORING (2026-08-16): extracted into the named _capWindowRescale so
       // witnesses/probes can slice the SHIPPED rescale instead of maintaining copies — body verbatim.
-      _capWindowRescale(_allScheduled, _cap.win);
+      // §CAP_RESCALE_SKIP (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
+      // §ZONE_WINDOW_DAGWINS_CLIP follow-through): a display-authored schedule's windows are VIEWS
+      // of these very element times — there is nothing to reconcile, and every reconciliation
+      // attempt measurably damaged the contact order (gap-clamp: 4,712 manufactured violations;
+      // even a rigid per-task shift: 537). Same DB flag §OG_SWEEP_SKIP already keys on, computed
+      // once here for both. Bar EDITS are not lost: the Gantt edit machinery mutates element times
+      // directly (witness_gantt_edit_lock / witness_gantt_group_move) — this load-path rescale was
+      // only ever for imported/captured windows, which keep it below.
+      var _capDisplayAuthored = false;
+      try {
+        var _daR0 = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
+        _capDisplayAuthored = !!(_daR0.length && _daR0[0].values.length);
+      } catch (e0) { /* legacy DB without the column — rescale stays */ }
+      if (_capDisplayAuthored) {
+        console.log('§CAP_RESCALE_SKIP display-authored windows are views of these element times — nothing to reconcile');
+      } else {
+        _capWindowRescale(_allScheduled, _cap.win);
+      }
       function _capWindowRescale(_allScheduled, _win) {
       var _GANTT_GAP_CLAMP_K = 500;
       var _taskItems = {}, _taskSpan = {};
@@ -5850,18 +5924,19 @@
         var arr = _taskItems[tid];
         var w = _win[tid];
         var sp = _taskSpan[tid];
-        // tolerance = 2 days: a display-authored window is the floor(start)/ceil(end) DAY
-        // ENVELOPE of these times (§ZONE_ENVELOPE_DAYS), so its duration legitimately exceeds the
-        // element span by up to one day at each edge — the quantum is the window's own rounding,
-        // never a tuned constant.
-        if (w && Math.abs((w.e - w.s) - (sp.max - sp.min)) <= 2 * _identD) {
+        // identity = the window is the HEAD of its own element span: same start within the 2-day
+        // floor/ceil quantum (§ZONE_ENVELOPE_DAYS), and no wider than the span needs. The span may
+        // legitimately OVERHANG the window (§ZONE_WINDOW_DAGWINS_CLIP: a dag-wins straggler rides
+        // OUTSIDE its bar and is never squeezed back in — squeezing is what manufactured 4,712
+        // violations from a 0-floating timeline). Identity tasks take a RIGID SHIFT only (<=2d
+        // day-rounding), order and spacing byte-exact. A bar a planner moved (start off by >2d) or
+        // widened past its own span still takes the full rescale below.
+        // action for an identity task: NOTHING — replay verbatim. Even a rigid per-task shift is
+        // poison here (measured: sub-2-day differential shifts across tasks broke 537 cross-task
+        // contact pairs, 34 of them unrepairable because a straggler sits outside its own window).
+        // The window is a floor/ceil VIEW of these exact times; there is nothing to move.
+        if (w && Math.abs(w.s - sp.min) <= 2 * _identD && (w.e - w.s) <= (sp.max - sp.min) + 2 * _identD) {
           _identSkipped++;
-          var _af = (w.e - w.s) / Math.max(1, sp.max - sp.min);
-          for (var _ai = 0; _ai < arr.length; _ai++) {
-            var _it = arr[_ai], _dur = Math.max(0, _it.e - _it.s);
-            _it.s = w.s + Math.floor((_it.s - sp.min) * _af);
-            _it.e = _it.s + Math.max(60000, Math.floor(_dur * _af));
-          }
           return;
         }
         _identRescaled++;
@@ -5902,7 +5977,7 @@
           item.e = item.s + scaledDur;       // never zero/negative duration (floor already >=60000)
         }
       });
-      console.log('§CAP_RESCALE_IDENTITY tasks=' + _identSkipped + '/' + (_identSkipped + _identRescaled) + ' affine-rebased shape-exact (window duration==own envelope duration); reSpaced=' + _identRescaled);
+      console.log('§CAP_RESCALE_IDENTITY tasks=' + _identSkipped + '/' + (_identSkipped + _identRescaled) + ' replayed verbatim (window==head of own span within day rounding); reSpaced=' + _identRescaled);
       }
       // §ZONE_DISPLAY_AUTHORING (2026-08-16): when the task windows were authored FROM the display
       // timeline (schedules.display_authored=1, written by materializeZones' displayRemap path),
@@ -8077,7 +8152,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 28;   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
+  var _GANTT_CACHE_VERSION = 29;   // §ZONE_WINDOW_DAGWINS_CLIP + §CAP_RESCALE_SKIP + §CPM_DISPLAY_EPOCH
+  // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
                                    // one schedule for movie and Gantt. Bump re-materializes stale

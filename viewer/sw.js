@@ -8,7 +8,12 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1046';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1047';   // bump on each deploy; per-change detail is the git commit message.
+// v1047 (2026-08-16) §ZONE_WINDOW_DAGWINS_CLIP: task bars = non-straggler envelopes (user:
+// "schedule looks gibberish" — every Hospital bar ran to project end, smeared by 11,215 dag-wins
+// stragglers); §CAP_RESCALE_SKIP: display-authored windows never re-spaced (views, not a second
+// schedule); §CPM_DISPLAY_EPOCH: one-truth reuse rigid-shifts the cached timeline onto the
+// requester's epoch (was landing uncovered ops in 1970). _GANTT_CACHE_VERSION 28->29.
 // v1046 (2026-08-16) §CPM_DISPLAY: time_machine.js display timeline authored by cpm_schedule.js
 // one-DAG forward pass (support/host/discipline/storey edges, SCC-condensed) at BOTH consumers
 // (kernel_ops write + materializeZones displayRemap) — floating 0 by construction, ?cpm4d=0 reverts.

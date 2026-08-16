@@ -198,13 +198,16 @@ async function main() {
       CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
     vm.createContext(cpmSandbox);
     vm.runInContext(sliced.replace('var _CPM_DISPLAY = false;', 'var _CPM_DISPLAY = true;') +
-      '\nthis.__remapHook = _tmDisplayRemap; this.__cg = _contactGraph;', cpmSandbox);
-    const cpmDisp = cpmSandbox.__remapHook(elements, rawSched);
+      '\nthis.__remapHook = _tmDisplayRemap; this.__cg = _contactGraph; this.__dt = _displayTimeline;', cpmSandbox);
+    // judge the OPS timeline (what the movie plays) — the hook's map is the WINDOW view, which
+    // deliberately clamps dag-wins stragglers (§ZONE_WINDOW_DAGWINS_CLIP) and is not the schedule
     const cpmItems = elements.map(el => {
-      const st = cpmDisp[el.guid]; if (!st) return null;
+      const st = rawSched[el.guid]; if (!st) return null;
       return { guid: el.guid, s: st.start, e: st.end, bz: el.bz, tz: el.tz,
-        x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, cls: el.cls, seq: el.seq };
+        x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, cls: el.cls, seq: el.seq,
+        phase: el.phase, storey: el.storey };
     }).filter(Boolean);
+    cpmSandbox.__dt(cpmItems);
     const cpmFloat = census(cpmItems);
     console.log = ql;
     console.log('  §ZDA_CPM_DISPLAY ' + B + ' midair=' + cpmFloat + ' (legacy display path above: ' + nextFloat + ')');

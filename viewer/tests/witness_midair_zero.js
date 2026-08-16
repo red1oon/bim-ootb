@@ -115,7 +115,7 @@ console.log('§MIDAIR_SLICE _midairRepairDefs=' + _mrCount + ' slicing #' + (_mr
 // so neither the seam call nor the legacy repair pair can silently drop out.
 assert(/_displayTimeline\(_twItems\)/.test(tmSrc),
   'W-MZ-5a kernel_ops path calls _displayTimeline (the single display-timeline source)');
-assert(/function _displayTimeline\(items\) \{[\s\S]{0,2600}_twoTierRemap\(items\);[\s\S]{0,200}_midairRepair\(items\)/.test(tmSrc),
+assert(/function _displayTimeline\(items\) \{[\s\S]{0,6000}_twoTierRemap\(items\);[\s\S]{0,200}_midairRepair\(items\)/.test(tmSrc),
   'W-MZ-5b _displayTimeline legacy branch still runs _twoTierRemap then _midairRepair (a defined-but-uncalled repair is a silent no-op)');
 // W-MZ-6 — the LOCK gate must judge by the same rule the generator enforces, or a planner's drag
 // re-creates exactly the hangings the generated film has none of and the lock is still granted.
