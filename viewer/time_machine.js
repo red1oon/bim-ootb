@@ -4612,47 +4612,55 @@
         cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey });
     });
     if (!items.length) return null;
-    var _dtRes = _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path
+    _displayTimeline(items);   // §CPM_DISPLAY: same single source as the kernel_ops write path (times only)
     var out = {};
-    // §ZONE_WINDOW_DAGWINS_CLIP (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
-    // — user live report: "the schedule looks gibberish", measured: every Hospital task bar ran to
-    // project end because each (phase, level) group's min/max envelope was smeared by its dag-wins
-    // stragglers, 11,215/63,415 physics-forced-late elements). For WINDOW AUTHORING ONLY, a
-    // straggler's time is clamped into its group's non-straggler envelope, so the bar shows the
-    // group's own coherent block — the shipped pre-CPM semantics exactly (`_tier1Extents` always
-    // excluded `_t1Straggler` from serialization extents). The movie/ops keep TRUE physics times:
-    // a straggler appears after its bar, §TIER_DAG_WINS doctrine — counted, never hidden.
-    var _strag = _dtRes && _dtRes.strag;
-    if (_strag) {
-      var _SGw = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
-      var _env = {}, _gkOf = function (it) {
-        return (it.phase || '_UNPHASED') + '||' + (_SGw && _SGw.collapsePhase ? _SGw.collapsePhase(it.storey) : (it.storey || ''));
-      };
-      items.forEach(function (it) {
-        if (_strag[it.guid]) return;
-        var k = _gkOf(it), e2 = _env[k] || (_env[k] = { min: Infinity, max: -Infinity });
-        if (it.s < e2.min) e2.min = it.s;
-        if (it.e > e2.max) e2.max = it.e;
-      });
-      var _clamped = 0;
-      items.forEach(function (it) {
-        var st = it.s, en = it.e;
-        if (_strag[it.guid]) {
-          var e2 = _env[_gkOf(it)];
-          if (e2 && e2.max > e2.min) {
-            st = Math.min(Math.max(st, e2.min), e2.max);
-            en = Math.min(Math.max(en, e2.min), e2.max);
-            if (en <= st) { st = Math.max(e2.min, e2.max - 60000); en = e2.max; }
-            _clamped++;
-          }
-        }
-        out[it.guid] = { start: st, end: en };
-      });
-      console.log('§ZONE_WINDOW_DAGWINS_CLIP clamped=' + _clamped +
-        ' (straggler times clamped into their group envelope for WINDOW AUTHORING ONLY — ops/movie keep true physics times)');
-    } else {
-      items.forEach(function (it) { out[it.guid] = { start: it.s, end: it.e }; });
+    // §ZONE_WINDOW_DAGWINS_CLIP (2026-08-16, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §MODEL M2 —
+    // superseded the min/max-over-non-stragglers formula this tag originally shipped with; tag kept,
+    // formula changed per M2's own instruction). A TASK BAR is the ROBUST ENVELOPE of ALL its
+    // members' true times — Tukey fences (Q1-1.5*IQR .. Q3+1.5*IQR, clamped to actual min/max) over
+    // member starts (low fence) and ends (high fence), the same outlier-statistic family as the
+    // shipped per-task median-based §GANTT_GAP_CLAMP. CLASSIFICATION-FREE (no straggler graph lookup
+    // needed) — right on BOTH Hospital-shaped (late-tail) and Terminal-shaped (straggler-mass)
+    // buildings, where a fixed classification undercounted/overcounted depending on shape. For WINDOW
+    // AUTHORING ONLY, every member's time is clamped into its group's fence so the bar shows the
+    // group's own coherent mass; a genuine outlier still rides outside the resulting bar (never
+    // hidden — §TIER_DAG_WINS doctrine unchanged) — deriveZones takes a plain min(start)/max(end)
+    // over what this function returns, so clamping IS the mechanism that shapes the bar. The
+    // movie/ops keep TRUE physics times (this map is window-authoring-only, per §ZONE_DISPLAY_AUTHORING
+    // above — never fed back into `items`). Percentile convention matches storeyOrderReport /
+    // §GANTT_GAP_CLAMP: sorted[Math.floor(n*p)], no interpolation.
+    var _SGw = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    var _gkOf = function (it) {
+      return (it.phase || '_UNPHASED') + '||' + (_SGw && _SGw.collapsePhase ? _SGw.collapsePhase(it.storey) : (it.storey || ''));
+    };
+    var _groups = {};
+    items.forEach(function (it) {
+      var k = _gkOf(it), g = _groups[k] || (_groups[k] = { starts: [], ends: [] });
+      g.starts.push(it.s); g.ends.push(it.e);
+    });
+    function _tukeyBound(arr, lowSide) {
+      var s = arr.slice().sort(function (a, b) { return a - b; });
+      var n = s.length, q1 = s[Math.floor(n * 0.25)], q3 = s[Math.floor(n * 0.75)], iqr = q3 - q1;
+      return lowSide ? Math.max(s[0], q1 - 1.5 * iqr) : Math.min(s[n - 1], q3 + 1.5 * iqr);
     }
+    var _bar = {};
+    Object.keys(_groups).forEach(function (k) {
+      var g = _groups[k], lo = _tukeyBound(g.starts, true), hi = _tukeyBound(g.ends, false);
+      _bar[k] = { lo: lo, hi: Math.max(hi, lo) };   // degenerate-group safety (n=1, zero IQR)
+    });
+    var _clamped = 0;
+    items.forEach(function (it) {
+      var b = _bar[_gkOf(it)], st = it.s, en = it.e;
+      if (b) {
+        var nst = Math.min(Math.max(st, b.lo), b.hi), nen = Math.min(Math.max(en, b.lo), b.hi);
+        if (nen <= nst) { nst = Math.max(b.lo, b.hi - 60000); nen = b.hi; }
+        if (nst !== st || nen !== en) _clamped++;
+        st = nst; en = nen;
+      }
+      out[it.guid] = { start: st, end: en };
+    });
+    console.log('§ZONE_WINDOW_DAGWINS_CLIP clamped=' + _clamped +
+      ' (Tukey-fenced group envelope, classification-free, for WINDOW AUTHORING ONLY — ops/movie keep true physics times)');
     return out;
   }
 
