@@ -320,10 +320,17 @@
   // a second consumer (schedule_author.js's zone-level CPM rollup) can get the SAME real floor order
   // without a duplicate copy of this math to drift out of sync with the live scheduler.
   // Returns { bandRank: {collapsedStorey: rank}, rankList: [{ph,z,n}, ...], unbanded: N }.
-  function deriveBandRanks(elements) {
+  // storeyMergeMap: OPTIONAL {collapsedName: canonicalName}, built by deriveStoreyMergeMap() below
+  // from spatial_structure's EXTRACTED IfcBuildingStorey.Elevation (§S18, 2026-08-17,
+  // prompts/4D_GANTT_TM_REFACTOR.md). When supplied, storey names that share one physical floor
+  // collapse to ONE band before ranking — DISPLAY/AUDIT layer only. computeSchedule's own internal
+  // call to this function (line ~418, inside PASS-B's band-monotonic trade gate) never passes this
+  // map, so engine timing and the floating=0 gate are provably unaffected by this parameter existing.
+  function deriveBandRanks(elements, storeyMergeMap) {
     var byPhase = {};
     elements.forEach(function (e) {
       var ph = collapsePhase(e.storey);
+      if (storeyMergeMap && storeyMergeMap[ph]) ph = storeyMergeMap[ph];
       (byPhase[ph] = byPhase[ph] || []).push(e.base_z);
     });
     var rows = [], bandRank = {}, unbanded = 0;
@@ -337,6 +344,50 @@
     rows.sort(function (a, b) { return a.z - b.z; });
     rows.forEach(function (r, i) { bandRank[r.ph] = i; });
     return { bandRank: bandRank, rankList: rows, unbanded: unbanded };
+  }
+
+  // deriveStoreyMergeMap(spatialStructure) — §S18 (2026-08-17): groups storey NAMES that share one
+  // physical floor using EXTRACTED IfcBuildingStorey.Elevation, never inferred from element z-values
+  // (§PATHS NOT TO TAKE #7 forbids exactly that — mean/median-Z-of-ELEMENTS proximity). Each
+  // collapsePhase()'d name's representative elevation is the MEDIAN of every spatial_structure row
+  // with that name — robust to a single mis-scaled outlier (measured need: one of Clinic's 5
+  // federated discipline files has a "Second Floor" row reading 4570 where its own IfcProject
+  // declares LENGTHUNIT=METRE — a real source-file authoring defect, not a units-conversion miss;
+  // 3 of that name's 4 rows agree at ~4.57, so the median rejects the one bad row the same way this
+  // project's other Tukey/median derivations already do). Names within GAP (this module's own 0.5m
+  // "audit: within this of" constant, line ~39 — reused, not a new tuned constant) of a lower band's
+  // representative elevation join that band; chaining compares to the BAND'S elevation, not the
+  // previous row's, so a band stays bounded to within GAP of where it started rather than drifting
+  // through a long chain of small steps. Measured same-floor agreement in real data is far tighter
+  // than GAP (~1e-13m — floating-point noise between independently-authored files) — GAP is
+  // deliberately generous headroom above that, not a floor-height heuristic; it is far below every
+  // measured real floor-to-floor gap in the fleet (Clinic's smallest is 4.57m).
+  //
+  // Parentage (spatial_structure.parent_guid, IfcBuilding<-IfcBuildingStorey, also extracted by
+  // §S18) is NOT used as a hard partition here. Every federated "IfcBuilding" row measured in the
+  // fleet so far (Clinic's 5 discipline files, LTU_AHouse's 9) represents ONE physical building
+  // split across per-discipline exports, not genuinely distinct structures sharing a site — there is
+  // no fleet case yet where an elevation coincidence could falsely merge two REAL different
+  // buildings. If one appears, gate this merge to same-building parentage groups first; inventing
+  // that partition today, with no case to verify it against, is exactly what Prime Rule forbids.
+  function deriveStoreyMergeMap(spatialStructure) {
+    var byName = {};
+    (spatialStructure || []).forEach(function (r) {
+      if (!r || r.type !== 'IfcBuildingStorey' || r.elevation == null || r.name == null) return;
+      var name = collapsePhase(r.name);
+      (byName[name] = byName[name] || []).push(r.elevation);
+    });
+    var rows = Object.keys(byName).map(function (name) {
+      var zs = byName[name].slice().sort(function (a, b) { return a - b; });
+      return { name: name, z: zs[Math.floor(zs.length / 2)] };
+    });
+    rows.sort(function (a, b) { return a.z - b.z; });
+    var map = {}, bandName = null, bandZ = null;
+    rows.forEach(function (r) {
+      if (bandName === null || Math.abs(r.z - bandZ) > GAP) { bandName = r.name; bandZ = r.z; }
+      map[r.name] = bandName;
+    });
+    return map;
   }
 
   // Collapse sub-storeys onto their Level so the phase list stays ~8 (user: "collapsing is better").
@@ -1097,12 +1148,15 @@
   // whole graph is consistent with one global "real start time" ordering and cannot cycle by
   // construction; computeCpm's cycle guard is defence-in-depth, not the primary safeguard here.
   // Returns { zones: [{id,phase,storey,rank,start,end,guids,count}], edges: [{predId,succId,lagMs}] }.
-  function deriveZones(elements, schedule) {
-    var ranks = deriveBandRanks(elements).bandRank;
+  // storeyMergeMap: same optional §S18 parameter as deriveBandRanks — applied identically here so a
+  // zone's storey label and the rank it looks up (both keyed by the SAME merged name) never diverge.
+  function deriveZones(elements, schedule, storeyMergeMap) {
+    var ranks = deriveBandRanks(elements, storeyMergeMap).bandRank;
     var byZone = {};   // zoneId -> { phase, storey, rank, seq, guids:[], start:Infinity, end:-Infinity }
     elements.forEach(function (e) {
       var st = schedule[e.guid]; if (!st) return;   // unscheduled (e.g. a class computeSchedule skipped)
       var storey = collapsePhase(e.storey);
+      if (storeyMergeMap && storeyMergeMap[storey]) storey = storeyMergeMap[storey];
       var zid = (e.phase || '_UNPHASED') + '||' + storey;
       var z = byZone[zid] || (byZone[zid] = {
         id: zid, phase: e.phase || '_UNPHASED', storey: storey, rank: ranks[storey],
@@ -1162,7 +1216,7 @@
   // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
   // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
   // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
