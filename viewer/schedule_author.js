@@ -420,7 +420,26 @@
         }
       } catch (e) { console.log('§ZONE_DISPLAY_AUTHORING_FAIL ' + e.message + ' — raw-schedule windows kept'); }
     }
-    var rolled = SG.deriveZones(elements, schedule);
+    // §S18 (2026-08-17, prompts/4D_GANTT_TM_REFACTOR.md Part B): storey-band merge, sourced from
+    // spatial_structure's EXTRACTED IfcBuildingStorey.Elevation when the loaded DB carries it (older
+    // shipped DBs, not yet regenerated with the fixed extractor, simply lack the `elevation` column —
+    // the query throws, storeyMergeMap stays null, deriveZones falls back to its pre-§S18 behavior
+    // byte-identically; no building regresses for not having been regenerated yet).
+    var storeyMergeMap = null;
+    if (SG.deriveStoreyMergeMap) {
+      try {
+        var _ssRes = db.exec("SELECT type,name,elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL");
+        if (_ssRes.length) {
+          var _ssCols = _ssRes[0].columns, _tI = _ssCols.indexOf('type'), _nI = _ssCols.indexOf('name'), _eI = _ssCols.indexOf('elevation');
+          var _ssRows = _ssRes[0].values.map(function (v) { return { type: v[_tI], name: v[_nI], elevation: v[_eI] }; });
+          storeyMergeMap = SG.deriveStoreyMergeMap(_ssRows);
+          var _mergedN = 0;
+          for (var _mk in storeyMergeMap) if (storeyMergeMap[_mk] !== _mk) _mergedN++;
+          console.log('§S18_STOREY_MERGE names=' + Object.keys(storeyMergeMap).length + ' merged=' + _mergedN);
+        }
+      } catch (e) { console.log('§S18_STOREY_MERGE_FAIL ' + e.message + ' — no elevation data, bands unmerged'); }
+    }
+    var rolled = SG.deriveZones(elements, schedule, storeyMergeMap);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
 
     _ensureSchedulesGenVersion(db);

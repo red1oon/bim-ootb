@@ -21,7 +21,7 @@ async function main() {
   // write-loop lines to stdout as they arrive (previously only pushed to the internal `lines` array
   // and never printed — a real gap, this fixes it for the timing-relevant subset without flooding
   // stdout with every § line the activation logs).
-  const TIMING_RE = /§(S4_ACTIVATION|S4_RAW_SCHEDULE_REUSE|WRITE_LOOP_TIMING|CPM_DISPLAY_REUSE|GANTT_SOURCE|4D_COVERAGE|TM_OPS_CHECK|GANTT_CACHE)/;
+  const TIMING_RE = /§(S4_ACTIVATION|S4_RAW_SCHEDULE_REUSE|WRITE_LOOP_TIMING|CPM_DISPLAY_REUSE|GANTT_SOURCE|4D_COVERAGE|TM_OPS_CHECK|GANTT_CACHE|S18_STOREY_MERGE)/;
   page.on('console', m => {
     const t = m.text();
     if (t.indexOf('§') >= 0) lines.push(t);
