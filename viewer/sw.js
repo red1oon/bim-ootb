@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1056';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1057';   // bump on each deploy; per-change detail is the git commit message.
+// v1057 (2026-08-17) 4D_GANTT_TM_REFACTOR.md stage 2: buildGanttTasks()'s bar-span rule replaced
+// (2nd-98th-percentile-above-n20/true-min-max-below -> uniform Tukey-fence, no cliff) — the
+// mechanism behind the live "one pile, full project length" report. _GANTT_CACHE_VERSION 32->33
+// bumped alongside so an already-persisted/cached schedule regenerates through the fixed path.
 // v1056 (2026-08-17) §S20 Part B (4D_GANTT_TM_REFACTOR.md): time_machine.js's dead legacy
 // display-repair chain (_twoTierRemap/_midairRepair/_tier1Serialize/_tierAuditRegate + their
 // _tier1Extents/_tier1Protrusion/_zoneOf/_TIER1_ORDER helpers — reachable only via the now-deleted

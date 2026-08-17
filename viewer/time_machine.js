@@ -4378,6 +4378,18 @@
   // discipline as _displayTimeline._last so a rates/shift edit is never served stale) — does not
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
+
+  // §TUKEY_BOUND (4D_GANTT_TM_REFACTOR.md stage 2, 2026-08-17) — hoisted out of _tmDisplayRemap
+  // (was a nested closure there) so buildGanttTasks() can share the SAME envelope math instead of
+  // re-deriving its own. This is the proven, already-shipped, already-measured rule (Hospital
+  // floating 664->63, window fidelity 97.03%->99.95% when this landed for §ZONE_WINDOW_DAGWINS_CLIP)
+  // — uniform at every group size, no group-size branch, no cliff. Percentile convention matches
+  // storeyOrderReport/§GANTT_GAP_CLAMP: sorted[Math.floor(n*p)], no interpolation.
+  function _tukeyBound(arr, lowSide) {
+    var s = arr.slice().sort(function (a, b) { return a - b; });
+    var n = s.length, q1 = s[Math.floor(n * 0.25)], q3 = s[Math.floor(n * 0.75)], iqr = q3 - q1;
+    return lowSide ? Math.max(s[0], q1 - 1.5 * iqr) : Math.min(s[n - 1], q3 + 1.5 * iqr);
+  }
   function _tmDisplayRemap(elements, schedule) {
     (function () {
       var map = {}, n = 0;
@@ -4422,11 +4434,8 @@
       var k = _gkOf(it), g = _groups[k] || (_groups[k] = { starts: [], ends: [] });
       g.starts.push(it.s); g.ends.push(it.e);
     });
-    function _tukeyBound(arr, lowSide) {
-      var s = arr.slice().sort(function (a, b) { return a - b; });
-      var n = s.length, q1 = s[Math.floor(n * 0.25)], q3 = s[Math.floor(n * 0.75)], iqr = q3 - q1;
-      return lowSide ? Math.max(s[0], q1 - 1.5 * iqr) : Math.min(s[n - 1], q3 + 1.5 * iqr);
-    }
+    // §TUKEY_BOUND — hoisted to module scope (2026-08-17, 4D_GANTT_TM_REFACTOR.md stage 2) so
+    // buildGanttTasks() shares this exact function instead of re-deriving it a third time.
     var _bar = {};
     Object.keys(_groups).forEach(function (k) {
       var g = _groups[k], lo = _tukeyBound(g.starts, true), hi = _tukeyBound(g.ends, false);
@@ -6022,36 +6031,22 @@
     }
     _ganttIdentified = _idN; _ganttUnidentified = _noIdN;
 
-    // §GANTT_MINI_TRIM (2026-07-18, prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 6
-    // postscript 2): the bar's displayed span used to be the true min/max of every element in the
-    // group. A small number of elements per floor (confirmed live on Hospital: ~0.5-1% of a given
-    // storey's MEP Rough-in group) carry a real, present storey TAG that disagrees sharply with
-    // their own extracted Z position (e.g. an IfcPipeFitting tagged "Level 5" but physically near
-    // Z~164m, well below even Level 1's median 168.9 — most likely a riser/connector whose IFC
-    // "Level" property reflects which floor's system it serves, not where it physically sits).
-    // schedule_gate.js correctly gates these by their REAL geometric position, so they schedule
-    // (correctly) to start almost immediately — but true min/max let that handful of outliers drag
-    // the WHOLE floor's displayed bar down to "starts at day 0", making every floor's MEP bar look
-    // like it starts at the same point even though the bulk of the work (Hospital Level 5: 99%+ of
-    // 7,627 elements, median start day 258) is genuinely gradual and correctly staggered by floor.
-    // Trim to the 2nd–98th percentile of REAL per-element start/end times for the bar's drawn span
-    // — still real extracted data, just excluding the extreme 2% each side so a few mistagged
-    // elements can't single-handedly define what the whole floor's bar looks like. Tiny groups
-    // (n<=20) keep true min/max — percentile trimming is meaningless at that sample size.
+    // §GANTT_MINI_TRIM (2026-08-17, 4D_GANTT_TM_REFACTOR.md stage 2 — REPLACES the 2026-07-18
+    // 2nd-98th-percentile-above-n20/true-min-max-below rule). The old rule's cliff at n=20 was
+    // measured live to be exactly the mechanism behind "one pile, full project length": most
+    // phase|storey groups are small (many storeys x 6 phases), so most bars got NO trim at all —
+    // one mistagged/outlier element (this project's own numbers show non-zero outliers on every
+    // building, by design) was enough to stretch an untrimmed small group's bar to cover it.
+    // Fix: the SAME Tukey-fence envelope §ZONE_WINDOW_DAGWINS_CLIP already uses for task-window
+    // authoring (_tukeyBound, hoisted to module scope above) — uniform at every group size, no
+    // cliff, no new tuned constant (reuses the exact proven formula, not a fresh invention).
+    // Members outside the fence still exist in the underlying data (§TIER_DAG_WINS doctrine:
+    // counted, never hidden) — they just don't get to single-handedly define the bar's span.
     _ganttTasks = [];
     for (var k in groups) {
       var g = groups[k];
-      g.starts.sort(function(a, b) { return a - b; });
-      g.ends.sort(function(a, b) { return a - b; });
-      var n = g.starts.length;
-      if (n > 20) {
-        var loI = Math.floor(n * 0.02), hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
-        g.startTs = g.starts[loI];
-        g.endTs = g.ends[hiI];
-      } else {
-        g.startTs = g.starts[0];
-        g.endTs = g.ends[n - 1];
-      }
+      g.startTs = _tukeyBound(g.starts, true);
+      g.endTs = Math.max(_tukeyBound(g.ends, false), g.startTs);   // degenerate-group safety (n=1)
       delete g.starts; delete g.ends;
       _ganttTasks.push(g);
     }
@@ -7430,6 +7425,15 @@
         return { i: i, taskId: t.taskId || null, phase: t.phase, storey: t.storey,
           x: bx, w: bw, y: i * rowH + 2, h: barH, midX: bx + bw / 2, midY: i * rowH + 2 + barH / 2 };
       });
+      // §GANTT_BAR_RECTS_RAW (2026-08-17, 4D_GANTT_TM_REFACTOR.md stage 2) — same read-only debug
+      // convention as __tmGanttBars above, but the real ms times instead of pixel geometry. Needed
+      // to measure the actual rendered bar span (stagger acceptance) without re-deriving ms from
+      // pixels through the axis math — a live probe reads exactly what was drawn from, not a
+      // reconstruction of it.
+      window.__tmGanttBarsRaw = _ganttTasks.map(function (t, i) {
+        return { i: i, taskId: t.taskId || null, phase: t.phase, storey: t.storey,
+          startTs: t.startTs, endTs: t.endTs, count: t.count };
+      });
     } catch (e) {}
 
     // Hairline cursor. §GANTT_AXIS_OUTLIER: clamp into the qualified axis — the real _cursor can
@@ -7844,7 +7848,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 32;   // §GROUNDWORK_SLAB (4D_GANTT_TM_REFACTOR.md §S9) — grade slab+beam reclassification reshapes ground-level schedule
+  var _GANTT_CACHE_VERSION = 33;   // §GANTT_MINI_TRIM (4D_GANTT_TM_REFACTOR.md stage 2) — bar-span rule changed (Tukey fence, no n=20 cliff), regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
