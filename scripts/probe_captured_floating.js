@@ -586,13 +586,24 @@ async function main() {
     console.log('§EXP5B_FINAL_BYCLASS ' + JSON.stringify(m.c.byClass));
   }
 
-  // ══ EXP6 — BROWSER-FAITHFUL captured pipeline (2026-08-16, §CHASE_TO_ZERO_WINDOW_AUTHORING
-  // correction from the user's live Hospital log). Everything above feeds the rescale from
-  // computeSchedule's RAW times — but the real injectGantt overlay reads kernel_ops timestamps,
-  // which carry the TWO-TIER DISPLAY timeline (_twoTierRemap + _midairRepair, §TIER_SERIAL 420d on
-  // Hospital), while task windows are authored from the RAW schedule (334d). Live divergence proof:
-  // browser §PHASE_OVERLAP_SUPPORT_GUARD pushed=4117 vs this probe's raw-fed 1152. This section
-  // reproduces the REAL input using witness_midair_zero.js's validated display-timeline recipe. ════
+  // ══ EXP6 — captured pipeline (2026-08-16, §CHASE_TO_ZERO_WINDOW_AUTHORING correction from the
+  // user's live Hospital log). Everything above feeds the rescale from computeSchedule's RAW times
+  // — the real injectGantt overlay reads kernel_ops timestamps, which carry the TWO-TIER DISPLAY
+  // timeline (_twoTierRemap + _midairRepair, §TIER_SERIAL 420d on Hospital), while task windows are
+  // authored from the RAW schedule (334d). Live divergence proof at the time: browser
+  // §PHASE_OVERLAP_SUPPORT_GUARD pushed=4117 vs this probe's raw-fed 1152.
+  //
+  // ⚠ RETRACTED LABEL, KEPT CODE (§S13.8/§S14.0, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md
+  // §PATHS NOT TO TAKE #1/#2): this was called "BROWSER-FAITHFUL" when written — that claim is now
+  // KNOWN FALSE. `_twoTierRemap`/`_midairRepair` are reachable ONLY via `_displayTimeline`'s
+  // `§CPM_DISPLAY_FALLBACK` branch (time_machine.js), which has never fired live in this lane
+  // (`§CPM_DISPLAY_REUSE` hits it instead). This section slices and calls those two functions
+  // directly — it measures a real function's behavior, not what the live default path executes.
+  // §S14.0 re-measured the SAME per-phase/per-storey table on the confirmed-live `CpmSchedule.run`
+  // path (bim-ootb PR #1421, `probe_cpm_display_path.js`) and the scrambling this section reproduces
+  // did NOT reproduce there. Do not cite STOREY_PHASE_TABLE output from this section as a live root
+  // cause without ALSO printing, in the same log, proof this exact call matches the live default
+  // path — the standing guardrail those sections established. ════════════════════════════════════
   {
     const vm = require('vm');
     function sliceAt(src, name, which, optional) {
@@ -676,6 +687,10 @@ async function main() {
     // question the aggregate cannot: WITHIN one phase, is p50 start still monotonic in z? If yes,
     // the inversion is a mix artifact of the metric; if no, the ordering is genuinely broken.
     if (process.env.STOREY_PHASE_TABLE) {
+      console.log('§STOREY_PHASE_TABLE_REACHABILITY_WARNING this table is computed from a sliced ' +
+        '_twoTierRemap/_midairRepair call (EXP6, above), NOT the live default path — see §S13.8/' +
+        '§S14.0 in bim-compiler prompts/4D_GANTT_TM_REFACTOR.md. Do not write up a number from ' +
+        'here as a live root cause without independent live-path proof (probe_cpm_display_path.js).');
       // Run the SAME table on the raw pre-remap starts and on the post-remap ones, so the answer
       // to "does the remap break it or was it already broken" is one diff instead of two runs.
       [['RAW', function (o) { return _preRemapS[o.guid]; }],
