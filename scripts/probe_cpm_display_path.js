@@ -77,7 +77,56 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPMDP_BUILDING ' + name + ' n=' + items.length);
   const res = CpmSchedule.run(items, { maxCrews });
   if (!res.ok) throw new Error('CPM failed');
+  // §S14.0 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md) — REACHABILITY EVIDENCE, printed before
+  // any number is quoted. §S13.7 was retracted because it measured _twoTierRemap, which
+  // time_machine.js only reaches in _displayTimeline's §CPM_DISPLAY_FALLBACK branch. The live
+  // default is the branch THIS probe is on: _CPM_DISPLAY defaults true (time_machine.js:4519) and
+  // `CpmSchedule.run(...).ok` truthy makes _displayTimeline return at :4578, before ever reaching
+  // _twoTierRemap at :4585. Nothing here is sliced out of source — `CpmSchedule` is the shipped
+  // module, required directly, and its own §CPM_RUN line above is the proof it executed.
+  console.log('§CPM_LIVE_PATH ' + name + ' cpmRunOk=' + res.ok +
+    ' -> _displayTimeline would return at time_machine.js:4578 (§CPM_DISPLAY on); ' +
+    '_twoTierMap/_midairRepair at :4585-4586 NOT reached. Module=require(viewer/cpm_schedule.js), not a source slice.');
+  const _rawStart = {}; items.forEach(function (o) { _rawStart[o.guid] = o.s; });
   items.forEach((o, i) => { o.s = res.solution.times[i].s; o.e = res.solution.times[i].e; });
+
+  // §S14.0 — the SAME per-phase, per-storey p50 table §S13.7 built, now on the confirmed-live
+  // author. RAW = ScheduleGate.computeSchedule (the generative engine, unchanged on either path);
+  // CPM = CpmSchedule.run's solution (what the browser plays). Per phase because the aggregate
+  // storey report's p50 runs over ALL of a storey's elements, so an MEP-heavy storey and a
+  // structure-heavy one get compared on different things and a global phase ordering alone reads
+  // as an "inversion".
+  {
+    const tbl = function (startOf, label) {
+      const byKey = {};
+      items.forEach(function (o) {
+        const k = (o.phase || '_NONE') + '||' + ScheduleGate.collapsePhase(o.storey);
+        (byKey[k] = byKey[k] || { s: [], z: [] }).s.push(startOf(o));
+        byKey[k].z.push(o.bz);
+      });
+      const gmin = Math.min.apply(null, items.map(startOf));
+      const phases = {};
+      Object.keys(byKey).forEach(function (k) {
+        const pr = k.split('||'), g = byKey[k];
+        const ss = g.s.slice().sort(function (a, b) { return a - b; });
+        (phases[pr[0]] = phases[pr[0]] || []).push({ st: pr[1], n: ss.length,
+          z: g.z.reduce(function (a, b) { return a + b; }, 0) / g.z.length,
+          p50: Math.round((ss[Math.floor(ss.length / 2)] - gmin) / 86400000) });
+      });
+      Object.keys(phases).sort().forEach(function (ph) {
+        const rows = phases[ph].filter(function (r) { return r.st !== 'Unknown' && r.n >= 20; })
+          .sort(function (a, b) { return a.z - b.z; });
+        let v = 0, worst = 0;
+        for (let i = 1; i < rows.length; i++)
+          if (rows[i].p50 < rows[i - 1].p50) { v++; worst = Math.max(worst, rows[i - 1].p50 - rows[i].p50); }
+        console.log('§S14_PHASE_ORDER ' + name + ' ' + label + ' phase=' + ph +
+          ' storeys=' + rows.length + ' violations=' + v + '/' + Math.max(0, rows.length - 1) +
+          ' worst=' + worst + 'd ' + JSON.stringify(rows.map(function (r) { return [r.st, r.z.toFixed(1), r.n, r.p50]; })));
+      });
+    };
+    tbl(function (o) { return _rawStart[o.guid]; }, 'RAW');
+    tbl(function (o) { return o.s; }, 'CPM_LIVE');
+  }
 
   // §CREW_FEASIBILITY (4D_GANTT_TM_REFACTOR.md §S6 acceptance 1) on the CPM-authored schedule this
   // display path plays: per resource, integrated over-cap exposure must stay within the 1-day
