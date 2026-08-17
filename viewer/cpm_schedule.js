@@ -211,11 +211,13 @@
         }
       }
     }
+    // stragglerOf is still computed and returned — it remains real, reportable data ("stragglers
+    // are counted, never hidden") even though milestone() no longer excludes them from feeding
+    // their own phase's completion gate (§CPM_STRAGGLER_EXEMPTION_DROPPED below).
     var stragglerOf = new Uint8Array(n);
     for (i = 0; i < n; i++) if (lvlOf[i] && maxAnc[pscc.comp[i]] > groupKeyOf(i)) { stragglerOf[i] = 1; counts.stragglers++; }
-    function isStraggler(i2) { return stragglerOf[i2] === 1; }
 
-    // Milestones: M(level, phase) completion, dur 0, fed FS by every NON-STRAGGLER member.
+    // Milestones: M(level, phase) completion, dur 0, fed FS by EVERY member (straggler or not).
     var msId = {}, msMeta = [];     // node ids n.. ; msMeta[k] = {level, phase}
     var groups = {};                // level||phase -> [element idx]
     for (i = 0; i < n; i++) {
@@ -223,6 +225,28 @@
       var key = lvlOf[i] + '||' + (items[i].phase || '_UNPHASED');
       (groups[key] || (groups[key] = [])).push(i);
     }
+    // §CPM_STRAGGLER_EXEMPTION_DROPPED (4D_GANTT_TM_REFACTOR.md, decision after fleet-trace
+    // diagnosis) — the isStraggler() skip that used to sit here has been removed. It excluded
+    // ANY element whose physics ancestry reached a later group from feeding its own phase's
+    // completion milestone — meaning "phase done" meant only the non-straggler subset was done,
+    // which on real data was often the MINORITY of the phase (measured live: 54-100% of a phase's
+    // elements classified as stragglers on Duplex/Hospital/HHS, at multiple levels), so the gate
+    // fired on a small residual instead of the true bulk. Decision: "phase done" means the WHOLE
+    // group is done, no filtered subset, no tuning knob.
+    //
+    // Why the exemption existed, and why removing it is still safe: a straggler element X is one
+    // whose OWN E1/E2 physics ancestry reaches into a LATER (level,phase) group Y. If X also fed
+    // its own group's completion milestone, and that milestone hammock-gates the very group Y
+    // sits in, the graph would close a genuine cycle (Y->X physics edge, X->milestone->Y hammock
+    // edge) — a real deadlock, not a hypothetical one. Every element now feeds its own milestone
+    // unconditionally; any such cycle this creates is caught and broken by solve()'s own Round-1
+    // Tarjan SCC pass (§TIER_DAG_WINS doctrine, top of file) — which ALREADY exists for exactly
+    // this class of problem and ONLY ever drops the tidiness edge (member/E3/E4) inside the
+    // detected cycle, never a physics edge (E1/E2) — so floating=0 (which depends only on E1/E2)
+    // is structurally unaffected by this change. The difference is precision: the old pre-filter
+    // excluded an element from ANY milestone it might ever reach, globally and conservatively;
+    // solve()'s cycle-breaking only drops an edge if it is actually inside a real cycle. Verified
+    // fleet-wide (see PR) before shipping, not assumed from this reasoning alone.
     function milestone(level, phase) {
       var key = level + '||' + phase;
       if (key in msId) return msId[key];
@@ -232,7 +256,6 @@
       out.push(null);
       var g = groups[key];
       if (g) for (var k5 = 0; k5 < g.length; k5++) {
-        if (isStraggler(g[k5])) continue;
         addEdge(g[k5], id, FS, 0, 'member');
       }
       return id;
