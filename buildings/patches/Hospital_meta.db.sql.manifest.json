@@ -1,10 +1,10 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-15T17:27:47.822Z",
+  "generated_at": "2026-08-17T06:37:28.023Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-hospital-colour-patch",
-    "sha": "b60440d1730ca42c306700d5cebf710b5e73d570",
+    "worktree": "/tmp/wt-s21-hospital-data",
+    "sha": "225e0cbfe33e785554a182fec3b7f60532cfefce",
     "behind_origin_main": 0,
     "ahead_origin_main": 1,
     "clean": true,
@@ -20,30 +20,19 @@
   },
   "artifact": {
     "file": "buildings/patches/Hospital_meta.db.sql",
-    "bytes": 1382739,
-    "md5": "f22a37aa2466981307f034fd03580f40",
-    "md5_b64": "8io3qiRmmBMH8DT9A1gPQA==",
+    "bytes": 2592837,
+    "md5": "6dfa92c5872357691c8cd47e78a48104",
+    "md5_b64": "bfqSxYcjV2kcjNR+eKSBBA==",
     "object": "buildings/patches/Hospital_meta.db.sql",
     "content_type": "application/sql"
   },
   "target": {
     "exists": true,
-    "etag": "a8da8873-d3db-4bef-a64c-5eea3816486a",
-    "size": "1381433",
-    "last-modified": "Mon, 10 Aug 2026 02:58:55 GMT"
-  },
-  "verification": {
-    "cmd": "bash scripts/verify_hospital_colour_backfill.sh",
-    "exit": 0,
-    "tail": [
-      "§VERIFY_COLOUR_BACKFILL empty_outside_ghosts=0 ghosts_empty=233 (expect 0 / 233)"
-    ]
-  },
-  "verdict": "PASS",
-  "failures": [],
-  "uploaded": {
-    "at": "2026-08-15T17:27:52.505Z",
     "etag": "cee44b7c-4491-4cb6-ab4c-6e508e42560c",
-    "verified": true
-  }
+    "size": "1382739",
+    "last-modified": "Sat, 15 Aug 2026 17:27:50 GMT"
+  },
+  "verification": null,
+  "verdict": "PASS",
+  "failures": []
 }
