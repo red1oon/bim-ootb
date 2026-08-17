@@ -136,24 +136,32 @@
       _projectStart = cOps[0].start_ts - 1;
       _projectEnd = Math.max.apply(null, cOps.map(function(o){ return o.end_ts; }));
     }
-    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Same 2nd-98th percentile trim §GANTT_MINI_TRIM
-    // already uses per-bar (buildGanttTasks), applied here to the GLOBAL population of end_ts that
-    // would otherwise define the whole chart's axis. n>20 real percentiles, else true min/max — same
-    // threshold, never a new invented one. Kept as real, independent defense against genuinely
-    // mistagged construction data even now that cOps excludes bookkeeping ops (§GANTT_MINI_TRIM's own
-    // proven case — a handful of real elements DO carry a real-but-wrong storey tag).
-    var ends = cOps.map(function (o) { return o.end_ts; }).sort(function (a, b) { return a - b; });
-    var n = ends.length;
+    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Was its own copy of the 2nd-98th-percentile-
+    // above-n20/true-max-below cliff §GANTT_MINI_TRIM used to use per-bar (buildGanttTasks) — the
+    // SAME broken rule, applied here to the GLOBAL population of end_ts that defines the whole
+    // chart's axis instead of one bar's span. Stage 2 (4D_GANTT_TM_REFACTOR.md) fixed the per-bar
+    // copy but not this one — a bar's DATA could be correct while its DRAWN pixel position was
+    // still wrong, because the axis it's scaled against was still cliff-computed. Fixed here the
+    // same way: the shared _tukeyBound (hoisted to module scope, stage 2) — uniform at every
+    // population size, no cliff, no new tuned constant, reuses the exact proven formula. Never
+    // exceeds the true max (_tukeyBound's own Math.min(s[n-1], ...) clamp), so this stays a
+    // qualification of the real data, never an invention beyond it.
     _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
-    if (n > 20) {
-      var hiI = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
-      _ganttAxisEnd = ends[hiI];
-    } else {
-      _ganttAxisEnd = _projectEnd;
-    }
+    _ganttAxisEnd = cOps.length
+      ? _tukeyBound(cOps.map(function (o) { return o.end_ts; }), false)
+      : _projectEnd;
     // (G-3 fix 2026-08-11: a stale byte-duplicate of the block above sat here reading `_ops` —
     // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
     // BUILDING_OPEN. Removed; the cOps-based block above is the single authority.)
+    // §GANTT_AXIS_RAW (2026-08-18, 4D_GANTT_TM_REFACTOR.md — the axis's own near-duplicate fix) —
+    // read-only debug hook, same convention as __tmGanttBarsRaw, so this layer is verifiable by a
+    // witness instead of only by reading source. Exposes both the qualified axis actually drawn
+    // against and the true unqualified bounds, so a probe can directly check "does any bar's real
+    // end exceed what it's scaled against" without a second, separate computation.
+    try {
+      window.__tmGanttAxis = { axisStart: _ganttAxisStart, axisEnd: _ganttAxisEnd,
+        projectStart: _projectStart, projectEnd: _projectEnd, n: cOps.length };
+    } catch (e) {}
   }
 
   // ── Scene: emerge from nothing ──
@@ -7848,7 +7856,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 33;   // §GANTT_MINI_TRIM (4D_GANTT_TM_REFACTOR.md stage 2) — bar-span rule changed (Tukey fence, no n=20 cliff), regenerate
+  var _GANTT_CACHE_VERSION = 34;   // §GANTT_AXIS_OUTLIER (4D_GANTT_TM_REFACTOR.md) — axis-end rule changed (Tukey fence, no n=20 cliff), regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —
