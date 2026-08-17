@@ -7,14 +7,26 @@
  * (replaces nothing yet — §EXECUTION_PLAN stages 1-3). A node is an element (dur = crew-leveled
  * duration from ScheduleGate.computeSchedule, which stays — §WHAT_STAYS) or a dur-0 milestone.
  * An edge means "T cannot start until S starts (SS) / finishes (FS)". Earliest-start = one Kahn
- * topological pass, ES(T) = max(crew lower bound, max over in-edges). No fixpoint, no sweep cap.
+ * topological pass, ES(T) = max(crew-slot availability, max over in-edges) — see §S6_CREW_PASS in
+ * solve() below. No fixpoint, no sweep cap.
  *
  * Edge types (§CPM_SPEC — every edge traces to a real geometry query or an already-shipped rule):
  *   E1 support   SS  designated physical support from the contact graph (judge's own relation)
  *   E2 host/open FS  ScheduleGate.hostPairs / openingPairs (the one shared definition)
  *   E3 discipline FS Tier-1 chain + Tier-2-after-Tier-1 per level, via hammock milestones
  *   E4 storey    FS  phase P complete at level k -> phase P elements at level k+1 (THE missing edge)
- *   E5 crew       -  per-element lower bound ES(T) >= computeSchedule(T).start (no explicit edges)
+ *   E5 crew       -  RESOLVED (4D_GANTT_TM_REFACTOR.md §S19 Part B, 2026-08-17): originally a
+ *                    per-element lower bound ES(T) >= computeSchedule(T).start (no explicit edges,
+ *                    hence no counts.e5 in buildGraph()). §S6_CREW_PASS (below, in solve()) retired
+ *                    that bound — ES no longer seeds from each element's own computeSchedule start,
+ *                    only from a single shared epoch (`base` = min over all items). What's still
+ *                    read from computeSchedule per element is DUR = e-s (the crew-leveled work
+ *                    DURATION) — S6 has no independent duration model, so this is a live dependency,
+ *                    not dead weight. Measured (§S19_RESULTS, probe_e5_resolution.js, Terminal
+ *                    48,428 elements): cpmStart < rawStart for 12,131 elements (25%) — impossible if
+ *                    the old per-element floor still held — while cpmDur === rawDur bit-exact
+ *                    (maxDelta=0ms) for all 48,428. Comment corrected; solve()'s code needed no
+ *                    change, it already only uses `.s`/`.e` this way.
  *
  * Cycle policy (§TIER_DAG_WINS doctrine — physics beats phase tidiness): Tarjan SCC first. A
  * cycle containing a hammock/membership edge drops exactly those edges INSIDE the cycle (tidiness
@@ -103,7 +115,9 @@
   }
 
   // buildGraph(items, G) — items need guid,cls,seq,phase,storey,x0,x1,y0,y1,bz,tz,s,e where s/e are
-  // the crew-leveled generative times (E5 lower bound + durations). Returns the whole graph.
+  // computeSchedule's crew-leveled generative times. Only e-s (duration) is read past this point —
+  // s alone no longer seeds a per-element lower bound, see §S19 Part B note at the top of this file
+  // and §S6_CREW_PASS in solve(). Returns the whole graph.
   //
   // §CPM_STRAGGLER_MEMBERSHIP: an element whose PHYSICS ancestry (E1/E2 transitive closure)
   // reaches a later (level, phase) group than its own is a dag-wins straggler — the shipped
