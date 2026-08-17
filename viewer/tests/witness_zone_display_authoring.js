@@ -66,23 +66,31 @@ assert(/opts\.displayRemap/.test(saSrc) && /display_authored/.test(saSrc),
   'schedule_author.js materializeZones consumes opts.displayRemap and persists display_authored');
 
 // ── shipped-function slices (one physics — the same functions the browser runs) ───────────────
-let mrCount = 0, mrFrom = 0;
-for (;;) { const k = tmSrc.indexOf('function _midairRepair(', mrFrom); if (k < 0) break; mrCount++; mrFrom = k + 1; }
+// §S20 (2026-08-17, 4D_GANTT_TM_REFACTOR.md): the "4-line unused-slice" fix §S19_RESULTS predicted
+// was TESTED, not assumed, and found short — dropping _tier1Extents/_tier1Serialize/_tier1Protrusion/
+// _tierAuditRegate/_twoTierRemap/_midairRepair while leaving `_CPM_DISPLAY = false` throws
+// `ReferenceError: _twoTierRemap is not defined` at _tmDisplayRemap's own call site (line ~165 below,
+// `dispSched = _tmDisplayRemap(elements, rawSched)`): the "legacy" comparison this witness built
+// (W-ZDA-4a/4b's `base`) was genuinely computed by running `_displayTimeline`'s _CPM_DISPLAY=false
+// branch, which calls exactly the two functions Part B deletes. So this is not a pure drop — the
+// single-flag fix is to point the ONE remaining live branch (_CPM_DISPLAY=true, real CpmSchedule
+// module) at what production will actually run post-Part-B, matching what the standalone W-ZDA-6
+// cpmSandbox below already proves works. mrCount's hoisting-disambiguation scan is dropped with it
+// (nothing left to disambiguate once _midairRepair is never sliced here).
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
 const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
-  'var _CPM_DISPLAY = false;',   // §CPM_DISPLAY: legacy branch under test here; CPM branch = W-ZDA-6 below,
+  'var _CPM_DISPLAY = true;',   // §S20: only live branch left once Part B lands — see note above
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
-  sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
-  sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
-  sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
-  sliceFn(tmSrc, '_midairRepair', mrCount - 1),
+  sliceFn(tmSrc, '_contactGraph'),
   sliceFn(tmSrc, '_ogSupportSweep'), sliceFn(tmSrc, '_cjpJudgeParity'),
   sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_midairAudit'),
   sliceFn(tmSrc, '_displayTimeline'), sliceFn(tmSrc, '_displayTimelineRemember'),
   sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
-const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-  ScheduleGate: ScheduleGate, Math: Math };
+const _rlines = [];
+const sandbox = { console: { log: (...a) => _rlines.push(a.join(' ')), warn: () => {} }, performance: { now: () => Date.now() },
+  ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
+  CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
 vm.createContext(sandbox);
 vm.runInContext(sliced +
   '\nthis.__remapHook = _tmDisplayRemap; this.__sweep = _ogSupportSweep; this.__parity = _cjpJudgeParity; this.__cg = _contactGraph; this.__rescale = _capWindowRescale;', sandbox);
@@ -128,6 +136,10 @@ async function main() {
     const dbPath = path.join(BLD_DIR, B + '.db');
     if (!fs.existsSync(dbPath)) { console.log('  SKIP ' + B + ' (no DB)'); continue; }
     console.log('W-ZDA-2/4/5 ' + B);
+    _rlines.length = 0;   // §S20 reachability capture starts here — covers W-ZDA-2b's materializeZones
+                            // hook call too (its FIRST call per building is the fresh CPM compute; the
+                            // later direct _tmDisplayRemap call below legitimately hits the one-shot
+                            // §CPM_DISPLAY_ONE_TRUTH cache-reuse branch on the SAME guids, not a re-derive)
     const bytes = fs.readFileSync(dbPath);
     const mkOpts = extra => Object.assign({ laborRates: RATES.LABOR_RATES, rates: RATES.RATES,
       nameOverrides: RATES.SEQUENCE_NAME_OVERRIDES, defaultRule: RATES.SEQUENCE_DEFAULT,
@@ -164,6 +176,15 @@ async function main() {
     const rawSched = ScheduleGate.computeSchedule(elements, 0, 1, maxCrews, 24);
     const dispSched = _tmDisplayRemap(elements, rawSched);
     console.log = ql;
+    // §S20 reachability proof (same discipline as §S14.0 — print it, don't assume it): every
+    // _tmDisplayRemap call this building made (W-ZDA-2b's materializeZones hook + the direct call
+    // just above) must have gone through _displayTimeline's CPM branch — fresh compute
+    // (§CPM_DISPLAY on) the first time, legitimately the one-shot cache (§CPM_DISPLAY_REUSE, same
+    // guids) any time after — and NEVER the §CPM_DISPLAY_FALLBACK legacy chain.
+    const _cpmHit = _rlines.find(l => l.indexOf('§CPM_DISPLAY on') === 0 || l.indexOf('§CPM_DISPLAY_REUSE') === 0);
+    const _cpmFallback = _rlines.find(l => l.indexOf('§CPM_DISPLAY_FALLBACK') === 0);
+    assert(!!_cpmHit && !_cpmFallback, 'W-ZDA-CPM-PATH ' + B + ' _tmDisplayRemap reached the CPM branch, ' +
+      'not the fallback (hit=' + (_cpmHit || 'none') + ' fallback=' + (_cpmFallback || 'none') + ')');
     function capItems(schedMap, win) {
       return elements.map(el => {
         const st = schedMap[el.guid]; if (!st) return null;
