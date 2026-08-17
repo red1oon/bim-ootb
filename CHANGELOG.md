@@ -4,6 +4,28 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.49.0](https://github.com/red1oon/bim-ootb/compare/v1.48.0...v1.49.0) (2026-08-17)
+
+
+### ✨ Features
+
+* **4d:** ScheduleEngine — single-source schedule class (4D_GANTT_TM_REFACTOR.md stage 1) ([#1431](https://github.com/red1oon/bim-ootb/issues/1431)) ([07d6744](https://github.com/red1oon/bim-ootb/commit/07d6744f6d9094d97545151f097b7d5333c99791))
+
+
+### 🐛 Fixes
+
+* **4d:** §S15/S16 — activation memory probe + retire the STOREY_PHASE_TABLE landmine ([#1422](https://github.com/red1oon/bim-ootb/issues/1422)) ([9a56be9](https://github.com/red1oon/bim-ootb/commit/9a56be9863601bf328000874bebefcc18e9f6895))
+* **4d:** §S18 Part B — viewer-side storey-band merge from EXTRACTED Elevation ([#1424](https://github.com/red1oon/bim-ootb/issues/1424)) ([2535355](https://github.com/red1oon/bim-ootb/commit/25353559438d6931b9a14ba77c3020c1da3d310d))
+* **4d:** §S19 Part B — resolve E5, comment-only (already retired by S6) ([#1425](https://github.com/red1oon/bim-ootb/issues/1425)) ([7674940](https://github.com/red1oon/bim-ootb/commit/76749401ee367ce7a9303019282469e85796a6de))
+* **4d:** §S20 Part A — redesign dead-pipeline witnesses against the live CPM path ([#1426](https://github.com/red1oon/bim-ootb/issues/1426)) ([3a1a90e](https://github.com/red1oon/bim-ootb/commit/3a1a90e7ec5363f90e7617d85aba652180f26471))
+* **4d:** §S20 Part B — delete the dead legacy display-repair pipeline ([#1430](https://github.com/red1oon/bim-ootb/issues/1430)) ([8f8d3de](https://github.com/red1oon/bim-ootb/commit/8f8d3de087fca951892c257de7971649d21b8470))
+* **4d:** §S21 — real IfcBuildingStorey.Elevation + IfcBuilding parentage patch (Hospital) ([#1428](https://github.com/red1oon/bim-ootb/issues/1428)) ([c722124](https://github.com/red1oon/bim-ootb/commit/c7221244b62a6e7f4c62e38cf03c2df8a281ea1c))
+* **4d:** §S21 — real IfcBuildingStorey.Elevation + IfcBuilding parentage patch (Terminal) ([#1427](https://github.com/red1oon/bim-ootb/issues/1427)) ([c497c22](https://github.com/red1oon/bim-ootb/commit/c497c22ef0745ed3fe1abd490143c9539dce2cc2))
+* **4d:** §S22 — Gantt drag-later clock mismatch left elements invisible after scrub (bim-compiler #S22) ([#1429](https://github.com/red1oon/bim-ootb/issues/1429)) ([21b574b](https://github.com/red1oon/bim-ootb/commit/21b574b80c157aaf0f8de834991e39c85cc79e50))
+* **4d:** buildGanttTasks() bar-span rule — Tukey fence, no n=20 cliff (4D_GANTT_TM_REFACTOR.md stage 2) ([#1432](https://github.com/red1oon/bim-ootb/issues/1432)) ([dd3a746](https://github.com/red1oon/bim-ootb/commit/dd3a746ddb4bd1de079ca78afe35ed46dcbb1410))
+* **4d:** computeDays()'s Gantt axis-end — Tukey fence, the axis's own near-duplicate cliff (4D_GANTT_TM_REFACTOR.md) ([#1433](https://github.com/red1oon/bim-ootb/issues/1433)) ([035561e](https://github.com/red1oon/bim-ootb/commit/035561efc6f451aea653a467b544214cd6d9204a))
+* **4d:** E3 gate no longer exempts stragglers from their own phase's completion (4D_GANTT_TM_REFACTOR.md) ([#1434](https://github.com/red1oon/bim-ootb/issues/1434)) ([5ea6fcf](https://github.com/red1oon/bim-ootb/commit/5ea6fcf616f9e1d030d9d015d00496df65b9a730))
+
 ## [1.48.0](https://github.com/red1oon/bim-ootb/compare/v1.47.0...v1.48.0) (2026-08-17)
 
 
