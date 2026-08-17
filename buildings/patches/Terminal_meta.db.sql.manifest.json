@@ -1,12 +1,12 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-16T16:59:02.033Z",
+  "generated_at": "2026-08-17T06:37:14.178Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-fleet-pair-audit",
-    "sha": "d5c0eb72dcab93f6446c6a8cf27d2f885840cf29",
+    "worktree": "/tmp/wt-s21-terminal-data",
+    "sha": "ccc83a41ca14a01defbdee612e131408925868b7",
     "behind_origin_main": 0,
-    "ahead_origin_main": 1,
+    "ahead_origin_main": 2,
     "clean": true,
     "dirty_paths": []
   },
@@ -20,35 +20,19 @@
   },
   "artifact": {
     "file": "buildings/patches/Terminal_meta.db.sql",
-    "bytes": 569945,
-    "md5": "3b4cfd6698c4773be7364e8a44abe760",
-    "md5_b64": "O0z9ZpjEdzvnNk6KRKvnYA==",
+    "bytes": 4723739,
+    "md5": "a891aac0b67c158ac9e087f304e46cf9",
+    "md5_b64": "qJGqwLZ8FYrJ4IfzBORs+Q==",
     "object": "buildings/patches/Terminal_meta.db.sql",
     "content_type": "application/sql"
   },
   "target": {
     "exists": true,
-    "etag": "0f06a396-1793-47f3-839a-69378d19a435",
-    "size": "413659",
-    "last-modified": "Sun, 16 Aug 2026 15:26:58 GMT"
-  },
-  "verification": {
-    "cmd": "node scripts/verify_terminal_meta_transform_repair.js",
-    "exit": 0,
-    "tail": [
-      "§S10_VERIFY spot 2B0$$pk5 z=17.188841 expect=17.188841 PASS",
-      "§LABOR_QUANTITY_WEIGHT class=IfcPlate count=33324 avgArea=0.0741m2 (<1m2 floor) totalRealArea=2469.3m2 — real AREA used as labor quantity, not element count",
-      "§HEAVY_MEMBER_SPEED_LIMIT classes=6 [IfcBeam:avg=7.31m, IfcColumn:avg=9.15m, IfcDuctSegment:avg=2.06m, IfcMember:avg=4.28m, IfcPipeSegment:avg=1.26m, IfcRailing:avg=4.32m] — real LENGTH redistributes each class's existing flat total, per-element speed now scales with real size",
-      "§GROUNDWORK_SLAB recipe=schedule_author n=233 levels=[\"Aras Tanah\",\"GROUND FLOOR LEVEL\"] — slab-on-grade reclassified Substructure (bears on grade/piles/footings only, lowest Superstructure band)",
-      "§S10_VERIFY groundwork=233 expect=233 PASS",
-      "§S10_VERIFY_SUMMARY fail=0 PASS"
-    ]
-  },
-  "verdict": "PASS",
-  "failures": [],
-  "uploaded": {
-    "at": "2026-08-16T16:59:06.870Z",
     "etag": "a6ce6a68-5464-45fd-8c20-e9dbf6fa5a53",
-    "verified": true
-  }
+    "size": "569945",
+    "last-modified": "Sun, 16 Aug 2026 16:59:05 GMT"
+  },
+  "verification": null,
+  "verdict": "PASS",
+  "failures": []
 }
