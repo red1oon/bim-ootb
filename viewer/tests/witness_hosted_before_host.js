@@ -41,15 +41,29 @@
 //                   itself owns. Exactly 0 is required here: hostGate + its DAG edge make it
 //                   structural, so any non-zero is a real gate defect, not display-layer slack.
 //   G-HOST-DISPLAY  (BLOCKING) EARLY <= 5% of hostMatched on the DISPLAY timeline the movie
-//                   actually plays (post _twoTierRemap + _midairRepair). Not 0: those two layers
-//                   are allowed to move a host relative to what it hosts (see G-HOST-STAGE), and
-//                   5% is this lane's standing error margin.
-//   G-HOST-STAGE    attribution, reported per building — EARLY after generation vs after remap vs
-//                   after midair repair. This is what says WHICH layer any residual came from,
-//                   rather than leaving it as an unexplained number.
+//                   actually plays (post CPM authoring). Not 0: display authoring is allowed to
+//                   move a host relative to what it hosts (see G-HOST-STAGE), and 5% is this
+//                   lane's standing error margin.
+//   G-HOST-STAGE    attribution, reported per building — EARLY after generation vs after CPM
+//                   authoring. This is what says whether any residual came from the generative
+//                   schedule or from display authoring, rather than leaving it as an unexplained
+//                   number.
 //   G-HOST-MATCH    the hosted-vs-hostMatched gap: hosted elements with NO bracketing host in their
 //                   cell at all. A separate, already-accepted category (not part of EARLY) —
 //                   reported so it can never quietly grow into a way of passing this witness.
+//
+// §S20 REDESIGN (2026-08-17, 4D_GANTT_TM_REFACTOR.md §S20) — G-HOST-DISPLAY/G-HOST-STAGE used to
+// measure the DISPLAY timeline by slicing `_twoTierRemap`/`_midairRepair` (the dead legacy chain,
+// §PATHS NOT TO TAKE #1: reachable only via `?cpm4d=0`, never live) out of source and calling them
+// directly, making this witness the pipeline's own regression baseline rather than a test OF it
+// (§S19_RESULTS). Rebuilt to author the DISPLAY timeline via the LIVE default path instead —
+// `_displayTimeline`'s CPM branch (`CpmSchedule.run`, viewer/cpm_schedule.js), the exact function
+// `injectGantt`'s kernel_ops write path and the materializeZones displayRemap hook both call.
+// `CpmSchedule` is REQUIRED as the real module (never sliced), same discipline
+// `probe_cpm_display_path.js` and `witness_zone_display_authoring.js`'s W-ZDA-6 already established.
+// G-HOST-STAGE's THREE-stage attribution (gen -> remap -> midair repair) collapses to TWO
+// (gen -> CPM display) because CPM authors the whole timeline in one DAG pass, not two sequential
+// repair stages — there is no intermediate "remap-only" state to report separately.
 //
 // Command (from the worktree root):
 //   BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_hosted_before_host.js
@@ -64,6 +78,7 @@ const SQLJS_DIR = process.env.SQLJS_DIR || path.join(HOME, 'bim-ootb', 'modeller
 const initSqlJs = require(path.join(SQLJS_DIR, 'sql-wasm.js'));
 const ScheduleGate = require(path.join(VIEWER_DIR, 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(VIEWER_DIR, 'schedule_author.js'));
+const CpmSchedule = require(path.join(VIEWER_DIR, 'cpm_schedule.js'));
 const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
@@ -154,20 +169,20 @@ function countEarly(pairs, get) {
   const RATES = loadRatesTable();
   const tmSrc = fs.readFileSync(path.join(VIEWER_DIR, 'time_machine.js'), 'utf8');
   const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild'), sliceFn(tmSrc, '_zoneIndex')].filter(Boolean);
-  const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
+  // §S20: dropped from this slice list — `_buildXrayElements`/`_contactGraph`/`_midairAudit`/
+  // `_displayTimeline` never reach `_tier1Extents`, `_tier1Serialize`, `_tier1Protrusion`,
+  // `_tierAuditRegate`, `_twoTierRemap`, `_midairRepair`, or `_TIER1_ORDER` (used only inside that
+  // same dead chain) — `_CPM_DISPLAY = true` below means `_displayTimeline`'s FALLBACK branch,
+  // the only place they are called, is never reached.
+  const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left reachable post-Part-B
     (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
     sliceFn(tmSrc, '_zoneOf') || '',
     // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15): _buildXrayElements' local matchNameOverride/matchRule
     // now delegate to this shared pair — rides along verbatim, same idiom as the zone helpers above.
     sliceFn(tmSrc, '_classifyNameOverride'), sliceFn(tmSrc, '_classifyRule'),
     sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-    sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
-    sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
-    sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
-    sliceFn(tmSrc, '_midairAudit'),
-    // the LAST _midairRepair definition is the one that hoists last and therefore the one the
-    // browser executes — measure ship truth, same selection probe_arch_start.js defaults to
-    sliceFn(tmSrc, '_midairRepair', 1) || sliceFn(tmSrc, '_midairRepair', 0)].filter(Boolean).join('\n');
+    sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairAudit'),
+    sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].filter(Boolean).join('\n');
 
   let ran = 0, rawBad = [], dispBad = [], stageRep = [], matchRep = [];
 
@@ -175,12 +190,16 @@ function countEarly(pairs, get) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { console.log(`      (skip ${bld} — fixture missing)`); continue; }
     const db = new SQL.Database(fs.readFileSync(dbPath));
+    // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
+    // browser exposes, so _displayTimeline's §S6_CREW_PASS max_crews_fixed/max_crews lookup sees
+    // real per-resource caps instead of running crew-unconstrained.
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO },
+      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
       ScheduleGate: ScheduleGate, Math: Math, RegExp: RegExp, Object: Object, Infinity: Infinity,
+      URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule,
       A: () => ({ db: db, activeBuilding: bld, _metaGen: 0 }) };
     vm.createContext(sandbox);
-    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__remap = _twoTierRemap; this.__repair = _midairRepair;', sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
     const els = sandbox.__bxe();
     if (!els || !els.length) { console.log(`      (skip ${bld} — element build returned nothing)`); db.close(); continue; }
 
@@ -225,31 +244,39 @@ function countEarly(pairs, get) {
     const items = geoEls.map(e => ({ guid: e.guid, s: sched[e.guid].start, e: sched[e.guid].end,
       rawS: sched[e.guid].start,
       bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq,
-      phase: e.phase, storey: e.storey }));
+      phase: e.phase, storey: e.storey, resource: e.resource }));   // resource: cpm_schedule.js's crew pass reads it
 
     const { hostedN, pairs } = pairHosts(items);
     if (!pairs.length) { console.log(`      ${bld}: hosted=${hostedN} hostMatched=0 — nothing to check`); continue; }
     ran++;
 
     const raw = countEarly(pairs, it => it.rawS);                      // stage 1: generative
-    sandbox.console = { log: () => {}, warn: () => {} };
+    const dtLines = [];
+    sandbox.console = { log: (...a) => dtLines.push(a.join(' ')), warn: (...a) => dtLines.push(a.join(' ')) };
     sandbox.__items = items;
-    vm.runInContext('this.__remap(this.__items);', sandbox);
-    const remapS = {}; items.forEach(it => { remapS[it.guid] = it.s; });
-    const rem = countEarly(pairs, it => remapS[it.guid]);              // stage 2: + two-tier remap
-    vm.runInContext('this.__repair(this.__items);', sandbox);
-    const disp = countEarly(pairs, it => it.s);                        // stage 3: DISPLAY (what plays)
+    const dtResult = vm.runInContext('this.__dt(this.__items);', sandbox);
+    // §S14.0 reachability proof — print it, don't assume it. Fresh vm context per building, so
+    // `.cpm` must be exactly `true` (fresh CpmSchedule.run success), never the FALLBACK branch —
+    // the exact bug class this redesign exists to prevent (silently measuring the dead chain again).
+    const cpmOnLine = dtLines.find(l => l.indexOf('§CPM_DISPLAY on') === 0);
+    if (!(dtResult && dtResult.cpm === true && cpmOnLine))
+      console.log(`      §CPM_LIVE_PATH_FAIL ${bld} cpm=${dtResult && dtResult.cpm} line=${cpmOnLine || 'none'}`);
+    const disp = countEarly(pairs, it => it.s);                        // stage 2: DISPLAY (what plays, CPM-authored)
 
     const pct = n => (100 * n / pairs.length).toFixed(1);
     if (raw.early !== 0) rawBad.push(`${bld}=${raw.early}(${pct(raw.early)}%, worst ${raw.worstD.toFixed(1)}d ${raw.worst})`);
     if (100 * disp.early / pairs.length > DISPLAY_TOL)
       dispBad.push(`${bld}=${pct(disp.early)}% (${disp.early}/${pairs.length}, worst ${disp.worstD.toFixed(1)}d ${disp.worst})`);
-    stageRep.push(`${bld} gen=${raw.early} remap=${rem.early} display=${disp.early}`);
+    if (!(dtResult && dtResult.cpm === true && cpmOnLine)) dispBad.push(`${bld}=CPM_PATH_NOT_REACHED`);
+    // §S20: two-stage attribution (gen -> CPM display) — the legacy chain's middle "remap-only"
+    // stage no longer exists (CPM authors the whole timeline in one DAG pass), so there is nothing
+    // to attribute it to separately anymore.
+    stageRep.push(`${bld} gen=${raw.early} display=${disp.early}`);
     matchRep.push(`${bld}=${hostedN - pairs.length}/${hostedN}`);
 
     console.log(`      ${bld}: hosted=${hostedN} hostMatched=${pairs.length} ` +
-      `EARLY gen=${raw.early}(${pct(raw.early)}%) remap=${rem.early}(${pct(rem.early)}%) ` +
-      `display=${disp.early}(${pct(disp.early)}%) worstDisplay=${disp.worstD.toFixed(1)}d${disp.worst ? ' ' + disp.worst : ''}`);
+      `EARLY gen=${raw.early}(${pct(raw.early)}%) display=${disp.early}(${pct(disp.early)}%) ` +
+      `worstDisplay=${disp.worstD.toFixed(1)}d${disp.worst ? ' ' + disp.worst : ''} cpmPath=${dtResult && dtResult.cpm}`);
   }
 
   gate('G-HOST-RAW', rawBad.length === 0 && ran > 0,
@@ -257,11 +284,12 @@ function countEarly(pairs, get) {
       : `0 hosted elements start before their host on the generative timeline, all ${ran} buildings ` +
         `— hostGate + its DAG edge make this structural, not incidental`);
   gate('G-HOST-DISPLAY', dispBad.length === 0 && ran > 0,
-    dispBad.length ? `over the ${DISPLAY_TOL}% margin on the timeline the movie plays: ` + dispBad.join(' ')
-      : `every building within the ${DISPLAY_TOL}% margin on the DISPLAY timeline (post remap + midair repair)`);
+    dispBad.length ? `over the ${DISPLAY_TOL}% margin on the timeline the movie plays (or CPM path unreached): ` + dispBad.join(' ')
+      : `every building within the ${DISPLAY_TOL}% margin on the DISPLAY timeline (post CPM authoring, ` +
+        `_displayTimeline's CPM branch — reachability proven per building, see cpmPath=true above)`);
   gate('G-HOST-STAGE', ran > 0, stageRep.join(' | ') +
-    ' — gen is schedule_gate.js\'s own output; any growth from gen to display is _twoTierRemap or ' +
-    '_midairRepair moving a host relative to what it hosts, and this is where that shows');
+    ' — gen is schedule_gate.js\'s own output; any growth from gen to display is CpmSchedule.run ' +
+    'moving a host relative to what it hosts, and this is where that shows');
   gate('G-HOST-MATCH', ran > 0, `hosted elements with NO bracketing host in their cell: ${matchRep.join(' ')} ` +
     `— an accepted separate category (never counted as EARLY), reported so it cannot grow into a way of passing this witness`);
 

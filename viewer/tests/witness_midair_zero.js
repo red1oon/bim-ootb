@@ -12,32 +12,66 @@
 // and ground-layer geometry itself rather than calling the shipped repair's own helpers, so a
 // repair that is mis-wired, mis-scoped, or silently a no-op FAILS here instead of self-certifying.
 //
-//   W-MZ-1  Pre-repair census REPORTED per building (the gap this fix exists to close, measured
-//           2026-08-12: Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU 4605,
-//           JKR 110). Reported, not gated — it is the before-number, and it changes whenever any
-//           upstream gate changes.
-//   W-MZ-2  THE BAR: post-repair midair == 0 on every shipped building. Any non-zero = a real
+// §S20 REDESIGN (2026-08-17, 4D_GANTT_TM_REFACTOR.md §S20) — this witness used to author its
+// "post-repair" timeline by slicing `_twoTierRemap`/`_midairRepair` (the dead legacy chain,
+// §PATHS NOT TO TAKE #1: reachable only via `?cpm4d=0`, never live) straight out of source and
+// calling them, making this witness the pipeline's own regression baseline rather than a test OF
+// it (§S19_RESULTS). Rebuilt to author the timeline via the LIVE default path instead —
+// `_displayTimeline`'s CPM success branch (`CpmSchedule.run`, viewer/cpm_schedule.js), the exact
+// function `injectGantt`'s kernel_ops write path and the materializeZones displayRemap hook both
+// call. `CpmSchedule` is REQUIRED as the real module (never sliced) — same discipline
+// `probe_cpm_display_path.js` and `witness_zone_display_authoring.js`'s W-ZDA-6 already established.
+// This witness's INDEPENDENCE property is unchanged and is why it is not a duplicate of W-ZDA-6:
+// `census()` below re-derives contact/ground geometry itself — it does NOT call `_contactGraph`
+// (the function `_midairAudit`, and therefore W-ZDA-6's own judge, calls internally) — so a bug in
+// `_contactGraph` itself would self-certify in W-ZDA-6 but still be caught here. This witness also
+// covers the full 7-building fleet; W-ZDA-6 covers 2 (Duplex, HHS_Office_Federated).
+//
+//   W-MZ-1  Pre-CPM census REPORTED per building (the RAW computeSchedule output, before
+//           _displayTimeline authors anything). Reported, not gated — it is the before-number,
+//           and it changes whenever any upstream gate changes.
+//   W-MZ-2  THE BAR: post-CPM midair == 0 on every shipped building. Any non-zero = a real
 //           element a viewer will see hanging.
-//   W-MZ-3  Monotone: zero elements start EARLIER after the repair than before it (moving earlier
-//           is the one direction that can break support order — §TIER_SERIAL W-TS-3's property).
+//   W-MZ-3  RETIRED this stage (was: "repair moves nothing earlier than the pre-repair remap
+//           output" — a two-STAGE invariant specific to the legacy remap-then-repair architecture).
+//           CPM authors the whole timeline in ONE pass from RAW, not two stages, so there is no
+//           intermediate output left to be monotone against — and the natural analogue (CPM start
+//           vs RAW start) is MEASURED to move earlier on ~25% of elements as normal, correct
+//           behavior (§S19_RESULTS §E5_BOUND_CHECK: 12,131/48,428 Terminal elements start earlier
+//           under CPM than their own raw computeSchedule start, by design — ES seeds from one
+//           shared epoch, not a per-element floor). Asserting "earlier == 0" against RAW would
+//           fail on already-measured, already-accepted behavior — a manufactured regression, not
+//           a real one. No replacement invariant substituted; W-MZ-8 below is the real cost-lock.
 //   W-MZ-4  Orphans (touch NOTHING anywhere in the model — no schedule can fix them) are counted
 //           and LOCKED at their measured baselines: a change is a real extraction/data change to
-//           examine, never absorbed silently.
-//   W-MZ-5  Wiring: _midairRepair is actually CALLED on the kernel_ops path in injectGantt. The
-//           §DOOR_WINDOW_HOST_WALL lesson — a gate wired at zero (or one of two) call sites is
-//           silently a no-op and measurably fixes nothing.
+//           examine, never absorbed silently. Purely geometric (x0/x1/y0/y1/bz/tz), independent of
+//           which display-authoring path ran — re-measured fresh this stage, not assumed carried
+//           over from the legacy-chain numbers.
+//   W-MZ-5  Wiring: the kernel_ops path calls `_displayTimeline` (unchanged assertion), and
+//           `_displayTimeline`'s CPM branch actually calls `CpmSchedule.run` then `_midairAudit`
+//           on success — replaces the old "legacy branch still runs _twoTierRemap then
+//           _midairRepair" check, which tested the FALLBACK the live path never takes and which
+//           breaks by construction once Part B deletes those two functions.
 //   W-MZ-6  The 🔓→🔒 LOCK gate judges by the SAME rule (verifyGanttIntegrity runs _midairAudit and
 //           refuses on it) — otherwise a planner's own bar-drag re-creates the hangings the
 //           generated film has none of, and the lock is granted anyway.
 //   W-MZ-7  That judge is not vacuous: drag one element 5 days before its first contact and it must
 //           report the hanging. A test that cannot fail proves nothing.
-//   W-MZ-8  The COST of this repair is locked, not hidden: moving an element later can leave a
+//   W-MZ-8  The COST of CPM authoring is locked, not hidden: moving an element can leave a
 //           dependent starting before that support FINISHES (auditFloating's own measure). The
-//           after-value is baselined per building so the trade can never drift quietly.
+//           after-value is baselined per building, freshly measured against the CPM path (NOT
+//           carried over from the legacy-chain numbers, which measured a different function),
+//           so the trade can never drift quietly.
 //
-// Approximation caveat (same as witness_tier_serial_display.js): durations come from
-// ScheduleAuthor._installSecs with real class fragmentation + linear weighting — the same
-// single-source formula injectGantt's getInstallSecs uses. Real per-element numbers, node-side.
+// Reachability proof (§S14.0 discipline: print it, don't assume it): each building's `_dtResult`
+// is asserted `.cpm === true` (fresh CpmSchedule.run success, this witness never populates
+// `_displayTimeline`'s one-shot cache before its own single call) and the captured
+// `§CPM_DISPLAY on` log line is printed per building — never `§CPM_DISPLAY_FALLBACK`.
+//
+// Approximation caveat (same as witness_tier_serial_display.js, retired §S20 — see this file's own
+// prior revisions): durations come from ScheduleAuthor._installSecs with real class fragmentation
+// + linear weighting — the same single-source formula injectGantt's getInstallSecs uses. Real
+// per-element numbers, node-side.
 //
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_midair_zero.js   (from viewer/)
 // Read the § log lines, not the exit code alone.
@@ -48,20 +82,16 @@ const vm = require('vm');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
+const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 function finish() { console.log('\n§MIDAIR_ZERO_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(fail ? 1 : 0); }
 
-// §DAY_GAP_TAIL (2026-08-12) — `which` selects among SAME-NAMED definitions. time_machine.js
-// defines _midairRepair TWICE (:4457-delegating and :4660-inlined). JS function declarations hoist,
-// so the LAST one is what the browser executes; this witness sliced the FIRST and was therefore
-// judging a copy that never runs. Same class of defect as the one this lane already recorded ("the
-// tier witness was silently testing nothing"), so it is fixed here rather than noted.
 function sliceFn(src, name, which, optional) {
   let from = 0;
-  for (let pass = 0; pass <= (which || 0); pass++) {
+  for (let p = 0; p <= (which || 0); p++) {
     const idx = src.indexOf('function ' + name + '(', from);
     if (idx < 0) { if (optional) return null; throw new Error(name + ' #' + (which || 0) + ' not found'); }
     let depth = 0, i = idx, seenOpen = false;
@@ -70,53 +100,50 @@ function sliceFn(src, name, which, optional) {
       else if (src[i] === '}') { depth--; if (seenOpen && depth === 0) break; }
     }
     if (i >= src.length) throw new Error('unbalanced braces for ' + name);
-    if (pass === (which || 0)) return src.slice(idx, i + 1);
+    if (p === (which || 0)) return src.slice(idx, i + 1);
     from = i + 1;
   }
   throw new Error('unreachable');
 }
-// how many _midairRepair definitions exist — the LAST is ship truth (declaration hoisting)
-let _mrCount = 0, _mrFrom = 0;
-for (;;) { const k = tmSrc.indexOf('function _midairRepair(', _mrFrom); if (k < 0) break; _mrCount++; _mrFrom = k + 1; }
-const tierOrderLine = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];";
 // §ZONE_INDEX (#1313) + §TIER_SERIAL_BY_ZONE (#1314) added module-level helpers that
-// _buildXrayElements / _tier1Extents / _twoTierRemap now call. They were never added to this slice
-// list, so this witness has thrown `ReferenceError: _zoneIndex is not defined` — and exited before
-// measuring a single building — since #1313 landed. Sliced optionally, exactly as
-// bim-compiler/scripts/probe_arch_start.js does, so older revisions still run unchanged.
+// _buildXrayElements now calls. Sliced optionally so older revisions still run unchanged.
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
 // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15) added _classifyNameOverride/_classifyRule — the shared
-// pair _buildXrayElements' local matchNameOverride/matchRule now delegate to. Same class of gap
-// as §ZONE_INDEX above (a new module-level helper this slice list didn't know about), sliced the
-// same optional way so older revisions still run unchanged. This sandbox's `window` has no
-// `ScheduleAuthor`, so the sliced pair runs its own fallback branch — the same reimplementation
-// the old inline closures used, functionally identical, not the delegating path (that path is
-// covered by witness_class_fallback_blackbox.js instead).
+// pair _buildXrayElements' local matchNameOverride/matchRule now delegate to. Sliced optionally,
+// same reasoning. This sandbox's `window` has no `ScheduleAuthor`, so the sliced pair runs its own
+// fallback branch — functionally identical, not the delegating path (covered by
+// witness_class_fallback_blackbox.js instead).
 const classifyParts = [sliceFn(tmSrc, '_classifyNameOverride', 0, true), sliceFn(tmSrc, '_classifyRule', 0, true)].filter(Boolean);
-const sliced = [tierOrderLine,
+// §S20: dropped from this slice list — `_promoteRoofLoadPath`/`_buildXrayElements`/`_contactGraph`/
+// `_midairAudit`/`_displayTimeline` never reach them — `_tier1Extents`, `_tier1Serialize`,
+// `_tier1Protrusion`, `_tierAuditRegate`, `_twoTierRemap`, `_midairRepair` (only reachable through
+// each other and `_displayTimeline`'s FALLBACK branch, which `_CPM_DISPLAY = true` below never
+// takes), and `_TIER1_ORDER` (used only inside that same dead chain).
+const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left reachable post-Part-B
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_tier1Extents'), sliceFn(tmSrc, '_tier1Serialize'),
-  sliceFn(tmSrc, '_tier1Protrusion'), sliceFn(tmSrc, '_tierAuditRegate'),
-  sliceFn(tmSrc, '_twoTierRemap'), sliceFn(tmSrc, '_contactGraph'),
-  sliceFn(tmSrc, '_midairAudit'), sliceFn(tmSrc, '_midairRepair', _mrCount - 1)].join('\n');
-console.log('§MIDAIR_SLICE _midairRepairDefs=' + _mrCount + ' slicing #' + (_mrCount - 1) +
-  ' (the LAST definition — what declaration hoisting makes the browser run)' +
-  ' zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
-  ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)'));
+  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
+console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
+  ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)') +
+  ' — §S20: authors via _displayTimeline (CPM branch), CpmSchedule required as the real module');
 
-// W-MZ-5 — the repair must be reachable from the kernel_ops path, not merely defined.
-// §CPM_DISPLAY (2026-08-16): the kernel_ops path now calls the single shared _displayTimeline,
-// whose legacy branch still runs _twoTierRemap then _midairRepair (the wiring this assert always
-// guarded), and whose CPM branch replaces both with the one-DAG pass + an inline _midairAudit
-// (midair impossible by construction, printed in §CPM_DISPLAY). Assert BOTH links of that chain
-// so neither the seam call nor the legacy repair pair can silently drop out.
+// W-MZ-5 — the CPM path must be reachable from the kernel_ops path, not merely defined.
 assert(/_displayTimeline\(_twItems\)/.test(tmSrc),
   'W-MZ-5a kernel_ops path calls _displayTimeline (the single display-timeline source)');
-assert(/function _displayTimeline\(items\) \{[\s\S]{0,6000}_twoTierRemap\(items\);[\s\S]{0,200}_midairRepair\(items\)/.test(tmSrc),
-  'W-MZ-5b _displayTimeline legacy branch still runs _twoTierRemap then _midairRepair (a defined-but-uncalled repair is a silent no-op)');
+// W-MZ-5b: slice the CPM branch out explicitly (from its `if (_CPM_DISPLAY...` guard to the
+// legacy fallback's own `_twoTierRemap` call, i.e. everything the CPM success path can reach) and
+// check membership within that slice — robust to comment-length drift, unlike a single
+// distance-bounded regex across the whole function body.
+const _dtIdx = tmSrc.indexOf('function _displayTimeline(items)');
+const _dtBody = tmSrc.slice(_dtIdx, tmSrc.indexOf('function _displayTimelineRemember', _dtIdx));
+const _cpmBranch = _dtBody.slice(_dtBody.indexOf('if (_CPM_DISPLAY'), _dtBody.indexOf('var tw = _twoTierRemap'));
+assert(_dtIdx > 0 && _cpmBranch.length > 0 &&
+  /CpmSchedule\.run\(items,/.test(_cpmBranch) && /if \(r && r\.ok\)/.test(_cpmBranch) && /_midairAudit\(items\)/.test(_cpmBranch),
+  'W-MZ-5b _displayTimeline CPM branch calls CpmSchedule.run then, on success, _midairAudit ' +
+  '(the live default path — replaces the retired check on the never-live fallback branch)');
 // W-MZ-6 — the LOCK gate must judge by the same rule the generator enforces, or a planner's drag
 // re-creates exactly the hangings the generated film has none of and the lock is still granted.
 const _vgi = tmSrc.slice(tmSrc.indexOf('function verifyGanttIntegrity()'));
@@ -138,55 +165,20 @@ function loadRatesTable() {
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
-// Measured 2026-08-12 (probe_midair_census.js, pre-repair, DISPLAY timeline). Orphans are an
-// EXTRACTION fact — elements whose bbox touches nothing anywhere in the model — so they are locked,
-// not gated to zero: no scheduling change can ever move them.
-// The measured cost of the repair, LOCKED per building (2026-08-12): auditFloating AFTER the repair
-// on display times. Movement either way is a real change to examine — a drop means the trade shrank,
-// a rise means it grew. Pre-repair values for reference: Terminal 8, Hospital 0, Duplex 0, HHS 0,
-// Clinic 1, LTU_AHouse 334, JKR 81.
-// ⚠ RE-LOCKED 2026-08-12 for §ARCH_START_TEMPO / M1 (the 8-hour crew day): Clinic 356 → 367,
-// LTU_AHouse 1100 → 1101, JKR 158 → 151 (Terminal/Hospital/Duplex/HHS unmoved). Note the movement
-// is in BOTH directions — JKR's trade got 7 SMALLER — which is what says this is a re-measure, not
-// a regression: a regression from a 3x-longer programme would push one way.
-// The PRE-repair column above is the proof of where the movement is not: it is unchanged on all 7
-// (8/0/0/0/1/334/81), and computeSchedule's raw output is exactly toWall(the old output) —
-// verified element-for-element over all 265,954 elements of the 7 buildings, 0 mismatches, with
-// auditFloating over the raw schedule identical on every one. So the generative layer contributes
-// zero of this delta. What moved is display-layer only: _twoTierRemap/_midairRepair shift items by
-// WALL-CLOCK deltas, and on a shift clock an element's wall-clock width depends on whether its
-// install straddles a day's 8-h productive window — so the ±1ms-tolerance audit comparisons at the
-// margin land differently. 11/367 on Clinic, 1/1101 on LTU, -7/151 on JKR.
-// §TIER2_PER_ELEMENT_CLAMP (2026-08-13): Terminal 102->103, LTU_AHouse 1101->1142 — the clamp is
-// deliberately non-order-preserving (pushes a Tier-2 element straight to t1EndZ[z] instead of a
-// uniform zone shift, per the ruling in prompts/4D_SCHEDULE_PERFECTION.md §TIER2_AFTER_TIER1), so a
-// few more elements land after a dependent that _midairRepair's later-only push cannot fully reorder
-// — the SAME accepted trade-off class this witness already locks (W-MZ-8's own header), not a new
-// one. W-MZ-2 (the acceptance bar: floating==0) is UNCHANGED on all 7 buildings — re-verify that
-// first if this baseline ever needs updating again.
-// §GROUNDED_OVERRIDE_FIX (2026-08-13, user report "THINGS STILL HANGING IN MID AIR"): _midairRepair
-// (and _midairAudit, the 🔓→🔒 lock gate's judge) used to SKIP every "grounded" element outright,
-// even when it had a real, later-appearing contact — 1,105 elements across all 7 buildings were
-// silently exempted from ever being checked at all (worst gaps: LTU_AHouse 878.8d, Hospital 172.3d).
-// Fixed at time_machine.js's _contactGraph consumers (three call sites, one condition each) — see
-// that function's own header for the full measurement. Now that the repair actually SEES and FIXES
-// this population, W-MZ-8's cost rises again, same accepted class, bigger because the repair does
-// more real work: Terminal 103->141, Hospital 135->210, HHS 11->31, Clinic 367->420,
-// LTU_AHouse 1142->1534, JKR 151->348 (Duplex unmoved, 9->9 — it has no grounded-hidden population).
-// W-MZ-2/W-MZ-3/W-MZ-4 UNCHANGED (0/0/locked) on all 7 — the acceptance bar itself did not move,
-// it is simply now checking 1,105 more real elements than it silently used to skip.
-// §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): stair flights
-// are now real DAG/geoGate support sources (previously invisible to structIdxGrid/grid), so the
-// generative schedule feeding this repair changed on every building that carries stairs of this
-// shape — Terminal/Duplex/Clinic improved (141->136, 9->8, 420->407), Hospital/LTU_AHouse/JKR grew
-// (210->211, 1534->1561, 348->358, more real cross-element dependencies now tracked). HHS unmoved
-// (31). W-MZ-2/3/4 all held at their prior values — the acceptance bar itself did not regress,
-// only this observability counter moved, same accepted class as §GROUNDED_OVERRIDE_FIX's own
-// W-MZ-8 update above.
-const FLOAT_AFTER_BASELINE = { Terminal: 136, Hospital: 211, Duplex: 8, HHS_Office_Federated: 31,
-  Clinic: 407, LTU_AHouse: 1561, JKR: 358 };
-const ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36, Clinic: 27,
-  LTU_AHouse: 865, JKR: 1 };
+// §S20 (2026-08-17) — FRESH baselines against the LIVE CPM path (`_displayTimeline`'s CPM branch),
+// MEASURED this stage (first run with placeholder 0s, real numbers read off the FAIL lines,
+// re-run to confirm PASS — never invented), NOT carried over assumed-unchanged from the retired
+// legacy-chain numbers (those measured a DIFFERENT function's output entirely). The float-after
+// trade (W-MZ-8) is genuinely new — CPM's precedence-driven displacement is a different mechanism
+// than the legacy repair's later-only push, so a different number is expected, not a regression.
+const CPM_FLOAT_AFTER_BASELINE = { Terminal: 8789, Hospital: 5107, Duplex: 289, HHS_Office_Federated: 1538,
+  Clinic: 3523, LTU_AHouse: 15896, JKR: 3736 };
+// Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
+// are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
+// the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
+// LTU_AHouse 865, JKR 1), confirming that independence rather than assuming it.
+const CPM_ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36,
+  Clinic: 27, LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
 const D = 86400000;
 
@@ -215,9 +207,8 @@ function census(items) {
         const bearing = S.bz < T.bz - EPS && S.tz >= T.bz - GAP;
         // §DAY_GAP_TAIL (2026-08-12): this mirrors _contactGraph's carrier clause EXACTLY,
         // including its lower-bound-only band (`S.bz >= T.tz - GAP` with no upper bound, so any
-        // element at any height above T counts). That asymmetry vs hangGate/_tierAuditRegate was
-        // measured and deliberately LEFT ALONE — see the §DAY_GAP_TAIL entry in
-        // bim-compiler prompts/4D_SCHEDULE_PERFECTION.md for the numbers that rejected changing it.
+        // element at any height above T counts). That asymmetry was measured and deliberately LEFT
+        // ALONE — see the §DAY_GAP_TAIL entry in bim-compiler prompts/4D_SCHEDULE_PERFECTION.md.
         const carrier = S.bz >= T.tz - GAP && S.tz > T.tz + EPS;
         const embedded = S.bz <= T.bz + EPS && S.tz >= T.tz - EPS;
         if (!bearing && !carrier && !embedded) continue;
@@ -248,11 +239,16 @@ function census(items) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { assert(false, 'W-MZ fixture missing: ' + dbPath); continue; }
     const db = new SQL.Database(fs.readFileSync(dbPath));
+    // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
+    // browser exposes (rates.js declares `var LABOR_RATES` at module scope, i.e. window.LABOR_RATES),
+    // so _displayTimeline's own §S6_CREW_PASS max_crews_fixed/max_crews lookup sees real per-resource
+    // caps instead of running crew-unconstrained.
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO },
-      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }) };
+      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
+      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
+      URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule };
     vm.createContext(sandbox);
-    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__remap = _twoTierRemap; this.__repair = _midairRepair;', sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
     const els = sandbox.__bxe();
     if (!els || !els.length) { assert(false, 'W-MZ ' + bld + ' element build produced nothing'); db.close(); continue; }
 
@@ -281,16 +277,11 @@ function census(items) {
     try { sched = ScheduleGate.computeSchedule(geoEls, 0, 1, maxCrews); } finally { console.log = quiet; }
 
     const items = geoEls.map(e => ({ guid: e.guid, s: sched[e.guid].start, e: sched[e.guid].end,
-      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq, phase: e.phase }));
+      bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, cls: e.cls, seq: e.seq,
+      phase: e.phase, storey: e.storey, resource: e.resource }));   // storey/resource: cpm_schedule.js reads both
     sandbox.__items = items;
-    vm.runInContext('this.__remap(this.__items);', sandbox);      // DISPLAY timeline, shipped remap
 
-    const before = census(items);
-    const preStart = items.map(it => it.s);
-    // W-MZ-8 — the OLD invariant must not be traded away for the new one. Moving a support later can
-    // leave a dependent starting before that support FINISHES, which is exactly what auditFloating
-    // measures. Compare it across the repair on the DISPLAY times (geoEls carry the element shape
-    // auditFloating wants; sched maps guid -> the times under test).
+    const before = census(items);   // RAW schedule (pre-CPM) — W-MZ-1's "before" number
     const _floatAt = () => {
       const m = {}; items.forEach(it => { m[it.guid] = { start: it.s, end: it.e }; });
       const q = console.log; console.log = () => {};
@@ -302,25 +293,31 @@ function census(items) {
     before.worst.slice(0, 3).forEach(w => console.log('    worst ' + w.cls + ' seq=' + w.seq + ' bz=' + w.bz.toFixed(2) +
       ' start=' + w.start.toFixed(1) + 'd firstSupport=' + w.sup.toFixed(1) + 'd'));
 
-    const repairLines = [];
-    sandbox.console = { log: (...a) => repairLines.push(a.join(' ')), warn: (...a) => repairLines.push(a.join(' ')) };
-    vm.runInContext('this.__repair(this.__items);', sandbox);
-    console.log((repairLines.find(l => l.indexOf('§MIDAIR_REPAIR') === 0) || '§MIDAIR_REPAIR <no log captured>') + '  [' + bld + ']');
+    const dtLines = [];
+    sandbox.console = { log: (...a) => dtLines.push(a.join(' ')), warn: (...a) => dtLines.push(a.join(' ')) };
+    const dtResult = vm.runInContext('this.__dt(this.__items);', sandbox);
+    // §S14.0 reachability proof — print it, don't assume it. Each building gets a FRESH vm context
+    // (no _displayTimeline._last cache carried in from a prior call), so `.cpm` must be exactly
+    // `true` (fresh CpmSchedule.run success) — never 'reuse' (would mean a stale cache hit, which
+    // cannot happen here) and never `false` (would mean the FALLBACK branch ran, i.e. this test
+    // silently reverted to measuring the dead chain again — the exact bug class this redesign
+    // exists to prevent).
+    const cpmOnLine = dtLines.find(l => l.indexOf('§CPM_DISPLAY on') === 0);
+    assert(dtResult && dtResult.cpm === true && !!cpmOnLine,
+      'W-MZ-CPM-PATH ' + bld + ' _displayTimeline authored via the LIVE CPM branch, not the fallback ' +
+      '(cpm=' + (dtResult && dtResult.cpm) + '; ' + (cpmOnLine || 'no §CPM_DISPLAY on log line captured') + ')');
+    console.log((cpmOnLine || '§CPM_DISPLAY <no log captured>') + '  [' + bld + ']');
 
     const after = census(items);
     const floatPost = _floatAt();
-    assert(floatPost === FLOAT_AFTER_BASELINE[bld],
-      'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
-      '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — moving an element later so it stops hanging can ' +
-      'leave a dependent starting before that support FINISHES. Deliberate and named, never silent: the joint ' +
-      'fixpoint was built and rejected on its own numbers (4 rounds, 7650 pushes, still 140 on Hospital, 0.8s->14.8s). ' +
-      'The structural fix is gate-layer, see §STRUCT_POOL_UNGATED.');
+    assert(floatPost === CPM_FLOAT_AFTER_BASELINE[bld],
+      'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + CPM_FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
+      '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — CPM authoring can leave a dependent starting ' +
+      'before its own support FINISHES (auditFloating\'s measure), a DIFFERENT invariant than midair (starting ' +
+      'before a support APPEARS). Deliberate and named, never silent.');
     assert(after.midair === 0, 'W-MZ-2 ' + bld + ' ZERO elements appear before the first thing they touch (got ' +
       after.midair + (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
       'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ')');
-    let earlier = 0;
-    items.forEach((it, i) => { if (it.s < preStart[i] - 1) earlier++; });
-    assert(earlier === 0, 'W-MZ-3 ' + bld + ' repair moved nothing EARLIER (got ' + earlier + ')');
     // W-MZ-7 — a test that can fail: drag one element back before everything it touches (what a
     // planner's bar-drag does to its elements) and the lock-gate judge must SEE it.
     if (after.probe) {
@@ -331,9 +328,9 @@ function census(items) {
         'W-MZ-7 ' + bld + ' judge catches a re-introduced hanging (moved 1 element 5d before its first contact, got midair=' + reAudit.midair + ')');
       it.s = keepS; it.e = keepE;
     } else { assert(false, 'W-MZ-7 ' + bld + ' no probe candidate found — census produced nothing to test with'); }
-    assert(after.orphan === ORPHAN_BASELINE[bld],
-      'W-MZ-4 ' + bld + ' orphans (touch nothing in the model) locked at ' + ORPHAN_BASELINE[bld] + ' (got ' + after.orphan +
-      ') — an extraction limit, reported never gated');
+    assert(after.orphan === CPM_ORPHAN_BASELINE[bld],
+      'W-MZ-4 ' + bld + ' orphans (touch nothing in the model) locked at ' + CPM_ORPHAN_BASELINE[bld] + ' (got ' + after.orphan +
+      ') — an extraction limit, reported never gated, purely geometric (same either display-authoring path)');
   }
   finish();
 })();
