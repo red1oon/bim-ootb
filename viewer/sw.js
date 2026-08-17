@@ -8,7 +8,15 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1057';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1058';   // bump on each deploy; per-change detail is the git commit message.
+// v1058 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, the axis near-duplicate fix: computeDays()'s
+// _ganttAxisEnd used the SAME cliff rule stage 2 fixed inside buildGanttTasks() (2nd-98th
+// percentile above n=20, true max below), applied to the GLOBAL end_ts population instead of one
+// bar's span. Fleet-measured live (before fix): every one of the 7 buildings had bars whose real
+// end exceeded the axis they were drawn against — worst LTU 17.8d/12 bars, Hospital 10.6d/5 bars
+// (top floors squashed toward the panel edge). Data-correct, draw-wrong. Now uses the same shared
+// _tukeyBound as the bar-span fix — 0 overflow, all 7 buildings, after. _GANTT_CACHE_VERSION
+// 33->34 bumped alongside.
 // v1057 (2026-08-17) 4D_GANTT_TM_REFACTOR.md stage 2: buildGanttTasks()'s bar-span rule replaced
 // (2nd-98th-percentile-above-n20/true-min-max-below -> uniform Tukey-fence, no cliff) — the
 // mechanism behind the live "one pile, full project length" report. _GANTT_CACHE_VERSION 32->33
