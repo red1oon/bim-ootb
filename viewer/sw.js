@@ -8,7 +8,15 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1055';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1056';   // bump on each deploy; per-change detail is the git commit message.
+// v1056 (2026-08-17) §S20 Part B (4D_GANTT_TM_REFACTOR.md): time_machine.js's dead legacy
+// display-repair chain (_twoTierRemap/_midairRepair/_tier1Serialize/_tierAuditRegate + their
+// _tier1Extents/_tier1Protrusion/_zoneOf/_TIER1_ORDER helpers — reachable only via the now-deleted
+// ?cpm4d=0 fallback, confirmed twice this lane never reached it live) DELETED, -540 lines. No
+// schedule-affecting logic changed (the CPM branch, the only path ever executed live, is byte-for-
+// byte unchanged) — _GANTT_CACHE_VERSION NOT bumped, fleet floating/storey/crew numbers measured
+// IDENTICAL before/after (probe_cpm_schedule.js, probe_cpm_display_path.js). This bump is precache
+// hygiene only (time_machine.js content changed).
 // v1051 (2026-08-16) §S7_OUTLIER_DELTA: Gantt drag/resize no longer collapses (437/gesture) or
 // INVERTS (217/gesture) the ops riding outside their task's drawn Tukey bar — outsiders get the
 // window's uniform start delta with true duration preserved (time_machine.js, 4D_GANTT_TM_REFACTOR.md §S7).

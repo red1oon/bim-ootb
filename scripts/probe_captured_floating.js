@@ -11,6 +11,7 @@ const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
+const CpmScheduleMod = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));   // §S20: EXP6/7/8's live-path source
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
@@ -29,10 +30,9 @@ function buildFn(srcParts, ret) {
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
 const _ogSupportSweep = buildFn([sliceFn(tmSrc, '_ogSupportSweep')], '_ogSupportSweep');
 const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
-const _TIER1_ORDER_LINE = "var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];";
-// §MIDAIR_REPAIR_CONTACTGRAPH_DEDUP (bim-ootb PR #1378): _midairRepair now calls _contactGraph
-// instead of inlining its own copy, so this standalone build needs _contactGraph's source too.
-const _midairRepair = buildFn([_TIER1_ORDER_LINE, sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairRepair')], '_midairRepair');
+// §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): the module-scope _midairRepair const (and the
+// _TIER1_ORDER_LINE string it needed) that used to live here are retired along with EXP3/EXP5/EXP6
+// below — their only consumers. time_machine.js's _midairRepair/_twoTierRemap are DELETED.
 
 function _slug(name) { return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
 
@@ -441,169 +441,28 @@ async function main() {
   console.log('§CAP_PROXY_EDGE_CHECK sameTask=' + sameTask + ' edgeExists=' + edgeExists + ' edgeMissing=' + edgeMissing);
   console.log('§CAP_PROXY_EDGE_SAMPLES ' + JSON.stringify(sampleGaps, null, 1));
 
-  // ══ EXPERIMENT 3 — repair BEFORE the window is computed, not after ═══════════════════════════
-  // Prior 2 attempts (documented, both ruled out) ran a repair AFTER materializeZones had already
-  // computed each task's window from the raw generative times, so a cross-zone push necessarily
-  // desynced the display from the already-fixed Gantt dates. Untried variant: run the SAME proven
-  // fixpoint (_midairRepair, already gets generative floating to 0 on all 7 buildings) on the RAW
-  // per-element schedule BEFORE deriveZones ever computes zone start/end — so materializeZones'
-  // window is built FROM the corrected times, and can never be "desynced" from a Gantt that is
-  // itself derived from those same corrected times. No display-layer trick, no bolt-on: this is
-  // "give the task a window that already accounts for its real physical dependency", literally.
-  const preZoneItems = _allScheduled.map(o => Object.assign({}, o));
-  const mrStats = _midairRepair(preZoneItems);
-  console.log('§EXP3_MIDAIR_REPAIR_RAW ' + JSON.stringify(mrStats));
-  const repairedCensusRaw = floatingCensus(preZoneItems.map(o => Object.assign({}, o)));
-  console.log('§EXP3_RAW_POST_REPAIR midair=' + repairedCensusRaw.midair);
-
-  // Re-derive zones/windows from the REPAIRED per-element times (same deriveZones call, different input)
-  const repairedSchedule = {};
-  preZoneItems.forEach(function (it) { repairedSchedule[it.guid] = { start: it.s, end: it.e }; });
-  const rolled2 = ScheduleGate.deriveZones(elements, repairedSchedule);
-  const minStart2 = Math.min.apply(null, rolled2.zones.map(z => z.start));
-  const zoneTaskId2 = {}, taskWin2 = {};
-  rolled2.zones.forEach(function (z) {
-    const tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
-    zoneTaskId2[z.id] = tid;
-    const sDays = Math.round((z.start - minStart2) / 86400000);
-    let eDays = Math.round((z.end - minStart2) / 86400000);
-    if (eDays <= sDays) eDays = sDays + 1;
-    taskWin2[tid] = { s: minStart2 + sDays * 86400000, e: minStart2 + eDays * 86400000 };
-  });
-  // compare total project span: does authoring off repaired times blow up totalDays?
-  const maxEnd2 = Math.max.apply(null, rolled2.zones.map(z => z.end));
-  const totalDays2 = Math.round((maxEnd2 - minStart2) / 86400000);
-  const maxEnd1 = Math.max.apply(null, rolled.zones.map(z => z.end));
-  const totalDays1 = Math.round((maxEnd1 - minStart) / 86400000);
-  console.log('§EXP3_TOTAL_DAYS before=' + totalDays1 + ' after=' + totalDays2 + ' delta=' + (totalDays2 - totalDays1));
-
-  // full pipeline on the repaired-zone windows: same rescale + _ogSupportSweep as the shipped path
-  const exp3Items = preZoneItems.map(function (o) {
-    return Object.assign({}, o, { task: zoneTaskId2[o.zoneId] });
-  });
-  const _taskSpan3 = {};
-  exp3Items.forEach(function (item) {
-    const sp = _taskSpan3[item.task] || (_taskSpan3[item.task] = { min: Infinity, max: -Infinity });
-    if (item.s < sp.min) sp.min = item.s;
-    if (item.e > sp.max) sp.max = item.e;
-  });
-  exp3Items.forEach(function (item) {
-    const w = taskWin2[item.task], sp = _taskSpan3[item.task];
-    const tSpan = Math.max(1, w.e - w.s), lsSpan = Math.max(1, sp.max - sp.min);
-    item.s = w.s + Math.floor(((item.s - sp.min) / lsSpan) * tSpan);
-    item.e = w.s + Math.floor(((item.e - sp.min) / lsSpan) * tSpan);
-    if (item.e <= item.s) item.e = item.s + 60000;
-  });
-  const exp3PreRepair = floatingCensus(exp3Items.map(o => Object.assign({}, o)));
-  console.log('§EXP3_PRE_OGSWEEP_FLOATING midair=' + exp3PreRepair.midair);
-  const exp3ForRepair = exp3Items.map(o => Object.assign({}, o));
-  _ogSupportSweep(exp3ForRepair, taskWin2);
-  const exp3Post = floatingCensus(exp3ForRepair);
-  console.log('§EXP3_FINAL total=' + exp3Post.midair + '/' + exp3ForRepair.length +
-    ' orphans=' + exp3Post.orphans + ' grounded=' + exp3Post.grounded +
-    ' ok=' + (exp3ForRepair.length - exp3Post.midair - exp3Post.orphans - exp3Post.grounded));
-  console.log('§EXP3_FINAL_BYCLASS ' + JSON.stringify(exp3Post.byClass));
-
-  // ══ §CHASE_TO_ZERO_WINDOW_AUTHORING (2026-08-16) — EXP5 family. The §CROSSTASK_JUDGE_PARITY
-  // residual is 100% WINDOW_BLOCKED, so zero requires the BARS to change, not the elements'
-  // relation to their bars. Both candidates run the FULL shipped pipeline (clamp rescale ->
-  // _ogSupportSweep -> _cjpJudgeParity) — the third-lever lesson: nothing is judged mid-pipe. ═════
-  function runPipeline(base, win) {
-    const items = base.map(o => Object.assign({}, o));
-    applyGapClampRescale(items, win);
-    _ogSupportSweep(items, win);
-    _cjpJudgeParity(items, win);
-    return items;
-  }
-  function measureWin(items, win) {
-    const c = floatingCensus(items.map(o => Object.assign({}, o)));
-    let inW = 0, outW = 0;
-    items.forEach(it => { const w = win[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW++; else outW++; });
-    return { c, inW, outW };
-  }
-  const DAY5 = 86400000;
-
-  // EXP5a — minimal authored-END extension, whole-pipeline fixpoint. Only ends move, only where a
-  // WINDOW_BLOCKED element measurably needs it, day-quantized, iterated because an extension
-  // changes that task's own rescale (durFactor) and can move other tasks' first-contact times.
-  {
-    const win5 = {}; Object.keys(taskWin).forEach(t => win5[t] = { s: taskWin[t].s, e: taskWin[t].e });
-    const extTotals = {};
-    let iter = 0, final = null, converged = false;
-    for (; iter < 8; iter++) {
-      const items = runPipeline(_allScheduled, win5);
-      const m = measureWin(items, win5);
-      const G5 = _contactGraph(items);
-      const ext = {}; let blocked = 0; const gapDays = [];
-      for (let i = 0; i < items.length; i++) {
-        const list = G5.contacts[i]; if (!list) continue;
-        const T = items[i];
-        let first = Infinity;
-        for (const k of list) { if (items[k].s < first) first = items[k].s; }
-        if (first <= T.s + 1) continue;
-        const w = win5[T.task]; if (!w) continue;
-        const dur = Math.max(60000, T.e - T.s);
-        const need = (first + dur) - w.e;
-        if (need > 0) { blocked++; gapDays.push(need / DAY5); ext[T.task] = Math.max(ext[T.task] || 0, need); }
-      }
-      if (iter === 0 && gapDays.length) {
-        gapDays.sort((a, b) => a - b);
-        const gN = gapDays.length;
-        console.log('§EXP5_DIAG blockedNeedingExt=' + blocked + ' tasks=' + Object.keys(ext).length +
-          ' needDays p50=' + gapDays[Math.floor(gN * 0.5)].toFixed(1) +
-          ' p90=' + gapDays[Math.floor(gN * 0.9)].toFixed(1) + ' max=' + gapDays[gN - 1].toFixed(1));
-        console.log('§EXP5_DIAG_TASKS ' + JSON.stringify(Object.entries(ext).map(e => [e[0], (e[1] / DAY5).toFixed(1)]).sort((a, b) => b[1] - a[1]).slice(0, 8)));
-      }
-      console.log('§EXP5A_ITER ' + iter + ' floating=' + m.c.midair + ' blockedNeedingExt=' + blocked +
-        ' inWindow=' + m.inW + ' outWindow=' + m.outW);
-      final = m;
-      if (!blocked) { converged = true; break; }
-      Object.keys(ext).forEach(t => {
-        const addDays = Math.ceil(ext[t] / DAY5);
-        win5[t].e += addDays * DAY5;
-        extTotals[t] = (extTotals[t] || 0) + addDays;
-      });
-    }
-    const extList = Object.entries(extTotals).sort((a, b) => b[1] - a[1]);
-    let maxE0 = 0, maxE1 = 0;
-    Object.keys(taskWin).forEach(t => { if (taskWin[t].e > maxE0) maxE0 = taskWin[t].e; });
-    Object.keys(win5).forEach(t => { if (win5[t].e > maxE1) maxE1 = win5[t].e; });
-    console.log('§EXP5A_FINAL floating=' + final.c.midair + ' converged=' + converged + ' iters=' + (iter + 1) +
-      ' tasksExtended=' + extList.length + ' inWindow=' + final.inW + ' outWindow=' + final.outW +
-      ' totalDaysDelta=' + Math.round((maxE1 - maxE0) / DAY5) +
-      ' orphans=' + final.c.orphans + ' grounded=' + final.c.grounded);
-    console.log('§EXP5A_EXT_DAYS_BYTASK ' + JSON.stringify(extList.slice(0, 8)));
-  }
-
-  // EXP5b — EXP3 revisited WITH the parity layer: windows derived FROM the repaired raw times,
-  // then the full shipped pipeline. preZoneItems/taskWin2/zoneTaskId2 come from the EXP3 block.
-  {
-    const base5b = preZoneItems.map(o => Object.assign({}, o, { task: zoneTaskId2[o.zoneId] }));
-    const items = runPipeline(base5b, taskWin2);
-    const m = measureWin(items, taskWin2);
-    console.log('§EXP5B_FINAL floating=' + m.c.midair + ' inWindow=' + m.inW + ' outWindow=' + m.outW +
-      ' orphans=' + m.c.orphans + ' grounded=' + m.c.grounded);
-    console.log('§EXP5B_FINAL_BYCLASS ' + JSON.stringify(m.c.byClass));
-  }
-
-  // ══ EXP6 — captured pipeline (2026-08-16, §CHASE_TO_ZERO_WINDOW_AUTHORING correction from the
-  // user's live Hospital log). Everything above feeds the rescale from computeSchedule's RAW times
-  // — the real injectGantt overlay reads kernel_ops timestamps, which carry the TWO-TIER DISPLAY
-  // timeline (_twoTierRemap + _midairRepair, §TIER_SERIAL 420d on Hospital), while task windows are
-  // authored from the RAW schedule (334d). Live divergence proof at the time: browser
-  // §PHASE_OVERLAP_SUPPORT_GUARD pushed=4117 vs this probe's raw-fed 1152.
-  //
-  // ⚠ RETRACTED LABEL, KEPT CODE (§S13.8/§S14.0, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md
-  // §PATHS NOT TO TAKE #1/#2): this was called "BROWSER-FAITHFUL" when written — that claim is now
-  // KNOWN FALSE. `_twoTierRemap`/`_midairRepair` are reachable ONLY via `_displayTimeline`'s
-  // `§CPM_DISPLAY_FALLBACK` branch (time_machine.js), which has never fired live in this lane
-  // (`§CPM_DISPLAY_REUSE` hits it instead). This section slices and calls those two functions
-  // directly — it measures a real function's behavior, not what the live default path executes.
-  // §S14.0 re-measured the SAME per-phase/per-storey table on the confirmed-live `CpmSchedule.run`
-  // path (bim-ootb PR #1421, `probe_cpm_display_path.js`) and the scrambling this section reproduces
-  // did NOT reproduce there. Do not cite STOREY_PHASE_TABLE output from this section as a live root
-  // cause without ALSO printing, in the same log, proof this exact call matches the live default
-  // path — the standing guardrail those sections established. ════════════════════════════════════
+  // EXP3 + EXP5 family (repair-before-window-computation experiments, and the two candidate
+  // window-authoring fixes derived from them) RETIRED §S20 Part B (2026-08-17,
+  // 4D_GANTT_TM_REFACTOR.md) — their entire subject was `_midairRepair` (the dead legacy
+  // display-repair chain, deleted from time_machine.js; reachable only via the now-deleted
+  // ?cpm4d=0 fallback, confirmed never reached live). §CHASE_TO_ZERO_WINDOW_AUTHORING's real
+  // conclusion — author task windows FROM the display timeline, not the raw schedule separately —
+  // already SHIPPED as production code (`_tmDisplayRemap`, schedule_author.js's `displayRemap`
+  // hook) and is gated by `witness_zone_display_authoring.js` (W-ZDA-1..6) against the LIVE CPM
+  // path, which supersedes what this section measured. EXP6/EXP7/EXP8 below (kept, EXP6 rebuilt
+  // against the live CPM path in the same PR) already answer the same class of question these did.
+  const DAY5 = 86400000;   // still needed by EXP6/EXP7/EXP8 below (was defined in the EXP5 header)
+  // ══ EXP6 — element build + CPM-authored display timeline, windows from the RAW schedule
+  // (materializeZones semantics). §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md) REBUILT against
+  // the live default path: this used to slice+call the dead _twoTierRemap/_midairRepair chain
+  // directly (⚠ already RETRACTED as "BROWSER-FAITHFUL" per §S13.8/§S14.0 — that chain is reachable
+  // ONLY via _displayTimeline's §CPM_DISPLAY_FALLBACK branch, never fired live) — now authors the
+  // SAME `disp` timeline EXP7/EXP8 below consume via `_displayTimeline`'s CPM branch
+  // (`CpmSchedule.run`, required as the real module, never sliced), with the same reachability proof
+  // discipline §S14.0 established (print it, don't assume it). The EXP6-specific measurement passes
+  // (§EXP6_*, the STOREY_PHASE_TABLE remap-vs-raw diagnostic, §STOREY_ORDER_L1_DIAG) are retired
+  // with the dead chain they measured — EXP7/EXP8's own numbers against the live CPM-authored `disp`
+  // are the current answer to the same question. ════════════════════════════════════════════════
   {
     const vm = require('vm');
     function sliceAt(src, name, which, optional) {
@@ -620,24 +479,21 @@ async function main() {
         from = i + 1;
       }
     }
-    let mrCount = 0, mrFrom = 0;
-    for (;;) { const k = tmSrc.indexOf('function _midairRepair(', mrFrom); if (k < 0) break; mrCount++; mrFrom = k + 1; }
     const zoneParts = [sliceAt(tmSrc, '_zoneIndexBuild', 0, true), sliceAt(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
     const classifyParts = [sliceAt(tmSrc, '_classifyNameOverride', 0, true), sliceAt(tmSrc, '_classifyRule', 0, true)].filter(Boolean);
-    const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
+    const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left reachable post-Part-B
       (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
       sliceAt(tmSrc, '_zoneOf', 0, true) || '', classifyParts[0] || '', classifyParts[1] || '',
       sliceAt(tmSrc, '_promoteRoofLoadPath'), sliceAt(tmSrc, '_buildXrayElements'),
-      sliceAt(tmSrc, '_tier1Extents'), sliceAt(tmSrc, '_tier1Serialize'),
-      sliceAt(tmSrc, '_tier1Protrusion'), sliceAt(tmSrc, '_tierAuditRegate'),
-      sliceAt(tmSrc, '_twoTierRemap'), sliceAt(tmSrc, '_contactGraph'),
-      sliceAt(tmSrc, '_midairRepair', mrCount - 1)].join('\n');
+      sliceAt(tmSrc, '_contactGraph'), sliceAt(tmSrc, '_midairAudit'),
+      sliceAt(tmSrc, '_displayTimelineRemember'), sliceAt(tmSrc, '_displayTimeline')].join('\n');
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: RATES.SEQUENCE_RULES, SEQUENCE_DEFAULT: RATES.SEQUENCE_DEFAULT,
-        SEQUENCE_NAME_OVERRIDES: RATES.SEQUENCE_NAME_OVERRIDES },
-      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }) };
+        SEQUENCE_NAME_OVERRIDES: RATES.SEQUENCE_NAME_OVERRIDES, LABOR_RATES: RATES.LABOR_RATES },
+      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
+      URLSearchParams: URLSearchParams, CpmSchedule: CpmScheduleMod };
     vm.createContext(sandbox);
-    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__remap = _twoTierRemap; this.__repair = _midairRepair;', sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
     const els6 = sandbox.__bxe();
     const nameOf = {};
     const nr = db.exec("SELECT guid, ifc_class, COALESCE(element_name,'') FROM elements_meta");
@@ -657,119 +513,26 @@ async function main() {
       e.installSecs = ScheduleAuthor._installSecs(e.cls, rule, RATES.LABOR_RATES, realQty, lengthRatio);
     });
     const sched6 = ScheduleGate.computeSchedule(geoEls, 0, 1, maxCrews, SHIFT_HOURS);
-    // windows from RAW schedule — materializeZones semantics (what the browser's tasks table holds)
-    const rolled6 = ScheduleGate.deriveZones(geoEls, sched6);
-    const minStart6 = Math.min.apply(null, rolled6.zones.map(z => z.start));
-    const zoneTaskId6 = {}, taskWin6 = {};
-    rolled6.zones.forEach(function (z) {
-      const tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
-      zoneTaskId6[z.id] = tid;
-      const sD = Math.round((z.start - minStart6) / DAY5);
-      let eD = Math.round((z.end - minStart6) / DAY5);
-      if (eD <= sD) eD = sD + 1;
-      taskWin6[tid] = { s: minStart6 + sD * DAY5, e: minStart6 + eD * DAY5 };
-    });
-    // DISPLAY timeline (what kernel_ops actually carries): two-tier remap + midair repair
+    // §S20: windows-from-RAW-schedule (zoneTaskId6/taskWin6/rolled6/minStart6) dropped — they fed
+    // ONLY the retired §EXP6_* raw-vs-CPM comparison; EXP7/EXP8 below derive their own windows FROM
+    // the CPM-authored `disp` (zoneTaskId7/taskWin7), which is the live default path's own behavior.
+    // DISPLAY timeline (what kernel_ops actually carries): §S20 authors it via _displayTimeline's
+    // CPM branch (CpmSchedule.run) instead of the deleted _twoTierRemap+_midairRepair chain.
     const disp = geoEls.map(e => ({ guid: e.guid, s: sched6[e.guid].start, e: sched6[e.guid].end,
       bz: e.base_z, tz: e.top_z, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
-      cls: e.cls, seq: e.seq, phase: e.phase, storey: e.storey }));
-    const _preRemapS = {}; disp.forEach(function (o) { _preRemapS[o.guid] = o.s; });
+      cls: e.cls, seq: e.seq, phase: e.phase, storey: e.storey, resource: e.resource }));   // resource: cpm_schedule.js's crew pass reads it
     sandbox.__items = disp;
-    vm.runInContext('this.__remap(this.__items);', sandbox);
-    // §STOREY_ORDER_REPORT — split remap vs repair to localize suspect (c) inside DISPLAY.
-    storeyOrderReport(disp.map(function (o) {
-      return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
-    }), 'POST_REMAP_LEVEL');
-    // §STOREY_PHASE_ORDER (2026-08-17) — the storey report's p50 is taken over ALL of a storey's
-    // elements, so a storey whose mix is 58% MEP and one that is mostly structure are compared on
-    // different things: a global phase ordering alone will make the MEP-heavy storey's median look
-    // late and register as an "inversion" with nothing actually out of order. This dump asks the
-    // question the aggregate cannot: WITHIN one phase, is p50 start still monotonic in z? If yes,
-    // the inversion is a mix artifact of the metric; if no, the ordering is genuinely broken.
-    if (process.env.STOREY_PHASE_TABLE) {
-      console.log('§STOREY_PHASE_TABLE_REACHABILITY_WARNING this table is computed from a sliced ' +
-        '_twoTierRemap/_midairRepair call (EXP6, above), NOT the live default path — see §S13.8/' +
-        '§S14.0 in bim-compiler prompts/4D_GANTT_TM_REFACTOR.md. Do not write up a number from ' +
-        'here as a live root cause without independent live-path proof (probe_cpm_display_path.js).');
-      // Run the SAME table on the raw pre-remap starts and on the post-remap ones, so the answer
-      // to "does the remap break it or was it already broken" is one diff instead of two runs.
-      [['RAW', function (o) { return _preRemapS[o.guid]; }],
-       ['POST_REMAP', function (o) { return o.s; }]].forEach(function (mode) {
-      const startOf = mode[1];
-      const byKey = {};
-      disp.forEach(function (o) {
-        const k = (o.phase || '_NONE') + '||' + ScheduleGate.collapsePhase(o.storey);
-        (byKey[k] = byKey[k] || { s: [], z: [] }).s.push(startOf(o));
-        byKey[k].z.push(o.bz);
-      });
-      const gmin = Math.min.apply(null, disp.map(startOf));
-      const phases = {};
-      Object.keys(byKey).forEach(function (k) {
-        const parts = k.split('||'), ph = parts[0], st = parts[1], g = byKey[k];
-        const ss = g.s.slice().sort(function (a, b) { return a - b; });
-        (phases[ph] = phases[ph] || []).push({ st: st, n: ss.length,
-          z: g.z.reduce(function (a, b) { return a + b; }, 0) / g.z.length,
-          p50: Math.round((ss[Math.floor(ss.length / 2)] - gmin) / DAY5) });
-      });
-      Object.keys(phases).sort().forEach(function (ph) {
-        const rows = phases[ph].filter(function (r) { return r.st !== 'Unknown' && r.n >= 20; })
-          .sort(function (a, b) { return a.z - b.z; });
-        let v = 0, worst = 0;
-        for (let i = 1; i < rows.length; i++)
-          if (rows[i].p50 < rows[i - 1].p50) { v++; worst = Math.max(worst, rows[i - 1].p50 - rows[i].p50); }
-        console.log('§STOREY_PHASE_ORDER ' + mode[0] + ' phase=' + ph + ' storeys=' + rows.length +
-          ' violations=' + v + '/' + Math.max(0, rows.length - 1) + ' worst=' + worst + 'd ' +
-          JSON.stringify(rows.map(function (r) { return [r.st, r.z.toFixed(1), r.n, r.p50]; })));
-      });
-      });
-    }
-    // §STOREY_ORDER_L1_DIAG — who exactly moved, and by how much, within raw storey "Level 1"?
-    {
-      const l1 = disp.filter(function (o) { return o.storey === 'Level 1'; })
-        .map(function (o) { return Object.assign({}, o, { delta: Math.round((o.s - _preRemapS[o.guid]) / DAY5) }); })
-        .sort(function (a, b) { return b.delta - a.delta; });
-      console.log('§STOREY_ORDER_L1_DIAG n=' + l1.length + ' top=' + JSON.stringify(
-        l1.slice(0, 8).map(function (o) { return [o.guid, o.cls, o.phase, o.delta, o._t1Straggler || false]; })));
-      const byPhaseDelta = {};
-      l1.forEach(function (o) {
-        const p = byPhaseDelta[o.phase] || (byPhaseDelta[o.phase] = { n: 0, sumDelta: 0, maxDelta: -Infinity });
-        p.n++; p.sumDelta += o.delta; if (o.delta > p.maxDelta) p.maxDelta = o.delta;
-      });
-      console.log('§STOREY_ORDER_L1_BYPHASE ' + JSON.stringify(Object.entries(byPhaseDelta).map(function (e) {
-        return [e[0], e[1].n, Math.round(e[1].sumDelta / e[1].n), e[1].maxDelta];
-      })));
-    }
-    vm.runInContext('this.__repair(this.__items);', sandbox);
+    const dtLines = [];
+    sandbox.console = { log: (...a) => dtLines.push(a.join(' ')), warn: (...a) => dtLines.push(a.join(' ')) };
+    const dtResult = vm.runInContext('this.__dt(this.__items);', sandbox);
+    sandbox.console = { log: () => {}, warn: () => {} };
+    // §S14.0 reachability proof — print it, don't assume it.
+    const cpmOnLine = dtLines.find(l => l.indexOf('§CPM_DISPLAY on') === 0);
+    console.log('§EXP6_CPM_PATH cpm=' + (dtResult && dtResult.cpm) + ' ' +
+      (cpmOnLine || 'no §CPM_DISPLAY on log line captured'));
     storeyOrderReport(disp.map(function (o) {
       return { storey: ScheduleGate.collapsePhase(o.storey), bz: o.bz, s: o.s };
     }), 'DISPLAY_LEVEL');
-    let noTask = 0;
-    const cap6 = disp.map(o => {
-      const zid = (o.phase || '_UNPHASED') + '||' + ScheduleGate.collapsePhase(o.storey);
-      const tid = zoneTaskId6[zid];
-      if (!tid) { noTask++; return null; }
-      return Object.assign({}, o, { task: tid, zoneId: zid });
-    }).filter(Boolean);
-    console.log('§EXP6_INPUT n=' + cap6.length + ' noTask=' + noTask +
-      ' displaySpanDays=' + Math.round((Math.max.apply(null, disp.map(o => o.e)) - Math.min.apply(null, disp.map(o => o.s))) / DAY5) +
-      ' rawWindowSpanDays=' + Math.round((Math.max.apply(null, Object.values(taskWin6).map(w => w.e)) - minStart6) / DAY5));
-    const rawC6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
-    console.log('§EXP6_DISPLAY_FLOATING midair=' + rawC6.midair + ' orphans=' + rawC6.orphans + ' (pre-overlay, the kernel_ops truth)');
-    applyGapClampRescale(cap6, taskWin6);
-    const preC6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
-    console.log('§EXP6_PRE_REPAIR_FLOATING midair=' + preC6.midair);
-    const sweep6 = _ogSupportSweep(cap6, taskWin6);
-    console.log('§EXP6_OGSWEEP pushed=' + sweep6.pushed + ' sweeps=' + sweep6.sweeps + ' (live browser said 4117/2 on Hospital)');
-    const postSweep6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
-    console.log('§EXP6_POST_SWEEP_FLOATING midair=' + postSweep6.midair + ' byClass=' + JSON.stringify(postSweep6.byClass));
-    const r6 = _cjpJudgeParity(cap6, taskWin6);
-    const final6 = floatingCensus(cap6.map(o => Object.assign({}, o)));
-    let inW6 = 0, outW6 = 0;
-    cap6.forEach(it => { const w = taskWin6[it.task]; if (!w) return; if (it.s >= w.s && it.e <= w.e) inW6++; else outW6++; });
-    console.log('§EXP6_FINAL floating=' + final6.midair + '/' + cap6.length + ' parityPushed=' + r6.pushed +
-      ' (live said 542) inWindow=' + inW6 + ' outWindow=' + outW6 +
-      ' orphans=' + final6.orphans + ' grounded=' + final6.grounded);
-    console.log('§EXP6_FINAL_BYCLASS ' + JSON.stringify(final6.byClass));
 
     // ── EXP7 — author the windows FROM the display timeline (the schedule the movie actually
     // plays), so windows and element times describe ONE schedule instead of two. Same overlay

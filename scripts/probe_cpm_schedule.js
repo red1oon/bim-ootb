@@ -7,8 +7,12 @@
 //   §CPM_FLOATING    — floatingCensus (the judge) on CPM output; acceptance: 0 structural
 //                      (footing/column/beam/slab), total confined to cycle-break population
 //   §CPM_STOREY      — storeyOrderReport at LEVEL granularity on CPM output; acceptance: 0 violations
-//   §CPM_TIMING      — CPM build+solve wall-clock vs one _tierAuditRegate call (the documented
-//                      78-90% dominant cost of the shipped pipeline) on the same items
+//   §CPM_TIMING      — CPM build+solve wall-clock (own components: contact/build/solve)
+// §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): §CPM_TIMING used to also report a one-call
+// _tierAuditRegate wall-clock as a comparison baseline ("the documented 78-90% dominant cost of the
+// shipped pipeline") — _tierAuditRegate (time_machine.js's dead legacy repair chain) is deleted in
+// this same PR, so there is nothing left to compare against; the comparison line and its regateMs
+// field are removed, CPM's own timing breakdown is unaffected and kept.
 // Loading pattern verbatim from probe_captured_floating.js. Read the log after every run.
 'use strict';
 const fs = require('fs');
@@ -33,7 +37,6 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
-const _tierAuditRegate = buildFn([sliceFn(tmSrc, '_tierAuditRegate')], '_tierAuditRegate');
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
@@ -306,15 +309,10 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPM_WINDOWS derivedTasks=' + Object.keys(win).length +
     ' makespanDays=' + res.solution.makespanDays.toFixed(1));
 
-  // §CPM_TIMING — vs ONE _tierAuditRegate call (itself only 1 of the 8 passes CPM replaces, and
-  // _twoTierRemap calls it up to 6+1 times) on a disposable copy of the same items.
-  const regateItems = items.map(o => Object.assign({}, o));
-  const tR0 = Date.now();
-  const reg = _tierAuditRegate(regateItems, {}, false);
-  const tR1 = Date.now();
+  // §S20 Part B: the _tierAuditRegate one-call timing comparison was removed here (see file header)
+  // — CPM's own build+solve breakdown is still printed via §CPM_WINDOWS's neighbor line below.
   console.log('§CPM_TIMING cpmTotalMs=' + res.ms.total + ' (contact=' + res.ms.contact +
-    ' build=' + res.ms.build + ' solve=' + res.ms.solve + ') tierAuditRegateMs=' + (tR1 - tR0) +
-    ' regatePushed=' + reg.pushed + ' speedup=' + ((tR1 - tR0) / Math.max(1, res.ms.total)).toFixed(2) + 'x');
+    ' build=' + res.ms.build + ' solve=' + res.ms.solve + ')');
 
   const pass = census.midair === 0 && storeyRes.violations === 0 && crewViol === 0;
   console.log('§CPM_ACCEPT ' + name + ' floating=' + census.midair + ' structural=' + structural +
@@ -323,7 +321,7 @@ async function runBuilding(SQL, RATES, name) {
     ' cycleDrops=' + JSON.stringify(res.solution.drops) + ' ' + (pass ? 'PASS' : 'FAIL'));
   return { name, midair: census.midair, structural, storeyViolations: storeyRes.violations,
            crewViol,
-           rawMidair: rawCensus.midair, cpmMs: res.ms.total, regateMs: tR1 - tR0, parity: mismatch === 0 };
+           rawMidair: rawCensus.midair, cpmMs: res.ms.total, parity: mismatch === 0 };
 }
 
 async function main() {
@@ -339,7 +337,7 @@ async function main() {
     if (r.midair !== 0 || r.storeyViolations !== 0 || !r.parity || r.crewViol !== 0) fails++;
     return [r.name, 'raw=' + r.rawMidair, 'cpm=' + r.midair, 'str=' + r.structural,
             'storeyViol=' + r.storeyViolations, 'crewViol=' + r.crewViol,
-            'cpmMs=' + r.cpmMs, 'regateMs=' + r.regateMs];
+            'cpmMs=' + r.cpmMs];
   })));
   console.log('§CPM_FLEET_VERDICT buildings=' + out.length + ' fails=' + fails + ' ' + (fails === 0 ? 'PASS' : 'FAIL'));
   process.exit(fails === 0 ? 0 : 1);
