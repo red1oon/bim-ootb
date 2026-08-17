@@ -8,7 +8,16 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1058';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1059';   // bump on each deploy; per-change detail is the git commit message.
+// v1059 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, E3 gate fix: cpm_schedule.js's milestone() no longer
+// exempts stragglers from feeding their own phase's completion gate ("phase done" now means the
+// WHOLE group, not a filtered subset). Verified fleet-wide: floating=0/7 unaffected (only 'member'
+// tidiness edges changed, never E1/E2 physics); the gate itself now matches true bulk completion
+// exactly on Duplex/HHS/Hospital (e.g. HHS Level 1 t1Complete 0.2d->27.7d). Real, reported
+// caveat: ~24% of MEP Rough-in at HHS Level 1 still starts early via legitimate cycle-breaking
+// (the same deadlock-avoidance mechanism the removed exemption used to provide preemptively, now
+// resolved per-cycle by solve()'s existing Round-1 breaker instead) — not silently patched around.
+// _GANTT_CACHE_VERSION 34->35 bumped alongside.
 // v1058 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, the axis near-duplicate fix: computeDays()'s
 // _ganttAxisEnd used the SAME cliff rule stage 2 fixed inside buildGanttTasks() (2nd-98th
 // percentile above n=20, true max below), applied to the GLOBAL end_ts population instead of one
