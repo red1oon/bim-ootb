@@ -6980,7 +6980,7 @@
     return { s: s, e: e };
   }
 
-  function retimeTaskElements(db, barsByTask, moved) {
+  function retimeTaskElements(db, barsByTask, moved, tasksBefore) {
     var upd = db.prepare("UPDATE kernel_ops SET timestamp = ?, parameters = ? " +
       "WHERE op_type = 'ELEMENT_PLACE' AND output_guid = ?");
     var opByGuid = {}, i;
@@ -6991,10 +6991,54 @@
     // outliers M2 deliberately leaves riding outside the bar) and what duration _retimeSpan hands
     // each one back. collapsed = duration crushed to the 60s floor; inverted = end before start.
     var audOutside = 0, audCollapsed = 0, audInverted = 0, audMinDur = Infinity, audMaxDur = -Infinity;
+    // §S22_EPOCH_FIX (4D_GANTT_TM_REFACTOR.md §S22, MEASURED 2026-08-17 on a real +10d drag —
+    // Clinic TASK_MEP_Rough_in_Level_1: bar.startTs/endTs went 1970-01-09..1970-03-23 -> AFTER the
+    // drag, 2026-08-23..2026-11-18. m.start/m.finish (ScheduleAuthor's moveTaskCascade/resizeTask/
+    // shiftSchedule/shiftTasks result) are REAL absolute calendar dates on the `tasks` table's OWN
+    // clock (materializeZones seeds it from real "today", schedule_author.js:386/480 — `start` opt +
+    // day-count added via _addDays). bar.startTs/endTs (oS/oE) and every op's start_ts/end_ts are on
+    // the TM's OWN internal clock (kernel_ops.timestamp, sourced from cpm_schedule.js's zero-anchored
+    // day-offset solve — confirmed near-1970 by design, matching the raw solver dumps quoted
+    // elsewhere in this lane). Date.parse(m.start)-ing directly and feeding it to _retimeSpan
+    // alongside oS/oE (a DIFFERENT, day-offset clock) spliced the dragged task's ops onto a
+    // timescale ~57 YEARS from the rest of the untouched project: _projectEnd (computeDays() takes
+    // Math.max over ALL ops) ballooned to match, so the rest of the schedule occupied 0.5% of the
+    // resulting scrub range — practically unreachable by a live drag-scrub, matching the live user
+    // report ("scrubbing didn't solve it") even though a scripted absolute-cursor jump COULD still
+    // land there (§S22's own diagnostic evidence, both correct in isolation, missed this).
+    // Fix: convert m.start/m.finish into TM-clock units via tasksBefore[m.id] — the SAME `tasks`
+    // table, SAME clock, snapshotted immediately before the ScheduleAuthor verb ran (already
+    // captured at every one of retimeTaskElements's 3 call sites for undo, just never passed in
+    // here). A pure DAY-COUNT DELTA is clock-agnostic: both clocks share 86400000ms/day granularity,
+    // only their zero-point differs, so (Date.parse(m.start) - Date.parse(before.start)) applied
+    // onto oS/oE (already on the correct clock) needs no knowledge of either clock's absolute
+    // zero-point. Sub-day rounding noise (materializeZones's Math.floor/ceil day-grid) can survive
+    // the round trip — far below the severity of a decades-scale splice, and the same day-grain this
+    // whole authoring pipeline already works in.
+    var epochFixApplied = 0, epochFixSkippedNoBefore = 0;
     db.run('BEGIN');
     moved.forEach(function (m) {
       var bar = barsByTask[m.id]; if (!bar || !bar.guids || !bar.guids.length) return;
-      var nS = Date.parse(m.start + 'T00:00:00Z'), nE = Date.parse(m.finish + 'T00:00:00Z');
+      var tb = tasksBefore && tasksBefore[m.id];
+      var nS, nE;
+      if (tb && tb.start && tb.finish) {
+        var oldRealS = Date.parse(tb.start + 'T00:00:00Z'), oldRealE = Date.parse(tb.finish + 'T00:00:00Z');
+        var newRealS = Date.parse(m.start + 'T00:00:00Z'), newRealE = Date.parse(m.finish + 'T00:00:00Z');
+        if (isNaN(oldRealS) || isNaN(oldRealE) || isNaN(newRealS) || isNaN(newRealE)) return;
+        nS = Math.round(bar.startTs + (newRealS - oldRealS));
+        nE = Math.round(bar.endTs + (newRealE - oldRealE));
+        epochFixApplied++;
+        console.log('§S22_EPOCH_FIX_DETAIL task=' + m.id + ' tb.start=' + tb.start + ' tb.finish=' + tb.finish +
+          ' m.start=' + m.start + ' m.finish=' + m.finish + ' oS=' + bar.startTs + ' oE=' + bar.endTs +
+          ' deltaSdays=' + ((newRealS - oldRealS) / 86400000).toFixed(2) + ' nS=' + nS + ' nE=' + nE);
+      } else {
+        // No before-snapshot for this task — refuse rather than guess a cross-clock splice. Every
+        // real call site (commitGanttDrag/shiftGanttSchedule/commitGanttGroupShift) captures
+        // tasksBefore for every task it's about to touch, so this should never fire live; it exists
+        // as a fail-safe, not a fallback path to lean on.
+        epochFixSkippedNoBefore++;
+        return;
+      }
       if (isNaN(nS) || isNaN(nE) || nE <= nS) return;
       var oS = bar.startTs, oE = bar.endTs, oSpan = Math.max(1, oE - oS), nSpan = nE - nS;
       for (var gi = 0; gi < bar.guids.length; gi++) {
@@ -7023,6 +7067,8 @@
       ' inverted=' + audInverted +
       (audOutside ? ' outlierDurMs=[' + audMinDur + ',' + audMaxDur + ']' : '') +
       ' — outliers ride outside their bar (M2); collapse/inversion here is the §S7 edit-path defect');
+    console.log('§S22_EPOCH_FIX clockTranslated=' + epochFixApplied + ' skippedNoBefore=' + epochFixSkippedNoBefore +
+      ' — nS/nE derived via tasksBefore day-delta, never a raw Date.parse(m.start) splice onto the TM clock');
     return rows;
   }
 
@@ -7068,15 +7114,35 @@
       });
     } catch (e) {}
 
+    // §S22_EPOCH_FIX (4D_GANTT_TM_REFACTOR.md §S22, MEASURED 2026-08-17): the target date string
+    // handed to moveTaskCascade/resizeTask used to be d(bar.startTs + deltaDays*86400000) — bar.startTs
+    // is the TM's OWN internal clock (kernel_ops-derived day-offset solve, near-1970 by construction),
+    // NOT a real calendar date. On a real drag this produced a target like "1970-01-19" that
+    // moveTaskCascade's C2 predecessor-floor clamp (correctly) snapped straight back to the task's
+    // OWN current real position (`§GANTT_EDIT_CLAMP requested=1970-01-19 clampedTo=2026-08-23
+    // blockedBy=...`, measured live) — the drag's deltaDays was silently discarded, the task never
+    // actually moved, EVERY 'move' drag on an on-critical-path task was a no-op in real terms. The
+    // target must be computed from the task's ACTUAL real calendar position — tasksBefore[bar.taskId],
+    // captured just above from the SAME `tasks` table ScheduleAuthor itself reads — not from bar's
+    // TM-clock fields. bar.taskId is guaranteed present in tasksBefore (same query, same schedId,
+    // same task) except in a genuinely stale-model edge case, refused rather than silently
+    // mis-targeted.
+    var tbBar = tasksBefore[bar.taskId];
+    if (!tbBar || !tbBar.start || !tbBar.finish) {
+      console.log('§GANTT_DRAG_REJECT reason=no_real_task_snapshot task=' + bar.taskId);
+      return;
+    }
+    var realS0 = Date.parse(tbBar.start + 'T00:00:00Z'), realE0 = Date.parse(tbBar.finish + 'T00:00:00Z');
+
     var res;
     if (mode === 'move') {
-      res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000), {});
+      res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(realS0 + deltaDays * 86400000), {});
     } else if (mode === 'resizeR') {
-      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs),
-        d(bar.endTs + deltaDays * 86400000), {});
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(realS0),
+        d(realE0 + deltaDays * 86400000), {});
     } else {
-      res = SA.resizeTask(app.db, schedId, bar.taskId, d(bar.startTs + deltaDays * 86400000),
-        d(bar.endTs), {});
+      res = SA.resizeTask(app.db, schedId, bar.taskId, d(realS0 + deltaDays * 86400000),
+        d(realE0), {});
     }
     if (!res || !res.ok) {
       console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
@@ -7110,7 +7176,7 @@
       });
     });
 
-    retimeTaskElements(app.db, barsByTask, res.moved || []);
+    retimeTaskElements(app.db, barsByTask, res.moved || [], tasksBefore);
     _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
@@ -7133,6 +7199,16 @@
       return { taskId: g.taskId, storey: g.storey, phase: g.phase, startTs: g.startTs, endTs: g.endTs,
                n: g.guids ? g.guids.length : 0 };
     });
+  };
+  // §S22_DIAG (2026-08-17, 4D_GANTT_TM_REFACTOR.md §S22 — TM invisible-after-drag-then-scrub bug):
+  // read-only, same double-underscore convention as __tmGanttWindows above but returns the actual
+  // guid list for one task, needed to check per-guid mesh-visibility state (via __tmSnapshotVisible)
+  // against the schedule, which __tmGanttWindows (count only) cannot support. Diagnostic only.
+  window.__tmGanttTaskGuids = function (taskId) {
+    for (var i = 0; i < _ganttTasks.length; i++) {
+      if (_ganttTasks[i].taskId === taskId) return (_ganttTasks[i].guids || []).slice();
+    }
+    return null;
   };
 
   // §TM_RULER_SHIFT — drag the day ruler to move the WHOLE project's start/finish. Same shape as
@@ -7179,7 +7255,7 @@
       });
     });
 
-    retimeTaskElements(app.db, barsByTask, res.moved);
+    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
     _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
@@ -7231,7 +7307,7 @@
       });
     });
 
-    retimeTaskElements(app.db, barsByTask, res.moved);
+    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
     _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
@@ -7581,12 +7657,24 @@
     // freshly-created violation on screen.
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     if (SA.moveTaskCascade) {
-      var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId,
-        new Date(succBar.startTs).toISOString().slice(0, 10), {});
+      var tasksBeforeLink = {};
+      try {
+        var tbL = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
+        if (tbL.length) tbL[0].values.forEach(function (row) { tasksBeforeLink[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
+      } catch (e) {}
+      // §S22_EPOCH_FIX: succBar.startTs is the TM's OWN internal clock (kernel_ops-derived day-offset
+      // solve, not a real date) — new Date(succBar.startTs) misread it as if it already were one,
+      // handing moveTaskCascade a bogus target (the same clock-mismatch class §S22 found in
+      // retimeTaskElements, one call site over). Re-apply the successor at its OWN CURRENT real
+      // position instead — tasks.schedule_start, just captured above — the correct "no-op except for
+      // the new constraint" input the comment above already intends.
+      var succReal = tasksBeforeLink[succBar.taskId];
+      var targetDate = succReal ? succReal.start : new Date(succBar.startTs).toISOString().slice(0, 10);
+      var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId, targetDate, {});
       if (res && res.ok && res.moved && res.moved.length) {
         var byTask = {};
         for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
-        retimeTaskElements(app.db, byTask, res.moved);
+        retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
       }
     }
     invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
@@ -7647,6 +7735,14 @@
       var msg = document.getElementById('tmp-msg');
       // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
       // surface onto one model, never a bypass around C1/C2.
+      // §S22_EPOCH_FIX: same tasksBefore snapshot commitGanttDrag/shiftGanttSchedule/
+      // commitGanttGroupShift already capture, needed here too so retimeTaskElements can convert
+      // res.moved's real calendar dates back onto the TM's own clock instead of splicing them in raw.
+      var tasksBeforeApply = {};
+      try {
+        var tbA = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
+        if (tbA.length) tbA[0].values.forEach(function (row) { tasksBeforeApply[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
+      } catch (e) {}
       var res = (s !== d(bar.startTs) && f === d(bar.endTs) && SA.moveTaskCascade)
         ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
         : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
@@ -7655,7 +7751,7 @@
         ('Applied · ' + res.cascaded + ' successor(s) cascaded');
       var byTask = {};
       for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
-      retimeTaskElements(app.db, byTask, res.moved || []);
+      retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
       console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
         ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
