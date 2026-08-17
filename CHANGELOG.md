@@ -4,6 +4,37 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.48.0](https://github.com/red1oon/bim-ootb/compare/v1.47.0...v1.48.0) (2026-08-17)
+
+
+### ✨ Features
+
+* **4d:** §CPM_DISPLAY — CPM authors the display timeline; needle==appearance, floating 0 ([#1398](https://github.com/red1oon/bim-ootb/issues/1398)) ([50190e0](https://github.com/red1oon/bim-ootb/commit/50190e0011164484d5fc2e9bfeacbe070abb297b))
+* **4d:** §CPM_SPEC stages 1-3 — side-by-side CPM module, fleet floating 0/7 buildings ([#1396](https://github.com/red1oon/bim-ootb/issues/1396)) ([a5de597](https://github.com/red1oon/bim-ootb/commit/a5de597b74594a641ad9902753a4981775bb7350))
+* **4d:** §GROUNDWORK_SLAB (S9) — grade slabs+beams are Substructure; frame beams &lt;2d 16→0 engine-side ([#1410](https://github.com/red1oon/bim-ootb/issues/1410)) ([d631834](https://github.com/red1oon/bim-ootb/commit/d6318347fcec8e82690498e623d4c1ad555ae476))
+* **4d:** §S12 — fleet-wide split-pair audit + one generic repair generator (fleet now corrupt=0) ([#1417](https://github.com/red1oon/bim-ootb/issues/1417)) ([3ccf13d](https://github.com/red1oon/bim-ootb/commit/3ccf13d2ed52279508ecaa9a825db6df0eed293b))
+* **4d:** §S13 — storey-ladder audit, the measured cause of the Clinic bake report ([#1419](https://github.com/red1oon/bim-ootb/issues/1419)) ([4b7f5a9](https://github.com/red1oon/bim-ootb/commit/4b7f5a9a81c7d0fc5e300d88bab8df1581bda4ff))
+* **4d:** §S6_CREW_PASS — crew-aware CPM forward pass (serial SGS), §CREW_FEASIBILITY+§CREW_SPREAD_FLOOR fleet gates ([#1406](https://github.com/red1oon/bim-ootb/issues/1406)) ([382105f](https://github.com/red1oon/bim-ootb/commit/382105f54d1ac842572e4319585346f03df3cd62))
+* **cache:** §R6a cache revalidation — cachedFetch no longer trusts a hit forever ([#1418](https://github.com/red1oon/bim-ootb/issues/1418)) ([d9a9201](https://github.com/red1oon/bim-ootb/commit/d9a920170b54e45211a195411848d9e432f69519))
+* **photo:** §MIRROR_ROOM_PROBE — Alt+S glossy/metal materials reflect the real scene, not just sky ([#1407](https://github.com/red1oon/bim-ootb/issues/1407)) ([6b0c559](https://github.com/red1oon/bim-ootb/commit/6b0c55995879be1ed7d7087a70680bc51558ed58))
+* **photo:** §MIRROR_TRUE_REFLECT + §TRIPLANAR_MEP_GAPS — mirrors reflect the real room, MEP inline devices get real texture ([#1409](https://github.com/red1oon/bim-ootb/issues/1409)) ([6a0f89a](https://github.com/red1oon/bim-ootb/commit/6a0f89a0e58bccab58b5c17d6ef08bb6c9568c52))
+
+
+### 🐛 Fixes
+
+* **4d:** §S1_BAND_RANK — E4 storey hammocks + straggler group-key use 3m z-bands, not storey names ([#1401](https://github.com/red1oon/bim-ootb/issues/1401)) ([7b4c621](https://github.com/red1oon/bim-ootb/commit/7b4c62142d6a427511cb7369e85958dbdf677569))
+* **4d:** §S10_META_TRANSFORM_REPAIR — Terminal_meta.db per-element rebase corruption patched (2,074 rows), live world = probe world ([#1412](https://github.com/red1oon/bim-ootb/issues/1412)) ([cafff10](https://github.com/red1oon/bim-ootb/commit/cafff1094e7d060afe16da733b231c3d8ec543b7))
+* **4d:** §S11 — LTU_AHouse_meta.db transform corruption repaired (33,524 rows), live world = probe world ([#1416](https://github.com/red1oon/bim-ootb/issues/1416)) ([cc7493c](https://github.com/red1oon/bim-ootb/commit/cc7493c0da5e2909256d6ecc078f8c291f0d4073))
+* **4d:** §S2_TUKEY_ENVELOPE — task bars = classification-free robust envelope, not straggler min/max ([#1402](https://github.com/red1oon/bim-ootb/issues/1402)) ([26595a2](https://github.com/red1oon/bim-ootb/commit/26595a2d00c23a1c7c653dd01c81b0d56b5ad739))
+* **4d:** §S7_OUTLIER_DELTA — Gantt drag no longer collapses/inverts outside-window outlier ops ([#1408](https://github.com/red1oon/bim-ootb/issues/1408)) ([63ba9fa](https://github.com/red1oon/bim-ootb/commit/63ba9fab7790a8fcb9d087d6c50d37419c03a023))
+* **4d:** §ZONE_WINDOW_DAGWINS_CLIP — task bars = non-straggler envelopes; live Hospital schedule readable ([#1399](https://github.com/red1oon/bim-ootb/issues/1399)) ([40d5a4e](https://github.com/red1oon/bim-ootb/commit/40d5a4ebce47ef89ea7872e39394c0df32ac4589))
+* **photo:** mirror metalness — roughness fix alone wasn't enough ([#1415](https://github.com/red1oon/bim-ootb/issues/1415)) ([663648f](https://github.com/red1oon/bim-ootb/commit/663648f428e2a3f5f7ed410070140612176c78da))
+
+
+### ⚡ Performance
+
+* **4d:** §S4_RAW_SCHEDULE_REUSE — skip injectGantt's redundant computeSchedule call; measured floor ([#1404](https://github.com/red1oon/bim-ootb/issues/1404)) ([8209650](https://github.com/red1oon/bim-ootb/commit/8209650fe8898a36a6d72bc232da4630024e41a4))
+
 ## [1.47.0](https://github.com/red1oon/bim-ootb/compare/v1.46.0...v1.47.0) (2026-08-16)
 
 
