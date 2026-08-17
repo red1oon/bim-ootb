@@ -3937,268 +3937,14 @@
       ' elemMemo=' + (_em.hit ? 'hit' : 'miss') + ' edgeMemo=miss staged=' + _tmXrayStagedTotal);
   }
 
-  // ── §TIER_SERIAL (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11
-  // evening: phase-window collapse — the capstone piece) ─────────────────────────────────────────
-  // computeSchedule's generative output (the proven support DAG — UNTOUCHED, floating baselines
-  // unchanged) is remapped for DISPLAY into a two-tier structure:
-  //   Tier 1 — the structural backbone (Substructure → Superstructure → Architecture) is STRICTLY
-  //   SERIAL: each phase's last element completes before the next phase's first element starts.
-  //   "Never appears before its support" becomes a structural guarantee for the backbone instead
-  //   of a corrected-after-the-fact repair. Deliberate, user-confirmed refinement of the
-  //   2026-08-02 §4D_BAND_MONOTONIC ruling ("ARCH/STR should be exempt as they are the physical
-  //   foundation. Separate unrelated disciplines can run parallel thereafter if construction
-  //   practice permits") — the per-trade storey-by-storey discipline itself lives inside
-  //   computeSchedule and is inherited unchanged: this remap never REORDERS the generative
-  //   timeline, it only shifts whole phase groups later and pushes dependents after supports.
-  //   Tier 2 — everything else (MEP Rough-in, MEP Final, Finishes; FP/ELEC/ACMV/PLB and the
-  //   generic undifferentiated MEP bucket included — DECIDED: no special-case for it) stays ONE
-  //   CONCURRENT POOL: no artificial phase-window barrier between disciplines. Each element is
-  //   still individually gated by the real support DAG via _ogSupportSweep (bearing + hang +
-  //   §OG_BEARING_BOUND two-tier rule) — which is what actually prevents "built before support";
-  //   the phase bucket only ever affected display grouping.
-  // Misclassified-furniture safeguard: rates.js/sequence_rules.json 'furniture_generic_bucket'
-  // NAME_OVERRIDE keeps furniture-named generic-class elements out of Tier 1 entirely.
-  // Witness: viewer/tests/witness_tier_serial_display.js (W-TS-1..6, all 5 shipped buildings).
-  var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
-
-  // Backbone phase extents over the SERIALIZABLE population — elements marked _t1Straggler are
-  // excluded (see §TIER_STRAGGLER in _twoTierRemap: the measured, DAG-forced cross-phase tail).
-  // §TIER_SERIAL_BY_ZONE (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
-  // §TIER_SERIAL_BY_ZONE — Witness: viewer/tests/witness_tier_serial_zone.js W-TSZ) ─────────────
-  // The backbone barrier was GLOBAL: every Superstructure element ANYWHERE finished before any
-  // Architecture element started. Measured cost: the remap inflated the programme 1.71x-3.71x over
-  // the generative timeline on all 7 buildings (Hospital 314.9d -> 1168.7d), and on LTU it produced
-  // a 29%-of-film dead run.
-  //
-  // DERIVED FROM THE EXISTING RULING, not a new one. §TIER_SERIAL's own header quotes the user's
-  // 2026-08-02 words: "ARCH/STR should be exempt as they are the physical foundation. Separate
-  // unrelated disciplines can run parallel thereafter IF CONSTRUCTION PRACTICE PERMITS." Practice
-  // permits walls on level 1 while level 7 is still framing; a global barrier is a cruder reading
-  // of that sentence than a per-zone one. The physical guarantee is UNCHANGED and is not what this
-  // touches: _ogSupportSweep already gates every element individually against the real support DAG.
-  // This is the display grouping on top of it, and it now says "backbone order holds WITHIN a
-  // zone" instead of "across the whole model".
-  //
-  // The zone comes from §ZONE_INDEX (#1313) — the derived median-Z band, never a configured list,
-  // so this is generic to any IFC. A single-zone model degenerates to EXACTLY the old global
-  // behaviour, which is what keeps the change safe on models without storey data.
-  function _zoneOf(it) { return (it && it.storey) || '_ALL'; }
-
-  // ext[zone][phase] = {minS,maxE}. Straggler-excluded exactly as before.
-  function _tier1Extents(items) {
-    var ext = {};
-    items.forEach(function (it) {
-      if (it._t1Straggler || _TIER1_ORDER.indexOf(it.phase) < 0) return;
-      var z = ext[_zoneOf(it)] || (ext[_zoneOf(it)] = {});
-      var x = z[it.phase] || (z[it.phase] = { minS: Infinity, maxE: -Infinity });
-      if (it.s < x.minS) x.minS = it.s;
-      if (it.e > x.maxE) x.maxE = it.e;
-    });
-    return ext;
-  }
-
-  // Uniform per-phase-group shift: phase k starts no earlier than phase k-1's last end. A uniform
-  // shift preserves all within-group generative order, and cross-group Tier-1 support edges only
-  // ever point BACKWARD in _TIER1_ORDER (walls carry only load-path-PROMOTED slabs, which
-  // _promoteRoofLoadPath re-phases to Architecture — no Architecture→Superstructure support edge
-  // exists) — the measured exceptions are exactly the §TIER_STRAGGLER set, excluded here and
-  // governed purely by _tierAuditRegate instead.
-  function _tier1Serialize(items) {
-    var ext = _tier1Extents(items);
-    var deltas = {};                     // deltas[zone][phase]
-    for (var z in ext) {
-      var zd = deltas[z] = {}, prevEnd = -Infinity;
-      _TIER1_ORDER.forEach(function (ph) {
-        var x = ext[z][ph]; if (!x) return;   // phase absent in THIS zone (common: no Substructure upstairs)
-        var d = prevEnd > x.minS ? prevEnd - x.minS : 0;
-        zd[ph] = d;
-        prevEnd = x.maxE + d;
-      });
-    }
-    items.forEach(function (it) {
-      if (it._t1Straggler) return;       // stragglers ride the regate, never the group shift
-      var zd = deltas[_zoneOf(it)];
-      var d = zd && zd[it.phase];
-      if (d) { it.s += d; it.e += d; }
-    });
-    return deltas;
-  }
-
-  // 0 = the Tier-1 chain is strictly serial: for consecutive PRESENT backbone phases, phase k's
-  // last end <= phase k+1's first start (transitive across the chain — each window is well-formed).
-  // Straggler-excluded by _tier1Extents; the straggler count itself is reported, never hidden.
-  // §TIER_SERIAL_BY_ZONE: counted WITHIN each zone and summed. W-TS-1's bar is unchanged in
-  // meaning — "the backbone chain is serial" — but its scope is now the zone, which is the whole
-  // point of the change; a single-zone model reduces to the identical global count.
-  function _tier1Protrusion(items) {
-    var ext = _tier1Extents(items);
-    var overlapping = 0;
-    for (var z in ext) {
-      var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
-      for (var i = 0; i + 1 < present.length; i++) {
-        if (ext[z][present[i]].maxE > ext[z][present[i + 1]].minS) overlapping++;
-      }
-    }
-    return overlapping;
-  }
-
-  // ── §TIER_REGATE — audit-physics display re-gate (the remap's push pass) ─────────────────────
-  // MUST use the SAME physics as schedule_gate.js auditFloating()/the generative gates — structGrid
-  // INCLUDES promoted roof slabs, bearing takes the max end over ALL carriers (enveloping included),
-  // hang + §HANG_NEAREST fallback + both antisymmetry exclusions — NOT the §OG_BEARING_BOUND-bounded
-  // guard physics (_ogSupportSweep). MEASURED 2026-08-11, first witness run of this lane: re-gating
-  // with guard physics left 1,383 audit-visible floaters on HHS alone — every rooftop/hanging
-  // element whose carrier is a PROMOTED slab (Architecture phase, shifted later by Tier-1
-  // serialization) that the guard's seq<=4-only grid cannot see. schedule_gate.js is explicitly
-  // untouched by this lane (spec: computeSchedule AND auditFloating stay as-is), so this is a
-  // deliberate, WITNESS-PINNED mirror: witness_tier_serial_display.js W-TS-2 runs the REAL
-  // auditFloating over this pass's output on all 5 shipped buildings — any drift between this
-  // mirror and the canonical physics surfaces there as displayed-floating > generative-floating.
-  // Push-only (start moves LATER, duration kept), fixpoint <=16 sweeps (monotone pushes over the
-  // acyclic support relation — the DAG's own convergence argument). Note the generative times
-  // already satisfy this physics (§SUPPORT_CHECK floating baselines), so on an unshifted timeline
-  // this pass pushes at most the known raw floating tail.
-  //
-  // §TIER_REGATE_WORKLIST (2026-08-14, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — the
-  // dedicated follow-up SESSION 7 named: "_tierAuditRegate's full-array-rescan fixpoint is the
-  // dominant cost of the ENTIRE 4D generation pipeline on large/complex buildings" — 15,466ms of
-  // Terminal's 19,773ms _twoTierRemap total, ~78-90% of whole-building 4D-gen wall time).
-  // Every branch below (bearing pool, else hang pool, else the §HANG_NEAREST big-sink fallback)
-  // reads ONLY static geometry (bz/tz/x/y/cls/seq) — never s/e — so a target's qualifying
-  // candidate SET is fixed for the life of one _twoTierRemap call. This function precomputes that
-  // set once per element (`cand[guid]`) and its inverse (`dependents[guid]` — who reads this
-  // guid's `.e`), then walks a WORKLIST instead of rescanning every element every sweep: only a
-  // target whose OWN candidate just moved is re-checked. Same longest-path-over-a-DAG relaxation
-  // the old full-rescan loop performed (same EPS/GAP physics, same -1ms tolerance, same exempt
-  // semantics — an exempt guid is never pushed but still counts as a candidate for others) — DAG
-  // confluence (already invoked above for convergence) also makes the fixpoint ORDER-INDEPENDENT,
-  // so a worklist reaches the identical final schedule without redoing untouched elements.
-  // A/B'd byte-identical (every guid's final .s/.e) against the old full-rescan version on all 7
-  // shipped buildings via scripts/probe_tier_regate_worklist.js — 6.1x Terminal (13,315ms->
-  // 2,199ms), 8.0x LTU_AHouse (40,229ms->5,013ms), 3.0-5.4x the other 5. Not assumed, measured.
-  // CACHE: the candidate index is built once per `items` array and cached on the FUNCTION OBJECT
-  // itself via a WeakMap (not a module-scope var), so a standalone copy of this ONE function —
-  // witnesses/probes slice-and-vm it out of time_machine.js by name, e.g. witness_midair_zero.js —
-  // still gets the cache with zero changes on their end; a module-scope var would vanish from that
-  // slice and ReferenceError. `_twoTierRemap` calls this up to 7 times (1 dryRun + up to 6
-  // iterated) per generate; entries fall out of scope for GC the moment a caller drops the array,
-  // and a fresh `_buildXrayElements()` array (every real generate) naturally misses and rebuilds.
-  function _tierAuditRegate(items, exempt, dryRun) {
-    _tierAuditRegate._cache = _tierAuditRegate._cache || new WeakMap();
-    var idx = _tierAuditRegate._cache.get(items);
-    if (!idx) {
-      var EPS = 0.05, GAP = 0.5;
-      var CELL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.CELL) || 4;
-      var BIGVOL = (typeof ScheduleGate !== 'undefined' && ScheduleGate.BIG_ELEMENT_VOL) || 1.556;
-      var cellsOf = function (e) {
-        var o = [], gi, gj;
-        for (gi = Math.floor(e.x0 / CELL); gi <= Math.floor(e.x1 / CELL); gi++)
-          for (gj = Math.floor(e.y0 / CELL); gj <= Math.floor(e.y1 / CELL); gj++) o.push(gi + ',' + gj);
-        return o;
-      };
-      var xyOverlap = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
-      var structGrid = {}, wallGrid = {};
-      items.forEach(function (e) {
-        var cs = null;
-        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cs = structGrid;
-        else if (e.cls.indexOf('IfcWall') === 0) cs = wallGrid;
-        if (cs) cellsOf(e).forEach(function (c) { (cs[c] = cs[c] || []).push(e); });
-      });
-      var cand = {}, dependents = {};
-      items.forEach(function (T) {
-        var cs = cellsOf(T), p, c, k, arr, S;
-        var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
-        var bearing = [], seen = {};
-        for (p = 0; p < pools.length; p++) {
-          for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
-            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
-              if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP && xyOverlap(S, T)) bearing.push(S); } }
-        }
-        var finalSet = bearing;
-        if (!bearing.length && T.seq > 4) {      // hangs — gate against the carrier above instead
-          var tPool = T.cls === 'IfcSlab' && T.seq > 4;
-          var tWall = T.cls.indexOf('IfcWall') === 0;
-          var hang = [], seenH = {};
-          for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-            for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
-              if (S.bz >= T.tz - GAP && S.bz <= T.tz + GAP && S.tz > T.tz + EPS &&
-                  !(tPool && T.bz < S.bz - EPS) &&
-                  !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
-                    T.bz < S.bz - EPS && T.tz >= S.bz - GAP) &&
-                  xyOverlap(S, T)) hang.push(S); } }
-          finalSet = hang;
-          // §HANG_NEAREST twin — big pure-sink hangers gate on the nearest pool member above + its
-          // co-planar GAP band, exactly what the scheduler/audit gate them on.
-          if (!hang.length && !tPool && !tWall &&
-              (T.x1 - T.x0) * (T.y1 - T.y0) * (T.tz - T.bz) > BIGVOL) {
-            var nbA = Infinity, seenN = {};
-            for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-              for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenN[S.guid] || S.guid === T.guid) continue; seenN[S.guid] = 1;
-                if (S.bz > T.tz + GAP && S.bz < nbA && xyOverlap(S, T)) nbA = S.bz; } }
-            var near = [];
-            if (nbA < Infinity) {
-              var seenP = {};
-              for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
-                for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenP[S.guid] || S.guid === T.guid) continue; seenP[S.guid] = 1;
-                  if (S.bz > T.tz + GAP && S.bz <= nbA + GAP && xyOverlap(S, T)) near.push(S); } }
-            }
-            finalSet = near;
-          }
-        }
-        cand[T.guid] = finalSet;
-        finalSet.forEach(function (S) { (dependents[S.guid] = dependents[S.guid] || []).push(T); });
-      });
-      idx = { cand: cand, dependents: dependents };
-      _tierAuditRegate._cache.set(items, idx);
-    }
-    var seFromCand = function (list) {     // max end among a target's precomputed candidates
-      var se = 0;
-      for (var i = 0; i < list.length; i++) if (list[i].e > se) se = list[i].e;
-      return se;
-    };
-    // dryRun: one non-mutating pass over CURRENT times → the set of guids violating audit-se.
-    // _twoTierRemap calls this ONCE on the pristine generative times: that set is the DAG's own
-    // deliberate tail (cycle-breaks + unsolvables — e.g. Clinic's parapet-wall/roof-slab loop,
-    // MEASURED 2026-08-11 clinic_cycle.log: chasing it pushed 43k times across 400 sweeps without
-    // converging, the whole building drifting together). Those elements are EXEMPT from pushing —
-    // they ride their group shifts, keeping exactly their raw-relative wrongness, never more.
-    if (dryRun) {
-      var fset = {}, fn = 0;
-      items.forEach(function (T) {
-        var se0 = seFromCand(idx.cand[T.guid] || []);
-        if (se0 > 0 && T.s < se0 - 1) { fset[T.guid] = 1; fn++; }
-      });
-      return { floatSet: fset, n: fn };
-    }
-    // worklist: start with every non-exempt element (the unavoidable first O(n) pass, same as the
-    // old loop's sweep 1), then only re-check a target when one of ITS OWN candidates was just
-    // pushed — not the whole array, every sweep.
-    var pushed = 0, checks = 0, queue = [], inQ = {};
-    items.forEach(function (T) {
-      if (exempt && exempt[T.guid]) return;   // the raw tail — never chased (see dryRun above)
-      queue.push(T); inQ[T.guid] = 1;
-    });
-    var qi = 0;
-    while (qi < queue.length) {
-      var T = queue[qi++]; inQ[T.guid] = 0; checks++;
-      var se = seFromCand(idx.cand[T.guid] || []);
-      if (se > 0 && T.s < se - 1) {     // same -1ms tolerance as auditFloating's floating test
-        var dur = Math.max(60000, T.e - T.s);
-        T.s = se; T.e = se + dur;
-        pushed++;
-        var deps = idx.dependents[T.guid];
-        if (deps) for (var i = 0; i < deps.length; i++) {
-          var D = deps[i];
-          if (exempt && exempt[D.guid]) continue;
-          if (!inQ[D.guid]) { inQ[D.guid] = 1; queue.push(D); }
-        }
-      }
-    }
-    if (pushed) console.log('§TIER_REGATE pushed=' + pushed + ' checks=' + checks +
-      ' items=' + items.length +
-      ' (worklist audit-physics display re-gate — dependents pushed after their real supports\' shifted ends)');
-    return { pushed: pushed, sweeps: checks };   // `sweeps` kept as the field name _twoTierRemap aggregates; now a worklist check count, not a full-array-sweep count
-  }
+  // ── §TIER_SERIAL / §TIER_REGATE (retired §S20 Part B, 2026-08-17, 4D_GANTT_TM_REFACTOR.md) —
+  // the two-tier Substructure/Superstructure/Architecture-serial + audit-physics-regate display
+  // repair chain (_TIER1_ORDER, _zoneOf, _tier1Extents, _tier1Serialize, _tier1Protrusion,
+  // _tierAuditRegate — all reachable only through each other and the deleted _twoTierRemap below,
+  // zero external callers, verified by grep before deletion) is DELETED. Replaced fleet-wide by
+  // §CPM_DISPLAY's one-DAG forward pass (viewer/cpm_schedule.js) — see _displayTimeline below.
+  // Confirmed twice this lane never reached this chain live (§S13.8 by reading, §S14.0 and every
+  // fleet run since by measurement) before deleting it. Net: -216 lines.
 
   // ── §PHASE_OVERLAP_SUPPORT_GUARD — the support-order sweep, now a NAMED shared pass ──────────
   // 2026-08-11 §TIER_SERIAL restructure: hoisted VERBATIM out of injectGantt's _cap-only overlay
@@ -4508,18 +4254,26 @@
   // ══ §CPM_DISPLAY (2026-08-16, bim-compiler prompts/4D_SCHEDULE_ARCHITECTURE_REDESIGN.md
   // §STAGE4_RETIREMENT_PROPOSAL step 1) — the display timeline is authored by ONE dependency-DAG
   // forward pass (viewer/cpm_schedule.js: contact-graph support edges + host/opening + discipline +
-  // storey hammocks + crew lower bound, SCC-condensed Kahn), replacing the _twoTierRemap +
+  // storey hammocks + crew lower bound, SCC-condensed Kahn), replacing the retired _twoTierRemap +
   // _midairRepair repair chain at BOTH consumers of this one function (kernel_ops write + the
   // materializeZones displayRemap hook), so the movie, the Gantt windows, and the progress needle
   // describe the SAME schedule by construction — floating impossible instead of chased.
   // Measured fleet-wide before wiring (probe_cpm_schedule.js, all 7 buildings): floating 0/7,
-  // storey order improves-or-matches RAW everywhere, Terminal 387ms vs 1,467ms for ONE
-  // _tierAuditRegate call. ?cpm4d=0 reverts to the legacy repair chain (A/B lever, same physics
-  // constants either way). Old passes stay in the file until their staged retirement PRs.
-  var _CPM_DISPLAY = (function () {
-    try { return new URLSearchParams(location.search).get('cpm4d') !== '0'; }
-    catch (e) { return true; }
-  })();
+  // storey order improves-or-matches RAW everywhere.
+  // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md) — the legacy chain this branch used to fall
+  // back to (_twoTierRemap/_midairRepair/_tier1Serialize/_tierAuditRegate + their _tier1Extents/
+  // _tier1Protrusion/_zoneOf/_TIER1_ORDER helpers) is DELETED: confirmed twice over this lane's
+  // entire measured history (§S13.8 by reading, §S14.0 and every fleet run since by measurement)
+  // that `§CPM_DISPLAY_FALLBACK` never fired live — CpmSchedule.run always succeeds. `?cpm4d=0`'s
+  // fallback target no longer exists, so the URL-param lever is RETIRED (a flag that silently did
+  // nothing, or worse referenced deleted code, is worse than no flag). `_CPM_DISPLAY` stays a named
+  // variable (not inlined) rather than deleted outright: every witness/probe in this lane injects
+  // its own `var _CPM_DISPLAY = true;` ahead of a sliced copy of this function (the established
+  // convention for forcing the live branch in a sandbox with no `location` global) — keeping the
+  // name means none of them need editing for this. The one truly exceptional path left (CpmSchedule
+  // missing, or CpmSchedule.run failing — never once measured live) is a minimal explicit no-op +
+  // loud console.error, not a silent revert to a chain that no longer exists.
+  var _CPM_DISPLAY = true;
   function _displayTimeline(items) {
     // §CPM_DISPLAY_ONE_TRUTH: on a cold open the materializeZones hook computes FIRST
     // (§GANTT_PREMATERIALIZE) and the kernel_ops seam runs SECOND — measured live on Terminal
@@ -4580,12 +4334,12 @@
         for (var _ci = 0; _ci < items.length; _ci++) if (r.graph.stragglerOf[_ci]) _cstrag[items[_ci].guid] = 1;
         return { cpm: true, midair: aud.midair, stats: r, strag: _cstrag };
       }
-      console.warn('§CPM_DISPLAY_FALLBACK CpmSchedule.run failed — legacy repair chain used');
+      console.error('§CPM_DISPLAY_FALLBACK CpmSchedule.run failed or unavailable — the legacy ' +
+        'display-repair chain was retired (§S20 Part B, 2026-08-17); items left at their RAW ' +
+        'computeSchedule times, unauthored (may show real hangings — this path has never fired live)');
     }
-    var tw = _twoTierRemap(items);
-    _midairRepair(items);
     _displayTimelineRemember(items, null);
-    return { cpm: false, stats: tw };
+    return { cpm: false, stats: null };
   }
   // §CPM_DISPLAY_ONE_TRUTH: the LAST computed display timeline, guid-keyed. materializeZones'
   // displayRemap hook serves THIS map when it covers the request — the kernel_ops movie and the
@@ -4694,181 +4448,12 @@
     return out;
   }
 
-  // The two-tier orchestrator: serialize the backbone → re-gate every dependent after its real
-  // supports (audit physics) → verify strictness; iterate (bounded). Converges structurally:
-  // shifts never break Tier-1 internal order, regate pushes only ever move later and only enforce
-  // raw-satisfied constraints (see _tierAuditRegate dryRun), and Tier-2 elements are never
-  // carriers (audit pools = seq<=4 ∪ promoted slabs ∪ walls — all Tier 1).
-  //
-  // §TIER_DAG_WINS (measured 2026-08-11, stragglers.log + promoted_deps.log): some Tier-1
-  // elements are placed by the support DAG ITSELF inside a LATER backbone phase, and for them
-  // support order WINS over strict serialization (the mission: nothing appears before its
-  // support). Two measured shapes:
-  //   - isolated forward deps: Hospital's 'Foundation Slab' IfcFooting + Clinic's slab-on-grade
-  //     pair, each poured around full-height Superstructure columns whose base sits below theirs;
-  //   - the WALL-CARRIED CONE: on buildings where storeys are wall-carried (Terminal: 45 direct
-  //     "upper column stands on a load-path-PROMOTED structural flat slab" edges), the entire
-  //     dependency cone above those slabs — ~24k of Terminal's 34.8k Superstructure elements —
-  //     must follow Architecture-phase carriers; a frame building (Hospital) has almost none.
-  // Treatment mirrors the closure pass's "annotate, don't suppress": mark them out of the
-  // serialization extents, let the regate own their timing (real construction order for a
-  // wall-carried building), COUNT them in the §TIER_SERIAL log as tier1DagWins, and lock the
-  // per-building count in the witness — never silently absorbed, never hidden.
-  function _twoTierRemap(items) {
-    if (!items || !items.length) return { iterations: 0, pushed: 0, sweeps: 0, overlapPairs: 0, dagWins: 0 };
-    // the DAG's own raw tail (deliberate cycle-breaks, e.g. Clinic's parapet/roof-slab loop) —
-    // computed on PRISTINE generative times, exempt from regate pushing forever after.
-    var _exempt = _tierAuditRegate(items, null, true).floatSet;
-    var iters = 0, pushed = 0, sweeps = 0, overlap = -1, dagWins = 0;
-    while (iters < 6) {
-      iters++;
-      _tier1Serialize(items);
-      var r = _tierAuditRegate(items, _exempt, false);
-      pushed += r.pushed; sweeps += r.sweeps;
-      overlap = _tier1Protrusion(items);
-      if (!overlap) break;
-      // mark this round's DAG-forced cross-phase elements, then re-serialize without them
-      var ext = _tier1Extents(items);
-      var marked = 0;
-      for (var z in ext) {                       // §TIER_SERIAL_BY_ZONE: absorb per zone
-        var present = _TIER1_ORDER.filter(function (ph) { return ext[z][ph]; });
-        for (var i = 0; i + 1 < present.length; i++) {
-          var ph = present[i], nextMinS = ext[z][present[i + 1]].minS, zk = z;
-          if (ext[z][ph].maxE <= nextMinS) continue;
-          items.forEach(function (it) {
-            if (it._t1Straggler || it.phase !== ph || _zoneOf(it) !== zk) return;
-            if (it.e > nextMinS) { it._t1Straggler = true; marked++; }
-          });
-        }
-      }
-      dagWins += marked;
-      if (!marked) break;   // nothing left to absorb — residual overlap reported honestly below
-    }
-    // §TIER2_AFTER_TIER1 (2026-08-11, same-day correction — user's original words: "separate
-    // unrelated disciplines can run parallel THEREAFTER" — after Tier 1 finishes, not concurrent
-    // with it). Tier 1's TRUE completion is every backbone-phase element, straggler included —
-    // "ARCH/STR out of the way first" means literally all of it, not just the serializable part.
-    // Uniform later-shift only: safe by construction, since pushing every Tier-2 element later by
-    // the SAME amount preserves all of Tier 2's own internal order and only pushes starts further
-    // past their already-satisfied support minimum, never before it.
-    // §TIER_SERIAL_BY_ZONE: "Tier 2 THEREAFTER" is now evaluated per zone — MEP on a floor waits
-    // for that floor's backbone, not for the whole building's. The user's same-day correction
-    // ("after Tier 1 finishes, not concurrent with it") is preserved in its zone: within any zone
-    // no Tier-2 element starts before that zone's Tier-1 is complete. A single-zone model is
-    // byte-identical to the previous global shift.
-    // §TIER2_PER_ELEMENT_CLAMP (2026-08-13, ruling given — user: "DONT ASK ME, JUST FIX. U already
-    // know what i want.") The prior uniform shift sized d = t1EndZ[z] - t2MinZ[z] off the EARLIEST
-    // Tier-2 element in the zone and applied it to EVERY Tier-2 element there, shearing the whole
-    // block later even for elements that already started after t1EndZ[z] — measured: turns MEP
-    // Final's 121-day generative package into a 784-day display window with zero added work.
-    // The barrier's own contract is per-element ("no Tier-2 element starts before that zone's Tier-1
-    // is complete"), so clamp each element individually to t1EndZ[z] instead. Strictly less movement
-    // than the uniform shift, cannot violate the barrier. Not order-preserving across elements (an
-    // element clamped onto the barrier can now land after one it depends on) — that is why
-    // _midairRepair (below) and witness_midair_zero MUST run after this and are extended to assert
-    // the repaired order, per the ruling.
-    var t1EndZ = {};
-    items.forEach(function (it) {
-      var z = _zoneOf(it);
-      if (_TIER1_ORDER.indexOf(it.phase) >= 0) {
-        if (!(z in t1EndZ) || it.e > t1EndZ[z]) t1EndZ[z] = it.e;
-      }
-    });
-    var tier2Shift = 0, tier2Pushed = 0;
-    items.forEach(function (it) {
-      if (_TIER1_ORDER.indexOf(it.phase) >= 0) return;
-      var z = _zoneOf(it);
-      // A zone with Tier-2 but no Tier-1 (MEP in an unbanded pocket) has nothing to wait for here;
-      // _ogSupportSweep still gates it individually, so it is left where the generative layer put it.
-      if (!(z in t1EndZ)) return;
-      if (it.s < t1EndZ[z]) {
-        var dur = it.e - it.s, d = t1EndZ[z] - it.s;
-        it.s = t1EndZ[z]; it.e = t1EndZ[z] + dur;
-        tier2Pushed++;
-        if (d > tier2Shift) tier2Shift = d;
-      }
-    });
-    // ══ §HOSTED_BEFORE_HOST (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ═════════
-    // The zone shift above is order-preserving WITHIN a zone — its own comment says so, and that is
-    // true. It is NOT order-preserving ACROSS zones, and a hosted element and the ceiling it hangs
-    // in routinely land in different ones: _zoneOf is the RAW storey, so a covering tagged
-    // "Level 3 Ceiling" and the light fixture in it tagged "Level 3" are two zones, get two
-    // different shifts (or none at all — a zone with no Tier-1 returns early above), and the pair
-    // re-inverts after the generative layer had it right.
-    // MEASURED, per stage, by witness_hosted_before_host.js on the fixed generative layer:
-    // JKR gen=0 → remap=30, HHS_Office_Federated gen=0 → remap=11. So schedule_gate.js's hostGate
-    // cannot own this alone — the layer that re-broke the order has to be the layer that repairs it.
-    // Same host inference the scheduler gates on (ScheduleGate.hostPairs — ONE definition, the same
-    // reason EPS/GAP are imported rather than re-typed), and the same later-only safety
-    // §MIDAIR_REPAIR carries: a hosted element is pushed to its host's end, never pulled earlier,
-    // so nothing already satisfied above can be undone by it.
-    var _hostFixed = 0, _openFixed = 0;
-    var _gateEls = (typeof ScheduleGate !== 'undefined' && (ScheduleGate.hostPairs || ScheduleGate.openingPairs))
-      ? items.map(function (it) {
-          return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
-                   base_z: it.bz, top_z: it.tz };
-        })
-      : null;
-    if (_gateEls && ScheduleGate.hostPairs) {
-      var _hp = ScheduleGate.hostPairs(_gateEls);
-      _hp.forEach(function (p) {
-        var e = items[p.i], h = items[p.h];
-        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _hostFixed++; }
-      });
-    }
-    // ══ §DOOR_WINDOW_HOST_WALL_DISPLAY (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md)
-    // The §HOSTED_BEFORE_HOST argument above, one layer over and with the same remedy — deliberately
-    // not a second mechanism. openingGate (schedule_gate.js) gates a door/window on its host wall's
-    // FINISH and holds perfectly where it runs: rawEARLY 0.0% on all 7 shipped buildings
-    // (witness_curtain_wall_opening G-CWO-RAW). The DISPLAY timeline then undid it — MEASURED by that
-    // witness's own G-CWO-DISPLAY, which was shipped non-asserting for exactly this fix to promote:
-    // LTU_AHouse 28.5%, Terminal 16.4%, JKR 10.1%, Hospital 2.5% of openings started before their
-    // host finished on the timeline the movie plays. Same cause as the host case: the passes that
-    // rewrite times afterwards (the Tier-1 straggler/zone work above, _tierAuditRegate, and
-    // _midairRepair after) are order-preserving only within a zone, and a door and the wall it is cut
-    // into are routinely in different ones.
-    // SAME PAIRING THE GATE USES (ScheduleGate.openingPairs — one definition, same reason hostPairs
-    // is imported rather than re-derived), same later-only safety: an opening is pushed to its host's
-    // end, never pulled earlier, so nothing already satisfied above can be undone by it. Every host
-    // of the pool is honoured, which is openingGate's own MAX-over-pool bound; hosts are walls and
-    // curtain-wall parts and openings are never hosts, so one pass reaches that maximum exactly.
-    if (_gateEls && ScheduleGate.openingPairs) {
-      var _opMoved = {};
-      ScheduleGate.openingPairs(_gateEls).forEach(function (p) {
-        var e = items[p.i], h = items[p.h];
-        if (e.s < h.e) { var dur = e.e - e.s; e.s = h.e; e.e = h.e + dur; _opMoved[p.i] = 1; }
-      });
-      _openFixed = Object.keys(_opMoved).length;
-    }
-    var base = Infinity, endAll = -Infinity, ext2 = {};
-    items.forEach(function (it) {
-      if (it.s < base) base = it.s;
-      if (it.e > endAll) endAll = it.e;
-      var x = ext2[it.phase] || (ext2[it.phase] = { minS: Infinity, maxE: -Infinity, n: 0 });
-      if (it.s < x.minS) x.minS = it.s;
-      if (it.e > x.maxE) x.maxE = it.e;
-      x.n++;
-    });
-    var D = 86400000, parts = [];
-    Object.keys(ext2).forEach(function (ph) {
-      var x = ext2[ph];
-      parts.push(ph + '=[' + ((x.minS - base) / D).toFixed(1) + '..' + ((x.maxE - base) / D).toFixed(1) + ']d n=' + x.n);
-    });
-    console.log('§TIER_SERIAL iterations=' + iters + ' tier1OverlapPairs=' + overlap +
-      ' (0=strictly serial backbone, dag-wins excluded) tier1DagWins=' + dagWins +
-      ' rawTailExempt=' + Object.keys(_exempt).length + ' pushed=' + pushed + ' sweeps=' + sweeps +
-      ' §HOSTED_BEFORE_HOST hostFixed=' + _hostFixed +
-      ' (hosted elements the cross-zone Tier-2 shift left ahead of their own host, pushed back to it)' +
-      ' §DOOR_WINDOW_HOST_WALL_DISPLAY openFixed=' + _openFixed +
-      ' (doors/windows this remap left starting before their own host wall finished, pushed to its end)' +
-      ' §TIER2_AFTER_TIER1 maxShiftDays=' + (tier2Shift / D).toFixed(1) + ' pushed=' + tier2Pushed +
-      ' (§TIER2_PER_ELEMENT_CLAMP: per-element push-to-barrier, not a uniform zone shift;' +
-      ' 0 pushed=Tier2 already started after Tier1\'s true completion everywhere)' +
-      ' totalDays=' + ((endAll - base) / D).toFixed(1) + ' ' + parts.join(' '));
-    return { iterations: iters, pushed: pushed, sweeps: sweeps, overlapPairs: overlap,
-      dagWins: dagWins, rawTailExempt: Object.keys(_exempt).length, tier2ShiftDays: tier2Shift / D,
-      tier2Pushed: tier2Pushed, base: base, end: endAll, extents: ext2, exempt: _exempt };
-  }
+  // _twoTierRemap (retired §S20 Part B, 2026-08-17, 4D_GANTT_TM_REFACTOR.md) — the legacy
+  // two-tier (Substructure/Superstructure/Architecture-serial, then audit-physics-regate) display
+  // orchestrator. Reachable ONLY via _displayTimeline's now-deleted fallback branch — confirmed
+  // twice this lane never reached it live (§S13.8 by reading, §S14.0 and every fleet run since by
+  // measurement) before deleting it. Replaced fleet-wide by §CPM_DISPLAY's one-DAG forward pass
+  // (viewer/cpm_schedule.js) — see _displayTimeline above.
 
   // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
   // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
@@ -4982,138 +4567,13 @@
     return out;
   }
 
-  // ══ §MIDAIR_REPAIR (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) ══════════════
-  // The acceptance bar, user's own words: "all i want is not to see a single item hanging in
-  // midair that is all" — and "no band aid fix, just generalised solution."
-  //
-  // WHY the existing proof trail could not deliver that. ScheduleGate.auditFloating counts an
-  // element as floating only when a support it KNOWS ABOUT finishes after that element starts, and
-  // the pools it knows about are narrow: structGrid = seq<=4 plus promoted slabs, wallGrid = walls.
-  // So two populations are invisible to it, and both are exactly what an eye sees as hanging:
-  //   (a) an element whose only real neighbours are outside those pools (a post on a curtain-wall
-  //       plate, a fitting on a proxy, a stair tread on a stringer) — auditFloating finds no
-  //       candidate at all, records `se=0`, and reports it clean;
-  //   (b) a seq<=4 structure-pool member — never support-checked in EITHER direction (the gates in
-  //       schedule_gate.js all run in placeNonst). MEASURED live report: HHS's stair flights are
-  //       authored as IfcSlab, so seq=4, so no gate ever ran — 2 of them appeared on day 1.5 with
-  //       their first real neighbour on day 8.5, and 2 more on day 9.6 against day 49.7. That is
-  //       the "stairs hanging in midair" the user watched, and it needed no temporary-works excuse.
-  // MEASURED, before this function existed (probe_midair_census.js, DISPLAY timeline, all 7 shipped
-  // buildings): Terminal 161, Hospital 165, Duplex 19, HHS 156, Clinic 345, LTU_AHouse 4605, JKR 110
-  // elements appear with NOTHING they touch yet visible — 5,561 total, while auditFloating reported
-  // its usual locked baselines. This is the gap between "the witnesses pass" and "the movie is right".
-  //
-  // THE RULE, stated once, class-blind and pool-blind: AN ELEMENT MAY NOT APPEAR BEFORE THE FIRST
-  // ELEMENT IT PHYSICALLY TOUCHES APPEARS. Contact is the union of the three relations the shipped
-  // gates already model, applied without any class or pool filter — bearing-below (I rest on S),
-  // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
-  // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
-  // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
-  //
-  // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
-  // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
-  // invisible, and cannot re-time the 99% that already sit on something. It only ever moves an
-  // element LATER (monotonicity, the property §TIER_SERIAL W-TS-3 depends on, is preserved by
-  // construction). It terminates: every raise sets a start to some other element's CURRENT start,
-  // so the global maximum start never grows, and the sweep is capped besides.
-  // It runs on the DISPLAY timeline, after _twoTierRemap, because that is the last layer before
-  // kernel_ops — a repair in the generative layer would be undone by the Tier-2 shift moving a
-  // carrier out from under its consumer.
-  //
-  // TIER-1 SERIALIZATION LOSES TO SUPPORT ORDER, and that is the established doctrine here, not a
-  // new licence: §TIER_DAG_WINS already accepts backbone elements crossing a phase window when the
-  // support DAG forces it ("counted, never hidden"). t1Moved reports the same population for this
-  // rule. Physics beats phase tidiness — an element cannot exist before what holds it.
-  //
-  // ORPHANS ARE REPORTED, NEVER MOVED: an element that touches nothing anywhere in the model has no
-  // schedule that can fix it (it hangs at every instant, including the last frame). That is an
-  // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
-  // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
-  function _midairRepair(items) {
-    var stats = { moved: 0, sweeps: 0, orphans: 0, grounded: 0, residual: 0, strictResidual: 0, t1Moved: 0, maxShiftMs: 0, total: items ? items.length : 0, ms: 0 };
-    if (!items || !items.length) return stats;
-    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    // §MIDAIR_REPAIR_CONTACTGRAPH_DEDUP (2026-08-15, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
-    // §CARRIER_DEDUP_DERISK_STUDY): this used to be a byte-identical inlined copy of _contactGraph's
-    // own grid-build + contact-scan + grounded computation — same predicate, same GAP/EPS, drifted
-    // from nothing but duplication. Call the one real implementation instead.
-    var G = _contactGraph(items);
-    if (!G.ok) { console.warn('§MIDAIR_REPAIR ScheduleGate not loaded — repair skipped'); return stats; }
-    var n = items.length, i, k;
-    var contacts = G.contacts;
-    stats.orphans = G.orphans; stats.grounded = G.groundedN;
-    // ══ §GROUNDED_OVERRIDE_FIX (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — user
-    // report: "THINGS STILL HANGING IN MID AIR") ═════════════════════════════════════════════════
-    // `grounded[i]` means "nothing shares MY OWN exact XY footprint below me" — true for a genuine
-    // ground-floor slab, but ALSO true for any element whose real support/carrier simply doesn't
-    // overlap its own tight bbox (a column whose footing is a hair narrower, a beam whose neighbour
-    // sits one grid cell over). The repair loop below used to SKIP every grounded element outright
-    // (`if (!list2 || grounded[i]) continue`), so an element with a REAL, later-appearing contact
-    // (`list` non-null) was silently exempted from ever being checked — "grounded" was overriding a
-    // detected violation instead of only covering the case where there is genuinely nothing to check
-    // (`!list`, unchanged, still skipped — that population is `orphans`, tracked separately).
-    // MEASURED, all 7 buildings, before this fix (grounded exempted these from EVERY audit, so
-    // witness_midair_zero's "0 floating" was checking the wrong question for all of them): Hospital
-    // 460, Terminal 236, LTU_AHouse 254, JKR 57, Clinic 79, HHS 15, Duplex 4 — 1,105 elements total,
-    // worst gaps up to 878.8d (LTU_AHouse) and 172.3d (Hospital), real elements starting hundreds of
-    // days before anything they geometrically touch even appears on screen.
-    // The fix is one condition, three call sites (`_contactGraph`'s two consumers below plus
-    // `_midairAudit` above, which the 🔓→🔒 lock gate reads): `grounded[i]` no longer overrides a
-    // present contact list. `grounded` stays exactly as informative as before for elements that
-    // truly have none (`!list`) — this only stops it from REPRIEVING a real detected violation.
-    var movedFlag = new Uint8Array(n), first, d, changed;
-    // ── THE STRICTER BAR, MEASURED AND DELIBERATELY NOT ENFORCED (2026-08-12) ──────────────────
-    // §SUPPORT_CHECK's doctrine is end-based ("nothing may start before its physical support
-    // FINISHES"), so a stricter version of this repair was built and measured: move every element
-    // to the first FINISH among the things it touches (frozen pre-repair ends, single pass — an
-    // end-based fixpoint provably diverges here, since contact is near-symmetric and each raise
-    // adds a duration rather than reusing an existing time).
-    // MEASURED RESULT, why it is NOT shipped: on Terminal it moved 700 elements by up to 103 days
-    // and STILL left 624 of them appearing before any contact finished (Duplex: 23 moved, 22 still
-    // violating) — because the contacts move too, so the bar recedes as you chase it. Reaching it
-    // for real means serializing neighbours against each other, i.e. exactly the global floor gate
-    // §4D_BAND_MONOTONIC's own header rules out ("would serialize the project and destroy the trade
-    // train"). It is also not the visual truth: renderAtTime shows an element from its START
-    // (frontier = orange glow, "being installed"), so a slab arriving over a glowing, half-built
-    // column is on screen resting on something, not hanging in midair.
-    // strictResidual below reports that population every run — a named, measured limit, never a
-    // silent one. Revisit only with a real user report that a half-built support reads as floating.
-    // ── THE REPAIR (fixpoint): nothing appears before the first thing it touches has APPEARED ──
-    while (stats.sweeps < 12) {
-      stats.sweeps++; changed = 0;
-      for (i = 0; i < n; i++) {
-        var list2 = contacts[i]; if (!list2) continue;   // §GROUNDED_OVERRIDE_FIX
-        first = Infinity;
-        for (k = 0; k < list2.length; k++) { var s2 = items[list2[k]].s; if (s2 < first) first = s2; }
-        if (first > items[i].s + 1) {                              // 1ms tolerance, auditFloating's own
-          d = first - items[i].s;
-          items[i].s += d; items[i].e += d;
-          if (d > stats.maxShiftMs) stats.maxShiftMs = d;
-          if (!movedFlag[i]) { movedFlag[i] = 1; stats.moved++; if (_TIER1_ORDER.indexOf(items[i].phase) >= 0) stats.t1Moved++; }
-          changed++;
-        }
-      }
-      if (!changed) break;
-    }
-    for (i = 0; i < n; i++) {                                      // honest residual after the cap
-      var list3 = contacts[i]; if (!list3) continue;   // §GROUNDED_OVERRIDE_FIX
-      first = Infinity;
-      for (k = 0; k < list3.length; k++) { var s3 = items[list3[k]].s; if (s3 < first) first = s3; }
-      if (first > items[i].s + 1) stats.residual++;
-      var firstE = Infinity;
-      for (k = 0; k < list3.length; k++) { var e3 = items[list3[k]].e; if (e3 < firstE) firstE = e3; }
-      if (firstE > items[i].s + 1) stats.strictResidual++;   // reported, not gated — see PASS 1 header
-    }
-    stats.ms = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0);
-    console.log('§MIDAIR_REPAIR moved=' + stats.moved + ' sweeps=' + stats.sweeps +
-      ' residual=' + stats.residual + ' (0=no element appears before what it touches) strictResidual=' +
-      stats.strictResidual + ' (appear before any contact FINISHES — the stricter end-based bar, measured and deliberately not enforced, see header) t1Moved=' +
-      stats.t1Moved + ' (support order wins over backbone serialization, same doctrine as §TIER_DAG_WINS)' +
-      ' maxShiftDays=' + (stats.maxShiftMs / 86400000).toFixed(1) +
-      ' orphans=' + stats.orphans + ' (touch NOTHING in the model — extraction limit, unfixable by any schedule)' +
-      ' grounded=' + stats.grounded + ' total=' + stats.total + ' ms=' + stats.ms);
-    return stats;
-  }
+  // _midairRepair (retired §S20 Part B, 2026-08-17, 4D_GANTT_TM_REFACTOR.md) — the legacy
+  // display-repair pass that used to run after _twoTierRemap. Replaced fleet-wide by §CPM_DISPLAY's
+  // one-DAG forward pass (viewer/cpm_schedule.js), which guarantees 0 midair BY CONSTRUCTION
+  // instead of chasing it after the fact — see _displayTimeline above. The doctrine this repair
+  // enforced (the acceptance bar, contact definition, why-it-was-safe reasoning) is unchanged and
+  // still documented once, above _contactGraph/_midairAudit (both KEPT — _midairAudit is still the
+  // 🔓→🔒 lock-gate's judge, verifyGanttIntegrity).
 
   // §GANTT_LOCK_INTEGRITY (2026-08-07, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — the
   // lock-back verification core. Pure READ: rebuilds geometry via _buildXrayElements() (works on

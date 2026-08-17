@@ -133,17 +133,20 @@ console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' 
 // W-MZ-5 — the CPM path must be reachable from the kernel_ops path, not merely defined.
 assert(/_displayTimeline\(_twItems\)/.test(tmSrc),
   'W-MZ-5a kernel_ops path calls _displayTimeline (the single display-timeline source)');
-// W-MZ-5b: slice the CPM branch out explicitly (from its `if (_CPM_DISPLAY...` guard to the
-// legacy fallback's own `_twoTierRemap` call, i.e. everything the CPM success path can reach) and
-// check membership within that slice — robust to comment-length drift, unlike a single
-// distance-bounded regex across the whole function body.
+// W-MZ-5b: the whole _displayTimeline body (from its own def to the next function) is checked
+// directly — §S20 Part B deleted the legacy fallback (_twoTierRemap/_midairRepair), so there is no
+// longer a second branch's text to accidentally match against; testing the full body is now both
+// simpler AND robust (previously this sliced out just the CPM `if` branch using
+// 'var tw = _twoTierRemap' as the boundary marker — that string no longer exists post-deletion,
+// which would have silently widened the slice to near-EOF rather than erroring; found and fixed
+// while executing Part B, not before).
 const _dtIdx = tmSrc.indexOf('function _displayTimeline(items)');
 const _dtBody = tmSrc.slice(_dtIdx, tmSrc.indexOf('function _displayTimelineRemember', _dtIdx));
-const _cpmBranch = _dtBody.slice(_dtBody.indexOf('if (_CPM_DISPLAY'), _dtBody.indexOf('var tw = _twoTierRemap'));
-assert(_dtIdx > 0 && _cpmBranch.length > 0 &&
-  /CpmSchedule\.run\(items,/.test(_cpmBranch) && /if \(r && r\.ok\)/.test(_cpmBranch) && /_midairAudit\(items\)/.test(_cpmBranch),
-  'W-MZ-5b _displayTimeline CPM branch calls CpmSchedule.run then, on success, _midairAudit ' +
-  '(the live default path — replaces the retired check on the never-live fallback branch)');
+assert(_dtIdx > 0 && _dtBody.length > 0 &&
+  /CpmSchedule\.run\(items,/.test(_dtBody) && /if \(r && r\.ok\)/.test(_dtBody) && /_midairAudit\(items\)/.test(_dtBody) &&
+  _dtBody.indexOf('_twoTierRemap') < 0 && _dtBody.indexOf('_midairRepair') < 0,
+  'W-MZ-5b _displayTimeline calls CpmSchedule.run then, on success, _midairAudit (the live default ' +
+  'path), and no longer references the deleted _twoTierRemap/_midairRepair chain at all');
 // W-MZ-6 — the LOCK gate must judge by the same rule the generator enforces, or a planner's drag
 // re-creates exactly the hangings the generated film has none of and the lock is still granted.
 const _vgi = tmSrc.slice(tmSrc.indexOf('function verifyGanttIntegrity()'));

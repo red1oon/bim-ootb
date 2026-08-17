@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-// probe_gantt_stagger.js — quantify Gantt "stagger" for any building, BOTH engines (CPM4D=0 legacy):
+// probe_gantt_stagger.js — quantify Gantt "stagger" for any building.
+// §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): CPM4D=0 used to select the legacy
+// _twoTierRemap/_midairRepair display-repair chain via `?cpm4d=0` — that chain is DELETED
+// (never fired live in this lane's entire measured history, §PATHS NOT TO TAKE #1/§S13.8/§S14.0)
+// and `_CPM_DISPLAY` is now hardcoded `true` in time_machine.js, so `?cpm4d=0` is a no-op: setting
+// CPM4D=0 here now just runs the SAME (CPM) engine twice, not "both engines". Left wired rather
+// than removed (harmless, zero behavior difference either way) — noted here so a future run isn't
+// misread as a legacy-vs-CPM comparison.
 // dump all authored task windows, compute (a) within-level phase order violations, (b) per-phase
 // level cascade overlap, (c) global parallelism. Numbers, not looks.
 'use strict';
 const { spawn } = require('child_process');
 const puppeteer = require(process.env.PUPPETEER || 'puppeteer');
 const PORT = 8125;
-const MODE = process.env.CPM4D === '0' ? '&cpm4d=0' : '';
+const MODE = process.env.CPM4D === '0' ? '&cpm4d=0' : '';   // no-op post-§S20-Part-B, see header
 const BLD = process.env.BLD || 'Terminal_extracted';
 const URL = `http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}.db${MODE}`;
 

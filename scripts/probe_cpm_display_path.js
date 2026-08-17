@@ -79,14 +79,17 @@ async function runBuilding(SQL, RATES, name) {
   if (!res.ok) throw new Error('CPM failed');
   // §S14.0 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md) — REACHABILITY EVIDENCE, printed before
   // any number is quoted. §S13.7 was retracted because it measured _twoTierRemap, which
-  // time_machine.js only reaches in _displayTimeline's §CPM_DISPLAY_FALLBACK branch. The live
-  // default is the branch THIS probe is on: _CPM_DISPLAY defaults true (time_machine.js:4519) and
-  // `CpmSchedule.run(...).ok` truthy makes _displayTimeline return at :4578, before ever reaching
-  // _twoTierRemap at :4585. Nothing here is sliced out of source — `CpmSchedule` is the shipped
-  // module, required directly, and its own §CPM_RUN line above is the proof it executed.
+  // time_machine.js only ever reached via _displayTimeline's §CPM_DISPLAY_FALLBACK branch. The live
+  // default is the branch THIS probe is on: `CpmSchedule.run(...).ok` truthy makes _displayTimeline
+  // return from its CPM branch. §S20 Part B (2026-08-17) DELETED _twoTierRemap/_midairRepair
+  // entirely (confirmed twice this lane never reached them live) — the fallback branch is now a
+  // minimal explicit console.error + no-op, not a second schedule generator, so "NOT reached" is
+  // now "does not exist" rather than merely "not taken this run". Nothing here is sliced out of
+  // source — `CpmSchedule` is the shipped module, required directly, and its own §CPM_RUN line
+  // above is the proof it executed.
   console.log('§CPM_LIVE_PATH ' + name + ' cpmRunOk=' + res.ok +
-    ' -> _displayTimeline would return at time_machine.js:4578 (§CPM_DISPLAY on); ' +
-    '_twoTierMap/_midairRepair at :4585-4586 NOT reached. Module=require(viewer/cpm_schedule.js), not a source slice.');
+    ' -> _displayTimeline returned from its CPM branch (§CPM_DISPLAY on); the legacy ' +
+    '_twoTierRemap/_midairRepair fallback no longer exists (§S20 Part B). Module=require(viewer/cpm_schedule.js), not a source slice.');
   const _rawStart = {}; items.forEach(function (o) { _rawStart[o.guid] = o.s; });
   items.forEach((o, i) => { o.s = res.solution.times[i].s; o.e = res.solution.times[i].e; });
 
