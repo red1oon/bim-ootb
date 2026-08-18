@@ -212,7 +212,7 @@ function countEarly(pairs, getS, getE, sccOf) {
     // now delegate to this shared pair — rides along verbatim, same idiom as the zone helpers above.
     sliceFn(tmSrc, '_classifyNameOverride'), sliceFn(tmSrc, '_classifyRule'),
     sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-    sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairAudit'),
+    sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
     sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].filter(Boolean).join('\n');
 
   let ran = 0;

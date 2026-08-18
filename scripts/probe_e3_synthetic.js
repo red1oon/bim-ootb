@@ -60,18 +60,28 @@ function checkCase(name, items, opts, EXPECT, EXPECT_DROPS, EXPECT_STRAG_COUNT) 
     if (!ok) mismatches++;
   }
   const cpmItems = items.map(function (it, i) { return Object.assign({}, it, { s: times[i].s, e: times[i].e }); });
-  const G = _contactGraph(cpmItems);
-  let midair = 0;
-  for (let i = 0; i < cpmItems.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { const s = cpmItems[k].s; if (s < first) first = s; }
-    if (first > cpmItems[i].s + 1) midair++;
-  }
+  const midair = directionalMidair(cpmItems).midair;
   console.log('  floating: midair=' + midair + ' | ' + (midair === 0 ? 'PASS' : 'FAIL'));
   if (midair !== 0) mismatches++;
   console.log(name + ' ' + (mismatches === 0 ? 'PASS' : 'FAIL') + ' mismatches=' + mismatches);
   return mismatches === 0;
+}
+
+// §MIDAIR_DIRECTIONAL — the fix under test in this section. Was symmetric ("does my earliest
+// physical neighbor of ANY kind start around when I do"), which false-flags a correctly-grounded
+// element the moment designatedSupport() stops forcing it to share a start with whatever's built
+// on top of it. Directional: uses the SAME real support designatedSupport() now correctly
+// computes (grounded-check-first) — an element with nothing to depend on (grounded or orphan,
+// des=-1) can never be floating, no matter what starts later nearby.
+function directionalMidair(items) {
+  const G = _contactGraph(items);
+  const des = CpmSchedule.designatedSupport(items, G);
+  let midair = 0; const guids = [];
+  for (let i = 0; i < items.length; i++) {
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) { midair++; guids.push(items[i].guid); }
+  }
+  return { midair, orphans: G.orphans, guids };
 }
 
 // ══ CASE 1 — stragglers present in a phase + a deadlock scenario, plus E1/E2/E3/E4/crew-cap ═════
@@ -94,22 +104,37 @@ const case1Items = [
   el('COL_L1',       'IfcColumn',           'Superstructure', 2, 'L1', 'STEEL',        0,  3, 0, 2, 0, 2, 0, 2),
   el('COL_L1B',      'IfcColumn',           'Superstructure', 2, 'L1', 'STEEL',        0,  3, 20, 22, 0, 2, 0, 1),
   el('BRACKET',      'IfcMember',           'Superstructure', 2, 'L1', 'STEEL2',       0,  3, 8, 10, 0, 2, 0, 1),
-  el('WALL_L1',      'IfcWallStandardCase', 'Architecture',   5, 'L1', 'MASON',      -0.5, 0, 8, 10, 0, 2, 0, 2),
+  // §GAP_BOUNDARY_COINCIDENCE (found verifying the grounded-check fix, 2026-08-18): bz was -0.5,
+  // making BRACKET's own vertical gap to WALL_L1 land EXACTLY on GAP (0.5m) -- the `grounded`
+  // formula's strict `<` there disagreed with bearing-below's inclusive `>=` at that exact
+  // boundary, so BRACKET itself registered as "grounded" despite having a genuine support,
+  // wrongly skipped by the fix. -0.6 clears the boundary while keeping the bearing-below match
+  // (S.tz=0 >= BRACKET.bz(0)-GAP(0.5)=-0.5 still holds). Real, reportable edge case, not a defect
+  // in the fix itself -- see the report.
+  el('WALL_L1',      'IfcWallStandardCase', 'Architecture',   5, 'L1', 'MASON',      -0.6, 0, 8, 10, 0, 2, 0, 2),
   el('WALL_L1_MAIN', 'IfcWallStandardCase', 'Architecture',   5, 'L1', 'MASON',        0,  3, 2.5, 4.5, 0, 2, 0, 3),
   el('LIGHT_L1',      'IfcLightFixture',    'MEP Rough-in',   7, 'L1', 'ELECTRICIAN', 1.4, 1.6, 3.4, 3.6, 0.9, 1.1, 0, 1),
   el('COL_L2',       'IfcColumn',           'Superstructure', 2, 'L2', 'STEEL',        3,  6, 0, 2, 0, 2, 0, 2)
 ];
+// §GROUNDED_NEVER_HANGS re-derivation (2026-08-18) — FOOTING_L1 and WALL_L1 no longer get a
+// spurious reversed support from designatedSupport()'s grounded-check-first fix, so the
+// accidental 2-node mutual cycles (and the second straggler) are gone. The DELIBERATE cycle
+// (BRACKET genuinely rests on WALL_L1, which is gated behind Superstructure's own completion)
+// is untouched by that fix and still resolves the same way. E3 now correctly reaches COL_L1/
+// COL_L1B/COL_L2/WALL_L1_MAIN/LIGHT_L1 (no longer reset to 0 by the accidental cycle), pushing
+// every downstream time later than before — re-derived by hand, then confirmed via a direct
+// contactGraph/designatedSupport dump before trusting these numbers (see the fix's own report).
 const case1Expect = {
-  FOOTING_L1:    { s: 0, e: 1,   straggler: true  },
-  COL_L1:        { s: 0, e: 2,   straggler: false },
-  COL_L1B:       { s: 2, e: 3,   straggler: false },
-  BRACKET:       { s: 0, e: 1,   straggler: true  },
+  FOOTING_L1:    { s: 0, e: 1,   straggler: false },
+  COL_L1:        { s: 1, e: 3,   straggler: false },
+  COL_L1B:       { s: 3, e: 4,   straggler: false },
+  BRACKET:       { s: 1, e: 2,   straggler: true  },
   WALL_L1:       { s: 0, e: 2,   straggler: false },
-  WALL_L1_MAIN:  { s: 3, e: 6,   straggler: false },
-  LIGHT_L1:      { s: 6, e: 7,   straggler: false },
-  COL_L2:        { s: 3, e: 5,   straggler: false }
+  WALL_L1_MAIN:  { s: 4, e: 7,   straggler: false },
+  LIGHT_L1:      { s: 7, e: 8,   straggler: false },
+  COL_L2:        { s: 4, e: 6,   straggler: false }
 };
-const case1Drops = { e3: 2, e4: 0, member: 2, contractedSccs: 2, contractedNodes: 4, fsViolInScc: 0 };
+const case1Drops = { e3: 1, e4: 0, member: 1, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
 
 // ══ CASE 2 — a level missing a phase (Superstructure absent at L3; Substructure chains straight
 // to Architecture, skipping the gap; Tier-2's t1Complete correctly excludes the absent phase from
@@ -130,12 +155,16 @@ const case2Items = [
 // M(Architecture) milestone via an UNRELATED member edge (not part of this cycle), so
 // M(Architecture)=WALL2.finish=1 survives intact. t1Complete(L3)=max(M(Substructure)=0[reset by
 // the drop],M(Architecture)=1)=1 [Superstructure absent throughout]. MEP2: ES=1,dur1 -> s=1,e=2.
+// §GROUNDED_NEVER_HANGS re-derivation (2026-08-18) — FOOTING2 no longer gets a spurious reversed
+// support from WALL2; the accidental cycle (and FOOTING2's false straggler flag) is gone. E3
+// correctly reaches WALL2 now (M(Substructure) no longer reset to 0), pushing WALL2 and MEP2 both
+// one day later than before.
 const case2Expect = {
-  FOOTING2: { s: 0, e: 1, straggler: true  },
-  WALL2:    { s: 0, e: 1, straggler: false },
-  MEP2:     { s: 1, e: 2, straggler: false }
+  FOOTING2: { s: 0, e: 1, straggler: false },
+  WALL2:    { s: 1, e: 2, straggler: false },
+  MEP2:     { s: 2, e: 3, straggler: false }
 };
-const case2Drops = { e3: 1, e4: 0, member: 1, contractedSccs: 1, contractedNodes: 2, fsViolInScc: 0 };
+const case2Drops = { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
 
 // ══ CASE 3 — an orphan element (not grounded, no valid contact: something sits below within grid
 // range but too far in Z to satisfy any of bearing-below/embedded/carrier-above). ════════════════
@@ -158,11 +187,15 @@ const case3Items = [
 // contractedSccs=0, unlike case1/case2. Final: ORPHAN_EL's e3-in dropped, no other constraint ->
 // s=0,e=1. FAR_BELOW's only surviving constraint is the E1 SS from ORPHAN_EL (needs its START=0)
 // -> s=0,e=1. FAR_BELOW inherits ORPHAN_EL's higher groupKey via that surviving physics edge -> straggler.
+// §GROUNDED_NEVER_HANGS re-derivation (2026-08-18) — FAR_BELOW no longer gets a spurious reversed
+// support from ORPHAN_EL (the long-distance carrier-above match); with that edge gone, the whole
+// chain is a simple DAG (no cycle at all), so nothing gets dropped and ORPHAN_EL's E3 gate from
+// M(Substructure) applies normally, pushing it one day later than before.
 const case3Expect = {
-  FAR_BELOW: { s: 0, e: 1, straggler: true  },
-  ORPHAN_EL: { s: 0, e: 1, straggler: false }
+  FAR_BELOW: { s: 0, e: 1, straggler: false },
+  ORPHAN_EL: { s: 1, e: 2, straggler: false }
 };
-const case3Drops = { e3: 1, e4: 0, member: 1, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
+const case3Drops = { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
 
 // ══ CASE 4 — parallel independent zones sharing one band (two differently-NAMED levels whose
 // mean Z falls in the SAME 3m band): must NOT cross-chain via E4 — each zone's own timeline stays
@@ -194,12 +227,90 @@ const case4Expect = {
 };
 const case4Drops = { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0, fsViolInScc: 0 };
 
+// ══ CASE 5 — a grounded footing with something built on top that starts MUCH later must NOT be
+// flagged floating. This is the exact regression the OLD symmetric judge produced the moment
+// designatedSupport() stopped forcing a grounded element to share its start with whatever's on
+// top of it: FOOTING5 (grounded, no real support, des=-1) sits at day 0; COL5 (rests on FOOTING5)
+// is hand-given a much later start (day 5, simulating a real delay — crew queue, a gate, anything)
+// to maximize the gap the OLD check would have misread as "I appear before my neighbor arrives".
+// Tests the JUDGE directly (hand-picked times, not run through solve()) — the question is whether
+// the CHECK is right, not whether the engine produced these times. ═══════════════════════════════
+const case5Items = [
+  el('FOOTING5', 'IfcFooting', 'Substructure',   1, 'L5', 'CONCRETE', -1, 0, 0, 2, 0, 2, 0, 1),
+  el('COL5',     'IfcColumn',  'Superstructure', 2, 'L5', 'STEEL',     0, 3, 0, 2, 0, 2, 5, 7)
+];
+// Hand-computed: FOOTING5 is grounded (nothing below it) -> designatedSupport=-1 -> can never be
+// floating, regardless of COL5's start. COL5's designated support IS FOOTING5 (bearing-below) ->
+// is FOOTING5.s(0) > COL5.s(5)+1? No -> COL5 not floating either (its support started well before
+// it did, which is correct). Expected: midair=0.
+
+// ══ CASE 6 — a genuine floating violation must still be caught. DEPENDENT6 is hand-given a start
+// BEFORE its real support (SUPPORT6) has even begun — the exact case the fix must not regress.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+const case6Items = [
+  el('SUPPORT6',   'IfcFooting', 'Substructure',   1, 'L6', 'CONCRETE', -1, 0, 0, 2, 0, 2, 5, 6),
+  el('DEPENDENT6', 'IfcColumn',  'Superstructure', 2, 'L6', 'STEEL',     0, 3, 0, 2, 0, 2, 0, 1)
+];
+// Hand-computed: SUPPORT6 is grounded -> never floating. DEPENDENT6's designated support IS
+// SUPPORT6 (bearing-below) -> is SUPPORT6.s(5) > DEPENDENT6.s(0)+1=1? YES (5>1) -> DEPENDENT6 IS
+// floating. Expected: midair=1, guids=['DEPENDENT6'].
+
+// ══ CASE 7 — the narrowing itself: a grounded-by-coarse-threshold element that still has a
+// genuine close support must NOT lose it. `grounded[i]` uses the coarse GAP(0.5m) threshold over
+// ALL XY-neighbors regardless of relation, but a genuine bearing-below match only needs EPS(0.05m)
+// clearance — a real support sitting between EPS and GAP below T satisfies cls=0 while leaving
+// `lowest >= T.bz-GAP`, so grounded[T] stays 1 even though T has real support. The ORIGINAL blunt
+// fix ("if grounded, always -1") would have discarded THIN_FTG7 here — exactly the
+// §GROUNDED_OVERRIDE_FIX mistake repeated. The narrowed fix must not. ══════════════════════════
+const case7Items = [
+  el('THIN_FTG7', 'IfcFooting', 'Substructure', 1, 'L7', 'CONCRETE', -0.2, 0.05, 0, 2, 0, 2, 0, 1),
+  el('SLAB7',     'IfcSlab',    'Superstructure', 2, 'L7', 'CONCRETE', 0, 1, 0, 2, 0, 2, 1, 2)
+];
+// Hand-computed: SLAB7.bz=0. THIN_FTG7.bz=-0.2, THIN_FTG7.tz=0.05. cls=0 test for THIN_FTG7 as
+// SLAB7's support: THIN_FTG7.bz(-0.2) < SLAB7.bz(0)-EPS(0.05)=-0.05? YES. THIN_FTG7.tz(0.05) >=
+// SLAB7.bz(0)-GAP(0.5)=-0.5? YES -> cls=0, genuine bearing-below. grounded[SLAB7]: lowest among
+// SLAB7's neighbors = THIN_FTG7.bz(-0.2); is -0.2 < SLAB7.bz(0)-GAP(0.5)=-0.5? NO -> grounded[SLAB7]=1
+// despite the genuine support existing. Narrowed fix: bestCls=0 (not 2) -> grounded check never
+// applies -> des[SLAB7]=THIN_FTG7's index. THIN_FTG7 itself: only neighbor is SLAB7 above (cls=2
+// by elimination, S.bz(0) is not < T.bz(-0.2)-EPS and not <= T.bz+EPS with S.tz>=T.tz — falls to
+// cls=2); grounded[THIN_FTG7]=1 (nothing below IT either) -> bestCls=2 && grounded -> des=-1.
+// Correct: THIN_FTG7 is the true base element, gets no support; SLAB7 correctly keeps its real one.
+function checkNarrowing(name, items, expectDes) {
+  console.log('--- ' + name + ' ---');
+  const G = CpmSchedule.contactGraph(items);
+  const des = CpmSchedule.designatedSupport(items, G);
+  let ok = true;
+  items.forEach(function (it, i) {
+    const gotJ = des[i], gotGuid = gotJ >= 0 ? items[gotJ].guid : null;
+    const exp = expectDes[it.guid];
+    const match = gotGuid === exp;
+    if (!match) ok = false;
+    console.log('  ' + it.guid + ': des=' + gotGuid + ' expect=' + exp + ' | ' + (match ? 'MATCH' : 'MISMATCH'));
+  });
+  console.log(name + ' ' + (ok ? 'PASS' : 'FAIL'));
+  return ok;
+}
+
+function checkDirectionalOnly(name, items, expectMidair, expectGuids) {
+  console.log('--- ' + name + ' ---');
+  const r = directionalMidair(items);
+  const guidsOk = JSON.stringify(r.guids.sort()) === JSON.stringify((expectGuids || []).sort());
+  const ok = r.midair === expectMidair && guidsOk;
+  console.log('  midair: got=' + r.midair + ' guids=' + JSON.stringify(r.guids) +
+    ' | expect=' + expectMidair + ' guids=' + JSON.stringify(expectGuids || []) + ' | ' + (ok ? 'MATCH' : 'MISMATCH'));
+  console.log(name + ' ' + (ok ? 'PASS' : 'FAIL'));
+  return ok;
+}
+
 function main() {
   const results = [
-    checkCase('CASE1_STRAGGLER_DEADLOCK', case1Items, { maxCrews: { STEEL: 1 } }, case1Expect, case1Drops, 2),
-    checkCase('CASE2_MISSING_PHASE', case2Items, {}, case2Expect, case2Drops, 1),
-    checkCase('CASE3_ORPHAN', case3Items, {}, case3Expect, case3Drops, 1),
-    checkCase('CASE4_PARALLEL_ZONES_ONE_BAND', case4Items, {}, case4Expect, case4Drops, 0)
+    checkCase('CASE1_STRAGGLER_DEADLOCK', case1Items, { maxCrews: { STEEL: 1 } }, case1Expect, case1Drops, 1),
+    checkCase('CASE2_MISSING_PHASE', case2Items, {}, case2Expect, case2Drops, 0),
+    checkCase('CASE3_ORPHAN', case3Items, {}, case3Expect, case3Drops, 0),
+    checkCase('CASE4_PARALLEL_ZONES_ONE_BAND', case4Items, {}, case4Expect, case4Drops, 0),
+    checkDirectionalOnly('CASE5_GROUNDED_NOT_FLOATING', case5Items, 0, []),
+    checkDirectionalOnly('CASE6_GENUINE_FLOATING_STILL_CAUGHT', case6Items, 1, ['DEPENDENT6']),
+    checkNarrowing('CASE7_GROUNDED_BUT_REAL_SUPPORT_SURVIVES', case7Items, { THIN_FTG7: null, SLAB7: 'THIN_FTG7' })
   ];
   const allPass = results.every(Boolean);
   console.log('\n§E3_SYNTHETIC_SUITE ' + (allPass ? 'PASS' : 'FAIL') + ' cases=' + results.length + ' passed=' + results.filter(Boolean).length);

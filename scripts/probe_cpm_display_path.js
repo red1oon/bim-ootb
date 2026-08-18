@@ -30,6 +30,7 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
+const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
 const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
 // the SHIPPED rescale, sliced verbatim (incl. §CAP_RESCALE_IDENTITY guard) — never a maintained copy
 const applyCapWindowRescale = buildFn([sliceFn(tmSrc, '_capWindowRescale')], '_capWindowRescale');
@@ -42,15 +43,14 @@ const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
 const SHIFT_HOURS = process.env.SHIFT_HOURS ? Number(process.env.SHIFT_HOURS) : 24;
 function _slug(name) { return String(name).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
 
-// floatingCensus — THE JUDGE, verbatim math from probe_captured_floating.js.
+// floatingCensus — THE JUDGE, directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md).
 function floatingCensus(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0; const byClass = {};
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { const s = items[k].s; if (s < first) first = s; }
-    if (first > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
   }
   return { midair, orphans: G.orphans, byClass };
 }

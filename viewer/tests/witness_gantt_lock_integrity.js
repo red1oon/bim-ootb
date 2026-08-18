@@ -125,7 +125,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     // thing it touches" (_midairAudit → _contactGraph) — auditFloating's pools cannot see that
     // population. Slice them when present, same both-commits pattern as _promoteRoofLoadPath above.
     const _hasMidairAudit = tmSrc.indexOf('function _midairAudit(') >= 0;
-    if (_hasMidairAudit) _names.unshift('_contactGraph', '_midairAudit');
+    if (_hasMidairAudit) _names.unshift('_contactGraph', '_designatedSupport', '_midairAudit');
     // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md) — FIXES THE LANDMINE §S19_RESULTS named:
     // this used to conditionally slice `_midairRepair` (the dead legacy display-repair chain)
     // whenever `_midairAudit` was present in source — a condition that is now ALWAYS true

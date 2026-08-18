@@ -84,7 +84,7 @@ const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architec
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   sliceFn(tmSrc, '_contactGraph'),
   sliceFn(tmSrc, '_ogSupportSweep'), sliceFn(tmSrc, '_cjpJudgeParity'),
-  sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
   sliceFn(tmSrc, '_displayTimeline'), sliceFn(tmSrc, '_displayTimelineRemember'),
   sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
 const _rlines = [];
@@ -93,18 +93,19 @@ const sandbox = { console: { log: (...a) => _rlines.push(a.join(' ')), warn: () 
   CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
 vm.createContext(sandbox);
 vm.runInContext(sliced +
-  '\nthis.__remapHook = _tmDisplayRemap; this.__sweep = _ogSupportSweep; this.__parity = _cjpJudgeParity; this.__cg = _contactGraph; this.__rescale = _capWindowRescale;', sandbox);
+  '\nthis.__remapHook = _tmDisplayRemap; this.__sweep = _ogSupportSweep; this.__parity = _cjpJudgeParity; this.__cg = _contactGraph; this.__ds = _designatedSupport; this.__rescale = _capWindowRescale;', sandbox);
 const _tmDisplayRemap = sandbox.__remapHook, _ogSupportSweep = sandbox.__sweep,
-  _cjpJudgeParity = sandbox.__parity, _contactGraph = sandbox.__cg, _capWindowRescale = sandbox.__rescale;
+  _cjpJudgeParity = sandbox.__parity, _contactGraph = sandbox.__cg, _designatedSupport = sandbox.__ds,
+  _capWindowRescale = sandbox.__rescale;
 
+// census — directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md).
 function census(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0;
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { if (items[k].s < first) first = items[k].s; }
-    if (first > items[i].s + 1) midair++;
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) midair++;
   }
   return midair;
 }

@@ -28,6 +28,7 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
+const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
 const _ogSupportSweep = buildFn([sliceFn(tmSrc, '_ogSupportSweep')], '_ogSupportSweep');
 const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
 // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): the module-scope _midairRepair const (and the
@@ -40,15 +41,17 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 const ONLY = process.env.ONLY || 'Hospital_extracted';
 const SHIFT_HOURS = process.env.SHIFT_HOURS ? Number(process.env.SHIFT_HOURS) : 24;
 
+// Directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md) — REPLACES the old symmetric
+// "earliest contact of any kind" check. See cpm_schedule.js designatedSupport()
+// §GROUNDED_NEVER_HANGS for the mechanism.
 function floatingCensus(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0, byClass = {}, guids = [];
   const byGuid = {}; items.forEach((it, i) => byGuid[it.guid] = i);
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { const s = items[k].s; if (s < first) first = s; }
-    if (first > items[i].s + 1) {
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) {
       midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1;
       if (guids.length < 2000) guids.push({ guid: items[i].guid, cls: items[i].cls, task: items[i].task });
     }
@@ -485,7 +488,7 @@ async function main() {
       (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
       sliceAt(tmSrc, '_zoneOf', 0, true) || '', classifyParts[0] || '', classifyParts[1] || '',
       sliceAt(tmSrc, '_promoteRoofLoadPath'), sliceAt(tmSrc, '_buildXrayElements'),
-      sliceAt(tmSrc, '_contactGraph'), sliceAt(tmSrc, '_midairAudit'),
+      sliceAt(tmSrc, '_contactGraph'), sliceAt(tmSrc, '_designatedSupport'), sliceAt(tmSrc, '_midairAudit'),
       sliceAt(tmSrc, '_displayTimelineRemember'), sliceAt(tmSrc, '_displayTimeline')].join('\n');
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: RATES.SEQUENCE_RULES, SEQUENCE_DEFAULT: RATES.SEQUENCE_DEFAULT,

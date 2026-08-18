@@ -37,6 +37,7 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
+const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
@@ -46,16 +47,18 @@ const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
 const SHIFT_HOURS = process.env.SHIFT_HOURS ? Number(process.env.SHIFT_HOURS) : 24;
 const DAY_MS = 86400000;
 
-// floatingCensus — THE JUDGE, verbatim math from probe_captured_floating.js, running on the
-// SLICED time_machine _contactGraph (independent of the module under test).
+// floatingCensus — THE JUDGE, directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md), running
+// on the SLICED time_machine _contactGraph/_designatedSupport (independent of the module under
+// test). REPLACES the old symmetric "earliest contact of any kind" check, which false-flagged a
+// correctly-grounded element the moment a real support stopped being forced to share its start —
+// see cpm_schedule.js's designatedSupport() §GROUNDED_NEVER_HANGS for the full mechanism.
 function floatingCensus(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0; const byClass = {};
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { const s = items[k].s; if (s < first) first = s; }
-    if (first > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
   }
   return { midair, orphans: G.orphans, grounded: G.groundedN, byClass };
 }
@@ -135,6 +138,13 @@ async function runBuilding(SQL, RATES, name) {
   console.log('§CPM_PARITY contactsJudge=' + contactsJ + ' contactsModule=' + contactsM +
     ' elementMismatch=' + mismatch + ' orphans=' + Gj.orphans + '/' + Gm.orphans +
     ' grounded=' + Gj.groundedN + '/' + Gm.groundedN + ' ' + (mismatch === 0 ? 'PASS' : 'FAIL'));
+
+  // §CPM_PARITY_SUPPORT — designatedSupport, the same two-copy discipline extended (2026-08-18,
+  // grounded-narrowing fix): the judge's own copy vs the module's, support-index-for-support-index.
+  const desJ = _designatedSupport(items, Gj), desM = CpmSchedule.designatedSupport(items, Gm);
+  let supportMismatch = 0;
+  for (let i = 0; i < items.length; i++) if (desJ[i] !== desM[i]) supportMismatch++;
+  console.log('§CPM_PARITY_SUPPORT elementMismatch=' + supportMismatch + ' ' + (supportMismatch === 0 ? 'PASS' : 'FAIL'));
 
   // RAW baseline floating (pre-CPM, crew-leveled generative times), for the delta report.
   const rawCensus = floatingCensus(items.map(o => Object.assign({}, o)));
