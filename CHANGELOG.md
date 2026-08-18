@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.49.1](https://github.com/red1oon/bim-ootb/compare/v1.49.0...v1.49.1) (2026-08-18)
+
+
+### 🐛 Fixes
+
+* **4d:** designatedSupport() never hangs a grounded element on carrier-above + directional floating judge ([#1435](https://github.com/red1oon/bim-ootb/issues/1435)) ([6a395ca](https://github.com/red1oon/bim-ootb/commit/6a395ca58ed5f98759e868ddfaea8ba6a7beb50d))
+
 ## [1.49.0](https://github.com/red1oon/bim-ootb/compare/v1.48.0...v1.49.0) (2026-08-17)
 
 
