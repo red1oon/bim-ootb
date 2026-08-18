@@ -31,6 +31,7 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
+const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
@@ -39,15 +40,14 @@ const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
 ]);
 const SHIFT_HOURS = process.env.SHIFT_HOURS ? Number(process.env.SHIFT_HOURS) : 24;
 
-// floatingCensus — same judge as probe_cpm_schedule.js, independent of ScheduleEngine.
+// floatingCensus — same directional judge as probe_cpm_schedule.js, independent of ScheduleEngine.
 function floatingCensus(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0; const byClass = {};
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { const s = items[k].s; if (s < first) first = s; }
-    if (first > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) { midair++; byClass[items[i].cls] = (byClass[items[i].cls] || 0) + 1; }
   }
   return { midair, orphans: G.orphans, grounded: G.groundedN, byClass };
 }

@@ -91,6 +91,32 @@
   // the judge's own contact set, so min-over-contacts <= ES(T) holds). Deterministic preference:
   // bearing-below (nearest below = max tz), else embedded (smallest |bz gap|), else carrier-above
   // (nearest above = min bz); guid tie-break. -1 = no contacts (orphan/pure-ground).
+  //
+  // §GROUNDED_NEVER_HANGS (4D_GANTT_TM_REFACTOR.md §VERIFICATION, real-data cycle characterization;
+  // NARROWED 2026-08-18 after conflicting with the already-proven §GROUNDED_OVERRIDE_FIX
+  // (2026-08-13) precedent: "grounded" must never override a REAL detected relationship — a prior
+  // blunt grounded-skip elsewhere caught 1,105 false negatives when removed). An element
+  // G.grounded[i]===1 must never get a CARRIER-ABOVE (cls=2, the weakest fallback) designated
+  // support — before this fix, a grounded element with ONLY a carrier-above candidate (something
+  // built on top of it, within reach, no real support of its own) fell through to that weakest
+  // match and got assigned it as a backward E1 SS edge, "I depend on the thing resting on me".
+  // Measured on real fleet data (HHS/Duplex/Hospital/Terminal): this dominated the cycle-closing
+  // share of the straggler-exemption removal's dropped E3/E4 edges (65-90% of sampled cases were
+  // this exact backward-direction pattern, not the documented, deliberate long-distance-hang case
+  // for genuinely suspended MEP). Serious specifically because E1 is the one edge type solve()'s
+  // Tarjan cycle-breaker NEVER drops (physics is absolute, by design) — a backward E1 edge doesn't
+  // get surgically removed like a wrong member/E3/E4 edge would; it becomes a permanent pure-
+  // physics cycle, silently contracted every time.
+  //
+  // NARROWING: `grounded[i]` (contactGraph, above) is computed from the coarse GAP threshold
+  // (`lowest < T.bz - GAP`) over ALL contacts regardless of classification — but a genuine
+  // bearing-below match only needs `S.bz < T.bz - EPS`, a finer threshold (EPS << GAP). A real
+  // support sitting between EPS and GAP below T (e.g. a thin bedding/formwork gap) can satisfy
+  // cls=0 while still leaving `lowest >= T.bz - GAP`, so `grounded[i]` stays 1 even though a real
+  // bearing-below relationship exists. Rejecting the WHOLE lookup for any grounded element (the
+  // original fix) would discard that real relationship, repeating §GROUNDED_OVERRIDE_FIX's exact
+  // mistake. Fix: run the same classification loop unconditionally; only reject the RESULT if it
+  // landed on cls=2 AND the element is grounded. A genuine cls=0/cls=1 match always survives.
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
@@ -109,6 +135,7 @@
           bestCls = cls; bestScore = score; bestJ = j;
         }
       }
+      if (bestCls === 2 && G.grounded[i]) continue;   // carrier-above rejected ONLY when grounded
       out[i] = bestJ;
     }
     return out;

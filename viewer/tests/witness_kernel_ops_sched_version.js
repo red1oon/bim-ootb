@@ -106,7 +106,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   sliceFn(tmSrc, '_kernelOpsSchedStale'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')
 ].join('\n');
 

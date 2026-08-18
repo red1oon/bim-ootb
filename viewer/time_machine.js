@@ -4564,21 +4564,65 @@
     return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
   }
 
-  // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before the
-  // first element they touch appears. Used by verifyGanttIntegrity (the 🔓→🔒 lock gate) so a
+  // _designatedSupport(items, G) — mirrors cpm_schedule.js's designatedSupport EXACTLY (same
+  // formula, same preference order, same grounded-narrowing) — kept as a second copy under the
+  // same §CPM_PARITY drift-prevention discipline as _contactGraph above (probe_cpm_schedule.js
+  // now also diffs this pair contact-for-contact; a diverging edit here fails that witness loudly
+  // instead of silently). See cpm_schedule.js's own §GROUNDED_NEVER_HANGS comment for the full
+  // reasoning — summary: bearing-below (nearest below), else embedded, else carrier-above ONLY
+  // when the element is not grounded (a genuine close support, even under the coarse `grounded`
+  // threshold, always wins over the grounded exemption — §GROUNDED_OVERRIDE_FIX precedent).
+  function _designatedSupport(items, G) {
+    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
+    var EPS = SG.EPS, GAP = SG.GAP;
+    var n = items.length, out = new Int32Array(n);
+    for (var i = 0; i < n; i++) {
+      out[i] = -1;
+      var list = G.contacts[i]; if (!list) continue;
+      var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
+      for (var k = 0; k < list.length; k++) {
+        var j = list[k], S = items[j], cls, score;
+        if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
+        else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) { cls = 1; score = Math.abs(S.bz - T.bz); }
+        else { cls = 2; score = S.bz; }
+        if (cls < bestCls || (cls === bestCls && (score < bestScore ||
+            (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
+          bestCls = cls; bestScore = score; bestJ = j;
+        }
+      }
+      if (bestCls === 2 && G.grounded[i]) continue;
+      out[i] = bestJ;
+    }
+    return out;
+  }
+
+  // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before what
+  // they actually DEPEND ON appears. Used by verifyGanttIntegrity (the 🔓→🔒 lock gate) so a
   // dragged bar that re-creates a hanging is REFUSED, not silently accepted — auditFloating alone
   // cannot see this population (that is the whole §MIDAIR_REPAIR finding).
+  //
+  // §MIDAIR_DIRECTIONAL (2026-08-18, 4D_GANTT_TM_REFACTOR.md) — REPLACES the old symmetric check
+  // ("does my EARLIEST contact of ANY kind start after me"), which false-flagged a correctly-
+  // grounded element the moment designatedSupport()-style logic stopped forcing it to share a
+  // start with whatever's built on top of it (that forcing bug is what accidentally kept this one
+  // masked until now). Directional: uses _designatedSupport()'s own real-dependency result — an
+  // element with nothing it actually depends on (des=-1, grounded or a genuine orphan) can never
+  // be floating, no matter what starts later nearby. This does NOT reintroduce the
+  // §GROUNDED_OVERRIDE_FIX (2026-08-13) mistake: that fix rejected skipping the audit whenever
+  // `grounded[i]` was set, because the coarse grounded threshold can be true even when a genuine
+  // close support exists (verified: scripts/probe_e3_synthetic.js CASE7) — this check still finds
+  // and uses that real support via _designatedSupport()'s own narrowing, it just no longer treats
+  // "something built on top of me, which depends on ME" as a thing I should be waiting for.
   function _midairAudit(items) {
     var out = { midair: 0, orphans: 0, guids: [], ok: true };
     if (!items || !items.length) return out;
     var G = _contactGraph(items);
     if (!G.ok) return out;
     out.orphans = G.orphans;
+    var des = _designatedSupport(items, G);
     for (var i = 0; i < items.length; i++) {
-      var list = G.contacts[i]; if (!list) continue;   // §GROUNDED_OVERRIDE_FIX (2026-08-13): a real later contact must be checked even when I have nothing below MY OWN footprint
-      var first = Infinity;
-      for (var k = 0; k < list.length; k++) { var s = items[list[k]].s; if (s < first) first = s; }
-      if (first > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
+      var sIdx = des[i]; if (sIdx < 0) continue;
+      if (items[sIdx].s > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
     }
     out.ok = out.midair === 0;
     return out;

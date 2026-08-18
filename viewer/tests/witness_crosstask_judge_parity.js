@@ -61,16 +61,22 @@ function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
 const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
+const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
 const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
 
+// census — directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md, 2026-08-18). NOTE: the
+// specific counts cited in this file's header (3090->656, 265->133, Clinic 91->9) were measured
+// against the OLD symmetric judge and are now stale baselines, not re-verified here — this fix's
+// scope is making the judge consistent everywhere, not re-deriving every historical figure. The
+// witness's own PASS/FAIL assertions (W-CJP-2 strictly-reduces, W-CJP-4 monotone, W-CJP-5
+// byte-identical) are relative comparisons, not hardcoded expected numbers, so they remain valid.
 function census(items) {
   const G = _contactGraph(items);
+  const des = _designatedSupport(items, G);
   let midair = 0;
   for (let i = 0; i < items.length; i++) {
-    const list = G.contacts[i]; if (!list) continue;
-    let first = Infinity;
-    for (const k of list) { if (items[k].s < first) first = items[k].s; }
-    if (first > items[i].s + 1) midair++;
+    const sIdx = des[i]; if (sIdx < 0) continue;
+    if (items[sIdx].s > items[i].s + 1) midair++;
   }
   return { midair, orphans: G.orphans, grounded: G.groundedN };
 }

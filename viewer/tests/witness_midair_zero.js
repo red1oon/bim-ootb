@@ -124,7 +124,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
   ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)') +
