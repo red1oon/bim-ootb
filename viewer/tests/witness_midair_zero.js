@@ -166,7 +166,23 @@ function loadRatesTable() {
 }
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
-const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
+// §S39/§S37-A2 (2026-08-19) — DB RESOLUTION IS A RULE, NOT A DICTIONARY. It used to be a
+// hand-maintained map with ONE entry (LTU_AHouse), so every other building silently fell back to
+// `<bld>_extracted.db` — including Terminal, Hospital and Clinic, which all HAVE a newer `_meta.db`
+// (Terminal's and Hospital's were patched by PRs #1427/#1428 on 2026-08-17 and this witness never
+// saw either patch). Measured cost of reading the deprecated file, same engine, only the DB
+// changed: Terminal W-MZ-8 10,011 → 4,256 (−57.5%), Hospital 8,103 → 8,210, Clinic identical.
+// The rule: prefer `<bld>_meta.db` when it exists, fall back to `<bld>_extracted.db`, and LOG the
+// choice per building so a stale-fixture measurement can never again be read as a code regression
+// (which is exactly what happened on 2026-08-18 — see the §RESULTS addendum in
+// prompts/4D_GANTT_TM_REFACTOR.md). A dictionary entry would have fixed one building; the rule
+// fixes the class and stays correct as more buildings gain a meta/geo split.
+function resolveDbFile(bld) {
+  const meta = path.join(BLD_DIR, bld + '_meta.db');
+  const extracted = path.join(BLD_DIR, bld + '_extracted.db');
+  if (fs.existsSync(meta)) return { path: meta, kind: 'meta', deprecatedAlso: fs.existsSync(extracted) };
+  return { path: extracted, kind: 'extracted', deprecatedAlso: false };
+}
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
 // §S20 (2026-08-17) — FRESH baselines against the LIVE CPM path (`_displayTimeline`'s CPM branch),
 // MEASURED this stage (first run with placeholder 0s, real numbers read off the FAIL lines,
@@ -174,13 +190,32 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // legacy-chain numbers (those measured a DIFFERENT function's output entirely). The float-after
 // trade (W-MZ-8) is genuinely new — CPM's precedence-driven displacement is a different mechanism
 // than the legacy repair's later-only push, so a different number is expected, not a regression.
-const CPM_FLOAT_AFTER_BASELINE = { Terminal: 8789, Hospital: 5107, Duplex: 289, HHS_Office_Federated: 1538,
-  Clinic: 3523, LTU_AHouse: 15896, JKR: 3736 };
+// §S39 RE-LOCK (2026-08-19). The §S20 numbers were GREEN when locked at 8f8d3de (#1430) and went
+// RED on all 7 at 5ea6fcf (#1434 — "E3 gate no longer exempts stragglers from their own phase's
+// completion"), then moved again at 6a395ca (#1435 — designatedSupport + directional judge).
+// Bisected commit by commit against UNCHANGED DB files (green at #1431/#1432/#1433, red at #1434),
+// so this is a CODE movement, not data drift, and both movers are merged, intentional,
+// independently-verified correctness fixes: the lock was stale, not the engine.
+// ⚠ #1435's own commit message attributed this failure to itself — measured, all 7 were ALREADY
+// red at 6a395ca^. Corrected in prompts/4D_GANTT_TM_REFACTOR.md §S39.1.
+// These numbers are measured on the file resolveDbFile() now picks (meta where it exists), which is
+// why Terminal and Hospital differ from the extracted-DB values quoted in §S39.2.
+//   §S20 lock → after #1434 → after #1435 (extracted) → THIS LOCK (correct DB)
+//   Terminal 8789 → 10086 → 10011 → 4256   ·  Hospital 5107 → 8466 → 8103 → 8210
+//   Duplex 289 → 239 → 237 → 237           ·  HHS 1538 → 1606 → 1491 → 1491
+//   Clinic 3523 → 958 → 1205 → 1205        ·  LTU 15896 → 15296 → 12686 → 12686
+//   JKR 3736 → 3656 → 3385 → 3385
+const CPM_FLOAT_AFTER_BASELINE = { Terminal: 4256, Hospital: 8210, Duplex: 237, HHS_Office_Federated: 1491,
+  Clinic: 1205, LTU_AHouse: 12686, JKR: 3385 };
 // Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
 // are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
 // the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
 // LTU_AHouse 865, JKR 1), confirming that independence rather than assuming it.
-const CPM_ORPHAN_BASELINE = { Terminal: 7, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36,
+// §S39: Terminal 7 → 25. Same DB swap, not a code change — Terminal_meta.db has the SAME 48,428
+// elements/transforms as the deprecated extracted file but different elevations (sum(center_z)
+// 1,557,254 → 847,396, PR #1427's patch), so 18 more elements genuinely touch nothing. Orphans are
+// purely geometric, so the DB is the only thing that can move this number.
+const CPM_ORPHAN_BASELINE = { Terminal: 25, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36,
   Clinic: 27, LTU_AHouse: 865, JKR: 1 };
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
 const D = 86400000;
@@ -239,7 +274,11 @@ function census(items) {
   const RATES = loadRatesTable();
 
   for (const bld of BUILDINGS) {
-    const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
+    const dbPick = resolveDbFile(bld);
+    const dbPath = dbPick.path;
+    console.log('§W_MZ_DBFILE ' + bld + ' using=' + path.basename(dbPath) + ' kind=' + dbPick.kind +
+      (dbPick.deprecatedAlso ? ' (a deprecated ' + bld + '_extracted.db also exists and was NOT used)' : '') +
+      ' — every number below for this building is measured on THIS file');
     if (!fs.existsSync(dbPath)) { assert(false, 'W-MZ fixture missing: ' + dbPath); continue; }
     const db = new SQL.Database(fs.readFileSync(dbPath));
     // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
