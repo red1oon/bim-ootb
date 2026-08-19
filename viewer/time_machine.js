@@ -4579,7 +4579,18 @@
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
+      // §S26.2 (2026-08-19) — STRUCTURE FIRST, contact only as a last resort. The election used to
+      // take any lower touching box, so an IfcFlowSegment under a wall "bore" that wall: a CONTACT,
+      // not a precedence, and those edges are what contradict phase order (Duplex: 761 physics-vs-
+      // phase contradictions vs 1 when supports are restricted to load-bearing classes).
+      // Electing ONLY from the pool was measured FIRST and is wrong: an element whose every contact
+      // is non-pool then gets no support at all, starts at day 0, and appears before the thing it
+      // touches — W-MZ-2 went 0 -> 2,781 on LTU, 0 -> 107 on Hospital. So the same classification
+      // elects TWICE: the pool winner when one exists, else the unrestricted winner. Nothing loses
+      // its support edge; a real structural support simply outranks a pipe.
       var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
+      var poolJ = -1, poolCls = 9, poolScore = Infinity;
+      var inPool = SG.supportPool || function () { return true; };
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -4589,7 +4600,12 @@
             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
           bestCls = cls; bestScore = score; bestJ = j;
         }
+        if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
+            (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
+          poolCls = cls; poolScore = score; poolJ = j;
+        }
       }
+      if (poolJ >= 0) { bestJ = poolJ; bestCls = poolCls; }   // §S26.2 structure outranks contact
       if (bestCls === 2 && G.grounded[i]) continue;
       out[i] = bestJ;
     }
