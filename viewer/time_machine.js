@@ -4590,7 +4590,16 @@
           bestCls = cls; bestScore = score; bestJ = j;
         }
       }
-      if (bestCls === 2 && G.grounded[i]) continue;
+      // §S26.3 (4D_GANTT_TM_REFACTOR.md, 2026-08-19) — carrier-above is NEVER an ORDERING edge.
+      // Measured fleet-wide: phase order alone already covers 93.5-99.8% of hang relations, and the
+      // residue is direction-reversed structure pairs (IfcSlab "carries" IfcBeam), not hanging
+      // fixtures. Dropping it makes the required-precedence set ACYCLIC on all 7 buildings
+      // (kahnLeftover=0 largestSCC=1, scripts/probe_s26_rank_monotone.js) — the 49,436-element
+      // Hospital component and the 74,617-element LTU component cease to exist, not shrink.
+      // NOTE the scope: this removes hang from ORDERING only. schedule_gate.js hangGate() is a
+      // start-time CLOCK, is untouched, and still makes a genuine hanger (Hospital's 139 rod-hung
+      // IfcDuctSegments, §HANG_NEAREST) wait for its carrier to finish. A delay cannot cycle.
+      if (bestCls === 2) continue;                   // carrier-above never orders (was: only when grounded)
       out[i] = bestJ;
     }
     return out;
