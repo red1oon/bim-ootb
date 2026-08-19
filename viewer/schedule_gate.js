@@ -507,7 +507,7 @@
       // The DAG makes the rule explicit and uniform: between two pool members only BELOW orders
       // them; the §GEO_SUPPORT_LEAK cases this clause exists for were all non-pool consumers
       // (IfcWallStandardCase / Proxy) and keep it unchanged.
-      var elPool = el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el);
+      var elPool = supportPool(el);   // §S26.2: same test, one definition (was inline here)
       for (c = 0; c < cs.length; c++) { arr = grid[cs[c]]; if (!arr) continue;
         for (k = 0; k < arr.length; k++) { S = arr[k]; if (S.guid === el.guid) continue;
           var below = S.base_z < el.base_z - EPS;
@@ -1216,7 +1216,21 @@
   // SHIFT_MS/DAY_MS + the two mappers are exported for the same reason EPS/GAP/CELL are: the live
   // movie clock (time_machine.js injectGantt's scaleFactor/projectDays) must size a day with THIS
   // module's shift, not a second hand-typed 8h constant to drift (§TM_DURATION_SYNC's lesson).
-  var API = { computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  // §S26.2 (2026-08-19, prompts/4D_GANTT_TM_REFACTOR.md) — the SUPPORT POOL, expressed once and
+  // exported. This is not a new concept: it is verbatim the membership test computeSchedule's
+  // geoGate already used inline (`el.seq <= 4 || isPromotedSlab(el) || isStairFlight(el)`), lifted
+  // to module scope so designatedSupport() in cpm_schedule.js and _designatedSupport() in
+  // time_machine.js can ask the same question instead of treating every touching box as structure.
+  // Measured on Duplex (§S26.2): support = anything below gives 4,706 bearing relations and 761
+  // physics-vs-phase contradictions; support = load-bearing classes gives 702 and 1. The 760
+  // difference is the engine insisting a pipe must be installed before the wall above it.
+  function supportPool(e) {
+    return e.seq <= 4 ||                                   // PASS-A structure
+           (e.cls === 'IfcSlab' && e.seq > 4) ||           // §DEQ_V1 promoted roof slab
+           e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
+  }
+
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
