@@ -205,8 +205,15 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 //   Duplex 289 → 239 → 237 → 237           ·  HHS 1538 → 1606 → 1491 → 1491
 //   Clinic 3523 → 958 → 1205 → 1205        ·  LTU 15896 → 15296 → 12686 → 12686
 //   JKR 3736 → 3656 → 3385 → 3385
-const CPM_FLOAT_AFTER_BASELINE = { Terminal: 4256, Hospital: 8210, Duplex: 237, HHS_Office_Federated: 1491,
-  Clinic: 1205, LTU_AHouse: 12686, JKR: 3385 };
+// §S26.2 RE-LOCK (2026-08-19) — structure-first support election. The numbers this replaces were
+// themselves freshly measured in the same branch stack (§S39 re-lock, correct `_meta.db` files);
+// these are the SAME instrument on the SAME files with only the predicate changed, so the deltas
+// below are the fix and nothing else:
+//   Terminal 4256 → 2151 (−49.5%) · Hospital 8210 → 3960 (−51.8%) · Duplex 237 → 44 (−81.4%)
+//   HHS 1491 → 889 (−40.4%) · Clinic 1205 → 877 (−27.2%) · LTU 12686 → 5023 (−60.4%)
+//   JKR 3385 → 1222 (−63.9%)      — better on 7/7, worse on none.
+const CPM_FLOAT_AFTER_BASELINE = { Terminal: 2151, Hospital: 3960, Duplex: 44, HHS_Office_Federated: 889,
+  Clinic: 877, LTU_AHouse: 5023, JKR: 1222 };
 // Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
 // are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
 // the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
