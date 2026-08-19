@@ -1,2 +1,15 @@
 modeller/*_geo.db filter=lfs diff=lfs merge=lfs -text
 modeller/mesh.db filter=lfs diff=lfs merge=lfs -text
+
+# ── LFS EGRESS GUARD (2026-08-19) ──────────────────────────────────────────────────────────────
+# GitHub bills LFS BANDWIDTH when a source archive containing real LFS content is downloaded, and
+# this repo cuts a release DAILY (auto-publish-release.yml, cron 0 1 * * *) — every tag adds another
+# permanently-downloadable tar.gz/zip. Measured 2026-08-19: the v1.49.1 tarball streamed 48MB+ before
+# being aborted, i.e. it carries real blob content, not pointers.
+# `export-ignore` removes these from `git archive` output (GitHub's source tarball/zipball) WITHOUT
+# touching history, clones, checkouts, or the Modeller — modeller.html, str_walker_outliner.js and
+# buildings_manifest.json all still reference mesh.db and are unaffected by this.
+# NOTE: this is only half the fix. The other half is a WEB-UI-ONLY repo setting not exposed by the
+# REST API: Settings -> Archives -> uncheck "Include Git LFS objects in archives".
+modeller/mesh.db export-ignore
+modeller/*_geo.db export-ignore
