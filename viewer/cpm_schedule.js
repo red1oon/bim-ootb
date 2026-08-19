@@ -40,6 +40,10 @@
 
   var TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
   var SS = 0, FS = 1;
+  // phaseRank = Tier-1 chain index, Tier-2 (anything not in TIER1_ORDER) = 3. Module scope: shared
+  // by designatedSupport's §S25_REVIEW.6 tie-break (needs it before buildGraph's own ladder exists)
+  // and buildGraph's own E3/E4 group-key ladder below — one definition, no drift between the two.
+  function phaseRank(P) { var t = TIER1_ORDER.indexOf(P); return t >= 0 ? t : 3; }
 
   // contactGraph(items) — same algorithm, same shipped ScheduleGate CELL/EPS/GAP constants as
   // time_machine.js _contactGraph (the judge). This module is the destined single home of the
@@ -117,22 +121,72 @@
   // original fix) would discard that real relationship, repeating §GROUNDED_OVERRIDE_FIX's exact
   // mistake. Fix: run the same classification loop unconditionally; only reject the RESULT if it
   // landed on cls=2 AND the element is grounded. A genuine cls=0/cls=1 match always survives.
+  //
+  // §S25_REVIEW.6 (4D_GANTT_TM_REFACTOR.md, 2026-08-19, prototyped in scripts/proto_s25_forward_pass.js
+  // DESIG='v2' and scripts/probe_support_designation.js's elect(mode=2)) — CLASSIFICATION is
+  // unchanged (still cls 0 bearing-below / 1 embedded / 2 carrier-above, in that preference order).
+  // What changes is the TIE-BREAK applied AMONG CANDIDATES OF THE SAME CLASS, before falling back to
+  // nearest-distance `score`:
+  //   tie #1 STRUCT — a structure-pool member (seq<=4, or any IfcSlab regardless of seq) outranks a
+  //     non-structural one at the same class. Without this, "nearest" alone can elect a pipe running
+  //     1cm under a wall over the slab 10cm under it — physically equivalent class, arbitrary choice,
+  //     and the arbitrary choice was picking the non-structural one.
+  //   tie #2 FWD — among remaining ties, a candidate whose own (bandRank, phaseRank) group does NOT
+  //     sort after the dependent's group (i.e. does not contradict phase order) outranks one that
+  //     does. Group key mirrors buildGraph's own M1 band ladder below (mean-z 3m band, dense-ranked,
+  //     phaseRank = Tier-1 index or 3 for Tier-2) — computed locally here since designatedSupport is
+  //     called (via buildGraph, below) before that ladder exists yet.
+  // Neither tie-break can promote a WORSE class — `cls` is still the primary sort key — so this never
+  // overrides real physics, only the arbitrary pick between candidates physics left equivalent.
+  // Measured (§S25_REVIEW.6, fleet-wide, real buildings): backward supports -29% to -51%; float
+  // (ScheduleGate.auditFloating on the live CPM path) better on 7/7.
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
     var n = items.length, out = new Int32Array(n);
+
+    // §S25_REVIEW.6 tie-break groundwork — same (bandRank, phaseRank) group key as buildGraph's E3/E4
+    // ladder (M1), recomputed here (self-contained, matching the prototype) because buildGraph builds
+    // its own ladder AFTER calling this function.
+    var lvlOf = new Array(n), lvlAgg = {};
+    for (var i0 = 0; i0 < n; i0++) {
+      var L0 = items[i0].storey ? SG.collapsePhase(items[i0].storey) : null;
+      lvlOf[i0] = L0;
+      if (L0) { var a0 = lvlAgg[L0] || (lvlAgg[L0] = { sum: 0, c: 0 }); a0.sum += items[i0].bz; a0.c++; }
+    }
+    var levels0 = Object.keys(lvlAgg).sort(function (a, b) { return lvlAgg[a].sum / lvlAgg[a].c - lvlAgg[b].sum / lvlAgg[b].c; });
+    var bandOfLevel0 = {};
+    levels0.forEach(function (L) { bandOfLevel0[L] = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3); });
+    var bandValues0 = [];
+    levels0.forEach(function (L) { if (bandValues0.indexOf(bandOfLevel0[L]) < 0) bandValues0.push(bandOfLevel0[L]); });
+    bandValues0.sort(function (a, b) { return a - b; });
+    var bandRankOfBand0 = {}; bandValues0.forEach(function (b, r) { bandRankOfBand0[b] = r; });
+    var bandRank0 = {}; levels0.forEach(function (L) { bandRank0[L] = bandRankOfBand0[bandOfLevel0[L]]; });
+    function groupKey(i2) {
+      if (!lvlOf[i2]) return -1;
+      return bandRank0[lvlOf[i2]] * 8 + phaseRank(items[i2].phase || '_UNPHASED');
+    }
+
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
-      var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
+      var T = items[i], bestJ = -1, bestCls = 9, bestStruct = -1, bestFwd = -1, bestScore = Infinity;
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
         else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) { cls = 1; score = Math.abs(S.bz - T.bz); }
         else { cls = 2; score = S.bz; }
-        if (cls < bestCls || (cls === bestCls && (score < bestScore ||
-            (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
-          bestCls = cls; bestScore = score; bestJ = j;
+        // tie #1: structure-pool membership outranks non-structural, at the same class.
+        var struct = (cls < 2 && (S.seq <= 4 || (S.cls === 'IfcSlab' && S.seq > 4))) ? 1 : 0;
+        // tie #2: a candidate that does not contradict phase order outranks one that does.
+        var gj = groupKey(j), gi = groupKey(i);
+        var fwd = (gj >= 0 && gi >= 0 && gj <= gi) ? 1 : 0;
+        if (cls < bestCls ||
+            (cls === bestCls && struct > bestStruct) ||
+            (cls === bestCls && struct === bestStruct && fwd > bestFwd) ||
+            (cls === bestCls && struct === bestStruct && fwd === bestFwd && (score < bestScore ||
+             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
+          bestCls = cls; bestStruct = struct; bestFwd = fwd; bestScore = score; bestJ = j;
         }
       }
       if (bestCls === 2 && G.grounded[i]) continue;   // carrier-above rejected ONLY when grounded
@@ -202,10 +256,10 @@
     var bandRank = {}; levels.forEach(function (L) { bandRank[L] = bandRankOfBand[bandOfLevel[L]]; });
 
     // Group key = lexicographic (bandRank, phaseRank) as one int; phaseRank = Tier-1 chain index,
-    // Tier-2 = 3. Every hammock gate points to a strictly LARGER key than its own. bandRank (not
+    // Tier-2 = 3 (module-scope phaseRank, above — shared with designatedSupport's own tie-break
+    // ladder). Every hammock gate points to a strictly LARGER key than its own. bandRank (not
     // per-name lvlRank) is the M1 straggler group-key so cross-ladder ancestry inside one physical
     // band stops manufacturing false stragglers.
-    function phaseRank(P) { var t = TIER1_ORDER.indexOf(P); return t >= 0 ? t : 3; }
     function groupKeyOf(i2) {
       if (!lvlOf[i2]) return -1;
       return bandRank[lvlOf[i2]] * 8 + phaseRank(items[i2].phase || '_UNPHASED');

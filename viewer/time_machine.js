@@ -4572,22 +4572,62 @@
   // reasoning — summary: bearing-below (nearest below), else embedded, else carrier-above ONLY
   // when the element is not grounded (a genuine close support, even under the coarse `grounded`
   // threshold, always wins over the grounded exemption — §GROUNDED_OVERRIDE_FIX precedent).
+  //
+  // §S25_REVIEW.6 (4D_GANTT_TM_REFACTOR.md, 2026-08-19) tie-break — mirrors cpm_schedule.js's own
+  // §S25_REVIEW.6 comment EXACTLY, see that copy for the full reasoning. Summary: classification is
+  // unchanged; among same-class candidates, a structure-pool member (seq<=4, or any IfcSlab) outranks
+  // a non-structural one, then a candidate whose own (bandRank, phaseRank) group does not sort after
+  // the dependent's outranks one that does. The TIER1 order + phaseRank + group-key ladder are kept
+  // FULLY LOCAL to this function (not module scope, unlike cpm_schedule.js's own copy) because
+  // witness_midair_zero.js / probe_captured_floating.js slice this function OUT of this file BY
+  // SOURCE TEXT (brace-matched from its own signature alone) — anything it depends on outside its
+  // own braces would be undefined in that sliced sandbox.
   function _designatedSupport(items, G) {
     var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
     var EPS = SG.EPS, GAP = SG.GAP;
     var n = items.length, out = new Int32Array(n);
+
+    // §S25_REVIEW.6 tie-break groundwork — same (bandRank, phaseRank) group key as buildGraph's E3/E4
+    // ladder (M1) in cpm_schedule.js, recomputed here (self-contained, matching the prototype).
+    var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
+    function _phaseRank(P) { var t = _TIER1_ORDER.indexOf(P); return t >= 0 ? t : 3; }
+    var lvlOf = new Array(n), lvlAgg = {};
+    for (var i0 = 0; i0 < n; i0++) {
+      var L0 = items[i0].storey ? SG.collapsePhase(items[i0].storey) : null;
+      lvlOf[i0] = L0;
+      if (L0) { var a0 = lvlAgg[L0] || (lvlAgg[L0] = { sum: 0, c: 0 }); a0.sum += items[i0].bz; a0.c++; }
+    }
+    var levels0 = Object.keys(lvlAgg).sort(function (a, b) { return lvlAgg[a].sum / lvlAgg[a].c - lvlAgg[b].sum / lvlAgg[b].c; });
+    var bandOfLevel0 = {};
+    levels0.forEach(function (L) { bandOfLevel0[L] = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3); });
+    var bandValues0 = [];
+    levels0.forEach(function (L) { if (bandValues0.indexOf(bandOfLevel0[L]) < 0) bandValues0.push(bandOfLevel0[L]); });
+    bandValues0.sort(function (a, b) { return a - b; });
+    var bandRankOfBand0 = {}; bandValues0.forEach(function (b, r) { bandRankOfBand0[b] = r; });
+    var bandRank0 = {}; levels0.forEach(function (L) { bandRank0[L] = bandRankOfBand0[bandOfLevel0[L]]; });
+    function groupKey(i2) {
+      if (!lvlOf[i2]) return -1;
+      return bandRank0[lvlOf[i2]] * 8 + _phaseRank(items[i2].phase || '_UNPHASED');
+    }
+
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
-      var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
+      var T = items[i], bestJ = -1, bestCls = 9, bestStruct = -1, bestFwd = -1, bestScore = Infinity;
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
         else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) { cls = 1; score = Math.abs(S.bz - T.bz); }
         else { cls = 2; score = S.bz; }
-        if (cls < bestCls || (cls === bestCls && (score < bestScore ||
-            (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
-          bestCls = cls; bestScore = score; bestJ = j;
+        var struct = (cls < 2 && (S.seq <= 4 || (S.cls === 'IfcSlab' && S.seq > 4))) ? 1 : 0;
+        var gj = groupKey(j), gi = groupKey(i);
+        var fwd = (gj >= 0 && gi >= 0 && gj <= gi) ? 1 : 0;
+        if (cls < bestCls ||
+            (cls === bestCls && struct > bestStruct) ||
+            (cls === bestCls && struct === bestStruct && fwd > bestFwd) ||
+            (cls === bestCls && struct === bestStruct && fwd === bestFwd && (score < bestScore ||
+             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
+          bestCls = cls; bestStruct = struct; bestFwd = fwd; bestScore = score; bestJ = j;
         }
       }
       if (bestCls === 2 && G.grounded[i]) continue;
