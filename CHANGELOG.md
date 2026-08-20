@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.49.2](https://github.com/red1oon/bim-ootb/compare/v1.49.1...v1.49.2) (2026-08-20)
+
+
+### 🐛 Fixes
+
+* **4d:** §S26.2 — a support must be structure, not any lower touching box (float −27% to −81%, 7/7) ([#1439](https://github.com/red1oon/bim-ootb/issues/1439)) ([#1440](https://github.com/red1oon/bim-ootb/issues/1440)) ([9db62a6](https://github.com/red1oon/bim-ootb/commit/9db62a6fb592b24761ee92b69402ae4651f72780))
+* **4d:** W-MZ DB resolution is a RULE, not a dict — and re-lock W-MZ-8/W-MZ-4 with the cause named ([#1438](https://github.com/red1oon/bim-ootb/issues/1438)) ([b81f646](https://github.com/red1oon/bim-ootb/commit/b81f6466707ddac0c96b44632d9cb7ef15ee844a))
+
 ## [1.49.1](https://github.com/red1oon/bim-ootb/compare/v1.49.0...v1.49.1) (2026-08-18)
 
 
