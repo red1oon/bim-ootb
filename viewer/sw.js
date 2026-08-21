@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1064';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1065';   // bump on each deploy; per-change detail is the git commit message.
 // v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
 // ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
 // model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).
@@ -445,6 +445,17 @@ const PRECACHE_ASSETS = [
   // §OFFLINE-GATEWAY-LEAK: was hardcoded network-first ("during tuning") — precached like every
   // other config file now so it stops re-hitting the network once cached.
   'sfx.json',
+  // W-SW-UNLISTED (2026-08-21, bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S61.2):
+  // 18 scripts viewer.html has always loaded that were never precached — invisible until the
+  // audit gained its second direction. Offline users got them from the network or not at all.
+  // 344 KB total, measured, against a shell that already precaches 121 assets.
+  // History + share + sfx:
+  '../common/history_tap.js', '../common/whole_history.js', '../common/history_bar.js',
+  '../common/about_diy.js', 'universal_history.js', 'share.js', 'sfx.js',
+  // ERP fold set (the viewer-side fold verbs and their FSM/decimal deps):
+  '../erp/bigdecimal.js', '../erp/ad_docfsm.js', 'blue_fold.js', 'proj_fold.js', 'vo_fold.js',
+  'proj_control.js', 'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js',
+  'proj_claim.js',
 ];
 
 self.addEventListener('install', (event) => {
