@@ -31,6 +31,9 @@ const vm = require('vm');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
+// §S58: support-order physics is a real module — REQUIRED, not sliced. A require() cannot
+// half-import a function, which is the failure mode that killed a witness for four days.
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -89,14 +92,12 @@ const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architec
   'var _tukeyBound = GanttModel.tukeyBound;',
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
-  sliceFn(tmSrc, '_contactGraph'),
-  sliceFn(tmSrc, '_ogSupportSweep'), sliceFn(tmSrc, '_cjpJudgeParity'),
-  sliceFn(tmSrc, '_capWindowRescale'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+  'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit, _ogSupportSweep = SupportSweep.ogSupportSweep, _cjpJudgeParity = SupportSweep.cjpJudgeParity, _capWindowRescale = SupportSweep.capWindowRescale;',   // §S58: real module, not source-text slices
   sliceFn(tmSrc, '_displayTimeline'), sliceFn(tmSrc, '_displayTimelineRemember'),
   sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
 const _rlines = [];
 const sandbox = { console: { log: (...a) => _rlines.push(a.join(' ')), warn: () => {} }, performance: { now: () => Date.now() },
-  ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
+  ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, URLSearchParams: URLSearchParams,
   CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
   GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53: the drawer's bar-trim envelope, as a real module
 vm.createContext(sandbox);
@@ -224,7 +225,7 @@ async function main() {
     // display timeline through the SAME hook (proves the wiring, not just the module).
     console.log = quiet;
     const cpmSandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-      ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
+      ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, URLSearchParams: URLSearchParams,
       CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
       GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53, same as the sandbox above
     vm.createContext(cpmSandbox);

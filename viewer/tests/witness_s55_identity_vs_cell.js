@@ -57,6 +57,7 @@ const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 's
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58
 const GanttModel = require(path.join(__dirname, '..', 'gantt_model.js'));   // the drawer's REAL model (§S53) — never re-implemented here
 globalThis.RoomWalker = require(path.join(__dirname, '..', 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(__dirname, '..', 'lib', 'level_deriver.js'));
@@ -92,7 +93,7 @@ const sliced = ['var _CPM_DISPLAY = true;',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+  'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 
 function loadRatesTable() {
@@ -143,7 +144,7 @@ function authoredRowCounts(db) {
       const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
         window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO,
                   LABOR_RATES: RATES.LABOR_RATES, GanttModel: GanttModel },
-        ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
+        ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, A: () => ({ db: db }),
         URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule };
       vm.createContext(sandbox);
       vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);

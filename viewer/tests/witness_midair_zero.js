@@ -92,6 +92,10 @@ const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
 // phase derivation below — a mirrored judge stays green when the drawer's own rule changes
 // (§S25_REVIEW.1, one step removed). All three now call this, the same discipline CpmSchedule already had.
 const GanttModel = require(path.join(__dirname, '..', 'gantt_model.js'));
+// §S58: the support-order physics is a real module now — the three judge functions below are
+// REQUIRED, not sliced out of time_machine.js by source text. A require() cannot half-import a
+// function, which is the failure mode that killed witness_zone_display_authoring for four days.
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
 // §S50 (4D_GANTT_TM_REFACTOR.md §S50, 2026-08-21) — the engine now gates per building on the
 // location axis. Register the REAL modules on globalThis so CpmSchedule (a real require, never a
 // slice) resolves them exactly the way a browser window would; globalThis.APP = { db } is set
@@ -140,7 +144,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+  'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not a slice
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
   ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)') +
@@ -362,7 +366,7 @@ function census(items) {
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO,
                 LABOR_RATES: RATES.LABOR_RATES, GanttModel: GanttModel },   // §S53: sliced code's delegates read window.GanttModel
-      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
+      ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, A: () => ({ db: db }),   // §S58
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule };
     vm.createContext(sandbox);
     vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);

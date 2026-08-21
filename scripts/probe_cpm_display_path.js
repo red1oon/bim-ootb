@@ -14,6 +14,7 @@ const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-was
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));
+const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
@@ -29,11 +30,11 @@ function sliceFn(src, name) {
 function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
-const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
-const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
-const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
+const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
+const _designatedSupport = SupportSweep.designatedSupport;  // §S58
+const _cjpJudgeParity = SupportSweep.cjpJudgeParity;    // §S58 (the module resolves its own contactGraph)
 // the SHIPPED rescale, sliced verbatim (incl. §CAP_RESCALE_IDENTITY guard) — never a maintained copy
-const applyCapWindowRescale = buildFn([sliceFn(tmSrc, '_capWindowRescale')], '_capWindowRescale');
+const applyCapWindowRescale = SupportSweep.capWindowRescale;  // §S58
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const FLEET = (process.env.ONLY ? [process.env.ONLY] : [
