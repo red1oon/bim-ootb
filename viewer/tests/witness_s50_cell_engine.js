@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
@@ -66,6 +67,7 @@ const BUILDINGS = (process.env.ONLY || 'Clinic,Duplex').split(',');
     const db = new SQL.Database(fs.readFileSync(dbPath));
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
+      ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }), URLSearchParams: URLSearchParams };
     vm.createContext(sandbox);
     vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements;', sandbox);

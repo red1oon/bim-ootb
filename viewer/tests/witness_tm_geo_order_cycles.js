@@ -44,6 +44,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
 let pass = 0, fail = 0;
@@ -72,6 +73,15 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const names = ['_buildXrayElements'];
   const hasPromote = tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0;
   if (hasPromote) names.unshift('_promoteRoofLoadPath');
+  // §S62: _buildXrayElements' real dependency closure. It calls _classifyRule (which calls
+  // _classifyNameOverride) and _zoneIndex — none of which were in this slice set, so the witness
+  // died on ReferenceError before its first assertion. _zoneIndex now comes from the zone_index.js
+  // module via the sandbox; these two are still text slices, added here the same way
+  // witness_midair_zero.js:136 already does it. Each name added is a dependency that was
+  // ALWAYS required and never declared — the text-slice pattern cannot state its own needs.
+  for (const dep of ['_classifyNameOverride', '_classifyRule']) {
+    if (tmSrc.indexOf('function ' + dep + '(') >= 0) names.push(dep);
+  }
   console.log('§TMREPRO_SLICE state=' + (hasPromote ? 'post-refactor (shared _promoteRoofLoadPath)' : 'pre-refactor (inline copy)'));
   let sliced;
   try {
@@ -89,6 +99,12 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     performance: { now: () => Date.now() },
     window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
     A: function () { return { db: db }; },
+    // §S62: _buildXrayElements calls _zoneIndex(), which was in NEITHER the slice set nor the
+    // sandbox — this witness died on `ReferenceError: _zoneIndex is not defined` before its first
+    // assertion. The builder is a real module now, so the accessor is provided here (no memo
+    // needed: one build per run) instead of hoping a text slice happens to include it.
+    ZoneIndex: ZoneIndex,
+    _zoneIndex: function () { return ZoneIndex.build(db); },
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements;', sandbox);
