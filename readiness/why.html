@@ -168,6 +168,21 @@ figcaption b{
 .band.m{background:var(--surface-3);color:var(--ink-2)}
 .band.b{background:var(--warn-wash);color:var(--warn)}
 
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
 /* ---- callout ---- */
 .call{
   background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
@@ -244,6 +259,19 @@ footer{
   <div class="shead"><span class="snum">01</span><h2>What the industry actually certifies</h2></div>
   <p class="lede">Start here, because almost everyone has this backwards — including people selling
   you software.</p>
+
+  <blockquote class="ps">
+    <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
+    BIM workflows towards more interoperable OpenBIM practices. This transition requires not only
+    appropriate technologies, but also organisational readiness in areas such as governance, business
+    processes, workforce capabilities, data management, and compliance with open standards.</p>
+    <p class="k">However, there is currently no simple and practical way for organisations to
+    objectively assess their readiness for OpenBIM implementation or to identify the capability gaps
+    that should be addressed before embarking on this transition.</p>
+    <cite>The problem statement &mdash; research proposal, 10 Aug 2026</cite>
+  </blockquote>
+
+  <p>That is what this toolkit is for, and the rest of this page is the evidence behind it.</p>
 
   <p>BIM moved the industry from drawing to modelling, and the model became the record: geometry
   carrying data, coordinated across disciplines, outliving the project into operations. That part is
