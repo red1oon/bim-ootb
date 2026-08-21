@@ -300,7 +300,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
     <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Research instrument · v0.1 draft</small></div>
     <div class="topspacer"></div>
     <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-    <button class="ghostbtn" id="helpbtn" type="button">? Read more</button>
+    <a class="ghostbtn" id="helpbtn" href="why.html">? Read more</a>
   </div>
 
   <ul class="rail" id="rail" hidden>
@@ -682,11 +682,6 @@ document.addEventListener('click', function (e) {
     var dark = r.getAttribute('data-theme') === 'dark' ||
       (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
     r.setAttribute('data-theme', dark ? 'light' : 'dark');
-  }
-  if (e.target.id === 'helpbtn') {
-    alert('MOCKUP — this opens the "Read more" explainer page on GitHub Pages:\n\n' +
-      '· Why open BIM matters (industry)\n· Where you stand (your gap)\n· What to do about it (roadmap)\n\n' +
-      'Charts there use measured or cited data only — never invented figures.');
   }
 });
 
