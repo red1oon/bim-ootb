@@ -250,6 +250,15 @@ pre.payload{
 .delta .vs{display:flex;gap:20px;margin-top:10px;flex-wrap:wrap;font-size:13px}
 .delta .vs b{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.06em;text-transform:uppercase}
 
+/* ---- RISK REGISTER ---- */
+.risks{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:10px}
+.risks li{
+  background:var(--surface-2);border:1px solid var(--rule);border-left:3px solid var(--warn);
+  border-radius:7px;padding:14px 16px
+}
+.risks h4{margin:0 0 4px;font-size:14.5px;font-weight:600;color:var(--warn)}
+.risks p{font-size:13.5px;color:var(--ink-2)}
+
 /* ---- FIX LIST ---- */
 .fixes{list-style:none;padding:0;margin:16px 0;counter-reset:f}
 .fixes li{
@@ -337,12 +346,13 @@ function q(id, title, tip, anchor, list) {
 }
 
 /* ---------- CANNED RESULTS ---------- */
+/* target = proportionate level for an 11-50 firm, engineering, mixed projects (§6.5) */
 var DIMS = [
-  { name: 'Governance',               measured: 2.0, claimed: 2.25 },
-  { name: 'People and skills',        measured: 1.5, claimed: 1.75 },
-  { name: 'Technology',               measured: 2.8, claimed: 3.00 },
-  { name: 'Data and standards',       measured: 1.0, claimed: 3.25 },
-  { name: 'Organisational processes', measured: 1.8, claimed: 2.00 }
+  { name: 'Governance',               measured: 2.0, claimed: 2.25, target: 3 },
+  { name: 'People and skills',        measured: 1.5, claimed: 1.75, target: 2 },
+  { name: 'Technology',               measured: 2.8, claimed: 3.00, target: 3 },
+  { name: 'Data and standards',       measured: 1.0, claimed: 3.25, target: 3 },
+  { name: 'Organisational processes', measured: 1.8, claimed: 2.00, target: 2 }
 ];
 
 var SCREENS = {};
@@ -532,6 +542,9 @@ function renderItem(it) {
       '<label for="' + it.id + 'na"><span class="lv">N/A</span><span class="dot"></span>' +
       '<span>No model-based submission exists in our market <em class="small">&mdash; excluded from scoring</em></span></label>';
   }
+  rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'dk">' +
+    '<label for="' + it.id + 'dk"><span class="lv">&mdash;</span><span class="dot"></span>' +
+    '<span>Not known to me <em class="small">&mdash; scored as insufficient evidence, never as zero</em></span></label>';
   return '<div class="field"><div class="qhead"><span class="qid">' + it.id + '</span><span>' + it.q + '</span>' +
     TIP(it.tip, it.anchor) + '</div><div class="opts">' + rows + '</div></div>';
 }
@@ -617,14 +630,17 @@ SCREENS.model =
 /* ---------- 5 · RESULTS ---------- */
 function chartRows() {
   return DIMS.map(function (d) {
-    var w = (d.measured / 5 * 100).toFixed(1), c = (d.claimed / 5 * 100).toFixed(1);
-    var gap = Math.abs(d.claimed - d.measured) >= 2;
-    return '<div class="crow" title="' + d.name + ' — measured ' + d.measured.toFixed(1) +
-      ' of 5, you said ' + d.claimed.toFixed(1) + '">' +
-      '<div class="cname">' + d.name + (gap ? ' <span style="color:var(--warn)">&#9650;</span>' : '') + '</div>' +
-      '<div class="ctrack"><div class="cbar" style="width:' + w + '%"></div>' +
-      '<div class="cclaim" style="left:' + c + '%"></div></div>' +
-      '<div class="cval">' + d.measured.toFixed(1) + '</div></div>';
+    var w = (d.measured / 5 * 100).toFixed(1), t = (d.target / 5 * 100).toFixed(1);
+    var met = d.measured >= d.target;
+    var short = (d.target - d.measured);
+    return '<div class="crow" title="' + d.name + ' — assessed ' + d.measured.toFixed(1) +
+      ', proportionate target ' + d.target + '">' +
+      '<div class="cname">' + d.name + '</div>' +
+      '<div class="ctrack"><div class="ctarget" style="width:' + t + '%"></div>' +
+      '<div class="cbar" style="width:' + w + '%"></div>' +
+      '<div class="cclaim" style="left:' + t + '%"></div></div>' +
+      '<div class="cval"' + (met ? ' style="color:var(--accent)"' : '') + '>' +
+      (met ? 'met' : '&minus;' + short.toFixed(1)) + '</div></div>';
   }).join('');
 }
 
@@ -636,22 +652,23 @@ SCREENS.results =
 
   '<div class="card">' +
     '<h3>Readiness profile</h3>' +
-    '<p class="small" style="margin-top:5px">ISO/IEC 33020 capability levels 0&ndash;5, across five dimensions</p>' +
+    '<p class="small" style="margin-top:5px">ISO/IEC 33020 capability levels 0&ndash;5, against a target proportionate to your firm</p>' +
     '<div class="chart">' + chartRows() +
       '<div class="cscale"><span></span><div class="cticks">' +
         '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><span></span></div>' +
     '</div>' +
     '<div class="clegend">' +
       '<span><i class="swatch"></i>Assessed level</span>' +
-      '<span><i class="swtick"></i>What you said</span>' +
-      '<span style="color:var(--warn)">&#9650; Claim and evidence disagree</span>' +
+      '<span><i class="swtick"></i>Proportionate target for a firm your size</span>' +
+      '<span class="small">Targets follow ISO/IEC 33020 &mdash; capability is meant to suit the risk, not be maximised</span>' +
     '</div>' +
     '<details class="tvwrap"><summary>View as a table</summary>' +
-      '<table class="tv"><thead><tr><th>Dimension</th><th>Assessed</th><th>You said</th><th>Gap</th></tr></thead><tbody>' +
+      '<table class="tv"><thead><tr><th>Dimension</th><th>Assessed</th><th>Target</th><th>Gap</th><th>You said</th></tr></thead><tbody>' +
       DIMS.map(function (d) {
-        var g = (d.claimed - d.measured);
+        var g = d.target - d.measured;
         return '<tr><td>' + d.name + '</td><td class="n">' + d.measured.toFixed(1) + '</td><td class="n">' +
-          d.claimed.toFixed(1) + '</td><td class="n">' + (g >= 2 ? '+' + g.toFixed(1) + ' ▲' : g.toFixed(1)) + '</td></tr>';
+          d.target + '</td><td class="n">' + (g <= 0 ? 'met' : '&minus;' + g.toFixed(1)) + '</td><td class="n">' +
+          d.claimed.toFixed(2) + '</td></tr>';
       }).join('') + '</tbody></table></details>' +
   '</div>' +
 
@@ -676,6 +693,25 @@ SCREENS.results =
       '</div></div>' +
     '<p class="small">This is not a gotcha. Most firms score differently on claim and evidence, and the gap is ' +
     'usually a reporting problem rather than a competence one &mdash; but it is the most useful thing here.</p>' +
+
+    '<h3 style="margin-top:28px">Implementation risks</h3>' +
+    '<p class="small" style="margin-top:5px">Things that can stop a transition regardless of how capable you are. ' +
+    'These are flagged, not scored.</p>' +
+    '<ul class="risks">' +
+      '<li><div><h4>Professional indemnity position is unchecked</h4>' +
+      '<p>You have not confirmed with your insurer or counsel whether delivering on open standards, or ' +
+      'using non-proprietary tooling, affects your cover. <strong>This toolkit cannot answer that and does ' +
+      'not try to.</strong> What it can tell you is that software warranty disclaimers are near-universal ' +
+      '&mdash; proprietary licences carry them too &mdash; and that professional indemnity insures the ' +
+      'professional, not the tool. Put the question to your insurer in writing before it becomes urgent.</p></div></li>' +
+      '<li><div><h4>No named accountable party for information</h4>' +
+      '<p>Governance sits below its proportionate target and no one role carries information management ' +
+      'with authority. Under ISO 19650 that accountability does not disappear &mdash; it defaults upward to ' +
+      'whoever signed.</p></div></li>' +
+      '<li><div><h4>Single-vendor continuity</h4>' +
+      '<p>No model has been retrieved from your authoring tool and opened elsewhere, so the cost and ' +
+      'feasibility of moving is unknown rather than low.</p></div></li>' +
+    '</ul>' +
   '</div>' +
 
   '<div class="card">' +
