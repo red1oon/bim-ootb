@@ -1460,6 +1460,10 @@
     mergeRooms: mergeRooms, rejectRooms: rejectRooms, allWallsRaw: allWallsRaw, allDoorsRaw: allDoorsRaw,
     compileRooms: compileRooms, writeRooms: writeRooms, walk: walk,
     buildCameraRoomIndex: buildCameraRoomIndex,
+    // §S50 (4D_GANTT_TM_REFACTOR.md, 2026-08-21): the containment join, exported so the runtime
+    // location axis (location_axis.js) assigns elements to compiled rooms IN MEMORY with the
+    // IDENTICAL math writeRooms persists — one join, no re-derivation, no drift.
+    _canonicalFloor: _canonicalFloor, _makeJoinKey: _makeJoinKey,
     RES: RES, MIN_AREA: MIN_AREA, DOOR_SHORTFALL_RATIO: DOOR_SHORTFALL_RATIO,
     VERT_FACTOR: VERT_FACTOR, OPEN_PERIM_FACTOR: OPEN_PERIM_FACTOR,
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,

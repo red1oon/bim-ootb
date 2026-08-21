@@ -34,6 +34,12 @@
  * Clinic's parapet/roof-slab loop, mutual-contact pairs) is CONTRACTED: every member shares one
  * earliest-start, which satisfies the judge's own start-vs-start contact test with equality.
  * Every drop/contraction is counted and reported, never hidden.
+ *
+ * §S50 (2026-08-21, user ruling — 4D_GANTT_TM_REFACTOR.md §S50): the graph above is RETIRED as
+ * the live precedence carrier where the data supports the cell grid. run() now gates per building
+ * (see §S50 block before run()): location axis (location_axis.js: compiled rooms + §S35 levels) +
+ * (location, trade) product order + §S47.3 hang filing. buildGraph/solve stay as the per-building
+ * fallback (representability < 0.88) and for probes.
  */
 (function (global) {
   'use strict';
@@ -633,14 +639,209 @@
              makespanDays: (makespanE - makespanS) / 86400000 };
   }
 
-  // run(items, opts) — contact graph + build + solve, with per-phase §CPM timing stats.
-  // opts.maxCrews: per-resource crew caps ({resource: N} or a uniform number) for §S6_CREW_PASS —
-  // same lookup shape computeSchedule takes (LABOR_RATES[r].max_crews_fixed ?? max_crews).
+  // ── §S50 THE CELL-GRAIN SCHEDULE (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S50, user
+  // ruling 2026-08-21: the per-element support graph is RETIRED as the live precedence carrier;
+  // precedence is (location, trade) ordering — two ordered lists, trades within a level, levels
+  // bottom-up (§S26.11), rooms (location_axis.js) as the horizontal grain, plus ONE exception:
+  // an element suspended from above is filed by what it hangs from (§S47.3, measured: Hospital
+  // 78.69% -> 1.90% unrepresentable). buildGraph/solve below are KEPT as the per-building
+  // fallback and for probes — §S50.1.g's gate decides per building, from the data, at runtime:
+  //
+  //   PASS MARK (declared before any run, §S48.3's measured split): representability =
+  //   (E1 designated-support edges inside one (level,trade) cell + representable by the product
+  //   order) / all E1 edges, at the FINAL filing, whole population. >= 0.88 -> cell path;
+  //   below -> today's graph engine, unchanged. Measured 2026-08-21 (probe_s50_early):
+  //   Terminal 98.32 / Hospital 97.06 / Clinic 91.24 -> CELL; Duplex 66.27 / HHS 71.13 /
+  //   JKR 77.15 / LTU 78.06 -> GRAPH. Both branches live in the fleet = the gate is exercised.
+  var CELL_GATE_MARK = 0.88;
+
+  // _cellFiling(items, axis, des) — final location filing + the gate quantity.
+  // axis = LocationAxis.derive() output; des = designatedSupport (the judge's own election,
+  // read ONCE as EXTRACTION — never as precedence edges).
+  function _cellFiling(items, axis, des) {
+    var n = items.length, i;
+    var lvl1 = new Array(n), loc1 = new Array(n);
+    for (i = 0; i < n; i++) {
+      var g = items[i].guid;
+      lvl1[i] = (axis.lvlOf[g] != null ? axis.lvlOf[g] : -1);
+      loc1[i] = (axis.locOf[g] != null ? axis.locOf[g] : ('L' + lvl1[i]));
+    }
+    // §S47.3 hang filing — a SINGLE pass reading the BASE filing (lvl1), writing the final one
+    // (lvl2). NOT cascading: §S47b's measured mechanism promotes each element once, from the
+    // unpromoted state (grid_probe.js lines 746-753). A cascading variant read 87.04% on Clinic
+    // where the measured instrument reads 91.24% — caught by the smoke run, 2026-08-21.
+    var lvl2 = lvl1.slice(), loc2 = loc1.slice();
+    var promoted = 0;
+    for (i = 0; i < n; i++) {
+      if (des[i] < 0) continue;
+      var a = des[i];
+      if (lvl1[a] > lvl1[i]) { lvl2[i] = lvl1[a]; loc2[i] = loc1[a]; promoted++; }
+    }
+    // gate quantity — §S47b formula at LEVEL grain (the grain the 0.88 mark was calibrated on)
+    var intra = 0, ok = 0, refused = 0;
+    for (i = 0; i < n; i++) {
+      if (des[i] < 0) continue;
+      var u = des[i];
+      var la = lvl2[u], lb = lvl2[i];
+      var ta = _trdOf(items[u]), tb = _trdOf(items[i]);
+      if (la === lb && ta === tb) intra++;
+      else if (lb >= la && tb >= ta) ok++;
+      else refused++;
+    }
+    var total = intra + ok + refused;
+    return { lvl2: lvl2, loc2: loc2, promoted: promoted,
+             e1Total: total, intra: intra, representable: ok, refused: refused,
+             repr: total ? (intra + ok) / total : 1 };
+  }
+  function _trdOf(it) { return (typeof it.seq === 'number' ? it.seq : 99); }
+
+  // solveCells(items, filing, opts) — the two ordered lists, scheduled. Cells in product order:
+  // ES(L, loc, T) = max(epoch, finish of every cell (L, *, T'<T), finish of every cell (L'<L, *, T)).
+  // Trade order is LEVEL-scoped (a room's own slab/walls are filed at the level location —
+  // room-scoped order would leave slab->fit-out unrepresented, §S47.2's refused class); rooms at
+  // one level are PARALLEL locations — global per-resource crew pools are what serialize them.
+  // Packing inside a cell: members by (bz, guid), each claims the earliest slot of its GLOBAL
+  // resource pool (same caps + default-3 as computeSchedule §CREW-CAP). Deterministic throughout.
+  function solveCells(items, filing, opts) {
+    var maxCrews = opts && opts.maxCrews;
+    var n = items.length, i;
+    var base = Infinity;
+    for (i = 0; i < n; i++) if (items[i].s < base) base = items[i].s;
+    if (!isFinite(base)) base = 0;
+    function crewCapFor(resource) {
+      if (typeof maxCrews === 'number') return maxCrews;
+      if (maxCrews && maxCrews[resource]) return maxCrews[resource];
+      return 3;   // schedule_gate.js MAX_CREWS_DEFAULT, mirrored not invented
+    }
+    var pools = {};
+    function poolOf(resource) {
+      return pools[resource] || (pools[resource] = new Array(crewCapFor(resource)).fill(base));
+    }
+    // group members per cell
+    var SEP = '';
+    var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
+    for (i = 0; i < n; i++) {
+      var k = filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i];
+      keyOf[i] = k;
+      (cellMem[k] || (cellMem[k] = [])).push(i);
+      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: _trdOf(items[i]), loc: filing.loc2[i] });
+    }
+    var keys = Object.keys(cellMem).sort(function (x, y) {
+      var a = cellMeta[x], b = cellMeta[y];
+      if (a.lvl !== b.lvl) return a.lvl - b.lvl;
+      if (a.trd !== b.trd) return a.trd - b.trd;
+      return a.loc < b.loc ? -1 : (a.loc > b.loc ? 1 : 0);
+    });
+    var times = new Array(n);
+    var prevLevelsByTrade = {};   // trd -> max finish over all LOWER levels
+    var thisLevelByTrade = {};    // trd -> max finish at the CURRENT level
+    var earlierTradesMax = base;  // max finish of this level's already-processed (strictly lower) trades
+    var curLvl = null, curTrd = null;
+    var lvlSet = {}, trdSet = {};
+    var makespanS = Infinity, makespanE = -Infinity;
+    function foldLevel() {
+      for (var t in thisLevelByTrade) {
+        if (!(t in prevLevelsByTrade) || thisLevelByTrade[t] > prevLevelsByTrade[t])
+          prevLevelsByTrade[t] = thisLevelByTrade[t];
+      }
+      thisLevelByTrade = {};
+      earlierTradesMax = base;
+      curTrd = null;
+    }
+    function foldTrade(t) {
+      if (thisLevelByTrade[t] != null && thisLevelByTrade[t] > earlierTradesMax)
+        earlierTradesMax = thisLevelByTrade[t];
+    }
+    keys.forEach(function (k) {
+      var c = cellMeta[k];
+      lvlSet[c.lvl] = 1; trdSet[c.trd] = 1;
+      if (curLvl === null) { curLvl = c.lvl; }
+      else if (c.lvl !== curLvl) { foldLevel(); curLvl = c.lvl; }
+      if (curTrd === null) curTrd = c.trd;
+      else if (c.trd !== curTrd) { foldTrade(curTrd); curTrd = c.trd; }
+      var es = earlierTradesMax;
+      var pl = prevLevelsByTrade[c.trd];
+      if (pl != null && pl > es) es = pl;
+      if (es < base) es = base;
+      var mem = cellMem[k].slice().sort(function (a, b) {
+        if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
+        var ga = String(items[a].guid), gb = String(items[b].guid);
+        return ga < gb ? -1 : (ga > gb ? 1 : 0);
+      });
+      var fin = es;
+      mem.forEach(function (u) {
+        var pool = poolOf(items[u].resource);
+        var idx = 0;
+        for (var q = 1; q < pool.length; q++) if (pool[q] < pool[idx]) idx = q;
+        var st = Math.max(es, pool[idx]);
+        var dur = Math.max(0, items[u].e - items[u].s);
+        var en = st + dur;
+        pool[idx] = en;
+        times[u] = { s: st, e: en };
+        if (st < makespanS) makespanS = st;
+        if (en > makespanE) makespanE = en;
+        if (en > fin) fin = en;
+      });
+      if (!(c.trd in thisLevelByTrade) || fin > thisLevelByTrade[c.trd]) thisLevelByTrade[c.trd] = fin;
+    });
+    return { times: times, cells: keys.length, keyOf: keyOf,
+             levels: Object.keys(lvlSet).length, trades: Object.keys(trdSet).length,
+             makespanDays: (isFinite(makespanE) && isFinite(makespanS)) ? (makespanE - makespanS) / 86400000 : 0 };
+  }
+
+  // run(items, opts) — §S50: location axis + gate, THEN either the cell schedule (>= mark) or
+  // the retained graph engine (< mark, or no db/LocationAxis — every legacy caller lands there
+  // unchanged). opts.maxCrews: per-resource crew caps, same shape computeSchedule takes.
+  // opts.db: the building DB; defaults to APP.db (the viewer's live app object) when present.
   function run(items, opts) {
     var t0 = Date.now();
     var G = contactGraph(items);
     var t1 = Date.now();
     if (!G.ok) return { ok: false, error: 'ScheduleGate not loaded' };
+    var LA = (typeof global.LocationAxis !== 'undefined') ? global.LocationAxis
+      : (typeof LocationAxis !== 'undefined' ? LocationAxis : null);
+    var db = (opts && opts.db) || (global.APP && global.APP.db) || null;
+    if (LA && db) {
+      var axis = LA.derive(db, items, { label: (opts && opts.label) || ('n' + items.length) });
+      var des0 = designatedSupport(items, G);
+      var filing = _cellFiling(items, axis, des0);
+      var path = filing.repr >= CELL_GATE_MARK ? 'CELL' : 'GRAPH';
+      console.log('§CELL_GATE n=' + items.length + ' (whole scheduled population, §S46 discipline)' +
+        ' E1edges=' + filing.e1Total + ' insideLT=' + filing.intra +
+        ' representable=' + filing.representable + ' REFUSED=' + filing.refused +
+        ' repr=' + (100 * filing.repr).toFixed(2) + '% mark=' + (100 * CELL_GATE_MARK) + '%' +
+        ' promoted=' + filing.promoted + ' path=' + path +
+        ' [gate quantity: §S47b formula, level grain, designatedSupport unchanged — a rule, not a dictionary]');
+      if (path === 'CELL') {
+        var solC = solveCells(items, filing, opts);
+        var t2c = Date.now();
+        console.log('§CELL_RUN n=' + items.length + ' cells=' + solC.cells +
+          ' levels=' + solC.levels + ' trades=' + solC.trades +
+          ' roomsUsed=' + (axis.stats ? axis.stats.inRoom : '?') + ' promoted=' + filing.promoted +
+          ' refusedE1=' + filing.refused + ' (arrows-as-exception surface, NOT enforced — §S26.11 leg 4)' +
+          ' makespanDays=' + solC.makespanDays.toFixed(1) +
+          ' ms={contact:' + (t1 - t0) + ',axis+solve:' + (t2c - t1) + ',total:' + (t2c - t0) + '}');
+        var nEl = items.length;
+        var stub = { out: new Array(nEl), nElements: nEl, nNodes: nEl, msMeta: [],
+                     stragglerOf: new Uint8Array(nEl),
+                     counts: { e1: 0, e2h: 0, e2o: 0, e3: 0, e4: 0, member: 0, stragglers: 0 },
+                     designated: des0, cellPath: true };
+        for (var si = 0; si < nEl; si++) stub.out[si] = null;
+        return { ok: true, G: G, graph: stub,
+                 solution: { times: solC.times, makespanDays: solC.makespanDays,
+                             drops: { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0,
+                                      fsViolInScc: 0, crewOverCapScc: 0 },
+                             cells: solC.cells },
+                 gate: { path: 'CELL', repr: filing.repr, mark: CELL_GATE_MARK,
+                         promoted: filing.promoted, refused: filing.refused,
+                         cellKeys: solC.keyOf },
+                 ms: { contact: t1 - t0, build: 0, solve: t2c - t1, total: t2c - t0 } };
+      }
+      // fall through to the graph engine — today's schedule, unchanged, for this building
+    } else {
+      console.log('§CELL_GATE unavailable (LocationAxis=' + !!LA + ' db=' + !!db +
+        ') path=GRAPH — legacy caller or module not loaded; the graph engine runs unchanged');
+    }
     var graph = buildGraph(items, G);
     var t2 = Date.now();
     var sol = solve(items, graph, opts);

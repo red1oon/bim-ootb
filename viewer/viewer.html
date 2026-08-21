@@ -932,7 +932,14 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
 <script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
-<script src="cpm_schedule.js?v=1" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
+     gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
+     window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
+     and runs the graph engine unchanged — loud degrade, never silent. -->
+<script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
+<script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
+<script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
+<script src="cpm_schedule.js?v=2" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
 <script src="time_machine.js?v=71" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=2" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>

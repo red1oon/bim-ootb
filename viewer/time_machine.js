@@ -7916,7 +7916,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 35;   // §CPM_STRAGGLER_EXEMPTION_DROPPED (4D_GANTT_TM_REFACTOR.md) — E3 gate now requires the WHOLE phase group, not a straggler-filtered subset; the actual schedule shape changed, regenerate
+  var _GANTT_CACHE_VERSION = 36;   // §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50) — gated buildings now schedule by (location, trade) cells; the schedule shape changed, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —

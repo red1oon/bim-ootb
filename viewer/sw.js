@@ -8,7 +8,12 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1059';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1060';   // bump on each deploy; per-change detail is the git commit message.
+// v1060 (2026-08-21) §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50, user ruling: the
+// support graph is retired as the live precedence carrier). cpm_schedule.js gates per building
+// (representability >= 0.88 -> (location, trade) cell schedule; below -> graph engine unchanged);
+// NEW location_axis.js + lib/level_deriver.js precached; viewer.html loads both + room_walker
+// before cpm_schedule. _GANTT_CACHE_VERSION 35->36 — the schedule shape changes on gated buildings.
 // v1059 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, E3 gate fix: cpm_schedule.js's milestone() no longer
 // exempts stragglers from feeding their own phase's completion gate ("phase done" now means the
 // WHOLE group, not a filtered subset). Verified fleet-wide: floating=0/7 unaffected (only 'member'
@@ -372,6 +377,8 @@ const PRECACHE_ASSETS = [
   'clash_snag.js',
   'precision_cam.js',
   'schedule_gate.js',
+  'lib/level_deriver.js',   // §S50 — vertical axis of the cell-grain schedule
+  'location_axis.js',       // §S50 — rooms injection; lib/room_walker.js is network-first below
   'cpm_schedule.js',
   'time_machine.js',
   'dlod_nav.js',
