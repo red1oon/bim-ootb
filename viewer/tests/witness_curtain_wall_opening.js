@@ -83,6 +83,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58: required, never sliced
 const HOME = require('os').homedir();
 const VIEWER_DIR = path.join(__dirname, '..');
@@ -228,6 +229,7 @@ function countEarly(pairs, getS, getE, sccOf) {
     // real per-resource caps instead of running crew-unconstrained.
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
+      ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, RegExp: RegExp, Object: Object, Infinity: Infinity,
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule,
       A: () => ({ db: db, activeBuilding: bld, _metaGen: 0 }) };

@@ -44,6 +44,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58: required, never sliced
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
@@ -159,6 +160,7 @@ function loadRatesTable() {
     const sandbox = {
       console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
+      ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, A: () => ({ db: db }),
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule
     };

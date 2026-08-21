@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * audit_section_refs.js — every `prompts/X.md` pointer in the code resolves to a real file.
+ * audit_section_refs.js — every `prompts/<NAME>.md` pointer in the code resolves to a real file.
  *
  * Implementing bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S62 — Witness: W-REF-RESOLVE
  *
@@ -57,7 +57,7 @@ if (!sidecarPresent) {
               ' — refs that would resolve there are reported NO-SIDECAR, not failed');
 }
 
-function resolveRef(rel) {           // rel is like 'prompts/FOO.md'
+function resolveRef(rel) {           // rel is like 'prompts/<NAME>.md'
   const base = path.basename(rel);
   const cands = [path.join(ROOT, rel), path.join(ROOT, 'prompts', 'archive', base)];
   if (sidecarPresent) cands.push(path.join(SIDECAR, base), path.join(SIDECAR, 'archive', base));
@@ -75,7 +75,7 @@ try {
   else { console.log('§REF_AUDIT FAIL: git grep failed — ' + e.message); process.exit(1); }
 }
 
-const refs = new Map();              // 'prompts/X.md' -> [{file, line}]
+const refs = new Map();              // 'prompts/<NAME>.md' -> [{file, line}]
 for (const row of hits.split('\n')) {
   if (!row) continue;
   const m = row.match(/^([^:]+):(\d+):(.*)$/); if (!m) continue;

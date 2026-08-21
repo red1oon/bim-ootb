@@ -18,6 +18,7 @@
   "CostPanel": "readonly",
   "CpmSchedule": "readonly",
   "SupportSweep": "readonly",
+  "ZoneIndex": "readonly",
   "DB_URL": "readonly",
   "DISC_COLORS": "readonly",
   "DimChains": "readonly",

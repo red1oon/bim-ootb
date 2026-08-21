@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const { execSync } = require('child_process');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
@@ -160,8 +161,10 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   const sandbox = {
     console: console,
     performance: { now: () => Date.now() },
+    ZoneIndex: ZoneIndex,
     ScheduleGate: ScheduleGate,
     window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
+    ZoneIndex: ZoneIndex,
     A: function () { return { db: db }; },
     _ops: [],
     URLSearchParams: URLSearchParams,

@@ -469,6 +469,7 @@ async function main() {
   // are the current answer to the same question. ════════════════════════════════════════════════
   {
     const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'viewer', 'zone_index.js'));   // §S62
     function sliceAt(src, name, which, optional) {
       let from = 0;
       for (let pass = 0; pass <= (which || 0); pass++) {
@@ -494,6 +495,7 @@ async function main() {
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: RATES.SEQUENCE_RULES, SEQUENCE_DEFAULT: RATES.SEQUENCE_DEFAULT,
         SEQUENCE_NAME_OVERRIDES: RATES.SEQUENCE_NAME_OVERRIDES, LABOR_RATES: RATES.LABOR_RATES },
+      ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
       URLSearchParams: URLSearchParams, CpmSchedule: CpmScheduleMod };
     vm.createContext(sandbox);

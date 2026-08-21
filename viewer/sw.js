@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1066';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1067';   // bump on each deploy; per-change detail is the git commit message.
 // v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
 // ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
 // model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).
@@ -399,6 +399,7 @@ const PRECACHE_ASSETS = [
   'location_axis.js',       // §S50 — rooms injection; lib/room_walker.js is network-first below
   'cpm_schedule.js',
   'gantt_model.js',      // §S53 (F3) — the Gantt bar model, extracted from time_machine.js
+  'zone_index.js',       // §S62 — median-Z storey banding, extracted from time_machine.js
   'support_sweep.js',    // §S58 — support-order physics, extracted from time_machine.js
   'time_machine.js',
   'dlod_nav.js',

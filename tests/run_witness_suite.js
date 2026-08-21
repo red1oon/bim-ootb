@@ -76,8 +76,10 @@ const KNOWN_RED = {
   // A — stale-slice crash: a source-text slice of time_machine.js calls a module-scope helper the
   // vm sandbox was never given. The §S53.5 class (it killed witness_zone_display_authoring for four
   // days). §S58's support_sweep.js extraction retires this class outright.
-  'witness_big_element_support_coverage.js': 'A — ReferenceError: _zoneIndex is not defined, crashes AFTER its first PASS line so its head reads healthy',
-  'witness_tm_geo_order_cycles.js':          'A — ReferenceError: _zoneIndex is not defined, after §TMREPRO_SLICE',
+  // §S62: no longer a crash — it RUNS now, and on its first live run in 9+ days it reports a real
+  // drift: W-TMREPRO-5 locks Terminal's floating tail at 8, measured 12. cycles=0 is clean.
+  // The lock was set when the witness last ran; nothing has checked it since. Not chased here.
+  'witness_tm_geo_order_cycles.js':          'C — W-TMREPRO-5 Terminal floating tail 12, locked at 8 (cycles=0). Real drift, newly visible.',
   // B — environment assumption baked into the file.
   'witness_zone_index.js':                   'B — ENOENT: hardcodes /tmp/vw/time_machine.js instead of resolving from __dirname. One-line fix.',
   // C — real assertion reds, reproducible every run.

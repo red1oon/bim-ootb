@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const ZoneIndex = require(path.join(__dirname, '..', 'zone_index.js'));   // §S62: sliced _zoneIndexBuild delegates to it
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
@@ -97,6 +98,7 @@ const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architec
   sliceFn(tmSrc, '_tmDisplayRemap')].join('\n');
 const _rlines = [];
 const sandbox = { console: { log: (...a) => _rlines.push(a.join(' ')), warn: () => {} }, performance: { now: () => Date.now() },
+  ZoneIndex: ZoneIndex,
   ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, URLSearchParams: URLSearchParams,
   CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
   GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53: the drawer's bar-trim envelope, as a real module
@@ -225,6 +227,7 @@ async function main() {
     // display timeline through the SAME hook (proves the wiring, not just the module).
     console.log = quiet;
     const cpmSandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
+      ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, URLSearchParams: URLSearchParams,
       CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
       GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53, same as the sandbox above

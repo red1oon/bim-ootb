@@ -3557,73 +3557,10 @@
   // not with a refactor that has to prove itself byte-identical.
   var _zoneMemo = [];   // 2-slot, most-recent first — same discipline as §XRAY_CACHE_MEMO
 
-  function _zoneIndexBuild(db) {
-    var t0 = performance.now();
-    var r;
-    // Same population filter both former copies used, so the index is exactly their union.
-    try {
-      r = db.exec('SELECT m.guid, m.storey, COALESCE(t.center_z, 0) as cz ' +
-        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
-    } catch (e) { return null; }
-    if (!r.length || !r[0].values.length) return null;
-    var rows = r[0].values;
-
-    var zvals = {}, unknownN = 0;
-    for (var i = 0; i < rows.length; i++) {
-      var st = rows[i][1] || '_UNKNOWN';
-      if (st === '_UNKNOWN' || /^unknown$/i.test(st)) { unknownN++; continue; }
-      (zvals[st] || (zvals[st] = [])).push(rows[i][2] || 0);
-    }
-    var medianZ = {};
-    for (var sk in zvals) {
-      var vals = zvals[sk].sort(function (a, b) { return a - b; });
-      var mid = Math.floor(vals.length / 2);
-      medianZ[sk] = vals.length % 2 !== 0 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-    }
-    var names = Object.keys(medianZ).sort(function (a, b) { return medianZ[a] - medianZ[b]; });
-    var band = {};
-    for (var bi = 0; bi < names.length; bi++) band[names[bi]] = bi;
-
-    // Tie audit: the two former copies fed their maps in DIFFERENT row orders (injectGantt's SELECT
-    // carries ORDER BY cz, _buildXrayElements' does not). Sorting by medianZ is only order-stable
-    // when no two storeys SHARE a median — so a tie is the one condition under which the old pair
-    // could legitimately have disagreed with each other, and under which this consolidation would
-    // be picking a winner rather than preserving both. Counted and logged, never silently assumed.
-    var tiesN = 0;
-    for (var ti = 1; ti < names.length; ti++) if (medianZ[names[ti]] === medianZ[names[ti - 1]]) tiesN++;
-
-    // Optional finest level — present only where the extractor produced it (Terminal today).
-    var spaceOf = null, spaceN = 0;
-    try {
-      var sr = db.exec('SELECT element_guid, space_guid FROM rel_contained_in_space');
-      if (sr.length && sr[0].values.length) {
-        spaceOf = {};
-        for (var si = 0; si < sr[0].values.length; si++) spaceOf[sr[0].values[si][0]] = sr[0].values[si][1];
-        spaceN = sr[0].values.length;
-      }
-    } catch (e) { spaceOf = null; }   // table absent — expected on 6 of 7 buildings, not an error
-
-    var level = spaceOf ? 'space' : (names.length > 1 ? 'band' : (names.length === 1 ? 'storey' : 'single'));
-    return {
-      medianZ: medianZ, names: names, band: band, spaceOf: spaceOf,
-      level: level, tiesN: tiesN, unknownN: unknownN, spaceN: spaceN,
-      totalN: rows.length, buildMs: performance.now() - t0,
-      // The reassignment both former copies performed, verbatim — an element with no real storey
-      // is placed on the nearest real one by |cz - medianZ|, first-wins on an exact distance tie
-      // (loop keeps the earlier name on `<`), which is the previous behaviour exactly.
-      assign: function (storey, cz) {
-        if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-        if (!names.length) return storey;
-        var best = names[0], bd = Infinity;
-        for (var ai = 0; ai < names.length; ai++) {
-          var d = Math.abs(cz - medianZ[names[ai]]);
-          if (d < bd) { bd = d; best = names[ai]; }
-        }
-        return best;
-      }
-    };
-  }
+  // §S62: the builder moved VERBATIM to viewer/zone_index.js (pure: db in, index out). The memo,
+  // the key and the §ZONE_INDEX log below stay here — state and reporting are the parent's job.
+  // Name kept so every caller and the __tmZoneProbe hook read unchanged.
+  function _zoneIndexBuild(db) { return ZoneIndex.build(db); }
 
   // Memoized accessor. Key mirrors §XRAY_CACHE_MEMO: over-invalidating on _metaGen is the safe
   // direction (a miss costs one rebuild; a false hit is a wrong-zone bug).
