@@ -486,6 +486,17 @@
   // close support exists (verified: scripts/probe_e3_synthetic.js CASE7) — this check still finds
   // and uses that real support via _designatedSupport()'s own narrowing, it just no longer treats
   // "something built on top of me, which depends on ME" as a thing I should be waiting for.
+  // ⛔ OPEN — ref: bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S58.5 (already tracked there; this
+  // is the code-side pointer, not a second record). That item asks: "measure whether the two judges
+  // still agree per element, or only in aggregate." MEASURED 2026-08-22 during the §S58 extraction,
+  // and the answer is worse than aggregate-only agreement: weakening THIS judge by 86,400,000x
+  // (the `items[sIdx].s > items[i].s + 1` threshold raised to + 86400000) produces ZERO failures
+  // across witness_midair_zero, witness_hosted_before_host, witness_kernel_ops_sched_version and
+  // witness_curtain_wall_opening. witness_midair_zero locks midair with its OWN census() (see the
+  // matching note there), which mirrors _contactGraph's symmetric carrier clause and did NOT follow
+  // this judge when #1435 made it directional. So the function that names the lane's core metric
+  // has no test that goes red when it breaks. Do not "fix" that by deleting census() — it is a
+  // deliberate independent judge; the open question is whether the two still describe one physics.
   function _midairAudit(items) {
     var out = { midair: 0, orphans: 0, guids: [], ok: true };
     if (!items || !items.length) return out;
