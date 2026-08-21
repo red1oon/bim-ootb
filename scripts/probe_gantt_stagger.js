@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// INSTRUMENT (§S61.1): reports by §-log, does not gate — exit code is not its contract.
 // probe_gantt_stagger.js — quantify Gantt "stagger" for any building.
 // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): CPM4D=0 used to select the legacy
 // _twoTierRemap/_midairRepair display-repair chain via `?cpm4d=0` — that chain is DELETED
