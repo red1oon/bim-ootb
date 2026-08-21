@@ -298,6 +298,12 @@ const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
 const D = 86400000;
 
 // ── the INDEPENDENT judge (deliberately not the shipped repair's own helpers) ──
+// ⛔ OPEN — ref: bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S58.5 (tracked there; pointer only).
+// This census() is an INDEPENDENT judge by design, but it no longer encodes the same rule as the
+// shipped judge: it mirrors _contactGraph's symmetric carrier clause, while SupportSweep.midairAudit
+// went DIRECTIONAL in #1435. Measured 2026-08-22: breaking the shipped judge by 86,400,000x leaves
+// this witness at pass=49 fail=0 — the lock does not track the engine. Green here is not evidence
+// that midairAudit works. See the matching note at viewer/support_sweep.js _midairAudit.
 function census(items) {
   const grid = {};
   const cellsOf = e => { const o = [];
