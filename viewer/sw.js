@@ -8,7 +8,14 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1063';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1064';   // bump on each deploy; per-change detail is the git commit message.
+// v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
+// ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
+// model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).
+// (b) NEW §HOSTED_BEFORE_HOST line — it had no log line at all; first run exposed Terminal
+// 268/2367 hosted elements (11.3%) falling through unguarded. (c) NEW §GANTT_AXIS line.
+// (d) five silent catches now warn: §LABOR_QUANTITY_WEIGHT_SKIP, §HEAVY_MEMBER_SPEED_LIMIT_SKIP,
+// §WOULD_CYCLE_BLIND, §CASCADE_BLIND, §LOC_AXIS_PERSISTED_UNREADABLE.
 // v1063 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S54 (item F2): time_machine.js's two ERP-twin
 // loaders (_loadTwin/_loadShopfloor) no longer default a missing activeBuilding to 'Hospital' —
 // with no active building they now skip BEFORE the 25.8MB ad_seed.db fetch instead of attaching

@@ -114,7 +114,14 @@
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + _AREA_EXPR + ") FROM elements_meta m " +
         "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(m2Classes) + ") GROUP BY m.ifc_class");
-    } catch (e) { return out; }   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
+    } catch (e) {   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
+      // §S58 (§S58.2): this catch fires on ANY throw, not just the commented stripped-DB case, and
+      // silently reverts durations to count-based — the §LABOR_QUANTITY_WEIGHT fix just doesn't
+      // happen, with no trace. Behaviour unchanged; it is now VISIBLE.
+      console.warn('§LABOR_QUANTITY_WEIGHT_SKIP no area weighting — ' + (e && e.message) +
+        ' (durations fall back to count-based; not necessarily a stripped DB)');
+      return out;
+    }
     var fragClasses = [];
     if (r.length && r[0].values.length) {
       r[0].values.forEach(function (row) {
@@ -166,7 +173,13 @@
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + LEN_EXPR + ") FROM elements_meta m " +
         "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(mClasses) + ") GROUP BY m.ifc_class");
-    } catch (e) { return out; }   // no element_transforms table — degrade to flat (no weighting)
+    } catch (e) {   // no element_transforms table — degrade to flat (no weighting)
+      // §S58 (§S58.2): same silent-revert as above — §HEAVY_MEMBER_SPEED_LIMIT stops firing and
+      // per-element speed stops scaling with real size, invisibly. Behaviour unchanged, now visible.
+      console.warn('§HEAVY_MEMBER_SPEED_LIMIT_SKIP no length weighting — ' + (e && e.message) +
+        ' (durations fall back to flat per-class totals)');
+      return out;
+    }
     var haveClasses = [];
     if (r.length && r[0].values.length) {
       r[0].values.forEach(function (row) {
@@ -1011,7 +1024,14 @@
       if (r.length && r[0].values.length) r[0].values.forEach(function (row) {
         (adj[row[0]] = adj[row[0]] || []).push(row[1]);
       });
-    } catch (e) {}
+    } catch (e) {
+      // §S58 (§S58.2): this guard FAILS OPEN. With adj={} the DFS below finds nothing and
+      // wouldCycle() returns false for EVERY check — the sole guard against a cyclic (invalid)
+      // schedule is blind, and silently. The fail-open behaviour is NOT changed here (that is a
+      // separate decision with its own witness); this makes the blindness loud.
+      console.warn('§WOULD_CYCLE_BLIND task_sequences unreadable — ' + (e && e.message) +
+        ' — cycle detection is DISABLED for this call, every edge will be reported acyclic');
+    }
     var stack = [succId], seen = {};
     while (stack.length) {
       var cur = stack.pop();
@@ -1262,7 +1282,13 @@
         (preds[row[1]] = preds[row[1]] || []).push(e);
         (succs[row[0]] = succs[row[0]] || []).push(e);
       });
-    } catch (e) {}
+    } catch (e) {
+      // §S58 (§S58.2): on a throw, preds/succs stay empty and the cascade computes a move with NO
+      // predecessor clamp and NO successor cascade — indistinguishable in the log from "this task
+      // genuinely has no dependencies." Behaviour unchanged; the difference is now stated.
+      console.warn('§CASCADE_BLIND task_sequences unreadable — ' + (e && e.message) +
+        ' — this move runs with no predecessor clamp and no successor cascade');
+    }
 
     // ---- C2: clamp against this task's own predecessors.
     var want = _dayNum(newStart);
