@@ -245,8 +245,23 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 // Duplex 44 · HHS 889 · Clinic 877 · LTU 5023 · JKR 1222 (fleet 14,166), midair 0 on all 7.
 // §S50 measured (run 1 FAIL lines, 2026-08-21): Terminal 2151 -> 554 (-74.2%) · Hospital
 // 3960 -> 935 (-76.4%) · Clinic 877 -> 324 (-63.1%); fleet 14,166 -> 8,991 (-36.5%).
-const CPM_FLOAT_AFTER_BASELINE = { Terminal: 554, Hospital: 935, Duplex: 44, HHS_Office_Federated: 889,
-  Clinic: 324, LTU_AHouse: 5023, JKR: 1222 };
+// ── LOCKED BASELINES — the numbers live in baselines/midair.json, the WHY lives here ───────────
+// Split out 2026-08-21: a re-lock is now a DATA edit with a readable diff, and an eighth building
+// never edits test code. Re-lock discipline is UNCHANGED — placeholder -1s, read the real numbers
+// off the FAIL lines, re-run to PASS. A missing/!=7-key group throws HERE rather than asserting
+// against `undefined`, which would pass-by-absence: `x === undefined` never equals a count.
+const _BL = require(path.join(__dirname, 'baselines', 'midair.json'));
+function baseline(group) {
+  const g = _BL[group];
+  if (!g) throw new Error('baselines/midair.json missing group "' + group + '"');
+  const blds = Object.keys(g).filter(k => k[0] !== '_');
+  if (blds.length !== 7) throw new Error('baselines/midair.json group "' + group + '" has ' +
+    blds.length + ' buildings, expected 7 — a silently truncated lock is a false pass');
+  for (const b of blds) if (typeof g[b] !== 'number')
+    throw new Error('baselines/midair.json ' + group + '.' + b + ' is not a number');
+  return g;
+}
+const CPM_FLOAT_AFTER_BASELINE = baseline('float_after_cpm');
 // W-MZ-2 under §S50: midair-0 was the GRAPH era's invariant — §S49.3 proved midair-0 and low float
 // are mutually exclusive under a cyclic support graph (B's 0 is an artifact of SCC contraction:
 // simultaneity satisfies the start-vs-start test and pays for it in float). On the CELL path the
@@ -254,8 +269,7 @@ const CPM_FLOAT_AFTER_BASELINE = { Terminal: 554, Hospital: 935, Duplex: 44, HHS
 // silently; W-MZ-7 below stays the proof this judge CAN go red. GRAPH-path buildings stay at 0.
 // §S50 measured (run 1 FAIL lines, 2026-08-21): Terminal 684 · Hospital 218 · Clinic 422 —
 // the leg-4 exception surface, on the same order as §S48.1's level-grain grid (687/179/373).
-const CPM_MIDAIR_BASELINE = { Terminal: 684, Hospital: 218, Duplex: 0, HHS_Office_Federated: 0,
-  Clinic: 422, LTU_AHouse: 0, JKR: 0 };
+const CPM_MIDAIR_BASELINE = baseline('midair');
 // Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
 // are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
 // the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
@@ -264,8 +278,7 @@ const CPM_MIDAIR_BASELINE = { Terminal: 684, Hospital: 218, Duplex: 0, HHS_Offic
 // elements/transforms as the deprecated extracted file but different elevations (sum(center_z)
 // 1,557,254 → 847,396, PR #1427's patch), so 18 more elements genuinely touch nothing. Orphans are
 // purely geometric, so the DB is the only thing that can move this number.
-const CPM_ORPHAN_BASELINE = { Terminal: 25, Hospital: 35, Duplex: 1, HHS_Office_Federated: 36,
-  Clinic: 27, LTU_AHouse: 865, JKR: 1 };
+const CPM_ORPHAN_BASELINE = baseline('orphans');
 const CELL = ScheduleGate.CELL, EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
 const D = 86400000;
 
