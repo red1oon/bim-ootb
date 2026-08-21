@@ -72,6 +72,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58: required, never sliced
 const HOME = require('os').homedir();
 const VIEWER_DIR = path.join(__dirname, '..');
 const SQLJS_DIR = process.env.SQLJS_DIR || path.join(HOME, 'bim-ootb', 'modeller', 'lib');
@@ -181,7 +182,7 @@ function countEarly(pairs, get) {
     // now delegate to this shared pair — rides along verbatim, same idiom as the zone helpers above.
     sliceFn(tmSrc, '_classifyNameOverride'), sliceFn(tmSrc, '_classifyRule'),
     sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
-    sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+    'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
     sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].filter(Boolean).join('\n');
 
   let ran = 0, rawBad = [], dispBad = [], stageRep = [], matchRep = [];
@@ -195,7 +196,7 @@ function countEarly(pairs, get) {
     // real per-resource caps instead of running crew-unconstrained.
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
-      ScheduleGate: ScheduleGate, Math: Math, RegExp: RegExp, Object: Object, Infinity: Infinity,
+      ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, RegExp: RegExp, Object: Object, Infinity: Infinity,
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule,
       A: () => ({ db: db, activeBuilding: bld, _metaGen: 0 }) };
     vm.createContext(sandbox);

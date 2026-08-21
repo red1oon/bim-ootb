@@ -12,6 +12,7 @@ const path = require('path');
 const CpmSchedule = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const fs = require('fs');
+const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
 
 const DAY = 86400000;
 function el(guid, cls, phase, seq, storey, resource, bz, tz, x0, x1, y0, y1, s, e) {
@@ -31,7 +32,7 @@ function sliceFn(src, name) {
   return src.slice(idx, i + 1);
 }
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
-const _contactGraph = (new Function('ScheduleGate', sliceFn(tmSrc, '_contactGraph') + '\nreturn _contactGraph;'))(ScheduleGate);
+const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
 
 function checkCase(name, items, opts, EXPECT, EXPECT_DROPS, EXPECT_STRAG_COUNT) {
   console.log('--- ' + name + ' ---');

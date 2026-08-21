@@ -44,6 +44,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58: required, never sliced
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 
 let pass = 0, fail = 0;
@@ -106,7 +107,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   sliceFn(tmSrc, '_kernelOpsSchedStale'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
   sliceFn(tmSrc, '_buildXrayElements'),
-  sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+  'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')
 ].join('\n');
 
@@ -158,7 +159,7 @@ function loadRatesTable() {
     const sandbox = {
       console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
-      ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
+      ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, A: () => ({ db: db }),
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule
     };
     vm.createContext(sandbox);
