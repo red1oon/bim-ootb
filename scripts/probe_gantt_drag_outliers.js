@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// INSTRUMENT (§S61.1): reports by §-log, does not gate — exit code is not its contract.
 // probe_gantt_drag_outliers.js — Implementing bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S7
 // step 1 (measure, don't assume): drive the REAL commitGanttDrag path headless (window.__tmGanttDrag
 // test hook) on a large-outlier task and read §RETIME_OUTLIER_AUDIT — how many of the task's ops sat
