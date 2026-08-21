@@ -8,7 +8,10 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1060';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1061';   // bump on each deploy; per-change detail is the git commit message.
+// v1061 (2026-08-21) §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): the Gantt reads the cell
+// schedule — CELL-path generations stamp _cell into kernel_ops and buildGanttTasks groups bars by
+// it (graph-path buildings unchanged). _GANTT_CACHE_VERSION 36->37 regenerates pre-stamp ops.
 // v1060 (2026-08-21) §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50, user ruling: the
 // support graph is retired as the live precedence carrier). cpm_schedule.js gates per building
 // (representability >= 0.88 -> (location, trade) cell schedule; below -> graph engine unchanged);
