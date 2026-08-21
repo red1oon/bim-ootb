@@ -87,6 +87,11 @@ const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 's
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
+// §S53 (F3): the Gantt bar MODEL as a REAL MODULE. This witness used to slice `_tukeyBound` out of
+// time_machine.js by source text and to RE-IMPLEMENT buildGanttTasks' grouping and §GANTT_ROW_ORDER's
+// phase derivation below — a mirrored judge stays green when the drawer's own rule changes
+// (§S25_REVIEW.1, one step removed). All three now call this, the same discipline CpmSchedule already had.
+const GanttModel = require(path.join(__dirname, '..', 'gantt_model.js'));
 // §S50 (4D_GANTT_TM_REFACTOR.md §S50, 2026-08-21) — the engine now gates per building on the
 // location axis. Register the REAL modules on globalThis so CpmSchedule (a real require, never a
 // slice) resolves them exactly the way a browser window would; globalThis.APP = { db } is set
@@ -136,7 +141,6 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
-  sliceFn(tmSrc, '_tukeyBound'),   // §S51_SCREEN — the display's own bar-trim envelope
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
   ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)') +
@@ -176,10 +180,17 @@ assert(_dtBody.indexOf('_displayTimeline._lastCell = { map:') > 0 && _dtBody.ind
   'W-S51a _displayTimeline remembers cell identity on a CELL-path authoring and NULLs it on a GRAPH-path one');
 assert(/_cell:\s*_cellMap \? _cellMap\[el\.guid\] : undefined/.test(tmSrc),
   'W-S51b injectGantt stamps _cell into every op parameters JSON when the cell map covers the elements');
-const _bgtIdx = tmSrc.indexOf('function buildGanttTasks()');
-const _bgtBody = tmSrc.slice(_bgtIdx, tmSrc.indexOf('§GANTT_ROW_ORDER', _bgtIdx));
-assert(_bgtIdx > 0 && /\('C:' \+ cellId\)/.test(_bgtBody) && /p\._cell/.test(_bgtBody),
-  'W-S51c buildGanttTasks groups bars by the cell stamp between real task identity and the storey|phase fallback');
+// W-S51c — §S53 (F3): was a REGEX over buildGanttTasks' source text ("does the body contain
+// 'C:' + cellId"). Now the real rule is a real module, so this asserts the BEHAVIOUR instead: the
+// grouping precedence is exercised, not pattern-matched. A source regex would still pass against a
+// body that computes the key and then throws it away.
+{
+  const gk = GanttModel.groupKeyOf;
+  assert(gk('T7', 'L1\u00b7Arch\u00b70', 'L1', 'Architecture') === 'T:T7' &&
+         gk(null, 'L1\u00b7Arch\u00b70', 'L1', 'Architecture') === 'C:L1\u00b7Arch\u00b70' &&
+         gk(null, null, 'L1', 'Architecture') === 'L1|Architecture',
+    'W-S51c the drawer groups bars by the cell stamp BETWEEN real task identity and the storey|phase fallback');
+}
 
 function loadRatesTable() {
   const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
@@ -349,11 +360,12 @@ function census(items) {
     // so _displayTimeline's own §S6_CREW_PASS max_crews_fixed/max_crews lookup sees real per-resource
     // caps instead of running crew-unconstrained.
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
+      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO,
+                LABOR_RATES: RATES.LABOR_RATES, GanttModel: GanttModel },   // §S53: sliced code's delegates read window.GanttModel
       ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule };
     vm.createContext(sandbox);
-    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline; this.__tukey = _tukeyBound;', sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
     const els = sandbox.__bxe();
     if (!els || !els.length) { assert(false, 'W-MZ ' + bld + ' element build produced nothing'); db.close(); continue; }
 
@@ -446,36 +458,37 @@ function census(items) {
         ' float=' + floatPost + ' [ScheduleGate.auditFloating]' +
         ' midair=' + after.midair + ' [this witness\'s own census(), independent judge]');
     }
-    // ── §S51_SCREEN — what the Gantt DRAWS, before vs after item d, mirrored on this witness's
-    // own items with the display's own trim (_tukeyBound sliced from time_machine.js — the exact
-    // envelope buildGanttTasks applies). BEFORE = storey|phase grouping (pre-§S51 display). AFTER =
-    // cell stamp where present, storey|phase fallback otherwise (the shipped §S51 grouping rule).
+    // ── §S51_SCREEN — what the Gantt DRAWS, before vs after item d, measured on this witness's own
+    // items by THE DRAWER'S OWN MODEL. §S53 (F3): this block used to re-implement buildGanttTasks'
+    // grouping and slice `_tukeyBound` out of time_machine.js by source text; it now feeds items to
+    // GanttModel.buildTasks — the exact function time_machine.js's buildGanttTasks() wrapper calls —
+    // so a change to the drawer's grouping or trim shows up HERE instead of leaving this instrument
+    // silently measuring the retired rule. BEFORE = storey|phase grouping (pre-§S51 display, ops with
+    // no _cell stamp). AFTER = the cell stamp (the shipped §S51 grouping rule).
     {
       let lo = Infinity, hi = -Infinity;
       items.forEach(it => { if (it.s < lo) lo = it.s; if (it.e > hi) hi = it.e; });
       const span = hi - lo;
-      const tk = sandbox.__tukey;
-      const barW50 = groups => {
-        let wide = 0, n = 0;
-        for (const k in groups) {
-          const g = groups[k]; n++;
-          const s0 = tk(g.starts, true), e0 = Math.max(tk(g.ends, false), s0);
-          if (span && (e0 - s0) / span > 0.5) wide++;
-        }
-        return { wide, n };
+      // Items -> the ELEMENT_PLACE op shape buildTasks consumes. idx=null: no authored task index in
+      // this witness, so the task-identity branch is inert and the cell/storey|phase rule is what runs.
+      const asOps = cellOf => items.map((it, i2) => ({ op_type: 'ELEMENT_PLACE', start_ts: it.s, end_ts: it.e,
+        output_guid: it.guid, parameters: { storey: it.storey || '_UNKNOWN', phase: it.phase || 'Architecture',
+          _cell: cellOf ? cellOf(i2) : undefined } }));
+      const barW50 = ops => {
+        const bars = GanttModel.buildTasks(ops, null, SR).tasks;
+        let wide = 0;
+        bars.forEach(b => { if (span && (b.endTs - b.startTs) / span > 0.5) wide++; });
+        return { wide, n: bars.length };
       };
-      const collect = keyFn => { const m = {}; items.forEach((it, i2) => {
-        const k = keyFn(it, i2); (m[k] || (m[k] = { starts: [], ends: [] }));
-        m[k].starts.push(it.s); m[k].ends.push(it.e); }); return m; };
       const gate = dtResult && dtResult.stats && dtResult.stats.gate;
-      const beforeG = barW50(collect(it => (it.storey || '_UNKNOWN') + '|' + (it.phase || 'Architecture')));
+      const beforeG = barW50(asOps(null));
       const afterG = gate && gate.cellKeys
-        ? barW50(collect((it, i2) => 'C:' + gate.cellKeys[i2]))
+        ? barW50(asOps(i2 => gate.cellKeys[i2]))
         : beforeG;   // graph path: the display is UNCHANGED by construction (no stamp exists)
       console.log('§S51_SCREEN ' + bld + ' path=' + (gate ? gate.path : 'GRAPH') +
         ' wide50screen BEFORE=' + beforeG.wide + '/' + beforeG.n + 'bars (storey|phase, tukey-trimmed — the pre-§S51 drawer)' +
         ' AFTER=' + afterG.wide + '/' + afterG.n + 'bars (' + (gate && gate.cellKeys ? 'cell stamp — the §S51 drawer' : 'IDENTICAL: graph path, no stamp') + ')' +
-        ' [instrument: this witness mirroring buildGanttTasks grouping+_tukeyBound on the same items]');
+        ' [instrument: GanttModel.buildTasks — the drawer\'s own grouping+trim, on the same items]');
     }
     // ── §S51_RESIDUE — the ACCEPTANCE SPLIT on the locked midair residue (user: "within walls or
     // last"). General rule only — element class plays no part, no per-building constants:
@@ -486,10 +499,10 @@ function census(items) {
     //              rules table, same derivation as time_machine's §GANTT_ROW_ORDER);
     //   NEITHER  = early, free-standing — the only number that matters.
     {
-      const minSeq = {};
-      for (const k2 in SR) { const r2 = SR[k2]; if (r2 && r2.phase && r2.sequence != null &&
-        (minSeq[r2.phase] == null || r2.sequence < minSeq[r2.phase])) minSeq[r2.phase] = r2.sequence; }
-      const phOrder = Object.keys(minSeq).sort((a, b) => minSeq[a] - minSeq[b]);
+      // §S53 (F3): was a local re-derivation of the SEQUENCE_RULES minimum-sequence-per-phase order,
+      // annotated in this witness's own comment as "same derivation as time_machine's §GANTT_ROW_ORDER".
+      // It is now literally that derivation, called from the module both this witness and the drawer share.
+      const phOrder = GanttModel.phaseOrder(SR);
       const ffIdx = phOrder.indexOf('MEP Rough-in');
       const isLate = ph => ffIdx >= 0 && phOrder.indexOf(ph) > ffIdx;
       let emb = 0, late = 0, neither = 0;
