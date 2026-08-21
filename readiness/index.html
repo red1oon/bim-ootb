@@ -324,7 +324,7 @@ var TIP = function (text, anchor) {
     (anchor ? '<span class="anchor">Anchor · ' + anchor + '</span>' : '') + '</span></span>';
 };
 
-var LV = ['L0', 'L1', 'L2', 'L3', 'L4'];
+var LV = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5'];
 function opts(name, list) {
   return '<div class="opts">' + list.map(function (t, i) {
     return '<input type="radio" name="' + name + '" id="' + name + i + '"' + (i === 1 ? ' checked' : '') + '>' +
@@ -338,11 +338,11 @@ function q(id, title, tip, anchor, list) {
 
 /* ---------- CANNED RESULTS ---------- */
 var DIMS = [
-  { name: 'Governance',        measured: 1.8, claimed: 2.0 },
-  { name: 'People and skills',  measured: 1.3, claimed: 1.5 },
-  { name: 'Technology',        measured: 2.3, claimed: 2.5 },
-  { name: 'Data and standards', measured: 0.9, claimed: 2.8 },
-  { name: 'Organisational processes', measured: 1.5, claimed: 1.8 }
+  { name: 'Governance',               measured: 2.0, claimed: 2.25 },
+  { name: 'People and skills',        measured: 1.5, claimed: 1.75 },
+  { name: 'Technology',               measured: 2.8, claimed: 3.00 },
+  { name: 'Data and standards',       measured: 1.0, claimed: 3.25 },
+  { name: 'Organisational processes', measured: 1.8, claimed: 2.00 }
 ];
 
 var SCREENS = {};
@@ -433,92 +433,93 @@ var DIMENSIONS = [
 { key:'A', name:'Governance', blurb:'How your firm is set up', items:[
   { id:'A1', pre:2, q:'Is there a written position on open / IFC deliverables?',
     tip:'A policy that exists but is never checked behaves differently from one that is enforced. We are separating those two, not judging either.',
-    anchor:'ISO 19650 · organisational information requirements',
-    o:['Nothing, and it has not come up','Discussed, nothing written','Written into a policy or BEP template','Written, someone owns it, checked on projects','As above, and non-compliance is escalated'] },
-  { id:'A2', pre:2, q:'Your most recent contract &mdash; what did it say about deliverable format?',
+    anchor:'ISO 19650-1 &middot; organisational information requirements',
+    o:['Nothing, and it has not come up','It happens case by case, when someone remembers','Written into a policy or BEP template and kept current','A standard position applied across all projects','Compliance is checked and reported per project','Those reports drive changes to the policy'] },
+  { id:'A2', pre:3, q:'Your most recent contract &mdash; what did it say about deliverable format?',
     tip:'Naming IFC and naming a schema version are different commitments. The second is checkable; the first often is not.',
-    anchor:'ISO 19650 · exchange information requirements',
-    o:['Did not mention format, or I don&rsquo;t know','Named native files only','Named IFC among the deliverables','Named IFC with a schema version','Named IFC with schema and a validation criterion'] },
+    anchor:'ISO 19650-2 &middot; exchange information requirements',
+    o:['Did not mention format, or I don&rsquo;t know','Format agreed informally, project by project','Named IFC in the appointment documents','A standard clause naming IFC and a schema version, every appointment','Conformance to that clause is verified at handover','Verification findings feed back into the clause'] },
   { id:'A3', pre:1, q:'Have you ever taken a finished model out of your BIM software and opened it elsewhere?',
     tip:'&ldquo;We own our data&rdquo; is a belief until somebody has actually pulled a model out and opened it somewhere else. This is the single strongest signal of lock-in exposure.',
-    anchor:'Vendor lock-in · data portability',
-    o:['Never tried','Tried, it did not work','Once, roughly worked, not repeated','Done on delivery and the result is checked','Routine, archived vendor-neutrally, re-opened periodically'] },
+    anchor:'Vendor lock-in &middot; data portability',
+    o:['Never tried','Tried once, ad hoc','Done on delivery and the result is kept','A standard step in every project close-out','Fidelity is measured against the source each time','Those measurements change how we export'] },
   { id:'A4', pre:3, q:'For authority submission, what do you actually hand over?',
     tip:'Submission requirements vary by jurisdiction &mdash; your locale pack adjusts this question. If model-based submission does not exist where you work, choose N/A and it is excluded from scoring rather than counted as a zero.',
-    anchor:'Locale pack · authority submission route',
-    o:['Paper or PDF drawings only','Native model files','IFC alongside other formats','IFC to a schema the authority named','IFC that passes the authority&rsquo;s validation first'], na:true } ]},
-
+    anchor:'Locale pack &middot; authority submission route',
+    o:['Paper or PDF drawings only','Native model files, as asked','IFC alongside other formats','IFC to the authority&rsquo;s named schema, every submission','Validated against the authority&rsquo;s criteria before sending','Validation findings change our authoring templates'], na:true }
+]},
 { key:'B', name:'People and skills', blurb:'Who actually knows this, and what happens without them', items:[
-  { id:'B1', pre:1, q:'Who in the firm could explain what an IFC property set is?',
+  { id:'B1', pre:2, q:'Who in the firm could explain what an IFC property set is?',
     tip:'Not a test of anyone&rsquo;s knowledge. We are finding out whether open-standards understanding sits with one person or is spread &mdash; that difference decides how fragile your capability is.',
-    anchor:'ISO 19650 · information management competence',
-    o:['Nobody','One person','Two or three','Most of the technical team','It is assumed knowledge here'] },
+    anchor:'ISO 19650-1 &middot; information management competence',
+    o:['Nobody','One person, self-taught','One person, and it is written down somewhere','Most of the technical team, through defined onboarding','Competence is assessed and tracked','Assessment results drive the training programme'] },
   { id:'B2', pre:2, q:'Is information or BIM management in anyone&rsquo;s job description?',
     tip:'Doing the job and being accountable for it are different things. A role with time allocated behaves differently from someone absorbing it on top of their real work.',
-    anchor:'ISO 19650 · Information Manager role',
-    o:['No','One person does it informally','Part of a named role','A defined role with time allocated','A defined role with authority to stop a delivery'] },
+    anchor:'ISO 19650-1 &middot; Information Manager function',
+    o:['No','Someone does it informally','Part of a named role, with time allocated','A defined role with documented responsibilities','Role performance is measured','Measurement reshapes the role'] },
   { id:'B3', pre:1, q:'If that person left tomorrow, what happens?',
     tip:'The most honest question in this section. Firms often score well on capability and badly here, and it is the best single predictor of whether a BIM programme survives a resignation.',
-    anchor:'BIM maturity · key-person concentration',
-    o:['BIM capability stops','Severely degraded for months','Slowed, but recoverable','Minor disruption, handover is documented','No material impact'] },
+    anchor:'Key-person concentration &middot; continuity',
+    o:['BIM capability stops','Severely degraded for months','Slowed; some handover notes exist','Documented handover and a defined backup role','Continuity is tested, not assumed','Test results drive succession planning'] },
   { id:'B4', pre:2, q:'Has anyone had BIM or open-standards training in the last 12 months?',
     tip:'Vendor product training and open-standards training are different investments. Learning one application deeply can even increase lock-in &mdash; that is not a criticism, just a different thing.',
-    anchor:'Succar · competency development',
-    o:['None','Self-taught only','Vendor product training','Open-standards training (IFC / ISO 19650)','An ongoing programme with a budget line'] } ]},
-
+    anchor:'Succar &middot; competency development',
+    o:['None','Self-taught only','Vendor product training, when budget allowed','A defined training path including open standards','Training outcomes are measured','Measured outcomes set next year&rsquo;s programme'] }
+]},
 { key:'C', name:'Technology', blurb:'What you run, and what it would take to change it', items:[
-  { id:'C1', pre:2, q:'How many BIM authoring tools are in regular use?',
+  { id:'C1', pre:3, q:'How many BIM authoring tools are in regular use?',
     tip:'One tool used well is not a failure. We are measuring concentration, not sophistication &mdash; a single-tool firm is efficient and exposed at the same time.',
-    anchor:'Vendor concentration · switching cost',
-    o:['None','Exactly one','One main, one occasional','Two or more in genuine use','Chosen per task; exchange between them is routine'] },
-  { id:'C2', pre:3, q:'Last time you received an IFC from someone else, what happened?',
+    anchor:'Vendor concentration &middot; switching cost',
+    o:['None','Exactly one, by default','One main, one occasional','Tool choice is a defined decision per task','Exchange between them is measured for loss','Those measurements drive the toolchain'] },
+  { id:'C2', pre:4, q:'Last time you received an IFC from someone else, what happened?',
     tip:'The most useful answer here is usually &ldquo;geometry fine, data missing&rdquo;. That is the normal state of IFC exchange and worth recording honestly rather than rounding up.',
-    anchor:'buildingSMART · IFC exchange fidelity',
-    o:['Never received one','Opened but unusable','Geometry fine, data missing','Opened and used it for real work','Used it and fed changes back'] },
+    anchor:'buildingSMART &middot; IFC exchange fidelity',
+    o:['Never received one','Opened but unusable','Geometry fine, data missing','Opened and used within a defined workflow','Import quality is checked and recorded','Findings go back to the sender and the exchange improves'] },
   { id:'C3', pre:2, q:'What most limits how many people here use BIM tools?',
     tip:'If licence cost is the answer, say so. That is the constraint the open route is most likely to relieve, and understating it makes your recommendations less useful.',
-    anchor:'Adoption barriers · licensing',
-    o:['Licence cost, severely','Licence cost, significantly','Hardware or skills','Minor constraints only','Nothing material'] },
+    anchor:'Adoption barriers &middot; licensing',
+    o:['Licence cost, severely','Licence cost, significantly','Hardware or skills, being managed','Access is planned and provisioned','Utilisation is measured against need','Measurement drives licensing decisions'] },
   { id:'C4', pre:3, q:'Has the firm ever evaluated an alternative to its main BIM tool?',
     tip:'Not a loyalty question. Having tested an alternative is what turns &ldquo;we could move if we had to&rdquo; from a hope into a known quantity.',
-    anchor:'Switching cost · optionality',
-    o:['Never considered it','Discussed only','Someone trialled one','Trialled and costed a switch','Ran a real project on an alternative'] } ]},
-
+    anchor:'Switching cost &middot; optionality',
+    o:['Never considered it','Discussed only','Someone trialled one','Evaluation is a defined periodic exercise','Switching cost is quantified','That figure informs procurement'] }
+]},
 { key:'D', name:'Data and standards', blurb:'What is actually inside the model', items:[
-  { id:'D1', pre:3, q:'Do your models use a classification system?',
+  { id:'D1', pre:4, q:'Do your models use a classification system?',
     tip:'A file-naming convention is not a classification system. Both are useful and they answer different questions &mdash; the gap analysis needs to know which one you actually have.',
-    anchor:'ISO 12006-2 · Uniclass / OmniClass / MasterFormat',
-    o:['No','A file-naming convention only','A classification standard, partly applied','Applied consistently','Applied and validated before issue'] },
-  { id:'D2', pre:2, q:'Is what the model must contain written down before the project starts?',
+    anchor:'ISO 12006-2 &middot; Uniclass / OmniClass / MasterFormat',
+    o:['No','A file-naming convention only','A classification standard, partly applied','Applied consistently through a defined process','Coverage is measured and reported per project','Coverage figures drive template changes'] },
+  { id:'D2', pre:3, q:'Is what the model must contain written down before the project starts?',
     tip:'This is about information requirements, whatever they are called locally. Written before the project behaves very differently from agreed as you go.',
-    anchor:'ISO 19650 · EIR / AIR',
-    o:['No','Verbally agreed','A written requirement exists','Written and referenced during the project','Written and verified at handover'] },
+    anchor:'ISO 19650-2 &middot; EIR / AIR',
+    o:['No','Verbally agreed','A written requirement exists','A standard requirement applied to every project','Compliance is measured at handover','Measurement changes the standard requirement'] },
   { id:'D3', pre:4, q:'Before sending an IFC out, is it checked?',
     tip:'Opening it to see whether it looks right is a real answer and a common one. We are separating &ldquo;looked at it&rdquo; from &ldquo;ran it through something that reports errors&rdquo;.',
-    anchor:'buildingSMART · validation service',
-    o:['Never sent one','Not checked','Opened once to eyeball it','Checked against a written expectation','Validated with a checker tool and the result recorded'] },
+    anchor:'buildingSMART &middot; validation service',
+    o:['Never sent one','Not checked','Opened once to eyeball it','Checked against a defined expectation, every issue','Validated with a checker tool and results recorded','Recorded results drive authoring changes'] },
   { id:'D4', pre:2, q:'Where will your finished project models be in five years?',
     tip:'An asset outlives the software that modelled it by decades. This is the question owners eventually ask, and most firms have never been asked it.',
-    anchor:'ISO 19650 · long-term information stewardship',
-    o:['Nowhere specific','Native format on a server somewhere','Deliberately archived, native only','Archived including IFC','Archived, IFC, re-opened periodically to confirm it still reads'] } ]},
-
+    anchor:'ISO 19650-3 &middot; long-term information stewardship',
+    o:['Nowhere specific','Native format on a server somewhere','Deliberately archived, native only','A defined archive process including IFC','Archive readability is tested periodically','Test results change the archive policy'] }
+]},
 { key:'E', name:'Organisational processes', blurb:'How the work actually flows', items:[
   { id:'E1', pre:2, q:'How is model data shared on a project?',
     tip:'A shared drive is a real answer. We are distinguishing a place where files sit from an environment that manages versions, status, and who has what.',
-    anchor:'ISO 19650 · Common Data Environment',
-    o:['Email or file transfer','A shared drive','A CDE for documents','A CDE handling models','A CDE handling IFC natively, with issue tracking'] },
-  { id:'E2', pre:2, q:'Are model exchanges scheduled?',
+    anchor:'ISO 19650-1 &middot; Common Data Environment',
+    o:['Email or file transfer','A shared drive','A CDE for documents','A CDE handling models, with defined states','CDE compliance is measured','Measurement drives CDE configuration'] },
+  { id:'E2', pre:3, q:'Are model exchanges scheduled?',
     tip:'Ad hoc on request is extremely common and not a failure. Scheduled exchange is what lets other disciplines plan around you.',
-    anchor:'ISO 19650 · information delivery planning',
-    o:['Ad hoc, on request','Around milestones, informally','Defined in a plan','Defined and tracked','Defined, tracked, and missed exchanges have consequences'] },
+    anchor:'ISO 19650-2 &middot; information delivery planning',
+    o:['Ad hoc, on request','Around milestones, informally','Defined in a plan','A standard delivery plan on every project','Exchange punctuality is measured','Measurement changes the plan'] },
   { id:'E3', pre:1, q:'After handover, is the model used for anything?',
     tip:'Most models stop at handover. If yours does, that is the normal case &mdash; and it is the largest unrealised value in the whole lifecycle.',
-    anchor:'Asset information model · FM handover',
-    o:['No','Occasionally referenced','Handed to the client, unclear if used','Used for FM or asset management','Drives O&amp;M with data flowing back to the model'] },
+    anchor:'ISO 19650-3 &middot; asset information model',
+    o:['No','Occasionally referenced','Handed over, unclear if used','A defined role in FM or asset management','Its operational value is measured','Measurement drives what we model'] },
   { id:'E4', pre:2, q:'Is anything about your BIM work measured?',
     tip:'Anecdotes count as an honest &ldquo;no&rdquo;. Without measurement there is no way to tell whether a change you make actually worked.',
-    anchor:'Maturity · measurement and improvement',
-    o:['No','Anecdotally','Some metrics collected','Metrics reviewed periodically','Metrics drive changes in how projects run'] } ]}
+    anchor:'ISO/IEC 33020 &middot; measurement and improvement',
+    o:['No','Anecdotally','Some metrics collected','A defined metric set on every project','Metrics reviewed against targets','Reviews change how projects run'] }
+]}
 ];
 
 function renderItem(it) {
@@ -616,10 +617,10 @@ SCREENS.model =
 /* ---------- 5 · RESULTS ---------- */
 function chartRows() {
   return DIMS.map(function (d) {
-    var w = (d.measured / 4 * 100).toFixed(1), c = (d.claimed / 4 * 100).toFixed(1);
+    var w = (d.measured / 5 * 100).toFixed(1), c = (d.claimed / 5 * 100).toFixed(1);
     var gap = Math.abs(d.claimed - d.measured) >= 2;
     return '<div class="crow" title="' + d.name + ' — measured ' + d.measured.toFixed(1) +
-      ' of 4, you said ' + d.claimed.toFixed(1) + '">' +
+      ' of 5, you said ' + d.claimed.toFixed(1) + '">' +
       '<div class="cname">' + d.name + (gap ? ' <span style="color:var(--warn)">&#9650;</span>' : '') + '</div>' +
       '<div class="ctrack"><div class="cbar" style="width:' + w + '%"></div>' +
       '<div class="cclaim" style="left:' + c + '%"></div></div>' +
@@ -635,10 +636,10 @@ SCREENS.results =
 
   '<div class="card">' +
     '<h3>Readiness profile</h3>' +
-    '<p class="small" style="margin-top:5px">Maturity 0&ndash;4 across five dimensions</p>' +
+    '<p class="small" style="margin-top:5px">ISO/IEC 33020 capability levels 0&ndash;5, across five dimensions</p>' +
     '<div class="chart">' + chartRows() +
       '<div class="cscale"><span></span><div class="cticks">' +
-        '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span></div><span></span></div>' +
+        '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><span></span></div>' +
     '</div>' +
     '<div class="clegend">' +
       '<span><i class="swatch"></i>Assessed level</span>' +
@@ -660,7 +661,7 @@ SCREENS.results =
     '<div class="delta" style="margin-top:13px">' +
       '<div class="ic">!</div><div>' +
         '<h4>Classification</h4>' +
-        '<p>You reported a classification standard applied consistently. 4.2% of elements in the file carry a ' +
+        '<p>You reported that classification coverage is measured and reported per project. 4.2% of elements in the file carry a ' +
         'classification reference. We scored the measurement.</p>' +
         '<div class="vs"><span><b>You said</b>L3 · applied consistently</span>' +
         '<span><b>Measured</b>L1 · 4.2% coverage</span></div>' +
@@ -696,11 +697,11 @@ SCREENS.results =
 
   '<div class="idx2">' +
     '<div class="ix"><span class="who">Can we start?</span>' +
-      '<div class="v">1.6<small> / 4</small></div>' +
+      '<div class="v">1.9<small> / 5</small></div>' +
       '<div style="font-weight:600;font-size:14px">Entry readiness</div>' +
       '<p>The open route is reachable, but not with this model as it stands.</p></div>' +
     '<div class="ix"><span class="who">How exposed are we?</span>' +
-      '<div class="v">3.1<small> / 4</small></div>' +
+      '<div class="v">3.9<small> / 5</small></div>' +
       '<div style="font-weight:600;font-size:14px">Lock-in exposure</div>' +
       '<p>High. No model has been retrieved from your authoring tool and re-opened elsewhere.</p></div>' +
   '</div>' +
