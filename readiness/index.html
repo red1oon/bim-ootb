@@ -92,6 +92,28 @@ button{font:inherit;color:inherit}
 @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ---- PRINTED NOTICE (travels with the PDF) ---- */
+.printnotice{
+  border:1.5px solid var(--warn);border-radius:8px;padding:16px 18px;margin:26px 0 0;
+  background:var(--warn-wash)
+}
+.printnotice h4{
+  margin:0 0 8px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--warn);font-family:"IBM Plex Mono",monospace;font-weight:600
+}
+.printnotice p{font-size:13px;color:var(--ink-2);line-height:1.55}
+.printnotice p + p{margin-top:9px}
+.printnotice a{color:var(--warn);font-weight:600}
+
+@media print{
+  .mockbar,.topbar,.rail,.railcap,.actions,.tvwrap{display:none!important}
+  body{background:#fff;color:#000;font-size:11pt}
+  .card,.printnotice,figure{break-inside:avoid;box-shadow:none}
+  .printnotice{border:1.5pt solid #000;background:#fff;break-inside:avoid}
+  .printnotice h4,.printnotice a{color:#000}
+  a[href]:after{content:" (" attr(href) ")";font-size:9pt;word-break:break-all}
+}
+
 .eyebrow{
   font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;
   text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:14px
@@ -118,6 +140,7 @@ h3{font-size:15.5px;font-weight:600}
 :root[data-theme="dark"] .btn,:root:not([data-theme="light"]) .btn{color:#0f1816}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .btn{color:#fff}}
 .btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.42;cursor:not-allowed;filter:none}
 .btn.sec{background:transparent;color:var(--ink-2);border-color:var(--rule)}
 .btn.sec:hover{background:var(--surface-2);filter:none;border-color:var(--accent)}
 .btn.sm{padding:8px 14px;font-size:13.5px}
@@ -313,7 +336,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
   </div>
 
   <ul class="rail" id="rail" hidden>
-    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
+    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
   </ul>
   <div class="railcap" id="railcap" hidden><span id="railnow">About you</span><span id="railpct">Step 1 of 5</span></div>
 
@@ -390,13 +413,82 @@ SCREENS.intro =
   '</div>' +
 
   '<div class="actions">' +
-    '<button class="btn" data-go="context">Start assessment</button>' +
+    '<button class="btn" data-go="agree">Start assessment</button>' +
     '<button class="btn sec" data-go="results">Skip to sample results</button>' +
+  '</div>';
+
+/* ---------- 1b · ACKNOWLEDGEMENT GATE ---------- */
+SCREENS.agree =
+  '<p class="eyebrow">Before you begin</p>' +
+  '<h2>What this is, and what it is not</h2>' +
+  '<p class="sub small">Please read this. It takes thirty seconds and it decides how you may use the ' +
+  'result.</p>' +
+
+  '<div class="card" style="border-left:3px solid var(--warn)">' +
+    '<h3>Scope</h3>' +
+    '<p class="small" style="margin-top:8px"><strong>This is only a technical readiness assessment.</strong> ' +
+    'It measures organisational readiness for open-standard working and the data quality of a model you ' +
+    'supply. That is its entire scope. It says nothing about the lawfulness, safety, buildability or ' +
+    'professional adequacy of anything you produce.</p>' +
+
+    '<h3 style="margin-top:22px">It qualifies nothing and no one</h3>' +
+    '<p class="small" style="margin-top:8px">It confers no certification, accreditation, licence, approval ' +
+    'or professional status. It is not evidence of compliance with any regulation, standard, code or ' +
+    'contract, and must not be presented as such &mdash; to a client, an authority, an insurer, or in a ' +
+    'tender.</p>' +
+
+    '<h3 style="margin-top:22px">Nothing here is audited</h3>' +
+    '<p class="small" style="margin-top:8px">Your answers are self-reported and the measurements come from ' +
+    'a file you supply. No third party has witnessed, checked or attested to any of it.</p>' +
+
+    '<h3 style="margin-top:22px">Your obligations remain yours</h3>' +
+    '<p class="small" style="margin-top:8px">Where insurance, professional indemnity, licensing, ' +
+    'certification or a formal qualification process is required or applicable under your regulations, ' +
+    'contract or client requirements, that obligation is yours and must be discharged directly with the ' +
+    'responsible body. This report substitutes for none of it.</p>' +
+
+    '<h3 style="margin-top:22px">Your data</h3>' +
+    '<p class="small" style="margin-top:8px">Any model file you choose is read inside your browser and is ' +
+    'never uploaded. Submitting anonymous results at the end is optional, you will see the exact payload ' +
+    'first, and your checklist is complete either way.</p>' +
+
+    '<h3 style="margin-top:22px">Research instrument</h3>' +
+    '<p class="small" style="margin-top:8px">This is a work in progress supporting academic research. Its ' +
+    'criteria, thresholds and weightings are subject to expert validation and will change.</p>' +
+  '</div>' +
+
+  '<label class="chk" style="font-size:15px;margin:20px 0 0"><input type="checkbox" id="ackbox">' +
+    '<span>I have read and understood the above, and I understand this assessment qualifies nothing ' +
+    'and no one.</span></label>' +
+
+  '<div class="actions">' +
+    '<button class="btn" id="agreebtn" data-go="context" disabled>Agree and continue</button>' +
+    '<button class="btn sec" data-go="declined">I do not agree</button>' +
+  '</div>' +
+  '<p class="small" style="margin-top:16px"><a href="disclaimer.html">Read the full Disclaimer Notice ' +
+  '&rarr;</a> &nbsp;&middot;&nbsp; <span class="mono">Terms v0.1 &middot; 22 Aug 2026</span></p>';
+
+/* ---------- 1c · DECLINED ---------- */
+SCREENS.declined =
+  '<p class="eyebrow">No assessment taken</p>' +
+  '<h2>That is a legitimate answer</h2>' +
+  '<p class="sub">Nothing has been recorded and nothing has left your device. If the limits on what this ' +
+  'can tell you make it not worth your time, that is a reasonable read &mdash; it is a narrow instrument ' +
+  'by design.</p>' +
+  '<div class="card">' +
+    '<h3>You may still find these useful</h3>' +
+    '<p class="small" style="margin-top:9px">The background reading covers what the industry actually ' +
+    'certifies, where delivered models really stand, and what closing the gap involves. None of it ' +
+    'requires taking the assessment.</p>' +
+  '</div>' +
+  '<div class="actions">' +
+    '<a class="btn" href="why.html">Read the background</a>' +
+    '<button class="btn sec" data-go="agree">Back</button>' +
   '</div>';
 
 /* ---------- 2 · CONTEXT ---------- */
 SCREENS.context =
-  '<p class="eyebrow">Step 2 of 9 &middot; About you</p>' +
+  '<p class="eyebrow">Step 3 of 10 &middot; About you</p>' +
   '<h2>A little context</h2>' +
   '<p class="sub small">None of this identifies you. It selects the right rules for your jurisdiction and ' +
   'places you in a comparable group.</p>' +
@@ -437,7 +529,7 @@ SCREENS.context =
 
   '<div class="actions">' +
     '<button class="btn" data-go="dim0">Continue</button>' +
-    '<button class="btn sec" data-go="intro">Back</button>' +
+    '<button class="btn sec" data-go="agree">Back</button>' +
   '</div>';
 
 /* ---------- THE 20 SCORED ITEMS ---------- */
@@ -554,7 +646,7 @@ function renderItem(it) {
 
 function dimScreen(n) {
   var d = DIMENSIONS[n];
-  return '<p class="eyebrow">Step ' + (n + 2) + ' of 9 &nbsp;&middot;&nbsp; ' + d.name +
+  return '<p class="eyebrow">Step ' + (n + 4) + ' of 10 &nbsp;&middot;&nbsp; ' + d.name +
       ' &nbsp;&middot;&nbsp; section ' + (n + 1) + ' of 5</p>' +
     '<h2>' + d.blurb + '</h2>' +
     '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
@@ -569,7 +661,7 @@ function dimScreen(n) {
 
 /* ---------- 4 · MODEL ---------- */
 SCREENS.model =
-  '<p class="eyebrow">Step 8 of 9 &middot; Your model</p>' +
+  '<p class="eyebrow">Step 9 of 10 &middot; Your model</p>' +
   '<h2>Now let&rsquo;s look at an actual file</h2>' +
   '<p class="sub small">This is the part a questionnaire cannot do. We read the file here, in your browser, and ' +
   'compare what it contains against what you just told us. <strong>The file is never uploaded.</strong></p>' +
@@ -648,7 +740,7 @@ function chartRows() {
 }
 
 SCREENS.results =
-  '<p class="eyebrow">Step 9 of 9 &middot; Your results</p>' +
+  '<p class="eyebrow">Step 10 of 10 &middot; Your results</p>' +
   '<h2>Where you stand</h2>' +
   '<p class="sub small">Two numbers per dimension: what your answers claimed, and what the evidence supports. ' +
   'Where they disagree by two levels or more, the measurement is used and the gap is shown.</p>' +
@@ -763,6 +855,21 @@ SCREENS.results =
     '<p class="small">Where insurance, professional indemnity, licensing or a formal qualification process ' +
     'is required or applicable under your regulations, contract or client requirements, that obligation is ' +
     'yours and must be discharged directly with the responsible body. This report substitutes for none of it.</p>' +
+    '<p class="small"><a href="disclaimer.html">Read the full Disclaimer Notice &rarr;</a></p>' +
+  '</div>' +
+
+  '<div class="printnotice">' +
+    '<h4>Notice &mdash; printed with every copy of this report</h4>' +
+    '<p><strong>This is only a technical readiness assessment. It qualifies nothing and no one.</strong> ' +
+    'It confers no certification, accreditation, licence, approval or professional status, and is not ' +
+    'evidence of compliance with any regulation, standard, code or contract. Do not present it as such ' +
+    '&mdash; to a client, an authority, an insurer, or in a tender.</p>' +
+    '<p>Answers are self-reported and measurements come from a file supplied by the respondent. Nothing ' +
+    'here has been audited or verified by any third party. Where insurance, professional indemnity, ' +
+    'licensing or a formal qualification process is required or applicable under your regulations or ' +
+    'appointment, that obligation is yours and this report substitutes for none of it.</p>' +
+    '<p><a href="disclaimer.html">Read the full Disclaimer Notice &rarr;</a> &nbsp;&middot;&nbsp; ' +
+    '<span class="mono">Notice v0.1 &middot; 22 Aug 2026</span></p>' +
   '</div>' +
 
   '<div class="actions">' +
@@ -771,16 +878,16 @@ SCREENS.results =
     '<button class="btn sec" data-go="intro">Start over</button>' +
   '</div>' +
   '<p class="small mono" style="margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)">' +
-  'core-0.1 · locale ae-v1 · toolkit v0.1 · scope: one office or region · scoring is deterministic &mdash; ' +
+  'core-0.1 · locale ae-v1 · toolkit v0.1 · terms v0.1 acknowledged · scope: one office or region · scoring is deterministic &mdash; ' +
   'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
   'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
 
 /* ---------- NAV ---------- */
 DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
 
-var ORDER = ['intro', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'results'];
+var ORDER = ['intro', 'agree', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'results'];
 var LABELS = {
-  intro: 'Introduction', context: 'About you',
+  intro: 'Introduction', agree: 'Before you begin', declined: 'No assessment taken', context: 'About you',
   dim0: 'Governance', dim1: 'People and skills', dim2: 'Technology',
   dim3: 'Data and standards', dim4: 'Organisational processes',
   model: 'Your model', results: 'Results'
@@ -790,8 +897,9 @@ var host = document.getElementById('screens');
 function show(name) {
   host.innerHTML = '<div class="screen on">' + SCREENS[name] + '</div>';
   var i = ORDER.indexOf(name);
+  if (i < 0) { window.scrollTo({ top: 0, behavior: 'instant' }); return; }
   var rail = document.getElementById('rail'), cap = document.getElementById('railcap');
-  rail.hidden = cap.hidden = (name === 'intro');
+  rail.hidden = cap.hidden = (name === 'intro' || name === 'agree' || name === 'declined');
   [].forEach.call(rail.children, function (li, n) {
     li.className = n < i ? 'done' : (n === i ? 'now' : '');
   });
@@ -800,8 +908,15 @@ function show(name) {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'ackbox') {
+    document.getElementById('agreebtn').disabled = !e.target.checked;
+  }
+});
+
 document.addEventListener('click', function (e) {
   var go = e.target.closest('[data-go]');
+  if (go && go.disabled) return;
   if (go) { show(go.dataset.go); return; }
 
   var tb = e.target.closest('.tipbtn');
