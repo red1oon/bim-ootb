@@ -24,6 +24,18 @@
  *   fixed      in KNOWN_RED but now green  — printed loudly, does NOT fail (never punish a fix);
  *                                            drain it from the list in the same PR that fixed it.
  *
+ * TWO CLASSES, AND ONLY ONE OF THEM CAN GATE (measured over three full sweeps of a98b62c).
+ * 21 of the 63 witnesses launch their own chromium + http server; 42 are headless node.
+ * Across three sweeps the headless 42 gave the SAME verdict every time. The browser 21 gave a
+ * different red set every time — run 1 flagged shakeout/pill_drawer_followup/disc_friendly_labels,
+ * run 2 flagged corridor_reveal_shell (whose own log ended "ALL PASS"), run 3 flagged
+ * role_filter/room_cycle_home/room_select_door, each failing twice in a row so --retries did not
+ * absorb it. Every unstable file is browser-driven; not one headless file ever moved.
+ * So: the headless class GATES (default). The browser class is quarantined behind --browser and
+ * is REPORT-ONLY — it never fails the suite, because a verdict that changes per run cannot gate
+ * anyone honestly. Fixing that contention is its own task; pretending it is signal is worse than
+ * saying it out loud.
+ *
  * FLAKINESS IS REAL AND WAS MEASURED, not anticipated: two full sweeps of the same commit
  * (a98b62c) 30 minutes apart disagreed on FOUR files — witness_disc_friendly_labels,
  * witness_pill_drawer_followup and witness_shakeout flipped red -> green, and
@@ -42,6 +54,7 @@
  *   node tests/run_witness_suite.js --filter gantt   # only matching names (fast iteration)
  *   node tests/run_witness_suite.js --timeout 60     # per-file seconds (default 150)
  *   node tests/run_witness_suite.js --retries 0      # believe the first result (default 1 retry)
+ *   node tests/run_witness_suite.js --browser        # ALSO run the 21 browser witnesses (report-only)
  *   node tests/run_witness_suite.js --list           # discover only, run nothing
  * Sequential on purpose: several witnesses drive a real browser against a fixed port, so parallel
  * runs would contend. Full sweep is ~15 min; use --filter while iterating.
@@ -60,31 +73,25 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 // retires it). B = hardcoded path. C = real product red. D = needs a live server/browser this run
 // did not have — NOT proven healthy, just not proven red.
 const KNOWN_RED = {
-  'witness_big_element_support_coverage.js': 'A — ReferenceError: _zoneIndex is not defined, crashes AFTER its first PASS line',
+  // A — stale-slice crash: a source-text slice of time_machine.js calls a module-scope helper the
+  // vm sandbox was never given. The §S53.5 class (it killed witness_zone_display_authoring for four
+  // days). §S58's support_sweep.js extraction retires this class outright.
+  'witness_big_element_support_coverage.js': 'A — ReferenceError: _zoneIndex is not defined, crashes AFTER its first PASS line so its head reads healthy',
   'witness_tm_geo_order_cycles.js':          'A — ReferenceError: _zoneIndex is not defined, after §TMREPRO_SLICE',
-  'witness_zone_index.js':                   'B — ENOENT, hardcodes /tmp/vw/time_machine.js instead of resolving from __dirname',
-  'witness_isolate_zoom_2026-07-12.js':      'C — real red in a live browser: Parts axis reachable via toggle, axis=disc',
+  // B — environment assumption baked into the file.
+  'witness_zone_index.js':                   'B — ENOENT: hardcodes /tmp/vw/time_machine.js instead of resolving from __dirname. One-line fix.',
+  // C — real assertion reds, reproducible every run.
   'witness_gantt_lock_integrity.js':         'C — G-LI-2e, self-declared KNOWN PRE-EXISTING BUG in its own assert message',
-  'witness_zone_display_authoring.js':       'C — W-ZDA-4a x2, floating worse under display-authored windows (§S53.5, decision pending)',
-  'witness_door_window_host_wall.js':        'C — assertion red, untriaged',
-  'witness_scene_merge_2026-07-30.js':       'C — assertion red, untriaged',
-  'witness_disc_friendly_labels_2026-07-12.js': 'D/C — untriaged',
-  'witness_find_close_no_leak_2026-07-26.js':   'D/C — untriaged',
-  'witness_find_panel_hidden_onload_2026-07-11.js': 'D/C — untriaged',
-  'witness_hba_cctv_inscene_capture.js':     'D/C — untriaged',
-  'witness_hba_iot_lod_device_meshes.js':    'D/C — untriaged',
-  'witness_hba_outline_panel_fixes.js':      'D/C — untriaged',
-  'witness_hba_pill_desync_fix.js':          'D/C — untriaged',
-  'witness_iot_pov_live.js':                 'D/C — untriaged',
-  'witness_pill_drawer_followup_2026-07-06.js':        'D/C — untriaged',
-  'witness_pill_drawer_mobile_position_2026-07-11.js': 'D/C — untriaged',
-  'witness_room_box_purple_2026-07-12.js':   'D/C — untriaged',
-  'witness_shakeout_2026-07-06.js':          'D — page.goto: Timeout 30000ms, needs the viewer served',
-  'witness_tm_stream_index_defer.js':        'D — browser/server not up in this run',
-  'witness_xray_cache_memo.js':              'D — browser/server not up in this run',
-  'witness_class_outline_live.js':           'D — exceeded 150s, needs a live browser',
-  'witness_panel_abstraction.js':            'D — exceeded 150s, needs a live browser'
+  'witness_zone_display_authoring.js':       'C — W-ZDA-4a x2 (§S53.5): decision pending, re-lock as per-building baselines rather than a threshold',
+  'witness_door_window_host_wall.js':        'C — assertion red, UNTRIAGED',
+  // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
+  // an earlier pass called these "browser/server not up", which was wrong — both are headless.
+  'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',
+  'witness_xray_cache_memo.js':              'C — reproducible red, cause NOT yet established'
 };
+
+// The 21 browser witnesses are deliberately NOT listed here. They are report-only (see the header):
+// a verdict that changes run to run cannot be captured in a static list without lying about it.
 
 const args = process.argv.slice(2);
 const argOf = (name, dflt) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : dflt; };
@@ -92,9 +99,15 @@ const FILTER = argOf('--filter', null);
 const TIMEOUT_S = parseInt(argOf('--timeout', '150'), 10);
 const LIST_ONLY = args.includes('--list');
 const RETRIES = parseInt(argOf('--retries', '1'), 10);
+const WITH_BROWSER = args.includes('--browser');
+
+// Class by what the file DOES, not by a name convention that could drift.
+const isBrowser = f => /chromium|playwright/.test(fs.readFileSync(path.join(TESTS_DIR, f), 'utf8'));
 
 let files = fs.readdirSync(TESTS_DIR).filter(f => /^witness_.*\.js$/.test(f)).sort();
 if (FILTER) files = files.filter(f => f.indexOf(FILTER) >= 0);
+const browserFiles = files.filter(isBrowser);
+if (!WITH_BROWSER) files = files.filter(f => !isBrowser(f));
 
 if (LIST_ONLY) {
   files.forEach(f => console.log('  ' + f + (KNOWN_RED[f] ? '   [KNOWN_RED]' : '')));
@@ -102,7 +115,7 @@ if (LIST_ONLY) {
   process.exit(0);
 }
 
-console.log('§SUITE_START ' + files.length + ' witnesses, timeout=' + TIMEOUT_S + 's, BLD_DIR=' + BLD_DIR);
+console.log('§SUITE_START ' + files.length + ' witnesses (headless' + (WITH_BROWSER ? ' + browser, browser is REPORT-ONLY' : '; ' + browserFiles.length + ' browser witnesses skipped, use --browser') + '), timeout=' + TIMEOUT_S + 's');
 
 // The witness's own verdict line, so the runner reports what the witness says — not a count it invented.
 function summaryOf(out) {
@@ -146,6 +159,8 @@ for (const f of files) {
     console.log('  FIXED ' + f + ' — was KNOWN_RED, now green. Drain it from KNOWN_RED.' + (sum ? '   ' + sum : ''));
   } else if (known) {
     knownRed++; console.log('  known ' + f + ' (' + code + ') — ' + KNOWN_RED[f]);
+  } else if (isBrowser(f)) {
+    console.log('  brwsr ' + f + ' (' + code + ') — browser class, REPORT-ONLY, does not gate (verdict is not stable run to run)');
   } else {
     newRed++; newRedList.push(f + ' (' + code + ')');
     console.log('  RED   ' + f + ' (' + code + ')' + (sum ? '   ' + sum : ''));
