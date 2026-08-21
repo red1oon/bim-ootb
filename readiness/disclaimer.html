@@ -1,0 +1,336 @@
+<title>Disclaimer Notice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --focus:#4fc9b0;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --focus:#4fc9b0;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;font-size:17.5px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.022em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+.wrap{max-width:800px;margin:0 auto;padding:0 22px 90px}
+
+/* ---- topbar ---- */
+.topbar{display:flex;align-items:center;gap:13px;padding:18px 0;border-bottom:1px solid var(--rule)}
+.brandmark{
+  width:28px;height:28px;border-radius:6px;background:var(--accent);flex:none;
+  display:grid;place-items:center;color:var(--paper);font-weight:700;font-size:12px;
+  font-family:"IBM Plex Mono",monospace
+}
+.brandtext{font-family:"Instrument Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.3}
+.brandtext small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.topspacer{flex:1}
+.ghostbtn{
+  background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 12px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;cursor:pointer;color:var(--ink-2);
+  text-decoration:none;display:inline-block
+}
+.ghostbtn:hover{background:var(--surface-2);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ---- hero ---- */
+.hero{padding:56px 0 40px;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:16px
+}
+h1{font-family:"Instrument Sans",sans-serif;font-size:clamp(31px,5.2vw,46px);line-height:1.08;font-weight:700}
+.standfirst{font-size:19px;color:var(--ink-2);margin-top:18px;max-width:58ch;line-height:1.55}
+
+/* ---- sections ---- */
+section{margin:64px 0 0;scroll-margin-top:20px}
+.shead{display:flex;gap:14px;align-items:baseline;margin-bottom:10px}
+.snum{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;padding-top:5px;letter-spacing:.05em
+}
+h2{font-family:"Instrument Sans",sans-serif;font-size:26px;font-weight:600;line-height:1.2}
+h3{font-family:"Instrument Sans",sans-serif;font-size:16.5px;font-weight:600;margin:30px 0 8px}
+section p{margin:15px 0;max-width:64ch}
+.lede{font-size:18.5px;color:var(--ink-2)}
+strong{font-weight:600;color:var(--ink)}
+
+/* ---- nav chips ---- */
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 0}
+.jump a{
+  font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:20px;padding:7px 14px;color:var(--ink-2);background:var(--surface)
+}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+
+/* ---- figure ---- */
+figure{
+  margin:26px 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:22px 24px;box-shadow:var(--shadow)
+}
+figure h4{
+  font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;margin:0 0 4px
+}
+figure .fsub{font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--muted);margin-bottom:18px}
+figcaption{
+  margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;font-size:12.5px;color:var(--muted);line-height:1.5
+}
+figcaption b{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;display:block;margin-bottom:4px
+}
+
+/* ---- stacked bar ---- */
+.stack{display:flex;height:38px;border-radius:6px;overflow:hidden;gap:2px;background:var(--surface)}
+.seg{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:0}
+.seg.a{background:var(--accent);color:var(--paper)}
+.seg.n{background:var(--surface-3);color:var(--ink-2)}
+.seg.w{background:var(--warn);color:var(--paper)}
+.stacklab{
+  display:flex;justify-content:space-between;margin-top:9px;gap:14px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--ink-2)
+}
+.stacklab span{display:flex;gap:7px;align-items:center}
+.sw{width:12px;height:11px;border-radius:3px;flex:none}
+.sw.a{background:var(--accent)} .sw.n{background:var(--surface-3)} .sw.w{background:var(--warn)}
+
+/* ---- hbars ---- */
+.hb{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center;padding:6px 0}
+.hb .n{font-family:"Instrument Sans",sans-serif;font-size:13.5px;text-align:right;color:var(--ink-2);line-height:1.25}
+.hb .t{height:17px;background:var(--surface-3);border-radius:4px;position:relative;overflow:hidden}
+.hb .f{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+.hb .v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+
+/* ---- hero stat ---- */
+.bignum{
+  display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;
+  padding:6px 0 2px
+}
+.bignum .n{
+  font-family:"Instrument Sans",sans-serif;font-size:clamp(46px,9vw,74px);font-weight:700;
+  line-height:.95;letter-spacing:-.04em;color:var(--warn);font-variant-numeric:tabular-nums
+}
+.bignum .n.ok{color:var(--accent)}
+.bignum .t{font-size:16px;color:var(--ink-2);max-width:34ch;font-family:"Instrument Sans",sans-serif;line-height:1.4}
+
+/* ---- matrix ---- */
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--rule);font-weight:600
+}
+.mx th.c,.mx td.c{text-align:center;width:88px}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2)}
+.mx tr:last-child td{border-bottom:none}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--warn);font-weight:700}
+.mxscroll{overflow-x:auto}
+
+/* ---- bands ---- */
+.bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
+.band{padding:11px 12px;flex:1;font-family:"Instrument Sans",sans-serif;font-size:12.5px;text-align:center;line-height:1.35}
+.band b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14px;margin-bottom:3px}
+.band.g{background:var(--accent-wash);color:var(--accent-ink)}
+.band.m{background:var(--surface-3);color:var(--ink-2)}
+.band.b{background:var(--warn-wash);color:var(--warn)}
+
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
+/* ---- callout ---- */
+.call{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:8px;padding:19px 22px;margin:26px 0
+}
+.call.warn{border-left-color:var(--warn)}
+.call .lab{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-ink);font-weight:600;display:block;margin-bottom:8px
+}
+.call.warn .lab{color:var(--warn)}
+.call p{margin:0 0 11px;max-width:none}
+.call p:last-child{margin-bottom:0}
+
+/* ---- ladder ---- */
+.ladder{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:22px 0}
+.rung{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:baseline}
+.rung .l{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--accent-ink)}
+.rung b{font-family:"Instrument Sans",sans-serif;font-size:14.5px}
+.rung p{margin:2px 0 0;font-size:14.5px;color:var(--muted);max-width:none}
+
+/* ---- cta ---- */
+.cta{
+  margin:60px 0 0;padding:30px 26px;background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:12px;text-align:center
+}
+.cta h3{margin:0 0 8px;font-size:20px}
+.cta p{margin:0 auto 20px;max-width:46ch;color:var(--ink-2);font-size:15.5px}
+.btn{
+  background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:8px;
+  padding:12px 24px;font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;
+  cursor:pointer;text-decoration:none;display:inline-block
+}
+.btn:hover{filter:brightness(1.08)}
+
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+
+@media (max-width:600px){
+  .hb{grid-template-columns:96px 1fr 62px;gap:9px}
+  .hb .n{font-size:12.5px}
+  .bands{flex-direction:column}
+  figure{padding:18px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+
+<div class="topbar">
+  <div class="brandmark">OB</div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Disclaimer Notice</small></div>
+  <div class="topspacer"></div>
+  <button class="ghostbtn" id="themebtn" type="button">Theme</button>
+  <a class="ghostbtn" href="./">Back to assessment</a>
+</div>
+
+<div class="hero">
+  <p class="eyebrow">Disclaimer Notice &middot; v0.1 &middot; 22 August 2026</p>
+  <h1>What this assessment is, and what it is not.</h1>
+  <p class="standfirst">This notice applies to the OpenBIM Readiness Assessment Toolkit, to every
+  assessment taken with it, and to every report, checklist or record it produces.</p>
+</div>
+
+<section>
+  <div class="shead"><span class="snum">01</span><h2>Scope</h2></div>
+  <p><strong>This is only a technical readiness assessment.</strong> It measures organisational
+  readiness for open-standard working, and the data quality of a model file supplied by the
+  respondent. That is its entire scope.</p>
+  <p>It says nothing about the lawfulness, safety, structural adequacy, buildability, fitness for
+  purpose or professional adequacy of any design, model, building or asset. It does not assess the
+  respondent, their competence, or their standing to practise.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">02</span><h2>It qualifies nothing and no one</h2></div>
+  <p>This assessment and any report produced from it confer <strong>no certification, accreditation,
+  licence, approval, registration, endorsement or professional status</strong> of any kind, on any
+  person or organisation.</p>
+  <p>They are <strong>not evidence of compliance</strong> with any regulation, building code,
+  standard, mandate, contract, appointment or client requirement, and must not be presented as such
+  &mdash; to a client, an authority having jurisdiction, an insurer, a certifying body, or in a
+  tender or prequalification submission.</p>
+  <p>No BIM software holds local-authority compliance certification in any jurisdiction. Compliance
+  rests with the Appointing Party and the Lead Appointed Party. Software is never a legal party to it.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">03</span><h2>Nothing here is audited or verified</h2></div>
+  <p>The inputs are <strong>self-reported by the respondent</strong> and computed from a file the
+  respondent supplies. No third party has witnessed, inspected, checked or attested to any answer,
+  measurement or result.</p>
+  <p>Results reflect what the respondent reported and what their file contained at the moment of
+  assessment, at the scope they declared. They are not a statement of fact about the organisation.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">04</span><h2>Your obligations remain yours</h2></div>
+  <p>Where <strong>insurance, professional indemnity, licensing, certification, registration or any
+  formal qualification process</strong> is required or applicable under the respondent&rsquo;s
+  regulations, contract, appointment or client requirements, that obligation is the
+  respondent&rsquo;s and must be discharged directly with the responsible body.</p>
+  <p><strong>This report substitutes for none of it, in whole or in part.</strong></p>
+  <p>Nothing in this toolkit or its outputs is insurance, indemnity, legal, regulatory or
+  professional advice. Whether working to open standards affects any cover or obligation is a matter
+  for the respondent&rsquo;s insurer and legal counsel. Two facts are offered only as context for that
+  conversation: warranty disclaimers are near-universal in software licensing, proprietary licences
+  included; and professional indemnity insures the professional, not the tool.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">05</span><h2>Figures and measurements</h2></div>
+  <p>Figures published by this toolkit are either measured from a named individual model, cited from
+  a public source, or aggregated from assessments taken &mdash; and are labelled accordingly. A
+  measurement from one building is not an industry statistic and must not be quoted as one.</p>
+  <p>Coverage and validity are reported as separate figures. A result showing well-formed data says
+  nothing about whether the right data is present. No single headline score is produced.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">06</span><h2>Research instrument, in development</h2></div>
+  <p>This toolkit supports academic research and is a work in progress. Its readiness dimensions,
+  assessment criteria, capability thresholds and weightings are subject to expert validation and
+  pilot testing, and <strong>will change</strong>. Results produced under one version are not
+  directly comparable with results produced under another.</p>
+  <p>Each report states the versions under which it was produced. Quote them whenever you quote a
+  result.</p>
+</section>
+
+<div class="cta">
+  <h3>Understood?</h3>
+  <p>You can take the assessment, or read the background on why any of this matters.</p>
+  <a class="btn" href="./">Go to the assessment</a>
+</div>
+
+<footer>
+  Disclaimer Notice v0.1 &middot; 22 August 2026<br>
+  OpenBIM Readiness Assessment Toolkit &middot; applies to the toolkit and every output it produces.
+</footer>
+
+</div>
+
+<script>
+document.getElementById('themebtn').addEventListener('click', function () {
+  var r = document.documentElement;
+  var dark = r.getAttribute('data-theme') === 'dark' ||
+    (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
+  r.setAttribute('data-theme', dark ? 'light' : 'dark');
+});
+</script>

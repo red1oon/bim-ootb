@@ -92,6 +92,28 @@ button{font:inherit;color:inherit}
 @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ---- PRINTED NOTICE (travels with the PDF) ---- */
+.printnotice{
+  border:1.5px solid var(--warn);border-radius:8px;padding:16px 18px;margin:26px 0 0;
+  background:var(--warn-wash)
+}
+.printnotice h4{
+  margin:0 0 8px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--warn);font-family:"IBM Plex Mono",monospace;font-weight:600
+}
+.printnotice p{font-size:13px;color:var(--ink-2);line-height:1.55}
+.printnotice p + p{margin-top:9px}
+.printnotice a{color:var(--warn);font-weight:600}
+
+@media print{
+  .mockbar,.topbar,.rail,.railcap,.actions,.tvwrap{display:none!important}
+  body{background:#fff;color:#000;font-size:11pt}
+  .card,.printnotice,figure{break-inside:avoid;box-shadow:none}
+  .printnotice{border:1.5pt solid #000;background:#fff;break-inside:avoid}
+  .printnotice h4,.printnotice a{color:#000}
+  a[href]:after{content:" (" attr(href) ")";font-size:9pt;word-break:break-all}
+}
+
 .eyebrow{
   font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.13em;
   text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:14px
@@ -118,6 +140,7 @@ h3{font-size:15.5px;font-weight:600}
 :root[data-theme="dark"] .btn,:root:not([data-theme="light"]) .btn{color:#0f1816}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .btn{color:#fff}}
 .btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.42;cursor:not-allowed;filter:none}
 .btn.sec{background:transparent;color:var(--ink-2);border-color:var(--rule)}
 .btn.sec:hover{background:var(--surface-2);filter:none;border-color:var(--accent)}
 .btn.sm{padding:8px 14px;font-size:13.5px}
@@ -250,6 +273,15 @@ pre.payload{
 .delta .vs{display:flex;gap:20px;margin-top:10px;flex-wrap:wrap;font-size:13px}
 .delta .vs b{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.06em;text-transform:uppercase}
 
+/* ---- RISK REGISTER ---- */
+.risks{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:10px}
+.risks li{
+  background:var(--surface-2);border:1px solid var(--rule);border-left:3px solid var(--warn);
+  border-radius:7px;padding:14px 16px
+}
+.risks h4{margin:0 0 4px;font-size:14.5px;font-weight:600;color:var(--warn)}
+.risks p{font-size:13.5px;color:var(--ink-2)}
+
 /* ---- FIX LIST ---- */
 .fixes{list-style:none;padding:0;margin:16px 0;counter-reset:f}
 .fixes li{
@@ -304,8 +336,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
   </div>
 
   <ul class="rail" id="rail" hidden>
-    <li data-step="1"></li><li data-step="2"></li><li data-step="3"></li>
-    <li data-step="4"></li><li data-step="5"></li>
+    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
   </ul>
   <div class="railcap" id="railcap" hidden><span id="railnow">About you</span><span id="railpct">Step 1 of 5</span></div>
 
@@ -325,7 +356,7 @@ var TIP = function (text, anchor) {
     (anchor ? '<span class="anchor">Anchor · ' + anchor + '</span>' : '') + '</span></span>';
 };
 
-var LV = ['L0', 'L1', 'L2', 'L3', 'L4'];
+var LV = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5'];
 function opts(name, list) {
   return '<div class="opts">' + list.map(function (t, i) {
     return '<input type="radio" name="' + name + '" id="' + name + i + '"' + (i === 1 ? ' checked' : '') + '>' +
@@ -338,12 +369,13 @@ function q(id, title, tip, anchor, list) {
 }
 
 /* ---------- CANNED RESULTS ---------- */
+/* target = proportionate level for an 11-50 firm, engineering, mixed projects (§6.5) */
 var DIMS = [
-  { name: 'Governance',        measured: 1.8, claimed: 2.0 },
-  { name: 'People & skills',   measured: 1.3, claimed: 1.5 },
-  { name: 'Technology',        measured: 2.3, claimed: 2.5 },
-  { name: 'Data & standards',  measured: 0.9, claimed: 2.8 },
-  { name: 'Process',           measured: 1.5, claimed: 1.8 }
+  { name: 'Governance',               measured: 2.0, claimed: 2.25, target: 3 },
+  { name: 'People and skills',        measured: 1.5, claimed: 1.75, target: 2 },
+  { name: 'Technology',               measured: 2.8, claimed: 3.00, target: 3 },
+  { name: 'Data and standards',       measured: 1.0, claimed: 3.25, target: 3 },
+  { name: 'Organisational processes', measured: 1.8, claimed: 2.00, target: 2 }
 ];
 
 var SCREENS = {};
@@ -351,17 +383,23 @@ var SCREENS = {};
 /* ---------- 1 · INTRO ---------- */
 SCREENS.intro =
   '<p class="eyebrow">Research instrument · open access</p>' +
-  '<h1>You&rsquo;re expected to deliver open BIM.<br>Nothing tells you whether you&rsquo;re ready.</h1>' +
+  '<h1>You&rsquo;re expected to deliver OpenBIM.<br>Nothing tells you whether you&rsquo;re ready.</h1>' +
   '<p class="sub">Twenty questions about how your firm works, plus one IFC file we read inside your browser. ' +
   'You get a checklist of what to fix, in order.</p>' +
 
   '<div class="card formal">' +
-    '<p><strong>This OpenBIM Readiness Assessment Toolkit</strong> is a research instrument that measures an ' +
-    'organisation&rsquo;s readiness to adopt open BIM standards across five dimensions &mdash; governance, people and ' +
-    'skills, technology, data and standards, and process &mdash; combining self-reported organisational evidence ' +
-    'with metrics computed directly from your own IFC model.</p>' +
-    '<p class="small">It measures readiness and model data quality. It does not certify regulatory compliance, ' +
-    'and no software does so in any jurisdiction.</p>' +
+    '<p><strong>This OpenBIM Readiness Assessment Toolkit</strong> is a structured but easy-to-use way for an ' +
+    'organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. ' +
+    'Readiness is assessed across the dimensions most associated with successful adoption: governance, people and ' +
+    'skills, technology, data and standards, and organisational processes.</p>' +
+    '<p>The result shows an organisation where its capability gaps and implementation risks lie, and which areas ' +
+    'to address first before committing to OpenBIM &mdash; combining what you report with metrics computed ' +
+    'directly from your own IFC model.</p>' +
+    '<p class="small"><strong>This is only a technical readiness assessment.</strong> It measures ' +
+    'organisational readiness and model data quality &mdash; nothing else. It qualifies nothing and no ' +
+    'one, confers no certification, licence or professional status, and is not evidence of compliance. ' +
+    'Where your regulations or appointment require insurance, indemnity or a formal qualification ' +
+    'process, that remains yours to satisfy directly.</p>' +
   '</div>' +
 
   '<div class="card">' +
@@ -375,13 +413,82 @@ SCREENS.intro =
   '</div>' +
 
   '<div class="actions">' +
-    '<button class="btn" data-go="context">Start assessment</button>' +
+    '<button class="btn" data-go="agree">Start assessment</button>' +
     '<button class="btn sec" data-go="results">Skip to sample results</button>' +
+  '</div>';
+
+/* ---------- 1b · ACKNOWLEDGEMENT GATE ---------- */
+SCREENS.agree =
+  '<p class="eyebrow">Before you begin</p>' +
+  '<h2>What this is, and what it is not</h2>' +
+  '<p class="sub small">Please read this. It takes thirty seconds and it decides how you may use the ' +
+  'result.</p>' +
+
+  '<div class="card" style="border-left:3px solid var(--warn)">' +
+    '<h3>Scope</h3>' +
+    '<p class="small" style="margin-top:8px"><strong>This is only a technical readiness assessment.</strong> ' +
+    'It measures organisational readiness for open-standard working and the data quality of a model you ' +
+    'supply. That is its entire scope. It says nothing about the lawfulness, safety, buildability or ' +
+    'professional adequacy of anything you produce.</p>' +
+
+    '<h3 style="margin-top:22px">It qualifies nothing and no one</h3>' +
+    '<p class="small" style="margin-top:8px">It confers no certification, accreditation, licence, approval ' +
+    'or professional status. It is not evidence of compliance with any regulation, standard, code or ' +
+    'contract, and must not be presented as such &mdash; to a client, an authority, an insurer, or in a ' +
+    'tender.</p>' +
+
+    '<h3 style="margin-top:22px">Nothing here is audited</h3>' +
+    '<p class="small" style="margin-top:8px">Your answers are self-reported and the measurements come from ' +
+    'a file you supply. No third party has witnessed, checked or attested to any of it.</p>' +
+
+    '<h3 style="margin-top:22px">Your obligations remain yours</h3>' +
+    '<p class="small" style="margin-top:8px">Where insurance, professional indemnity, licensing, ' +
+    'certification or a formal qualification process is required or applicable under your regulations, ' +
+    'contract or client requirements, that obligation is yours and must be discharged directly with the ' +
+    'responsible body. This report substitutes for none of it.</p>' +
+
+    '<h3 style="margin-top:22px">Your data</h3>' +
+    '<p class="small" style="margin-top:8px">Any model file you choose is read inside your browser and is ' +
+    'never uploaded. Submitting anonymous results at the end is optional, you will see the exact payload ' +
+    'first, and your checklist is complete either way.</p>' +
+
+    '<h3 style="margin-top:22px">Research instrument</h3>' +
+    '<p class="small" style="margin-top:8px">This is a work in progress supporting academic research. Its ' +
+    'criteria, thresholds and weightings are subject to expert validation and will change.</p>' +
+  '</div>' +
+
+  '<label class="chk" style="font-size:15px;margin:20px 0 0"><input type="checkbox" id="ackbox">' +
+    '<span>I have read and understood the above, and I understand this assessment qualifies nothing ' +
+    'and no one.</span></label>' +
+
+  '<div class="actions">' +
+    '<button class="btn" id="agreebtn" data-go="context" disabled>Agree and continue</button>' +
+    '<button class="btn sec" data-go="declined">I do not agree</button>' +
+  '</div>' +
+  '<p class="small" style="margin-top:16px"><a href="disclaimer.html">Read the full Disclaimer Notice ' +
+  '&rarr;</a> &nbsp;&middot;&nbsp; <span class="mono">Terms v0.1 &middot; 22 Aug 2026</span></p>';
+
+/* ---------- 1c · DECLINED ---------- */
+SCREENS.declined =
+  '<p class="eyebrow">No assessment taken</p>' +
+  '<h2>That is a legitimate answer</h2>' +
+  '<p class="sub">Nothing has been recorded and nothing has left your device. If the limits on what this ' +
+  'can tell you make it not worth your time, that is a reasonable read &mdash; it is a narrow instrument ' +
+  'by design.</p>' +
+  '<div class="card">' +
+    '<h3>You may still find these useful</h3>' +
+    '<p class="small" style="margin-top:9px">The background reading covers what the industry actually ' +
+    'certifies, where delivered models really stand, and what closing the gap involves. None of it ' +
+    'requires taking the assessment.</p>' +
+  '</div>' +
+  '<div class="actions">' +
+    '<a class="btn" href="why.html">Read the background</a>' +
+    '<button class="btn sec" data-go="agree">Back</button>' +
   '</div>';
 
 /* ---------- 2 · CONTEXT ---------- */
 SCREENS.context =
-  '<p class="eyebrow">Step 1 of 5 · About you</p>' +
+  '<p class="eyebrow">Step 3 of 10 &middot; About you</p>' +
   '<h2>A little context</h2>' +
   '<p class="sub small">None of this identifies you. It selects the right rules for your jurisdiction and ' +
   'places you in a comparable group.</p>' +
@@ -421,67 +528,140 @@ SCREENS.context =
   '</div>' +
 
   '<div class="actions">' +
-    '<button class="btn" data-go="assess">Continue</button>' +
-    '<button class="btn sec" data-go="intro">Back</button>' +
+    '<button class="btn" data-go="dim0">Continue</button>' +
+    '<button class="btn sec" data-go="agree">Back</button>' +
   '</div>';
 
-/* ---------- 3 · ASSESSMENT ---------- */
-SCREENS.assess =
-  '<p class="eyebrow">Step 2 of 5 · Governance &nbsp;·&nbsp; 1 of 5 sections</p>' +
-  '<h2>How your firm is set up</h2>' +
-  '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
-  'There is no right answer here &mdash; only an accurate one.</p>' +
+/* ---------- THE 20 SCORED ITEMS ---------- */
+/* pre = mockup's canned answer index, chosen to reproduce the results screen. */
+var DIMENSIONS = [
+{ key:'A', name:'Governance', blurb:'How your firm is set up', items:[
+  { id:'A1', pre:2, q:'Is there a written position on open / IFC deliverables?',
+    tip:'A policy that exists but is never checked behaves differently from one that is enforced. We are separating those two, not judging either.',
+    anchor:'ISO 19650-1 &middot; organisational information requirements',
+    o:['Nothing, and it has not come up','It happens case by case, when someone remembers','Written into a policy or BEP template and kept current','A standard position applied across all projects','Compliance is checked and reported per project','Those reports drive changes to the policy'] },
+  { id:'A2', pre:3, q:'Your most recent contract &mdash; what did it say about deliverable format?',
+    tip:'Naming IFC and naming a schema version are different commitments. The second is checkable; the first often is not.',
+    anchor:'ISO 19650-2 &middot; exchange information requirements',
+    o:['Did not mention format, or I don&rsquo;t know','Format agreed informally, project by project','Named IFC in the appointment documents','A standard clause naming IFC and a schema version, every appointment','Conformance to that clause is verified at handover','Verification findings feed back into the clause'] },
+  { id:'A3', pre:1, q:'Have you ever taken a finished model out of your BIM software and opened it elsewhere?',
+    tip:'&ldquo;We own our data&rdquo; is a belief until somebody has actually pulled a model out and opened it somewhere else. This is the single strongest signal of lock-in exposure.',
+    anchor:'Vendor lock-in &middot; data portability',
+    o:['Never tried','Tried once, ad hoc','Done on delivery and the result is kept','A standard step in every project close-out','Fidelity is measured against the source each time','Those measurements change how we export'] },
+  { id:'A4', pre:3, q:'For authority submission, what do you actually hand over?',
+    tip:'Submission requirements vary by jurisdiction &mdash; your locale pack adjusts this question. If model-based submission does not exist where you work, choose N/A and it is excluded from scoring rather than counted as a zero.',
+    anchor:'Locale pack &middot; authority submission route',
+    o:['Paper or PDF drawings only','Native model files, as asked','IFC alongside other formats','IFC to the authority&rsquo;s named schema, every submission','Validated against the authority&rsquo;s criteria before sending','Validation findings change our authoring templates'], na:true }
+]},
+{ key:'B', name:'People and skills', blurb:'Who actually knows this, and what happens without them', items:[
+  { id:'B1', pre:2, q:'Who in the firm could explain what an IFC property set is?',
+    tip:'Not a test of anyone&rsquo;s knowledge. We are finding out whether open-standards understanding sits with one person or is spread &mdash; that difference decides how fragile your capability is.',
+    anchor:'ISO 19650-1 &middot; information management competence',
+    o:['Nobody','One person, self-taught','One person, and it is written down somewhere','Most of the technical team, through defined onboarding','Competence is assessed and tracked','Assessment results drive the training programme'] },
+  { id:'B2', pre:2, q:'Is information or BIM management in anyone&rsquo;s job description?',
+    tip:'Doing the job and being accountable for it are different things. A role with time allocated behaves differently from someone absorbing it on top of their real work.',
+    anchor:'ISO 19650-1 &middot; Information Manager function',
+    o:['No','Someone does it informally','Part of a named role, with time allocated','A defined role with documented responsibilities','Role performance is measured','Measurement reshapes the role'] },
+  { id:'B3', pre:1, q:'If that person left tomorrow, what happens?',
+    tip:'The most honest question in this section. Firms often score well on capability and badly here, and it is the best single predictor of whether a BIM programme survives a resignation.',
+    anchor:'Key-person concentration &middot; continuity',
+    o:['BIM capability stops','Severely degraded for months','Slowed; some handover notes exist','Documented handover and a defined backup role','Continuity is tested, not assumed','Test results drive succession planning'] },
+  { id:'B4', pre:2, q:'Has anyone had BIM or open-standards training in the last 12 months?',
+    tip:'Vendor product training and open-standards training are different investments. Learning one application deeply can even increase lock-in &mdash; that is not a criticism, just a different thing.',
+    anchor:'Succar &middot; competency development',
+    o:['None','Self-taught only','Vendor product training, when budget allowed','A defined training path including open standards','Training outcomes are measured','Measured outcomes set next year&rsquo;s programme'] }
+]},
+{ key:'C', name:'Technology', blurb:'What you run, and what it would take to change it', items:[
+  { id:'C1', pre:3, q:'How many BIM authoring tools are in regular use?',
+    tip:'One tool used well is not a failure. We are measuring concentration, not sophistication &mdash; a single-tool firm is efficient and exposed at the same time.',
+    anchor:'Vendor concentration &middot; switching cost',
+    o:['None','Exactly one, by default','One main, one occasional','Tool choice is a defined decision per task','Exchange between them is measured for loss','Those measurements drive the toolchain'] },
+  { id:'C2', pre:4, q:'Last time you received an IFC from someone else, what happened?',
+    tip:'The most useful answer here is usually &ldquo;geometry fine, data missing&rdquo;. That is the normal state of IFC exchange and worth recording honestly rather than rounding up.',
+    anchor:'buildingSMART &middot; IFC exchange fidelity',
+    o:['Never received one','Opened but unusable','Geometry fine, data missing','Opened and used within a defined workflow','Import quality is checked and recorded','Findings go back to the sender and the exchange improves'] },
+  { id:'C3', pre:2, q:'What most limits how many people here use BIM tools?',
+    tip:'If licence cost is the answer, say so. That is the constraint the open route is most likely to relieve, and understating it makes your recommendations less useful.',
+    anchor:'Adoption barriers &middot; licensing',
+    o:['Licence cost, severely','Licence cost, significantly','Hardware or skills, being managed','Access is planned and provisioned','Utilisation is measured against need','Measurement drives licensing decisions'] },
+  { id:'C4', pre:3, q:'Has the firm ever evaluated an alternative to its main BIM tool?',
+    tip:'Not a loyalty question. Having tested an alternative is what turns &ldquo;we could move if we had to&rdquo; from a hope into a known quantity.',
+    anchor:'Switching cost &middot; optionality',
+    o:['Never considered it','Discussed only','Someone trialled one','Evaluation is a defined periodic exercise','Switching cost is quantified','That figure informs procurement'] }
+]},
+{ key:'D', name:'Data and standards', blurb:'What is actually inside the model', items:[
+  { id:'D1', pre:4, q:'Do your models use a classification system?',
+    tip:'A file-naming convention is not a classification system. Both are useful and they answer different questions &mdash; the gap analysis needs to know which one you actually have.',
+    anchor:'ISO 12006-2 &middot; Uniclass / OmniClass / MasterFormat',
+    o:['No','A file-naming convention only','A classification standard, partly applied','Applied consistently through a defined process','Coverage is measured and reported per project','Coverage figures drive template changes'] },
+  { id:'D2', pre:3, q:'Is what the model must contain written down before the project starts?',
+    tip:'This is about information requirements, whatever they are called locally. Written before the project behaves very differently from agreed as you go.',
+    anchor:'ISO 19650-2 &middot; EIR / AIR',
+    o:['No','Verbally agreed','A written requirement exists','A standard requirement applied to every project','Compliance is measured at handover','Measurement changes the standard requirement'] },
+  { id:'D3', pre:4, q:'Before sending an IFC out, is it checked?',
+    tip:'Opening it to see whether it looks right is a real answer and a common one. We are separating &ldquo;looked at it&rdquo; from &ldquo;ran it through something that reports errors&rdquo;.',
+    anchor:'buildingSMART &middot; validation service',
+    o:['Never sent one','Not checked','Opened once to eyeball it','Checked against a defined expectation, every issue','Validated with a checker tool and results recorded','Recorded results drive authoring changes'] },
+  { id:'D4', pre:2, q:'Where will your finished project models be in five years?',
+    tip:'An asset outlives the software that modelled it by decades. This is the question owners eventually ask, and most firms have never been asked it.',
+    anchor:'ISO 19650-3 &middot; long-term information stewardship',
+    o:['Nowhere specific','Native format on a server somewhere','Deliberately archived, native only','A defined archive process including IFC','Archive readability is tested periodically','Test results change the archive policy'] }
+]},
+{ key:'E', name:'Organisational processes', blurb:'How the work actually flows', items:[
+  { id:'E1', pre:2, q:'How is model data shared on a project?',
+    tip:'A shared drive is a real answer. We are distinguishing a place where files sit from an environment that manages versions, status, and who has what.',
+    anchor:'ISO 19650-1 &middot; Common Data Environment',
+    o:['Email or file transfer','A shared drive','A CDE for documents','A CDE handling models, with defined states','CDE compliance is measured','Measurement drives CDE configuration'] },
+  { id:'E2', pre:3, q:'Are model exchanges scheduled?',
+    tip:'Ad hoc on request is extremely common and not a failure. Scheduled exchange is what lets other disciplines plan around you.',
+    anchor:'ISO 19650-2 &middot; information delivery planning',
+    o:['Ad hoc, on request','Around milestones, informally','Defined in a plan','A standard delivery plan on every project','Exchange punctuality is measured','Measurement changes the plan'] },
+  { id:'E3', pre:1, q:'After handover, is the model used for anything?',
+    tip:'Most models stop at handover. If yours does, that is the normal case &mdash; and it is the largest unrealised value in the whole lifecycle.',
+    anchor:'ISO 19650-3 &middot; asset information model',
+    o:['No','Occasionally referenced','Handed over, unclear if used','A defined role in FM or asset management','Its operational value is measured','Measurement drives what we model'] },
+  { id:'E4', pre:2, q:'Is anything about your BIM work measured?',
+    tip:'Anecdotes count as an honest &ldquo;no&rdquo;. Without measurement there is no way to tell whether a change you make actually worked.',
+    anchor:'ISO/IEC 33020 &middot; measurement and improvement',
+    o:['No','Anecdotally','Some metrics collected','A defined metric set on every project','Metrics reviewed against targets','Reviews change how projects run'] }
+]}
+];
 
-  '<div class="card">' +
-    q('A1', 'Is there a written position on open / IFC deliverables?',
-      'A policy that exists but is never checked behaves differently from one that is enforced. We are separating those two, not judging either.',
-      'ISO 19650 · organisational information requirements',
-      ['Nothing, and it has not come up',
-       'Discussed, nothing written',
-       'Written into a policy or BEP template',
-       'Written, someone owns it, checked on projects',
-       'As above, and non-compliance is escalated']) +
+function renderItem(it) {
+  var rows = it.o.map(function (t, i) {
+    return '<input type="radio" name="' + it.id + '" id="' + it.id + i + '"' + (i === it.pre ? ' checked' : '') + '>' +
+      '<label for="' + it.id + i + '"><span class="lv">' + LV[i] + '</span><span class="dot"></span><span>' + t + '</span></label>';
+  }).join('');
+  if (it.na) {
+    rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'na">' +
+      '<label for="' + it.id + 'na"><span class="lv">N/A</span><span class="dot"></span>' +
+      '<span>No model-based submission exists in our market <em class="small">&mdash; excluded from scoring</em></span></label>';
+  }
+  rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'dk">' +
+    '<label for="' + it.id + 'dk"><span class="lv">&mdash;</span><span class="dot"></span>' +
+    '<span>Not known to me <em class="small">&mdash; scored as insufficient evidence, never as zero</em></span></label>';
+  return '<div class="field"><div class="qhead"><span class="qid">' + it.id + '</span><span>' + it.q + '</span>' +
+    TIP(it.tip, it.anchor) + '</div><div class="opts">' + rows + '</div></div>';
+}
 
-    q('A2', 'Your most recent contract &mdash; what did it say about deliverable format?',
-      'Naming IFC and naming a schema version are different commitments. The second is checkable; the first often is not.',
-      'ISO 19650 · exchange information requirements',
-      ['Did not mention format, or I don’t know',
-       'Named native files only',
-       'Named IFC among the deliverables',
-       'Named IFC with a schema version',
-       'Named IFC with schema and a validation criterion']) +
-
-    q('A3', 'Have you ever taken a finished model out of your BIM software and opened it elsewhere?',
-      '&ldquo;We own our data&rdquo; is a belief until somebody has actually pulled a model out and opened it somewhere else. This is the single strongest signal of lock-in exposure.',
-      'Vendor lock-in · data portability',
-      ['Never tried',
-       'Tried, it did not work',
-       'Once, roughly worked, not repeated',
-       'Done on delivery and the result is checked',
-       'Routine, archived vendor-neutrally, re-opened periodically']) +
-
-    q('A4', 'For authority submission, what do you actually hand over?',
-      'Submission requirements vary by jurisdiction &mdash; your locale pack adjusts this question. If model-based submission does not exist where you work, choose N/A and it is excluded from scoring rather than counted as a zero.',
-      'Locale pack · UAE authority submission',
-      ['Paper or PDF drawings only',
-       'Native model files',
-       'IFC alongside other formats',
-       'IFC to a schema the authority named',
-       'IFC that passes the authority’s validation first']) +
-
-    '<p class="small" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--rule-soft)">' +
-    'Remaining sections: People &amp; skills · Technology · Data &amp; standards · Process &mdash; four questions each. ' +
-    '<em>Not built in this mockup.</em></p>' +
-  '</div>' +
-
-  '<div class="actions">' +
-    '<button class="btn" data-go="model">Continue to model check</button>' +
-    '<button class="btn sec" data-go="context">Back</button>' +
-  '</div>';
+function dimScreen(n) {
+  var d = DIMENSIONS[n];
+  return '<p class="eyebrow">Step ' + (n + 4) + ' of 10 &nbsp;&middot;&nbsp; ' + d.name +
+      ' &nbsp;&middot;&nbsp; section ' + (n + 1) + ' of 5</p>' +
+    '<h2>' + d.blurb + '</h2>' +
+    '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
+    'There is no right answer here &mdash; only an accurate one. Tap <strong>?</strong> on any question to see why we ask it.</p>' +
+    '<div class="card">' + d.items.map(renderItem).join('') + '</div>' +
+    '<div class="actions">' +
+      '<button class="btn" data-go="' + (n < 4 ? 'dim' + (n + 1) : 'model') + '">' +
+        (n < 4 ? 'Continue to ' + DIMENSIONS[n + 1].name : 'Continue to model check') + '</button>' +
+      '<button class="btn sec" data-go="' + (n > 0 ? 'dim' + (n - 1) : 'context') + '">Back</button>' +
+    '</div>';
+}
 
 /* ---------- 4 · MODEL ---------- */
 SCREENS.model =
-  '<p class="eyebrow">Step 3 of 5 · Your model</p>' +
+  '<p class="eyebrow">Step 9 of 10 &middot; Your model</p>' +
   '<h2>Now let&rsquo;s look at an actual file</h2>' +
   '<p class="sub small">This is the part a questionnaire cannot do. We read the file here, in your browser, and ' +
   'compare what it contains against what you just told us. <strong>The file is never uploaded.</strong></p>' +
@@ -539,56 +719,61 @@ SCREENS.model =
 
   '<div class="actions">' +
     '<button class="btn" data-go="results">See my results</button>' +
-    '<button class="btn sec" data-go="assess">Back</button>' +
+    '<button class="btn sec" data-go="dim4">Back</button>' +
   '</div>';
 
 /* ---------- 5 · RESULTS ---------- */
 function chartRows() {
   return DIMS.map(function (d) {
-    var w = (d.measured / 4 * 100).toFixed(1), c = (d.claimed / 4 * 100).toFixed(1);
-    var gap = Math.abs(d.claimed - d.measured) >= 2;
-    return '<div class="crow" title="' + d.name + ' — measured ' + d.measured.toFixed(1) +
-      ' of 4, you said ' + d.claimed.toFixed(1) + '">' +
-      '<div class="cname">' + d.name + (gap ? ' <span style="color:var(--warn)">&#9650;</span>' : '') + '</div>' +
-      '<div class="ctrack"><div class="cbar" style="width:' + w + '%"></div>' +
-      '<div class="cclaim" style="left:' + c + '%"></div></div>' +
-      '<div class="cval">' + d.measured.toFixed(1) + '</div></div>';
+    var w = (d.measured / 5 * 100).toFixed(1), t = (d.target / 5 * 100).toFixed(1);
+    var met = d.measured >= d.target;
+    var short = (d.target - d.measured);
+    return '<div class="crow" title="' + d.name + ' — assessed ' + d.measured.toFixed(1) +
+      ', proportionate target ' + d.target + '">' +
+      '<div class="cname">' + d.name + '</div>' +
+      '<div class="ctrack"><div class="ctarget" style="width:' + t + '%"></div>' +
+      '<div class="cbar" style="width:' + w + '%"></div>' +
+      '<div class="cclaim" style="left:' + t + '%"></div></div>' +
+      '<div class="cval"' + (met ? ' style="color:var(--accent)"' : '') + '>' +
+      (met ? 'met' : '&minus;' + short.toFixed(1)) + '</div></div>';
   }).join('');
 }
 
 SCREENS.results =
-  '<p class="eyebrow">Step 5 of 5 · Your results</p>' +
+  '<p class="eyebrow">Step 10 of 10 &middot; Your results</p>' +
   '<h2>Where you stand</h2>' +
   '<p class="sub small">Two numbers per dimension: what your answers claimed, and what the evidence supports. ' +
   'Where they disagree by two levels or more, the measurement is used and the gap is shown.</p>' +
 
   '<div class="card">' +
     '<h3>Readiness profile</h3>' +
-    '<p class="small" style="margin-top:5px">Maturity 0&ndash;4 across five dimensions</p>' +
+    '<p class="small" style="margin-top:5px">ISO/IEC 33020 capability levels 0&ndash;5, against a target proportionate to your firm</p>' +
     '<div class="chart">' + chartRows() +
       '<div class="cscale"><span></span><div class="cticks">' +
-        '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span></div><span></span></div>' +
+        '<span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><span></span></div>' +
     '</div>' +
     '<div class="clegend">' +
       '<span><i class="swatch"></i>Assessed level</span>' +
-      '<span><i class="swtick"></i>What you said</span>' +
-      '<span style="color:var(--warn)">&#9650; Claim and evidence disagree</span>' +
+      '<span><i class="swtick"></i>Proportionate target for a firm your size</span>' +
+      '<span class="small">Targets follow ISO/IEC 33020 &mdash; capability is meant to suit the risk, not be maximised</span>' +
     '</div>' +
     '<details class="tvwrap"><summary>View as a table</summary>' +
-      '<table class="tv"><thead><tr><th>Dimension</th><th>Assessed</th><th>You said</th><th>Gap</th></tr></thead><tbody>' +
+      '<table class="tv"><thead><tr><th>Dimension</th><th>Assessed</th><th>Target</th><th>Gap</th><th>You said</th></tr></thead><tbody>' +
       DIMS.map(function (d) {
-        var g = (d.claimed - d.measured);
+        var g = d.target - d.measured;
         return '<tr><td>' + d.name + '</td><td class="n">' + d.measured.toFixed(1) + '</td><td class="n">' +
-          d.claimed.toFixed(1) + '</td><td class="n">' + (g >= 2 ? '+' + g.toFixed(1) + ' ▲' : g.toFixed(1)) + '</td></tr>';
+          d.target + '</td><td class="n">' + (g <= 0 ? 'met' : '&minus;' + g.toFixed(1)) + '</td><td class="n">' +
+          d.claimed.toFixed(2) + '</td></tr>';
       }).join('') + '</tbody></table></details>' +
   '</div>' +
 
   '<div class="card">' +
-    '<h3>Where your model disagreed with your answers</h3>' +
+    '<h3>Gap analysis</h3>' +
+    '<p class="small" style="margin-top:5px">Capability gaps, implementation risks, and where your model disagreed with your answers</p>' +
     '<div class="delta" style="margin-top:13px">' +
       '<div class="ic">!</div><div>' +
         '<h4>Classification</h4>' +
-        '<p>You reported a classification standard applied consistently. 4.2% of elements in the file carry a ' +
+        '<p>You reported that classification coverage is measured and reported per project. 4.2% of elements in the file carry a ' +
         'classification reference. We scored the measurement.</p>' +
         '<div class="vs"><span><b>You said</b>L3 · applied consistently</span>' +
         '<span><b>Measured</b>L1 · 4.2% coverage</span></div>' +
@@ -603,11 +788,30 @@ SCREENS.results =
       '</div></div>' +
     '<p class="small">This is not a gotcha. Most firms score differently on claim and evidence, and the gap is ' +
     'usually a reporting problem rather than a competence one &mdash; but it is the most useful thing here.</p>' +
+
+    '<h3 style="margin-top:28px">Implementation risks</h3>' +
+    '<p class="small" style="margin-top:5px">Things that can stop a transition regardless of how capable you are. ' +
+    'These are flagged, not scored.</p>' +
+    '<ul class="risks">' +
+      '<li><div><h4>Professional indemnity position is unchecked</h4>' +
+      '<p>You have not confirmed with your insurer or counsel whether delivering on open standards, or ' +
+      'using non-proprietary tooling, affects your cover. <strong>This toolkit cannot answer that and does ' +
+      'not try to.</strong> What it can tell you is that software warranty disclaimers are near-universal ' +
+      '&mdash; proprietary licences carry them too &mdash; and that professional indemnity insures the ' +
+      'professional, not the tool. Put the question to your insurer in writing before it becomes urgent.</p></div></li>' +
+      '<li><div><h4>No named accountable party for information</h4>' +
+      '<p>Governance sits below its proportionate target and no one role carries information management ' +
+      'with authority. Under ISO 19650 that accountability does not disappear &mdash; it defaults upward to ' +
+      'whoever signed.</p></div></li>' +
+      '<li><div><h4>Single-vendor continuity</h4>' +
+      '<p>No model has been retrieved from your authoring tool and opened elsewhere, so the cost and ' +
+      'feasibility of moving is unknown rather than low.</p></div></li>' +
+    '</ul>' +
   '</div>' +
 
   '<div class="card">' +
-    '<h3>What to fix first</h3>' +
-    '<p class="small" style="margin-top:5px">Ordered by how much each unlocks downstream</p>' +
+    '<h3>Recommendations</h3>' +
+    '<p class="small" style="margin-top:5px">Capability development &middot; standards adoption &middot; implementation planning &mdash; ordered by how much each unlocks downstream</p>' +
     '<ol class="fixes">' +
       '<li><div><h4>Add spaces to the model</h4><p>Zero IfcSpace entities. Rooms are the spine of anything ' +
       'downstream &mdash; FM, area schedules, analysis. Nothing that needs a room can consume this file.</p></div></li>' +
@@ -624,11 +828,11 @@ SCREENS.results =
 
   '<div class="idx2">' +
     '<div class="ix"><span class="who">Can we start?</span>' +
-      '<div class="v">1.6<small> / 4</small></div>' +
+      '<div class="v">1.9<small> / 5</small></div>' +
       '<div style="font-weight:600;font-size:14px">Entry readiness</div>' +
       '<p>The open route is reachable, but not with this model as it stands.</p></div>' +
     '<div class="ix"><span class="who">How exposed are we?</span>' +
-      '<div class="v">3.1<small> / 4</small></div>' +
+      '<div class="v">3.9<small> / 5</small></div>' +
       '<div style="font-weight:600;font-size:14px">Lock-in exposure</div>' +
       '<p>High. No model has been retrieved from your authoring tool and re-opened elsewhere.</p></div>' +
   '</div>' +
@@ -640,25 +844,62 @@ SCREENS.results =
     'asserted.</p>' +
   '</div>' +
 
+  '<div class="card" style="border-left:3px solid var(--warn)">' +
+    '<h3 style="color:var(--warn)">Before you share this</h3>' +
+    '<p class="small" style="margin-top:8px"><strong>This assessment qualifies nothing and no one.</strong> ' +
+    'It confers no certification, accreditation, licence, approval or professional status, and it is not ' +
+    'evidence of compliance with any regulation, standard, code or contract. Do not present it as such &mdash; ' +
+    'to a client, an authority, an insurer, or in a tender.</p>' +
+    '<p class="small">Nothing here is audited or verified. The answers are yours and the measurements come ' +
+    'from a file you supplied; no third party has checked any of it.</p>' +
+    '<p class="small">Where insurance, professional indemnity, licensing or a formal qualification process ' +
+    'is required or applicable under your regulations, contract or client requirements, that obligation is ' +
+    'yours and must be discharged directly with the responsible body. This report substitutes for none of it.</p>' +
+    '<p class="small"><a href="disclaimer.html">Read the full Disclaimer Notice &rarr;</a></p>' +
+  '</div>' +
+
+  '<div class="printnotice">' +
+    '<h4>Notice &mdash; printed with every copy of this report</h4>' +
+    '<p><strong>This is only a technical readiness assessment. It qualifies nothing and no one.</strong> ' +
+    'It confers no certification, accreditation, licence, approval or professional status, and is not ' +
+    'evidence of compliance with any regulation, standard, code or contract. Do not present it as such ' +
+    '&mdash; to a client, an authority, an insurer, or in a tender.</p>' +
+    '<p>Answers are self-reported and measurements come from a file supplied by the respondent. Nothing ' +
+    'here has been audited or verified by any third party. Where insurance, professional indemnity, ' +
+    'licensing or a formal qualification process is required or applicable under your regulations or ' +
+    'appointment, that obligation is yours and this report substitutes for none of it.</p>' +
+    '<p><a href="disclaimer.html">Read the full Disclaimer Notice &rarr;</a> &nbsp;&middot;&nbsp; ' +
+    '<span class="mono">Notice v0.1 &middot; 22 Aug 2026</span></p>' +
+  '</div>' +
+
   '<div class="actions">' +
     '<button class="btn">Download checklist (PDF)</button>' +
     '<button class="btn sec">See these gaps in 3D</button>' +
     '<button class="btn sec" data-go="intro">Start over</button>' +
   '</div>' +
   '<p class="small mono" style="margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)">' +
-  'core-0.1 · locale ae-v1 · toolkit v0.1 · 2026-08-21 · scoring is deterministic &mdash; ' +
-  'same answers and same versions always produce this same result</p>';
+  'core-0.1 · locale ae-v1 · toolkit v0.1 · terms v0.1 acknowledged · scope: one office or region · scoring is deterministic &mdash; ' +
+  'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
+  'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
 
 /* ---------- NAV ---------- */
-var ORDER = ['intro', 'context', 'assess', 'model', 'results'];
-var LABELS = { intro: 'Introduction', context: 'About you', assess: 'Your firm', model: 'Your model', results: 'Results' };
+DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
+
+var ORDER = ['intro', 'agree', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'results'];
+var LABELS = {
+  intro: 'Introduction', agree: 'Before you begin', declined: 'No assessment taken', context: 'About you',
+  dim0: 'Governance', dim1: 'People and skills', dim2: 'Technology',
+  dim3: 'Data and standards', dim4: 'Organisational processes',
+  model: 'Your model', results: 'Results'
+};
 var host = document.getElementById('screens');
 
 function show(name) {
   host.innerHTML = '<div class="screen on">' + SCREENS[name] + '</div>';
   var i = ORDER.indexOf(name);
+  if (i < 0) { window.scrollTo({ top: 0, behavior: 'instant' }); return; }
   var rail = document.getElementById('rail'), cap = document.getElementById('railcap');
-  rail.hidden = cap.hidden = (name === 'intro');
+  rail.hidden = cap.hidden = (name === 'intro' || name === 'agree' || name === 'declined');
   [].forEach.call(rail.children, function (li, n) {
     li.className = n < i ? 'done' : (n === i ? 'now' : '');
   });
@@ -667,8 +908,15 @@ function show(name) {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'ackbox') {
+    document.getElementById('agreebtn').disabled = !e.target.checked;
+  }
+});
+
 document.addEventListener('click', function (e) {
   var go = e.target.closest('[data-go]');
+  if (go && go.disabled) return;
   if (go) { show(go.dataset.go); return; }
 
   var tb = e.target.closest('.tipbtn');

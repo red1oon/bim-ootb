@@ -1,4 +1,4 @@
-<title>Why Open BIM Readiness</title>
+<title>Why OpenBIM Readiness</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -168,6 +168,21 @@ figcaption b{
 .band.m{background:var(--surface-3);color:var(--ink-2)}
 .band.b{background:var(--warn-wash);color:var(--warn)}
 
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
 /* ---- callout ---- */
 .call{
   background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
@@ -237,6 +252,7 @@ footer{
     <a href="#gap">02 &nbsp;The gap</a>
     <a href="#roadmap">03 &nbsp;The roadmap</a>
     <a href="#offline">Offline copy</a>
+    <a href="disclaimer.html">Disclaimer Notice</a>
   </nav>
 </div>
 
@@ -244,6 +260,19 @@ footer{
   <div class="shead"><span class="snum">01</span><h2>What the industry actually certifies</h2></div>
   <p class="lede">Start here, because almost everyone has this backwards — including people selling
   you software.</p>
+
+  <blockquote class="ps">
+    <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
+    BIM workflows towards more interoperable OpenBIM practices. This transition requires not only
+    appropriate technologies, but also organisational readiness in areas such as governance, business
+    processes, workforce capabilities, data management, and compliance with open standards.</p>
+    <p class="k">However, there is currently no simple and practical way for organisations to
+    objectively assess their readiness for OpenBIM implementation or to identify the capability gaps
+    that should be addressed before embarking on this transition.</p>
+    <cite>The problem statement &mdash; research proposal, 10 Aug 2026</cite>
+  </blockquote>
+
+  <p>That is what this toolkit is for, and the rest of this page is the evidence behind it.</p>
 
   <p>BIM moved the industry from drawing to modelling, and the model became the record: geometry
   carrying data, coordinated across disciplines, outliving the project into operations. That part is
@@ -387,16 +416,20 @@ footer{
   independently.</p>
 
   <p>The assessment scores each of governance, people and skills, technology, data and standards, and
-  process on the same five-rung ladder. The rungs are deliberately about
-  <strong>institutionalisation</strong> rather than enthusiasm &mdash; a firm where one keen engineer
-  exports IFC by hand is not more mature than one that never tried, it is differently fragile.</p>
+  organisational processes on one shared capability ladder. The rungs are not ours: they are the six
+  capability levels defined by <strong>ISO/IEC 33020</strong>, the international standard for process
+  capability measurement, which states it is applicable to any domain.</p>
+  <p>They measure <strong>institutionalisation</strong> rather than enthusiasm. A firm where one keen
+  engineer exports IFC by hand sits at Performed, not higher &mdash; it is not more mature than a firm
+  that never tried, it is differently fragile.</p>
 
   <div class="ladder">
-    <div class="rung"><span class="l">L0</span><div><b>Absent</b><p>Not present, and not recognised as something that should be.</p></div></div>
-    <div class="rung"><span class="l">L1</span><div><b>Ad hoc</b><p>Happens through individual initiative, and stops when that individual does.</p></div></div>
-    <div class="rung"><span class="l">L2</span><div><b>Defined</b><p>Written down, but not enforced, resourced or measured.</p></div></div>
-    <div class="rung"><span class="l">L3</span><div><b>Managed</b><p>Enforced and resourced, with named ownership and some measurement.</p></div></div>
-    <div class="rung"><span class="l">L4</span><div><b>Optimising</b><p>Measured outcomes drive change, and the open path is the default rather than the exception.</p></div></div>
+    <div class="rung"><span class="l">L0</span><div><b>Incomplete</b><p>Not present, or it fails to achieve its purpose.</p></div></div>
+    <div class="rung"><span class="l">L1</span><div><b>Performed</b><p>It happens and achieves its purpose, but unmanaged — through individual initiative.</p></div></div>
+    <div class="rung"><span class="l">L2</span><div><b>Managed</b><p>Planned, controlled and maintained; the work products are kept.</p></div></div>
+    <div class="rung"><span class="l">L3</span><div><b>Established</b><p>A defined standard process, applied across projects rather than per person.</p></div></div>
+    <div class="rung"><span class="l">L4</span><div><b>Predictable</b><p>Measured quantitatively, so performance can be predicted rather than hoped for.</p></div></div>
+    <div class="rung"><span class="l">L5</span><div><b>Innovating</b><p>Those measurements drive continuous change to how the work is done.</p></div></div>
   </div>
 
   <h3>Jurisdiction rules are data, not code &mdash; and they are being built</h3>
@@ -433,6 +466,22 @@ footer{
 
   <div class="call warn">
     <span class="lab">Disclaimer</span>
+    <p><strong>This is only a technical readiness assessment.</strong> It measures organisational
+    readiness for open-standard working and the data quality of a model you supply. That is its entire
+    scope. It says nothing about the lawfulness, safety, buildability or professional adequacy of
+    anything you produce.</p>
+    <p><strong>It qualifies nothing and no one.</strong> It confers no certification,
+    accreditation, licence, approval or professional status. It is not evidence of compliance with any
+    regulation, standard, code or contract, and must not be presented as such &mdash; to a client, an
+    authority, an insurer, or in a tender.</p>
+    <p><strong>Nothing here is audited or verified.</strong> The inputs are self-reported by the
+    respondent and computed from a file the respondent supplied. No third party has witnessed,
+    checked or attested to any of it.</p>
+    <p><strong>Where regulation or an appointment requires a formal process, you must satisfy it
+    separately.</strong> If insurance, professional indemnity, licensing, certification or a
+    qualification procedure is required or applicable under your regulations, contract or client
+    requirements, that obligation is yours and must be discharged directly with the responsible body.
+    This report substitutes for none of it, in whole or in part.</p>
     <p><strong>Measurement works. Certification does not.</strong> This toolkit can tell you how far a
     model and an organisation are from carrying compliant, open, well-structured information, with
     numbers you can reproduce. It cannot certify a model or a firm as compliant with any standard,
@@ -448,6 +497,15 @@ footer{
     <p><strong>Figures on this page are measured from named individual models or cited public sources,
     and are labelled as such.</strong> Single-building measurements are not industry statistics and
     must not be quoted as such. Nothing here is estimated, projected or illustrative.</p>
+    <p><strong>Nothing here is insurance, indemnity or legal advice.</strong> Whether delivering on
+    open standards affects your professional indemnity cover is a question for your insurer and your
+    counsel, and this toolkit neither answers it nor is qualified to. Two facts are worth carrying into
+    that conversation: warranty disclaimers are near-universal in software licensing, proprietary
+    licences included; and professional indemnity insures the professional, not the tool. What an
+    open-standard toolchain can evidence is <em>technical</em> conformance &mdash; schema validity,
+    exchange fidelity, information completeness &mdash; and that is the only claim made here.</p>
+    <p><a href="disclaimer.html"><strong>Read the full Disclaimer Notice &rarr;</strong></a> &mdash; the
+    canonical version, which applies to the toolkit and every report it produces.</p>
     <p><strong>Research instrument, in development.</strong> This is a work in progress supporting
     academic research. Its criteria, thresholds and weightings are subject to expert validation and
     will change.</p>
