@@ -4335,6 +4335,23 @@
         for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; }
         var aud = _midairAudit(items);
         _displayTimelineRemember(items, r.graph.stragglerOf);
+        // §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): when the CELL path authored this timeline,
+        // remember each element's cell identity so injectGantt stamps it into the ops and the
+        // Gantt groups bars BY CELL — the display reads the schedule's own grain instead of
+        // re-deriving a coarser one. NOT one-shot (the partner consumer of the same generation
+        // cycle replays via the REUSE branch above and still needs it); overwritten on every
+        // fresh authoring, and set NULL on a GRAPH-path authoring so a building switch can never
+        // leak one building's cells onto another's bars.
+        if (r.gate && r.gate.cellKeys) {
+          var _cm = {};
+          for (var _cki = 0; _cki < items.length; _cki++) {
+            var _ckp = String(r.gate.cellKeys[_cki]).split('\u0001');
+            _cm[items[_cki].guid] = 'L' + _ckp[0] + '\u00b7T' + _ckp[1] + '\u00b7' + _ckp[2];
+          }
+          _displayTimeline._lastCell = { map: _cm, n: items.length };
+        } else {
+          _displayTimeline._lastCell = null;
+        }
         console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
           ' midair=' + aud.midair + ' orphans=' + aud.orphans +
           ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
@@ -5217,6 +5234,18 @@
     for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
     if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
+    // §S51 item d — cell identity for the Gantt: stamped into each op so buildGanttTasks groups
+    // bars by CELL on cell-path buildings (GRAPH-path authoring set _lastCell = null above, so
+    // those buildings' ops carry no stamp and group exactly as before). Coverage-checked the same
+    // way as _displayTimeline._last: a different building's guids miss and the stamp is skipped.
+    var _cellMap = null;
+    if (_displayTimeline._lastCell && _displayTimeline._lastCell.map) {
+      var _chit = 0, _cmiss = 0, _cmap0 = _displayTimeline._lastCell.map;
+      _twItems.forEach(function (it) { if (_cmap0[it.guid]) _chit++; else _cmiss++; });
+      if (_chit > 0 && _chit >= 0.999 * (_chit + _cmiss)) _cellMap = _cmap0;
+      console.log('§S51_CELL_STAMP coverage=' + _chit + '/' + (_chit + _cmiss) +
+        ' stamping=' + (_cellMap ? 'YES — bars group by cell' : 'NO — coverage below 99.9%, bars stay storey|phase this generation'));
+    }
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
@@ -5225,7 +5254,8 @@
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION}),
+           resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION,
+           _cell: _cellMap ? _cellMap[el.guid] : undefined}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
       if (s.end > _projEnd) _projEnd = s.end;
@@ -6083,11 +6113,15 @@
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
-      // Real task identity first (exact, by guid); storey|phase only as the un-authored fallback.
+      // Real task identity first (exact, by guid); then §S51's cell stamp (the schedule's own
+      // grain, present only on cell-path generations); storey|phase only as the un-authored
+      // fallback — graph-path buildings and pre-§S51 ops group exactly as before.
       var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
       if (tid) _idN++; else _noIdN++;
-      var key = tid ? ('T:' + tid) : (storey + '|' + phase);
-      if (!groups[key]) groups[key] = { storey: storey, phase: phase, taskId: tid || null,
+      var cellId = (!tid && p._cell) ? String(p._cell) : null;
+      var key = tid ? ('T:' + tid) : (cellId ? ('C:' + cellId) : (storey + '|' + phase));
+      if (!groups[key]) groups[key] = { storey: cellId ? (cellId.split('\u00b7')[2] || storey) : storey,
+        phase: phase, cell: cellId || null, taskId: tid || null,
         taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
         starts: [], ends: [], count: 0, cap: 0, guids: [] };
       var g = groups[key];
@@ -7916,7 +7950,7 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 36;   // §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50) — gated buildings now schedule by (location, trade) cells; the schedule shape changed, regenerate
+  var _GANTT_CACHE_VERSION = 37;   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —

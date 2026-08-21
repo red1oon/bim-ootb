@@ -136,6 +136,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_designatedSupport'), sliceFn(tmSrc, '_midairAudit'),
+  sliceFn(tmSrc, '_tukeyBound'),   // §S51_SCREEN — the display's own bar-trim envelope
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 console.log('§MIDAIR_SLICE zoneHelpers=' + (zoneParts.length === 2 ? 'present' : 'absent (pre-#1313 revision)') +
   ' classifyHelpers=' + (classifyParts.length === 2 ? 'present' : 'absent (pre-§SCHEDULE_CLASSIFY_DEDUP revision)') +
@@ -168,6 +169,17 @@ assert(/ok:\s*n <= base\.floating && ma\.midair <= base\.midair/.test(_vgiBody),
   'W-MZ-6b the lock gate REFUSES on a midair INCREASE (§GANTT_LOCK_DELTA: ok requires BOTH audits no worse ' +
   'than the edit-start baseline — absolute zero was the old contract and it refused the lock on 4 of 7 ' +
   'buildings for an unedited schedule)');
+// W-S51 — item d wiring (4D_GANTT_TM_REFACTOR.md §S51): the display reads the cell schedule.
+// Three links, each checked by source text so a one-file edit cannot go green on unwired code:
+// authoring remembers cells -> injectGantt stamps them into ops -> buildGanttTasks groups by them.
+assert(_dtBody.indexOf('_displayTimeline._lastCell = { map:') > 0 && _dtBody.indexOf('_displayTimeline._lastCell = null') > 0,
+  'W-S51a _displayTimeline remembers cell identity on a CELL-path authoring and NULLs it on a GRAPH-path one');
+assert(/_cell:\s*_cellMap \? _cellMap\[el\.guid\] : undefined/.test(tmSrc),
+  'W-S51b injectGantt stamps _cell into every op parameters JSON when the cell map covers the elements');
+const _bgtIdx = tmSrc.indexOf('function buildGanttTasks()');
+const _bgtBody = tmSrc.slice(_bgtIdx, tmSrc.indexOf('§GANTT_ROW_ORDER', _bgtIdx));
+assert(_bgtIdx > 0 && /\('C:' \+ cellId\)/.test(_bgtBody) && /p\._cell/.test(_bgtBody),
+  'W-S51c buildGanttTasks groups bars by the cell stamp between real task identity and the storey|phase fallback');
 
 function loadRatesTable() {
   const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
@@ -269,7 +281,7 @@ function census(items) {
   const worst = [];
   let probe = null;   // any non-grounded element WITH contacts — used by W-MZ-7 to re-create a hanging
   items.forEach((T, i) => {
-    let lowest = Infinity, firstContact = Infinity, contacts = 0;
+    let lowest = Infinity, firstContact = Infinity, contacts = 0, embHit = false;
     const seen = {};
     for (const c of cellsOf(T)) {
       const arr = grid[c]; if (!arr) continue;
@@ -287,6 +299,7 @@ function census(items) {
         const carrier = S.bz >= T.tz - GAP && S.tz > T.tz + EPS;
         const embedded = S.bz <= T.bz + EPS && S.tz >= T.tz - EPS;
         if (!bearing && !carrier && !embedded) continue;
+        if (embedded) embHit = true;   // §S51 — the judge's own enclosure clause, recorded per element
         contacts++;
         if (S.s < firstContact) firstContact = S.s;
       }
@@ -297,7 +310,7 @@ function census(items) {
     if (firstContact <= T.s + 1) { ok++; return; }
     if (isGround) { grounded++; return; }
     midair++;
-    worst.push({ cls: T.cls, seq: T.seq, phase: T.phase, bz: T.bz, start: T.s / D, sup: firstContact / D });
+    worst.push({ cls: T.cls, seq: T.seq, phase: T.phase, bz: T.bz, start: T.s / D, sup: firstContact / D, emb: embHit });
   });
   worst.sort((a, b) => (b.sup - b.start) - (a.sup - a.start));
   return { midair, orphan, grounded, ok, worst, probe };
@@ -327,7 +340,7 @@ function census(items) {
       ScheduleGate: ScheduleGate, Math: Math, A: () => ({ db: db }),
       URLSearchParams: URLSearchParams, CpmSchedule: CpmSchedule };
     vm.createContext(sandbox);
-    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
+    vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline; this.__tukey = _tukeyBound;', sandbox);
     const els = sandbox.__bxe();
     if (!els || !els.length) { assert(false, 'W-MZ ' + bld + ' element build produced nothing'); db.close(); continue; }
 
@@ -419,6 +432,88 @@ function census(items) {
         ' wide50cell=' + wide50Cell + ' [cell bars, CpmSchedule gate.cellKeys]' +
         ' float=' + floatPost + ' [ScheduleGate.auditFloating]' +
         ' midair=' + after.midair + ' [this witness\'s own census(), independent judge]');
+    }
+    // ── §S51_SCREEN — what the Gantt DRAWS, before vs after item d, mirrored on this witness's
+    // own items with the display's own trim (_tukeyBound sliced from time_machine.js — the exact
+    // envelope buildGanttTasks applies). BEFORE = storey|phase grouping (pre-§S51 display). AFTER =
+    // cell stamp where present, storey|phase fallback otherwise (the shipped §S51 grouping rule).
+    {
+      let lo = Infinity, hi = -Infinity;
+      items.forEach(it => { if (it.s < lo) lo = it.s; if (it.e > hi) hi = it.e; });
+      const span = hi - lo;
+      const tk = sandbox.__tukey;
+      const barW50 = groups => {
+        let wide = 0, n = 0;
+        for (const k in groups) {
+          const g = groups[k]; n++;
+          const s0 = tk(g.starts, true), e0 = Math.max(tk(g.ends, false), s0);
+          if (span && (e0 - s0) / span > 0.5) wide++;
+        }
+        return { wide, n };
+      };
+      const collect = keyFn => { const m = {}; items.forEach((it, i2) => {
+        const k = keyFn(it, i2); (m[k] || (m[k] = { starts: [], ends: [] }));
+        m[k].starts.push(it.s); m[k].ends.push(it.e); }); return m; };
+      const gate = dtResult && dtResult.stats && dtResult.stats.gate;
+      const beforeG = barW50(collect(it => (it.storey || '_UNKNOWN') + '|' + (it.phase || 'Architecture')));
+      const afterG = gate && gate.cellKeys
+        ? barW50(collect((it, i2) => 'C:' + gate.cellKeys[i2]))
+        : beforeG;   // graph path: the display is UNCHANGED by construction (no stamp exists)
+      console.log('§S51_SCREEN ' + bld + ' path=' + (gate ? gate.path : 'GRAPH') +
+        ' wide50screen BEFORE=' + beforeG.wide + '/' + beforeG.n + 'bars (storey|phase, tukey-trimmed — the pre-§S51 drawer)' +
+        ' AFTER=' + afterG.wide + '/' + afterG.n + 'bars (' + (gate && gate.cellKeys ? 'cell stamp — the §S51 drawer' : 'IDENTICAL: graph path, no stamp') + ')' +
+        ' [instrument: this witness mirroring buildGanttTasks grouping+_tukeyBound on the same items]');
+    }
+    // ── §S51_RESIDUE — the ACCEPTANCE SPLIT on the locked midair residue (user: "within walls or
+    // last"). General rule only — element class plays no part, no per-building constants:
+    //   embedded = some contact SPANS the element's height (the census judge's own `embedded`
+    //              clause, recorded per element above — enclosure, not a new predicate);
+    //   late     = the element's phase sorts STRICTLY AFTER first-fix MEP ('MEP Rough-in') in the
+    //              SEQUENCE_RULES-derived phase order (minimum sequence per phase — the global
+    //              rules table, same derivation as time_machine's §GANTT_ROW_ORDER);
+    //   NEITHER  = early, free-standing — the only number that matters.
+    {
+      const minSeq = {};
+      for (const k2 in SR) { const r2 = SR[k2]; if (r2 && r2.phase && r2.sequence != null &&
+        (minSeq[r2.phase] == null || r2.sequence < minSeq[r2.phase])) minSeq[r2.phase] = r2.sequence; }
+      const phOrder = Object.keys(minSeq).sort((a, b) => minSeq[a] - minSeq[b]);
+      const ffIdx = phOrder.indexOf('MEP Rough-in');
+      const isLate = ph => ffIdx >= 0 && phOrder.indexOf(ph) > ffIdx;
+      let emb = 0, late = 0, neither = 0;
+      const neitherByPhase = {}, neitherByCls = {};
+      let lo2 = Infinity, hi2 = -Infinity;
+      items.forEach(it => { if (it.s < lo2) lo2 = it.s; if (it.e > hi2) hi2 = it.e; });
+      const first10 = (lo2 + 0.10 * (hi2 - lo2)) / D;
+      let neitherEarly10 = 0;
+      after.worst.forEach(w => {
+        if (w.emb) emb++;
+        else if (isLate(w.phase)) late++;
+        else {
+          neither++;
+          neitherByPhase[w.phase] = (neitherByPhase[w.phase] || 0) + 1;
+          neitherByCls[w.cls] = (neitherByCls[w.cls] || 0) + 1;
+          if (w.start < first10) neitherEarly10++;
+        }
+      });
+      const profTotal = emb + late + neither;
+      console.log('§S51_RESIDUE ' + bld + ' population=' + items.length + ' midairLocked=' + CPM_MIDAIR_BASELINE[bld] +
+        ' profiled=' + profTotal +
+        ' | embedded(withinWalls)=' + emb + ' late(afterFirstFixMEP,notEmbedded)=' + late +
+        ' NEITHER(early,freeStanding)=' + neither +
+        (profTotal ? ' (' + (100 * neither / profTotal).toFixed(1) + '% of residue, ' + (100 * neither / items.length).toFixed(3) + '% of population)' : '') +
+        ' neitherInFirst10pctDays=' + neitherEarly10 +
+        ' neitherByPhase=' + JSON.stringify(neitherByPhase) +
+        ' neitherTopClasses=' + JSON.stringify(Object.keys(neitherByCls).sort((a, b) => neitherByCls[b] - neitherByCls[a])
+          .slice(0, 4).reduce((o, k3) => { o[k3] = neitherByCls[k3]; return o; }, {})) +
+        ' [instrument: this witness\'s census() emb flag + SEQUENCE_RULES-derived phase order; no per-building constants]');
+      console.log('§S51_RESIDUE_GUARD ' + bld +
+        ' phaseOrder=[' + phOrder.join('>') + '] firstFixIdx=' + ffIdx +
+        ' embBranchFired=' + (emb > 0 ? 'YES' : 'no (0 embedded among midair here — flag CAN fire: clause is the judge\'s own, exercised fleet-wide)') +
+        ' lateBranchFired=' + (late > 0 ? 'YES' : 'no') +
+        ' — profiled MUST equal the locked baseline or the assert below goes red');
+      assert(profTotal === CPM_MIDAIR_BASELINE[bld],
+        'W-S51d ' + bld + ' residue profile covers EXACTLY the locked midair population (profiled=' + profTotal +
+        ' locked=' + CPM_MIDAIR_BASELINE[bld] + ') — a profile over a different population than the lock is the §S46 subset trap');
     }
     assert(floatPost === CPM_FLOAT_AFTER_BASELINE[bld],
       'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + CPM_FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
