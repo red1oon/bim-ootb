@@ -5813,7 +5813,14 @@
   // Same lazy-fetch idiom as navigate_find._ensureErpDb; read-only (db.close after extracting the figures).
   function _loadTwin() {
     var app = A();
-    var building = (app && app.activeBuilding) || 'Hospital';
+    // §S54 (4D_GANTT_TM_REFACTOR.md §S54.2, item F2): this used to read
+    // `(app && app.activeBuilding) || 'Hospital'` — with no active building it silently loaded
+    // HOSPITAL's ERP twin and attached its cost/phase figures to whatever model was on screen.
+    // No active building is a REAL state (an arbitrary IFC opened straight into the viewer) and
+    // the honest answer there is the one both functions already give a building with no C_Project
+    // row: no folded project. Skip, never guess — and skip BEFORE the 25.8MB ad_seed.db fetch.
+    var building = app && app.activeBuilding;
+    if (!building) { console.log('§TM_TWIN_NOBLD no active building — ERP twin skipped (never defaulted to another building\'s project)'); return Promise.resolve(null); }
     if (_twin && _twin.building === building) return Promise.resolve(_twin);   // cached for THIS building
     if (_twinMiss === building) return Promise.resolve(null);   // §PERF_NEG_CACHE — see _loadShopfloor
     if (_twinLoading) return Promise.resolve(null);                            // a load is in flight; caller retries
@@ -5842,7 +5849,8 @@
   // Same fetch/cache pattern as _loadTwin; closed over _shopfloor/_shopfloorLoading.
   function _loadShopfloor() {
     var app = A();
-    var building = (app && app.activeBuilding) || 'Hospital';
+    var building = app && app.activeBuilding;   // §S54 (item F2) — see _loadTwin: skip, never guess a building
+    if (!building) { console.log('§PERF_NEG_CACHE shopfloor no-building — skipped before the ad_seed.db fetch (not a cached miss: the miss cache is keyed by name and this state has none)'); return Promise.resolve(null); }
     if (_shopfloor && _shopfloor.building === building) return Promise.resolve(_shopfloor);
     // §PERF_NEG_CACHE: remember a MISS too. drawDash() calls this every tick behind
     // `if (!_shopfloor && !_shopfloorLoading)`, and every failure path below cleared the

@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1062';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1063';   // bump on each deploy; per-change detail is the git commit message.
+// v1063 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S54 (item F2): time_machine.js's two ERP-twin
+// loaders (_loadTwin/_loadShopfloor) no longer default a missing activeBuilding to 'Hospital' —
+// with no active building they now skip BEFORE the 25.8MB ad_seed.db fetch instead of attaching
+// another project's cost figures to an arbitrary IFC. Witness: witness_tm_erp_twin_guard.js.
 // v1062 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S53 (item F3): the Gantt bar MODEL extracted out of
 // time_machine.js into NEW gantt_model.js (precached above, viewer.html loads it first) —
 // buildGanttTasks/computeDays/_tukeyBound are now thin wrappers over it. Behaviour-preserving,
