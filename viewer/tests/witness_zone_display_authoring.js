@@ -80,6 +80,13 @@ assert(/opts\.displayRemap/.test(saSrc) && /display_authored/.test(saSrc),
 const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild', 0, true), sliceFn(tmSrc, '_zoneIndex', 0, true)].filter(Boolean);
 const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];",
   'var _CPM_DISPLAY = true;',   // §S20: only live branch left once Part B lands — see note above
+  // §S53 (F3, 4D_GANTT_TM_REFACTOR.md): _tmDisplayRemap's §ZONE_WINDOW_DAGWINS_CLIP calls
+  // _tukeyBound, which stage 2 (2026-08-17) hoisted to time_machine.js module scope WITHOUT adding
+  // it to this slice list — so every run of this witness has died with `ReferenceError: _tukeyBound
+  // is not defined` before reaching a single assertion since that day (verified at a4932ee, the same
+  // crash, before F3 touched anything). The envelope is now a real module, so it is BOUND here from
+  // GanttModel rather than sliced — the failure mode cannot come back.
+  'var _tukeyBound = GanttModel.tukeyBound;',
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   sliceFn(tmSrc, '_contactGraph'),
@@ -90,7 +97,8 @@ const sliced = ["var _TIER1_ORDER = ['Substructure', 'Superstructure', 'Architec
 const _rlines = [];
 const sandbox = { console: { log: (...a) => _rlines.push(a.join(' ')), warn: () => {} }, performance: { now: () => Date.now() },
   ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
-  CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
+  CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
+  GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53: the drawer's bar-trim envelope, as a real module
 vm.createContext(sandbox);
 vm.runInContext(sliced +
   '\nthis.__remapHook = _tmDisplayRemap; this.__sweep = _ogSupportSweep; this.__parity = _cjpJudgeParity; this.__cg = _contactGraph; this.__ds = _designatedSupport; this.__rescale = _capWindowRescale;', sandbox);
@@ -217,7 +225,8 @@ async function main() {
     console.log = quiet;
     const cpmSandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       ScheduleGate: ScheduleGate, Math: Math, URLSearchParams: URLSearchParams,
-      CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')) };
+      CpmSchedule: require(path.join(__dirname, '..', 'cpm_schedule.js')),
+      GanttModel: require(path.join(__dirname, '..', 'gantt_model.js')) };   // §S53, same as the sandbox above
     vm.createContext(cpmSandbox);
     vm.runInContext(sliced.replace('var _CPM_DISPLAY = false;', 'var _CPM_DISPLAY = true;') +
       '\nthis.__remapHook = _tmDisplayRemap; this.__cg = _contactGraph; this.__dt = _displayTimeline;', cpmSandbox);

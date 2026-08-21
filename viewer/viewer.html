@@ -940,6 +940,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
 <script src="cpm_schedule.js?v=2" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
+     Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
+<script src="gantt_model.js?v=1" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>
 <script src="time_machine.js?v=71" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=2" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>

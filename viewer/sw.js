@@ -8,7 +8,11 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1061';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1062';   // bump on each deploy; per-change detail is the git commit message.
+// v1062 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S53 (item F3): the Gantt bar MODEL extracted out of
+// time_machine.js into NEW gantt_model.js (precached above, viewer.html loads it first) —
+// buildGanttTasks/computeDays/_tukeyBound are now thin wrappers over it. Behaviour-preserving,
+// no rule changed; witness_midair_zero.js pass=49 fail=0 with every number identical.
 // v1061 (2026-08-21) §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): the Gantt reads the cell
 // schedule — CELL-path generations stamp _cell into kernel_ops and buildGanttTasks groups bars by
 // it (graph-path buildings unchanged). _GANTT_CACHE_VERSION 36->37 regenerates pre-stamp ops.
@@ -383,6 +387,7 @@ const PRECACHE_ASSETS = [
   'lib/level_deriver.js',   // §S50 — vertical axis of the cell-grain schedule
   'location_axis.js',       // §S50 — rooms injection; lib/room_walker.js is network-first below
   'cpm_schedule.js',
+  'gantt_model.js',      // §S53 (F3) — the Gantt bar model, extracted from time_machine.js
   'time_machine.js',
   'dlod_nav.js',
   'schedule_author.js',

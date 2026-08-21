@@ -122,37 +122,20 @@
   // buildGanttTasks()'s bar grouping.
   function _placeOps() { return _ops.filter(function (o) { return o.op_type === 'ELEMENT_PLACE'; }); }
 
+  // computeDays() — THIN WRAPPER (§S53, F3). The model lives in gantt_model.js (GanttModel
+  // .computeDays); this function owns only the STATE assignment and the read-only debug hook, which
+  // is what belongs in time_machine.js. Every rule — the day ladder, the unqualified playback bounds,
+  // and §GANTT_AXIS_OUTLIER's Tukey-qualified DISPLAY axis — moved there verbatim with its comments.
   function computeDays() {
-    var cOps = _placeOps();
-    var seen = {};
-    cOps.forEach(function(op) {
-      var d = new Date(op.start_ts);
-      var key = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
-      if (!seen[key]) seen[key] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    });
-    _days = Object.values(seen).sort(function(a,b){ return a - b; });
-    if (cOps.length) {
-      // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
-      _projectStart = cOps[0].start_ts - 1;
-      _projectEnd = Math.max.apply(null, cOps.map(function(o){ return o.end_ts; }));
-    }
-    // §GANTT_AXIS_OUTLIER — qualified DISPLAY axis. Was its own copy of the 2nd-98th-percentile-
-    // above-n20/true-max-below cliff §GANTT_MINI_TRIM used to use per-bar (buildGanttTasks) — the
-    // SAME broken rule, applied here to the GLOBAL population of end_ts that defines the whole
-    // chart's axis instead of one bar's span. Stage 2 (4D_GANTT_TM_REFACTOR.md) fixed the per-bar
-    // copy but not this one — a bar's DATA could be correct while its DRAWN pixel position was
-    // still wrong, because the axis it's scaled against was still cliff-computed. Fixed here the
-    // same way: the shared _tukeyBound (hoisted to module scope, stage 2) — uniform at every
-    // population size, no cliff, no new tuned constant, reuses the exact proven formula. Never
-    // exceeds the true max (_tukeyBound's own Math.min(s[n-1], ...) clamp), so this stays a
-    // qualification of the real data, never an invention beyond it.
-    _ganttAxisStart = _projectStart;   // starts are not the observed problem; leave unqualified
-    _ganttAxisEnd = cOps.length
-      ? _tukeyBound(cOps.map(function (o) { return o.end_ts; }), false)
-      : _projectEnd;
-    // (G-3 fix 2026-08-11: a stale byte-duplicate of the block above sat here reading `_ops` —
+    var GM = (typeof window !== 'undefined' && window.GanttModel) || null;
+    if (!GM) { console.warn('§LOAD_FAIL gantt_model.js — computeDays skipped, timeline bounds unchanged'); return; }
+    var r = GM.computeDays(_placeOps());
+    _days = r.days;
+    if (r.projectStart !== null) { _projectStart = r.projectStart; _projectEnd = r.projectEnd; }
+    _ganttAxisStart = r.axisStart; _ganttAxisEnd = r.axisEnd;
+    // (G-3 fix 2026-08-11: a stale byte-duplicate of the axis block sat here reading `_ops` —
     // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
-    // BUILDING_OPEN. Removed; the cOps-based block above is the single authority.)
+    // BUILDING_OPEN. Removed; GanttModel.computeDays is now the single authority.)
     // §GANTT_AXIS_RAW (2026-08-18, 4D_GANTT_TM_REFACTOR.md — the axis's own near-duplicate fix) —
     // read-only debug hook, same convention as __tmGanttBarsRaw, so this layer is verifiable by a
     // witness instead of only by reading source. Exposes both the qualified axis actually drawn
@@ -160,7 +143,7 @@
     // end exceed what it's scaled against" without a second, separate computation.
     try {
       window.__tmGanttAxis = { axisStart: _ganttAxisStart, axisEnd: _ganttAxisEnd,
-        projectStart: _projectStart, projectEnd: _projectEnd, n: cOps.length };
+        projectStart: _projectStart, projectEnd: _projectEnd, n: r.n };
     } catch (e) {}
   }
 
@@ -4410,10 +4393,11 @@
   // floating 664->63, window fidelity 97.03%->99.95% when this landed for §ZONE_WINDOW_DAGWINS_CLIP)
   // — uniform at every group size, no group-size branch, no cliff. Percentile convention matches
   // storeyOrderReport/§GANTT_GAP_CLAMP: sorted[Math.floor(n*p)], no interpolation.
+  // §S53 (F3): the formula itself now lives in gantt_model.js — ONE envelope shared by the drawer's
+  // bar spans, the display axis, and witness_midair_zero.js (which used to slice this function out
+  // of this file BY SOURCE TEXT). This delegate keeps the in-file callers reading unchanged.
   function _tukeyBound(arr, lowSide) {
-    var s = arr.slice().sort(function (a, b) { return a - b; });
-    var n = s.length, q1 = s[Math.floor(n * 0.25)], q3 = s[Math.floor(n * 0.75)], iqr = q3 - q1;
-    return lowSide ? Math.max(s[0], q1 - 1.5 * iqr) : Math.min(s[n - 1], q3 + 1.5 * iqr);
+    return window.GanttModel.tukeyBound(arr, lowSide);
   }
   function _tmDisplayRemap(elements, schedule) {
     (function () {
@@ -6094,111 +6078,20 @@
       ' AC=' + EVM.AC + ' CPI=' + EVM.CPI.toFixed(3) + ' CV=' + EVM.CV + ' BAC=' + EVM.BAC + ' EAC=' + EVM.EAC + ' VAC=' + EVM.VAC);
   }
 
-  // buildGanttTasks() — the storey|phase rollup, now cached and task-identity-aware (K0).
-  // Grouping key is the REAL task_id whenever the op's guid resolves through task_elements, so each
-  // resulting bar carries `taskId` and is addressable by moveTask/resizeTask/addDependency. Ops with
-  // no task fall back to the original storey|phase key and stay non-editable.
+  // buildGanttTasks() — THIN WRAPPER (§S53, F3). The model lives in gantt_model.js
+  // (GanttModel.buildTasks): the §S51 grouping precedence (task id -> cell stamp -> storey|phase),
+  // the §GANTT_MINI_TRIM Tukey bar-span trim, and the SEQUENCE_RULES-derived §GANTT_ROW_ORDER sort,
+  // all moved there verbatim with their comments. This function keeps what is genuinely
+  // time_machine's: the K0 dirty-flag gate, the state assignment, and the three §-log proof lines.
   function buildGanttTasks() {
     if (!_ganttDirty) return;
+    var GM = (typeof window !== 'undefined' && window.GanttModel) || null;
+    if (!GM) { console.warn('§LOAD_FAIL gantt_model.js — buildGanttTasks skipped, bars unchanged'); return; }
     _ganttDirty = false;
     var idx = buildTaskIndex();
-    var groups = {};
-    var _idN = 0, _noIdN = 0;
-    for (var i = 0; i < _ops.length; i++) {
-      var op = _ops[i];
-      // §GANTT_OPS_BOOKKEEPING_LEAK: a non-construction op (BUILDING_OPEN, ELEMENT_PICK, GRID_*, ...)
-      // is not a task and must not become a bar — see computeDays()'s own header comment for the
-      // traced mechanism. _ops itself stays the full mixed history for other consumers (copyGuids).
-      if (op.op_type !== 'ELEMENT_PLACE') continue;
-      var p = op.parameters || {};
-      var storey = p.storey || '_UNKNOWN';
-      var phase = p.phase || 'Architecture';
-      // Real task identity first (exact, by guid); then §S51's cell stamp (the schedule's own
-      // grain, present only on cell-path generations); storey|phase only as the un-authored
-      // fallback — graph-path buildings and pre-§S51 ops group exactly as before.
-      var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
-      if (tid) _idN++; else _noIdN++;
-      var cellId = (!tid && p._cell) ? String(p._cell) : null;
-      var key = tid ? ('T:' + tid) : (cellId ? ('C:' + cellId) : (storey + '|' + phase));
-      if (!groups[key]) groups[key] = { storey: cellId ? (cellId.split('\u00b7')[2] || storey) : storey,
-        phase: phase, cell: cellId || null, taskId: tid || null,
-        taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
-        starts: [], ends: [], count: 0, cap: 0, guids: [] };
-      var g = groups[key];
-      g.starts.push(op.start_ts);
-      g.ends.push(op.end_ts);
-      g.guids.push(op.output_guid);   // W1 needs the member set to re-time an edited bar
-      g.count++;
-      if (p._captured) g.cap++;   // §gate: captured = preset IFC 4D (verbatim) — drives the yellow frame
-    }
-    _ganttIdentified = _idN; _ganttUnidentified = _noIdN;
-
-    // §GANTT_MINI_TRIM (2026-08-17, 4D_GANTT_TM_REFACTOR.md stage 2 — REPLACES the 2026-07-18
-    // 2nd-98th-percentile-above-n20/true-min-max-below rule). The old rule's cliff at n=20 was
-    // measured live to be exactly the mechanism behind "one pile, full project length": most
-    // phase|storey groups are small (many storeys x 6 phases), so most bars got NO trim at all —
-    // one mistagged/outlier element (this project's own numbers show non-zero outliers on every
-    // building, by design) was enough to stretch an untrimmed small group's bar to cover it.
-    // Fix: the SAME Tukey-fence envelope §ZONE_WINDOW_DAGWINS_CLIP already uses for task-window
-    // authoring (_tukeyBound, hoisted to module scope above) — uniform at every group size, no
-    // cliff, no new tuned constant (reuses the exact proven formula, not a fresh invention).
-    // Members outside the fence still exist in the underlying data (§TIER_DAG_WINS doctrine:
-    // counted, never hidden) — they just don't get to single-handedly define the bar's span.
-    _ganttTasks = [];
-    for (var k in groups) {
-      var g = groups[k];
-      g.startTs = _tukeyBound(g.starts, true);
-      g.endTs = Math.max(_tukeyBound(g.ends, false), g.startTs);   // degenerate-group safety (n=1)
-      delete g.starts; delete g.ends;
-      _ganttTasks.push(g);
-    }
-
-    // §GANTT_ROW_ORDER (K1, 2026-08-04) — user report: "are you using any 4D convention used by P6 on
-    // gantt phase/task ordering? Last session was a mess putting substructure which has above ground
-    // appearing first." Correct answer at the time: we followed NO convention. Rows were sorted purely
-    // by `a.startTs - b.startTs`, so whichever zone happened to compute earliest floated to the top and
-    // a phase's floors appeared interleaved with other phases' — arbitrary, and unreadable as a
-    // construction programme.
-    //
-    // P6/MSP order rows by WBS path, THEN by early start. Our WBS is (phase → floor): the zone
-    // decomposition materializeZones already persists. So: phase in real construction sequence first,
-    // then start time within the phase (which tracks bottom-up floor order, because the engine builds
-    // floors bottom-up). Falls back to alphabetical for any phase outside the canonical list rather
-    // than silently bucketing it at position 0.
-    //
-    // ⚠ DERIVED FROM SEQUENCE_RULES, NEVER HARDCODED — and this matters, it is not tidiness.
-    // The first draft of this fix copied the order out of _VAR_ORDER (~:4238) and was WRONG: that
-    // array still reads Substructure/Superstructure/MEP Rough-in/Architecture/…, i.e. MEP rough-in
-    // BEFORE the building envelope — the exact backwards discipline PR #1165 fixed in SEQUENCE_RULES
-    // and across all 18 rate-template sources. _VAR_ORDER is a THIRD stale copy that #1165 missed
-    // (the two known-stale PHASE_ORDER arrays in this file are the other two). The real engine order,
-    // read from SEQUENCE_RULES' own sequence numbers, is:
-    //   Substructure(1) → Superstructure(2) → Architecture(5) → MEP Rough-in(7) → MEP Final(9) → Finishes(10)
-    // Deriving it kills this whole class of drift: the drawer cannot disagree with the engine again.
-    var _ROW_PHASE_ORDER = (function () {
-      var SR = (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null;
-      if (SR) {
-        var minSeq = {};
-        for (var k in SR) {
-          var r = SR[k]; if (!r || !r.phase || r.sequence == null) continue;
-          if (minSeq[r.phase] == null || r.sequence < minSeq[r.phase]) minSeq[r.phase] = r.sequence;
-        }
-        var ks = Object.keys(minSeq);
-        if (ks.length) return ks.sort(function (a, b) { return minSeq[a] - minSeq[b]; });
-      }
-      // Fallback only when SEQUENCE_RULES has not loaded — matches the derived order above.
-      return ['Substructure', 'Superstructure', 'Architecture', 'MEP Rough-in', 'MEP Final', 'Finishes'];
-    })();
-    function _phaseRank(p) {
-      var i = _ROW_PHASE_ORDER.indexOf(p);
-      return i < 0 ? _ROW_PHASE_ORDER.length : i;      // unknown phases sort after the known ones
-    }
-    _ganttTasks.sort(function (a, b) {
-      var pa = _phaseRank(a.phase), pb = _phaseRank(b.phase);
-      if (pa !== pb) return pa - pb;
-      if (pa === _ROW_PHASE_ORDER.length && a.phase !== b.phase) return a.phase < b.phase ? -1 : 1;
-      return (a.startTs - b.startTs) || (a.storey < b.storey ? -1 : a.storey > b.storey ? 1 : 0);
-    });
+    var r = GM.buildTasks(_ops, idx, (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null);
+    _ganttTasks = r.tasks;
+    _ganttIdentified = r.identified; _ganttUnidentified = r.unidentified;
 
     if (!_ganttTasksComputed) {
       var _idBars = 0;
