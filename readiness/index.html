@@ -304,8 +304,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
   </div>
 
   <ul class="rail" id="rail" hidden>
-    <li data-step="1"></li><li data-step="2"></li><li data-step="3"></li>
-    <li data-step="4"></li><li data-step="5"></li>
+    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
   </ul>
   <div class="railcap" id="railcap" hidden><span id="railnow">About you</span><span id="railpct">Step 1 of 5</span></div>
 
@@ -340,10 +339,10 @@ function q(id, title, tip, anchor, list) {
 /* ---------- CANNED RESULTS ---------- */
 var DIMS = [
   { name: 'Governance',        measured: 1.8, claimed: 2.0 },
-  { name: 'People & skills',   measured: 1.3, claimed: 1.5 },
+  { name: 'People and skills',  measured: 1.3, claimed: 1.5 },
   { name: 'Technology',        measured: 2.3, claimed: 2.5 },
-  { name: 'Data & standards',  measured: 0.9, claimed: 2.8 },
-  { name: 'Process',           measured: 1.5, claimed: 1.8 }
+  { name: 'Data and standards', measured: 0.9, claimed: 2.8 },
+  { name: 'Organisational processes', measured: 1.5, claimed: 1.8 }
 ];
 
 var SCREENS = {};
@@ -384,7 +383,7 @@ SCREENS.intro =
 
 /* ---------- 2 · CONTEXT ---------- */
 SCREENS.context =
-  '<p class="eyebrow">Step 1 of 5 · About you</p>' +
+  '<p class="eyebrow">Step 2 of 9 &middot; About you</p>' +
   '<h2>A little context</h2>' +
   '<p class="sub small">None of this identifies you. It selects the right rules for your jurisdiction and ' +
   'places you in a comparable group.</p>' +
@@ -424,67 +423,136 @@ SCREENS.context =
   '</div>' +
 
   '<div class="actions">' +
-    '<button class="btn" data-go="assess">Continue</button>' +
+    '<button class="btn" data-go="dim0">Continue</button>' +
     '<button class="btn sec" data-go="intro">Back</button>' +
   '</div>';
 
-/* ---------- 3 · ASSESSMENT ---------- */
-SCREENS.assess =
-  '<p class="eyebrow">Step 2 of 5 · Governance &nbsp;·&nbsp; 1 of 5 sections</p>' +
-  '<h2>How your firm is set up</h2>' +
-  '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
-  'There is no right answer here &mdash; only an accurate one.</p>' +
+/* ---------- THE 20 SCORED ITEMS ---------- */
+/* pre = mockup's canned answer index, chosen to reproduce the results screen. */
+var DIMENSIONS = [
+{ key:'A', name:'Governance', blurb:'How your firm is set up', items:[
+  { id:'A1', pre:2, q:'Is there a written position on open / IFC deliverables?',
+    tip:'A policy that exists but is never checked behaves differently from one that is enforced. We are separating those two, not judging either.',
+    anchor:'ISO 19650 · organisational information requirements',
+    o:['Nothing, and it has not come up','Discussed, nothing written','Written into a policy or BEP template','Written, someone owns it, checked on projects','As above, and non-compliance is escalated'] },
+  { id:'A2', pre:2, q:'Your most recent contract &mdash; what did it say about deliverable format?',
+    tip:'Naming IFC and naming a schema version are different commitments. The second is checkable; the first often is not.',
+    anchor:'ISO 19650 · exchange information requirements',
+    o:['Did not mention format, or I don&rsquo;t know','Named native files only','Named IFC among the deliverables','Named IFC with a schema version','Named IFC with schema and a validation criterion'] },
+  { id:'A3', pre:1, q:'Have you ever taken a finished model out of your BIM software and opened it elsewhere?',
+    tip:'&ldquo;We own our data&rdquo; is a belief until somebody has actually pulled a model out and opened it somewhere else. This is the single strongest signal of lock-in exposure.',
+    anchor:'Vendor lock-in · data portability',
+    o:['Never tried','Tried, it did not work','Once, roughly worked, not repeated','Done on delivery and the result is checked','Routine, archived vendor-neutrally, re-opened periodically'] },
+  { id:'A4', pre:3, q:'For authority submission, what do you actually hand over?',
+    tip:'Submission requirements vary by jurisdiction &mdash; your locale pack adjusts this question. If model-based submission does not exist where you work, choose N/A and it is excluded from scoring rather than counted as a zero.',
+    anchor:'Locale pack · authority submission route',
+    o:['Paper or PDF drawings only','Native model files','IFC alongside other formats','IFC to a schema the authority named','IFC that passes the authority&rsquo;s validation first'], na:true } ]},
 
-  '<div class="card">' +
-    q('A1', 'Is there a written position on open / IFC deliverables?',
-      'A policy that exists but is never checked behaves differently from one that is enforced. We are separating those two, not judging either.',
-      'ISO 19650 · organisational information requirements',
-      ['Nothing, and it has not come up',
-       'Discussed, nothing written',
-       'Written into a policy or BEP template',
-       'Written, someone owns it, checked on projects',
-       'As above, and non-compliance is escalated']) +
+{ key:'B', name:'People and skills', blurb:'Who actually knows this, and what happens without them', items:[
+  { id:'B1', pre:1, q:'Who in the firm could explain what an IFC property set is?',
+    tip:'Not a test of anyone&rsquo;s knowledge. We are finding out whether open-standards understanding sits with one person or is spread &mdash; that difference decides how fragile your capability is.',
+    anchor:'ISO 19650 · information management competence',
+    o:['Nobody','One person','Two or three','Most of the technical team','It is assumed knowledge here'] },
+  { id:'B2', pre:2, q:'Is information or BIM management in anyone&rsquo;s job description?',
+    tip:'Doing the job and being accountable for it are different things. A role with time allocated behaves differently from someone absorbing it on top of their real work.',
+    anchor:'ISO 19650 · Information Manager role',
+    o:['No','One person does it informally','Part of a named role','A defined role with time allocated','A defined role with authority to stop a delivery'] },
+  { id:'B3', pre:1, q:'If that person left tomorrow, what happens?',
+    tip:'The most honest question in this section. Firms often score well on capability and badly here, and it is the best single predictor of whether a BIM programme survives a resignation.',
+    anchor:'BIM maturity · key-person concentration',
+    o:['BIM capability stops','Severely degraded for months','Slowed, but recoverable','Minor disruption, handover is documented','No material impact'] },
+  { id:'B4', pre:2, q:'Has anyone had BIM or open-standards training in the last 12 months?',
+    tip:'Vendor product training and open-standards training are different investments. Learning one application deeply can even increase lock-in &mdash; that is not a criticism, just a different thing.',
+    anchor:'Succar · competency development',
+    o:['None','Self-taught only','Vendor product training','Open-standards training (IFC / ISO 19650)','An ongoing programme with a budget line'] } ]},
 
-    q('A2', 'Your most recent contract &mdash; what did it say about deliverable format?',
-      'Naming IFC and naming a schema version are different commitments. The second is checkable; the first often is not.',
-      'ISO 19650 · exchange information requirements',
-      ['Did not mention format, or I don’t know',
-       'Named native files only',
-       'Named IFC among the deliverables',
-       'Named IFC with a schema version',
-       'Named IFC with schema and a validation criterion']) +
+{ key:'C', name:'Technology', blurb:'What you run, and what it would take to change it', items:[
+  { id:'C1', pre:2, q:'How many BIM authoring tools are in regular use?',
+    tip:'One tool used well is not a failure. We are measuring concentration, not sophistication &mdash; a single-tool firm is efficient and exposed at the same time.',
+    anchor:'Vendor concentration · switching cost',
+    o:['None','Exactly one','One main, one occasional','Two or more in genuine use','Chosen per task; exchange between them is routine'] },
+  { id:'C2', pre:3, q:'Last time you received an IFC from someone else, what happened?',
+    tip:'The most useful answer here is usually &ldquo;geometry fine, data missing&rdquo;. That is the normal state of IFC exchange and worth recording honestly rather than rounding up.',
+    anchor:'buildingSMART · IFC exchange fidelity',
+    o:['Never received one','Opened but unusable','Geometry fine, data missing','Opened and used it for real work','Used it and fed changes back'] },
+  { id:'C3', pre:2, q:'What most limits how many people here use BIM tools?',
+    tip:'If licence cost is the answer, say so. That is the constraint the open route is most likely to relieve, and understating it makes your recommendations less useful.',
+    anchor:'Adoption barriers · licensing',
+    o:['Licence cost, severely','Licence cost, significantly','Hardware or skills','Minor constraints only','Nothing material'] },
+  { id:'C4', pre:3, q:'Has the firm ever evaluated an alternative to its main BIM tool?',
+    tip:'Not a loyalty question. Having tested an alternative is what turns &ldquo;we could move if we had to&rdquo; from a hope into a known quantity.',
+    anchor:'Switching cost · optionality',
+    o:['Never considered it','Discussed only','Someone trialled one','Trialled and costed a switch','Ran a real project on an alternative'] } ]},
 
-    q('A3', 'Have you ever taken a finished model out of your BIM software and opened it elsewhere?',
-      '&ldquo;We own our data&rdquo; is a belief until somebody has actually pulled a model out and opened it somewhere else. This is the single strongest signal of lock-in exposure.',
-      'Vendor lock-in · data portability',
-      ['Never tried',
-       'Tried, it did not work',
-       'Once, roughly worked, not repeated',
-       'Done on delivery and the result is checked',
-       'Routine, archived vendor-neutrally, re-opened periodically']) +
+{ key:'D', name:'Data and standards', blurb:'What is actually inside the model', items:[
+  { id:'D1', pre:3, q:'Do your models use a classification system?',
+    tip:'A file-naming convention is not a classification system. Both are useful and they answer different questions &mdash; the gap analysis needs to know which one you actually have.',
+    anchor:'ISO 12006-2 · Uniclass / OmniClass / MasterFormat',
+    o:['No','A file-naming convention only','A classification standard, partly applied','Applied consistently','Applied and validated before issue'] },
+  { id:'D2', pre:2, q:'Is what the model must contain written down before the project starts?',
+    tip:'This is about information requirements, whatever they are called locally. Written before the project behaves very differently from agreed as you go.',
+    anchor:'ISO 19650 · EIR / AIR',
+    o:['No','Verbally agreed','A written requirement exists','Written and referenced during the project','Written and verified at handover'] },
+  { id:'D3', pre:4, q:'Before sending an IFC out, is it checked?',
+    tip:'Opening it to see whether it looks right is a real answer and a common one. We are separating &ldquo;looked at it&rdquo; from &ldquo;ran it through something that reports errors&rdquo;.',
+    anchor:'buildingSMART · validation service',
+    o:['Never sent one','Not checked','Opened once to eyeball it','Checked against a written expectation','Validated with a checker tool and the result recorded'] },
+  { id:'D4', pre:2, q:'Where will your finished project models be in five years?',
+    tip:'An asset outlives the software that modelled it by decades. This is the question owners eventually ask, and most firms have never been asked it.',
+    anchor:'ISO 19650 · long-term information stewardship',
+    o:['Nowhere specific','Native format on a server somewhere','Deliberately archived, native only','Archived including IFC','Archived, IFC, re-opened periodically to confirm it still reads'] } ]},
 
-    q('A4', 'For authority submission, what do you actually hand over?',
-      'Submission requirements vary by jurisdiction &mdash; your locale pack adjusts this question. If model-based submission does not exist where you work, choose N/A and it is excluded from scoring rather than counted as a zero.',
-      'Locale pack · UAE authority submission',
-      ['Paper or PDF drawings only',
-       'Native model files',
-       'IFC alongside other formats',
-       'IFC to a schema the authority named',
-       'IFC that passes the authority’s validation first']) +
+{ key:'E', name:'Organisational processes', blurb:'How the work actually flows', items:[
+  { id:'E1', pre:2, q:'How is model data shared on a project?',
+    tip:'A shared drive is a real answer. We are distinguishing a place where files sit from an environment that manages versions, status, and who has what.',
+    anchor:'ISO 19650 · Common Data Environment',
+    o:['Email or file transfer','A shared drive','A CDE for documents','A CDE handling models','A CDE handling IFC natively, with issue tracking'] },
+  { id:'E2', pre:2, q:'Are model exchanges scheduled?',
+    tip:'Ad hoc on request is extremely common and not a failure. Scheduled exchange is what lets other disciplines plan around you.',
+    anchor:'ISO 19650 · information delivery planning',
+    o:['Ad hoc, on request','Around milestones, informally','Defined in a plan','Defined and tracked','Defined, tracked, and missed exchanges have consequences'] },
+  { id:'E3', pre:1, q:'After handover, is the model used for anything?',
+    tip:'Most models stop at handover. If yours does, that is the normal case &mdash; and it is the largest unrealised value in the whole lifecycle.',
+    anchor:'Asset information model · FM handover',
+    o:['No','Occasionally referenced','Handed to the client, unclear if used','Used for FM or asset management','Drives O&amp;M with data flowing back to the model'] },
+  { id:'E4', pre:2, q:'Is anything about your BIM work measured?',
+    tip:'Anecdotes count as an honest &ldquo;no&rdquo;. Without measurement there is no way to tell whether a change you make actually worked.',
+    anchor:'Maturity · measurement and improvement',
+    o:['No','Anecdotally','Some metrics collected','Metrics reviewed periodically','Metrics drive changes in how projects run'] } ]}
+];
 
-    '<p class="small" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--rule-soft)">' +
-    'Remaining sections: People &amp; skills · Technology · Data &amp; standards · Process &mdash; four questions each. ' +
-    '<em>Not built in this mockup.</em></p>' +
-  '</div>' +
+function renderItem(it) {
+  var rows = it.o.map(function (t, i) {
+    return '<input type="radio" name="' + it.id + '" id="' + it.id + i + '"' + (i === it.pre ? ' checked' : '') + '>' +
+      '<label for="' + it.id + i + '"><span class="lv">' + LV[i] + '</span><span class="dot"></span><span>' + t + '</span></label>';
+  }).join('');
+  if (it.na) {
+    rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'na">' +
+      '<label for="' + it.id + 'na"><span class="lv">N/A</span><span class="dot"></span>' +
+      '<span>No model-based submission exists in our market <em class="small">&mdash; excluded from scoring</em></span></label>';
+  }
+  return '<div class="field"><div class="qhead"><span class="qid">' + it.id + '</span><span>' + it.q + '</span>' +
+    TIP(it.tip, it.anchor) + '</div><div class="opts">' + rows + '</div></div>';
+}
 
-  '<div class="actions">' +
-    '<button class="btn" data-go="model">Continue to model check</button>' +
-    '<button class="btn sec" data-go="context">Back</button>' +
-  '</div>';
+function dimScreen(n) {
+  var d = DIMENSIONS[n];
+  return '<p class="eyebrow">Step ' + (n + 2) + ' of 9 &nbsp;&middot;&nbsp; ' + d.name +
+      ' &nbsp;&middot;&nbsp; section ' + (n + 1) + ' of 5</p>' +
+    '<h2>' + d.blurb + '</h2>' +
+    '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
+    'There is no right answer here &mdash; only an accurate one. Tap <strong>?</strong> on any question to see why we ask it.</p>' +
+    '<div class="card">' + d.items.map(renderItem).join('') + '</div>' +
+    '<div class="actions">' +
+      '<button class="btn" data-go="' + (n < 4 ? 'dim' + (n + 1) : 'model') + '">' +
+        (n < 4 ? 'Continue to ' + DIMENSIONS[n + 1].name : 'Continue to model check') + '</button>' +
+      '<button class="btn sec" data-go="' + (n > 0 ? 'dim' + (n - 1) : 'context') + '">Back</button>' +
+    '</div>';
+}
 
 /* ---------- 4 · MODEL ---------- */
 SCREENS.model =
-  '<p class="eyebrow">Step 3 of 5 · Your model</p>' +
+  '<p class="eyebrow">Step 8 of 9 &middot; Your model</p>' +
   '<h2>Now let&rsquo;s look at an actual file</h2>' +
   '<p class="sub small">This is the part a questionnaire cannot do. We read the file here, in your browser, and ' +
   'compare what it contains against what you just told us. <strong>The file is never uploaded.</strong></p>' +
@@ -542,7 +610,7 @@ SCREENS.model =
 
   '<div class="actions">' +
     '<button class="btn" data-go="results">See my results</button>' +
-    '<button class="btn sec" data-go="assess">Back</button>' +
+    '<button class="btn sec" data-go="dim4">Back</button>' +
   '</div>';
 
 /* ---------- 5 · RESULTS ---------- */
@@ -560,7 +628,7 @@ function chartRows() {
 }
 
 SCREENS.results =
-  '<p class="eyebrow">Step 5 of 5 · Your results</p>' +
+  '<p class="eyebrow">Step 9 of 9 &middot; Your results</p>' +
   '<h2>Where you stand</h2>' +
   '<p class="sub small">Two numbers per dimension: what your answers claimed, and what the evidence supports. ' +
   'Where they disagree by two levels or more, the measurement is used and the gap is shown.</p>' +
@@ -654,8 +722,15 @@ SCREENS.results =
   'same answers and same versions always produce this same result</p>';
 
 /* ---------- NAV ---------- */
-var ORDER = ['intro', 'context', 'assess', 'model', 'results'];
-var LABELS = { intro: 'Introduction', context: 'About you', assess: 'Your firm', model: 'Your model', results: 'Results' };
+DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
+
+var ORDER = ['intro', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'results'];
+var LABELS = {
+  intro: 'Introduction', context: 'About you',
+  dim0: 'Governance', dim1: 'People and skills', dim2: 'Technology',
+  dim3: 'Data and standards', dim4: 'Organisational processes',
+  model: 'Your model', results: 'Results'
+};
 var host = document.getElementById('screens');
 
 function show(name) {
