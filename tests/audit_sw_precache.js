@@ -63,14 +63,10 @@ var UNLISTED_LANES = [
   { prefix: 'connect_',         why: 'dev-only cross-window harness, never shipped to an offline user' },
   { prefix: 'effects_gi_poc',   why: 'GI proof-of-concept behind Alt+G, not a shell asset' }
 ];
-// Individually captured on 2026-08-21 at a98b62c. These are NOT blessed — each is a real
-// offline gap owed a decision (§S61.2). They are listed so the audit can gate anything NEW
-// while the existing 18 get triaged, instead of the check being unshippable on day one.
-var UNLISTED_TRIAGE = ['../common/history_tap.js', 'share.js', '../erp/bigdecimal.js',
-  '../erp/ad_docfsm.js', 'blue_fold.js', 'proj_fold.js', 'vo_fold.js', 'proj_control.js',
-  'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js', 'proj_claim.js',
-  '../common/whole_history.js', '../common/history_bar.js', '../common/about_diy.js',
-  'universal_history.js', 'sfx.js'];
+// DRAINED 2026-08-21, same PR: all 18 were added to PRECACHE_ASSETS (344 KB, measured) the
+// moment this audit made them visible. Kept as an empty list, not deleted — the next file that
+// needs a deliberate, reasoned exception has a place to go that is not a bare skip.
+var UNLISTED_TRIAGE = [];
 
 const scriptTags = htmlSrc.match(/src="([^"]+\.js[^"]*)"/g) || [];
 var uPass = 0, uFail = 0, uLane = 0, uTriage = 0;
