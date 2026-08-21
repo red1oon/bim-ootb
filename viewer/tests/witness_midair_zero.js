@@ -30,8 +30,12 @@
 //   W-MZ-1  Pre-CPM census REPORTED per building (the RAW computeSchedule output, before
 //           _displayTimeline authors anything). Reported, not gated — it is the before-number,
 //           and it changes whenever any upstream gate changes.
-//   W-MZ-2  THE BAR: post-CPM midair == 0 on every shipped building. Any non-zero = a real
-//           element a viewer will see hanging.
+//   W-MZ-2  §S50 (2026-08-21): was "post-CPM midair == 0 on every building" — that was the GRAPH
+//           era's invariant and §S49.3 proved it mutually exclusive with low float under a cyclic
+//           support graph (B's 0 was an artifact of SCC contraction). Now a LOCKED PER-BUILDING
+//           baseline: 0 where the §CELL_GATE routes to the unchanged graph engine; the measured
+//           leg-4 exception surface where it routes to the cell path. W-MZ-7 still proves the
+//           judge can go red.
 //   W-MZ-3  RETIRED this stage (was: "repair moves nothing earlier than the pre-repair remap
 //           output" — a two-STAGE invariant specific to the legacy remap-then-repair architecture).
 //           CPM authors the whole timeline in ONE pass from RAW, not two stages, so there is no
@@ -83,6 +87,13 @@ const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 's
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
+// §S50 (4D_GANTT_TM_REFACTOR.md §S50, 2026-08-21) — the engine now gates per building on the
+// location axis. Register the REAL modules on globalThis so CpmSchedule (a real require, never a
+// slice) resolves them exactly the way a browser window would; globalThis.APP = { db } is set
+// around the _displayTimeline call below, the same accessor the live viewer exposes.
+globalThis.RoomWalker = require(path.join(__dirname, '..', 'lib', 'room_walker.js'));
+globalThis.LevelDeriver = require(path.join(__dirname, '..', 'lib', 'level_deriver.js'));
+globalThis.LocationAxis = require(path.join(__dirname, '..', 'location_axis.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -212,8 +223,27 @@ const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Fede
 //   Terminal 4256 → 2151 (−49.5%) · Hospital 8210 → 3960 (−51.8%) · Duplex 237 → 44 (−81.4%)
 //   HHS 1491 → 889 (−40.4%) · Clinic 1205 → 877 (−27.2%) · LTU 12686 → 5023 (−60.4%)
 //   JKR 3385 → 1222 (−63.9%)      — better on 7/7, worse on none.
-const CPM_FLOAT_AFTER_BASELINE = { Terminal: 2151, Hospital: 3960, Duplex: 44, HHS_Office_Federated: 889,
-  Clinic: 877, LTU_AHouse: 5023, JKR: 1222 };
+// §S50 RE-LOCK (2026-08-21) — the cell-grain schedule (user ruling: the support graph is RETIRED
+// as the live precedence carrier). CpmSchedule.run now gates per building (§CELL_GATE, mark 0.88):
+// Terminal/Hospital/Clinic take the CELL path (new numbers, measured per the §S20 lock discipline
+// — first run with placeholder -1s, real numbers read off the FAIL lines, re-run to PASS);
+// Duplex/HHS/LTU/JKR fall below the mark and keep the GRAPH engine — their numbers must NOT move
+// (same engine, same inputs; any movement is a real regression, not a re-lock).
+// Control (main @ 9db62a6, log control_main_9db62a6.log): Terminal 2151 · Hospital 3960 ·
+// Duplex 44 · HHS 889 · Clinic 877 · LTU 5023 · JKR 1222 (fleet 14,166), midair 0 on all 7.
+// §S50 measured (run 1 FAIL lines, 2026-08-21): Terminal 2151 -> 554 (-74.2%) · Hospital
+// 3960 -> 935 (-76.4%) · Clinic 877 -> 324 (-63.1%); fleet 14,166 -> 8,991 (-36.5%).
+const CPM_FLOAT_AFTER_BASELINE = { Terminal: 554, Hospital: 935, Duplex: 44, HHS_Office_Federated: 889,
+  Clinic: 324, LTU_AHouse: 5023, JKR: 1222 };
+// W-MZ-2 under §S50: midair-0 was the GRAPH era's invariant — §S49.3 proved midair-0 and low float
+// are mutually exclusive under a cyclic support graph (B's 0 is an artifact of SCC contraction:
+// simultaneity satisfies the start-vs-start test and pays for it in float). On the CELL path the
+// residue is the §S26.11 leg-4 arrows-as-exception surface — LOCKED here so it can never drift
+// silently; W-MZ-7 below stays the proof this judge CAN go red. GRAPH-path buildings stay at 0.
+// §S50 measured (run 1 FAIL lines, 2026-08-21): Terminal 684 · Hospital 218 · Clinic 422 —
+// the leg-4 exception surface, on the same order as §S48.1's level-grain grid (687/179/373).
+const CPM_MIDAIR_BASELINE = { Terminal: 684, Hospital: 218, Duplex: 0, HHS_Office_Federated: 0,
+  Clinic: 422, LTU_AHouse: 0, JKR: 0 };
 // Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
 // are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
 // the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
@@ -317,7 +347,8 @@ function census(items) {
       const lengthRatio = (realQty == null && span > 0 && avgLen > 0) ? span / avgLen : null;
       e.installSecs = ScheduleAuthor._installSecs(e.cls, rule, LR, realQty, lengthRatio);
     });
-    db.close();
+    // §S50: db stays OPEN through the _displayTimeline call — CpmSchedule.run's location axis
+    // reads it (rooms + levels). Closed at the end of this building's block.
     const maxCrews = {};
     for (const rk in LR) if (LR[rk].max_crews) maxCrews[rk] = LR[rk].max_crews;
 
@@ -344,7 +375,10 @@ function census(items) {
 
     const dtLines = [];
     sandbox.console = { log: (...a) => dtLines.push(a.join(' ')), warn: (...a) => dtLines.push(a.join(' ')) };
-    const dtResult = vm.runInContext('this.__dt(this.__items);', sandbox);
+    globalThis.APP = { db: db };   // §S50 — the accessor CpmSchedule.run resolves the db through
+    let dtResult;
+    try { dtResult = vm.runInContext('this.__dt(this.__items);', sandbox); }
+    finally { delete globalThis.APP; }
     // §S14.0 reachability proof — print it, don't assume it. Each building gets a FRESH vm context
     // (no _displayTimeline._last cache carried in from a prior call), so `.cpm` must be exactly
     // `true` (fresh CpmSchedule.run success) — never 'reuse' (would mean a stale cache hit, which
@@ -359,14 +393,45 @@ function census(items) {
 
     const after = census(items);
     const floatPost = _floatAt();
+    // ── §S50_FOURAXIS — the four axes on ONE line, instruments named, population = ALL items ──
+    {
+      let lo = Infinity, hi = -Infinity;
+      items.forEach(it => { if (it.s < lo) lo = it.s; if (it.e > hi) hi = it.e; });
+      const span = hi - lo;
+      const frac = g => { let a = Infinity, b = -Infinity;
+        g.forEach(i2 => { if (items[i2].s < a) a = items[i2].s; if (items[i2].e > b) b = items[i2].e; });
+        return span ? (b - a) / span : 0; };
+      const groupBy = keyFn => { const m = {}; items.forEach((it, i2) => {
+        const k = keyFn(it, i2); (m[k] || (m[k] = [])).push(i2); }); return m; };
+      const dispG = groupBy(it => (it.storey || '_UNKNOWN') + '|' + (it.phase || 'Architecture'));
+      const wide50Disp = Object.keys(dispG).filter(k => frac(dispG[k]) > 0.5).length;
+      const gate = dtResult && dtResult.stats && dtResult.stats.gate;
+      let wide50Cell = 'n/a(GRAPH path — no cells exist)';
+      if (gate && gate.cellKeys) {
+        const cellG = groupBy((it, i2) => gate.cellKeys[i2]);
+        wide50Cell = Object.keys(cellG).filter(k => frac(cellG[k]) > 0.5).length +
+          '/' + Object.keys(cellG).length + 'cells';
+      }
+      console.log('§S50_FOURAXIS ' + bld + ' path=' + (gate ? gate.path : 'GRAPH') +
+        ' population=' + items.length + ' (all scheduled geo elements)' +
+        ' days=' + (span / D).toFixed(1) + ' [span of _displayTimeline output]' +
+        ' wide50display=' + wide50Disp + '/' + Object.keys(dispG).length + 'bars [storey|phase hull, time_machine.js:6074 grouping]' +
+        ' wide50cell=' + wide50Cell + ' [cell bars, CpmSchedule gate.cellKeys]' +
+        ' float=' + floatPost + ' [ScheduleGate.auditFloating]' +
+        ' midair=' + after.midair + ' [this witness\'s own census(), independent judge]');
+    }
     assert(floatPost === CPM_FLOAT_AFTER_BASELINE[bld],
       'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + CPM_FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
       '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — CPM authoring can leave a dependent starting ' +
       'before its own support FINISHES (auditFloating\'s measure), a DIFFERENT invariant than midair (starting ' +
       'before a support APPEARS). Deliberate and named, never silent.');
-    assert(after.midair === 0, 'W-MZ-2 ' + bld + ' ZERO elements appear before the first thing they touch (got ' +
-      after.midair + (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
-      'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ')');
+    assert(after.midair === CPM_MIDAIR_BASELINE[bld],
+      'W-MZ-2 ' + bld + ' strict midair locked at ' + CPM_MIDAIR_BASELINE[bld] + ' (got ' + after.midair +
+      (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
+      'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ') — 0 on GRAPH-path buildings ' +
+      '(unchanged engine); on CELL-path buildings this is the §S26.11 leg-4 declared-exception ' +
+      'surface, locked so it can never drift silently (§S49.3: midair-0 and low float are mutually ' +
+      'exclusive under a cyclic support graph — the user chose the grid, §S50)');
     // W-MZ-7 — a test that can fail: drag one element back before everything it touches (what a
     // planner's bar-drag does to its elements) and the lock-gate judge must SEE it.
     if (after.probe) {
@@ -380,6 +445,7 @@ function census(items) {
     assert(after.orphan === CPM_ORPHAN_BASELINE[bld],
       'W-MZ-4 ' + bld + ' orphans (touch nothing in the model) locked at ' + CPM_ORPHAN_BASELINE[bld] + ' (got ' + after.orphan +
       ') — an extraction limit, reported never gated, purely geometric (same either display-authoring path)');
+    db.close();   // §S50 — was closed before _displayTimeline; the location axis needs it live
   }
   finish();
 })();
