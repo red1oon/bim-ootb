@@ -145,6 +145,17 @@
       window.__tmGanttAxis = { axisStart: _ganttAxisStart, axisEnd: _ganttAxisEnd,
         projectStart: _projectStart, projectEnd: _projectEnd, n: r.n };
     } catch (e) {}
+    // §S58 (§S58.2): the qualified DISPLAY axis vs the true playback end was written to the debug
+    // hook above and NEVER logged, though §GANTT_AXIS_OUTLIER's own header names that exact
+    // difference as the cause of a prior bug class ("a bar's DATA could be correct while its DRAWN
+    // pixel position was still wrong"). A reader had to poke a global. Now it is a log line.
+    var _axD = 86400000;
+    console.log('§GANTT_AXIS n=' + r.n +
+      ' axisDays=' + (r.axisEnd != null ? ((r.axisEnd - r.axisStart) / _axD).toFixed(1) : 'n/a') +
+      ' trueDays=' + (r.projectEnd != null ? ((r.projectEnd - _projectStart) / _axD).toFixed(1) : 'n/a') +
+      ' qualifiedAway=' + (r.axisEnd != null && r.projectEnd != null
+        ? ((r.projectEnd - r.axisEnd) / _axD).toFixed(1) + 'd' : 'n/a') +
+      ' (display axis is Tukey-qualified; playback bounds are NOT — they must reach every element)');
   }
 
   // ── Scene: emerge from nothing ──
@@ -5665,7 +5676,8 @@
   }
 
   // ── Mini Gantt chart ──
-  var _ganttTasksComputed = false; // log once flag
+  var _ganttTasksComputed = false; // §S58: no longer gates the log lines; "has ever built" only
+  var _ganttRebuildN = 0;          // §S58: rebuild ordinal — N rebuilds per gesture is readable
 
   // ── §GANTT_BAR_IDENTITY (K0 — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
   // The drawer used to derive its bars purely by grouping raw kernel_ops on storey|phase, yielding
@@ -6101,18 +6113,29 @@
     _ganttTasks = r.tasks;
     _ganttIdentified = r.identified; _ganttUnidentified = r.unidentified;
 
-    if (!_ganttTasksComputed) {
+    // §S58 (4D_GANTT_TM_REFACTOR.md §S58.1a): these three lines used to be gated on
+    // `_ganttTasksComputed`, a "log once flag" reset only at building-close — so they reported the
+    // FIRST build of a building and never again. But this function recomputes the whole model
+    // whenever `_ganttDirty` is set, i.e. after every drag, retime, group-move, link and undo,
+    // which is exactly when a reader needs the numbers. A drag that duplicated bars, reordered
+    // phases or flipped the editable/non-editable mix was invisible in the log for the rest of the
+    // session. Now reported on every real REBUILD. NOT per-frame: the `!_ganttDirty` early-return
+    // above means a redraw with an unchanged model logs nothing.
+    {
+      _ganttRebuildN++;
       var _idBars = 0;
       for (var bi = 0; bi < _ganttTasks.length; bi++) if (_ganttTasks[bi].taskId) _idBars++;
-      console.log('§GANTT_MINI tasks=' + _ganttTasks.length);
+      console.log('§GANTT_MINI tasks=' + _ganttTasks.length + ' rebuild=' + _ganttRebuildN);
       // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
       // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
       // authored schedule exists for this building, NOT that the join failed.
       // K1 proof line: the row order actually drawn, so "is substructure first" is checkable from the
       // log instead of from a screenshot.
-      console.log('§GANTT_ROW_ORDER phases=' + JSON.stringify(_ganttTasks.map(function (t) { return t.phase; })
+      console.log('§GANTT_ROW_ORDER rebuild=' + _ganttRebuildN + ' phases=' +
+        JSON.stringify(_ganttTasks.map(function (t) { return t.phase; })
         .filter(function (p, i, arr) { return i === 0 || arr[i - 1] !== p; })));
-      console.log('§GANTT_BAR_IDENTITY schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
+      console.log('§GANTT_BAR_IDENTITY rebuild=' + _ganttRebuildN +
+        ' schedule=' + ((_taskIndex && _taskIndex.scheduleId) || 'none') +
         ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
         ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
         ' modelTasks=' + ((_taskIndex && _taskIndex.n) || 0));
@@ -8270,7 +8293,7 @@
     _sCurveData = null;
     _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
-    _ganttTasksComputed = false;
+    _ganttTasksComputed = false; _ganttRebuildN = 0;   // §S58: ordinal is per building
     invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');

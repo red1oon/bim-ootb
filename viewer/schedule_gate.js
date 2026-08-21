@@ -150,15 +150,24 @@
   // caller can pair once and then compare whatever stage of the timeline it owns.
   function hostPairs(els) {
     var idx = {}, out = [], t, cs, c, e, k, bi;
+    // §S58 (§S58.1b): §HOSTED_BEFORE_HOST had NO log line anywhere — it is the fix for the reported
+    // "outlets and hanging elements appearing a bit early" bug, and §GEO_ORDER reported only
+    // hostEdges= (matches found), with no denominator and no count of hosted elements that fell
+    // through UNGUARDED to baseMs. Its own sibling §CURTAIN_WALL_OPENING already reports
+    // cwGated=/stillUngated=; this is the same shape. Counted here, reported by the caller.
+    var _hostedTotal = 0, _noCell = 0, _noNearest = 0;
     for (t = 0; t < els.length; t++) { e = els[t];
       if (!HOST_CLS.test(e.cls || '')) continue;
       cs = cellsOf(e); for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(t); }
     for (t = 0; t < els.length; t++) { e = els[t];
       if (!isHosted(e)) continue;
-      k = idx[hostCellKey(e)]; if (!k) continue;
+      _hostedTotal++;
+      k = idx[hostCellKey(e)]; if (!k) { _noCell++; continue; }
       bi = nearestHostAt(e, k, els);
-      if (bi >= 0) out.push({ i: t, h: k[bi] });
+      if (bi >= 0) out.push({ i: t, h: k[bi] }); else _noNearest++;
     }
+    out.census = { hostedTotal: _hostedTotal, matched: out.length,
+                   fellThroughNoHostCell: _noCell, fellThroughNoNearest: _noNearest };
     return out;
   }
 
@@ -928,6 +937,16 @@
         (_cyc.length ? ' sample=[' + _cyc.slice(0, 5).map(function (x) { return elements[x].guid; }).join(',') + ']' : ''));
       console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' hangNearest=' + _hangNearest +
         ' hostEdges=' + _hostEdges + ' orderMs=' + (Date.now() - _t0));
+      // §S58 (§S58.1b) — §HOSTED_BEFORE_HOST's own proof line. hostEdges above is the numerator
+      // only; this is the denominator and the miss breakdown, so "did the outlets-appear-early fix
+      // actually cover this building" is readable from the log instead of inferred. Same shape as
+      // §CURTAIN_WALL_OPENING's cwGated=/stillUngated=. matched+fellThrough == hostedTotal is an
+      // accounting identity a witness can assert, not a bare count.
+      var _hc = _hostPairs && _hostPairs.census;
+      if (_hc) console.log('§HOSTED_BEFORE_HOST hostedTotal=' + _hc.hostedTotal +
+        ' matched=' + _hc.matched + ' fellThrough=' + (_hc.fellThroughNoHostCell + _hc.fellThroughNoNearest) +
+        ' (noHostCell=' + _hc.fellThroughNoHostCell + ' noNearest=' + _hc.fellThroughNoNearest + ')' +
+        ' — fellThrough elements are gated at baseMs only, i.e. NOT held behind their host');
     }
     var nonst = elements.filter(function (e) { return e.seq > 4; });
     // §DEQ_V1 repair loop — the zero-contradiction guarantee. The gates above are only as good as

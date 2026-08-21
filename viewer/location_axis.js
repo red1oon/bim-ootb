@@ -55,7 +55,14 @@
     try {
       var pr = db.exec("SELECT COUNT(*), SUM(CASE WHEN space_guid NOT LIKE 'RM_%' THEN 1 ELSE 0 END) FROM rel_contained_in_space");
       if (pr.length) { var t = pr[0].values[0]; persisted.ifc = t[1] || 0; persisted.rm = t[0] - persisted.ifc; }
-    } catch (e) { /* no table — fine */ }
+    } catch (e) {
+      // §S58 (§S58.2): "no table" is the expected case, but this also swallows a REAL failure —
+      // and then §LOC_AXIS reports persistedRM=0 as if it had checked and found none, rather than
+      // "could not check." Only the unexpected shape is logged, so the normal case stays quiet.
+      if (!/no such table/i.test((e && e.message) || ''))
+        console.warn('§LOC_AXIS_PERSISTED_UNREADABLE rel_contained_in_space read failed — ' +
+          (e && e.message) + ' — persistedRM/ifc below read 0 because the check FAILED, not because it is empty');
+    }
     var rooms = [], suspects = 0, compileMs = 0, joinKey = null, byFloor = {};
     if (d.RW && d.RW.compileRooms && d.RW._makeJoinKey && d.RW._canonicalFloor) {
       var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
