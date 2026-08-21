@@ -372,8 +372,11 @@ SCREENS.intro =
     '<p>The result shows an organisation where its capability gaps and implementation risks lie, and which areas ' +
     'to address first before committing to OpenBIM &mdash; combining what you report with metrics computed ' +
     'directly from your own IFC model.</p>' +
-    '<p class="small">It measures readiness and model data quality. It does not certify regulatory compliance, ' +
-    'and no software does so in any jurisdiction.</p>' +
+    '<p class="small"><strong>This is only a technical readiness assessment.</strong> It measures ' +
+    'organisational readiness and model data quality &mdash; nothing else. It qualifies nothing and no ' +
+    'one, confers no certification, licence or professional status, and is not evidence of compliance. ' +
+    'Where your regulations or appointment require insurance, indemnity or a formal qualification ' +
+    'process, that remains yours to satisfy directly.</p>' +
   '</div>' +
 
   '<div class="card">' +
@@ -749,14 +752,28 @@ SCREENS.results =
     'asserted.</p>' +
   '</div>' +
 
+  '<div class="card" style="border-left:3px solid var(--warn)">' +
+    '<h3 style="color:var(--warn)">Before you share this</h3>' +
+    '<p class="small" style="margin-top:8px"><strong>This assessment qualifies nothing and no one.</strong> ' +
+    'It confers no certification, accreditation, licence, approval or professional status, and it is not ' +
+    'evidence of compliance with any regulation, standard, code or contract. Do not present it as such &mdash; ' +
+    'to a client, an authority, an insurer, or in a tender.</p>' +
+    '<p class="small">Nothing here is audited or verified. The answers are yours and the measurements come ' +
+    'from a file you supplied; no third party has checked any of it.</p>' +
+    '<p class="small">Where insurance, professional indemnity, licensing or a formal qualification process ' +
+    'is required or applicable under your regulations, contract or client requirements, that obligation is ' +
+    'yours and must be discharged directly with the responsible body. This report substitutes for none of it.</p>' +
+  '</div>' +
+
   '<div class="actions">' +
     '<button class="btn">Download checklist (PDF)</button>' +
     '<button class="btn sec">See these gaps in 3D</button>' +
     '<button class="btn sec" data-go="intro">Start over</button>' +
   '</div>' +
   '<p class="small mono" style="margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)">' +
-  'core-0.1 · locale ae-v1 · toolkit v0.1 · 2026-08-21 · scoring is deterministic &mdash; ' +
-  'same answers and same versions always produce this same result</p>';
+  'core-0.1 · locale ae-v1 · toolkit v0.1 · scope: one office or region · scoring is deterministic &mdash; ' +
+  'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
+  'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
 
 /* ---------- NAV ---------- */
 DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
