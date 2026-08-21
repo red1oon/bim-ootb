@@ -19,9 +19,19 @@
  *   green      exit 0                      — counted as passing
  *   red        exit nonzero                — fails the suite UNLESS listed in KNOWN_RED
  *   timeout    killed at --timeout seconds — treated as red, never as a pass
- *   new red    not in KNOWN_RED            — exit 1. THIS is what the runner is for.
+ *   flaky      nonzero, then green on retry — reported as FLAKY, does NOT fail the suite
+ *   new red    not in KNOWN_RED, red twice  — exit 1. THIS is what the runner is for.
  *   fixed      in KNOWN_RED but now green  — printed loudly, does NOT fail (never punish a fix);
  *                                            drain it from the list in the same PR that fixed it.
+ *
+ * FLAKINESS IS REAL AND WAS MEASURED, not anticipated: two full sweeps of the same commit
+ * (a98b62c) 30 minutes apart disagreed on FOUR files — witness_disc_friendly_labels,
+ * witness_pill_drawer_followup and witness_shakeout flipped red -> green, and
+ * witness_corridor_reveal_shell flipped green -> red while its own log ended "ALL PASS".
+ * Those witnesses each launch their OWN http server and chromium, so this is contention and
+ * timing, not a missing service. A single run therefore cannot classify them, and a KNOWN_RED
+ * list is the wrong instrument for a test that is not deterministic. Hence --retries: a red is
+ * only believed when it reproduces.
  *
  * KNOWN_RED follows the house pattern already used by tests/audit_sw_precache.js (KNOWN_MISSING):
  * capture today's state WITH A STATED REASON so the suite is shippable on day one and gates
@@ -31,6 +41,7 @@
  *   node tests/run_witness_suite.js                  # all witnesses, sequential
  *   node tests/run_witness_suite.js --filter gantt   # only matching names (fast iteration)
  *   node tests/run_witness_suite.js --timeout 60     # per-file seconds (default 150)
+ *   node tests/run_witness_suite.js --retries 0      # believe the first result (default 1 retry)
  *   node tests/run_witness_suite.js --list           # discover only, run nothing
  * Sequential on purpose: several witnesses drive a real browser against a fixed port, so parallel
  * runs would contend. Full sweep is ~15 min; use --filter while iterating.
@@ -80,6 +91,7 @@ const argOf = (name, dflt) => { const i = args.indexOf(name); return i >= 0 ? ar
 const FILTER = argOf('--filter', null);
 const TIMEOUT_S = parseInt(argOf('--timeout', '150'), 10);
 const LIST_ONLY = args.includes('--list');
+const RETRIES = parseInt(argOf('--retries', '1'), 10);
 
 let files = fs.readdirSync(TESTS_DIR).filter(f => /^witness_.*\.js$/.test(f)).sort();
 if (FILTER) files = files.filter(f => f.indexOf(FILTER) >= 0);
@@ -98,21 +110,37 @@ function summaryOf(out) {
   return m ? m[m.length - 1].trim() : '';
 }
 
-let green = 0, newRed = 0, knownRed = 0, fixed = 0;
-const newRedList = [], fixedList = [];
+let green = 0, newRed = 0, knownRed = 0, fixed = 0, flakyN = 0;
+const newRedList = [], fixedList = [], flakyList = [];
 
-for (const f of files) {
+function runOnce(f) {
   const r = spawnSync('node', [f], {
     cwd: TESTS_DIR, encoding: 'utf8', timeout: TIMEOUT_S * 1000,
     env: Object.assign({}, process.env, { BLD_DIR: BLD_DIR })
   });
   const timedOut = r.error && r.error.code === 'ETIMEDOUT';
-  const code = timedOut ? 'TIMEOUT' : r.status;
-  const ok = !timedOut && r.status === 0;
-  const known = Object.prototype.hasOwnProperty.call(KNOWN_RED, f);
-  const sum = summaryOf((r.stdout || '') + (r.stderr || ''));
+  return { ok: !timedOut && r.status === 0, code: timedOut ? 'TIMEOUT' : r.status,
+           out: (r.stdout || '') + (r.stderr || '') };
+}
 
-  if (ok && !known) { green++; console.log('  PASS  ' + f + (sum ? '   ' + sum : '')); }
+for (const f of files) {
+  let r = runOnce(f);
+  let flaky = false;
+  // A red is only believed when it reproduces — see the FLAKINESS note in the header.
+  for (let a = 0; !r.ok && a < RETRIES; a++) {
+    const again = runOnce(f);
+    if (again.ok) { flaky = true; r = again; break; }
+    r = again;
+  }
+  const code = r.code;
+  const ok = r.ok;
+  const known = Object.prototype.hasOwnProperty.call(KNOWN_RED, f);
+  const sum = summaryOf(r.out);
+
+  if (flaky) {
+    flakyN++; flakyList.push(f);
+    console.log('  FLAKY ' + f + ' — failed then passed on retry, same commit. Not a red; not trustworthy either.' + (sum ? '   ' + sum : ''));
+  } else if (ok && !known) { green++; console.log('  PASS  ' + f + (sum ? '   ' + sum : '')); }
   else if (ok && known) {
     fixed++; fixedList.push(f);
     console.log('  FIXED ' + f + ' — was KNOWN_RED, now green. Drain it from KNOWN_RED.' + (sum ? '   ' + sum : ''));
@@ -125,7 +153,8 @@ for (const f of files) {
 }
 
 console.log('§SUITE_SUMMARY green=' + green + ' new_red=' + newRed + ' known_red=' + knownRed +
-            ' fixed=' + fixed + ' total=' + files.length);
+            ' fixed=' + fixed + ' flaky=' + flakyN + ' total=' + files.length);
+if (flakyList.length) { console.log('§SUITE_FLAKY — same commit, different verdict per run'); flakyList.forEach(x => console.log('   ' + x)); }
 if (newRedList.length) { console.log('§SUITE_NEW_RED'); newRedList.forEach(x => console.log('   ' + x)); }
 if (fixedList.length) { console.log('§SUITE_FIXED — remove these from KNOWN_RED'); fixedList.forEach(x => console.log('   ' + x)); }
 if (newRed > 0) process.exit(1);
