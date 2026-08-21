@@ -17,6 +17,7 @@
   "ConstructionHandlers": "readonly",
   "CostPanel": "readonly",
   "CpmSchedule": "readonly",
+  "SupportSweep": "readonly",
   "DB_URL": "readonly",
   "DISC_COLORS": "readonly",
   "DimChains": "readonly",

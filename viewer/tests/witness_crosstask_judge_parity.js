@@ -41,6 +41,7 @@ const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));   // §S58: required, never sliced
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -60,9 +61,9 @@ function sliceFn(src, name) {
 function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
-const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
-const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
-const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
+const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
+const _designatedSupport = SupportSweep.designatedSupport;  // §S58
+const _cjpJudgeParity = SupportSweep.cjpJudgeParity;    // §S58 (the module resolves its own contactGraph)
 
 // census — directional (§MIDAIR_DIRECTIONAL, 4D_GANTT_TM_REFACTOR.md, 2026-08-18). NOTE: the
 // specific counts cited in this file's header (3090->656, 265->133, Clinic 91->9) were measured

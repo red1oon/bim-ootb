@@ -42,15 +42,23 @@ const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'))
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
+// §S58: the guard block now lives in viewer/support_sweep.js as a real function. This witness still
+// needs SOURCE TEXT (it builds reference variants by substring substitution), but it slices BY
+// FUNCTION NAME instead of by raw text markers — immune to indentation and to log wording, the two
+// things that rotted the old marker slice once already.
+const ssSrc = fs.readFileSync(path.join(__dirname, '..', 'support_sweep.js'), 'utf8');
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
-
-// ── slice the guard block (same marks as witness_gantt_og_grid_perf.js) ──
-const startMark = 'var _ogCELL = ';
-const endMark = "if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +\n        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');";
-const si = tmSrc.indexOf(startMark);
-const ei = tmSrc.indexOf(endMark, si);
-if (si < 0 || ei < 0) throw new Error('guard block marks not found — has the block been renamed/moved?');
-const guardBlock = tmSrc.slice(si, ei + endMark.length);
+function _sliceNamed(src, name) {
+  const idx = src.indexOf('function ' + name + '(');
+  if (idx < 0) throw new Error(name + ' not found in support_sweep.js — renamed?');
+  let d = 0, i = idx, open = false;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') { d++; open = true; }
+    else if (src[i] === '}') { d--; if (open && d === 0) break; }
+  }
+  return src.slice(idx, i + 1);
+}
+const guardBlock = _sliceNamed(ssSrc, '_ogSupportSweep');
 
 // ── slice the judge (named function — the standard sliceFn convention) ──
 function sliceFn(src, name) {
@@ -105,7 +113,9 @@ function runGuard(scheduled, unboundedVariant) {
   copy.forEach(e => { origS[e.guid] = e.s; });   // by guid — the block SORTS the array in place
   const sandbox = { _allScheduled: copy, ScheduleGate: { CELL: 4 }, taskWin: undefined, console: { log: function () {} }, Math: Math };
   vm.createContext(sandbox);
-  vm.runInContext(block, sandbox);
+  // §S58: the slice is now the whole named function rather than a bare statement sequence, so it is
+  // DEFINED then INVOKED here — same physics, same in-place mutation of sandbox._allScheduled.
+  vm.runInContext(block + '\n_ogSupportSweep(_allScheduled, taskWin);', sandbox);
   const pushed = {};
   copy.forEach(e => { if (e.s !== origS[e.guid]) pushed[e.guid] = true; });
   return { out: copy, pushedN: Object.keys(pushed).length, pushed: pushed };

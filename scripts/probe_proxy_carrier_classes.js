@@ -10,6 +10,7 @@ const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
+const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
@@ -22,11 +23,7 @@ function sliceFn(src, name) {
   }
   return src.slice(idx, i + 1);
 }
-const _contactGraphSrc = sliceFn(tmSrc, '_contactGraph');
-const _contactGraph = (function () {
-  const f = new Function('ScheduleGate', _contactGraphSrc + '\nreturn _contactGraph;');
-  return f(ScheduleGate);
-})();
+const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const ONLY = process.env.ONLY || 'Hospital_extracted';

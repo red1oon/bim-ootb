@@ -11,6 +11,7 @@ const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
+const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
 const CpmScheduleMod = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));   // §S20: EXP6/7/8's live-path source
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
@@ -27,10 +28,10 @@ function sliceFn(src, name) {
 function buildFn(srcParts, ret) {
   return new Function('ScheduleGate', srcParts.join('\n') + '\nreturn ' + ret + ';')(ScheduleGate);
 }
-const _contactGraph = buildFn([sliceFn(tmSrc, '_contactGraph')], '_contactGraph');
-const _designatedSupport = buildFn([sliceFn(tmSrc, '_designatedSupport')], '_designatedSupport');
-const _ogSupportSweep = buildFn([sliceFn(tmSrc, '_ogSupportSweep')], '_ogSupportSweep');
-const _cjpJudgeParity = buildFn([sliceFn(tmSrc, '_contactGraph'), sliceFn(tmSrc, '_cjpJudgeParity')], '_cjpJudgeParity');
+const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
+const _designatedSupport = SupportSweep.designatedSupport;  // §S58
+const _ogSupportSweep = SupportSweep.ogSupportSweep;    // §S58
+const _cjpJudgeParity = SupportSweep.cjpJudgeParity;    // §S58 (the module resolves its own contactGraph)
 // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md): the module-scope _midairRepair const (and the
 // _TIER1_ORDER_LINE string it needed) that used to live here are retired along with EXP3/EXP5/EXP6
 // below — their only consumers. time_machine.js's _midairRepair/_twoTierRemap are DELETED.
