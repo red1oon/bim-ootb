@@ -1,0 +1,19 @@
+{
+  "_readme": "Locked regression baselines for viewer/tests/witness_midair_zero.js. DATA ONLY — the WHY for every number stays in the witness's own comment blocks, which cite the prompts/4D_GANTT_TM_REFACTOR.md section that measured it. Split out of the witness source 2026-08-21 so a re-lock is a data edit with a readable diff, and so adding an eighth building never edits test code. Re-lock discipline is unchanged: first run with placeholder -1s, read the real numbers off the FAIL lines, re-run to PASS. Never hand-write a number you have not seen a run produce.",
+  "_relocked": "2026-08-21 — §S50 cell-grain schedule (bim-ootb #1442), carried unchanged through §S51 (#1444)",
+  "float_after_cpm": {
+    "_what": "W-MZ-8 — ScheduleGate.auditFloating AFTER _displayTimeline. The measured TRADE: a dependent may start before its support FINISHES. Deliberate and named, never silent.",
+    "Terminal": 554, "Hospital": 935, "Duplex": 44, "HHS_Office_Federated": 889,
+    "Clinic": 324, "LTU_AHouse": 5023, "JKR": 1222
+  },
+  "midair": {
+    "_what": "W-MZ-2 — this witness's own census(): elements appearing before the first thing they touch. Non-zero ONLY on the CELL-path buildings (the §S26.11 leg-4 exception surface); GRAPH-path buildings stay at 0. W-MZ-7 is the proof this judge can go red.",
+    "Terminal": 684, "Hospital": 218, "Duplex": 0, "HHS_Office_Federated": 0,
+    "Clinic": 422, "LTU_AHouse": 0, "JKR": 0
+  },
+  "orphans": {
+    "_what": "W-MZ-4 — elements touching nothing in the model. Purely geometric (never reads .s/.e), so independent of which display-authoring path produced the times. An extraction limit, reported never gated.",
+    "Terminal": 25, "Hospital": 35, "Duplex": 1, "HHS_Office_Federated": 36,
+    "Clinic": 27, "LTU_AHouse": 865, "JKR": 1
+  }
+}
