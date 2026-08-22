@@ -34,18 +34,37 @@
 //   G-ZONE-MEMO    the index is built ONCE across repeated consumers, not once per consumer.
 //
 // Command (from the worktree root):
-//   OLD=/tmp/vw/time_machine.js BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_zone_index.js
+//   BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_zone_index.js
+//   (the OLD baseline is derived from git at 475373b^; OLD=<path> / OLD_REV=<rev> override)
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const HOME = require('os').homedir();
 const NEW_TM = process.env.NEW_TM || path.join(__dirname, '..', 'time_machine.js');
-const OLD_TM = process.env.OLD || '/tmp/vw/time_machine.js';
+// The OLD side is not a sibling FILE, it is a prior REVISION: the last commit before §ZONE_INDEX
+// (#1313, 475373b) consolidated the two inline banding copies. The original run staged it by hand at
+// /tmp/vw/time_machine.js, which then ENOENT-crashed this witness for everyone else (§S61.3 class B).
+// Derive it from git instead, cached under the OS temp dir; `OLD=<path>` still overrides.
+const OLD_REV = process.env.OLD_REV || '475373b^';                 // pre-§ZONE_INDEX baseline
+function resolveOldTm() {
+  if (process.env.OLD) return process.env.OLD;
+  const cache = path.join(require('os').tmpdir(), 'witness_zone_index_old_' + OLD_REV.replace(/[^a-zA-Z0-9]/g, '_') + '.js');
+  if (fs.existsSync(cache) && fs.statSync(cache).size > 0) return cache;
+  try {
+    const src = require('child_process').execFileSync('git',
+      ['-C', path.join(__dirname, '..', '..'), 'show', OLD_REV + ':viewer/time_machine.js'],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    fs.writeFileSync(cache, src);
+    return cache;
+  } catch (e) { return null; }
+}
+const OLD_TM = resolveOldTm();
 const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const VIEWER_DIR = path.join(__dirname, '..');
 const SQLJS_DIR = process.env.SQLJS_DIR || path.join(HOME, 'bim-ootb', 'modeller', 'lib');
 const initSqlJs = require(path.join(SQLJS_DIR, 'sql-wasm.js'));
+const ZoneIndex = require(path.join(VIEWER_DIR, 'zone_index.js'));   // §S62
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
 
@@ -70,7 +89,13 @@ function sliceFn(src, name, which) {
 function makeCtx(src, db, bld, counters) {
   const parts = [
     sliceFn(src, '_promoteRoofLoadPath'),
-    sliceFn(src, '_buildXrayElements')
+    sliceFn(src, '_buildXrayElements'),
+    // §S62 follow-on: _buildXrayElements' real dependency closure — matchRule() calls _classifyRule,
+    // which calls _classifyNameOverride. Neither was ever in this slice set (the same undeclared-
+    // dependency class as the ZoneIndex miss above); added conditionally so a revision that predates
+    // either name still slices cleanly.
+    sliceFn(src, '_classifyRule'),
+    sliceFn(src, '_classifyNameOverride')
   ];
   const zb = sliceFn(src, '_zoneIndexBuild');
   const zi = sliceFn(src, '_zoneIndex');
@@ -81,6 +106,12 @@ function makeCtx(src, db, bld, counters) {
     performance: { now: () => Date.now() },
     window: {},
     Math: Math, RegExp: RegExp, Object: Object, Infinity: Infinity,
+    // §S62 (#1459) moved the builder body out to viewer/zone_index.js, so the NEW side's sliced
+    // _zoneIndexBuild is now a one-line `return ZoneIndex.build(db)` wrapper and the sandbox has to
+    // supply the module. Same pattern as witness_tm_geo_order_cycles.js. Without it the witness
+    // died on `ReferenceError: ZoneIndex is not defined` — a sliced function cannot state its own
+    // dependencies. The OLD side has the banding inline and never touches this.
+    ZoneIndex: ZoneIndex,
     A: () => ({ db: db, activeBuilding: bld, _metaGen: 0 })
   };
   vm.createContext(sandbox);
@@ -99,6 +130,11 @@ function gate(name, pass, detail) {
 (async () => {
   const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(SQLJS_DIR, 'sql-wasm.wasm')) });
   const newSrc = fs.readFileSync(NEW_TM, 'utf8');
+  if (!OLD_TM || !fs.existsSync(OLD_TM)) {
+    console.log('§ZONE_INDEX_SKIP baseline revision ' + OLD_REV + ' unavailable (not a git checkout, or the ' +
+      'revision is not fetched). Set OLD=<path to a pre-§ZONE_INDEX time_machine.js> to run. Skipping, not failing.');
+    process.exit(0);
+  }
   const oldSrc = fs.readFileSync(OLD_TM, 'utf8');
   const rulesJson = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
 

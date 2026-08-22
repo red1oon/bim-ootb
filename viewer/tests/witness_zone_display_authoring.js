@@ -37,6 +37,14 @@ const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'))
 const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
+// W-ZDA-4a's locked pair, same file + same discipline as witness_midair_zero.js's baselines
+// (data in baselines/midair.json, the WHY here). §S63, 2026-08-22.
+const ZDA_LOCK = (function () {
+  const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'baselines', 'midair.json'), 'utf8'));
+  if (!j.zda_display_float) throw new Error('baselines/midair.json missing group "zda_display_float"');
+  return j.zda_display_float;
+})();
+
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
@@ -221,7 +229,22 @@ async function main() {
     console.log = ql;
     console.log('  §ZDA_WITNESS ' + B + ' floating ' + baseFloat + ' -> ' + nextFloat +
       ' outWindow ' + baseWin.outW + ' -> ' + nextWin.outW);
-    assert(nextFloat <= baseFloat, 'W-ZDA-4a floating not worse under display-authored windows (' + baseFloat + ' -> ' + nextFloat + ')');
+    // W-ZDA-4a — §S63 (2026-08-22). WAS `nextFloat <= baseFloat`, which had shipped PERMANENTLY RED:
+    // the display-authored path is genuinely worse on both buildings (Duplex 22->37, HHS 894->1839),
+    // so the inequality was false on every run and gated nothing — it only taught readers to skip the
+    // file. Locked per building instead, exactly like witness_midair_zero.js's baselines: a CHANGE
+    // either way is red, a re-lock is a data edit in baselines/midair.json with a named cause, and the
+    // trade stays visible on the §ZDA_WITNESS line above. NOT a % threshold — that judge transfer was
+    // tried and retracted. The trade itself is still an OPEN item, not blessed by being locked.
+    const lock = ZDA_LOCK[B];
+    if (!lock) {
+      assert(false, 'W-ZDA-4a no locked baseline for ' + B + ' in baselines/midair.json — measured ' +
+        baseFloat + ' -> ' + nextFloat + '; record it there with the run that produced it');
+    } else {
+      assert(baseFloat === lock.base && nextFloat === lock.display,
+        'W-ZDA-4a floating pair at its locked baseline for ' + B + ' (locked ' + lock.base + ' -> ' +
+        lock.display + ', got ' + baseFloat + ' -> ' + nextFloat + ')');
+    }
     assert(nextWin.outW <= baseWin.outW, 'W-ZDA-4b window fidelity not worse (outWindow ' + baseWin.outW + ' -> ' + nextWin.outW + ')');
     // W-ZDA-6 (§CPM_DISPLAY, 2026-08-16): the CPM branch of _displayTimeline authors a 0-midair
     // display timeline through the SAME hook (proves the wiring, not just the module).

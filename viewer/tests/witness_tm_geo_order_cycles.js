@@ -15,8 +15,10 @@
 //     for slabs EMBEDDED metres below the wall's top. Fix: contained support must live in the
 //     consumer's LOWER HALF; a wall carries a promoted slab only AT ITS TOP (wallCarries, ±GAP).
 //     Terminal: cycles 37,927→0, §DEQ_REPAIR shifts 251→0, floating 45→8 (37 were cycle-fallback
-//     ordering artifacts; the 8 remain a separate, named, open tail). This witness now ASSERTS
-//     cycles=0 and floating=8 so any regression screams.
+//     ordering artifacts; the 8 remain a separate, named, open tail). This witness ASSERTS
+//     cycles=0 plus the floating tail's COUNT AND COMPOSITION so any regression screams. The tail
+//     is 12 since #1345 (§S63, 2026-08-22 — bisected, isolated to one file, cause measured; see the
+//     block at W-TMREPRO-5). It was 8 from 2026-08-10 to #1345.
 //
 //   ISSUE 2 (refactor invariance): the roof/load-path promotion classifier existed as two copies in
 //     time_machine.js (_buildXrayElements inline + injectGantt inline). Direct verification proved
@@ -138,16 +140,45 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   assert(cycles >= 0, 'W-TMREPRO-2 §SUPPORT_CYCLE reported by canonical computeSchedule (cycles=' + cycles + ')');
   assert(typeof floating === 'number' && floating >= 0, 'W-TMREPRO-3 auditFloating returns a count (floating=' + floating + ')');
   // §TM_GEO_ORDER_CYCLES fix bar (2026-08-10): the DAG is acyclic on Terminal under load-path
-  // promotion. floating=8 is the EXACT remaining tail (was 45; 37 were cycle-fallback artifacts) —
+  // promotion. The floating tail is the EXACT remainder (was 45; 37 were cycle-fallback artifacts) —
   // if it moves EITHER way, that is a real behavior change to examine, not to absorb silently.
+  //
+  // §S63 (2026-08-22) — the tail moved 8 -> 12 and the lock was re-measured, not absorbed. Bisected
+  // over every schedule_gate.js commit since the lock was set (268a85f..HEAD, 18 runs, this witness
+  // unchanged, only viewer/{schedule_gate,time_machine}.js + rates/sequence_rules.json swapped):
+  // constant 8 through 2463ff1, 12 from a2c30ee onward. Isolated to ONE file — a2c30ee's
+  // schedule_gate.js alone over the 2463ff1 tree gives 12; a2c30ee's time_machine.js alone gives 8.
+  // a2c30ee = #1345 §STAIR_FLIGHT_GRID_VISIBILITY, which added isStairFlight() to the SCHEDULER's
+  // support pool (now supportPool(), schedule_gate.js:1246) and deliberately did NOT mirror it into
+  // auditFloating's structGrid (:1076 still admits seq<=4 or promoted IfcSlab only).
+  //
+  // The 4 added floaters are all IfcStairFlight, and they are that asymmetry, measured:
+  //   flight ...UjZp  base_z 18.892 top_z 20.864, ZERO bearing-below supports -> audited on the HANG
+  //   path against the landing above it (IfcSlab seq=4 @20.864 + 2x IfcMember seq=3 @20.564).
+  //   Scheduler side, the same pair runs the OTHER way: the flight is now a pool member BELOW those
+  //   carriers (geoGate's `below` has no top-proximity bound), so carrier ...UjXu's gate IS the
+  //   flight — start day 1.1083 == flight end day 1.1083 (next candidate down ends day 0.3139).
+  //   Pre-#1345 those carriers finished day 0.25 and the flight started day 1.15, 0.89d clear.
+  //   Now the flight starts 0.01d (~14 min) before its audited carrier ends -> flagged.
+  // So this is the audit/scheduler asymmetry disagreeing about one pair, not a physics regression:
+  // the deficit is a rounding-scale 0.01d, and #1345 already tried and reverted mirroring flights
+  // into auditFloating (it surfaced an unrelated _twoTierRemap weakness). Closing the asymmetry is
+  // a named open item, NOT this witness's job — see prompts/4D_SCHEDULE_PERFECTION.md §S63.
+  //
+  // The lock is therefore 12 AND its composition: count alone would let a swap through.
   assert(cycles === 0, 'W-TMREPRO-4 Terminal support DAG is acyclic under load-path promotion (cycles=' + cycles + ', fix: lower-half contained + wallCarries)');
-  assert(floating === 8, 'W-TMREPRO-5 floating tail exactly 8 (measured after cycle fix; was 45) — got ' + floating);
+  var _byG = new Map(geoEls.map(function (e) { return [e.guid, e]; }));
+  var _tail = {};
+  collector.forEach(function (g) { var e = _byG.get(g); var c = e ? e.cls : 'NOT-IN-geoEls'; _tail[c] = (_tail[c] || 0) + 1; });
+  var tailSig = Object.keys(_tail).sort().map(function (k) { return k + ':' + _tail[k]; }).join(',');
+  assert(floating === 12, 'W-TMREPRO-5 floating tail exactly 12 (8 promoted roof slabs since 2026-08-10 + 4 stair flights since #1345, §S63) — got ' + floating);
+  assert(tailSig === 'IfcSlab:8,IfcStairFlight:4', 'W-TMREPRO-5b floating tail COMPOSITION unchanged (a swap that keeps the count still reddens) — got ' + tailSig);
 
   // THE line. Must be numerically identical pre vs post the _promoteRoofLoadPath refactor
   // (diffed across the two commits' logs — see header ISSUE 2). Numbers only; slice state is on
   // the separate §TMREPRO_SLICE line above so this one diffs clean.
   console.log('§TM_GEO_ORDER_CYCLES_REPRO cycles=' + cycles + ' floating=' + floating +
-    ' n=' + geoEls.length + '/' + els.length + ' promotedRoofSlabs=' + promoted +
+    ' n=' + geoEls.length + '/' + els.length + ' promotedRoofSlabs=' + promoted + ' tail=' + tailSig +
     ' (Terminal_extracted.db; resource/installSecs approximated — structural cycle count unaffected)');
   console.log('§TMREPRO_DRIFT_FLAG planning-session 2026-08-10 got cycles=37927 floating=45; doc earlier recorded cycles=24353 floating=33/48428 — divergence unexplained, neither number overwritten (see header)');
   if (collector.length) console.log('§TMREPRO_FLOATING_SAMPLE [' + collector.slice(0, 5).join(',') + ']');
