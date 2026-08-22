@@ -73,18 +73,19 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 // retires it). B = hardcoded path. C = real product red. D = needs a live server/browser this run
 // did not have — NOT proven healthy, just not proven red.
 const KNOWN_RED = {
-  // A — stale-slice crash: a source-text slice of time_machine.js calls a module-scope helper the
-  // vm sandbox was never given. The §S53.5 class (it killed witness_zone_display_authoring for four
-  // days). §S58's support_sweep.js extraction retires this class outright.
-  // §S62: no longer a crash — it RUNS now, and on its first live run in 9+ days it reports a real
-  // drift: W-TMREPRO-5 locks Terminal's floating tail at 8, measured 12. cycles=0 is clean.
-  // The lock was set when the witness last ran; nothing has checked it since. Not chased here.
-  'witness_tm_geo_order_cycles.js':          'C — W-TMREPRO-5 Terminal floating tail 12, locked at 8 (cycles=0). Real drift, newly visible.',
-  // B — environment assumption baked into the file.
-  'witness_zone_index.js':                   'B — ENOENT: hardcodes /tmp/vw/time_machine.js instead of resolving from __dirname. One-line fix.',
+  // DRAINED 2026-08-22 (§S63) — all three were fixed and are green in the same PR that removed them:
+  //   witness_tm_geo_order_cycles.js — the 8 -> 12 drift was BISECTED (18 runs over schedule_gate.js
+  //     history), isolated to a2c30ee (#1345 §STAIR_FLIGHT_GRID_VISIBILITY) and MEASURED: the 4 added
+  //     floaters are stair flights caught by the scheduler/audit asymmetry that commit deliberately
+  //     left open, deficit 0.01d. Re-locked at 12 AND its class composition. Cause: 4D_SCHEDULE_PERFECTION §S63.
+  //   witness_zone_index.js — was not a path bug: OLD is a prior REVISION, not a sibling file. Now
+  //     derived from git at 475373b^, plus the two undeclared slice deps §S62 exposed. 5/5, 267,274
+  //     elements compared across 7 buildings, mismatch=0.
+  //   witness_zone_display_authoring.js — W-ZDA-4a re-locked to per-building baselines in
+  //     baselines/midair.json (Duplex 22->37, HHS 894->1839). The inequality it replaced was
+  //     permanently false, i.e. it gated nothing.
   // C — real assertion reds, reproducible every run.
   'witness_gantt_lock_integrity.js':         'C — G-LI-2e, self-declared KNOWN PRE-EXISTING BUG in its own assert message',
-  'witness_zone_display_authoring.js':       'C — W-ZDA-4a x2 (§S53.5): decision pending, re-lock as per-building baselines rather than a threshold',
   'witness_door_window_host_wall.js':        'C — assertion red, UNTRIAGED',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.

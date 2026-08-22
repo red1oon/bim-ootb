@@ -11,6 +11,12 @@
     "Terminal": 684, "Hospital": 218, "Duplex": 0, "HHS_Office_Federated": 0,
     "Clinic": 422, "LTU_AHouse": 0, "JKR": 0
   },
+  "zda_display_float": {
+    "_what": "W-ZDA-4a — the floating census under DISPLAY-AUTHORED windows vs the raw-authored baseline, from witness_zone_display_authoring.js. The display path IS measurably worse and always has been; this locks the exact pair so a CHANGE reddens, replacing an inequality assert that shipped permanently red. base = raw-authored windows + shipped rescale/sweep/parity; display = display-authored windows, rescale + parity, no sweep. Deliberately NOT a % threshold — that judge transfer was tried and retracted.",
+    "_measured": "2026-08-22 on origin/main 6ec0dcc (§S63)",
+    "Duplex_extracted":               { "base": 22,  "display": 37 },
+    "HHS_Office_Federated_extracted": { "base": 894, "display": 1839 }
+  },
   "orphans": {
     "_what": "W-MZ-4 — elements touching nothing in the model. Purely geometric (never reads .s/.e), so independent of which display-authoring path produced the times. An extraction limit, reported never gated.",
     "Terminal": 25, "Hospital": 35, "Duplex": 1, "HHS_Office_Federated": 36,

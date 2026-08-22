@@ -79,6 +79,11 @@ const BUILDINGS = [
   //   Duplex   big=49   unchecked=6   (IfcSlab:4,IfcWallStandardCase:2)     floating=0 (HELD)
   //   HHS      big=239  unchecked=13  (IfcSlab:5,IfcFlowSegment:3,…)        floating=0 (HELD)
   //   Clinic   big=442  unchecked=22  (IfcWallStandardCase:15,IfcMember:3,…) floating=1 (HELD)
+  // The floating column above is COMMENTARY (this witness asserts `unchecked`, never floating) and
+  // has drifted since. Re-measured 2026-08-22 (§S63, this witness's own green run): Terminal=12
+  // Hospital=0 Duplex=0 HHS=9 Clinic=1 LTU_AHouse=360 JKR=80. Terminal 8->12 is bisected and
+  // explained in witness_tm_geo_order_cycles.js (which DOES lock it, count + composition); the rest
+  // are recorded here so the next reader compares against a real number, not a stale one.
   // RE-MEASURED 2026-08-11 (closure pass, bigsup_after_fix.log) after the
   // 'slab_on_grade_substructure' name-override (rates.js/sequence_rules.json — slab-on-grade is
   // the 1c spec's own named ground-bearing class, pattern measured to exactly Duplex 4 + Clinic 4
