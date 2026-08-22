@@ -252,6 +252,22 @@ footer{
 .startbar div{flex:1;min-width:220px}
 .startbar h3{margin:0 0 5px;font-size:19px}
 .startbar p{margin:0;font-size:15px;color:var(--ink-2);max-width:46ch}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
 </style>
 <div class="wrap">
 
@@ -276,7 +292,7 @@ footer{
 <section>
   <div class="shead"><span class="snum">&mdash;</span><h2>Synopsis</h2></div>
   <div class="proposal">
-<p>Digital transformation is reshaping how infrastructure assets are planned, delivered, operated, and maintained. In the UAE, Building Information Modelling (BIM) has become an increasingly important enabler of this transformation, supporting more integrated and data-driven approaches to infrastructure development and lifecycle management. OpenBIM strengthens this capability by adopting vendor-neutral open standards, principally the Industry Foundation Classes (IFC), enabling infrastructure information to be exchanged, integrated, and managed across diverse software platforms without dependence on proprietary systems. The benefits are well recognised, including improved interoperability, reduced software lock-in, and more effective collaboration among stakeholders throughout the asset lifecycle.</p><p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary BIM workflows towards more interoperable OpenBIM practices. This is also applicable in various <span class="corr" title="Corrected from &quot;third word countries&quot; in the source document.">third world countries</span>. This transition requires not only appropriate technologies, but also organisational readiness in areas such as governance, business processes, workforce capabilities, data management, and compliance with open standards. However, there is currently no simple and practical way for organisations to objectively assess their readiness for OpenBIM implementation or to identify the capability gaps that should be addressed before embarking on this transition.</p><p>This project addresses that gap by developing an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management, a structured but easy-to-use way for an organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. Readiness is assessed across the dimensions most associated with successful adoption: governance, people and skills, technology, data and standards, and organisational processes. The result shows an organisation where its capability gaps and implementation risks lie, and which areas to address first before committing to OpenBIM.</p><p>It helps to be precise about how the toolkit works and where its information comes from, because three roles are easily confused. First, a large language model (LLM) acts as the interviewer: instead of filling in a static questionnaire, a practitioner has a guided conversation with the LLM, which asks about the organisation's current practices, constraints, and concerns. Second, the practitioner is the source of evidence: the picture of industry readiness is built entirely from what real people in real organisations report, the LLM does not, and cannot, observe the industry on its own. Third, the toolkit measures those answers against a reference benchmark of OpenBIM good practice (described below), then scores readiness and produces tailored, vendor-neutral recommendations for capability development, standards adoption, and implementation planning.</p><p>That benchmark is provided by an existing open-source, browser-based OpenBIM platform that extracts and compiles IFC models, renders them directly in a standard web browser with no server-side dependency, and extends into asset, operations, and lifecycle management. The platform is not the subject of the study; it serves as a concrete, working example of what an open-standard BIM environment can deliver, giving the toolkit's recommendations a demonstrable reference point rather than an abstract ideal. Alongside it, a knowledge base of OpenBIM standards, readiness criteria, and implementation guidance supports the LLM's reasoning, and automated reporting turns each assessment into a readiness profile, gap analysis, and set of recommendations.</p>
+<p>Digital transformation is reshaping how infrastructure assets are planned, delivered, operated, and maintained. In the UAE, Building Information Modelling (BIM)<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> has become an increasingly important enabler of this transformation, supporting more integrated and data-driven approaches to infrastructure development and lifecycle management. OpenBIM strengthens this capability by adopting vendor-neutral open standards, principally the Industry Foundation Classes (IFC), enabling infrastructure information to be exchanged, integrated, and managed across diverse software platforms without dependence on proprietary systems. The benefits are well recognised, including improved interoperability, reduced software lock-in, and more effective collaboration among stakeholders throughout the asset lifecycle.</p><p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary BIM workflows towards more interoperable OpenBIM practices. This is also applicable in various <span class="corr" title="Corrected from &quot;third word countries&quot; in the source document.">third world countries</span>. This transition requires not only appropriate technologies, but also organisational readiness in areas such as governance, business processes, workforce capabilities, data management, and compliance with open standards. However, there is currently no simple and practical way for organisations to objectively assess their readiness for OpenBIM implementation or to identify the capability gaps that should be addressed before embarking on this transition.</p><p>This project addresses that gap by developing an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management, a structured but easy-to-use way for an organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. Readiness is assessed across the dimensions most associated with successful adoption: governance, people and skills, technology, data and standards, and organisational processes. The result shows an organisation where its capability gaps and implementation risks lie, and which areas to address first before committing to OpenBIM.</p><p>It helps to be precise about how the toolkit works and where its information comes from, because three roles are easily confused. First, a large language model (LLM) acts as the interviewer: instead of filling in a static questionnaire, a practitioner has a guided conversation with the LLM, which asks about the organisation's current practices, constraints, and concerns. Second, the practitioner is the source of evidence: the picture of industry readiness is built entirely from what real people in real organisations report, the LLM does not, and cannot, observe the industry on its own. Third, the toolkit measures those answers against a reference benchmark of OpenBIM good practice (described below), then scores readiness and produces tailored, vendor-neutral recommendations for capability development, standards adoption, and implementation planning.</p><p>That benchmark is provided by an existing open-source, browser-based OpenBIM platform that extracts and compiles IFC models, renders them directly in a standard web browser with no server-side dependency, and extends into asset, operations, and lifecycle management. The platform is not the subject of the study; it serves as a concrete, working example of what an open-standard BIM environment can deliver, giving the toolkit's recommendations a demonstrable reference point rather than an abstract ideal. Alongside it, a knowledge base of OpenBIM standards, readiness criteria, and implementation guidance supports the LLM's reasoning, and automated reporting turns each assessment into a readiness profile, gap analysis, and set of recommendations.</p>
   </div>
 
   <div class="startbar">
@@ -298,10 +314,27 @@ footer{
   </tbody></table></div>
 </section>
 
+<section id="references">
+  <div class="shead"><span class="snum">&mdash;</span><h2>Editorial references</h2></div>
+  <p class="lede">Notes added by the publisher of this page. They annotate the synopsis; they do not
+  alter it.</p>
+  <ol class="refs">
+    <li id="ref1">The regulatory position in the UAE is specific to the emirate. BIM is mandatory in
+      <strong>Dubai</strong> under Dubai Municipality <span class="loc">Circular 196</span> (2013) — architectural
+      and MEP work on buildings over 40 floors, facilities over 300,000&nbsp;sq&nbsp;ft, and specialist facilities
+      such as hospitals and universities — as widened by <span class="loc">Circular 207</span> (2015) to buildings
+      over 20 floors, facilities over 200,000&nbsp;sq&nbsp;ft, and all government projects. There is
+      <strong>no federal UAE BIM mandate</strong>, and the other emirates have not mandated BIM, though major
+      projects have adopted it voluntarily. Source: CMS Expert Guide to Building Information Modelling — United
+      Arab Emirates, consulted 22 August 2026; the primary circular texts were not obtained. Recorded in the
+      project source register as a Tier&nbsp;3 verification. <a class="back" href="#fnref1">&#8617;</a></li>
+  </ol>
+</section>
+
 <footer>
   OpenBIM Readiness Assessment Toolkit &middot; research instrument in development, v0.1<br>
   Synopsis reproduced verbatim from the research funding request dated 10 August 2026, with one
-  typographical correction marked.
+  typographical correction and one editorial reference marked.
 </footer>
 
 </div>
