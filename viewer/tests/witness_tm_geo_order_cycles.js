@@ -16,9 +16,10 @@
 //     consumer's LOWER HALF; a wall carries a promoted slab only AT ITS TOP (wallCarries, ±GAP).
 //     Terminal: cycles 37,927→0, §DEQ_REPAIR shifts 251→0, floating 45→8 (37 were cycle-fallback
 //     ordering artifacts; the 8 remain a separate, named, open tail). This witness ASSERTS
-//     cycles=0 plus the floating tail's COUNT AND COMPOSITION so any regression screams. The tail
-//     is 12 since #1345 (§S63, 2026-08-22 — bisected, isolated to one file, cause measured; see the
-//     block at W-TMREPRO-5). It was 8 from 2026-08-10 to #1345.
+//     cycles=0 plus the floating tail's COUNT AND COMPOSITION so any regression screams. History of
+//     the tail: 45 -> 8 (2026-08-10, the cycle fix) -> 12 (#1345, §S63 — bisected and explained) ->
+//     0 (§S64, 2026-08-22 — both causes were audit-side false positives, closed in auditFloating
+//     with no schedule time changed). See the block at W-TMREPRO-5.
 //
 //   ISSUE 2 (refactor invariance): the roof/load-path promotion classifier existed as two copies in
 //     time_machine.js (_buildXrayElements inline + injectGantt inline). Direct verification proved
@@ -165,14 +166,25 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   // into auditFloating (it surfaced an unrelated _twoTierRemap weakness). Closing the asymmetry is
   // a named open item, NOT this witness's job — see prompts/4D_SCHEDULE_PERFECTION.md §S63.
   //
-  // The lock is therefore 12 AND its composition: count alone would let a swap through.
+  // §S64 (2026-08-22) — the asymmetry named above was STUDIED fleet-wide and CLOSED, audit-side, in
+  // two lines that changed no schedule time: auditFloating's tPool now mirrors hangGate's elPool
+  // (so a stair flight is no longer hung on the landing it sits below), and its wall pool now
+  // carries wallCarries' carry-at-top bound (so a wall cresting metres past a promoted slab's
+  // underside is no longer counted as that slab's support). Terminal's tail went 12 -> 0: the 4
+  // stair flights and the 8 promoted roof slabs were BOTH false positives, from the two different
+  // causes. The lock is therefore ZERO and an EMPTY composition — Terminal's support DAG is acyclic
+  // AND its audit is clean. See prompts/4D_SCHEDULE_PERFECTION.md §S64 for the fleet decomposition
+  // (462 -> 362; the 350 that remain are the §SUPPORT_CYCLE fallback on JKR + LTU_AHouse, 350/350
+  // measured cycle-set membership — not this file's building and not an audit defect).
+  //
+  // The lock is count AND composition: count alone would let a swap through.
   assert(cycles === 0, 'W-TMREPRO-4 Terminal support DAG is acyclic under load-path promotion (cycles=' + cycles + ', fix: lower-half contained + wallCarries)');
   var _byG = new Map(geoEls.map(function (e) { return [e.guid, e]; }));
   var _tail = {};
   collector.forEach(function (g) { var e = _byG.get(g); var c = e ? e.cls : 'NOT-IN-geoEls'; _tail[c] = (_tail[c] || 0) + 1; });
   var tailSig = Object.keys(_tail).sort().map(function (k) { return k + ':' + _tail[k]; }).join(',');
-  assert(floating === 12, 'W-TMREPRO-5 floating tail exactly 12 (8 promoted roof slabs since 2026-08-10 + 4 stair flights since #1345, §S63) — got ' + floating);
-  assert(tailSig === 'IfcSlab:8,IfcStairFlight:4', 'W-TMREPRO-5b floating tail COMPOSITION unchanged (a swap that keeps the count still reddens) — got ' + tailSig);
+  assert(floating === 0, 'W-TMREPRO-5 floating tail exactly 0 (was 45 -> 8 -> 12; §S64 closed both false-positive causes audit-side, no schedule time changed) — got ' + floating);
+  assert(tailSig === '', 'W-TMREPRO-5b floating tail COMPOSITION empty (a returning floater names its own class here) — got ' + (tailSig || '<empty>'));
 
   // THE line. Must be numerically identical pre vs post the _promoteRoofLoadPath refactor
   // (diffed across the two commits' logs — see header ISSUE 2). Numbers only; slice state is on

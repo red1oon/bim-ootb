@@ -1096,14 +1096,32 @@
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
+            // §S64 (2026-08-22) — the WALL pool (p===1, offered only to a promoted slab) must carry
+            // the same CARRY-AT-TOP bound the scheduler puts on the identical relation: wallGate
+            // (:684) and the DAG's wallCarries (:797) both require S.top_z <= T.base_z + GAP, the
+            // §TM_GEO_ORDER_CYCLES rule that "a wall carries a promoted slab AT ITS TOP, never one
+            // embedded metres below its crown". Without it the audit counted a wall the scheduler
+            // never gated on — measured: Terminal IfcWall top 37.06 against a slab base 30.57,
+            // LTU_AHouse 10.80 against 8.60 — 73 fleet-wide false "floating" verdicts (Terminal 8,
+            // Clinic 1, LTU_AHouse 64). structGrid (p===0) is unbounded here as before: that pool's
+            // bearing test is edgeBearing's exact twin and already agrees with the gate.
+            if (p === 1 && !(S.top_z <= T.base_z + GAP)) continue;
             if (S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP && overlap(S, T)) {
               hasBearing = true;
               var en = sched[S.guid].end; if (en > se) se = en; } } }
       }
       if (!hasBearing && T.seq > 4) {      // hangs — audit against its carrier above instead
-        // §GEOMETRIC_SUPPORT_ORDER: a pool member (promoted slab) never hangs from what it sits
-        // BELOW of — mirrors the scheduler's hangGate pool rule, so audit and scheduler agree
-        var tPool = T.cls === 'IfcSlab' && T.seq > 4;
+        // §GEOMETRIC_SUPPORT_ORDER: a pool member never hangs from what it sits BELOW of —
+        // mirrors the scheduler's hangGate pool rule, so audit and scheduler agree.
+        // §S64 (2026-08-22, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — Witness:
+        // witness_tm_geo_order_cycles.js W-TMREPRO-5/5b, scripts/probe_support_asymmetry.js):
+        // this line STOPPED mirroring at #1345, which added isStairFlight() to hangGate's elPool
+        // (:611) and to the scheduler's whole support pool (supportPool(), :1246) without touching
+        // the audit twin here. Result, measured on 3 of 7 buildings: the scheduler REFUSES to hang
+        // a stair flight on the landing it sits below, and the audit hangs it there anyway — 17
+        // fleet-wide false "floating" verdicts (Terminal 4, HHS 4, LTU_AHouse 9), deficits as small
+        // as 0.006 d. elPool's exact test, one concept, both sides.
+        var tPool = (T.cls === 'IfcSlab' && T.seq > 4) || T.cls === 'IfcStairFlight';
         var tWall = T.cls.indexOf('IfcWall') === 0;
         var seenH = {};
         for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;

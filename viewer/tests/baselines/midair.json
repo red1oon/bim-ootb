@@ -1,10 +1,10 @@
 {
   "_readme": "Locked regression baselines for viewer/tests/witness_midair_zero.js. DATA ONLY — the WHY for every number stays in the witness's own comment blocks, which cite the prompts/4D_GANTT_TM_REFACTOR.md section that measured it. Split out of the witness source 2026-08-21 so a re-lock is a data edit with a readable diff, and so adding an eighth building never edits test code. Re-lock discipline is unchanged: first run with placeholder -1s, read the real numbers off the FAIL lines, re-run to PASS. Never hand-write a number you have not seen a run produce.",
-  "_relocked": "2026-08-21 — §S50 cell-grain schedule (bim-ootb #1442), carried unchanged through §S51 (#1444)",
+  "_relocked": "2026-08-21 — §S50 cell-grain schedule (bim-ootb #1442), carried unchanged through §S51 (#1444). float_after_cpm ONLY re-locked 2026-08-22 (§S64): HHS 889->884, LTU_AHouse 5023->4998, JKR 1222->1212 — auditFloating shed false positives when its tPool was made to mirror hangGate's elPool and its wall pool given wallCarries' carry-at-top bound. NO schedule time changed (both fixes are inside auditFloating, which no gate reads); midair and orphans are byte-identical on all 7, which is the proof this was the audit and not the engine.",
   "float_after_cpm": {
     "_what": "W-MZ-8 — ScheduleGate.auditFloating AFTER _displayTimeline. The measured TRADE: a dependent may start before its support FINISHES. Deliberate and named, never silent.",
-    "Terminal": 554, "Hospital": 935, "Duplex": 44, "HHS_Office_Federated": 889,
-    "Clinic": 324, "LTU_AHouse": 5023, "JKR": 1222
+    "Terminal": 554, "Hospital": 935, "Duplex": 44, "HHS_Office_Federated": 884,
+    "Clinic": 324, "LTU_AHouse": 4998, "JKR": 1212
   },
   "midair": {
     "_what": "W-MZ-2 — this witness's own census(): elements appearing before the first thing they touch. Non-zero ONLY on the CELL-path buildings (the §S26.11 leg-4 exception surface); GRAPH-path buildings stay at 0. W-MZ-7 is the proof this judge can go red.",
