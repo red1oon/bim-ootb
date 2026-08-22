@@ -230,6 +230,12 @@ footer{
   figure{padding:18px 16px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
 </style>
 
 <div class="wrap">
@@ -237,16 +243,14 @@ footer{
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Read more</small></div>
-  <div class="topspacer"></div>
-  <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-  <a class="ghostbtn" href="./">Back to assessment</a>
+  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html" class="on">Background</a><a href="faq.html">Basics</a><a href="disclaimer.html">Notice</a></div>
 </div>
 
 <div class="hero">
   <p class="eyebrow">Why this exists</p>
   <h1>Everyone is telling you to open your data. Nobody is telling you what that costs.</h1>
-  <p class="standfirst">Three things worth knowing before you spend money on it: what the industry
-  actually certifies, where models really stand today, and what closing the gap involves.</p>
+  <p class="standfirst">What the industry actually certifies, where delivered models stand today, and
+  what closing the gap involves.</p>
   <nav class="jump">
     <a href="#industry">01 &nbsp;The industry</a>
     <a href="#gap">02 &nbsp;The gap</a>
@@ -260,8 +264,7 @@ footer{
 
 <section id="industry">
   <div class="shead"><span class="snum">01</span><h2>What the industry actually certifies</h2></div>
-  <p class="lede">Start here, because almost everyone has this backwards — including people selling
-  you software.</p>
+  <p class="lede">Worth establishing first, because it is commonly misunderstood.</p>
 
   <blockquote class="ps">
     <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
@@ -312,7 +315,7 @@ footer{
   </figure>
 
   <div class="call">
-    <span class="lab">The conclusion that matters</span>
+    <span class="lab">What follows from that</span>
     <p>The largest BIM vendor on earth, facing every jurisdiction on earth, certifies
     <strong>&ldquo;I don&rsquo;t corrupt your data&rdquo;</strong> &mdash; and leaves &ldquo;is this
     building lawful&rdquo; to the practice.</p>
@@ -339,8 +342,7 @@ footer{
   in each case.</p>
 
   <h3>A model can be almost entirely missing and still look fine</h3>
-  <p>This is the one to know about, because it fails <em>quietly</em>. Past a 4 GB boundary during
-  export, geometry generation stops. There is no crash and no error message. The file opens. It
+  <p>Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error message. The file opens. It
   renders. It looks like a building.</p>
 
   <figure>
@@ -446,7 +448,7 @@ footer{
     <div class="hb"><span class="n">Stated target</span><span class="t"><span class="f" style="width:100%;background:var(--surface-3)"></span></span><span class="v">200+</span></div>
     <figcaption><b>Source</b>Project rule inventory. 30 UBBL rules implemented against a stated target
     of 200+ across six jurisdictions. <strong>The architecture is proven; the rule population is the
-    work ahead.</strong> Shown here because a roadmap that hides its own gap is marketing.</figcaption>
+    work ahead.</strong></figcaption>
   </figure>
 
   <h3>The industry picture starts empty</h3>
@@ -458,8 +460,8 @@ footer{
       <span class="t">No assessments have been submitted yet. As responses accumulate, this becomes a
       real industry picture &mdash; built from practitioners rather than asserted.</span>
     </div>
-    <figcaption><b>Source</b>Live count of submitted assessments. There is deliberately no estimate,
-    no projection and no illustrative figure here. When we do not have a number, the page says so.</figcaption>
+    <figcaption><b>Source</b>Live count of submitted assessments. No estimate, projection or illustrative figure is
+    shown in its place.</figcaption>
   </figure>
 </section>
 

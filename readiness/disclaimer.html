@@ -230,16 +230,19 @@ footer{
   figure{padding:18px 16px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
 </style>
 <div class="wrap">
 
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Disclaimer Notice</small></div>
-  <div class="topspacer"></div>
-  <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-  <a class="ghostbtn" href="proposal.html">Proposal</a>
-  <a class="ghostbtn" href="./">Back to assessment</a>
+  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html">Background</a><a href="faq.html">Basics</a><a href="disclaimer.html" class="on">Notice</a></div>
 </div>
 
 <div class="hero">
@@ -328,10 +331,9 @@ footer{
   in the UAE. The full proposal is reproduced at <a href="proposal.html">The research proposal</a>.</p>
 
   <h3>Funding</h3>
-  <p>Supported by a research grant awarded to Mohd Faizal Bin Yusof at
-  <strong>[institution]</strong>, reference <strong>[grant reference]</strong>, value US$5,000.
-  Software development was contracted separately to REFREX SDN BHD under quotation
-  QTN.KFK.260703-01.</p>
+  <p>Supported by a research grant awarded to Mohd Faizal Bin Yusof, value US$5,000. Software
+  development was contracted separately to REFREX SDN BHD under quotation QTN.KFK.260703-01. Full
+  award details are published with the first citable release.</p>
   <p>The funder had no role in the design of the assessment framework, the collection or analysis of
   responses, the writing of any report, or the decision to submit for publication.</p>
 
@@ -361,8 +363,9 @@ footer{
   it will be optional and anonymous, with the exact payload shown before sending.</p>
 
   <h3>Ethics</h3>
-  <p><strong>[Ethics position to be stated by the researcher.]</strong> The toolkit collects no
-  participant data in its current version.</p>
+  <p>The toolkit collects no participant data in its current version. Any ethics determination for
+  the wider study rests with the researcher's institution and is published with the first citable
+  release.</p>
 
   <h3>Use of generative AI</h3>
   <p>Generative AI was used in developing this toolkit and in preparing its documentation. All
@@ -373,9 +376,9 @@ footer{
   a respondent&rsquo;s behalf.</p>
 
   <h3>Licence and citation</h3>
-  <p>Source code: <strong>[licence to be selected]</strong>, available at
-  <span class="mono">github.com/red1oon/bim-ootb</span> under <span class="mono">readiness/</span>.
-  Cite as <strong>[DOI to be minted on the tagged release]</strong>.</p>
+  <p>Source code is available at <span class="mono">github.com/red1oon/bim-ootb</span> under
+  <span class="mono">readiness/</span>. Licence terms and a citable DOI are issued with the first
+  tagged release; until then this is a pre-release draft and should not be cited.</p>
 
   <h3>Status</h3>
   <p>Research instrument in development. Criteria, thresholds and weightings are subject to expert

@@ -1,4 +1,4 @@
-<title>Plain Answers</title>
+<title>OpenBIM Basics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -253,42 +253,45 @@ footer{
 .gterm dt{font-family:"Instrument Sans",sans-serif;font-weight:600;font-size:14.5px;color:var(--ink);margin:0}
 .gterm dd{margin:0;font-size:15px;color:var(--ink-2);line-height:1.55}
 @media (max-width:600px){.gterm{grid-template-columns:1fr;gap:5px}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
 </style>
 <div class="wrap">
 
 <div class="topbar">
   <div class="brandmark">OB</div>
-  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Plain answers</small></div>
-  <div class="topspacer"></div>
-  <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-  <a class="ghostbtn" href="./">Back to assessment</a>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Basics</small></div>
+  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html">Background</a><a href="faq.html" class="on">Basics</a><a href="disclaimer.html">Notice</a></div>
 </div>
 
 <div class="hero">
-  <p class="eyebrow">Plain answers</p>
-  <h1>The questions people feel they should already know the answer to.</h1>
-  <p class="standfirst">Nobody asks these out loud. They are all reasonable questions, several of them
-  are the whole point, and one of them is answered wrongly by most of the industry.</p>
+  <p class="eyebrow">Basics</p>
+  <h1>What OpenBIM is, and what this assessment does.</h1>
+  <p class="standfirst">Short answers to the questions that come up most often, and the terms the
+  assessment uses.</p>
 </div>
 
 <section>
   <div class="shead"><span class="snum">01</span><h2>The basics</h2></div>
   <div class="qa">
-<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong> — designing with a model that carries data, not just lines. OpenBIM is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information. It is published by buildingSMART, an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to \u201cdeliver in IFC\u201d, this is what was meant.</p></div></details><details><summary>My software already has an \u201cexport to IFC\u201d button. Isn't that it?</summary><div class="a"><p>That button is where it starts, not where it ends. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p><strong>That gap is exactly what this assessment measures.</strong> Most exports open fine and carry far less than the sender assumes.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No, and this assessment will not tell you to. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
+<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong> — designing with a model that carries data, not just lines. OpenBIM is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information. It is published by buildingSMART, an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to \u201cdeliver in IFC\u201d, this is what was meant.</p></div></details><details><summary>My software already has an \u201cexport to IFC\u201d button. Isn't that it?</summary><div class="a"><p>That button is where it starts, not where it ends. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p>Most exports open fine and carry far less than the sender assumes. That gap is what this assessment measures.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
   </div>
 </section>
 
 <section>
   <div class="shead"><span class="snum">02</span><h2>About this assessment</h2></div>
   <div class="qa">
-<details><summary>What do I need before I start?</summary><div class="a"><p>About fifteen minutes. Optionally one IFC file. No account, no sign-up, no API key, no payment.</p></div></details><details><summary>What if I don't have an IFC file?</summary><div class="a"><p>You can still take it. You get the organisational half of the assessment, and the report says plainly that the model half was not measured — it does not guess, and it does not score you down for the absence.</p></div></details><details><summary>Will you see my model?</summary><div class="a"><p>No. The file is read <strong>inside your browser</strong> and is never uploaded. There is no server to upload it to. If you choose to submit results at the end, you are shown the exact payload first, and it contains only numbers and fixed categories — no file, no names, no coordinates.</p></div></details><details><summary>What is the catch? Who is paying for this?</summary><div class="a"><p>It is a research instrument, developed under an academic research grant, and free to use. The platform it references as a worked example is open source. The full proposal is published at <a href="proposal.html">The research proposal</a>.</p><p>The honest commercial disclosure: the people who built it also build that open-source platform. That is why the assessment scores you against <em>published standards</em> rather than against any product, and why it can return \u201cthe open route is not viable for you yet\u201d.</p></div></details><details><summary>Am I too small for this?</summary><div class="a"><p>No. Targets are proportionate to firm size and project type — a four-person practice is not measured against what a 200-person firm should be doing. That was a deliberate design decision.</p></div></details><details><summary>Is this only for BIM managers?</summary><div class="a"><p>No. It is for anyone who delivers or receives building information — principals, project managers, contractors, owners, facilities teams. If you have ever been asked for a model, or been handed one, the questions will make sense.</p></div></details><details><summary>What do I get at the end?</summary><div class="a"><p>A readiness profile across five areas, a gap analysis showing where you stand against a proportionate target, an ordered set of recommendations, and — if you supplied a file — the places where your model disagreed with your answers. Downloadable as a PDF.</p></div></details>
+<details><summary>What do I need before I start?</summary><div class="a"><p>About fifteen minutes. Optionally one IFC file. No account, no sign-up, no API key, no payment.</p></div></details><details><summary>What if I don't have an IFC file?</summary><div class="a"><p>You can still take it. You get the organisational half of the assessment, and the report says plainly that the model half was not measured — it does not guess, and it does not score you down for the absence.</p></div></details><details><summary>Will you see my model?</summary><div class="a"><p>No. The file is read <strong>inside your browser</strong> and is never uploaded. There is no server to upload it to. If you choose to submit results at the end, you are shown the exact payload first, and it contains only numbers and fixed categories — no file, no names, no coordinates.</p></div></details><details><summary>What is the catch? Who is paying for this?</summary><div class="a"><p>It is a research instrument, developed under an academic research grant, and free to use. The platform it references as a worked example is open source. The full proposal is published at <a href="proposal.html">The research proposal</a>.</p><p>The people who built it also build that open-source platform. That is why the assessment scores you against <em>published standards</em> rather than against any product, and why it can return \u201cthe open route is not viable for you yet\u201d.</p></div></details><details><summary>Am I too small for this?</summary><div class="a"><p>No. Targets are proportionate to firm size and project type. A four-person practice is not measured against what a 200-person firm should be doing.</p></div></details><details><summary>Is this only for BIM managers?</summary><div class="a"><p>No. It is for anyone who delivers or receives building information — principals, project managers, contractors, owners, facilities teams. If you have ever been asked for a model, or been handed one, the questions will make sense.</p></div></details><details><summary>What do I get at the end?</summary><div class="a"><p>A readiness profile across five areas, a gap analysis showing where you stand against a proportionate target, an ordered set of recommendations, and — if you supplied a file — the places where your model disagreed with your answers. Downloadable as a PDF.</p></div></details>
   </div>
 </section>
 
 <section>
   <div class="shead"><span class="snum">03</span><h2>Words the assessment uses</h2></div>
-  <p class="lede">If a question uses a term you do not use day to day, it is here. Not knowing these
-  is not a failing — several are UK or ISO vocabulary that never travelled.</p>
+  <p class="lede">Terms used in the assessment questions.</p>
   <dl class="gloss">
     <div class="gterm"><dt>IFC</dt><dd>The open file format for building information. Published by buildingSMART; readable by any tool.</dd></div>
     <div class="gterm"><dt>IFC schema version</dt><dd>Which edition of IFC a file uses — IFC2x3, IFC4, IFC4x3. They differ in what can be expressed, which is why contracts increasingly name one.</dd></div>
@@ -305,14 +308,14 @@ footer{
 </section>
 
 <div class="cta">
-  <h3>Still nothing here that answers it?</h3>
+  <h3>Not covered here?</h3>
   <p>The background reading goes deeper on why any of this matters, and the Disclaimer Notice covers
   what this assessment can and cannot be used for.</p>
   <a class="btn" href="./">Take the assessment</a>
 </div>
 
 <footer>
-  Plain answers &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
+  Basics &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
   <a href="proposal.html">The research proposal</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="disclaimer.html">Disclaimer Notice</a>
 </footer>
 
