@@ -236,6 +236,22 @@ footer{
   border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
 .nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
 .nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
 </style>
 
 <div class="wrap">
@@ -326,10 +342,16 @@ footer{
   </div>
 
   <h3>The mandates are already in force</h3>
-  <p>Since <strong>1 July 2025</strong>, BIM is mandatory for Malaysian projects of RM 10 million and
-  above, public and private, under the Construction 4.0 Strategic Plan &mdash; with deliverables
-  expected to follow CIDB BIM Guidelines and hand over LOD 500 models conforming to PeDATA and SKATA.
-  Other jurisdictions are moving on their own timetables.</p>
+  <p>Since <strong>1 July 2025</strong>, BIM has been mandatory for Malaysian <strong>government</strong>
+  development projects valued at RM 10 million and above, under Ministry of Finance circular
+  PK 1.15.<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> Private-sector adoption is encouraged rather than required. CIDB publishes
+  BIM guidance for project delivery separately from that circular.<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup></p>
+
+  <p>Other jurisdictions are on their own timetables. The United Kingdom required collaborative BIM
+  Level 2 on centrally-funded public projects from April 2016.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> Singapore phases
+  mandatory BIM e-submission by project size.<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> The European Union&rsquo;s public
+  procurement directive is permissive rather than mandatory &mdash; it allows member states to require
+  BIM tools for public works, but does not itself require them.<sup class="fn"><a href="#ref5" id="fnref5">5</a></sup></p>
 
   <p>This produces the situation the toolkit addresses: a specific deliverable is required, the
   software does not promise to produce it, and no established method measures the distance between
@@ -420,7 +442,7 @@ footer{
   <p>The assessment scores each of governance, people and skills, technology, data and standards, and
   organisational processes on one shared capability ladder. The levels are the six capability levels
   defined by <strong>ISO/IEC 33020</strong>, the international standard for process capability
-  measurement, which states it is applicable to any domain.</p>
+  measurement, which states it is applicable to any domain.<sup class="fn"><a href="#ref6" id="fnref6">6</a></sup></p>
   <p>They measure <strong>institutionalisation</strong> rather than individual initiative. A firm
   where one engineer exports IFC by hand sits at Performed: the practice occurs, but it is not
   planned, managed or maintained.</p>
@@ -533,6 +555,40 @@ footer{
     dependencies to fetch.</p>
     <p class="mono" style="font-size:13px;color:var(--muted)">openbim-readiness-toolkit-v0.1.zip</p>
   </div>
+</section>
+
+<section id="references">
+  <div class="shead"><span class="snum">&mdash;</span><h2>References</h2></div>
+  <p class="lede">Regulatory and standards claims on this page, cited to the instrument.</p>
+  <ol class="refs">
+    <li id="ref1">Malaysia, Ministry of Finance, <em>Pekeliling Perbendaharaan PK 1.15 — Pelaksanaan Building
+      Information Modelling (BIM).</em> Effective <span class="loc">1 July 2025</span>; BIM mandatory for Government
+      development projects valued at RM 10 million and above. The circular is a Treasury instrument governing
+      government procurement: private-sector adoption is encouraged, not mandated.
+      <a class="back" href="#fnref1">↩</a></li>
+    <li id="ref2">CIDB Malaysia, <em>BIM Guides</em> (series). Published separately from PK 1.15. Reporting that ties
+      specific handover requirements — LOD 500, PeDATA and SKATA asset data — directly to the PK 1.15 mandate is
+      secondary commentary; those requirements have not been verified here against a primary CIDB or JKR document, and
+      are therefore not asserted on this page. <a class="back" href="#fnref2">↩</a></li>
+    <li id="ref3">United Kingdom, <em>Government Construction Strategy.</em> Required collaborative 3D BIM
+      (“BIM Level 2”) on centrally-funded public projects from <span class="loc">April 2016</span>.
+      <a class="back" href="#fnref3">↩</a></li>
+    <li id="ref4">Singapore, Building and Construction Authority (BCA), <em>BIM e-submission.</em> Mandatory BIM
+      e-submission introduced in phases by project size. <a class="back" href="#fnref4">↩</a></li>
+    <li id="ref5">European Union, <em>Directive 2014/24/EU on public procurement</em>, <span class="loc">Article
+      22(4)</span>: “For public works contracts and design contests, Member States <em>may require</em> the use of
+      specific electronic tools, such as of building information electronic modelling tools or similar.” The provision
+      is permissive; where such tools are required, contracting authorities “shall offer alternative means of access
+      until such time as those tools become generally available”. The directive is frequently miscited as an EU-wide
+      BIM mandate; it is not one. <a class="back" href="#fnref5">↩</a></li>
+    <li id="ref6">ISO/IEC 33020:2019, <em>Information technology — Process assessment — Process measurement framework
+      for assessment of process capability.</em> <span class="loc">§5.2.2–§5.2.7</span> define capability levels 0–5 as
+      Incomplete, Performed, Managed, Established, Predictable and Innovating — level 5 is <em>Innovating</em>, not the
+      older SPICE/CMMI “Optimizing”. <a class="back" href="#fnref6">↩</a></li>
+  </ol>
+  <p class="small" style="margin-top:18px;color:var(--muted);font-size:13.5px">Standards texts were read from the
+  publishers’ official preview documents; clause numbers and quoted wording are taken from those texts. Sources
+  verified 22 August 2026. Figures elsewhere on this page carry their own source line in the chart.</p>
 </section>
 
 <div class="cta">

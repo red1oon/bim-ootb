@@ -259,6 +259,22 @@ footer{
   border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
 .nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
 .nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
 </style>
 <div class="wrap">
 
@@ -278,7 +294,7 @@ footer{
 <section>
   <div class="shead"><span class="snum">01</span><h2>The basics</h2></div>
   <div class="qa">
-<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong> — designing with a model that carries data, not just lines. OpenBIM is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information. It is published by buildingSMART, an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to “deliver in IFC”, this is what was meant.</p></div></details><details><summary>My software already has an “export to IFC” button. Isn't that it?</summary><div class="a"><p>That button is the starting point, not the whole of it. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p>Exports frequently open without error while carrying less than the sender assumes. That gap is what this assessment measures.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
+<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong><sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> — designing with a model that carries data, not just lines. OpenBIM<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup> is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> It is published by buildingSMART,<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to “deliver in IFC”, this is what was meant.</p></div></details><details><summary>My software already has an “export to IFC” button. Isn't that it?</summary><div class="a"><p>That button is the starting point, not the whole of it. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p>Exports frequently open without error while carrying less than the sender assumes. That gap is what this assessment measures.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
   </div>
 </section>
 
@@ -293,18 +309,64 @@ footer{
   <div class="shead"><span class="snum">03</span><h2>Words the assessment uses</h2></div>
   <p class="lede">Terms used in the assessment questions.</p>
   <dl class="gloss">
-    <div class="gterm"><dt>IFC</dt><dd>The open file format for building information. Published by buildingSMART; readable by any tool.</dd></div>
+    <div class="gterm"><dt>IFC</dt><dd>The open file format for building information.<sup class="fn"><a href="#ref3">3</a></sup> Published by buildingSMART; readable by any tool.</dd></div>
     <div class="gterm"><dt>IFC schema version</dt><dd>Which edition of IFC a file uses — IFC2x3, IFC4, IFC4x3. They differ in what can be expressed, which is why contracts increasingly name one.</dd></div>
     <div class="gterm"><dt>Property set</dt><dd>A named group of data attached to an element — a wall's fire rating, a door's acoustic performance. Geometry without property sets is a shape, not information.</dd></div>
-    <div class="gterm"><dt>Classification</dt><dd>A standard code identifying what a thing <em>is</em>, from a published system such as Uniclass, OmniClass or MasterFormat. A file-naming convention is not classification.</dd></div>
+    <div class="gterm"><dt>Classification</dt><dd>A standard code identifying what a thing <em>is</em>, from a published system such as Uniclass, OmniClass or MasterFormat.<sup class="fn"><a href="#ref5" id="fnref5">5</a></sup> A file-naming convention is not classification.</dd></div>
     <div class="gterm"><dt>IfcSpace</dt><dd>A room or space as an object in the model, rather than as a gap between walls. Downstream uses — areas, FM, analysis — require these to exist.</dd></div>
-    <div class="gterm"><dt>CDE</dt><dd>Common Data Environment. The agreed place project information lives, with versions and status — not simply a shared drive.</dd></div>
-    <div class="gterm"><dt>EIR / AIR</dt><dd>Exchange and Asset Information Requirements: what the client says the model must contain, written down before the work starts.</dd></div>
-    <div class="gterm"><dt>Federated model</dt><dd>Discipline models combined for review without being merged into one file, so each stays owned by its author.</dd></div>
-    <div class="gterm"><dt>buildingSMART</dt><dd>The international non-profit that publishes IFC and certifies software for data-exchange fidelity — not for regulatory compliance.</dd></div>
-    <div class="gterm"><dt>ISO 19650</dt><dd>The international standard for managing information using BIM. It sets requirements; it does not define a maturity ladder.</dd></div>
-    <div class="gterm"><dt>Capability level</dt><dd>How reliably and repeatably your organisation does something, on the ISO/IEC 33020 scale of 0 to 5. It is not a grade, and it is not a compliance measure.</dd></div>
+    <div class="gterm"><dt>CDE</dt><dd>Common Data Environment.<sup class="fn"><a href="#ref6" id="fnref6">6</a></sup> The agreed place project information lives, with versions and status — not simply a shared drive.</dd></div>
+    <div class="gterm"><dt>EIR / AIR</dt><dd>Exchange and Asset Information Requirements:<sup class="fn"><a href="#ref7" id="fnref7">7</a></sup> what the client says the model must contain, written down before the work starts.</dd></div>
+    <div class="gterm"><dt>Federated model</dt><dd>Discipline models combined for review without being merged into one file,<sup class="fn"><a href="#ref8" id="fnref8">8</a></sup> so each stays owned by its author.</dd></div>
+    <div class="gterm"><dt>buildingSMART</dt><dd>The international non-profit that publishes IFC and certifies software for data-exchange fidelity<sup class="fn"><a href="#ref4">4</a></sup> — not for regulatory compliance.</dd></div>
+    <div class="gterm"><dt>ISO 19650</dt><dd>The international standard for managing information using BIM.<sup class="fn"><a href="#ref9" id="fnref9">9</a></sup> It sets requirements; it does not define a maturity ladder.</dd></div>
+    <div class="gterm"><dt>Capability level</dt><dd>How reliably and repeatably your organisation does something, on the ISO/IEC 33020 scale of 0 to 5.<sup class="fn"><a href="#ref10" id="fnref10">10</a></sup> It is not a grade, and it is not a compliance measure.</dd></div>
   </dl>
+</section>
+
+<section id="references">
+  <div class="shead"><span class="snum">04</span><h2>References</h2></div>
+  <p class="lede">Every definition above traces to one of these. Standards are cited to the clause.</p>
+  <ol class="refs">
+    <li id="ref1">ISO 19650-1:2018, <em>Organization and digitization of information about buildings and civil
+      engineering works, including building information modelling (BIM) — Information management using building
+      information modelling — Part 1: Concepts and principles.</em> <span class="loc">Term 3.3.14</span> defines BIM as
+      “use of a shared digital representation of a built asset to facilitate design, construction and operation
+      processes to form a reliable basis for decisions”. ISO 19650-1 attributes the definition to ISO 29481-1:2016, 3.2,
+      modified. <a class="back" href="#fnref1">↩</a></li>
+    <li id="ref2">buildingSMART International, <em>openBIM definition.</em> openBIM is a vendor-neutral collaborative
+      process permitting workflows based on neutral formats such as IFC, BCF and COBie.
+      <a class="back" href="#fnref2">↩</a></li>
+    <li id="ref3">ISO 16739-1:2024, <em>Industry Foundation Classes (IFC) for data sharing in the construction and
+      facility management industries — Part 1: Data schema.</em> <span class="loc">Current edition</span>, superseding
+      ISO 16739-1:2018; corresponds to IFC 4.3.2.0. <a class="back" href="#fnref3">↩</a></li>
+    <li id="ref4">buildingSMART International. Publishes the IFC schema and operates the software certification
+      programme, which verifies data-exchange fidelity against the IFC standard — not regulatory compliance.
+      <a class="back" href="#fnref4">↩</a></li>
+    <li id="ref5">ISO 12006-2:2015, <em>Building construction — Organization of information about construction works —
+      Part 2: Framework for classification.</em> Note that ISO 12006-2 is a <em>framework for developing</em>
+      classification systems: it does not itself provide an operational classification system or the content of the
+      tables. Uniclass, OmniClass and MasterFormat are separately published systems built to that framework.
+      <a class="back" href="#fnref5">↩</a></li>
+    <li id="ref6">ISO 19650-1:2018, <span class="loc">term 3.3.15</span>: common data environment (CDE), “agreed source
+      of information for any given project or asset, for collecting, managing and disseminating each information
+      container through a managed process”. <a class="back" href="#fnref6">↩</a></li>
+    <li id="ref7">ISO 19650-1:2018 separates these by what they relate to: <span class="loc">3.3.6</span> exchange
+      information requirements (EIR), “information requirements in relation to an appointment”;
+      <span class="loc">3.3.4</span> asset information requirements (AIR), “in relation to the operation of an asset”;
+      and <span class="loc">3.3.5</span> project information requirements (PIR), “in relation to the delivery of an
+      asset”. <a class="back" href="#fnref7">↩</a></li>
+    <li id="ref8">ISO 19650-1:2018, <span class="loc">term 3.3.11</span>: federation, “creation of a composite
+      information model from separate information containers”. <a class="back" href="#fnref8">↩</a></li>
+    <li id="ref9">ISO 19650 series, <em>Information management using building information modelling.</em> Parts 1–6.
+      Published by ISO/TC 59/SC 13. <a class="back" href="#fnref9">↩</a></li>
+    <li id="ref10">ISO/IEC 33020:2019, <em>Information technology — Process assessment — Process measurement framework
+      for assessment of process capability.</em> <span class="loc">§5.2.2–§5.2.7</span> define capability levels 0–5 as
+      Incomplete, Performed, Managed, Established, Predictable and Innovating.
+      <a class="back" href="#fnref10">↩</a></li>
+  </ol>
+  <p class="small" style="margin-top:18px;color:var(--muted);font-size:13.5px">Standards texts were read from the
+  publishers’ official preview documents; clause numbers and quoted wording are taken from those texts. Sources
+  verified 22 August 2026.</p>
 </section>
 
 <div class="cta">
