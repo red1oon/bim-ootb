@@ -241,15 +241,19 @@ footer{
 .dtable td.n{font-family:"IBM Plex Mono",monospace;color:var(--muted);white-space:nowrap}
 .dscroll{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--surface);margin:20px 0}
 .dscroll .dtable{margin:0}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
 </style>
 <div class="wrap">
 
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>The research proposal</small></div>
-  <div class="topspacer"></div>
-  <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-  <a class="ghostbtn" href="./">Back to assessment</a>
+  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html" class="on">Proposal</a><a href="why.html">Background</a><a href="faq.html">Basics</a><a href="disclaimer.html">Notice</a></div>
 </div>
 
 <div class="hero">
