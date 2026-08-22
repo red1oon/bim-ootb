@@ -4,6 +4,39 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.50.0](https://github.com/red1oon/bim-ootb/compare/v1.49.2...v1.50.0) (2026-08-22)
+
+
+### ✨ Features
+
+* **4d:** §S50 cell-grain schedule — (location, trade) ordering with per-building gate, graph engine retired where data supports it ([#1442](https://github.com/red1oon/bim-ootb/issues/1442)) ([eb832c1](https://github.com/red1oon/bim-ootb/commit/eb832c14fedc4983fc445853c649da5108743a81))
+* **4d:** §S51 — the Gantt reads the cell schedule (item d, drawer half) + the accepted-residue composition profile ([#1444](https://github.com/red1oon/bim-ootb/issues/1444)) ([81cdf27](https://github.com/red1oon/bim-ootb/commit/81cdf271558c538d27107cdc85e0f2c03556e9b9))
+* **4d:** §S55 witness — authored task identity vs the §S51 cell grain, measured ([#1448](https://github.com/red1oon/bim-ootb/issues/1448)) ([cab9ad5](https://github.com/red1oon/bim-ootb/commit/cab9ad5f4da560a297b98d3f807d9f393553f9bb))
+* **4d:** §S58 observability — the log lines that would have caught things ([#1449](https://github.com/red1oon/bim-ootb/issues/1449)) ([7b99405](https://github.com/red1oon/bim-ootb/commit/7b99405d80cc7ec94f03e71526ddeca49bcbedc8))
+* **4d:** the Gantt refuses edits while the film is recording (§TM_BAKE_LOCK, §S56) ([#1460](https://github.com/red1oon/bim-ootb/issues/1460)) ([06084f9](https://github.com/red1oon/bim-ootb/commit/06084f982417283021d1a938f07449c70da20d0b))
+* **readiness:** "Read more" explainer page, and wire the ? button to it ([#1451](https://github.com/red1oon/bim-ootb/issues/1451)) ([af6b168](https://github.com/red1oon/bim-ootb/commit/af6b16878b65425212acdb891301f05ab1a01b4e))
+* **readiness:** OpenBIM Readiness Assessment Toolkit — UI mockup for review ([#1450](https://github.com/red1oon/bim-ootb/issues/1450)) ([a98b62c](https://github.com/red1oon/bim-ootb/commit/a98b62cf4938e555e0b5d824ce6de7a6d1f4053c))
+* **readiness:** publish the research proposal in full, declarations, and plain answers ([#1461](https://github.com/red1oon/bim-ootb/issues/1461)) ([2c03a31](https://github.com/red1oon/bim-ootb/commit/2c03a317824bf5e22dcbef8d80a5bd6c1c1f38ef))
+
+
+### 🐛 Fixes
+
+* **4d:** the ERP-twin loaders never guess a building (§S54, item F2) ([#1447](https://github.com/red1oon/bim-ootb/issues/1447)) ([6dab2d1](https://github.com/red1oon/bim-ootb/commit/6dab2d1ab9282ce411258da00168e0d515e91263))
+* re-land the two follow-up commits that [#1452](https://github.com/red1oon/bim-ootb/issues/1452)/[#1453](https://github.com/red1oon/bim-ootb/issues/1453) squash-merges orphaned ([#1454](https://github.com/red1oon/bim-ootb/issues/1454)) ([2d60bdc](https://github.com/red1oon/bim-ootb/commit/2d60bdc5f49bde8b155a156b52705035b03ba39a))
+
+
+### 📝 Documentation
+
+* **4d:** code-side pointers for the midair judge divergence (ref §S58.5), with the measurement ([#1457](https://github.com/red1oon/bim-ootb/issues/1457)) ([db591fb](https://github.com/red1oon/bim-ootb/commit/db591fbde168864d33e977e8ac73334b31c9ad99))
+* **readiness:** adopt the funded proposal's language across both pages ([#1456](https://github.com/red1oon/bim-ootb/issues/1456)) ([f08d16b](https://github.com/red1oon/bim-ootb/commit/f08d16ba372f7abc63a9a3e3d8d3e04872dfe725))
+
+
+### ♻️ Refactors
+
+* **4d:** extract the Gantt bar model out of time_machine.js (§S53, item F3) ([#1446](https://github.com/red1oon/bim-ootb/issues/1446)) ([a0885e2](https://github.com/red1oon/bim-ootb/commit/a0885e2010e1b3f65a8db9c074da40cc2e647a7e))
+* **4d:** extract the support-order physics into viewer/support_sweep.js (§S58) ([#1455](https://github.com/red1oon/bim-ootb/issues/1455)) ([876face](https://github.com/red1oon/bim-ootb/commit/876face1a0a8d1a49445081119fbd7c3c5e42e63))
+* **4d:** extract the zone-index builder into viewer/zone_index.js (§S62), retiring a dead witness ([#1459](https://github.com/red1oon/bim-ootb/issues/1459)) ([90573ce](https://github.com/red1oon/bim-ootb/commit/90573ce5ce72f28faada975d903f526bbee75159))
+
 ## [1.49.2](https://github.com/red1oon/bim-ootb/compare/v1.49.1...v1.49.2) (2026-08-20)
 
 
