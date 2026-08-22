@@ -248,8 +248,8 @@ footer{
 
 <div class="hero">
   <p class="eyebrow">Why this exists</p>
-  <h1>Everyone is telling you to open your data. Nobody is telling you what that costs.</h1>
-  <p class="standfirst">What the industry actually certifies, where delivered models stand today, and
+  <h1>Background to the readiness assessment</h1>
+  <p class="standfirst">What the industry certifies, where delivered models stand today, and
   what closing the gap involves.</p>
   <nav class="jump">
     <a href="#industry">01 &nbsp;The industry</a>
@@ -263,8 +263,8 @@ footer{
 </div>
 
 <section id="industry">
-  <div class="shead"><span class="snum">01</span><h2>What the industry actually certifies</h2></div>
-  <p class="lede">Worth establishing first, because it is commonly misunderstood.</p>
+  <div class="shead"><span class="snum">01</span><h2>What the industry certifies</h2></div>
+  <p class="lede">Established first, because it is commonly misunderstood.</p>
 
   <blockquote class="ps">
     <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
@@ -286,10 +286,10 @@ footer{
   <p>A small number of vendors own practical BIM today. That bought real maturity, and it charged for
   it in ways that only surface later — formats one application fully understands and others
   approximate, licences that scale with headcount, and model data whose readability depends on
-  keeping a subscription alive. The sharpest version belongs to the asset owner: <strong>a building
-  outlives the software that modelled it by decades.</strong></p>
+  keeping a subscription alive. The consideration is most acute for the asset owner: a building
+  outlives the software that modelled it by decades.</p>
 
-  <p>So it is worth asking what the largest vendor on earth certifies about its own software.</p>
+  <p>It is therefore worth examining what Autodesk certifies about its own software.</p>
 
   <figure>
     <h4>What Autodesk holds certification for</h4>
@@ -316,37 +316,36 @@ footer{
 
   <div class="call">
     <span class="lab">What follows from that</span>
-    <p>The largest BIM vendor on earth, facing every jurisdiction on earth, certifies
-    <strong>&ldquo;I don&rsquo;t corrupt your data&rdquo;</strong> &mdash; and leaves &ldquo;is this
-    building lawful&rdquo; to the practice.</p>
-    <p>That is not a gap in their product. It is the correct division of responsibility: local-authority
+    <p>The certifications cover interoperability &mdash; that files are imported and exported in
+    accordance with the relevant IFC standard. They do not cover whether a building is lawful, which
+    remains with the practice.</p>
+    <p>This is the correct division of responsibility rather than a gap in the product: local-authority
     compliance sits with the Appointing Party and the Lead Appointed Party. Software is never a legal
-    party to it. Anyone selling you &ldquo;compliance certified&rdquo; software is selling something
-    that does not exist as a category.</p>
+    party to it. No vendor holds certification for local-authority compliance in any jurisdiction; the
+    category does not exist.</p>
   </div>
 
-  <h3>Meanwhile the mandates arrive anyway</h3>
+  <h3>The mandates are already in force</h3>
   <p>Since <strong>1 July 2025</strong>, BIM is mandatory for Malaysian projects of RM 10 million and
   above, public and private, under the Construction 4.0 Strategic Plan &mdash; with deliverables
   expected to follow CIDB BIM Guidelines and hand over LOD 500 models conforming to PeDATA and SKATA.
   Other jurisdictions are moving on their own timetables.</p>
 
-  <p>Which produces the situation this toolkit exists for: <strong>you are being asked to deliver
-  something specific, the software you own does not promise to deliver it, and nothing tells you how
-  far off you are.</strong></p>
+  <p>This produces the situation the toolkit addresses: a specific deliverable is required, the
+  software does not promise to produce it, and no established method measures the distance between
+  the two.</p>
 </section>
 
 <section id="gap">
-  <div class="shead"><span class="snum">02</span><h2>Where models actually stand</h2></div>
-  <p class="lede">Not opinion. Numbers measured from real delivered models, with the building named
-  in each case.</p>
+  <div class="shead"><span class="snum">02</span><h2>Where delivered models stand</h2></div>
+  <p class="lede">Figures measured from delivered models, with the building named in each case.</p>
 
-  <h3>A model can be almost entirely missing and still look fine</h3>
-  <p>Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error message. The file opens. It
-  renders. It looks like a building.</p>
+  <h3>A truncated model can be almost entirely absent and still open without error</h3>
+  <p>Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error
+  message; the file opens and renders.</p>
 
   <figure>
-    <h4>One real truncated export</h4>
+    <h4>One measured truncated export</h4>
     <p class="fsub">Elements delivered vs. elements silently absent</p>
     <div class="stack" aria-label="6 percent delivered, 94 percent absent">
       <div class="seg a" style="flex:6">6%</div>
@@ -357,13 +356,13 @@ footer{
       <span><i class="sw w"></i>no error shown</span>
     </div>
     <figcaption><b>Source</b>Measured export failure documented in the project&rsquo;s own IFC export
-    guide. Export died at element #3,956 of the model and reported success.
-    <strong>A reviewer can sign off on a model that is almost entirely absent.</strong></figcaption>
+    guide. Export stopped at element #3,956 of the model and reported success.
+    A model that is almost entirely absent can therefore pass review.</figcaption>
   </figure>
 
-  <h3>The expensive part is geometry. The useful part is almost free.</h3>
-  <p>When a model is extracted into a database, it becomes obvious where the weight sits &mdash; and
-  it is not where most delivery effort goes.</p>
+  <h3>Geometry accounts for most of the file; the semantic data does not</h3>
+  <p>When a model is extracted into a database, the distribution of storage between geometry and
+  semantics becomes measurable.</p>
 
   <figure>
     <h4>Where the bytes go in an extracted model</h4>
@@ -378,31 +377,31 @@ footer{
     </div>
     <figcaption><b>Source</b>Measured with <span class="mono">dbstat</span> on the Hospital extraction.
     Relationship data &mdash; the part that makes a model queryable rather than merely viewable &mdash;
-    is roughly 0.2% of the file. The industry rations the cheap part.</figcaption>
+    is roughly 0.2% of the file.</figcaption>
   </figure>
 
-  <h3>And the data that should be there, usually isn&rsquo;t</h3>
+  <h3>Coverage of classification data</h3>
 
   <figure>
     <h4>Classification coverage in one delivered model</h4>
     <p class="fsub">Hospital building &mdash; elements carrying a classification code</p>
     <div class="bignum">
       <span class="n">7.11%</span>
-      <span class="t">of 63,917 elements carry a classification code. Of those that do,
-      <strong>every single one is well-formed</strong> &mdash; zero invalid codes.</span>
+      <span class="t">of 63,917 elements carry a classification code. Every code present is
+      well-formed &mdash; zero invalid codes.</span>
     </div>
     <figcaption><b>Source</b>Measured on re-extraction of the Hospital model, 2026-07-31.
     <strong>This is one building&rsquo;s number and must not be read as an industry figure.</strong>
-    It illustrates a pattern worth checking on your own model, which is what the assessment does.
-    Note also what it shows about verdicts: judged on validity alone this model passes perfectly.
-    Judged on coverage it is almost empty. <em>Both numbers have to be read together, which is why
-    this toolkit never reports a single headline score.</em></figcaption>
+    It indicates a pattern worth checking on an individual model, which is what the assessment does.
+    It also shows why validity and coverage are reported separately: judged on validity alone this
+    model passes; judged on coverage it is close to empty. Both are reported together, and no single
+    headline score is produced.</figcaption>
   </figure>
 
-  <h3>Even file bulk has a threshold</h3>
+  <h3>File bulk has a delivery threshold</h3>
   <figure>
     <h4>Entities per element &mdash; delivery thresholds</h4>
-    <p class="fsub">A rough measure of whether anyone else can open what you send</p>
+    <p class="fsub">A measure of whether other tools can open the delivered file</p>
     <div class="bands">
       <div class="band g"><b>&lt; 50</b>Target &mdash; exports cleanly, opens everywhere</div>
       <div class="band m"><b>50 &ndash; 200</b>Acceptable &mdash; large but workable</div>
@@ -416,16 +415,15 @@ footer{
 
 <section id="roadmap">
   <div class="shead"><span class="snum">03</span><h2>What closing the gap involves</h2></div>
-  <p class="lede">Readiness is not one thing you either have or lack. It is five, and they fail
-  independently.</p>
+  <p class="lede">Readiness is assessed across five dimensions, which vary independently.</p>
 
   <p>The assessment scores each of governance, people and skills, technology, data and standards, and
-  organisational processes on one shared capability ladder. The rungs are not ours: they are the six
-  capability levels defined by <strong>ISO/IEC 33020</strong>, the international standard for process
-  capability measurement, which states it is applicable to any domain.</p>
-  <p>They measure <strong>institutionalisation</strong> rather than enthusiasm. A firm where one keen
-  engineer exports IFC by hand sits at Performed, not higher &mdash; it is not more mature than a firm
-  that never tried, it is differently fragile.</p>
+  organisational processes on one shared capability ladder. The levels are the six capability levels
+  defined by <strong>ISO/IEC 33020</strong>, the international standard for process capability
+  measurement, which states it is applicable to any domain.</p>
+  <p>They measure <strong>institutionalisation</strong> rather than individual initiative. A firm
+  where one engineer exports IFC by hand sits at Performed: the practice occurs, but it is not
+  planned, managed or maintained.</p>
 
   <div class="ladder">
     <div class="rung"><span class="l">L0</span><div><b>Incomplete</b><p>Not present, or it fails to achieve its purpose.</p></div></div>
@@ -436,9 +434,9 @@ footer{
     <div class="rung"><span class="l">L5</span><div><b>Innovating</b><p>Those measurements drive continuous change to how the work is done.</p></div></div>
   </div>
 
-  <h3>Jurisdiction rules are data, not code &mdash; and they are being built</h3>
-  <p>Requirements differ by country, so they are carried in swappable rule packs rather than baked
-  into the instrument. That work is partial and the chart says so.</p>
+  <h3>Jurisdiction rules are carried as data, not code</h3>
+  <p>Requirements differ by jurisdiction, so they are carried in versioned rule packs rather than
+  embedded in the instrument. Coverage is partial; the current state is shown below.</p>
 
   <figure>
     <h4>Jurisdiction rule coverage</h4>
@@ -447,8 +445,7 @@ footer{
     <div class="hb"><span class="n">SG · UK · AU · US · EU · HK</span><span class="t"><span class="f" style="width:0%"></span></span><span class="v">0</span></div>
     <div class="hb"><span class="n">Stated target</span><span class="t"><span class="f" style="width:100%;background:var(--surface-3)"></span></span><span class="v">200+</span></div>
     <figcaption><b>Source</b>Project rule inventory. 30 UBBL rules implemented against a stated target
-    of 200+ across six jurisdictions. <strong>The architecture is proven; the rule population is the
-    work ahead.</strong></figcaption>
+    of 200+ across six jurisdictions. The remaining rules are outstanding work.</figcaption>
   </figure>
 
   <h3>The industry picture starts empty</h3>
@@ -457,8 +454,8 @@ footer{
     <p class="fsub">The benchmark this toolkit builds</p>
     <div class="bignum">
       <span class="n ok">0</span>
-      <span class="t">No assessments have been submitted yet. As responses accumulate, this becomes a
-      real industry picture &mdash; built from practitioners rather than asserted.</span>
+      <span class="t">No assessments have been submitted yet. As responses accumulate, this figure
+      becomes an industry picture built from practitioner reports.</span>
     </div>
     <figcaption><b>Source</b>Live count of submitted assessments. No estimate, projection or illustrative figure is
     shown in its place.</figcaption>
@@ -518,16 +515,16 @@ footer{
 
 <section id="offline">
   <div class="shead"><span class="snum">&mdash;</span><h2>Run it on your own machine</h2></div>
-  <p class="lede">If your IT policy will not let a model near a browser tab, take the whole thing
-  offline instead.</p>
+  <p class="lede">Where IT policy does not permit a model to be opened in a browser tab, the
+  assessment can be run entirely offline.</p>
 
-  <p>The assessment is a set of static files with no server, no database and no accounts. That means
-  it can simply be downloaded and opened from your own disk &mdash; the same assessment, the same
-  scoring, with no network involved at any point.</p>
+  <p>The assessment is a set of static files with no server, no database and no accounts. It can be
+  downloaded and opened from local disk &mdash; the same assessment and the same scoring, with no
+  network involved at any point.</p>
 
-  <p>Useful when your models are commercially sensitive, when your firm works air-gapped, when you are
-  on site with no connection, or when you would simply rather verify for yourself that nothing is
-  being transmitted. Unzip it, open the file, and read the source if you want to.</p>
+  <p>This applies where models are commercially sensitive, where the firm works air-gapped, where
+  there is no connection on site, or where the organisation wishes to verify directly that nothing is
+  transmitted. The archive is unzipped and opened directly, and the source is readable.</p>
 
   <div class="call">
     <span class="lab">What&rsquo;s in the download</span>
@@ -539,7 +536,7 @@ footer{
 </section>
 
 <div class="cta">
-  <h3>Find out where you actually stand</h3>
+  <h3>The assessment</h3>
   <p>Twenty questions and one IFC file, read inside your browser. About fifteen minutes.</p>
   <a class="btn" href="./">Start the assessment</a>
 </div>
