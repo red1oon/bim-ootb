@@ -5994,8 +5994,32 @@
   }
 
   // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
+  // ── §TM_BAKE_LOCK — the film plays this timeline; do not edit it mid-record ───────────────────
+  // Implementing bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S56.
+  // User's rule, verbatim: "Alt-S movie making is a separation of concern. It runs the TM to record
+  // the movie. User should not do both same time to avoid conflict." Until now that was DISCIPLINE,
+  // not code: cinema_maxq.js sets A._maxqActive (:884) and dlod_nav.js/panels.js both honour it,
+  // while time_machine.js — the thing being recorded — never read it at all.
+  // The busy triple is the SAME one tmWarmXrayElements already uses below (see its comment: the
+  // flags dlod_nav.js names as "not idle"). Extracted from that list rather than invented; there is
+  // deliberately no new bake flag on APP, because a second source of truth is how these drift.
+  // Refusal is LOUD and returns — never a silent no-op, never a queued edit applied after the bake.
+  function _tmBusyRecording(app) {
+    if (!app) return null;
+    if (app._maxqActive) return 'maxq_bake';
+    if (app._cinemaOrbitActive) return 'cinema_orbit';
+    if (app._stillRefineActive) return 'still_refine';
+    return null;
+  }
+
   function commitGanttDrag(bar, mode, deltaDays) {
     var app = A();
+    var _tmBusy = _tmBusyRecording(app);
+    if (_tmBusy) {
+      console.log('§TM_BAKE_LOCK refused=commitGanttDrag reason=' + _tmBusy +
+        ' — the film is playing this timeline; editing it mid-record would desync the recording');
+      return;
+    }
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.moveTaskCascade) {
       console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
@@ -6331,6 +6355,12 @@
 
   function generateGanttSchedule() {
     var app = A();
+    var _tmBusy = _tmBusyRecording(app);
+    if (_tmBusy) {
+      console.log('§TM_BAKE_LOCK refused=generateGanttSchedule reason=' + _tmBusy +
+        ' — the film is playing this timeline; editing it mid-record would desync the recording');
+      return;
+    }
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) {

@@ -34,7 +34,12 @@ function sliceFn(src, name) {
 }
 
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+  // §S56: commitGanttDrag/generateGanttSchedule now call _tmBusyRecording (the §TM_BAKE_LOCK
+  // guard). Declared here because a sliced function cannot state its own dependencies — the
+  // same undeclared-dep class that killed two witnesses in §S62. Adding the name is the fix;
+  // the suite runner caught the omission the moment the guard landed.
 const sliced = [
+  '_tmBusyRecording',
   'loadOps', '_retimeSpan', 'retimeTaskElements', 'commitGanttDrag', 'undoLastGanttEdit'
 ].map(function (n) { return sliceFn(tmSrc, n); }).join('\n');
 

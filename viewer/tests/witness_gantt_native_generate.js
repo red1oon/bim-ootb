@@ -41,6 +41,7 @@ const _verMatch = tmSrc.match(/var _GANTT_CACHE_VERSION = (\d+);/);
 if (!_verMatch) throw new Error('_GANTT_CACHE_VERSION not found in time_machine.js');
 const sliced = 'var _GANTT_CACHE_VERSION = ' + _verMatch[1] + ';\n' +
   'var _tmDisplayRemap = function () { return null; };\n' +
+  sliceFn(tmSrc, '_tmBusyRecording') + '\n' +   // §S56: the §TM_BAKE_LOCK guard the verb now calls
   sliceFn(tmSrc, 'generateGanttSchedule');
 
 function loadRules() {
