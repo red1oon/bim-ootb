@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1068';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1069';   // bump on each deploy; per-change detail is the git commit message.
 // v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
 // ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
 // model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).

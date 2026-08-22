@@ -84,6 +84,18 @@ const BUILDINGS = [
   // Hospital=0 Duplex=0 HHS=9 Clinic=1 LTU_AHouse=360 JKR=80. Terminal 8->12 is bisected and
   // explained in witness_tm_geo_order_cycles.js (which DOES lock it, count + composition); the rest
   // are recorded here so the next reader compares against a real number, not a stale one.
+  //
+  // RE-LOCKED 2026-08-22 (§S64, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S64) — Terminal 32->36,
+  // HHS 13->17, LTU_AHouse 626 (was 611). Three baselines moved UP and that is the INTENDED trade,
+  // not a regression: auditFloating stopped handing a stair flight a false hang-carrier above it
+  // (its tPool now mirrors hangGate's elPool) and stopped counting a wall whose crown rises past a
+  // promoted slab's underside (its wall pool now carries wallCarries' carry-at-top bound). An
+  // element that was being given a support it never had is now an HONEST §SUPPORT_UNCHECKED finding
+  // — named, counted, warn-only, never a gate. The exchange is exact: floating fell 462->362
+  // fleet-wide while unchecked rose 863->886, and every added warn is one of the elements whose
+  // false carrier was removed. Floating re-measured the same day: Terminal=0 Hospital=0 Duplex=0
+  // HHS=5 Clinic=0 LTU_AHouse=277 JKR=80 (the 350 remaining are the §SUPPORT_CYCLE fallback on
+  // JKR+LTU_AHouse — 350/350 measured cycle-set membership, an upstream modelling fact).
   // RE-MEASURED 2026-08-11 (closure pass, bigsup_after_fix.log) after the
   // 'slab_on_grade_substructure' name-override (rates.js/sequence_rules.json — slab-on-grade is
   // the 1c spec's own named ground-bearing class, pattern measured to exactly Duplex 4 + Clinic 4
@@ -94,10 +106,10 @@ const BUILDINGS = [
   // IfcPile SEQUENCE_RULES entry added the same pass (Gap A close) changed nothing anywhere —
   // latent by construction (no shipped building models the class; Terminal's real piles arrive
   // via the IfcSlab name-override). TOTAL 250→246.
-  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 32 },   // was bms:false/279
+  { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 36 },   // was bms:false/279; 32->36 §S64
   { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
-  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 13 },   // was 21
+  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 17 },   // was 21; 13->17 §S64
   { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
   // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
   // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
@@ -111,7 +123,7 @@ const BUILDINGS = [
   // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
   // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
   // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
-  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 611 },
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 626 },   // 611->626 §S64
   { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 
