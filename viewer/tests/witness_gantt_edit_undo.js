@@ -99,7 +99,12 @@ const BUILDING = process.argv[2] || 'Duplex';
     invalidateGanttModel: function () {}, computeDays: function () {}, drawGanttMini: function () {}, renderAtTime: function () {},
     // §GANTT_RETIME_RESYNC (PR #1240) added this call to every retime commit path; a cache/index
     // rebuild is a no-op here (the witness asserts on the DB rows, not the render caches)
-    _tmResyncAfterRetime: function () {}
+    _tmResyncAfterRetime: function () {},
+    // §GANTT_CPM_ANNOTATE (§S68) added a second such call to the same paths. Stubbed for the same
+    // reason — it only writes early_*/late_*/float/is_critical and this witness asserts on
+    // schedule_start/schedule_finish. That annotate cannot touch those columns is proven separately,
+    // on the real verb rather than a stub, by witness_gantt_cpm_annotate.js W-CPM-2.
+    _tmAnnotateCpm: function () {}
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nglobalThis.__ops = _ops = loadOps(); ' +

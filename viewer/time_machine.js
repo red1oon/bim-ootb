@@ -5552,6 +5552,12 @@
       var _idBars = 0;
       for (var bi = 0; bi < _ganttTasks.length; bi++) if (_ganttTasks[bi].taskId) _idBars++;
       console.log('§GANTT_MINI tasks=' + _ganttTasks.length + ' rebuild=' + _ganttRebuildN);
+      // §GANTT_CPM_ANNOTATE (§S68) — prime float/criticality ONCE per building, so the critical path
+      // is on screen before the first edit. Deliberately not per-rebuild: every rebuild past this one
+      // is edit-driven, and each edit path already re-annotates itself after its own retime, so a
+      // per-rebuild call would run CPM twice for every drag. Reset with the rest of the per-building
+      // state on deactivate.
+      if (!_cpmPrimed) { _cpmPrimed = true; _tmAnnotateCpm(); }
       // K0 proof line: how many bars carry a real tasks.task_id (i.e. are addressable by the edit
       // verbs) vs how many are still the un-authored storey|phase fallback. editable=0 means no
       // authored schedule exists for this building, NOT that the join failed.
@@ -5993,6 +5999,65 @@
     _tmRebuildXrayCache();
   }
 
+  // ── §GANTT_CPM_ANNOTATE — float + critical path, DERIVED from the edit, never driving it ────────
+  // Implementing bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S68 (product decision, 2026-08-23:
+  // "go with annotate"). Settles the standing question "does the drag run CPM?" — it does not, and
+  // deliberately still does not. moveTaskCascade's push-only cascade + predecessor-floor clamp stays
+  // the date engine. CPM runs AFTER it, in fixedDates mode, purely to derive float/criticality FROM
+  // the dates the cascade just wrote.
+  // Why fixedDates is mandatory here: computeCpm's derived forward pass (max over predecessors'
+  // EF+lag) compounds independently-fitted lags on a multi-parent zone graph — MEASURED at PF=138d
+  // against the real movie's 93d on Terminal's 71-zone graph, +48% (schedule_author.js:1385). A drag
+  // that silently restretches the project by half is worse than the honest cascade. With the flag,
+  // ES/EF come straight from the persisted dates and only the BACKWARD pass runs, over real edges,
+  // so total float and is_critical stay meaningful.
+  // computeCpm's only write is early_*/late_*/free_float/total_float/is_critical — it never touches
+  // schedule_start/schedule_finish/schedule_duration. That is the whole safety property of this
+  // feature, and it is witnessed byte-for-byte (W-CPM-2), not assumed from reading the code.
+  var _ganttCritical = {};   // taskId -> { critical, totalFloat } — DISPLAY state, not a date source
+  var _cpmPrimed = false;    // first-build annotate ran for this building (reset on deactivate)
+  function _tmAnnotateCpm(schedId) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.computeCpm) {
+      console.log('§GANTT_CPM_ANNOTATE_SKIP reason=ScheduleAuthor_not_loaded');
+      return null;
+    }
+    schedId = schedId || (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+    // A `tasks` table predating the widened DDL has no is_critical column, so computeCpm's UPDATE
+    // would throw INSIDE a drag commit. Probe first and refuse loudly — annotate must never be able
+    // to break an edit that already succeeded.
+    try { app.db.exec('SELECT is_critical FROM tasks LIMIT 1'); }
+    catch (e) {
+      console.log('§GANTT_CPM_ANNOTATE_SKIP reason=thin_tasks_table schedule=' + schedId);
+      return null;
+    }
+    var r = null;
+    try { r = SA.computeCpm(app.db, schedId, { fixedDates: true }); }
+    catch (e) { console.log('§GANTT_CPM_ANNOTATE_SKIP reason=threw msg=' + (e && e.message)); return null; }
+    if (!r || r.error) {
+      // Cycle/orphan (computeCpm logs §SE_CPM_BAIL) or no tasks. 2 of the 7 fleet buildings still
+      // carry cycles (4D_SCHEDULE_PERFECTION.md §MILESTONE), so this is a real, expected branch.
+      // CLEAR the marks rather than leave stale ones on screen — never paint a critical path that
+      // the current dates do not support.
+      _ganttCritical = {};
+      console.log('§GANTT_CPM_ANNOTATE_SKIP reason=' + (r ? r.error : 'no_result') + ' schedule=' + schedId);
+      return null;
+    }
+    var marks = {}, crit = 0, minF = null, maxF = null;
+    (r.tasks || []).forEach(function (t) {
+      marks[t.id] = { critical: !!t.critical, totalFloat: t.totalFloat };
+      if (t.critical) crit++;
+      if (minF === null || t.totalFloat < minF) minF = t.totalFloat;
+      if (maxF === null || t.totalFloat > maxF) maxF = t.totalFloat;
+    });
+    _ganttCritical = marks;
+    var nT = (r.tasks || []).length;
+    console.log('§GANTT_CPM_ANNOTATE schedule=' + schedId + ' tasks=' + nT +
+      ' critical=' + crit + ' (' + (nT ? Math.round(crit / nT * 100) : 0) + '%) projectDuration=' +
+      r.projectDuration + 'd float=' + minF + '..' + maxF + ' datesWritten=0 (fixedDates)');
+    return r;
+  }
+
   // Commit a finished gesture: engine verb → clamp/cascade result → re-time elements → redraw.
   // ── §TM_BAKE_LOCK — the film plays this timeline; do not edit it mid-record ───────────────────
   // Implementing bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S56.
@@ -6112,6 +6177,7 @@
     console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6190,6 +6256,7 @@
     _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6242,6 +6309,7 @@
     _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
     console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6296,6 +6364,7 @@
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
     say('Undone: ' + edit.mode + ' ' + edit.taskId);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    _tmAnnotateCpm(edit.schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6615,6 +6684,9 @@
         _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       }
     }
+    // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
+    // so it changes float and criticality even when the clamp left every date exactly where it was.
+    _tmAnnotateCpm(schedId);
     invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
   }
 
@@ -6636,6 +6708,7 @@
     })();
     var deps = (SA.listDependencies ? SA.listDependencies(app.db, schedId) : [])
       .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
+    var cpmInfo = bar.taskId ? _ganttCritical[bar.taskId] : null;   // §S68 — display only, never a date source
     var depHtml = deps.length ? deps.map(function (x, i) {
       var dir = x.succId === bar.taskId ? '← after' : '→ before';
       var other = x.succId === bar.taskId ? x.predName : x.succName;
@@ -6647,6 +6720,12 @@
     box.innerHTML =
       '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
       '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      // §GANTT_CPM_ANNOTATE (§S68) — read-only. Total float is the ONE number that tells you whether
+      // a slip on this task moves the project end; the bar's red rail only says "zero float". Blank
+      // when CPM could not run (cycle/thin table) rather than showing a made-up 0.
+      (cpmInfo ? '<div style="margin-bottom:6px;color:' + (cpmInfo.critical ? '#e53935' : '#8a97a5') + '">' +
+        (cpmInfo.critical ? 'CRITICAL PATH · zero float' : 'Total float ' + cpmInfo.totalFloat + 'd') +
+        ' <span style="font-size:9px;color:#8a97a5">(CPM, dates unchanged)</span></div>' : '') +
       '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
         '<input id="tmp-s" type="date" value="' + d(bar.startTs) + '" style="flex:1;font-size:11px"></div>' +
       '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
@@ -6665,6 +6744,7 @@
         if (!x || !SA.removeDependency) return;
         SA.removeDependency(app.db, x.predId, x.succId);
         console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
+        _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — removing an edge changes float too
         invalidateGanttModel(); computeDays(); drawGanttMini(); openGanttProps(bar);
       };
     });
@@ -6691,6 +6771,7 @@
       for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
       retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
       _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+      _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
       console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
         ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
@@ -6855,6 +6936,24 @@
       ctx.globalAlpha = 1;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
+
+      // §GANTT_CPM_ANNOTATE (§S68): float rail on the BOTTOM edge — red = on the critical path
+      // (zero float), green = has slack. NOT a fourth stroke frame: yellow (captured), orange
+      // (cursor-active) and cyan (marquee-selected) already take all three, and a fourth at 9px row
+      // height is unreadable. Same solid-edge-marker idiom the variance panel uses for its cost cap.
+      // Why BOTH colours rather than red-only: MEASURED over the 8-building fleet with the real rate
+      // tables, criticality runs 27–82% of tasks (Terminal/TermRooms 27%, Hospital 33%, LTU 55%,
+      // JKR 64%, Clinic 78%, Duplex 79%, HHS 82% — witness_gantt_cpm_annotate.js W-CPM-5). At the
+      // top of that range a red-only rail marks four bars in five and carries almost no signal;
+      // painting the complement makes the SCARCE thing — the bars that can actually move without
+      // pushing the end date — the thing that stands out, at every fraction.
+      // The marks are derived FROM the dates the cascade wrote — annotate never moved one.
+      var cpmMark = task.taskId ? _ganttCritical[task.taskId] : null;
+      if (cpmMark) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = cpmMark.critical ? '#e53935' : '#26a69a';
+        ctx.fillRect(x, y + barH - 2, w, 2);
+      }
 
       // §gate: captured (preset IFC 4D) bars get a bright-yellow frame so you can tell the real
       // programme from the generated fallback. cap = #captured ops in this storey|phase group.
@@ -7752,6 +7851,7 @@
     _shopfloor = null; _shopfloorLoading = false;    // §E2b: invalidate shopfloor cache on building change
     _ganttTasks = [];
     _ganttTasksComputed = false; _ganttRebuildN = 0;   // §S58: ordinal is per building
+    _ganttCritical = {}; _cpmPrimed = false;          // §S68: CPM marks are per building too
     invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
