@@ -6612,6 +6612,7 @@
         var byTask = {};
         for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
         retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
+        _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       }
     }
     invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
@@ -6689,6 +6690,7 @@
       var byTask = {};
       for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
       retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
+      _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
         ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
