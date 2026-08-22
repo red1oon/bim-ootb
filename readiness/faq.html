@@ -1,4 +1,4 @@
-<title>Disclaimer Notice</title>
+<title>Plain Answers</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -230,169 +230,90 @@ footer{
   figure{padding:18px 16px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- Q&A ---- */
+.qa{margin:26px 0;display:flex;flex-direction:column;gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.qa details{background:var(--surface)}
+.qa summary{
+  cursor:pointer;padding:15px 20px;font-family:"Instrument Sans",sans-serif;font-weight:600;
+  font-size:15.5px;list-style:none;display:flex;gap:12px;align-items:baseline
+}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary::before{content:"+";color:var(--accent-ink);font-weight:700;flex:none;width:12px}
+.qa details[open] summary::before{content:"\2212"}
+.qa summary:hover{background:var(--surface-2)}
+.qa .a{padding:0 20px 18px 44px;font-size:16px;color:var(--ink-2);line-height:1.6}
+.qa .a p+p{margin-top:12px}
+.qa .a strong{color:var(--ink)}
+/* ---- glossary ---- */
+.gloss{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:10px;overflow:hidden;margin:24px 0}
+.gterm{background:var(--surface);padding:15px 20px;display:grid;grid-template-columns:172px 1fr;gap:18px}
+.gterm dt{font-family:"Instrument Sans",sans-serif;font-weight:600;font-size:14.5px;color:var(--ink);margin:0}
+.gterm dd{margin:0;font-size:15px;color:var(--ink-2);line-height:1.55}
+@media (max-width:600px){.gterm{grid-template-columns:1fr;gap:5px}}
 </style>
 <div class="wrap">
 
 <div class="topbar">
   <div class="brandmark">OB</div>
-  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Disclaimer Notice</small></div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Plain answers</small></div>
   <div class="topspacer"></div>
   <button class="ghostbtn" id="themebtn" type="button">Theme</button>
-  <a class="ghostbtn" href="proposal.html">Proposal</a>
   <a class="ghostbtn" href="./">Back to assessment</a>
 </div>
 
 <div class="hero">
-  <p class="eyebrow">Disclaimer Notice &middot; v0.1 &middot; 22 August 2026</p>
-  <h1>What this assessment is, and what it is not.</h1>
-  <p class="standfirst">This notice applies to the OpenBIM Readiness Assessment Toolkit, to every
-  assessment taken with it, and to every report, checklist or record it produces.</p>
+  <p class="eyebrow">Plain answers</p>
+  <h1>The questions people feel they should already know the answer to.</h1>
+  <p class="standfirst">Nobody asks these out loud. They are all reasonable questions, several of them
+  are the whole point, and one of them is answered wrongly by most of the industry.</p>
 </div>
 
 <section>
-  <div class="shead"><span class="snum">01</span><h2>Scope</h2></div>
-  <p><strong>This is only a technical readiness assessment.</strong> It measures organisational
-  readiness for open-standard working, and the data quality of a model file supplied by the
-  respondent. That is its entire scope.</p>
-  <p>It says nothing about the lawfulness, safety, structural adequacy, buildability, fitness for
-  purpose or professional adequacy of any design, model, building or asset. It does not assess the
-  respondent, their competence, or their standing to practise.</p>
+  <div class="shead"><span class="snum">01</span><h2>The basics</h2></div>
+  <div class="qa">
+<details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong> — designing with a model that carries data, not just lines. OpenBIM is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information. It is published by buildingSMART, an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to \u201cdeliver in IFC\u201d, this is what was meant.</p></div></details><details><summary>My software already has an \u201cexport to IFC\u201d button. Isn't that it?</summary><div class="a"><p>That button is where it starts, not where it ends. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p><strong>That gap is exactly what this assessment measures.</strong> Most exports open fine and carry far less than the sender assumes.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No, and this assessment will not tell you to. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
+  </div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">02</span><h2>It qualifies nothing and no one</h2></div>
-  <p>This assessment and any report produced from it confer <strong>no certification, accreditation,
-  licence, approval, registration, endorsement or professional status</strong> of any kind, on any
-  person or organisation.</p>
-  <p>They are <strong>not evidence of compliance</strong> with any regulation, building code,
-  standard, mandate, contract, appointment or client requirement, and must not be presented as such
-  &mdash; to a client, an authority having jurisdiction, an insurer, a certifying body, or in a
-  tender or prequalification submission.</p>
-  <p>No BIM software holds local-authority compliance certification in any jurisdiction. Compliance
-  rests with the Appointing Party and the Lead Appointed Party. Software is never a legal party to it.</p>
+  <div class="shead"><span class="snum">02</span><h2>About this assessment</h2></div>
+  <div class="qa">
+<details><summary>What do I need before I start?</summary><div class="a"><p>About fifteen minutes. Optionally one IFC file. No account, no sign-up, no API key, no payment.</p></div></details><details><summary>What if I don't have an IFC file?</summary><div class="a"><p>You can still take it. You get the organisational half of the assessment, and the report says plainly that the model half was not measured — it does not guess, and it does not score you down for the absence.</p></div></details><details><summary>Will you see my model?</summary><div class="a"><p>No. The file is read <strong>inside your browser</strong> and is never uploaded. There is no server to upload it to. If you choose to submit results at the end, you are shown the exact payload first, and it contains only numbers and fixed categories — no file, no names, no coordinates.</p></div></details><details><summary>What is the catch? Who is paying for this?</summary><div class="a"><p>It is a research instrument, developed under an academic research grant, and free to use. The platform it references as a worked example is open source. The full proposal is published at <a href="proposal.html">The research proposal</a>.</p><p>The honest commercial disclosure: the people who built it also build that open-source platform. That is why the assessment scores you against <em>published standards</em> rather than against any product, and why it can return \u201cthe open route is not viable for you yet\u201d.</p></div></details><details><summary>Am I too small for this?</summary><div class="a"><p>No. Targets are proportionate to firm size and project type — a four-person practice is not measured against what a 200-person firm should be doing. That was a deliberate design decision.</p></div></details><details><summary>Is this only for BIM managers?</summary><div class="a"><p>No. It is for anyone who delivers or receives building information — principals, project managers, contractors, owners, facilities teams. If you have ever been asked for a model, or been handed one, the questions will make sense.</p></div></details><details><summary>What do I get at the end?</summary><div class="a"><p>A readiness profile across five areas, a gap analysis showing where you stand against a proportionate target, an ordered set of recommendations, and — if you supplied a file — the places where your model disagreed with your answers. Downloadable as a PDF.</p></div></details>
+  </div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">03</span><h2>Nothing here is audited or verified</h2></div>
-  <p>The inputs are <strong>self-reported by the respondent</strong> and computed from a file the
-  respondent supplies. No third party has witnessed, inspected, checked or attested to any answer,
-  measurement or result.</p>
-  <p>Results reflect what the respondent reported and what their file contained at the moment of
-  assessment, at the scope they declared. They are not a statement of fact about the organisation.</p>
-</section>
-
-<section>
-  <div class="shead"><span class="snum">04</span><h2>Your obligations remain yours</h2></div>
-  <p>Where <strong>insurance, professional indemnity, licensing, certification, registration or any
-  formal qualification process</strong> is required or applicable under the respondent&rsquo;s
-  regulations, contract, appointment or client requirements, that obligation is the
-  respondent&rsquo;s and must be discharged directly with the responsible body.</p>
-  <p><strong>This report substitutes for none of it, in whole or in part.</strong></p>
-  <p>Nothing in this toolkit or its outputs is insurance, indemnity, legal, regulatory or
-  professional advice. Whether working to open standards affects any cover or obligation is a matter
-  for the respondent&rsquo;s insurer and legal counsel. Two facts are offered only as context for that
-  conversation: warranty disclaimers are near-universal in software licensing, proprietary licences
-  included; and professional indemnity insures the professional, not the tool.</p>
-</section>
-
-<section>
-  <div class="shead"><span class="snum">05</span><h2>Figures and measurements</h2></div>
-  <p>Figures published by this toolkit are either measured from a named individual model, cited from
-  a public source, or aggregated from assessments taken &mdash; and are labelled accordingly. A
-  measurement from one building is not an industry statistic and must not be quoted as one.</p>
-  <p>Coverage and validity are reported as separate figures. A result showing well-formed data says
-  nothing about whether the right data is present. No single headline score is produced.</p>
-</section>
-
-<section>
-  <div class="shead"><span class="snum">06</span><h2>Research instrument, in development</h2></div>
-  <p>This toolkit supports academic research and is a work in progress. Its readiness dimensions,
-  assessment criteria, capability thresholds and weightings are subject to expert validation and
-  pilot testing, and <strong>will change</strong>. Results produced under one version are not
-  directly comparable with results produced under another.</p>
-  <p>Each report states the versions under which it was produced. Quote them whenever you quote a
-  result.</p>
-</section>
-
-
-<section id="declarations">
-  <div class="shead"><span class="snum">07</span><h2>About this research</h2></div>
-  <p class="lede">Standard declarations. Blanks are marked and will be completed before any release
-  is cited.</p>
-
-  <h3>The toolkit</h3>
-  <p>The OpenBIM Readiness Assessment Toolkit is a research instrument developed under the project
-  <em>Development of an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure
-  Management</em>. It assesses readiness across governance, people and skills, technology, data and
-  standards, and organisational processes. The study is set in the context of infrastructure delivery
-  in the UAE. The full proposal is reproduced at <a href="proposal.html">The research proposal</a>.</p>
-
-  <h3>Funding</h3>
-  <p>Supported by a research grant awarded to Mohd Faizal Bin Yusof at
-  <strong>[institution]</strong>, reference <strong>[grant reference]</strong>, value US$5,000.
-  Software development was contracted separately to REFREX SDN BHD under quotation
-  QTN.KFK.260703-01.</p>
-  <p>The funder had no role in the design of the assessment framework, the collection or analysis of
-  responses, the writing of any report, or the decision to submit for publication.</p>
-
-  <h3>Declaration of competing interests</h3>
-  <p>The proposal describes the reference benchmark as <em>&ldquo;an existing open-source,
-  browser-based OpenBIM platform&rdquo;</em> and states that <em>&ldquo;the platform is not the
-  subject of the study&rdquo;</em>. That platform is <strong>BIM OOTB</strong>.
-  <strong>The developers contracted to build this toolkit are also the developers of that
-  platform.</strong> This is declared as a competing interest.</p>
-  <p>Three measures address it, and each can be checked rather than taken on trust:</p>
-  <p>1. Assessment criteria are anchored to published standards &mdash; ISO 19650, ISO 12006-2,
-  buildingSMART IFC &mdash; and the capability ladder is taken verbatim from ISO/IEC 33020. The
-  platform appears as what the proposal itself calls <em>&ldquo;a concrete, working example &hellip;
-  rather than an abstract ideal&rdquo;</em>.</p>
-  <p>2. Scoring is a deterministic function of the responses. Any third party can reproduce a score
-  from the same inputs and the same published versions.</p>
-  <p>3. The instrument can return a negative result for the open route, including that it is not yet
-  viable for a given organisation&rsquo;s regulatory or capability position.</p>
-  <p>No commercial relationship arises between a respondent and either party as a result of taking an
-  assessment. The platform is free and open source; the toolkit is free to use and requires no
-  account.</p>
-
-  <h3>Data availability</h3>
-  <p>No personal data is collected. Model files supplied by respondents are processed entirely in the
-  respondent&rsquo;s browser and are never transmitted. Version 0.1 has no submission endpoint, so no
-  response data is collected or stored by any party. Where submission is offered in a future version
-  it will be optional and anonymous, with the exact payload shown before sending.</p>
-
-  <h3>Ethics</h3>
-  <p><strong>[Ethics position to be stated by the researcher.]</strong> The toolkit collects no
-  participant data in its current version.</p>
-
-  <h3>Use of generative AI</h3>
-  <p>Generative AI was used in developing this toolkit and in preparing its documentation. All
-  assessment criteria, capability thresholds and scoring logic were reviewed and trace to the cited
-  standards.</p>
-  <p>Separately and by design, the instrument invites the respondent to use <em>their own</em> AI
-  service to conduct the interview. The toolkit bundles no language model and makes no model calls on
-  a respondent&rsquo;s behalf.</p>
-
-  <h3>Licence and citation</h3>
-  <p>Source code: <strong>[licence to be selected]</strong>, available at
-  <span class="mono">github.com/red1oon/bim-ootb</span> under <span class="mono">readiness/</span>.
-  Cite as <strong>[DOI to be minted on the tagged release]</strong>.</p>
-
-  <h3>Status</h3>
-  <p>Research instrument in development. Criteria, thresholds and weightings are subject to expert
-  validation and will change. Results produced under different versions are not directly comparable;
-  each report states the versions under which it was produced.</p>
+  <div class="shead"><span class="snum">03</span><h2>Words the assessment uses</h2></div>
+  <p class="lede">If a question uses a term you do not use day to day, it is here. Not knowing these
+  is not a failing — several are UK or ISO vocabulary that never travelled.</p>
+  <dl class="gloss">
+    <div class="gterm"><dt>IFC</dt><dd>The open file format for building information. Published by buildingSMART; readable by any tool.</dd></div>
+    <div class="gterm"><dt>IFC schema version</dt><dd>Which edition of IFC a file uses — IFC2x3, IFC4, IFC4x3. They differ in what can be expressed, which is why contracts increasingly name one.</dd></div>
+    <div class="gterm"><dt>Property set</dt><dd>A named group of data attached to an element — a wall's fire rating, a door's acoustic performance. Geometry without property sets is a shape, not information.</dd></div>
+    <div class="gterm"><dt>Classification</dt><dd>A standard code identifying what a thing <em>is</em>, from a published system such as Uniclass, OmniClass or MasterFormat. A file-naming convention is not classification.</dd></div>
+    <div class="gterm"><dt>IfcSpace</dt><dd>A room or space as an object in the model, rather than as a gap between walls. Almost everything downstream — areas, FM, analysis — needs these to exist.</dd></div>
+    <div class="gterm"><dt>CDE</dt><dd>Common Data Environment. The agreed place project information lives, with versions and status — not simply a shared drive.</dd></div>
+    <div class="gterm"><dt>EIR / AIR</dt><dd>Exchange and Asset Information Requirements: what the client says the model must contain, written down before the work starts.</dd></div>
+    <div class="gterm"><dt>Federated model</dt><dd>Discipline models combined for review without being merged into one file, so each stays owned by its author.</dd></div>
+    <div class="gterm"><dt>buildingSMART</dt><dd>The international non-profit that publishes IFC and certifies software for data-exchange fidelity — not for regulatory compliance.</dd></div>
+    <div class="gterm"><dt>ISO 19650</dt><dd>The international standard for managing information using BIM. It sets requirements; it does not define a maturity ladder.</dd></div>
+    <div class="gterm"><dt>Capability level</dt><dd>How reliably and repeatably your organisation does something, on the ISO/IEC 33020 scale of 0 to 5. It is not a grade, and it is not a compliance measure.</dd></div>
+  </dl>
 </section>
 
 <div class="cta">
-  <h3>Understood?</h3>
-  <p>You can take the assessment, or read the background on why any of this matters.</p>
-  <a class="btn" href="./">Go to the assessment</a>
+  <h3>Still nothing here that answers it?</h3>
+  <p>The background reading goes deeper on why any of this matters, and the Disclaimer Notice covers
+  what this assessment can and cannot be used for.</p>
+  <a class="btn" href="./">Take the assessment</a>
 </div>
 
 <footer>
-  Disclaimer Notice v0.1 &middot; 22 August 2026<br>
-  OpenBIM Readiness Assessment Toolkit &middot; applies to the toolkit and every output it produces.<br>
-  <a href="proposal.html">The research proposal</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="faq.html">Plain answers</a>
+  Plain answers &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
+  <a href="proposal.html">The research proposal</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="disclaimer.html">Disclaimer Notice</a>
 </footer>
 
 </div>

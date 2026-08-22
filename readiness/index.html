@@ -44,6 +44,7 @@ body{
 h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.02em}
 p{margin:0}
 button{font:inherit;color:inherit}
+a{color:var(--accent-ink);text-underline-offset:2px}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
 
 /* ---- MOCKUP BANNER ---- */
@@ -332,6 +333,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
     <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Research instrument · v0.1 draft</small></div>
     <div class="topspacer"></div>
     <button class="ghostbtn" id="themebtn" type="button">Theme</button>
+    <a class="ghostbtn" href="faq.html">Plain answers</a>
     <a class="ghostbtn" id="helpbtn" href="why.html">? Read more</a>
   </div>
 
@@ -412,6 +414,10 @@ SCREENS.intro =
       '<span>Include my (anonymous) results in the industry benchmark, so I can see how I compare.</span></label>' +
   '</div>' +
 
+  '<p class="small" style="margin-top:20px">This toolkit is the artifact of a funded research ' +
+  'project. The proposal is published in full: <a href="proposal.html">read it</a>. New to any of ' +
+  'this? <a href="faq.html">Plain answers</a> covers the basics nobody wants to ask about.</p>' +
+
   '<div class="actions">' +
     '<button class="btn" data-go="agree">Start assessment</button>' +
     '<button class="btn sec" data-go="results">Skip to sample results</button>' +
@@ -465,7 +471,8 @@ SCREENS.agree =
     '<button class="btn" id="agreebtn" data-go="context" disabled>Agree and continue</button>' +
     '<button class="btn sec" data-go="declined">I do not agree</button>' +
   '</div>' +
-  '<p class="small" style="margin-top:16px"><a href="disclaimer.html">Read the full Disclaimer Notice ' +
+  '<p class="small" style="margin-top:16px"><a href="proposal.html">The research proposal</a> &nbsp;&middot;&nbsp; ' +
+  '<a href="faq.html">Plain answers</a> &nbsp;&middot;&nbsp; <a href="disclaimer.html">Read the full Disclaimer Notice ' +
   '&rarr;</a> &nbsp;&middot;&nbsp; <span class="mono">Terms v0.1 &middot; 22 Aug 2026</span></p>';
 
 /* ---------- 1c · DECLINED ---------- */
@@ -483,6 +490,7 @@ SCREENS.declined =
   '</div>' +
   '<div class="actions">' +
     '<a class="btn" href="why.html">Read the background</a>' +
+    '<a class="btn sec" href="faq.html">Plain answers</a>' +
     '<button class="btn sec" data-go="agree">Back</button>' +
   '</div>';
 
