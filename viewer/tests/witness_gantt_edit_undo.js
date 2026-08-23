@@ -108,7 +108,13 @@ const BUILDING = process.argv[2] || 'Duplex';
     // reason — it only writes early_*/late_*/float/is_critical and this witness asserts on
     // schedule_start/schedule_finish. That annotate cannot touch those columns is proven separately,
     // on the real verb rather than a stub, by witness_gantt_cpm_annotate.js W-CPM-2.
-    _tmAnnotateCpm: function () {}
+    _tmAnnotateCpm: function () {},
+    // §S70 added a debounced IndexedDB write-back to the same commit paths. STUBBED, unlike
+    // _tmEditLocked which is sliced: the lock can PREVENT the edit, so slicing it is required for
+    // this sandbox to be honest; the persist is a pure side effect that cannot change a single row
+    // this witness asserts on, and there is no IndexedDB in node. That the edit actually survives a
+    // reload is proven where it can be — live, by §S70's round-trip probe.
+    _tmPersistEdit: function () {}
   };
   vm.createContext(sandbox);
   vm.runInContext(sliced + '\nglobalThis.__ops = _ops = loadOps(); ' +

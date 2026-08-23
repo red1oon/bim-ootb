@@ -1654,9 +1654,25 @@
   }
 
   var _persistTimers = {};   // url -> timer, so rapid edits on the SAME db coalesce into one write
+  // §SCHED_PERSIST_KEY (4D_GANTT_TM_REFACTOR.md §S70) — key the write the way the READER keys it.
+  // MEASURED live before this fix: a Gantt drag persisted fine (§SCHED_PERSIST ok=true, 15264KB),
+  // the reload hit the cache (§CACHE_HIT Duplex_extracted.db 14.3MB), and the edit was GONE — two
+  // different slots. scene.js's cachedFetch looks blobs up under DbResolve.cacheKey(url) (W-DB-CACHE-KEY:
+  // '/buildings/X.db' and 'buildings/X.db?v=2' both fold to 'buildings/X.db'), while every persist path
+  // wrote under the RAW url. cachedFetch treats the raw url as the LEGACY slot and only reads it when
+  // the canonical key MISSES — so on any profile that has ever loaded the building normally, every
+  // persisted edit was written somewhere nothing reads. That silently broke schedule_editor_ui.js's
+  // §SE-6 ("edits vanish on tab close") and kernel_ops.js's "survive refresh" too, not just this path.
+  function _cacheKeyFor(url) {
+    var DR = (typeof window !== 'undefined') && window.DbResolve;
+    var A = (typeof window !== 'undefined') && (window.APP || window.A);
+    return (DR && DR.cacheKey) ? DR.cacheKey(url, A && A.PROD_BASE) : url;
+  }
+
   function persistDb(db, url, opts) {
     opts = opts || {};
     if (!db || !url) return Promise.resolve(false);
+    var key = _cacheKeyFor(url);
     var delay = opts.immediate ? 0 : (opts.delay != null ? opts.delay : 1200);
     if (_persistTimers[url]) { clearTimeout(_persistTimers[url]); }
     return new Promise(function (resolve) {
@@ -1669,9 +1685,9 @@
               console.warn('§SCHED_PERSIST_ERR no cache store url=' + url); resolve(false); return;
             }
             var tx = idb.transaction('dbs', 'readwrite');
-            tx.objectStore('dbs').put(buf, url);
+            tx.objectStore('dbs').put(buf, key);
             tx.oncomplete = function () {
-              console.log('§SCHED_PERSIST url=' + url + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+              console.log('§SCHED_PERSIST url=' + url + ' key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
               resolve(true);
             };
             tx.onerror = function () { console.warn('§SCHED_PERSIST_ERR tx ' + (tx.error && tx.error.message)); resolve(false); };
@@ -1682,6 +1698,7 @@
   }
 
   var API = {
+    _cacheKeyFor: _cacheKeyFor,   // §S70: read and write MUST derive the slot the same way
     matchRule: matchRule,
     matchNameOverride: matchNameOverride,
     // §TM_DURATION_SYNC — exported so time_machine.js's playback-clock duration engine

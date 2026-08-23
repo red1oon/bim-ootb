@@ -514,11 +514,14 @@
   // profile (caught live by W-SCHED-PERSIST); the shared opener self-heals that via a versioned
   // onupgradeneeded, so read and write now use the exact same, robust opener.
   function _idbGetDb(url) {
+    // §SCHED_PERSIST_KEY (§S70): derive the slot exactly as persistDb writes it and as cachedFetch
+    // reads it — a read keyed by the raw url misses every canonically-keyed blob.
+    var key = (SA()._cacheKeyFor ? SA()._cacheKeyFor(url) : url);
     return SA().openBuildingCache().then(function (idb) {
       return new Promise(function (resolve) {
         if (!idb || !idb.objectStoreNames.contains('dbs')) { resolve(null); return; }
         try {
-          var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+          var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(key);
           g.onsuccess = function () { resolve(g.result || null); };
           g.onerror = function () { resolve(null); };
         } catch (e) { resolve(null); }
