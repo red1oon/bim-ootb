@@ -10,7 +10,10 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v767';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v768';   // bump on each deploy; per-change detail is the git commit message.
+// v768 (ERP_PROJECT_REVIEW.md §2.1 W-ACCESS-GATE-LIVE) — ad_access.js shipped as a twin of
+// build/erp/ad_access.js; idmp_session.js now delegates window/process/form access decisions to
+// it (IsReadWrite/canView/org-client gateRecord) instead of a weaker independent implementation.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -62,6 +65,7 @@ const PRECACHE_ASSETS = [
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   'erp_key_epochs.js', // T1 (W-ROSTER-VERIFY): HQ-signed device roster + ROTATE/REVOKE key epochs on verify/import
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
+  'ad_access.js',       // W-ACCESS-GATE-LIVE — MRole-faithful gate engine, twin of build/erp/ad_access.js
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
   'odoo_descriptor.js', // RENDERER #2 — the Odoo descriptor (?erp=odoo); reads the two pulled artifacts below
