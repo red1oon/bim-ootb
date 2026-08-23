@@ -6100,6 +6100,32 @@
     return true;
   }
 
+  // _tmPersistEdit(what) — write the edited building back to the IndexedDB slot it was loaded from.
+  // Implementing bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S70.
+  // Until now an in-canvas Gantt edit lived ONLY in the in-memory sql.js db and died on reload.
+  // retimeTaskElements writes kernel_ops with raw SQL rather than through KernelOps' commit API, so
+  // kernel_ops.js's own debounce never fired for it, and nothing else persisted it either. This is
+  // the same gap schedule_editor_ui.js closed for the Editor tab (§SE-6, "the gap that made every
+  // schedule edit vanish on tab close") — same DB, same slot, same verb, just never wired here.
+  // MEASURED cost of persistDb's whole-db export on the real fleet: Duplex 3ms, Terminal 10ms,
+  // LTU 26ms, Clinic 47ms, JKR 70ms, Hospital (252MB) 86ms — one dropped frame at the worst, and
+  // persistDb debounces 1200ms on top, so a burst of drags collapses to a single write.
+  // Guards mirror §KRN_PERSIST_GUARD: only APP.db under APP.DB_URL, never a foreign db (a lens
+  // committing its own op-db under the building's key cost a P0 in kernel_ops.js), and never when
+  // _cacheDisabled (incognito / low quota).
+  function _tmPersistEdit(what) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.persistDb) {
+      console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=ScheduleAuthor_not_loaded');
+      return;
+    }
+    if (!app.DB_URL) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=no_db_url'); return; }
+    if (app._cacheDisabled) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=cache_disabled'); return; }
+    SA.persistDb(app.db, app.DB_URL, {}).then(function (ok) {
+      console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + app.DB_URL + ' ok=' + ok);
+    });
+  }
+
   function commitGanttDrag(bar, mode, deltaDays) {
     if (_tmEditLocked('commitGanttDrag')) return;
     var app = A();
@@ -6196,6 +6222,7 @@
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+    _tmPersistEdit('drag');   // §S70 — the edit must survive a reload
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6276,6 +6303,7 @@
     console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+    _tmPersistEdit('rulerShift');   // §S70 — the edit must survive a reload
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6330,6 +6358,7 @@
     console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+    _tmPersistEdit('groupShift');   // §S70 — the edit must survive a reload
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6387,6 +6416,7 @@
     say('Undone: ' + edit.mode + ' ' + edit.taskId);
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(edit.schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+    _tmPersistEdit('undo');   // §S70 — the edit must survive a reload
     invalidateGanttModel();
     computeDays();
     drawGanttMini();
@@ -6709,6 +6739,7 @@
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
     // so it changes float and criticality even when the clamp left every date exactly where it was.
     _tmAnnotateCpm(schedId);
+    _tmPersistEdit('link');   // §S70 — the edit must survive a reload
     invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
   }
 
@@ -6770,6 +6801,7 @@
         SA.removeDependency(app.db, x.predId, x.succId);
         console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
         _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — removing an edge changes float too
+        _tmPersistEdit('unlink');   // §S70 — the edit must survive a reload
         invalidateGanttModel(); computeDays(); drawGanttMini(); openGanttProps(bar);
       };
     });
@@ -6798,6 +6830,7 @@
       retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
       _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
       _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+      _tmPersistEdit('propsApply');   // §S70 — the edit must survive a reload
       console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
         ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
