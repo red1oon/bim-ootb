@@ -4,6 +4,34 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.51.0](https://github.com/red1oon/bim-ootb/compare/v1.50.0...v1.51.0) (2026-08-23)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_CPM_ANNOTATE — drag → CPM annotate (float + critical path), never a re-solve ([#1475](https://github.com/red1oon/bim-ootb/issues/1475)) ([980982e](https://github.com/red1oon/bim-ootb/commit/980982ef56bd2ef27817af87fa389e096a2b8942))
+* **readiness:** synopsis becomes the front door, assessment moves to assess.html ([#1462](https://github.com/red1oon/bim-ootb/issues/1462)) ([bf5ac0e](https://github.com/red1oon/bim-ootb/commit/bf5ac0e40c96324be33196b4756cf78034ea2029))
+
+
+### 🐛 Fixes
+
+* **4d:** §GANTT_EDIT_PERSIST — Gantt edits survive a reload, and persistDb writes the slot the loader reads ([#1479](https://github.com/red1oon/bim-ootb/issues/1479)) ([4ee5a7d](https://github.com/red1oon/bim-ootb/commit/4ee5a7de4a8db26713080d712f5688d523032182))
+* **4d:** §GANTT_RETIME_RESYNC — two edit paths re-timed the model and never resynced the canvas ([#1474](https://github.com/red1oon/bim-ootb/issues/1474)) ([dcb8042](https://github.com/red1oon/bim-ootb/commit/dcb8042dd810e8ffc747615536439c3481a882fd))
+* **4d:** §S64 — auditFloating disagreed with the gate it claims to mirror; fleet floating 462 → 362 ([#1472](https://github.com/red1oon/bim-ootb/issues/1472)) ([d29acf0](https://github.com/red1oon/bim-ootb/commit/d29acf03b1136d55896b419fa027d7ae4a46a5e7))
+* **4d:** §TM_BAKE_LOCK — one shared refusal, and all 8 edit paths call it (was 2) ([#1477](https://github.com/red1oon/bim-ootb/issues/1477)) ([282769c](https://github.com/red1oon/bim-ootb/commit/282769c60abdb3e3850aff7b0034d9478107d9c1))
+
+
+### 📝 Documentation
+
+* **readiness:** §ANCHORS — verify the 20 criteria anchors; correct 4 labels and the Dubai footnote ([#1476](https://github.com/red1oon/bim-ootb/issues/1476)) ([89ad90f](https://github.com/red1oon/bim-ootb/commit/89ad90f13cba5ed37787902b09034e7193ea56c1))
+* **readiness:** §SOURCES — publish the source register as a page, and link every criterion to its clause ([#1478](https://github.com/red1oon/bim-ootb/issues/1478)) ([11fc185](https://github.com/red1oon/bim-ootb/commit/11fc185d27df95973fbbeb2e22b6ebc5675846f0))
+* **readiness:** cite the UAE claim — Dubai mandates BIM, the UAE does not ([#1473](https://github.com/red1oon/bim-ootb/issues/1473)) ([3b5a3e9](https://github.com/red1oon/bim-ootb/commit/3b5a3e9b25e65f6d3b0fb845c01e186e704ccfc4))
+* **readiness:** decode literal quote escapes in faq.html, and call the output a report ([#1469](https://github.com/red1oon/bim-ootb/issues/1469)) ([535a0e6](https://github.com/red1oon/bim-ootb/commit/535a0e6304be97f01d4a1f1b56ddfacf8c01f2ef))
+* **readiness:** drop the repeated project title from the front page ([#1465](https://github.com/red1oon/bim-ootb/issues/1465)) ([9caea51](https://github.com/red1oon/bim-ootb/commit/9caea510995b0ecec02629c922cc1b196f8c9380))
+* **readiness:** footnote every definition and mandate claim to a verified source ([#1471](https://github.com/red1oon/bim-ootb/issues/1471)) ([f073c7c](https://github.com/red1oon/bim-ootb/commit/f073c7c18ae15428641c3a20dc863dcc54930682))
+* **readiness:** restore the front-page title, shortened (relands [#1466](https://github.com/red1oon/bim-ootb/issues/1466) over [#1465](https://github.com/red1oon/bim-ootb/issues/1465)) ([#1467](https://github.com/red1oon/bim-ootb/issues/1467)) ([6ec0dcc](https://github.com/red1oon/bim-ootb/commit/6ec0dcc6debb93bc18fdf0a1b1fcd029dc272eec))
+* **readiness:** tone pass — professional academic register across four pages ([#1468](https://github.com/red1oon/bim-ootb/issues/1468)) ([9731ce9](https://github.com/red1oon/bim-ootb/commit/9731ce9bde8a98da2ef07508a419ae0f8e0ade9c))
+
 ## [1.50.0](https://github.com/red1oon/bim-ootb/compare/v1.49.2...v1.50.0) (2026-08-22)
 
 
