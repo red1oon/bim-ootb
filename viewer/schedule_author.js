@@ -1358,6 +1358,128 @@
     return moveTaskCascade(db, scheduleId, taskId, _dayStr(s), opts);
   }
 
+  // rescheduleAsap(db, scheduleId, opts) — §GANTT_RESCHEDULE_ASAP, the EXPLICIT pull-back verb.
+  // moveTaskCascade above is push-only BY DESIGN (its own header: "Successors are only ever pushed
+  // LATER, never pulled earlier") — an ordinary drag must never silently re-optimise the schedule.
+  // The product decision (4D_GANTT_TM_REFACTOR.md lane, user-decided) is that "reschedule as early
+  // as possible" ships as a deliberate, user-triggered action instead — THIS verb — so the
+  // annotate-only drag contract (§S68) stays intact.
+  //
+  // SEMANTICS — compression only:
+  //   · Forward topological pass over task_sequences, the same Kahn sort + IfcSequenceEnum ES math
+  //     computeCpm's non-fixedDates forward pass runs (_fwdES semantics, re-expressed over the
+  //     tasks' REAL current day positions rather than a zero-anchored es/ef frame).
+  //   · A task with NO predecessors (in this schedule's leaf set) keeps its CURRENT start — roots
+  //     anchor the project; this closes gaps CPM can prove are pure float, it does not re-baseline
+  //     the whole programme to day zero.
+  //   · A task is NEVER moved later: if its derived ES is >= its current start (including a task
+  //     already sitting ahead of a violated constraint), it is left byte-identical.
+  //   · Summaries (is_summary=1) are skipped — they roll up, same as moveTaskCascade.
+  //   · Duration preserved; same BEGIN/prepare/run/free/COMMIT write shape as moveTaskCascade.
+  // opts.dryRun — compute and report without writing (witness convention, same as moveTaskCascade).
+  // → { ok, moved:[{id,start,finish,days,daysPulled}], projectDurationBefore, projectDurationAfter,
+  //     daysCompressed, finishBefore, finishAfter }  |  { ok:false, reason }
+  function rescheduleAsap(db, scheduleId, opts) {
+    opts = opts || {};
+    var tr;
+    try {
+      tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration, is_summary ' +
+        'FROM tasks WHERE schedule_id=?', [scheduleId]);
+    } catch (e) { console.log('§GANTT_RESCHEDULE_ASAP_FAIL schedule=' + scheduleId + ' reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    if (!tr.length || !tr[0].values.length) { console.log('§GANTT_RESCHEDULE_ASAP_FAIL schedule=' + scheduleId + ' reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    var T = {}, ids = [];
+    tr[0].values.forEach(function (row) {
+      if (row[4] === 1) return;                       // summaries are rolled up, never moved directly
+      var s = _dayNum(row[1]); if (s === null) return;
+      var dur = _durDays(row[3], row[1], row[2]);
+      T[row[0]] = { id: row[0], start: s, finish: s + dur, dur: dur, preds: [], succs: [] };
+      ids.push(row[0]);
+    });
+    if (!ids.length) { console.log('§GANTT_RESCHEDULE_ASAP_FAIL schedule=' + scheduleId + ' reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    try {
+      var er = db.exec('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences');
+      if (er.length && er[0].values.length) er[0].values.forEach(function (row) {
+        if (!T[row[0]] || !T[row[1]]) return;          // edge leaving this schedule's leaf set
+        var e = { pred: row[0], succ: row[1], type: (row[2] || 'FS').toUpperCase(), lag: row[3] != null ? row[3] : 0 };
+        T[row[1]].preds.push(e); T[row[0]].succs.push(e);
+      });
+    } catch (e) {
+      // Unlike moveTaskCascade's §CASCADE_BLIND (where a blind move is still the user's own explicit
+      // one-bar edit), a blind PULL-BACK would compress every task onto its own start — a no-op — so
+      // refuse loudly instead of "succeeding" at nothing.
+      console.log('§GANTT_RESCHEDULE_ASAP_FAIL schedule=' + scheduleId + ' reason=no_sequences — ' + (e && e.message));
+      return { ok: false, reason: 'no_sequences' };
+    }
+    // Kahn topo sort — same cycle/orphan bail computeCpm runs (§SE-1 guards authored edges, but a
+    // captured import can carry anything; never iterate a cyclic graph).
+    var indeg = {}, queue = [], topo = [];
+    ids.forEach(function (id) { indeg[id] = T[id].preds.length; if (indeg[id] === 0) queue.push(id); });
+    while (queue.length) {
+      var cur = queue.shift(); topo.push(cur);
+      T[cur].succs.forEach(function (e) { if (--indeg[e.succ] === 0) queue.push(e.succ); });
+    }
+    if (topo.length !== ids.length) {
+      console.log('§GANTT_RESCHEDULE_ASAP_FAIL schedule=' + scheduleId + ' reason=cycle topo=' + topo.length + ' tasks=' + ids.length);
+      return { ok: false, reason: 'cycle' };
+    }
+    var minStartBefore = Infinity, finishBefore = -Infinity;
+    ids.forEach(function (id) {
+      if (T[id].start < minStartBefore) minStartBefore = T[id].start;
+      if (T[id].finish > finishBefore) finishBefore = T[id].finish;
+    });
+    // FORWARD pass in topo order, over the working (already-compressed-upstream) positions.
+    // newStart[id] is the task's post-compression start; a root keeps its current start, a task with
+    // predecessors takes max(candidate ES over preds) capped at its own current start (never later).
+    var newStart = {};
+    topo.forEach(function (id) {
+      var t = T[id];
+      if (!t.preds.length) { newStart[id] = t.start; return; }
+      var es = null;
+      t.preds.forEach(function (e) {
+        var P = T[e.pred];
+        var pS = newStart[e.pred] != null ? newStart[e.pred] : P.start;
+        var pF = pS + P.dur, c;
+        switch (e.type) {                              // same four IfcSequenceEnum cases as _fwdES
+          case 'SS': c = pS + e.lag; break;
+          case 'FF': c = pF + e.lag - t.dur; break;
+          case 'SF': c = pS + e.lag - t.dur; break;
+          default:   c = pF + e.lag;                   // FS
+        }
+        if (es === null || c > es) es = c;
+      });
+      newStart[id] = (es !== null && es < t.start) ? es : t.start;   // compression only, never later
+    });
+    var moved = [];
+    topo.forEach(function (id) {
+      var t = T[id];
+      if (newStart[id] >= t.start) return;             // untouched (roots, tight tasks, ES>=current)
+      var daysPulled = t.start - newStart[id];
+      t.start = newStart[id]; t.finish = t.start + t.dur;
+      moved.push({ id: id, start: _dayStr(t.start), finish: _dayStr(t.finish), days: t.dur, daysPulled: daysPulled });
+    });
+    var minStartAfter = Infinity, finishAfter = -Infinity;
+    ids.forEach(function (id) {
+      if (T[id].start < minStartAfter) minStartAfter = T[id].start;
+      if (T[id].finish > finishAfter) finishAfter = T[id].finish;
+    });
+    if (moved.length && !opts.dryRun) {
+      db.run('BEGIN');
+      var st = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+      moved.forEach(function (m) { st.run([m.start, m.finish, 'P' + m.days + 'D', m.id]); });
+      st.free();
+      db.run('COMMIT');
+    }
+    var daysCompressed = finishBefore - finishAfter;
+    console.log('§GANTT_RESCHEDULE_ASAP schedule=' + scheduleId + ' moved=' + moved.length +
+      ' finishBefore=' + _dayStr(finishBefore) + ' finishAfter=' + _dayStr(finishAfter) +
+      ' daysCompressed=' + daysCompressed + (opts.dryRun ? ' (dryRun)' : ''));
+    return { ok: true, moved: moved,
+      projectDurationBefore: finishBefore - minStartBefore,
+      projectDurationAfter: finishAfter - minStartAfter,
+      daysCompressed: daysCompressed,
+      finishBefore: _dayStr(finishBefore), finishAfter: _dayStr(finishAfter) };
+  }
+
   // setBaseline(db, scheduleId) — §GANTT_EDIT_UNDO's transport-row sibling, ⚑ Set Baseline
   // (4D_SCHEDULE_PERFECTION.md "the transport row's two buttons"). P6 baseline = a frozen snapshot
   // of every task's dates, taken at a deliberate moment, compared against the live (possibly
@@ -1730,6 +1852,7 @@
     shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
     shiftTasks: shiftTasks,             // §GANTT_GROUP_MOVE — uniform date shift over an explicit task_id list
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
+    rescheduleAsap: rescheduleAsap,     // §GANTT_RESCHEDULE_ASAP — explicit pull-back, compression only
     setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
     getBaselineVariance: getBaselineVariance,
     addTask: addTask,

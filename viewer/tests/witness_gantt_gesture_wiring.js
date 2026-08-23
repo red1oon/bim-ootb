@@ -78,7 +78,8 @@ const NEED = [
   ['commitGanttGroupShift', ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']],
   ['linkGanttBars',         ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']],
   ['openGanttProps',        ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']],
-  ['commitGanttDrag',       ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']]
+  ['commitGanttDrag',       ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']],
+  ['rescheduleGanttAsap',   ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']]
 ];
 NEED.forEach(function (spec) {
   const body = fnBody(spec[0]);
