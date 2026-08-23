@@ -260,6 +260,10 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 .tier.t4{border-color:var(--warn);color:var(--warn);background:var(--warn-wash)}
 .mx td .cl{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);display:block;margin-top:3px}
 .mx tr:target td{background:var(--accent-wash)}
+.todo{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--warn);
+  border:1px dashed var(--warn);border-radius:4px;padding:1px 6px;white-space:nowrap
+}
 .mx td.k{font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--ink);width:52px;vertical-align:top}
 .mx td{vertical-align:top}
 .mx th.c,.mx td.c{width:auto}
@@ -287,6 +291,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <a href="#measured">05 &nbsp;What we measured</a>
     <a href="#unverified">06 &nbsp;Carried without a source</a>
     <a href="#corrections">07 &nbsp;Corrections</a>
+    <a href="#limitations">08 &nbsp;Limitations</a>
     <a href="#refs">References</a>
   </nav>
 </div>
@@ -686,6 +691,55 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   touched.</p>
 </section>
 
+<section id="limitations">
+  <div class="shead"><span class="snum">08</span><h2>Limitations</h2></div>
+  <p class="lede">Stated as a set, in one place, because a reader should not have to assemble them from
+  seven pages. Each is detailed in the section named against it.</p>
+
+  <ol class="refs">
+    <li><strong>Four of the twenty criteria are not anchored to any external source.</strong> A3 data
+      portability, C1 tool concentration, C3 adoption barriers and C4 switching cost rest on the
+      instrument&rsquo;s own design rationale. Construct validity for those four is not demonstrable
+      from the literature and depends on the pilot study. <span class="loc">Section 02.</span></li>
+    <li><strong>The instrument has not been validated.</strong> Expert validation and pilot testing are
+      a planned phase and have not been carried out. No criterion weighting, threshold band or
+      proportionate target in this version has been calibrated against evidence; they are provisional.
+      <span class="loc">Version 0.1 throughout.</span></li>
+    <li><strong>The industry benchmark is empty.</strong> Zero assessments have been submitted, so any
+      comparative statement in a report is a statement about an empty set and is labelled as such. No
+      figure is substituted for it. <span class="loc">Finding F6, section 05.</span></li>
+    <li><strong>Findings F1&ndash;F4 have n&nbsp;=&nbsp;1.</strong> They are measurements of individual
+      named models. They establish that a condition occurs and is detectable; they establish no
+      frequency, prevalence or industry rate, and must not be quoted as industry statistics.
+      <span class="loc">Section 05.</span></li>
+    <li><strong>Responses are self-reported and unaudited.</strong> The organisational half of every
+      assessment is what a respondent says about their own firm. No third party witnesses, checks or
+      attests to it. The model half is measured, but from a file the respondent chooses to supply.
+      <span class="loc">Acknowledgement gate, in the assessment.</span></li>
+    <li><strong>Three standards were read only as far as their publishers&rsquo; previews allow.</strong>
+      For ISO 19650-2, ISO 19650-3 and ISO 12006-2, clause <em>titles</em> are quoted and clause
+      <em>bodies</em> were not read. Anchors resting on those documents are anchored to a clause whose
+      title is verified and whose full text is not. <span class="loc">Section 03.</span></li>
+    <li><strong>One source remains at T2 and six at T3.</strong> ISO 16739-1:2024 is cited from its
+      catalogue record only. The Malaysia, United Kingdom and European Union mandate rows rest on
+      secondary accounts whose primary instrument texts were not obtained.
+      <span class="loc">Sections 03 and 04.</span></li>
+    <li><strong>Regulatory positions are current as at the date each row was read, and mandates
+      change.</strong> This was not hypothetical: the Dubai position published here was two circulars
+      out of date until 23 August 2026, and the error came from a secondary account that was accurate
+      about the instrument it described. <span class="loc">Correction C-3, section 07.</span></li>
+    <li><strong>The toolkit measures losslessness, never lawfulness.</strong> It reports whether
+      information is present and well-formed. It does not certify compliance with any regulation,
+      standard, code or contract &mdash; no software does, in any jurisdiction. Local authority
+      compliance rests with the Appointing Party and the Lead Appointed Party.
+      <span class="loc">Disclaimer Notice.</span></li>
+    <li><strong>No single headline score is issued, by design.</strong> Coverage and well-formedness are
+      independent axes, so a one-word verdict would be arbitrary rather than merely coarse. A reader
+      wanting a single number will not find one here, and that is the finding at F3 rather than an
+      omission. <span class="loc">Section 05.</span></li>
+  </ol>
+</section>
+
 <section id="refs">
   <div class="shead"><span class="snum">&mdash;</span><h2>References</h2></div>
   <p class="lede">Standards are given in the issuing body&rsquo;s own citation form. Each entry states
@@ -726,6 +780,15 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   content of ISO standards or national regulations, which should always be cited to the issuing body.</p>
   <p>Funding, competing interests, data availability, ethics, use of generative AI and licence are
   declared at <a href="disclaimer.html">the Disclaimer Notice</a> and are not duplicated here.</p>
+
+  <h3>Correspondence</h3>
+  <p>Author of record and corresponding author: <strong>Mohd Faizal Bin Yusof</strong>.</p>
+  <p>Queries about a figure, a source, or a request for the underlying data:
+  <span class="todo">contact address &mdash; to be inserted</span></p>
+  <p>Ethics approval reference for the participant-facing study:
+  <span class="todo">ethics approval reference &mdash; to be inserted</span></p>
+  <p class="small">These two values are not yet held by the project. They are shown as placeholders
+  rather than omitted, so that their absence is visible and cannot be mistaken for a value.</p>
 </section>
 
 <footer>

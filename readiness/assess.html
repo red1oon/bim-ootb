@@ -234,6 +234,22 @@ a.anchor:hover .src{text-decoration:underline}
 .drop.filled{border-style:solid;border-color:var(--accent);text-align:left;padding:18px 20px}
 
 /* ---- PAYLOAD ---- */
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+footer a{color:var(--muted)}
+.call.warnc{
+  border-left:3px solid var(--warn);background:var(--warn-wash);border-radius:6px;
+  padding:12px 14px;font-size:14.5px;color:var(--ink-2);line-height:1.55
+}
+dl.consent{margin:0;font-size:14.5px}
+dl.consent dt{
+  font-family:"Instrument Sans",sans-serif;font-size:12px;font-weight:600;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--accent-ink);margin-top:13px
+}
+dl.consent dt:first-child{margin-top:0}
+dl.consent dd{margin:4px 0 0;color:var(--ink-2);line-height:1.55}
 pre.payload{
   margin:0;background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;
   padding:14px 16px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;
@@ -300,6 +316,20 @@ pre.payload{
   padding:13px 0;border-bottom:1px solid var(--rule-soft);align-items:start
 }
 .fixes li:last-child{border-bottom:none}
+/* Grant deliverable: recommendations fall in three categories — capability development,
+   standards adoption, implementation planning. Every recommendation carries one. */
+.fixes .cat{
+  display:inline-block;margin-bottom:6px;font-family:"Instrument Sans",sans-serif;font-size:11px;
+  font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--accent-ink);
+  background:var(--accent-wash);border:1px solid var(--accent);border-radius:4px;padding:2px 7px
+}
+.fixes .cat.plan{color:var(--warn);background:var(--warn-wash);border-color:var(--warn)}
+.fixes .cat.cap{color:var(--ink-2);background:var(--surface-2);border-color:var(--rule)}
+/* A value the project does not yet hold. Rendered so it cannot ship unnoticed. */
+.todo{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--warn);
+  border:1px dashed var(--warn);border-radius:4px;padding:1px 6px;white-space:nowrap
+}
 .fixes li::before{
   content:counter(f);font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
   color:var(--accent-ink);background:var(--accent-wash);border-radius:5px;
@@ -356,6 +386,16 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
   <div class="railcap" id="railcap" hidden><span id="railnow">About you</span><span id="railpct">Step 1 of 5</span></div>
 
   <div id="screens"></div>
+
+<footer>
+  OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management &middot; v0.1<br>
+  Mohd Faizal Bin Yusof &middot; research instrument in development &mdash; criteria and thresholds
+  subject to expert validation.<br>
+  <a href="sources.html">Sources and verification</a> &middot;
+  <a href="sources.html#refs">How to cite</a> &middot;
+  <a href="proposal.html">The research proposal</a> &middot;
+  <a href="disclaimer.html">Disclaimer Notice</a>
+</footer>
 
 </div>
 
@@ -435,7 +475,8 @@ SCREENS.intro =
     '<label class="chk" style="margin-top:14px"><input type="checkbox" checked>' +
       '<span>Answer anonymously. No name, firm, email, or project details are collected.</span></label>' +
     '<label class="chk"><input type="checkbox">' +
-      '<span>Include my (anonymous) results in the industry benchmark, so I can see how I compare.</span></label>' +
+      '<span>Include my (anonymous) results in the industry benchmark, so I can see how I compare. ' +
+      'You are asked to consent separately, at the end, once you can see exactly what would be sent.</span></label>' +
   '</div>' +
 
   '<p class="small" style="margin-top:20px">This toolkit is the artifact of a funded research ' +
@@ -762,8 +803,50 @@ SCREENS.model =
       '  "exporter":      "other",\n' +
       '  "toolkit":       "v0.1",\n' +
       '  "kb":            "core-0.1 / ae-v1"\n}</pre>' +
-    '<label class="chk" style="margin-top:14px"><input type="checkbox">' +
-      '<span>Send this. Optional &mdash; your report is complete either way.</span></label>' +
+  '</div>' +
+
+  /* Research participation. This is a funded study and a submission is research data,
+     so consent is asked separately from the disclaimer, at the point of collection. */
+  '<div class="card">' +
+    '<h3>Taking part in the research</h3>' +
+    '<div class="call warnc"><strong>Version 0.1 has no submission endpoint.</strong> Nothing is ' +
+    'transmitted from this page, and no response data is collected or stored by any party. The ' +
+    'checkbox below is part of the mocked flow. This consent statement is published now, ahead of ' +
+    'that capability, so it can be reviewed before it ever governs a real submission.</div>' +
+    '<p class="small" style="margin:12px 0 13px">When submission does exist, sending the payload above ' +
+    'will make you a participant in a funded research study on these terms.</p>' +
+    '<dl class="consent">' +
+      '<dt>Who is running it</dt>' +
+      '<dd>Mohd Faizal Bin Yusof, under a research grant. The full proposal is published at ' +
+        '<a href="proposal.html">The research proposal</a>.</dd>' +
+      '<dt>What is collected</dt>' +
+      '<dd>Exactly the payload shown above &mdash; numbers and fixed categories. No file, no name, no ' +
+        'firm, no email, no project details, no GUIDs, no coordinates, no free text.</dd>' +
+      '<dt>What it is used for</dt>' +
+      '<dd>Two things: the industry benchmark shown in your report, and analysis for a peer-reviewed ' +
+        'journal article. Only aggregates are published &mdash; never a single response.</dd>' +
+      '<dt>Taking part is voluntary</dt>' +
+      '<dd>Declining changes nothing. Your report is complete either way, and no feature is withheld.</dd>' +
+      '<dt>A submission could not be withdrawn</dt>' +
+      '<dd>Because nothing identifying you would be sent, a submission could not afterwards be found ' +
+        'and removed. That is the cost of genuine anonymity, and it is the reason to decide before ' +
+        'sending rather than after.</dd>' +
+      '<dt>How long it is kept</dt>' +
+      '<dd>For the life of the research project and any publication arising from it. Aggregates may be ' +
+        'published as supplementary data; the individual responses behind them are not republished.</dd>' +
+      '<dt>Ethics approval</dt>' +
+      '<dd><span class="todo">ethics approval reference &mdash; to be inserted</span> Any ethics ' +
+        'determination for the study rests with the researcher&rsquo;s institution. The reference will ' +
+        'appear here before the first submission is ever accepted.</dd>' +
+      '<dt>Questions or complaints</dt>' +
+      '<dd><span class="todo">contact address &mdash; to be inserted</span></dd>' +
+    '</dl>' +
+    '<label class="chk" style="margin-top:16px"><input type="checkbox">' +
+      '<span>I have read the above and consent to my anonymous responses being used for research. ' +
+      '<strong>Optional</strong> &mdash; your report is complete either way.</span></label>' +
+    '<p class="small" style="margin-top:11px">Full declarations &mdash; funding, competing interests, ' +
+    'data availability, ethics, use of generative AI, licence &mdash; are at ' +
+    '<a href="disclaimer.html">the Disclaimer Notice</a>.</p>' +
   '</div>' +
 
   '<div class="actions">' +
@@ -859,17 +942,17 @@ SCREENS.results =
 
   '<div class="card">' +
     '<h3>Recommendations</h3>' +
-    '<p class="small" style="margin-top:5px">Capability development &middot; standards adoption &middot; implementation planning &mdash; ordered by how much each unlocks downstream</p>' +
+    '<p class="small" style="margin-top:5px">Each recommendation is placed in one of the three categories &mdash; capability development, standards adoption, implementation planning &mdash; and the set is ordered by how much each unlocks downstream</p>' +
     '<ol class="fixes">' +
-      '<li><div><h4>Add spaces to the model</h4><p>Zero IfcSpace entities. Rooms are required by downstream ' +
+      '<li><div><span class="cat">Standards adoption</span><h4>Add spaces to the model</h4><p>Zero IfcSpace entities. Rooms are required by downstream ' +
       'uses &mdash; FM, area schedules, analysis. A consumer that requires spaces cannot use this file.</p></div></li>' +
-      '<li><div><h4>Classify at type level, not element level</h4><p>234 of 339 types carry no code. Coding types ' +
+      '<li><div><span class="cat plan">Implementation planning</span><h4>Classify at type level, not element level</h4><p>234 of 339 types carry no code. Coding types ' +
       'rather than 12,847 elements is roughly a day of work instead of a month.</p></div></li>' +
-      '<li><div><h4>Resolve 47 duplicate GUIDs before the next issue</h4><p>Duplicates break round-tripping and ' +
+      '<li><div><span class="cat">Standards adoption</span><h4>Resolve 47 duplicate GUIDs before the next issue</h4><p>Duplicates break round-tripping and ' +
       'change tracking silently.</p></div></li>' +
-      '<li><div><h4>Turn on quantity export</h4><p>No IfcElementQuantity present, so nothing downstream can do ' +
+      '<li><div><span class="cat">Standards adoption</span><h4>Turn on quantity export</h4><p>No IfcElementQuantity present, so nothing downstream can do ' +
       'cost or carbon from this model.</p></div></li>' +
-      '<li><div><h4>Write down what the model must contain, before the next project starts</h4>' +
+      '<li><div><span class="cat cap">Capability development</span><h4>Write down what the model must contain, before the next project starts</h4>' +
       '<p>Your lowest-scoring governance item, and the cheapest to fix.</p></div></li>' +
     '</ol>' +
   '</div>' +
@@ -917,6 +1000,23 @@ SCREENS.results =
     'appointment, that obligation is yours and this report substitutes for none of it.</p>' +
     '<p><a href="disclaimer.html">Read the full Disclaimer Notice &rarr;</a> &nbsp;&middot;&nbsp; ' +
     '<span class="mono">Notice v0.1 &middot; 22 Aug 2026</span></p>' +
+  '</div>' +
+
+  /* A report that leaves this page has to say who produced it and how to cite it.
+     Separate card — the Notice above is legally load-bearing and is not edited. */
+  '<div class="card">' +
+    '<h4>Provenance and citation</h4>' +
+    '<p class="small" style="margin-top:9px">Instrument: <strong>OpenBIM Readiness Assessment Toolkit ' +
+    'for Digital Infrastructure Management</strong>, version 0.1. Author of record: ' +
+    '<strong>Mohd Faizal Bin Yusof</strong>. Research instrument in development &mdash; criteria and ' +
+    'thresholds are subject to expert validation and are not final.</p>' +
+    '<p class="small">Every criterion in this assessment names the source it is drawn from, and ' +
+    '<a href="sources.html">Sources and verification</a> gives the clause each was checked against and ' +
+    'how far that source was read. <strong>Sixteen of the twenty criteria are anchored to a published ' +
+    'standard; four are not</strong>, and are marked as such.</p>' +
+    '<p class="small"><strong>No DOI has been minted.</strong> Cite the version number and the access ' +
+    'date. Any DOI attributed to this work before its first version-frozen release is not one the ' +
+    'authors issued. <a href="sources.html#refs">How to cite &rarr;</a></p>' +
   '</div>' +
 
   '<div class="actions">' +
