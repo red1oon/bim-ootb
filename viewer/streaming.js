@@ -2308,6 +2308,12 @@ function setupStreaming(A) {
       if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
       A.libDb = A.db;
       A._splitHasMeta = true;
+      // §TM_SPLITMODE_PERSIST_KEY (4D_GANTT_TM_REFACTOR.md §S78): A.db's content just came from
+      // metaUrl, not A.DB_URL — a persist keyed on A.DB_URL writes a slot this same loader never
+      // reads back (cachedFetch(metaUrl) above resolves its OWN key from metaUrl, never A.DB_URL,
+      // in split mode). One source of truth: whoever persists app.db reads THIS field instead of
+      // re-deriving split state, so read-key and write-key can never drift apart.
+      A._dbPersistUrl = metaUrl;
       console.log(`[S192] §DB_META_LOADED size=${(metaBuf.byteLength/1024/1024).toFixed(1)}MB`);
 
       // §S260b: Set activeBuilding + _hasBbox early so 4D5D relay + clash work during geo download
@@ -2474,6 +2480,9 @@ function setupStreaming(A) {
       }
       A.db = new SQL.Database(new Uint8Array(dbBuf));
       if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
+      // §TM_SPLITMODE_PERSIST_KEY — whole-db path: A.db's content IS A.DB_URL's bytes, set
+      // explicitly (not left unset) so this field is never stale from a prior split-mode load.
+      A._dbPersistUrl = A.DB_URL;
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
       // §S283: Remember last building URL for PWA resume
       try { localStorage.setItem('pwa_last_db', A.DB_URL); } catch(e) {}

@@ -49,7 +49,16 @@ const check = (name, cond, detail) => {
   check('H0 page loads with no JS error', errs.length === 0, errs.length ? errs[0] : '(0 page errors), loadMs=' + loadMs);
 
   await page.evaluate(() => window.toggleTimeMachine());
-  await new Promise(r => setTimeout(r, 15000));
+  // §S78 diagnostic: this environment's cold page-load already consumes ~180s (reproduced
+  // identically on unmodified origin/main — not a fix regression); bars=0 with the original 15s
+  // wait suggests the Gantt data (schedule/tasks) simply hadn't finished materializing yet.
+  // Poll instead of a fixed sleep so we don't guess a magic number twice.
+  let _barsSeen = 0;
+  for (let _w = 0; _w < 24; _w++) {
+    await new Promise(r => setTimeout(r, 5000));
+    _barsSeen = await page.evaluate(() => (window.__tmGanttBars || []).filter(b => b.taskId).length).catch(() => 0);
+    if (_barsSeen > 1) { console.log('§S78_BARS_POLL ready after ' + ((_w + 1) * 5) + 's bars=' + _barsSeen); break; }
+  }
   await page.evaluate(() => { const g = document.getElementById('tm-gantt'); g && g.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
   await new Promise(r => setTimeout(r, 8000));
   await page.evaluate(() => { const l = document.getElementById('tm-gantt-editlock'); l && l.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
@@ -118,9 +127,16 @@ const check = (name, cond, detail) => {
   const reloadMs = Date.now() - t3;
 
   const allCacheLines = lines.filter(l => /§CACHE_HIT/.test(l));
-  const extractedCacheLine = allCacheLines.find(l => /Hospital_extracted/.test(l)) || '(none — extracted.db not cache-hit by name)';
-  check('H5 reload hits the IDB cache for the EXTRACTED db specifically (not just geo/positions)',
-    /Hospital_extracted/.test(extractedCacheLine), 'all §CACHE_HIT lines: ' + JSON.stringify(allCacheLines));
+  // §S78 CORRECTION: this check originally asserted a hit on Hospital_extracted.db — but that was
+  // never the right expectation. In split mode APP.db is loaded from meta.db BY DESIGN (that is not
+  // the bug; extracted.db is bypassed entirely for split buildings, geo.db separately for geometry).
+  // The actual invariant the fix must prove is that the RELOAD's cache lookup for the tasks-bearing
+  // db (meta.db) is a HIT — i.e. the persist actually landed in the slot the loader reads, not a
+  // miss that silently re-fetches a pristine copy from the network and masks data loss as "it loaded
+  // fine." A miss here would mean H6 passing is not even testing what we think it's testing.
+  const metaCacheLine = allCacheLines.find(l => /Hospital_meta/.test(l)) || '(none — meta.db not cache-hit)';
+  check('H5 reload hits the IDB cache for meta.db (the db split mode actually loads tasks from)',
+    /Hospital_meta/.test(metaCacheLine), 'all §CACHE_HIT lines: ' + JSON.stringify(allCacheLines));
 
   const schemaCheck = await page2.evaluate((taskId) => {
     try {
