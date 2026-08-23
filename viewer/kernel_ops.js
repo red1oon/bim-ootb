@@ -126,7 +126,11 @@
     _persistTimer = setTimeout(function() {
       sealChain(db).then(function() {
         try {
-          var dbUrl = window.APP && APP.DB_URL;
+          // §TM_SPLITMODE_PERSIST_KEY (§S78): a split-mode building's APP.db is loaded from
+          // metaUrl, not APP.DB_URL (streaming.js) — APP._dbPersistUrl is set at the exact point
+          // APP.db is assigned, in both the split and whole-db branches, so it always names the
+          // url APP.db's bytes actually came from. Same field ScheduleAuthor.persistDb now uses.
+          var dbUrl = window.APP && (APP._dbPersistUrl || APP.DB_URL);
           if (!dbUrl) return;
           if (window.APP && APP._cacheDisabled) return;   // incognito / low quota → no IDB
           // §SCHED_PERSIST_KEY (§S70): cachedFetch reads under DbResolve.cacheKey(url), not the raw

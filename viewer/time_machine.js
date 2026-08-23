@@ -6168,9 +6168,17 @@
   // MEASURED cost of persistDb's whole-db export on the real fleet: Duplex 3ms, Terminal 10ms,
   // LTU 26ms, Clinic 47ms, JKR 70ms, Hospital (252MB) 86ms — one dropped frame at the worst, and
   // persistDb debounces 1200ms on top, so a burst of drags collapses to a single write.
-  // Guards mirror §KRN_PERSIST_GUARD: only APP.db under APP.DB_URL, never a foreign db (a lens
-  // committing its own op-db under the building's key cost a P0 in kernel_ops.js), and never when
-  // _cacheDisabled (incognito / low quota).
+  // Guards mirror §KRN_PERSIST_GUARD: only APP.db under the url APP.db's own bytes came from,
+  // never a foreign db (a lens committing its own op-db under the building's key cost a P0 in
+  // kernel_ops.js), and never when _cacheDisabled (incognito / low quota).
+  // §TM_SPLITMODE_PERSIST_KEY (4D_GANTT_TM_REFACTOR.md §S78): a split-mode building's A.db is
+  // loaded from metaUrl, not A.DB_URL (streaming.js) — persisting under A.DB_URL writes a slot
+  // the reload path's cachedFetch(metaUrl) never reads, so the edit survives the write and is
+  // silently unreachable on reload (measured on Hospital/Clinic, §S76). app._dbPersistUrl is set
+  // by streaming.js at the exact point app.db is assigned, in BOTH the split and whole-db
+  // branches — it is the one url that is always guaranteed to describe app.db's actual content,
+  // so persisting under it (falling back to app.DB_URL only if a pre-this-fix build never set it)
+  // keeps read-key and write-key derived from the same fact, not two independent guesses.
   function _tmPersistEdit(what) {
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.persistDb) {
@@ -6179,8 +6187,9 @@
     }
     if (!app.DB_URL) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=no_db_url'); return; }
     if (app._cacheDisabled) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=cache_disabled'); return; }
-    SA.persistDb(app.db, app.DB_URL, {}).then(function (ok) {
-      console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + app.DB_URL + ' ok=' + ok);
+    var persistUrl = app._dbPersistUrl || app.DB_URL;
+    SA.persistDb(app.db, persistUrl, {}).then(function (ok) {
+      console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + persistUrl + ' ok=' + ok);
     });
   }
 
