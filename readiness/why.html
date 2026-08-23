@@ -159,6 +159,20 @@ figcaption b{
 .yes{color:var(--accent);font-weight:700}
 .no{color:var(--warn);font-weight:700}
 .mxscroll{overflow-x:auto}
+/* numbered point list, same treatment as the assessment's recommendations */
+.fixes{list-style:none;padding:0;margin:16px 0;counter-reset:f}
+.fixes li{
+  counter-increment:f;display:grid;grid-template-columns:27px 1fr;gap:13px;
+  padding:13px 0;border-bottom:1px solid var(--rule-soft);align-items:start
+}
+.fixes li:last-child{border-bottom:none}
+.fixes li::before{
+  content:counter(f);font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent-ink);background:var(--accent-wash);border-radius:5px;
+  width:27px;height:24px;display:flex;align-items:center;justify-content:center
+}
+.fixes h4{margin:0 0 5px;font-size:15.5px}
+.fixes p{margin:0;font-size:14.5px;color:var(--ink-2);line-height:1.55}
 
 /* ---- bands ---- */
 .bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
@@ -271,6 +285,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <a href="#industry">01 &nbsp;The industry</a>
     <a href="#gap">02 &nbsp;The gap</a>
     <a href="#roadmap">03 &nbsp;The roadmap</a>
+    <a href="#differs">04 &nbsp;How this differs</a>
     <a href="#offline">Offline copy</a>
     <a href="proposal.html">The proposal</a>
     <a href="faq.html">Plain answers</a>
@@ -484,6 +499,78 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   </figure>
 </section>
 
+<section id="differs">
+  <div class="shead"><span class="snum">04</span><h2>How this differs from other assessments</h2></div>
+  <p class="lede">BIM maturity assessment is a crowded field, and this instrument should not be
+  presented as entering an empty one. What follows is where it sits, and what it does not claim.</p>
+
+  <h3>The field is well populated</h3>
+  <p>A 2020 evaluation by the Centre for Digital Built Britain with the UK BIM Alliance inventoried
+  <strong>fifteen tools and six methods</strong> for assessing BIM maturity.<sup class="fn"><a href="#ref7" id="fnref7">7</a></sup>
+  At organisation level these include the BIM Excellence Online Platform, the NBIMS Capability Maturity
+  Model, Penn State&rsquo;s Organizational BIM Assessment, the Scottish Futures Trust&rsquo;s BIM
+  Compass, CPIx, and Succar&rsquo;s BIM Maturity Matrix; at project level, Stanford&rsquo;s VDC
+  Scorecard and ARUP&rsquo;s BIM Maturity Measure, among others.</p>
+
+  <p>That report found <strong>45% of the organisations it surveyed who assess maturity had built their
+  own internal tool</strong> rather than use a published one. It attributed this to specific failings
+  it observed in the existing tools, quoted here in its own words: <em>&ldquo;rigid tools &mdash;
+  one-size-fits-all; inaccurate and low granularity assessment; binary (yes/no) assessment focused on
+  readiness and capabilities for compliance purposes; overlooking collaborative behaviour;
+  inappropriate baselines and timing used in assessment.&rdquo;</em> The same report recorded
+  <strong>interoperability and IFC support at 96%</strong> among the highest-rated areas of industry
+  importance.</p>
+
+  <h3>What is not new here</h3>
+  <p>Assessing BIM capability against the ISO/IEC 33000 family of process-assessment standards
+  <strong>is not a new idea, and this project does not claim it as one</strong>. BIM-CAREM, a reference
+  model grounded on that same standard family, was developed at the Middle East Technical University
+  and published in 2018.<sup class="fn"><a href="#ref8" id="fnref8">8</a></sup> Its own review compares
+  eight earlier models and concludes that <em>&ldquo;there is no commonly accepted and broadly used
+  model in the literature&rdquo;</em>. Anyone assessing this instrument should read that work first.</p>
+
+  <h3>Four things this one does differently</h3>
+  <ol class="fixes">
+    <li><div><h4>OpenBIM is the subject, not a subdomain</h4>
+      <p>Existing instruments treat interoperability as one topic among many &mdash; BIM-CAREM records
+      it as <em>&ldquo;whether interoperable formats are used&rdquo;</em>, a question about presence.
+      Here, all twenty criteria are about open-standard working, and the assessment reports nothing
+      else.</p></div></li>
+    <li><div><h4>Your answers are checked against your model</h4>
+      <p>Every instrument named above is self-assessment. This one optionally reads an IFC file you
+      supply &mdash; inside your browser, never uploaded &mdash; and reports where the measurement
+      disagrees with what you said. A claim and its evidence are reported as two different things.</p></div></li>
+    <li><div><h4>No single headline score, ever</h4>
+      <p>This follows from a measurement rather than a preference. On one hospital model of 63,917
+      elements, <strong>7.11%</strong> of elements carried a classification code and, of the codes
+      present, <strong>none were invalid</strong>. The same model therefore scores 100% on validity and
+      7.11% on coverage. A one-word verdict is not merely coarse but arbitrary: it depends entirely on
+      which of two independent axes it happens to measure.</p></div></li>
+    <li><div><h4>Every claim states how far its source was read</h4>
+      <p>Each criterion names the standard it is drawn from, the clause, and a tier recording whether
+      the publisher&rsquo;s own text was read, only a catalogue record, or only a secondary account.
+      <strong>Sixteen of the twenty criteria are anchored to a published standard. Four are not</strong>,
+      and say so. <a href="sources.html#anchors">See the anchors and their tiers &rarr;</a></p></div></li>
+  </ol>
+
+  <p>Two further differences are practical rather than methodological: the assessment is free, runs
+  entirely in a browser with no account and no server, and takes about fifteen minutes &mdash; matching
+  the fastest instrument in the 2020 survey; and the conversational step runs in whatever AI service
+  you already use, so no key, no subscription and no data of yours reaches a model operated by this
+  project.</p>
+
+  <div class="call warn">
+    <span class="lab">What this comparison does not establish</span>
+    <p>The survey quoted above is dated <strong>February 2020</strong> and the field has moved since.
+    A tool published in 2026 by the author of BIM-CAREM was located but could not be obtained, and no
+    claim is made about its contents.</p>
+    <p>No OpenBIM-specific instrument was found in the parts of that survey read, but it runs to
+    several hundred pages and was read selectively. <strong>That is a gap not found, not a gap
+    demonstrated</strong>, and it is recorded that way in the source register rather than presented as
+    a claim to originality.</p>
+  </div>
+</section>
+
 <section id="disclaimer">
   <div class="shead"><span class="snum">&mdash;</span><h2>What this does not do</h2></div>
 
@@ -585,6 +672,17 @@ ol.refs a.back:hover{color:var(--accent-ink)}
       for assessment of process capability.</em> <span class="loc">§5.2.2–§5.2.7</span> define capability levels 0–5 as
       Incomplete, Performed, Managed, Established, Predictable and Innovating — level 5 is <em>Innovating</em>, not the
       older SPICE/CMMI “Optimizing”. <a class="back" href="#fnref6">↩</a></li>
+    <li id="ref7">Kassem, M., Li, J., Kumar, B., Malleson, A., Gibbs, D.J., Kelly, G. and Watson, R. (2020),
+      <em>Building Information Modelling: Evaluating Tools for Maturity and Benefits Measurement.</em> Centre for
+      Digital Built Britain in partnership with the UK BIM Alliance, <span class="loc">February 2020</span>.
+      Inventory of 15 tools and 6 methods; the quoted gap analysis, the 45% figure and the 96% interoperability
+      rating are that report’s own findings. Read selectively — executive summary, tool inventory, gap analysis
+      and interoperability findings. <a class="back" href="#fnref7">↩</a></li>
+    <li id="ref8">Yılmaz, G. (2017), <em>BIM-CAREM: A Reference Model for Building Information Modelling Capability
+      Assessment</em>, PhD thesis, Middle East Technical University; published as Yılmaz, G., Akçamete, A. and
+      Demirörs, O. (2018), ‘A reference model for BIM capability assessments’, <em>Automation in Construction</em>,
+      <span class="loc">doi:10.1016/j.autcon.2018.10.022</span>. The thesis was read in full; the journal papers
+      were not obtained. <a class="back" href="#fnref8">↩</a></li>
   </ol>
   <p class="small" style="margin-top:18px;color:var(--muted);font-size:13.5px">Standards texts were read from the
   publishers’ official preview documents; clause numbers and quoted wording are taken from those texts. Sources
