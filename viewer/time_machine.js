@@ -6750,6 +6750,27 @@
     if (!app || !app.db || !SA) return;
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     var d = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+    // §S22_EPOCH_FIX, E7 (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S72) — the REAL calendar
+    // dates, read from `tasks`, never bar.startTs/bar.endTs.
+    // bar.startTs is the TM's OWN internal playback clock (a kernel_ops-derived day-offset solve,
+    // near-1970 by construction). §S22 fixed commitGanttDrag for exactly this and E7 was never
+    // brought along: the panel showed "1970-01-01" for a task really starting 2026-09-07, and
+    // Apply then wrote that 1970 date straight into tasks.schedule_start through moveTaskCascade.
+    // MEASURED live before the fix (Duplex, real dblclick → real Apply):
+    //   §GANTT_PROPS_OPEN task=TASK_Substructure_T_FDN → input value 1970-01-01
+    //   §GANTT_EDIT_MOVE  task=TASK_Substructure_T_FDN start=1970-01-05 cascaded=0
+    //   §GANTT_EDIT_PERSIST what=propsApply ok=true      ← and §S70 then cached the corruption
+    var realS = null, realF = null;
+    try {
+      var rr = app.db.exec('SELECT schedule_start, schedule_finish FROM tasks WHERE task_id=?', [bar.taskId]);
+      if (rr.length && rr[0].values.length) { realS = rr[0].values[0][0]; realF = rr[0].values[0][1]; }
+    } catch (e) {}
+    if (!realS || !realF) {
+      // Honest refusal, same shape as commitGanttDrag's no_real_task_snapshot: a panel that cannot
+      // read the task's real dates must not offer to edit them with made-up ones.
+      console.log('§GANTT_PROPS_REJECT reason=no_real_task_dates task=' + bar.taskId);
+      return;
+    }
     var box = document.getElementById('tm-gantt-props') || (function () {
       var el = document.createElement('div');
       el.id = 'tm-gantt-props';
@@ -6780,9 +6801,9 @@
         (cpmInfo.critical ? 'CRITICAL PATH · zero float' : 'Total float ' + cpmInfo.totalFloat + 'd') +
         ' <span style="font-size:9px;color:#8a97a5">(CPM, dates unchanged)</span></div>' : '') +
       '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
-        '<input id="tmp-s" type="date" value="' + d(bar.startTs) + '" style="flex:1;font-size:11px"></div>' +
+        '<input id="tmp-s" type="date" value="' + realS + '" style="flex:1;font-size:11px"></div>' +
       '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
-        '<input id="tmp-f" type="date" value="' + d(bar.endTs) + '" style="flex:1;font-size:11px"></div>' +
+        '<input id="tmp-f" type="date" value="' + realF + '" style="flex:1;font-size:11px"></div>' +
       '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
       '<div style="display:flex;gap:6px;margin-top:8px">' +
         '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
@@ -6819,7 +6840,10 @@
         var tbA = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
         if (tbA.length) tbA[0].values.forEach(function (row) { tasksBeforeApply[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
       } catch (e) {}
-      var res = (s !== d(bar.startTs) && f === d(bar.endTs) && SA.moveTaskCascade)
+      // Compare against the REAL dates the panel was populated with (§S72) — comparing the typed
+      // value against the TM-clock d(bar.startTs) made "start changed, finish didn't" always true,
+      // so a pure finish edit was routed through moveTaskCascade as if it were a move.
+      var res = (s !== realS && f === realF && SA.moveTaskCascade)
         ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
         : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
       if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
