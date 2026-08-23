@@ -40,6 +40,10 @@ const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'ut
   // the suite runner caught the omission the moment the guard landed.
 const sliced = [
   '_tmBusyRecording',
+  // §S69: the per-site refusal moved into one helper, so the sliced verbs call THIS now. Sliced
+  // rather than stubbed — it is five lines and slicing the real one keeps the sandbox honest about
+  // what the guard actually does (with no recording flag set on the fake app, it returns false).
+  '_tmEditLocked',
   'loadOps', '_retimeSpan', 'retimeTaskElements', 'commitGanttDrag', 'undoLastGanttEdit'
 ].map(function (n) { return sliceFn(tmSrc, n); }).join('\n');
 

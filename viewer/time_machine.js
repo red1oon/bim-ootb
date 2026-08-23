@@ -5151,7 +5151,13 @@
     // task index is built from it. sched.safeToRegen already excludes captured (imported) schedules
     // and anything with a baseline set (the user's committed, edited product) — see activeSchedule's
     // own header for the exact contract.
-    if (sched.safeToRegen && SA.materializeZones) {
+    // §TM_BAKE_LOCK (§S69) — the guard is on the REGEN, not on buildTaskIndex itself. This block
+    // rewrites the whole schedule in place, so firing it mid-bake would swap the timeline out from
+    // under the recorder; but refusing the whole function would leave the Gantt with no task index
+    // and break the very display the film is recording. Skipping only the regen keeps the film on
+    // the exact schedule it started with, and genVersion stays stale so the self-heal simply runs on
+    // the next rebuild after the bake finishes. Found by W-TBL-5's derivation, not by hand.
+    if (sched.safeToRegen && SA.materializeZones && !_tmEditLocked('buildTaskIndex:staleRegen')) {
       console.log('§GANTT_SCHEDULE_STALE_REGEN id=' + sched.id + ' genVersion=' + sched.genVersion +
         ' current=' + _GANTT_CACHE_VERSION + ' — re-materializing in place');
       try {
@@ -6077,14 +6083,26 @@
     return null;
   }
 
+  // _tmEditLocked(verb) — the ONE refusal, called by every timeline-mutating entry point.
+  // Implementing bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §S69. §S56 shipped this guard as five
+  // duplicated lines inside commitGanttDrag and generateGanttSchedule; the five paths added since
+  // (ruler shift, group shift, undo, link, typed apply/unlink) never got a copy, so a bake could be
+  // desynced by any of them. Duplication was the mechanism — a rule that has to be re-typed at each
+  // new call site is a rule that eventually is not. One helper, one log format, and W-TBL-5 derives
+  // the list of callers from the code instead of trusting a hand-kept list.
+  // Refusal stays LOUD and returns — never a silent no-op, never an edit queued and applied after
+  // the bake finishes.
+  function _tmEditLocked(verb) {
+    var busy = _tmBusyRecording(A());
+    if (!busy) return false;
+    console.log('§TM_BAKE_LOCK refused=' + verb + ' reason=' + busy +
+      ' — the film is playing this timeline; editing it mid-record would desync the recording');
+    return true;
+  }
+
   function commitGanttDrag(bar, mode, deltaDays) {
+    if (_tmEditLocked('commitGanttDrag')) return;
     var app = A();
-    var _tmBusy = _tmBusyRecording(app);
-    if (_tmBusy) {
-      console.log('§TM_BAKE_LOCK refused=commitGanttDrag reason=' + _tmBusy +
-        ' — the film is playing this timeline; editing it mid-record would desync the recording');
-      return;
-    }
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.moveTaskCascade) {
       console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
@@ -6216,6 +6234,7 @@
   // only) — undoLastGanttEdit's restore loop doesn't branch on it, so no other change was needed
   // there at all.
   function shiftGanttSchedule(deltaDays) {
+    if (_tmEditLocked('shiftGanttSchedule')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftSchedule) {
@@ -6268,6 +6287,7 @@
   // restore loop doesn't care whether tasksBefore/opsBefore covers a cascade, the whole schedule,
   // or a selection, it just restores whatever's in there.
   function commitGanttGroupShift(taskIds, deltaDays) {
+    if (_tmEditLocked('commitGanttGroupShift')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftTasks) {
@@ -6321,6 +6341,8 @@
   // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
   // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
   function undoLastGanttEdit() {
+    // §TM_BAKE_LOCK (§S69) — an undo mutates the timeline exactly as much as the edit it reverses.
+    if (_tmEditLocked('undoLastGanttEdit')) return;
     var app = A();
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) {
@@ -6409,6 +6431,10 @@
   function _materializeNativeSchedule(app) {
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.materializeZones) return false;
+    // §TM_BAKE_LOCK (§S69) — deliberately NOT guarded, and the line below is why: this bootstrap
+    // returns early whenever a schedule already exists, and a bake by definition plays an existing
+    // one. It can only ever write the FIRST schedule for a building, which is not a timeline any
+    // film is mid-way through recording. W-TBL-5d asserts that early-return still stands.
     var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
     if (act) return false;                       // schedule exists — injectGantt absorbs it, one pass
     var todayStart = new Date().toISOString().slice(0, 10);
@@ -6423,13 +6449,8 @@
   }
 
   function generateGanttSchedule() {
+    if (_tmEditLocked('generateGanttSchedule')) return;
     var app = A();
-    var _tmBusy = _tmBusyRecording(app);
-    if (_tmBusy) {
-      console.log('§TM_BAKE_LOCK refused=generateGanttSchedule reason=' + _tmBusy +
-        ' — the film is playing this timeline; editing it mid-record would desync the recording');
-      return;
-    }
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) {
@@ -6645,6 +6666,7 @@
   // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
   // schedule is invalid, so the guard refuses rather than "fixing" it silently.
   function linkGanttBars(predBar, succBar) {
+    if (_tmEditLocked('linkGanttBars')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); return; }
     var tip = document.getElementById('tm-gantt-tip');
@@ -6740,6 +6762,9 @@
     document.getElementById('tmp-close').onclick = function () { box.style.display = 'none'; };
     box.querySelectorAll('[data-unlink]').forEach(function (btn) {
       btn.onclick = function () {
+        // §TM_BAKE_LOCK (§S69) — on the WRITE, not on opening the panel: reading a task's dates
+        // mid-bake is harmless, and refusing that would be a worse product than the bug.
+        if (_tmEditLocked('openGanttProps:unlink')) return;
         var x = deps[parseInt(btn.getAttribute('data-unlink'), 10)];
         if (!x || !SA.removeDependency) return;
         SA.removeDependency(app.db, x.predId, x.succId);
@@ -6749,6 +6774,7 @@
       };
     });
     document.getElementById('tmp-apply').onclick = function () {
+      if (_tmEditLocked('openGanttProps:apply')) return;   // §TM_BAKE_LOCK (§S69) — same, on the write
       var s = document.getElementById('tmp-s').value, f = document.getElementById('tmp-f').value;
       var msg = document.getElementById('tmp-msg');
       // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
