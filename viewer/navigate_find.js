@@ -1773,7 +1773,7 @@
     // survey's own rule low witness coverage DISQUALIFIES a candidate. Locked end-to-end by
     // poc_find_erp_link_live.js + poc_construction_link_live.js (real browser, §-log asserted).
     // find_erp_push.js loads BEFORE this file in main.js's A.loadNavigate() module list.
-    var _erpPush = (typeof FindErpPush !== 'undefined' && FindErpPush.create) ? FindErpPush.create({
+    var _erpPush = (typeof window.FindErpPush !== 'undefined' && window.FindErpPush.create) ? window.FindErpPush.create({
       A: A, elErpOpen: elErpOpen, elConstructionOpen: elConstructionOpen,
       getLastSelSet: function () { return _lastSelSet; },      // selection state stays owned HERE (_updateSelCost writes it)
       getLastSelLabel: function () { return _lastSelLabel; },
