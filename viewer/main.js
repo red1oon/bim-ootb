@@ -172,7 +172,14 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=57',
+        // §S59 candidate 2 (SCRIPT_LENGTH_REFACTOR_SEAMS.md, 2026-08-23): the Find panel's 5D-cost/
+        // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
+        // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
+        // no-op if missing, but then every › ERP surface is inert).
+        'find_erp_push.js?v=1',
+        // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
+        // would still carry its own copy AND the new wiring would never run.
+        'navigate_find.js?v=58',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',

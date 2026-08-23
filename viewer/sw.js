@@ -8,7 +8,13 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1077';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1078';   // bump on each deploy; per-change detail is the git commit message.
+// v1078 (2026-08-23) SCRIPT_LENGTH_REFACTOR_SEAMS.md §S59 candidate 2 — navigate_find.js's ERP-push
+// block extracted to NEW find_erp_push.js (loaded by main.js's lazy navigate list BEFORE
+// navigate_find.js?v=58). NOT precached ON PURPOSE: none of the lazy navigate_* sub-modules are
+// (navigate_find/grid/path/engine/controls, room_graph, hallway_backbone — only navigate.js is);
+// local .js is network-first, so online users fetch fresh. This bump purges stale runtime caches
+// so an offline fallback can never pair an old self-contained navigate_find.js with the new main.js.
 // v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
 // ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
 // model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).
