@@ -506,7 +506,14 @@
     var des = _designatedSupport(items, G);
     for (var i = 0; i < items.length; i++) {
       var sIdx = des[i]; if (sIdx < 0) continue;
-      if (items[sIdx].s > items[i].s + 1) { out.midair++; if (out.guids.length < 20) out.guids.push(items[i].guid); }
+      // §S73 — collect EVERY midair guid, do not cap here. The old `if (out.guids.length < 20)` kept
+      // the first twenty IN SCAN ORDER, which on a building with a known midair tail (173 on this
+      // lane's Duplex fixture) meant the element a planner just broke was essentially never in the
+      // list — verifyGanttIntegrity's lock breach then named twenty elements the planner had not
+      // touched. Sampling is the CALLER's decision (it ranks newly-broken elements first, then caps
+      // at 20); an audit that silently truncates its own findings cannot be ranked at all.
+      // Cost is one guid string per offender on a count that is already being computed.
+      if (items[sIdx].s > items[i].s + 1) { out.midair++; out.guids.push(items[i].guid); }
     }
     out.ok = out.midair === 0;
     return out;

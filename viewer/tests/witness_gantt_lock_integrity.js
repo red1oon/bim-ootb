@@ -37,9 +37,17 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
+// §S73: LINE-ANCHORED. A plain indexOf finds the first mention of `function NAME(` ANYWHERE —
+// including inside a comment that talks about the function — and then slices prose as if it were
+// code. That is exactly why this witness was RED on main: time_machine.js:4154 carries a comment
+// containing the words `function _midairAudit(` (it describes this very check) and the real
+// definition sits eight lines below it, so the slice began mid-sentence and vm threw
+// `SyntaxError: Unexpected template string`. Same family as G-COH-6. Anchor to the start of a line
+// so only a real definition can match.
 function sliceFn(src, name) {
-  const idx = src.indexOf('function ' + name + '(');
-  if (idx < 0) throw new Error(name + ' not found');
+  const m = new RegExp('^[ \\t]*function ' + name + '\\(', 'm').exec(src);
+  const idx = m ? m.index + m[0].indexOf('function') : -1;
+  if (idx < 0) throw new Error(name + ' not found (no line-anchored definition)');
   let depth = 0, i = idx, seenOpen = false;
   for (; i < src.length; i++) {
     if (src[i] === '{') { depth++; seenOpen = true; }
@@ -125,7 +133,8 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     // §MIDAIR_REPAIR (2026-08-12): the lock gate now ALSO judges "nothing appears before the first
     // thing it touches" (_midairAudit → _contactGraph) — auditFloating's pools cannot see that
     // population. Slice them when present, same both-commits pattern as _promoteRoofLoadPath above.
-    const _hasMidairAudit = tmSrc.indexOf('function _midairAudit(') >= 0;
+    // §S73: line-anchored for the same reason sliceFn is — the comment above mentions the name.
+    const _hasMidairAudit = new RegExp('^[ \\t]*function _midairAudit\\(', 'm').test(tmSrc);
     if (_hasMidairAudit) _names.unshift('_contactGraph', '_designatedSupport', '_midairAudit');
     // §S20 Part B (2026-08-17, 4D_GANTT_TM_REFACTOR.md) — FIXES THE LANDMINE §S19_RESULTS named:
     // this used to conditionally slice `_midairRepair` (the dead legacy display-repair chain)
@@ -165,6 +174,11 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     ScheduleGate: ScheduleGate,
     window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
     ZoneIndex: ZoneIndex,
+    // §S73: §S58 moved _contactGraph/_designatedSupport/_midairAudit into support_sweep.js and left
+    // one-line delegating wrappers behind, so the sliced wrappers need the real module — the same
+    // "give the sandbox the collaborator, never a second copy of the logic" rule this file's header
+    // already states for the restore SQL.
+    SupportSweep: require(path.join(__dirname, '..', 'support_sweep.js')),
     A: function () { return { db: db }; },
     _ops: [],
     URLSearchParams: URLSearchParams,
@@ -235,20 +249,16 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   assert(breach && breach.ok === false && (breach.dFloating > 0 || breach.dMidair > 0),
     'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ' +' +
     (breach && breach.dFloating) + ', midair=' + (breach && breach.midair) + ' +' + (breach && breach.dMidair) + ')');
-  // §S20 Part B (2026-08-17) — found while fixing this file's landmines, NOT caused by the
-  // dead-chain deletion or this witness's own redesign: `verifyGanttIntegrity()` (time_machine.js)
-  // builds `guids` from `ScheduleGate.auditFloating`'s own UNBOUNDED collector first, then only
-  // appends `_midairAudit`'s offender list `if (ma.midair && guids.length < 20)` — so whenever the
-  // auditFloating tail alone already reaches 20 (documented as real and expected on 4 of 7 shipped
-  // buildings: "Terminal 8, Clinic 1, JKR 81, LTU_AHouse 334"), the midair-specific offender is
-  // SILENTLY never appended, regardless of which element actually broke. This fixture's own
-  // auditFloating baseline moved from near-zero (under the retired legacy chain's authored times)
-  // to 362 (under CPM's) — a genuine, measured difference between the two display-authoring paths
-  // on this witness's synthetic flat-120s-installSecs fixture — which is what exposes the bug here
-  // for the first time. This is a real, pre-existing PRODUCTION bug in `verifyGanttIntegrity()`
-  // itself, unrelated to the dead pipeline and out of THIS stage's scope to fix (touching it is new,
-  // unscoped engine work, not a deletion follow-up) — reported, not silently worked around. G-LI-2e
-  // is LEFT RED, honestly, rather than papered over.
+  // §S20 Part B (2026-08-17) named this as a real, pre-existing PRODUCTION bug in
+  // verifyGanttIntegrity() and deliberately LEFT G-LI-2e RED rather than paper over it:
+  // `guids` was auditFloating's own unbounded collector, with _midairAudit's offenders appended only
+  // `if (ma.midair && guids.length < 20)`, so on a building with a known floating tail the midair
+  // offender was silently dropped. FIXED 2026-08-23 (§S73), and the cause ran one layer deeper than
+  // the append: SupportSweep's _midairAudit was itself capped at `out.guids.length < 20` IN SCAN
+  // ORDER, so with 173 midair elements on this fixture the element the drag actually broke was never
+  // in its list at all (measured: brokeGuid inAll=false, allGuids=84). The audit now reports every
+  // offender (allGuids=237) and verifyGanttIntegrity ranks the ones ABSENT from the lock baseline
+  // first, so what the planner just broke leads the sample instead of being buried under the tail.
   assert(breach && breach.guids && breach.guids.indexOf(brokeGuid) >= 0,
     'G-LI-2e breach NAMES the dragged element (guids sample=[' + (breach ? breach.guids.slice(0, 3).join(',') : '') +
     ']) — KNOWN PRE-EXISTING BUG if this fails: verifyGanttIntegrity()\'s guids=auditFloating-collector-then-' +
