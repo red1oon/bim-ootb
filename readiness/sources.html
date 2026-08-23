@@ -1,0 +1,737 @@
+<title>Sources and Verification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ink:#131e1b; --ink-2:#3a4a45; --muted:#6b7d78; --faint:#9aaba6;
+  --paper:#f5f7f5; --surface:#ffffff; --surface-2:#eaefed; --surface-3:#dbe3e0;
+  --rule:#d3dcd9; --rule-soft:#e4e9e7;
+  --accent:#00897b; --accent-ink:#00695f; --accent-wash:#e0efec;
+  --warn:#a06a00; --warn-wash:#f7efdd;
+  --focus:#00897b;
+  --shadow:0 1px 2px rgba(19,30,27,.05),0 10px 30px -18px rgba(19,30,27,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+    --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+    --rule:#2d3e39; --rule-soft:#22302c;
+    --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+    --warn:#b1811f; --warn-wash:#2f2612;
+    --focus:#4fc9b0;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9efed; --ink-2:#c3d0cc; --muted:#93a5a0; --faint:#6d7f7a;
+  --paper:#0f1816; --surface:#182421; --surface-2:#1f2d29; --surface-3:#2b3b36;
+  --rule:#2d3e39; --rule-soft:#22302c;
+  --accent:#1f9d87; --accent-ink:#4fc9b0; --accent-wash:#14312b;
+  --warn:#b1811f; --warn-wash:#2f2612;
+  --focus:#4fc9b0;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 12px 32px -18px rgba(0,0,0,.75);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif;font-size:17.5px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.022em}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-ink);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+.wrap{max-width:800px;margin:0 auto;padding:0 22px 90px}
+
+/* ---- topbar ---- */
+.topbar{display:flex;align-items:center;gap:13px;padding:18px 0;border-bottom:1px solid var(--rule)}
+.brandmark{
+  width:28px;height:28px;border-radius:6px;background:var(--accent);flex:none;
+  display:grid;place-items:center;color:var(--paper);font-weight:700;font-size:12px;
+  font-family:"IBM Plex Mono",monospace
+}
+.brandtext{font-family:"Instrument Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.3}
+.brandtext small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+.topspacer{flex:1}
+.ghostbtn{
+  background:transparent;border:1px solid var(--rule);border-radius:6px;padding:6px 12px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;cursor:pointer;color:var(--ink-2);
+  text-decoration:none;display:inline-block
+}
+.ghostbtn:hover{background:var(--surface-2);border-color:var(--accent);color:var(--accent-ink)}
+
+/* ---- hero ---- */
+.hero{padding:56px 0 40px;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;margin-bottom:16px
+}
+h1{font-family:"Instrument Sans",sans-serif;font-size:clamp(31px,5.2vw,46px);line-height:1.08;font-weight:700}
+.standfirst{font-size:19px;color:var(--ink-2);margin-top:18px;max-width:58ch;line-height:1.55}
+
+/* ---- sections ---- */
+section{margin:64px 0 0;scroll-margin-top:20px}
+.shead{display:flex;gap:14px;align-items:baseline;margin-bottom:10px}
+.snum{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;padding-top:5px;letter-spacing:.05em
+}
+h2{font-family:"Instrument Sans",sans-serif;font-size:26px;font-weight:600;line-height:1.2}
+h3{font-family:"Instrument Sans",sans-serif;font-size:16.5px;font-weight:600;margin:30px 0 8px}
+section p{margin:15px 0;max-width:64ch}
+.lede{font-size:18.5px;color:var(--ink-2)}
+strong{font-weight:600;color:var(--ink)}
+
+/* ---- nav chips ---- */
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 0}
+.jump a{
+  font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:20px;padding:7px 14px;color:var(--ink-2);background:var(--surface)
+}
+.jump a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+
+/* ---- figure ---- */
+figure{
+  margin:26px 0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:22px 24px;box-shadow:var(--shadow)
+}
+figure h4{
+  font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;margin:0 0 4px
+}
+figure .fsub{font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--muted);margin-bottom:18px}
+figcaption{
+  margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;font-size:12.5px;color:var(--muted);line-height:1.5
+}
+figcaption b{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--accent-ink);font-weight:600;display:block;margin-bottom:4px
+}
+
+/* ---- stacked bar ---- */
+.stack{display:flex;height:38px;border-radius:6px;overflow:hidden;gap:2px;background:var(--surface)}
+.seg{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;min-width:0}
+.seg.a{background:var(--accent);color:var(--paper)}
+.seg.n{background:var(--surface-3);color:var(--ink-2)}
+.seg.w{background:var(--warn);color:var(--paper)}
+.stacklab{
+  display:flex;justify-content:space-between;margin-top:9px;gap:14px;
+  font-family:"Instrument Sans",sans-serif;font-size:13px;color:var(--ink-2)
+}
+.stacklab span{display:flex;gap:7px;align-items:center}
+.sw{width:12px;height:11px;border-radius:3px;flex:none}
+.sw.a{background:var(--accent)} .sw.n{background:var(--surface-3)} .sw.w{background:var(--warn)}
+
+/* ---- hbars ---- */
+.hb{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;align-items:center;padding:6px 0}
+.hb .n{font-family:"Instrument Sans",sans-serif;font-size:13.5px;text-align:right;color:var(--ink-2);line-height:1.25}
+.hb .t{height:17px;background:var(--surface-3);border-radius:4px;position:relative;overflow:hidden}
+.hb .f{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+.hb .v{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+
+/* ---- hero stat ---- */
+.bignum{
+  display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;
+  padding:6px 0 2px
+}
+.bignum .n{
+  font-family:"Instrument Sans",sans-serif;font-size:clamp(46px,9vw,74px);font-weight:700;
+  line-height:.95;letter-spacing:-.04em;color:var(--warn);font-variant-numeric:tabular-nums
+}
+.bignum .n.ok{color:var(--accent)}
+.bignum .t{font-size:16px;color:var(--ink-2);max-width:34ch;font-family:"Instrument Sans",sans-serif;line-height:1.4}
+
+/* ---- matrix ---- */
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  padding:9px 10px;border-bottom:1px solid var(--rule);font-weight:600
+}
+.mx th.c,.mx td.c{text-align:center;width:88px}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2)}
+.mx tr:last-child td{border-bottom:none}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--warn);font-weight:700}
+.mxscroll{overflow-x:auto}
+
+/* ---- bands ---- */
+.bands{display:flex;gap:2px;border-radius:6px;overflow:hidden;margin-top:4px}
+.band{padding:11px 12px;flex:1;font-family:"Instrument Sans",sans-serif;font-size:12.5px;text-align:center;line-height:1.35}
+.band b{display:block;font-family:"IBM Plex Mono",monospace;font-size:14px;margin-bottom:3px}
+.band.g{background:var(--accent-wash);color:var(--accent-ink)}
+.band.m{background:var(--surface-3);color:var(--ink-2)}
+.band.b{background:var(--warn-wash);color:var(--warn)}
+
+/* ---- pull quote ---- */
+blockquote.ps{
+  margin:30px 0;padding:24px 26px;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:8px;
+  box-shadow:var(--shadow)
+}
+blockquote.ps p{margin:0 0 13px;font-size:17px;line-height:1.6;max-width:none}
+blockquote.ps p:last-of-type{margin-bottom:0}
+blockquote.ps .k{font-weight:600;color:var(--ink)}
+blockquote.ps cite{
+  display:block;margin-top:16px;padding-top:13px;border-top:1px solid var(--rule-soft);
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);font-style:normal
+}
+
+/* ---- callout ---- */
+.call{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:8px;padding:19px 22px;margin:26px 0
+}
+.call.warn{border-left-color:var(--warn)}
+.call .lab{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-ink);font-weight:600;display:block;margin-bottom:8px
+}
+.call.warn .lab{color:var(--warn)}
+.call p{margin:0 0 11px;max-width:none}
+.call p:last-child{margin-bottom:0}
+
+/* ---- ladder ---- */
+.ladder{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin:22px 0}
+.rung{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:baseline}
+.rung .l{font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;color:var(--accent-ink)}
+.rung b{font-family:"Instrument Sans",sans-serif;font-size:14.5px}
+.rung p{margin:2px 0 0;font-size:14.5px;color:var(--muted);max-width:none}
+
+/* ---- cta ---- */
+.cta{
+  margin:60px 0 0;padding:30px 26px;background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:12px;text-align:center
+}
+.cta h3{margin:0 0 8px;font-size:20px}
+.cta p{margin:0 auto 20px;max-width:46ch;color:var(--ink-2);font-size:15.5px}
+.btn{
+  background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:8px;
+  padding:12px 24px;font-family:"Instrument Sans",sans-serif;font-size:15.5px;font-weight:600;
+  cursor:pointer;text-decoration:none;display:inline-block
+}
+.btn:hover{filter:brightness(1.08)}
+
+footer{
+  margin:64px 0 0;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
+}
+
+@media (max-width:600px){
+  .hb{grid-template-columns:96px 1fr 62px;gap:9px}
+  .hb .n{font-size:12.5px}
+  .bands{flex-direction:column}
+  figure{padding:18px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-family:"Instrument Sans",sans-serif;font-size:13px;text-decoration:none;
+  border:1px solid var(--rule);border-radius:6px;padding:6px 12px;color:var(--ink-2);background:transparent}
+.nav a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.nav a.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash);font-weight:600}
+
+/* ---- footnotes ---- */
+sup.fn{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;line-height:0;vertical-align:super}
+sup.fn a{color:var(--accent-ink);text-decoration:none;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+ol.refs{margin:22px 0 0;padding:0;list-style:none;counter-reset:r}
+ol.refs li{counter-increment:r;position:relative;padding:10px 0 10px 34px;
+  border-bottom:1px solid var(--rule-soft);font-size:14.5px;color:var(--ink-2);line-height:1.55}
+ol.refs li:last-child{border-bottom:none}
+ol.refs li::before{content:counter(r) ".";position:absolute;left:0;top:10px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+ol.refs .loc{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+ol.refs a.back{font-family:"IBM Plex Mono",monospace;font-size:11px;text-decoration:none;color:var(--muted)}
+ol.refs a.back:hover{color:var(--accent-ink)}
+:target{background:var(--accent-wash)}
+@media print{ol.refs li{page-break-inside:avoid}}
+
+/* ---- sources page ---- */
+.tier{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.04em;
+  border:1px solid var(--rule);border-radius:4px;padding:2px 6px;white-space:nowrap;color:var(--ink-2)}
+.tier.t1{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.tier.t4{border-color:var(--warn);color:var(--warn);background:var(--warn-wash)}
+.mx td .cl{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);display:block;margin-top:3px}
+.mx tr:target td{background:var(--accent-wash)}
+.mx td.k{font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--ink);width:52px;vertical-align:top}
+.mx td{vertical-align:top}
+.mx th.c,.mx td.c{width:auto}
+</style>
+
+<div class="wrap">
+
+<div class="topbar">
+  <div class="brandmark">OB</div>
+  <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Sources</small></div>
+  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html">Background</a><a href="faq.html">Basics</a><a href="sources.html" class="on">Sources</a><a href="disclaimer.html">Notice</a></div>
+</div>
+
+<div class="hero">
+  <p class="eyebrow">Appendix A</p>
+  <h1>Sources and verification</h1>
+  <p class="standfirst">Every factual claim this toolkit makes, the source that supports it, and
+  how far that source was actually read. A claim that cannot be traced to an entry here is
+  softened or removed &mdash; it is never shipped with an approximate reference.</p>
+  <nav class="jump">
+    <a href="#tiers">01 &nbsp;How to read this</a>
+    <a href="#anchors">02 &nbsp;The twenty criteria</a>
+    <a href="#standards">03 &nbsp;Standards</a>
+    <a href="#mandates">04 &nbsp;Mandates</a>
+    <a href="#measured">05 &nbsp;What we measured</a>
+    <a href="#unverified">06 &nbsp;Carried without a source</a>
+    <a href="#corrections">07 &nbsp;Corrections</a>
+    <a href="#refs">References</a>
+  </nav>
+</div>
+
+<section id="tiers">
+  <div class="shead"><span class="snum">01</span><h2>How to read this page</h2></div>
+  <p class="lede">One standard applies throughout: <strong>a source counts as verified only where its
+  own text has been read.</strong> Search engines were used to locate candidate sources; a search
+  result summary was never treated as the source itself.</p>
+
+  <p>A reference list tells you what an author says they consulted. It does not tell you how far to
+  trust each line of it. Every entry below therefore carries a tier stating <em>what was read</em> &mdash;
+  not how reputable the publisher is.</p>
+
+  <figure>
+    <h4>Verification tiers</h4>
+    <p class="fsub">What each tier permits a reader to take from the entry</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Tier</th><th>What was read</th><th>What may be cited from it</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tier t1">T1</span></td><td>The publisher&rsquo;s own text of the source</td><td>Clause numbers and verbatim wording</td></tr>
+          <tr><td><span class="tier">T2</span></td><td>The publisher&rsquo;s catalogue or specification record; full text paywalled</td><td>Identity, edition, scope. <strong>No clause wording</strong></td></tr>
+          <tr><td><span class="tier">T3</span></td><td>An authoritative secondary account &mdash; legal guide, official reproduction, institutional record</td><td>The substance of the provision, attributed to the secondary source</td></tr>
+          <tr><td><span class="tier t4">T4</span></td><td>Not verified</td><td><strong>Nothing.</strong> The claim is softened or removed</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Note</b>Where a preview stops partway through a standard, clause <em>titles</em> are
+    quotable and clause <em>bodies</em> are not. Each entry says which was read.</figcaption>
+  </figure>
+
+  <div class="call warn">
+    <span class="lab">Why this page exists</span>
+    <p>Fabricated or approximate citations are the characteristic failure mode of machine-assisted
+    literature work, and a single invented reference would compromise both this instrument and any
+    publication resting on it. This register is written to make the <em>absence</em> of a source
+    visible rather than to conceal it. Section 06 lists what is still unsupported.</p>
+  </div>
+</section>
+
+<section id="anchors">
+  <div class="shead"><span class="snum">02</span><h2>The twenty criteria</h2></div>
+  <p class="lede">Each question in the assessment names the source it is drawn from. This is where
+  that source is stated in full, with the clause. <strong>Sixteen of the twenty are anchored to a
+  published standard or industry-body document whose own text was read. Four are not</strong>, and
+  say so.</p>
+
+  <p>Until this pass was completed the criteria carried <em>candidate</em> anchors that had never been
+  checked against the sources they name. That is recorded here because the difference matters to a
+  reader deciding how much weight the instrument carries: a criterion described as anchored, but never
+  checked, is an assertion about the literature rather than a use of it.</p>
+
+  <figure>
+    <h4>Criterion anchors, verified 23 August 2026</h4>
+    <p class="fsub">Anchor as shown in the assessment &middot; the clause it was checked against &middot; how far the source was read</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Item</th><th>Anchor shown</th><th>Verified against</th><th class="c">Tier</th></tr></thead>
+        <tbody>
+          <tr id="a1"><td class="k">A1</td><td>ISO 19650-1 &middot; organisational information requirements<span class="cl">Governance</span></td><td>ISO&nbsp;19650-1:2018 <span class="cl">3.3.3 organizational information requirements (OIR); Clause 5.2</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="a2"><td class="k">A2</td><td>ISO 19650-2 &middot; exchange information requirements<span class="cl">Governance</span></td><td>ISO&nbsp;19650-2:2018 <span class="cl">5.2.1 appointing party&rsquo;s EIR; 5.4.3 lead appointed party&rsquo;s EIR; 5.1.4 project&rsquo;s information standard</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="a3"><td class="k">A3</td><td>Vendor lock-in &middot; data portability<span class="cl">Governance</span></td><td><strong>No external anchor.</strong> <span class="cl">Instrument design rationale. Nearest citable material: buildingSMART on openBIM vendor-neutrality [10]; ISO 16739-1 [3]. Neither says how often firms test portability</span></td><td class="c"><span class="tier t4">none</span></td></tr>
+          <tr id="a4"><td class="k">A4</td><td>Locale pack &middot; authority submission route<span class="cl">Governance</span></td><td>Dubai Municipality Circular&nbsp;9-1-2 (2023) [16]; Singapore CORENET&nbsp;X / IFC-SG [12] <span class="cl">The label names this toolkit&rsquo;s own locale mechanism; the practice it assesses is primary-sourced</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="b1"><td class="k">B1</td><td>ISO 19650-1 &middot; capability and capacity<span class="cl">People and skills</span></td><td>ISO&nbsp;19650-1:2018 <span class="cl">3.3.18 capability; 3.3.19 capacity; Clause 8 <em>Delivery team capability and capacity</em></span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="b2"><td class="k">B2</td><td>ISO 19650-1 &middot; information management functions<span class="cl">People and skills</span></td><td>ISO&nbsp;19650-1:2018 <span class="cl">Clause 7 <em>Project and asset information management functions</em> (7.2&ndash;7.4); ISO 19650-2 5.1.1</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="b3"><td class="k">B3</td><td>Key-person concentration &middot; continuity<span class="cl">People and skills</span></td><td>ISO&nbsp;19650-1:2018 <span class="cl">3.3.19 capacity &mdash; &ldquo;resources available to perform and function&rdquo;; Clause 8; ISO 19650-2 5.3.3, 5.3.4</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="b4"><td class="k">B4</td><td>Succar &middot; competency development<span class="cl">People and skills</span></td><td>Succar, Sher &amp; Williams (2013) [19] <span class="cl">Competency tiers &mdash; Core, Domain, Execution &mdash; with sets and topics; individual competencies as &ldquo;the building blocks of organizational capability&rdquo;</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="c1"><td class="k">C1</td><td>Vendor concentration &middot; switching cost<span class="cl">Technology</span></td><td><strong>No external anchor.</strong> <span class="cl">Instrument design rationale. Measurable rather than citable</span></td><td class="c"><span class="tier t4">none</span></td></tr>
+          <tr id="c2"><td class="k">C2</td><td>buildingSMART &middot; IFC exchange fidelity<span class="cl">Technology</span></td><td>buildingSMART Software Certification Program [18] <span class="cl">Global IFC Software Certification, export and import. Import certification is assessed by user questionnaire &mdash; a reported observation, which is what this item collects</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="c3"><td class="k">C3</td><td>Adoption barriers &middot; licensing<span class="cl">Technology</span></td><td><strong>No external anchor.</strong> <span class="cl">Instrument design rationale. See section 06</span></td><td class="c"><span class="tier t4">none</span></td></tr>
+          <tr id="c4"><td class="k">C4</td><td>Switching cost &middot; optionality<span class="cl">Technology</span></td><td><strong>No external anchor.</strong> <span class="cl">Instrument design rationale. Measurable rather than citable</span></td><td class="c"><span class="tier t4">none</span></td></tr>
+          <tr id="d1"><td class="k">D1</td><td>ISO 12006-2 &middot; framework for classification<span class="cl">Data and standards</span></td><td>ISO&nbsp;12006-2:2015 <span class="cl">Clause 1 Scope; Clause 5 <em>Recommended classification tables</em>. The standard states it &ldquo;does not provide a complete operational classification system&rdquo;</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="d2"><td class="k">D2</td><td>ISO 19650-2 &middot; project information requirements<span class="cl">Data and standards</span></td><td>ISO&nbsp;19650-2:2018 <span class="cl">5.1.2 <em>Establish the project&rsquo;s information requirements</em>; 5.1.4 <em>Establish the project&rsquo;s information standard</em></span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="d3"><td class="k">D3</td><td>buildingSMART &middot; validation service<span class="cl">Data and standards</span></td><td>buildingSMART IFC Validation Service [17] <span class="cl">STEP syntax, IFC schema, normative IFC rules; industry practices and bSDD compliance as warnings</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="d4"><td class="k">D4</td><td>ISO 19650-3 &middot; long-term information stewardship<span class="cl">Data and standards</span></td><td>ISO&nbsp;19650-3:2020 <span class="cl">Clause 1 Scope (operational phase); 5.8.2 <em>Review and continue maintenance of the AIM</em>; ISO 19650-2 5.8.1 <em>Archive the project information model</em>. The label is this toolkit&rsquo;s paraphrase, not the standard&rsquo;s wording</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="e1"><td class="k">E1</td><td>ISO 19650-1 &middot; Common Data Environment<span class="cl">Organisational processes</span></td><td>ISO&nbsp;19650-1:2018 <span class="cl">3.3.15 CDE; Clause 12, with the states at 12.2&ndash;12.7 &mdash; work in progress, shared, published, archive</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="e2"><td class="k">E2</td><td>ISO 19650-2 &middot; information delivery planning<span class="cl">Organisational processes</span></td><td>ISO&nbsp;19650-2:2018 <span class="cl">5.4.4 task information delivery plans; 5.4.5 master information delivery plan</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="e3"><td class="k">E3</td><td>ISO 19650-3 &middot; asset information model<span class="cl">Organisational processes</span></td><td>ISO&nbsp;19650-1 3.3.9 AIM; ISO&nbsp;19650-3:2020 <span class="cl">5.1.11 <em>Establish the asset information model</em>; 5.8.1&ndash;5.8.2 AIM aggregation and maintenance</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr id="e4"><td class="k">E4</td><td>ISO/IEC 33020 &middot; measurement and improvement<span class="cl">Organisational processes</span></td><td>ISO/IEC&nbsp;33020:2019 <span class="cl">5.2.6 level 4 Predictable (PA 4.1 quantitative analysis, PA 4.2 quantitative control); 5.2.7 level 5 Innovating (PA 5.1 process innovation)</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Source</b>The publishers&rsquo; own texts, read 23 August 2026. Bracketed numbers
+    refer to the numbered references at the foot of this page.</figcaption>
+  </figure>
+
+  <div class="call">
+    <span class="lab">The answer scale is anchored once, for all twenty</span>
+    <p>The per-item anchors above are not the whole of the instrument&rsquo;s construct validity, and
+    treating them as such understates it. Every item offers <strong>exactly six options</strong>, and
+    the six positions instantiate the six-point ordinal scale of
+    <strong>ISO/IEC&nbsp;33020:2019 &sect;5.2.1</strong>, quoted in the standard&rsquo;s own words:</p>
+    <p><em>&ldquo;Process capability is defined on a six-point ordinal scale that enables capability to
+    be assessed from the bottom of the scale, Incomplete, through to the top end of the scale,
+    Innovating. The scale represents increasing capability of the implemented process, from failing to
+    achieve the process purpose through to continually improving and able to respond to organizational
+    change.&rdquo;</em></p>
+    <p>Level 0 <strong>Incomplete</strong> &middot; 1 <strong>Performed</strong> &middot;
+    2 <strong>Managed</strong> &middot; 3 <strong>Established</strong> &middot;
+    4 <strong>Predictable</strong> &middot; 5 <strong>Innovating</strong>
+    (&sect;5.2.2&ndash;&sect;5.2.7). Levels 4 and 5 are defined by quantitative management and by
+    innovation drawn from analysed data, which is why every item&rsquo;s top two options are a
+    measurement option followed by one where the measurement changes something.</p>
+  </div>
+
+  <div class="call warn">
+    <span class="lab">Four criteria carry no external anchor</span>
+    <p><strong>A3</strong> data portability, <strong>C1</strong> tool concentration,
+    <strong>C3</strong> adoption barriers and <strong>C4</strong> switching cost name no instrument.
+    Their labels in the assessment are concept pairs, not citations, and this page states plainly that
+    they rest on the instrument&rsquo;s own design rationale.</p>
+    <p>They are measurable rather than citable, which is a different problem from being unsupported:
+    the way to settle them is to conduct the measurement, not to keep searching for a secondary source.
+    They stand or fall on the pilot study, not on the literature. Any description of this instrument as
+    &ldquo;anchored&rdquo; should state the sixteen&ndash;four split rather than round it up.</p>
+  </div>
+</section>
+
+<section id="standards">
+  <div class="shead"><span class="snum">03</span><h2>Standards</h2></div>
+  <p class="lede">Read from the publishers&rsquo; official preview documents. Clause numbers and quoted
+  wording below are taken from those texts.</p>
+
+  <figure>
+    <h4>Standards in the register</h4>
+    <p class="fsub">What each supports, and how far its text was read</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Standard</th><th>What it supports here</th><th class="c">Tier</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ISO 19650-1:2018</strong><span class="cl">Concepts and principles</span></td>
+              <td>Definitions of BIM (3.3.14), CDE (3.3.15), federation (3.3.11), information container (3.3.12), OIR/AIR/PIR/EIR (3.3.3&ndash;3.3.6), AIM (3.3.9), capability (3.3.18) and capacity (3.3.19)<span class="cl">Full Clause 3 read</span></td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>ISO 19650-2:2018</strong><span class="cl">Delivery phase of the assets</span></td>
+              <td>Where EIR are established (5.2.1, 5.4.3), the project&rsquo;s information standard (5.1.4), information delivery planning (5.4.4, 5.4.5), capability and capacity assessment (5.3.3, 5.3.4), archiving at close-out (5.8.1)<span class="cl">Cover matter through the opening of Clause 3, including the full table of contents. Clause titles quotable; clause bodies not read</span></td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>ISO 19650-3:2020</strong><span class="cl">Operational phase of the assets</span></td>
+              <td>Scope as the operational phase (Clause 1), asset information requirements (5.1.4), the AIM established, aggregated and maintained (5.1.11, 5.8.1, 5.8.2)<span class="cl">Read to the same extent as Part 2</span></td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>ISO 12006-2:2015</strong><span class="cl">Framework for classification</span></td>
+              <td>That it is a <em>framework</em> for developing classification systems and not a system itself (Clause 1); the recommended classification tables (Clause 5)</td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>ISO/IEC 33020:2019</strong><span class="cl">Process measurement framework</span></td>
+              <td>The six-point capability scale (&sect;5.2.1) and the names of levels 0&ndash;5 (&sect;5.2.2&ndash;&sect;5.2.7)<span class="cl">Full &sect;5.2 read, including process attributes</span></td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>ISO 16739-1:2024</strong><span class="cl">Industry Foundation Classes</span></td>
+              <td>IFC as the open international standard for BIM data. Current edition; supersedes the 2018 edition and corresponds to IFC 4.3.2.0<span class="cl">Catalogue record only &mdash; no clause wording is quoted from it anywhere in this toolkit</span></td>
+              <td class="c"><span class="tier">T2</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Source</b>Publishers&rsquo; official preview texts, read 22&ndash;23 August 2026,
+    except ISO 16739-1 (catalogue record, 22 August 2026).</figcaption>
+  </figure>
+
+  <h3>Building information modelling, verbatim</h3>
+  <p>ISO 19650-1:2018, 3.3.14 &mdash; <em>&ldquo;use of a shared digital representation of a built asset
+  to facilitate design, construction and operation processes to form a reliable basis for
+  decisions.&rdquo;</em> The standard attributes this to ISO 29481-1:2016, 3.2, modified: the word
+  &ldquo;object&rdquo; was replaced with &ldquo;asset&rdquo;. Cite 19650-1 as the operative source and
+  mention 29481-1 where the lineage is material.</p>
+
+  <h3>Three requirement types the glossary once collapsed</h3>
+  <p>ISO 19650-1 separates them by <em>what each relates to</em>:
+  <strong>EIR (3.3.6)</strong> &mdash; &ldquo;information requirements in relation to an
+  appointment&rdquo;; <strong>AIR (3.3.4)</strong> &mdash; &ldquo;in relation to the operation of an
+  asset&rdquo;; <strong>PIR (3.3.5)</strong> &mdash; &ldquo;in relation to the delivery of an
+  asset&rdquo;. An early draft of the toolkit&rsquo;s glossary merged EIR and AIR into one entry. The
+  plain-language gloss remains for the practitioner; the distinction is carried in the footnote.</p>
+
+  <div class="call warn">
+    <span class="lab">Do not overstate ISO 12006-2</span>
+    <p>Its own Scope states that it <em>&ldquo;does not provide a complete operational classification
+    system, nor does it provide the content of the tables&rdquo;</em>. Uniclass, OmniClass and
+    MasterFormat are separately published systems built to that framework and appear nowhere in the
+    text read. Any wording implying that ISO 12006-2 <em>is</em> the classification system is
+    incorrect &mdash; including an earlier version of this toolkit&rsquo;s own D1 anchor. See
+    correction C-4.</p>
+  </div>
+</section>
+
+<section id="mandates">
+  <div class="shead"><span class="snum">04</span><h2>Regulatory mandates</h2></div>
+  <p class="lede">The instruments behind claims that BIM is required. Tiers are mixed and are given per
+  row. Where a primary text was obtained it is cited directly; where it was not, the row says so.</p>
+
+  <figure>
+    <h4>What each instrument actually requires</h4>
+    <p class="fsub">Jurisdiction &middot; instrument &middot; scope &middot; force</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Jurisdiction</th><th>Instrument and what it requires</th><th class="c">Force</th><th class="c">Tier</th></tr></thead>
+        <tbody>
+          <tr><td><strong>UAE &mdash; Dubai</strong></td>
+              <td>Dubai Municipality <strong>Circular 9-1-1</strong> (23 Aug 2021) [15]. Sets <strong>two scopes in force together</strong>: architectural and mechanical work on buildings over 20 floors, facilities over 200,000&nbsp;sq&nbsp;ft, specialist facilities such as hospitals and universities, all government projects, and projects submitted by a foreign office subsidiary; and structural work on buildings over 40 floors and facilities over 300,000&nbsp;sq&nbsp;ft</td>
+              <td class="c">Mandatory<span class="cl">Dubai only</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>UAE &mdash; Dubai</strong></td>
+              <td>Dubai Municipality <strong>Circular 9-1-2</strong> (13 Oct 2023) [16]. Architectural and structural designs must be submitted in what the circular itself calls <strong>Open BIM</strong> form, to the Dubai BIM Standard, with new building permit applications, as a <strong>first phase from 1 January 2024</strong>: over 20 floors architectural or 40 floors structural; over 20,000&nbsp;m&sup2; architectural or 30,000&nbsp;m&sup2; structural; hospitals, universities and the like; government projects other than utility services. Submission runs <em>in parallel with</em> existing drawings and does not replace them</td>
+              <td class="c">Mandatory<span class="cl">Dubai only</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>UAE &mdash; Dubai</strong></td>
+              <td>Dubai Municipality <strong>Circular 196</strong> (2013) and <strong>Circular 207</strong> (2015) [6]. The founding circulars, named as predecessors by 9-1-1 and 9-1-2. buildingSMART records the initial position as &ldquo;a soft mandate without standards&rdquo; that established the requirement for BIM during design and construction of all significant projects in the city</td>
+              <td class="c">Superseded in effect</td><td class="c"><span class="tier">T3</span></td></tr>
+          <tr><td><strong>Singapore</strong></td>
+              <td>BCA BIM e-submission, now <strong>CORENET X</strong> [8][12]. Mandatory for projects with <strong>GFA over 5,000&nbsp;m&sup2; since 2015</strong>. Coordinated models are submitted in <strong>IFC-SG</strong>, an extension built on the IFC4 Reference View, and regulatory agencies issue approvals on the submitted IFC model. Enabled by the Building and Related Works (Miscellaneous Amendments), passed July 2023</td>
+              <td class="c">Mandatory<span class="cl">Regulatory submission</span></td><td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>Malaysia</strong></td>
+              <td>Treasury Circular <strong>PK 1.15</strong>, Ministry of Finance [5]. BIM for <strong>Government development projects</strong> of RM&nbsp;10 million and above, from 1 July 2025</td>
+              <td class="c">Mandatory<span class="cl">Public sector only</span></td><td class="c"><span class="tier">T3</span></td></tr>
+          <tr><td><strong>United Kingdom</strong></td>
+              <td>Government Construction Strategy [7]. Collaborative 3D <strong>BIM Level 2</strong> on centrally-funded public projects from April 2016</td>
+              <td class="c">Mandatory<span class="cl">Centrally-funded public projects</span></td><td class="c"><span class="tier">T3</span></td></tr>
+          <tr><td><strong>European Union</strong></td>
+              <td>Directive <strong>2014/24/EU, Article 22(4)</strong> [9]. Member States <em>&ldquo;may require the use of specific electronic tools, such as of building information electronic modelling tools or similar&rdquo;</em></td>
+              <td class="c"><strong>Permissive</strong><span class="cl">Not a mandate</span></td><td class="c"><span class="tier">T3</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Source</b>Dubai circulars obtained as primary texts from Dubai Municipality&rsquo;s
+    own document server, 23 August 2026. Singapore via buildingSMART&rsquo;s <em>Global openBIM
+    Mandates, 2025 Edition</em>. Malaysia, the UK and the EU through authoritative secondary accounts;
+    their primary instrument texts were not obtained.</figcaption>
+  </figure>
+
+  <h3>On the UAE specifically</h3>
+  <p>BIM is mandatory <strong>in Dubai only</strong>, under Dubai Municipality circulars. There is
+  <strong>no federal UAE BIM mandate</strong>, and the other emirates have not mandated BIM, although
+  major projects have adopted it voluntarily. Any statement that &ldquo;the UAE mandates BIM&rdquo; is
+  inaccurate; the accurate form names Dubai Municipality.</p>
+
+  <h3>On the EU specifically</h3>
+  <p>Article 22(4) is routinely miscited as an EU-wide BIM mandate. It is not one. It <em>authorises</em>
+  member states to require BIM electronic tools, and where they do, contracting authorities
+  &ldquo;shall offer alternative means of access until such time as those tools become generally
+  available.&rdquo;</p>
+
+  <h3>What the buildingSMART playbook does and does not cover</h3>
+  <p><em>Global openBIM Mandates, 2025 Edition</em> [12] carries chapters on Australasia, China, the
+  Czech Republic, Denmark, Dubai, Japan, Poland, Singapore, Spain, Spain (Catalunya), the USA and South
+  Korea. It <strong>has no chapter on Malaysia, the United Kingdom or the European Union</strong>, so
+  those three rows remain on their per-jurisdiction secondary accounts. This is recorded because an
+  earlier version of this register expected that one document would re-cite the whole table.</p>
+</section>
+
+<section id="measured">
+  <div class="shead"><span class="snum">05</span><h2>What this project measured itself</h2></div>
+  <p class="lede">The register above records what this project <em>cites</em>. This section records what
+  it <strong>contributes</strong>: measurements made by the authors on named models, using stated
+  instruments, drawn from no external source. These are the entries for which this project is itself
+  the citable authority.</p>
+
+  <figure>
+    <h4>Original findings</h4>
+    <p class="fsub">Instrument named &middot; date given &middot; sample size stated &middot; limit of generalisation explicit</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>ID</th><th>Finding</th><th>Measurement</th></tr></thead>
+        <tbody>
+          <tr><td class="k">F1</td><td>An IFC export can terminate silently and report success</td>
+              <td>Export stopped at element <strong>#3,956</strong>; 3,955 elements delivered, roughly <strong>94% of the model absent</strong>; no error raised, and the file opens and renders</td></tr>
+          <tr><td class="k">F2</td><td>Storage in an extracted model is dominated by geometry, not by the semantic data that makes it useful</td>
+              <td>Hospital building, 63,917 elements, about 263&nbsp;MB: <strong>239.1&nbsp;MB geometry (91%)</strong> against 23.7&nbsp;MB (9%) for all semantics, transforms and indexes. Relationship data is about <strong>0.2%</strong> of the file<span class="cl">SQLite dbstat on the extraction, 2026</span></td></tr>
+          <tr><td class="k">F3</td><td><strong>Coverage and validity are independent axes of model quality</strong></td>
+              <td>Hospital building, 63,917 elements: <strong>7.11%</strong> carry a classification code; of the codes present, <strong>zero are invalid</strong><span class="cl">Re-extraction and direct count, 31 July 2026</span></td></tr>
+          <tr><td class="k">F4</td><td>Entity density predicts whether a delivered file can be opened by other tools</td>
+              <td>Under <strong>50</strong> entities per element opens broadly; <strong>50&ndash;200</strong> large but workable; over <strong>200</strong> and many tools cannot open it</td></tr>
+          <tr><td class="k">F5</td><td>Jurisdiction rule coverage is partial, and is reported as partial</td>
+              <td><strong>30</strong> UBBL rules implemented against a stated target of <strong>200+</strong> across six jurisdictions</td></tr>
+          <tr><td class="k">F6</td><td>The industry benchmark is empty, and no figure is substituted for it</td>
+              <td><strong>0</strong> assessments submitted<span class="cl">Live count</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Source</b>Measured by this project on the named models. F2 and F3 are reproducible by
+    any party holding the same source IFC: re-run the extraction and repeat the counts. They are counts,
+    not estimates, and involve no sampling or inference.</figcaption>
+  </figure>
+
+  <div class="call">
+    <span class="lab">F3 is the substantive contribution</span>
+    <p>The same model scores <strong>100% on validity</strong> and <strong>7.11% on coverage</strong>.
+    A single-word verdict &mdash; &ldquo;pass&rdquo;, &ldquo;green&rdquo;, &ldquo;conformant&rdquo; &mdash;
+    is therefore not merely coarse but <em>arbitrary</em>: it depends entirely on which of two
+    independent axes the verdict happens to measure, and a tool reporting only validity would certify a
+    model that is almost entirely unclassified.</p>
+    <p>This is why the toolkit reports coverage and well-formedness separately and never issues a single
+    headline score. That design rule follows from a measurement, not from a preference. Where a reader
+    wishes to cite this project as an authority, this is the finding to cite.</p>
+  </div>
+
+  <div class="call warn">
+    <span class="lab">Limit of generalisation</span>
+    <p>F1&ndash;F4 are measurements of <em>individual named models</em>, n&nbsp;=&nbsp;1 in each case.
+    They demonstrate that a condition <strong>occurs</strong> and is detectable. They establish
+    <strong>no</strong> frequency, prevalence or industry rate, and must never be quoted as industry
+    statistics.</p>
+  </div>
+
+  <h3>Reproducibility of the scoring</h3>
+  <p>A separate and stronger claim the instrument makes by construction: identical responses, core
+  version and locale pack produce an identical score, because scoring is a deterministic function
+  rather than a model output. This is what makes test&ndash;retest reliability claimable, and it is
+  checkable by any third party from published versions.</p>
+</section>
+
+<section id="unverified">
+  <div class="shead"><span class="snum">06</span><h2>Carried without a verified source</h2></div>
+  <p class="lede">Recorded so that they are visible rather than forgotten. Each is either softened in
+  the published copy or awaiting verification, and <strong>none may be given a footnote until it moves
+  out of this section.</strong></p>
+
+  <figure>
+    <h4>Open claims</h4>
+    <p class="fsub">What is asserted &middot; where &middot; what would resolve it</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Claim</th><th>Where</th><th>What would resolve it</th></tr></thead>
+        <tbody>
+          <tr><td>&ldquo;A small number of vendors own practical BIM today&rdquo;</td><td>Background</td>
+              <td>A market-share source. Industry market reports are typically paywalled; if none is citable, the claim is softened. A free, checkable proxy is a count from the buildingSMART certification register</td></tr>
+          <tr><td>&ldquo;Warranty disclaimers are near-universal in software licensing, proprietary licences included&rdquo;</td><td>Background, Assessment</td>
+              <td>Best evidenced by sampling the end-user licence agreements of the most-used BIM authoring tools and counting, with the clause quoted for each. Public documents; a defensible primary finding in a day&rsquo;s work</td></tr>
+          <tr><td>&ldquo;Professional indemnity insures the professional, not the tool&rdquo;</td><td>Background, Assessment</td>
+              <td>A professional-body or insurer statement, or narrowing the claim to what the cited disclaimers themselves say</td></tr>
+          <tr><td>&ldquo;A building outlives the software that modelled it by decades&rdquo;</td><td>Background, D4</td>
+              <td>The concept anchors to ISO 19650-3 on the operational phase. The <em>&ldquo;by decades&rdquo;</em> quantum is rhetorical and is presented as such, not as a finding</td></tr>
+          <tr><td>CIDB BIM Guidelines, LOD 500, PeDATA and SKATA as mandate requirements</td><td>Background</td>
+              <td>A primary CIDB or JKR document. These appear only in secondary commentary and derive from guidance separate from PK 1.15 &mdash; see correction C-1</td></tr>
+          <tr><td>Four criteria rest on design rationale: <strong>A3</strong>, <strong>C1</strong>, <strong>C3</strong>, <strong>C4</strong></td><td>Assessment</td>
+              <td>These are measurable rather than citable. The pilot study validates them, not the literature. See section 02</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Note</b>The list is published because a register that hides its own gaps is not a
+    register. Anything appearing here is not footnoted anywhere in the toolkit.</figcaption>
+  </figure>
+</section>
+
+<section id="corrections">
+  <div class="shead"><span class="snum">07</span><h2>Corrections issued</h2></div>
+  <p class="lede">This register is only worth publishing if it is allowed to overturn the
+  toolkit&rsquo;s own copy. Four live claims were found to be wrong during compilation and were
+  corrected in the published pages.</p>
+
+  <h3>C-1 &mdash; Malaysia mandate overstated as covering private projects</h3>
+  <p><strong>Was published as</strong> BIM being mandatory for Malaysian projects of RM 10 million and
+  above, <em>&ldquo;public and private&rdquo;</em>, with LOD 500, PeDATA and SKATA handover
+  requirements attached.</p>
+  <p><strong>Finding.</strong> PK 1.15 is a Treasury circular issued by the Ministry of Finance. Its
+  scope is <em>Government development projects</em> of RM 10 million and above. A Treasury circular
+  governs government procurement and cannot bind private-sector projects; private adoption is
+  encouraged, not mandated. The &ldquo;public and private&rdquo; framing traces to vendor marketing
+  material, not to the circular. The LOD 500, PeDATA and SKATA requirements derive from separate CIDB
+  guidance, and attaching them to the mandate conflated two instruments.</p>
+
+  <h3>C-2 &mdash; EU procurement directive miscited by omission</h3>
+  <p><strong>Finding.</strong> Directive 2014/24/EU Article 22(4) is permissive, not mandatory. The
+  page now states that the directive allows member states to require BIM tools for public works but
+  does not itself require them.</p>
+
+  <h3>C-3 &mdash; the Dubai position was two circulars out of date, and its two figures were read as eras</h3>
+  <p><strong>Was published as</strong> the position under Circulars 196 (2013) and 207 (2015), sourced
+  to a law-firm guide, with 207 described as having &ldquo;widened&rdquo; 196.</p>
+  <p><strong>Finding.</strong> The primary texts were obtained from Dubai Municipality&rsquo;s own
+  document server, and two separate defects appeared. First, two circulars had been missed:
+  <strong>9-1-1</strong> (2021) restates the standing position and <strong>9-1-2</strong> (2023) adds a
+  mandatory Open BIM model submission with new building permit applications from 1 January 2024.
+  Second, the two threshold figures are <strong>not two eras</strong>: 9-1-1 sets them out as two
+  work-scopes in force together &mdash; over 20 floors and 200,000&nbsp;sq&nbsp;ft for architectural
+  and mechanical work, over 40 floors and 300,000&nbsp;sq&nbsp;ft for structural work. Reading 207 as
+  having widened 196&rsquo;s figures collapses a scope distinction into a chronology.</p>
+  <p>The central assertion &mdash; mandatory in Dubai only, no federal UAE mandate &mdash; was correct
+  and is unchanged. A secondary account can be simultaneously accurate about the instrument it
+  describes and years out of date about the jurisdiction.</p>
+
+  <h3>C-4 &mdash; four criteria anchors attributed wording to standards that do not carry it</h3>
+  <p>Found by the verification pass in section 02. All four are of one kind: the anchor named a real
+  standard but described it in words the standard does not use, or attached content to it that belongs
+  elsewhere. <strong>None was a fabricated source</strong>; each was an imprecise attribution, and
+  imprecision in a citation is what the tier system exists to expose.</p>
+  <div class="mxscroll">
+    <table class="mx">
+      <thead><tr><th>Item</th><th>Was</th><th>Now</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td class="k">B1</td><td>information management competence</td><td><strong>capability and capacity</strong></td>
+            <td>&ldquo;Competence&rdquo; is not a defined term of ISO 19650-1. Its terms are capability (3.3.18) and capacity (3.3.19), and Clause 8 is <em>Delivery team capability and capacity</em></td></tr>
+        <tr><td class="k">B2</td><td>Information Manager function</td><td><strong>information management functions</strong></td>
+            <td>The standard defines a <em>function</em>, not a role. Clause 7 is <em>Project and asset information management functions</em>; ISO 19650-2 5.1.1 appoints individuals to undertake it. &ldquo;Information Manager&rdquo; is a job title from earlier national practice</td></tr>
+        <tr><td class="k">D1</td><td>Uniclass / OmniClass / MasterFormat</td><td><strong>framework for classification</strong></td>
+            <td>ISO 12006-2&rsquo;s Scope states it does not provide a complete operational classification system. The three named systems are separate publications and appear nowhere in the text read</td></tr>
+        <tr><td class="k">D2</td><td>EIR / AIR</td><td><strong>project information requirements</strong></td>
+            <td>AIR is not in ISO 19650-2. Part 2 covers the delivery phase; AIR is defined in Part 1 (3.3.4) as relating to the operation of an asset and established in Part 3 (5.1.4)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The change was to four label strings. No question wording, no response option and no score was
+  touched.</p>
+</section>
+
+<section id="refs">
+  <div class="shead"><span class="snum">&mdash;</span><h2>References</h2></div>
+  <p class="lede">Standards are given in the issuing body&rsquo;s own citation form. Each entry states
+  how it was verified and on what date.</p>
+  <ol class="refs">
+    <li id="r1"><strong>ISO 19650-1:2018</strong>, <em>Organization and digitization of information about buildings and civil engineering works, including building information modelling (BIM) &mdash; Information management using building information modelling &mdash; Part 1: Concepts and principles.</em> ISO, Geneva. Technical committee ISO/TC 59/SC 13. Terms cited: 3.3.3&ndash;3.3.6, 3.3.9, 3.3.11, 3.3.12, 3.3.14, 3.3.15, 3.3.18, 3.3.19; Clauses 5.2, 7, 8, 12. <span class="loc">Publisher&rsquo;s official preview text read, 22&ndash;23 Aug 2026 (T1).</span></li>
+    <li id="r2"><strong>ISO/IEC 33020:2019</strong>, <em>Information technology &mdash; Process assessment &mdash; Process measurement framework for assessment of process capability.</em> ISO/IEC, Geneva. Clauses cited: &sect;5.2.1&ndash;&sect;5.2.7. <span class="loc">Publisher&rsquo;s official preview text read, 22&ndash;23 Aug 2026 (T1).</span></li>
+    <li id="r3"><strong>ISO 16739-1:2024</strong>, <em>Industry Foundation Classes (IFC) for data sharing in the construction and facility management industries &mdash; Part 1: Data schema.</em> ISO, Geneva. Supersedes ISO 16739-1:2018; corresponds to IFC 4.3.2.0. <span class="loc">Catalogue record read, 22 Aug 2026 (T2). No clause wording is quoted from it.</span></li>
+    <li id="r4"><strong>ISO 12006-2:2015</strong>, <em>Building construction &mdash; Organization of information about construction works &mdash; Part 2: Framework for classification.</em> ISO, Geneva. Clauses cited: 1, 5. <span class="loc">Publisher&rsquo;s official preview text read, 23 Aug 2026 (T1).</span></li>
+    <li id="r5"><strong>Malaysia, Ministry of Finance.</strong> <em>Pekeliling Perbendaharaan PK 1.15 &mdash; Pelaksanaan Building Information Modelling (BIM).</em> Effective 1 July 2025. <span class="loc">Secondary account read, 22 Aug 2026 (T3). Primary circular text not obtained.</span></li>
+    <li id="r6"><strong>Dubai Municipality.</strong> <em>Circular No. 196</em> (2013) and <em>Circular No. 207</em> (2015), on the mandatory use of Building Information Modelling. <span class="loc">Secondary account read, 22 Aug 2026 (T3). Primary texts of 196 and 207 not obtained; their substance is restated in [15], which was obtained. Superseded in operative effect by [15] and [16].</span></li>
+    <li id="r7"><strong>United Kingdom, Cabinet Office.</strong> <em>Government Construction Strategy.</em> BIM Level 2 required on centrally-funded public projects from April 2016. <span class="loc">Secondary accounts read, 22 Aug 2026 (T3).</span></li>
+    <li id="r8"><strong>Singapore, Building and Construction Authority.</strong> <em>BIM e-submission requirements.</em> <span class="loc">Secondary accounts and BCA published guidance located, 22 Aug 2026 (T3); the substance is restated at T1 in [12].</span></li>
+    <li id="r9"><strong>European Union.</strong> <em>Directive 2014/24/EU of the European Parliament and of the Council of 26 February 2014 on public procurement and repealing Directive 2004/18/EC</em>, Article 22(4). <span class="loc">Official reproduction of the article text read, 22 Aug 2026 (T3). EUR-Lex full-text retrieval was unsuccessful; wording taken from an official legislative reproduction.</span></li>
+    <li id="r10"><strong>buildingSMART International.</strong> <em>openBIM definition</em>, and the IFC certification programme. <span class="loc">Publisher&rsquo;s published definition read, 22 Aug 2026 (T3).</span></li>
+    <li id="r11"><strong>buildingSMART International.</strong> <em>Software certification register.</em> <span class="loc">Register consulted directly for Autodesk&rsquo;s certification holdings, 31 July 2026 (T3).</span></li>
+    <li id="r12"><strong>buildingSMART International.</strong> <em>Global openBIM Mandates, 2025 Edition &mdash; A playbook of IFC Mandates from around the world.</em> Chapters cited: Dubai, Singapore. <span class="loc">Publisher&rsquo;s own PDF obtained and read, 23 Aug 2026 (T1). Retrieval had failed at HTTP 403 the previous day.</span></li>
+    <li id="r13"><strong>ISO 19650-2:2018</strong>, <em>&hellip; Part 2: Delivery phase of the assets.</em> ISO, Geneva. Clauses cited: 5.1.1, 5.1.2, 5.1.4, 5.2.1, 5.3.3, 5.3.4, 5.4.3, 5.4.4, 5.4.5, 5.8.1. <span class="loc">Publisher&rsquo;s official preview text read, 23 Aug 2026 (T1) &mdash; cover matter through the opening of Clause 3, including the full table of contents from which clause titles are quoted. Clause bodies not read.</span></li>
+    <li id="r14"><strong>ISO 19650-3:2020</strong>, <em>&hellip; Part 3: Operational phase of the assets.</em> ISO, Geneva. Clauses cited: 1, 3.1.1, 3.1.2, 5.1.4, 5.1.11, 5.8.1, 5.8.2. <span class="loc">Publisher&rsquo;s official preview text read, 23 Aug 2026 (T1), on the same terms as [13].</span></li>
+    <li id="r15"><strong>Dubai Municipality.</strong> <em>Circular No. (9-1-1) of Year 2021, On Application of Buildings Information Modelling</em>, 23 August 2021. <span class="loc">Primary circular text obtained from Dubai Municipality&rsquo;s own document server and read, 23 Aug 2026 (T1), in the Municipality&rsquo;s own English technical translation, which states that the Arabic version prevails in case of ambiguity.</span></li>
+    <li id="r16"><strong>Dubai Municipality.</strong> <em>Circular No. (9-1-2) of 2023, on the mandatory submission of the Building Information Model (BIM Model) with the building permit application for certain types of buildings</em>, 13 October 2023. <span class="loc">Primary circular text (Arabic) obtained from Dubai Municipality&rsquo;s own document server and read, 23 Aug 2026 (T1). The Municipality&rsquo;s document index records the file date as 18 October 2023; the circular&rsquo;s own text is dated 13 October 2023, and that date is used here.</span></li>
+    <li id="r17"><strong>buildingSMART International.</strong> <em>Validation Service</em>, published page text. <span class="loc">Publisher&rsquo;s own published source read, 23 Aug 2026 (T1).</span></li>
+    <li id="r18"><strong>buildingSMART International.</strong> <em>buildingSMART International Software Certification Program</em>, published page text. <span class="loc">Publisher&rsquo;s own page read, 23 Aug 2026 (T1), from an archived snapshot dated 7 Aug 2024. The snapshot date is stated because the programme&rsquo;s use-case list changes.</span></li>
+    <li id="r19"><strong>Succar, B., Sher, W. and Williams, A. (2013).</strong> &lsquo;An integrated approach to BIM competency assessment, acquisition and application.&rsquo; <em>Automation in Construction</em>, 35, 174&ndash;189. <span class="loc">doi:10.1016/j.autcon.2013.05.016. Author&rsquo;s final version read in full, 23 Aug 2026 (T1), from the publisher-linked repository copy. Bibliographic identity confirmed independently against the Crossref record.</span></li>
+  </ol>
+
+  <h3>How to cite</h3>
+  <p>This page forms part of the toolkit release and is not separately citable. Cite the toolkit:</p>
+  <p class="mono">Yusof, M.F.B. (2026). <em>OpenBIM Readiness Assessment Toolkit for Digital
+  Infrastructure Management</em> (Version 0.1) [Research instrument].</p>
+  <p><strong>No DOI has been minted.</strong> A Digital Object Identifier will be assigned at the first
+  version-frozen release, and this section will be updated to carry it. Until then, cite the version
+  number and the access date. <strong>Any DOI attributed to this work before that release is not one
+  the authors issued.</strong></p>
+  <p>To cite a specific claim, cite the underlying source above directly rather than citing this
+  toolkit as the authority for it. The toolkit is the authority for its own instrument design &mdash;
+  the criteria, the scoring function, the claim and evidence delta method &mdash; and not for the
+  content of ISO standards or national regulations, which should always be cited to the issuing body.</p>
+  <p>Funding, competing interests, data availability, ethics, use of generative AI and licence are
+  declared at <a href="disclaimer.html">the Disclaimer Notice</a> and are not duplicated here.</p>
+</section>
+
+<footer>
+  Sources and verification &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
+  Appendix A to the research instrument &mdash; living document, revised 23 August 2026.<br>
+  <a href="assess.html">The assessment</a> &middot; <a href="proposal.html">The research proposal</a> &middot; <a href="disclaimer.html">Disclaimer Notice</a>
+</footer>
+
+</div>
