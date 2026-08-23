@@ -477,7 +477,11 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=11"></script>
 <script src="ad_data.js?v=23"></script>
-<script src="idmp_session.js?v=24"></script>
+<!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
+     build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
+     decisions to window.AdAccess instead of computing them independently. -->
+<script src="ad_access.js?v=1"></script>
+<script src="idmp_session.js?v=25"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
