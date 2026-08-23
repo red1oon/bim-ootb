@@ -7054,24 +7054,6 @@
       ctx.fillStyle = color;
       ctx.fillRect(x, y, w, barH);
 
-      // §GANTT_CPM_ANNOTATE (§S68): float rail on the BOTTOM edge — red = on the critical path
-      // (zero float), green = has slack. NOT a fourth stroke frame: yellow (captured), orange
-      // (cursor-active) and cyan (marquee-selected) already take all three, and a fourth at 9px row
-      // height is unreadable. Same solid-edge-marker idiom the variance panel uses for its cost cap.
-      // Why BOTH colours rather than red-only: MEASURED over the 8-building fleet with the real rate
-      // tables, criticality runs 27–82% of tasks (Terminal/TermRooms 27%, Hospital 33%, LTU 55%,
-      // JKR 64%, Clinic 78%, Duplex 79%, HHS 82% — witness_gantt_cpm_annotate.js W-CPM-5). At the
-      // top of that range a red-only rail marks four bars in five and carries almost no signal;
-      // painting the complement makes the SCARCE thing — the bars that can actually move without
-      // pushing the end date — the thing that stands out, at every fraction.
-      // The marks are derived FROM the dates the cascade wrote — annotate never moved one.
-      var cpmMark = task.taskId ? _ganttCritical[task.taskId] : null;
-      if (cpmMark) {
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = cpmMark.critical ? '#e53935' : '#26a69a';
-        ctx.fillRect(x, y + barH - 2, w, 2);
-      }
-
       // §gate: captured (preset IFC 4D) bars get a bright-yellow frame so you can tell the real
       // programme from the generated fallback. cap = #captured ops in this storey|phase group.
       if (task.cap > 0) {
@@ -7097,6 +7079,29 @@
         ctx.strokeStyle = '#4fc3f7';
         ctx.lineWidth = 2;
         ctx.strokeRect(x - 1, y - 1, w + 2, barH + 2);
+      }
+
+      // §GANTT_CPM_ANNOTATE (§S68/§S74): float rail on the BOTTOM edge — red = on the critical path
+      // (zero float), green = has slack. DRAWN LAST, and that placement is the fix, not a preference:
+      // §S68 drew it right after the bar fill, so the yellow captured-schedule frame (a 1px
+      // strokeRect around the whole bar) painted straight over its bottom row. MEASURED on the live
+      // site before this change — canvas pixels read back, not eyeballed — 19 bars: the rail showed
+      // on only ONE of its two rows (railVisibleAt row h-2 = 15, at h-1 = 0) and the yellow frame
+      // owned h-1 on 17 of 19. A 2px cue that renders as 1px, half of it blended against the phase
+      // fill, is why it read as "no visual cue at all".
+      // NOT a fourth stroke frame: yellow (captured), orange (cursor-active) and cyan
+      // (marquee-selected) already take all three, and a fourth at this row height is unreadable.
+      // Why BOTH colours rather than red-only: MEASURED over the 8-building fleet with the real rate
+      // tables, criticality runs 27–82% of tasks (witness_gantt_cpm_annotate.js W-CPM-5). At the top
+      // of that range a red-only rail marks four bars in five and carries almost no signal; painting
+      // the complement makes the SCARCE thing — the bars that can actually move without pushing the
+      // end date — the thing that stands out, at every fraction.
+      // The marks are derived FROM the dates the cascade wrote — annotate never moved one.
+      var cpmMark = task.taskId ? _ganttCritical[task.taskId] : null;
+      if (cpmMark) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = cpmMark.critical ? '#e53935' : '#26a69a';
+        ctx.fillRect(x, y + barH - 2, w, 2);
       }
 
       // Label: explicit phase short-code (§GANTT_PALETTE). substring(0,3) used to yield "Sub" vs
