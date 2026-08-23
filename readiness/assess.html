@@ -239,6 +239,33 @@ footer{
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
 }
 footer a{color:var(--muted)}
+.langbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 0;border-bottom:1px solid var(--rule-soft)
+}
+.langbar label{font-family:"Instrument Sans",sans-serif;font-size:12px;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.langbar select{
+  font-family:"Instrument Sans",sans-serif;font-size:13.5px;color:var(--ink);
+  background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:5px 9px
+}
+.langbar select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.langbar .small{flex:1;min-width:240px;font-size:12.5px}
+.draftbar{
+  margin:12px 0 0;padding:12px 14px;border-left:3px solid var(--warn);border-radius:6px;
+  background:var(--warn-wash);color:var(--ink-2);font-size:14px;line-height:1.55
+}
+.draftbar .en{display:block;margin-top:7px;padding-top:7px;border-top:1px solid var(--rule-soft);
+  font-size:13px;color:var(--muted)}
+/* Arabic is right-to-left. Flip the reading direction of the instrument only; the shared
+   chrome and the Latin-script navigation stay as they are. */
+[dir="rtl"] .field,[dir="rtl"] .opts,[dir="rtl"] .card,[dir="rtl"] h2,[dir="rtl"] .sub,
+[dir="rtl"] .eyebrow,[dir="rtl"] .qhead{direction:rtl;text-align:right}
+[dir="rtl"] .opts label{flex-direction:row-reverse}
+[dir="rtl"] .tipbody{left:auto;right:-8px;text-align:right;direction:rtl}
+[dir="rtl"] .fixes li{direction:rtl}
+[dir="rtl"] .draftbar{border-left:none;border-right:3px solid var(--warn);direction:rtl;text-align:right}
+[dir="rtl"] .draftbar .en{direction:ltr;text-align:left}
 .t4{
   display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
   letter-spacing:.04em;color:var(--warn);background:var(--warn-wash);border:1px solid var(--warn);
@@ -400,6 +427,18 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
     <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Research instrument · v0.1 draft</small></div>
     <div class="nav"><a href="./">Overview</a><a href="assess.html" class="on">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html">Background</a><a href="faq.html">Basics</a><a href="sources.html">Sources</a><a href="disclaimer.html">Notice</a></div>
   </div>
+
+  <div class="langbar">
+    <label for="langsel">Language</label>
+    <select id="langsel">
+      <option value="en">English</option>
+      <option value="ms">Bahasa Melayu &mdash; draf</option>
+      <option value="ar">العربية &mdash; مسودة</option>
+    </select>
+    <span class="small" id="langnote">The twenty questions and their answer options are translated.
+    Explanatory pages, legal notices and the consent statement stay in English.</span>
+  </div>
+  <div class="draftbar" id="draftbar" hidden></div>
 
   <ul class="rail" id="rail" hidden>
     <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
@@ -598,7 +637,7 @@ SCREENS.declined =
 
 /* ---------- 2 · CONTEXT ---------- */
 SCREENS.context =
-  '<p class="eyebrow">Step 3 of 10 &middot; About you</p>' +
+  '<p class="eyebrow">Step 3 of 11 &middot; About you</p>' +
   '<h2>Context</h2>' +
   '<p class="sub small">None of this identifies you. It selects the right rules for your jurisdiction and ' +
   'places you in a comparable group.</p>' +
@@ -760,7 +799,8 @@ var DIMENSIONS = [
 function renderItem(it) {
   var rows = it.o.map(function (t, i) {
     return '<input type="radio" name="' + it.id + '" id="' + it.id + i + '"' + (i === it.pre ? ' checked' : '') + '>' +
-      '<label for="' + it.id + i + '"><span class="lv">' + LV[i] + '</span><span class="dot"></span><span>' + t + '</span></label>';
+      '<label for="' + it.id + i + '"><span class="lv">' + LV[i] + '</span><span class="dot"></span><span>' +
+      L(t, it.id, 'o', i) + '</span></label>';
   }).join('');
   if (it.na) {
     rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'na">' +
@@ -770,28 +810,31 @@ function renderItem(it) {
   rows += '<input type="radio" name="' + it.id + '" id="' + it.id + 'dk">' +
     '<label for="' + it.id + 'dk"><span class="lv">&mdash;</span><span class="dot"></span>' +
     '<span>Not known to me <em class="small">&mdash; scored as insufficient evidence, never as zero</em></span></label>';
-  return '<div class="field"><div class="qhead"><span class="qid">' + it.id + '</span><span>' + it.q + '</span>' +
-    TIP(it.tip, it.anchor, it.id, it.cl, it.tier) + '</div><div class="opts">' + rows + '</div></div>';
+  return '<div class="field"><div class="qhead"><span class="qid">' + it.id + '</span><span>' + L(it.q, it.id, 'q') + '</span>' +
+    TIP(L(it.tip, it.id, 'tip'), it.anchor, it.id, it.cl, it.tier) +
+    '</div><div class="opts">' + rows + '</div></div>';
 }
 
 function dimScreen(n) {
   var d = DIMENSIONS[n];
-  return '<p class="eyebrow">Step ' + (n + 4) + ' of 10 &nbsp;&middot;&nbsp; ' + d.name +
+  return '<p class="eyebrow">Step ' + (n + 4) + ' of 11 &nbsp;&middot;&nbsp; ' + (trDim(d.key, 'name') || d.name) +
       ' &nbsp;&middot;&nbsp; section ' + (n + 1) + ' of 5</p>' +
-    '<h2>' + d.blurb + '</h2>' +
+    '<h2>' + (trDim(d.key, 'blurb') || d.blurb) + '</h2>' +
     '<p class="sub small">Each question asks about the <strong>last real instance</strong>, not general practice. ' +
     'Answer from what you know. Tap <strong>?</strong> on any question to see why it is asked.</p>' +
     '<div class="card">' + d.items.map(renderItem).join('') + '</div>' +
     '<div class="actions">' +
       '<button class="btn" data-go="' + (n < 4 ? 'dim' + (n + 1) : 'model') + '">' +
-        (n < 4 ? 'Continue to ' + DIMENSIONS[n + 1].name : 'Continue to model check') + '</button>' +
+        (n < 4 ? 'Continue to ' + (trDim(DIMENSIONS[n + 1].key, 'name') || DIMENSIONS[n + 1].name)
+               : 'Continue to model check') + '</button>' +
       '<button class="btn sec" data-go="' + (n > 0 ? 'dim' + (n - 1) : 'context') + '">Back</button>' +
     '</div>';
 }
 
 /* ---------- 4 · MODEL ---------- */
-SCREENS.model =
-  '<p class="eyebrow">Step 9 of 10 &middot; Your model</p>' +
+/* Built at render time: the payload stamp names the active language pack. */
+SCREENS.model = function () { return '' +
+  '<p class="eyebrow">Step 9 of 11 &middot; Your model</p>' +
   '<h2>Model check</h2>' +
   '<p class="sub small">The file is read here, in your browser, and what it contains is compared against the ' +
   'answers given. <strong>The file is never uploaded.</strong></p>' +
@@ -842,7 +885,9 @@ SCREENS.model =
       '  "dup_guids":     47,\n' +
       '  "exporter":      "other",\n' +
       '  "toolkit":       "v0.1",\n' +
-      '  "kb":            "core-0.1 / ae-v1"\n}</pre>' +
+      '  "kb":            "core-0.1 / ae-v1"' + (LANGS[LANG].pack === 'en-v1' ? '' : ',') + '\n' +
+      (LANGS[LANG].pack === 'en-v1' ? '' : '  "lang":          "' + LANGS[LANG].pack + '"\n') +
+      '}</pre>' +
   '</div>' +
 
   /* Research participation. This is a funded study and a submission is research data,
@@ -893,7 +938,7 @@ SCREENS.model =
     '<button class="btn" data-go="bridge">Next: talk it through with your AI</button>' +
     '<button class="btn sec" data-go="results">Skip to my results</button>' +
     '<button class="btn sec" data-go="dim4">Back</button>' +
-  '</div>';
+  '</div>'; };
 
 /* ---------- 5 · RESULTS ---------- */
 function chartRows() {
@@ -913,7 +958,7 @@ function chartRows() {
 }
 
 SCREENS.results =
-  '<p class="eyebrow">Step 10 of 10 &middot; Your results</p>' +
+  '<p class="eyebrow">Step 11 of 11 &middot; Your results</p>' +
   '<h2>Results</h2>' +
   '<p class="sub small">Two numbers per dimension: what your answers claimed, and what the evidence supports. ' +
   'Where they disagree by two levels or more, the measurement is used and the gap is shown.</p>' +
@@ -1072,6 +1117,56 @@ SCREENS.results =
   'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
   'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
 
+
+
+/* ============================================================
+   LANGUAGE PACKS — §LANGUAGE_I18N
+   The twenty questions and their answer ladders ARE the measurement. Machine-translating a
+   scored item changes the construct being measured, so a pack is only trustworthy once a
+   qualified human has adjudicated it. These two packs have NOT been adjudicated and the
+   instrument says so, in the reader's own language, whenever one is active.
+
+   Deliberately NOT translated here: the acknowledgement gate, the consent statement and the
+   printed Notice. Those are legally load-bearing and must be translated by someone qualified
+   to translate legal text, not drafted by a model. They stay in English and the banner says so.
+
+   The payload carries answer INDICES, so a translated instrument produces directly comparable
+   data. The active pack is stamped into it, so every response records which wording produced it.
+   ============================================================ */
+
+var LANGS = {
+  en: { name: 'English',  native: 'English',        dir: 'ltr', pack: 'en-v1', status: 'source' },
+  ms: { name: 'Malay',    native: 'Bahasa Melayu',  dir: 'ltr', pack: 'ms-v0.1-draft', status: 'draft' },
+  ar: { name: 'Arabic',   native: 'العربية',        dir: 'rtl', pack: 'ar-v0.1-draft', status: 'draft' }
+};
+
+var PACKS = { ms: {"dims":{"A":{"name":"Tadbir urus","blurb":"Bagaimana firma anda ditadbir"},"B":{"name":"Orang dan kemahiran","blurb":"Di mana pengetahuan standard terbuka berada, dan apa yang berlaku tanpanya"},"C":{"name":"Teknologi","blurb":"Apa yang anda guna, dan apa kosnya untuk berubah"},"D":{"name":"Data dan standard","blurb":"Apa yang terkandung dalam model"},"E":{"name":"Proses organisasi","blurb":"Bagaimana kerja mengalir"}},"items":{"A1":{"q":"Adakah terdapat pendirian bertulis mengenai penyerahan terbuka / IFC?","tip":"Dasar yang wujud tetapi tidak pernah disemak berkelakuan berbeza daripada dasar yang dikuatkuasakan. Kedua-duanya dinilai secara berasingan.","o":["Tiada, dan perkara ini tidak pernah timbul","Mengikut kes, apabila ada yang teringat","Ditulis dalam dasar atau templat BEP dan dikemas kini","Pendirian standard yang digunakan merentas semua projek","Pematuhan disemak dan dilaporkan bagi setiap projek","Laporan tersebut mendorong perubahan pada dasar"]},"A2":{"q":"Kontrak terkini anda &mdash; apa yang dinyatakan mengenai format penyerahan?","tip":"Menamakan IFC dan menamakan versi skema adalah dua komitmen berbeza. Yang kedua boleh disemak; yang pertama selalunya tidak.","o":["Tidak menyebut format, atau saya tidak tahu","Format dipersetujui secara tidak rasmi, projek demi projek","IFC dinamakan dalam dokumen pelantikan","Klausa standard menamakan IFC dan versi skema, setiap pelantikan","Pematuhan klausa itu disahkan semasa serahan","Penemuan pengesahan disalurkan semula ke dalam klausa"]},"A3":{"q":"Pernahkah anda mengeluarkan model siap daripada perisian BIM anda dan membukanya di tempat lain?","tip":"&ldquo;Kami memiliki data kami&rdquo; kekal tidak teruji sehingga sesuatu model dikeluarkan dan dibuka di tempat lain. Item ini menunjukkan pendedahan kepada terikat vendor.","o":["Tidak pernah cuba","Pernah cuba sekali, secara sembarangan","Dilakukan semasa penyerahan dan hasilnya disimpan","Langkah standard dalam setiap penutupan projek","Kesetiaan data diukur berbanding sumber setiap kali","Ukuran tersebut mengubah cara kami mengeksport"]},"A4":{"q":"Untuk penyerahan kepada pihak berkuasa, apa yang anda serahkan?","tip":"Keperluan penyerahan berbeza mengikut bidang kuasa &mdash; pek lokal anda melaraskan soalan ini. Jika penyerahan berasaskan model tidak wujud di tempat anda bekerja, pilih Tidak Berkenaan dan ia dikecualikan daripada pemarkahan, bukan dikira sebagai sifar.","o":["Lukisan kertas atau PDF sahaja","Fail model asli, seperti yang diminta","IFC bersama format lain","IFC mengikut skema yang dinamakan pihak berkuasa, setiap penyerahan","Disahkan mengikut kriteria pihak berkuasa sebelum dihantar","Penemuan pengesahan mengubah templat pengarangan kami"]},"B1":{"q":"Siapa dalam firma yang boleh menerangkan apa itu set sifat IFC?","tip":"Item ini merekodkan sama ada kefahaman standard terbuka terletak pada seorang individu atau tersebar &mdash; perbezaan itu menentukan betapa rapuhnya keupayaan tersebut.","o":["Tiada sesiapa","Seorang, belajar sendiri","Seorang, dan ia ada didokumenkan","Kebanyakan pasukan teknikal, melalui orientasi yang ditetapkan","Kompetensi dinilai dan dijejaki","Keputusan penilaian mendorong program latihan"]},"B2":{"q":"Adakah pengurusan maklumat atau BIM tersenarai dalam skop tugas sesiapa?","tip":"Melakukan kerja dan bertanggungjawab ke atasnya adalah dua perkara berbeza. Peranan dengan masa diperuntukkan berkelakuan berbeza daripada seseorang yang memikulnya di atas kerja sebenar mereka.","o":["Tidak","Ada yang melakukannya secara tidak rasmi","Sebahagian daripada peranan bernama, dengan masa diperuntukkan","Peranan yang ditetapkan dengan tanggungjawab berdokumen","Prestasi peranan diukur","Pengukuran membentuk semula peranan"]},"B3":{"q":"Jika orang itu berhenti esok, apa yang berlaku?","tip":"Firma sering mendapat markah baik untuk keupayaan tetapi lemah untuk kesinambungan. Item ini merekodkan sama ada keupayaan BIM bergantung pada seorang individu.","o":["Keupayaan BIM terhenti","Merosot teruk selama berbulan","Perlahan; ada beberapa nota serahan","Serahan berdokumen dan peranan sandaran yang ditetapkan","Kesinambungan diuji, bukan diandaikan","Keputusan ujian mendorong perancangan pewarisan"]},"B4":{"q":"Adakah sesiapa menerima latihan BIM atau standard terbuka dalam 12 bulan lepas?","tip":"Latihan produk vendor dan latihan standard terbuka adalah pelaburan berbeza. Latihan mendalam dalam satu aplikasi boleh meningkatkan terikat vendor.","o":["Tiada","Belajar sendiri sahaja","Latihan produk vendor, apabila bajet mengizinkan","Laluan latihan yang ditetapkan termasuk standard terbuka","Hasil latihan diukur","Hasil yang diukur menetapkan program tahun hadapan"]},"C1":{"q":"Berapa banyak perisian pengarangan BIM digunakan secara tetap?","tip":"Item ini mengukur penumpuan alat, bukan kecanggihan. Firma satu alat boleh menjadi cekap dan terdedah pada masa yang sama.","o":["Tiada","Tepat satu, secara lalai","Satu utama, satu sekali-sekala","Pemilihan alat ialah keputusan yang ditetapkan bagi setiap tugas","Pertukaran antara alat diukur bagi kehilangan data","Ukuran tersebut mendorong rantaian alat"]},"C2":{"q":"Kali terakhir anda menerima IFC daripada pihak lain, apa yang berlaku?","tip":"&ldquo;Geometri baik, data hilang&rdquo; ialah hasil biasa pertukaran IFC dan patut direkodkan sedemikian.","o":["Tidak pernah menerima","Dibuka tetapi tidak boleh digunakan","Geometri baik, data hilang","Dibuka dan digunakan dalam aliran kerja yang ditetapkan","Kualiti import disemak dan direkodkan","Penemuan dikembalikan kepada penghantar dan pertukaran bertambah baik"]},"C3":{"q":"Apa yang paling mengehadkan bilangan orang di sini yang menggunakan alat BIM?","tip":"Kos lesen ialah kekangan yang paling mungkin diringankan oleh laluan standard terbuka. Memandang ringan perkara ini mengurangkan nilai cadangan yang diberikan.","o":["Kos lesen, sangat teruk","Kos lesen, ketara","Perkakasan atau kemahiran, sedang diuruskan","Akses dirancang dan disediakan","Penggunaan diukur berbanding keperluan","Pengukuran mendorong keputusan pelesenan"]},"C4":{"q":"Pernahkah firma menilai alternatif kepada alat BIM utamanya?","tip":"Setelah menguji alternatif, kos berpindah menjadi kuantiti yang diketahui dan bukan lagi andaian.","o":["Tidak pernah dipertimbangkan","Dibincangkan sahaja","Ada yang pernah mencubanya","Penilaian ialah latihan berkala yang ditetapkan","Kos berpindah dikuantifikasi","Angka itu memaklumkan perolehan"]},"D1":{"q":"Adakah model anda menggunakan sistem pengelasan?","tip":"Konvensyen penamaan fail bukan sistem pengelasan. Kedua-duanya berguna dan menjawab soalan berbeza &mdash; analisis jurang membezakannya.","o":["Tidak","Konvensyen penamaan fail sahaja","Standard pengelasan, digunakan sebahagian","Digunakan secara konsisten melalui proses yang ditetapkan","Liputan diukur dan dilaporkan bagi setiap projek","Angka liputan mendorong perubahan templat"]},"D2":{"q":"Adakah kandungan yang wajib ada dalam model ditulis sebelum projek bermula?","tip":"Ini mengenai keperluan maklumat, apa pun namanya di tempat anda. Ditulis sebelum projek berkelakuan sangat berbeza daripada dipersetujui sambil berjalan.","o":["Tidak","Dipersetujui secara lisan","Keperluan bertulis wujud","Keperluan standard digunakan bagi setiap projek","Pematuhan diukur semasa serahan","Pengukuran mengubah keperluan standard"]},"D3":{"q":"Sebelum menghantar IFC keluar, adakah ia disemak?","tip":"Pemeriksaan visual ialah amalan biasa. Item ini membezakan pemeriksaan daripada pengesahan menggunakan alat yang melaporkan ralat.","o":["Tidak pernah menghantar","Tidak disemak","Dibuka sekali untuk dilihat sepintas lalu","Disemak mengikut jangkaan yang ditetapkan, setiap kali dikeluarkan","Disahkan dengan alat penyemak dan keputusan direkodkan","Keputusan yang direkodkan mendorong perubahan pengarangan"]},"D4":{"q":"Di mana model projek siap anda akan berada dalam masa lima tahun?","tip":"Sesuatu aset hidup lebih lama daripada perisian yang memodelkannya. Item ini merekodkan sama ada kebolehbacaan jangka panjang telah dirancang.","o":["Tiada tempat khusus","Format asli pada suatu pelayan","Diarkibkan secara sengaja, format asli sahaja","Proses pengarkiban yang ditetapkan termasuk IFC","Kebolehbacaan arkib diuji secara berkala","Keputusan ujian mengubah dasar pengarkiban"]},"E1":{"q":"Bagaimana data model dikongsi dalam sesuatu projek?","tip":"Item ini membezakan lokasi tempat fail disimpan daripada persekitaran yang menguruskan versi, status dan akses.","o":["E-mel atau pemindahan fail","Pemacu kongsi","CDE untuk dokumen","CDE yang mengendalikan model, dengan status yang ditetapkan","Pematuhan CDE diukur","Pengukuran mendorong konfigurasi CDE"]},"E2":{"q":"Adakah pertukaran model dijadualkan?","tip":"Pertukaran berjadual membolehkan disiplin lain merancang di sekitar penyerahan. Pertukaran atas permintaan adalah biasa.","o":["Sembarangan, atas permintaan","Sekitar peristiwa penting, secara tidak rasmi","Ditetapkan dalam suatu pelan","Pelan penyerahan standard bagi setiap projek","Ketepatan masa pertukaran diukur","Pengukuran mengubah pelan"]},"E3":{"q":"Selepas serahan, adakah model digunakan untuk apa-apa?","tip":"Banyak model tidak digunakan selepas serahan. Item ini merekodkan sama ada model mempunyai peranan yang ditetapkan dalam operasi.","o":["Tidak","Dirujuk sekali-sekala","Diserahkan, tidak pasti sama ada digunakan","Peranan yang ditetapkan dalam FM atau pengurusan aset","Nilai operasinya diukur","Pengukuran mendorong apa yang kami modelkan"]},"E4":{"q":"Adakah apa-apa mengenai kerja BIM anda diukur?","tip":"Tanpa pengukuran tiada asas untuk menentukan sama ada sesuatu perubahan memberi kesan. Bukti anekdot direkodkan sebagai tiada pengukuran.","o":["Tidak","Secara anekdot","Beberapa metrik dikumpulkan","Set metrik yang ditetapkan bagi setiap projek","Metrik disemak berbanding sasaran","Semakan mengubah cara projek dijalankan"]}}}, ar: {"dims":{"A":{"name":"الحوكمة","blurb":"كيف تُدار منشأتك"},"B":{"name":"الأفراد والمهارات","blurb":"أين تقع المعرفة بالمعايير المفتوحة، وماذا يحدث بدونها"},"C":{"name":"التقنية","blurb":"ما الذي تستخدمه، وما تكلفة تغييره"},"D":{"name":"البيانات والمعايير","blurb":"ما الذي يحتويه النموذج"},"E":{"name":"العمليات المؤسسية","blurb":"كيف يسير العمل"}},"items":{"A1":{"q":"هل هناك موقف مكتوب بشأن المخرجات المفتوحة أو مخرجات IFC؟","tip":"السياسة الموجودة دون متابعة تختلف في أثرها عن السياسة المُنفَّذة. وتُقيَّم الحالتان بشكل منفصل.","o":["لا شيء، ولم يُطرح الأمر","حسب كل حالة، عندما يتذكر أحدهم","مكتوب في سياسة أو قالب خطة تنفيذ BIM ويُحدَّث","موقف موحّد يُطبَّق على جميع المشاريع","يُتحقق من الالتزام ويُبلَّغ عنه لكل مشروع","تُحدث تلك التقارير تغييرات في السياسة"]},"A2":{"q":"عقدك الأحدث &mdash; ماذا نصّ بشأن صيغة التسليم؟","tip":"تسمية IFC وتسمية إصدار المخطط التزامان مختلفان. الثاني قابل للتحقق؛ والأول غالبًا ليس كذلك.","o":["لم يذكر الصيغة، أو لا أعلم","اتُّفق على الصيغة بشكل غير رسمي، مشروعًا بمشروع","ذُكر IFC في وثائق التكليف","بند موحّد يسمّي IFC وإصدار المخطط، في كل تكليف","يُتحقق من مطابقة ذلك البند عند التسليم","تُغذّى نتائج التحقق في صياغة البند"]},"A3":{"q":"هل سبق أن أخرجت نموذجًا مكتملًا من برنامج BIM لديك وفتحته في برنامج آخر؟","tip":"عبارة &laquo;بياناتنا ملكنا&raquo; تظل غير مُختبَرة حتى يُخرَج نموذج ويُفتح في مكان آخر. يشير هذا البند إلى مدى التعرض للارتباط بمورّد واحد.","o":["لم نحاول قط","حاولنا مرة واحدة، دون ترتيب","يُنفَّذ عند التسليم وتُحفظ النتيجة","خطوة قياسية في إغلاق كل مشروع","تُقاس الأمانة مقابل المصدر في كل مرة","تلك القياسات تغيّر طريقة التصدير لدينا"]},"A4":{"q":"عند التقديم للجهة المختصة، ماذا تُسلِّم؟","tip":"تختلف متطلبات التقديم باختلاف الولاية القضائية &mdash; وحزمة النطاق المحلي تعدّل هذا السؤال. إذا كان التقديم القائم على النموذج غير موجود في مكان عملك، اختر «لا ينطبق» ويُستبعد من التقييم بدلًا من احتسابه صفرًا.","o":["مخططات ورقية أو PDF فقط","ملفات النموذج الأصلية، كما هو مطلوب","IFC إلى جانب صيغ أخرى","IFC وفق المخطط الذي تحدده الجهة، في كل تقديم","يُتحقق منه وفق معايير الجهة قبل الإرسال","نتائج التحقق تغيّر قوالب الإنتاج لدينا"]},"B1":{"q":"من في المنشأة يستطيع شرح ما هي مجموعة خصائص IFC؟","tip":"يسجّل هذا البند ما إذا كان فهم المعايير المفتوحة محصورًا في شخص واحد أم موزعًا &mdash; وهذا الفرق يحدد هشاشة القدرة.","o":["لا أحد","شخص واحد، تعلّم ذاتيًا","شخص واحد، وهو موثّق في مكان ما","معظم الفريق الفني، عبر تأهيل محدد","تُقيَّم الكفاءة وتُتابَع","نتائج التقييم توجّه برنامج التدريب"]},"B2":{"q":"هل إدارة المعلومات أو إدارة BIM مذكورة في وصف وظيفي لأحد؟","tip":"أداء العمل وتحمّل المسؤولية عنه أمران مختلفان. الدور المخصص له وقت يختلف في أثره عمّن يؤديه فوق عمله الأساسي.","o":["لا","يقوم به أحدهم بشكل غير رسمي","جزء من دور مُسمّى، مع وقت مخصص","دور محدد بمسؤوليات موثّقة","يُقاس أداء الدور","القياس يعيد تشكيل الدور"]},"B3":{"q":"إذا ترك ذلك الشخص العمل غدًا، ماذا يحدث؟","tip":"كثيرًا ما تحقق المنشآت نتائج جيدة في القدرة وضعيفة في الاستمرارية. يسجّل هذا البند ما إذا كانت قدرة BIM تعتمد على فرد واحد.","o":["تتوقف قدرة BIM","تتدهور بشدة لعدة أشهر","تتباطأ؛ توجد بعض ملاحظات التسليم","تسليم موثّق ودور احتياطي محدد","تُختبر الاستمرارية ولا تُفترض","نتائج الاختبار توجّه تخطيط التعاقب الوظيفي"]},"B4":{"q":"هل حصل أحد على تدريب في BIM أو المعايير المفتوحة خلال الاثني عشر شهرًا الماضية؟","tip":"تدريب منتج المورّد وتدريب المعايير المفتوحة استثماران مختلفان. والتدريب المتعمق في تطبيق واحد قد يزيد الارتباط بمورّد واحد.","o":["لا شيء","تعلّم ذاتي فقط","تدريب على منتج مورّد، عند توفر الميزانية","مسار تدريبي محدد يشمل المعايير المفتوحة","تُقاس مخرجات التدريب","المخرجات المقاسة تحدد برنامج العام المقبل"]},"C1":{"q":"كم عدد برامج إنتاج نماذج BIM المستخدمة بانتظام؟","tip":"يقيس هذا البند تركّز الأدوات لا مستوى تطورها. فالمنشأة ذات الأداة الواحدة قد تكون فعّالة ومعرّضة للخطر في آن واحد.","o":["لا شيء","واحد فقط، بشكل تلقائي","واحد رئيسي، وآخر أحيانًا","اختيار الأداة قرار محدد لكل مهمة","يُقاس التبادل بينها لرصد فقد البيانات","تلك القياسات توجّه منظومة الأدوات"]},"C2":{"q":"في آخر مرة استلمت فيها ملف IFC من جهة أخرى، ماذا حدث؟","tip":"«الهندسة سليمة والبيانات مفقودة» نتيجة شائعة لتبادل IFC وينبغي تسجيلها كذلك.","o":["لم نستلم قط","فُتح لكنه غير صالح للاستخدام","الهندسة سليمة، البيانات مفقودة","فُتح واستُخدم ضمن سير عمل محدد","تُفحص جودة الاستيراد وتُسجَّل","تُعاد النتائج إلى المُرسِل ويتحسن التبادل"]},"C3":{"q":"ما الذي يحدّ أكثر من عدد المستخدمين لأدوات BIM لديكم؟","tip":"تكلفة الترخيص هي القيد الذي يُرجَّح أن يخففه المسار القائم على المعايير المفتوحة. والتقليل من شأنه يقلل قيمة التوصيات.","o":["تكلفة الترخيص، بشكل حاد","تكلفة الترخيص، بدرجة ملموسة","العتاد أو المهارات، ويجري التعامل معها","الوصول مخطط له ومُوفَّر","يُقاس الاستخدام مقابل الحاجة","القياس يوجّه قرارات الترخيص"]},"C4":{"q":"هل سبق أن قيّمت المنشأة بديلًا لأداة BIM الرئيسية لديها؟","tip":"اختبار بديل يجعل تكلفة الانتقال كمية معلومة بدلًا من أن تظل افتراضًا.","o":["لم يُطرح قط","نوقش فقط","جرّبه أحدهم","التقييم ممارسة دورية محددة","تكلفة الانتقال محسوبة كميًا","ذلك الرقم يوجّه قرارات الشراء"]},"D1":{"q":"هل تستخدم نماذجكم نظام تصنيف؟","tip":"اصطلاح تسمية الملفات ليس نظام تصنيف. وكلاهما مفيد ويجيب عن سؤال مختلف &mdash; ويميّز تحليل الفجوات بينهما.","o":["لا","اصطلاح تسمية ملفات فقط","معيار تصنيف، مطبَّق جزئيًا","مطبَّق باتساق عبر عملية محددة","تُقاس التغطية ويُبلَّغ عنها لكل مشروع","أرقام التغطية توجّه تعديل القوالب"]},"D2":{"q":"هل يُكتب ما يجب أن يحتويه النموذج قبل بدء المشروع؟","tip":"يتعلق الأمر بمتطلبات المعلومات، أيًا كانت تسميتها محليًا. والمكتوب قبل المشروع يختلف كثيرًا عمّا يُتفق عليه أثناء العمل.","o":["لا","اتُّفق شفهيًا","يوجد متطلب مكتوب","متطلب موحّد يُطبَّق على كل مشروع","يُقاس الالتزام عند التسليم","القياس يغيّر المتطلب الموحّد"]},"D3":{"q":"قبل إرسال ملف IFC، هل يُفحص؟","tip":"الفحص البصري ممارسة شائعة. يفصل هذا البند بين المعاينة والتحقق بأداة تُبلّغ عن الأخطاء.","o":["لم نرسل قط","لا يُفحص","يُفتح مرة للمعاينة السريعة","يُفحص مقابل توقّع محدد، في كل إصدار","يُتحقق منه بأداة فحص وتُسجَّل النتائج","النتائج المسجلة توجّه تغييرات الإنتاج"]},"D4":{"q":"أين ستكون نماذج مشاريعكم المكتملة بعد خمس سنوات؟","tip":"يبقى الأصل بعد زوال البرنامج الذي أنتج نموذجه. يسجّل هذا البند ما إذا كانت قابلية القراءة على المدى الطويل قد خُطط لها.","o":["لا مكان محدد","بالصيغة الأصلية على خادم ما","مؤرشفة عمدًا، بالصيغة الأصلية فقط","عملية أرشفة محددة تشمل IFC","تُختبر قابلية قراءة الأرشيف دوريًا","نتائج الاختبار تغيّر سياسة الأرشفة"]},"E1":{"q":"كيف تُشارَك بيانات النموذج في المشروع؟","tip":"يميّز هذا البند بين موقع تُخزَّن فيه الملفات وبيئة تدير الإصدارات والحالات والصلاحيات.","o":["البريد الإلكتروني أو نقل الملفات","مساحة تخزين مشتركة","بيئة بيانات مشتركة للوثائق","بيئة بيانات مشتركة تدير النماذج، بحالات محددة","يُقاس الالتزام ببيئة البيانات المشتركة","القياس يوجّه إعداد بيئة البيانات المشتركة"]},"E2":{"q":"هل عمليات تبادل النماذج مجدولة؟","tip":"التبادل المجدول يتيح للتخصصات الأخرى التخطيط حول موعد التسليم. والتبادل عند الطلب شائع.","o":["عند الطلب، دون جدول","حول المراحل الرئيسية، بشكل غير رسمي","محددة في خطة","خطة تسليم موحّدة في كل مشروع","يُقاس الالتزام بمواعيد التبادل","القياس يغيّر الخطة"]},"E3":{"q":"بعد التسليم، هل يُستخدم النموذج في أي شيء؟","tip":"كثير من النماذج لا تُستخدم بعد التسليم. يسجّل هذا البند ما إذا كان للنموذج دور محدد في التشغيل.","o":["لا","يُرجَع إليه أحيانًا","سُلِّم، وغير معروف إن كان يُستخدم","دور محدد في إدارة المرافق أو إدارة الأصول","تُقاس قيمته التشغيلية","القياس يوجّه ما ننمذجه"]},"E4":{"q":"هل يُقاس أي شيء يتعلق بعمل BIM لديكم؟","tip":"بدون قياس لا يوجد أساس لتحديد ما إذا كان التغيير قد أحدث أثرًا. وتُسجَّل الشواهد الانطباعية على أنها عدم وجود قياس.","o":["لا","بشكل انطباعي","تُجمع بعض المؤشرات","مجموعة مؤشرات محددة في كل مشروع","تُراجع المؤشرات مقابل الأهداف","المراجعات تغيّر طريقة إدارة المشاريع"]}}} };
+
+var LANG = 'en';
+
+/* Draft-status warning, shown in the target language and in English. */
+var DRAFTNOTE = {
+  ms: 'Terjemahan ini ialah <strong>draf yang belum diadjudikasi</strong>. Ia belum disemak oleh penterjemah bertauliah, dan perkataan sesuatu soalan ialah alat ukur itu sendiri. Notis undang-undang dan pernyataan persetujuan kekal dalam bahasa Inggeris.',
+  ar: 'هذه الترجمة <strong>مسودة لم تخضع للمراجعة والاعتماد</strong>. لم يراجعها مترجم مؤهل، وصياغة السؤال هي أداة القياس نفسها. تبقى الإشعارات القانونية وبيان الموافقة باللغة الإنجليزية.'
+};
+var DRAFTNOTE_EN = 'This translation is an <strong>unadjudicated draft</strong>. It has not been reviewed by a qualified translator, and the wording of a question is the measuring instrument itself. The legal notices and the consent statement remain in English.';
+
+function tr(id, field, i) {
+  var p = PACKS[LANG];
+  if (!p) return null;
+  var it = p.items[id];
+  if (!it) return null;
+  return field === 'o' ? (it.o ? it.o[i] : null) : it[field];
+}
+function trDim(key, field) {
+  var p = PACKS[LANG];
+  return p && p.dims[key] ? p.dims[key][field] : null;
+}
+/* Fall back to English, per string, if a pack is ever incomplete. Never render a blank. */
+function L(en, id, field, i) {
+  var v = (id ? tr(id, field, i) : null);
+  return (v === null || v === undefined || v === '') ? en : v;
+}
 
 /* ============================================================
    THE GUIDED CONVERSATION — §LLM_BRIDGE
@@ -1305,7 +1400,9 @@ var LABELS = {
 };
 var host = document.getElementById('screens');
 
+var CURRENT = null;
 function show(name) {
+  CURRENT = name;
   var sc = SCREENS[name];
   host.innerHTML = '<div class="screen on">' + (typeof sc === 'function' ? sc() : sc) + '</div>';
   if (name === 'results') renderFindings();
@@ -1344,6 +1441,34 @@ document.addEventListener('click', function (e) {
       (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
     r.setAttribute('data-theme', dark ? 'light' : 'dark');
   }
+});
+
+/* §LANGUAGE_I18N — switching the pack re-renders the current screen and flips direction.
+   Nothing is persisted: a language choice is not data about the respondent. */
+function applyLang(code) {
+  if (!LANGS[code]) code = 'en';
+  LANG = code;
+  var meta = LANGS[code];
+  document.documentElement.setAttribute('lang', code);
+  var wrap = document.querySelector('.shell') || document.body;
+  wrap.setAttribute('dir', meta.dir);
+  var bar = document.getElementById('draftbar');
+  if (bar) {
+    if (meta.status === 'draft') {
+      bar.hidden = false;
+      bar.setAttribute('lang', code);
+      bar.innerHTML = (DRAFTNOTE[code] || '') + '<span class="en" lang="en">' + DRAFTNOTE_EN + '</span>';
+    } else {
+      bar.hidden = true;
+      bar.innerHTML = '';
+    }
+  }
+  DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
+  if (CURRENT) show(CURRENT);
+}
+
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'langsel') applyLang(e.target.value);
 });
 
 /* §LLM_BRIDGE handlers. Answer capture keeps the composed prompt honest: it reflects what
