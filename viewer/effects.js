@@ -192,6 +192,18 @@ async function setupEffects(A, renderer, scene, camera) {
     return false;
   }
   var _staffageTexCache = {};
+  // §STAFFAGE_TEX_CAP (housekeeping/sqljs-close-leaks): the cache's key space is strictly bounded
+  // by the static roster (12 files — _STAFFAGE_PEOPLE 6 + _STAFFAGE_TREES 6; a DB-saved file name
+  // outside the roster never reaches _staffageTex, _restoreStaffageInstances drops it via its
+  // `if (!entry) return`), and session-lifetime caching is the documented design
+  // (§PHOTO_STAFFAGE_PRELOAD below: cutouts are building-independent, "loaded once per session" so
+  // the second Alt+P is instant). There is deliberately NO clear-on-teardown: _disposeStaffage()
+  // keeps textures cached across building switches by design, and clearRouteCache()'s trigger
+  // (Find-panel open, navigate_find.js) is semantically unrelated to staffage. So: a dormant size
+  // cap at 2x roster instead — it can only ever fire if a future change makes the key space dynamic,
+  // at which point oldest-in is disposed+evicted (three.js re-uploads from tex.image if a live
+  // sprite still references an evicted texture, so eviction can never break a rendered sprite).
+  var _STAFFAGE_TEX_CAP = 24;
   var _STAFFAGE_BASE = 'textures/staffage/';
   // §STAFFAGE_OFFLINE (2026-07-18): adding/removing a `file:` entry below or in _STAFFAGE_TREES?
   // Mirror it in viewer/sw.js's STAFFAGE_ASSETS list too. These pngs load via _STAFFAGE_BASE, not
@@ -915,6 +927,15 @@ async function setupEffects(A, renderer, scene, camera) {
   // aspect once the pixels are known (no hardcoded widths), anchor its bottom to the ground.
   function _staffageTex(path) {
     if (_staffageTexCache[path]) return _staffageTexCache[path];
+    // §STAFFAGE_TEX_CAP — see the cap's comment at its declaration. Dormant at roster scale
+    // (12 keys < 24): fires only if the key space ever becomes dynamic.
+    var _tcKeys = Object.keys(_staffageTexCache);
+    if (_tcKeys.length >= _STAFFAGE_TEX_CAP) {
+      var _evict = _staffageTexCache[_tcKeys[0]];
+      if (_evict && typeof _evict.dispose === 'function') { try { _evict.dispose(); } catch (e) {} }
+      delete _staffageTexCache[_tcKeys[0]];
+      console.log('§STAFFAGE_TEX_EVICT ' + _tcKeys[0] + ' cap=' + _STAFFAGE_TEX_CAP);
+    }
     var tex = new THREE.TextureLoader().load(_STAFFAGE_BASE + path,
       function() { console.log('§STAFFAGE_TEX_READY ' + path); },
       undefined,

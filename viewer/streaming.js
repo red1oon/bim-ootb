@@ -2289,8 +2289,23 @@ function setupStreaming(A) {
       // lens/graph actually read in split mode, so a shipped-stale room set (e.g. Terminal's
       // pre-STAIRWELL-STACK 43 rooms) is patched here or nowhere. Raw bytes stay in IDB.
       if (A._applyPendingPatch) metaBuf = await A._applyPendingPatch(metaBuf, metaUrl);
+      // §SQLJS_CLOSE (housekeeping/sqljs-close-leaks): free the prior sql.js WASM instance before
+      // reassigning — an orphaned Database keeps its whole DB copy alive on the WASM heap forever
+      // (no GC reaches it). Defensive-only today: A.init() runs exactly once per page life
+      // (main.js:942; Ctrl+O "replace" navigates to a fresh page, scene.js:1073, and the merge path
+      // folds into the LIVE A.db without reassigning), so no current user path re-enters here.
+      // A.libDb may alias A.db (set just below, and at §SPLIT_GEO_FALLBACK_META / §BBOX_PAINT_YIELD)
+      // — clear the alias so no closed handle survives. City-mode swaps (city.js:707/744/796/950)
+      // never run this code (A.init returns before the split/single load in city mode).
+      if (A.db && typeof A.db.close === 'function') {
+        try { A.db.close(); } catch (e) {}
+        if (A.libDb === A.db) A.libDb = null;
+      }
       A.db = new SQL.Database(new Uint8Array(metaBuf));
       if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
+      // §SQLJS_CLOSE: on a (hypothetical) re-entry a previous split-load's separate geo instance
+      // would be orphaned by this alias — close it first. Never closes the live meta (!== A.db).
+      if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
       A.libDb = A.db;
       A._splitHasMeta = true;
       console.log(`[S192] §DB_META_LOADED size=${(metaBuf.byteLength/1024/1024).toFixed(1)}MB`);
@@ -2358,6 +2373,10 @@ function setupStreaming(A) {
           ? `Loading geometry from cache...`
           : `First visit — downloading geometry (${_posLoaded ? 'bboxes visible' : 'please wait'})...`;
         var geoBuf = _geoCached || await A.cachedFetch(geoUrl);
+        // §SQLJS_CLOSE: A.libDb aliases the live meta A.db here (set above) — the guard's !== A.db
+        // check makes it a no-op in the normal flow; it only fires if a future reorder leaves a
+        // separate prior geo instance in A.libDb. Never closes the meta DB through its alias.
+        if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
         A.libDb = new SQL.Database(new Uint8Array(geoBuf));
         A._splitHasMeta = false;  // use sync streaming path (libDb has geometry)
         var _geoMs = (performance.now() - _geoT0).toFixed(0);
@@ -2372,6 +2391,8 @@ function setupStreaming(A) {
         try {
           A.status.textContent = 'geo.db not found — loading extracted DB as geometry source...';
           var _extBuf = await A.cachedFetch(A.DB_URL);
+          // §SQLJS_CLOSE: same alias-aware guard as the geo.db site above.
+          if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
           A.libDb = new SQL.Database(new Uint8Array(_extBuf));
           A._splitHasMeta = false;
           console.log(`§SPLIT_GEO_FALLBACK_EXTRACTED url=${A.DB_URL} size=${(_extBuf.byteLength/1024/1024).toFixed(1)}MB`);
@@ -2379,6 +2400,8 @@ function setupStreaming(A) {
           _geoOk = true;
         } catch(_extErr) {
           console.log(`§SPLIT_GEO_FALLBACK_META err=${_extErr.message} — using meta.db (bboxes only)`);
+          // §SQLJS_CLOSE: same alias-aware guard (a prior separate geo instance would be orphaned here).
+          if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
           A.libDb = A.db;
           A._splitHasMeta = true;
           A.status.textContent = 'Geometry unavailable — showing bounding boxes only.';
@@ -2444,6 +2467,11 @@ function setupStreaming(A) {
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_fetching||'Fetching {url}...').replace('{url}',A.DB_URL);
       var dbBuf = await A.cachedFetch(A.DB_URL);
       if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
+      // §SQLJS_CLOSE: same defensive close-before-reassign as the split path (see comment there).
+      if (A.db && typeof A.db.close === 'function') {
+        try { A.db.close(); } catch (e) {}
+        if (A.libDb === A.db) A.libDb = null;
+      }
       A.db = new SQL.Database(new Uint8Array(dbBuf));
       if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
@@ -2621,6 +2649,9 @@ function setupStreaming(A) {
     // libDb is enabled (streamTick gates on libDb), i.e. before mesh streaming grabs the thread.
     if (!_splitMode && !A._useRangeStream) {
       await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+      // §SQLJS_CLOSE: same alias-aware guard — a re-entry after a previous SPLIT load would
+      // otherwise orphan that load's separate geo instance here.
+      if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
       A.libDb = A.db;
       console.log('[S241] §BBOX_PAINT_YIELD bboxes painted; enabling mesh stream');
     }
