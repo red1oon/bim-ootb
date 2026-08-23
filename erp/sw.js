@@ -10,7 +10,9 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v767';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v768';   // bump on each deploy; per-change detail is the git commit message.
+// v768 (2026-08-23) ad_seed.db gains AD_Form (49) + ad_val_rule (332) — see erp/tests/bake_forms_valrules_seed.js.
+// ad_seed_v16 -> ad_seed_v17 IDB cache key bump forces re-fetch of the seed for returning users.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
