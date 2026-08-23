@@ -2764,6 +2764,7 @@
         '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
         '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
         '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
+        '<button id="tm-reschedule-asap" style="flex:1;font-size:9px" title="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">&#x23EA; Pull Back</button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
@@ -2926,6 +2927,9 @@
     });
     document.getElementById('tm-baseline').addEventListener('pointerup', function(e) {
       e.stopPropagation(); setGanttBaseline();
+    });
+    document.getElementById('tm-reschedule-asap').addEventListener('pointerup', function(e) {
+      e.stopPropagation(); rescheduleGanttAsap();
     });
     document.getElementById('tm-sun').addEventListener('pointerup', function(e) {
       e.stopPropagation();
@@ -6522,6 +6526,90 @@
     if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
     say('Baseline set — ' + res.taskCount + ' tasks');
   }
+
+  // ⏪ Pull Back — §GANTT_RESCHEDULE_ASAP. The EXPLICIT "reschedule as early as possible" action.
+  // moveTaskCascade is push-only by design (§S68's annotate-only drag contract: a drag moves ONE
+  // bar and pushes violated successors, it never silently re-optimises the rest of the programme).
+  // The user-decided product shape for pull-back is therefore a deliberate transport-row button —
+  // same surface as ⚑ Set Baseline — not a side-effect of every drag. Same 7-step commit pipeline
+  // as every other edit path (lock → verb → retime → resync → annotate → persist → redraw); W-CPM-1
+  // / W-PERS-1 / W-TBL-5 derive their caller lists from the source and hold this function to it.
+  function rescheduleGanttAsap() {
+    if (_tmEditLocked('rescheduleGanttAsap')) return;   // §TM_BAKE_LOCK (§S69)
+    var app = A();
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var tip = document.getElementById('tm-gantt-tip');
+    function say(msg) {
+      if (!tip) return;
+      tip.textContent = msg; tip.style.display = 'block';
+      setTimeout(function () { tip.style.display = 'none'; }, 2600);
+    }
+    if (!app || !app.db || !SA || !SA.rescheduleAsap) {
+      console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=ScheduleAuthor_not_loaded');
+      say('Not available'); return;
+    }
+    // (returns: true = committed, 'nothing' = zero float to close, undefined = refused — §S73's
+    // convention, so the __tmRescheduleAsap probe hook reports what HAPPENED, not "I was called".)
+    var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+
+    // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. This action can move MANY
+    // leaf tasks, so the snapshot covers every leaf in the schedule (same scope commitGanttDrag
+    // already uses for exactly this reason: "cascade scope isn't known until the verb returns").
+    var tasksBefore = {};
+    try {
+      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
+        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) {
+        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
+      });
+    } catch (e) {}
+
+    var res = SA.rescheduleAsap(app.db, schedId, {});
+    if (!res || !res.ok) {
+      console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      say('Cannot compress — ' + ((res && res.reason) || 'no schedule'));
+      return;
+    }
+    if (!res.moved.length) {
+      // The verb wrote nothing (compression found zero float to close) — honest no-op, no retime,
+      // no persist, no undo entry to clobber the user's real last edit.
+      say('Nothing to compress — schedule is already at earliest float');
+      return 'nothing';
+    }
+
+    var barsByTask = {};
+    for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) barsByTask[_ganttTasks[i].taskId] = _ganttTasks[i];
+    var opsBefore = {};
+    var _opByGuidForUndo = {};
+    for (var oi4 = 0; oi4 < _ops.length; oi4++) if (_ops[oi4].output_guid) _opByGuidForUndo[_ops[oi4].output_guid] = _ops[oi4];
+    res.moved.forEach(function (m) {
+      var bar4 = barsByTask[m.id]; if (!bar4 || !bar4.guids) return;
+      bar4.guids.forEach(function (g) {
+        var op = _opByGuidForUndo[g];
+        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+      });
+    });
+
+    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
+    _lastEdit = { schedId: schedId, taskId: '(' + res.moved.length + ' pulled back)', mode: 'asap', tasksBefore: tasksBefore, opsBefore: opsBefore };
+    console.log('§GANTT_RESCHEDULE_ASAP_COMMIT schedule=' + schedId + ' tasks=' + res.moved.length +
+      ' daysCompressed=' + res.daysCompressed);
+    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
+    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
+    _tmPersistEdit('rescheduleAsap');   // §S70 — the edit must survive a reload
+    invalidateGanttModel();
+    computeDays();
+    drawGanttMini();
+    renderAtTime(_cursor);
+    say('Compressed ' + res.moved.length + ' task' + (res.moved.length === 1 ? '' : 's') +
+      (res.daysCompressed > 0 ? ' — project finish moved up ' + res.daysCompressed + ' day' + (res.daysCompressed === 1 ? '' : 's')
+                              : ' — project finish unchanged (internal float closed)'));
+    return true;
+  }
+  // Test hook (diagnostic only, same contract as __tmGanttDrag / __tmZoneProbe): a headless probe
+  // needs the REAL commit path — lock check, engine verb, retime, resync, annotate, persist — not a
+  // DOM gesture. §S73 semantics: true = committed, 'nothing' = zero closable float, false = refused.
+  window.__tmRescheduleAsap = function () { return rescheduleGanttAsap() || false; };
 
   // §GANTT_AUTHOR_ENTRY (native, §GANTT_EDIT_LOCK 2026-08-05 dropped the last old-panel fallback) —
   // called automatically by drawGanttMini when the drawer has nothing editable to show, no button,

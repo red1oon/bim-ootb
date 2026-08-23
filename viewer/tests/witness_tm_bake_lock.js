@@ -167,7 +167,7 @@ function namedFns(text) {
 }
 const FNS = namedFns(tmSrc);
 const MUTATORS = ['retimeTaskElements(', '.moveTaskCascade(', '.shiftSchedule(', '.shiftTasks(',
-                  '.materializeZones(', '.addDependency(', '.removeDependency('];
+                  '.rescheduleAsap(', '.materializeZones(', '.addDependency(', '.removeDependency('];
 // Skip the wrappers that are not user-facing edit ENTRY points: the pre-materialize bootstrap runs
 // before any film exists, and the helper/model builders below are called BY the guarded verbs.
 // _materializeNativeSchedule is the ONLY name-based exemption, and W-TBL-5d below asserts the
