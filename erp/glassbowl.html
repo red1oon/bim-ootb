@@ -877,7 +877,9 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
 <!-- T7 (W-T7-INC): memoized tip-folds — load BEFORE crud_overlay so readTip/tipValues delegate. -->
 <script src="tip_fold.js?v=1"></script>
-<script src="crud_overlay.js?v=6"></script>
+<!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
+<script src="crud_core.js?v=1"></script>
+<script src="crud_overlay.js?v=7"></script>
 <!-- Period-close in-app (§INTEG-WIRE) — fold the live sidecar op-log → ONE signed checkpoint = balance b/f; bootstrap from it on load. -->
 <script src="erp_period_close.js"></script>
 <script src="period_close_ui.js"></script>
