@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v766';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v767';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -96,6 +96,7 @@ const PRECACHE_ASSETS = [
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
+  'crud_core.js',      // §S60 physical split — the PURE CORE (window.CrudCore); MUST precede crud_overlay.js in page load order
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
   'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
   'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it

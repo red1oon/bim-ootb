@@ -600,7 +600,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
-<script src="crud_overlay.js?v=20"></script>
+<!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
+<script src="crud_core.js?v=1"></script>
+<script src="crud_overlay.js?v=21"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
