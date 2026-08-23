@@ -4215,7 +4215,28 @@
         x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 };
     });
     var ma = _midairAudit(mrItems);
-    if (ma.midair && guids.length < 20) guids = guids.concat(ma.guids.slice(0, 20 - guids.length));
+    // §S73 — the breach must name WHAT THE EDIT BROKE, not the first 20 offenders it happens to scan.
+    // Two defects lived in the one line this replaces (`if (ma.midair && guids.length < 20) guids =
+    // guids.concat(...)`):
+    //   1. whenever auditFloating's own collector alone reached 20 — documented as normal on 4 of 7
+    //      shipped buildings (Terminal 8, Clinic 1, JKR 81, LTU_AHouse 334) — the midair offenders
+    //      were SILENTLY dropped, so a midair-caused breach listed only floating elements;
+    //   2. even with room, the sample was scan-ordered, so it was dominated by the PRE-EXISTING tail
+    //      the baseline already knew about, and the element the planner just dragged was usually
+    //      absent. That is the operator-facing failure: "your edit broke physics — here are twenty
+    //      guids you did not touch."
+    // Fix: rank NEW offenders (absent from the lock baseline's own offender set) ahead of known ones,
+    // keep floating-then-midair order inside each rank, then cap at the same 20. The full list is
+    // returned as allGuids so captureLockBaseline can remember the set instead of just the counts.
+    var allGuids = guids.concat(ma.guids || []);
+    var baseSet = (_lockBaseline && _lockBaseline.guidSet) || null;
+    var ranked = allGuids;
+    if (baseSet) {
+      var fresh = [], known = [];
+      for (var ai = 0; ai < allGuids.length; ai++) (baseSet[allGuids[ai]] ? known : fresh).push(allGuids[ai]);
+      ranked = fresh.concat(known);
+    }
+    guids = ranked.slice(0, 20);
     // §GANTT_LOCK_DELTA (2026-08-12) — the gate asks "did YOUR EDIT break physics", not "is the
     // generator perfect". Absolute zero was the wrong test and was already wrong before
     // §MIDAIR_REPAIR: measured pre-repair auditFloating on the shipped buildings was Terminal 8,
@@ -4229,7 +4250,7 @@
     return { ok: n <= base.floating && ma.midair <= base.midair,
       floating: n, midair: ma.midair, baseFloating: base.floating, baseMidair: base.midair,
       dFloating: n - base.floating, dMidair: ma.midair - base.midair,
-      total: audited.length, guids: guids, ms: ms() };
+      total: audited.length, guids: guids, allGuids: allGuids, ms: ms() };
   }
 
   // §GANTT_LOCK_DELTA — the physics state at the moment editing STARTED. Captured on 🔒→🔓 so the
@@ -4239,7 +4260,12 @@
   var _lockBaseline = null;
   function captureLockBaseline() {
     var v = verifyGanttIntegrity();
-    _lockBaseline = { floating: v.floating, midair: v.midair };
+    // §S73: remember WHICH elements were already offending, not just how many. That set is what lets
+    // a later breach rank the newly-broken elements first — the ones the planner's edit is
+    // responsible for — instead of burying them under the tail that was there all along.
+    var gset = {};
+    (v.allGuids || v.guids || []).forEach(function (g) { gset[g] = 1; });
+    _lockBaseline = { floating: v.floating, midair: v.midair, guidSet: gset };
     console.log('§GANTT_LOCK_BASELINE floating=' + v.floating + ' midair=' + v.midair +
       ' total=' + v.total + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)');
     return _lockBaseline;
@@ -6227,14 +6253,22 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
+    // §S73 — the ONLY `return true` in this function. Every refusal above returns undefined, so the
+    // __tmGanttDrag test hook can report what actually happened instead of "I found the bar."
+    return true;
   }
   // Test hooks (diagnostic only, same contract as __tmZoneProbe) — §S7's live drag reproduction:
   // a headless probe needs the real commit path and the real computed bars, not a DOM gesture.
+  // §S73: returns whether the edit COMMITTED, not whether the bar was found. It used to return true
+  // for a refused edit too — including a §TM_BAKE_LOCK refusal — so a probe watching this hook would
+  // report a mid-bake edit as successful, which is precisely the regression the lock exists to catch.
+  // `notFound` is distinguishable from `false` for the same reason: a renamed task should not read as
+  // "the software refused."
   window.__tmGanttDrag = function (taskId, mode, deltaDays) {
     for (var i = 0; i < _ganttTasks.length; i++) {
-      if (_ganttTasks[i].taskId === taskId) { commitGanttDrag(_ganttTasks[i], mode, deltaDays); return true; }
+      if (_ganttTasks[i].taskId === taskId) return commitGanttDrag(_ganttTasks[i], mode, deltaDays) === true;
     }
-    return false;
+    return 'notFound';
   };
   window.__tmGanttWindows = function () {   // NOT __tmGanttBars — drawGanttMini owns that name (rects)
     return _ganttTasks.map(function (g) {
