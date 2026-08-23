@@ -239,6 +239,27 @@ footer{
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
 }
 footer a{color:var(--muted)}
+.t4{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+  letter-spacing:.04em;color:var(--warn);background:var(--warn-wash);border:1px solid var(--warn);
+  border-radius:4px;padding:1px 6px;vertical-align:middle;margin-left:7px;text-transform:none
+}
+textarea#aiin{
+  width:100%;box-sizing:border-box;font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  line-height:1.6;color:var(--ink);background:var(--surface-2);border:1px solid var(--rule);
+  border-radius:8px;padding:12px 13px;resize:vertical
+}
+textarea#aiin:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.mx{width:100%;border-collapse:collapse;font-family:"Instrument Sans",sans-serif;font-size:13.5px}
+.mx th{
+  text-align:left;padding:9px 10px;border-bottom:1px solid var(--rule);
+  font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600
+}
+.mx td{padding:10px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+.mx tr:last-child td{border-bottom:none}
+.mx th.c,.mx td.c{text-align:center;white-space:nowrap}
+.mx td .cl{display:block;margin-top:3px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint)}
+.mxscroll{overflow-x:auto}
 .call.warnc{
   border-left:3px solid var(--warn);background:var(--warn-wash);border-radius:6px;
   padding:12px 14px;font-size:14.5px;color:var(--ink-2);line-height:1.55
@@ -381,7 +402,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
   </div>
 
   <ul class="rail" id="rail" hidden>
-    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
+    <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
   </ul>
   <div class="railcap" id="railcap" hidden><span id="railnow">About you</span><span id="railpct">Step 1 of 5</span></div>
 
@@ -477,6 +498,25 @@ SCREENS.intro =
     '<label class="chk"><input type="checkbox">' +
       '<span>Include my (anonymous) results in the industry benchmark, so I can see how I compare. ' +
       'You are asked to consent separately, at the end, once you can see exactly what would be sent.</span></label>' +
+  '</div>' +
+
+  /* §CONFORMANCE finding 1. The proposal promises a guided conversation rather than a static
+     questionnaire. This page is the structured half; the conversation is the step after it,
+     and the reader is told so here rather than discovering the mismatch. */
+  '<div class="card">' +
+    '<h3>Two halves, and the second one is a conversation</h3>' +
+    '<p class="small" style="margin-top:9px">What follows is the <strong>structured instrument</strong> ' +
+    '&mdash; twenty questions across five dimensions, each naming the published standard it is drawn ' +
+    'from. It is deliberately a fixed set, because a score is only reproducible if everyone answers ' +
+    'the same things.</p>' +
+    '<p class="small">After it comes the <strong>guided conversation</strong>: the toolkit builds a ' +
+    'prompt from your own answers, and you run it in whatever AI service you already use, which ' +
+    'interviews you about your weakest areas and gives you current context on them. This toolkit ' +
+    'bundles no AI model and makes no calls to one on your behalf &mdash; there is no account here, ' +
+    'no API key, no cost. That step is optional and changes none of your scores.</p>' +
+    '<p class="small">Both halves are at <strong>v0.1</strong> and are mocked: no answer is scored ' +
+    'yet, and nothing is transmitted. What the numbers <em>will</em> mean is set out in ' +
+    '<a href="proposal.html">the research proposal</a>.</p>' +
   '</div>' +
 
   '<p class="small" style="margin-top:20px">This toolkit is the artifact of a funded research ' +
@@ -850,7 +890,8 @@ SCREENS.model =
   '</div>' +
 
   '<div class="actions">' +
-    '<button class="btn" data-go="results">See my results</button>' +
+    '<button class="btn" data-go="bridge">Next: talk it through with your AI</button>' +
+    '<button class="btn sec" data-go="results">Skip to my results</button>' +
     '<button class="btn sec" data-go="dim4">Back</button>' +
   '</div>';
 
@@ -974,7 +1015,9 @@ SCREENS.results =
     'first. As responses accumulate this becomes an industry picture built from practitioner reports.</p>' +
   '</div>' +
 
-  '<div class="card" style="border-left:3px solid var(--warn)">' +
+    '<div id="aibox"></div>' +
+
+'<div class="card" style="border-left:3px solid var(--warn)">' +
     '<h3 style="color:var(--warn)">Before you share this</h3>' +
     '<p class="small" style="margin-top:8px"><strong>This assessment qualifies nothing and no one.</strong> ' +
     'It confers no certification, accreditation, licence, approval or professional status, and it is not ' +
@@ -1029,20 +1072,243 @@ SCREENS.results =
   'same answers and same versions always produce this same result. Technical readiness assessment only: ' +
   'self-reported, unaudited, qualifies nothing and no one, confers no certification or professional status.</p>';
 
+
+/* ============================================================
+   THE GUIDED CONVERSATION — §LLM_BRIDGE
+   The grant funds an LLM interviewer. We bundle no model and make no model calls:
+   the toolkit composes a prompt, the practitioner runs it in whatever AI service they
+   already use, and pastes the result back. See disclaimer.html "Use of generative AI".
+
+   Two rules govern everything below and are not negotiable:
+     1. The prompt carries only what the payload card already discloses — numbers and
+        fixed categories. Never free text, never a firm name.
+     2. What comes back is T4 by definition. It never touches a score, never alters the
+        readiness profile, and never enters the submitted payload.
+   ============================================================ */
+
+var PROMPT_VERSION = 'bridge-v1';
+
+/* Answer state. Seeded from the mockup's canned values, then updated for real as the
+   respondent answers, so the composed prompt reflects what they actually said. */
+var STATE = { answers: {}, findings: null, rejected: 0 };
+DIMENSIONS.forEach(function (d) {
+  d.items.forEach(function (it) { STATE.answers[it.id] = it.pre; });
+});
+
+function itemById(id) {
+  for (var i = 0; i < DIMENSIONS.length; i++) {
+    var f = DIMENSIONS[i].items.filter(function (it) { return it.id === id; })[0];
+    if (f) return { item: f, dim: DIMENSIONS[i] };
+  }
+  return null;
+}
+
+/* Deterministic: same answers in, same prompt out. Ties break on item id, never on
+   object key order. Seeds on lowest absolute level; switch to largest gap against the
+   proportionate target once threshold calibration lands (§ROADMAP action 2). */
+function weakest(n) {
+  return Object.keys(STATE.answers).sort(function (a, b) {
+    var d = STATE.answers[a] - STATE.answers[b];
+    return d !== 0 ? d : (a < b ? -1 : 1);
+  }).slice(0, n);
+}
+
+function ctxValue(id, fallback) {
+  var el = document.getElementById(id);
+  return el && el.value ? el.value : fallback;
+}
+
+function composePrompt() {
+  var picks = weakest(3).map(function (id) {
+    var r = itemById(id);
+    return '    ' + id + '  (level ' + STATE.answers[id] + ' of 5)  ' + r.dim.name +
+           ' — ' + r.item.q.replace(/&mdash;/g, '—').replace(/&rsquo;/g, "'");
+  }).join('\n');
+
+  return [
+'You are helping a construction practitioner prepare to adopt OpenBIM. Work in two stages.',
+'',
+'STAGE 1 — INTERVIEW THEM FIRST.',
+'Ask up to five short questions, one at a time, about the weak areas listed below: what they have',
+'already tried, what is blocking them, and what their next project looks like. Wait for each answer',
+'before asking the next. Do not skip this stage and do not ask all five at once.',
+'',
+'STAGE 2 — THEN GIVE THEM CURRENT, CHECKABLE CONTEXT for those weak areas.',
+'',
+'RULES. These matter more than being comprehensive:',
+'  • Every figure must name a source that can be checked: an instrument, a standard, or an official',
+'    body, with a date. A vendor blog, a marketing page or a consultancy summary is NOT a source.',
+'  • If you do not know, write "unknown". Do not estimate. Do not supply a plausible-looking number.',
+'  • Say which jurisdiction each item applies to. A rule that binds government procurement does not',
+'    bind private projects.',
+'  • Do not repeat their assessment back to them. They already have it.',
+'',
+'THEIR CONTEXT — from the assessment. No identifying information is included.',
+'    locale       ' + ctxValue('c1', 'United Arab Emirates'),
+'    firm type    ' + ctxValue('c4', 'Engineering (structural / MEP)'),
+'    toolkit      v0.1',
+'    prompt       ' + PROMPT_VERSION,
+'    weakest areas',
+picks,
+'',
+'FINISH by outputting exactly one fenced json block and nothing after it:',
+'',
+'```json',
+'{"items":[',
+'  {"claim":"", "figure":"", "source":"", "instrument":"", "date":"", "jurisdiction":""}',
+']}',
+'```',
+'',
+'One object per finding. Leave a field as "unknown" rather than filling it with a guess.',
+'A finding with no source or no date will be discarded when it is pasted back, so do not include one.'
+  ].join('\n');
+}
+
+/* Strict on purpose. A row without a checkable source and a date is the failure mode this
+   whole feature has to avoid, so it is dropped and the drop is reported, not hidden. */
+function parseFindings(text) {
+  var out = { items: [], rejected: 0, error: null };
+  if (!text || !text.trim()) { out.error = 'Nothing pasted.'; return out; }
+  var m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  var raw = m ? m[1] : text;
+  var data;
+  try { data = JSON.parse(raw); }
+  catch (e) { out.error = 'That is not the json block. Copy everything between the ``` fences.'; return out; }
+  if (!data || !Array.isArray(data.items)) { out.error = 'The block parsed, but it has no "items" array.'; return out; }
+  data.items.forEach(function (r) {
+    var ok = r && typeof r === 'object';
+    var src = ok && typeof r.source === 'string' ? r.source.trim() : '';
+    var dt  = ok && typeof r.date   === 'string' ? r.date.trim()   : '';
+    var cl  = ok && typeof r.claim  === 'string' ? r.claim.trim()  : '';
+    if (!cl || !src || !dt || /^unknown$/i.test(src) || /^unknown$/i.test(dt)) { out.rejected++; return; }
+    out.items.push({
+      claim: cl, figure: (r.figure || '').toString().trim(), source: src,
+      instrument: (r.instrument || '').toString().trim(), date: dt,
+      jurisdiction: (r.jurisdiction || '').toString().trim()
+    });
+  });
+  return out;
+}
+
+/* Text pasted here came from a third party. Escape before it touches innerHTML.
+   Quotes included, so a value stays inert even if it is ever moved into an attribute. */
+function esc(x) {
+  return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* Rendered into the report under its own heading, every row at T4. */
+function renderFindings() {
+  var box = document.getElementById('aibox');
+  if (!box) return;
+  var f = STATE.findings;
+  if (!f || !f.items.length) {
+    box.innerHTML =
+      '<div class="card"><h3>Current context from your AI service</h3>' +
+      '<p class="small" style="margin-top:9px">Not used. This step is optional and skipping it ' +
+      'changes nothing in this report.</p></div>';
+    return;
+  }
+  box.innerHTML =
+    '<div class="card">' +
+      '<h3>Current context from your AI service <span class="t4">unverified</span></h3>' +
+      '<p class="small" style="margin:9px 0 4px">Supplied by an AI service you chose and ran ' +
+      'yourself. <strong>Nothing here has been verified by this project</strong>, none of it ' +
+      'affects your scores or your readiness profile, and none of it is included if you submit ' +
+      'your results. Each row names a source — check it before you rely on it.</p>' +
+      (STATE.rejected
+        ? '<p class="small" style="color:var(--warn)">' + STATE.rejected + ' row' +
+          (STATE.rejected === 1 ? ' was' : 's were') + ' discarded for naming no checkable source ' +
+          'or no date.</p>'
+        : '') +
+      '<div class="mxscroll"><table class="mx"><thead><tr>' +
+        '<th>What it says</th><th>Figure</th><th>Source named</th><th class="c">Tier</th>' +
+      '</tr></thead><tbody>' +
+      f.items.map(function (r) {
+        return '<tr><td>' + esc(r.claim) +
+          (r.jurisdiction ? '<span class="cl">' + esc(r.jurisdiction) + '</span>' : '') + '</td>' +
+          '<td>' + (esc(r.figure) || '&mdash;') + '</td>' +
+          '<td>' + esc(r.source) +
+          (r.instrument ? '<span class="cl">' + esc(r.instrument) + '</span>' : '') +
+          '<span class="cl">' + esc(r.date) + '</span></td>' +
+          '<td class="c"><span class="t4">T4</span></td></tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      '<p class="small" style="margin-top:11px">T4 is this project&rsquo;s lowest verification tier: ' +
+      '<em>not verified — cite nothing from it</em>. A row moves off T4 only when someone opens the ' +
+      'named source and reads it. <a href="sources.html#tiers">What the tiers mean &rarr;</a></p>' +
+    '</div>';
+}
+
+SCREENS.bridge = function () {
+  return '' +
+  '<p class="eyebrow">Step 10 of 11 &middot; Guided conversation</p>' +
+  '<h2>Talk it through with your own AI</h2>' +
+  '<p class="sub small">Optional, and it changes none of your scores. This is the step where the ' +
+  'assessment stops being a questionnaire: you take a prompt built from your own answers into ' +
+  'whatever AI service you already use, and it interviews you about your weakest areas before ' +
+  'giving you current context on them.</p>' +
+
+  '<div class="card">' +
+    '<h3>Why it works this way</h3>' +
+    '<p class="small" style="margin-top:9px">This toolkit bundles no AI model and makes no calls to ' +
+    'one on your behalf. You use the service you already trust and already pay for &mdash; there is ' +
+    'no account here, no API key, and no cost. A readiness instrument about vendor neutrality should ' +
+    'not lock you to one vendor&rsquo;s model.</p>' +
+  '</div>' +
+
+  '<div class="card">' +
+    '<h3>Exactly what the prompt contains</h3>' +
+    '<p class="small" style="margin:9px 0 13px">The same numbers and fixed categories the submission ' +
+    'payload discloses, plus your three weakest items. No file, no name, no firm, no free text. ' +
+    'Read it before you copy it &mdash; once you paste it into a third-party service, that ' +
+    'service&rsquo;s terms apply, not ours.</p>' +
+    '<pre class="payload" id="promptbox">' + esc(composePrompt()) + '</pre>' +
+    '<div class="actions" style="margin-top:13px">' +
+      '<button class="btn sec" id="copyprompt" type="button">Copy the prompt</button>' +
+      '<span class="small" id="copystate"></span>' +
+    '</div>' +
+  '</div>' +
+
+  '<div class="card">' +
+    '<h3>Paste what it gives you back</h3>' +
+    '<p class="small" style="margin:9px 0 13px">Paste the whole reply, or just the json block at the ' +
+    'end of it. Rows that name no checkable source, or no date, are discarded &mdash; and you are ' +
+    'told how many were.</p>' +
+    '<textarea id="aiin" rows="7" placeholder="Paste the reply here"></textarea>' +
+    '<div class="actions" style="margin-top:11px">' +
+      '<button class="btn sec" id="aiparse" type="button">Read it in</button>' +
+      '<span class="small" id="aistate"></span>' +
+    '</div>' +
+  '</div>' +
+
+  '<div class="call warnc" style="margin-top:18px"><strong>Whatever comes back is unverified.</strong> ' +
+  'It is recorded at T4 &mdash; this project&rsquo;s tier for <em>not verified, cite nothing from ' +
+  'it</em>. It cannot change a score, cannot alter your readiness profile, and is never included if ' +
+  'you submit your results. It sits in your report as context you can go and check.</div>' +
+
+  '<div class="actions">' +
+    '<button class="btn" data-go="results">Continue to results</button>' +
+    '<button class="btn sec" data-go="model">Back</button>' +
+  '</div>';
+};
+
 /* ---------- NAV ---------- */
 DIMENSIONS.forEach(function (d, i) { SCREENS['dim' + i] = dimScreen(i); });
 
-var ORDER = ['intro', 'agree', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'results'];
+var ORDER = ['intro', 'agree', 'context', 'dim0', 'dim1', 'dim2', 'dim3', 'dim4', 'model', 'bridge', 'results'];
 var LABELS = {
   intro: 'Introduction', agree: 'Before you begin', declined: 'No assessment taken', context: 'About you',
   dim0: 'Governance', dim1: 'People and skills', dim2: 'Technology',
   dim3: 'Data and standards', dim4: 'Organisational processes',
-  model: 'Your model', results: 'Results'
+  model: 'Your model', bridge: 'Guided conversation', results: 'Results'
 };
 var host = document.getElementById('screens');
 
 function show(name) {
-  host.innerHTML = '<div class="screen on">' + SCREENS[name] + '</div>';
+  var sc = SCREENS[name];
+  host.innerHTML = '<div class="screen on">' + (typeof sc === 'function' ? sc() : sc) + '</div>';
+  if (name === 'results') renderFindings();
   var i = ORDER.indexOf(name);
   if (i < 0) { window.scrollTo({ top: 0, behavior: 'instant' }); return; }
   var rail = document.getElementById('rail'), cap = document.getElementById('railcap');
@@ -1077,6 +1343,45 @@ document.addEventListener('click', function (e) {
     var dark = r.getAttribute('data-theme') === 'dark' ||
       (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
     r.setAttribute('data-theme', dark ? 'light' : 'dark');
+  }
+});
+
+/* §LLM_BRIDGE handlers. Answer capture keeps the composed prompt honest: it reflects what
+   the respondent actually selected, not the mockup's canned values. */
+document.addEventListener('change', function (e) {
+  var el = e.target;
+  if (el && el.type === 'radio' && /^[A-E][1-4]$/.test(el.name || '')) {
+    var lvl = parseInt(String(el.id).slice(el.name.length), 10);
+    if (!isNaN(lvl)) STATE.answers[el.name] = lvl;
+  }
+});
+
+document.addEventListener('click', function (e) {
+  var t = e.target;
+  if (t && t.id === 'copyprompt') {
+    var box = document.getElementById('promptbox');
+    var state = document.getElementById('copystate');
+    var txt = box ? box.textContent : '';
+    var done = function (ok) { if (state) state.textContent = ok ? 'Copied. Paste it into your AI service.' : 'Copy failed — select the text and copy it manually.'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+    } else { done(false); }
+    return;
+  }
+  if (t && t.id === 'aiparse') {
+    var ta = document.getElementById('aiin');
+    var st = document.getElementById('aistate');
+    var res = parseFindings(ta ? ta.value : '');
+    if (res.error) { STATE.findings = null; STATE.rejected = 0; if (st) { st.style.color = 'var(--warn)'; st.textContent = res.error; } return; }
+    STATE.findings = res; STATE.rejected = res.rejected;
+    if (st) {
+      st.style.color = res.items.length ? 'var(--accent-ink)' : 'var(--warn)';
+      st.textContent = res.items.length
+        ? res.items.length + ' row' + (res.items.length === 1 ? '' : 's') + ' read in' +
+          (res.rejected ? ', ' + res.rejected + ' discarded for no source or no date' : '') +
+          '. They appear in your report at T4.'
+        : 'Every row was discarded — none named a checkable source and a date.';
+    }
   }
 });
 
