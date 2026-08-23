@@ -116,7 +116,7 @@ assert(!!drawFn && drawFn.body.indexOf('_ganttCritical[') >= 0,
 // why the feature read as "no visual cue at all".
 (function () {
   const b = drawFn ? drawFn.body : '';
-  const iRail = b.indexOf("cpmMark.critical ? '#e53935'");
+  const iRail = b.indexOf('cpmMark.critical ? CPM_COLOR_CRITICAL');
   const iYellow = b.indexOf("strokeStyle = '#ffeb3b'");
   const iOrange = b.indexOf("strokeStyle = '#ff8c00'");
   const iCyan = b.indexOf("strokeStyle = '#4fc3f7'");
@@ -124,9 +124,34 @@ assert(!!drawFn && drawFn.body.indexOf('_ganttCritical[') >= 0,
   assert(iRail > 0 && iYellow > 0 && iOrange > 0 && iCyan > 0 && iRail > iYellow && iRail > iOrange && iRail > iCyan,
     'W-CPM-6 the float rail is drawn AFTER all three stroke frames — drawn before them, the frames paint over its bottom row and the cue reads as 1px of blended colour');
 })();
-assert(!!drawFn && /cpmMark\.critical\s*\?\s*'#e53935'\s*:\s*'#26a69a'/.test(drawFn.body),
+assert(!!drawFn && /cpmMark\.critical\s*\?\s*CPM_COLOR_CRITICAL\s*:\s*CPM_COLOR_FLOAT/.test(drawFn.body),
   'W-CPM-4b it paints BOTH rails (red = zero float, green = slack) — see W-CPM-5b: criticality runs ' +
   '27–82% of tasks across the fleet, so at the top of that range a red-only rail carries almost no signal');
+
+// ── §S75: the legend. The user could not tell what the colours meant, which is a fair complaint
+// about a two-colour code with no key. The risk a legend introduces is DRIFT — a key that explains a
+// colour the bars stopped using, or counts from a second computation that disagree with the rail.
+// Both are closed structurally: one palette constant, one annotate pass feeding both.
+assert(/var CPM_COLOR_CRITICAL = '#e53935'/.test(src) && /var CPM_COLOR_FLOAT = '#26a69a'/.test(src),
+  'W-CPM-7a the float palette is defined ONCE as named constants');
+const legendFn = FNS.find(f => f.name === '_tmCpmLegend');
+assert(!!legendFn, 'W-CPM-7b _tmCpmLegend exists and is brace-matched');
+assert(!!legendFn && /CPM_COLOR_CRITICAL/.test(legendFn.body) && /CPM_COLOR_FLOAT/.test(legendFn.body) &&
+  !/#e53935|#26a69a/.test(legendFn.body),
+  'W-CPM-7c the legend swatches use those SAME constants and carry no hex literal of their own — a key ' +
+  'with its own copy of the colour is how it ends up explaining a colour the bars no longer use');
+assert(!!annFn && /_tmCpmLegend\(crit, nT - crit/.test(annFn.body),
+  'W-CPM-7d the counts come from the SAME annotate pass that paints the bars, not a second computation');
+assert(/id="tm-gantt-cpmlegend"/.test(src), 'W-CPM-7e the legend element is in the drawer markup');
+(function () {
+  // Every refusal path must EMPTY the strip. A legend still showing the last building's counts after
+  // a cycle bail is worse than no legend: it reports a critical path that was not computed.
+  const skips = (annFn ? annFn.body : '').split('§GANTT_CPM_ANNOTATE_SKIP').length - 1;
+  const clears = (annFn ? annFn.body.match(/_tmCpmLegend\(null\)/g) || [] : []).length;
+  console.log('§GANTT_CPM_LEGEND_CLEARS skipPaths=' + skips + ' legendClears=' + clears);
+  assert(skips > 0 && clears >= skips,
+    'W-CPM-7f every §GANTT_CPM_ANNOTATE_SKIP path clears the legend (' + clears + ' clears for ' + skips + ' skip paths)');
+})();
 
 // ─────────────────────── W-CPM-2 / W-CPM-3: behaviour, real fixture ────────────────────────────
 const initSqlJs = require('/home/red1/bim-ootb/node_modules/sql.js');

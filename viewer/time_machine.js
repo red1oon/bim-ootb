@@ -2787,7 +2787,12 @@
             'font-size:10px;color:#8a97a5;border-bottom:1px solid rgba(79,195,247,0.15)">' +
             '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
             'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
-            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span></div>' +
+            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span>' +
+            // §S75 — the legend for the float rail. The swatches are drawn as thin bars, the same
+            // shape as the rail itself, so the mapping reads without a caption. Counts come from the
+            // SAME annotate pass that paints the bars (never a second computation), and the whole
+            // strip is emptied when CPM could not run rather than showing a stale or invented zero.
+            '<span id="tm-gantt-cpmlegend" style="white-space:nowrap;color:#8a97a5"></span></div>' +
           '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" ' +
             'title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
         '</div>' +
@@ -6046,12 +6051,36 @@
   // computeCpm's only write is early_*/late_*/free_float/total_float/is_critical — it never touches
   // schedule_start/schedule_finish/schedule_duration. That is the whole safety property of this
   // feature, and it is witnessed byte-for-byte (W-CPM-2), not assumed from reading the code.
+  // §S75 — ONE definition of the float palette. The rail on the canvas and the legend swatch in the
+  // drawer must be the same colour by construction; two hex literals in two files is how a legend
+  // ends up quietly explaining a colour the bars no longer use.
+  var CPM_COLOR_CRITICAL = '#e53935';   // zero float — this task cannot slip without moving the end date
+  var CPM_COLOR_FLOAT = '#26a69a';      // has slack
   var _ganttCritical = {};   // taskId -> { critical, totalFloat } — DISPLAY state, not a date source
   var _cpmPrimed = false;    // first-build annotate ran for this building (reset on deactivate)
+  // _tmCpmLegend(marks) — §S75. null/empty ⇒ the strip is cleared: a legend that keeps showing the
+  // last building's counts after a bail is worse than no legend.
+  function _tmCpmLegend(crit, slack, pf, minF, maxF) {
+    var el = (typeof document !== 'undefined') && document.getElementById('tm-gantt-cpmlegend');
+    if (!el) return;
+    if (crit === null) { el.textContent = ''; el.removeAttribute('title'); return; }
+    var sw = function (c) {
+      return '<span style="display:inline-block;width:12px;height:3px;background:' + c +
+        ';vertical-align:middle;margin-right:3px"></span>';
+    };
+    el.innerHTML = sw(CPM_COLOR_CRITICAL) + '<b style="color:#c9d3dd">' + crit + '</b> critical' +
+      '<span style="margin:0 5px">·</span>' + sw(CPM_COLOR_FLOAT) + '<b style="color:#c9d3dd">' + slack + '</b> with float';
+    el.title = 'Critical Path Method, recomputed after every edit. Red = zero total float: the task ' +
+      'cannot slip without moving the project end. Green = it has slack.\n' +
+      'Project duration ' + pf + 'd · total float ' + minF + '..' + maxF + 'd.\n' +
+      'CPM reads the dates the drag produced — it never changes one.';
+  }
+
   function _tmAnnotateCpm(schedId) {
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.computeCpm) {
       console.log('§GANTT_CPM_ANNOTATE_SKIP reason=ScheduleAuthor_not_loaded');
+      _tmCpmLegend(null);
       return null;
     }
     schedId = schedId || (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -6061,17 +6090,19 @@
     try { app.db.exec('SELECT is_critical FROM tasks LIMIT 1'); }
     catch (e) {
       console.log('§GANTT_CPM_ANNOTATE_SKIP reason=thin_tasks_table schedule=' + schedId);
+      _tmCpmLegend(null);
       return null;
     }
     var r = null;
     try { r = SA.computeCpm(app.db, schedId, { fixedDates: true }); }
-    catch (e) { console.log('§GANTT_CPM_ANNOTATE_SKIP reason=threw msg=' + (e && e.message)); return null; }
+    catch (e) { console.log('§GANTT_CPM_ANNOTATE_SKIP reason=threw msg=' + (e && e.message)); _tmCpmLegend(null); return null; }
     if (!r || r.error) {
       // Cycle/orphan (computeCpm logs §SE_CPM_BAIL) or no tasks. 2 of the 7 fleet buildings still
       // carry cycles (4D_SCHEDULE_PERFECTION.md §MILESTONE), so this is a real, expected branch.
       // CLEAR the marks rather than leave stale ones on screen — never paint a critical path that
       // the current dates do not support.
       _ganttCritical = {};
+      _tmCpmLegend(null);
       console.log('§GANTT_CPM_ANNOTATE_SKIP reason=' + (r ? r.error : 'no_result') + ' schedule=' + schedId);
       return null;
     }
@@ -6084,6 +6115,7 @@
     });
     _ganttCritical = marks;
     var nT = (r.tasks || []).length;
+    _tmCpmLegend(crit, nT - crit, r.projectDuration, minF, maxF);
     console.log('§GANTT_CPM_ANNOTATE schedule=' + schedId + ' tasks=' + nT +
       ' critical=' + crit + ' (' + (nT ? Math.round(crit / nT * 100) : 0) + '%) projectDuration=' +
       r.projectDuration + 'd float=' + minF + '..' + maxF + ' datesWritten=0 (fixedDates)');
@@ -7100,7 +7132,7 @@
       var cpmMark = task.taskId ? _ganttCritical[task.taskId] : null;
       if (cpmMark) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = cpmMark.critical ? '#e53935' : '#26a69a';
+        ctx.fillStyle = cpmMark.critical ? CPM_COLOR_CRITICAL : CPM_COLOR_FLOAT;
         ctx.fillRect(x, y + barH - 2, w, 2);
       }
 
@@ -7974,6 +8006,7 @@
     _ganttTasks = [];
     _ganttTasksComputed = false; _ganttRebuildN = 0;   // §S58: ordinal is per building
     _ganttCritical = {}; _cpmPrimed = false;          // §S68: CPM marks are per building too
+    _tmCpmLegend(null);                               // §S75: and so is the legend that explains them
     invalidateGanttModel();   // K0: building changed → drop the cached task index + bar rollup
     var ganttBtn = document.getElementById('tm-gantt');
     if (ganttBtn) ganttBtn.classList.remove('tm-active');
