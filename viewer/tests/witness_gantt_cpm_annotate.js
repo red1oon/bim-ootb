@@ -109,6 +109,21 @@ assert(!!annFn && /_ganttCritical\s*=\s*\{\}/.test(annFn.body),
 const drawFn = FNS.find(f => f.name === 'drawGanttMini');
 assert(!!drawFn && drawFn.body.indexOf('_ganttCritical[') >= 0,
   'W-CPM-4 drawGanttMini reads _ganttCritical — a criticality nothing paints is not the feature');
+// §S74 — ORDER, not just presence. The rail is painted over unless it is drawn AFTER every frame.
+// Measured on the live site before the fix, by reading canvas pixels back: of 19 bars the rail
+// showed on one of its two rows (h-2: 15 bars, h-1: 0) because the yellow captured-schedule frame —
+// a 1px strokeRect around the whole bar — owned row h-1 on 17 of them. A 2px cue rendering as 1px is
+// why the feature read as "no visual cue at all".
+(function () {
+  const b = drawFn ? drawFn.body : '';
+  const iRail = b.indexOf("cpmMark.critical ? '#e53935'");
+  const iYellow = b.indexOf("strokeStyle = '#ffeb3b'");
+  const iOrange = b.indexOf("strokeStyle = '#ff8c00'");
+  const iCyan = b.indexOf("strokeStyle = '#4fc3f7'");
+  console.log('§GANTT_RAIL_ORDER rail=' + iRail + ' yellowFrame=' + iYellow + ' orangeFrame=' + iOrange + ' cyanFrame=' + iCyan);
+  assert(iRail > 0 && iYellow > 0 && iOrange > 0 && iCyan > 0 && iRail > iYellow && iRail > iOrange && iRail > iCyan,
+    'W-CPM-6 the float rail is drawn AFTER all three stroke frames — drawn before them, the frames paint over its bottom row and the cue reads as 1px of blended colour');
+})();
 assert(!!drawFn && /cpmMark\.critical\s*\?\s*'#e53935'\s*:\s*'#26a69a'/.test(drawFn.body),
   'W-CPM-4b it paints BOTH rails (red = zero float, green = slack) — see W-CPM-5b: criticality runs ' +
   '27–82% of tasks across the fleet, so at the top of that range a red-only rail carries almost no signal');
