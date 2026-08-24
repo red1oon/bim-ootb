@@ -18,8 +18,8 @@
  */
 const { execSync } = require('child_process');
 const fs = require('fs');
-const NEW = require('./viewer/schedule_gate.js');
-const OLD = require('./tests/_schedule_gate_main.js');
+const NEW = require('../schedule_gate.js');
+const OLD = require('../../tests/_schedule_gate_main.js');
 
 const DB = process.env.SCHEDULE_TEST_DB || '/home/red1/bim-compiler/deploy/buildings/Hospital_extracted.db';
 if (!fs.existsSync(DB)) { console.log('§4D_BAND SKIP — no test DB at ' + DB); process.exit(0); }
@@ -111,7 +111,12 @@ console.log('§4D_BAND ladder=' + rows.map(r=>r.ph).join(' < '));
 console.log('--- BEFORE (origin/main scheduler)');
 const sOld = OLD.computeSchedule(elements, base, 1, null);
 console.log('--- AFTER  (scheduler under test)');
-const sNew = NEW.computeSchedule(elements, base, 1, null);
+// shiftHours=24: the live product default (§SHIFT_HOURS, user ruling "24hr is our default",
+// 4D_SCHEDULE_PERFECTION.md) — computeSchedule's own internal default is 8h, and omitting this
+// arg here previously made T4 compare against a schedule ~3x slower than production actually
+// plays (same trap as §GANTT_SHIFT_HOURS_DESYNC #1355, independently found in this witness
+// 2026-08-24). OLD is a frozen pre-shiftHours snapshot and has no such param to match.
+const sNew = NEW.computeSchedule(elements, base, 1, null, 24);
 
 const a = inversions(sOld), b = inversions(sNew);
 const NONST = e => e.seq > 4, STRUCT = e => e.seq <= 4;
