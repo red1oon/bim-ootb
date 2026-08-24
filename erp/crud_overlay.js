@@ -1532,9 +1532,13 @@
   // _gateReject — surface a REJECT in the UI: a toast + NO history dot (the write never happened), and the
   // §-log line the witness asserts. Replaces the old silent dry fallback for an ownerGated denial.
   function _gateReject(op, gate) {
-    console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=REJECT reason=' + gate.reason);
-    toast((op.verb ? op.verb.toUpperCase() + ' ' : '') + fname(op.key) + ' — REJECTED (' +
-          (gate.reason === 'owner' ? 'not the owner' : 'stale write — record changed') + ')');
+    console.log('§CRUD-GATE key=' + op.key + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' verdict=REJECT reason=' + gate.reason);
+    var msg = gate.reason === 'owner' ? 'not the owner'
+      : gate.reason === 'wrong-accesslevel' ? "access denied — outside your role's access level"
+      : gate.reason === 'wrong-org' ? "access denied — outside your role's org scope"
+      : gate.reason === 'wrong-client' ? "access denied — outside your role's client scope"
+      : 'stale write — record changed';
+    toast((op.verb ? op.verb.toUpperCase() + ' ' : '') + fname(op.key) + ' — REJECTED (' + msg + ')');
   }
   // _gateForOwnedWrite — run the pre-seal owner/CAS check for an ownerGated mutating op; resolves the ctx
   // from the record (getRecord layers read-the-tip), then cb(gate). Non-gated ops short-circuit to PASS.
@@ -1546,6 +1550,23 @@
       if (gate.ok) console.log('§CRUD-GATE key=' + op.key + ' ownerGated=Y verdict=PASS actor=' + ctx.actor + ' owner=' + ctx.owner + (ctx.casCol ? ' cas=' + ctx.casCol : ''));
       cb(gate);
     });
+  }
+  // _gateRecordAccess — T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): record-level canView +
+  // org/client scope, via CORE.recordAccessGate (host-injected window.APP.gateRecordFor, absent → PASS).
+  // UPDATE/DELETE only — CREATE has no prior record to check org/client against; the new row is stamped
+  // with the ACTOR's own scope via stdDefaults (buildOp Task 1), inherently self-consistent. CREATE-time
+  // accesslevel gating is a named residual, not this pass.
+  function _gateRecordAccess(op, cb) {
+    if (op.op_type !== 'CRUD_UPDATE' && op.op_type !== 'CRUD_DELETE') { cb({ ok: true }); return; }
+    // explicit op.id (not the no-arg curChain-guessing form _gateForOwnedWrite uses) — a write triggered
+    // by a host call (hostUpdate/hostDelete) rather than a UI click never updates curChain, so the no-arg
+    // form would gate whatever record curChain last pointed at, not the one actually being written
+    // (found live while building this witness — poc_record_gate_live.js).
+    getRecord(op.key, function (rec) {
+      var g = CORE.recordAccessGate(op.table, rec || {});
+      if (g.allowed) { cb({ ok: true }); return; }
+      cb({ ok: false, reason: g.reason });
+    }, op.id != null ? op.id : undefined);
   }
 
   // commitCrud — the REAL signed write for a CRUD field verb (CREATE/UPDATE/DELETE), the field-value peer
@@ -1574,9 +1595,14 @@
         // BEFORE the seal — a non-owner / stale-CAS write is REJECTED (toast, NO dot), never silently sealed.
         // CREATE has no prior owner to gate (the creator becomes the owner) → passes through.
         var gatedVerb = op.ownerGated && (op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE');
-        _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, freshDb, function (gate) {
-          if (!gate.ok) { _gateReject(op, gate); done(); return; }   // REJECT — no dry fallback, no dot
-          _commitCrudSealed(op, K, freshDb, done);
+        // Record-access gate runs FIRST (role's org/client scope for the record at all) — a role outside
+        // scope is rejected before the owner/CAS check even asks whose write it is.
+        _gateRecordAccess(op, function (recGate) {
+          if (!recGate.ok) { _gateReject(op, recGate); done(); return; }
+          _gateForOwnedWrite(gatedVerb ? op : { ownerGated: false }, freshDb, function (gate) {
+            if (!gate.ok) { _gateReject(op, gate); done(); return; }   // REJECT — no dry fallback, no dot
+            _commitCrudSealed(op, K, freshDb, done);
+          });
         });
       });
     });

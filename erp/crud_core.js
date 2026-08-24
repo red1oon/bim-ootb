@@ -746,6 +746,41 @@
   function sessionClientId() { try { if (global.APP && global.APP.clientId != null) return global.APP.clientId; } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.clientId != null) return globalThis.APP.clientId; } catch (e2) {} return null; }
   function sessionOrgId()    { try { if (global.APP && global.APP.orgId    != null) return global.APP.orgId;    } catch (e) {} try { if (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.orgId    != null) return globalThis.APP.orgId;    } catch (e2) {} return 0; }
 
+  // ── T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate on the LIVE write
+  // path. ad_access.js's gateRecord (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven headless)
+  // was exposed via idmp_session.js's gateRecordFor but never reached commitCrud — a CRUD write only checked
+  // owner+CAS, never whether the ACTING ROLE may touch this record's org/client at all. Same "the page may
+  // set it" INPUT seam as sessionActor/sessionClientId/sessionOrgId: idempiere.html's applySession sets
+  // window.APP.gateRecordFor (a closure over its db + logged-in role); absent (glassbowl.html and any other
+  // no-login host) → PASS, never a hard dependency on idmp_session.js. NEVER invented — only read.
+  var _tableAccessLevelCache = {};
+  function _getTableAccessLevel(table) {
+    var k = String(table || '').toLowerCase();
+    if (_tableAccessLevelCache.hasOwnProperty(k)) return _tableAccessLevelCache[k];
+    try {
+      var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+      if (!mdb) return null;
+      var r = mdb.exec("SELECT AccessLevel FROM AD_Table WHERE UPPER(TableName)=UPPER('" + k.replace(/'/g, "''") + "') LIMIT 1");
+      var lvl = (r.length && r[0].values.length) ? String(r[0].values[0][0]) : null;
+      _tableAccessLevelCache[k] = lvl; return lvl;
+    } catch (e) { return null; }
+  }
+  // recordAccessGate(table, record) — record is the fetched row (crud_overlay.js's getRecord shape: keys
+  // exposed both original-case and lower-case, per §ADORGID-CASING). Reads ad_org_id/ad_client_id lower-case
+  // (this codebase's established convention throughout, ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22).
+  function recordAccessGate(table, record) {
+    try {
+      var fn = (global.APP && global.APP.gateRecordFor) ||
+               (typeof globalThis !== 'undefined' && globalThis.APP && globalThis.APP.gateRecordFor);
+      if (typeof fn !== 'function') return { allowed: true, reason: 'no-gate-available' };
+      var lvl = _getTableAccessLevel(table);
+      if (lvl == null) return { allowed: true, reason: 'no-accesslevel-data' };
+      var rec = record || {};
+      return fn(lvl, { AD_Org_ID: rec.ad_org_id != null ? rec.ad_org_id : rec.AD_Org_ID,
+                        AD_Client_ID: rec.ad_client_id != null ? rec.ad_client_id : rec.AD_Client_ID });
+    } catch (e) { return { allowed: true, reason: 'gate-error' }; }
+  }
+
   // ── Task 2 — changeLog: op-log CRUD trail for one record, AD-config-filtered (iDempiere AD_ChangeLog parity)
   // Returns [{opId,ts,actor,column,old,new}] for logged columns only; null if table not in IsChangeLog=Y.
   // NON-INVENT: the IsAllowLogging/IsChangeLog filter is READ from the main db (global.__idmpDb); we follow AD.
@@ -992,6 +1027,7 @@
   CORE.sessionActor = sessionActor;     // §0.21 recorded-identity reads — buildOp/_gateCtxFor deps
   CORE.sessionClientId = sessionClientId;
   CORE.sessionOrgId = sessionOrgId;
+  CORE.recordAccessGate = recordAccessGate;   // T-0 item 4 — record-level canView + org/client scope
 
   // dual-mode export (gantt_model.js pattern; footer binding preserved — see header note).
   global.CrudCore = CORE;

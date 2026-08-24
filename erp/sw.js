@@ -10,7 +10,11 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v769';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v770';   // bump on each deploy; per-change detail is the git commit message.
+// v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
+//   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
+//   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
+//   gain recordAccessGate/_gateRecordAccess. New witness: scripts/poc_record_gate_live.js (bim-compiler).
 // v769 (2026-08-23) merge of two independent v768 bumps — both applied, neither dropped:
 // v768a: ad_seed.db gains AD_Form (49) + ad_val_rule (332) — see erp/tests/bake_forms_valrules_seed.js.
 //   ad_seed_v16 -> ad_seed_v17 IDB cache key bump forces re-fetch of the seed for returning users.
