@@ -1133,7 +1133,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.actor   = _session.user.id;
     window.APP.clientId = _session.client.id;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
-    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId);
+    window.APP.roleId  = _session.role.id;
+    // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
+    // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
+    // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
+    window.APP.gateRecordFor = function (tableAccessLevel, record) {
+      return SES.gateRecordFor(db, _session.role.id, tableAccessLevel, record);
+    };
+    console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId + ' role=' + window.APP.roleId);
     _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
