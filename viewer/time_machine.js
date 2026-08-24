@@ -6197,17 +6197,126 @@
     });
   }
 
+  // ── §TM_SILENT_REFUSAL — every refusal the user can trigger gets a visible tip ─────────────────
+  // Implementing the tm-error-handling spec (W-TM-SRT / W-TM-EXC). Before this, ten refusal paths
+  // logged a §..._REJECT/§..._FAIL line and returned: the drag snapped back, the click did nothing,
+  // and the user saw NOTHING (commitGanttDrag :6205/:6210/:6243/:6259, shiftGanttSchedule
+  // :6347/:6363, commitGanttGroupShift :6401/:6418, the dblclick lock gate :6852, openGanttProps
+  // :6934, linkGanttBars :6864 — pre-fix line numbers). Same centralization rationale as
+  // _tmEditLocked above: a tip that has to be re-typed at each new refusal site is a tip that
+  // eventually is not (witness_tm_silent_refusal_tips.js now gates that).
+  function _tmTipRestore(tip) {
+    // _tmSayException below loosens these so its inline action is clickable/wrappable; every
+    // hide (and every fresh show) puts the drawer's original inline contract back.
+    tip.style.pointerEvents = 'none';
+    tip.style.whiteSpace = 'nowrap';
+    tip.style.overflow = 'hidden';
+  }
+  function _tmSay(msg, ms) {
+    var tip = document.getElementById('tm-gantt-tip');
+    if (!tip) return;
+    _tmTipRestore(tip);
+    tip.textContent = msg;
+    tip.style.display = 'block';
+    setTimeout(function () { tip.style.display = 'none'; }, ms || 2600);
+  }
+
+  // ── §TM_EDIT_EXCEPTION — an edit pipeline that THROWS must not leave a stale frame ─────────────
+  // Each edit verb runs a multi-step pipeline (engine verb → retimeTaskElements → resync → annotate
+  // → persist → repaint). Before this, a throw anywhere in it propagated uncaught to
+  // error_reporter.js's sitewide handler (generic "Something went wrong", 3-per-session cap, shared
+  // app-wide) and TM's own display froze on whatever half-updated frame the throw interrupted.
+  // On catch: log, then re-derive the display from the DB's REAL current state. Every recovery step
+  // is an idempotent re-deriver (verified by reading each: _tmResyncAfterRetime re-sorts _ops and
+  // nulls caches; invalidateGanttModel nulls flags; computeDays re-reads _placeOps(); drawGanttMini
+  // rebuilds and redraws; renderAtTime paints visibility at the cursor) — the same five calls every
+  // successful edit already ends with, and undoLastGanttEdit already re-runs after restoring the DB.
+  // Each step is individually guarded so one failing step cannot rob the panel of the rest.
+  function _tmEditExceptionRecover(fnName, e) {
+    console.log('§TM_EDIT_EXCEPTION fn=' + fnName + ' error=' + (e && e.message));
+    try { _tmResyncAfterRetime(); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=resync error=' + (e2 && e2.message)); }
+    try { invalidateGanttModel(); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=invalidate error=' + (e2 && e2.message)); }
+    try { computeDays(); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=computeDays error=' + (e2 && e2.message)); }
+    try { drawGanttMini(); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=draw error=' + (e2 && e2.message)); }
+    try { renderAtTime(_cursor); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=render error=' + (e2 && e2.message)); }
+    try { _tmSayException(e); } catch (e2) { console.log('§TM_EDIT_EXCEPTION_RECOVER_SKIP step=tip error=' + (e2 && e2.message)); }
+  }
+
+  // The TM-specific message (never the sitewide generic toast), plus the ONE concrete, low-risk
+  // mitigation that is actually buildable from what exists: offering to close the OTHER open
+  // panels. "Other panels" is grounded in the app's REAL registry — scene.js's _registerPanel /
+  // window._panels ({id, el, nav, close}), using the exact visibility check _cyclePanel already
+  // uses. The TM panel itself is NOT in that registry (hand-built #time-machine-panel appended to
+  // document.body), so the id filter is belt-and-braces. Closing is ONLY ever user-clicked — the
+  // offer is an inline button in the tip, never an automatic side-effect.
+  function _tmVisibleOtherPanels() {
+    var out = [];
+    var reg = (typeof window !== 'undefined' && window._panels) || [];
+    for (var i = 0; i < reg.length; i++) {
+      var p = reg[i];
+      if (!p || !p.el || p.el.id === 'time-machine-panel') continue;
+      if (p.el.style.display !== 'none' && p.el.offsetWidth > 0) out.push(p);   // _cyclePanel's check
+    }
+    return out;
+  }
+  function _tmSayException(e) {
+    var tip = document.getElementById('tm-gantt-tip');
+    if (!tip) return;
+    var shortReason = (e && e.message) ? String(e.message).slice(0, 90) : 'unexpected error';
+    _tmTipRestore(tip);
+    tip.textContent = 'Time Machine couldn\'t complete this edit — ' + shortReason;
+    var others = [];
+    try { others = _tmVisibleOtherPanels(); } catch (e2) {}
+    var hidden = false;
+    function hide() {
+      if (hidden) return;
+      hidden = true;
+      tip.style.display = 'none';
+      _tmTipRestore(tip);
+    }
+    if (others.length) {
+      var btn = document.createElement('button');
+      btn.textContent = 'Close other panels (' + others.length + ')';
+      btn.style.cssText = 'display:block;margin-top:3px;font-size:10px;padding:1px 6px;cursor:pointer';
+      btn.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+      btn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var ids = [], n = 0;
+        for (var i = 0; i < others.length; i++) {
+          var p = others[i];
+          try {
+            if (typeof p.close === 'function') p.close();
+            else p.el.style.display = 'none';
+            ids.push(p.id); n++;
+          } catch (e3) {}
+        }
+        console.log('§TM_CLOSE_OTHER_PANELS closed=' + n + ' ids=[' + ids.join(',') + ']');
+        hide();
+      });
+      tip.appendChild(btn);
+      // The drawer tip ships pointer-events:none + nowrap/ellipsis (fine for passive text, fatal
+      // for a button) — loosen while the offer is up; hide()/_tmTipRestore puts it all back.
+      tip.style.pointerEvents = 'auto';
+      tip.style.whiteSpace = 'normal';
+      tip.style.overflow = 'visible';
+    }
+    tip.style.display = 'block';
+    setTimeout(hide, others.length ? 8000 : 3600);
+  }
+
   function commitGanttDrag(bar, mode, deltaDays) {
     if (_tmEditLocked('commitGanttDrag')) return;
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.moveTaskCascade) {
       console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
+      _tmSay('Not available');   // §TM_SILENT_REFUSAL — same wording as setGanttBaseline/rescheduleGanttAsap's SA guard
       return;
     }
     if (!bar.taskId) {
       // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
       console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
+      _tmSay('Not editable — no schedule task on this bar');   // §TM_SILENT_REFUSAL — same wording as wireGanttDrag's copy of this refusal
       return;
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -6241,10 +6350,14 @@
     var tbBar = tasksBefore[bar.taskId];
     if (!tbBar || !tbBar.start || !tbBar.finish) {
       console.log('§GANTT_DRAG_REJECT reason=no_real_task_snapshot task=' + bar.taskId);
+      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
       return;
     }
     var realS0 = Date.parse(tbBar.start + 'T00:00:00Z'), realE0 = Date.parse(tbBar.finish + 'T00:00:00Z');
 
+    // §TM_EDIT_EXCEPTION — the whole pipeline (engine verb → retime → resync → annotate → persist →
+    // repaint), so a throw anywhere in it recovers the display instead of freezing a stale frame.
+    try {
     var res;
     if (mode === 'move') {
       res = SA.moveTaskCascade(app.db, schedId, bar.taskId, d(realS0 + deltaDays * 86400000), {});
@@ -6256,7 +6369,10 @@
         d(realE0), {});
     }
     if (!res || !res.ok) {
+      // §TM_SILENT_REFUSAL — the CLAMPED case below always showed a tip; the outright-failure case
+      // (bad_date / no_such_task / no_tasks / cycle from the engine verb) showed nothing at all.
       console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
+      _tmSay('Rejected: ' + ((res && res.reason) || 'unknown'));   // same format as the props panel's Rejected: line
       return;
     }
     // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
@@ -6301,6 +6417,7 @@
     // §S73 — the ONLY `return true` in this function. Every refusal above returns undefined, so the
     // __tmGanttDrag test hook can report what actually happened instead of "I found the bar."
     return true;
+    } catch (e) { _tmEditExceptionRecover('commitGanttDrag', e); }   // §TM_EDIT_EXCEPTION — undefined return = "did not commit" (§S73)
   }
   // Test hooks (diagnostic only, same contract as __tmZoneProbe) — §S7's live drag reproduction:
   // a headless probe needs the real commit path and the real computed bars, not a DOM gesture.
@@ -6345,6 +6462,7 @@
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftSchedule) {
       console.log('§TM_RULER_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      _tmSay('Not available');   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays) return;   // a click, not a drag — nothing to shift
@@ -6358,9 +6476,11 @@
       });
     } catch (e) {}
 
+    try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
     var res = SA.shiftSchedule(app.db, schedId, deltaDays);
     if (!res || !res.ok) {
       console.log('§TM_RULER_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      _tmSay('Cannot shift — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL — same shape as "Cannot compress"
       return;
     }
 
@@ -6387,6 +6507,7 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
+    } catch (e) { _tmEditExceptionRecover('shiftGanttSchedule', e); }   // §TM_EDIT_EXCEPTION
   }
 
   // §GANTT_GROUP_MOVE — same shape as shiftGanttSchedule, scoped to an explicit marquee-selected
@@ -6399,6 +6520,7 @@
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftTasks) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
+      _tmSay('Not available');   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays || !taskIds || !taskIds.length) return;
@@ -6413,9 +6535,11 @@
       });
     } catch (e) {}
 
+    try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
     var res = SA.shiftTasks(app.db, taskIds, deltaDays);
     if (!res || !res.ok) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
+      _tmSay('Cannot move group — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL
       return;
     }
 
@@ -6442,6 +6566,7 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
+    } catch (e) { _tmEditExceptionRecover('commitGanttGroupShift', e); }   // §TM_EDIT_EXCEPTION
   }
 
   // §GANTT_EDIT_UNDO — reverse the single most recent commitGanttDrag edit. Restores both halves
@@ -6564,6 +6689,7 @@
       });
     } catch (e) {}
 
+    try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint; a throw returns undefined = "refused" (§S73)
     var res = SA.rescheduleAsap(app.db, schedId, {});
     if (!res || !res.ok) {
       console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=' + ((res && res.reason) || 'unknown'));
@@ -6605,6 +6731,7 @@
       (res.daysCompressed > 0 ? ' — project finish moved up ' + res.daysCompressed + ' day' + (res.daysCompressed === 1 ? '' : 's')
                               : ' — project finish unchanged (internal float closed)'));
     return true;
+    } catch (e) { _tmEditExceptionRecover('rescheduleGanttAsap', e); }   // §TM_EDIT_EXCEPTION
   }
   // Test hook (diagnostic only, same contract as __tmGanttDrag / __tmZoneProbe): a headless probe
   // needs the REAL commit path — lock check, engine verb, retime, resync, annotate, persist — not a
@@ -6662,6 +6789,7 @@
     // in the gantt chart itself"): a captured schedule is left exactly as imported (never
     // regenerated) and is edited through the SAME drawer lock/drag/link/props surface as any other
     // schedule, once its bars carry real task_ids via the normal cap/injectGantt load path.
+    try {   // §TM_EDIT_EXCEPTION — schedule probe + materialize verb through the refresh
     var act = SA.activeSchedule ? SA.activeSchedule(app.db) : null;
     if (act && act.captured) {
       console.log('§GANTT_AUTHOR_ENTRY captured=' + act.id + ' — leaving it as imported, not regenerating');
@@ -6691,6 +6819,7 @@
     // lighter-weight refresh path whose correctness would need its own separate proof.
     if (typeof window.tmRefoldSchedule === 'function') window.tmRefoldSchedule();
     else { invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor); }
+    } catch (e) { _tmEditExceptionRecover('generateGanttSchedule', e); }   // §TM_EDIT_EXCEPTION
   }
 
   function wireGanttDrag() {
@@ -6850,6 +6979,15 @@
       if (!hit || !hit.bar.taskId) return;
       if (!_ganttEditable) {  // §GANTT_EDIT_LOCK — same gate as drag, props panel also edits (typed retime + unlink)
         console.log('§GANTT_PROPS_REJECT reason=locked');
+        // §TM_SILENT_REFUSAL — every OTHER lock refusal already says this. Inline tip-set (not
+        // _tmSay) on purpose: wireGanttDrag's sibling refusals use this exact self-contained
+        // pattern, and witness_gantt_edit_lock.js slices this function alone into its sandbox.
+        var t2 = document.getElementById('tm-gantt-tip');
+        if (t2) {
+          t2.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t2.style.display = 'block';
+          setTimeout(function () { t2.style.display = 'none'; }, 2200);
+        }
         return;
       }
       _dragConsumed = true; openGanttProps(hit.bar);
@@ -6861,9 +6999,12 @@
   function linkGanttBars(predBar, succBar) {
     if (_tmEditLocked('linkGanttBars')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); return; }
+    // §TM_SILENT_REFUSAL — this guard returns before the local say() below exists, so it uses the
+    // module-scope _tmSay (the guard used to be the one refusal in this function with no tip).
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay('Not available'); return; }
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
+    try {   // §TM_EDIT_EXCEPTION — cycle probe + addDependency verb through the final repaint
     if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
       console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
       say('Refused — that link would create a cycle');
@@ -6904,6 +7045,7 @@
     _tmAnnotateCpm(schedId);
     _tmPersistEdit('link');   // §S70 — the edit must survive a reload
     invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+    } catch (e) { _tmEditExceptionRecover('linkGanttBars', e); }   // §TM_EDIT_EXCEPTION
   }
 
   // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
@@ -6932,6 +7074,7 @@
       // Honest refusal, same shape as commitGanttDrag's no_real_task_snapshot: a panel that cannot
       // read the task's real dates must not offer to edit them with made-up ones.
       console.log('§GANTT_PROPS_REJECT reason=no_real_task_dates task=' + bar.taskId);
+      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
       return;
     }
     var box = document.getElementById('tm-gantt-props') || (function () {
@@ -7006,6 +7149,7 @@
       // Compare against the REAL dates the panel was populated with (§S72) — comparing the typed
       // value against the TM-clock d(bar.startTs) made "start changed, finish didn't" always true,
       // so a pure finish edit was routed through moveTaskCascade as if it were a move.
+      try {   // §TM_EDIT_EXCEPTION — typed-apply pipeline: engine verb through the final repaint
       var res = (s !== realS && f === realF && SA.moveTaskCascade)
         ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
         : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
@@ -7021,6 +7165,7 @@
       console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
         ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
+      } catch (e) { _tmEditExceptionRecover('commitGanttProps', e); }   // §TM_EDIT_EXCEPTION — the typed-apply path (props panel Apply)
     };
   }
 
