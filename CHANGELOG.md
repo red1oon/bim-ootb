@@ -4,6 +4,39 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.52.0](https://github.com/red1oon/bim-ootb/compare/v1.51.0...v1.52.0) (2026-08-24)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_CPM_LEGEND — a key for the float rail, in the drawer's own lock bar ([#1491](https://github.com/red1oon/bim-ootb/issues/1491)) ([705a48c](https://github.com/red1oon/bim-ootb/commit/705a48c6dac5b70b4663e7a84cd838c16be78935))
+* **erp:** wire record-level access gate into commitCrud (T-0 item 4) ([#1499](https://github.com/red1oon/bim-ootb/issues/1499)) ([b386436](https://github.com/red1oon/bim-ootb/commit/b386436dd9ade4389c7798e657c7584ad37fbaa5))
+* **gantt:** §GANTT_RESCHEDULE_ASAP — explicit ⏪ Pull Back (reschedule as early as possible) ([#1498](https://github.com/red1oon/bim-ootb/issues/1498)) ([5aca269](https://github.com/red1oon/bim-ootb/commit/5aca26978326cf1d339e9505e739990af83a83aa))
+* **readiness:** §LANGUAGE_I18N — Malay and Arabic instrument packs, shipped as labelled drafts ([#1497](https://github.com/red1oon/bim-ootb/issues/1497)) ([d064960](https://github.com/red1oon/bim-ootb/commit/d064960420291a2e06385c2c7c078a0c8a9489d9))
+* **readiness:** §LLM_BRIDGE — the guided conversation, run in the practitioner's own AI ([#1485](https://github.com/red1oon/bim-ootb/issues/1485)) ([bc17bb6](https://github.com/red1oon/bim-ootb/commit/bc17bb613c5030e5dd983dadf128fa75c4be75bb))
+
+
+### 🐛 Fixes
+
+* **4d:** §S22_EPOCH_FIX for E7 — the typed properties panel was writing 1970 dates ([#1482](https://github.com/red1oon/bim-ootb/issues/1482)) ([daf382e](https://github.com/red1oon/bim-ootb/commit/daf382e8200773caaf7d166938728088ac3afa53))
+* **4d:** §S78 — split-mode Gantt edits now persist under the key the reload reads ([#1494](https://github.com/red1oon/bim-ootb/issues/1494)) ([408d9d1](https://github.com/red1oon/bim-ootb/commit/408d9d175aef5d2e8fe5f506768c7ad3bd5bab91))
+* **4d:** the CPM float rail was painted over — draw it after the frames ([#1486](https://github.com/red1oon/bim-ootb/issues/1486)) ([ff8b5ee](https://github.com/red1oon/bim-ootb/commit/ff8b5ee7ba480007e2bfeba598545901f04137fd))
+* **erp-seed:** bake AD_Form (49) + ad_val_rule (332) into ad_seed.db additively ([#1496](https://github.com/red1oon/bim-ootb/issues/1496)) ([0b28347](https://github.com/red1oon/bim-ootb/commit/0b283472a2c69755d31b4122c923cd1c0b5223c6))
+* **erp:** ERP_PROJECT_REVIEW.md §2.1 — ship ad_access.js live, idmp_session.js delegates ([#1495](https://github.com/red1oon/bim-ootb/issues/1495)) ([e7fc1a9](https://github.com/red1oon/bim-ootb/commit/e7fc1a9adaeec547d9add0a488fb70afd04f4238))
+* **viewer:** §S76 — cacheKey K3 no-leading-slash gap closed; Hospital persistence probe finds a real split-mode P0 ([#1492](https://github.com/red1oon/bim-ootb/issues/1492)) ([166059a](https://github.com/red1oon/bim-ootb/commit/166059a9066e57ad6218caef581c4fe1ea15f5fe))
+
+
+### 📝 Documentation
+
+* **readiness:** §CONFORMANCE — consent, recommendation categories, scholarly identity, Limitations ([#1481](https://github.com/red1oon/bim-ootb/issues/1481)) ([d83f29d](https://github.com/red1oon/bim-ootb/commit/d83f29dad6565957d26c531df99db8dd3a62a059))
+* **readiness:** §DIFFERS — "How this differs from other assessments", and the prior art that constrains it ([#1490](https://github.com/red1oon/bim-ootb/issues/1490)) ([f883f3e](https://github.com/red1oon/bim-ootb/commit/f883f3ecf4d7a906b77314db0dd896ea31a84a21))
+
+
+### ♻️ Refactors
+
+* **erp:** §S60 — physically split crud_overlay.js's pure CORE into crud_core.js ([#1487](https://github.com/red1oon/bim-ootb/issues/1487)) ([a03b7d7](https://github.com/red1oon/bim-ootb/commit/a03b7d77e8ccf15218e0976cab3195948a810cd2))
+* **viewer:** §S59 — extract navigate_find.js's ERP-push block into find_erp_push.js ([#1489](https://github.com/red1oon/bim-ootb/issues/1489)) ([63aab47](https://github.com/red1oon/bim-ootb/commit/63aab4761a5fff1de83e8b1cc109732b835a1b5a))
+
 ## [1.51.0](https://github.com/red1oon/bim-ootb/compare/v1.50.0...v1.51.0) (2026-08-23)
 
 
