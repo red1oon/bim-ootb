@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1080';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1081';   // bump on each deploy; per-change detail is the git commit message.
 // v1078 (2026-08-23) SCRIPT_LENGTH_REFACTOR_SEAMS.md §S59 candidate 2 — navigate_find.js's ERP-push
 // block extracted to NEW find_erp_push.js (loaded by main.js's lazy navigate list BEFORE
 // navigate_find.js?v=58). NOT precached ON PURPOSE: none of the lazy navigate_* sub-modules are
