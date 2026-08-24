@@ -543,18 +543,23 @@ SCREENS.intro =
      questionnaire. This page is the structured half; the conversation is the step after it,
      and the reader is told so here rather than discovering the mismatch. */
   '<div class="card">' +
-    '<h3>Two halves, and the second one is a conversation</h3>' +
-    '<p class="small" style="margin-top:9px">What follows is the <strong>structured instrument</strong> ' +
-    '&mdash; twenty questions across five dimensions, each naming the published standard it is drawn ' +
-    'from. It is deliberately a fixed set, because a score is only reproducible if everyone answers ' +
-    'the same things.</p>' +
-    '<p class="small">After it comes the <strong>guided conversation</strong>: the toolkit builds a ' +
-    'prompt from your own answers, and you run it in whatever AI service you already use, which ' +
-    'interviews you about your weakest areas and gives you current context on them. This toolkit ' +
-    'bundles no AI model and makes no calls to one on your behalf &mdash; there is no account here, ' +
-    'no API key, no cost. That step is optional and changes none of your scores.</p>' +
-    '<p class="small">Both halves are at <strong>v0.1</strong> and are mocked: no answer is scored ' +
-    'yet, and nothing is transmitted. What the numbers <em>will</em> mean is set out in ' +
+    '<h3>What you say, what your model shows, and where they disagree</h3>' +
+    '<p class="small" style="margin-top:9px"><strong>1 &middot; What you say.</strong> Twenty ' +
+    'questions across five dimensions, each naming the published standard it is drawn from. A fixed ' +
+    'set on purpose &mdash; a score is only reproducible if everyone answers the same things.</p>' +
+    '<p class="small"><strong>2 &middot; What your model shows.</strong> Optionally, one IFC file, ' +
+    'read inside your browser and never uploaded. It is measured, and it is opened &mdash; by ' +
+    'software that is not the software you authored it in. That is one of these questions ' +
+    '(<span class="mono">A3</span>) performed rather than asked.</p>' +
+    '<p class="small"><strong>3 &middot; Where the two disagree.</strong> A readiness profile, a gap ' +
+    'analysis and a set of recommendations, plus the places the model did not support the answer ' +
+    'given. In between sits an optional <strong>guided conversation</strong>: the toolkit builds a ' +
+    'prompt from your answers and you run it in whatever AI service you already use. No account ' +
+    'here, no API key, no cost, and it changes none of your scores.</p>' +
+    '<p class="small"><strong>This is an assessment. The app behind step 2 is how you check it</strong> ' +
+    '&mdash; it is open source and free, a worked example rather than the subject of the research.</p>' +
+    '<p class="small">Everything is at <strong>v0.1</strong> and mocked: no answer is scored yet, no ' +
+    'file is read yet, and nothing is transmitted. What the numbers <em>will</em> mean is set out in ' +
     '<a href="proposal.html">the research proposal</a>.</p>' +
   '</div>' +
 
@@ -836,8 +841,16 @@ function dimScreen(n) {
 SCREENS.model = function () { return '' +
   '<p class="eyebrow">Step 9 of 11 &middot; Your model</p>' +
   '<h2>Model check</h2>' +
-  '<p class="sub small">The file is read here, in your browser, and what it contains is compared against the ' +
-  'answers given. <strong>The file is never uploaded.</strong></p>' +
+  '<p class="sub small">This is question <span class="mono">A3</span> performed instead of asked: ' +
+  '<em>have you ever taken a finished model out of your BIM software and opened it elsewhere?</em> ' +
+  'A file you choose will be read <strong>here, in your browser</strong>, never uploaded &mdash; ' +
+  'measured against what you told us, and opened by software that is not the software you authored ' +
+  'it in.</p>' +
+  '<div class="call warnc" style="margin-bottom:16px"><strong>Not built yet.</strong> In v0.1 this ' +
+  'screen is a worked example and the figures below come from a sample model, not from a file of ' +
+  'yours. Nothing here reads, uploads or stores anything. The engine that will do the reading is ' +
+  'already in use elsewhere in the platform &mdash; it parses IFC in a browser worker, with no ' +
+  'server and no upload &mdash; and connecting it is the next piece of work.</div>' +
 
   '<div class="drop filled" id="drop">' +
     '<div style="display:flex;gap:13px;align-items:center;flex-wrap:wrap">' +
@@ -862,8 +875,11 @@ SCREENS.model = function () { return '' +
       '<div class="mcell flag"><dt>Quantities</dt><dd>Absent</dd></div>' +
       '<div class="mcell flag"><dt>Duplicate GUIDs</dt><dd class="mono">47</dd></div>' +
     '</dl>' +
-    '<p class="small" style="margin-top:14px">Counted from the file directly, not from anything we stored &mdash; ' +
-    'so these are your model&rsquo;s numbers, not our extractor&rsquo;s view of it.</p>' +
+    '<p class="small" style="margin-top:14px"><strong>Sample figures.</strong> Once wired these will ' +
+    'be counted from your file directly and not from anything we stored &mdash; your model&rsquo;s ' +
+    'numbers, not our extractor&rsquo;s view of it. What is checked is not this platform&rsquo;s ' +
+    'preference: spaces, classification, types and quantities are what any open-standard consumer ' +
+    'needs. <strong>A model that fails these fails them all.</strong></p>' +
   '</div>' +
 
   '<div class="card">' +
