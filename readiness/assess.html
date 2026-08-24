@@ -877,6 +877,38 @@ SCREENS.model = function () { return '' +
       '<p class="small" style="margin:12px 0 0;text-align:left">This is your model, read by ' +
       'software that is not the software you authored it in. That is question ' +
       '<span class="mono">A3</span>, answered.</p>' +
+
+      /* §HANDOVER — the visitor leaves holding their own data. */
+      '<div style="margin-top:14px;text-align:left">' +
+        '<button class="btn sec sm" type="button" id="convbtn">Take your model with you &mdash; ' +
+        'compile it to SQLite</button>' +
+        '<div class="small" id="convstate" style="margin-top:8px"></div>' +
+        '<div class="prog" id="convprog" hidden style="margin-left:0"><div class="progbar" id="convbar"></div></div>' +
+      '</div>' +
+
+      '<div class="call warnc" id="convgate" hidden style="margin-top:14px;text-align:left">' +
+        '<strong>Before it downloads &mdash; what you are about to get.</strong>' +
+        '<p style="margin:9px 0 0">Your IFC is compiled to a <strong>SQLite database</strong> that you ' +
+        'may open and use thereof. It is written straight to your Downloads folder. The conversion ' +
+        'runs in this browser tab: nothing is uploaded and no copy is kept here.</p>' +
+        '<p style="margin:9px 0 0"><strong>This concludes the assessment.</strong> The analysis has ' +
+        'landed in your report and is not written into the database.</p>' +
+        '<p style="margin:9px 0 0">A <strong>README</strong> arrives in the same folder beside your ' +
+        'database, yours to use or dispose of. <strong>No back door and no lock-in exists.</strong></p>' +
+        '<p style="margin:9px 0 0" class="small">Large models take a few minutes and the tab must ' +
+        'stay open. Your browser may ask permission to save more than one file.</p>' +
+        '<div class="actions" style="margin-top:12px">' +
+          '<button class="btn" type="button" id="convgo">Compile and download</button>' +
+          '<button class="btn sec" type="button" id="convcancel">Not now</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="call" id="convdone" hidden style="margin-top:14px;text-align:left">' +
+        '<span class="lab">Saved to your Downloads folder</span>' +
+        '<p>Your model is now a SQLite database, and a README sits beside it explaining what it is ' +
+        'and how to open it. It needs no licence, expires never, and answers to nobody &mdash; ' +
+        'including us. <strong>That is the whole argument for open standards, in a file you can hold.</strong></p>' +
+      '</div>' +
     '</div>' +
     '<div id="droperr" class="small" hidden style="color:var(--warn)"></div>' +
   '</div>' +
@@ -1284,6 +1316,7 @@ function readIFC(file) {
   if (!file || MWbusy) return;
   if (!/\.ifc$/i.test(file.name)) { mwShow('dropidle', 'That is not an .ifc file.'); return; }
   MWbusy = true;
+  LASTFILE = file;
   mwShow('dropbusy');
   var bn = mwEl('busyname'); if (bn) bn.textContent = file.name + ' · ' + (file.size / 1048576).toFixed(1) + ' MB';
   var setPct = function (p, phase) {
@@ -1363,6 +1396,167 @@ document.addEventListener('drop', function (e) {
   e.preventDefault(); d.style.borderColor = '';
   var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
   if (f) readIFC(f);
+});
+
+
+/* ============================================================
+   TAKE YOUR MODEL WITH YOU  (§HANDOVER)
+   The last act of the assessment. Their IFC is compiled to a SQLite database and downloaded to
+   their own Downloads folder, with a README beside it. Nothing is kept here and nothing is sent
+   anywhere: the conversion runs in a Web Worker in this tab and the result goes straight to disk.
+
+   This is the anti-lock-in claim demonstrated rather than asserted. A visitor arrives for a
+   readiness assessment and leaves holding their own model in an open, queryable format that
+   this project cannot reach, revoke or charge for.
+
+   ⚠ Everything below reuses the platform's own modules UNMODIFIED — ../viewer/import_worker.js,
+   ../viewer/import_db_builder.js, ../viewer/lib/sql-wasm.js. Nothing is copied and the viewer is
+   not touched. If those move, this breaks loudly rather than drifting out of sync.
+   ============================================================ */
+
+var LASTFILE = null;          /* the File the respondent chose, kept only in this tab's memory */
+var CONVERTING = false;
+
+function readmeText(name, m) {
+  var when = new Date().toISOString().slice(0, 10);
+  return [
+    'YOUR MODEL, AS A DATABASE',
+    '=========================',
+    '',
+    'Source file : ' + name,
+    'Converted   : ' + when + ', in your own browser',
+    'Schema      : ' + (m && m.schema || 'IFC'),
+    'Elements    : ' + (m && m.elements != null ? m.elements : 'n/a'),
+    '',
+    'WHAT THIS IS',
+    'Your IFC has been compiled to a SQLite database. It is an ordinary .db file. Open it with',
+    'any SQLite tool — the sqlite3 command line, DB Browser for SQLite, Python\'s sqlite3 module,',
+    'or anything else that reads SQLite. Nothing proprietary is involved.',
+    '',
+    'WHERE IT CAME FROM',
+    'The conversion ran inside your browser tab. Your IFC was never uploaded, and neither was the',
+    'database. No account was created. No server saw either file.',
+    '',
+    'WHAT IT IS NOT',
+    'This is not your assessment. Your readiness profile, gap analysis and recommendations stayed',
+    'in the report on the assessment page and were not written into this database.',
+    '',
+    'NO BACK DOOR, NO LOCK-IN',
+    'This file is yours. It phones nothing home, needs no licence and will not expire. Keep it,',
+    'move it, query it, or delete it. Nothing here depends on us and nothing about it can be',
+    'revoked. That is the point of open standards, and it is the point this toolkit was written',
+    'to make.',
+    '',
+    'A note on honesty: this database is a projection of your IFC, not a replacement for it. Keep',
+    'the original IFC as your source of truth.',
+    '',
+    'You may notice the database holds fewer elements than the assessment reported. That is not a',
+    'loss and not an error: the assessment counts every entity the IFC schema calls an element,',
+    'while the database stores the ones that carry geometry, and it de-duplicates repeated shapes.',
+    'Two different counts, for two different jobs, both taken from the same file.',
+    '',
+    'IF YOU DO SO WISH TO PROGRESS ON YOUR OWN',
+    'The same open-source platform that compiled this file can open it, and its user guide is here:',
+    '',
+    '    https://red1oon.github.io/BIMCompiler/BIMUserGuide/',
+    '',
+    'You are under no obligation to use it. The database is plain SQLite and owes nothing to the',
+    'tool that produced it — that is rather the point.',
+    '',
+    'OpenBIM Readiness Assessment Toolkit v0.1 — a research instrument.',
+    'https://red1oon.github.io/bim-ootb/readiness/'
+  ].join('\n');
+}
+
+function saveBlob(data, filename, mime) {
+  var blob = new Blob([data], { type: mime || 'application/octet-stream' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+}
+
+function loadScriptOnce(src) {
+  return new Promise(function (resolve, reject) {
+    if (document.querySelector('script[data-src="' + src + '"]')) return resolve();
+    var el = document.createElement('script');
+    el.src = src; el.setAttribute('data-src', src);
+    el.onload = function () { resolve(); };
+    el.onerror = function () { reject(new Error('could not load ' + src)); };
+    document.head.appendChild(el);
+  });
+}
+
+function convStatus(msg, pct, bad) {
+  var el = document.getElementById('convstate');
+  if (el) { el.textContent = msg || ''; el.style.color = bad ? 'var(--warn)' : 'var(--muted)'; }
+  var bar = document.getElementById('convbar');
+  if (bar) bar.style.width = Math.max(2, Math.min(100, pct || 2)) + '%';
+  var wrap = document.getElementById('convprog');
+  if (wrap) wrap.hidden = (pct == null);
+}
+
+async function convertAndDownload() {
+  if (CONVERTING || !LASTFILE) return;
+  CONVERTING = true;
+  var name = LASTFILE.name, base = name.replace(/\.ifc$/i, '');
+  try {
+    convStatus('Loading the compiler', 4);
+    await loadScriptOnce('../viewer/lib/sql-wasm.js');
+    await loadScriptOnce('../viewer/import_db_builder.js');
+
+    convStatus('Reading your file', 8);
+    var buf = await LASTFILE.arrayBuffer();
+
+    var msg = await new Promise(function (resolve, reject) {
+      var w = new Worker('../viewer/import_worker.js');
+      w.onmessage = function (ev) {
+        var d = ev.data || {};
+        if (d.type === 'progress') { convStatus(d.phase || 'Compiling', 8 + Math.round((d.pct || 0) * 0.72)); return; }
+        if (d.type === 'error') { w.terminate(); reject(new Error(d.message || 'conversion failed')); return; }
+        if (d.type === 'done') { w.terminate(); resolve(d); }
+      };
+      w.onerror = function () { w.terminate(); reject(new Error('the compiler could not start')); };
+      w.postMessage({ arrayBuffer: buf, filename: name }, [buf]);
+    });
+
+    convStatus('Building the database', 86);
+    var SQL = await initSqlJs({ locateFile: function (f) { return '../viewer/lib/' + f; } });
+    var dbs = buildImportDBs(SQL, msg);
+
+    convStatus('Saving to your Downloads folder', 96);
+    if (dbs.metaDb && dbs.geoDb) {
+      saveBlob(dbs.metaDb, base + '_meta.db');
+      saveBlob(dbs.geoDb, base + '_geo.db');
+    } else {
+      saveBlob(dbs.extractedDb, base + '.db');
+    }
+    saveBlob(readmeText(name, MEASURED), 'README_' + base + '.txt', 'text/plain');
+
+    convStatus('', null);
+    var done = document.getElementById('convdone');
+    if (done) done.hidden = false;
+    var btn = document.getElementById('convbtn');
+    if (btn) btn.hidden = true;
+  } catch (err) {
+    convStatus('Conversion failed: ' + String(err && err.message || err) + '. Nothing was sent anywhere.', 100, true);
+  } finally {
+    CONVERTING = false;
+  }
+}
+
+document.addEventListener('click', function (e) {
+  var t = e.target;
+  if (t && t.id === 'convbtn') { var g = document.getElementById('convgate'); if (g) g.hidden = false; t.disabled = true; return; }
+  if (t && t.id === 'convcancel') {
+    var g2 = document.getElementById('convgate'); if (g2) g2.hidden = true;
+    var b2 = document.getElementById('convbtn'); if (b2) b2.disabled = false; return;
+  }
+  if (t && t.id === 'convgo') {
+    var g3 = document.getElementById('convgate'); if (g3) g3.hidden = true;
+    convertAndDownload(); return;
+  }
 });
 
 /* ============================================================
