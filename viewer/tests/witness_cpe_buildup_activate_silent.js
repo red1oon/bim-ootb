@@ -128,7 +128,7 @@ async function gateA(src, label) {
     const h = makeActivateHarness(src);
     h.ctx._cachedOps = HOSPITAL_OPS;
     h.ctx.activate();
-    for (let i = 0; i < 30 && !h.ctx._active; i++) await new Promise(r => setImmediate(r));
+    for (let i = 0; i < 30 && !h.ctx._active; i++) await new Promise(r => setTimeout(r, 0));
     const panelFired = h.calls.setToolbarHighlight > 0 && h.calls.panelDisplaySets.includes('flex') &&
       h.calls.switchMode > 0 && h.calls.updateStatus > 0;
     const dataOk = h.ctx._ops.length === 2 && h.ctx._projectEnd > h.ctx._projectStart;
@@ -142,7 +142,7 @@ async function gateA(src, label) {
     const h = makeActivateHarness(src);
     h.ctx._cachedOps = HOSPITAL_OPS;
     h.ctx.activate(true);
-    for (let i = 0; i < 30 && !h.ctx._active; i++) await new Promise(r => setImmediate(r));
+    for (let i = 0; i < 30 && !h.ctx._active; i++) await new Promise(r => setTimeout(r, 0));
     const panelSilent = h.calls.setToolbarHighlight === 0 && h.calls.panelDisplaySets.length === 0 &&
       h.calls.switchMode === 0 && h.calls.renderAtTime === 0 && h.calls.updateStatus === 0 &&
       h.calls.drawGanttMini === 0 && h.calls.drawDashboard === 0 && h.calls.loadTwin === 0;
