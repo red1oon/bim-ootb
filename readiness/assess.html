@@ -240,6 +240,15 @@ footer{
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
 }
 footer a{color:var(--muted)}
+.stalebar{
+  position:sticky;top:0;z-index:90;background:var(--warn);color:#fff;
+  font-family:"Instrument Sans",sans-serif;font-size:13.5px;padding:9px 16px;text-align:center
+}
+.stalebar button{
+  font:inherit;font-weight:600;margin:0 6px;padding:3px 11px;cursor:pointer;
+  background:#fff;color:var(--warn);border:none;border-radius:5px
+}
+.stalebar .small{opacity:.85;font-size:12px}
 .prog{height:6px;border-radius:3px;background:var(--surface-3);margin:11px auto;max-width:340px;overflow:hidden}
 .progbar{height:100%;width:2%;background:var(--accent);border-radius:3px;transition:width .2s}
 .langbar{
@@ -419,9 +428,9 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 </style>
 
 <div class="mockbar" id="mockbar">
-  <span>⚠ Mockup for review — canned data, nothing wired</span>
+  <span>⚠ Research instrument, v0.1 — the model check is live; scoring is not wired yet</span>
   <span>·</span>
-  <span>v0.1 · 2026-08-21</span>
+  <span id="buildstamp">build 2026-08-24T12:10Z</span>
 </div>
 
 <div class="shell">
@@ -1904,6 +1913,28 @@ document.addEventListener('click', function (e) {
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') document.querySelectorAll('.tip.open').forEach(function (t) { t.classList.remove('open'); });
 });
+
+/* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
+   Rather than expecting anyone to guess, the page checks its own build against the published one
+   and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
+var BUILD_ID = '2026-08-24T12:10Z';
+(function checkBuild() {
+  try {
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (v) {
+        if (!v || !v.build || v.build === BUILD_ID) return;
+        var bar = document.createElement('div');
+        bar.className = 'stalebar';
+        bar.innerHTML = 'A newer version of this page has been published. ' +
+          '<button type="button" id="reloadnow">Reload</button> ' +
+          '<span class="small">you are on ' + BUILD_ID + ', current is ' + v.build + '</span>';
+        document.body.insertBefore(bar, document.body.firstChild);
+        document.getElementById('reloadnow').onclick = function () { location.reload(true); };
+      })
+      .catch(function () { /* offline or blocked — say nothing rather than cry wolf */ });
+  } catch (e) {}
+})();
 
 show('intro');
 </script>
