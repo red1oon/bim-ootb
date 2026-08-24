@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>OpenBIM Readiness Toolkit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -239,6 +240,8 @@ footer{
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);line-height:1.8
 }
 footer a{color:var(--muted)}
+.prog{height:6px;border-radius:3px;background:var(--surface-3);margin:11px auto;max-width:340px;overflow:hidden}
+.progbar{height:100%;width:2%;background:var(--accent);border-radius:3px;transition:width .2s}
 .langbar{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   padding:11px 0;border-bottom:1px solid var(--rule-soft)
@@ -246,6 +249,7 @@ footer a{color:var(--muted)}
 .langbar label{font-family:"Instrument Sans",sans-serif;font-size:12px;font-weight:600;
   letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .langbar select{
+  flex:0 0 auto;width:auto;max-width:220px;
   font-family:"Instrument Sans",sans-serif;font-size:13.5px;color:var(--ink);
   background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:5px 9px
 }
@@ -846,60 +850,52 @@ SCREENS.model = function () { return '' +
   'A file you choose will be read <strong>here, in your browser</strong>, never uploaded &mdash; ' +
   'measured against what you told us, and opened by software that is not the software you authored ' +
   'it in.</p>' +
-  '<div class="call warnc" style="margin-bottom:16px"><strong>Not built yet.</strong> In v0.1 this ' +
-  'screen is a worked example and the figures below come from a sample model, not from a file of ' +
-  'yours. Nothing here reads, uploads or stores anything. The engine that will do the reading is ' +
-  'already in use elsewhere in the platform &mdash; it parses IFC in a browser worker, with no ' +
-  'server and no upload &mdash; and connecting it is the next piece of work.</div>' +
-
-  '<div class="drop filled" id="drop">' +
-    '<div style="display:flex;gap:13px;align-items:center;flex-wrap:wrap">' +
-      '<div class="brandmark" style="background:var(--accent-wash);color:var(--accent-ink)">IFC</div>' +
-      '<div style="flex:1;min-width:170px">' +
-        '<div style="font-weight:600;font-size:15px">Tower_ARC_Rev04.ifc</div>' +
-        '<div class="small mono">IFC2X3 · 84.2 MB · read locally · 12,847 elements</div>' +
-      '</div>' +
-      '<button class="btn sec sm" type="button">Choose a different file</button>' +
+  '<input type="file" id="ifcfile" accept=".ifc,.IFC" hidden>' +
+  '<div class="drop" id="drop" tabindex="0" role="button" ' +
+       'aria-label="Choose an IFC file, or drop one here">' +
+    '<div id="dropidle">' +
+      '<div style="font-weight:600;font-size:15.5px">Drop an IFC file here, or click to choose one</div>' +
+      '<div class="small" style="margin-top:6px">It is read in this browser tab and is never ' +
+      'uploaded. Nothing is stored. Closing the tab discards it. The page itself loads webfonts ' +
+      'from Google; <strong>your file is never part of any request</strong>.</div>' +
+      '<div class="small mono" style="margin-top:8px">IFC2x3 · IFC4 · IFC4x3</div>' +
     '</div>' +
+    '<div id="dropbusy" hidden>' +
+      '<div style="font-weight:600;font-size:15.5px" id="busyphase">Reading…</div>' +
+      '<div class="prog"><div class="progbar" id="progbar"></div></div>' +
+      '<div class="small mono" id="busyname"></div>' +
+    '</div>' +
+    '<div id="dropdone" hidden>' +
+      '<div style="display:flex;gap:13px;align-items:center;flex-wrap:wrap">' +
+        '<div class="brandmark" style="background:var(--accent-wash);color:var(--accent-ink)">IFC</div>' +
+        '<div style="flex:1;min-width:170px;text-align:left">' +
+          '<div style="font-weight:600;font-size:15px" id="donename"></div>' +
+          '<div class="small mono" id="donemeta"></div>' +
+        '</div>' +
+        '<button class="btn sec sm" type="button" id="rechoose">Choose a different file</button>' +
+      '</div>' +
+      '<p class="small" style="margin:12px 0 0;text-align:left">This is your model, read by ' +
+      'software that is not the software you authored it in. That is question ' +
+      '<span class="mono">A3</span>, answered.</p>' +
+    '</div>' +
+    '<div id="droperr" class="small" hidden style="color:var(--warn)"></div>' +
   '</div>' +
 
   '<div class="card">' +
     '<h3>What the file contains</h3>' +
-    '<dl class="mgrid" style="margin-top:13px">' +
-      '<div class="mcell"><dt>Schema</dt><dd class="mono">IFC2X3</dd></div>' +
-      '<div class="mcell"><dt>Elements</dt><dd class="mono">12,847</dd></div>' +
-      '<div class="mcell"><dt>Spatial chain</dt><dd>Complete</dd></div>' +
-      '<div class="mcell flag"><dt>Spaces (rooms)</dt><dd class="mono">0</dd></div>' +
-      '<div class="mcell flag"><dt>Classified</dt><dd class="mono">4.2<span class="unit">%</span></dd></div>' +
-      '<div class="mcell flag"><dt>Property sets</dt><dd class="mono">39<span class="unit">%</span></dd></div>' +
-      '<div class="mcell flag"><dt>Quantities</dt><dd>Absent</dd></div>' +
-      '<div class="mcell flag"><dt>Duplicate GUIDs</dt><dd class="mono">47</dd></div>' +
-    '</dl>' +
-    '<p class="small" style="margin-top:14px"><strong>Sample figures.</strong> Once wired these will ' +
-    'be counted from your file directly and not from anything we stored &mdash; your model&rsquo;s ' +
-    'numbers, not our extractor&rsquo;s view of it. What is checked is not this platform&rsquo;s ' +
-    'preference: spaces, classification, types and quantities are what any open-standard consumer ' +
-    'needs. <strong>A model that fails these fails them all.</strong></p>' +
+    '<dl class="mgrid" style="margin-top:13px" id="mgrid">' + figuresHTML() + '</dl>' +
+    '<p class="small" style="margin-top:14px" id="figsrc">' + figuresNote() + '</p>' +
   '</div>' +
 
   '<div class="card">' +
     '<h3>Exactly what would leave your browser</h3>' +
     '<p class="small" style="margin:9px 0 13px">Numbers and fixed categories only. No file, no names, no GUIDs, ' +
     'no coordinates, no free text.</p>' +
-    '<pre class="payload">{\n' +
+    '<pre class="payload" id="payloadbox">{\n' +
       '  "locale":        "AE",\n' +
       '  "firm_size":     "11-50",\n' +
       '  "firm_type":     "engineering",\n' +
-      '  "answers":       [1,2,0,1, 1,1,2,1, 2,2,3,2, 3,1,4,0, 1,2,1,1],\n' +
-      '  "schema":        "IFC2X3",\n' +
-      '  "elements":      12847,\n' +
-      '  "spaces":        0,\n' +
-      '  "classified_pc": 4.2,\n' +
-      '  "psets_pc":      39.0,\n' +
-      '  "quantities":    false,\n' +
-      '  "georef":        true,\n' +
-      '  "dup_guids":     47,\n' +
-      '  "exporter":      "other",\n' +
+      '  "answers":       [' + answerVector() + '],\n' + payloadModelLines() +
       '  "toolkit":       "v0.1",\n' +
       '  "kb":            "core-0.1 / ae-v1"' + (LANGS[LANG].pack === 'en-v1' ? '' : ',') + '\n' +
       (LANGS[LANG].pack === 'en-v1' ? '' : '  "lang":          "' + LANGS[LANG].pack + '"\n') +
@@ -1183,6 +1179,191 @@ function L(en, id, field, i) {
   var v = (id ? tr(id, field, i) : null);
   return (v === null || v === undefined || v === '') ? en : v;
 }
+
+
+/* ============================================================
+   TRACK B — measuring the respondent's own model  (§STORY act 2)
+   The file is read by metrics_worker.js, which calls the same web-ifc build the viewer uses,
+   in a Web Worker, at the web-ifc layer. Nothing is uploaded, fetched or stored: no network
+   call, no IndexedDB, no cookie. Closing the tab discards everything.
+
+   MEASURED is the sample model until a real file is read. Every figure and every payload line
+   below states which of the two it is — a sample figure is never allowed to look measured.
+   ============================================================ */
+
+var SAMPLE = {
+  sample: true, filename: 'Tower_ARC_Rev04.ifc', size_mb: 84.2,
+  schema: 'IFC2X3', elements: 12847, spatial_chain_complete: true, spaces: 0,
+  classified_pc: 4.2, psets_pc: 39.0, quantities: false, quantities_pc: 0,
+  georef: true, dup_guids: 47, exporter: 'other',
+  storeys: 0, storeys_with_spaces_pc: 0, materials_pc: 0, typed_pc: 0,
+  named_pc: 0, orphans: 0, orphans_pc: 0, space_boundaries: false
+};
+var MEASURED = SAMPLE;
+
+function nfmt(n) { return (typeof n === 'number' ? n : 0).toLocaleString('en-US'); }
+function cell(label, value, flag) {
+  return '<div class="mcell' + (flag ? ' flag' : '') + '"><dt>' + label + '</dt><dd>' + value + '</dd></div>';
+}
+function mono(v) { return '<dd class="mono">' + v + '</dd>'; }
+
+function figuresHTML() {
+  var m = MEASURED;
+  function num(label, v, flag) {
+    return '<div class="mcell' + (flag ? ' flag' : '') + '"><dt>' + label +
+           '</dt><dd class="mono">' + v + '</dd></div>';
+  }
+  function pct(label, v, flag) {
+    return '<div class="mcell' + (flag ? ' flag' : '') + '"><dt>' + label +
+           '</dt><dd class="mono">' + v + '<span class="unit">%</span></dd></div>';
+  }
+  return num('Schema', m.schema) +
+    num('Elements', nfmt(m.elements)) +
+    cell('Spatial chain', m.spatial_chain_complete ? 'Complete' : 'Incomplete', !m.spatial_chain_complete) +
+    num('Spaces (rooms)', nfmt(m.spaces), m.spaces === 0) +
+    pct('Classified', m.classified_pc, m.classified_pc < 50) +
+    pct('Property sets', m.psets_pc, m.psets_pc < 50) +
+    cell('Quantities', m.quantities ? 'Present' : 'Absent', !m.quantities) +
+    num('Duplicate GUIDs', nfmt(m.dup_guids), m.dup_guids > 0);
+}
+
+function figuresNote() {
+  if (MEASURED.sample) {
+    return '<strong>Sample figures &mdash; not your model.</strong> Drop a file above and these ' +
+      'become counts from it. What is checked is not this platform&rsquo;s preference: spaces, ' +
+      'classification, types and quantities are what any open-standard consumer needs. ' +
+      '<strong>A model that fails these fails them all.</strong>';
+  }
+  return '<strong>Measured from your file, in this browser tab.</strong> Counted directly from the ' +
+    'IFC and not from anything we stored &mdash; your model&rsquo;s numbers, not our ' +
+    'extractor&rsquo;s view of it. What is checked is not this platform&rsquo;s preference: spaces, ' +
+    'classification, types and quantities are what any open-standard consumer needs. ' +
+    '<strong>A model that fails these fails them all.</strong>';
+}
+
+function answerVector() {
+  var out = [];
+  DIMENSIONS.forEach(function (d) {
+    d.items.forEach(function (it) { out.push(STATE.answers[it.id]); });
+  });
+  return out.join(',');
+}
+
+/* Only fixed categories, numbers and booleans. No filename, no GUID, no coordinate, no name. */
+function payloadModelLines() {
+  var m = MEASURED, L = [];
+  function add(k, v) { L.push('  "' + k + '":' + Array(Math.max(1, 16 - k.length)).join(' ') + v + ',\n'); }
+  add('measured', m.sample ? 'false' : 'true');
+  add('schema', '"' + m.schema + '"');
+  add('elements', m.elements);
+  add('spaces', m.spaces);
+  add('classified_pc', m.classified_pc);
+  add('psets_pc', m.psets_pc);
+  add('quantities', m.quantities ? 'true' : 'false');
+  add('georef', m.georef ? 'true' : 'false');
+  add('dup_guids', m.dup_guids);
+  add('exporter', '"' + m.exporter + '"');
+  return L.join('');
+}
+
+/* ---- driving the worker ---- */
+var MW = null, MWbusy = false;
+
+function mwEl(id) { return document.getElementById(id); }
+function mwShow(which, err) {
+  ['dropidle', 'dropbusy', 'dropdone'].forEach(function (k) {
+    var el = mwEl(k); if (el) el.hidden = (k !== which);
+  });
+  var e = mwEl('droperr');
+  if (e) { e.hidden = !err; e.textContent = err || ''; }
+  var d = mwEl('drop');
+  if (d) d.className = 'drop' + (which === 'dropdone' ? ' filled' : '');
+}
+
+function readIFC(file) {
+  if (!file || MWbusy) return;
+  if (!/\.ifc$/i.test(file.name)) { mwShow('dropidle', 'That is not an .ifc file.'); return; }
+  MWbusy = true;
+  mwShow('dropbusy');
+  var bn = mwEl('busyname'); if (bn) bn.textContent = file.name + ' · ' + (file.size / 1048576).toFixed(1) + ' MB';
+  var setPct = function (p, phase) {
+    var bar = mwEl('progbar'); if (bar) bar.style.width = Math.max(2, Math.min(100, p)) + '%';
+    var ph = mwEl('busyphase'); if (ph && phase) ph.textContent = phase + '…';
+  };
+  setPct(2, 'Reading the file');
+
+  try { if (MW) MW.terminate(); } catch (e) {}
+  try { MW = new Worker('metrics_worker.js'); }
+  catch (e) { MWbusy = false; mwShow('dropidle', 'This browser blocked the local reader. Nothing was sent anywhere.'); return; }
+
+  MW.onmessage = function (ev) {
+    var d = ev.data || {};
+    if (d.type === 'progress') { setPct(d.pct, d.phase); return; }
+    if (d.type === 'error') {
+      MWbusy = false; mwShow('dropidle', d.message || 'The file could not be read.');
+      try { MW.terminate(); } catch (e) {} MW = null; return;
+    }
+    if (d.type === 'done') {
+      MWbusy = false;
+      var m = d.metrics || {};
+      m.sample = false;
+      m.filename = file.name;
+      m.size_mb = +(file.size / 1048576).toFixed(1);
+      MEASURED = m;
+      var dn = mwEl('donename'); if (dn) dn.textContent = file.name;
+      var dm = mwEl('donemeta');
+      if (dm) dm.textContent = m.schema + ' · ' + m.size_mb + ' MB · read locally · ' + nfmt(m.elements) + ' elements';
+      mwShow('dropdone');
+      var grid = mwEl('mgrid'); if (grid) grid.innerHTML = figuresHTML();
+      var note = mwEl('figsrc'); if (note) note.innerHTML = figuresNote();
+      /* Refresh the payload in place. Calling show('model') here would rebuild the drop zone and
+         throw away the done-state the respondent has just reached. */
+      var pb = mwEl('payloadbox');
+      if (pb) {
+        var txt = pb.textContent, a = txt.indexOf('  "measured"'), t2 = txt.indexOf('  "toolkit"');
+        if (a < 0) a = txt.indexOf('  "schema"');
+        if (a > 0 && t2 > a) pb.textContent = txt.slice(0, a) + payloadModelLines() + txt.slice(t2);
+      }
+      try { MW.terminate(); } catch (e) {} MW = null;
+    }
+  };
+  MW.onerror = function () {
+    MWbusy = false; mwShow('dropidle', 'The local reader failed to start. Nothing was sent anywhere.');
+  };
+
+  file.arrayBuffer().then(function (buf) {
+    MW.postMessage({ arrayBuffer: buf, filename: file.name }, [buf]);
+  }).catch(function () {
+    MWbusy = false; mwShow('dropidle', 'The file could not be opened.');
+  });
+}
+
+document.addEventListener('click', function (e) {
+  var t = e.target;
+  if (t && (t.id === 'rechoose' || (t.closest && t.closest('#drop') && !MWbusy))) {
+    var inp = mwEl('ifcfile'); if (inp) inp.click();
+  }
+});
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'ifcfile' && e.target.files && e.target.files[0]) readIFC(e.target.files[0]);
+});
+['dragenter', 'dragover'].forEach(function (n) {
+  document.addEventListener(n, function (e) {
+    var d = e.target && e.target.closest && e.target.closest('#drop');
+    if (d) { e.preventDefault(); d.style.borderColor = 'var(--accent)'; }
+  });
+});
+document.addEventListener('dragleave', function (e) {
+  var d = e.target && e.target.closest && e.target.closest('#drop');
+  if (d) d.style.borderColor = '';
+});
+document.addEventListener('drop', function (e) {
+  var d = e.target && e.target.closest && e.target.closest('#drop');
+  if (!d) return;
+  e.preventDefault(); d.style.borderColor = '';
+  var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) readIFC(f);
+});
 
 /* ============================================================
    THE GUIDED CONVERSATION — §LLM_BRIDGE
