@@ -87,6 +87,11 @@ const KNOWN_RED = {
   // C — real assertion reds, reproducible every run.
   'witness_gantt_lock_integrity.js':         'C — G-LI-2e, self-declared KNOWN PRE-EXISTING BUG in its own assert message',
   'witness_door_window_host_wall.js':        'C — assertion red, UNTRIAGED',
+  'witness_4d_band_monotonic.js':            'C — T2a: 0->14,267 non-structure cross-storey inversions (Hospital), bisected to c972778 ' +
+                                              '#1319 §HOSTED_BEFORE_HOST (0->9,171) then a2c30ee #1345 §STAIR_FLIGHT_GRID_VISIBILITY ' +
+                                              '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
+                                              'per §S66 — suite never ran it, so this went undetected). Cause: 4D_SCHEDULE_PERFECTION.md ' +
+                                              '"REGRESSION FOUND" section.',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',
