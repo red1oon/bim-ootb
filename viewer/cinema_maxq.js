@@ -1471,6 +1471,11 @@
       if (_bkState && typeof window.tmRestoreDerivedOrder === 'function') {
         window.tmRestoreDerivedOrder(); _bkState = null;
       }
+      // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: same contract — a bake that silently turned Time Machine
+      // on (tmActivateForBake, no real Play involved) must silently turn it back off, or the scene
+      // is left mid-construction with nothing offering to restore it (the panel was never shown, so
+      // there's no close button to do it).
+      try { if (typeof window.tmDeactivateIfBakeOwned === 'function') window.tmDeactivateIfBakeOwned(); } catch (eTM) {}
       // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
       // user into normal navigation for the rest of the session.
       try { _ghostGroundRestore(); } catch (eGG) {}
@@ -1527,6 +1532,8 @@
       // §CPE_BUILDUP: same restore on the THROW path. A re-keyed op-log left behind by a crashed
       // bake would look like a corrupted schedule to the next person who opens the timeline.
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
+      // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: same restore on the THROW path — see the in-try comment above.
+      try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { _workPacingReset(); } catch (e5) {}
