@@ -292,7 +292,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <a href="#measured">05 &nbsp;What we measured</a>
     <a href="#unverified">06 &nbsp;Carried without a source</a>
     <a href="#corrections">07 &nbsp;Corrections</a>
-    <a href="#limitations">08 &nbsp;Limitations</a>
+    <a href="#related">08 &nbsp;Related work</a>
+    <a href="#limitations">09 &nbsp;Limitations</a>
     <a href="#refs">References</a>
   </nav>
 </div>
@@ -692,8 +693,103 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   touched.</p>
 </section>
 
+<section id="related">
+  <div class="shead"><span class="snum">08</span><h2>Related work</h2></div>
+  <p class="lede">What this instrument is positioned against. Six of the seven sources below were
+  obtained and read in full; the one that could not be is recorded at T2 with its content unclaimed.
+  An earlier version of this register reported this material from search summaries, which
+  &sect;01&rsquo;s own standard forbids &mdash; it was redone properly.</p>
+
+  <h3>An LLM conducting the interview is an active research area</h3>
+  <p>The instrument&rsquo;s conversational step is not a novel idea and is not presented as one.</p>
+  <figure>
+    <h4>Studies read in full</h4>
+    <p class="fsub">All four at T1 &mdash; the papers&rsquo; own texts were read</p>
+    <div class="mxscroll">
+      <table class="mx">
+        <thead><tr><th>Study</th><th>What was done</th><th class="c">Tier</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Wuttke et al. (2025)</strong><span class="cl">LMU Munich / Mannheim [20]</span></td>
+              <td>Small-N controlled study, students randomly assigned to an <strong>AI or a human interviewer</strong> on identical questionnaires. GPT-4 turbo behind a Chainlit interface, pre-registered. Concludes AI conversational interviewing is viable; own stated limit is the small sample</td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>Cuevas et al. (2024)</strong><span class="cl">CMU / ETH / UW / Microsoft [21]</span></td>
+              <td><strong>n = 399</strong>, three chatbots collecting qualitative data at scale. GPT-4 and GPT-3.5 at temperature 0 for replicability; reports limited reliability for automated quality evaluation even with GPT-4</td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>Barari et al. (2025)</strong><span class="cl">NORC, University of Chicago [22]</span></td>
+              <td><strong>n = 1,800</strong>. Chatbots that probe for elaboration <em>and</em> live-code open responses. Coding is moderately good without fine-tuning, with <strong>inflated false positives from acquiescence bias</strong>; richer answers, slightly worse respondent experience</td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+          <tr><td><strong>Lang &amp; Eskenazi (2025)</strong><span class="cl">60 Decibels / Oxford [23]</span></td>
+              <td>Telephone system (speech in, LLM, speech out). Pilot <strong>n = 75</strong> (US), deployment <strong>n = 2,739</strong> (Peru). Probing depth below human interviewers; structured-item quality approached human standards</td>
+              <td class="c"><span class="tier t1">T1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Source</b>Papers obtained and read 23 August 2026.</figcaption>
+  </figure>
+
+  <div class="call">
+    <span class="lab">The one difference, stated carefully</span>
+    <p>In all four studies <strong>the researcher operates the model</strong> &mdash; their key, their
+    pipeline, and what a respondent says reaches the researcher&rsquo;s model. This toolkit inverts
+    that: it composes a prompt and <strong>the respondent runs it in an AI service of their own
+    choosing</strong>. It bundles no model and makes no model calls.</p>
+    <p>Two consequences worth stating: the instrument is reproducible <strong>without a paid
+    API</strong>, and nothing a respondent says reaches a model this project operates.</p>
+    <p><strong>Four papers are not a systematic review.</strong> Nothing read here uses that
+    arrangement, but absence of evidence is not evidence of absence, and no claim to novelty rests
+    on it.</p>
+  </div>
+
+  <h3>BIM maturity assessment is a crowded field</h3>
+  <p>A 2020 evaluation by the Centre for Digital Built Britain with the UK BIM Alliance [24]
+  inventoried <strong>fifteen tools and six methods</strong>. Its gap analysis names, in its own
+  words, <em>&ldquo;rigid tools &mdash; one-size-fits-all; inaccurate and low granularity assessment;
+  binary (yes/no) assessment focused on readiness and capabilities for compliance purposes;
+  overlooking collaborative behaviour; inappropriate baselines and timing.&rdquo;</em> It reports
+  <strong>45% of surveyed organisations that assess maturity had built their own internal tool</strong>,
+  and rates <strong>interoperability and IFC support at 96%</strong> industry importance.
+  Succar&rsquo;s BIM Maturity Matrix [25] adds a five-level index for
+  <em>&ldquo;low-detail organisational self-assessment.&rdquo;</em></p>
+
+  <div class="call warn">
+    <span class="lab">What is not new here &mdash; BIM-CAREM</span>
+    <p><strong>Assessing BIM capability against the ISO/IEC 33000 family is not a new idea, and this
+    project does not claim it as one.</strong> BIM-CAREM [27] is a process-based BIM capability
+    assessment model <em>&ldquo;grounded on the meta-model of ISO/IEC 33000&rdquo;</em> &mdash; the
+    same standard family this instrument&rsquo;s answer scale comes from. It was built at the Middle
+    East Technical University, published in 2018 [28] and applied in 2023 [29]. Its own review
+    compares eight earlier models and concludes there is <em>&ldquo;no commonly accepted and broadly
+    used model in the literature.&rdquo;</em></p>
+    <p>Anyone assessing this instrument should read that work first. Where the two differ:
+    BIM-CAREM records interoperability as one subdomain &mdash; <em>&ldquo;whether interoperable
+    formats are used&rdquo;</em> &mdash; whereas here OpenBIM is the entire subject; and BIM-CAREM
+    assesses processes by interview, whereas this instrument additionally <strong>measures a model
+    file</strong> and reports where the measurement disagrees with the self-report.</p>
+  </div>
+
+  <h3>What this comparison does not establish</h3>
+  <p>The field survey [24] is dated <strong>February 2020</strong> and the field has moved. The most
+  recent comparator located, <strong>BIM-CAP</strong> [26] &mdash; by the same author as BIM-CAREM
+  and very probably that model&rsquo;s software implementation &mdash; could not be obtained on three
+  separate routes and is recorded at <span class="tier">T2</span> with <strong>no claim made about
+  its contents</strong>.</p>
+  <p>No OpenBIM-specific instrument was found in the portions of [24] read, but that report runs to
+  several hundred pages and was read selectively. <strong>That is a gap not found, not a gap
+  demonstrated</strong>, and it is recorded that way rather than presented as originality.</p>
+
+  <h3>On constraining an LLM to a schema</h3>
+  <p>Requiring JSON output against a fixed schema is thoroughly established practice, and the
+  relevant caution is the design rationale for how this toolkit treats what comes back:
+  <strong>schema validation solves a format problem, not a truth problem</strong> &mdash; a
+  schema-valid row can still be invented, stale, or drawn from the wrong source. Detecting
+  fabricated citations is its own research area, working by grounding each citation against an
+  external index. This project does something deliberately weaker: it does not verify, it
+  <strong>quarantines at T4</strong>, where nothing can touch a score. <em>This paragraph is written
+  from secondary summaries rather than primary texts, and nothing is cited from it by number.</em></p>
+</section>
+
 <section id="limitations">
-  <div class="shead"><span class="snum">08</span><h2>Limitations</h2></div>
+  <div class="shead"><span class="snum">09</span><h2>Limitations</h2></div>
   <p class="lede">Stated as a set, in one place, because a reader should not have to assemble them from
   seven pages. Each is detailed in the section named against it.</p>
 
@@ -771,6 +867,16 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <li id="r17"><strong>buildingSMART International.</strong> <em>Validation Service</em>, published page text. <span class="loc">Publisher&rsquo;s own published source read, 23 Aug 2026 (T1).</span></li>
     <li id="r18"><strong>buildingSMART International.</strong> <em>buildingSMART International Software Certification Program</em>, published page text. <span class="loc">Publisher&rsquo;s own page read, 23 Aug 2026 (T1), from an archived snapshot dated 7 Aug 2024. The snapshot date is stated because the programme&rsquo;s use-case list changes.</span></li>
     <li id="r19"><strong>Succar, B., Sher, W. and Williams, A. (2013).</strong> &lsquo;An integrated approach to BIM competency assessment, acquisition and application.&rsquo; <em>Automation in Construction</em>, 35, 174&ndash;189. <span class="loc">doi:10.1016/j.autcon.2013.05.016. Author&rsquo;s final version read in full, 23 Aug 2026 (T1), from the publisher-linked repository copy. Bibliographic identity confirmed independently against the Crossref record.</span></li>
+    <li id="r20"><strong>Wuttke, A., Aßenmacher, M., Klamm, C., Lang, M.M., Würschinger, Q. and Kreuter, F. (2025).</strong> &lsquo;AI Conversational Interviewing: Transforming Surveys with LLMs as Adaptive Interviewers.&rsquo; arXiv:2410.01824v2 [cs.HC], 12 March 2025. LMU Munich, Munich Center for Machine Learning, University of Mannheim. <span class="loc">Full text read, 23 Aug 2026 (T1).</span></li>
+    <li id="r21"><strong>Cuevas, A., Scurrell, J.V., Brown, E.M., Entenmann, J. and Daepp, M.I.G. (2024).</strong> &lsquo;Collecting Qualitative Data at Scale with Large Language Models: A Case Study.&rsquo; arXiv:2309.10187v3 [cs.HC], 3 December 2024. Carnegie Mellon University, ETH Zurich, University of Washington, Microsoft Research. <span class="loc">Full text read, 23 Aug 2026 (T1). An earlier version circulated under a different title; the v3 title is used here.</span></li>
+    <li id="r22"><strong>Barari, S., Angbazo, J., Wang, N., Christian, L.M., Dean, E., Slowinski, Z. and Sepulvado, B. (2025).</strong> &lsquo;AI-Assisted Conversational Interviewing: Effects on Data Quality and Respondent Experience.&rsquo; arXiv:2504.13908. NORC at the University of Chicago, 1 December 2025. <span class="loc">Full text read, 23 Aug 2026 (T1).</span></li>
+    <li id="r23"><strong>Lang, M.M. and Eskenazi, S. (2025).</strong> &lsquo;Telephone Surveys Meet Conversational AI: Evaluating a LLM-Based Telephone Survey System at Scale.&rsquo; arXiv:2502.20140. 60 Decibels Inc. and University of Oxford. <span class="loc">Full text read, 23 Aug 2026 (T1).</span></li>
+    <li id="r24"><strong>Kassem, M., Li, J., Kumar, B., Malleson, A., Gibbs, D.J., Kelly, G. and Watson, R. (2020).</strong> <em>Building Information Modelling: Evaluating Tools for Maturity and Benefits Measurement.</em> Centre for Digital Built Britain with the UK BIM Alliance, February 2020. <span class="loc">Publisher&rsquo;s own PDF read, 23 Aug 2026 (T1) &mdash; executive summary, tool inventory, gap analysis and interoperability findings. Read selectively, and that limit is stated wherever it is cited.</span></li>
+    <li id="r25"><strong>Succar, B.</strong> <em>BIM Maturity Matrix (BIm³).</em> BIMe Initiative. Built on Succar (2009) <em>Automation in Construction</em> 18(3); Succar (2010); Succar, Sher &amp; Williams (2012). <span class="loc">Publisher&rsquo;s own PDF read, 23 Aug 2026 (T1).</span></li>
+    <li id="r26"><strong>Yılmaz, G. (2026).</strong> &lsquo;BIM-CAP: A tool for assessing building information modelling capabilities of architecture, engineering, construction and facilities management processes.&rsquo; <em>SoftwareX</em>, 24 February 2026. doi:10.1016/j.softx.2026.102575. Gold open access, CC-BY. <span class="loc">Publisher record read, 23 Aug 2026 (T2). Full text is behind a bot challenge on three separate routes and was not obtained; no claim is made about its contents.</span></li>
+    <li id="r27"><strong>Yılmaz, G. (2017).</strong> <em>BIM-CAREM: A Reference Model for Building Information Modelling Capability Assessment.</em> PhD thesis, Graduate School of Informatics, Middle East Technical University, Ankara. <span class="loc">Full thesis obtained from the METU institutional repository and read, 23 Aug 2026 (T1).</span></li>
+    <li id="r28"><strong>Yılmaz, G., Akçamete, A. and Demirörs, O. (2018).</strong> &lsquo;A reference model for BIM capability assessments.&rsquo; <em>Automation in Construction.</em> doi:10.1016/j.autcon.2018.10.022. <span class="loc">Publisher records read, 23 Aug 2026 (T2). Full text not obtained; its substance is read at T1 in [27].</span></li>
+    <li id="r29"><strong>Yılmaz, G., Akçamete, A. and Demirörs, O. (2023).</strong> &lsquo;BIM-CAREM: Assessing the BIM capabilities of design, construction and facilities management processes in the construction industry.&rsquo; <em>Computers in Industry.</em> doi:10.1016/j.compind.2023.103861. <span class="loc">Publisher record read, 23 Aug 2026 (T2). Full text not obtained.</span></li>
   </ol>
 
   <h3>How to cite</h3>
