@@ -6,11 +6,12 @@
 //   Every edit made in the Time Machine's Gantt drawer — drag, ruler shift, group move, undo, link,
 //   unlink, typed apply — lived ONLY in the in-memory sql.js db and died on reload. Verified on
 //   origin/main before the fix: ScheduleAuthor.persistDb had exactly two callers
-//   (schedule_editor_ui.js, schedule_author_ui.js), neither in time_machine.js; and
+//   (schedule_editor_ui.js — the Editor tab, since deleted and folded into the TM panel,
+//   §TM_P6_FOLD 2026-08-24 — and schedule_author_ui.js), neither in time_machine.js; and
 //   retimeTaskElements writes kernel_ops with raw SQL rather than through KernelOps' commit API, so
 //   kernel_ops.js's own debounced persist never fired for a Gantt edit either.
 //
-//   This is the SAME gap schedule_editor_ui.js closed for the Editor tab — its own comment calls it
+//   This is the SAME gap the Editor tab closed for itself — its own comment called it
 //   "the gap that made every schedule edit vanish on tab close" (§SE-6) — on the same db, the same
 //   IDB slot, through the same verb. So: a gap, not a design choice.
 //
@@ -140,7 +141,6 @@ assert(disabled.got.length === 0 && disabled.logs.some(l => l.indexOf('reason=ca
 // building normally, every persisted edit went somewhere nothing reads.
 const SA_SRC = fs.readFileSync(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
 const KO_SRC = fs.readFileSync(path.join(__dirname, '..', 'kernel_ops.js'), 'utf8');
-const SEU_SRC = fs.readFileSync(path.join(__dirname, '..', 'schedule_editor_ui.js'), 'utf8');
 const SA_FNS = namedFns(SA_SRC);
 const persistDbFn = SA_FNS.find(f => f.name === 'persistDb');
 assert(!!persistDbFn && /put\(buf,\s*key\)/.test(persistDbFn.body) && /_cacheKeyFor\(url\)/.test(persistDbFn.body),
@@ -148,9 +148,9 @@ assert(!!persistDbFn && /put\(buf,\s*key\)/.test(persistDbFn.body) && /_cacheKey
 const koFn = namedFns(KO_SRC).find(f => f.name === '_persistToIdb');
 assert(!!koFn && /put\(buf,\s*dbKey\)/.test(koFn.body) && /DbResolve\.cacheKey/.test(koFn.body),
   'W-PERS-5b kernel_ops.js persists under the same canonical key — its "survive refresh" had the identical defect');
-const seuFn = namedFns(SEU_SRC).find(f => f.name === '_idbGetDb');
-assert(!!seuFn && /_cacheKeyFor\(url\)/.test(seuFn.body) && /objectStore\('dbs'\)\.readonly|get\(key\)/.test(seuFn.body),
-  'W-PERS-5c the Editor READS by the same derivation it now writes by — a raw-url read misses every canonical blob');
+// (W-PERS-5c retired 2026-08-24 with the Editor tab itself, §TM_P6_FOLD: it gated the deleted
+// schedule_editor_ui.js's _idbGetDb read-key derivation. The surviving reader is scene.js's
+// cachedFetch via DbResolve.cacheKey — exactly what W-PERS-5b and W-PERS-5d already gate.)
 
 // Behavioural: the helper and the reader's own function must agree, on real url shapes.
 const DbResolve = require(path.join(__dirname, '..', 'db_resolve.js'));

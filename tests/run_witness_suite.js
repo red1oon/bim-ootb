@@ -84,8 +84,10 @@ const KNOWN_RED = {
   //   witness_zone_display_authoring.js — W-ZDA-4a re-locked to per-building baselines in
   //     baselines/midair.json (Duplex 22->37, HHS 894->1839). The inequality it replaced was
   //     permanently false, i.e. it gated nothing.
+  // DRAINED 2026-08-24 (§TM_P6_FOLD PR):
+  //   witness_gantt_lock_integrity.js — 20/20 green, verified twice AND against pristine
+  //     origin/main (so an earlier merge fixed G-LI-2e, not this PR); entry was stale.
   // C — real assertion reds, reproducible every run.
-  'witness_gantt_lock_integrity.js':         'C — G-LI-2e, self-declared KNOWN PRE-EXISTING BUG in its own assert message',
   'witness_door_window_host_wall.js':        'C — assertion red, UNTRIAGED',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
