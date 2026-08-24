@@ -412,11 +412,9 @@ const PRECACHE_ASSETS = [
   'schedule_author.js',
   'schedule_read_4d.js',
   'schedule_author_ui.js',
-  'foreign_schedule.js',
-  'schedule_diff.js',
+  'foreign_schedule.js',    // §TM_P6_FOLD — lazy-loaded by the TM panel P6/MSP section; precached so it works offline
+  'schedule_diff.js',       // §TM_P6_FOLD — same (Diff-vs-Model engine)
   'schedule_sync.js',
-  'schedule_editor.html',
-  'schedule_editor_ui.js',
   'error_reporter.js',
   'print_sheet.js',
   'ghostglass.js',

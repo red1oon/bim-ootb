@@ -844,8 +844,9 @@ accrual=op, balance=replay, feeds payroll). Anti-scope reminder: T3 (ATS/LMS/ben
 carries 4D data." FALSE — HHS has the 4D SCHEMA (`tasks`/`task_sequences`/`task_elements`/`schedules`) but **ZERO
 rows** (verified `sqlite3 … SELECT count(*)`). There is no extracted schedule to show. The TM editor + P6/MSP
 importers **already exist and are MERGED on mainline** (`§SE-1..4` + PRs #504–#521: CPM, drag-Gantt, cross-surface
-sync, P6/MSP/XER import, auto-bind) — NOT HBA-lane work; the TM "Schedule Editor" button already opens
-`schedule_editor.html?db=<current DB_URL>`. A live 4D demo therefore needs a REAL schedule, which cannot be
+sync, P6/MSP/XER import, auto-bind) — NOT HBA-lane work; the TM panel's ⇄ P6/MSP section imports P6/MSP
+directly in-panel (the Editor tab was folded into the TM panel, §TM_P6_FOLD 2026-08-24; `schedule_editor.html`
+no longer exists). A live 4D demo therefore needs a REAL schedule, which cannot be
 INVENTED: either (a) import the one real plan in the repo `tests/fixtures/Hospital_GW_Programme(.bound).xer`
 (GardenWorld-bound, not HHS), or (b) the user supplies a real P6/MSP plan, or (c) the HBA-native path: derive a
 maintenance timeline from PM_Asset `next_due`/`pm_cycle` (the witnessed `maintenance` RUN profile = derived, not

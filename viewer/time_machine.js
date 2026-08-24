@@ -61,6 +61,8 @@
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
   // deterministic over-run VARIANT computed live on it. No shipped schedule data — a variant ON what's there.
   var _varVisible = false;
+  var _p6Visible = false;      // §TM_P6_FOLD — the P6/MSP interop section (collapsed by default)
+  var _p6ModsPromise = null;   // §TM_P6_FOLD — lazy-load promise cache for foreign_schedule/schedule_diff
   var _opsPlanned = null;   // snapshot of the planned _ops phase windows (taken when variance first opens)
   var _ganttTasks = [];  // computed task groups for click detection
   // §GANTT_BAR_IDENTITY (K0): the storey|phase rollup below used to be recomputed from scratch on
@@ -2730,12 +2732,15 @@
         '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
         // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
         // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
-        // both constraint-aware). The ↗ Editor tab below stays FOR NOW and is consolidated into the
-        // drawer in a later pass. schedule_author_ui.js is left on disk and still loads: this removes
-        // the entry point, not the module, so nothing else that references it breaks. The guarded
-        // handler below is a no-op once the element is gone.
+        // both constraint-aware). §TM_P6_FOLD (2026-08-24): the "later pass" that old comment
+        // promised for the ↗ Editor tab happened — the tab's editing surface (WBS outline,
+        // dependency editor, drag-Gantt, ▶ CPM, zoom) was fully redundant with the drawer's direct
+        // editing (§GANTT_EDIT/§GANTT_PROPS) + auto-CPM-annotate (§S68), so schedule_editor.html /
+        // schedule_editor_ui.js are DELETED. The tab's one non-redundant surface — P6/MS Project
+        // import/export + Diff-vs-Model — is folded into the #tm-p6-box section below, and #tm-editor
+        // is repurposed as its toggle.
         '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
-        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="Open the full Schedule Editor in a new tab — expandable WBS, dependencies, critical path (CPM) and interactive drag-Gantt">&#8599; Editor</button>' +
+        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">&#8644; P6/MSP</button>' +
         '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
         '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
         '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
@@ -2809,6 +2814,25 @@
         '<div id="tm-var-head" style="padding:4px 6px 2px;font-size:11px;color:#e0e0e0;line-height:1.5"></div>' +
         '<canvas id="tm-var-canvas" style="width:100%;cursor:default"></canvas>' +
         '<div id="tm-var-list" style="padding:2px 6px 4px;font-size:10px;color:#ccc"></div>' +
+      '</div>' +
+      // §TM_P6_FOLD — P6/MS Project interop + Diff-vs-Model, folded in from the retired Schedule
+      // Editor tab (2026-08-24). Collapsed by default (.tm-drawer-bottom max-height:0); #tm-editor
+      // toggles it and lazy-loads foreign_schedule.js + schedule_diff.js on first open.
+      '<div id="tm-p6-box" class="tm-drawer-bottom">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 6px 2px">' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Import</span>' +
+          '<button id="tm-p6-import" style="font-size:10px" title="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">&#8681; P6/MSP file</button>' +
+          '<input id="tm-p6-file" type="file" accept=".xer,.xml" style="display:none">' +
+          '<label style="font-size:10px;color:#8a97a5" title="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="tm-p6-autobind" type="checkbox" checked> auto-bind</label>' +
+          '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Export</span>' +
+          '<button id="tm-p6-export-msp" style="font-size:10px" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">&#8679; MSP</button>' +
+          '<button id="tm-p6-export-pmxml" style="font-size:10px" title="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">&#8679; PMXML</button>' +
+          '<button id="tm-p6-export-xer" style="font-size:10px" title="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">&#8679; XER</button>' +
+          '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
+          '<button id="tm-p6-diff" style="font-size:10px" title="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">&#9878; Diff vs Model</button>' +
+        '</div>' +
+        '<div id="tm-p6-out" style="padding:2px 8px 6px;font-size:10px;color:#9fb0c6;line-height:1.5;max-height:64px;overflow-y:auto"></div>' +
       '</div>' +
       '<div id="tm-dash-col" class="tm-drawer-right">' +
         '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px">' +
@@ -2890,20 +2914,16 @@
       if (window.WhatIfPanel) window.WhatIfPanel.open();
       else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'What-if engine not loaded'; }
     });
-    // §SE-C: open the full Schedule Editor (WBS · dependencies · CPM · drag-Gantt) in its own tab,
-    // carrying the current building's DB so it edits the SAME model. The TM is the schedule hub; the
-    // power tool lives on a separate surface (front visual stays light).
+    // §TM_P6_FOLD — repurposed #tm-editor: no longer opens a tab; toggles the in-panel P6/MSP
+    // interop section (import/export/diff). Editing lives in the drawer itself (§GANTT_EDIT +
+    // §S68 auto-CPM); the interop engines lazy-load on first open, so Alt+C and plain viewer
+    // boot pay nothing for this section.
     var _editor = document.getElementById('tm-editor');
     if (_editor) _editor.addEventListener('pointerup', function(e) {
       e.stopPropagation();
-      var a = A();
-      var dburl = (a && a.DB_URL) ? a.DB_URL : (new URL(location.href)).searchParams.get('db');
-      var u = new URL('schedule_editor.html', location.href);
-      if (dburl) u.searchParams.set('db', dburl);
-      window.open(u.toString(), '_blank');
-      var s = document.getElementById('tm-status'); if (s) s.textContent = 'Schedule Editor opened in a new tab';
-      console.log('§TIME_MACHINE open schedule_editor db=' + (dburl || '(default)'));
+      toggleP6Drawer();
     });
+    wireP6Controls();
 
     // Transport buttons
     document.getElementById('tm-start-btn').addEventListener('pointerup', function(e) {
@@ -6167,7 +6187,7 @@
   // Until now an in-canvas Gantt edit lived ONLY in the in-memory sql.js db and died on reload.
   // retimeTaskElements writes kernel_ops with raw SQL rather than through KernelOps' commit API, so
   // kernel_ops.js's own debounce never fired for it, and nothing else persisted it either. This is
-  // the same gap schedule_editor_ui.js closed for the Editor tab (§SE-6, "the gap that made every
+  // the same gap schedule_editor_ui.js (the Editor tab, since folded in — §TM_P6_FOLD) closed (§SE-6, "the gap that made every
   // schedule edit vanish on tab close") — same DB, same slot, same verb, just never wired here.
   // MEASURED cost of persistDb's whole-db export on the real fleet: Duplex 3ms, Terminal 10ms,
   // LTU 26ms, Clinic 47ms, JKR 70ms, Hospital (252MB) 86ms — one dropped frame at the worst, and
@@ -7167,6 +7187,289 @@
       invalidateGanttModel(); computeDays(); drawGanttMini(); renderAtTime(_cursor);
       } catch (e) { _tmEditExceptionRecover('commitGanttProps', e); }   // §TM_EDIT_EXCEPTION — the typed-apply path (props panel Apply)
     };
+  }
+
+  // ── §TM_P6_FOLD — P6 / MS Project interop + Diff-vs-Model, folded IN from the retired Schedule
+  // Editor tab (viewer/schedule_editor.html + schedule_editor_ui.js, DELETED 2026-08-24). The tab's
+  // editing surface (WBS outline, dependency editor, drag-Gantt, ▶ CPM, zoom) was fully redundant:
+  // the drawer edits directly (§GANTT_EDIT/§GANTT_PROPS) and CPM float/criticality is auto-derived
+  // after every edit (§S68 _tmAnnotateCpm). What was NOT redundant — file interop (Import P6/MSPDI,
+  // Export MSPDI/PMXML/XER, §X5/§X6/§X7) and the §4D_SCHEDULE_DIFF grader — lives here now,
+  // operating on the TM's own already-open app.db instead of a second sql.js copy in another tab.
+  // foreign_schedule.js + schedule_diff.js stay pure engines and are LAZY-LOADED on first open of
+  // this section (promise-cached dynamic injection, the same pattern as main.js APP.loadNavigate /
+  // APP.loadWizard) — the main viewer's eager script list does not grow.
+  // Alt+C impact: NONE — cinema_maxq.js only calls window.tm* globals that read closure state
+  // (_ops/_projectStart/_projectEnd); it never opens the TM panel or touches its DOM (see the
+  // §TM/Alt+C separation contract near tmActivateForBake: "Alt+C owns the camera", never the DOM).
+  function _tmLoadP6Modules() {
+    if (window.ForeignSchedule && window.ScheduleDiff) return Promise.resolve();
+    if (_p6ModsPromise) return _p6ModsPromise;
+    _p6ModsPromise = new Promise(function (resolve, reject) {
+      var mods = ['foreign_schedule.js?v=1', 'schedule_diff.js?v=1'];
+      function next(i) {
+        if (i >= mods.length) { console.log('§TM_P6_LAZY_LOADED ' + mods.join(' + ')); resolve(); return; }
+        var s = document.createElement('script');
+        s.src = mods[i];
+        s.onload = function () { next(i + 1); };
+        s.onerror = function () { _p6ModsPromise = null; reject(new Error('failed to load ' + mods[i])); };
+        document.head.appendChild(s);
+      }
+      next(0);
+    });
+    return _p6ModsPromise;
+  }
+
+  function toggleP6Drawer() {
+    _p6Visible = !_p6Visible;
+    // Mobile: only one bottom drawer at a time (mirror the gantt/dash/var rule).
+    if (_p6Visible && window.innerWidth < 600 && _ganttVisible) {
+      _ganttVisible = false;
+      var gb = document.getElementById('tm-gantt-box'); if (gb) gb.classList.remove('open');
+      var gbt = document.getElementById('tm-gantt'); if (gbt) gbt.classList.remove('tm-active');
+    }
+    var btn = document.getElementById('tm-editor');
+    if (btn) btn.classList.toggle('tm-active', _p6Visible);
+    var box = document.getElementById('tm-p6-box');
+    if (box) box.classList.toggle('open', _p6Visible);
+    if (_p6Visible) {
+      _tmLoadP6Modules().then(function () {
+        console.log('§TM_P6_OPEN modules ready ForeignSchedule=' + !!window.ForeignSchedule +
+          ' ScheduleDiff=' + !!window.ScheduleDiff);
+      }).catch(function (e) {
+        _tmP6Say('Interop modules failed to load: ' + e.message);
+      });
+    }
+  }
+
+  function wireP6Controls() {
+    var imp = document.getElementById('tm-p6-import'), impFile = document.getElementById('tm-p6-file');
+    if (imp && impFile) {
+      // 'click' (not pointerup) on purpose: opening a file dialog needs the user-activation a
+      // click carries; the hidden input's programmatic .click() then inherits it.
+      imp.addEventListener('click', function (e) { e.stopPropagation(); impFile.click(); });
+      impFile.addEventListener('change', function () {
+        if (impFile.files && impFile.files[0]) tmImportForeign(impFile.files[0]);
+        impFile.value = '';
+      });
+    }
+    var em = document.getElementById('tm-p6-export-msp');
+    if (em) em.addEventListener('pointerup', function (e) { e.stopPropagation(); tmExportMSProject(); });
+    var ep = document.getElementById('tm-p6-export-pmxml');
+    if (ep) ep.addEventListener('pointerup', function (e) { e.stopPropagation(); tmExportPMXML(); });
+    var ex = document.getElementById('tm-p6-export-xer');
+    if (ex) ex.addEventListener('pointerup', function (e) { e.stopPropagation(); tmExportXER(); });
+    var ed = document.getElementById('tm-p6-diff');
+    if (ed) ed.addEventListener('pointerup', function (e) { e.stopPropagation(); tmDiffVsModel(); });
+  }
+
+  // Status routing: the section's own output line (persistent, multi-result) + the drawer tip
+  // (transient, same say() every other TM action uses).
+  function _tmP6Say(msg) {
+    var out = document.getElementById('tm-p6-out');
+    if (out) out.textContent = msg;
+    _tmSay(msg);
+  }
+
+  // UTC day arithmetic — matches the engine's _addDays; ported verbatim from the Editor tab.
+  function _p6DaysBetween(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+
+  function _tmP6BaseName(app) {
+    var u = String((app && (app._dbPersistUrl || app.DB_URL)) || 'schedule');
+    return u.split('?')[0].split('/').pop().replace(/\.[a-z0-9]+$/i, '') || 'schedule';
+  }
+
+  function _tmP6Download(content, mime, filename) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+
+  // Refresh the cached index first so an export right after an import targets the ADOPTED schedule,
+  // not the last one the drawer indexed (buildTaskIndex re-probes activeSchedule; positive-cached).
+  function _tmP6SchedId() {
+    try { buildTaskIndex(); } catch (e) {}
+    return (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
+  }
+
+  // §X5 port — import a Primavera P6 (.xer / PMXML .xml) or MS Project (MSPDI) programme into the
+  // TM's own db. Adopt via ForeignSchedule, then §TM-REFOLD: an import IS an external schedule
+  // edit, so it takes the exact rebuild path main.js's bim_4d consumer already uses (stale gantt
+  // cache + kernel_ops places invalidated, re-activate re-reads the adopted tasks). task_elements
+  // stays empty unless auto-bind resolves tokens — binding is a separate, reviewable craft.
+  function tmImportForeign(file) {
+    if (_tmEditLocked('tmImportForeign')) { _tmP6Say('Recording in progress — import refused'); return; }   // §TM_BAKE_LOCK (§S69)
+    var app = A();
+    var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
+    if (!FSx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
+    if (!app || !app.db) { _tmP6Say('No model open yet'); return; }
+    var rdr = new FileReader();
+    rdr.onload = function () {
+      try {
+        var txt = String(rdr.result);
+        var det = FSx.parseForeign(txt, file.name);   // sniff P6-XER / P6-XML(PMXML) / MS Project(MSPDI)
+        var data = FSx.toScheduleData(det.parsed);
+        FSx.adoptIntoDb(app.db, data);
+        var schedId = data.schedules[0].id;
+        // §B3 — auto-bind by convention (opt-in, reviewable): resolve any @disc:class tokens the
+        // file carried and report the pre-bound counts — a deterministic SUGGESTION, never silent.
+        var tokened = data.tasks.filter(function (t) { return t.bindSelector; }).length;
+        var ab = document.getElementById('tm-p6-autobind'); var bindMsg = '';
+        if (tokened && (!ab || ab.checked) && FSx.autoBind) {
+          var r = FSx.autoBind(app.db, schedId);
+          bindMsg = ' Pre-bound ' + r.bound + ' elements across ' + r.perActivity.length +
+            ' activities by convention' +
+            (r.unresolved.length ? ' (' + r.unresolved.length + ' selector(s) matched nothing — review)' : '') + '.';
+          console.log('§TM_AUTOBIND schedule=' + schedId + ' bound=' + r.bound +
+            ' activities=' + r.perActivity.length + ' unresolved=' + r.unresolved.length);
+        } else if (tokened) {
+          bindMsg = ' (' + tokened + ' activities carry a bind token — tick auto-bind to resolve.)';
+        }
+        invalidateGanttModel();
+        _tmAnnotateCpm(schedId);        // §S68 — the Editor tab's ▶ CPM, automatic here
+        _tmPersistEdit('import_p6');    // §S70 — an imported programme is a real edit, save it
+        refoldSchedule();               // §TM-REFOLD — rebuild the 4D from the LIVE tasks table
+        _tmP6Say('Imported ' + det.format + ' "' + file.name + '" — ' + data._meta.summaryCount +
+          ' WBS / ' + data._meta.leafCount + ' activities / ' + data.taskSequences.length + ' links.' + bindMsg);
+        console.log('§TM_IMPORT_P6 file=' + file.name + ' format=' + det.format +
+          ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount +
+          ' activities=' + data._meta.leafCount + ' tokened=' + tokened);
+      } catch (e) { _tmP6Say('Import failed: ' + e.message); console.error('§TM_IMPORT_P6 ERROR', e); }
+    };
+    rdr.readAsText(file);
+  }
+
+  // §X6 port — export to MS Project XML (MSPDI). Schema/units verified AGAINST foreign_schedule.js
+  // parseMSPDI (not invented): OutlineLevel-encoded hierarchy, Duration='PT{hours}H0M0S', LinkLag in
+  // TENTHS OF A MINUTE, PredecessorLink/Type 0=FF/1=FS/2=SF/3=SS, 8h/day calendar (MinutesPerDay=480).
+  function tmExportMSProject() {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    var schedId = _tmP6SchedId();
+    var tree = SA.wbsTree(app.db, schedId);
+    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
+    var predByTask = {};
+    deps.forEach(function (d) { (predByTask[d.succId] = predByTask[d.succId] || []).push(d); });
+
+    var HPD = 8, MPD = HPD * 60;
+    var TYPE_CODE = { FS: 1, SS: 3, FF: 0, SF: 2 };
+    // split/join for the quote (not a /"/g regex literal): witness_tm_silent_refusal_tips.js's
+    // brace scanner deliberately aborts on any regex literal containing a quote or brace.
+    function xmlEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').split('"').join('&quot;'); }
+    function durTag(start, finish) {
+      if (!start || !finish) return 'PT0H0M0S';
+      var days = Math.max(1, _p6DaysBetween(start, finish));
+      return 'PT' + (days * HPD) + 'H0M0S';
+    }
+
+    var uid = {}, seq = 1, rows = [];
+    (function walk(nodes, level) {
+      nodes.forEach(function (n) {
+        uid[n.id] = seq++;
+        rows.push({ n: n, level: level });
+        if (n.children && n.children.length) walk(n.children, level + 1);
+      });
+    })(tree, 1);
+
+    var name = _tmP6BaseName(app);
+    var xml = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+      '<Project xmlns="http://schemas.microsoft.com/project">',
+      '<Name>' + xmlEsc(name) + '</Name>',
+      '<MinutesPerDay>' + MPD + '</MinutesPerDay>',
+      '<Tasks>'];
+    rows.forEach(function (r) {
+      var n = r.n, u = uid[n.id];
+      var links = predByTask[n.id] || [];
+      xml.push('<Task>' +
+        '<UID>' + u + '</UID><ID>' + u + '</ID>' +
+        '<Name>' + xmlEsc(n.name) + '</Name>' +
+        '<OutlineLevel>' + r.level + '</OutlineLevel>' +
+        '<Summary>' + (n.isSummary ? 1 : 0) + '</Summary>' +
+        (n.start ? '<Start>' + n.start + 'T08:00:00</Start>' : '') +
+        (n.finish ? '<Finish>' + n.finish + 'T17:00:00</Finish>' : '') +
+        '<Duration>' + durTag(n.start, n.finish) + '</Duration>' +
+        (n.critical ? '<Critical>1</Critical>' : '') +
+        links.map(function (l) {
+          var lagTenths = Math.round((l.lag || 0) * HPD * 60 * 10);
+          return '<PredecessorLink><PredecessorUID>' + uid[l.predId] + '</PredecessorUID>' +
+            '<Type>' + (TYPE_CODE[l.type] != null ? TYPE_CODE[l.type] : 1) + '</Type>' +
+            '<LinkLag>' + lagTenths + '</LinkLag></PredecessorLink>';
+        }).join('') +
+        '</Task>');
+    });
+    xml.push('</Tasks></Project>');
+
+    var fname = name + '_schedule.xml';
+    _tmP6Download(xml.join(''), 'application/xml', fname);
+    _tmP6Say('Exported ' + rows.length + ' tasks / ' + deps.length + ' links to MS Project XML (' + fname + ').');
+    console.log('§TM_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + fname);
+  }
+
+  // §X7 port — Primavera PMXML / XER writers. SAME (tree, deps) input tmExportMSProject reads —
+  // ForeignSchedule.toPMXML/toXER are pure serializers (W-XER-ROUNDTRIP/W-PMXML-ROUNDTRIP prove
+  // mismatch=0 re-parsing the writer's own output with our reader).
+  function _tmExportP6(kind, writeFn, ext, mime, label) {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
+    if (!FSx || !FSx[writeFn]) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
+    var schedId = _tmP6SchedId();
+    var tree = SA.wbsTree(app.db, schedId);
+    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
+    var name = _tmP6BaseName(app);
+    var out = FSx[writeFn](tree, deps, { hpd: 8, projectId: schedId, projectName: name });
+
+    var fname = name + '_schedule.' + ext;
+    _tmP6Download(out, mime, fname);
+    var leafCount = 0; (function walk(ns) { (ns || []).forEach(function (n) { if (!n.isSummary) leafCount++; walk(n.children); }); })(tree);
+    _tmP6Say('Exported ' + leafCount + ' tasks / ' + deps.length + ' links to ' + label + ' (' + fname +
+      '). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, ' +
+      'baselines) are not carried — P6 itself drops most of these on cross-DB import.');
+    console.log('§TM_EXPORT_' + kind + ' tasks=' + leafCount + ' links=' + deps.length + ' file=' + fname);
+  }
+  function tmExportPMXML() { _tmExportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
+  function tmExportXER() { _tmExportP6('XER', 'toXER', 'xer', 'text/plain', 'Primavera XER'); }
+
+  // §4D_SCHEDULE_DIFF port — grade an IMPORTED P6/MSP schedule's per-phase durations against OUR
+  // own real-quantity + labor-rate estimate for THIS building. Only meaningful on a captured
+  // (imported) schedule — diffing our own generated estimate against itself is a no-op. The
+  // estimate is written to the throwaway SCH_DIFF_SHADOW schedule (non-destructive,
+  // rebuild-on-every-call — schedule_diff.js's own convention).
+  function tmDiffVsModel() {
+    var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    var DFx = (typeof window !== 'undefined') && window.ScheduleDiff;
+    if (!DFx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
+    if (!app || !app.db || !SA || !SA.activeSchedule) { _tmP6Say('No schedule loaded'); return; }
+    var act = SA.activeSchedule(app.db);
+    if (!act || !act.captured) {
+      _tmP6Say('Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.');
+      return;
+    }
+    _tmP6Say('Computing schedule diff…');
+    setTimeout(function () {
+      var res = DFx.computeScheduleDiff(app.db, null, { importedScheduleId: act.id, start: '2026-01-01' });
+      if (res.error) { _tmP6Say('Diff failed: ' + res.error); return; }
+      var lines = res.phases.map(function (r) {
+        var icon = r.flag === 'optimistic' ? '⚡' : r.flag === 'slow' ? '🐢' : '✓';
+        return icon + ' ' + r.phase + ': theirs ' + r.theirDays + 'd vs ours ' + r.ourDays + 'd (' +
+          (r.deltaPct > 0 ? '+' : '') + r.deltaPct + '%) — ' + r.flagMsg;
+      });
+      if (res.unmatchedActivities.length) lines.push(res.unmatchedActivities.length +
+        ' activity(ies) unmatched — see console §4D_DIFF_UNMATCHED');
+      var out = document.getElementById('tm-p6-out');
+      if (out) out.textContent = lines.join('   ');
+      _tmSay('4D Schedule Diff: ' + res.summary.matchedPhases + '/' + res.summary.ourPhases +
+        ' phases compared, ' + res.summary.matchedActivities + '/' + res.summary.theirActivities +
+        ' activities matched.');
+      console.log('§TM_DIFF schedule=' + act.id + ' matchedPhases=' + res.summary.matchedPhases +
+        ' matchedActivities=' + res.summary.matchedActivities + ' unmatched=' + res.summary.unmatchedActivities);
+    }, 30);
   }
 
   function drawGanttMini() {

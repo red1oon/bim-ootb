@@ -943,8 +943,9 @@
   }
 
   // ── §SE-1 — WBS outline + dependency CRUD (the MSP-grade Gantt arc, step 1+2) ──────────────
-  // Pure, DOM-free reads/writes over the IFC-native tables. The schedule editor's NEW-TAB surface
-  // (schedule_editor_ui.js) renders these; the engine stays node-testable (W-SCHED-EDIT). Writes go
+  // Pure, DOM-free reads/writes over the IFC-native tables. Rendered by the TM panel's Gantt
+  // drawer + P6/MSP section (time_machine.js — the old Editor-tab surface was folded in,
+  // §TM_P6_FOLD 2026-08-24); the engine stays node-testable (W-SCHED-EDIT). Writes go
   // STRAIGHT to task_sequences — the IFC-native dependency truth — exactly as assignElement writes
   // task_elements (kernel_ops signing still deferred; §SE-D signed broadcast is a later slice).
 
@@ -1783,8 +1784,9 @@
   // '/buildings/X.db' and 'buildings/X.db?v=2' both fold to 'buildings/X.db'), while every persist path
   // wrote under the RAW url. cachedFetch treats the raw url as the LEGACY slot and only reads it when
   // the canonical key MISSES — so on any profile that has ever loaded the building normally, every
-  // persisted edit was written somewhere nothing reads. That silently broke schedule_editor_ui.js's
-  // §SE-6 ("edits vanish on tab close") and kernel_ops.js's "survive refresh" too, not just this path.
+  // persisted edit was written somewhere nothing reads. That silently broke the old Editor tab's
+  // §SE-6 ("edits vanish on tab close" — schedule_editor_ui.js, since folded into the TM panel,
+  // §TM_P6_FOLD) and kernel_ops.js's "survive refresh" too, not just this path.
   function _cacheKeyFor(url) {
     var DR = (typeof window !== 'undefined') && window.DbResolve;
     var A = (typeof window !== 'undefined') && (window.APP || window.A);
