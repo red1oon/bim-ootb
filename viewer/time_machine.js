@@ -8269,7 +8269,11 @@
   }
 
   var _s4ActT0 = 0;   // §S4_ACTIVATION_TIMING — shared with _finishActivate below (measure-first, additive only)
-  function activate() {
+  // §CPE_BUILDUP_ACTIVATE_POPS_PANEL (2026-08-25, bim-compiler prompts/CINEMA_PATH_EDITOR.md):
+  // silent=true loads the schedule DATA only, never touches the panel DOM — for tmActivateForBake,
+  // per G-CPE-SOLE-OWNER ("only a real Play opens Time Machine"). Every other caller passes
+  // nothing, so silent is falsy and behavior is byte-identical to before this flag existed.
+  function activate(silent) {
     if (_active) return;
     _s4ActT0 = performance.now();
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
@@ -8304,24 +8308,27 @@
         if (app.buildingsRendered && app.buildingsRendered.size > 0 && !app.streaming) {
           clearInterval(_reWait);
           console.log('§TM_UNMERGE done bld=' + (bld || '?') + ' ms=' + (performance.now() - _umT0).toFixed(1));
-          activate();
+          activate(silent);
         }
       }, 500);
       return;
     }
-    setToolbarHighlight(true);
-    _panel.style.display = 'flex';
-    var st = document.getElementById('tm-status');
-    if (st) st.textContent = 'Loading timeline...';
+    var st = null;
+    if (!silent) {
+      setToolbarHighlight(true);
+      _panel.style.display = 'flex';
+      st = document.getElementById('tm-status');
+      if (st) st.textContent = 'Loading timeline...';
+    }
 
     // §S260c: Try IDB cache first, then kernel_ops table, then full recompute
-    _activateAsync(st).then(function(ok) {
-      if (!ok) { setToolbarHighlight(false); _panel.style.display = 'none'; return; }
+    _activateAsync(st, silent).then(function(ok) {
+      if (!ok && !silent) { setToolbarHighlight(false); _panel.style.display = 'none'; return; }
     });
     return; // async continuation below
   }
 
-  function _activateAsync(st) {
+  function _activateAsync(st, silent) {
     return new Promise(function(resolve) {
     var app = A();
 
@@ -8372,7 +8379,7 @@
         _ops = loadOps(); _ganttDirty = true;
         if (st) st.textContent = '';
         viewerStatus('Time Machine: ' + _ops.length + ' elements (cached)');
-        _finishActivate(app);
+        _finishActivate(app, silent);
         resolve(true);
         return;
       }
@@ -8434,20 +8441,20 @@
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
       }
 
-      _finishActivate(app);
+      _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
-      if (_ops.length) { _finishActivate(app); resolve(true); }
+      if (_ops.length) { _finishActivate(app, silent); resolve(true); }
       else resolve(false);
     });
     });
   }
 
-  function _finishActivate(app) {
+  function _finishActivate(app, silent) {
     _active = true;
     app._tmOn = true;  // exposed for pill isActive highlight (panels.js 'tm' entry)
     // §TM_GI_AUTO RETIRED (2026-07-18, user: "its up to user to turn Shadow, G and audio"):
@@ -8496,6 +8503,18 @@
     console.log('§MOBILE_TM_TOGGLE method=setVisibleAt|setMatrixAt mobile=' + !!app._isMobile + ' dlod=' + !!app._useDlodPath);
     _anchorDay = _days.length ? _days[_days.length - 1] : null;
     _anchorHr = 15;
+    // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: everything below this line is panel DOM/canvas work — the
+    // bake path (silent=true) needs only _ops/_projectStart/_projectEnd, already populated above by
+    // computeDays(). Skipping it here means Alt+C's bake never shows, draws into, or fetches for a
+    // TM panel the user never asked to see; cinema_maxq drives the real per-frame render itself via
+    // tmSetCursor()→renderAtTime(), so the initial renderAtTime(_projectEnd) below would be thrown
+    // away by that first frame anyway.
+    if (silent) {
+      _s4faMark('silentSkipPanel');
+      console.log('§TIME_MACHINE ON (silent, bake-owned) — ' + _ops.length + ' ops, ' + _days.length +
+        ' days, project: ' + new Date(_projectStart).toLocaleDateString() + ' → ' + new Date(_projectEnd).toLocaleDateString());
+      return;
+    }
     _panel.style.display = 'flex';
     switchMode('DAY');
     renderAtTime(_projectEnd); // §S260c: initial render so Gantt + status populate immediately
@@ -8855,10 +8874,18 @@
   // waits for the condition it always meant. A real timeline always has span > 0 (`_projectStart =
   // _ops[0].start_ts - 1`, `_projectEnd` = max end_ts), so this cannot reject a usable state.
   function _bakeTimelineReady() { return !!_ops.length && _projectEnd > _projectStart; }
+  // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: true only while THIS bake is the reason TM is _active — a bake
+  // that started while a real user Play/TM session was already open must never turn that off underneath
+  // them. window.tmDeactivateIfBakeOwned() (below) is the paired cleanup cinema_maxq calls on every
+  // bake exit path (normal end, cancel, throw) — same contract as tmRestoreDerivedOrder/_ghostGroundRestore.
+  var _bakeOwnsActivation = false;
   window.tmActivateForBake = function() {
     return new Promise(function(resolve) {
       if (_active && _bakeTimelineReady()) return resolve(true);
-      if (!_active) { try { activate(); } catch (e) { console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); } }
+      if (!_active) {
+        _bakeOwnsActivation = true;
+        try { activate(true); } catch (e) { _bakeOwnsActivation = false; console.warn('§MAXQ_TIME_ABORT reason=activate ' + e.message); return resolve(false); }
+      }
       var n = 0, iv = setInterval(function() {
         if (_bakeTimelineReady() || ++n > 60) {
           clearInterval(iv);
@@ -8870,6 +8897,13 @@
         }
       }, 500);
     });
+  };
+  // Paired with tmActivateForBake — call once on every bake exit path (normal end, cancel, throw).
+  // No-op unless THIS bake was the one that silently turned TM on; a bake that reused an
+  // already-open real TM session leaves it exactly as the user had it.
+  window.tmDeactivateIfBakeOwned = function() {
+    if (_bakeOwnsActivation && _active) deactivate();
+    _bakeOwnsActivation = false;
   };
 
   // ── §TM_WARM (2026-08-12, bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §3c —

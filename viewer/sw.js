@@ -8,7 +8,17 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1082';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1083';   // bump on each deploy; per-change detail is the git commit message.
+// v1083 (2026-08-25) §CPE_BUILDUP_ACTIVATE_POPS_PANEL (CINEMA_PATH_EDITOR.md): Alt+C's bake
+// (tmActivateForBake) no longer calls the real, panel-popping activate() — a new `silent` param
+// threaded through activate()->_activateAsync()->_finishActivate() loads the same schedule data
+// (_ops/_projectStart/_projectEnd, xray cache, computeDays, saveVisibility) without ever touching
+// the Time Machine panel DOM/canvas (no setToolbarHighlight/_panel.display/switchMode/renderAtTime/
+// updateStatus/drawGanttMini/drawDashboard/_loadTwin fetch). A real user Play is unaffected (silent
+// is falsy for every other caller). New window.tmDeactivateIfBakeOwned() (cinema_maxq.js, called on
+// every bake exit path) turns TM back off ONLY if the bake itself silently turned it on — a bake
+// that reuses an already-open real TM session leaves it untouched. Witness:
+// witness_cpe_buildup_activate_silent.js.
 // v1078 (2026-08-23) SCRIPT_LENGTH_REFACTOR_SEAMS.md §S59 candidate 2 — navigate_find.js's ERP-push
 // block extracted to NEW find_erp_push.js (loaded by main.js's lazy navigate list BEFORE
 // navigate_find.js?v=58). NOT precached ON PURPOSE: none of the lazy navigate_* sub-modules are
