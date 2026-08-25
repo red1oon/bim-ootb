@@ -4801,12 +4801,40 @@
       console.log('§S51_CELL_STAMP coverage=' + _chit + '/' + (_chit + _cmiss) +
         ' stamping=' + (_cellMap ? 'YES — bars group by cell' : 'NO — coverage below 99.9%, bars stay storey|phase this generation'));
     }
+    // §TM_ELEMENT_WINDOW_BIND (2026-08-25, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md "Two clocks"
+    // recurring bug class) — `_disp[el.guid]` comes from CpmSchedule.run(), a pure relative CPM
+    // solver with NO epoch concept anywhere in cpm_schedule.js (verified by reading the whole file —
+    // zero references to baseMs/anchor/opts.start). Its output can be, and was measured live to be,
+    // near-1970. `_cap.win[taskId]` is the one thing in this whole function already proven real —
+    // Date.parse() on the REAL `tasks.schedule_start/finish` this building's own template-driven
+    // generator wrote (materializeDefault/materializeZones + SEQUENCE_RULES, verified on 5 real
+    // buildings, WITNESS_INTERFACE_FRAMEWORK.md §3/§6). This does not trust the solver's epoch at
+    // all — it clamps every element's placement into its OWN task's already-correct real window, so
+    // no matter what CpmSchedule.run returns (today, or after any future change to it), the value
+    // actually written to kernel_ops.timestamp can never leave real calendar time. Elements with no
+    // resolvable task (guid not in task_elements, or that task undated) keep prior behavior
+    // unchanged — nothing to bind to, not this fix's problem to invent.
+    function _tmClampToTaskWindow(guid, s) {
+      if (!_cap) return s;
+      var taskId = _cap.guidTask[guid];
+      var win = (taskId != null) ? _cap.win[taskId] : null;
+      if (!win) return s;
+      var st = Math.min(Math.max(s.start, win.s), win.e);
+      var en = Math.min(Math.max(s.end, win.s), win.e);
+      if (en <= st) { st = Math.max(win.s, win.e - 60000); en = win.e; } // degenerate-window safety, same shape as §ZONE_WINDOW_DAGWINS_CLIP
+      if (st === s.start && en === s.end) return s;
+      return { start: st, end: en, clamped: true };
+    }
     // §S280h: ONE transaction + prepared statement (batched INSERTs — avoids the multi-second freeze).
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
+    var _windowClamped = 0, _windowUncovered = 0;
     elements.forEach(function(el) {
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
+      var bound = _tmClampToTaskWindow(el.guid, s);
+      if (bound.clamped) _windowClamped++; else if (!_cap || _cap.guidTask[el.guid] == null) _windowUncovered++;
+      s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
            resource:el.resource, _end_ts:s.end, _genVersion:_GANTT_CACHE_VERSION,
@@ -4816,6 +4844,8 @@
       if (s.end > _projEnd) _projEnd = s.end;
     });
     _gStmt.free();
+    console.log('§TM_ELEMENT_WINDOW_BIND total=' + elements.length + ' clamped=' + _windowClamped +
+      ' uncovered=' + _windowUncovered + ' (uncovered = no resolvable real task window, prior behavior kept)');
     _s4Mark('insertLoop');
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
