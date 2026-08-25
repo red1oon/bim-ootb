@@ -187,7 +187,15 @@
         // (schedule_gate.js:827-828 adds ONE edge on the OR of all three). This module has to tag a
         // kind, so support is checked first as the more fundamental of the two relations.
         if (G.edgeBelow(S, E) || (!isPoolE && G.edgeContained(S, E))) {
-          if (addEdge(S.guid, E.guid, 'support')) countSupport++;
+          // BEARING vs BELOW are split (2026-08-25, integration finding — bim-compiler
+          // prompts/4D_BAR_MODEL.md §9.2). geoGate's `below` is the PLACEMENT relation: anything
+          // overlapping underneath, contact or not. The midair judge (witness_midair_zero.js
+          // census()) tests BEARING CONTACT — `S.top_z >= E.base_z - GAP`. They are not the same
+          // set, and the scheduler must gate on the relation the judge measures or the two can
+          // never agree: with both flattened into one 'support' kind, the any-of min() released an
+          // element on a distant slab far below it while its actual bearing neighbour was still
+          // unbuilt. MEASURED flattened: HHS midair 609. Split, the any-of set is bearing-first.
+          if (addEdge(S.guid, E.guid, G.edgeBearing(S, E) ? 'bearing' : 'support')) countSupport++;
         } else if (isCarrierEdge) {
           if (addEdge(S.guid, E.guid, 'carrier')) countCarrier++;
         }
