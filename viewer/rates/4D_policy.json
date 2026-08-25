@@ -1,0 +1,16 @@
+{
+  "_what": "The ONLY authored input to 4D scheduling. Everything else is EXTRACTED — phase order from sequence_rules.json's min sequence per phase, trades from the union of that phase's classes' resources, level from ScheduleGate.deriveBandRanks, work from ScheduleAuthor._installSecs, crews from LABOR_RATES.max_crews, shift from rates.js SHIFT_HOURS. Spec: bim-compiler prompts/4D_BAR_MODEL.md §4.",
+  "_replaces": "4D_template.json v1.2.0, which was 123 lines and 146 keys — 52 of them prose, and its data keys were copies: phases[].sequence and phases[].trades duplicated sequence_rules.json, its ten dependency edges restated the phase list order plus one flag, and `scope` and `replicate_per_level` were the same fact twice with an invariant written to check they agreed instead of deleting one. Audited 2026-08-25 on the user's observation that it was 'not even a recipe yet, it is just a mould — an extraction'.",
+
+  "days_per_week": 7,
+  "_days_per_week_why": "Matches what the engine does today (schedule_gate.js applies no week calendar; §CREW_DAY logs '24/7 calendar unchanged'). Stated so a 5-day week is an edit, not a rewrite. Hours per shift is NOT here — rates.js SHIFT_HOURS already owns it (user ruling 2026-08-13, 24h default).",
+
+  "phase_link": "serial",
+  "_phase_link_why": "USER RULING 2026-08-25: 'we make phases packed but sequential? User can then just drag them overlap if they want.' FS+0 between consecutive phases on a level. An overlap is a human's drag on the Gantt, never a solver artifact. Priced before adopting: 49d vs the overlapping engine's 46.9d on HHS_Office_Federated, +4%.",
+
+  "level_link": "self",
+  "_level_link_why": "§4D_BAND_MONOTONIC — a trade may not run ahead of ITSELF on the floor below. Different trades still overlap across floors, which is what a trade train is. Measured need: with the ladder on superstructure alone, HHS PLUMBER peaks at 3.67 crews against a cap of 2 (1.84x); with it on every level phase, zero breaches.",
+
+  "building_scope": ["Substructure"],
+  "_building_scope_why": "Phases that occur ONCE for the whole building instead of repeating per storey. Their TaskBar hangs off the ProjectBar, never off a LevelBar — hanging it under one level made its bar span every level and overlap that level's own tasks (measured as 2/34 false phase-stacking pairs on Duplex in the 2026-08-25 prototype). Their elements are collected from EVERY level: dropping the ones above the lowest silently lost an element on Hospital, 63,181 of 63,182, invisible in every other number."
+}
