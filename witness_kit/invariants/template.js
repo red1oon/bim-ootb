@@ -19,6 +19,24 @@
 // real function's own behaviour, and the point of the gate is that NOTHING should reach it.
 const FALLBACK_SECS = 120;
 
+// NON-PHYSICAL classes, excluded from scheduling before a rule is ever consulted. NOT a judgement
+// call here — this list mirrors the actual SQL predicate the element builders use, verbatim:
+//   schedule_author.js:307   WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'
+//   time_machine.js:3673, :4476, :9165  — the same predicate, all three element-query sites.
+// A rule for one of these can never reach _installSecs, so holding it to the duration gates would be
+// a FALSE POSITIVE. It was one, on this witness's first run: IfcSpace ships resource:null and got
+// reported as a live zero-minute source when it is unreachable dead config (§S65 correction).
+// IfcOpeningElement is listed for completeness — it currently has a real MASON rule and would pass
+// anyway; the point is that the exclusion set is read from the product, not curated by hand here.
+const NON_PHYSICAL = ['IfcOpeningElement', 'IfcSpace'];
+
+/**
+ * Is this row's class actually schedulable — i.e. can it ever reach _installSecs at runtime?
+ * @param {{cls:string}} row
+ * @returns {boolean}
+ */
+const isSchedulable = row => NON_PHYSICAL.indexOf(row.cls) < 0;
+
 /**
  * A row lands on the silent 120s floor — i.e. it will draw a zero-width bar.
  * @param {{installSecs:number}} row
@@ -32,7 +50,7 @@ const isZeroMinute = row => row.installSecs === FALLBACK_SECS;
  * @param {object[]} rows
  * @returns {boolean}
  */
-const noZeroMinuteRows = rows => rows.every(r => !isZeroMinute(r));
+const noZeroMinuteRows = rows => rows.filter(isSchedulable).every(r => !isZeroMinute(r));
 
 /**
  * G-TPL-RES — every resource a row names must exist in the labour table.
@@ -42,7 +60,7 @@ const noZeroMinuteRows = rows => rows.every(r => !isZeroMinute(r));
  * @returns {boolean}
  */
 const everyResourceResolves = (rows, laborRates) =>
-  rows.every(r => r.resource != null && !!laborRates[r.resource]);
+  rows.filter(isSchedulable).every(r => r.resource != null && !!laborRates[r.resource]);
 
 /**
  * G-TPL-BANDS — phase sequence bands must not interleave.
@@ -89,6 +107,6 @@ function phaseBandReport(rows) {
 }
 
 module.exports = {
-  FALLBACK_SECS, isZeroMinute, noZeroMinuteRows, everyResourceResolves,
-  phaseBandsDisjoint, phaseBandReport
+  FALLBACK_SECS, NON_PHYSICAL, isSchedulable, isZeroMinute, noZeroMinuteRows,
+  everyResourceResolves, phaseBandsDisjoint, phaseBandReport
 };

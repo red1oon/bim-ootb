@@ -84,6 +84,9 @@ const KNOWN_RED = {
   //   witness_zone_display_authoring.js — W-ZDA-4a re-locked to per-building baselines in
   //     baselines/midair.json (Duplex 22->37, HHS 894->1839). The inequality it replaced was
   //     permanently false, i.e. it gated nothing.
+  // DRAINED 2026-08-25 (§S65 template lock PR): witness_sequence_template_lock.js arrived red on 3
+  //   of 7 gates and is green in this same PR — the template itself was fixed, not the witness
+  //   relaxed. 7/65 rows were on _installSecs' silent 120s floor; now 0/63 schedulable rows.
   // DRAINED 2026-08-24 (§TM_P6_FOLD PR):
   //   witness_gantt_lock_integrity.js — 20/20 green, verified twice AND against pristine
   //     origin/main (so an earlier merge fixed G-LI-2e, not this PR); entry was stale.
@@ -102,22 +105,6 @@ const KNOWN_RED = {
                                               '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
                                               'per §S66 — suite never ran it, so this went undetected). Cause: 4D_SCHEDULE_PERFECTION.md ' +
                                               '"REGRESSION FOUND" section.',
-  'witness_sequence_template_lock.js':       'C — RED BY DESIGN ON ARRIVAL, 3 of 7 checks. This witness is NEW (2026-08-25) ' +
-                                              'and it is the FIRST check of any kind on the preset 4D template itself; it ' +
-                                              'arrives red because the template is genuinely wrong, not because the witness ' +
-                                              'is unfinished. no-zero-minute-rows + every-resource-resolves: 7/65 rows land ' +
-                                              'on ScheduleAuthor._installSecs\' silent 120s floor (IfcSpace, ' +
-                                              'IfcBuildingElementProxy and SEQUENCE_DEFAULT all ship resource:null; the ' +
-                                              'glazed_curtainwall_facade override moves IfcPlate/IfcMember to CARPENTER and ' +
-                                              'furniture_generic_bucket moves IfcBuildingElementPart to FINISHER, neither of ' +
-                                              'which carries productivity for those classes) — a 120s element is a ' +
-                                              'zero-width bar that stacks with every other one, the user-reported "zero ' +
-                                              'minute stacking". phase-bands-disjoint: Architecture spans seq 5-8 while MEP ' +
-                                              'Rough-in sits at 7, so IfcRoof (Architecture, seq 8) sequences AFTER all MEP ' +
-                                              'rough-in. TWO of the six defects are BLOCKED on a fact that exists nowhere in ' +
-                                              'the rate table (what trade + daily productivity a generic/unclassified ' +
-                                              'element carries) — filling it in would be invention, so it is a user ' +
-                                              'question, not a code task. Cause + full table: 4D_SCHEDULE_PERFECTION.md §S65.',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',

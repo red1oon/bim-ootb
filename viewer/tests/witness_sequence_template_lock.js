@@ -36,7 +36,8 @@ const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 const { TemplateRuleRow } = require('../../witness_kit/schemas/template');
 const {
-  noZeroMinuteRows, everyResourceResolves, phaseBandsDisjoint, phaseBandReport, FALLBACK_SECS
+  noZeroMinuteRows, everyResourceResolves, phaseBandsDisjoint, phaseBandReport, FALLBACK_SECS,
+  isSchedulable, NON_PHYSICAL
 } = require('../../witness_kit/invariants/template');
 
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
@@ -106,11 +107,14 @@ function buildRows() {
 const rows = buildRows();
 
 // §-log proof lines: the shape of what was checked, readable without re-running.
-const zero = rows.filter(r => r.installSecs === FALLBACK_SECS);
+const zero = rows.filter(isSchedulable).filter(r => r.installSecs === FALLBACK_SECS);
+const skipped = rows.filter(r => !isSchedulable(r));
 console.log('§TPL_SOURCE executed=viewer/rates.js rules=' + Object.keys(T.rules).length +
   ' labor=' + Object.keys(T.labor).length + ' overrides=' + T.overrides.length + ' rows=' + rows.length);
 console.log('§TPL_BANDS ' + phaseBandReport(rows));
-console.log('§TPL_ZERO_MINUTE n=' + zero.length + '/' + rows.length +
+console.log('§TPL_NON_PHYSICAL excluded=' + skipped.length + ' [' + NON_PHYSICAL.join(',') +
+  '] — not schedulable, cannot reach _installSecs (schedule_author.js:307, time_machine.js:3673/4476/9165)');
+console.log('§TPL_ZERO_MINUTE n=' + zero.length + '/' + rows.filter(isSchedulable).length +
   (zero.length ? ' [' + zero.map(r => r.key + '(res=' + r.resource + ')').join(' ') + ']' : ''));
 
 /**
@@ -123,11 +127,21 @@ function mirrorMatchesExecuted() {
   const strip = o => {
     const c = Object.assign({}, o); delete c.reason; return c;
   };
-  if (JSON.stringify(T.rules) !== JSON.stringify(M.SEQUENCE_RULES)) return false;
-  if (JSON.stringify(T.labor) !== JSON.stringify(M.LABOR_RATES)) return false;
-  if (JSON.stringify(T.dflt) !== JSON.stringify(M.SEQUENCE_DEFAULT)) return false;
+  // Canonical (key-sorted) serialisation, NOT plain JSON.stringify. A first cut used stringify
+  // directly and reported drift the moment `default_productivity` was added before `productivity` in
+  // one file and after it in the other — the two tables were identical in every value. Key ORDER in a
+  // config object is not drift, and a gate that fires on it teaches people to ignore it.
+  const canon = v => {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object')
+      return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+    return JSON.stringify(v);
+  };
+  if (canon(T.rules) !== canon(M.SEQUENCE_RULES)) return false;
+  if (canon(T.labor) !== canon(M.LABOR_RATES)) return false;
+  if (canon(T.dflt) !== canon(M.SEQUENCE_DEFAULT)) return false;
   const a = (T.overrides || []).map(strip), b = (M.NAME_OVERRIDES || []).map(strip);
-  return JSON.stringify(a) === JSON.stringify(b);
+  return canon(a) === canon(b);
 }
 
 Witness('sequence_template_lock')
