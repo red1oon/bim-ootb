@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "id": "programme_template",
+    "name": "Core Construction Programme Template",
+    "version": "1.0.0",
+    "what": "THE core Gantt programme every building instance copies from. This is the artifact that did not exist before 2026-08-25: a checked-in, reviewable, witnessed programme SKELETON — phases, per-level activities, and the dependency logic between them — authored once here instead of emerging at runtime from a geometry solve and being discarded on reload.",
+    "not_this_file": "sequence_rules.json is a CLASSIFICATION table (ifc_class -> phase/sequence/trade + labour productivity). It answers 'which phase does this element belong to'. It cannot answer 'what is the programme', and 4D_SCHEDULE_PERFECTION.md line 1751's claim that it IS the template is wrong. The two files are used together: this one is the shape, that one is the lookup.",
+    "instantiation": "A building instance copies this file, replicates every activity marked replicate_per_level once per real storey (bottom-up), drops any activity whose element population is empty for that building, and resolves durations by the duration_rule below. Nothing here is per-building; nothing per-building belongs here.",
+    "provenance": "phases[].id/name/sequence and phases[].trades are EXTRACTED from viewer/rates/sequence_rules.json's own SEQUENCE_RULES (min/max sequence per phase, the union of resources that phase's classes name) — not typed by hand, and they must not drift from it. witness_programme_template.js gates that.",
+    "editable": "Registered like every other project JSON: id = programme_template, file = rates/programme_template.json, storageKey = json_programme_template."
+  },
+
+  "calendar": {
+    "_what": "The working calendar the programme is authored against. Named here because it was previously implicit: rates.js SHIFT_HOURS alone carried it, and nothing stated the week.",
+    "hours_per_shift": 24,
+    "days_per_week": 7,
+    "_hours_per_shift_why": "24 is the STANDING USER RULING recorded at rates.js SHIFT_HOURS (2026-08-13): 'our default, import and JSON setting can import as we align to standard model'. Carried forward verbatim, NOT changed here — this file only makes it visible and editable. A standard-model import sets 8.",
+    "_days_per_week_why": "7 matches what the engine actually does today (schedule_gate.js applies no week calendar; §CREW_DAY logs '24/7 calendar unchanged'). Stated so a 5-day working week becomes an edit rather than a rewrite.",
+    "holidays": []
+  },
+
+  "duration_rule": {
+    "_what": "How an activity's duration is derived. THIS IS THE ANCHOR the chain was missing: before this, a task's length came from however long the geometry placement solve happened to span, which is why one HHS run logged 185.2 crew-days of work content inside a 42-day programme — a 4.4x self-contradiction in a single log.",
+    "basis": "work_content",
+    "formula": "days = ceil( sum(element.installSecs) / (hours_per_shift * 3600 * crews) ), crews = sum of max_crews over the trades the activity's own elements actually use",
+    "min_days": 1,
+    "_installSecs_source": "ScheduleAuthor._installSecs, from sequence_rules.json LABOR_RATES productivity. Same function the engine uses — never a second copy.",
+    "_not_this": "NOT the elapsed span of the placement solve. The solve orders elements; it does not price the work."
+  },
+
+  "phases": [
+    {
+      "id": "substructure", "name": "Substructure", "sequence": 1,
+      "trades": ["CONCRETE_GANG"],
+      "replicate_per_level": false,
+      "_scope": "Ground-bearing work below the frame. Single occurrence per building — it does not repeat per storey.",
+      "_empty_ok": true,
+      "_empty_ok_why": "A federated or partial model legitimately ships no foundations. HHS_Office_Federated is one: its programme logs phases [Superstructure, Architecture, MEP Rough-in, MEP Final, Finishes] with no Substructure at all. Absent must be REPORTED as absent, never silently skipped."
+    },
+    {
+      "id": "superstructure", "name": "Superstructure", "sequence": 2,
+      "trades": ["CONCRETE_GANG", "STEEL_ERECTOR"],
+      "replicate_per_level": true,
+      "_scope": "Frame and floor plates for one level."
+    },
+    {
+      "id": "architecture", "name": "Architecture", "sequence": 5,
+      "trades": ["CARPENTER", "CONCRETE_GANG", "MASON", "ROOFER"],
+      "replicate_per_level": true,
+      "_scope": "Envelope and internal fabric for one level: walls, doors, windows, curtain walling, roof."
+    },
+    {
+      "id": "mep_rough_in", "name": "MEP Rough-in", "sequence": 7,
+      "trades": ["ELECTRICIAN", "HVAC_TECH", "PLUMBER"],
+      "replicate_per_level": true,
+      "_scope": "First-fix services for one level, after that level is weather-tight."
+    },
+    {
+      "id": "mep_final", "name": "MEP Final", "sequence": 9,
+      "trades": ["ELECTRICIAN", "HVAC_TECH", "PLUMBER"],
+      "replicate_per_level": true,
+      "_scope": "Second-fix services and terminals for one level."
+    },
+    {
+      "id": "finishes", "name": "Finishes", "sequence": 10,
+      "trades": ["FINISHER"],
+      "replicate_per_level": true,
+      "_scope": "Coverings, furniture and final finishes for one level."
+    }
+  ],
+
+  "dependencies": {
+    "_what": "Construction LOGIC, authored here, independent of any date. This is the second half of the anchor: today's task_sequences rows are computed FROM the dates they are meant to validate (schedule_author.js: 'succ.start = pred.finish + lag EXACTLY'), so every edge is tight by construction, float is zero everywhere, and CPM reports 17 of 17 tasks critical. An edge that comes from the answer cannot contradict the answer. These do.",
+    "within_level": [
+      { "pred": "substructure",   "succ": "superstructure", "type": "FS", "lag_days": 0, "_why": "Frame bears on the foundations." },
+      { "pred": "superstructure", "succ": "architecture",   "type": "FS", "lag_days": 0, "_why": "Envelope and partitions need the frame and slab of their own level." },
+      { "pred": "architecture",   "succ": "mep_rough_in",   "type": "FS", "lag_days": 0, "_why": "First fix follows weather-tight. This is the same precedence the 2026-08-25 IfcRoof 8->6 ruling encoded at class level; stated here as programme logic rather than a sequence number." },
+      { "pred": "mep_rough_in",   "succ": "mep_final",      "type": "FS", "lag_days": 0, "_why": "Second fix follows first fix." },
+      { "pred": "mep_final",      "succ": "finishes",       "type": "FS", "lag_days": 0, "_why": "Finishes close up completed services." }
+    ],
+    "across_levels": [
+      { "pred": "superstructure", "succ": "superstructure", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "A level's frame cannot start before the level below it is framed. This is the ONLY hard vertical constraint; everything else follows from it plus the within-level chain." }
+    ],
+    "_overlap": "Every lag is 0 and every type is FS in v1.0.0 — a deliberately conservative, strictly serial start. Real programmes overlap trades (SS with lag, FS with negative lead). Those belong here as edits, each with its own _why, so an overlap is a reviewed decision and not an artifact of a solver."
+  }
+}
