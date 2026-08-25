@@ -8879,6 +8879,22 @@
   // them. window.tmDeactivateIfBakeOwned() (below) is the paired cleanup cinema_maxq calls on every
   // bake exit path (normal end, cancel, throw) — same contract as tmRestoreDerivedOrder/_ghostGroundRestore.
   var _bakeOwnsActivation = false;
+  // §CPE_BUILDUP_REQUIRE_TM_FIRST (2026-08-25, bim-compiler prompts/CINEMA_PATH_EDITOR.md — user
+  // ruling "no auto JSON outside TM"): a plain existence check, read-only, no DB writes, never
+  // generates anything. cinema_maxq calls this BEFORE tmActivateForBake so it can refuse with a
+  // clear reason instead of silently falling through activate()'s cold-generate path — the FIRST
+  // schedule for a building must be born from a real Time Machine open (the one place generation is
+  // allowed to run), so the user actually sees the buildup before it gets baked into a movie. Once a
+  // schedule exists (cache OR kernel_ops), every later bake reads it silently — a one-time gate, not
+  // a per-bake nag (user: "it is only 1 time and good practice").
+  window.tmHasExistingSchedule = function() {
+    function hasPlace(ops) { return !!ops && ops.some(function(o) { return o.op_type === 'ELEMENT_PLACE'; }); }
+    if (_active && hasPlace(_ops)) return Promise.resolve(true);
+    return cacheGet('gantt').then(function(cachedOps) {
+      if (hasPlace(cachedOps)) return true;
+      return hasPlace(loadOps());
+    }).catch(function() { return hasPlace(loadOps()); });
+  };
   window.tmActivateForBake = function() {
     return new Promise(function(resolve) {
       if (_active && _bakeTimelineReady()) return resolve(true);

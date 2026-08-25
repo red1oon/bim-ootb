@@ -8,7 +8,16 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1083';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1084';   // bump on each deploy; per-change detail is the git commit message.
+// v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
+// JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
+// window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
+// checks active ops / IDB gantt cache / kernel_ops before cinema_maxq.js ever calls
+// tmActivateForBake(). No schedule yet -> visible status "Open Time Machine first to build the
+// construction schedule — baking without it this time", bake continues as a plain flythrough with
+// no buildup. Once a schedule exists (from either source) every later bake reads it silently, same
+// as before — this is a one-time gate, not a per-bake check. Witness:
+// witness_cpe_buildup_require_tm_first.js.
 // v1083 (2026-08-25) §CPE_BUILDUP_ACTIVATE_POPS_PANEL (CINEMA_PATH_EDITOR.md): Alt+C's bake
 // (tmActivateForBake) no longer calls the real, panel-popping activate() — a new `silent` param
 // threaded through activate()->_activateAsync()->_finishActivate() loads the same schedule data
