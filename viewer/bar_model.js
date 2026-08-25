@@ -219,6 +219,10 @@
       // A dropped phase BRIDGES — prevOnLevel is only advanced by a task that exists.
       if (policy.phase_link === 'serial' && prevOnLevel[lk]) t.needs.push(prevOnLevel[lk]);
       // level_link=self: §4D_BAND_MONOTONIC, a phase waits for itself one level below.
+      // level_link 'self' chains the whole TASK to itself one level below — every trade in it waits
+      // for every trade below. 'trade' enforces §4D_BAND_MONOTONIC at its actual wording instead —
+      // per TRADE, inside the scheduler — so a trade that has finished the level below may start
+      // above while a DIFFERENT trade is still working down there. Same ruling, finer grain.
       if (policy.level_link === 'self' && prevOfPhase[t.phase]) t.needs.push(prevOfPhase[t.phase]);
       prevOnLevel[lk] = t; prevOfPhase[t.phase] = t;
     });
@@ -332,6 +336,10 @@
   // IfcWall holding up a Superstructure IfcMember.
   function schedule(tree, opts) {
     opts = opts || {};
+    // Phase order EXTRACTED from the caller's own phase list — never a second hand-typed order.
+    var phaseRank = {};
+    (opts.phaseOrder || []).forEach(function (p, i) { phaseRank[p] = i; });
+    var byTrade = (opts.levelLink === 'trade');
     var laborRates = opts.laborRates || {};
     var baseMs = opts.baseMs || 0;
     var crews = {}, cycles = [], placed = 0;
@@ -342,9 +350,33 @@
       for (var i = 1; i < slots.length; i++) if (slots[i] < slots[k]) k = i;
       return { at: Math.max(notBefore, slots[k]), commit: function (end) { slots[k] = end; } };
     }
-    function put(b, at) {
+    // §BAND_BY_TRADE — §4D_BAND_MONOTONIC at its own wording: "a trade may not run ahead of ITSELF
+    // on the floor below". The task-level ladder makes EVERY trade in a task wait for EVERY trade in
+    // the task below, which is stricter than the ruling and pays for it in midair (Hospital 228 vs
+    // an unpartitioned 1). This gates the same thing per trade, per storey rank, on the emitted
+    // times — different trades still overlap across floors, which is what a trade train IS.
+    var bandDone = {};                      // trade -> rank -> latest stop committed
+    function bandGateFor(b, rank) {
+      if (byTrade !== true || rank == null || rank < 0) return 0;
+      var m = bandDone[b.trade()];
+      if (!m) return 0;
+      var g = 0;
+      // every rank BELOW this one, not just rank-1: a trade must clear the whole building under it
+      // before running up, which is what "ahead of itself" means on a model with merged/odd storeys.
+      for (var r in m) if (Number(r) < rank && m[r] > g) g = m[r];
+      return g;
+    }
+    function bandCommitFor(b, rank, end) {
+      if (byTrade !== true || rank == null || rank < 0) return;
+      var m = bandDone[b.trade()] || (bandDone[b.trade()] = {});
+      if (!(m[rank] > end)) m[rank] = end;
+    }
+    function put(b, at, rank) {
+      var g = bandGateFor(b, rank);
+      if (g > at) at = g;
       var s = claim(b.trade(), at), dur = Math.round(b.work() * 1000);
       b.place(s.at, dur); s.commit(s.at + dur); placed++;
+      bandCommitFor(b, rank, s.at + dur);
     }
 
     tree.tasks.forEach(function (t) {
@@ -374,8 +406,22 @@
         }
         deg[kb.guid] = d;
       }
-      var byZ = function (a, b) { return (a.e.base_z - b.e.base_z) || (a.e.seq - b.e.seq) ||
-                                          (a.guid < b.guid ? -1 : 1); };
+      // QUEUE PRIORITY. §BAR_PHASE_PRIORITY (2026-08-25).
+      // The physics DAG decides what is READY; this decides which ready element goes first. Making
+      // phase order a PRIORITY rather than a BARRIER is the whole point: a barrier ("all of
+      // Superstructure before any of Architecture") drags elements away from the order gravity
+      // wants and costs midair, which is why partitioning by phase x level measured 228 on Hospital
+      // and 413 on Terminal against a raw 139/226. A priority gives the same story — trades come out
+      // in order wherever the structure allows it — while never releasing an element before the
+      // thing it stands on. Standard RCPSP practice: topological order from the constraints, phase
+      // preference as the priority rule among the ready set.
+      // base_z second, so within one trade the work still runs bottom-up.
+      var byZ = function (a, b) {
+        var pa = phaseRank[a.e.phase], pb = phaseRank[b.e.phase];
+        if (pa == null) pa = 99; if (pb == null) pb = 99;
+        return (pa - pb) || (a.e.base_z - b.e.base_z) || (a.e.seq - b.e.seq) ||
+               (a.guid < b.guid ? -1 : 1);
+      };
       // WAVE-based Kahn, not a re-sort per pop. Sorting the ready list on every single pop is
       // O(n^2 log n) and took Hospital from 82ms to 6,958ms — correct, but 85x. Each WAVE is sorted
       // once (bottom-up within the wave), which is the same output because everything in a wave is
@@ -423,7 +469,7 @@
             if (!sawPlaced) { again.push(b); continue; }
             if (earliest > at) at = earliest;
           }
-          put(b, at);
+          put(b, at, t.rank);
         }
         if (again.length === pending.length) {          // a full round with nothing placeable
           for (var k = 0; k < again.length; k++) {
@@ -462,7 +508,7 @@
               var lb = ord[lz];
               if (lb.stop != null && lb.stop > last) last = lb.stop;
             }
-            put(c, last);                                // placed anyway, but LAST and REPORTED
+            put(c, last, t.rank);                        // placed anyway, but LAST and REPORTED
           }
           break;
         }
