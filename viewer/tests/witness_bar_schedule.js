@@ -33,6 +33,14 @@ const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const BUILDINGS = process.argv.slice(2).length ? process.argv.slice(2)
   : ['Duplex', 'HHS_Office_Federated', 'Hospital', 'Terminal'];
 
+// §MIDAIR_BASELINE — measured 2026-08-26 on this exact model, judged by the sliced census().
+// Shipping engine for comparison: 17 / 147 / 139 / 226. The model beats it on three and loses on
+// Terminal, which prompts/4D_SCHEDULE_PERFECTION.md §S72.2 traces to one line in room_walker.js
+// (a storey row is emitted only where a room was compiled), not to the scheduler.
+const MIDAIR_BASELINE = {
+  Duplex: 12, HHS_Office_Federated: 70, Hospital: 92, Terminal: 336
+};
+
 // ── census(), sliced. Never reimplemented — see the header. ───────────────────────────────────
 function sliceFn(src, name) {
   const i = src.indexOf('function ' + name + '(');
@@ -178,15 +186,26 @@ function bandInversions(els, byGuid, bandRank, levelOf) {
     .invariant('no-zero-duration', INV.noZeroDuration)
     // The two hells, at the POLICY DEFAULT. Locked to the measured fleet baseline, not to 0:
     // a baseline that lies is worse than a number that is honest about where it stands.
+    // MIDAIR — THE PRIMARY HELL, GATED, not merely printed. It was printed-only until 2026-08-26:
+    // Terminal could have gone 336 -> 3,360 with this witness still green. A number in a §-log that
+    // no invariant reads is a number nothing defends.
+    // LOCKED PER-BUILDING BASELINE, the same shape witness_midair_zero.js's own W-MZ-2 uses — not a
+    // gate at 0, because 0 is not where this stands and a baseline that lies is worse than an honest
+    // one. Lower these when the work earns it; never raise one without saying why in the same commit.
+    .invariant('midair-within-locked-baseline', () => per.every(p => p.midair <= MIDAIR_BASELINE[p.bld]))
     .invariant('band-monotonic-holds', () => per.every(p => p.inv <= 20))
     .invariant('phases-do-not-stack-within-a-level', () => per.every(p => p.stack === 0))
+    // Was a two-branch `||` whose first branch passed {} as the rate table — every cap defaulting to
+    // 1, so it always failed and always fell through to the real check. It worked by accident.
     .invariant('crew-caps-honoured', () => per.every(p =>
-      INV.crewBreaches(rows.filter(r => r.building === p.bld), require(path.join(V, 'rates.js')) && {} , 24).length === 0 ||
-      INV.crewBreaches(rows.filter(r => r.building === p.bld), executedRules().LABOR_RATES).length === 0))
+      INV.crewBreaches(rows.filter(r => r.building === p.bld), R.LABOR_RATES).length === 0))
     // THE DIAL is monotone in both directions, on both buildings that have levels to coarsen.
     .invariant('dial-coarser-buys-less-midair', () => dial.every(d => d.coarse.midair <= d.fine.midair))
     .invariant('dial-coarser-costs-band-monotonicity', () => dial.every(d => d.coarse.inv > d.fine.inv))
     // RED CONTROLS — each gate rejects its own defect, in the committed witness.
+    .invariant('redctl:midair gate rejects a building over its baseline',
+      () => !(([{ bld: 'Duplex', midair: MIDAIR_BASELINE.Duplex + 1 }])
+              .every(p => p.midair <= MIDAIR_BASELINE[p.bld])))
     .invariant('redctl:inside gate rejects an element outside its task',
       () => INV.everyElementInsideItsTask([{ start: 0, stop: 10, taskStart: 5, taskStop: 10 }]) === false)
     .invariant('redctl:zero gate rejects a zero-duration element',
