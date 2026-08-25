@@ -26,8 +26,7 @@
     "footer": "أداة تقييم جاهزية OpenBIM &middot; أداة بحثية قيد التطوير، v0.1<br>أُعيد إنتاج الملخص حرفيًا من طلب التمويل البحثي المؤرخ 10 أغسطس 2026، مع تصحيح مطبعي واحد ومرجع تحريري واحد مُشار إليه."
   },
   "why": {
-    "hero": "<p class='eyebrow'>لماذا يوجد هذا</p><h1>خلفية تقييم الجاهزية</h1><p class='standfirst'>ما تعتمده الصناعة، وأين تقف النماذج المُسلَّمة اليوم، وما الذي يتطلبه سد الفجوة.</p>",
-    "jump": "<a href='#industry'>01 &nbsp;الصناعة</a><a href='#gap'>02 &nbsp;الفجوة</a><a href='#roadmap'>03 &nbsp;خارطة الطريق</a><a href='#differs'>04 &nbsp;كيف يختلف هذا</a><a href='#offline'>نسخة غير متصلة</a><a href='proposal.html'>المقترح</a><a href='faq.html'>إجابات مبسطة</a><a href='disclaimer.html'>إشعار إخلاء المسؤولية</a>",
+    "hero": "<p class='eyebrow'>لماذا يوجد هذا</p><h1>خلفية تقييم الجاهزية</h1><p class='standfirst'>ما تعتمده الصناعة، وأين تقف النماذج المُسلَّمة اليوم، وما الذي يتطلبه سد الفجوة.</p><nav class='jump'><a href='#industry'>01 &nbsp;الصناعة</a><a href='#gap'>02 &nbsp;الفجوة</a><a href='#roadmap'>03 &nbsp;خارطة الطريق</a><a href='#differs'>04 &nbsp;كيف يختلف هذا</a><a href='#offline'>نسخة غير متصلة</a><a href='proposal.html'>المقترح</a><a href='faq.html'>إجابات مبسطة</a><a href='disclaimer.html'>إشعار إخلاء المسؤولية</a></nav>",
     "industry_head": "ما تعتمده الصناعة",
     "industry_lede": "يُحدَّد أولًا، لأنه يُساء فهمه غالبًا.",
     "industry_quote": "<p>مع نضوج تبني BIM، يُتوقع من المنشآت بشكل متزايد الانتقال من سير عمل BIM الاحتكاري نحو ممارسات OpenBIM الأكثر قابلية للتشغيل البيني. لا يتطلب هذا الانتقال التقنيات المناسبة فحسب، بل أيضًا جاهزية مؤسسية في مجالات مثل الحوكمة، وعمليات الأعمال، وقدرات القوى العاملة، وإدارة البيانات، والامتثال للمعايير المفتوحة.</p><p class='k'>ومع ذلك، لا توجد حاليًا طريقة بسيطة وعملية للمنشآت لتقييم جاهزيتها بشكل موضوعي لتطبيق OpenBIM أو تحديد فجوات القدرات التي ينبغي معالجتها قبل الشروع في هذا الانتقال.</p><cite>بيان المشكلة &mdash; المقترح البحثي، 10 أغسطس 2026</cite>",
@@ -150,6 +149,6 @@
     "footer": "إشعار إخلاء المسؤولية v0.1 &middot; 22 أغسطس 2026<br>أداة تقييم جاهزية OpenBIM &middot; ينطبق على الأداة وكل مخرج تنتجه.<br><a href='proposal.html'>المقترح البحثي</a> &middot; <a href='why.html'>قراءة خلفية</a> &middot; <a href='faq.html'>إجابات مبسطة</a>"
   },
   "sources": {
-    "hero": "<p class='eyebrow'>الملحق أ</p><h1>المصادر والتحقق</h1><p class='standfirst'>كل ادعاء واقعي تقدمه هذه الأداة، والمصدر الذي يدعمه، ومدى قراءة ذلك المصدر فعليًا. يبقى المحتوى الكامل لهذه الصفحة (سجل الاستشهادات) بالإنجليزية عمدًا للحفاظ على دقة الاقتباس.</p>"
+    "hero": "<p class='eyebrow'>الملحق أ</p><h1>المصادر والتحقق</h1><p class='standfirst'>كل ادعاء واقعي تقدمه هذه الأداة، والمصدر الذي يدعمه، ومدى قراءة ذلك المصدر فعليًا. يبقى المحتوى الكامل لهذه الصفحة (سجل الاستشهادات) بالإنجليزية عمدًا للحفاظ على دقة الاقتباس.</p><nav class=\"jump\">\n    <a href=\"#tiers\">01 &nbsp;How to read this</a>\n    <a href=\"#anchors\">02 &nbsp;The twenty criteria</a>\n    <a href=\"#standards\">03 &nbsp;Standards</a>\n    <a href=\"#mandates\">04 &nbsp;Mandates</a>\n    <a href=\"#measured\">05 &nbsp;What we measured</a>\n    <a href=\"#unverified\">06 &nbsp;Carried without a source</a>\n    <a href=\"#corrections\">07 &nbsp;Corrections</a>\n    <a href=\"#related\">08 &nbsp;Related work</a>\n    <a href=\"#limitations\">09 &nbsp;Limitations</a>\n    <a href=\"#refs\">References</a>\n  </nav>"
   }
 }

@@ -1,18 +1,35 @@
 /* §LANGUAGE_I18N_FULLTOOLKIT — shared loader for the 6 prose pages (front/why/faq/proposal/sources/
    disclaimer). assess.html has its own inline templated renderer (tr()/L()/T() reading PACKS) and
-   does not load this file. Policy: nothing persisted across pages — "a language choice is not data
-   about the respondent," extended here to "not data about the reader either." Every fetch is same-
-   origin, static JSON; no network call leaves the page beyond that.
+   does not load this file, but mirrors the sessionStorage persistence below independently in its own
+   applyLang(). Every fetch is same-origin, static JSON; no network call leaves the page beyond that.
 
    One mechanism: data-i18n-block="key" replaces an element's innerHTML from pack[PAGE][key];
    data-i18n-block="common:key" replaces it from pack.common[key] instead (nav labels, footer
    boilerplate — shared across all 7 pages). innerHTML, not textContent, throughout — translated
    content already carries its own tags/links, and plain-text values work fine as innerHTML too.
    Original English markup is left in place as the fallback: if a key is missing from a pack, or the
-   pack fetch fails, the page simply stays in English — never a blank. */
+   pack fetch fails, the page simply stays in English — never a blank.
+
+   PERSISTENCE (added 2026-08-25, user directive): the pick is written to sessionStorage under
+   READINESS_LANG_KEY and read back on every page's load, restoring it instead of defaulting to
+   English — a UI convenience so navigating Overview→Assessment→Proposal etc. doesn't reset the
+   reader to English every click. sessionStorage ONLY (per-tab, gone when the tab closes, never sent
+   over the network) — never localStorage, never a URL param, and NEVER the submitted answer payload.
+   The narrower principle — "a language choice is not data about the respondent" — is about the
+   research payload specifically and is unchanged; this is a separate, purely client-side reading
+   convenience that touches nothing that gets submitted. Graceful fallback to English if unset, or if
+   the stored code no longer exists in languages.json (e.g. a language is later removed). */
 (function () {
   var PAGE = document.currentScript && document.currentScript.getAttribute('data-page');
   var LANGS = null, PACKCACHE = {};
+
+  var READINESS_LANG_KEY = 'readiness_lang';
+  function readStoredLang() {
+    try { return sessionStorage.getItem(READINESS_LANG_KEY); } catch (e) { return null; }
+  }
+  function writeStoredLang(code) {
+    try { sessionStorage.setItem(READINESS_LANG_KEY, code); } catch (e) {}
+  }
 
   var CSS = '.langbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;' +
     'padding:11px 0;border-bottom:1px solid var(--rule-soft)}' +
@@ -74,7 +91,8 @@
      missing a key) always has a real fallback to restore, not a guess. */
   var originals = {};
 
-  function applyLang(code) {
+  function applyLang(code, skipWrite) {
+    if (!skipWrite) writeStoredLang(code);
     document.documentElement.setAttribute('dir', LANGS[code] && LANGS[code].dir === 'rtl' ? 'rtl' : 'ltr');
     var draft = document.getElementById('draftbar');
     fetchPack(code).then(function (pack) {
@@ -109,6 +127,11 @@
     fetch('i18n/languages.json').then(function (r) { return r.json(); }).then(function (langs) {
       LANGS = langs;
       populateSelect(sel);
+      var stored = readStoredLang();
+      if (stored && stored !== 'en' && LANGS[stored]) {
+        sel.value = stored;
+        applyLang(stored, true);
+      }
     }).catch(function () { LANGS = { en: { name: 'English', native: 'English', dir: 'ltr', status: 'source' } }; });
     sel.addEventListener('change', function () { applyLang(sel.value); });
   });
