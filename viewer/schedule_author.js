@@ -59,15 +59,35 @@
   // by its class's real average length. A flat per-unit rate assumes every element is "typical
   // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
   // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
+  // §TPL_ZERO_MINUTE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65) — the 120s
+  // returns below are a FLOOR, not a real duration: on a 45-day axis a 120-second element draws a
+  // zero-width Gantt bar, and every floored element starts at the same instant, so they stack. That
+  // is the user-reported "zero minute stacking", and it survived weeks of downstream fixes because
+  // this function reached the floor SILENTLY — no §-log, at any of its sites, ever.
+  // Now reported, but AGGREGATED PER CLASS and once only: §CLASS_UNMATCHED already warns once per
+  // ELEMENT and that alone overflowed run_witness_suite.js's 1MB spawnSync maxBuffer on Hospital
+  // (WITNESS_INTERFACE_FRAMEWORK.md §6). A per-element line here would be strictly worse.
+  var _floorSeen = {};
+  function _reportFloor(cls, resource, why) {
+    var k = cls + '|' + resource + '|' + why;
+    if (_floorSeen[k]) return;
+    _floorSeen[k] = 1;
+    console.warn('§TPL_ZERO_MINUTE cls=' + cls + ' resource=' + resource + ' reason=' + why +
+      ' — 120s floor, this class draws a zero-width bar (first occurrence only)');
+  }
   function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
     var resource = rule && rule.resource;
-    if (!resource || !laborRates[resource]) return 120;
+    if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return 120; }
     var labor = laborRates[resource], bestPk = null, bestLen = 0;
     for (var pk in labor.productivity) {
       if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
     }
-    var prod = bestPk ? labor.productivity[bestPk] : 0;
-    if (prod <= 0) return 120;
+    // §S65: the class-key lookup above is a SUBSTRING match, so a class the table does not name can
+    // never resolve ANY key — which is why SEQUENCE_DEFAULT floored no matter which resource it
+    // pointed at. default_productivity is the resource's own declared figure for that case; absent,
+    // this is 0 and the floor still applies exactly as before (backward-compatible).
+    var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
+    if (prod <= 0) { _reportFloor(cls, resource, bestPk ? 'productivity<=0' : 'no-productivity-key'); return 120; }
     var secsPerUnit = 28800 / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);

@@ -7,8 +7,14 @@
 // Network-first for .html/.js (always fresh on deploy).
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
+// v1087 (2026-08-25) §S65 §TPL_ZERO_MINUTE: rates.js + rates/sequence_rules.json + schedule_author.js
+// + time_machine.js all changed (preset 4D template fixes — see witness_sequence_template_lock.js).
+// All four are in PRECACHE_ASSETS, so without this bump an installed service worker keeps serving the
+// old table and the fix never reaches an existing user. That exact miss happened twice in 90 minutes
+// on 2026-08-25 (#1521 for #1520, then #1524 for #1523) — WITNESS_INTERFACE_FRAMEWORK.md §CRISIS
+// LESSON 4. Bumped in the SAME PR as the change, deliberately.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1086';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1087';   // bump on each deploy; per-change detail is the git commit message.
 // v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
 // JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
 // window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —

@@ -4459,7 +4459,9 @@
       for (var pk in labor.productivity) {
         if (cls.indexOf(pk) >= 0 && pk.length > bestLen) { bestPk = pk; bestLen = pk.length; }
       }
-      var prod = bestPk ? labor.productivity[bestPk] : 0;
+      // §TPL_ZERO_MINUTE (§S65) — keep this fallback in step with ScheduleAuthor._installSecs'
+      // default_productivity, or the two copies disagree the moment ScheduleAuthor fails to load.
+      var prod = bestPk ? labor.productivity[bestPk] : (labor.default_productivity || 0);
       return prod > 0 ? Math.round(28800 / prod) : 120;
     }
 
