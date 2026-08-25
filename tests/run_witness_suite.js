@@ -84,6 +84,13 @@ const KNOWN_RED = {
   //   witness_zone_display_authoring.js — W-ZDA-4a re-locked to per-building baselines in
   //     baselines/midair.json (Duplex 22->37, HHS 894->1839). The inequality it replaced was
   //     permanently false, i.e. it gated nothing.
+  // DRAINED 2026-08-25 (§S65 STAGE 3, same PR that added it): witness_gantt_bar_is_its_task.js —
+  //   arrived red on window-covers-work-content and is green here. The red was real and was FIXED,
+  //   not tuned: §ZONE_WINDOW_COVERS_WORK now floors a zone's window at its own members' crew-days
+  //   (5 over-committed windows across 4 buildings -> 0/135). The 6th apparent case, JKR "MEP
+  //   Rough-in — 03 Water Tank Floor Level", was a WITNESS defect — the generator re-derived the
+  //   trade from SEQUENCE_RULES[cls], ignoring NAME_OVERRIDES, and so disagreed with the engine
+  //   about crew count; it now reads the element's own installSecs/resource.
   // DRAINED 2026-08-25 (§S65 template lock PR): witness_sequence_template_lock.js arrived red on 3
   //   of 7 gates and is green in this same PR — the template itself was fixed, not the witness
   //   relaxed. 7/65 rows were on _installSecs' silent 120s floor; now 0/63 schedulable rows.
@@ -105,20 +112,6 @@ const KNOWN_RED = {
                                               '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
                                               'per §S66 — suite never ran it, so this went undetected). Cause: 4D_SCHEDULE_PERFECTION.md ' +
                                               '"REGRESSION FOUND" section.',
-  'witness_gantt_bar_is_its_task.js':        'C — 1 of 7 gates (no-hairline-bars-3px). NOT the layer this witness is ' +
-                                              'about, and deliberately NOT tuned away. Its own subject — an authored bar ' +
-                                              'is drawn at its task window — is GREEN on 135 bars across Duplex/Clinic/' +
-                                              'JKR/HHS_Office_Federated: worst window error 0.000 days, spanFromOps=0. ' +
-                                              'The red is an UPSTREAM authoring defect this witness makes visible: Clinic ' +
-                                              'ships 6+ zone tasks with exactly 1.00-day windows on a 156-day axis ' +
-                                              '(2.2px), including "MEP Rough-in - Roof - Mech" with 139 elements and ' +
-                                              '"Substructure - TOF Footing" with 58. Cause: schedule_author.js:517 floors ' +
-                                              'a zone whose SOLVED span rounds below a day at exactly one day ' +
-                                              '(eDays <= sDays -> sDays + 1), so a zone window comes from the element ' +
-                                              'solve span and never from its work content — the already-named ' +
-                                              '§CPM_GENERATOR_UPSTREAM_SPEC / "window derivation from work content" item ' +
-                                              'in 4D_SCHEDULE_PERFECTION.md, open before this PR and untouched by it. ' +
-                                              'Lowering the 3px threshold would hide a real number; the gate stays.',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',
