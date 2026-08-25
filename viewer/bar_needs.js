@@ -114,6 +114,78 @@
    *   CALLED providers (supportPool/hostPairs/openingPairs) — defaults to this file's own require.
    * @returns {{edges: {from:string,to:string,kind:string}[], counts: object, cycles: []}}
    */
+  // ══ ContactNeeds — §BAR_CONTACT (2026-08-25) ══════════════════════════════════════════════════
+  // THE ANY-OF GATE MUST BE THE JUDGE'S OWN RELATION. witness_midair_zero.js census() accepts a
+  // contact as bearing OR carrier OR embedded, over EVERY element. The model's bearing edges are
+  // supportPool-filtered — only structure counts as support — so the two sets differ, and MEASURED
+  // on Terminal that difference is the whole defect: of 813 floaters, ZERO had a bearing edge in the
+  // model while the judge saw a bearing contact on 417 of them. They fell through to the looser
+  // `below` set, whose min() released them early.
+  //
+  // §S26.2's "support is not anything below" warning does NOT apply here and the distinction
+  // matters: that was about an ORDERING constraint (it insisted a pipe precede the wall above it).
+  // This is ANY-OF — "at least one thing I touch already exists" — where a wider set can only be
+  // easier to satisfy, never stricter. Gate on exactly what the judge tests and midair is 0 by
+  // construction rather than by repair.
+  //
+  // The three clauses are census()'s own, lifted by balanced-brace slicing from
+  // viewer/tests/witness_midair_zero.js, never retyped — same discipline as every other provider
+  // here, and the discipline whose breach cost 4,706-vs-716 support edges earlier in this session.
+  function contactClauses() {
+    var src = fs.readFileSync(path.join(__dirname, 'tests', 'witness_midair_zero.js'), 'utf8');
+    var i = src.indexOf('const bearing = S.bz < T.bz - EPS');
+    if (i < 0) throw new Error('census() contact clauses not found in witness_midair_zero.js — ' +
+      'do not retype them, fix the slice');
+    var j = src.indexOf('if (!bearing && !carrier && !embedded)', i);
+    if (j < 0) throw new Error('census() contact clause terminator not found');
+    var body = src.slice(i, j);
+    // census names its fields bz/tz; elements here carry base_z/top_z. Rename at the boundary only.
+    body = body.replace(/\.bz\b/g, '.base_z').replace(/\.tz\b/g, '.top_z');
+    return new Function('S', 'T', 'EPS', 'GAP', body + ' return bearing || carrier || embedded;');
+  }
+
+  // buildContacts(elements) — the ANY-OF set: for each element, every OTHER element it touches by
+  // census()'s own three clauses. Returned as {toGuid: [fromGuid,...]} rather than flat edges,
+  // because the gate only ever needs "the earliest of these", and a flat list on Terminal runs to
+  // roughly a million rows. Grounded elements (nothing meaningfully below them) get no entry —
+  // they stand on the earth, which is census()'s own rule and its own GAP constant.
+  function buildContacts(elements) {
+    var touches = contactClauses();
+    var idx = {}, i, c, cs;
+    function cellsOf(e) {
+      var o = [];
+      for (var a = Math.floor(e.x0 / ScheduleGate.CELL); a <= Math.floor(e.x1 / ScheduleGate.CELL); a++)
+        for (var b = Math.floor(e.y0 / ScheduleGate.CELL); b <= Math.floor(e.y1 / ScheduleGate.CELL); b++)
+          o.push(a + ',' + b);
+      return o;
+    }
+    for (i = 0; i < elements.length; i++) {
+      cs = cellsOf(elements[i]);
+      for (c = 0; c < cs.length; c++) (idx[cs[c]] = idx[cs[c]] || []).push(i);
+    }
+    var out = {}, grounded = {}, total = 0;
+    var EPS = ScheduleGate.EPS, GAP = ScheduleGate.GAP;
+    for (i = 0; i < elements.length; i++) {
+      var T = elements[i], seen = {}, lowest = Infinity, list = null;
+      cs = cellsOf(T);
+      for (c = 0; c < cs.length; c++) {
+        var arr = idx[cs[c]]; if (!arr) continue;
+        for (var k = 0; k < arr.length; k++) {
+          var j = arr[k]; if (j === i || seen[j]) continue;
+          var S = elements[j];
+          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
+          seen[j] = 1;
+          if (S.base_z < lowest) lowest = S.base_z;
+          if (!touches(S, T, EPS, GAP)) continue;
+          (list = list || (out[T.guid] = [])).push(S.guid);
+          total++;
+        }
+      }
+      if (!(lowest < T.base_z - GAP)) grounded[T.guid] = 1;
+    }
+    return { contacts: out, grounded: grounded, total: total };
+  }
+
   function buildNeeds(elements, opts) {
     opts = opts || {};
     var SG = opts.scheduleGate || ScheduleGate;
@@ -187,7 +259,15 @@
         // (schedule_gate.js:827-828 adds ONE edge on the OR of all three). This module has to tag a
         // kind, so support is checked first as the more fundamental of the two relations.
         if (G.edgeBelow(S, E) || (!isPoolE && G.edgeContained(S, E))) {
-          if (addEdge(S.guid, E.guid, 'support')) countSupport++;
+          // BEARING vs BELOW are split (2026-08-25, integration finding — bim-compiler
+          // prompts/4D_BAR_MODEL.md §9.2). geoGate's `below` is the PLACEMENT relation: anything
+          // overlapping underneath, contact or not. The midair judge (witness_midair_zero.js
+          // census()) tests BEARING CONTACT — `S.top_z >= E.base_z - GAP`. They are not the same
+          // set, and the scheduler must gate on the relation the judge measures or the two can
+          // never agree: with both flattened into one 'support' kind, the any-of min() released an
+          // element on a distant slab far below it while its actual bearing neighbour was still
+          // unbuilt. MEASURED flattened: HHS midair 609. Split, the any-of set is bearing-first.
+          if (addEdge(S.guid, E.guid, G.edgeBearing(S, E) ? 'bearing' : 'support')) countSupport++;
         } else if (isCarrierEdge) {
           if (addEdge(S.guid, E.guid, 'carrier')) countCarrier++;
         }
@@ -257,7 +337,7 @@
     return { edges: edges, counts: counts, cycles: [] };
   }
 
-  var API = { buildNeeds: buildNeeds };
+  var API = { buildNeeds: buildNeeds, buildContacts: buildContacts };
   root.BarNeeds = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
