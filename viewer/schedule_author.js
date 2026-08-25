@@ -401,6 +401,243 @@
       ' — slab-on-grade reclassified Substructure (bears on grade/piles/footings only, lowest Superstructure band)');
   }
 
+  // ══ §TEMPLATE_INSTANTIATE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S69) ══
+  // THE INVERSION. Until now the chain ran elements -> phases: computeSchedule placed elements, and
+  // deriveZones CREATED phases afterwards by grouping the placed elements and taking each group's
+  // min-start/max-end. A phase bar was an ENVELOPE over what the elements did, and an envelope
+  // cannot constrain what drew it — which is why phase stacking could never be reined in (§S68: the
+  // solver has no phase in it at all; `phaseTrade` is keyed by collapsePhase(el.STOREY)).
+  //
+  // This function runs phases -> elements. It reads viewer/rates/4D_template.json and EMITS the
+  // task grid: one task per (phase x real level) the template declares, each priced by
+  // duration_rule (per-trade work content, never the solve's span) and placed by dependencies
+  // (FS+0 within a level, plus the §4D_BAND_MONOTONIC ladder across levels). Elements are then
+  // ASSIGNED to tasks; they no longer define them.
+  //
+  // PURE + node-testable: no DB, no globals, no console side effects beyond the reports it returns.
+  // `collapse` is passed in (ScheduleGate.collapsePhase composed with the §S18 merge map) so the
+  // storey names here and the ones materializeZones writes can never diverge.
+  //
+  // Returns { tasks, edges, reports, totalDays } where a task is
+  //   { id, phase, storey, level, sDays, eDays, days, guids, crewDays, bottleneck }
+  // and an edge is { predId, succId, type, lagDays, kind } — kind 'within_level' | 'across_levels'.
+  // EVERY edge's lag comes from the TEMPLATE, never from the dates it constrains.
+  function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse) {
+    laborRates = laborRates || {};
+    var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
+    var minDays = (T.duration_rule && T.duration_rule.min_days) || 1;
+    collapse = collapse || function (x) { return x; };
+
+    // (phase, storey) -> { secs per trade, guids }
+    var cell = {}, storeySeen = {};
+    for (var i = 0; i < elements.length; i++) {
+      var e = elements[i], st = collapse(e.storey), ph = e.phase || '_UNPHASED';
+      storeySeen[st] = 1;
+      var k = ph + '||' + st, c = cell[k] || (cell[k] = { secs: {}, guids: [] });
+      var tr = (e.resource && e.resource !== '_DEFAULT') ? e.resource : '_DEFAULT';
+      c.secs[tr] = (c.secs[tr] || 0) + (e.installSecs || 0);
+      c.guids.push(e.guid);
+    }
+    // levels bottom-up. bandRank is the SAME rank deriveBandRanks gives the movie, so "the level
+    // below" means the same thing here as it does in the solver's own band gate.
+    var levels = Object.keys(storeySeen).sort(function (a, b) {
+      var ra = bandRank && bandRank[a] != null ? bandRank[a] : 1e9;
+      var rb = bandRank && bandRank[b] != null ? bandRank[b] : 1e9;
+      return ra - rb || (a < b ? -1 : a > b ? 1 : 0);
+    });
+
+    // duration_rule: days = ceil( MAX over trades t of ( secs[t] / (shift * max_crews[t]) ) )
+    function priceCell(c) {
+      var d = 0, bott = null, any = 0;
+      for (var t in c.secs) {
+        if (t === '_DEFAULT') continue;
+        any = 1;
+        var cap = (laborRates[t] && laborRates[t].max_crews) || 1;
+        var td = c.secs[t] / (shiftSecs * cap);
+        if (td > d) { d = td; bott = t + '(' + cap + ')'; }
+      }
+      if (!any) { d = (c.secs._DEFAULT || 0) / shiftSecs; bott = '_DEFAULT(1)'; }
+      return { crewDays: d, days: Math.max(minDays, Math.ceil(d)), bottleneck: bott };
+    }
+
+    // dependencies._ladder_rule — which phases chain to themselves one level down.
+    var ladder = {};
+    (T.dependencies.across_levels || []).forEach(function (ed) {
+      if (ed.pred === ed.succ && ed.level_offset === 1) ladder[ed.pred] = ed;
+    });
+    var byId = {};
+    T.phases.forEach(function (p) { byId[p.id] = p; });
+
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0;
+    levels.forEach(function (lv, li) {
+      var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
+      var cursor = 0;
+      T.phases.forEach(function (p) {
+        // _edge_scope_rule: a building-scope phase instantiates ONCE, on the lowest level. But its
+        // ELEMENTS must all come with it — an element of a building-scope phase that happens to sit
+        // on an upper storey belongs to that single task, it is not dropped. Silently losing it is
+        // exactly the failure class this lane exists to kill: MEASURED on Hospital before this
+        // guard, 1 of 63,182 elements reached no task at all (a Substructure element above the
+        // lowest level — §GROUNDWORK_SLAB reclassifies slab-on-grade by geometry, not by storey).
+        var k, c;
+        if (p.scope === 'building') {
+          if (li > 0) return;                       // emitted once, on the lowest level
+          c = { secs: {}, guids: [] };
+          levels.forEach(function (anyLv) {
+            var cc = cell[p.name + '||' + anyLv];
+            if (!cc) return;
+            for (var tr in cc.secs) c.secs[tr] = (c.secs[tr] || 0) + cc.secs[tr];
+            c.guids = c.guids.concat(cc.guids);
+          });
+          k = p.name + '||' + lv;
+          cell[k] = c;                              // so the levelling pass prices the merged cell
+        } else {
+          k = p.name + '||' + lv; c = cell[k];
+        }
+        if (!c || !c.guids.length) {
+          reports.push({ kind: 'phase_absent_on_level', phase: p.name, level: lv, why: 'no elements classify here' });
+          return;                                   // chain BRIDGES: prevOnLevel is left untouched
+        }
+        var pr = priceCell(c);
+        var start = cursor;
+        // across_levels: the §4D_BAND_MONOTONIC ladder — this phase on the level below.
+        if (ladder[p.id] && li > 0) {
+          var below = taskAt[p.name + '||' + levels[li - 1]];
+          if (below) {
+            var need = below.eDays + (ladder[p.id].lag_days || 0);
+            if (need > start) start = need;
+          }
+        }
+        var t = {
+          id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
+          phase: p.name, storey: lv, level: li, phaseId: p.id,
+          sDays: start, eDays: start + pr.days, days: pr.days,
+          crewDays: pr.crewDays, bottleneck: pr.bottleneck, guids: c.guids
+        };
+        tasks.push(t); taskAt[k] = t;
+        if (t.eDays > totalDays) totalDays = t.eDays;
+        cursor = t.eDays;
+        // within_level edge, from the last phase that ACTUALLY instantiated on this level.
+        if (prevOnLevel) {
+          var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
+          edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
+                       lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
+        }
+        if (ladder[p.id] && li > 0) {
+          var b2 = taskAt[p.name + '||' + levels[li - 1]];
+          if (b2) edges.push({ predId: b2.id, succId: t.id, type: ladder[p.id].type || 'FS',
+                               lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' });
+        }
+        prevOnLevel = t;
+      });
+    });
+    // ── capacity_rule LEVELLING ────────────────────────────────────────────────────────────
+    // The ladder forbids a phase overtaking ITSELF up the building. It does NOT stop two DIFFERENT
+    // phases that share a crew pool from running at once on different levels: MEP Rough-in on
+    // level 5 and MEP Final on level 2 both consume PLUMBER. MEASURED on Hospital (63,182 elements,
+    // 8 levels, 2026-08-25): logic dates alone give PLUMBER peak 3.26 crews against a cap of 2
+    // (1.63x). HHS and Duplex are clean at 3-4 levels; it takes a tall building to expose it.
+    //
+    // So the template's own capacity_rule ("at no instant may more than max_crews[t] elements of
+    // trade t be in progress") is applied here as ordinary resource levelling: walk the tasks in
+    // topological order, delay each to the earliest day its whole span fits inside every trade's
+    // remaining capacity, then push its successors out by the declared lag. Delay-only, so the
+    // graph stays acyclic and every dependency the logic pass established still holds.
+    //
+    // A task's demand for trade t is its own seconds of t spread over its own duration:
+    // secs_t / (shift * days) crews, held for every day of the span. That is the same average-crew
+    // model duration_rule prices with, not a second one.
+    var succOf = {}, indeg = {};
+    tasks.forEach(function (t) { indeg[t.id] = 0; });
+    edges.forEach(function (e) {
+      (succOf[e.predId] = succOf[e.predId] || []).push(e);
+      indeg[e.succId] = (indeg[e.succId] || 0) + 1;
+    });
+    var byIdT = {}; tasks.forEach(function (t) { byIdT[t.id] = t; });
+    // Kahn order; ties by (logic start, level, template phase order) so the result is deterministic.
+    var phaseOrder = {}; T.phases.forEach(function (p, i) { phaseOrder[p.name] = i; });
+    function rank(t) { return [t.sDays, t.level, phaseOrder[t.phase] != null ? phaseOrder[t.phase] : 99]; }
+    var ready = tasks.filter(function (t) { return !indeg[t.id]; });
+    var topo = [], deg = {};
+    for (var ti in indeg) deg[ti] = indeg[ti];
+    while (ready.length) {
+      ready.sort(function (a, b) {
+        var ra = rank(a), rb = rank(b);
+        return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || (a.id < b.id ? -1 : 1);
+      });
+      var cur = ready.shift();
+      topo.push(cur);
+      (succOf[cur.id] || []).forEach(function (e) {
+        if (--deg[e.succId] === 0) ready.push(byIdT[e.succId]);
+      });
+    }
+    if (topo.length !== tasks.length) topo = tasks.slice().sort(function (a, b) { return a.sDays - b.sDays; });
+
+    var demand = {};                       // trade -> day -> crews committed
+    function taskTradeCrews(t) {
+      var c = cell[t.phase + '||' + t.storey], out = {};
+      if (!c) return out;
+      for (var tr in c.secs) {
+        if (tr === '_DEFAULT') continue;
+        out[tr] = c.secs[tr] / (shiftSecs * Math.max(1, t.days));
+      }
+      return out;
+    }
+    function fits(t, at) {
+      var need = taskTradeCrews(t);
+      for (var tr in need) {
+        var cap = (laborRates[tr] && laborRates[tr].max_crews) || 1;
+        for (var d = at; d < at + t.days; d++)
+          if (((demand[tr] && demand[tr][d]) || 0) + need[tr] > cap + 1e-9) return false;
+      }
+      return true;
+    }
+    var levelled = 0, levelledDays = 0, LEVEL_SCAN_MAX = 100000;
+    topo.forEach(function (t) {
+      var at = t.sDays, guard = 0;
+      while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++;
+      if (at > t.sDays) { levelled++; levelledDays += at - t.sDays; }
+      var shift = at - t.sDays;
+      t.sDays = at; t.eDays = at + t.days;
+      var need = taskTradeCrews(t);
+      for (var tr in need) {
+        var dd = demand[tr] || (demand[tr] = {});
+        for (var d = t.sDays; d < t.eDays; d++) dd[d] = (dd[d] || 0) + need[tr];
+      }
+      if (t.eDays > totalDays) totalDays = t.eDays;
+      // push successors out so every declared edge still holds after the delay
+      (succOf[t.id] || []).forEach(function (e) {
+        var st = byIdT[e.succId];
+        var min = t.eDays + (e.lagDays || 0);
+        if (st && st.sDays < min) { st.eDays = min + st.days; st.sDays = min; }
+      });
+    });
+    if (levelled) reports.push({ kind: 'capacity_levelled', tasksDelayed: levelled, totalDaysAdded: levelledDays });
+
+    // ORPHANS — an element whose phase the template does not declare lands in NO task and would
+    // vanish from the Gantt silently. That is the exact failure class this whole lane exists to
+    // kill, so it is counted and named, never dropped. MEASURED on Hospital: 1 of 63,182.
+    var declared = {}; T.phases.forEach(function (p) { declared[p.name] = 1; });
+    var orphanBy = {}, orphanN = 0;
+    for (var oi = 0; oi < elements.length; oi++) {
+      var oe = elements[oi], oph = oe.phase || '_UNPHASED';
+      if (declared[oph]) continue;
+      orphanN++;
+      var ok2 = oph + '|' + oe.cls;
+      orphanBy[ok2] = (orphanBy[ok2] || 0) + 1;
+    }
+    if (orphanN) reports.push({ kind: 'elements_orphaned', count: orphanN, byPhaseClass: orphanBy });
+
+    // A phase the template declares that never instantiated ANYWHERE is reported once, loudly —
+    // 4D_template.json's own instantiation rule: "REPORTS (never silently drops)".
+    T.phases.forEach(function (p) {
+      if (!tasks.some(function (t) { return t.phase === p.name; }))
+        reports.push({ kind: 'phase_absent_everywhere', phase: p.name, level: null,
+                       why: p._empty_ok ? 'declared _empty_ok' : 'NOT marked _empty_ok' });
+    });
+    return { tasks: tasks, edges: edges, reports: reports, totalDays: totalDays, levels: levels };
+  }
+
   // materializeZones(db, rules, opts) — CPM_FLOAT_GAP.md Gap 1 (element-level, rolled up): the
   // DETAIL-granularity sibling of materializeDefault. Where materializeDefault gives 5 coarse phase
   // tasks, this persists one task per (phase × real floor) ZONE — built from
@@ -472,6 +709,12 @@
         }
       } catch (e) { console.log('§S18_STOREY_MERGE_FAIL ' + e.message + ' — no elevation data, bands unmerged'); }
     }
+    // §TEMPLATE_INSTANTIATE — when a template is supplied, the TASK GRID comes from it and the
+    // solve is no longer what defines the phases (see instantiateTemplate's header). The legacy
+    // grouping path below is left byte-identical for every caller that passes no template.
+    if (opts.template) return _writeTemplateSchedule(db, elements, schedule, opts, SG,
+      storeyMergeMap, laborRates, schedId, start, _displayAuthored);
+
     var rolled = SG.deriveZones(elements, schedule, storeyMergeMap);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }
 
@@ -613,6 +856,88 @@
     console.log('§AUTHOR_ZONES schedule=' + schedId + ' zones=' + rolled.zones.length + ' edges=' + edgeN +
       ' elements=' + elements.length + ' totalDays=' + totalDays);
     return { ok: true, scheduleId: schedId, zoneCount: rolled.zones.length, edgeCount: edgeN, totalDays: totalDays };
+  }
+
+  // _writeTemplateSchedule — the §TEMPLATE_INSTANTIATE write path. Same tables, same schedule_id,
+  // same idempotent rebuild as the legacy grouping path; the difference is WHERE the numbers come
+  // from: task windows from 4D_template.json's duration_rule, task_sequences from its dependencies.
+  // Nothing here reads a date to produce an edge, which is the whole point — the persisted lag used
+  // to be `sd.s - pd.e`, i.e. the answer restated as its own constraint (§S67 HOP 5 measured 25/25).
+  function _writeTemplateSchedule(db, elements, schedule, opts, SG, storeyMergeMap, laborRates, schedId, start, displayAuthored) {
+    var T = opts.template;
+    var bandRank = (SG.deriveBandRanks ? SG.deriveBandRanks(elements, storeyMergeMap).bandRank : {}) || {};
+    function collapse(st) {
+      var c = SG.collapsePhase(st);
+      return (storeyMergeMap && storeyMergeMap[c]) || c;
+    }
+    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse);
+    if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+
+    // Absence is REPORTED, never silent — 4D_template.json's own instantiation rule, and the
+    // defect §S67 HOP 1/HOP 3 found (Substructure simply vanished from HHS with nothing said).
+    var _absLevel = inst.reports.filter(function (r) { return r.kind === 'phase_absent_on_level'; });
+    var _absAll = inst.reports.filter(function (r) { return r.kind === 'phase_absent_everywhere'; });
+    var _orph = inst.reports.filter(function (r) { return r.kind === 'elements_orphaned'; })[0];
+    if (_orph) console.log('§TPL_ELEMENT_ORPHAN n=' + _orph.count + ' — element(s) whose phase the template does not declare, so they land in NO task: ' +
+      JSON.stringify(_orph.byPhaseClass));
+    else console.log('§TPL_ELEMENT_ORPHAN n=0 — every element landed in a declared phase');
+    var _lev = inst.reports.filter(function (r) { return r.kind === 'capacity_levelled'; })[0];
+    console.log('§TPL_CAPACITY_LEVEL tasksDelayed=' + (_lev ? _lev.tasksDelayed : 0) +
+      ' daysAdded=' + (_lev ? _lev.totalDaysAdded : 0) +
+      ' (a task was pushed later because its trade had no free crew at its logic date; 0 = the' +
+      ' declared logic was already crew-legal on its own)');
+    console.log('§TPL_PHASE_COVERAGE declared=' + T.phases.length + ' levels=' + inst.levels.length +
+      ' tasksEmitted=' + inst.tasks.length + ' absentPhaseLevels=' + _absLevel.length +
+      ' absentPhasesEntirely=' + _absAll.length);
+    _absAll.forEach(function (r) {
+      console.log('§TPL_PHASE_ABSENT phase="' + r.phase + '" on NO level of this building — ' + r.why);
+    });
+    _absLevel.forEach(function (r) {
+      console.log('§TPL_PHASE_GAP phase="' + r.phase + '" level="' + r.level + '" — ' + r.why + ' (chain bridged)');
+    });
+
+    _ensureSchedulesGenVersion(db);
+    _ensureSchedulesDisplayAuthored(db);
+    _ensureWideTasks(db);
+    db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+
+    db.run('BEGIN TRANSACTION');
+    db.run('DELETE FROM task_elements WHERE task_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId]);
+    db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
+    db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
+    db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
+    db.run('INSERT INTO schedules (schedule_id,name,status,created_date,gen_version,display_authored) VALUES (?,?,?,?,?,?)',
+      [schedId, 'Authored Schedule (4D template)', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null, displayAuthored || 0]);
+
+    var rootId = 'TASK_ROOT';
+    db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, start, _addDays(start, inst.totalDays), 'P' + inst.totalDays + 'D', null, 'PLANNED']);
+
+    var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    inst.tasks.forEach(function (t) {
+      stmtTk.run([t.id, schedId, rootId, t.phase + ' — ' + t.storey, 'CONSTRUCTION', 0,
+        _addDays(start, t.sDays), _addDays(start, t.eDays), 'P' + t.days + 'D', null, 'PLANNED']);
+      for (var i = 0; i < t.guids.length; i++) stmtTe.run([t.id, t.guids[i]]);
+    });
+    stmtTk.free(); stmtTe.free();
+
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var wl = 0, al = 0;
+    inst.edges.forEach(function (e) {
+      stmtSeq.run([e.predId, e.succId, e.type, e.lagDays]);
+      if (e.kind === 'across_levels') al++; else wl++;
+    });
+    stmtSeq.free();
+    db.run('COMMIT');
+
+    console.log('§AUTHOR_TPL schedule=' + schedId + ' v=' + T.meta.version + ' tasks=' + inst.tasks.length +
+      ' edges=' + inst.edges.length + ' (withinLevel=' + wl + ' acrossLevels=' + al + ')' +
+      ' elements=' + elements.length + ' totalDays=' + inst.totalDays +
+      ' — every lag is the TEMPLATE\'s, none derived from the dates it constrains');
+    return { ok: true, scheduleId: schedId, zoneCount: inst.tasks.length, edgeCount: inst.edges.length,
+             totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports };
   }
 
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
@@ -1925,6 +2250,7 @@
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
+    instantiateTemplate: instantiateTemplate,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
