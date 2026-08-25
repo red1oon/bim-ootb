@@ -183,7 +183,40 @@ const dependencyScopeRulesDeclared = T => !!T.dependencies &&
   /LOWEST level/.test(T.dependencies._edge_scope_rule || '') &&
   /BRIDGED/.test(T.dependencies._empty_phase_rule || '');
 
+/**
+ * G-PT-LADDER — §4D_BAND_MONOTONIC as programme logic: EVERY level-scope phase must chain to
+ * ITSELF on the level below (an across_levels self-edge with level_offset 1).
+ *
+ * v1.1.0 declared the ladder for superstructure alone, which leaves every other trade free to run
+ * on three levels at once. MEASURED on HHS_Office_Federated (2026-08-25, probe_4d_motion.js):
+ * superstructure-only ladder -> PLUMBER peaks 3.67 crews vs cap 2 (1.84x), HVAC_TECH 3.48 (1.74x);
+ * full ladder -> ZERO breaches on every trade, programme 49d vs 41d. The 8 days buy legality.
+ *
+ * This is the gate that makes "packed but sequential" (user ruling 2026-08-25) actually hold: a
+ * within-level chain alone does not stop a trade overtaking itself up the building.
+ * @param {object} T
+ * @returns {boolean}
+ */
+function ladderCoversEveryLevelPhase(T) {
+  const levelPhases = T.phases.filter(p => p.scope === 'level').map(p => p.id);
+  if (!levelPhases.length) return false;
+  const self = new Set(T.dependencies.across_levels
+    .filter(e => e.pred === e.succ && e.level_offset === 1).map(e => e.pred));
+  return levelPhases.every(id => self.has(id));
+}
+
+/**
+ * G-PT-SERIAL — every declared edge is FS with zero lag: phases PACKED and STRICTLY SEQUENTIAL.
+ * User ruling 2026-08-25: an overlap must be a human's drag on the Gantt, never a solver artifact.
+ * @param {object} T
+ * @returns {boolean}
+ */
+const allEdgesAreSerialFS = T => T.dependencies.within_level
+  .concat(T.dependencies.across_levels)
+  .every(e => e.type === 'FS' && Number(e.lag_days) === 0);
+
 module.exports = {
+  ladderCoversEveryLevelPhase, allEdgesAreSerialFS,
   phasesMatchClassificationOrder, phaseBandsDoNotOverlap, tradesMatchClassification,
   edgesReferenceRealPhases, withinLevelChainCoversAllPhases, edgesAreDateIndependent,
   calendarMatchesEngine, durationRuleIsWorkContent, durationDivisorIsPerTrade,

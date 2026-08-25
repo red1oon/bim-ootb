@@ -64,6 +64,43 @@ const BLD = process.env.BLD || path.join(require('os').homedir(), 'bim-ootb', 'b
   });
   console.log('§HOP0_STOREYS n=' + storeyList.length + ' [' + storeyList.join(', ') + ']');
 
+  // ── HOP 0b — CONTAMINATION + THE DAY-0 STACK ────────────────────────────────────────────────
+  // User report 2026-08-25: "i noticed MEP appearing or that HR 0 truly stacked. Also they can be
+  // contaminated with MEP elements in there."
+  // (1) CONTAMINATION = an element whose FINAL phase differs from the phase its own ifc_class
+  //     declares in SEQUENCE_RULES. Something moved it: a NAME_OVERRIDE, or a reclass pass.
+  // (2) DAY-0 STACK = elements whose solved start is the very first instant. A structural phase
+  //     legitimately starts there; anything else starting at hour 0 is the reported symptom.
+  const classPhaseOf = {};
+  Object.keys(R.SEQUENCE_RULES).forEach(k => { classPhaseOf[k] = R.SEQUENCE_RULES[k].phase; });
+  const declaredPhase = cls => {
+    let best = null, bl = 0;
+    for (const k in classPhaseOf) if (cls.indexOf(k) >= 0 && k.length > bl) { best = k; bl = k.length; }
+    return best ? classPhaseOf[best] : R.SEQUENCE_DEFAULT.phase;
+  };
+  const MEP = ph => ph === 'MEP Rough-in' || ph === 'MEP Final';
+  const contam = {}, moved = {};
+  els.forEach(e => {
+    const want = declaredPhase(e.cls), got = e.phase;
+    if (want === got) return;
+    const k = e.cls + ': ' + want + ' -> ' + got;
+    moved[k] = (moved[k] || 0) + 1;
+    if (MEP(want) && !MEP(got)) contam[k] = (contam[k] || 0) + 1;   // an MEP element sitting in a structural/arch phase
+  });
+  console.log('\n§HOP0B_CONTAMINATION reclassified=' + Object.values(moved).reduce((a, b) => a + b, 0) +
+    ' ofWhichMEPintoNonMEP=' + Object.values(contam).reduce((a, b) => a + b, 0));
+  Object.keys(moved).sort((a, b) => moved[b] - moved[a]).slice(0, 8)
+    .forEach(k => console.log('   ' + (contam[k] ? 'MEP-CONTAM ' : 'reclass    ') + k + ' x' + moved[k]));
+  // what classes actually sit in each structural phase
+  ['Substructure', 'Superstructure'].forEach(ph => {
+    const cc = {};
+    els.forEach(e => { if (e.phase === ph) cc[e.cls] = (cc[e.cls] || 0) + 1; });
+    const keys = Object.keys(cc).sort((a, b) => cc[b] - cc[a]);
+    const bad = keys.filter(c => MEP(declaredPhase(c)));
+    console.log('   ' + ph.padEnd(15) + (keys.length ? keys.map(c => c + '=' + cc[c]).join(' ') : '(empty)') +
+      (bad.length ? '   ⛔ MEP classes present: ' + bad.join(',') : ''));
+  });
+
   // ── HOP 1 — what the TEMPLATE declares ──────────────────────────────────────────────────────
   console.log('\n§HOP1_TEMPLATE_SAYS phases=' + T.phases.length + ' shift=' + SHIFT + 'h');
   const mc = t => (R.LABOR_RATES[t] && R.LABOR_RATES[t].max_crews) || 1;
@@ -103,6 +140,16 @@ const BLD = process.env.BLD || path.join(require('os').homedir(), 'bim-ootb', 'b
   const spanDays = (sMax - sMin) / 86400000;
   console.log('\n§HOP2_SOLVE scheduled=' + nSched + '/' + els.length + ' spanDays=' + spanDays.toFixed(1) +
     ' vs template perTradeDays=' + tplPerTrade.toFixed(1) + ' (ratio=' + (spanDays / tplPerTrade).toFixed(2) + 'x)');
+
+  // day-0 stack: what starts at the very first instant, by phase
+  const zeroBy = {};
+  let zeroN = 0;
+  els.forEach(e => { const st = sched[e.guid]; if (!st || st.start !== sMin) return; zeroN++;
+    zeroBy[e.phase || '_UNPHASED'] = (zeroBy[e.phase || '_UNPHASED'] || 0) + 1; });
+  const structFirst = Object.keys(zeroBy).every(ph => ph === 'Substructure' || ph === 'Superstructure');
+  console.log('§HOP2C_DAY0_STACK atFirstInstant=' + zeroN + '/' + els.length + ' byPhase=' +
+    JSON.stringify(zeroBy) + ' structuralOnly=' + structFirst +
+    (structFirst ? '' : '   ⛔ a non-structural phase starts at hour 0'));
 
   // ── HOP 2b — THE HARD FLOOR: no trade can beat its own crew cap, whatever the overlap ───────
   // Building-wide, phase-agnostic. Overlap between phases is a legitimate design choice; exceeding
@@ -145,6 +192,32 @@ const BLD = process.env.BLD || path.join(require('os').homedir(), 'bim-ootb', 'b
       (p.replicate_per_level ? 'per-level x' + storeyList.length : 'per-building') + '), engine produced ' + got);
   });
 
+  // ── HOP 3b — HOW MUCH DO PHASES ACTUALLY STACK? ─────────────────────────────────────────────
+  // User 2026-08-25: "it is strange why all this while we cannot rein in phases stacking."
+  // The template says phases are FS+0 within a level: zero overlap. Measure the real overlap.
+  const zByLevel = {};
+  rolled.zones.forEach(z => { (zByLevel[z.storey] = zByLevel[z.storey] || []).push(z); });
+  const order = {}; T.phases.forEach((p, i) => { order[p.name] = i; });
+  let pairs = 0, overlapping = 0, worstPair = null, invertedPairs = 0;
+  Object.keys(zByLevel).forEach(lv => {
+    const list = zByLevel[lv].filter(z => order[z.phase] != null).sort((a, b) => order[a.phase] - order[b.phase]);
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j]; pairs++;
+      const ov = Math.min(a.end, b.end) - Math.max(a.start, b.start);
+      if (ov > 0) {
+        overlapping++;
+        const frac = ov / Math.max(1, Math.min(a.end - a.start, b.end - b.start));
+        if (!worstPair || frac > worstPair.frac) worstPair = { frac, lv, a: a.phase, b: b.phase, days: ov / 86400000 };
+      }
+      if (b.start < a.start) invertedPairs++;    // a LATER phase starts before an EARLIER one
+    }
+  });
+  console.log('§HOP3B_PHASE_STACK samLevelPhasePairs=' + pairs + ' overlapping=' + overlapping +
+    ' (' + (100 * overlapping / Math.max(1, pairs)).toFixed(0) + '%) startOrderInverted=' + invertedPairs +
+    (worstPair ? '  worst=' + worstPair.lv + ' ' + worstPair.a + ' vs ' + worstPair.b + ' ' +
+      worstPair.days.toFixed(1) + 'd (' + (worstPair.frac * 100).toFixed(0) + '% of the shorter bar)' : '') +
+    '   — template declares FS+0: 0% overlap, 0 inversions');
+
   // ── HOP 4 — zone windows vs their own work ──────────────────────────────────────────────────
   const elByGuid = {}; els.forEach(e => { elByGuid[e.guid] = e; });
   let over = 0, worst = null;
@@ -159,6 +232,86 @@ const BLD = process.env.BLD || path.join(require('os').homedir(), 'bim-ootb', 'b
   });
   console.log('§HOP4_WINDOWS zonesOverCommitted(perTrade)=' + over + '/' + rolled.zones.length +
     (worst ? ' worst=' + worst.id + ' window=' + worst.winD.toFixed(2) + 'd needs(perTrade)=' + worst.dMax.toFixed(2) + 'd needs(Σcrews)=' + worst.dSum.toFixed(2) + 'd' : ''));
+
+  // ── HOP 6 — WHAT WOULD THE TEMPLATE'S OWN SERIAL CHAIN COST? ────────────────────────────────
+  // The question this answers: if the engine STOPPED overlapping and instantiated the template
+  // literally — phases packed but strictly sequential per level, levels tied only by the
+  // superstructure ladder — how much longer is the programme? Nothing here changes any engine
+  // behaviour; it prices the option.
+  const ranks = ScheduleGate.deriveBandRanks(els, null).bandRank;
+  const levelsUp = storeyList.slice().sort((a, b) => (ranks[a] == null ? 1e9 : ranks[a]) - (ranks[b] == null ? 1e9 : ranks[b]));
+  // per (phase, level) work content, per-trade
+  const cell = {};
+  els.forEach(e => {
+    const ph = e.phase || '_UNPHASED', st = ScheduleGate.collapsePhase(e.storey);
+    const k = ph + '||' + st;
+    const c = cell[k] || (cell[k] = {});
+    const t = e.resource || '_NONE';
+    c[t] = (c[t] || 0) + (e.installSecs || 0);
+  });
+  const cellDays = k => {
+    const c = cell[k]; if (!c) return 0;
+    let d = 0;
+    Object.keys(c).forEach(t => { const v = c[t] / (shiftSecs * (t === '_NONE' ? 1 : mc(t))); if (v > d) d = v; });
+    return Math.max(d > 0 ? 1 : 0, Math.ceil(d));   // duration_rule.min_days = 1
+  };
+  const ladderPhases = new Set(T.dependencies.across_levels
+    .filter(e => e.pred === e.succ && e.level_offset === 1)
+    .filter(e => !process.env.LADDER_ONLY || process.env.LADDER_ONLY.split(',').indexOf(e.pred) >= 0)
+    .map(e => e.pred));
+  const present = T.phases.filter(p => byPhase[p.name]);          // _empty_phase_rule: dropped, chain BRIDGED
+  const finish = {}, finishSpan = {};                             // key -> finish day / {s,e}
+  let programme = 0;
+  levelsUp.forEach((lv, li) => {
+    let t = 0;
+    present.forEach(p => {
+      const isBuilding = p.scope === 'building';
+      if (isBuilding && li > 0) return;                            // _edge_scope_rule: LOWEST level only
+      const k = p.name + '||' + lv;
+      const d = cellDays(k);
+      if (!d) return;                                              // no elements of this phase on this level
+      let start = t;
+      // across_levels ladder, READ FROM THE TEMPLATE — never a second hand-typed list. LADDER_ONLY
+      // is a what-if knob for pricing a narrower ladder (it is how the v1.1.0 superstructure-only
+      // ladder was measured at PLUMBER 1.84x over cap before v1.2.0 widened it).
+      if (ladderPhases.has(p.id) && li > 0) {
+        const below = finish[p.name + '||' + levelsUp[li - 1]];   // keyed by NAME, same as finish[k]
+        if (below != null && below > start) start = below;
+      }
+      const end = start + d;
+      finish[k] = end; finishSpan[k] = { s: start, e: end }; t = end;
+      if (process.env.HOP6_DEBUG) console.log('     dbg ' + k + ' start=' + start + ' d=' + d + ' end=' + end);
+      if (end > programme) programme = end;
+    });
+  });
+  // HOP 6b — is the serial plan CREW-LEGAL? Levels run in parallel (only the superstructure ladder
+  // ties them), so the same trade can be demanded on two levels at once. Average crew demand per
+  // task per trade = secs_t / (shift * durationDays); summed across every task live on a given day.
+  const dayDemand = {};                                            // trade -> day -> crews
+  Object.keys(finishSpan).forEach(k => {
+    const sp = finishSpan[k], c = cell[k] || {};
+    Object.keys(c).forEach(t => {
+      if (t === '_NONE') return;
+      const crews = c[t] / (shiftSecs * Math.max(1, sp.e - sp.s));
+      const dd = dayDemand[t] || (dayDemand[t] = {});
+      for (let d = sp.s; d < sp.e; d++) dd[d] = (dd[d] || 0) + crews;
+    });
+  });
+  const serialBreach = [];
+  Object.keys(dayDemand).forEach(t => {
+    let pk = 0; Object.keys(dayDemand[t]).forEach(d => { if (dayDemand[t][d] > pk) pk = dayDemand[t][d]; });
+    if (pk > mc(t) + 1e-9) serialBreach.push(t + ' peak=' + pk.toFixed(2) + ' cap=' + mc(t) + ' (' + (pk / mc(t)).toFixed(2) + 'x)');
+  });
+
+  console.log('\n§HOP6_SERIAL_COST ladder=[' + Array.from(ladderPhases).join(',') + '] templateSerialProgramme=' + programme + 'd vs engineSpan=' +
+    spanDays.toFixed(1) + 'd  (ratio=' + (programme / spanDays).toFixed(2) + 'x) — phases packed, strictly sequential per level, levels tied only by the superstructure ladder');
+  levelsUp.forEach(lv => {
+    const parts = present.map(p => { const d = cellDays(p.name + '||' + lv); return d ? p.name + '=' + d + 'd' : null; }).filter(Boolean);
+    if (parts.length) console.log('   ' + lv.padEnd(14) + parts.join('  '));
+  });
+  console.log('§HOP6B_SERIAL_CREWLEGAL breaches=' + serialBreach.length +
+    (serialBreach.length ? ' [' + serialBreach.join('; ') + ']' : ' — every trade within max_crews across the level-parallel plan') +
+    '  (levels run in parallel under the one declared vertical edge, so a trade CAN be demanded on two levels at once)');
 
   // ── HOP 5 — edges: are they logic or restatements of the dates? ─────────────────────────────
   let restated = 0;

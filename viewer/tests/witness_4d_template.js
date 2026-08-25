@@ -25,7 +25,8 @@ const {
   phasesMatchClassificationOrder, phaseBandsDoNotOverlap, tradesMatchClassification,
   edgesReferenceRealPhases, withinLevelChainCoversAllPhases, edgesAreDateIndependent,
   calendarMatchesEngine, durationRuleIsWorkContent, durationDivisorIsPerTrade,
-  capacityRuleIsHard, phasesDeclareScope, dependencyScopeRulesDeclared
+  capacityRuleIsHard, phasesDeclareScope, dependencyScopeRulesDeclared,
+  ladderCoversEveryLevelPhase, allEdgesAreSerialFS
 } = require('../../witness_kit/invariants/4d_template');
 
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
@@ -69,13 +70,18 @@ const rows = T.phases.map((p, i) => ({
 
 console.log('§4DT_SOURCE template=rates/4D_template.json v=' + T.meta.version +
   ' phases=' + rows.length + ' withinLevelEdges=' + T.dependencies.within_level.length +
-  ' acrossLevelEdges=' + T.dependencies.across_levels.length);
+  ' acrossLevelEdges=' + T.dependencies.across_levels.length +
+  ' allFSzeroLag=' + allEdgesAreSerialFS(T));
 console.log('§4DT_PHASES ' + rows.map(r => r.name + '[' + r.classMinSequence + '-' + r.classMaxSequence + ']' +
   '/' + r.scope).join(' -> '));
 console.log('§4DT_CALENDAR hoursPerShift=' + T.calendar.hours_per_shift + ' engineSHIFT_HOURS=' + SHIFT +
   ' daysPerWeek=' + T.calendar.days_per_week + ' durationBasis=' + T.duration_rule.basis +
   ' divisorScope=' + T.duration_rule.divisor_scope);
 console.log('§4DT_CAPACITY rule="' + T.capacity_rule.rule + '" appliesTo=' + T.capacity_rule.applies_to);
+
+// Deep copy + mutate, so a red control can inject a defect without touching the real T every
+// later gate reads. structuredClone is node>=17; JSON round-trip is enough for a plain JSON doc.
+const mut = f => { const c = JSON.parse(JSON.stringify(T)); f(c); return c; };
 
 Witness('4d_template')
   .population(() => rows)
@@ -105,6 +111,46 @@ Witness('4d_template')
   .invariant('capacity-rule-is-hard', () => capacityRuleIsHard(T))
   // The two instantiation rules v1.0.0 left undefined, both of which HHS actually needs.
   .invariant('dependency-scope-rules-declared', () => dependencyScopeRulesDeclared(T))
+  // §4D_BAND_MONOTONIC as logic: a trade may not overtake itself up the building. Without the full
+  // ladder the packed-sequential plan is NOT crew-legal (PLUMBER 1.84x over cap on HHS).
+  .invariant('ladder-covers-every-level-phase', () => ladderCoversEveryLevelPhase(T))
+  // User ruling 2026-08-25: packed and strictly sequential; an overlap is a human's drag, not a
+  // solver artifact.
+  .invariant('all-edges-are-serial-fs', () => allEdgesAreSerialFS(T))
+  .invariant('redctl:ladder rejects a superstructure-only ladder', () => ladderCoversEveryLevelPhase(
+    mut(c => { c.dependencies.across_levels = c.dependencies.across_levels.filter(e => e.pred === 'superstructure'); })) === false)
+  .invariant('redctl:serial rejects a hand-authored overlap', () => allEdgesAreSerialFS(
+    mut(c => { c.dependencies.within_level[0].lag_days = -3; })) === false)
+  // ── PER-GATE RED CONTROLS ────────────────────────────────────────────────────────────────
+  // The contract allows ONE .redControl(), which proves the witness as a whole can fail. It does
+  // NOT prove that each individual gate can. That distinction is not academic here: every gate
+  // below this line was added in one sitting, and a gate whose predicate is quietly always-true
+  // reads exactly like a gate that passes. Each check injects that gate's OWN real defect into a
+  // deep copy and asserts the gate rejects it, every run, in the committed witness — not in a
+  // throwaway console session that nobody can re-run.
+  .invariant('redctl:bands reject an interleave', () => phaseBandsDoNotOverlap(
+    // the §S65 #7 shape: a class at sequence 8 inside Architecture, i.e. after all MEP Rough-in (7)
+    [{ classMinSequence: 1, classMaxSequence: 1 }, { classMinSequence: 5, classMaxSequence: 8 },
+     { classMinSequence: 7, classMaxSequence: 7 }]) === false)
+  .invariant('redctl:bands accept clean bands', () => phaseBandsDoNotOverlap(
+    [{ classMinSequence: 1, classMaxSequence: 1 }, { classMinSequence: 5, classMaxSequence: 6 },
+     { classMinSequence: 7, classMaxSequence: 7 }]) === true)
+  .invariant('redctl:per-trade rejects a summed formula', () => durationDivisorIsPerTrade(
+    mut(c => { c.duration_rule.formula = 'days = ceil( sum(installSecs) / (h*3600*crews) ), crews = sum of max_crews over the trades'; })) === false)
+  .invariant('redctl:per-trade rejects a drifted divisor_scope', () => durationDivisorIsPerTrade(
+    mut(c => { c.duration_rule.divisor_scope = 'pooled'; })) === false)
+  .invariant('redctl:capacity rejects placement-only', () => capacityRuleIsHard(
+    mut(c => { c.capacity_rule.applies_to = 'the times at first placement'; })) === false)
+  .invariant('redctl:capacity rejects a deleted rule', () => capacityRuleIsHard(
+    mut(c => { delete c.capacity_rule; })) === false)
+  .invariant('redctl:scope rejects a level phase claiming building scope',
+    () => phasesDeclareScope([{ scope: 'building', replicate_per_level: true }]) === false)
+  .invariant('redctl:edge-scope rejects a dropped empty-phase rule', () => dependencyScopeRulesDeclared(
+    mut(c => { delete c.dependencies._empty_phase_rule; })) === false)
+  .invariant('redctl:cover rejects an orphaned phase', () => withinLevelChainCoversAllPhases(
+    mut(c => { c.dependencies.within_level = c.dependencies.within_level.slice(0, 1); })) === false)
+  .invariant('redctl:trades reject an invented trade', () => tradesMatchClassification(
+    rows.map((r, i) => i ? r : Object.assign({}, r, { trades: r.trades.concat('WELDER') }))) === false)
   // RED CONTROL — reproduce the real defect this file exists to prevent: give an edge an absolute
   // date, which is exactly the shape schedule_author.js's derived lags have.
   .redControl(rs => {
