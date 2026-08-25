@@ -324,8 +324,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   <p data-i18n-block="industry_p4">It is therefore worth examining what Autodesk certifies about its own software.</p>
 
   <figure>
-    <h4>What Autodesk holds certification for</h4>
-    <p class="fsub">buildingSMART certifications vs. local-authority compliance, any jurisdiction</p>
+    <h4 data-i18n-block="industry_fig_h4">What Autodesk holds certification for</h4>
+    <p class="fsub" data-i18n-block="industry_fig_fsub">buildingSMART certifications vs. local-authority compliance, any jurisdiction</p>
     <div class="mxscroll">
       <table class="mx">
         <thead><tr><th>Certification</th><th class="c">Export</th><th class="c">Import</th></tr></thead>
@@ -340,7 +340,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
         </tbody>
       </table>
     </div>
-    <figcaption><b>Source</b>buildingSMART certification register, as researched 2026-07-31.
+    <figcaption data-i18n-block="industry_figcap"><b>Source</b>buildingSMART certification register, as researched 2026-07-31.
     What buildingSMART verifies is that an application &ldquo;can reliably import and export files in
     accordance with the relevant IFC standard versions&rdquo; &mdash; a losslessness claim, not a
     regulatory one.</figcaption>
@@ -383,8 +383,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   message; the file opens and renders.</p>
 
   <figure>
-    <h4>One measured truncated export</h4>
-    <p class="fsub">Elements delivered vs. elements silently absent</p>
+    <h4 data-i18n-block="gap_fig1_h4">One measured truncated export</h4>
+    <p class="fsub" data-i18n-block="gap_fig1_fsub">Elements delivered vs. elements silently absent</p>
     <div class="stack" aria-label="6 percent delivered, 94 percent absent">
       <div class="seg a" style="flex:6">6%</div>
       <div class="seg w" style="flex:94">94% absent</div>
@@ -393,7 +393,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
       <span><i class="sw a"></i>3,955 elements delivered</span>
       <span><i class="sw w"></i>no error shown</span>
     </div>
-    <figcaption><b>Source</b>Measured export failure documented in the project&rsquo;s own IFC export
+    <figcaption data-i18n-block="gap_fig1cap"><b>Source</b>Measured export failure documented in the project&rsquo;s own IFC export
     guide. Export stopped at element #3,956 of the model and reported success.
     A model that is almost entirely absent can therefore pass review.</figcaption>
   </figure>
@@ -403,8 +403,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   semantics becomes measurable.</p>
 
   <figure>
-    <h4>Where the bytes go in an extracted model</h4>
-    <p class="fsub">Hospital building, 63,917 elements, ~263 MB database</p>
+    <h4 data-i18n-block="gap_fig2_h4">Where the bytes go in an extracted model</h4>
+    <p class="fsub" data-i18n-block="gap_fig2_fsub">Hospital building, 63,917 elements, ~263 MB database</p>
     <div class="stack" aria-label="91 percent geometry, 9 percent semantics">
       <div class="seg a" style="flex:91">91% geometry</div>
       <div class="seg n" style="flex:9">9%</div>
@@ -413,7 +413,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
       <span><i class="sw a"></i>Component geometry &mdash; 239.1 MB</span>
       <span><i class="sw n"></i>All semantics, transforms, indexes &mdash; 23.7 MB</span>
     </div>
-    <figcaption><b>Source</b>Measured with <span class="mono">dbstat</span> on the Hospital extraction.
+    <figcaption data-i18n-block="gap_fig2cap"><b>Source</b>Measured with <span class="mono">dbstat</span> on the Hospital extraction.
     Relationship data &mdash; the part that makes a model queryable rather than merely viewable &mdash;
     is roughly 0.2% of the file.</figcaption>
   </figure>
@@ -421,14 +421,14 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   <h3 data-i18n-block="gap_h3">Coverage of classification data</h3>
 
   <figure>
-    <h4>Classification coverage in one delivered model</h4>
-    <p class="fsub">Hospital building &mdash; elements carrying a classification code</p>
+    <h4 data-i18n-block="gap_fig3_h4">Classification coverage in one delivered model</h4>
+    <p class="fsub" data-i18n-block="gap_fig3_fsub">Hospital building &mdash; elements carrying a classification code</p>
     <div class="bignum">
       <span class="n">7.11%</span>
       <span class="t">of 63,917 elements carry a classification code. Every code present is
       well-formed &mdash; zero invalid codes.</span>
     </div>
-    <figcaption><b>Source</b>Measured on re-extraction of the Hospital model, 2026-07-31.
+    <figcaption data-i18n-block="gap_fig3cap"><b>Source</b>Measured on re-extraction of the Hospital model, 2026-07-31.
     <strong>This is one building&rsquo;s number and must not be read as an industry figure.</strong>
     It indicates a pattern worth checking on an individual model, which is what the assessment does.
     It also shows why validity and coverage are reported separately: judged on validity alone this
@@ -438,14 +438,14 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 
   <h3 data-i18n-block="gap_h4">File bulk has a delivery threshold</h3>
   <figure>
-    <h4>Entities per element &mdash; delivery thresholds</h4>
-    <p class="fsub">A measure of whether other tools can open the delivered file</p>
+    <h4 data-i18n-block="gap_fig4_h4">Entities per element &mdash; delivery thresholds</h4>
+    <p class="fsub" data-i18n-block="gap_fig4_fsub">A measure of whether other tools can open the delivered file</p>
     <div class="bands">
       <div class="band g"><b>&lt; 50</b>Target &mdash; exports cleanly, opens everywhere</div>
       <div class="band m"><b>50 &ndash; 200</b>Acceptable &mdash; large but workable</div>
       <div class="band b"><b>&gt; 200</b>Many tools cannot open it at all</div>
     </div>
-    <figcaption><b>Source</b>Thresholds published in the project&rsquo;s IFC export guide, derived from
+    <figcaption data-i18n-block="gap_fig4cap"><b>Source</b>Thresholds published in the project&rsquo;s IFC export guide, derived from
     measured import behaviour. Driven mostly by exporting tessellated geometry where solids were
     available, and by exporting property sets nobody contracted for.</figcaption>
   </figure>
@@ -477,25 +477,25 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   embedded in the instrument. Coverage is partial; the current state is shown below.</p>
 
   <figure>
-    <h4>Jurisdiction rule coverage</h4>
-    <p class="fsub">Validation rules implemented against the stated target</p>
+    <h4 data-i18n-block="roadmap_fig1_h4">Jurisdiction rule coverage</h4>
+    <p class="fsub" data-i18n-block="roadmap_fig1_fsub">Validation rules implemented against the stated target</p>
     <div class="hb"><span class="n">Malaysia · UBBL</span><span class="t"><span class="f" style="width:15%"></span></span><span class="v">30</span></div>
     <div class="hb"><span class="n">SG · UK · AU · US · EU · HK</span><span class="t"><span class="f" style="width:0%"></span></span><span class="v">0</span></div>
     <div class="hb"><span class="n">Stated target</span><span class="t"><span class="f" style="width:100%;background:var(--surface-3)"></span></span><span class="v">200+</span></div>
-    <figcaption><b>Source</b>Project rule inventory. 30 UBBL rules implemented against a stated target
+    <figcaption data-i18n-block="roadmap_fig1cap"><b>Source</b>Project rule inventory. 30 UBBL rules implemented against a stated target
     of 200+ across six jurisdictions. The remaining rules are outstanding work.</figcaption>
   </figure>
 
   <h3 data-i18n-block="roadmap_h2">The industry picture starts empty</h3>
   <figure>
-    <h4>Assessments completed</h4>
-    <p class="fsub">The benchmark this toolkit builds</p>
+    <h4 data-i18n-block="roadmap_fig2_h4">Assessments completed</h4>
+    <p class="fsub" data-i18n-block="roadmap_fig2_fsub">The benchmark this toolkit builds</p>
     <div class="bignum">
       <span class="n ok">0</span>
       <span class="t">No assessments have been submitted yet. As responses accumulate, this figure
       becomes an industry picture built from practitioner reports.</span>
     </div>
-    <figcaption><b>Source</b>Live count of submitted assessments. No estimate, projection or illustrative figure is
+    <figcaption data-i18n-block="roadmap_fig2cap"><b>Source</b>Live count of submitted assessments. No estimate, projection or illustrative figure is
     shown in its place.</figcaption>
   </figure>
 </section>
