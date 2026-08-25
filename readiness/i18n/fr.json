@@ -9,8 +9,7 @@
     "nav.notice": "Avis",
     "brand.title": "Boîte à outils d'évaluation de la maturité OpenBIM",
     "lang.label": "Langue",
-    "lang.note": "Les vingt questions et leurs options de réponse sont traduites. Les pages explicatives, les mentions légales et la déclaration de consentement restent en anglais.",
-    "draftnote": "La traduction de cette page est un <strong>brouillon non validé</strong>, non relu par un traducteur qualifié. Les pages Sources et Avis restent en anglais afin de préserver l'exactitude des citations."
+    "lang.note": "Les vingt questions et leurs options de réponse sont traduites. Les pages explicatives, les mentions légales et la déclaration de consentement restent en anglais."
   },
   "front": {
     "hero": "<p class='eyebrow'>Demande de financement de recherche &middot; 10 août 2026 &middot; Mohd Faizal Bin Yusof</p><h1>Boîte à outils d'évaluation de la maturité pour la gestion de l'infrastructure numérique</h1>",

@@ -9,8 +9,7 @@
     "nav.notice": "Notis",
     "brand.title": "Kit Alat Penilaian Kesediaan OpenBIM",
     "lang.label": "Bahasa",
-    "lang.note": "Dua puluh soalan dan pilihan jawapannya diterjemahkan. Halaman penerangan, notis undang-undang dan pernyataan persetujuan kekal dalam bahasa Inggeris.",
-    "draftnote": "Terjemahan halaman ini ialah <strong>draf yang belum diadjudikasi</strong>, belum disemak oleh penterjemah bertauliah. Halaman Sumber dan Notis kekal dalam bahasa Inggeris untuk mengekalkan ketepatan petikan dan undang-undang."
+    "lang.note": "Dua puluh soalan dan pilihan jawapannya diterjemahkan. Halaman penerangan, notis undang-undang dan pernyataan persetujuan kekal dalam bahasa Inggeris."
   },
   "front": {
     "hero": "<p class='eyebrow'>Permohonan pembiayaan penyelidikan &middot; 10 Ogos 2026 &middot; Mohd Faizal Bin Yusof</p><h1>Kit Alat Penilaian Kesediaan untuk Pengurusan Infrastruktur Digital</h1>",

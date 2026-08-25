@@ -18,7 +18,14 @@
    The narrower principle — "a language choice is not data about the respondent" — is about the
    research payload specifically and is unchanged; this is a separate, purely client-side reading
    convenience that touches nothing that gets submitted. Graceful fallback to English if unset, or if
-   the stored code no longer exists in languages.json (e.g. a language is later removed). */
+   the stored code no longer exists in languages.json (e.g. a language is later removed).
+
+   DRAFT LABELING REMOVED (2026-08-25, user directive): the toolkit previously showed a warning
+   banner on every non-English page ("unadjudicated draft, not reviewed by a qualified translator")
+   and appended " — draft" to each language's name in the picker. The user explicitly withdrew that
+   framing — see PROMPT.md §LANGUAGE_I18N_FULLTOOLKIT for the dated note. Do not reintroduce a
+   draft/unadjudicated banner without a fresh user directive; this removal was deliberate, not an
+   oversight to "fix" back. */
 (function () {
   var PAGE = document.currentScript && document.currentScript.getAttribute('data-page');
   var LANGS = null, PACKCACHE = {};
@@ -40,12 +47,7 @@
     'border-radius:6px;padding:5px 9px}' +
     '.langbar select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}' +
     '.langbar .small{flex:1;min-width:240px;font-size:12.5px}' +
-    '.draftbar{margin:12px 0 0;padding:12px 14px;border-left:3px solid var(--warn);border-radius:6px;' +
-    'background:var(--warn-wash);color:var(--ink-2);font-size:14px;line-height:1.55}' +
-    '.draftbar .en{display:block;margin-top:7px;padding-top:7px;border-top:1px solid var(--rule-soft);opacity:.8}' +
-    '[dir="rtl"] .langbar{direction:rtl;text-align:right}' +
-    '[dir="rtl"] .draftbar{border-left:none;border-right:3px solid var(--warn);direction:rtl;text-align:right}' +
-    '[dir="rtl"] .draftbar .en{direction:ltr;text-align:left}';
+    '[dir="rtl"] .langbar{direction:rtl;text-align:right}';
 
   function injectCSS() {
     var s = document.createElement('style');
@@ -61,11 +63,8 @@
     bar.innerHTML =
       '<label for="langsel">Language</label>' +
       '<select id="langsel"><option value="en">English</option></select>' +
-      '<span class="small" id="langnote">Translated as an unadjudicated draft — see the notice below once a language is selected.</span>';
+      '<span class="small" id="langnote">This page is translated. The Sources page stays in English to preserve citation accuracy.</span>';
     topbar.parentNode.insertBefore(bar, topbar.nextSibling);
-    var draft = document.createElement('div');
-    draft.className = 'draftbar'; draft.id = 'draftbar'; draft.hidden = true;
-    bar.parentNode.insertBefore(draft, bar.nextSibling);
     return bar;
   }
 
@@ -74,7 +73,7 @@
       if (code === 'en') return;
       var o = document.createElement('option');
       o.value = code;
-      o.textContent = LANGS[code].native + (LANGS[code].status === 'draft' ? ' — draft' : '');
+      o.textContent = LANGS[code].native;
       sel.appendChild(o);
     });
   }
@@ -94,7 +93,6 @@
   function applyLang(code, skipWrite) {
     if (!skipWrite) writeStoredLang(code);
     document.documentElement.setAttribute('dir', LANGS[code] && LANGS[code].dir === 'rtl' ? 'rtl' : 'ltr');
-    var draft = document.getElementById('draftbar');
     fetchPack(code).then(function (pack) {
       var common = pack && pack.common;
       var page = pack && pack[PAGE];
@@ -107,14 +105,6 @@
         else { v = page && page[raw]; }
         el.innerHTML = (v === undefined || v === null || v === '') ? originals[raw] : v;
       });
-
-      if (code === 'en' || !pack) { if (draft) draft.hidden = true; return; }
-      if (draft) {
-        var note = (common && common.draftnote) ||
-          'This translation is an <strong>unadjudicated draft</strong>, not reviewed by a qualified translator.';
-        draft.innerHTML = note + '<span class="en" lang="en">This translation is an <strong>unadjudicated draft</strong>, not reviewed by a qualified translator.</span>';
-        draft.hidden = false;
-      }
     });
   }
 
@@ -132,7 +122,7 @@
         sel.value = stored;
         applyLang(stored, true);
       }
-    }).catch(function () { LANGS = { en: { name: 'English', native: 'English', dir: 'ltr', status: 'source' } }; });
+    }).catch(function () { LANGS = { en: { name: 'English', native: 'English', dir: 'ltr' } }; });
     sel.addEventListener('change', function () { applyLang(sel.value); });
   });
 })();

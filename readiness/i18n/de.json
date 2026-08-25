@@ -9,8 +9,7 @@
     "nav.notice": "Hinweis",
     "brand.title": "OpenBIM-Reifegrad-Bewertungswerkzeug",
     "lang.label": "Sprache",
-    "lang.note": "Die zwanzig Fragen und ihre Antwortoptionen sind übersetzt. Erläuternde Seiten, rechtliche Hinweise und die Einwilligungserklärung bleiben auf Englisch.",
-    "draftnote": "Die Übersetzung dieser Seite ist ein <strong>ungeprüfter Entwurf</strong>, nicht von einem qualifizierten Übersetzer geprüft. Die Seiten Quellen und Hinweis bleiben auf Englisch, um die Zitiergenauigkeit zu wahren."
+    "lang.note": "Die zwanzig Fragen und ihre Antwortoptionen sind übersetzt. Erläuternde Seiten, rechtliche Hinweise und die Einwilligungserklärung bleiben auf Englisch."
   },
   "front": {
     "hero": "<p class='eyebrow'>Forschungsförderantrag &middot; 10. August 2026 &middot; Mohd Faizal Bin Yusof</p><h1>Reifegrad-Bewertungswerkzeug für das digitale Infrastrukturmanagement</h1>",
