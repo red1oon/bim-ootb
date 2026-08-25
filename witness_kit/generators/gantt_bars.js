@@ -74,9 +74,17 @@ async function generateRealGanttBars(dbPath, opts) {
   const mute = ['log', 'warn', 'error'].map(k => { const o = console[k]; console[k] = () => {}; return [k, o]; });
   let els, solve;
   try {
+    // nameOverrides MUST be passed here, not only to _buildScheduleElements below. In the browser
+    // materializeZones picks them up off window.SEQUENCE_NAME_OVERRIDES (rates.js sets it), so the
+    // production path is fine; under node `global.SEQUENCE_NAME_OVERRIDES` is undefined and it
+    // silently authored task windows from UNOVERRIDDEN classification while this generator measured
+    // them against OVERRIDDEN elements. Two classifications, one comparison — the exact drift the
+    // NAME_OVERRIDES note further down records, reappearing at a second call site. MEASURED: it
+    // manufactured one phantom over-commit (Clinic "Superstructure — Roof - Main", 11%).
     const res = SA.materializeZones(db, R.SEQUENCE_RULES, {
       start, laborRates: R.LABOR_RATES, rates: R.RATES || {},
-      scheduleGate: SG, shiftHours: shift, defaultRule: R.SEQUENCE_DEFAULT
+      scheduleGate: SG, shiftHours: shift, defaultRule: R.SEQUENCE_DEFAULT,
+      nameOverrides: R.SEQUENCE_NAME_OVERRIDES
     });
     if (!res || !res.ok) { db.close(); mute.forEach(([k, o]) => console[k] = o); return []; }
     els = SA._buildScheduleElements(db, R.SEQUENCE_RULES, {
@@ -126,14 +134,27 @@ async function generateRealGanttBars(dbPath, opts) {
     const e = byGuid[r.guid]; if (!e || !win[r.task_id]) return;
     const w = workOf[r.task_id] || (workOf[r.task_id] = { secs: 0, trades: {} });
     w.secs += e.installSecs || 0;
-    if (e.resource && e.resource !== '_DEFAULT') w.trades[e.resource] = 1;
+    // §CREW_DIVISOR_PER_TRADE — per-trade SECONDS, not a presence marker. See crewDaysOf below.
+    if (e.resource && e.resource !== '_DEFAULT')
+      w.trades[e.resource] = (w.trades[e.resource] || 0) + (e.installSecs || 0);
   });
+  // §CREW_DIVISOR_PER_TRADE (2026-08-25, viewer/rates/4D_template.json duration_rule.divisor_scope).
+  // A task is as long as its SLOWEST TRADE, never total-seconds over pooled crews: summing max_crews
+  // across trades treats them as fungible (an electrician's seconds worked off by a plumber's crew)
+  // and understated HHS_Office_Federated by 1.74x overall, 3.00x on MEP Rough-in alone. This mirrors
+  // schedule_author.js's §ZONE_WINDOW_COVERS_WORK divisor exactly — the two must not drift, which is
+  // the same lesson the NAME_OVERRIDES note directly above records.
   function crewDaysOf(tid) {
     const w = workOf[tid]; if (!w) return 0;
-    var crews = 0;
-    for (var t in w.trades) crews += (R.LABOR_RATES[t] && R.LABOR_RATES[t].max_crews) || 1;
-    if (!crews) crews = 1;
-    return (w.secs * 1000) / (SHIFT_MS * crews);
+    var d = 0, any = 0;
+    for (var t in w.trades) {
+      any = 1;
+      var cap = (R.LABOR_RATES[t] && R.LABOR_RATES[t].max_crews) || 1;
+      var td = (w.trades[t] * 1000) / (SHIFT_MS * cap);
+      if (td > d) d = td;
+    }
+    if (!any) d = (w.secs * 1000) / SHIFT_MS;   // all '_DEFAULT': one crew, as before
+    return d;
   }
   const ops = [];
   Object.keys(solve).forEach(g => {

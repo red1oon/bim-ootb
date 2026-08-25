@@ -958,7 +958,7 @@
     // start order so support chains settle in few sweeps, measured 8 residual at cap=4 on Hospital
     // from a wall-on-roof chain deeper than the cap). Crew slots are NOT re-solved for shifted
     // elements — counted and logged, accepted v1 tradeoff (4D_SCHEDULE_PERFECTION.md §DEQ_V1_IMPL #4).
-    var _rIter = 0, _rMovedTot = 0;
+    var _rIter = 0, _rMovedTot = 0, _crewPackMovedTot = 0;
     for (; _rIter < 16; _rIter++) {
       var _moved = 0;
       // §CURTAIN_WALL_OPENING tally reset — cwGrid/wallGrid are complete by now, so the LAST sweep's
@@ -981,11 +981,59 @@
           _moved++;
         }
       });
+      // ══ §CREW_CAP_FINAL (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S67) ═══
+      // THE CREW CAP HAS TO BIND THE FINAL TIMES, NOT ONLY PLACEMENT.
+      //
+      // claimCrew above enforces LABOR_RATES[trade].max_crews correctly — but only at the moment an
+      // element is first placed. The geometry sweep immediately above then writes o.start/o.end
+      // DIRECTLY, so every shifted element lands wherever its gate demands with no regard for
+      // whether that trade has a free crew there. hostGate is the biggest shifter and its whole
+      // population is hosted openings (IfcDoor/IfcWindow = CARPENTER), so they pile onto the same
+      // instants: MEASURED 2026-08-25, final emitted times, 24h shift —
+      //   Terminal CARPENTER peak 20 vs cap 2 (10.0x) · HHS 8 vs 2 (4.0x) · Duplex 3 vs 2 (1.5x),
+      // every other trade legal on every building. A/B with this loop disabled returns all three to
+      // their caps, which isolates the sweep as the cause. The breach never shortened the programme
+      // (HHS span 46.9d either way) — it just authored work no crew exists to do.
+      //
+      // The fix re-packs crews over the CURRENT times, inside the SAME convergence loop, so the two
+      // constraints settle together instead of one undoing the other: geometry may only push an
+      // element later, and so may the re-pack, so the loop is monotone and terminates. A re-pack
+      // move counts as _moved, which is what makes the next geometry sweep re-check what it broke.
+      // Duration is carried in PRODUCTIVE ms exactly as the geometry sweep does it (§ARCH_START_TEMPO
+      // / M1) — a shift across a different number of idle windows must not invent or destroy hours.
+      var _packSlots = {};
+      function _packClaim(resource, notBefore) {
+        var cap = crewCapFor(resource);
+        var slots = _packSlots[resource] || (_packSlots[resource] = new Array(cap).fill(baseMs));
+        var idx = 0;
+        for (var pi = 1; pi < slots.length; pi++) if (slots[pi] < slots[idx]) idx = pi;
+        return { start: Math.max(notBefore, slots[idx]), commit: function (e) { slots[idx] = e; } };
+      }
+      var _packMoved = 0;
+      elements.slice().filter(function (e) { return out[e.guid]; })
+        .sort(function (a, b) { return (out[a.guid].start - out[b.guid].start) || (a.seq - b.seq); })
+        .forEach(function (el) {
+          var o = out[el.guid];
+          var dur = prodAt(o.end) - prodAt(o.start);
+          var cl = _packClaim(el.resource, o.start);
+          var end = wallAt(prodAt(cl.start) + dur);
+          cl.commit(end);
+          if (cl.start > o.start) {
+            o.start = cl.start; o.end = end;
+            var prl = recsByGuid[el.guid];
+            if (prl) for (var pq = 0; pq < prl.length; pq++) prl[pq].end = o.end;
+            _moved++; _packMoved++;
+          }
+        });
+      _crewPackMovedTot += _packMoved;
       _rMovedTot += _moved;
       if (!_moved) break;
     }
     if (typeof console !== 'undefined' && console.log)
       console.log('§DEQ_REPAIR sweeps=' + _rIter + ' shifted=' + _rMovedTot + ' (0=order already dependency-consistent)');
+    if (typeof console !== 'undefined' && console.log)
+      console.log('§CREW_CAP_FINAL crewRepacked=' + _crewPackMovedTot +
+        ' (elements pushed later because their trade had no free crew at the time a geometry gate wanted them; 0=every gate landing already had a crew)');
     // §CURTAIN_WALL_OPENING — the coverage number, so the pool is auditable rather than trusted.
     // cwGated = openings with NO IfcWall* host that the curtain-wall pool caught; stillUngated =
     // openings bracketed by neither pool (a genuinely wall-less opening — reported, never invented

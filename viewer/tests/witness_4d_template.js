@@ -22,9 +22,10 @@ const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 const { PhaseRow4D } = require('../../witness_kit/schemas/4d_template');
 const {
-  phasesMatchClassificationOrder, tradesMatchClassification, edgesReferenceRealPhases,
-  withinLevelChainCoversAllPhases, edgesAreDateIndependent, calendarMatchesEngine,
-  durationRuleIsWorkContent
+  phasesMatchClassificationOrder, phaseBandsDoNotOverlap, tradesMatchClassification,
+  edgesReferenceRealPhases, withinLevelChainCoversAllPhases, edgesAreDateIndependent,
+  calendarMatchesEngine, durationRuleIsWorkContent, durationDivisorIsPerTrade,
+  capacityRuleIsHard, phasesDeclareScope, dependencyScopeRulesDeclared
 } = require('../../witness_kit/invariants/4d_template');
 
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
@@ -47,8 +48,9 @@ const classPhases = {};
 Object.keys(C.SEQUENCE_RULES).forEach(cls => {
   const r = C.SEQUENCE_RULES[cls];
   if (!r.phase || r.sequence == null) return;
-  const p = classPhases[r.phase] || (classPhases[r.phase] = { min: Infinity, trades: {} });
+  const p = classPhases[r.phase] || (classPhases[r.phase] = { min: Infinity, max: -Infinity, trades: {} });
   if (r.sequence < p.min) p.min = r.sequence;
+  if (r.sequence > p.max) p.max = r.sequence;
   if (r.resource) p.trades[r.resource] = 1;
 });
 
@@ -58,25 +60,32 @@ const rows = T.phases.map((p, i) => ({
   sequence: p.sequence,
   trades: (p.trades || []).slice().sort(),
   replicate_per_level: !!p.replicate_per_level,
+  scope: p.scope,
   index: i,
   classMinSequence: classPhases[p.name] ? classPhases[p.name].min : null,
+  classMaxSequence: classPhases[p.name] ? classPhases[p.name].max : null,
   classTrades: classPhases[p.name] ? Object.keys(classPhases[p.name].trades).sort() : null
 }));
 
 console.log('§4DT_SOURCE template=rates/4D_template.json v=' + T.meta.version +
   ' phases=' + rows.length + ' withinLevelEdges=' + T.dependencies.within_level.length +
   ' acrossLevelEdges=' + T.dependencies.across_levels.length);
-console.log('§4DT_PHASES ' + rows.map(r => r.name + '(' + r.sequence + ')' +
-  (r.replicate_per_level ? '/level' : '/building')).join(' -> '));
+console.log('§4DT_PHASES ' + rows.map(r => r.name + '[' + r.classMinSequence + '-' + r.classMaxSequence + ']' +
+  '/' + r.scope).join(' -> '));
 console.log('§4DT_CALENDAR hoursPerShift=' + T.calendar.hours_per_shift + ' engineSHIFT_HOURS=' + SHIFT +
-  ' daysPerWeek=' + T.calendar.days_per_week + ' durationBasis=' + T.duration_rule.basis);
+  ' daysPerWeek=' + T.calendar.days_per_week + ' durationBasis=' + T.duration_rule.basis +
+  ' divisorScope=' + T.duration_rule.divisor_scope);
+console.log('§4DT_CAPACITY rule="' + T.capacity_rule.rule + '" appliesTo=' + T.capacity_rule.applies_to);
 
 Witness('4d_template')
   .population(() => rows)
   .schema(PhaseRow4D)
   // Phase set and order are EXTRACTED from the classification table, never typed twice.
   .invariant('phases-match-classification-order', phasesMatchClassificationOrder)
+  // MIN-only ordering cannot see a band INTERLEAVE — the §S65 #7 roof defect passed that shape.
+  .invariant('phase-bands-do-not-overlap', phaseBandsDoNotOverlap)
   .invariant('trades-match-classification', tradesMatchClassification)
+  .invariant('phases-declare-scope', phasesDeclareScope)
   // The dependency graph must be well-formed and must cover every phase, so no phase can be
   // silently unsequenced the way Substructure currently vanishes from HHS's generated programme.
   .invariant('edges-reference-real-phases', () => edgesReferenceRealPhases(T))
@@ -89,6 +98,13 @@ Witness('4d_template')
   .invariant('calendar-matches-engine', () => calendarMatchesEngine(T, SHIFT))
   // Duration comes from work content, not from the placement solve's elapsed span.
   .invariant('duration-rule-is-work-content', () => durationRuleIsWorkContent(T))
+  // An activity is as long as its SLOWEST TRADE. Dividing total seconds by the SUM of the trades'
+  // crews treats trades as fungible and understated HHS by 1.74x overall, 3.00x on one phase.
+  .invariant('duration-divisor-is-per-trade', () => durationDivisorIsPerTrade(T))
+  // Crew caps bind the FINAL times, not just placement — §DEQ_REPAIR breaches them 4.0x on HHS.
+  .invariant('capacity-rule-is-hard', () => capacityRuleIsHard(T))
+  // The two instantiation rules v1.0.0 left undefined, both of which HHS actually needs.
+  .invariant('dependency-scope-rules-declared', () => dependencyScopeRulesDeclared(T))
   // RED CONTROL — reproduce the real defect this file exists to prevent: give an edge an absolute
   // date, which is exactly the shape schedule_author.js's derived lags have.
   .redControl(rs => {
