@@ -89,6 +89,14 @@ const KNOWN_RED = {
   //     origin/main (so an earlier merge fixed G-LI-2e, not this PR); entry was stale.
   // C — real assertion reds, reproducible every run.
   'witness_door_window_host_wall.js':        'C — assertion red, UNTRIAGED',
+  'witness_gantt_props_epoch.js':            'C — W-PE-5/6/7 (4 of 20 checks) TRIAGED, not a live risk: updateStatus/' +
+                                              '_finishActivate/the two jump diagnostics still literally format the TM\'s ' +
+                                              'internal clock as a date, but every value reaching them is now clamped ' +
+                                              'inside its real task window at the write site (injectGantt\'s ' +
+                                              '_tmClampToTaskWindow, W-PE-8 in the same file proves it\'s wired; ' +
+                                              'witness_tm_element_window_bind.js proves it works against real data). ' +
+                                              'Fixing these 4 sites directly is a real follow-up (closes the pattern, not ' +
+                                              'just the value) — see WITNESS_INTERFACE_FRAMEWORK.md §9.',
   'witness_4d_band_monotonic.js':            'C — T2a: 0->14,267 non-structure cross-storey inversions (Hospital), bisected to c972778 ' +
                                               '#1319 §HOSTED_BEFORE_HOST (0->9,171) then a2c30ee #1345 §STAIR_FLIGHT_GRID_VISIBILITY ' +
                                               '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
