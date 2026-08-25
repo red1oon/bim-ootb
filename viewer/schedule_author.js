@@ -550,12 +550,31 @@
         var _we = _elByGuid[z.guids[_gi]];
         if (!_we) continue;
         _wSecs += _we.installSecs || 0;
-        if (_we.resource && _we.resource !== '_DEFAULT') _wTrades[_we.resource] = 1;
+        // per-trade seconds, not a presence marker — the divisor is per trade now (see below).
+        if (_we.resource && _we.resource !== '_DEFAULT')
+          _wTrades[_we.resource] = (_wTrades[_we.resource] || 0) + (_we.installSecs || 0);
       }
-      var _wCrews = 0;
-      for (var _wt in _wTrades) _wCrews += (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
-      if (!_wCrews) _wCrews = 1;
-      var _crewDays = (_wSecs * 1000) / (_shiftMs * _wCrews);
+      // §CREW_DIVISOR_PER_TRADE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S67 —
+      // viewer/rates/4D_template.json duration_rule.divisor_scope, gated by
+      // witness_4d_template.js `duration-divisor-is-per-trade`).
+      // This used to divide the zone's TOTAL seconds by the SUM of its trades' max_crews, which
+      // treats trades as FUNGIBLE — an electrician's seconds worked off by a plumber's crew. A zone
+      // is as long as its SLOWEST TRADE. MEASURED on HHS_Office_Federated (2026-08-25, 24h shift):
+      // whole-programme sum-of-crews 40.1d vs correct per-trade 69.8d (1.74x), and 3.00x on MEP
+      // Rough-in alone (3 trades, Sum(max_crews)=6, no single trade above 2). The sum form let a
+      // window pass this floor while still being shorter than the work one trade actually has to do
+      // in it. Still a FLOOR and still per-trade only over the trades this zone's OWN elements use.
+      var _crewDays = 0, _wAnyTrade = 0;
+      for (var _wt in _wTrades) {
+        _wAnyTrade = 1;
+        var _wCap = (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
+        var _wd = (_wTrades[_wt] * 1000) / (_shiftMs * _wCap);
+        if (_wd > _crewDays) _crewDays = _wd;
+      }
+      // A zone whose elements are ALL '_DEFAULT' (no named trade) names no crew to divide by. The
+      // sum form fell back to _wCrews=1 there; keep that exact behaviour rather than silently
+      // dropping the floor to zero for those zones.
+      if (!_wAnyTrade) _crewDays = (_wSecs * 1000) / _shiftMs;
       var _needDays = Math.ceil(_crewDays);
       if (eDays - sDays < _needDays) {
         _workWidened++;
