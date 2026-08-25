@@ -858,6 +858,70 @@
     return { ok: true, scheduleId: schedId, zoneCount: rolled.zones.length, edgeCount: edgeN, totalDays: totalDays };
   }
 
+  // ══ §TPL_MOVIE_BINDS_BARS (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S70) ══
+  // THE SECOND HALF OF THE INVERSION, and without it the first half is a REGRESSION.
+  //
+  // The legacy bars were ENVELOPES over the element solve, so an element was inside its own bar by
+  // construction: MEASURED 98.9% Hospital / 95.2% Terminal / 86.8% Duplex, worst offset 0.5 days
+  // (pure day-rounding). Emitting bars from the template instead makes the bar an INDEPENDENT
+  // statement — and the two timelines then disagree wildly: 54.5% / 35.4% / 18.8% inside, worst
+  // offset 274.3 days on Hospital, 81.1% of Duplex's elements appearing BEFORE their own bar.
+  // That is the user's reported hell — things appearing when no bar says they should — made worse,
+  // not better. So the movie must be bound to the bars.
+  //
+  // THE MAP: per task, an order-preserving affine map of that task's own solve envelope
+  // [minStart, maxEnd] onto its authored window [s, e]. Monotone, so EVERY ordering the solve
+  // established survives it — support-before-supported, host-before-hosted, band monotonicity are
+  // all preserved exactly, because a monotone map cannot swap two times. Relative widths survive
+  // too (uniform scale within a task), so nothing collapses to zero that was not already tiny.
+  // A degenerate task (every element solved at the same instant — the "zero minute stacking"
+  // shape) is spread EVENLY across its window instead, which is the one case an affine map cannot
+  // handle and the one case the user reported by name.
+  //
+  // This is the same seam §ZONE_DISPLAY_AUTHORING used, run the other way: that authored windows
+  // FROM the display timeline; this authors the display timeline FROM the windows. Only one of the
+  // two can be the source, and after §S68 it is the template.
+  function remapSolveToTasks(solve, tasks, startISO) {
+    var base = Date.parse(startISO || '2026-01-01');
+    var out = {}, degenerate = 0, mapped = 0;
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i], g, st;
+      var wS = base + t.sDays * 86400000, wE = base + t.eDays * 86400000;
+      var lo = Infinity, hi = -Infinity, have = 0;
+      for (var j = 0; j < t.guids.length; j++) {
+        st = solve[t.guids[j]]; if (!st) continue;
+        have++;
+        if (st.start < lo) lo = st.start;
+        if (st.end > hi) hi = st.end;
+      }
+      if (!have) continue;
+      var span = hi - lo;
+      if (span <= 0) {
+        // Degenerate: everything solved at one instant. Spread evenly, in a deterministic order,
+        // so the bar shows work progressing instead of one silent stack at its left edge.
+        degenerate++;
+        var ordered = t.guids.filter(function (x) { return solve[x]; }).slice().sort();
+        var step = (wE - wS) / Math.max(1, ordered.length);
+        for (var k = 0; k < ordered.length; k++) {
+          out[ordered[k]] = { start: Math.round(wS + k * step), end: Math.round(wS + (k + 1) * step) };
+          mapped++;
+        }
+        continue;
+      }
+      var scale = (wE - wS) / span;
+      for (var m = 0; m < t.guids.length; m++) {
+        g = t.guids[m]; st = solve[g]; if (!st) continue;
+        var ns = Math.round(wS + (st.start - lo) * scale);
+        var ne = Math.round(wS + (st.end - lo) * scale);
+        if (ne <= ns) ne = ns + 1;                 // never a zero-width element
+        if (ne > wE) ne = wE;
+        out[g] = { start: ns, end: ne };
+        mapped++;
+      }
+    }
+    return { schedule: out, mapped: mapped, degenerateTasks: degenerate };
+  }
+
   // _writeTemplateSchedule — the §TEMPLATE_INSTANTIATE write path. Same tables, same schedule_id,
   // same idempotent rebuild as the legacy grouping path; the difference is WHERE the numbers come
   // from: task windows from 4D_template.json's duration_rule, task_sequences from its dependencies.
@@ -936,8 +1000,15 @@
       ' edges=' + inst.edges.length + ' (withinLevel=' + wl + ' acrossLevels=' + al + ')' +
       ' elements=' + elements.length + ' totalDays=' + inst.totalDays +
       ' — every lag is the TEMPLATE\'s, none derived from the dates it constrains');
+    // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task
+    // objects, so the two can never be computed off different grids.
+    var _rm = remapSolveToTasks(schedule, inst.tasks, start);
+    console.log('§TPL_MOVIE_BINDS_BARS remapped=' + _rm.mapped + '/' + elements.length +
+      ' degenerateTasksSpreadEvenly=' + _rm.degenerateTasks +
+      ' — every element now plays inside the bar that claims it');
     return { ok: true, scheduleId: schedId, zoneCount: inst.tasks.length, edgeCount: inst.edges.length,
-             totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports };
+             totalDays: inst.totalDays, templateVersion: T.meta.version, reports: inst.reports,
+             tasks: inst.tasks, displaySchedule: _rm.schedule };
   }
 
   // materializeDefault(db, rules, opts) — originate the smart-default schedule on a blank model.
@@ -2251,6 +2322,7 @@
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
     instantiateTemplate: instantiateTemplate,
+    remapSolveToTasks: remapSolveToTasks,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
