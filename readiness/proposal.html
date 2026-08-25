@@ -270,10 +270,10 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>The research proposal</small></div>
-  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html" class="on">Proposal</a><a href="why.html">Background</a><a href="faq.html">Basics</a><a href="sources.html">Sources</a><a href="disclaimer.html">Notice</a></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" class="on" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" data-i18n-block="common:nav.background">Background</a><a href="faq.html" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
 </div>
 
-<div class="hero">
+<div class="hero" data-i18n-block="hero">
   <p class="eyebrow">Research funding request &middot; 10 August 2026</p>
   <h1>Development of an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management</h1>
   <p class="standfirst">The funded proposal, reproduced in full. This toolkit is the artifact it
@@ -281,8 +281,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <section>
-  <div class="shead"><span class="snum">&mdash;</span><h2>Project information</h2></div>
-  <div class="dscroll"><table class="dtable"><tbody>
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="projinfo_head">Project information</h2></div>
+  <div class="dscroll"><table class="dtable"><tbody data-i18n-block="projinfo">
     <tr><td class="n">Name</td><td>Mohd Faizal Bin Yusof</td></tr>
     <tr><td class="n">Date</td><td>10 August 2026</td></tr>
     <tr><td class="n">Project title</td><td>Development of an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management</td></tr>
@@ -290,42 +290,42 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </section>
 
 <section>
-  <div class="shead"><span class="snum">01</span><h2>Synopsis</h2></div>
-  <div class="proposal">
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="synopsis_head">Synopsis</h2></div>
+  <div class="proposal" data-i18n-block="synopsis">
 <p>Digital transformation is reshaping how infrastructure assets are planned, delivered, operated, and maintained. In the UAE, Building Information Modelling (BIM)<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> has become an increasingly important enabler of this transformation, supporting more integrated and data-driven approaches to infrastructure development and lifecycle management. OpenBIM strengthens this capability by adopting vendor-neutral open standards, principally the Industry Foundation Classes (IFC), enabling infrastructure information to be exchanged, integrated, and managed across diverse software platforms without dependence on proprietary systems. The benefits are well recognised, including improved interoperability, reduced software lock-in, and more effective collaboration among stakeholders throughout the asset lifecycle.</p><p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary BIM workflows towards more interoperable OpenBIM practices. This is also applicable in various <span class="corr" title="Corrected from &quot;third word countries&quot; in the source document.">third world countries</span>. This transition requires not only appropriate technologies, but also organisational readiness in areas such as governance, business processes, workforce capabilities, data management, and compliance with open standards. However, there is currently no simple and practical way for organisations to objectively assess their readiness for OpenBIM implementation or to identify the capability gaps that should be addressed before embarking on this transition.</p><p>This project addresses that gap by developing an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management, a structured but easy-to-use way for an organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. Readiness is assessed across the dimensions most associated with successful adoption: governance, people and skills, technology, data and standards, and organisational processes. The result shows an organisation where its capability gaps and implementation risks lie, and which areas to address first before committing to OpenBIM.</p><p>It helps to be precise about how the toolkit works and where its information comes from, because three roles are easily confused. First, a large language model (LLM) acts as the interviewer: instead of filling in a static questionnaire, a practitioner has a guided conversation with the LLM, which asks about the organisation's current practices, constraints, and concerns. Second, the practitioner is the source of evidence: the picture of industry readiness is built entirely from what real people in real organisations report, the LLM does not, and cannot, observe the industry on its own. Third, the toolkit measures those answers against a reference benchmark of OpenBIM good practice (described below), then scores readiness and produces tailored, vendor-neutral recommendations for capability development, standards adoption, and implementation planning.</p><p>That benchmark is provided by an existing open-source, browser-based OpenBIM platform that extracts and compiles IFC models, renders them directly in a standard web browser with no server-side dependency, and extends into asset, operations, and lifecycle management. The platform is not the subject of the study; it serves as a concrete, working example of what an open-standard BIM environment can deliver, giving the toolkit's recommendations a demonstrable reference point rather than an abstract ideal. Alongside it, a knowledge base of OpenBIM standards, readiness criteria, and implementation guidance supports the LLM's reasoning, and automated reporting turns each assessment into a readiness profile, gap analysis, and set of recommendations.</p>
   </div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">02</span><h2>Research design</h2></div>
-  <div class="proposal"><p>The study's evidence comes from practitioners, not from the LLM's own knowledge. Participants are professionals engaged in Digital Infrastructure Management who complete an assessment through the conversational tool; their responses are the primary data on industry preparedness and on the barriers to BIM adoption. The open-source OpenBIM platform is used throughout as the reference benchmark against which readiness is judged. The toolkit itself is then validated by a panel of subject-matter experts and through pilot use, who judge whether its assessments are accurate and its recommendations useful. Data is gathered through these expert reviews, pilot sessions, and usability evaluations, and analysed to test the toolkit's reliability, practicality, and effectiveness.</p></div>
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="design_head">Research design</h2></div>
+  <div class="proposal" data-i18n-block="design"><p>The study's evidence comes from practitioners, not from the LLM's own knowledge. Participants are professionals engaged in Digital Infrastructure Management who complete an assessment through the conversational tool; their responses are the primary data on industry preparedness and on the barriers to BIM adoption. The open-source OpenBIM platform is used throughout as the reference benchmark against which readiness is judged. The toolkit itself is then validated by a panel of subject-matter experts and through pilot use, who judge whether its assessments are accurate and its recommendations useful. Data is gathered through these expert reviews, pilot sessions, and usability evaluations, and analysed to test the toolkit's reliability, practicality, and effectiveness.</p></div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">03</span><h2>Research methodology</h2></div>
-  <div class="proposal"><p>The work follows a Design Science Research (DSR) approach: build a working artifact, then evaluate it with real users. The requirements phase reviews OpenBIM standards, existing BIM maturity and readiness models, and Digital Infrastructure Management practice to fix the readiness dimensions, the assessment criteria, and the issues that affect preparedness. The development phase produces the toolkit, assessment framework, conversational LLM engine, scoring model, recommendation engine, and reporting module. The evaluation phase tests it through the expert validation and pilot implementation described above. The project concludes with a publication reporting the readiness dimensions, the toolkit's design, the assessment method, and the validation result.</p></div>
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="method_head">Research methodology</h2></div>
+  <div class="proposal" data-i18n-block="method"><p>The work follows a Design Science Research (DSR) approach: build a working artifact, then evaluate it with real users. The requirements phase reviews OpenBIM standards, existing BIM maturity and readiness models, and Digital Infrastructure Management practice to fix the readiness dimensions, the assessment criteria, and the issues that affect preparedness. The development phase produces the toolkit, assessment framework, conversational LLM engine, scoring model, recommendation engine, and reporting module. The evaluation phase tests it through the expert validation and pilot implementation described above. The project concludes with a publication reporting the readiness dimensions, the toolkit's design, the assessment method, and the validation result.</p></div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">04</span><h2>Outsource requirements</h2></div>
-  <div class="proposal"><p>The project builds on existing open-source technologies and large language model platforms. Development support will be outsourced to implement the conversational interface, the assessment and recommendation engines, the reporting module, and the pilot deployment environment, together with knowledge base integration and usability testing. The outsourced scope is limited to technical development and deployment; the research design, data analysis, and reporting remain with the researcher.</p></div>
+  <div class="shead"><span class="snum">04</span><h2 data-i18n-block="outsource_head">Outsource requirements</h2></div>
+  <div class="proposal" data-i18n-block="outsource"><p>The project builds on existing open-source technologies and large language model platforms. Development support will be outsourced to implement the conversational interface, the assessment and recommendation engines, the reporting module, and the pilot deployment environment, together with knowledge base integration and usability testing. The outsourced scope is limited to technical development and deployment; the research design, data analysis, and reporting remain with the researcher.</p></div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">05</span><h2>Deliverables</h2></div>
+  <div class="shead"><span class="snum">05</span><h2 data-i18n-block="deliv_head">Deliverables</h2></div>
   <div class="dscroll"><table class="dtable">
     <thead><tr><th>#</th><th>Type</th><th>Title / topic</th><th>Target publication</th><th>Quartile</th></tr></thead>
-    <tbody><tr><td class="n">1</td><td>Research paper</td>
+    <tbody data-i18n-block="deliv"><tr><td class="n">1</td><td>Research paper</td>
       <td>Development and Validation of an OpenBIM Readiness Assessment Framework for Digital Infrastructure Management</td>
       <td>Automation in Construction (Elsevier)</td><td class="n">Q1</td></tr></tbody>
   </table></div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">06</span><h2>Project plan</h2></div>
+  <div class="shead"><span class="snum">06</span><h2 data-i18n-block="plan_head">Project plan</h2></div>
   <div class="dscroll"><table class="dtable">
     <thead><tr><th>Phase</th><th>Milestones / activities</th><th>Target date</th></tr></thead>
-    <tbody>
+    <tbody data-i18n-block="plan">
       <tr><td>Problem analysis</td><td>Finalise research requirements and identify OpenBIM readiness dimensions and assessment criteria for Digital Infrastructure Management.</td><td class="n">10 Aug 2026</td></tr>
       <tr><td>Artifact development</td><td>Design and develop the OpenBIM Readiness Assessment Toolkit, including the assessment framework, scoring model, and recommendation mechanism. Develop the toolkit, comprising the assessment framework, conversational LLM assessment engine, scoring model, recommendation engine, and reporting module.</td><td class="n">7 Sep 2026</td></tr>
       <tr><td>Technology assessment</td><td>Conduct expert validation and pilot testing with practitioners; evaluate and refine the toolkit based on feedback.</td><td class="n">1 Oct 2026</td></tr>
@@ -334,7 +334,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   </table></div>
 </section>
 
-<div class="cta">
+<div class="cta" data-i18n-block="cta">
   <h3>This is the artifact that proposal describes</h3>
   <p>The assessment implements the framework set out above. The Disclaimer Notice states what it can
   and cannot be used for.</p>
@@ -366,7 +366,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   </ol>
 </section>
 
-<footer>
+<footer data-i18n-block="footer">
   Reproduced from the research funding request dated 10 August 2026.<br>
   Text is verbatim, with one obvious typographical correction and one editorial reference marked in
   the Synopsis. Budget,
@@ -378,10 +378,11 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <script>
-document.getElementById('themebtn').addEventListener('click', function () {
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
   var r = document.documentElement;
   var dark = r.getAttribute('data-theme') === 'dark' ||
     (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
   r.setAttribute('data-theme', dark ? 'light' : 'dark');
 });
 </script>
+<script src="i18n_shell.js" data-page="proposal"></script>

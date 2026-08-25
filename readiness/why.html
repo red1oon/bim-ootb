@@ -274,10 +274,10 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Read more</small></div>
-  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html" class="on">Background</a><a href="faq.html">Basics</a><a href="sources.html">Sources</a><a href="disclaimer.html">Notice</a></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" class="on" data-i18n-block="common:nav.background">Background</a><a href="faq.html" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
 </div>
 
-<div class="hero">
+<div class="hero" data-i18n-block="hero">
   <p class="eyebrow">Why this exists</p>
   <h1>Background to the readiness assessment</h1>
   <p class="standfirst">What the industry certifies, where delivered models stand today, and
@@ -295,10 +295,10 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <section id="industry">
-  <div class="shead"><span class="snum">01</span><h2>What the industry certifies</h2></div>
-  <p class="lede">Established first, because it is commonly misunderstood.</p>
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="industry_head">What the industry certifies</h2></div>
+  <p class="lede" data-i18n-block="industry_lede">Established first, because it is commonly misunderstood.</p>
 
-  <blockquote class="ps">
+  <blockquote class="ps" data-i18n-block="industry_quote">
     <p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary
     BIM workflows towards more interoperable OpenBIM practices. This transition requires not only
     appropriate technologies, but also organisational readiness in areas such as governance, business
@@ -309,19 +309,19 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <cite>The problem statement &mdash; research proposal, 10 Aug 2026</cite>
   </blockquote>
 
-  <p>That is what this toolkit is for, and the rest of this page is the evidence behind it.</p>
+  <p data-i18n-block="industry_p1">That is what this toolkit is for, and the rest of this page is the evidence behind it.</p>
 
-  <p>BIM moved the industry from drawing to modelling, and the model became the record: geometry
+  <p data-i18n-block="industry_p2">BIM moved the industry from drawing to modelling, and the model became the record: geometry
   carrying data, coordinated across disciplines, outliving the project into operations. That part is
   settled. What is not settled is who owns the file format that record lives in.</p>
 
-  <p>A small number of vendors own practical BIM today. That bought real maturity, and it charged for
+  <p data-i18n-block="industry_p3">A small number of vendors own practical BIM today. That bought real maturity, and it charged for
   it in ways that only surface later — formats one application fully understands and others
   approximate, licences that scale with headcount, and model data whose readability depends on
   keeping a subscription alive. The consideration is most acute for the asset owner: a building
   outlives the software that modelled it by decades.</p>
 
-  <p>It is therefore worth examining what Autodesk certifies about its own software.</p>
+  <p data-i18n-block="industry_p4">It is therefore worth examining what Autodesk certifies about its own software.</p>
 
   <figure>
     <h4>What Autodesk holds certification for</h4>
@@ -346,7 +346,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     regulatory one.</figcaption>
   </figure>
 
-  <div class="call">
+  <div class="call" data-i18n-block="industry_call1">
     <span class="lab">What follows from that</span>
     <p>The certifications cover interoperability &mdash; that files are imported and exported in
     accordance with the relevant IFC standard. They do not cover whether a building is lawful, which
@@ -357,29 +357,29 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     category does not exist.</p>
   </div>
 
-  <h3>The mandates are already in force</h3>
-  <p>Since <strong>1 July 2025</strong>, BIM has been mandatory for Malaysian <strong>government</strong>
+  <h3 data-i18n-block="industry_h3">The mandates are already in force</h3>
+  <p data-i18n-block="industry_p5">Since <strong>1 July 2025</strong>, BIM has been mandatory for Malaysian <strong>government</strong>
   development projects valued at RM 10 million and above, under Ministry of Finance circular
   PK 1.15.<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> Private-sector adoption is encouraged rather than required. CIDB publishes
   BIM guidance for project delivery separately from that circular.<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup></p>
 
-  <p>Other jurisdictions are on their own timetables. The United Kingdom required collaborative BIM
+  <p data-i18n-block="industry_p6">Other jurisdictions are on their own timetables. The United Kingdom required collaborative BIM
   Level 2 on centrally-funded public projects from April 2016.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> Singapore phases
   mandatory BIM e-submission by project size.<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> The European Union&rsquo;s public
   procurement directive is permissive rather than mandatory &mdash; it allows member states to require
   BIM tools for public works, but does not itself require them.<sup class="fn"><a href="#ref5" id="fnref5">5</a></sup></p>
 
-  <p>This produces the situation the toolkit addresses: a specific deliverable is required, the
+  <p data-i18n-block="industry_p7">This produces the situation the toolkit addresses: a specific deliverable is required, the
   software does not promise to produce it, and no established method measures the distance between
   the two.</p>
 </section>
 
 <section id="gap">
-  <div class="shead"><span class="snum">02</span><h2>Where delivered models stand</h2></div>
-  <p class="lede">Figures measured from delivered models, with the building named in each case.</p>
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="gap_head">Where delivered models stand</h2></div>
+  <p class="lede" data-i18n-block="gap_lede">Figures measured from delivered models, with the building named in each case.</p>
 
-  <h3>A truncated model can be almost entirely absent and still open without error</h3>
-  <p>Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error
+  <h3 data-i18n-block="gap_h1">A truncated model can be almost entirely absent and still open without error</h3>
+  <p data-i18n-block="gap_p1">Past a 4 GB boundary during export, geometry generation stops. There is no crash and no error
   message; the file opens and renders.</p>
 
   <figure>
@@ -398,8 +398,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     A model that is almost entirely absent can therefore pass review.</figcaption>
   </figure>
 
-  <h3>Geometry accounts for most of the file; the semantic data does not</h3>
-  <p>When a model is extracted into a database, the distribution of storage between geometry and
+  <h3 data-i18n-block="gap_h2">Geometry accounts for most of the file; the semantic data does not</h3>
+  <p data-i18n-block="gap_p2">When a model is extracted into a database, the distribution of storage between geometry and
   semantics becomes measurable.</p>
 
   <figure>
@@ -418,7 +418,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     is roughly 0.2% of the file.</figcaption>
   </figure>
 
-  <h3>Coverage of classification data</h3>
+  <h3 data-i18n-block="gap_h3">Coverage of classification data</h3>
 
   <figure>
     <h4>Classification coverage in one delivered model</h4>
@@ -436,7 +436,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     headline score is produced.</figcaption>
   </figure>
 
-  <h3>File bulk has a delivery threshold</h3>
+  <h3 data-i18n-block="gap_h4">File bulk has a delivery threshold</h3>
   <figure>
     <h4>Entities per element &mdash; delivery thresholds</h4>
     <p class="fsub">A measure of whether other tools can open the delivered file</p>
@@ -452,18 +452,18 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </section>
 
 <section id="roadmap">
-  <div class="shead"><span class="snum">03</span><h2>What closing the gap involves</h2></div>
-  <p class="lede">Readiness is assessed across five dimensions, which vary independently.</p>
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="roadmap_head">What closing the gap involves</h2></div>
+  <p class="lede" data-i18n-block="roadmap_lede">Readiness is assessed across five dimensions, which vary independently.</p>
 
-  <p>The assessment scores each of governance, people and skills, technology, data and standards, and
+  <p data-i18n-block="roadmap_p1">The assessment scores each of governance, people and skills, technology, data and standards, and
   organisational processes on one shared capability ladder. The levels are the six capability levels
   defined by <strong>ISO/IEC 33020</strong>, the international standard for process capability
   measurement, which states it is applicable to any domain.<sup class="fn"><a href="#ref6" id="fnref6">6</a></sup></p>
-  <p>They measure <strong>institutionalisation</strong> rather than individual initiative. A firm
+  <p data-i18n-block="roadmap_p2">They measure <strong>institutionalisation</strong> rather than individual initiative. A firm
   where one engineer exports IFC by hand sits at Performed: the practice occurs, but it is not
   planned, managed or maintained.</p>
 
-  <div class="ladder">
+  <div class="ladder" data-i18n-block="roadmap_ladder">
     <div class="rung"><span class="l">L0</span><div><b>Incomplete</b><p>Not present, or it fails to achieve its purpose.</p></div></div>
     <div class="rung"><span class="l">L1</span><div><b>Performed</b><p>It happens and achieves its purpose, but unmanaged — through individual initiative.</p></div></div>
     <div class="rung"><span class="l">L2</span><div><b>Managed</b><p>Planned, controlled and maintained; the work products are kept.</p></div></div>
@@ -472,8 +472,8 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     <div class="rung"><span class="l">L5</span><div><b>Innovating</b><p>Those measurements drive continuous change to how the work is done.</p></div></div>
   </div>
 
-  <h3>Jurisdiction rules are carried as data, not code</h3>
-  <p>Requirements differ by jurisdiction, so they are carried in versioned rule packs rather than
+  <h3 data-i18n-block="roadmap_h1">Jurisdiction rules are carried as data, not code</h3>
+  <p data-i18n-block="roadmap_p3">Requirements differ by jurisdiction, so they are carried in versioned rule packs rather than
   embedded in the instrument. Coverage is partial; the current state is shown below.</p>
 
   <figure>
@@ -486,7 +486,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     of 200+ across six jurisdictions. The remaining rules are outstanding work.</figcaption>
   </figure>
 
-  <h3>The industry picture starts empty</h3>
+  <h3 data-i18n-block="roadmap_h2">The industry picture starts empty</h3>
   <figure>
     <h4>Assessments completed</h4>
     <p class="fsub">The benchmark this toolkit builds</p>
@@ -501,19 +501,19 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </section>
 
 <section id="differs">
-  <div class="shead"><span class="snum">04</span><h2>How this differs from other assessments</h2></div>
-  <p class="lede">BIM maturity assessment is a crowded field, and this instrument should not be
+  <div class="shead"><span class="snum">04</span><h2 data-i18n-block="differs_head">How this differs from other assessments</h2></div>
+  <p class="lede" data-i18n-block="differs_lede">BIM maturity assessment is a crowded field, and this instrument should not be
   presented as entering an empty one. What follows is where it sits, and what it does not claim.</p>
 
-  <h3>The field is well populated</h3>
-  <p>A 2020 evaluation by the Centre for Digital Built Britain with the UK BIM Alliance inventoried
+  <h3 data-i18n-block="differs_h1">The field is well populated</h3>
+  <p data-i18n-block="differs_p1">A 2020 evaluation by the Centre for Digital Built Britain with the UK BIM Alliance inventoried
   <strong>fifteen tools and six methods</strong> for assessing BIM maturity.<sup class="fn"><a href="#ref7" id="fnref7">7</a></sup>
   At organisation level these include the BIM Excellence Online Platform, the NBIMS Capability Maturity
   Model, Penn State&rsquo;s Organizational BIM Assessment, the Scottish Futures Trust&rsquo;s BIM
   Compass, CPIx, and Succar&rsquo;s BIM Maturity Matrix; at project level, Stanford&rsquo;s VDC
   Scorecard and ARUP&rsquo;s BIM Maturity Measure, among others.</p>
 
-  <p>That report found <strong>45% of the organisations it surveyed who assess maturity had built their
+  <p data-i18n-block="differs_p2">That report found <strong>45% of the organisations it surveyed who assess maturity had built their
   own internal tool</strong> rather than use a published one. It attributed this to specific failings
   it observed in the existing tools, quoted here in its own words: <em>&ldquo;rigid tools &mdash;
   one-size-fits-all; inaccurate and low granularity assessment; binary (yes/no) assessment focused on
@@ -522,16 +522,16 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   <strong>interoperability and IFC support at 96%</strong> among the highest-rated areas of industry
   importance.</p>
 
-  <h3>What is not new here</h3>
-  <p>Assessing BIM capability against the ISO/IEC 33000 family of process-assessment standards
+  <h3 data-i18n-block="differs_h2">What is not new here</h3>
+  <p data-i18n-block="differs_p3">Assessing BIM capability against the ISO/IEC 33000 family of process-assessment standards
   <strong>is not a new idea, and this project does not claim it as one</strong>. BIM-CAREM, a reference
   model grounded on that same standard family, was developed at the Middle East Technical University
   and published in 2018.<sup class="fn"><a href="#ref8" id="fnref8">8</a></sup> Its own review compares
   eight earlier models and concludes that <em>&ldquo;there is no commonly accepted and broadly used
   model in the literature&rdquo;</em>. Anyone assessing this instrument should read that work first.</p>
 
-  <h3>Four things this one does differently</h3>
-  <ol class="fixes">
+  <h3 data-i18n-block="differs_h3">Four things this one does differently</h3>
+  <ol class="fixes" data-i18n-block="differs_fixes">
     <li><div><h4>OpenBIM is the subject, not a subdomain</h4>
       <p>Existing instruments treat interoperability as one topic among many &mdash; BIM-CAREM records
       it as <em>&ldquo;whether interoperable formats are used&rdquo;</em>, a question about presence.
@@ -554,13 +554,13 @@ ol.refs a.back:hover{color:var(--accent-ink)}
       and say so. <a href="sources.html#anchors">See the anchors and their tiers &rarr;</a></p></div></li>
   </ol>
 
-  <p>Two further differences are practical rather than methodological: the assessment is free, runs
+  <p data-i18n-block="differs_p4">Two further differences are practical rather than methodological: the assessment is free, runs
   entirely in a browser with no account and no server, and takes about fifteen minutes &mdash; matching
   the fastest instrument in the 2020 survey; and the conversational step runs in whatever AI service
   you already use, so no key, no subscription and no data of yours reaches a model operated by this
   project.</p>
 
-  <div class="call warn">
+  <div class="call warn" data-i18n-block="differs_callwarn">
     <span class="lab">What this comparison does not establish</span>
     <p>The survey quoted above is dated <strong>February 2020</strong> and the field has moved since.
     A tool published in 2026 by the author of BIM-CAREM was located but could not be obtained, and no
@@ -573,9 +573,9 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </section>
 
 <section id="disclaimer">
-  <div class="shead"><span class="snum">&mdash;</span><h2>What this does not do</h2></div>
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="wdisclaimer_head">What this does not do</h2></div>
 
-  <div class="call warn">
+  <div class="call warn" data-i18n-block="wdisclaimer_call">
     <span class="lab">Disclaimer</span>
     <p><strong>This is only a technical readiness assessment.</strong> It measures organisational
     readiness for open-standard working and the data quality of a model you supply. That is its entire
@@ -624,19 +624,19 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </section>
 
 <section id="offline">
-  <div class="shead"><span class="snum">&mdash;</span><h2>Run it on your own machine</h2></div>
-  <p class="lede">Where IT policy does not permit a model to be opened in a browser tab, the
+  <div class="shead"><span class="snum">&mdash;</span><h2 data-i18n-block="offline_head">Run it on your own machine</h2></div>
+  <p class="lede" data-i18n-block="offline_lede">Where IT policy does not permit a model to be opened in a browser tab, the
   assessment can be run entirely offline.</p>
 
-  <p>The assessment is a set of static files with no server, no database and no accounts. It can be
+  <p data-i18n-block="offline_p1">The assessment is a set of static files with no server, no database and no accounts. It can be
   downloaded and opened from local disk &mdash; the same assessment and the same scoring, with no
   network involved at any point.</p>
 
-  <p>This applies where models are commercially sensitive, where the firm works air-gapped, where
+  <p data-i18n-block="offline_p2">This applies where models are commercially sensitive, where the firm works air-gapped, where
   there is no connection on site, or where the organisation wishes to verify directly that nothing is
   transmitted. The archive is unzipped and opened directly, and the source is readable.</p>
 
-  <div class="call">
+  <div class="call" data-i18n-block="offline_call">
     <span class="lab">What&rsquo;s in the download</span>
     <p>A single archive containing the assessment, this page, the rule packs, and a short README.
     Everything runs from <span class="mono">file://</span> &mdash; no install, no build step, no
@@ -690,13 +690,13 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   verified 22 August 2026. Figures elsewhere on this page carry their own source line in the chart.</p>
 </section>
 
-<div class="cta">
+<div class="cta" data-i18n-block="cta">
   <h3>The assessment</h3>
   <p>Twenty questions and one IFC file, read inside your browser. About fifteen minutes.</p>
   <a class="btn" href="./">Start the assessment</a>
 </div>
 
-<footer>
+<footer data-i18n-block="footer">
   OpenBIM Readiness Assessment Toolkit &middot; v0.1 draft &middot; 2026-08-21<br>
   Research instrument &mdash; criteria and thresholds subject to expert validation.<br>
   Every figure on this page is measured from a named model or cited from a public source.
@@ -705,10 +705,11 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <script>
-document.getElementById('themebtn').addEventListener('click', function () {
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
   var r = document.documentElement;
   var dark = r.getAttribute('data-theme') === 'dark' ||
     (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
   r.setAttribute('data-theme', dark ? 'light' : 'dark');
 });
 </script>
+<script src="i18n_shell.js" data-page="why"></script>

@@ -282,10 +282,10 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 <div class="topbar">
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Basics</small></div>
-  <div class="nav"><a href="./">Overview</a><a href="assess.html">Assessment</a><a href="proposal.html">Proposal</a><a href="why.html">Background</a><a href="faq.html" class="on">Basics</a><a href="sources.html">Sources</a><a href="disclaimer.html">Notice</a></div>
+  <div class="nav"><a href="./" data-i18n-block="common:nav.overview">Overview</a><a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a><a href="proposal.html" data-i18n-block="common:nav.proposal">Proposal</a><a href="why.html" data-i18n-block="common:nav.background">Background</a><a href="faq.html" class="on" data-i18n-block="common:nav.basics">Basics</a><a href="sources.html" data-i18n-block="common:nav.sources">Sources</a><a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a></div>
 </div>
 
-<div class="hero">
+<div class="hero" data-i18n-block="hero">
   <p class="eyebrow">Basics</p>
   <h1>What OpenBIM is, and what this assessment does.</h1>
   <p class="standfirst">Short answers to the questions that come up most often, and the terms the
@@ -293,23 +293,23 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <section>
-  <div class="shead"><span class="snum">01</span><h2>The basics</h2></div>
-  <div class="qa">
+  <div class="shead"><span class="snum">01</span><h2 data-i18n-block="sec1_head">The basics</h2></div>
+  <div class="qa" data-i18n-block="qa1">
 <details><summary>What is OpenBIM?</summary><div class="a"><p>BIM is <strong>building information modelling</strong><sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> — designing with a model that carries data, not just lines. OpenBIM<sup class="fn"><a href="#ref2" id="fnref2">2</a></sup> is doing that using <strong>open, published file formats</strong> so the information is not locked inside one company's software.</p><p>That is the whole idea. It is not a product, a brand, or a piece of software.</p></div></details><details><summary>Is OpenBIM something I buy?</summary><div class="a"><p>No. It is an approach and a set of published standards. Nobody owns it and nobody sells it. You can work this way with software you already have.</p></div></details><details><summary>What is IFC?</summary><div class="a"><p><strong>IFC</strong> — Industry Foundation Classes — is the main open file format for building information.<sup class="fn"><a href="#ref3" id="fnref3">3</a></sup> It is published by buildingSMART,<sup class="fn"><a href="#ref4" id="fnref4">4</a></sup> an international non-profit, and any software can read or write it without asking permission or paying a licence.</p><p>If you have ever been asked to “deliver in IFC”, this is what was meant.</p></div></details><details><summary>My software already has an “export to IFC” button. Isn't that it?</summary><div class="a"><p>That button is the starting point, not the whole of it. Almost every BIM tool has one. The question is whether what comes out is <em>usable</em> by anyone else — whether it carries the rooms, the classifications, the quantities and the properties that make it worth receiving.</p><p>Exports frequently open without error while carrying less than the sender assumes. That gap is what this assessment measures.</p></div></details><details><summary>Do I have to stop using the software I have?</summary><div class="a"><p>No. OpenBIM is about what you <em>deliver and archive</em>, not what you author in. Plenty of firms work openly using entirely proprietary tools.</p><p>What changes is that your information stays readable when the software, the subscription or the vendor does not.</p></div></details>
   </div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">02</span><h2>About this assessment</h2></div>
-  <div class="qa">
+  <div class="shead"><span class="snum">02</span><h2 data-i18n-block="sec2_head">About this assessment</h2></div>
+  <div class="qa" data-i18n-block="qa2">
 <details><summary>What do I need before I start?</summary><div class="a"><p>About fifteen minutes. Optionally one IFC file. No account, no sign-up, no API key, no payment.</p></div></details><details><summary>What if I don't have an IFC file?</summary><div class="a"><p>You can still take it. You receive the organisational half of the assessment, and the report states that the model half was not measured — it does not estimate, and the absence is not scored against you.</p></div></details><details><summary>Will you see my model?</summary><div class="a"><p>No. The file is read <strong>inside your browser</strong> and is never uploaded. There is no server to upload it to. If you choose to submit results at the end, you are shown the exact payload first, and it contains only numbers and fixed categories — no file, no names, no coordinates.</p></div></details><details><summary>Is this an assessment, or is it an app?</summary><div class="a"><p><strong>It is an assessment. The app is how you check it.</strong></p><p>The assessment has two halves. The first asks you twenty questions about your organisation. The second, which is optional, asks for one IFC file &mdash; read inside your browser, never uploaded &mdash; and does two things with it: measures what it contains, and opens it in software that is not the software you authored it in.</p><p>That second part is not a product demonstration. It is one of the assessment&rsquo;s own questions performed instead of asked: <em>&ldquo;Have you ever taken a finished model out of your BIM software and opened it elsewhere?&rdquo;</em> Watching your building render somewhere else <em>is</em> the finding. A number saying 7% of your elements carry a classification code is easy to skim past; a model that opens with no rooms in it is not.</p><p>The platform used for that step is open source and free to use. In this research it is a worked example, not the subject.</p></div></details><details><summary>Are you just measuring my model against your own software?</summary><div class="a"><p>No, and the reason is checkable rather than a promise. What gets checked &mdash; a complete spatial chain, spaces, classification, types, quantities &mdash; is not one platform&rsquo;s preference. It is what <em>any</em> open-standard consumer needs in order to do anything useful with a model. <strong>A model that fails these fails them all.</strong></p><p>Two further things follow from that. The assessment scores you against published standards, each named with its clause, rather than against any product. And it is able to return &ldquo;the open route is not viable for you yet&rdquo; &mdash; an answer no vendor assessment would give you.</p></div></details><details><summary>Who is funding this, and is it free to use?</summary><div class="a"><p>It is a research instrument, developed under an academic research grant, and free to use. The platform it references as a worked example is open source. The full proposal is published at <a href="proposal.html">The research proposal</a>.</p><p>The people who built it also build that open-source platform. That is why the assessment scores you against <em>published standards</em> rather than against any product, and why it can return “the open route is not viable for you yet”.</p></div></details><details><summary>Am I too small for this?</summary><div class="a"><p>No. Targets are proportionate to firm size and project type. A four-person practice is not measured against what a 200-person firm should be doing.</p></div></details><details><summary>Is this only for BIM managers?</summary><div class="a"><p>No. It is for anyone who delivers or receives building information — principals, project managers, contractors, owners, facilities teams. If you have ever been asked for a model, or been handed one, the questions will make sense.</p></div></details><details><summary>What do I get at the end?</summary><div class="a"><p>A readiness profile across five areas, a gap analysis showing where you stand against a proportionate target, an ordered set of recommendations, and — if you supplied a file — the places where your model disagreed with your answers. Downloadable as a PDF.</p></div></details>
   </div>
 </section>
 
 <section>
-  <div class="shead"><span class="snum">03</span><h2>Words the assessment uses</h2></div>
-  <p class="lede">Terms used in the assessment questions.</p>
-  <dl class="gloss">
+  <div class="shead"><span class="snum">03</span><h2 data-i18n-block="sec3_head">Words the assessment uses</h2></div>
+  <p class="lede" data-i18n-block="sec3_lede">Terms used in the assessment questions.</p>
+  <dl class="gloss" data-i18n-block="gloss">
     <div class="gterm"><dt>IFC</dt><dd>The open file format for building information.<sup class="fn"><a href="#ref3">3</a></sup> Published by buildingSMART; readable by any tool.</dd></div>
     <div class="gterm"><dt>IFC schema version</dt><dd>Which edition of IFC a file uses — IFC2x3, IFC4, IFC4x3. They differ in what can be expressed, which is why contracts increasingly name one.</dd></div>
     <div class="gterm"><dt>Property set</dt><dd>A named group of data attached to an element — a wall's fire rating, a door's acoustic performance. Geometry without property sets is a shape, not information.</dd></div>
@@ -370,14 +370,14 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   verified 22 August 2026.</p>
 </section>
 
-<div class="cta">
+<div class="cta" data-i18n-block="cta">
   <h3>Further reading</h3>
   <p>The background covers what the industry certifies and where delivered models stand. The
   Disclaimer Notice covers what this assessment can and cannot be used for.</p>
   <a class="btn" href="./">Take the assessment</a>
 </div>
 
-<footer>
+<footer data-i18n-block="footer">
   Basics &middot; OpenBIM Readiness Assessment Toolkit v0.1<br>
   <a href="proposal.html">The research proposal</a> &middot; <a href="why.html">Background reading</a> &middot; <a href="disclaimer.html">Disclaimer Notice</a>
 </footer>
@@ -385,10 +385,11 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 </div>
 
 <script>
-document.getElementById('themebtn').addEventListener('click', function () {
+document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {
   var r = document.documentElement;
   var dark = r.getAttribute('data-theme') === 'dark' ||
     (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme:dark)').matches);
   r.setAttribute('data-theme', dark ? 'light' : 'dark');
 });
 </script>
+<script src="i18n_shell.js" data-page="faq"></script>

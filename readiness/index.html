@@ -276,28 +276,28 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   <div class="brandmark">OB</div>
   <div class="brandtext">OpenBIM Readiness Assessment Toolkit<small>Digital Infrastructure Management</small></div>
   <div class="nav">
-    <a href="./" class="on">Overview</a>
-    <a href="assess.html">Assessment</a>
-    <a href="proposal.html">Proposal</a>
-    <a href="why.html">Background</a>
-    <a href="faq.html">Basics</a>
-    <a href="sources.html">Sources</a>
-    <a href="disclaimer.html">Notice</a>
+    <a href="./" class="on" data-i18n-block="common:nav.overview">Overview</a>
+    <a href="assess.html" data-i18n-block="common:nav.assessment">Assessment</a>
+    <a href="proposal.html" data-i18n-block="common:nav.proposal">Proposal</a>
+    <a href="why.html" data-i18n-block="common:nav.background">Background</a>
+    <a href="faq.html" data-i18n-block="common:nav.basics">Basics</a>
+    <a href="sources.html" data-i18n-block="common:nav.sources">Sources</a>
+    <a href="disclaimer.html" data-i18n-block="common:nav.notice">Notice</a>
   </div>
 </div>
 
-<div class="hero">
+<div class="hero" data-i18n-block="hero">
   <p class="eyebrow">Research funding request &middot; 10 August 2026 &middot; Mohd Faizal Bin Yusof</p>
   <h1>Readiness Assessment Toolkit for Digital Infrastructure Management</h1>
 </div>
 
 <section>
   <div class="shead"><span class="snum">&mdash;</span><h2>Synopsis</h2></div>
-  <div class="proposal">
+  <div class="proposal" data-i18n-block="synopsis">
 <p>Digital transformation is reshaping how infrastructure assets are planned, delivered, operated, and maintained. In the UAE, Building Information Modelling (BIM)<sup class="fn"><a href="#ref1" id="fnref1">1</a></sup> has become an increasingly important enabler of this transformation, supporting more integrated and data-driven approaches to infrastructure development and lifecycle management. OpenBIM strengthens this capability by adopting vendor-neutral open standards, principally the Industry Foundation Classes (IFC), enabling infrastructure information to be exchanged, integrated, and managed across diverse software platforms without dependence on proprietary systems. The benefits are well recognised, including improved interoperability, reduced software lock-in, and more effective collaboration among stakeholders throughout the asset lifecycle.</p><p>As BIM adoption matures, organisations are increasingly expected to move beyond proprietary BIM workflows towards more interoperable OpenBIM practices. This is also applicable in various <span class="corr" title="Corrected from &quot;third word countries&quot; in the source document.">third world countries</span>. This transition requires not only appropriate technologies, but also organisational readiness in areas such as governance, business processes, workforce capabilities, data management, and compliance with open standards. However, there is currently no simple and practical way for organisations to objectively assess their readiness for OpenBIM implementation or to identify the capability gaps that should be addressed before embarking on this transition.</p><p>This project addresses that gap by developing an OpenBIM Readiness Assessment Toolkit for Digital Infrastructure Management, a structured but easy-to-use way for an organisation to gauge how ready it is to adopt OpenBIM and to see the specific issues standing in its way. Readiness is assessed across the dimensions most associated with successful adoption: governance, people and skills, technology, data and standards, and organisational processes. The result shows an organisation where its capability gaps and implementation risks lie, and which areas to address first before committing to OpenBIM.</p><p>It helps to be precise about how the toolkit works and where its information comes from, because three roles are easily confused. First, a large language model (LLM) acts as the interviewer: instead of filling in a static questionnaire, a practitioner has a guided conversation with the LLM, which asks about the organisation's current practices, constraints, and concerns. Second, the practitioner is the source of evidence: the picture of industry readiness is built entirely from what real people in real organisations report, the LLM does not, and cannot, observe the industry on its own. Third, the toolkit measures those answers against a reference benchmark of OpenBIM good practice (described below), then scores readiness and produces tailored, vendor-neutral recommendations for capability development, standards adoption, and implementation planning.</p><p>That benchmark is provided by an existing open-source, browser-based OpenBIM platform that extracts and compiles IFC models, renders them directly in a standard web browser with no server-side dependency, and extends into asset, operations, and lifecycle management. The platform is not the subject of the study; it serves as a concrete, working example of what an open-standard BIM environment can deliver, giving the toolkit's recommendations a demonstrable reference point rather than an abstract ideal. Alongside it, a knowledge base of OpenBIM standards, readiness criteria, and implementation guidance supports the LLM's reasoning, and automated reporting turns each assessment into a readiness profile, gap analysis, and set of recommendations.</p>
   </div>
 
-  <div class="startbar">
+  <div class="startbar" data-i18n-block="startbar">
     <div>
       <h3>Take the assessment</h3>
       <p>Twenty questions and, optionally, one IFC file read inside your browser. About fifteen minutes.
@@ -309,7 +309,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 
 <section id="howitworks">
   <div class="shead"><span class="snum">&mdash;</span><h2>How it works</h2></div>
-  <p class="lede">One question runs through the whole assessment: <strong>can anyone else actually
+  <p class="lede" data-i18n-block="howitworks_lede">One question runs through the whole assessment: <strong>can anyone else actually
   open your model?</strong></p>
 
   <p>Readiness for open standards is usually assessed by asking people about their organisation.
@@ -318,7 +318,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   intends, not always the practice its files reveal. So this assessment asks for evidence as well as
   an account, and reports where the two disagree.</p>
 
-  <div class="dscroll"><table class="dtable"><tbody>
+  <div class="dscroll"><table class="dtable"><tbody data-i18n-block="howitworks_table">
     <tr><td class="n">1 &middot; What you say</td>
       <td>Twenty questions across governance, people and skills, technology, data and standards, and
       organisational processes. Each names the published standard it is drawn from. About fifteen
@@ -332,7 +332,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
       where the model did not support the answer given.</td></tr>
   </tbody></table></div>
 
-  <div class="call">
+  <div class="call" data-i18n-block="howitworks_call1">
     <span class="lab">Is this an assessment, or an app?</span>
     <p><strong>It is an assessment. The app is how you check it.</strong></p>
     <p>Step 2 is not a product demonstration. It is one of the assessment&rsquo;s own criteria,
@@ -344,7 +344,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
     example, not the subject of this research.</p>
   </div>
 
-  <div class="call warn">
+  <div class="call warn" data-i18n-block="howitworks_callwarn">
     <span class="lab">Why you are not simply being measured against someone&rsquo;s product</span>
     <p>The properties checked &mdash; spaces, classification, types, quantities, a complete spatial
     chain &mdash; are not this platform&rsquo;s preferences. They are what <em>any</em> open-standard
@@ -357,7 +357,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 
 <section>
   <div class="shead"><span class="snum">&mdash;</span><h2>Read further</h2></div>
-  <div class="dscroll"><table class="dtable"><tbody>
+  <div class="dscroll"><table class="dtable"><tbody data-i18n-block="readfurther">
     <tr><td class="n"><a href="proposal.html">The proposal</a></td><td>The funded proposal in full — research design, methodology, outsource requirements, deliverables and project plan.</td></tr>
     <tr><td class="n"><a href="why.html">Background</a></td><td>What the industry certifies, where delivered models stand, and what closing the gap involves.</td></tr>
     <tr><td class="n"><a href="faq.html">Basics</a></td><td>What OpenBIM is, what IFC is, and the terms the assessment uses.</td></tr>
@@ -390,7 +390,7 @@ ol.refs a.back:hover{color:var(--accent-ink)}
   </ol>
 </section>
 
-<footer>
+<footer data-i18n-block="footer">
   OpenBIM Readiness Assessment Toolkit &middot; research instrument in development, v0.1<br>
   Synopsis reproduced verbatim from the research funding request dated 10 August 2026, with one
   typographical correction and one editorial reference marked.
@@ -401,3 +401,4 @@ ol.refs a.back:hover{color:var(--accent-ink)}
 <script>
 document.getElementById('themebtn') && document.getElementById('themebtn').addEventListener('click', function () {});
 </script>
+<script src="i18n_shell.js" data-page="front"></script>
