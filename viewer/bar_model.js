@@ -91,13 +91,73 @@
     return Object.keys(min).sort(function (a, b) { return min[a] - min[b]; });
   }
 
+  // ══ §BAR_LEVEL_FROM_GEOMETRY (2026-08-25) ═══════════════════════════════════════════════════
+  // The IFC storey STRING is not the location. Location-Based Management (Kenley & Seppanen) makes
+  // the Location Breakdown Structure a deliberate physical decision precisely because inherited
+  // storey labels do not survive contact with a real model — and the same literature splits elements
+  // that span two locations rather than forcing each into one.
+  //
+  // MEASURED, all 28 remaining structural floaters across HHS/Hospital/Terminal after every other
+  // fix: EVERY ONE of them has its support physically LOWER, while the labels put that support in a
+  // LATER bar. 24 are same-phase cross-level (`Superstructure Level 1` resting on
+  // `Superstructure Level 2`; Terminal's `Ceiling Level 04` resting on `Aras 03`), 4 are cross-phase
+  // same-level. deriveBandRanks already ranks storeys by median element height, so the RANKING is
+  // geometric and correct — it is the per-element storey ASSIGNMENT that disagrees with physics.
+  //
+  // So: where an element's own label contradicts what it demonstrably rests on, the geometry wins
+  // and the element is moved to its support's level. Nothing is invented — the correction comes
+  // from the bearing relation the model already extracted. Reported, never silent.
+  function correctLevelsByGeometry(elements, edges, collapse, bandRank) {
+    var lvl = {}, byGuid = {}, i;
+    for (i = 0; i < elements.length; i++) {
+      var e = elements[i];
+      byGuid[e.guid] = e;
+      lvl[e.guid] = collapse(e.storey);
+    }
+    // bearing supports only: the relation the midair judge itself tests.
+    var supOf = {};
+    for (i = 0; i < edges.length; i++) {
+      if (edges[i].kind !== 'bearing') continue;
+      (supOf[edges[i].to] = supOf[edges[i].to] || []).push(edges[i].from);
+    }
+    function rankOf(g) { var r = bandRank[lvl[g]]; return r == null ? -1 : r; }
+
+    var moved = 0, detail = {}, pass;
+    // A correction can expose another one up the chain, so iterate to a fixpoint. Bounded: each
+    // pass either moves something or stops, and an element only ever moves UP a rank.
+    for (pass = 0; pass < 8; pass++) {
+      var movedThisPass = 0;
+      for (var g in supOf) {
+        var E = byGuid[g]; if (!E) continue;
+        var myRank = rankOf(g), bestLvl = null, bestRank = myRank;
+        var sups = supOf[g];
+        for (var k = 0; k < sups.length; k++) {
+          var S = byGuid[sups[k]]; if (!S) continue;
+          // only trust a support the GEOMETRY agrees is underneath — never relabel off a
+          // relation the heights contradict.
+          if (!(S.base_z < E.base_z)) continue;
+          var sr = rankOf(sups[k]);
+          if (sr > bestRank) { bestRank = sr; bestLvl = lvl[sups[k]]; }
+        }
+        if (bestLvl !== null) {
+          var from = lvl[g];
+          lvl[g] = bestLvl; moved++; movedThisPass++;
+          var dk = from + ' -> ' + bestLvl;
+          detail[dk] = (detail[dk] || 0) + 1;
+        }
+      }
+      if (!movedThisPass) break;
+    }
+    return { level: lvl, moved: moved, passes: pass, detail: detail };
+  }
+
   // ══ buildTree — Project > Level > Task(phase x level) > Element ═════════════════════════════
   // policy: { phase_link, level_link, building_scope[] } — viewer/rates/4D_policy.json.
   // collapse(storey) and bandRank come from ScheduleGate, so a level means the same thing here as
   // it does in the band gate.
   var STRUCTURAL_PHASE = { Substructure: 1, Superstructure: 1 };
   function phaseRankOf(t, order) { var i = order.indexOf(t.phase); return i < 0 ? 99 : i; }
-  function buildTree(elements, policy, collapse, bandRank, order) {
+  function buildTree(elements, policy, collapse, bandRank, order, levelOf) {
     var project = new GroupBar('Project');
     var levels = {}, tasks = {}, buildingScope = {};
     (policy.building_scope || []).forEach(function (p) { buildingScope[p] = 1; });
@@ -107,7 +167,7 @@
       var e = elements[i], b = new ElementBar(e);
       leaves.push(b);
       var ph = e.phase || '_UNPHASED';
-      var lv = collapse(e.storey);
+      var lv = (levelOf && levelOf[e.guid]) || collapse(e.storey);
       var isBuilding = !!buildingScope[ph];
       var key = ph + '||' + (isBuilding ? '*' : lv);
       var t = tasks[key];
@@ -266,7 +326,54 @@
       var gate = baseMs;
       t.needs.forEach(function (p) { var e = p.stop; if (e != null && e > gate) gate = e; });
 
-      var pending = t.children().slice(), guard = 0;
+      // ── IN-BAR QUEUE ORDER ──────────────────────────────────────────────────────────────
+      // User 2026-08-25: "support intra bar can be solved by some minor queue refine later. Indeed,
+      // sorting by order should solve most." Correct, and it is where most of the relations are:
+      // MEASURED share of bearing relations whose support sits in the SAME bar — Terminal 85.8%,
+      // HHS 37.6%, Hospital 19.6%. The round-robin defer loop below resolves those eventually, but
+      // only after an element has already been placed at the wrong time, which is what the judge
+      // then calls floating (HHS: 16 of its 25 floaters had their support in their own bar).
+      //
+      // So order the queue first: a topological sort over THIS BAR'S OWN edges, with base_z
+      // ascending as the tiebreak — bottom-up, which is how the thing is built. Edges leaving the
+      // bar are ignored here; they are the task gate's job, not the queue's.
+      var kids = t.children(), inBar = {}, ord = [], deg = {}, ki;
+      for (ki = 0; ki < kids.length; ki++) inBar[kids[ki].guid] = kids[ki];
+      var succIn = {};
+      for (ki = 0; ki < kids.length; ki++) {
+        var kb = kids[ki], all = kb.hardNeeds.concat(kb.bearing.length ? kb.bearing : kb.needs), d = 0;
+        for (var kj = 0; kj < all.length; kj++) {
+          if (!inBar[all[kj].guid]) continue;              // out-of-bar edge: the gate handles it
+          (succIn[all[kj].guid] = succIn[all[kj].guid] || []).push(kb);
+          d++;
+        }
+        deg[kb.guid] = d;
+      }
+      var byZ = function (a, b) { return (a.e.base_z - b.e.base_z) || (a.e.seq - b.e.seq) ||
+                                          (a.guid < b.guid ? -1 : 1); };
+      // WAVE-based Kahn, not a re-sort per pop. Sorting the ready list on every single pop is
+      // O(n^2 log n) and took Hospital from 82ms to 6,958ms — correct, but 85x. Each WAVE is sorted
+      // once (bottom-up within the wave), which is the same output because everything in a wave is
+      // mutually independent by definition, at O(n log n) overall.
+      var wave = kids.filter(function (k) { return !deg[k.guid]; });
+      while (wave.length) {
+        wave.sort(byZ);
+        var next = [];
+        for (var wi = 0; wi < wave.length; wi++) {
+          var head = wave[wi];
+          ord.push(head);
+          var sc = succIn[head.guid];
+          if (sc) for (var si = 0; si < sc.length; si++) if (--deg[sc[si].guid] === 0) next.push(sc[si]);
+        }
+        wave = next;
+      }
+      if (ord.length !== kids.length) {                    // a cycle inside the bar — keep them all
+        var got = {};
+        ord.forEach(function (x) { got[x.guid] = 1; });
+        kids.filter(function (x) { return !got[x.guid]; }).sort(byZ).forEach(function (x) { ord.push(x); });
+      }
+
+      var pending = ord, guard = 0;
       while (pending.length && guard++ <= pending.length + 2) {
         var again = [];
         for (var i = 0; i < pending.length; i++) {
@@ -361,6 +468,7 @@
   }
 
   var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar, isStructural: isStructural,
+              correctLevelsByGeometry: correctLevelsByGeometry,
               phaseOrder: phaseOrder, buildTree: buildTree, attachNeeds: attachNeeds,
               schedule: schedule, reportCycles: reportCycles };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
