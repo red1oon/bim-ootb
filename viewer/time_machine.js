@@ -4803,25 +4803,53 @@
     }
     // §TM_ELEMENT_WINDOW_BIND (2026-08-25, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md "Two clocks"
     // recurring bug class) — `_disp[el.guid]` comes from CpmSchedule.run(), a pure relative CPM
-    // solver with NO epoch concept anywhere in cpm_schedule.js (verified by reading the whole file —
-    // zero references to baseMs/anchor/opts.start). Its output can be, and was measured live to be,
-    // near-1970. `_cap.win[taskId]` is the one thing in this whole function already proven real —
-    // Date.parse() on the REAL `tasks.schedule_start/finish` this building's own template-driven
-    // generator wrote (materializeDefault/materializeZones + SEQUENCE_RULES, verified on 5 real
-    // buildings, WITNESS_INTERFACE_FRAMEWORK.md §3/§6). This does not trust the solver's epoch at
-    // all — it clamps every element's placement into its OWN task's already-correct real window, so
-    // no matter what CpmSchedule.run returns (today, or after any future change to it), the value
-    // actually written to kernel_ops.timestamp can never leave real calendar time. Elements with no
-    // resolvable task (guid not in task_elements, or that task undated) keep prior behavior
-    // unchanged — nothing to bind to, not this fix's problem to invent.
-    function _tmClampToTaskWindow(guid, s) {
+    // solver with NO epoch concept anywhere in cpm_schedule.js. `_cap.win[taskId]` is the one thing
+    // in this whole function already proven real (Date.parse() on the REAL tasks.schedule_start/
+    // finish, verified on 5 buildings, WITNESS_INTERFACE_FRAMEWORK.md §3/§6/§9).
+    //
+    // §TM_ELEMENT_WINDOW_RESCALE (2026-08-25, same day, real regression found live and fixed within
+    // the hour): the FIRST cut of this fix (a hard per-element Math.min/max clamp) fixed the epoch
+    // but broke the DISTRIBUTION — every element's raw time was near-1970, so ALL 6880 clamped to the
+    // exact same boundary instant, producing a NEW pile-up (§GANTT_OPS_FIRST20 showed 18 identical
+    // "Level 1|seq=5|IfcBuildingElementProxy" entries in a row; §CROSSTASK_JUDGE_PARITY floating
+    // jumped 14->89, all windowBlocked=89, because nothing had room to move). The witness that
+    // shipped with the hard clamp (witness_tm_element_window_bind.js) only asserted "inside the
+    // window" — true the whole time — and never checked spread, so it stayed green through the
+    // regression. Real lesson, not just a code fix: a bounds check is not a distribution check.
+    //
+    // The fix: a per-task PROPORTIONAL RESCALE, not a per-element clamp. Group every element by its
+    // real task, find that group's own RAW min/max (whatever CpmSchedule.run actually computed —
+    // real order, wrong epoch), then affine-map that raw range onto the task's REAL window. Relative
+    // order and spacing survive; only the epoch and scale change. Elements with no resolvable real
+    // task keep prior behavior unchanged — nothing invented.
+    var _winGroups = {};
+    if (_cap) {
+      elements.forEach(function(el) {
+        var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };
+        var taskId = _cap.guidTask[el.guid];
+        if (taskId == null || !_cap.win[taskId]) return;
+        var g = _winGroups[taskId] || (_winGroups[taskId] = { min: Infinity, max: -Infinity });
+        if (s.start < g.min) g.min = s.start;
+        if (s.end > g.max) g.max = s.end;
+      });
+    }
+    function _tmRescaleToTaskWindow(guid, s) {
       if (!_cap) return s;
       var taskId = _cap.guidTask[guid];
       var win = (taskId != null) ? _cap.win[taskId] : null;
       if (!win) return s;
-      var st = Math.min(Math.max(s.start, win.s), win.e);
-      var en = Math.min(Math.max(s.end, win.s), win.e);
-      if (en <= st) { st = Math.max(win.s, win.e - 60000); en = win.e; } // degenerate-window safety, same shape as §ZONE_WINDOW_DAGWINS_CLIP
+      var g = _winGroups[taskId];
+      if (!g || !isFinite(g.min) || !isFinite(g.max)) return s;
+      var rawSpan = Math.max(1, g.max - g.min);
+      var realSpan = Math.max(1, win.e - win.s);
+      var scale = realSpan / rawSpan;
+      var st = win.s + (s.start - g.min) * scale;
+      var en = win.s + (s.end - g.min) * scale;
+      // Final safety clamp — the affine map lands inside [win.s, win.e] by construction except for
+      // float rounding at the extremes; same degenerate-window guard as before if start/end collapse.
+      st = Math.min(Math.max(st, win.s), win.e);
+      en = Math.min(Math.max(en, win.s), win.e);
+      if (en <= st) { st = Math.max(win.s, win.e - 60000); en = win.e; }
       if (st === s.start && en === s.end) return s;
       return { start: st, end: en, clamped: true };
     }
@@ -4832,7 +4860,7 @@
     var _windowClamped = 0, _windowUncovered = 0;
     elements.forEach(function(el) {
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
-      var bound = _tmClampToTaskWindow(el.guid, s);
+      var bound = _tmRescaleToTaskWindow(el.guid, s);
       if (bound.clamped) _windowClamped++; else if (!_cap || _cap.guidTask[el.guid] == null) _windowUncovered++;
       s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',

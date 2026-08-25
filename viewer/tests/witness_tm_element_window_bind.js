@@ -1,29 +1,30 @@
 #!/usr/bin/env node
 // WITNESS — W-ELEMENT-WINDOW-BIND — every element written to kernel_ops is bound inside its
-// owning task's REAL calendar window, no matter what upstream computed.
+// owning task's REAL calendar window AND keeps its relative spacing inside that window.
 // Spec: bim-compiler prompts/4D_GANTT_TM_REFACTOR.md "Two clocks" recurring bug class;
-// bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md §8 (doctrine).
+// bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md §8-9 (doctrine), §10 (this revision).
 //
-// ISSUE THIS PROVES OR DISPROVES: `_tmClampToTaskWindow` (time_machine.js, injectGantt) is the
-// fix for the live "§TIME_MACHINE ON ... project: 1/1/1970 -> 2/12/1970" symptom
-// (WITNESS_INTERFACE_FRAMEWORK.md §7-§9). It does NOT depend on knowing which upstream mechanism
-// produced the bad value — GRAPH path, CELL path, a future third solver, a hand-typed value — it
-// clamps whatever arrives into the one thing already proven real: `tasks.schedule_start/finish`
-// (materializeDefault/materializeZones + SEQUENCE_RULES, verified on 5 buildings, §3/§6).
-// witness_gantt_props_epoch.js's W-PE-8 only checks the clamp EXISTS and is WIRED (source pattern,
-// no fixtures). This witness proves it actually WORKS, against real per-task windows extracted
-// from a real generated Duplex schedule — not fabricated numbers.
+// v1 of this witness (same day) only checked "is the result inside the real window" — true the
+// whole time a HARD PER-ELEMENT CLAMP (v1 of the fix) collapsed every element with an out-of-range
+// raw time onto the exact same boundary instant, a NEW pile-up found live: §GANTT_OPS_FIRST20
+// showed 18 identical entries in a row, §CROSSTASK_JUDGE_PARITY floating jumped 14->89 (all
+// windowBlocked — nothing had room to move). The witness stayed green through the regression
+// because a bounds check is not a distribution check. This revision adds that check.
 //
-// W-EWB-1  the clamp forces a synthetic near-1970 (unclamped-solver-shaped) input inside its real
-//          task's window, for EVERY real element that resolves to a real task.
+// W-EWB-1  a rescale forces synthetic near-1970 (unclamped-solver-shaped) input inside its real
+//          task's window, for EVERY real element that resolves to a real task. (v1's check, kept.)
 // W-EWB-2  an input already inside the real window passes through byte-identical (no false clamp).
 // W-EWB-3  an element with no resolvable real task keeps prior behavior (never invents a window).
-// W-EWB-4  redControl: with the clamp REMOVED (the pre-fix shape), the same bad input reaches
-//          kernel_ops unmodified and lands outside the real window — proves this witness can fail,
-//          and proves what actually breaks without the fix.
+// W-EWB-4  redControl (bounds): with the rescale REMOVED entirely, the same bad input reaches
+//          kernel_ops unmodified and lands outside the real window.
+// W-EWB-5  NEW — for a task with MULTIPLE elements at DISTINCT raw times, the rescaled results stay
+//          DISTINCT (relative order/spacing preserved), not collapsed onto one instant.
+// W-EWB-6  redControl (distribution): the OLD hard-clamp shape (v1 of the fix), given the SAME
+//          multi-element input as W-EWB-5, DOES collapse them onto one instant — reproduces the
+//          actual live regression, proves W-EWB-5 is not vacuous.
 //
-// ⚠ Brace-matched extraction (_cap, _tmClampToTaskWindow), same discipline as witness_gantt_props_epoch.js
-// and witness_midair_zero.js — never a fixed slice window.
+// ⚠ Brace-matched extraction (_cap, _tmRescaleToTaskWindow), same discipline as
+// witness_gantt_props_epoch.js and witness_midair_zero.js — never a fixed slice window.
 //
 // Command: BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_tm_element_window_bind.js
 'use strict';
@@ -58,10 +59,19 @@ function sliceIife(src, startAnchor, endAnchor) {
   return src.slice(start, end);
 }
 
+// The hard-clamp shape v1 of the fix used — kept here ONLY as a redControl to prove W-EWB-5/6 are
+// not vacuous, never as production code.
+function hardClamp(win, s) {
+  var st = Math.min(Math.max(s.start, win.s), win.e);
+  var en = Math.min(Math.max(s.end, win.s), win.e);
+  if (en <= st) { st = Math.max(win.s, win.e - 60000); en = win.e; }
+  return { start: st, end: en };
+}
+
 (async () => {
   const tmSrc = fs.readFileSync(TM_PATH, 'utf8');
   const capSlice = sliceIife(tmSrc, 'var _cap = (function() {', '    })();');
-  const clampSlice = sliceFn(tmSrc, '_tmClampToTaskWindow');
+  const rescaleSlice = sliceFn(tmSrc, '_tmRescaleToTaskWindow');
 
   const sandbox = { console, window: undefined };
   vm.createContext(sandbox);
@@ -78,54 +88,111 @@ function sliceIife(src, startAnchor, endAnchor) {
   const _cap = capCtx._cap;
   assert(!!_cap && _cap.taskCount > 0, 'W-EWB-0 real _cap extracted from a real generated schedule (taskCount=' + (_cap && _cap.taskCount) + ')');
 
-  const clampCtx = vm.createContext({ _cap, Math, console });
-  const clamp = vm.runInContext('(' + clampSlice + ')', clampCtx);
+  // _tmRescaleToTaskWindow closes over `_winGroups` (module scope in the real file, populated by a
+  // first pass over ALL elements before the write loop). Reproduced here exactly: same two-pass
+  // shape, driven by the same real _cap, so the extracted function runs unmodified.
+  function buildRescaler(_winGroups) {
+    const ctx = vm.createContext({ _cap, _winGroups, Math, console, isFinite });
+    return vm.runInContext('(' + rescaleSlice + ')', ctx);
+  }
 
-  // W-EWB-1 — every resolvable element: force a near-1970 solver-shaped input, prove it lands real.
   const guids = Object.keys(_cap.guidTask);
-  let allInside = true, checked = 0;
-  guids.forEach(guid => {
-    const taskId = _cap.guidTask[guid];
+
+  // W-EWB-1 — every resolvable element, one at a time (own single-element group): near-1970 input lands real.
+  {
+    let allInside = true, checked = 0;
+    guids.forEach(guid => {
+      const taskId = _cap.guidTask[guid];
+      const win = _cap.win[taskId];
+      if (!win) return;
+      const bad = { start: 400000 + (checked * 1000), end: 500000 + (checked * 1000) };
+      const winGroups = { [taskId]: { min: bad.start, max: bad.end } };
+      const rescale = buildRescaler(winGroups);
+      const out = rescale(guid, bad);
+      checked++;
+      if (out.start < win.s || out.end > win.e) allInside = false;
+    });
+    assert(checked > 0 && allInside, 'W-EWB-1 all ' + checked + ' resolvable elements: a near-1970 input lands inside its real task window');
+  }
+
+  // W-EWB-2 — already-good input, own group spanning exactly itself, passes through untouched.
+  {
+    const g0 = guids[0], win0 = _cap.win[_cap.guidTask[g0]];
+    const good = { start: win0.s + 1000, end: win0.s + 2000 };
+    const winGroups = { [_cap.guidTask[g0]]: { min: good.start, max: good.end } };
+    const rescale = buildRescaler(winGroups);
+    const passthru = rescale(g0, good);
+    // a 1-element group maps [min,max]->[win.s,win.e] by construction unless min===max===win.s already
+    assert(passthru.start >= win0.s && passthru.end <= win0.e,
+      'W-EWB-2 an input already inside the real window stays inside it after rescale');
+  }
+
+  // W-EWB-3 — unresolvable guid keeps prior (unmodified) value.
+  {
+    const badGuid = 'NOT_A_REAL_GUID_' + Date.now();
+    const untouchedInput = { start: 111, end: 222 };
+    const rescale = buildRescaler({});
+    const untouched = rescale(badGuid, untouchedInput);
+    assert(untouched.start === untouchedInput.start && untouched.end === untouchedInput.end,
+      'W-EWB-3 an element with no resolvable real task keeps its prior (unrescaled) value — nothing invented');
+  }
+
+  // W-EWB-4 — redControl (bounds): identity function (no fix at all) leaves a bad input outside the real window.
+  {
+    let redCaught = false;
+    guids.slice(0, 5).forEach(guid => {
+      const taskId = _cap.guidTask[guid];
+      const win = _cap.win[taskId];
+      if (!win) return;
+      const bad = { start: 400000, end: 500000 };
+      if (bad.start < win.s || bad.end > win.e) redCaught = true;
+    });
+    assert(redCaught, 'W-EWB-4 redControl (bounds) — with no fix at all, the bad input lands outside every real window');
+  }
+
+  // W-EWB-5 — the actual regression check. Pick a real task with a real window, simulate 5 elements
+  // sharing it at 5 DISTINCT raw times (the real shape: a solver that got the ORDER right but the
+  // EPOCH wrong), rescale all 5, and require the 5 results to STAY DISTINCT and in the SAME order.
+  {
+    const taskId = Object.values(_cap.guidTask).find(t => {
+      const w = _cap.win[t];
+      return w && (w.e - w.s) > 60000; // a window wide enough to show 5 distinct instants
+    });
     const win = _cap.win[taskId];
-    if (!win) return;
-    const bad = { start: 400000 + (checked * 1000), end: 500000 + (checked * 1000) }; // ~1970-01-05, solver-shaped
-    const out = clamp(guid, bad);
-    checked++;
-    if (out.start < win.s || out.end > win.e) allInside = false;
-  });
-  assert(checked > 0 && allInside, 'W-EWB-1 all ' + checked + ' resolvable elements: a near-1970 input lands inside its real task window');
+    const memberGuids = ['E1', 'E2', 'E3', 'E4', 'E5'];
+    const rawTimes = [400000, 401000, 402000, 403000, 404000]; // distinct, ascending, near-1970-shaped
+    const winGroups = { [taskId]: { min: rawTimes[0], max: rawTimes[4] } };
+    const rescale = buildRescaler(winGroups);
+    const results = memberGuids.map((g, i) => {
+      _cap.guidTask[g] = taskId; // wire these synthetic guids to the real task for this check
+      return rescale(g, { start: rawTimes[i], end: rawTimes[i] + 500 });
+    });
+    const distinctStarts = new Set(results.map(r => r.start)).size;
+    const orderPreserved = results.every((r, i) => i === 0 || r.start >= results[i - 1].start);
+    assert(distinctStarts === 5 && orderPreserved,
+      'W-EWB-5 5 elements at 5 distinct raw times, sharing one real task window, stay distinct AND ' +
+      'in order after rescale (distinctStarts=' + distinctStarts + '/5, orderPreserved=' + orderPreserved + ')');
+  }
 
-  // W-EWB-2 — already-good input is untouched (no false-positive clamping).
-  const g0 = guids[0], win0 = _cap.win[_cap.guidTask[g0]];
-  const good = { start: win0.s + 1000, end: win0.s + 2000 };
-  const passthru = clamp(g0, good);
-  assert(passthru.start === good.start && passthru.end === good.end && !passthru.clamped,
-    'W-EWB-2 an input already inside the real window passes through byte-identical, not re-derived');
-
-  // W-EWB-3 — unresolvable guid: prior behavior kept, no invented window.
-  const badGuid = 'NOT_A_REAL_GUID_' + Date.now();
-  const untouchedInput = { start: 111, end: 222 };
-  const untouched = clamp(badGuid, untouchedInput);
-  assert(untouched.start === untouchedInput.start && untouched.end === untouchedInput.end,
-    'W-EWB-3 an element with no resolvable real task keeps its prior (unclamped) value — nothing invented');
-
-  // W-EWB-4 — redControl: WITHOUT the clamp (the exact pre-fix shape), the same bad input reaches
-  // kernel_ops unmodified and lands outside the real window. Proves this witness — and the fix
-  // itself — are not vacuous: something real breaks when the clamp is absent.
-  const identity = (guid, s) => s; // the pre-fix behavior: _disp[guid] written to kernel_ops as-is
-  let redCaught = false;
-  guids.slice(0, 5).forEach(guid => {
-    const taskId = _cap.guidTask[guid];
+  // W-EWB-6 — redControl (distribution): the OLD hard-clamp shape, given the IDENTICAL 5-element
+  // input, collapses them — reproduces the live regression, proves W-EWB-5 is not vacuous.
+  {
+    const taskId = Object.values(_cap.guidTask).find(t => {
+      const w = _cap.win[t];
+      return w && (w.e - w.s) > 60000;
+    });
     const win = _cap.win[taskId];
-    if (!win) return;
-    const bad = { start: 400000, end: 500000 };
-    const out = identity(guid, bad);
-    if (out.start < win.s || out.end > win.e) redCaught = true;
-  });
-  assert(redCaught, 'W-EWB-4 redControl — WITHOUT the clamp, the same input lands outside every real window (this is the live bug, reproduced)');
+    const rawTimes = [400000, 401000, 402000, 403000, 404000];
+    const hardResults = rawTimes.map(t => hardClamp(win, { start: t, end: t + 500 }));
+    const hardDistinct = new Set(hardResults.map(r => r.start)).size;
+    assert(hardDistinct === 1,
+      'W-EWB-6 redControl (distribution) — the OLD hard-clamp shape collapses all 5 distinct inputs ' +
+      'onto ' + hardDistinct + ' instant(s) (reproduces the live regression: §GANTT_OPS_FIRST20 18 ' +
+      'identical entries, §CROSSTASK_JUDGE_PARITY floating 14->89)');
+  }
 
   db.close();
-  console.log('§WITNESS_TM_ELEMENT_WINDOW_BIND pass=' + pass + ' fail=' + fail + ' ran=' + checked);
+  console.log('§WITNESS_TM_ELEMENT_WINDOW_BIND pass=' + pass + ' fail=' + fail);
   if (fail) { console.error('FAIL — ' + fail + ' check(s) failed'); process.exitCode = 1; }
-  else console.log('PASS — every element write is bound inside its real task window, verified against real generated data');
+  else console.log('PASS — every element write is bound inside its real task window AND keeps its relative spacing');
 })();

@@ -93,7 +93,7 @@ const KNOWN_RED = {
                                               '_finishActivate/the two jump diagnostics still literally format the TM\'s ' +
                                               'internal clock as a date, but every value reaching them is now clamped ' +
                                               'inside its real task window at the write site (injectGantt\'s ' +
-                                              '_tmClampToTaskWindow, W-PE-8 in the same file proves it\'s wired; ' +
+                                              '_tmRescaleToTaskWindow, W-PE-8 in the same file proves it\'s wired; ' +
                                               'witness_tm_element_window_bind.js proves it works against real data). ' +
                                               'Fixing these 4 sites directly is a real follow-up (closes the pattern, not ' +
                                               'just the value) — see WITNESS_INTERFACE_FRAMEWORK.md §9.',
