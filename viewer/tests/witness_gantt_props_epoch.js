@@ -166,26 +166,34 @@ assert(!orderJump.bad,
 // EXTENSION 2026-08-25 (same day, follow-on) — W-PE-8: this is the fix for the W-PE-5/6/7 gap
 // above, NOT a fifth display-site patch. `_disp[el.guid]` (from CpmSchedule.run, a pure relative
 // CPM solver — verified by reading cpm_schedule.js end to end: zero references to baseMs/anchor
-// anywhere) gets clamped into its owning task's REAL window (`_cap.win[taskId]`, Date.parse() on
+// anywhere) gets rescaled into its owning task's REAL window (`_cap.win[taskId]`, Date.parse() on
 // the real `tasks.schedule_start/finish` — proven correct on 5 real buildings,
 // WITNESS_INTERFACE_FRAMEWORK.md §3/§6) at the ONE place every element's placement is actually
 // written to kernel_ops. This makes W-PE-5/6/7's residual pattern SAFE without touching any of the
-// four display sites: they still literally format _cursor/_projectStart/_projectEnd as dates, but
-// those values can no longer leave real calendar time by the time they get there. Real numeric
-// proof (real _cap data extracted from Duplex, not fabricated) lives in the sibling witness
-// witness_tm_element_window_bind.js — this file only checks the mechanism is present and wired,
-// matching its own "no fixtures, no DB" contract.
+// four display sites. Real numeric proof (real _cap data, not fabricated) lives in the sibling
+// witness witness_tm_element_window_bind.js — this file only checks the mechanism is present and
+// wired, matching its own "no fixtures, no DB" contract.
+//
+// REVISED same day — a hard per-element clamp (v1) fixed the epoch but broke distribution: every
+// element's raw time was near-1970, so ALL of them clamped to the exact same boundary instant,
+// found live (§GANTT_OPS_FIRST20 collapsed to 18 identical entries; §CROSSTASK_JUDGE_PARITY
+// floating 14->89, windowBlocked=89). v2 (below) is a per-task PROPORTIONAL RESCALE — groups
+// elements by real task, affine-maps each group's own raw min/max onto the real window, preserving
+// relative order/spacing instead of collapsing outliers to a boundary.
 const injectGantt = fnBody('injectGantt');
-assert(injectGantt.length > 0 && /function _tmClampToTaskWindow\(guid, s\)/.test(injectGantt),
-  'W-PE-8-0 injectGantt defines _tmClampToTaskWindow (found and brace-matched)');
-assert(/var bound = _tmClampToTaskWindow\(el\.guid, s\);/.test(injectGantt) &&
+assert(injectGantt.length > 0 && /function _tmRescaleToTaskWindow\(guid, s\)/.test(injectGantt),
+  'W-PE-8-0 injectGantt defines _tmRescaleToTaskWindow (found and brace-matched)');
+assert(/var bound = _tmRescaleToTaskWindow\(el\.guid, s\);/.test(injectGantt) &&
        /s = bound;/.test(injectGantt) &&
        injectGantt.indexOf('_gStmt.run([s.start,') > injectGantt.indexOf('s = bound;'),
-  'W-PE-8a every element write is routed through the clamp BEFORE the kernel_ops INSERT, not after ' +
-  '(ordering checked directly — a clamp defined-but-unused would pass a naive presence check)');
+  'W-PE-8a every element write is routed through the rescale BEFORE the kernel_ops INSERT, not after ' +
+  '(ordering checked directly — a rescale defined-but-unused would pass a naive presence check)');
 assert(/if \(!_cap\) return s;/.test(injectGantt) && /if \(!win\) return s;/.test(injectGantt),
-  'W-PE-8b the clamp has an explicit fallback for unresolvable elements — never invents a window, ' +
+  'W-PE-8b the rescale has an explicit fallback for unresolvable elements — never invents a window, ' +
   'never silently drops prior behavior for an element with no real task');
+assert(/var g = _winGroups\[taskId\];/.test(injectGantt) && /var scale = realSpan \/ rawSpan;/.test(injectGantt),
+  'W-PE-8c the rescale is per-task-group and PROPORTIONAL (scale=realSpan/rawSpan), not a per-element ' +
+  'hard clamp — the exact distinction between v1 (broke distribution) and v2 (this one)');
 
 console.log('§PROPS_EPOCH_SUMMARY pass=' + pass + ' fail=' + fail);
 if (fail) { console.error('FAIL — ' + fail + ' check(s) failed'); process.exit(1); }
