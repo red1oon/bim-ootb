@@ -4,6 +4,33 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.53.0](https://github.com/red1oon/bim-ootb/compare/v1.52.0...v1.53.0) (2026-08-25)
+
+
+### ✨ Features
+
+* **readiness:** §HANDOVER — the visitor leaves holding their own model, as SQLite ([#1506](https://github.com/red1oon/bim-ootb/issues/1506)) ([9736932](https://github.com/red1oon/bim-ootb/commit/9736932fe5b26798700c59ba9aa85fbd895ae344))
+* **readiness:** §LANGUAGE_I18N_FULLTOOLKIT — extend ar/ms translation to the whole toolkit ([#1515](https://github.com/red1oon/bim-ootb/issues/1515)) ([74406e3](https://github.com/red1oon/bim-ootb/commit/74406e340a807bd989003a362c16089f3c9bc561))
+* **readiness:** §TRACKB — step 9 reads a real IFC and measures it, in the browser ([#1502](https://github.com/red1oon/bim-ootb/issues/1502)) ([31302d6](https://github.com/red1oon/bim-ootb/commit/31302d6759aa25976b854c685af1410e4e4c5edf))
+* **tm:** §TM_P6_FOLD — retire the Schedule Editor tab, fold P6/MSP interop + Diff into the TM panel ([#1509](https://github.com/red1oon/bim-ootb/issues/1509)) ([a515081](https://github.com/red1oon/bim-ootb/commit/a5150816e8a03b017829ef0911aed591824a1057))
+* **tm:** Office snapshot — TM state leaves the browser as PNG + deep-link (Copy Image / Copy Link) ([#1503](https://github.com/red1oon/bim-ootb/issues/1503)) ([01baea8](https://github.com/red1oon/bim-ootb/commit/01baea8f9aac13fb124cd3449d0f64309154a848))
+* **tm:** silent refusals get tips; a thrown edit recovers + offers closing other panels ([#1500](https://github.com/red1oon/bim-ootb/issues/1500)) ([b66a1f7](https://github.com/red1oon/bim-ootb/commit/b66a1f7605ab24fb0b8b2611cdd2ca6cdcff5099))
+* **witness:** add witness_kit — reusable schema+invariant+redControl builder for authoring new witnesses ([#1511](https://github.com/red1oon/bim-ootb/issues/1511)) ([5c73a5d](https://github.com/red1oon/bim-ootb/commit/5c73a5dd120c8c17d4040e120cd9ce5a3b0a7e4b))
+
+
+### 🐛 Fixes
+
+* **readiness:** a real build stamp, and the page tells you when your tab is stale ([#1507](https://github.com/red1oon/bim-ootb/issues/1507)) ([b8886fa](https://github.com/red1oon/bim-ootb/commit/b8886fa99a3bdb2c3de7958deb341eb1b5aeb72c))
+* **tm:** Alt+C bake loads the schedule silently, never opens the TM panel ([#1510](https://github.com/red1oon/bim-ootb/issues/1510)) ([4ceae54](https://github.com/red1oon/bim-ootb/commit/4ceae549df9c51a8e8e7152e5575e2e229758f70))
+* **tm:** Alt+C bake never generates a building's first-ever 4D schedule ([#1514](https://github.com/red1oon/bim-ootb/issues/1514)) ([a324133](https://github.com/red1oon/bim-ootb/commit/a3241330cc63159f0c369a1e56a74a93c9b30e01))
+
+
+### 📝 Documentation
+
+* **readiness:** §REGISTER_SYNC — publish the related work that was read but never shipped ([#1508](https://github.com/red1oon/bim-ootb/issues/1508)) ([4201628](https://github.com/red1oon/bim-ootb/commit/4201628a6e97f2ec01c418a4f08896d438229779))
+* **readiness:** §STORY — "can anyone else actually open your model?", and stop claiming a file is read ([#1501](https://github.com/red1oon/bim-ootb/issues/1501)) ([77ddd16](https://github.com/red1oon/bim-ootb/commit/77ddd16c82832aeb21b457c2b6777de6a42e7eff))
+* **witness-kit:** add JSDoc to Witness() builder and its chained methods ([#1512](https://github.com/red1oon/bim-ootb/issues/1512)) ([1bc3aa7](https://github.com/red1oon/bim-ootb/commit/1bc3aa7fc5d24fb1fa135372cc0236c85365f6f5))
+
 ## [1.52.0](https://github.com/red1oon/bim-ootb/compare/v1.51.0...v1.52.0) (2026-08-24)
 
 
