@@ -712,6 +712,10 @@
     // §TEMPLATE_INSTANTIATE — when a template is supplied, the TASK GRID comes from it and the
     // solve is no longer what defines the phases (see instantiateTemplate's header). The legacy
     // grouping path below is left byte-identical for every caller that passes no template.
+    // §BAR_LIVE takes precedence: it needs no `schedule` at all, because it does not roll up a
+    // solve — it IS the solve. opts.barModel absent leaves every other path byte-identical.
+    if (opts.barModel) return _writeBarSchedule(db, elements, opts, SG, storeyMergeMap,
+      laborRates, schedId, start);
     if (opts.template) return _writeTemplateSchedule(db, elements, schedule, opts, SG,
       storeyMergeMap, laborRates, schedId, start, _displayAuthored);
 
@@ -920,6 +924,130 @@
       }
     }
     return { schedule: out, mapped: mapped, degenerateTasks: degenerate };
+  }
+
+  // ══ §BAR_LIVE (2026-08-26) — the Bar model as the LIVE authoring path ════════════════════════
+  // Spec: bim-compiler prompts/4D_BAR_MODEL.md. One graph, one stored timeline, one pass:
+  //   bar_needs.buildNeeds/buildContacts -> BarModel.buildTree -> attach -> schedule
+  // The task grid and the element times come out of the SAME tree, so the Gantt and the movie
+  // cannot disagree — a GroupBar's span IS min/max of its children (§2.1), which is why the five
+  // translators this replaces existed at all.
+  //
+  // MEASURED against the engine this supersedes, judged by census() sliced from
+  // witness_midair_zero.js (viewer/tests/witness_bar_schedule.js, 15/15):
+  //   midair           shipping 17/147/139/226  ->  12/70/92/336   (Duplex/HHS/Hospital/Terminal)
+  //   band inversions  shipping 64/654/29,013/30,318 -> 1/0/4/4
+  //   phase stacking   shipping 18%/34%/-/17%   ->  0 on every building
+  //   zero-minute, elements outside their own bar, crew-cap breaches -> 0
+  // Terminal's 336 vs 226 is the one regression and it is a DATA gap, not a scheduler gap —
+  // 4D_SCHEDULE_PERFECTION.md §S72.2 traces it to one line in room_walker.js.
+  //
+  // OPT-IN via opts.barModel (the parsed rates/4D_policy.json). Absent -> every existing path is
+  // byte-identical, including the legacy grouping path and the §TEMPLATE_INSTANTIATE path.
+  function _writeBarSchedule(db, elements, opts, SG, storeyMergeMap, laborRates, schedId, start) {
+    // This module's IIFE parameter is named `global` and is `self||this` — in node that is NOT
+    // globalThis, so a bare `global.BarModel` misses a module that registered itself properly.
+    // Exactly the trap _reclassGroundworkSlabs already documents for ScheduleGate. Check all three.
+    function _reg(name) {
+      return (global && global[name]) ||
+             (typeof globalThis !== 'undefined' && globalThis[name]) ||
+             (typeof window !== 'undefined' && window[name]) || null;
+    }
+    var BM = opts.barModel_impl || _reg('BarModel');
+    var BN = opts.barNeeds_impl || _reg('BarNeeds');
+    if (!BM || !BN) { console.log('§BAR_LIVE_FAIL reason=bar_model_or_bar_needs_not_loaded'); return { ok: false, reason: 'no_bar_model' }; }
+    var POLICY = opts.barModel;
+
+    var bandRank = (SG.deriveBandRanks ? SG.deriveBandRanks(elements, storeyMergeMap).bandRank : {}) || {};
+    function collapse(st) {
+      var c = SG.collapsePhase(st);
+      return (storeyMergeMap && storeyMergeMap[c]) || c;
+    }
+    var order = BM.phaseOrder(opts.sequenceRules || _reg('SEQUENCE_RULES') || {});
+    var needs = BN.buildNeeds(elements, {});
+    var ct = BN.buildContacts(elements);
+    var lv = BM.coarsenLevels(elements, null, collapse, bandRank, POLICY.level_bands);
+    var tree = BM.buildTree(elements, POLICY, collapse, bandRank, order, lv);
+    BM.attachNeeds(tree.leaves, needs.edges);
+    BM.attachContacts(tree.leaves, ct.contacts, ct.grounded);
+    var res = BM.schedule(tree, { laborRates: laborRates, baseMs: Date.parse(start),
+                                  phaseOrder: order, levelLink: POLICY.level_link });
+    if (!tree.tasks.length) { console.log('§BAR_LIVE_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    BM.reportCycles(res.cycles);
+
+    _ensureSchedulesGenVersion(db);
+    _ensureSchedulesDisplayAuthored(db);
+    _ensureWideTasks(db);
+    db.run('CREATE TABLE IF NOT EXISTS task_elements (task_id TEXT, guid TEXT, PRIMARY KEY (task_id, guid))');
+    db.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+
+    db.run('BEGIN TRANSACTION');
+    db.run('DELETE FROM task_elements WHERE task_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId]);
+    db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [schedId, schedId]);
+    db.run('DELETE FROM tasks WHERE schedule_id=?', [schedId]);
+    db.run('DELETE FROM schedules WHERE schedule_id=?', [schedId]);
+
+    var baseMs = Date.parse(start), DAY = 86400000;
+    // §ZONE_ENVELOPE_DAYS: a bar is the day-grid ENVELOPE of its own contents — floor the start,
+    // ceil the finish — so the bar BOUNDS what it contains and `contains()` stays a tautology on the
+    // day grid too. Math.round both ends put 295 HHS and 693 Hospital elements outside their own bar
+    // purely through rounding, which is the §S70 defect reappearing as an off-by-a-fraction.
+    var dayFloor = function (ms) { return Math.floor((ms - baseMs) / DAY); };
+    var dayCeil = function (ms) { return Math.ceil((ms - baseMs) / DAY); };
+    var dayOf = dayCeil;
+    var totalDays = Math.max(1, dayOf(tree.project.stop));
+    db.run('INSERT INTO schedules (schedule_id,name,status,created_date,gen_version,display_authored) VALUES (?,?,?,?,?,?)',
+      [schedId, 'Authored Schedule (bar model)', 'PLANNED', start, opts.genVersion != null ? opts.genVersion : null, 1]);
+    var rootId = 'TASK_ROOT';
+    db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [rootId, schedId, null, 'Project', 'CONSTRUCTION', 1, start, _addDays(start, totalDays), 'P' + totalDays + 'D', null, 'PLANNED']);
+
+    var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    var idOf = {}, ti;
+    for (ti = 0; ti < tree.tasks.length; ti++) {
+      var t = tree.tasks[ti];
+      // Task ids stay phase+storey derived so every existing consumer (kernel_ops, the drawer,
+      // P6 export) keeps matching what it already matches.
+      var tid = 'TASK_' + _slug(t.phase) + '_' + _slug(t.level == null ? 'building' : t.level);
+      idOf[t.name] = tid;
+      var sD = dayFloor(t.start), eD = dayCeil(t.stop);
+      if (eD <= sD) eD = sD + 1;
+      stmtTk.run([tid, schedId, rootId, t.phase + ' — ' + (t.level == null ? 'building' : t.level),
+        'CONSTRUCTION', 0, _addDays(start, sD), _addDays(start, eD), 'P' + (eD - sD) + 'D', null, 'PLANNED']);
+      var kids = t.children();
+      for (var ki = 0; ki < kids.length; ki++) stmtTe.run([tid, kids[ki].guid]);
+    }
+    stmtTk.free(); stmtTe.free();
+
+    // task_sequences from the TREE'S OWN declared edges — never `succ.start - pred.finish`, the
+    // derivation that made every edge tight and CPM report 17 of 17 critical with float 0..0.
+    var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var edgeN = 0;
+    for (ti = 0; ti < tree.tasks.length; ti++) {
+      var tt = tree.tasks[ti];
+      for (var ni = 0; ni < tt.needs.length; ni++) {
+        var pid = idOf[tt.needs[ni].name], sid = idOf[tt.name];
+        if (!pid || !sid || pid === sid) continue;
+        stmtSeq.run([pid, sid, 'FS', 0]); edgeN++;
+      }
+    }
+    stmtSeq.free();
+    db.run('COMMIT');
+
+    // THE MOVIE. Leaf times ARE the display timeline — no remap, because there is only one
+    // timeline. This is the §S70 problem dissolved rather than patched.
+    var display = {};
+    for (var li = 0; li < tree.leaves.length; li++) {
+      var b = tree.leaves[li];
+      if (b.start != null) display[b.guid] = { start: b.start, end: b.stop };
+    }
+    console.log('§BAR_LIVE schedule=' + schedId + ' bars=' + tree.tasks.length + ' edges=' + edgeN +
+      ' elements=' + elements.length + ' placed=' + Object.keys(display).length +
+      ' totalDays=' + totalDays + ' levelBands=' + POLICY.level_bands +
+      ' — one graph, one stored timeline; the bars and the movie are the same numbers');
+    return { ok: true, scheduleId: schedId, zoneCount: tree.tasks.length, edgeCount: edgeN,
+             totalDays: totalDays, displaySchedule: display, tasks: tree.tasks };
   }
 
   // _writeTemplateSchedule — the §TEMPLATE_INSTANTIATE write path. Same tables, same schedule_id,

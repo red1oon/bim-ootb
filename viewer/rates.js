@@ -557,6 +557,55 @@ var LOCALE_RATE_MAP = {
  * hardcoded fallback already in place is retained.
  * @returns {Promise<boolean>} true if the JSON was applied, false on fallback.
  */
+// ══ §4D_POLICY (2026-08-26) — the ONLY authored input to 4D scheduling ═══════════════════════
+// Spec: bim-compiler prompts/4D_BAR_MODEL.md §4. Everything else is EXTRACTED: phase order from
+// SEQUENCE_RULES' min sequence per phase, trades from the union of each phase's resources, level
+// from ScheduleGate.deriveBandRanks, work from _installSecs, crews from LABOR_RATES.max_crews,
+// shift from SHIFT_HOURS above.
+//
+// WHY A LITERAL AND A JSON. rates/4D_policy.json is the reviewable source and IS read — but a fetch
+// is async and generation can run before it lands. The literal below is the same five values, so a
+// pre-fetch generation is identical rather than broken, and loadFourDPolicy() overwrites in place
+// when the JSON arrives. This is deliberately NOT §RULES_TABLE_SOURCE's situation, where
+// loadSequenceRules() is never called by viewer.html at all and the JSON is dead (§S65 STAGE 1):
+// viewer.html DOES call loadFourDPolicy(), and a drift between the two is a witness failure.
+var FOURD_POLICY = {
+  "days_per_week": 7,
+  "phase_link": "serial",
+  "level_link": "trade",
+  "level_bands": "storey",
+  "ceiling_link": "frame_above",
+  "building_scope": [
+    "Substructure"
+  ]
+};
+if (typeof window !== 'undefined') window.FOURD_POLICY = FOURD_POLICY;
+
+function loadFourDPolicy() {
+  return fetch('rates/4D_policy.json').then(function (resp) {
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.json();
+  }).then(function (json) {
+    // Mutate IN PLACE — every reader holds this object reference and reads it at call time.
+    var changed = [];
+    ['days_per_week', 'phase_link', 'level_link', 'level_bands', 'ceiling_link', 'building_scope']
+      .forEach(function (k) {
+        if (json[k] === undefined) return;
+        if (JSON.stringify(json[k]) !== JSON.stringify(FOURD_POLICY[k])) changed.push(k);
+        FOURD_POLICY[k] = json[k];
+      });
+    try {
+      var ov = localStorage.getItem('json_4d_policy');
+      if (ov) { var o = JSON.parse(ov); for (var k in o) FOURD_POLICY[k] = o[k]; changed.push('(localStorage override)'); }
+    } catch (e) { /* no override */ }
+    console.log('\u00a74D_POLICY loaded from JSON, drift-vs-literal=' + (changed.length ? changed.join(',') : 'none'));
+    return FOURD_POLICY;
+  }).catch(function (e) {
+    console.warn('\u00a74D_POLICY_LOAD_FAIL ' + e.message + ' — running the rates.js literal (same values)');
+    return FOURD_POLICY;
+  });
+}
+
 function loadSequenceRules() {
   return fetch('rates/sequence_rules.json').then(function(resp) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);

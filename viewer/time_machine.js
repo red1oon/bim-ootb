@@ -5286,7 +5286,8 @@
         var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
         var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
           scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION,
-          displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+          displayRemap: _tmDisplayRemap,
+          barModel: (typeof window !== 'undefined' && window.FOURD_POLICY) || null, sequenceRules: _SR });   // §ZONE_DISPLAY_AUTHORING + §BAR_LIVE
         if ((!rres || !rres.ok) && SA.materializeDefault) {
           rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
             genVersion: _GANTT_CACHE_VERSION });
@@ -6855,7 +6856,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap, barModel: (typeof window !== 'undefined' && window.FOURD_POLICY) || null, sequenceRules: SR });   // §ZONE_DISPLAY_AUTHORING + §BAR_LIVE
     if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION });
     console.log('§GANTT_PREMATERIALIZE ' + (res.ok
       ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
@@ -6897,7 +6898,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap, barModel: (typeof window !== 'undefined' && window.FOURD_POLICY) || null, sequenceRules: SR });   // §ZONE_DISPLAY_AUTHORING + §BAR_LIVE
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
       res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION }) : { ok: false };

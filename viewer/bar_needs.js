@@ -45,12 +45,25 @@
 'use strict';
 (function (root) {
 
-  var fs = require('fs');
-  var path = require('path');
+  // BROWSER-SAFE (2026-08-26). This module used to `require('fs')` at load and slice
+  // schedule_gate.js's SOURCE TEXT to recover predicates trapped in computeSchedule's closure.
+  // That cannot run in a browser — `ReferenceError: require is not defined`, caught by
+  // witness_real_placement_resolver.js the moment the live wiring landed. The predicates are now
+  // LIFTED and EXPORTED from schedule_gate.js (same move, same reason as §S26.2's supportPool), so
+  // this module CALLS them. No text scraping, no drift possible, and it loads in both runtimes.
+  var ScheduleGate = (typeof require === 'function' && typeof module !== 'undefined')
+    ? require('./schedule_gate.js')
+    : (root.ScheduleGate || (typeof window !== 'undefined' && window.ScheduleGate));
+  if (!ScheduleGate) throw new Error('bar_needs.js: ScheduleGate not available');
 
-  var SG_PATH = path.join(__dirname, 'schedule_gate.js');
-  var SG_SRC = fs.readFileSync(SG_PATH, 'utf8');
-  var ScheduleGate = require('./schedule_gate.js');
+  // Node-only, and only for the WITNESS's anti-re-derivation check — never on the live path.
+  var fs = null, path = null, SG_SRC = '';
+  if (typeof require === 'function' && typeof module !== 'undefined') {
+    try {
+      fs = require('fs'); path = require('path');
+      SG_SRC = fs.readFileSync(path.join(__dirname, 'schedule_gate.js'), 'utf8');
+    } catch (e) { SG_SRC = ''; }
+  }
 
   // sliceFn(src, name) — balanced-brace extraction of a named function declaration, wherever it
   // sits in the source text (module scope or trapped inside another function's closure — pure text
@@ -71,23 +84,24 @@
   // The lifted geometric core, bound to ScheduleGate's own CELL/EPS/GAP (never a second hand-typed
   // copy of those constants — the reason schedule_gate.js exports them in the first place, per its
   // own comment at schedule_gate.js:1250-1252).
-  var _slicedSrc =
-    'var CELL = ' + ScheduleGate.CELL + ';\n' +
-    'var EPS = ' + ScheduleGate.EPS + ';\n' +
-    'var GAP = ' + ScheduleGate.GAP + ';\n' +
-    sliceFn(SG_SRC, 'cellsOf') + '\n' +          // schedule_gate.js:174 — CELL-keyed XY bucketer
-    sliceFn(SG_SRC, 'overlap') + '\n' +           // schedule_gate.js:180 — AABB XY overlap test
-    sliceFn(SG_SRC, 'isPromotedSlab') + '\n' +    // schedule_gate.js:549 — §DEQ_V1 roof-role slab
-    sliceFn(SG_SRC, 'edgeBelow') + '\n' +         // schedule_gate.js:790 — geoGate "below"
-    sliceFn(SG_SRC, 'edgeContained') + '\n' +     // schedule_gate.js:793 — geoGate §GEO_SUPPORT_LEAK
-    sliceFn(SG_SRC, 'edgeBearing') + '\n' +       // schedule_gate.js:794 — hasBearingBelow/audit
-    sliceFn(SG_SRC, 'wallCarries') + '\n' +       // schedule_gate.js:797 — wallGate's relation
-    sliceFn(SG_SRC, 'edgeCarrier') + '\n' +       // schedule_gate.js:798 — hangGate
-    sliceFn(SG_SRC, 'bboxVol');                   // schedule_gate.js:323 — §HANG_NEAREST volume test
-  var G = (new Function(_slicedSrc +
-    '\nreturn { cellsOf: cellsOf, overlap: overlap, isPromotedSlab: isPromotedSlab, ' +
-    'edgeBelow: edgeBelow, edgeContained: edgeContained, edgeBearing: edgeBearing, ' +
-    'wallCarries: wallCarries, edgeCarrier: edgeCarrier, bboxVol: bboxVol };'))();
+  // The predicates, CALLED not sliced (2026-08-26). Every one of these is exported from
+  // schedule_gate.js — cellsOf/overlap were already at module scope; isPromotedSlab and the five
+  // edge* predicates were lifted out of computeSchedule's closure for exactly this. Slicing them
+  // out of the file's source text worked in node and threw `require is not defined` in a browser,
+  // which is what stopped the live wiring. There is now nothing to drift: this IS the engine's own
+  // function object, not a copy of its text.
+  var G = {
+    cellsOf: ScheduleGate.cellsOf, overlap: ScheduleGate.overlap,
+    isPromotedSlab: ScheduleGate.isPromotedSlab, edgeBelow: ScheduleGate.edgeBelow,
+    edgeContained: ScheduleGate.edgeContained, edgeBearing: ScheduleGate.edgeBearing,
+    wallCarries: ScheduleGate.wallCarries, edgeCarrier: ScheduleGate.edgeCarrier,
+    bboxVol: ScheduleGate.bboxVol
+  };
+  (function () {
+    var missing = Object.keys(G).filter(function (k) { return typeof G[k] !== 'function'; });
+    if (missing.length) throw new Error('bar_needs.js: schedule_gate.js is not exporting ' +
+      missing.join(',') + ' — lift them to module scope, do not re-derive them here');
+  })();
 
   // buildIndex(elements, predFn) — CELL-bucket every element for which predFn holds, indexed the
   // same way structIdxGrid/wallIdxGrid are inside computeSchedule (schedule_gate.js:786-788).
@@ -131,24 +145,24 @@
   // The three clauses are census()'s own, lifted by balanced-brace slicing from
   // viewer/tests/witness_midair_zero.js, never retyped — same discipline as every other provider
   // here, and the discipline whose breach cost 4,706-vs-716 support edges earlier in this session.
+  // census()'s three contact clauses, held HERE rather than sliced out of
+  // viewer/tests/witness_midair_zero.js at runtime (that read a test file off disk — node-only, and
+  // a test is not a runtime dependency). They must stay byte-equivalent to census()'s own, which is
+  // not a hope: witness_bar_needs.js slices census() in node and asserts the two agree on the REAL
+  // contact set of all four buildings. Behavioural equality, checked, beats a comment saying "keep
+  // these in sync".
+  //   bearing  — S sits below E and reaches up to it
+  //   carrier  — S sits at or above E's top and rises past it (E hangs from S)
+  //   embedded — S brackets E vertically
   function contactClauses() {
-    var src = fs.readFileSync(path.join(__dirname, 'tests', 'witness_midair_zero.js'), 'utf8');
-    var i = src.indexOf('const bearing = S.bz < T.bz - EPS');
-    if (i < 0) throw new Error('census() contact clauses not found in witness_midair_zero.js — ' +
-      'do not retype them, fix the slice');
-    var j = src.indexOf('if (!bearing && !carrier && !embedded)', i);
-    if (j < 0) throw new Error('census() contact clause terminator not found');
-    var body = src.slice(i, j);
-    // census names its fields bz/tz; elements here carry base_z/top_z. Rename at the boundary only.
-    body = body.replace(/\.bz\b/g, '.base_z').replace(/\.tz\b/g, '.top_z');
-    return new Function('S', 'T', 'EPS', 'GAP', body + ' return bearing || carrier || embedded;');
+    return function (S, T, EPS, GAP) {
+      var bearing  = S.base_z < T.base_z - EPS && S.top_z >= T.base_z - GAP;
+      var carrier  = S.base_z >= T.top_z - GAP && S.top_z > T.top_z + EPS;
+      var embedded = S.base_z <= T.base_z + EPS && S.top_z >= T.top_z - EPS;
+      return bearing || carrier || embedded;
+    };
   }
 
-  // buildContacts(elements) — the ANY-OF set: for each element, every OTHER element it touches by
-  // census()'s own three clauses. Returned as {toGuid: [fromGuid,...]} rather than flat edges,
-  // because the gate only ever needs "the earliest of these", and a flat list on Terminal runs to
-  // roughly a million rows. Grounded elements (nothing meaningfully below them) get no entry —
-  // they stand on the earth, which is census()'s own rule and its own GAP constant.
   function buildContacts(elements) {
     var touches = contactClauses();
     var idx = {}, i, c, cs;

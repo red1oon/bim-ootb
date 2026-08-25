@@ -952,7 +952,14 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
 <script src="time_machine.js?v=77" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=2" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
+<script src="bar_model.js?v=1" onerror="console.warn('§LOAD_FAIL bar_model.js')"></script>
+<script src="bar_needs.js?v=1" onerror="console.warn('§LOAD_FAIL bar_needs.js')"></script>
 <script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<!-- §4D_POLICY — CALLED, unlike loadSequenceRules(), which viewer.html has never called and
+     which is why rates/sequence_rules.json is a dead mirror (§S65 STAGE 1). A JSON nothing
+     loads is a document, not a setting. rates.js carries the same five values as a literal
+     so a generation that races this fetch is identical rather than broken. -->
+<script>if (typeof loadFourDPolicy === 'function') loadFourDPolicy();</script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_author_ui.js?v=9" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>

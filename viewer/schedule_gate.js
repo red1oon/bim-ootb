@@ -322,6 +322,24 @@
   // the §HANG_NEAREST fallback below share this one definition so their populations can never drift)
   function bboxVol(e) { return (e.x1 - e.x0) * (e.y1 - e.y0) * (e.top_z - e.base_z); }
 
+  // ══ THE GEOMETRY EDGE PREDICATES, LIFTED TO MODULE SCOPE AND EXPORTED (2026-08-26) ═══════════
+  // Same move, same reason as §S26.2's supportPool: these were trapped inside computeSchedule's
+  // closure, so the only way for another module to use them was to slice them out of this file's
+  // SOURCE TEXT at runtime — which viewer/bar_needs.js did, and which cannot work in a browser
+  // (`require is not defined`, caught by witness_real_placement_resolver.js). Exported, they are an
+  // API instead of a text-scraping arrangement, and a consumer cannot drift from them at all.
+  // Bodies are verbatim; the definitions inside computeSchedule now call these.
+  function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }          // §DEQ_V1
+  function API_edgeBelow(S, E)     { return S.base_z < E.base_z - EPS; }               // geoGate "below"
+  // §TM_GEO_ORDER_CYCLES fix (2026-08-10): contained support must live in E's LOWER HALF —
+  // mirrors geoGate's clause (Terminal leftover 37,927 -> 0).
+  function API_edgeContained(S, E) { return !API_edgeBelow(S, E) && !isPromotedSlab(S) && S.base_z > E.base_z + EPS && S.top_z <= (E.base_z + E.top_z) / 2; }
+  function API_edgeBearing(S, E)   { return S.base_z < E.base_z - EPS && S.top_z >= E.base_z - GAP; }
+  // §TM_GEO_ORDER_CYCLES fix: wallGate's relation, bounded — a wall carries a promoted slab AT ITS
+  // TOP (top within GAP of the slab's base), never one embedded metres below its crown.
+  function API_wallCarries(S, E)   { return API_edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
+  function API_edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }   // hangGate
+
   // deriveBandRanks(elements) — the §4D_BAND_MONOTONIC ladder (see computeSchedule's header for the
   // full ruling): storeys grouped by collapsePhase(), each ranked by the MEDIAN base_z of its own
   // elements, ascending. Extracted verbatim from computeSchedule's own `deriveRanks` IIFE (pure
@@ -787,15 +805,10 @@
       if (P.seq <= 4 || isPromotedSlab(P) || isStairFlight(P)) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (structIdxGrid[cs[c]] = structIdxGrid[cs[c]] || []).push(t); }
       else if (P.cls && P.cls.indexOf('IfcWall') === 0) { cs = cellsOf(P); for (c = 0; c < cs.length; c++) (wallIdxGrid[cs[c]] = wallIdxGrid[cs[c]] || []).push(t); } }
     // pair predicates — one definition, used for both indegree count and decrement-on-place
-    function edgeBelow(S, E)     { return S.base_z < E.base_z - EPS; }                          // geoGate "below"
-    // §TM_GEO_ORDER_CYCLES fix (2026-08-10): contained support must live in E's LOWER HALF —
-    // mirrors geoGate's clause above (see the full rationale there; Terminal leftover 37,927 → 0).
-    function edgeContained(S, E) { return !edgeBelow(S, E) && !isPromotedSlab(S) && S.base_z > E.base_z + EPS && S.top_z <= (E.base_z + E.top_z) / 2; }  // geoGate §GEO_SUPPORT_LEAK clause
-    function edgeBearing(S, E)   { return S.base_z < E.base_z - EPS && S.top_z >= E.base_z - GAP; }  // hasBearingBelow / audit
-    // §TM_GEO_ORDER_CYCLES fix: wallGate's relation, bounded — a wall carries a promoted slab AT
-    // ITS TOP (top within GAP of the slab's base), never one embedded metres below its crown.
-    function wallCarries(S, E)   { return edgeBearing(S, E) && S.top_z <= E.base_z + GAP; }
-    function edgeCarrier(S, E)   { return S.base_z >= E.top_z - GAP && S.base_z <= E.top_z + GAP && S.top_z > E.top_z + EPS; }  // hangGate
+    // Bodies now live at module scope and are EXPORTED — see the block next to bboxVol. These
+    // aliases keep computeSchedule's own text unchanged; they are the same functions, not copies.
+    var edgeBelow = API_edgeBelow, edgeContained = API_edgeContained, edgeBearing = API_edgeBearing,
+        wallCarries = API_wallCarries, edgeCarrier = API_edgeCarrier;
     var indeg = new Int32Array(N), succs = new Array(N), hangs = new Uint8Array(N), _edges = 0,
         _hangNearest = 0,  // §HANG_NEAREST fallback edges added (logged in §GEO_ORDER)
         _hostEdges = 0;    // §HOSTED_BEFORE_HOST host→hosted edges added (logged in §GEO_ORDER)
@@ -1315,7 +1328,10 @@
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { supportPool: supportPool,
+    cellsOf: cellsOf, overlap: overlap,
+    edgeBelow: API_edgeBelow, edgeContained: API_edgeContained, edgeBearing: API_edgeBearing,
+    wallCarries: API_wallCarries, edgeCarrier: API_edgeCarrier, isPromotedSlab: isPromotedSlab, bboxVol: bboxVol, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

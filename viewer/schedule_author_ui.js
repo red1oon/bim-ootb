@@ -281,7 +281,7 @@
       render();
       return;
     }
-    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates() }) : { ok: false, reason: 'no_materializeZones' };
+    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates(), barModel: (typeof window !== 'undefined' && window.FOURD_POLICY) || null, sequenceRules: rules() }) : { ok: false, reason: 'no_materializeZones' };
     if (!res.ok) {
       // Honest degrade — no ScheduleGate loaded, or genuinely no elements. Not invented.
       console.log('§AUTHOR_UI_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
