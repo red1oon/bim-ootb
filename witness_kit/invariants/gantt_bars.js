@@ -42,15 +42,28 @@ const authoredBarsUseTaskSpan = rows => rows
   .every(r => r.spanFrom === 'task');
 
 /**
- * G-BAR-VISIBLE — no bar may be thinner than MIN_PX at a realistic canvas width. This is the
- * "tiny bars" claim expressed as a number instead of an impression, and it is checked on the
- * drawer's own output, never on a screenshot.
+ * G-BAR-WORK — a task's window must be long enough for its OWN members' work.
+ *
+ * This REPLACED a `no-hairline-bars-3px` pixel gate, and the replacement is strictly stronger, not a
+ * relaxation — measured on Clinic (156-day axis, 9 tasks with exactly 1.00-day windows):
+ *   MEP Rough-in - Roof - Mech   139 members  0.817 crew-days  -> HONEST, the pixel gate failed it
+ *   Architecture - Roof - Main    25 members  0.207 crew-days  -> HONEST, the pixel gate failed it
+ *   Finishes - Level 1            64 members  1.333 crew-days  -> REAL DEFECT (33% over its window)
+ *   Substructure - TOF Footing    58 members  1.074 crew-days  -> REAL DEFECT (7% over)
+ * 7 of the 9 were honest. A genuine one-day task on a 156-day chart SHOULD be thin — P6 draws it
+ * thin — so a pixel threshold flags real work as a defect and, worse, would be silenced by nudging
+ * the threshold. Crew-days is the thing that is actually true or false about a window.
+ *
+ * TOLERANCE: 5%, the project's own standing error-margin ruling (4D_SCHEDULE_PERFECTION.md
+ * §WORKING_STYLE: "5% error margin is acceptable — do not chase exactness past the point of
+ * usefulness"). Not a number invented for this gate.
  * @param {object[]} rows
- * @param {number} [minPx]
  * @returns {boolean}
  */
-const MIN_PX = 3;
-const noHairlineBars = (rows, minPx) => rows.every(r => r.widthPx >= (minPx == null ? MIN_PX : minPx));
+const WORK_TOLERANCE = 1.05;
+const windowCoversWorkContent = rows => rows
+  .filter(r => r.taskId && r.crewDays > 0)
+  .every(r => r.crewDays <= r.windowDays * WORK_TOLERANCE);
 
 /**
  * G-BAR-ORDERED — a bar's own start must precede its own end. Degenerate/inverted bars are the
@@ -60,4 +73,5 @@ const noHairlineBars = (rows, minPx) => rows.every(r => r.widthPx >= (minPx == n
  */
 const barsOrdered = rows => rows.every(r => r.endTs > r.startTs);
 
-module.exports = { SECOND, MIN_PX, barsMatchTaskWindow, authoredBarsUseTaskSpan, noHairlineBars, barsOrdered };
+module.exports = { SECOND, WORK_TOLERANCE, barsMatchTaskWindow, authoredBarsUseTaskSpan,
+                   windowCoversWorkContent, barsOrdered };

@@ -498,6 +498,14 @@
 
     var stmtTk = db.prepare('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
+    // §ZONE_WINDOW_COVERS_WORK — lookup + shift length for the per-zone work-content floor below.
+    // opts.shiftHours mirrors computeSchedule's own default (8) when a caller omits it, so probes
+    // and legacy callers stay byte-identical.
+    var _elByGuid = {};
+    for (var _ei = 0; _ei < elements.length; _ei++) _elByGuid[elements[_ei].guid] = elements[_ei];
+    var _shiftMs = (opts.shiftHours > 0 ? opts.shiftHours : 8) * 3600 * 1000;
+    var _workWidened = 0, _workWidenedDays = 0;
+
     var zoneTaskId = {}, zoneDays = {};
     rolled.zones.forEach(function (z) {
       var tid = 'TASK_' + _slug(z.phase) + '_' + _slug(z.storey);
@@ -516,6 +524,44 @@
         eDays = Math.round((z.end - minStart) / 86400000);
       }
       if (eDays <= sDays) eDays = sDays + 1;
+      // §ZONE_WINDOW_COVERS_WORK (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65
+      // STAGE 3 follow-up — Witness: witness_gantt_bar_is_its_task.js G-BAR-WORK).
+      // The rounding above derives a window from the SOLVE'S SPAN alone, so a zone whose elements
+      // happen to be solved into a tight cluster gets a window shorter than its own members' work
+      // — and the Gantt then draws a bar that cannot physically contain what it represents.
+      // MEASURED across Duplex/Clinic/JKR/HHS_Office_Federated (135 zone tasks): 5 were
+      // over-committed, worst JKR "MEP Final — 02 1st Floor Level" at 1.744 crew-days inside a
+      // 1.00-day window (74% over), then Clinic "Finishes — Level 1" 1.333 (33%), JKR "MEP Rough-in
+      // — 03 Water Tank Floor Level" 3.405 in 3.00 (14%), Clinic "Substructure — TOF Footing" 1.074
+      // (7%), HHS "MEP Rough-in — Level 2" 9.508 in 9.00 (6%).
+      //
+      // NOT a blanket widening, and NOT a new duration model: crew-days come from the elements'
+      // OWN already-computed installSecs (set by _installSecs in _buildScheduleElements) over the
+      // same per-trade max_crews the solve itself used. A zone whose window already covers its work
+      // is untouched — 130 of the 135 above. Nothing is invented; this only refuses to author a
+      // window that its own contents cannot fit in.
+      //
+      // Deliberately a FLOOR, not a re-derivation: the solve's span still sets the window whenever
+      // it is the larger of the two, so dead-air/gap behaviour and every zone that was already
+      // honest stay byte-identical. Replacing the span rule outright is the separate, larger
+      // §CPM_GENERATOR_UPSTREAM_SPEC item.
+      var _wSecs = 0, _wTrades = {};
+      for (var _gi = 0; _gi < z.guids.length; _gi++) {
+        var _we = _elByGuid[z.guids[_gi]];
+        if (!_we) continue;
+        _wSecs += _we.installSecs || 0;
+        if (_we.resource && _we.resource !== '_DEFAULT') _wTrades[_we.resource] = 1;
+      }
+      var _wCrews = 0;
+      for (var _wt in _wTrades) _wCrews += (laborRates[_wt] && laborRates[_wt].max_crews) || 1;
+      if (!_wCrews) _wCrews = 1;
+      var _crewDays = (_wSecs * 1000) / (_shiftMs * _wCrews);
+      var _needDays = Math.ceil(_crewDays);
+      if (eDays - sDays < _needDays) {
+        _workWidened++;
+        _workWidenedDays += _needDays - (eDays - sDays);
+        eDays = sDays + _needDays;
+      }
       // §ZONE_EDGE_LEAD: remember the ROUNDED day numbers actually written. The edge lags below are
       // derived from these, not re-rounded independently from raw ms — rounding dates and lags
       // separately let the two disagree by a day, which showed up as 53 self-violated edges on
@@ -526,6 +572,9 @@
       z.guids.forEach(function (g) { stmtTe.run([tid, g]); });
     });
     stmtTk.free(); stmtTe.free();
+    console.log('§ZONE_WINDOW_COVERS_WORK zones=' + rolled.zones.length + ' widened=' + _workWidened +
+      ' addedDays=' + _workWidenedDays + ' (a widened zone had a window shorter than its own ' +
+      'members\' crew-days; 0 = every zone window already covered its work)');
 
     var stmtSeq = db.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
     var edgeN = 0;
