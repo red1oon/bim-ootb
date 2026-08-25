@@ -38,7 +38,11 @@
   Object.defineProperty(Bar.prototype, 'stop', { get: function () { return this._e; }, configurable: true });
 
   // ══ ElementBar — the LEAF. The only place a time is ever stored. ════════════════════════════
-  function ElementBar(e) { Bar.call(this); this.e = e; this.guid = e.guid; this.needs = []; this.grounded = false; }
+  function ElementBar(e) { Bar.call(this); this.e = e; this.guid = e.guid;
+    this.needs = [];       // SOFT any-of: overlapping structure BELOW (geoGate's relation)
+    this.bearing = [];     // SOFT any-of, PREFERRED: structure this element actually rests ON
+    this.hardNeeds = [];   // ALL-OF: host, carrier, opening, wall
+    this.grounded = false; }
   ElementBar.prototype = Object.create(Bar.prototype);
   ElementBar.prototype.constructor = ElementBar;
   ElementBar.prototype.work = function () { return this.e.installSecs || 120; };
@@ -142,17 +146,38 @@
 
   // ══ attachNeeds — inject the physical edges (viewer/bar_needs.js builds them) ════════════════
   // edges: [{ from, to, kind }] by GUID. from must finish before to.
+  // ANY-OF vs ALL-OF. Found on integration 2026-08-25 and it is not a detail: an element's edges do
+  // NOT all mean the same thing.
+  //   support  — "something must be under me". You need ONE thing to stand on, not all of them. A
+  //              slab sitting on twelve columns can start when the first few are up; requiring all
+  //              twelve would serialise the frame and is not how anything is built. => min(stop).
+  //   host     — the wall this door is cut into. There is exactly one and you need it. => max(stop).
+  //   carrier  — the thing above that this element hangs from. You need it. => max(stop).
+  //   opening  — the wall/curtain-wall this opening is formed in. You need it. => max(stop).
+  //   wall     — wall before the promoted roof slab it carries. => max(stop).
+  // MEASURED with them flattened into one min(): HHS midair 609. The soft support edge finished
+  // early and satisfied the gate, so hosted and hanging elements were released before their host.
+  // Separated: see §9.2 of the spec for the after-numbers. Flattening them is the bug this
+  // comment exists to stop coming back.
+  // SOFT = any-of. BEARING is the relation the midair judge measures (witness_midair_zero.js
+  // census(): `S.top_z >= E.base_z - GAP`); BELOW is geoGate's looser placement relation, anything
+  // overlapping underneath whether it touches or not. Both are any-of, but BEARING WINS when an
+  // element has any: gating on the looser set releases an element on a distant slab while its real
+  // bearing neighbour is unbuilt, which is precisely what the judge then calls midair.
+  var SOFT = { bearing: 1, support: 1 };
   function attachNeeds(leaves, edges) {
     var byGuid = {}, i;
     for (i = 0; i < leaves.length; i++) byGuid[leaves[i].guid] = leaves[i];
-    var attached = 0, dangling = 0;
+    var attached = 0, dangling = 0, soft = 0, hard = 0;
     for (i = 0; i < edges.length; i++) {
       var f = byGuid[edges[i].from], t = byGuid[edges[i].to];
       if (!f || !t || f === t) { dangling++; continue; }
-      t.needs.push(f); attached++;
-      if (edges[i].kind === 'support') t.grounded = false;
+      if (edges[i].kind === 'bearing') { t.bearing.push(f); soft++; }
+      else if (SOFT[edges[i].kind]) { t.needs.push(f); soft++; }
+      else { t.hardNeeds.push(f); hard++; }
+      attached++;
     }
-    return { attached: attached, dangling: dangling };
+    return { attached: attached, dangling: dangling, soft: soft, hard: hard };
   }
 
   // ══ schedule — THE SINGLE PASS (spec §5) ════════════════════════════════════════════════════
@@ -189,13 +214,23 @@
       while (pending.length && guard++ <= pending.length + 2) {
         var again = [];
         for (var i = 0; i < pending.length; i++) {
-          var b = pending[i], at = gate, sawPlaced = false, earliest = Infinity;
-          if (!b.grounded && b.needs.length) {
-            for (var j = 0; j < b.needs.length; j++) {
-              var st = b.needs[j].stop;
+          var b = pending[i], at = gate, j, st, blocked = false;
+          // ALL-OF first: every hard need must be finished. An unplaced one blocks outright.
+          for (j = 0; j < b.hardNeeds.length; j++) {
+            st = b.hardNeeds[j].stop;
+            if (st == null) { blocked = true; break; }
+            if (st > at) at = st;
+          }
+          if (blocked) { again.push(b); continue; }
+          // ANY-OF: one thing under me is enough, so take the EARLIEST placed support.
+          // Bearing wins when present — it is the relation the midair judge measures.
+          var soft = b.bearing.length ? b.bearing : b.needs;
+          if (!b.grounded && soft.length) {
+            var sawPlaced = false, earliest = Infinity;
+            for (j = 0; j < soft.length; j++) {
+              st = soft[j].stop;
               if (st != null) { sawPlaced = true; if (st < earliest) earliest = st; }
             }
-            // Nothing this element rests on has been placed yet — defer it one round.
             if (!sawPlaced) { again.push(b); continue; }
             if (earliest > at) at = earliest;
           }
