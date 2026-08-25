@@ -95,6 +95,8 @@
   // policy: { phase_link, level_link, building_scope[] } — viewer/rates/4D_policy.json.
   // collapse(storey) and bandRank come from ScheduleGate, so a level means the same thing here as
   // it does in the band gate.
+  var STRUCTURAL_PHASE = { Substructure: 1, Superstructure: 1 };
+  function phaseRankOf(t, order) { var i = order.indexOf(t.phase); return i < 0 ? 99 : i; }
   function buildTree(elements, policy, collapse, bandRank, order) {
     var project = new GroupBar('Project');
     var levels = {}, tasks = {}, buildingScope = {};
@@ -125,14 +127,33 @@
         }
       }
       t.add(b);
+      b._task = t.name;                 // so a cycle report can say WHICH bar the blocker sits in
     }
 
     // Task ordering + PhaseNeeds/LadderNeeds, both from POLICY (spec §3).
     var taskList = Object.keys(tasks).map(function (k) { return tasks[k]; })
       .sort(function (a, b) { return (a.rank - b.rank) || (order.indexOf(a.phase) - order.indexOf(b.phase)); });
+    // ceiling_link=frame_above — the UPWARD edge. See 4D_policy.json's _ceiling_link_why: a level's
+    // fit-out hangs from the slab above it, and without this edge that slab is unbuilt when the
+    // fit-out runs. Structural phases are exempt (the frame does not hang from itself) and so is the
+    // topmost level (nothing above it).
+    var frameByRank = {};
+    taskList.forEach(function (t) {
+      if (t.level != null && STRUCTURAL_PHASE[t.phase]) {
+        var f = frameByRank[t.rank];
+        if (!f || phaseRankOf(t, order) > phaseRankOf(f, order)) frameByRank[t.rank] = t;
+      }
+    });
+    var ranksAsc = Object.keys(frameByRank).map(Number).sort(function (a, b) { return a - b; });
+
     var prevOnLevel = {}, prevOfPhase = {};
     taskList.forEach(function (t) {
       var lk = t.level == null ? '*' : t.level;
+      if (policy.ceiling_link === 'frame_above' && t.level != null && !STRUCTURAL_PHASE[t.phase]) {
+        for (var ri = 0; ri < ranksAsc.length; ri++) {
+          if (ranksAsc[ri] > t.rank) { t.needs.push(frameByRank[ranksAsc[ri]]); break; }
+        }
+      }
       // phase_link=serial: FS+0 after the previous phase that actually instantiated on this level.
       // A dropped phase BRIDGES — prevOnLevel is only advanced by a task that exists.
       if (policy.phase_link === 'serial' && prevOnLevel[lk]) t.needs.push(prevOnLevel[lk]);
@@ -141,7 +162,42 @@
       prevOnLevel[lk] = t; prevOfPhase[t.phase] = t;
     });
 
-    return { project: project, tasks: taskList, levels: levels, leaves: leaves };
+    // TOPOLOGICAL TASK ORDER — not a (rank, phase) sort.
+    // The ceiling_link edge points UPWARD, at a task on the level above. Under a rank sort that
+    // task is processed LATER, so its stop is still null when the gate reads it and the edge is
+    // silently ignored — the numbers came back identical to the digit, which is what caught it.
+    // Kahn, with (rank, phase order, name) as a deterministic tiebreak among ready tasks, so the
+    // result is reproducible and still reads bottom-up wherever the edges allow.
+    var indeg = {}, succ = {}, byName = {};
+    taskList.forEach(function (t) { indeg[t.name] = 0; byName[t.name] = t; });
+    taskList.forEach(function (t) {
+      t.needs.forEach(function (p) {
+        if (!byName[p.name]) return;
+        (succ[p.name] = succ[p.name] || []).push(t);
+        indeg[t.name]++;
+      });
+    });
+    function tie(a, b) {
+      return (a.rank - b.rank) || (order.indexOf(a.phase) - order.indexOf(b.phase)) ||
+             (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    }
+    var ready = taskList.filter(function (t) { return !indeg[t.name]; }), ordered = [];
+    while (ready.length) {
+      ready.sort(tie);
+      var cur = ready.shift();
+      ordered.push(cur);
+      (succ[cur.name] || []).forEach(function (n) { if (--indeg[n.name] === 0) ready.push(n); });
+    }
+    // A genuine cycle among TASKS would strand some — fall back to the rank sort for the stranded
+    // ones rather than dropping them, and let the element-level §BAR_CYCLE reporting name the cause.
+    if (ordered.length !== taskList.length) {
+      var seen = {};
+      ordered.forEach(function (t) { seen[t.name] = 1; });
+      taskList.filter(function (t) { return !seen[t.name]; }).sort(tie)
+        .forEach(function (t) { ordered.push(t); });
+    }
+
+    return { project: project, tasks: ordered, levels: levels, leaves: leaves };
   }
 
   // ══ attachNeeds — inject the physical edges (viewer/bar_needs.js builds them) ════════════════
@@ -238,8 +294,29 @@
         }
         if (again.length === pending.length) {          // a full round with nothing placeable
           for (var k = 0; k < again.length; k++) {
-            var c = again[k];
-            cycles.push({ guid: c.guid, cls: c.e.cls, phase: c.e.phase, task: t.name });
+            var c = again[k], blocker = null, blockerKind = null;
+            // WHY did it give up? Name the unplaced need, not just the element. Without this the
+            // log says "9,911 cycles" and nobody can tell whether that is a data defect, a task
+            // ordering defect, or the model asking for something impossible.
+            for (var m = 0; m < c.hardNeeds.length; m++)
+              if (c.hardNeeds[m].stop == null) { blocker = c.hardNeeds[m]; blockerKind = 'hard'; break; }
+            if (!blocker && c.bearing.length) {
+              var anyB = false;
+              for (m = 0; m < c.bearing.length; m++) if (c.bearing[m].stop != null) { anyB = true; break; }
+              if (!anyB) { blocker = c.bearing[0]; blockerKind = 'bearing'; }
+            }
+            if (!blocker && c.needs.length) { blocker = c.needs[0]; blockerKind = 'support'; }
+            cycles.push({ guid: c.guid, cls: c.e.cls, phase: c.e.phase, task: t.name,
+                          blockerKind: blockerKind,
+                          // WITHIN THIS BAR or ANOTHER BAR? The two need opposite fixes: within is
+                          // an element-ordering problem inside one task; another bar is a missing or
+                          // backwards TASK edge. Reporting them as one number tells you neither.
+                          blockerTask: blocker ? blocker._task : null,
+                          sameBar: !!(blocker && blocker._task === t.name),
+                          blockerCls: blocker ? blocker.e.cls : null,
+                          blockerPhase: blocker ? blocker.e.phase : null,
+                          blockerStorey: blocker ? blocker.e.storey : null,
+                          storey: c.e.storey });
             put(c, gate);                                // placed anyway, but REPORTED
           }
           break;
@@ -253,22 +330,37 @@
   // §BAR_CYCLE — aggregated per (predClass -> succPhase/succClass), never one line per element:
   // §CLASS_UNMATCHED's per-element warn alone overflowed run_witness_suite.js's 1MB spawnSync
   // maxBuffer on Hospital (WITNESS_INTERFACE_FRAMEWORK.md §6).
+  // STRUCTURAL and SERVICES are not the same defect and must never be reported as one number.
+  // USER RULING 2026-08-25, verbatim: "i dont mind floating MEP within when ARCH is up floor wall
+  // and roof." A pipe hung in a room whose walls and roof exist is acceptable; a beam resting on a
+  // column that is not built yet is not. MEASURED before this split, Hospital reported "9,911
+  // cycles" as one number — 9,898 of them were pipes, ducts and fittings, and only 13 were
+  // structural. The single number hid a 13 inside a 9,911 and made a green result look red.
+  var STRUCTURAL = { Substructure: 1, Superstructure: 1 };
+  function isStructural(phase) { return !!STRUCTURAL[phase]; }
+
   function reportCycles(cycles, log) {
     log = log || (typeof console !== 'undefined' ? console.log : function () {});
-    var by = {};
+    var by = {}, nStruct = 0, nSvc = 0;
     cycles.forEach(function (c) {
       var k = (c.phase || '?') + '/' + c.cls;
       by[k] = (by[k] || 0) + 1;
+      if (isStructural(c.phase)) nStruct++; else nSvc++;
     });
     var keys = Object.keys(by).sort(function (a, b) { return by[b] - by[a]; });
-    log('§BAR_CYCLE n=' + cycles.length + ' kinds=' + keys.length +
-      ' — support scheduled in a LATER task than the element it holds up. This is a CLASSIFICATION ' +
-      'defect in the model, not a scheduling problem; it is reported, never scheduled around.');
-    keys.slice(0, 8).forEach(function (k) { log('   §BAR_CYCLE ' + k + ' x' + by[k]); });
-    return by;
+    // Aggregated, never one line per element: §CLASS_UNMATCHED's per-element warn alone overflowed
+    // run_witness_suite.js's 1MB spawnSync maxBuffer on Hospital (WITNESS_INTERFACE_FRAMEWORK §6).
+    log('§BAR_CYCLE structural=' + nStruct + ' services=' + nSvc + ' total=' + cycles.length +
+      ' — an element placed without the thing that holds it up being finished, because that thing ' +
+      'is scheduled in a LATER task. STRUCTURAL is a defect. SERVICES is accepted (user ruling ' +
+      '2026-08-25: MEP may float within a level whose walls and roof are up).');
+    keys.slice(0, 8).forEach(function (k) {
+      log('   §BAR_CYCLE ' + (isStructural(k.split('/')[0]) ? 'STRUCTURAL ' : 'services   ') + k + ' x' + by[k]);
+    });
+    return { by: by, structural: nStruct, services: nSvc };
   }
 
-  var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar,
+  var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar, isStructural: isStructural,
               phaseOrder: phaseOrder, buildTree: buildTree, attachNeeds: attachNeeds,
               schedule: schedule, reportCycles: reportCycles };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
