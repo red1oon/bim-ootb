@@ -35,7 +35,7 @@ const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 const { GanttBarRow } = require('../../witness_kit/schemas/gantt_bars');
 const {
-  barsMatchTaskWindow, authoredBarsUseTaskSpan, noHairlineBars, barsOrdered, MIN_PX
+  barsMatchTaskWindow, authoredBarsUseTaskSpan, windowCoversWorkContent, barsOrdered, WORK_TOLERANCE
 } = require('../../witness_kit/invariants/gantt_bars');
 const { generateRealGanttBars } = require('../../witness_kit/generators/gantt_bars');
 
@@ -73,12 +73,23 @@ const FIXTURES = ['Duplex', 'Clinic', 'JKR', REQUIRED];
     ' worstWindowErrorDays=' + (worst ? (worst.d / 86400000).toFixed(3) : 'n/a') +
     (worst && worst.d > 1000 ? ' at=' + JSON.stringify(worst.r.name) : ''));
 
+  // §GBT_WORK — a thin bar is only a defect if its window is shorter than its own members' work.
+  // Reported for every bar, gated by windowCoversWorkContent. Pixel width stays in the log as
+  // information, deliberately NOT as a gate: 7 of Clinic's 9 one-day windows are honest work.
+  const over = rows.filter(r => r.taskId && r.crewDays > r.windowDays * WORK_TOLERANCE)
+    .sort((a, b) => (b.crewDays / b.windowDays) - (a.crewDays / a.windowDays));
+  console.log('§GBT_WORK overCommittedWindows=' + over.length + '/' + authored.length +
+    ' tolerance=' + ((WORK_TOLERANCE - 1) * 100).toFixed(0) + '%');
+  over.slice(0, 8).forEach(r => console.log('   ' + r.building + ' ' + JSON.stringify(r.name) +
+    ' windowDays=' + r.windowDays.toFixed(2) + ' crewDays=' + r.crewDays.toFixed(3) +
+    ' members=' + r.members + ' (' + ((r.crewDays / r.windowDays - 1) * 100).toFixed(0) + '% over)'));
+
   Witness('gantt_bar_is_its_task')
     .population(() => rows)
     .schema(GanttBarRow)
     .invariant('bars-match-task-window', barsMatchTaskWindow)
     .invariant('authored-bars-use-task-span', authoredBarsUseTaskSpan)
-    .invariant('no-hairline-bars-' + MIN_PX + 'px', rs => noHairlineBars(rs))
+    .invariant('window-covers-work-content', windowCoversWorkContent)
     .invariant('bars-ordered', barsOrdered)
     // RED CONTROL — reproduce the REAL defect, not a synthetic break: put one authored bar back on
     // the ops-derived envelope it used to use. Before the fix every bar looked like this row.
@@ -88,6 +99,7 @@ const FIXTURES = ['Duplex', 'Clinic', 'JKR', REQUIRED];
       collapsed.spanFrom = 'ops';
       collapsed.endTs = collapsed.startTs + 120000;   // the 0.6px shape, measured
       collapsed.widthPx = 0.6;
+      collapsed.windowDays = 120000 / 86400000;        // and the window no longer covers its own work
       return collapsed;
     }))
     .run();

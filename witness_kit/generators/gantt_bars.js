@@ -106,6 +106,35 @@ async function generateRealGanttBars(dbPath, opts) {
   });
 
   const byGuid = {}; els.forEach(e => byGuid[e.guid] = e);
+
+  // §BAR_WORK_CONTENT (2026-08-25, §S65 STAGE 3 follow-up) — the real crew-days each task's own
+  // members represent, from the SAME ScheduleAuthor._installSecs the generator uses. Measured, not
+  // assumed: this is what distinguishes an honest short bar from an under-sized window. Clinic's
+  // "MEP Rough-in - Roof - Mech" looks alarming at 139 elements in a 1.00-day window and is in fact
+  // 0.817 crew-days at 24h x 4 crews — genuinely a one-day task. Its neighbours
+  // "Finishes - Level 1" (1.333 crew-days) and "Substructure - TOF Footing" (1.074) are NOT.
+  const SHIFT_MS = shift * 3600 * 1000;
+  const workOf = {};
+  // Read the element's OWN already-computed installSecs/resource — the exact values
+  // _buildScheduleElements assigned (schedule_author.js:372-373) and the engine itself uses.
+  // A first cut re-derived them from SEQUENCE_RULES[e.cls], which IGNORES NAME_OVERRIDES, so the
+  // witness and the engine disagreed about which trade an overridden element belongs to and
+  // therefore about the crew count. That produced a phantom red on JKR "MEP Rough-in — 03 Water
+  // Tank Floor Level" — a mirrored predicate diverging from the real one, i.e. precisely the drift
+  // class witness_kit exists to prevent, caught here on its first real run.
+  te.forEach(r => {
+    const e = byGuid[r.guid]; if (!e || !win[r.task_id]) return;
+    const w = workOf[r.task_id] || (workOf[r.task_id] = { secs: 0, trades: {} });
+    w.secs += e.installSecs || 0;
+    if (e.resource && e.resource !== '_DEFAULT') w.trades[e.resource] = 1;
+  });
+  function crewDaysOf(tid) {
+    const w = workOf[tid]; if (!w) return 0;
+    var crews = 0;
+    for (var t in w.trades) crews += (R.LABOR_RATES[t] && R.LABOR_RATES[t].max_crews) || 1;
+    if (!crews) crews = 1;
+    return (w.secs * 1000) / (SHIFT_MS * crews);
+  }
   const ops = [];
   Object.keys(solve).forEach(g => {
     const e = byGuid[g]; if (!e) return;
@@ -131,6 +160,8 @@ async function generateRealGanttBars(dbPath, opts) {
       startTs: b.startTs, endTs: b.endTs,
       winStart: w ? w.s : null, winEnd: w ? w.e : null,
       widthPx: ((b.endTs - b.startTs) / axis) * barW,
+      crewDays: b.taskId ? crewDaysOf(b.taskId) : 0,
+      windowDays: (b.endTs - b.startTs) / DAY,
       axisDays: axis / DAY,
       members: b.count
     };
