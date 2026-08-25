@@ -8,7 +8,7 @@
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1085';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1086';   // bump on each deploy; per-change detail is the git commit message.
 // v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
 // JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
 // window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
