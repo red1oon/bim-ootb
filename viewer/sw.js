@@ -17,8 +17,12 @@
 // an authored Gantt bar is now drawn at its TASK'S window instead of a Tukey fence over its member
 // elements. Both files are in PRECACHE_ASSETS. v1087 shipped the STAGE 2 template fix (#1527); this is
 // a separate change and needs its own bump, per the twice-missed rule (§CRISIS LESSON 4).
+// v1089 (2026-08-25) §ZONE_WINDOW_COVERS_WORK: schedule_author.js changed — a zone task's window is
+// now floored at its own members' crew-days (5 over-committed windows across 4 buildings -> 0/135).
+// schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
+// separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1088';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1089';   // bump on each deploy; per-change detail is the git commit message.
 // v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
 // JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
 // window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
