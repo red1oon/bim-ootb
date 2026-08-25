@@ -105,6 +105,20 @@ const KNOWN_RED = {
                                               '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
                                               'per §S66 — suite never ran it, so this went undetected). Cause: 4D_SCHEDULE_PERFECTION.md ' +
                                               '"REGRESSION FOUND" section.',
+  'witness_gantt_bar_is_its_task.js':        'C — 1 of 7 gates (no-hairline-bars-3px). NOT the layer this witness is ' +
+                                              'about, and deliberately NOT tuned away. Its own subject — an authored bar ' +
+                                              'is drawn at its task window — is GREEN on 135 bars across Duplex/Clinic/' +
+                                              'JKR/HHS_Office_Federated: worst window error 0.000 days, spanFromOps=0. ' +
+                                              'The red is an UPSTREAM authoring defect this witness makes visible: Clinic ' +
+                                              'ships 6+ zone tasks with exactly 1.00-day windows on a 156-day axis ' +
+                                              '(2.2px), including "MEP Rough-in - Roof - Mech" with 139 elements and ' +
+                                              '"Substructure - TOF Footing" with 58. Cause: schedule_author.js:517 floors ' +
+                                              'a zone whose SOLVED span rounds below a day at exactly one day ' +
+                                              '(eDays <= sDays -> sDays + 1), so a zone window comes from the element ' +
+                                              'solve span and never from its work content — the already-named ' +
+                                              '§CPM_GENERATOR_UPSTREAM_SPEC / "window derivation from work content" item ' +
+                                              'in 4D_SCHEDULE_PERFECTION.md, open before this PR and untouched by it. ' +
+                                              'Lowering the 3px threshold would hide a real number; the gate stays.',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',

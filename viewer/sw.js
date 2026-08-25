@@ -13,8 +13,12 @@
 // old table and the fix never reaches an existing user. That exact miss happened twice in 90 minutes
 // on 2026-08-25 (#1521 for #1520, then #1524 for #1523) — WITNESS_INTERFACE_FRAMEWORK.md §CRISIS
 // LESSON 4. Bumped in the SAME PR as the change, deliberately.
+// v1088 (2026-08-25) §GANTT_BAR_IS_ITS_TASK (§S65 STAGE 3): gantt_model.js + time_machine.js changed —
+// an authored Gantt bar is now drawn at its TASK'S window instead of a Tukey fence over its member
+// elements. Both files are in PRECACHE_ASSETS. v1087 shipped the STAGE 2 template fix (#1527); this is
+// a separate change and needs its own bump, per the twice-missed rule (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1087';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1088';   // bump on each deploy; per-change detail is the git commit message.
 // v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
 // JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
 // window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
