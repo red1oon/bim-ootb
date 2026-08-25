@@ -17,11 +17,12 @@
 //   drawDashboard/_loadTwin must be ZERO on a silent activation and UNCHANGED (>0, same as a
 //   plain call) on a real one.
 //
-// HOW IT FALSIFIES: Gate A runs against both `origin/main` (shipped, no `silent` param — must
-// FAIL, panel calls fire regardless of the flag) and the working tree (must PASS, panel calls
-// fire only when NOT silent). A run where shipped also passes is not evidence — it means the RED
-// case stopped reproducing and the witness is blind. Gate B (deactivate ownership) only exists in
-// the working tree; shipped has no tmDeactivateIfBakeOwned to test at all.
+// HOW IT FALSIFIES: Gate A runs against the CURRENT working tree — re-deriving the panel-call
+// contract from real source every run is what makes this falsifiable, not a permanent RED control.
+// It also runs the same gates against `origin/main` and logs the comparison, but that comparison is
+// informational only, NOT a verdict gate: this fix (bim-ootb #1510) is itself part of origin/main
+// from the day it merged, so "shipped still reproduces the bug" becomes permanently unsatisfiable —
+// that's the fix being live, not the witness going blind. The verdict is `fixed`'s gates alone.
 //
 // Run (from the repo root): node witness_cpe_buildup_activate_silent.js
 // Read the log, not the exit code.
@@ -212,16 +213,20 @@ async function gateB2() {
   const b1 = await gateB();
   const b2 = await gateB2();
 
-  // RED control: shipped has no `silent` concept, so calling activate(true) on it must still pop
-  // the panel exactly like a real Play — i.e. shipped's "silent" gate must FAIL.
-  const redReproduces = shipped.realPlay === true && shipped.silent === false;
-  console.log('\n§ACTIVATE_SILENT_RESULT red=' + (redReproduces
-    ? 'shipped ignores the flag, panel still pops on a "silent" call (the bug reproduces)'
-    : 'WITNESS IS BLIND — shipped source unexpectedly passed the silent gate'));
+  // RED control vs origin/main: informational only, NOT a verdict gate. This fix (bim-ootb #1510)
+  // is now itself part of origin/main, so "shipped still reproduces the bug" is permanently
+  // unsatisfiable from the day this merged — that's the fix being live, not the witness going
+  // blind. Same phenomenon already documented for the sibling witness_cpe_buildup_arm_gate.js in
+  // bim-compiler prompts/CINEMA_PATH_EDITOR.md. The real, permanent regression test is `fixed`
+  // below, which re-derives the panel-call contract from the CURRENT source every run regardless
+  // of what origin/main contains.
+  const redReproducedHistorically = shipped.realPlay === true && shipped.silent === false;
+  console.log('\n§ACTIVATE_SILENT_RESULT vs-origin-main=' + (redReproducedHistorically
+    ? 'origin/main still lacks the fix (unexpected post-merge — worth a look)'
+    : 'origin/main already carries this fix (expected once #1510 merged — not a witness failure)'));
   const green = fixed.realPlay && fixed.silent && b1 && b2;
   console.log('§ACTIVATE_SILENT_RESULT green=' + (green ? 'all gates pass on the fix' : 'FIX INCOMPLETE') +
     ' (realPlay=' + fixed.realPlay + ' silent=' + fixed.silent + ' ownershipOn=' + b1 + ' ownershipAlreadyOn=' + b2 + ')');
-  const verdict = redReproduces && green;
-  console.log('§ACTIVATE_SILENT_VERDICT ' + (verdict ? 'GREEN — falsifiable and fixed' : 'RED — see gates above'));
-  process.exit(verdict ? 0 : 1);
+  console.log('§ACTIVATE_SILENT_VERDICT ' + (green ? 'GREEN — contract holds on the working tree' : 'RED — see gates above'));
+  process.exit(green ? 0 : 1);
 })();

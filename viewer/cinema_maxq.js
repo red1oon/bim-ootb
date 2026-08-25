@@ -1191,6 +1191,15 @@
         if (typeof window.tmOrderByCameraPath !== 'function' || typeof window.tmActivateForBake !== 'function') {
           console.warn('§CPE_BUILDUP_SKIP reason=time_machine.js not loaded — baking without the buildup');
           _buildup = false;
+        } else if (typeof window.tmHasExistingSchedule === 'function' && !(await window.tmHasExistingSchedule())) {
+          // §CPE_BUILDUP_REQUIRE_TM_FIRST — never let the movie button generate a building's FIRST
+          // schedule; that's Time Machine's job, once, so the user actually sees the buildup before
+          // it's baked. A visible status (not just a console warning) since this is a one-time thing
+          // the user needs to go DO, not a background detail.
+          console.warn('§CPE_BUILDUP_SKIP reason=no schedule generated yet — open Time Machine first');
+          _status('🎬 Open Time Machine first to build the construction schedule — baking without it this time');
+          await _sleep(2000);
+          _buildup = false;
         } else if (!(await window.tmActivateForBake())) {
           console.warn('§CPE_BUILDUP_SKIP reason=no derived build order (Time Machine has no ops for this building)');
           _buildup = false;

@@ -97,7 +97,13 @@ const KNOWN_RED = {
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',
-  'witness_xray_cache_memo.js':              'C — reproducible red, cause NOT yet established'
+  'witness_xray_cache_memo.js':              'C — reproducible red, cause NOT yet established',
+  // D — environment/data, NOT a code defect: ~/bim-ootb/buildings/Duplex_meta.db is 0 bytes
+  // (found 2026-08-25, both were green earlier the same day — pass=49/bad=0 — so this is a live
+  // regression in the SHARED checkout's data, not stale). Fix = redownload/regenerate that one file
+  // (see deploy/OCI_UPLOAD.md); nothing to change in either witness or in schedule_gate.js/S50.
+  'witness_midair_zero.js':                  'D — Duplex_meta.db is 0 bytes in the shared checkout, not a code defect',
+  'witness_s50_cell_engine.js':              'D — same root cause: Duplex_meta.db is 0 bytes in the shared checkout'
 };
 
 // The 21 browser witnesses are deliberately NOT listed here. They are report-only (see the header):
