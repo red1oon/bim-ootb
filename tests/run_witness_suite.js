@@ -102,6 +102,22 @@ const KNOWN_RED = {
                                               '(->14,267). Newly wired in 2026-08-24 (was git-orphaned at repo root since fc58210, ' +
                                               'per §S66 — suite never ran it, so this went undetected). Cause: 4D_SCHEDULE_PERFECTION.md ' +
                                               '"REGRESSION FOUND" section.',
+  'witness_sequence_template_lock.js':       'C — RED BY DESIGN ON ARRIVAL, 3 of 7 checks. This witness is NEW (2026-08-25) ' +
+                                              'and it is the FIRST check of any kind on the preset 4D template itself; it ' +
+                                              'arrives red because the template is genuinely wrong, not because the witness ' +
+                                              'is unfinished. no-zero-minute-rows + every-resource-resolves: 7/65 rows land ' +
+                                              'on ScheduleAuthor._installSecs\' silent 120s floor (IfcSpace, ' +
+                                              'IfcBuildingElementProxy and SEQUENCE_DEFAULT all ship resource:null; the ' +
+                                              'glazed_curtainwall_facade override moves IfcPlate/IfcMember to CARPENTER and ' +
+                                              'furniture_generic_bucket moves IfcBuildingElementPart to FINISHER, neither of ' +
+                                              'which carries productivity for those classes) — a 120s element is a ' +
+                                              'zero-width bar that stacks with every other one, the user-reported "zero ' +
+                                              'minute stacking". phase-bands-disjoint: Architecture spans seq 5-8 while MEP ' +
+                                              'Rough-in sits at 7, so IfcRoof (Architecture, seq 8) sequences AFTER all MEP ' +
+                                              'rough-in. TWO of the six defects are BLOCKED on a fact that exists nowhere in ' +
+                                              'the rate table (what trade + daily productivity a generic/unclassified ' +
+                                              'element carries) — filling it in would be invention, so it is a user ' +
+                                              'question, not a code task. Cause + full table: 4D_SCHEDULE_PERFECTION.md §S65.',
   // Reproducible reds whose cause has NOT been established. Labelled honestly rather than guessed:
   // an earlier pass called these "browser/server not up", which was wrong — both are headless.
   'witness_tm_stream_index_defer.js':        'C — reproducible red, cause NOT yet established',
