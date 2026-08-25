@@ -152,6 +152,53 @@
     return { level: lvl, moved: moved, passes: pass, detail: detail };
   }
 
+  // ══ §BAR_LEVEL_BANDS (2026-08-25) — the granularity DIAL ════════════════════════════════════
+  // The two hells trade against each other, smoothly and monotonically, and level granularity is
+  // the exchange rate. MEASURED across the fleet:
+  //
+  //   Terminal (22 nominal storeys)        Hospital (8)
+  //     bands  midair  bandInversions        bands  midair  bandInversions
+  //        22     336               4            8      92               4
+  //        11     219           7,074            4      32          25,319
+  //         6      86          13,996            3      32          36,235
+  //         3      51          15,535            1      22          48,589
+  //         1       0          29,993
+  //
+  // FINE bands  = strict floor-by-floor trade discipline, some floating.
+  // COARSE bands = clean build-up with no floating, trades free to roam vertically.
+  //
+  // This is a knob, not a defect. Both ends come out of the SAME graph, the same policy file and
+  // the same composite — one number changes. The model does not fork, so there is still exactly one
+  // stored timeline and nothing to reconcile (which is the whole point of §2.1 and the reason two
+  // separate models would be the wrong answer here).
+  //
+  // DEFAULT is "storey" — the finest — because §4D_BAND_MONOTONIC is a USER RULING from watching
+  // upper floors get walled first, not a preference to be traded away for a nicer number.
+  //
+  // @param {object} levelOf - guid -> level label (from correctLevelsByGeometry, or null)
+  // @param {object} bandRank - ScheduleGate.deriveBandRanks' own ranks
+  // @param {string|number} bands - "storey" (one band per storey) or an integer band count
+  // @returns {object} guid -> band label, ready to hand to buildTree as levelOf
+  function coarsenLevels(elements, levelOf, collapse, bandRank, bands) {
+    if (bands === 'storey' || bands == null) return levelOf;
+    var n = Math.max(1, Math.floor(Number(bands)));
+    var ranks = {}, i;
+    for (i = 0; i < elements.length; i++) {
+      var lv = (levelOf && levelOf[elements[i].guid]) || collapse(elements[i].storey);
+      if (bandRank[lv] != null) ranks[bandRank[lv]] = 1;
+    }
+    var nLev = Object.keys(ranks).length;
+    if (n >= nLev) return levelOf;                     // already finer than requested
+    var per = Math.ceil(nLev / n), out = {};
+    for (i = 0; i < elements.length; i++) {
+      var g = elements[i].guid;
+      var l = (levelOf && levelOf[g]) || collapse(elements[i].storey);
+      var r = bandRank[l];
+      out[g] = (r == null) ? l : 'Band ' + (Math.floor(r / per) + 1);
+    }
+    return out;
+  }
+
   // ══ buildTree — Project > Level > Task(phase x level) > Element ═════════════════════════════
   // policy: { phase_link, level_link, building_scope[] } — viewer/rates/4D_policy.json.
   // collapse(storey) and bandRank come from ScheduleGate, so a level means the same thing here as
@@ -553,6 +600,7 @@
 
   var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar, isStructural: isStructural,
               correctLevelsByGeometry: correctLevelsByGeometry, attachContacts: attachContacts,
+              coarsenLevels: coarsenLevels,
               phaseOrder: phaseOrder, buildTree: buildTree, attachNeeds: attachNeeds,
               schedule: schedule, reportCycles: reportCycles };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
