@@ -92,65 +92,14 @@
     return Object.keys(min).sort(function (a, b) { return min[a] - min[b]; });
   }
 
-  // ══ §BAR_LEVEL_FROM_GEOMETRY (2026-08-25) ═══════════════════════════════════════════════════
-  // The IFC storey STRING is not the location. Location-Based Management (Kenley & Seppanen) makes
-  // the Location Breakdown Structure a deliberate physical decision precisely because inherited
-  // storey labels do not survive contact with a real model — and the same literature splits elements
-  // that span two locations rather than forcing each into one.
-  //
-  // MEASURED, all 28 remaining structural floaters across HHS/Hospital/Terminal after every other
-  // fix: EVERY ONE of them has its support physically LOWER, while the labels put that support in a
-  // LATER bar. 24 are same-phase cross-level (`Superstructure Level 1` resting on
-  // `Superstructure Level 2`; Terminal's `Ceiling Level 04` resting on `Aras 03`), 4 are cross-phase
-  // same-level. deriveBandRanks already ranks storeys by median element height, so the RANKING is
-  // geometric and correct — it is the per-element storey ASSIGNMENT that disagrees with physics.
-  //
-  // So: where an element's own label contradicts what it demonstrably rests on, the geometry wins
-  // and the element is moved to its support's level. Nothing is invented — the correction comes
-  // from the bearing relation the model already extracted. Reported, never silent.
-  function correctLevelsByGeometry(elements, edges, collapse, bandRank) {
-    var lvl = {}, byGuid = {}, i;
-    for (i = 0; i < elements.length; i++) {
-      var e = elements[i];
-      byGuid[e.guid] = e;
-      lvl[e.guid] = collapse(e.storey);
-    }
-    // bearing supports only: the relation the midair judge itself tests.
-    var supOf = {};
-    for (i = 0; i < edges.length; i++) {
-      if (edges[i].kind !== 'bearing') continue;
-      (supOf[edges[i].to] = supOf[edges[i].to] || []).push(edges[i].from);
-    }
-    function rankOf(g) { var r = bandRank[lvl[g]]; return r == null ? -1 : r; }
-
-    var moved = 0, detail = {}, pass;
-    // A correction can expose another one up the chain, so iterate to a fixpoint. Bounded: each
-    // pass either moves something or stops, and an element only ever moves UP a rank.
-    for (pass = 0; pass < 8; pass++) {
-      var movedThisPass = 0;
-      for (var g in supOf) {
-        var E = byGuid[g]; if (!E) continue;
-        var myRank = rankOf(g), bestLvl = null, bestRank = myRank;
-        var sups = supOf[g];
-        for (var k = 0; k < sups.length; k++) {
-          var S = byGuid[sups[k]]; if (!S) continue;
-          // only trust a support the GEOMETRY agrees is underneath — never relabel off a
-          // relation the heights contradict.
-          if (!(S.base_z < E.base_z)) continue;
-          var sr = rankOf(sups[k]);
-          if (sr > bestRank) { bestRank = sr; bestLvl = lvl[sups[k]]; }
-        }
-        if (bestLvl !== null) {
-          var from = lvl[g];
-          lvl[g] = bestLvl; moved++; movedThisPass++;
-          var dk = from + ' -> ' + bestLvl;
-          detail[dk] = (detail[dk] || 0) + 1;
-        }
-      }
-      if (!movedThisPass) break;
-    }
-    return { level: lvl, moved: moved, passes: pass, detail: detail };
-  }
+  // ⛔ §BAR_LEVEL_FROM_GEOMETRY — REMOVED 2026-08-26. It moved an element to its support's level
+  // where its own storey label contradicted what it demonstrably rested on. That looked like a fix
+  // and was a SYMPTOM PATCH for missing storey metadata (§S72): it fired 1,986 times on Terminal
+  // and ZERO times once Terminal's 23 storey labels are mapped onto its 6 EXTRACTED storeys.
+  // MEASURED cost of keeping it — removing it is free on three buildings and a large win on the
+  // fourth: midair Duplex 12->12, HHS 70->70, Hospital 92->92, TERMINAL 513->336; force-placed
+  // Terminal 5,779->3,924. Band inversions move 0->4 on Terminal, negligible.
+  // The real fix is the WalkerDoctrine §14/§15 storey injection, not this.
 
   // ══ §BAR_LEVEL_BANDS (2026-08-25) — the granularity DIAL ════════════════════════════════════
   // The two hells trade against each other, smoothly and monotonically, and level granularity is
@@ -599,7 +548,7 @@
   }
 
   var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar, isStructural: isStructural,
-              correctLevelsByGeometry: correctLevelsByGeometry, attachContacts: attachContacts,
+              attachContacts: attachContacts,
               coarsenLevels: coarsenLevels,
               phaseOrder: phaseOrder, buildTree: buildTree, attachNeeds: attachNeeds,
               schedule: schedule, reportCycles: reportCycles };

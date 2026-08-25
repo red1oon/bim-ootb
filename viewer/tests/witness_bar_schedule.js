@@ -60,10 +60,9 @@ function run(els, bandRank, needs, ct, R, bands) {
   const order = BM.phaseOrder(R.SEQUENCE_RULES);
   const pol = JSON.parse(JSON.stringify(POLICY));
   if (bands != null) pol.level_bands = bands;
-  const fixed = BM.correctLevelsByGeometry(els, needs.edges, SG.collapsePhase, bandRank);
-  const lv = BM.coarsenLevels(els, fixed.level, SG.collapsePhase, bandRank, pol.level_bands);
+  const lv = BM.coarsenLevels(els, null, SG.collapsePhase, bandRank, pol.level_bands);
   const tree = BM.buildTree(els, pol, SG.collapsePhase, bandRank, order, lv);
-  tree.correctedLevel = fixed.level;
+  tree.correctedLevel = null;
   BM.attachNeeds(tree.leaves, needs.edges);
   BM.attachContacts(tree.leaves, ct.contacts, ct.grounded);
   const res = BM.schedule(tree, { laborRates: R.LABOR_RATES, baseMs: 0, phaseOrder: order, levelLink: pol.level_link });
