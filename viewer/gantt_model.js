@@ -135,11 +135,51 @@
     // (reuses the exact proven formula, not a fresh invention).
     // Members outside the fence still exist in the underlying data (§TIER_DAG_WINS doctrine:
     // counted, never hidden) — they just don't get to single-handedly define the bar's span.
+    // §GANTT_BAR_IS_ITS_TASK (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65 STAGE 3)
+    // — an AUTHORED bar's span is its TASK'S OWN WINDOW, not a statistical envelope over the elements
+    // that happen to be in it.
+    //
+    // The defect this closes, measured on HHS_Office_Federated (6839 ops, 17 bars, ALL of them
+    // carrying a real task_id — probe_bar_vs_task.js, §BVT_*):
+    //   Superstructure — Roof Level   drawn   0.6px  vs its own task's 101.4px  =   0.6% of its window
+    //   Architecture   — Roof Level   drawn   0.6px  vs                 58.0px  =   1.0%
+    //   Architecture   — Level 3      drawn  46.9px  vs                202.9px  =  23.1%, start off 22.03d
+    //   mean absolute start error across all 17 bars: 5.33 DAYS.
+    // The window was never unknown — buildTaskIndex already puts `start`/`finish` on every entry of
+    // idx.tasks (time_machine.js:5295) and this function read only `.name` from it. So the drawer
+    // computed a worse answer than the one it was already holding.
+    //
+    // WHY THE TUKEY ENVELOPE IS WRONG HERE, specifically: it is a fence over the MEMBERS. When a
+    // task's elements bunch (which the CPM/crew solve makes routine — one storey's steel goes up in a
+    // burst inside a window sized for the whole storey), the fence collapses onto the bunch and the
+    // bar becomes a sliver, while the real authored task is weeks long. That is the "tiny bars,
+    // stacked" shape, and NO element-level fix can reach it: the bar's geometry simply wasn't derived
+    // from the schedule. §S65's own §TPL_ZERO_MINUTE template fix moved 1217 zero-width elements to
+    // 114 and did not change this at all, because this is a different layer.
+    //
+    // UN-AUTHORED groups (no task_id — the storey|phase and cell fallbacks) keep the Tukey rule
+    // EXACTLY as before: there is no window to prefer, and those buildings must not shift. The
+    // fallback also still applies to an authored task whose dates are missing/unparseable — never
+    // invent a span, fall back to the measured one.
     var tasks = [];
+    var _fromWin = 0, _fromOps = 0;
     for (var k in groups) {
       var gg = groups[k];
-      gg.startTs = tukeyBound(gg.starts, true);
-      gg.endTs = Math.max(tukeyBound(gg.ends, false), gg.startTs);   // degenerate-group safety (n=1)
+      var win = (gg.taskId && idx && idx.tasks && idx.tasks[gg.taskId]) ? idx.tasks[gg.taskId] : null;
+      var ws = win && win.start != null ? Date.parse(win.start) : NaN;
+      var we = win && win.finish != null ? Date.parse(win.finish) : NaN;
+      if (isFinite(ws) && isFinite(we) && we > ws) {
+        gg.startTs = ws; gg.endTs = we; gg.spanFrom = 'task'; _fromWin++;
+      } else {
+        gg.startTs = tukeyBound(gg.starts, true);
+        gg.endTs = Math.max(tukeyBound(gg.ends, false), gg.startTs);   // degenerate-group safety (n=1)
+        gg.spanFrom = 'ops'; _fromOps++;
+      }
+      // The member ops stay available as the bar's FILL/progress extent — the elements are not
+      // hidden, they are just no longer allowed to define the bar's outline (§TIER_DAG_WINS
+      // doctrine: counted, never hidden).
+      gg.opsStartTs = tukeyBound(gg.starts, true);
+      gg.opsEndTs = Math.max(tukeyBound(gg.ends, false), gg.opsStartTs);
       delete gg.starts; delete gg.ends;
       tasks.push(gg);
     }
@@ -156,7 +196,8 @@
       return (a.startTs - b.startTs) || (a.storey < b.storey ? -1 : a.storey > b.storey ? 1 : 0);
     });
 
-    return { tasks: tasks, identified: _idN, unidentified: _noIdN };
+    return { tasks: tasks, identified: _idN, unidentified: _noIdN,
+             spanFromTask: _fromWin, spanFromOps: _fromOps };
   }
 
   // computeDays() — the day ladder and BOTH time axes, from the ELEMENT_PLACE ops only.
@@ -166,7 +207,15 @@
   // SEPARATE from projectStart/projectEnd on purpose: those two remain the real, unqualified
   // playback bounds (renderAtTime, scrubbing, "every element must eventually build" — Prime Rule,
   // do not touch). The axis pair is the DISPLAY axis for the Gantt drawer only.
-  function computeDays(placeOps) {
+  // §GANTT_AXIS_COVERS_TASKS (2026-08-25, §S65 STAGE 3) — `taskWins` is the optional list of real
+  // authored task windows ({start,finish} strings, i.e. idx.tasks' values). Since buildTasks() now
+  // draws an authored bar at its TASK'S span rather than at its elements' Tukey envelope, a bar can
+  // legitimately end LATER than the Tukey-qualified op axis — and would then be drawn past the right
+  // edge of the chart. So the display axis is widened to cover every real window. This does NOT
+  // touch projectStart/projectEnd (the true playback bounds, Prime Rule) and it is still never an
+  // invention: a task window is real persisted schedule data, exactly like an op timestamp.
+  // Callers that omit taskWins are byte-identical to before.
+  function computeDays(placeOps, taskWins) {
     var cOps = placeOps;
     var seen = {};
     cOps.forEach(function (op) {
@@ -195,6 +244,17 @@
     out.axisEnd = cOps.length
       ? tukeyBound(cOps.map(function (o) { return o.end_ts; }), false)
       : out.projectEnd;
+    // §GANTT_AXIS_COVERS_TASKS — widen to cover every authored window, so no authored bar is drawn
+    // off the right edge of its own axis.
+    if (taskWins) {
+      for (var wk in taskWins) {
+        var w = taskWins[wk]; if (!w) continue;
+        var ws = w.start != null ? Date.parse(w.start) : NaN;
+        var we = w.finish != null ? Date.parse(w.finish) : NaN;
+        if (isFinite(ws) && (out.axisStart == null || ws < out.axisStart)) out.axisStart = ws;
+        if (isFinite(we) && (out.axisEnd == null || we > out.axisEnd)) out.axisEnd = we;
+      }
+    }
     return out;
   }
 

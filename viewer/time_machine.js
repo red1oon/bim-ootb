@@ -131,7 +131,12 @@
   function computeDays() {
     var GM = (typeof window !== 'undefined' && window.GanttModel) || null;
     if (!GM) { console.warn('§LOAD_FAIL gantt_model.js — computeDays skipped, timeline bounds unchanged'); return; }
-    var r = GM.computeDays(_placeOps());
+    // §GANTT_AXIS_COVERS_TASKS (§S65 STAGE 3) — pass the real authored windows so the display axis
+    // covers every bar buildTasks() now draws at its task's own span. buildTaskIndex() is the same
+    // source buildGanttTasks() uses, so the two layers cannot disagree about what a task's window is.
+    var _axIdx = null;
+    try { _axIdx = buildTaskIndex(); } catch (e) { _axIdx = null; }
+    var r = GM.computeDays(_placeOps(), _axIdx && _axIdx.tasks);
     _days = r.days;
     if (r.projectStart !== null) { _projectStart = r.projectStart; _projectEnd = r.projectEnd; }
     _ganttAxisStart = r.axisStart; _ganttAxisEnd = r.axisEnd;
@@ -5218,7 +5223,8 @@
 
   // ── Mini Gantt chart ──
   var _ganttTasksComputed = false; // §S58: no longer gates the log lines; "has ever built" only
-  var _ganttRebuildN = 0;          // §S58: rebuild ordinal — N rebuilds per gesture is readable
+  var _ganttRebuildN = 0;
+  var _ganttSpanFromTask = 0, _ganttSpanFromOps = 0;   // §GANTT_BAR_IS_ITS_TASK (§S65)          // §S58: rebuild ordinal — N rebuilds per gesture is readable
 
   // ── §GANTT_BAR_IDENTITY (K0 — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT) ──
   // The drawer used to derive its bars purely by grouping raw kernel_ops on storey|phase, yielding
@@ -5659,6 +5665,7 @@
     var r = GM.buildTasks(_ops, idx, (typeof window !== 'undefined' && window.SEQUENCE_RULES) || null);
     _ganttTasks = r.tasks;
     _ganttIdentified = r.identified; _ganttUnidentified = r.unidentified;
+    _ganttSpanFromTask = r.spanFromTask || 0; _ganttSpanFromOps = r.spanFromOps || 0;
 
     // §S58 (4D_GANTT_TM_REFACTOR.md §S58.1a): these three lines used to be gated on
     // `_ganttTasksComputed`, a "log once flag" reset only at building-close — so they reported the
@@ -5692,6 +5699,14 @@
         ' bars=' + _ganttTasks.length + ' editable=' + _idBars +
         ' opsWithTask=' + _ganttIdentified + ' opsWithout=' + _ganttUnidentified +
         ' modelTasks=' + ((_taskIndex && _taskIndex.n) || 0));
+      // §GANTT_BAR_IS_ITS_TASK (§S65 STAGE 3) — where each bar's SPAN came from. spanFromTask is the
+      // authored window (the correct source); spanFromOps is the Tukey envelope over member elements,
+      // now only the un-authored fallback. Before this fix every bar was spanFromOps, and on
+      // HHS_Office_Federated that drew "Superstructure — Roof Level" 0.6px wide against its own
+      // 101.4px window (0.6%), with a mean absolute start error of 5.33 days across 17 bars.
+      console.log('§GANTT_BAR_SPAN_SOURCE rebuild=' + _ganttRebuildN +
+        ' spanFromTask=' + _ganttSpanFromTask + ' spanFromOps=' + _ganttSpanFromOps +
+        ' bars=' + _ganttTasks.length);
       _ganttTasksComputed = true;
     }
   }
