@@ -33,7 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 const { Schedule4DTaskRow } = require('../../witness_kit/schemas/schedule_4d');
-const { datesOrdered, noPre1970Dates, criticalFloatZero } = require('../../witness_kit/invariants/schedule');
+const { datesOrdered, noPre1970Dates, criticalFloatZero, day0FanoutOk } = require('../../witness_kit/invariants/schedule');
 const { generateRealTasksTable } = require('../../witness_kit/generators/schedule_4d');
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
@@ -65,7 +65,14 @@ async function runOne(name) {
     .invariant('dates-ordered', rs => rs.every(datesOrdered))
     .invariant('no-1970-dates', rs => rs.every(noPre1970Dates))
     .invariant('critical-float-zero', criticalFloatZero)
-    .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) c[0].schedule_start = '1970-01-05'; return c; })
+    .invariant('day0-fanout', day0FanoutOk)
+    .redControl(rs => {
+      const c = rs.map(r => Object.assign({}, r));
+      if (c[0]) c[0].schedule_start = '1970-01-05';
+      const minStart = c.reduce((m, r) => (!r.is_summary && (m == null || r.schedule_start < m)) ? r.schedule_start : m, null);
+      c.forEach(r => { if (!r.is_summary) r.schedule_start = minStart; });
+      return c;
+    })
     .run();
   return Object.assign({ name }, result);
 }
