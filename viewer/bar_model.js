@@ -40,7 +40,8 @@
   // ══ ElementBar — the LEAF. The only place a time is ever stored. ════════════════════════════
   function ElementBar(e) { Bar.call(this); this.e = e; this.guid = e.guid;
     this.needs = [];       // SOFT any-of: overlapping structure BELOW (geoGate's relation)
-    this.bearing = [];     // SOFT any-of, PREFERRED: structure this element actually rests ON
+    this.bearing = [];     // SOFT any-of: structure this element rests ON (supportPool-filtered)
+    this.contact = null;   // SOFT any-of, PREFERRED: the JUDGE'S relation — anything this touches
     this.hardNeeds = [];   // ALL-OF: host, carrier, opening, wall
     this.grounded = false; }
   ElementBar.prototype = Object.create(Bar.prototype);
@@ -281,6 +282,30 @@
   // element has any: gating on the looser set releases an element on a distant slab while its real
   // bearing neighbour is unbuilt, which is precisely what the judge then calls midair.
   var SOFT = { bearing: 1, support: 1 };
+
+  // attachContacts — install the JUDGE'S OWN contact relation as the any-of set.
+  // §BAR_CONTACT (2026-08-25). The model's bearing edges are supportPool-filtered (only structure
+  // counts as support); witness_midair_zero.js census() accepts bearing OR carrier OR embedded over
+  // EVERY element. MEASURED on Terminal, that difference WAS the defect: of 813 floaters, ZERO had
+  // a bearing edge in the model while the judge saw a bearing contact on 417 of them — they fell
+  // through to the looser `below` set whose min() released them early.
+  // Gate on exactly what the judge tests and "something I touch already exists" holds by
+  // construction, not by repair. Grounded elements are exempt: they stand on the earth.
+  function attachContacts(leaves, contacts, grounded) {
+    var byGuid = {}, i, n = 0;
+    for (i = 0; i < leaves.length; i++) byGuid[leaves[i].guid] = leaves[i];
+    for (i = 0; i < leaves.length; i++) {
+      var b = leaves[i];
+      if (grounded && grounded[b.guid]) { b.grounded = true; continue; }
+      var list = contacts[b.guid]; if (!list) continue;
+      b.contact = [];
+      for (var k = 0; k < list.length; k++) {
+        var f = byGuid[list[k]];
+        if (f && f !== b) { b.contact.push(f); n++; }
+      }
+    }
+    return { attached: n };
+  }
   function attachNeeds(leaves, edges) {
     var byGuid = {}, i;
     for (i = 0; i < leaves.length; i++) byGuid[leaves[i].guid] = leaves[i];
@@ -386,8 +411,9 @@
           }
           if (blocked) { again.push(b); continue; }
           // ANY-OF: one thing under me is enough, so take the EARLIEST placed support.
-          // Bearing wins when present — it is the relation the midair judge measures.
-          var soft = b.bearing.length ? b.bearing : b.needs;
+          // The judge's own contact set wins; then bearing; then the looser `below` set.
+          var soft = (b.contact && b.contact.length) ? b.contact
+                   : (b.bearing.length ? b.bearing : b.needs);
           if (!b.grounded && soft.length) {
             var sawPlaced = false, earliest = Infinity;
             for (j = 0; j < soft.length; j++) {
@@ -424,7 +450,19 @@
                           blockerPhase: blocker ? blocker.e.phase : null,
                           blockerStorey: blocker ? blocker.e.storey : null,
                           storey: c.e.storey });
-            put(c, gate);                                // placed anyway, but REPORTED
+            // PLACE IT LAST, NOT FIRST. It has to go somewhere — its dependencies cannot be
+            // satisfied inside this bar — but placing it at the bar's START is the maximally wrong
+            // choice: it is guaranteed to precede everything it touches, so the judge calls it
+            // floating every time. MEASURED with gate-placement: Terminal's worst offenders were
+            // MEP valves and pipes hanging 60-140 days. An element we know is unsatisfiable goes to
+            // the END of its own bar — still inside the bar it belongs to, still reported, but no
+            // longer asserting it was built before the things it rests on.
+            var last = gate;
+            for (var lz = 0; lz < ord.length; lz++) {
+              var lb = ord[lz];
+              if (lb.stop != null && lb.stop > last) last = lb.stop;
+            }
+            put(c, last);                                // placed anyway, but LAST and REPORTED
           }
           break;
         }
@@ -468,7 +506,7 @@
   }
 
   var API = { Bar: Bar, ElementBar: ElementBar, GroupBar: GroupBar, isStructural: isStructural,
-              correctLevelsByGeometry: correctLevelsByGeometry,
+              correctLevelsByGeometry: correctLevelsByGeometry, attachContacts: attachContacts,
               phaseOrder: phaseOrder, buildTree: buildTree, attachNeeds: attachNeeds,
               schedule: schedule, reportCycles: reportCycles };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
