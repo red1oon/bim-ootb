@@ -1,4 +1,4 @@
-// witness_kit/schemas/programme_template.js — the contract for ONE phase of the core programme
+// witness_kit/schemas/4d_template.js — the contract for ONE phase of the core programme
 // template. Spec: bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S66.
 //
 // classMinSequence / classTrades are ['...','null'] because a phase MAY legitimately name no
@@ -7,7 +7,7 @@
 // drift from being triaged as malformed data.
 'use strict';
 
-const ProgrammePhaseRow = {
+const PhaseRow4D = {
   type: 'object',
   required: ['id', 'name', 'sequence', 'trades', 'replicate_per_level', 'index'],
   properties: {
@@ -23,4 +23,4 @@ const ProgrammePhaseRow = {
   additionalProperties: true
 };
 
-module.exports = { ProgrammePhaseRow };
+module.exports = { PhaseRow4D };

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// WITNESS — programme_template: the core Gantt programme skeleton every building instance copies
+// WITNESS — 4d_template: the core Gantt programme skeleton every building instance copies
 // from. Spec: bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S66.
 //
 // WHICH LAYER THIS PROVES (WITNESS_INTERFACE_FRAMEWORK.md §CRISIS LESSON 1):
 //   the TEMPLATE layer only — the authored programme skeleton as a file. It says nothing about any
 //   building's instantiated tasks, nothing about kernel_ops, nothing about drawn bars.
 //
-// ISSUE THIS PROVES OR DISPROVES: the user asked for a core programme-template JSON months before
+// ISSUE THIS PROVES OR DISPROVES: the user asked for a core 4D template JSON months before
 // 2026-08-25 and was repeatedly told it existed. It did not. A repo-wide scan of all 96 JSON files
 // found zero containing tasks, durations or dependencies, and 4D_SCHEDULE_PERFECTION.md:1751 states
 // "sequence_rules.json IS that template and it does work" — which is false: that file is an
@@ -14,21 +14,21 @@
 // the new file cannot rot into the same claim: it gates that the template stays DERIVED from
 // sequence_rules.json where it should be, and INDEPENDENT of dates where it must be.
 //
-// Command: node viewer/tests/witness_programme_template.js
+// Command: node viewer/tests/witness_4d_template.js
 'use strict';
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
-const { ProgrammePhaseRow } = require('../../witness_kit/schemas/programme_template');
+const { PhaseRow4D } = require('../../witness_kit/schemas/4d_template');
 const {
   phasesMatchClassificationOrder, tradesMatchClassification, edgesReferenceRealPhases,
   withinLevelChainCoversAllPhases, edgesAreDateIndependent, calendarMatchesEngine,
   durationRuleIsWorkContent
-} = require('../../witness_kit/invariants/programme_template');
+} = require('../../witness_kit/invariants/4d_template');
 
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
-const T = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', 'programme_template.json'), 'utf8'));
+const T = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', '4D_template.json'), 'utf8'));
 const C = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
 
 // The EXECUTED clock, not the mirror — same reasoning as witness_sequence_template_lock.js:
@@ -63,17 +63,17 @@ const rows = T.phases.map((p, i) => ({
   classTrades: classPhases[p.name] ? Object.keys(classPhases[p.name].trades).sort() : null
 }));
 
-console.log('§PT_SOURCE template=rates/programme_template.json v=' + T.meta.version +
+console.log('§4DT_SOURCE template=rates/4D_template.json v=' + T.meta.version +
   ' phases=' + rows.length + ' withinLevelEdges=' + T.dependencies.within_level.length +
   ' acrossLevelEdges=' + T.dependencies.across_levels.length);
-console.log('§PT_PHASES ' + rows.map(r => r.name + '(' + r.sequence + ')' +
+console.log('§4DT_PHASES ' + rows.map(r => r.name + '(' + r.sequence + ')' +
   (r.replicate_per_level ? '/level' : '/building')).join(' -> '));
-console.log('§PT_CALENDAR hoursPerShift=' + T.calendar.hours_per_shift + ' engineSHIFT_HOURS=' + SHIFT +
+console.log('§4DT_CALENDAR hoursPerShift=' + T.calendar.hours_per_shift + ' engineSHIFT_HOURS=' + SHIFT +
   ' daysPerWeek=' + T.calendar.days_per_week + ' durationBasis=' + T.duration_rule.basis);
 
-Witness('programme_template')
+Witness('4d_template')
   .population(() => rows)
-  .schema(ProgrammePhaseRow)
+  .schema(PhaseRow4D)
   // Phase set and order are EXTRACTED from the classification table, never typed twice.
   .invariant('phases-match-classification-order', phasesMatchClassificationOrder)
   .invariant('trades-match-classification', tradesMatchClassification)

@@ -1,4 +1,4 @@
-// witness_kit/invariants/programme_template.js — reusable predicates for the core programme
+// witness_kit/invariants/4d_template.js — reusable predicates for the core programme
 // template. Spec: bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S66.
 //
 // The template and the classification table (sequence_rules.json) are TWO FILES describing ONE set
