@@ -140,11 +140,24 @@ var LABOR_RATES = {
   },
   MASON: {
     rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
-    productivity: {IfcWall:12,IfcWallStandardCase:12,IfcOpeningElement:20,IfcBuildingElementPart:15}
+    // §TPL_ZERO_MINUTE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65, user ruling):
+    // IfcBuildingElementProxy carried resource:null and therefore _installSecs' silent 120s floor —
+    // a zero-width Gantt bar, stacked with every other floored element. Value COPIED from its own
+    // sibling IfcBuildingElementPart (15), same generic-Architecture/seq-5 rule, already shipped and
+    // measured here — not a new invented figure. default_productivity serves SEQUENCE_DEFAULT: the
+    // class-key lookup below is a SUBSTRING match, so an unmatched class can never resolve any key
+    // and would floor no matter which resource it named.
+    default_productivity: 15,
+    productivity: {IfcWall:12,IfcWallStandardCase:12,IfcOpeningElement:20,IfcBuildingElementPart:15,IfcBuildingElementProxy:15}
   },
   CARPENTER: {
     rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Carpenter (Skilled)',
-    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8}
+    // §TPL_ZERO_MINUTE (§S65 defect 4): the glazed_curtainwall_facade NAME_OVERRIDE reassigns
+    // IfcPlate/IfcMember to CARPENTER, which carried no productivity for either — so the override
+    // fixed those elements' PHASE and silently destroyed their DURATION (Hospital 2211 IfcPlate +
+    // 7122 IfcMember, HHS 438 IfcPlate, all 120s). Values COPIED verbatim from STEEL_ERECTOR, the
+    // class's own canonical trade above (IfcPlate:12, IfcMember:10) — extracted, not invented.
+    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10}
   },
   ROOFER: {
     rate_per_day: 175, crew_size: 3, max_crews: 1, trade: 'Roofer (Skilled)',
@@ -152,7 +165,10 @@ var LABOR_RATES = {
   },
   FINISHER: {
     rate_per_day: 135, crew_size: 2, max_crews: 2, trade: 'Finisher (Skilled)',
-    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8}
+    // §TPL_ZERO_MINUTE (§S65 defect 5): furniture_generic_bucket reassigns IfcBuildingElementProxy/
+    // IfcBuildingElementPart to FINISHER, which carried neither — same silent duration loss as the
+    // curtain-wall override above. Values COPIED from MASON, those classes' own canonical trade (15).
+    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15}
   },
   LABORER: {
     rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
@@ -244,8 +260,8 @@ var SEQUENCE_RULES = {
   IfcRailing:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
   IfcRamp:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
   IfcRampFlight:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
-  IfcRoof:{phase:'Architecture',sequence:8,resource:'ROOFER'},
-  IfcBuildingElementProxy:{phase:'Architecture',sequence:5,resource:null},
+  IfcRoof:{phase:'Architecture',sequence:6,resource:'ROOFER'},   // §S65 defect 7 (user ruling): was 8, which sequenced the roof AFTER all MEP Rough-in (seq 7) — MEP installed before the roof existed, and it made the Architecture band [5-8] overlap MEP Rough-in [7]. Weather-tight first.
+  IfcBuildingElementProxy:{phase:'Architecture',sequence:5,resource:'MASON'},   // §S65: was resource:null -> 120s floor
   IfcCurtainWall:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
   // MEP Final
   IfcLightFixture:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
@@ -257,7 +273,7 @@ var SEQUENCE_RULES = {
   IfcFurniture:{phase:'Finishes',sequence:11,resource:'FINISHER'},
   IfcFurnishingElement:{phase:'Finishes',sequence:11,resource:'FINISHER'},
 };
-var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:null};
+var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:'MASON'};   // §S65: was resource:null -> every unmatched class floored at 120s
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
 // tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members
 // (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR/LTU_AHouse structural steel/timber, which must
@@ -272,7 +288,12 @@ var SEQUENCE_NAME_OVERRIDES = [
     pattern: 'glaz|glass|verglas|vitrage|vidrio|curtain|mullion',
     flags: 'i',
     phase: 'Architecture',
-    sequence: 7,
+    // §S65 defect 7 (2026-08-25): was 7, which tied this override with MEP Rough-in (seq 7) and kept
+    // the Architecture band [5-7] overlapping it. 6 is IfcCurtainWall's OWN class rule (line ~265) —
+    // these are the glazing panels and mullions OF that same curtain-wall system, so 7 was also
+    // internally inconsistent with the class it belongs to. Aligned, not invented; and it applies the
+    // user's own IfcRoof ruling (weather-tight envelope before MEP rough-in) to the other envelope.
+    sequence: 6,
     resource: 'CARPENTER'
   },
   // §PILE_SLAB_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md big-element
