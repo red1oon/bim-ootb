@@ -2,7 +2,7 @@
   "meta": {
     "id": "4d_template",
     "name": "Core 4D Programme Template",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "what": "THE core Gantt programme every building instance copies from: a checked-in, reviewable, witnessed programme SKELETON — phases, per-level activities, the dependency logic between them, and the two physical rules (work content, crew capacity) that bound any schedule derived from it. Authored once here instead of emerging at runtime from a geometry solve and being discarded on reload.",
     "not_this_file": "sequence_rules.json is a CLASSIFICATION table (ifc_class -> phase/sequence/trade + labour productivity). It answers 'which phase does this element belong to'. It cannot answer 'what is the programme'. The two files are used together: this one is the shape, that one is the lookup.",
     "what_this_file_authors": "EXACTLY three things: calendar, duration_rule, capacity_rule + dependencies. Everything else in this file (the phase set, each phase's sequence, each phase's trades) is EXTRACTED from sequence_rules.json and gated against drift. v1.0.0's header claimed this file was 'the only place a fact is authored' — that overclaimed, and its own provenance line contradicted it. Stated as the three, it is exact.",
@@ -105,10 +105,19 @@
       { "pred": "mep_rough_in",   "succ": "mep_final",      "type": "FS", "lag_days": 0, "_why": "Second fix follows first fix." },
       { "pred": "mep_final",      "succ": "finishes",       "type": "FS", "lag_days": 0, "_why": "Finishes close up completed services." }
     ],
+    "_ladder_rule": "EVERY level-scope phase chains to ITSELF on the level below (FS+0, level_offset 1). This is the project's own §4D_BAND_MONOTONIC ruling — 'a trade may not run ahead of ITSELF on the floor below' — declared here as programme logic instead of living only inside the solver's gates. v1.1.0 declared the ladder for superstructure ALONE, and MEASURED on HHS_Office_Federated (2026-08-25, probe_4d_motion.js) that is NOT crew-legal: with levels otherwise free to run in parallel, MEP Rough-in on Levels 1/2/3 overlaps and PLUMBER peaks at 3.67 crews against a cap of 2 (1.84x), HVAC_TECH at 3.48 (1.74x). With the full ladder: ZERO breaches on every trade, and the programme costs 49 days against 41 — the 8 days that buy physical legality. Different trades still overlap ACROSS floors, which is what a trade train is; only a trade overtaking itself is forbidden.",
     "across_levels": [
       { "pred": "superstructure", "succ": "superstructure", "type": "FS", "lag_days": 0, "level_offset": 1,
-        "_why": "A level's frame cannot start before the level below it is framed. This is the ONLY hard vertical constraint; everything else follows from it plus the within-level chain." }
+        "_why": "A level's frame cannot start before the level below it is framed. The one constraint that is structural as well as logistical." },
+      { "pred": "architecture",   "succ": "architecture",   "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC: the envelope/fabric trades may not run ahead of themselves. The user's own report that produced that ruling was 'upper floors gets walled first'." },
+      { "pred": "mep_rough_in",   "succ": "mep_rough_in",   "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, and the measured binding case: without it PLUMBER runs 1.84x over cap across three simultaneous levels." },
+      { "pred": "mep_final",      "succ": "mep_final",      "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. Same trades as rough-in, same crew pool, same failure mode." },
+      { "pred": "finishes",       "succ": "finishes",       "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. One FINISHER pool for the building." }
     ],
-    "_overlap": "Every lag is 0 and every type is FS in v1.x — a deliberately conservative, strictly serial start. Real programmes overlap trades (SS with lag, FS with negative lead). Those belong here as edits, each with its own _why, so an overlap is a reviewed decision and not an artifact of a solver. NOTE, MEASURED: the engine today already overlaps phases heavily — HHS spans 46.9 days against this chain's 69.8 days of serial per-trade work content. That gap is the template's logic disagreeing with what runs, and it is the thing instantiation has to reconcile."
+    "_overlap": "USER RULING 2026-08-25: 'wont it be safer to avoid the hell — we make phases packed but sequential? User can then just drag them overlap if they want. As long it is editable.' Adopted. Every lag is 0 and every type is FS: phases are PACKED (no dead air, min_days 1) and STRICTLY SEQUENTIAL within a level, with the ladder above across levels. An overlap is then a deliberate EDIT a human drags in on the TM Gantt, never something a solver produced and nobody authorised.\n\nThis is not the expensive choice, which is why it is the safe one. MEASURED on HHS_Office_Federated (2026-08-25): the packed-sequential programme is 49 days against the current overlapping engine's 46.9 — +4%, two days, and it is crew-legal on every trade where the engine needed a repair pass to become so. The old fear that serialising costs a much longer film is not supported by the numbers on this building."
   }
 }
