@@ -23,7 +23,10 @@ const { Schedule4DTaskRow } = require('../../witness_kit/schemas/schedule_4d');
 const { datesOrdered, noPre1970Dates, criticalFloatZero } = require('../../witness_kit/invariants/schedule');
 const { generateRealTasksTable } = require('../../witness_kit/generators/schedule_4d');
 
-const DB_PATH = path.join(__dirname, '..', '..', 'buildings', 'Duplex_extracted.db');
+// BLD_DIR — same house convention witness_door_window_host_wall.js etc use, and what
+// run_witness_suite.js sets when it spawns this file.
+const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
+const DB_PATH = path.join(BLD_DIR, 'Duplex_extracted.db');
 
 (async () => {
   const rows = await generateRealTasksTable(DB_PATH);
