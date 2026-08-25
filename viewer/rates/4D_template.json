@@ -1,13 +1,13 @@
 {
   "meta": {
-    "id": "programme_template",
+    "id": "4d_template",
     "name": "Core Construction Programme Template",
     "version": "1.0.0",
     "what": "THE core Gantt programme every building instance copies from. This is the artifact that did not exist before 2026-08-25: a checked-in, reviewable, witnessed programme SKELETON — phases, per-level activities, and the dependency logic between them — authored once here instead of emerging at runtime from a geometry solve and being discarded on reload.",
     "not_this_file": "sequence_rules.json is a CLASSIFICATION table (ifc_class -> phase/sequence/trade + labour productivity). It answers 'which phase does this element belong to'. It cannot answer 'what is the programme', and 4D_SCHEDULE_PERFECTION.md line 1751's claim that it IS the template is wrong. The two files are used together: this one is the shape, that one is the lookup.",
     "instantiation": "A building instance copies this file, replicates every activity marked replicate_per_level once per real storey (bottom-up), drops any activity whose element population is empty for that building, and resolves durations by the duration_rule below. Nothing here is per-building; nothing per-building belongs here.",
-    "provenance": "phases[].id/name/sequence and phases[].trades are EXTRACTED from viewer/rates/sequence_rules.json's own SEQUENCE_RULES (min/max sequence per phase, the union of resources that phase's classes name) — not typed by hand, and they must not drift from it. witness_programme_template.js gates that.",
-    "editable": "Registered like every other project JSON: id = programme_template, file = rates/programme_template.json, storageKey = json_programme_template."
+    "provenance": "phases[].id/name/sequence and phases[].trades are EXTRACTED from viewer/rates/sequence_rules.json's own SEQUENCE_RULES (min/max sequence per phase, the union of resources that phase's classes name) — not typed by hand, and they must not drift from it. witness_4d_template.js gates that.",
+    "editable": "Registered like every other project JSON: id = 4d_template, file = rates/4D_template.json, storageKey = json_4d_template."
   },
 
   "calendar": {
