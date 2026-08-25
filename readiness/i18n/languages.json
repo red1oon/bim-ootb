@@ -1,9 +1,9 @@
 {
-  "en": { "name": "English", "native": "English", "dir": "ltr", "status": "source" },
-  "ms": { "name": "Malay",   "native": "Bahasa Melayu", "dir": "ltr", "status": "draft", "pack": "ms-v0.1-draft" },
-  "ar": { "name": "Arabic",  "native": "العربية",        "dir": "rtl", "status": "draft", "pack": "ar-v0.1-draft" },
-  "fr": { "name": "French",  "native": "Français",       "dir": "ltr", "status": "draft", "pack": "fr-v0.1-draft" },
-  "de": { "name": "German",  "native": "Deutsch",        "dir": "ltr", "status": "draft", "pack": "de-v0.1-draft" },
-  "it": { "name": "Italian", "native": "Italiano",       "dir": "ltr", "status": "draft", "pack": "it-v0.1-draft" },
-  "es": { "name": "Spanish", "native": "Español",        "dir": "ltr", "status": "draft", "pack": "es-v0.1-draft" }
+  "en": { "name": "English", "native": "English", "dir": "ltr" },
+  "ms": { "name": "Malay",   "native": "Bahasa Melayu", "dir": "ltr", "pack": "ms-v0.1" },
+  "ar": { "name": "Arabic",  "native": "العربية",        "dir": "rtl", "pack": "ar-v0.1" },
+  "fr": { "name": "French",  "native": "Français",       "dir": "ltr", "pack": "fr-v0.1" },
+  "de": { "name": "German",  "native": "Deutsch",        "dir": "ltr", "pack": "de-v0.1" },
+  "it": { "name": "Italian", "native": "Italiano",       "dir": "ltr", "pack": "it-v0.1" },
+  "es": { "name": "Spanish", "native": "Español",        "dir": "ltr", "pack": "es-v0.1" }
 }

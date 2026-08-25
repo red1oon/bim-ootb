@@ -9,8 +9,7 @@
     "nav.notice": "Avviso",
     "brand.title": "Strumento di valutazione della maturità OpenBIM",
     "lang.label": "Lingua",
-    "lang.note": "Le venti domande e le loro opzioni di risposta sono tradotte. Le pagine esplicative, gli avvisi legali e la dichiarazione di consenso restano in inglese.",
-    "draftnote": "La traduzione di questa pagina è una <strong>bozza non convalidata</strong>, non rivista da un traduttore qualificato. Le pagine Fonti e Avviso restano in inglese per preservare l'accuratezza delle citazioni."
+    "lang.note": "Le venti domande e le loro opzioni di risposta sono tradotte. Le pagine esplicative, gli avvisi legali e la dichiarazione di consenso restano in inglese."
   },
   "front": {
     "hero": "<p class='eyebrow'>Richiesta di finanziamento per la ricerca &middot; 10 agosto 2026 &middot; Mohd Faizal Bin Yusof</p><h1>Strumento di valutazione della maturità per la gestione dell'infrastruttura digitale</h1>",

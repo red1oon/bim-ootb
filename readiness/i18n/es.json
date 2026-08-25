@@ -9,8 +9,7 @@
     "nav.notice": "Aviso",
     "brand.title": "Herramienta de evaluación de madurez OpenBIM",
     "lang.label": "Idioma",
-    "lang.note": "Las veinte preguntas y sus opciones de respuesta están traducidas. Las páginas explicativas, los avisos legales y la declaración de consentimiento permanecen en inglés.",
-    "draftnote": "La traducción de esta página es un <strong>borrador no validado</strong>, no revisado por un traductor cualificado. Las páginas Fuentes y Aviso permanecen en inglés para preservar la exactitud de las citas."
+    "lang.note": "Las veinte preguntas y sus opciones de respuesta están traducidas. Las páginas explicativas, los avisos legales y la declaración de consentimiento permanecen en inglés."
   },
   "front": {
     "hero": "<p class='eyebrow'>Solicitud de financiación para investigación &middot; 10 de agosto de 2026 &middot; Mohd Faizal Bin Yusof</p><h1>Herramienta de evaluación de madurez para la gestión de infraestructura digital</h1>",
