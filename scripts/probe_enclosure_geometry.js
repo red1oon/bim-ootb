@@ -92,6 +92,34 @@ function hit(p, d, b) {
       }
       encOf[i] = blocked;
     }
+    // §ENC_ON_FLOATING — the USER'S OWN RULE applied to the population that matters:
+    // "anything that hangs within a well formed room is no issue". Run the real template schedule,
+    // find what is unsupported on it, then ask of each whether it is enclosed.
+    const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
+    let floatIdx = [];
+    {
+      const db2 = new SQL.Database(new Uint8Array(fs.readFileSync(f)));
+      const _l = console.log, _w = console.warn; console.log = () => {}; console.warn = () => {};
+      let res = null;
+      try {
+        res = SA.materializeZones(db2, R.SEQUENCE_RULES, { start: '2026-01-01',
+          laborRates: R.LABOR_RATES, rates: R.RATES, nameOverrides: R.SEQUENCE_NAME_OVERRIDES,
+          defaultRule: R.SEQUENCE_DEFAULT, scheduleGate: SG, shiftHours: T.calendar.hours_per_shift,
+          template: T });
+      } catch (e) {}
+      console.log = _l; console.warn = _w;
+      const sched = res && res.displaySchedule;
+      if (sched) for (let i = 0; i < els.length; i++) {
+        const list = G.contacts[i]; if (!list || !list.length) continue;
+        const t = sched[els[i].guid]; if (!t) continue;
+        let held = false;
+        for (const j of list) { const sc = sched[els[j].guid];
+          if (sc && sc.end - 1 <= t.start) { held = true; break; } }
+        if (!held) floatIdx.push(i);
+      }
+      db2.close();
+    }
+
     const hist = new Array(7).fill(0);
     encOf.forEach(v => hist[v]++);
     let unsupported = 0, unsupportedEnclosed = 0;
@@ -103,6 +131,10 @@ function hit(p, d, b) {
     console.log('§ENC ' + bld + ' n=' + els.length +
       ' blockedRays 0..6 = [' + hist.join(', ') + ']  fullyEnclosed(6/6)=' + hist[6] +
       ' (' + (100 * hist[6] / els.length).toFixed(1) + '%)');
+    let fEnc = 0; floatIdx.forEach(i => { if (encOf[i] >= 5) fEnc++; });
+    console.log('   §ENC_ON_FLOATING unsupported on the TEMPLATE schedule=' + floatIdx.length +
+      '  ENCLOSED (>=5/6 rays — hanging in a formed room, USER RULING: no issue)=' + fEnc +
+      '  GENUINELY OPEN=' + (floatIdx.length - fEnc));
     console.log('   §ENC_VERDICT judge says UNSUPPORTED (des=-1): ' + unsupported +
       ' — of those, ' + unsupportedEnclosed + ' are ENCLOSED (>=5/6 rays blocked), i.e. hanging ' +
       'inside a formed room and not an issue at all. Genuinely open: ' + (unsupported - unsupportedEnclosed));
