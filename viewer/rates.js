@@ -409,6 +409,30 @@ var SEQUENCE_NAME_OVERRIDES = [
   // phase Substructure at seq 4. Name overrides run AHEAD of the class lookup and groundworkSlabs
   // only mutates phase in place, so this rule wins for a slab that is a named finish — which is
   // correct: a wood finish floor is not slab-on-grade groundworks.
+  // §STAIR_MEMBER_ARCHITECTURE (2026-08-27, same witness/claim as the two rules above). A stair
+  // component authored as IfcMember: the class rule sends IfcMember to Superstructure seq 3
+  // (STEEL_ERECTOR, structural framing), so Duplex's stair stringer — spanning base -0.095 to top
+  // 3.005, a full storey — was scheduled on DAY 0 as frame steel, three phases ahead of the
+  // IfcStairFlight it is part of, and hung there with nothing under it. Its own siblings in the
+  // SAME building already resolve correctly: IfcStairFlight x2 and IfcRailing x4 at Architecture
+  // Envelope seq 6. Target COPIED VERBATIM from IfcStairFlight's own class rule (line ~267),
+  // the family this element belongs to — extracted, not chosen.
+  // MEASURED fleet-wide before writing, under the IfcMember class gate: Duplex 4 (all 4 of its
+  // IfcMember are named 'Stair:...'), HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442 —
+  // 9,019 IfcMember across the rest of the fleet, zero false positives. Anchored ^stair\b so a
+  // 'Handrail for Stair' or a stair-adjacent brace is not swept in by a bare substring.
+  // NOTE the deliberate consequence: schedule_gate supportPool is seq<=4 u IfcSlab u
+  // IfcStairFlight u IfcWall*, so moving these from seq 3 to seq 6 REMOVES them from the support
+  // pool. That is correct — a stair stringer carries the stair, not the building.
+  {
+    id: 'stair_member_architecture',
+    classes: ['IfcMember'],
+    pattern: '^\\s*stair\\b',
+    flags: 'i',
+    phase: 'Architecture Envelope',
+    sequence: 6,
+    resource: 'CARPENTER'
+  },
   {
     id: 'finish_floor_finishes',
     classes: ['IfcSlab'],

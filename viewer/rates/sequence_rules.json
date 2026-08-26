@@ -69,6 +69,18 @@
       "resource": "CONCRETE_GANG"
     },
     {
+      "id": "stair_member_architecture",
+      "_why": "2026-08-27 §W_D0 C2/C3. A stair component authored as IfcMember lands at Superstructure seq 3 (structural framing) and was scheduled on DAY 0, three phases ahead of the IfcStairFlight it belongs to. Target copied verbatim from IfcStairFlight's own class rule. MEASURED under the class gate: Duplex 4 of 4, HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442.",
+      "classes": [
+        "IfcMember"
+      ],
+      "pattern": "^\\s*stair\\b",
+      "flags": "i",
+      "phase": "Architecture Envelope",
+      "sequence": 6,
+      "resource": "CARPENTER"
+    },
+    {
       "id": "finish_floor_finishes",
       "_why": "2026-08-27 §W_D0 C2. A slab NAMED Finish Floor is a finish, not structure; IfcSlab otherwise resolves to Superstructure seq 4 and was scheduled on DAY 0 on top of a slab still being poured. MEASURED under the class gate: Duplex 14 (Wood x8, Ceramic Tile x6), nothing elsewhere.",
       "classes": [

@@ -562,7 +562,7 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0;
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0;
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
@@ -594,14 +594,48 @@
         }
         var pr = priceCell(c);
         var start = cursor;
-        // across_levels: the §4D_BAND_MONOTONIC ladder — this phase on the level below.
-        if (ladder[p.id] && li > 0) {
-          var below = taskAt[p.name + '||' + levels[li - 1]];
-          if (below) {
-            var need = below.eDays + (ladder[p.id].lag_days || 0);
-            if (need > start) start = need;
+        // §TPL_LADDER_BRIDGE (2026-08-27) — the across_levels ladder MUST bridge past dropped
+        // phases, exactly as the within_level chain already does.
+        //
+        // THE DEFECT THIS FIXES, measured on Duplex: `cursor` resets to 0 for every level, so the
+        // FIRST phase to instantiate on a level has no within-level predecessor and takes its start
+        // from the ladder alone. The ladder looked at `levels[li-1]` ONLY — one level down, no
+        // bridge. Duplex's lowest band T/FDN has no Superstructure (its 184 elements are
+        // Substructure, Architecture and MEP), so `Superstructure @ Level 1` found no task below,
+        // fell back to cursor = 0, and RAN IN PARALLEL WITH `Substructure @ T/FDN` — 4 IfcBeam and
+        // 2 IfcSlab starting at h0.0 while the foundations they sit on ran to h24.0.
+        // The template's own _empty_phase_rule already says a dropped phase must BRIDGE, "never
+        // left dangling"; it was implemented for one of the two chains.
+        //
+        // Two steps, in the template's own order of authority:
+        //   1. same phase, nearest level BELOW — walk down past every level where it was dropped;
+        //   2. failing that, the within_level PREDECESSOR chain, itself walked backwards through
+        //      dropped phases, resolved on this level or the nearest one below. A building-scope
+        //      phase lives only on level 0, which is exactly how Superstructure @ Level 1 reaches
+        //      Substructure @ T/FDN.
+        // Returns null only when nothing precedes this phase anywhere — a genuine programme start.
+        var _bridge = (function () {
+          var d, b;
+          if (ladder[p.id] && li > 0) {
+            for (d = li - 1; d >= 0; d--) {
+              b = taskAt[p.name + '||' + levels[d]];
+              if (b) return { finish: b.eDays + (ladder[p.id].lag_days || 0), via: 'across_levels', hops: li - d };
+            }
           }
-        }
+          var seen = {}, cur2 = p.id, guard = 0;
+          while (guard++ < 32) {
+            var wl2 = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === cur2; })[0];
+            if (!wl2 || seen[wl2.pred]) break;
+            seen[wl2.pred] = 1; cur2 = wl2.pred;
+            var pp = byId[cur2]; if (!pp) break;
+            for (d = li; d >= 0; d--) {
+              b = taskAt[pp.name + '||' + levels[d]];
+              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d };
+            }
+          }
+          return null;
+        })();
+        if (_bridge && _bridge.finish > start) { start = _bridge.finish; if (_bridge.hops > 0 || !prevOnLevel) _ladderBridged++; }
         var t = {
           id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
           phase: p.name, storey: lv, level: li, phaseId: p.id,
@@ -618,13 +652,19 @@
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
         }
         if (ladder[p.id] && li > 0) {
-          var b2 = taskAt[p.name + '||' + levels[li - 1]];
-          if (b2) edges.push({ predId: b2.id, succId: t.id, type: ladder[p.id].type || 'FS',
-                               lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' });
+          for (var _d2 = li - 1; _d2 >= 0; _d2--) {          // §TPL_LADDER_BRIDGE — same walk as above
+            var b2 = taskAt[p.name + '||' + levels[_d2]];
+            if (b2) { edges.push({ predId: b2.id, succId: t.id, type: ladder[p.id].type || 'FS',
+                                   lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' }); break; }
+          }
         }
         prevOnLevel = t;
       });
     });
+    console.log('§TPL_LADDER_BRIDGE gatedByBridge=' + _ladderBridged + '/' + tasks.length +
+      ' — a phase whose predecessor was DROPPED on the level below now takes its start from the ' +
+      'nearest level that has one, or from its within_level predecessor chain; 0 = no task needed it');
+
     // ── capacity_rule LEVELLING ────────────────────────────────────────────────────────────
     // The ladder forbids a phase overtaking ITSELF up the building. It does NOT stop two DIFFERENT
     // phases that share a crew pool from running at once on different levels: MEP Rough-in on

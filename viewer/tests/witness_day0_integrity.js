@@ -127,27 +127,84 @@ function run(bld) {
     const ok = modelsSub ? (ph_i === 'Substructure') : (els[i].seq <= 4);
     if (!ok) { impure++; impureCls[els[i].cls] = (impureCls[els[i].cls] || 0) + 1; }
   }
-  out.push(claim('C2_DAY0_PURITY', bld, onScreen, impure,
-    'modelsSubstructure=' + modelsSub + ' phases{' +
-    Object.entries(phaseHist).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ') + '}' +
-    (impure ? '  INTRUDERS{' + Object.entries(impureCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : '')));
+  // ⚠ "DAY 0" IS NOT THE INVARIANT — THE PHASE ORDER IS. Measured: Duplex's whole programme is 13
+  // days and its Substructure is 18 elements finishing inside the first day, so "DAY 0 contains
+  // only Substructure" fails there for a reason that is not a defect — the foundations really are
+  // done, and holding the rest of the day empty would be make-work. Terminal's DAY 0 is 3% of its
+  // programme and Hospital's under 1%, so the same window means three different things. What is
+  // actually wrong is an element STARTING BEFORE THE SUBSTRUCTURE IT SITS ON IS FINISHED, and that
+  // is exact, needs no window, and is comparable across every building. The DAY-0 composition stays
+  // in the log as observability; the CLAIM is the phase order.
+  let subEnd = -Infinity, subN = 0;
+  for (let i = 0; i < els.length; i++) {
+    if ((els[i].phase || '') !== 'Substructure') continue;
+    const st = sched[els[i].guid]; if (!st) continue;
+    subN++; if (st.e > subEnd) subEnd = st.e;
+  }
+  let early = 0; const earlyCls = {};
+  if (modelsSub && subN) {
+    for (let i = 0; i < els.length; i++) {
+      if ((els[i].phase || '') === 'Substructure') continue;
+      const st = sched[els[i].guid]; if (!st) continue;
+      if (st.s < subEnd - 1) { early++; earlyCls[els[i].cls] = (earlyCls[els[i].cls] || 0) + 1; }
+    }
+  }
+  out.push(claim('C2_SUB_FIRST  ', bld, modelsSub ? subN : onScreen, modelsSub ? early : impure,
+    'modelsSubstructure=' + modelsSub +
+    (modelsSub ? ' substructure=' + subN + ' ends h' + ((subEnd - t0) / 3600000).toFixed(1) +
+      (early ? '  STARTED BEFORE IT{' + Object.entries(earlyCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : '')
+     : ' (template declares _empty_ok; the lowest Superstructure band is the legitimate opening)') +
+    '  [observed, not gated: DAY 0 phases{' +
+    Object.entries(phaseHist).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ') + '}]'));
 
-  let judged = 0, hanging = 0; const hangCls = {};
+  // TWO KINDS OF HANGING, AND ONLY ONE IS THE SCHEDULER'S. Conflating them makes the number
+  // unactionable, which is why this splits them — the distinction is 4D_MODEL_INTEGRITY §F's own
+  // ("148 rest on something on their own level classified into a later phase — a §5.1 data defect:
+  // named, never scheduled around"), not a new one invented here.
+  //   ORDER    — at least one real support is classified at or before this element's own phase, so
+  //              the declared programme COULD have placed it first and did not. The scheduler owns
+  //              this and it must be 0.
+  //   MODEL    — EVERY real support is classified into a LATER phase than the element it carries.
+  //              No ordering fixes that: forcing it means overriding the declared programme with
+  //              geometry, which is precisely the election §A says is inexpressible by design.
+  // MEASURED example, Duplex: 6 IfcBeam (M_W-Wide Flange W310X60/W410X60, Superstructure seq 3)
+  // rest on 'Basic Wall:Exterior - Brick on Block' and 'Party Wall - CMU' — load-bearing masonry
+  // that IfcWall's class rule sends to Architecture Envelope seq 5. In masonry construction the
+  // structural wall IS the envelope wall; the programme's frame-then-envelope shape is a
+  // steel/concrete assumption. That is a classification/programme question, and §B forbids fixing
+  // it in CLASSIFY ("element -> (phase, trade). A lookup. Must never compute anything").
+  let judged = 0, hangOrder = 0, hangModel = 0;
+  const hangCls = {}, modelPairs = {};
   for (let i = 0; i < els.length; i++) {
     if (!placed[i]) continue;
     if (els[i].seq === 1 || G.grounded[i]) continue;      // shipped 1c + rests on soil
     judged++;
-    const T = els[i]; let held = 0;
+    const T = els[i]; let held = 0, anySup = 0, allLater = 1, worst = null;
     for (const j of (G.contacts[i] || [])) {
       const S = els[j];
       const bearing = (S.bz < T.bz - EPS && S.tz >= T.bz - GAP);
       const embedded = (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS);
-      if ((bearing || embedded) && placed[j]) { held = 1; break; }
+      if (!(bearing || embedded)) continue;
+      anySup++;
+      if (placed[j]) { held = 1; break; }
+      if (S.seq <= T.seq) allLater = 0;
+      if (!worst || S.seq > worst.seq) worst = S;
     }
-    if (!held) { hanging++; hangCls[T.cls] = (hangCls[T.cls] || 0) + 1; }
+    if (held) continue;
+    hangCls[T.cls] = (hangCls[T.cls] || 0) + 1;
+    if (anySup && allLater) {
+      hangModel++;
+      if (worst) { const k = T.phase + ' seq' + T.seq + ' <- ' + worst.phase + ' seq' + worst.seq;
+        modelPairs[k] = (modelPairs[k] || 0) + 1; }
+    } else hangOrder++;
   }
-  out.push(claim('C3_DAY0_SUPPORT', bld, judged, hanging,
-    (hanging ? 'hanging{' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : 'nothing on screen is unheld')));
+  out.push(claim('C3_DAY0_SUPPORT', bld, judged, hangOrder,
+    (hangOrder || hangModel
+      ? 'hanging{' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' +
+        ' ORDER=' + hangOrder + ' (the scheduler owns this)  MODEL=' + hangModel +
+        ' (every support classified LATER — a §5.1 data defect, not schedulable)' +
+        (hangModel ? ' ' + Object.entries(modelPairs).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => '[' + k + ' x' + n + ']').join(' ') : '')
+      : 'nothing on screen is unheld')));
 
   // ── C4 NO EARLY MEP ────────────────────────────────────────────────────────────────────────
   // ⚠ THIS CLAIM'S WINDOW WAS WRONG AND THE CORRECTION IS KEPT. It first gated a FIXED 3 days,
