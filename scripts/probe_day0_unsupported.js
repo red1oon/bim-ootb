@@ -125,6 +125,48 @@ const quiet = fn => { const l = console.log, w = console.warn; console.log = () 
         heldH: first === Infinity ? 'never' : ((first - t0) / 3600000).toFixed(2),
         contacts: list.length, bearingAny, embeddedAny, carrierAny });
     }
+    // ── §D0_OPENING — WHAT DOES DAY 0 ACTUALLY OPEN WITH? ─────────────────────────────────────
+    // USER QUESTION 2026-08-26: "Will DAY 0 start with an early-days success — for Hospital and
+    // Terminal, where only substructure (if it exists) gets built up, with no columns and beams
+    // hanging?" That is two separate measurable claims and they are reported separately:
+    //   COMPOSITION — what phases/classes are on screen during DAY 0 at all. A clean opening is
+    //                 Substructure only (or, where a building models none, nothing that needs one).
+    //   HANGING     — of everything on screen (ALL classes, not only sub/super — the eye does not
+    //                 filter by phase), how many have a bearing/embedded contact that is NOT yet
+    //                 placed. This is the "no columns and beams hanging" half of the question.
+    // Checkpoints are hourly across DAY 0 and the verdict quotes the END of DAY 0 (h=24), because
+    // a clean h=3 says nothing about what the rest of the day drags in.
+    for (const hh of [1, 3, 6, 12, 18, 24]) {
+      const cur = t0 + hh * 3600000;
+      const pl = new Uint8Array(els.length);
+      let scr = 0;
+      for (let i = 0; i < els.length; i++) { const st = startOf(els[i].guid); if (Number.isFinite(st) && st <= cur) { pl[i] = 1; scr++; } }
+      const byPhase = {}, byClass = {}, hangCls = {};
+      let hanging = 0, structural = 0;
+      for (let i = 0; i < els.length; i++) {
+        if (!pl[i]) continue;
+        const Tt = els[i];
+        byPhase[Tt.phase || '_UNPHASED'] = (byPhase[Tt.phase || '_UNPHASED'] || 0) + 1;
+        byClass[Tt.cls] = (byClass[Tt.cls] || 0) + 1;
+        if (Tt.seq === 1 || G.grounded[i]) continue;          // shipped 1c + rests on soil
+        structural++;
+        let held = 0;
+        for (const j of (G.contacts[i] || [])) {
+          const S = els[j];
+          const bearing  = (S.bz < Tt.bz - EPS && S.tz >= Tt.bz - GAP);
+          const embedded = (S.bz <= Tt.bz + EPS && S.tz >= Tt.tz - EPS);
+          if ((bearing || embedded) && pl[j]) { held = 1; break; }
+        }
+        if (!held) { hanging++; hangCls[Tt.cls] = (hangCls[Tt.cls] || 0) + 1; }
+      }
+      const ph = Object.entries(byPhase).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ');
+      const cl = Object.entries(byClass).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ');
+      console.log('   §D0_OPENING ' + bld + ' h=' + String(hh).padStart(2) + ' onScreen=' + String(scr).padStart(5) +
+        '  HANGING=' + hanging + '/' + structural +
+        (hanging ? ' [' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ') + ']' : '') +
+        '  phases{' + ph + '}  top classes{' + cl + '}');
+    }
+
     // ── §D0_TOPBOUND — BLAST RADIUS OF THE ONE INCONSISTENCY, measured, not shipped ────────────
     // The shipped judge holds TWO copies of "S bears T" and they disagree on the upper bound:
     //   _contactGraph (support_sweep.js:411)   S.bz < T.bz - EPS && S.tz >= T.bz - GAP     <- no top bound
