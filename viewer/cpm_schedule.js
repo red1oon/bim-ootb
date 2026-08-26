@@ -188,9 +188,28 @@
       counts[bucket]++;
     }
 
-    // E1 — designated physical support, SS
+    // E1 — physical support. §SDAG_WIRED (bim-compiler BIMEYES_STRUCTURAL_ORACLE.md §S12/§S13):
+    // SUPPORT_SET=1 replaces the single ELECTED edge with one edge per BEARING-BELOW contact — no
+    // election, so no direction bug (§S2), no pool question (§S3), no tie-break, no des=-1.
+    // SUPPORT_FS=1 additionally makes them finish-to-start ("nothing appears before what it rests
+    // on has FINISHED"), the user's own acceptance bar. Default path is unchanged.
+    var _SET = (typeof process !== 'undefined' && process.env && process.env.SUPPORT_SET);
+    var _FSK = (typeof process !== 'undefined' && process.env && process.env.SUPPORT_FS) ? FS : SS;
     var des = designatedSupport(items, G);
-    for (i = 0; i < n; i++) if (des[i] >= 0) addEdge(des[i], i, SS, 1, 'e1');
+    if (_SET) {
+      var _EPS = SG.EPS, _GAP = SG.GAP, _se = 0;
+      for (i = 0; i < n; i++) {
+        var _T = items[i], _l = G.contacts[i] || [];
+        for (k = 0; k < _l.length; k++) {
+          var _S = items[_l[k]];
+          if (_S.bz < _T.bz - _EPS && _S.tz >= _T.bz - _GAP) { addEdge(_l[k], i, _FSK, 1, 'e1'); _se++; }
+        }
+      }
+      console.log('§SDAG_WIRED support-SET edges=' + _se + ' kind=' + (_FSK === FS ? 'FS' : 'SS') +
+        ' (replaces ' + (function(){var c=0;for(var z=0;z<n;z++)if(des[z]>=0)c++;return c;})() + ' elected E1 edges)');
+    } else {
+      for (i = 0; i < n; i++) if (des[i] >= 0) addEdge(des[i], i, SS, 1, 'e1');
+    }
 
     // E2 — host/opening pairs, FS (same element shape ScheduleGate's own pairs functions take)
     var gateEls = items.map(function (it) {
