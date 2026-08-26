@@ -91,7 +91,9 @@ console.log('── witness_gantt_edit_persist (§S70) ──');
 
 const persistFn = FNS.find(f => f.name === '_tmPersistEdit');
 assert(!!persistFn, 'W-PERS-0 _tmPersistEdit is defined in time_machine.js — without it every Gantt edit still dies on reload');
-if (!persistFn) { console.log('§GANTT_EDIT_PERSIST_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(1); }
+// Same field set as the closing summary (:257) — a §-line whose shape changes between runs is a
+// §-line nothing can grep reliably.
+if (!persistFn) { console.log('§GANTT_EDIT_PERSIST_SUMMARY pass=' + pass + ' fail=' + fail + ' inconclusive=' + inconclusive); process.exit(1); }
 
 // ── W-PERS-1: every re-time path persists.
 const CALL = 'retimeTaskElements(';
