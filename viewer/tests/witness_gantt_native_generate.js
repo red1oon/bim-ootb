@@ -41,6 +41,12 @@ const _verMatch = tmSrc.match(/var _GANTT_CACHE_VERSION = (\d+);/);
 if (!_verMatch) throw new Error('_GANTT_CACHE_VERSION not found in time_machine.js');
 const sliced = 'var _GANTT_CACHE_VERSION = ' + _verMatch[1] + ';\n' +
   'var _tmDisplayRemap = function () { return null; };\n' +
+  // §TPL_WIRED (2026-08-26): generateGanttSchedule now hands materializeZones the loaded 4D
+  // programme template. Stubbed NULL here for the same reason _tmDisplayRemap is — this
+  // witness owns the native-generate WIRING, and a null template takes materializeZones'
+  // legacy branch, which is the branch this witness has always measured. The template path's
+  // own behaviour is witnessed by witness_4d_template_instantiation.js.
+  'var _4dTemplate = null;\n' +
   sliceFn(tmSrc, '_tmBusyRecording') + '\n' +   // §S56: the §TM_BAKE_LOCK guard the verb now calls
   sliceFn(tmSrc, '_tmEditLocked') + '\n' +      // §S69: ...through the one shared refusal helper
   sliceFn(tmSrc, 'generateGanttSchedule');

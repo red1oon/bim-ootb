@@ -4123,6 +4123,9 @@
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
           });
+      // published so schedule_author_ui.js's draft path uses the SAME template object — one
+      // programme, not a second copy loaded on its own.
+      try { window._4dTemplate = _4dTemplate; } catch (e) {}
       console.log('§TPL_WIRED loaded ' + url + ' v' +
         ((_4dTemplate && _4dTemplate.meta && _4dTemplate.meta.version) || '?') +
         ' phases=' + ((_4dTemplate && _4dTemplate.phases || []).length) +

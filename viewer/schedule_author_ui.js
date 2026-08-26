@@ -281,7 +281,12 @@
       render();
       return;
     }
-    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates() }) : { ok: false, reason: 'no_materializeZones' };
+    // §TPL_WIRED (2026-08-26) — the authoring UI draws from the SAME 4D programme template as the
+    // Time Machine, so a draft and the movie can never describe two different programmes.
+    // window._4dTemplate is set by time_machine.js's _load4DTemplate(); absent -> null -> the
+    // legacy zone path, byte-identical to pre-2026-08-26.
+    var _tpl = (typeof window !== 'undefined' && window._4dTemplate) || null;
+    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates(), template: _tpl }) : { ok: false, reason: 'no_materializeZones' };
     if (!res.ok) {
       // Honest degrade — no ScheduleGate loaded, or genuinely no elements. Not invented.
       console.log('§AUTHOR_UI_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
