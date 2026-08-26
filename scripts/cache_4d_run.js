@@ -91,13 +91,23 @@ function build(bld, force) {
         // compare "storeys the model declares" against "bands the schedule invents" without a
         // tolerance constant anywhere. Absent on some shipped DBs (Duplex/Hospital have no
         // spatial_structure table at all) — absent must be REPORTED as absent, never guessed.
-        try {
-          const q = db.exec("SELECT name,center_z,size_z FROM spatial_structure WHERE type='IfcBuildingStorey'");
-          if (q.length) {
-            const c = q[0].columns, ni = c.indexOf('name'), zi = c.indexOf('center_z'), si = c.indexOf('size_z');
-            storeys = q[0].values.map(v => ({ name: v[ni], center_z: v[zi], size_z: v[si] }));
-          }
-        } catch (e) { storeys = null; }   // no table / no columns — reported, not invented
+        // Two shapes exist in the fleet and BOTH are the same fact: `elevation` (the extractor now
+        // writes it, and buildings/patches/*.sql backfills it) or `center_z` (older shipped DBs,
+        // where the storey row is a placement point with size_z 0/NULL). Try each. Getting this
+        // wrong is not cosmetic: the first draft asked only for center_z, so a DB patched with
+        // `elevation` threw and was reported as having NO declared storeys — the cache line said
+        // declaredStoreys=ABSENT on the very run where §STOREY_DATUM said mode=DECLARED
+        // declaredStoreys=4. Two log lines from one run contradicting each other.
+        for (const col of ['elevation', 'center_z']) {
+          try {
+            const q = db.exec("SELECT name," + col + " FROM spatial_structure WHERE type='IfcBuildingStorey' AND " + col + " IS NOT NULL");
+            if (q.length && q[0].values.length) {
+              storeys = q[0].values.map(v => ({ name: v[0], elevation: v[1], source: col }));
+              break;
+            }
+          } catch (e) { /* column absent — try the next shape */ }
+        }
+        if (!storeys) storeys = null;   // no table / neither column — reported, not invented
         db.close();
       } catch (e) { err = e; }
       console.log = _l; console.warn = _w;
