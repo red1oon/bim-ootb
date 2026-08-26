@@ -118,6 +118,7 @@ assert(src.indexOf('function _tmSay(') >= 0, 'W-SRT-1 _tmSay (shared #tm-gantt-t
 const SITE_RE = /console\.(?:log|warn)\('(§[A-Z0-9_]*?(?:_REJECT|_FAIL))\b/g;
 const EXCLUDED = {
   '§GANTT_SCHEDULE_STALE_REGEN_FAIL': 'load-time self-heal catch (buildTaskIndex), not a user gesture; tip may not exist yet; flow continues to a working fallback',
+  '§TPL_WIRED_FAIL': 'load-time fetch catch (_load4DTemplate), not a user gesture; the template is loaded before the drawer exists, and an absent template degrades to the legacy deriveZones path byte-identically — nothing is refused, so a tip would report a non-event',
   '§LOAD_FAIL': 'missing gantt_model.js script at load — fires on internal recompute paths (computeDays / buildGanttTasks, the latter on EVERY redraw), not on a gesture; a tip would spam and the drawer may not exist yet',
   '§GHOST_GROUND_TRIGGER_FAIL': 'DB-probe catch inside tmFirstAboveGroundMs/tmGroundSchedule — CPE bake helpers with a documented null-return contract ("treat null as never ghost"), consumed by cinema code, not a TM user gesture'
 };

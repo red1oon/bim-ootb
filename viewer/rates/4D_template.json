@@ -59,11 +59,12 @@
       "_scope": "Frame and floor plates for one level."
     },
     {
-      "id": "architecture", "name": "Architecture", "sequence": 5,
+      "id": "architecture_envelope", "name": "Architecture Envelope", "sequence": 5,
       "trades": ["CARPENTER", "CONCRETE_GANG", "MASON", "ROOFER"],
       "replicate_per_level": true,
       "scope": "level",
-      "_scope": "Envelope and internal fabric for one level: walls, doors, windows, curtain walling, roof."
+      "_scope": "The weather-tight skin for one level: walls, curtain walling, roof, windows, and the circulation structure (stairs/ramps) that is built with the frame.",
+      "_why_split": "v1.2.0 had ONE 'Architecture' phase scoped 'Envelope AND internal fabric'. Those two halves sit on OPPOSITE SIDES of MEP Rough-in — you make a level weather-tight BEFORE first fix, and you hang doors AFTER it — so no single ordering of that phase could be correct: whichever way it was placed, half of it was wrong. A phase that straddles another phase is not atomic, which is the BOM rule this file otherwise keeps (each level self-contained). Split 2026-08-26. NOTE the repo carried BOTH readings at once: templates/4D_phases.json (April) has IfcWall predecessors [IfcDuct, IfcPipe] — services first, walls close them in — while this file had envelope-before-services. The contradiction is what the split resolves."
     },
     {
       "id": "mep_rough_in", "name": "MEP Rough-in", "sequence": 7,
@@ -71,6 +72,17 @@
       "replicate_per_level": true,
       "scope": "level",
       "_scope": "First-fix services for one level, after that level is weather-tight."
+    },
+    {
+      "id": "architecture_closeup", "name": "Architecture Closeup", "sequence": 8,
+      "trades": ["CARPENTER"],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Internal fabric closed up AFTER first fix: doors, and anything hung on or into a wall once the services inside it are in.",
+      "_band": "Sequence 8 was FREE — IfcRoof vacated it in PR #1527 (§S65 #7 moved roof 8 -> 6). So the split needs no renumbering of any other phase: bands stay contiguous and non-overlapping at Substructure 1, Superstructure 2-4, Architecture Envelope 5-6, MEP Rough-in 7, Architecture Closeup 8, MEP Final 9, Finishes 10-11.",
+      "_empty_ok": true,
+      "_empty_ok_why": "A model with no doors legitimately has no closeup work. Absent must be REPORTED as absent, never silently skipped.",
+      "_open": "ONLY IfcDoor moves here. IfcWall/IfcWallStandardCase stay in the envelope and that is the KNOWN AMBIGUITY: ifc_class cannot tell an external skin wall from an internal partition, and moving all walls on a class name is the same mistake as a load-bearing class whitelist (4D_BAR_MODEL.md §18 — a structural-class regex re-admitted 438 curtain-wall glazing panels as load-bearing). An internal partition genuinely belongs in closeup; the signal to separate it must be MEASURED (perimeter/adjacency), not read off the class. Reported, not guessed."
     },
     {
       "id": "mep_final", "name": "MEP Final", "sequence": 9,
@@ -100,17 +112,20 @@
     "_empty_phase_rule": "When a phase is dropped for empty population, its within-level edge is BRIDGED (pred of the dropped phase -> succ of the dropped phase), never left dangling, and the drop is REPORTED. Verified need: HHS_Office_Federated drops Substructure, which is the head of the chain — an unbridged drop leaves Superstructure with no predecessor.",
     "within_level": [
       { "pred": "substructure",   "succ": "superstructure", "type": "FS", "lag_days": 0, "_why": "Frame bears on the foundations." },
-      { "pred": "superstructure", "succ": "architecture",   "type": "FS", "lag_days": 0, "_why": "Envelope and partitions need the frame and slab of their own level." },
-      { "pred": "architecture",   "succ": "mep_rough_in",   "type": "FS", "lag_days": 0, "_why": "First fix follows weather-tight. This is the same precedence the 2026-08-25 IfcRoof 8->6 ruling encoded at class level; stated here as programme logic rather than a sequence number." },
-      { "pred": "mep_rough_in",   "succ": "mep_final",      "type": "FS", "lag_days": 0, "_why": "Second fix follows first fix." },
+      { "pred": "superstructure", "succ": "architecture_envelope", "type": "FS", "lag_days": 0, "_why": "The envelope needs the frame and slab of its own level." },
+      { "pred": "architecture_envelope", "succ": "mep_rough_in", "type": "FS", "lag_days": 0, "_why": "First fix follows weather-tight. Same precedence the 2026-08-25 IfcRoof 8->6 ruling encoded at class level; stated here as programme logic rather than a sequence number." },
+      { "pred": "mep_rough_in",   "succ": "architecture_closeup", "type": "FS", "lag_days": 0, "_why": "Close up only once the services inside the fabric are in. This edge is the whole reason for the split — under one 'Architecture' phase it could not be expressed at all." },
+      { "pred": "architecture_closeup", "succ": "mep_final", "type": "FS", "lag_days": 0, "_why": "Second fix follows close-up." },
       { "pred": "mep_final",      "succ": "finishes",       "type": "FS", "lag_days": 0, "_why": "Finishes close up completed services." }
     ],
     "_ladder_rule": "EVERY level-scope phase chains to ITSELF on the level below (FS+0, level_offset 1). This is the project's own §4D_BAND_MONOTONIC ruling — 'a trade may not run ahead of ITSELF on the floor below' — declared here as programme logic instead of living only inside the solver's gates. v1.1.0 declared the ladder for superstructure ALONE, and MEASURED on HHS_Office_Federated (2026-08-25, probe_4d_motion.js) that is NOT crew-legal: with levels otherwise free to run in parallel, MEP Rough-in on Levels 1/2/3 overlaps and PLUMBER peaks at 3.67 crews against a cap of 2 (1.84x), HVAC_TECH at 3.48 (1.74x). With the full ladder: ZERO breaches on every trade, and the programme costs 49 days against 41 — the 8 days that buy physical legality. Different trades still overlap ACROSS floors, which is what a trade train is; only a trade overtaking itself is forbidden.",
     "across_levels": [
       { "pred": "superstructure", "succ": "superstructure", "type": "FS", "lag_days": 0, "level_offset": 1,
         "_why": "A level's frame cannot start before the level below it is framed. The one constraint that is structural as well as logistical." },
-      { "pred": "architecture",   "succ": "architecture",   "type": "FS", "lag_days": 0, "level_offset": 1,
-        "_why": "§4D_BAND_MONOTONIC: the envelope/fabric trades may not run ahead of themselves. The user's own report that produced that ruling was 'upper floors gets walled first'." },
+      { "pred": "architecture_envelope", "succ": "architecture_envelope", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC: the envelope trades may not run ahead of themselves. The user's own report that produced that ruling was 'upper floors gets walled first'." },
+      { "pred": "architecture_closeup", "succ": "architecture_closeup", "type": "FS", "lag_days": 0, "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, same CARPENTER pool as the envelope's doors were in before the split." },
       { "pred": "mep_rough_in",   "succ": "mep_rough_in",   "type": "FS", "lag_days": 0, "level_offset": 1,
         "_why": "§4D_BAND_MONOTONIC, and the measured binding case: without it PLUMBER runs 1.84x over cap across three simultaneous levels." },
       { "pred": "mep_final",      "succ": "mep_final",      "type": "FS", "lag_days": 0, "level_offset": 1,

@@ -248,21 +248,21 @@ var SEQUENCE_RULES = {
   IfcProtectiveDeviceTrippingUnit:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   IfcUnitaryControlElement:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   // Architecture
-  IfcWall:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcWallStandardCase:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcOpeningElement:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcSpace:{phase:'Architecture',sequence:5,resource:null},
-  IfcBuildingElementPart:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcDoor:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcWindow:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcStair:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcStairFlight:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcRailing:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcRamp:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
-  IfcRampFlight:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
-  IfcRoof:{phase:'Architecture',sequence:6,resource:'ROOFER'},   // §S65 defect 7 (user ruling): was 8, which sequenced the roof AFTER all MEP Rough-in (seq 7) — MEP installed before the roof existed, and it made the Architecture band [5-8] overlap MEP Rough-in [7]. Weather-tight first.
-  IfcBuildingElementProxy:{phase:'Architecture',sequence:5,resource:'MASON'},   // §S65: was resource:null -> 120s floor
-  IfcCurtainWall:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
+  IfcWall:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcWallStandardCase:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcOpeningElement:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcSpace:{phase:'Architecture Envelope',sequence:5,resource:null},
+  IfcBuildingElementPart:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcDoor:{phase:'Architecture Closeup',sequence:8,resource:'CARPENTER'},
+  IfcWindow:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcStair:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcStairFlight:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcRailing:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcRamp:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
+  IfcRampFlight:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
+  IfcRoof:{phase:'Architecture Envelope',sequence:6,resource:'ROOFER'},   // §S65 defect 7 (user ruling): was 8, which sequenced the roof AFTER all MEP Rough-in (seq 7) — MEP installed before the roof existed, and it made the Architecture band [5-8] overlap MEP Rough-in [7]. Weather-tight first.
+  IfcBuildingElementProxy:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},   // §S65: was resource:null -> 120s floor
+  IfcCurtainWall:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
   // MEP Final
   IfcLightFixture:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   IfcOutlet:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
@@ -273,7 +273,7 @@ var SEQUENCE_RULES = {
   IfcFurniture:{phase:'Finishes',sequence:11,resource:'FINISHER'},
   IfcFurnishingElement:{phase:'Finishes',sequence:11,resource:'FINISHER'},
 };
-var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:'MASON'};   // §S65: was resource:null -> every unmatched class floored at 120s
+var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON'};   // §S65: was resource:null -> every unmatched class floored at 120s
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
 // tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members
 // (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR/LTU_AHouse structural steel/timber, which must
@@ -287,7 +287,7 @@ var SEQUENCE_NAME_OVERRIDES = [
     classes: ['IfcPlate', 'IfcMember'],
     pattern: 'glaz|glass|verglas|vitrage|vidrio|curtain|mullion',
     flags: 'i',
-    phase: 'Architecture',
+    phase: 'Architecture Envelope',
     // §S65 defect 7 (2026-08-25): was 7, which tied this override with MEP Rough-in (seq 7) and kept
     // the Architecture band [5-7] overlapping it. 6 is IfcCurtainWall's OWN class rule (line ~265) —
     // these are the glazing panels and mullions OF that same curtain-wall system, so 7 was also
@@ -414,7 +414,9 @@ var DISC_COLORS = {
 };
 var PHASE_COLORS = {
   'Substructure':'#A5A5A5','Superstructure':'#4472C4','MEP Rough-in':'#70AD47',
-  'Architecture':'#ED7D31','MEP Final':'#5B9BD5','Finishes':'#FFC000',
+  'Architecture Envelope':'#ED7D31','Architecture Closeup':'#F4B183',
+  'Architecture':'#ED7D31',   // legacy key — ops/DBs written before the 2026-08-26 split still carry it
+  'MEP Final':'#5B9BD5','Finishes':'#FFC000',
   'Commissioning':'#C55A11','Unknown':'#888888',
 };
 

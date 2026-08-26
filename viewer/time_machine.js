@@ -4095,6 +4095,49 @@
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
 
+  // §TPL_WIRED (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §19/§20) — the 4D programme
+  // template, loaded ONCE and handed to every materializeZones call site in this file.
+  //
+  // WHY THIS EXISTS. viewer/rates/4D_template.json shipped 2026-08-25 (PR #1531-#1534) and
+  // schedule_author.js's instantiateTemplate() has read it since — but NO production call site
+  // ever passed `opts.template`, so the whole template path was dead code while every live
+  // schedule came from deriveZones grouping the geometry solve after the fact. Four schedule
+  // witnesses pass `template:` THEMSELVES, so the path was green and unreached at the same time
+  // (4D_BAR_MODEL.md line 693: "No witness exercises the LIVE call sites").
+  //
+  // ROUTED THROUGH loadJsonWithOverrides so a Settings edit (json_4d_template) applies, exactly
+  // as grid_drag.js does for json_grid_rules — one convention, not a second loader.
+  //
+  // NULL IS THE SAFE FALLBACK, BY CONSTRUCTION: materializeZones ignores an absent opts.template
+  // and runs the legacy zone path byte-identically, so a fetch failure degrades to today's
+  // behaviour instead of breaking generation.
+  var _4dTemplate = null, _4dTemplateTried = false;
+  async function _load4DTemplate() {
+    if (_4dTemplateTried) return _4dTemplate;
+    _4dTemplateTried = true;
+    var url = 'rates/4D_template.json';
+    try {
+      _4dTemplate = (typeof window.loadJsonWithOverrides === 'function')
+        ? await window.loadJsonWithOverrides(url, 'json_4d_template')
+        : await fetch(url).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          });
+      // published so schedule_author_ui.js's draft path uses the SAME template object — one
+      // programme, not a second copy loaded on its own.
+      try { window._4dTemplate = _4dTemplate; } catch (e) {}
+      console.log('§TPL_WIRED loaded ' + url + ' v' +
+        ((_4dTemplate && _4dTemplate.meta && _4dTemplate.meta.version) || '?') +
+        ' phases=' + ((_4dTemplate && _4dTemplate.phases || []).length) +
+        ' — the programme is AUTHORED; deriveZones no longer defines the phases');
+    } catch (e) {
+      _4dTemplate = null;
+      console.warn('§TPL_WIRED_FAIL ' + e.message +
+        ' — falling back to the legacy deriveZones path (byte-identical to pre-2026-08-26)');
+    }
+    return _4dTemplate;
+  }
+
   // §TUKEY_BOUND (4D_GANTT_TM_REFACTOR.md stage 2, 2026-08-17) — hoisted out of _tmDisplayRemap
   // (was a nested closure there) so buildGanttTasks() can share the SAME envelope math instead of
   // re-deriving its own. This is the proven, already-shipped, already-measured rule (Hospital
@@ -5286,7 +5329,7 @@
         var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
         var rres = SA.materializeZones(db, _SR, { start: '2026-01-01', laborRates: _LR, rates: _RT,
           scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: _GANTT_CACHE_VERSION,
-          displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+          displayRemap: _tmDisplayRemap, template: _4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
         if ((!rres || !rres.ok) && SA.materializeDefault) {
           rres = SA.materializeDefault(db, _SR, { start: '2026-01-01', laborRates: _LR, blank: false,
             genVersion: _GANTT_CACHE_VERSION });
@@ -6855,7 +6898,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap, template: _4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
     if (!res.ok && SA.materializeDefault) res = SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION });
     console.log('§GANTT_PREMATERIALIZE ' + (res.ok
       ? 'native schedule written BEFORE first injectGantt (zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') + ') — single-pass cold open'
@@ -6897,7 +6940,7 @@
     var todayStart = new Date().toISOString().slice(0, 10);
     var SR = window.SEQUENCE_RULES || {}, LR = window.LABOR_RATES || {}, RT = window.RATES || {};
     var _shiftHoursGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24; // §GANTT_SHIFT_HOURS_DESYNC — match injectGantt's real clock
-    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap });   // §ZONE_DISPLAY_AUTHORING
+    var res = SA.materializeZones(app.db, SR, { start: todayStart, laborRates: LR, rates: RT, scheduleGate: window.ScheduleGate, shiftHours: _shiftHoursGantt, genVersion: _GANTT_CACHE_VERSION, displayRemap: _tmDisplayRemap, template: _4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
       res = SA.materializeDefault ? SA.materializeDefault(app.db, SR, { start: todayStart, laborRates: LR, blank: false, genVersion: _GANTT_CACHE_VERSION }) : { ok: false };
@@ -8496,6 +8539,7 @@
         // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
         // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
         console.log('§S4_ACTIVATION_TIMING_MID beforeMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
+        await _load4DTemplate();   // §TPL_WIRED — before the first materialize, not after
         _materializeNativeSchedule(app);
         console.log('§S4_ACTIVATION_TIMING_MID afterMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
         if (!(await injectGantt())) {
@@ -8522,7 +8566,7 @@
       console.warn('§GANTT_CACHE_ERR ' + e.message);
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
-      if (!_ops.length) { _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
+      if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
       if (_ops.length) { _finishActivate(app, silent); resolve(true); }
       else resolve(false);
     });

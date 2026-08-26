@@ -13,7 +13,7 @@
       ],
       "pattern": "glaz|glass|verglas|vitrage|vidrio|curtain|mullion",
       "flags": "i",
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER",
       "reason": "ifc_class alone cannot separate curtain-wall glazing/framing from structural steel plates/members — a Revit curtain-wall panel is IfcPlate and its mullions are IfcMember, same classes as genuinely structural plates/members (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR's CHS/RHS steel framing, LTU_AHouse's timber beams, which must all stay at their structural seq). Name is the only extracted signal that discriminates them. Matched, measured against 8 shipped buildings: Hospital 'System Panel:Glazed' (2211/2211 IfcPlate) + 'Curtain Wall:...Framing'/'Curtain System' (7122/7127 IfcMember), Clinic 'Rectangular/Circular Mullion' (522/534 IfcMember), HHS 'Systemelement:Verglasung' (438/629 IfcPlate, German) — zero false positives on Terminal/JKR/LTU_AHouse/TermRooms. See bim-compiler prompts/RESUME_4D_TRUTH_AND_BE_HERE_WHEN.md §STAGE A A.3/A.4 and prompts/GANTT_ACCURACY.md §4D_HOST_BEFORE_HOSTED. Elements not matching this pattern keep their class-default seq (measured, never guessed) — known remaining blind spot: HHS 'Rechteckiger Pfosten' (German curtain-wall posts, 1450 IfcMember) not matched, deliberately not covered by a generic 'post' pattern (too ambiguous vs real structural posts) — reported, not silently dropped."
@@ -238,77 +238,77 @@
       "resource": "ELECTRICIAN"
     },
     "IfcWall": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcWallStandardCase": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcOpeningElement": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcSpace": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": null
     },
     "IfcBuildingElementPart": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcDoor": {
-      "phase": "Architecture",
-      "sequence": 6,
+      "phase": "Architecture Closeup",
+      "sequence": 8,
       "resource": "CARPENTER"
     },
     "IfcWindow": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStair": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcStairFlight": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRailing": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
     "IfcRamp": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRampFlight": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CONCRETE_GANG"
     },
     "IfcRoof": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "ROOFER"
     },
     "IfcBuildingElementProxy": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 5,
       "resource": "MASON"
     },
     "IfcCurtainWall": {
-      "phase": "Architecture",
+      "phase": "Architecture Envelope",
       "sequence": 6,
       "resource": "CARPENTER"
     },
@@ -349,7 +349,7 @@
     }
   },
   "SEQUENCE_DEFAULT": {
-    "phase": "Architecture",
+    "phase": "Architecture Envelope",
     "sequence": 6,
     "resource": "MASON"
   },
