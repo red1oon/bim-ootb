@@ -125,6 +125,43 @@ const quiet = fn => { const l = console.log, w = console.warn; console.log = () 
         heldH: first === Infinity ? 'never' : ((first - t0) / 3600000).toFixed(2),
         contacts: list.length, bearingAny, embeddedAny, carrierAny });
     }
+    // ── §D0_TOPBOUND — BLAST RADIUS OF THE ONE INCONSISTENCY, measured, not shipped ────────────
+    // The shipped judge holds TWO copies of "S bears T" and they disagree on the upper bound:
+    //   _contactGraph (support_sweep.js:411)   S.bz < T.bz - EPS && S.tz >= T.bz - GAP     <- no top bound
+    //   auditFloating wall pool (schedule_gate.js:1195, §S64)  ... && S.top_z <= T.base_z + GAP
+    // §S64's own comment says the wall pool needed the bound because without it "a wall carries a
+    // promoted slab AT ITS TOP, never one embedded metres below its crown" — 73 fleet-wide false
+    // verdicts. _contactGraph's clause never got it, and that is measurably admitting supports
+    // whose top is metres above the base they supposedly carry (Hospital: 11.4m). Bounding it does
+    // NOT reduce the unsupported count — it REMOVES FALSE SUPPORTS, so the count can only rise.
+    // That is the point: the current number is flattered by contacts that are not carrying anything.
+    // Reported here as a measurement. Changing _contactGraph is a construct change across the
+    // scheduler, the lock gate and the audit, and is not made from inside a probe.
+    let bearingTotal = 0, bearingOverTop = 0, boundedUnsupported = 0, boundedJudged = 0;
+    for (let i = 0; i < els.length; i++) {
+      const Tt = els[i];
+      if (!SCOPE_SEQ[Tt.seq] || Tt.seq === 1 || G.grounded[i]) continue;
+      const st = startOf(Tt.guid); if (!Number.isFinite(st)) continue;
+      boundedJudged++;
+      let firstB = Infinity;
+      for (const j of (G.contacts[i] || [])) {
+        const S = els[j];
+        const bearing  = (S.bz < Tt.bz - EPS && S.tz >= Tt.bz - GAP);
+        const embedded = (S.bz <= Tt.bz + EPS && S.tz >= Tt.tz - EPS);
+        if (bearing) {
+          bearingTotal++;
+          if (!(S.tz <= Tt.bz + GAP)) { bearingOverTop++; continue; }   // §S64 bound applied
+        } else if (!embedded) continue;
+        const ss = startOf(S.guid);
+        if (Number.isFinite(ss) && ss < firstB) firstB = ss;
+      }
+      if (firstB > st) boundedUnsupported++;
+    }
+    console.log('   §D0_TOPBOUND bearingContacts=' + bearingTotal + ' droppedByS64TopBound=' +
+      bearingOverTop + ' (' + (bearingTotal ? (100 * bearingOverTop / bearingTotal).toFixed(1) : '0') +
+      '%)  unsupportedWouldBecome=' + boundedUnsupported + '/' + boundedJudged +
+      ' — a support whose TOP is above the base it carries is not carrying it');
+
     // max concurrency by sweep-line over the interval endpoints — exact, no sampling
     const evts = [];
     spans.forEach(([a, b]) => { evts.push([a, 1]); if (b !== Infinity) evts.push([b, -1]); });
