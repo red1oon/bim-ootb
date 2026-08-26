@@ -429,7 +429,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 <div class="mockbar" id="mockbar">
   <span>⚠ Research instrument, v0.1 — the model check is live; scoring is not wired yet</span>
   <span>·</span>
-  <span id="buildstamp">build 2026-08-26T09:44Z</span>
+  <span id="buildstamp">build 2026-08-26T09:49Z</span>
 </div>
 
 <div class="shell">
@@ -1687,8 +1687,8 @@ function composePrompt() {
 'STAGE 2 — THEN GIVE THEM CURRENT, CHECKABLE CONTEXT for those weak areas, plus two locale checks:',
 '  A. Currency check — for each cited clause or circular listed below, say whether it is still',
 '     current for ' + locale + ', or name what has superseded it, with source and date.',
-'  B. Recent context — any OpenBIM-relevant policy, mandate or incentive change in ' + locale +
-'     in the last 12 months, with source and date.',
+'  B. Recent context — any OpenBIM-relevant policy, mandate or incentive change in ' + locale + ' in',
+'     the last 12 months, with source and date.',
 '',
 'RULES. These matter more than being comprehensive:',
 '  • Every figure must name a source that can be checked: an instrument, a standard, or an official',
@@ -2007,7 +2007,7 @@ document.addEventListener('keydown', function (e) {
 /* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
    Rather than expecting anyone to guess, the page checks its own build against the published one
    and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
-var BUILD_ID = '2026-08-26T09:44Z';
+var BUILD_ID = '2026-08-26T09:49Z';
 (function checkBuild() {
   try {
     fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
