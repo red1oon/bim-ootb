@@ -712,8 +712,25 @@
     // §TEMPLATE_INSTANTIATE — when a template is supplied, the TASK GRID comes from it and the
     // solve is no longer what defines the phases (see instantiateTemplate's header). The legacy
     // grouping path below is left byte-identical for every caller that passes no template.
-    if (opts.template) return _writeTemplateSchedule(db, elements, schedule, opts, SG,
-      storeyMergeMap, laborRates, schedId, start, _displayAuthored);
+    //
+    // §TPL_MODEL (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §L) — NAME WHICH OF THE
+    // TWO MODELS RAN, on BOTH branches. The 2026-08-27 user ruling makes the template path the
+    // CANONICAL model and deriveZones dead code, so this fork is no longer a graceful degrade: it
+    // is the difference between the model of record and a model nobody stands behind. It used to
+    // be SILENT, which is the exact defect class this lane keeps paying for — every downstream
+    // number was unattributable to a construct, and `witness_gantt_edit_coherence` passed 10/0
+    // while judging the legacy path (its materializeZones call passes no `template:`).
+    // PRIMAL LAW clause 4: a pass that cannot report that it took the dead branch is not a pass.
+    if (opts.template) {
+      var _tv = (opts.template.meta && opts.template.meta.version) || '?';
+      console.log('§TPL_MODEL model=template v=' + _tv +
+        ' — CANONICAL: the task grid is DECLARED by 4D_template.json');
+      return _writeTemplateSchedule(db, elements, schedule, opts, SG,
+        storeyMergeMap, laborRates, schedId, start, _displayAuthored);
+    }
+    console.warn('§TPL_MODEL model=legacy-deriveZones — ⛔ the CANONICAL template path did NOT ' +
+      'run (opts.template absent). Phases become an ENVELOPE over what the elements did, and an ' +
+      'envelope cannot constrain what drew it. Every number from this schedule is off-model.');
 
     var rolled = SG.deriveZones(elements, schedule, storeyMergeMap);
     if (!rolled.zones.length) { console.log('§AUTHOR_ZONES_FAIL reason=no_zones'); return { ok: false, reason: 'no_zones' }; }

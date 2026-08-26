@@ -22,7 +22,11 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1089';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1090';   // bump on each deploy; per-change detail is the git commit message.
+// v1090 (2026-08-27) §TPL_MODEL: rates/4D_template.json ADDED to PRECACHE_ASSETS (it defines the
+// canonical task grid and was never precached, so offline/cold-SW silently ran the dead deriveZones
+// path), plus schedule_author.js now names which model ran at the fork. Both are precached, so
+// without this bump an installed worker keeps serving the version with neither.
 // v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
 // JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
 // window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
@@ -477,6 +481,13 @@ const PRECACHE_ASSETS = [
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
   // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
   'rates/sequence_rules.json',
+  // §TPL_MODEL (2026-08-27) — the 4D programme template DEFINES the canonical task grid
+  // (schedule_author.js instantiateTemplate; user ruling 2026-08-27). It was NOT precached while
+  // sequence_rules.json above was, so on a cold SW or offline the fetch in time_machine.js
+  // _load4DTemplate() fails, _4dTemplate stays null, and materializeZones silently takes the dead
+  // deriveZones path. _4dTemplateTried makes that one-shot, so ONE failed fetch drops the
+  // canonical model for the whole session. Precached so the model of record always loads.
+  'rates/4D_template.json',
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',
