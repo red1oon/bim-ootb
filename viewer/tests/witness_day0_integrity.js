@@ -150,15 +150,30 @@ function run(bld) {
     (hanging ? 'hanging{' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : 'nothing on screen is unheld')));
 
   // ── C4 NO EARLY MEP ────────────────────────────────────────────────────────────────────────
-  const mepCur = t0 + MEP_WINDOW_D * DAY_MS;
-  let inWin = 0, mep = 0; const mepCls = {};
+  // ⚠ THIS CLAIM'S WINDOW WAS WRONG AND THE CORRECTION IS KEPT. It first gated a FIXED 3 days,
+  // which is not comparable across buildings: measured, Duplex's ENTIRE programme is 12 days
+  // (§AUTHOR_TPL totalDays=12) while Terminal's is 97 and Hospital's 318 — so "3 days" is 25% of
+  // one job and 3% of another, and Duplex failed with 175 hits that were 171 MEP Rough-in on the
+  // T/FDN level, i.e. underdrainage going in with the foundations, which is correct sequence.
+  // A claim whose threshold means something different per building measures the buildings, not the
+  // defect. The window is now DAY 0 — the same window C2 and C3 judge, and the user's actual scope.
+  // The 3-day figure is still REPORTED beside it as observability, deliberately not gating.
+  let mep = 0; const mepCls = {};
   for (let i = 0; i < els.length; i++) {
-    const st = sched[els[i].guid]; if (!st || st.s > mepCur) continue;
-    inWin++;
+    if (!placed[i]) continue;
     if (/^MEP/.test(els[i].phase || '')) { mep++; mepCls[els[i].cls] = (mepCls[els[i].cls] || 0) + 1; }
   }
-  out.push(claim('C4_NO_EARLY_MEP', bld, inWin, mep, 'window=' + MEP_WINDOW_D + 'd' +
-    (mep ? ' MEP{' + Object.entries(mepCls).map(([k, n]) => k + ':' + n).join(' ') + '}' : '')));
+  const obsCur = t0 + MEP_WINDOW_D * DAY_MS;
+  let obsIn = 0, obsMep = 0;
+  for (let i = 0; i < els.length; i++) {
+    const st = sched[els[i].guid]; if (!st || st.s > obsCur) continue;
+    obsIn++; if (/^MEP/.test(els[i].phase || '')) obsMep++;
+  }
+  const spanD = (Math.max.apply(null, Object.keys(sched).map(g => sched[g].e)) - t0) / DAY_MS;
+  out.push(claim('C4_NO_EARLY_MEP', bld, onScreen, mep, 'window=DAY 0' +
+    (mep ? ' MEP{' + Object.entries(mepCls).map(([k, n]) => k + ':' + n).join(' ') + '}' : '') +
+    '  [observed, not gated: ' + obsMep + '/' + obsIn + ' MEP within ' + MEP_WINDOW_D +
+    'd of a ' + spanD.toFixed(0) + 'd programme]'));
   return out;
 }
 

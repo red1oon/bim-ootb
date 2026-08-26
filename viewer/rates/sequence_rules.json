@@ -54,6 +54,31 @@
       "sequence": 11,
       "resource": "FINISHER",
       "reason": "§FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes Substructure→Superstructure→Architecture a STRICT serial backbone, so furniture-like content exported under a generic catch-all class (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would gate real structural phase completion on a chair or desk. Genuinely-tagged furniture (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — untouched. MEASURED before writing (furniture_measure.log 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' substring-matched 'adjustable' in a shower-head name; 'cabinet' matched a fire-extinguisher cabinet already correctly in MEP Final/Tier 2) — hence word boundaries + this class gate. Scoped run: ZERO live hits across all 5 shipped buildings — proactive safeguard (the pile-misclassification precedent proves this bug class is real on real-world IFCs), not a live-defect fix. Known deliberate non-target: Terminal 'Floor:Table Top:904745' (IfcSlab 3.96×22.43m ×150mm built-in counter) stays Superstructure — IfcSlab is an unambiguous class with two measured overrides already, and as a seq<=4 support-pool member reclassifying it would perturb locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a reported (not gated) case."
+    },
+    {
+      "id": "foundation_wall_substructure",
+      "_why": "2026-08-27 §W_D0 C2. A wall NAMED Foundation is substructure; IfcWall* otherwise resolves to Architecture Envelope seq 5 and lands on DAY 0 five phases ahead of itself. MEASURED under the class gate: Duplex 7, Hospital 28, HHS 0, Terminal 0. The class gate is load-bearing: Terminal's 20 IfcBeam matching /foundation/ and 25 IfcFooting already at seq 1 are correctly untouched.",
+      "classes": [
+        "IfcWall",
+        "IfcWallStandardCase"
+      ],
+      "pattern": "\\bfoundation\\b",
+      "flags": "i",
+      "phase": "Substructure",
+      "sequence": 1,
+      "resource": "CONCRETE_GANG"
+    },
+    {
+      "id": "finish_floor_finishes",
+      "_why": "2026-08-27 §W_D0 C2. A slab NAMED Finish Floor is a finish, not structure; IfcSlab otherwise resolves to Superstructure seq 4 and was scheduled on DAY 0 on top of a slab still being poured. MEASURED under the class gate: Duplex 14 (Wood x8, Ceramic Tile x6), nothing elsewhere.",
+      "classes": [
+        "IfcSlab"
+      ],
+      "pattern": "\\bfinish(ed)?[ _-]?floor\\b",
+      "flags": "i",
+      "phase": "Finishes",
+      "sequence": 11,
+      "resource": "FINISHER"
     }
   ],
   "SEQUENCE_RULES": {
@@ -433,7 +458,9 @@
         "IfcPile": 4,
         "IfcReinforcingBar": 50,
         "IfcRamp": 3,
-        "IfcRampFlight": 3
+        "IfcRampFlight": 3,
+        "IfcWall": 12,
+        "IfcWallStandardCase": 12
       }
     },
     "MASON": {
@@ -485,7 +512,8 @@
         "IfcFurniture": 8,
         "IfcFurnishingElement": 8,
         "IfcBuildingElementPart": 15,
-        "IfcBuildingElementProxy": 15
+        "IfcBuildingElementProxy": 15,
+        "IfcSlab": 35
       }
     },
     "LABORER": {
