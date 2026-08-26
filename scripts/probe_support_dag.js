@@ -133,7 +133,42 @@ for(const NAME of (process.env.ONLY||'Duplex,HHS_Office_Federated,Terminal').spl
    }
  }
  let unreached=0; for(let i=0;i<n;i++) if(!isFinite(gloS[i])){ gloS[i]=barLo[barOf(i)]; unreached++; }
- const B=judge(baseS),D=judge(dagS),C=judge(gloS);
+ // ── VARIANT E: the same global pass, WITH CREW CAPS. List-scheduling over the support set. ──
+ // A crew of the element's trade must be free. maxCrews from LABOR_RATES, same source the shipped
+ // solver uses. Ready(i) = max(bar floor, finish of the EARLIEST support that has been placed).
+ const crewS=new Float64Array(n).fill(Infinity);
+ {
+   const CAP=t=>Math.max(1,(R.LABOR_RATES[t]&&(R.LABOR_RATES[t].max_crews_fixed!=null?R.LABOR_RATES[t].max_crews_fixed:R.LABOR_RATES[t].max_crews))||1);
+   const slots={};                                   // trade -> array of next-free times
+   const ready=new Float64Array(n).fill(Infinity);
+   const placedN=new Uint8Array(n);
+   const remaining=[];
+   for(let i=0;i<n;i++){
+     if(items[i].bz<=groundZ+GAP || !sup[i].length) ready[i]=barLo[barOf(i)];
+     remaining.push(i);
+   }
+   let done=0,guard2=0;
+   while(done<n && guard2++ < n+5){
+     // take every element whose ready is finite, earliest first
+     const avail=remaining.filter(i=>!placedN[i]&&isFinite(ready[i]));
+     if(!avail.length){ for(const i of remaining) if(!placedN[i]&&!isFinite(ready[i])) ready[i]=barLo[barOf(i)]; continue; }
+     avail.sort((a,b)=>ready[a]-ready[b]);
+     for(const i of avail){
+       if(placedN[i]) continue;
+       const tr=items[i].resource||'_DEFAULT', cap=CAP(tr);
+       const arr=slots[tr]||(slots[tr]=new Float64Array(cap).fill(-Infinity));
+       let bi=0; for(let k=1;k<arr.length;k++) if(arr[k]<arr[bi]) bi=k;
+       const st=Math.max(ready[i],arr[bi]===-Infinity?ready[i]:arr[bi]);
+       crewS[i]=st; arr[bi]=st+dur[i]; placedN[i]=1; done++;
+       for(const v of dependents[i]){
+         const cand=Math.max(barLo[barOf(v)],st+dur[i]);
+         if(cand<ready[v]) ready[v]=cand;
+       }
+     }
+   }
+   for(let i=0;i<n;i++) if(!isFinite(crewS[i])) crewS[i]=barLo[barOf(i)];
+ }
+ const B=judge(baseS),D=judge(dagS),C=judge(gloS),E=judge(crewS);
  const pct=(a,b)=>b?((100*a/b).toFixed(1)+'%'):'-';
  console.log(`§SDAG_CYCLES bars=${Object.keys(bars).length} cyclicBars=${cyclicBars} nodesInCycles=${cyclicNodes} maxLayerDepth=${maxLayer}`);
  console.log(`§SDAG_BASE  floating=${B.floating} (intra=${B.floatIntra} cross=${B.floatCross}) noSupportAnywhere=${B.noSup} onGround=${B.grounded}`);
@@ -142,7 +177,9 @@ for(const NAME of (process.env.ONLY||'Duplex,HHS_Office_Federated,Terminal').spl
  const mk=S=>{let lo=Infinity,hi=-Infinity;for(let i=0;i<n;i++){if(S[i]<lo)lo=S[i];const e=S[i]+dur[i];if(e>hi)hi=e;}return (hi-lo)/DAY;};
  let outWin=0,lateDays=0;
  for(let i=0;i<n;i++){const w=win[barOf(i)];if(gloS[i]+dur[i]>w.hi+1){outWin++;lateDays=Math.max(lateDays,(gloS[i]+dur[i]-w.hi)/DAY);}}
- console.log(`§SDAG_COST makespanDays base=${mk(baseS).toFixed(1)} globalDAG=${mk(gloS).toFixed(1)} | outsideOwnBarWindow=${outWin}/${n} (${(100*outWin/n).toFixed(1)}%) worstOverrunDays=${lateDays.toFixed(1)}`);
+ let outWinE=0; for(let i=0;i<n;i++){const w=win[barOf(i)];if(crewS[i]+dur[i]>w.hi+1)outWinE++;}
+ console.log(`§SDAG_COST makespanDays base=${mk(baseS).toFixed(1)} globalDAG=${mk(gloS).toFixed(1)} globalDAG+CREWS=${mk(crewS).toFixed(1)} | outsideOwnBar base-n/a global=${outWin} crews=${outWinE} worstOverrunDays=${lateDays.toFixed(1)}`);
+ console.log(`§SDAG_CREW floating=${E.floating} (intra=${E.floatIntra} cross=${E.floatCross}) — the global DAG WITH crew caps`);
  console.log(`§SDAG_GLOBAL floating=${C.floating} (intra=${C.floatIntra} cross=${C.floatCross}) unreachedFromGround=${unreached}`);
  console.log(`§SDAG_DELTA base=${B.floating} perBarDAG=${D.floating} GLOBAL_DAG=${C.floating}  | intra ${B.floatIntra}/${D.floatIntra}/${C.floatIntra}  cross ${B.floatCross}/${D.floatCross}/${C.floatCross}`);
 }
