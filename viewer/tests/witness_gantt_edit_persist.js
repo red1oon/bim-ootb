@@ -19,13 +19,30 @@
 //   W-PERS-2  exemption — buildTaskIndex's stale-schedule REGEN does NOT, on purpose: it runs on a
 //                         plain page load, and persisting there would turn every ordinary visit to a
 //                         252MB building into a 252MB IDB write. A regen is reproducible; an edit is not.
-//   W-PERS-3  behaviour — _tmPersistEdit hands persistDb APP.db under APP.DB_URL and nothing else,
-//                         and refuses when the url is missing or the cache is disabled. Passing the
-//                         WRONG db under that key is not hypothetical: it cost a P0 in kernel_ops.js
-//                         (§KRN_PERSIST_GUARD, 2026-06-12).
+//   W-PERS-3  behaviour — _tmPersistEdit hands persistDb APP.db under APP._dbPersistUrl (falling
+//                         back to APP.DB_URL only for a pre-§S78 build that never set it) and
+//                         nothing else, and refuses when the url is missing or the cache is
+//                         disabled. Passing the WRONG db under that key is not hypothetical: it
+//                         cost a P0 in kernel_ops.js (§KRN_PERSIST_GUARD, 2026-06-12).
+//
+//   ⚠ SPLIT-MODE BLIND SPOT, CLOSED 2026-08-27 (§S5b). W-PERS-3 shipped with PR #1479 (§S70), when
+//   _tmPersistEdit really did pass APP.DB_URL and nothing else. PR #1494 (§S78) then changed it to
+//   `app._dbPersistUrl || app.DB_URL` — and never touched this file. Every W-PERS-3 fixture was a
+//   hand-rolled { db, DB_URL } with NO _dbPersistUrl, so the `_dbPersistUrl ||` half of that
+//   expression was never once evaluated: deleting it outright left this witness fully GREEN, on
+//   all 14 checks. That is exactly the §S76 bug (a split-mode building's A.db is loaded from
+//   metaUrl, so persisting under A.DB_URL writes a slot the reload never reads — the edit survives
+//   the write and is silently unreachable). W-PERS-3f/3g/3h below make the split-mode routing
+//   load-bearing; W-PERS-3f FAILS on the pre-§S78 line. See PRIMAL LAW #4 "scope-blind".
 //
 //   The round trip itself (drag → reload → new date still there) is proven live by the headless
-//   probe recorded in §S70, not here: it needs a browser, an IndexedDB and a real building load.
+//   probe recorded in §S70/§S78, NOT here: it needs a browser, an IndexedDB and a real building
+//   load. This witness deliberately does not re-implement it — one verification, one owner:
+//     node scripts/probe_splitmode_persist_direct.js Duplex     (whole-db)
+//     node scripts/probe_splitmode_persist_direct.js Hospital   (split-mode)
+//   That probe drives a real data-level edit → persist → fresh-browser reload → read-back, and
+//   owns claim D6 (the round trip). What THIS witness owns is the routing decision the probe can
+//   only observe on the one building it was pointed at: which url _tmPersistEdit chooses.
 //
 // ⚠ Brace-matched, never a fixed slice window (the G-COH-6 false-negative class, §S65).
 //
@@ -35,8 +52,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, inconclusive = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
+// PRIMAL LAW #4: a witness must be able to say its population was empty. Here that is not a
+// building count — it is "the split-mode url shape could not be EXTRACTED from streaming.js", in
+// which case W-PERS-3f/3g would be judging a url I invented rather than the one the loader builds.
+// Inventing it would make them pass forever; skipping silently would make them vacuous. So: say so.
+function inconc(msg) { inconclusive++; console.log('  INCONCLUSIVE ' + msg); }
 
 const TM = path.join(__dirname, '..', 'time_machine.js');
 const src = fs.readFileSync(TM, 'utf8');
@@ -117,13 +139,65 @@ function drive(app) {
   sandbox.__p('probe');
   return { got, logs };
 }
+// ── The split-mode fixture is EXTRACTED, not invented (PRIME RULE).
+// streaming.js derives the meta url from A.DB_URL and assigns it to A._dbPersistUrl at the exact
+// point A.db is loaded from it (§TM_SPLITMODE_PERSIST_KEY, streaming.js :2199/:2202/:2316). Typing
+// "buildings/Hospital_meta.db" here by hand would pin this witness to a url shape the loader is
+// free to stop producing — the fixture would keep passing while the real derivation drifted. So
+// the two derivation statements are lifted VERBATIM out of the shipped source and run.
+const ST_SRC = fs.readFileSync(path.join(__dirname, '..', 'streaming.js'), 'utf8');
+const DERIV = ST_SRC.split('\n').filter(l => /metaUrl\s*=\s*A\.DB_URL\.replace\(/.test(l)).map(l => l.trim());
+function metaUrlFor(dbUrl) {
+  if (!DERIV.length) return null;
+  const s = {};
+  vm.createContext(s);
+  try {
+    vm.runInContext('var A = { DB_URL: ' + JSON.stringify(dbUrl) + ' };\n' + DERIV.join('\n') + '\nthis.__m = metaUrl;', s);
+  } catch (e) { return null; }
+  return s.__m;
+}
+// Duplex is the measured whole-db building, Hospital the measured split-mode one — both confirmed
+// by probe_splitmode_persist_direct.js's own §S78_STATE line, not assumed here.
+const WHOLE_DB_URL = 'buildings/Duplex_extracted.db';
+const SPLIT_DB_URL = 'buildings/Hospital_extracted.db';
+const SPLIT_PERSIST_URL = metaUrlFor(SPLIT_DB_URL);
+console.log('§GANTT_EDIT_PERSIST_SPLIT_FIXTURE derivStmts=' + DERIV.length +
+  ' DB_URL=' + SPLIT_DB_URL + ' _dbPersistUrl=' + SPLIT_PERSIST_URL);
+
 const realDb = { marker: 'APP.db' };
-const ok = drive({ db: realDb, DB_URL: 'buildings/Hospital_extracted.db' });
+// Whole-db mode: streaming.js :2485 sets A._dbPersistUrl = A.DB_URL EXPLICITLY on this branch
+// (not "leaves it unset"), so the fixture sets it too — that is the real shipped shape.
+const ok = drive({ db: realDb, DB_URL: WHOLE_DB_URL, _dbPersistUrl: WHOLE_DB_URL });
 assert(ok.got.length === 1, 'W-PERS-3a a normal edit reaches persistDb exactly once (n=' + ok.got.length + ')');
 assert(ok.got.length === 1 && ok.got[0].db === realDb,
   'W-PERS-3b it passes APP.db ITSELF, not another db — writing a foreign db under the building key is the §KRN_PERSIST_GUARD P0');
-assert(ok.got.length === 1 && ok.got[0].url === 'buildings/Hospital_extracted.db',
-  'W-PERS-3c it hands persistDb APP.DB_URL — the url persistDb canonicalises into the slot cachedFetch reads (W-PERS-5)');
+assert(ok.got.length === 1 && ok.got[0].url === WHOLE_DB_URL,
+  'W-PERS-3c whole-db mode: it hands persistDb APP._dbPersistUrl, which streaming.js set to APP.DB_URL — the url persistDb canonicalises into the slot cachedFetch reads (W-PERS-5)');
+
+// ── W-PERS-3f/3g/3h — SPLIT MODE. THE GAP §S5b NAMED. ─────────────────────────────────────────
+// A split-mode building's A.db holds _meta.db's bytes, so persisting under A.DB_URL
+// (_extracted.db) writes a slot the reload path's cachedFetch(metaUrl) never reads. That is not a
+// hypothetical: it shipped, was measured on Hospital/Clinic (§S76) and was fixed in §S78. Until
+// today no fixture here set _dbPersistUrl at all, so the fix was untested by its own witness.
+if (!DERIV.length || !SPLIT_PERSIST_URL || SPLIT_PERSIST_URL === SPLIT_DB_URL) {
+  inconc('W-PERS-3f/3g split-mode routing NOT JUDGED — could not extract streaming.js\'s metaUrl ' +
+    'derivation (derivStmts=' + DERIV.length + ' derived=' + SPLIT_PERSIST_URL + '). The population ' +
+    'is empty, so a PASS here would mean nothing; treat split-mode persist as UNPROVEN and repair ' +
+    'the extractor against streaming.js §TM_SPLITMODE_PERSIST_KEY.');
+} else {
+  const split = drive({ db: realDb, DB_URL: SPLIT_DB_URL, _dbPersistUrl: SPLIT_PERSIST_URL });
+  assert(split.got.length === 1 && split.got[0].url === SPLIT_PERSIST_URL,
+    'W-PERS-3f SPLIT MODE: persistDb gets APP._dbPersistUrl (' + SPLIT_PERSIST_URL + '), NOT APP.DB_URL (' +
+    SPLIT_DB_URL + ') — got ' + (split.got.length ? split.got[0].url : 'NOTHING') +
+    '. This is the §S76 bug: persisting under DB_URL writes a slot the reload never reads, so the edit vanishes.');
+  assert(split.got.length === 1 && split.got[0].db === realDb,
+    'W-PERS-3g SPLIT MODE: still APP.db itself under that url — a right slot with the wrong db is the same P0 as 3b');
+}
+// The `||` fallback is real code and must keep working: a profile still running a pre-§S78 build
+// never set _dbPersistUrl, and MUST NOT lose its persist entirely.
+const legacy = drive({ db: realDb, DB_URL: SPLIT_DB_URL });
+assert(legacy.got.length === 1 && legacy.got[0].url === SPLIT_DB_URL,
+  'W-PERS-3h legacy build with no _dbPersistUrl still persists under DB_URL — the `||` fallback is a real branch, not dead code');
 
 const noUrl = drive({ db: realDb });
 assert(noUrl.got.length === 0 && noUrl.logs.some(l => l.indexOf('reason=no_db_url') >= 0),
@@ -166,6 +240,24 @@ assert(disagree.length === 0, 'W-PERS-5d persistDb\'s key derivation agrees with
 assert(SAmod._cacheKeyFor('/buildings/Duplex_extracted.db') !== '/buildings/Duplex_extracted.db',
   'W-PERS-5e RED CONTROL: the canonical key really does differ from the raw url for a normal viewer url — otherwise this whole fix would be a no-op and W-PERS-5d would pass trivially');
 
-console.log('§GANTT_EDIT_PERSIST_SUMMARY pass=' + pass + ' fail=' + fail);
+// W-PERS-5f — RED CONTROL for W-PERS-3f. 3f only means something if _dbPersistUrl and DB_URL land
+// in DIFFERENT IDB slots; if they canonicalised to the same key, picking the wrong one would be
+// harmless and 3f would be theatre. Measured by the probe on the real fleet (§S78_KEYS, Hospital:
+// write=buildings/Hospital_meta.db vs readKeyWhole=buildings/Hospital_extracted.db).
+if (SPLIT_PERSIST_URL && SPLIT_PERSIST_URL !== SPLIT_DB_URL) {
+  const kSplit = SAmod._cacheKeyFor(SPLIT_PERSIST_URL), kWhole = SAmod._cacheKeyFor(SPLIT_DB_URL);
+  console.log('§GANTT_EDIT_PERSIST_SPLIT_KEYS persist=' + kSplit + ' dbUrl=' + kWhole);
+  assert(kSplit !== kWhole,
+    'W-PERS-5f RED CONTROL: the split-mode persist url and DB_URL canonicalise to DIFFERENT cache keys (' +
+    kSplit + ' vs ' + kWhole + ') — so choosing the wrong one in W-PERS-3f really does write a slot nothing reads');
+} else {
+  inconc('W-PERS-5f split-mode key divergence NOT JUDGED — no extracted split url to compare (see W-PERS-3f)');
+}
+
+console.log('§GANTT_EDIT_PERSIST_SUMMARY pass=' + pass + ' fail=' + fail + ' inconclusive=' + inconclusive);
 if (fail) { console.error('FAIL — ' + fail + ' check(s) failed'); process.exit(1); }
-console.log('PASS — every Gantt edit path persists, the cold path does not');
+if (inconclusive) {
+  console.error('INCONCLUSIVE — ' + inconclusive + ' check(s) judged an EMPTY population; this is not a PASS');
+  process.exit(2);
+}
+console.log('PASS — every Gantt edit path persists (split-mode included), the cold path does not');
