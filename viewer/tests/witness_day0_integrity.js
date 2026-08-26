@@ -113,10 +113,18 @@ function run(bld) {
     if (!placed[i]) continue;
     const ph = els[i].phase || '_UNPHASED';
     phaseHist[ph] = (phaseHist[ph] || 0) + 1;
-    // Pure opening = Substructure. Where the building models NO Substructure at all, the lowest
-    // Superstructure band is the legitimate opening (HHS models zero foundations — 4D_template.json
-    // says so explicitly and "_empty_ok": absent must be reported, never silently skipped).
-    const ok = modelsSub ? (els[i].seq === 1) : (els[i].seq <= 4);
+    // Pure opening = the Substructure PHASE. Where the building models no Substructure at all, the
+    // lowest Superstructure band is the legitimate opening (HHS models zero foundations —
+    // 4D_template.json says so explicitly via "_empty_ok"; absent is reported, never skipped).
+    //
+    // ⚠ TEST THE PHASE, NOT seq. First draft tested `seq === 1` and called 65 Terminal elements
+    // intruders on a line that printed `phases{Substructure:301}` — the verdict contradicting its
+    // own evidence, which is the tell. §GROUNDWORK_SLAB reclassifies slab-on-grade by geometry and
+    // "mutates phase in place; seq/resource unchanged" (schedule_author.js), so a genuinely
+    // ground-bearing slab is phase Substructure at seq 4. The user's question was about the phase
+    // ("only substructure if exist gets buildup"), and the phase is what the log prints.
+    const ph_i = els[i].phase || '';
+    const ok = modelsSub ? (ph_i === 'Substructure') : (els[i].seq <= 4);
     if (!ok) { impure++; impureCls[els[i].cls] = (impureCls[els[i].cls] || 0) + 1; }
   }
   out.push(claim('C2_DAY0_PURITY', bld, onScreen, impure,

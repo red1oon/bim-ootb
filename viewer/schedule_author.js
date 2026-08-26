@@ -328,6 +328,68 @@
       "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
     if (!r.length || !r[0].values.length) return [];
 
+    // ══ §STOREY_DATUM (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3) ═════════════
+    // A LEVEL IS A DATUM: its floor up to the next level's floor (§C). Bands must be disjoint BY
+    // CONSTRUCTION, and a floor's elevation is a fact the IFC declares — it is not a property of
+    // where its members happen to sit.
+    //
+    // WHAT THIS REPLACES, and why it was wrong (all measured 2026-08-27, not argued):
+    // the previous rule assigned every storey-less element to the NEAREST storey by the MEDIAN
+    // center-Z OF THAT STOREY'S ELEMENTS. Three defects in one line:
+    //   1. median-Z-of-ELEMENTS is the exact inference §PATHS NOT TO TAKE #7 forbids, and which
+    //      deriveStoreyMergeMap's own header cites as forbidden — it was running here anyway;
+    //   2. nearest-neighbour with NO upper bound: an element 20m from every named storey still
+    //      got one;
+    //   3. the candidate pool was every DISTINCT LABEL, so in a federated model with three naming
+    //      systems (Terminal: Malay "Aras *", English "0N ... FLOOR LEVEL", and "Ceiling Level *"
+    //      reference planes) an element could be assigned to a label from a file it has nothing to
+    //      do with.
+    // Terminal is 69.9% storey-less (33,848/48,428), so this ran on most of the building. Result:
+    // the IFC declares 6 storeys, the schedule ran on 22 bands, and "06 ROOF LEVEL" — a label only
+    // 10 elements actually carry — collected 10,950. That is the root of the DAY-0 defects
+    // §W_D0/C1-C4 report (16 ceiling fans scheduled into HOUR 0).
+    //
+    // THE RULE NOW: read the storeys the model DECLARES (spatial_structure IfcBuildingStorey),
+    // sort by datum, and band i = [datum_i, datum_i+1). Assign by the element's OWN BASE (the
+    // floor it sits on), not its centre — a tall element belongs to the floor it stands on.
+    // Disjoint by construction, no tolerance constant, no nearest-neighbour, no label pool.
+    // The LABEL becomes advisory: in a federated model the labels disagree with each other, so
+    // geometry against a declared datum is the only thing all disciplines share.
+    //
+    // `elevation` is the IFC's own IfcBuildingStorey.Elevation — bim-compiler tools/extract.py now
+    // writes it (§STOREY_DATUM there too; it never did before, which is why deriveStoreyMergeMap
+    // has never once run). Shipped DBs predate that, so `center_z` is accepted as the same datum:
+    // MEASURED on every shipped DB carrying the table, storey rows have size_z NULL/0 — the row IS
+    // a placement point, so center_z IS the elevation. Not a proxy, the same number by another name.
+    //
+    // ⛔ NO DECLARED STOREYS ⇒ NOTHING CHANGES. Duplex and Hospital ship with no spatial_structure
+    // table at all; they keep the old inference byte-identically, and the §-line says so out loud
+    // rather than implying a datum that does not exist.
+    var _declared = [];
+    try {
+      var _dq = null;
+      try { _dq = db.exec("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL"); }
+      catch (e0) { _dq = null; }
+      if (!_dq || !_dq.length) {
+        try { _dq = db.exec("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL"); }
+        catch (e1) { _dq = null; }
+      }
+      if (_dq && _dq.length) {
+        _dq[0].values.forEach(function (v) {
+          var nm = v[0], z = Number(v[1]);
+          if (nm != null && isFinite(z)) _declared.push({ name: String(nm), z: z });
+        });
+      }
+    } catch (e) { _declared = []; }
+    // Two storeys at the same datum are one floor under two names — keep the first, deterministically.
+    _declared.sort(function (a, b) { return a.z - b.z || (a.name < b.name ? -1 : 1); });
+    var _bands = [];
+    for (var _di = 0; _di < _declared.length; _di++) {
+      if (_bands.length && Math.abs(_declared[_di].z - _bands[_bands.length - 1].z) < 1e-6) continue;
+      _bands.push(_declared[_di]);
+    }
+    var _datumMode = _bands.length >= 2;
+
     var storeyZs = {};
     r[0].values.forEach(function (row) {
       var storey = row[3], cz = row[6];
@@ -339,21 +401,32 @@
       var zs = storeyZs[s].slice().sort(function (a, b) { return a - b; });
       storeyMedianZ[s] = zs[Math.floor(zs.length / 2)];
     });
+    // datum band containing `bz`; everything below the lowest datum belongs to the lowest band
+    // (foundations sit under the ground floor — they are that floor's groundworks, not a new level).
+    function _bandOf(bz) {
+      var k = 0;
+      for (var i = 0; i < _bands.length; i++) if (bz >= _bands[i].z - 1e-9) k = i;
+      return _bands[k].name;
+    }
     function assignStoreyByZ(storey, cz) {
-      if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
-      if (!storeyNames.length) return storey;
-      var best = storeyNames[0], bd = Infinity;
-      for (var i = 0; i < storeyNames.length; i++) {
-        var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
-        if (d < bd) { bd = d; best = storeyNames[i]; }
+      if (!_datumMode) {                       // no declared datum — old behavior, byte-identical
+        if (storey !== '_UNKNOWN' && !/^unknown$/i.test(storey)) return storey;
+        if (!storeyNames.length) return storey;
+        var best = storeyNames[0], bd = Infinity;
+        for (var i = 0; i < storeyNames.length; i++) {
+          var d = Math.abs(cz - storeyMedianZ[storeyNames[i]]);
+          if (d < bd) { bd = d; best = storeyNames[i]; }
+        }
+        return best;
       }
-      return best;
+      return null;                             // datum mode resolves per-element, below (needs base_z)
     }
 
     var _bseList = r[0].values.map(function (row) {
       var guid = row[0], cls = row[1], name = row[2], rawStorey = row[3];
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
-      var storey = assignStoreyByZ(rawStorey, cz);
+      // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
+      var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
       var ov = matchNameOverride(cls, name, nameOverrides);
       var rule = ov || matchRule(cls, rules, dflt);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
@@ -374,10 +447,31 @@
         // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
         // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
         // that day-0 zone window is what spread walls from day 1 in the live movie.
+        _rawStorey: rawStorey,          // §STOREY_DATUM self-check only (see the §-line below)
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     }).filter(function (e) { return !e.noGeo; });
     _reclassGroundworkSlabs(_bseList, 'schedule_author');
+    // §STOREY_DATUM — SAY WHICH PATH RAN AND WHAT IT COST. A pass that cannot report a no-op is
+    // not a pass (CLAUDE.md PRIMAL LAW clause 4): `relabelled` counts elements whose level differs
+    // from the label they arrived with, so 0 in datum mode means the declared datums changed
+    // nothing and the claim is empty.
+    // _bseList is FILTERED (noGeo dropped), so it does not index-align with the raw query rows —
+    // the label each element arrived with is carried on the element itself instead. (First draft
+    // indexed the raw rows and would have miscounted by exactly the noGeo population.)
+    var _rl = 0, _lv = {};
+    for (var _bi = 0; _bi < _bseList.length; _bi++) {
+      var _e = _bseList[_bi], _raw = _e._rawStorey;
+      _lv[_e.storey] = (_lv[_e.storey] || 0) + 1;
+      if (_raw != null && _raw !== '_UNKNOWN' && !/^unknown$/i.test(_raw) && _raw !== _e.storey) _rl++;
+      delete _e._rawStorey;
+    }
+    console.log('§STOREY_DATUM mode=' + (_datumMode ? 'DECLARED' : 'INFERRED') +
+      ' declaredStoreys=' + _bands.length + ' labelsInDB=' + storeyNames.length +
+      ' bandsUsed=' + Object.keys(_lv).length + ' relabelled=' + _rl + '/' + _bseList.length +
+      (_datumMode
+        ? ' — a level is [datum_i, datum_i+1) and the element sits in the band containing its BASE'
+        : ' — NO declared storey datum in this DB (no spatial_structure): nearest-median-Z INFERENCE, unchanged. Bands here are not a datum.'));
     return _bseList;
   }
 
