@@ -429,7 +429,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 <div class="mockbar" id="mockbar">
   <span>⚠ Research instrument, v0.1 — the model check is live; scoring is not wired yet</span>
   <span>·</span>
-  <span id="buildstamp">build 2026-08-26T02:17Z</span>
+  <span id="buildstamp">build 2026-08-26T09:44Z</span>
 </div>
 
 <div class="shell">
@@ -1630,7 +1630,7 @@ document.addEventListener('click', function (e) {
         readiness profile, and never enters the submitted payload.
    ============================================================ */
 
-var PROMPT_VERSION = 'bridge-v1';
+var PROMPT_VERSION = 'bridge-v2';
 
 /* Answer state. Seeded from the mockup's canned values, then updated for real as the
    respondent answers, so the composed prompt reflects what they actually said. */
@@ -1663,13 +1663,20 @@ function ctxValue(id, fallback) {
 }
 
 function composePrompt() {
-  var picks = weakest(3).map(function (id) {
-    var r = itemById(id);
-    return '    ' + id + '  (level ' + STATE.answers[id] + ' of 5)  ' + r.dim.name +
-           ' — ' + r.item.q.replace(/&mdash;/g, '—').replace(/&rsquo;/g, "'");
+  var weak = weakest(3).map(function (id) { return { id: id, r: itemById(id) }; });
+  var picks = weak.map(function (w) {
+    return '    ' + w.id + '  (level ' + STATE.answers[w.id] + ' of 5)  ' + w.r.dim.name +
+           ' — ' + w.r.item.q.replace(/&mdash;/g, '—').replace(/&rsquo;/g, "'");
+  }).join('\n');
+  var locale = ctxValue('c1', 'United Arab Emirates');
+  /* Only the weak items that already carry a checkable clause/circular citation (item.cl) are
+     asked about — this reuses real per-item citation data already in DIMENSIONS, it does not
+     invent a country-to-regulation lookup that does not exist in the instrument. */
+  var cited = weak.filter(function (w) { return w.r.item.cl; }).map(function (w) {
+    return '    ' + w.id + '  ' + w.r.item.cl;
   }).join('\n');
 
-  return [
+  var lines = [
 'You are helping a construction practitioner prepare to adopt OpenBIM. Work in two stages.',
 '',
 'STAGE 1 — INTERVIEW THEM FIRST.',
@@ -1677,7 +1684,11 @@ function composePrompt() {
 'already tried, what is blocking them, and what their next project looks like. Wait for each answer',
 'before asking the next. Do not skip this stage and do not ask all five at once.',
 '',
-'STAGE 2 — THEN GIVE THEM CURRENT, CHECKABLE CONTEXT for those weak areas.',
+'STAGE 2 — THEN GIVE THEM CURRENT, CHECKABLE CONTEXT for those weak areas, plus two locale checks:',
+'  A. Currency check — for each cited clause or circular listed below, say whether it is still',
+'     current for ' + locale + ', or name what has superseded it, with source and date.',
+'  B. Recent context — any OpenBIM-relevant policy, mandate or incentive change in ' + locale +
+'     in the last 12 months, with source and date.',
 '',
 'RULES. These matter more than being comprehensive:',
 '  • Every figure must name a source that can be checked: an instrument, a standard, or an official',
@@ -1688,12 +1699,18 @@ function composePrompt() {
 '  • Do not repeat their assessment back to them. They already have it.',
 '',
 'THEIR CONTEXT — from the assessment. No identifying information is included.',
-'    locale       ' + ctxValue('c1', 'United Arab Emirates'),
+'    locale       ' + locale,
 '    firm type    ' + ctxValue('c4', 'Engineering (structural / MEP)'),
 '    toolkit      v0.1',
 '    prompt       ' + PROMPT_VERSION,
 '    weakest areas',
-picks,
+picks
+  ];
+  if (cited) {
+    lines.push('    cited clauses to check for currency (task A)');
+    lines.push(cited);
+  }
+  lines = lines.concat([
 '',
 'FINISH by outputting exactly one fenced json block and nothing after it:',
 '',
@@ -1703,9 +1720,12 @@ picks,
 ']}',
 '```',
 '',
-'One object per finding. Leave a field as "unknown" rather than filling it with a guess.',
-'A finding with no source or no date will be discarded when it is pasted back, so do not include one.'
-  ].join('\n');
+'One object per finding — this covers weak-area figures, task A currency checks and task B recent',
+'context alike, all in the same shape. Leave a field as "unknown" rather than filling it with a',
+'guess. A finding with no source or no date will be discarded when it is pasted back, so do not',
+'include one.'
+  ]);
+  return lines.join('\n');
 }
 
 /* Strict on purpose. A row without a checkable source and a date is the failure mode this
@@ -1987,7 +2007,7 @@ document.addEventListener('keydown', function (e) {
 /* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
    Rather than expecting anyone to guess, the page checks its own build against the published one
    and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
-var BUILD_ID = '2026-08-26T02:17Z';
+var BUILD_ID = '2026-08-26T09:44Z';
 (function checkBuild() {
   try {
     fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
