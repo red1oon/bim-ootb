@@ -66,7 +66,7 @@ function measure(label, els, pairs, sched, taskOf) {
     if (!supportsOf.has(ti)) supportsOf.set(ti, []);
     supportsOf.get(ti).push(si);
   }
-  let floating = 0, intra = 0, cross = 0, gated = 0;
+  let floating = 0, intra = 0, cross = 0, gated = 0, hungFromAbove = 0;
   for (const [ti, sup] of supportsOf) {
     const t = sched[els[ti].guid]; if (!t) continue;
     gated++;
@@ -85,6 +85,17 @@ function measure(label, els, pairs, sched, taskOf) {
       if (SAMPLES.length < 400 && earliest)
         SAMPLES.push({ st: a, tt: b });
     }
+    // HEADROOM — is EVERY support of this element strictly ABOVE it? Then it is not resting on
+    // anything on its own level: it hangs from the floor above, and no ordering WITHIN its level
+    // can ever hold it. Its work belongs to the level that carries it. Counting this separately
+    // says how much of the residue one addressing rule would close.
+    let allAbove = true, anySup = false;
+    for (const si of sup) {
+      const sc = sched[els[si].guid]; if (!sc) continue;
+      anySup = true;
+      if (els[si].bz <= els[ti].bz) { allAbove = false; break; }
+    }
+    if (anySup && allAbove) hungFromAbove++;
   }
 
   const hist = new Map();
@@ -92,7 +103,7 @@ function measure(label, els, pairs, sched, taskOf) {
   let maxPile = 0, over20 = 0;
   for (const v of hist.values()) { if (v > maxPile) maxPile = v; if (v >= 20) over20++; }
   const starts = [...hist.values()].reduce((a, b) => a + b, 0);
-  return { label, floating, intra, cross, gated, pairs: pairs.length, maxPile, over20,
+  return { label, floating, intra, cross, gated, hungFromAbove, pairs: pairs.length, maxPile, over20,
            placed: starts, distinctInstants: hist.size };
 }
 
@@ -146,6 +157,9 @@ function measure(label, els, pairs, sched, taskOf) {
     console.log('§HELLS ' + bld + ' n=' + els.length + ' supportPairs=' + L.pairs);
     console.log('   HELL A floating   legacy=' + L.floating + '/' + L.gated +
       '  template=' + P.floating + '/' + P.gated + ' (elements with >=1 bearing candidate)');
+    console.log('      HEADROOM: of ' + P.floating + ' floating, ' + P.hungFromAbove +
+      ' hang ENTIRELY from above (carrier on a higher level — no within-level order can hold them); ' +
+      (P.floating - P.hungFromAbove) + ' rest on something on their own level');
     console.log('      template split: INTRA-task=' + P.intra + ' (fixable only by ordering inside a task)' +
       '  CROSS-task=' + P.cross + ' (a phase/level ordering defect or a data defect)');
     console.log('   HELL B maxPile    legacy=' + L.maxPile + '  template=' + P.maxPile +
