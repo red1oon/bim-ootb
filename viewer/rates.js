@@ -226,6 +226,7 @@ var SEQUENCE_RULES = {
   IfcPipeFitting:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcCableCarrier:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},
   IfcCableCarrierSegment:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},
+  IfcCableCarrierFitting:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},   // §DEFAULT_IS_LAST: was falling to the catch-all
   IfcFlowSegment:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcFlowFitting:{phase:'MEP Rough-in',sequence:7,resource:'PLUMBER'},
   IfcFlowController:{phase:'MEP Rough-in',sequence:7,resource:'ELECTRICIAN'},
@@ -273,6 +274,21 @@ var SEQUENCE_RULES = {
   IfcFurniture:{phase:'Finishes',sequence:11,resource:'FINISHER'},
   IfcFurnishingElement:{phase:'Finishes',sequence:11,resource:'FINISHER'},
 };
+// §DEFAULT_IS_LAST — ⛔ INVESTIGATED 2026-08-26, NOT CHANGED, and the reason is the finding.
+// The catch-all sits in the MIDDLE of the programme (Architecture Envelope, sequence 6), so an
+// unclassified element can be scheduled BEFORE things it depends on. MEASURED across 5 buildings /
+// 246k elements: only 0-0.1% reach this rule, but what reached it was MEP — IfcCableCarrierFitting
+// x66 on Hospital (now mapped properly above), IfcFlowInstrumentType, IfcSensorType — landing at
+// sequence 6, ahead of MEP Rough-in. A default in the middle is a default that can invert.
+// MOVING IT TO THE LAST BUCKET WAS TRIED AND REVERTED: Finishes/LABORER makes
+// witness_sequence_template_lock go red on `no-zero-minute-rows`, because LABORER carries NO
+// productivity table and NO default_productivity, so _installSecs falls to its silent 120s floor —
+// the §TPL_ZERO_MINUTE defect §S65 removed. FINISHER is no better (default_productivity undefined,
+// and its 5 class keys cannot match an unknown class by definition).
+// THE GAP, STATED: no trade in LABOR_RATES can both sit in the terminal band AND price unknown
+// work. Closing it needs a measured productivity for the catch-all trade — a real number from real
+// data, not one typed here. Until then the default stays mid-programme and this comment is the
+// standing record of what that costs. See bim-compiler prompts/4D_MODEL_INTEGRITY.md §D.
 var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON'};   // §S65: was resource:null -> every unmatched class floored at 120s
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
 // tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members

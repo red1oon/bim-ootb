@@ -346,6 +346,11 @@
       "phase": "Finishes",
       "sequence": 11,
       "resource": "FINISHER"
+    },
+    "IfcCableCarrierFitting": {
+      "phase": "MEP Rough-in",
+      "sequence": 7,
+      "resource": "ELECTRICIAN"
     }
   },
   "SEQUENCE_DEFAULT": {
