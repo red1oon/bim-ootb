@@ -80,41 +80,56 @@ function calibration(K, data) {
   return { n, ok, pct: n ? 100 * ok / n : 0 };
 }
 
-// ── SIGNAL 2: within a level, do the types go up in the specified order? ────────────────────────
-// Per (building, level) the MEDIAN start of each type must be non-decreasing along TYPE_ORDER.
-// Median, not min: one stray element must not decide a whole trade's position (the same reason
-// every other derivation in this project medians rather than takes extremes).
-function typeOrderViolations(K, d) {
-  const byLevel = {};
-  for (const e of d.els) {
-    const st = d.sched[e.guid]; if (!st) continue;
-    const t = typeOf(e, K); if (RANK[t] == null) continue;
-    const L = byLevel[e.storey] || (byLevel[e.storey] = {});
-    (L[t] = L[t] || []).push(st.s);
-  }
-  let inversions = 0, levelsJudged = 0, pairs = 0;
-  const worst = [];
-  for (const lv in byLevel) {
-    const med = {};
-    for (const t in byLevel[lv]) {
-      const a = byLevel[lv][t].sort((x, y) => x - y);
-      med[t] = a[Math.floor(a.length / 2)];
+// ── SIGNAL 2: THE ORDER, MEASURED PHYSICALLY — NOT AS MEDIANS PER TYPE ──────────────────────────
+// ⛔ RETRACTION, kept here because the number reached the user. The first version of this signal
+// compared, per level, the MEDIAN start of each type bucket and reported "Hospital Level 1: column
+// before slab by 506.3h" and ~80 fleet inversions. THAT NUMBER WAS WRONG AND THE DEFECT DOES NOT
+// EXIST. Two faults, both mine:
+//   1. the buckets were filled by the bbox rule for every class not in TRUTH, so Hospital's 33,324
+//      IfcPlate (metal deck) and its IfcCovering ceilings landed in "slab" — the metric was timing
+//      ceilings and calling them slabs;
+//   2. a median over a whole type bucket is a proxy for the physical question, and §E's standing
+//      rule is that a proxy will be wrong on some building. It was wrong on all four.
+// CHECKED DIRECTLY: Hospital Level 1 carries 3 IfcSlab (median start 293.3h) against 254 IfcColumn
+// (median 300.3h) — correctly ordered, no inversion. And across the fleet, of 718 IfcColumn that
+// rest on a real IfcSlab/IfcFooting in the shipped contact graph, ZERO start before that support
+// finishes: Duplex 0/0, HHS 0/221, Hospital 0/378, Terminal 0/119.
+//
+// So the claim is now the PHYSICAL one, per element, off the shipped judge: whatever bears me must
+// finish before I start. That IS the user's "types must go up in order" — a column stands on the
+// slab because the slab bears it; the type sequence is an expression of the support relation, not a
+// separate fact to check. No medians, no buckets, no threshold.
+// The bbox type is still swept, but only where it can change an ANSWER: for elements whose class is
+// NOT unambiguous, does calling them slab/column/wall alter which pairs are judged?
+function orderViolations(K, d) {
+  const G = SS.contactGraph(d.els);
+  const EPS = SG.EPS, GAP = SG.GAP;
+  // ⛔ ANY-OF, NOT ALL-OF. §E's table row 4, already paid for once by this lane ("an element needs
+  // ONE support, not all — 1961 -> 95"), and the first version of this function made the mistake
+  // again: it counted every bearing PAIR as a constraint and reported 92,397 violations over
+  // 412,677 pairs. An element is only unheld when NOTHING that bears it is finished.
+  let judged = 0, bad = 0, byPair = {};
+  for (let i = 0; i < d.els.length; i++) {
+    const T = d.els[i], st = d.sched[T.guid];
+    if (!st) continue;
+    let anySup = 0, held = 0, earliest = null;
+    for (const j of (G.contacts[i] || [])) {
+      const S = d.els[j], ss = d.sched[S.guid];
+      if (!ss) continue;
+      if (!(S.bz < T.bz - EPS && S.tz >= T.bz - GAP)) continue;   // S actually bears T
+      anySup++;
+      if (st.s >= ss.e - 1) { held = 1; break; }
+      if (!earliest || ss.e < earliest.e) earliest = { S: S, e: ss.e };
     }
-    const present = TYPE_ORDER.filter(t => med[t] != null);
-    if (present.length < 2) continue;
-    levelsJudged++;
-    for (let i = 0; i < present.length - 1; i++) {
-      for (let j = i + 1; j < present.length; j++) {
-        pairs++;
-        if (med[present[j]] < med[present[i]]) {
-          inversions++;
-          worst.push(lv + ': ' + present[j] + ' before ' + present[i] +
-            ' by ' + ((med[present[i]] - med[present[j]]) / 3600000).toFixed(1) + 'h');
-        }
-      }
+    if (!anySup) continue;                       // nothing bears it: not this claim's question
+    judged++;
+    if (!held) {
+      bad++;
+      const k = typeOf(earliest.S, K) + ' -> ' + typeOf(T, K);
+      byPair[k] = (byPair[k] || 0) + 1;
     }
   }
-  return { inversions, levelsJudged, pairs, worst };
+  return { judged, bad, byPair };
 }
 
 (function main() {
@@ -123,16 +138,16 @@ function typeOrderViolations(K, d) {
   const names = Object.keys(data);
   if (!names.length) { console.log('§KNOB_ABORT no cached runs — run scripts/cache_4d_run.js first'); process.exit(2); }
 
-  console.log('§KNOB_SWEEP dial=K (bbox anisotropy)  buildings=' + names.join(','));
-  console.log('   K     calib%   ' + names.map(n => n.slice(0, 10).padStart(11)).join('') + '     total');
+  console.log('§KNOB_SWEEP dial=K (bbox anisotropy)  signal=BEARING ORDER (support must finish first)');
+  console.log('   K     calib%   ' + names.map(n => n.slice(0, 10).padStart(13)).join('') + '     total');
   const rows = [];
   for (let K = 1.1; K <= 6.001; K = Math.round((K + 0.1) * 10) / 10) {
     const cal = calibration(K, data);
-    const per = {}; let tot = 0, lv = 0;
-    for (const b of names) { const v = typeOrderViolations(K, data[b]); per[b] = v; tot += v.inversions; lv += v.levelsJudged; }
-    rows.push({ K, cal, per, tot, lv });
+    const per = {}; let tot = 0;
+    for (const b of names) { const v = orderViolations(K, data[b]); per[b] = v; tot += v.bad; }
+    rows.push({ K, cal, per, tot });
     console.log('  ' + K.toFixed(1) + '   ' + cal.pct.toFixed(1).padStart(5) + '%   ' +
-      names.map(n => (per[n].inversions + '/' + per[n].pairs).padStart(11)).join('') +
+      names.map(n => (per[n].bad + '/' + per[n].judged).padStart(13)).join('') +
       '   ' + String(tot).padStart(5));
   }
   // A PLATEAU is the thing worth having: the widest run of K where the fleet total does not change.
@@ -160,12 +175,13 @@ function typeOrderViolations(K, d) {
       'classes does NOT make the type order come out, so the ordering defect is REAL and not an artefact of the dial'));
   const K0 = bestCal.K;
   console.log('');
-  console.log('§KNOB_DETAIL at K=' + K0.toFixed(1) + ' — worst type-order inversions per building:');
+  console.log('§KNOB_DETAIL at K=' + K0.toFixed(1) + ' — bearing-order violations by type pair:');
   for (const b of names) {
-    const v = typeOrderViolations(K0, data[b]);
-    console.log('   ' + b.padEnd(22) + 'inversions=' + String(v.inversions).padStart(4) + '/' + v.pairs +
-      ' over ' + v.levelsJudged + ' levels' + (v.levelsJudged === 0 ? '   INCONCLUSIVE (no level carries two of the named types)' : ''));
-    v.worst.slice(0, 4).forEach(w => console.log('        ' + w));
+    const v = orderViolations(K0, data[b]);
+    console.log('   ' + b.padEnd(22) + 'violations=' + String(v.bad).padStart(5) + '/' + v.judged +
+      ' bearing pairs' + (v.judged === 0 ? '   INCONCLUSIVE (no bearing pair judged)' : ''));
+    Object.entries(v.byPair).sort((a, b2) => b2[1] - a[1]).slice(0, 5)
+      .forEach(([k, n]) => console.log('        ' + String(n).padStart(5) + '  ' + k));
   }
   console.log('');
   console.log('§KNOB_NOT_SWEPT these dials change the SCHEDULE and need a pipeline re-run per setting,');
