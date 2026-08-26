@@ -1309,9 +1309,47 @@
   // Measured on Duplex (§S26.2): support = anything below gives 4,706 bearing relations and 761
   // physics-vs-phase contradictions; support = load-bearing classes gives 702 and 1. The 760
   // difference is the engine insisting a pipe must be installed before the wall above it.
+  // §S26.3 WALL_BEARS_WALL (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §16/§18 —
+  // instrument: scripts/probe_floating_guid_audit.js, TRACE=<guid>).
+  // MEASURED DEFECT, one GUID: Duplex 2O2Fr$t4X7Zf8NOew3FNhv, an IfcWallStandardCase seq=5 at
+  // z[-0.20,2.90] standing on a basement wall at z[-1.25,0.00]. The wall below is seq=5, so it was
+  // not in this pool at all; the nearest pool member was an IfcSlab 2.99m OVERHEAD, and the pool
+  // override at support_sweep.js/cpm_schedule.js designatedSupport() replaced the correct
+  // bearing-below election with it. The wall was scheduled as HANGING FROM ITS OWN CEILING, started
+  // 3 hours before either wall it stands on, and `midair` reported 0 the whole time — because the
+  // judge asks only whether the DESIGNATED support is late, and the designation was the defect.
+  //
+  // ADDITIVE ONLY — nothing that was in this pool leaves it. Measured, `supportPool` unchanged
+  // elsewhere (probe_floating_guid_audit.js, origin/main @ 44f42dd):
+  //   designated bearing supports   Duplex 348 -> 789    HHS 3332 -> 3761
+  //   des = -1 (uncountable by _midairAudit)  Duplex 28 -> 27   HHS 63 -> 57
+  //   phase contradictions          Duplex 16 -> 31      HHS  974 -> 1181   ⚠ see below
+  //
+  // ⚠ THE CONTRADICTION RISE IS DISCLOSED, NOT HIDDEN. §S26.2's own justifying figure ("Duplex 761
+  // physics-vs-phase contradictions vs 1") does NOT reproduce from shipped code under any reading
+  // tried (4D_BAR_MODEL.md §17.1) — its 4,706/716 bearing-pair figures reproduce EXACTLY, the
+  // contradiction pair does not. So this rise cannot be scored against §S26.2's baseline until that
+  // is resolved. It is recorded here rather than left to be rediscovered.
+  //
+  // WHY WALLS AND NOT "STRUCTURAL CLASSES" (the rejected alternative — §18.2, a retraction):
+  // a `/^Ifc(Wall|Column|Beam|Slab|Plate|Member|...)/` pool was measured first and is WRONG. It
+  // re-admits 438 HHS IfcPlate whose element_name is `Systemelement:Verglasung:…` — curtain-wall
+  // GLAZING — as load-bearing supports, undoing §4D_FACADE_ORDER (rates.js
+  // SEQUENCE_NAME_OVERRIDES.glazed_curtainwall_facade), which exists precisely because "ifc_class
+  // alone cannot tell curtain-wall glazing from genuinely structural plates". `e.seq <= 4` is that
+  // classifier's OUTPUT, not a bare phase number: HHS IfcPlate splits 191 @ seq=4 (Superstructure)
+  // vs 438 @ seq=6 (Architecture), exactly the 191/438 glazing split in the DB. Walls carry no such
+  // shipped exclusion — no rule in this repo says an architectural wall cannot bear load — so this
+  // adds the one class the measured defect names, and no more.
+  //
+  // NOT AN EXTRACTION, AND SAID SO: no shipped building DB carries a LoadBearing property
+  // (`elements_meta` = guid, ifc_class, element_name, storey, discipline, material_name,
+  // material_rgba, building; `material_name` is a colour placeholder, e.g. "≈ Grey"). Every support
+  // pool here is a PROXY. This one's derivation is the paragraph above; that is the whole standard.
   function supportPool(e) {
     return e.seq <= 4 ||                                   // PASS-A structure
            (e.cls === 'IfcSlab' && e.seq > 4) ||           // §DEQ_V1 promoted roof slab
+           (e.cls && e.cls.indexOf('IfcWall') === 0) ||    // §S26.3 a wall can bear a wall
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
