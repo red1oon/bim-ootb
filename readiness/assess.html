@@ -139,8 +139,15 @@ h3{font-size:15.5px;font-weight:600}
   background:var(--accent);color:#fff;border:1px solid var(--accent);
   border-radius:7px;padding:11px 20px;font-size:15px;font-weight:600;cursor:pointer
 }
-:root[data-theme="dark"] .btn,:root:not([data-theme="light"]) .btn{color:#0f1816}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .btn{color:#fff}}
+/* :not(.sec) added 2026-08-26 (real bug, confirmed via getComputedStyle, not eyeballed): these two
+   rules were meant to govern ONLY the primary .btn's white-on-accent-teal text across themes. Their
+   selector specificity (0-3-0) beat .btn.sec{color:var(--ink-2)} (0-2-0), so secondary/outline
+   buttons silently inherited this color too — measured contrast ratio against the page background
+   was 1.08:1 in light mode and 1.00:1 in dark mode (both catastrophically below WCAG AA's 4.5:1;
+   dark mode was WORSE, not just light — near-black text on a near-black background). .btn.sec's own
+   color:var(--ink-2) was already correct per-theme; it just never won the specificity fight. */
+:root[data-theme="dark"] .btn:not(.sec),:root:not([data-theme="light"]) .btn:not(.sec){color:#0f1816}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .btn:not(.sec){color:#fff}}
 .btn:hover{filter:brightness(1.08)}
 .btn:disabled{opacity:.42;cursor:not-allowed;filter:none}
 .btn.sec{background:transparent;color:var(--ink-2);border-color:var(--rule)}
@@ -422,7 +429,7 @@ details.tvwrap summary{cursor:pointer;font-size:13.5px;color:var(--accent-ink);f
 <div class="mockbar" id="mockbar">
   <span>⚠ Research instrument, v0.1 — the model check is live; scoring is not wired yet</span>
   <span>·</span>
-  <span id="buildstamp">build 2026-08-25T13:42Z</span>
+  <span id="buildstamp">build 2026-08-26T02:17Z</span>
 </div>
 
 <div class="shell">
@@ -1980,7 +1987,7 @@ document.addEventListener('keydown', function (e) {
 /* A tab left open serves whatever it loaded, and GH Pages caches for 10 minutes on top of that.
    Rather than expecting anyone to guess, the page checks its own build against the published one
    and says plainly when it is out of date. Cache-busted so the check itself is never stale. */
-var BUILD_ID = '2026-08-25T13:42Z';
+var BUILD_ID = '2026-08-26T02:17Z';
 (function checkBuild() {
   try {
     fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
