@@ -881,7 +881,15 @@
   // This is the same seam §ZONE_DISPLAY_AUTHORING used, run the other way: that authored windows
   // FROM the display timeline; this authors the display timeline FROM the windows. Only one of the
   // two can be the source, and after §S68 it is the template.
-  function remapSolveToTasks(solve, tasks, startISO) {
+  // §TPL_LAYER_ORDER (2026-08-26) — inside a task, lay elements out in SUPPORT ORDER, not in the
+  // order the geometry solve happened to place them. Measured cause: at DAY 0 the Superstructure
+  // task spread its members by solve time, so a beam could be laid before the column carrying it —
+  // Duplex 4 unsupported at HR 3, Terminal 61. The task WINDOW is already priced by duration_rule;
+  // what was missing was order WITHIN it. layerOf[guid] is the topological layer of the bearing
+  // relation, computed once from the SHIPPED contact graph (never re-derived — 4D_BAR_MODEL.md
+  // §10.1 rule 1). Layer 0 is everything resting on ground or on nothing; layer n rests on layer
+  // n-1. Ties break on guid so the result is deterministic.
+  function remapSolveToTasks(solve, tasks, startISO, layerOf) {
     var base = Date.parse(startISO || '2026-01-01');
     var out = {}, degenerate = 0, mapped = 0;
     for (var i = 0; i < tasks.length; i++) {
@@ -896,27 +904,54 @@
       }
       if (!have) continue;
       var span = hi - lo;
-      if (span <= 0) {
-        // Degenerate: everything solved at one instant. Spread evenly, in a deterministic order,
-        // so the bar shows work progressing instead of one silent stack at its left edge.
-        degenerate++;
-        var ordered = t.guids.filter(function (x) { return solve[x]; }).slice().sort();
-        var step = (wE - wS) / Math.max(1, ordered.length);
-        for (var k = 0; k < ordered.length; k++) {
-          out[ordered[k]] = { start: Math.round(wS + k * step), end: Math.round(wS + (k + 1) * step) };
+      // ONE RULE for every task, degenerate or not (§TPL_LAYER_ORDER). The old code had two: an
+      // even spread when the solve collapsed to an instant, and an affine replay of solve times
+      // otherwise. The affine branch is what carried solve-order — and therefore support-order
+      // violations — into the window. Support order is the only order a task's contents have.
+      // Bucket the task's own members by support layer, then give each layer a CONTIGUOUS,
+      // NON-OVERLAPPING band of the window sized by its member count. Inside a band the solve's
+      // relative order is preserved (affine, as before) — the crew-leveling the solve did is real
+      // and is kept. What changes is that layer n+1 cannot begin before layer n's band ends, so a
+      // beam can never precede the column carrying it. Replacing the solve outright was tried and
+      // measured WORSE (Hospital 0 -> 2 unsupported at DAY 0 HR 3): the even spread discarded the
+      // crew-leveling. Clamp, do not replace.
+      var mine = t.guids.filter(function (x) { return solve[x]; });
+      if (span <= 0) degenerate++;
+      var byLayer = {}, layers = [];
+      for (var k = 0; k < mine.length; k++) {
+        var lk = (layerOf && layerOf[mine[k]] != null) ? layerOf[mine[k]] : 0;
+        if (!byLayer[lk]) { byLayer[lk] = []; layers.push(lk); }
+        byLayer[lk].push(mine[k]);
+      }
+      layers.sort(function (a, b) { return a - b; });
+      var cursor = wS, total = mine.length;
+      for (var li = 0; li < layers.length; li++) {
+        var grp = byLayer[layers[li]];
+        var bandW = (wE - wS) * (grp.length / Math.max(1, total));
+        var bS = cursor, bE = (li === layers.length - 1) ? wE : Math.min(wE, cursor + bandW);
+        if (bE <= bS) bE = bS + 1;
+        var glo = Infinity, ghi = -Infinity;
+        for (var q2 = 0; q2 < grp.length; q2++) {
+          var stq = solve[grp[q2]];
+          if (stq.start < glo) glo = stq.start;
+          if (stq.end > ghi) ghi = stq.end;
+        }
+        var gspan = ghi - glo, gscale = gspan > 0 ? (bE - bS) / gspan : 0;
+        var gstep = (bE - bS) / Math.max(1, grp.length);
+        for (var q3 = 0; q3 < grp.length; q3++) {
+          var gg = grp[q3], sq = solve[gg], ns2, ne2;
+          if (gspan > 0) {
+            ns2 = Math.round(bS + (sq.start - glo) * gscale);
+            ne2 = Math.round(bS + (sq.end - glo) * gscale);
+          } else {                                  // degenerate layer: deterministic even spread
+            ns2 = Math.round(bS + q3 * gstep); ne2 = Math.round(bS + (q3 + 1) * gstep);
+          }
+          if (ne2 <= ns2) ne2 = ns2 + 1;            // never a zero-width element
+          if (ne2 > bE) ne2 = Math.round(bE);
+          out[gg] = { start: ns2, end: ne2 };
           mapped++;
         }
-        continue;
-      }
-      var scale = (wE - wS) / span;
-      for (var m = 0; m < t.guids.length; m++) {
-        g = t.guids[m]; st = solve[g]; if (!st) continue;
-        var ns = Math.round(wS + (st.start - lo) * scale);
-        var ne = Math.round(wS + (st.end - lo) * scale);
-        if (ne <= ns) ne = ns + 1;                 // never a zero-width element
-        if (ne > wE) ne = wE;
-        out[g] = { start: ns, end: ne };
-        mapped++;
+        cursor = bE;
       }
     }
     return { schedule: out, mapped: mapped, degenerateTasks: degenerate };
@@ -1002,7 +1037,105 @@
       ' — every lag is the TEMPLATE\'s, none derived from the dates it constrains');
     // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task
     // objects, so the two can never be computed off different grids.
-    var _rm = remapSolveToTasks(schedule, inst.tasks, start);
+    // §TPL_LAYER_ORDER — topological layers of the SHIPPED contact graph's bearing relation.
+    // Kahn over "who rests on whom": an element is in layer 0 when nothing it rests on is still
+    // unplaced. Cycles (a data defect) fall out in one block and are laid out after everything
+    // acyclic, never looped on.
+    var _layerOf = (function () {
+      try {
+        // This module's IIFE parameter is named `global` and is `self||this` — in node that is
+        // NOT globalThis, so a bare `global.SupportSweep` MISSES a module that registered itself
+        // properly. Exactly the trap _writeBarSchedule's _reg() and _reclassGroundworkSlabs both
+        // already document; check all three. (I hit it: the layer block returned null silently and
+        // the whole pass was a no-op, with identical numbers hiding it.)
+        var SSw = (global && global.SupportSweep) ||
+                  (typeof globalThis !== 'undefined' && globalThis.SupportSweep) ||
+                  (typeof window !== 'undefined' && window.SupportSweep) || null;
+        if (!SSw || !SSw.contactGraph) { console.log('§TPL_LAYER_ORDER_FAIL SupportSweep not loaded — task interiors stay in solve order'); return null; }
+        var items = elements.map(function (e) {
+          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
+                   bz: e.base_z, tz: e.top_z };
+        });
+        var Gc = SSw.contactGraph(items);
+        if (!Gc.ok) return null;
+        var EPSl = SG.EPS, GAPl = SG.GAP;
+        var below = new Array(items.length);
+        for (var i2 = 0; i2 < items.length; i2++) {
+          var lst = Gc.contacts[i2], b2 = [];
+          if (lst) for (var q = 0; q < lst.length; q++) {
+            var S2 = items[lst[q]], T2 = items[i2];
+            if (S2.bz < T2.bz - EPSl && S2.tz >= T2.bz - GAPl && S2.tz <= T2.bz + GAPl) b2.push(lst[q]);
+          }
+          below[i2] = b2;
+        }
+        // No artificial layer cap. A real cycle is caught by the no-progress break below; a
+        // fixed 64 silently dumped 1322 Hospital elements into one 'cyclic' bucket and cost
+        // 968 inversions that read as a cycle problem when it was my own constant.
+        var lay = new Int32Array(items.length).fill(-1), left = items.length, cur = 0;
+        while (left > 0) {
+          var progressed = false;
+          for (var i3 = 0; i3 < items.length; i3++) {
+            if (lay[i3] >= 0) continue;
+            var ready = true;
+            for (var r = 0; r < below[i3].length; r++) if (lay[below[i3][r]] < 0) { ready = false; break; }
+            if (ready) { lay[i3] = cur; left--; progressed = true; }
+          }
+          if (!progressed) break;                  // cycle: everything remaining shares one layer
+          cur++;
+        }
+        var map = {}, unresolved = 0;
+        for (var i4 = 0; i4 < items.length; i4++) {
+          map[items[i4].guid] = lay[i4] >= 0 ? lay[i4] : cur;
+          if (lay[i4] < 0) unresolved++;
+        }
+        console.log('§TPL_LAYER_ORDER layers=' + cur + ' cyclic=' + unresolved +
+          ' — elements are laid out inside their task in SUPPORT order, not solve order');
+        return map;
+      } catch (e) { console.log('§TPL_LAYER_ORDER_FAIL ' + e.message); return null; }
+    })();
+    var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf);
+    // §TPL_LAYER_SELFCHECK — A PASS MUST PROVE IT DID SOMETHING AND THAT IT WORKED.
+    // Written because the layer pass above shipped BROKEN and silent: it returned null on a
+    // shadowed `global`, changed nothing, and emitted numbers IDENTICAL to the previous run. A
+    // no-op is indistinguishable from a working pass unless the pass counts its own effect.
+    //   applied     = did the layer map exist at all. 0 => the pass did not run.
+    //   moved       = elements whose interval differs from the solve-order layout. 0 => no-op.
+    //   stillInverted = bearing pairs INSIDE one task where the supported element still starts
+    //                   before its support ends. This is the thing the pass exists to remove; it
+    //                   must be 0, and if it is not the pass is not doing its job.
+    try {
+      var _no = remapSolveToTasks(schedule, inst.tasks, start, null).schedule;
+      var _mv = 0;
+      for (var _g in _rm.schedule) if (!_no[_g] || _no[_g].start !== _rm.schedule[_g].start) _mv++;
+      var _taskOf = {};
+      inst.tasks.forEach(function (tk) { tk.guids.forEach(function (g) { _taskOf[g] = tk.id || tk.taskId || tk.name; }); });
+      var _inv = 0, _byG = {};
+      elements.forEach(function (e) { _byG[e.guid] = e; });
+      var _SSc = (global && global.SupportSweep) ||
+                 (typeof globalThis !== 'undefined' && globalThis.SupportSweep) || null;
+      if (_SSc && _SSc.contactGraph) {
+        var _it = elements.map(function (e) {
+          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
+                   bz: e.base_z, tz: e.top_z };
+        });
+        var _Gc = _SSc.contactGraph(_it);
+        if (_Gc.ok) for (var _i = 0; _i < _it.length; _i++) {
+          var _l2 = _Gc.contacts[_i]; if (!_l2) continue;
+          var _T = _it[_i], _ts = _rm.schedule[_T.guid]; if (!_ts) continue;
+          for (var _q = 0; _q < _l2.length; _q++) {
+            var _S = _it[_l2[_q]], _ss = _rm.schedule[_S.guid]; if (!_ss) continue;
+            if (_taskOf[_S.guid] !== _taskOf[_T.guid]) continue;          // same task only
+            if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP && _S.tz <= _T.bz + SG.GAP)) continue;
+            if (_ts.start < _ss.end - 1) _inv++;
+          }
+        }
+      }
+      console.log('§TPL_LAYER_SELFCHECK applied=' + (_layerOf ? 1 : 0) + ' moved=' + _mv + '/' + _rm.mapped +
+        ' stillInverted=' + _inv + ' ' +
+        (!_layerOf ? 'FAIL pass did not run'
+         : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
+         : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
+    } catch (e) { console.log('§TPL_LAYER_SELFCHECK_ERROR ' + e.message); }
     console.log('§TPL_MOVIE_BINDS_BARS remapped=' + _rm.mapped + '/' + elements.length +
       ' degenerateTasksSpreadEvenly=' + _rm.degenerateTasks +
       ' — every element now plays inside the bar that claims it');
