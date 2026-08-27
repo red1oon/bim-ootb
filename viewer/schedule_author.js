@@ -483,11 +483,14 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0;
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, phaseLatestTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
       T.phases.forEach(function (p) {
+        // The within_level edge naming THIS phase as successor — computed once per phase, reused
+        // below both for the prevOnLevel chain and for the building-scope floor.
+        var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
         // _edge_scope_rule: a building-scope phase instantiates ONCE, on the lowest level. But its
         // ELEMENTS must all come with it — an element of a building-scope phase that happens to sit
         // on an upper storey belongs to that single task, it is not dropped. Silently losing it is
@@ -523,6 +526,28 @@
             if (need > start) start = need;
           }
         }
+        // §PHASE_WATERMARK_FLOOR (2026-08-27) — a level can start its own within_level chain with
+        // NOTHING real behind it: its declared predecessor phase has no LOCAL instance on this
+        // level (either it's scope:"building" and filed once elsewhere, or the level's own
+        // population simply skips that phase). Gate on whether THIS phase's OWN declared
+        // predecessor has a local instance — NOT on whether `prevOnLevel` is null. Those are
+        // different sets: a level can have SOME earlier phase locally (so `prevOnLevel` bridges to
+        // it, per `_empty_phase_rule`) while still lacking THIS phase's true declared predecessor
+        // specifically — MEASURED: Terminal "Ceiling Level Kedai" has local Architecture Envelope
+        // but no local Architecture Closeup, so MEP Final chain-bridged off Envelope alone
+        // (landing day 6) while Closeup's own real watermark elsewhere in the building reaches
+        // day 88. No level/storey reasoning either way — the exact failure class §E already names
+        // (fragmented/duplicate storey names make "nearest level" pick something unrelated): the
+        // phase SEQUENCE is already fully declared (`within_level`'s pred/succ chain), so track the
+        // LATEST-finishing task seen so far for each phase NAME as the walk proceeds bottom-up, and
+        // float an orphaned root against its declared predecessor's watermark directly. Not
+        // Terminal-specific — reads only the template's own declared fields, on any building.
+        var localPred = (wl && byId[wl.pred]) ? taskAt[byId[wl.pred].name + '||' + lv] : null;
+        var wmTask = (wl && byId[wl.pred] && !localPred) ? phaseLatestTask[byId[wl.pred].name] : null;
+        if (wmTask) {
+          var needW = wmTask.eDays + (wl.lag_days || 0);
+          if (needW > start) start = needW;
+        }
         var t = {
           id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
           phase: p.name, storey: lv, level: li, phaseId: p.id,
@@ -530,13 +555,18 @@
           crewDays: pr.crewDays, bottleneck: pr.bottleneck, guids: c.guids
         };
         tasks.push(t); taskAt[k] = t;
+        if (!phaseLatestTask[p.name] || t.eDays > phaseLatestTask[p.name].eDays) phaseLatestTask[p.name] = t;
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
         if (prevOnLevel) {
-          var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
           edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
+        }
+        // §PHASE_WATERMARK_FLOOR edge — see comment above.
+        if (wmTask) {
+          edges.push({ predId: wmTask.id, succId: t.id, type: wl.type || 'FS',
+                       lagDays: wl.lag_days || 0, kind: 'phase_watermark' });
         }
         if (ladder[p.id] && li > 0) {
           var b2 = taskAt[p.name + '||' + levels[li - 1]];
@@ -953,10 +983,14 @@
       // violations — into the window. Support order is the only order a task's contents have.
       // Bucket the task's own members by support layer, then give each layer a CONTIGUOUS,
       // NON-OVERLAPPING band of the window sized by its member count. Inside a band the solve's
-      // relative order is preserved (affine, as before) — the crew-leveling the solve did is real
-      // and is kept. What changes is that layer n+1 cannot begin before layer n's band ends, so a
-      // beam can never precede the column carrying it. Replacing the solve outright was tried and
-      // measured WORSE (Hospital 0 -> 2 unsupported at DAY 0 HR 3): the even spread discarded the
+      // relative ORDER is preserved (each element keeps its rank by solve start) — the
+      // crew-leveling the solve did is real and is kept — but each element's WIDTH inside the band
+      // is its own duration weight, not a raw affine replay of solve magnitude (§FUTURE item 2:
+      // duration-weighted CONTIGUOUS tiling, see below — a straight affine replay left dead air at
+      // a band's tail whenever the layer's solve times were unevenly spread). What changes vs. no
+      // layering at all is that layer n+1 cannot begin before layer n's band ends, so a beam can
+      // never precede the column carrying it. Replacing the solve outright was tried and measured
+      // WORSE (Hospital 0 -> 2 unsupported at DAY 0 HR 3): the even spread discarded the
       // crew-leveling. Clamp, do not replace.
       var mine = t.guids.filter(function (x) { return solve[x]; });
       if (span <= 0) degenerate++;
@@ -973,22 +1007,33 @@
         var bandW = (wE - wS) * (grp.length / Math.max(1, total));
         var bS = cursor, bE = (li === layers.length - 1) ? wE : Math.min(wE, cursor + bandW);
         if (bE <= bS) bE = bS + 1;
-        var glo = Infinity, ghi = -Infinity;
-        for (var q2 = 0; q2 < grp.length; q2++) {
-          var stq = solve[grp[q2]];
-          if (stq.start < glo) glo = stq.start;
-          if (stq.end > ghi) ghi = stq.end;
-        }
-        var gspan = ghi - glo, gscale = gspan > 0 ? (bE - bS) / gspan : 0;
-        var gstep = (bE - bS) / Math.max(1, grp.length);
-        for (var q3 = 0; q3 < grp.length; q3++) {
-          var gg = grp[q3], sq = solve[gg], ns2, ne2;
-          if (gspan > 0) {
-            ns2 = Math.round(bS + (sq.start - glo) * gscale);
-            ne2 = Math.round(bS + (sq.end - glo) * gscale);
-          } else {                                  // degenerate layer: deterministic even spread
-            ns2 = Math.round(bS + q3 * gstep); ne2 = Math.round(bS + (q3 + 1) * gstep);
-          }
+        // §FUTURE item 2 — duration-weighted CONTIGUOUS tiling, not raw-magnitude affine. The old
+        // code affine-mapped the layer's own solve range [glo,ghi] onto [bS,bE], which preserves
+        // the solve's ABSOLUTE spacing — so a band whose members' solve times are unevenly spread
+        // (typical: crew-levelling bunches many short elements early, one long one late) left the
+        // LATTER part of the band with zero element starts: "intra-task dead air"
+        // (§TPL_PARALLEL_REVEAL, Hospital TASK_Architecture_Envelope_Level_5 measured zero starts
+        // on days 166-168/173 of its own [137,180] window). Real crew-levelling ORDER still decides
+        // who reveals before whom (sorted by the solve's own start); what changes is that each
+        // element's share of the band is its own duration WEIGHT, not its solve-time position — so
+        // the band is tiled edge-to-edge by construction and dead air inside a populated band is
+        // structurally impossible. One rule for every band, degenerate solve-span or not — same
+        // move §TPL_LAYER_ORDER already made one level up for tasks. No duration invented: the
+        // weight is each element's own (sq.end - sq.start), the exact installSecs/crew figure the
+        // solve already computed; a zero-length solve interval floors to 1ms (equal split).
+        // Tie-break on guid (matches witness_4d_movie_binds_bars' own deterministic order for equal
+        // solveStart) — elements genuinely tied in the solve have no real "before" relationship, so
+        // any deterministic order is equally valid; matching the witness's tie-break avoids a
+        // false-positive reorder verdict on ties that are not a real order violation.
+        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || (x < y ? -1 : 1); });
+        var durs = ordered.map(function (g) { return Math.max(1, solve[g].end - solve[g].start); });
+        var durTotal = durs.reduce(function (a, b) { return a + b; }, 0);
+        var cum = 0;
+        for (var q3 = 0; q3 < ordered.length; q3++) {
+          var gg = ordered[q3];
+          var ns2 = Math.round(bS + (cum / durTotal) * (bE - bS));
+          cum += durs[q3];
+          var ne2 = Math.round(bS + (cum / durTotal) * (bE - bS));
           if (ne2 <= ns2) ne2 = ns2 + 1;            // never a zero-width element
           if (ne2 > bE) ne2 = Math.round(bE);
           out[gg] = { start: ns2, end: ne2 };
