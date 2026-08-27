@@ -736,6 +736,17 @@
     // number was unattributable to a construct, and `witness_gantt_edit_coherence` passed 10/0
     // while judging the legacy path (its materializeZones call passes no `template:`).
     // PRIMAL LAW clause 4: a pass that cannot report that it took the dead branch is not a pass.
+    //
+    // ⚠ BOTH BRANCHES LOG ON console.log, AND THAT IS LOAD-BEARING (§I.5j(b), fixed 2026-08-27).
+    // The dead branch used to emit on console.warn while the canonical one used console.log. Every
+    // §-collecting witness in this repo filters the LOG stream, and
+    // witness_4d_template_instantiation.js additionally installed `console.warn = () => {}` — so
+    // the one line that says "the dead model ran" was emitted and then deleted before any collector
+    // saw it. MEASURED before the fix (viewer/tests/probe_tpl_model_stream.js, Duplex):
+    // canonical-branch-visible=YES, legacy-branch-visible=NO, on a run where the legacy branch
+    // provably executed. A §-tag was not enough: which STREAM a line used decided whether the
+    // witness could see it. Do not "restore" the warn stream for emphasis — emphasis that a witness
+    // cannot read is not observability, it is decoration (PRIMAL LAW clause 3).
     if (opts.template) {
       var _tv = (opts.template.meta && opts.template.meta.version) || '?';
       console.log('§TPL_MODEL model=template v=' + _tv +
@@ -743,7 +754,7 @@
       return _writeTemplateSchedule(db, elements, schedule, opts, SG,
         storeyMergeMap, laborRates, schedId, start, _displayAuthored);
     }
-    console.warn('§TPL_MODEL model=legacy-deriveZones — ⛔ the CANONICAL template path did NOT ' +
+    console.log('§TPL_MODEL model=legacy-deriveZones — ⛔ the CANONICAL template path did NOT ' +
       'run (opts.template absent). Phases become an ENVELOPE over what the elements did, and an ' +
       'envelope cannot constrain what drew it. Every number from this schedule is off-model.');
 
