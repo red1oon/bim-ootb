@@ -2589,10 +2589,31 @@ async function setupEffects(A, renderer, scene, camera) {
       ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
   }
   A._sunArcStep = _sunArcStep;
-  var PHOTO_ENVMAP_BOOST = 3.0;   // multiply each material's existing envMapIntensity — stronger
+  var PHOTO_ENVMAP_BOOST = 2.0;   // multiply each material's existing envMapIntensity — stronger
                                    // glass/metal reflections without changing overall scene exposure
-                                   // (history: 2.2 -> 3.2 -> 4.5 -> 3.0. The 4.5 step, combined with
-                                   // the §PHOTO_ENVMAP_STALE fix below finally pointing every
+                                   // (history: 2.2 -> 3.2 -> 4.5 -> 3.0 -> 2.0. §PHOTO_REALISM_RETUNE
+                                   // (2026-08-27, PHOTOREAL_STILL_RENDER.md, this session): 3.0 was
+                                   // tuned BEFORE §MIRROR_ROOM_PROBE (2026-08-16) gave glossy/metal
+                                   // materials a real local-scene reflection on top of the sky/HDRI
+                                   // env map — with the room probe now doing part of the reflection
+                                   // work, 3.0 double-counts and reads "too bright, shiny reflection"
+                                   // (user's own words). One controlled step down (not back to the
+                                   // pre-room-probe 2.2 floor — same "single controlled increment,
+                                   // not guess-and-hope" discipline as §PHOTO_AO_EDGE's 2->4 step),
+                                   // verified live via witness_envmap_retune.js on Clinic (real,
+                                   // room-probe-applied, apples-to-apples before/after): meanBoostRatio
+                                   // 3.0000->2.0000, meanBoostedEnvMapIntensity 1.8000->1.2000 (both
+                                   // exactly track the constant, as expected); frame-level meanLuma
+                                   // 174.19->178.02, stdLuma 69.65->66.57, clippedWhiteFrac 0.00%
+                                   // unchanged — near-flat at the whole-frame level because Clinic has
+                                   // only 1 glossy/room-probe-eligible material of 7 in _matCache, so
+                                   // the material-level halo shrink is real but diluted by the rest of
+                                   // the frame. Hospital not re-verified after this same session hit a
+                                   // pre-existing CPE/Hospital environment flakiness (hang, then a
+                                   // detached-Frame puppeteer crash on retry, both unrelated to this
+                                   // diff) — see prompts/PHOTOREAL_STILL_RENDER.md §PHOTO_REALISM_RETUNE.
+                                   // (history predating this line, still true: the 4.5 step, combined
+                                   // with the §PHOTO_ENVMAP_STALE fix below finally pointing every
                                    // material at the CORRECT dusk env map, made the glint work for
                                    // the first time — but also overshot: user reported "all shadows
                                    // on building are gone." Root cause of THAT: env-map/IBL
@@ -2604,7 +2625,7 @@ async function setupEffects(A, renderer, scene, camera) {
                                    // the `typeof m.envMapIntensity !== 'number'` check never actually
                                    // excluded plain concrete/plaster walls. Fixed by gating on
                                    // glossiness below; boost itself also dialed back one notch
-                                   // per "glint is slightly too much."
+                                   // per "glint is slightly too much.")
   var PHOTO_GLOSSY_ROUGHNESS_MAX = 0.5;  // only materials this glossy or better (glass ~0.05-0.08,
                                           // tightened/native metal ~0.3-0.5) get the envMap boost —
                                           // excludes concrete/plaster/wood (STD_MAT rough 0.6-0.95),
