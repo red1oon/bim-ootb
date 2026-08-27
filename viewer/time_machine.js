@@ -6332,6 +6332,15 @@
     var persistUrl = app._dbPersistUrl || app.DB_URL;
     SA.persistDb(app.db, persistUrl, {}).then(function (ok) {
       console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + persistUrl + ' ok=' + ok);
+      // §GANTT_EDIT_PERSIST_FAIL (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — a save that fails must
+      // be LOUD. Before this the ok=false branch did nothing but log at info level: the edit stayed
+      // on screen, looked saved, and was gone on the next reload. persistDb now reports false for a
+      // real abort (§SCHED_PERSIST_ERR carries the reason), so say so where the user is looking.
+      if (!ok) {
+        console.warn('§GANTT_EDIT_PERSIST_FAIL what=' + what + ' url=' + persistUrl +
+          ' — edit is in memory only and will NOT survive a reload');
+        try { _tmSay('⚠ Could not save this edit — it will be lost on reload. See console (§SCHED_PERSIST_ERR).', 7000); } catch (e) {}
+      }
     });
   }
 
