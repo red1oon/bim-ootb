@@ -42,12 +42,12 @@ function dbKey(file) {
 }
 function dirFor(bld) { return path.join(ROOT, bld, codeKey() + '_' + dbKey(path.join(BLD, bld + '_extracted.db'))); }
 
-// read(bld) — what every downstream probe should call. Returns {els, sched, log, dir} or null.
+// read(bld) — what every downstream probe should call. Returns {els, sched, tasks, log, dir} or null.
 function read(bld) {
   const d = dirFor(bld);
   if (!fs.existsSync(path.join(d, 'run.json'))) return null;
   const j = JSON.parse(fs.readFileSync(path.join(d, 'run.json'), 'utf8'));
-  return { els: j.els, sched: j.sched, storeys: j.storeys || null, log: fs.readFileSync(path.join(d, 'witness.log'), 'utf8'), dir: d };
+  return { els: j.els, sched: j.sched, storeys: j.storeys || null, tasks: j.tasks || null, log: fs.readFileSync(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
 
 function build(bld, force) {
@@ -75,7 +75,7 @@ function build(bld, force) {
       // TEE, not suppress: the §-log is the evidence, so it goes to the file AND to the terminal.
       console.log = function () { const s = Array.prototype.join.call(arguments, ' '); lines.push(s); _l(s); };
       console.warn = function () { const s = Array.prototype.join.call(arguments, ' '); lines.push(s); _w(s); };
-      let els = null, sched = null, storeys = null, err = null;
+      let els = null, sched = null, storeys = null, tasks = null, err = null;
       try {
         const db = new SQL.Database(new Uint8Array(fs.readFileSync(file)));
         const base = { start: '2026-01-01', laborRates: sb.LABOR_RATES, rates: sb.RATES,
@@ -87,6 +87,11 @@ function build(bld, force) {
           x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }));
         const res = SA.materializeZones(db, sb.SEQUENCE_RULES, base);
         sched = res && res.displaySchedule;
+        // task grid (id, window, member guids) — needed to compute reveal-time-within-task-window,
+        // 4D_GANTT_TM_REFACTOR.md §FUTURE item 2. Not derivable from els/sched alone: the task_id a
+        // guid belongs to only exists on `res.tasks` (in-memory here, never written back to the db).
+        if (res && res.tasks) tasks = res.tasks.map(t => ({ id: t.id, sDays: t.sDays, eDays: t.eDays,
+          phase: t.phase, storey: t.storey, guids: t.guids }));
         // The IFC's OWN declared spatial structure, persisted alongside the run so a witness can
         // compare "storeys the model declares" against "bands the schedule invents" without a
         // tolerance constant anywhere. Absent on some shipped DBs (Duplex/Hospital have no
@@ -107,7 +112,7 @@ function build(bld, force) {
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, 'witness.log'), lines.join('\n') + '\n');
       fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ bld: bld, builtAt: new Date().toISOString(),
-        codeKey: codeKey(), els: els, sched: flat, storeys: storeys }));
+        codeKey: codeKey(), els: els, sched: flat, storeys: storeys, tasks: tasks }));
       console.log('§CACHE_BUILT ' + bld + ' n=' + els.length + ' scheduled=' + Object.keys(flat).length +
         ' logLines=' + lines.length + ' declaredStoreys=' + (storeys ? storeys.length : 'ABSENT') + ' -> ' + d);
       return read(bld);
