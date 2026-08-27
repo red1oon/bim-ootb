@@ -6436,11 +6436,12 @@ async function setupEffects(A, renderer, scene, camera) {
           if (d < bd) { bd = d; best = pi; }
         }
         var sArc = segLen[best] / totalLen;
-        // Fallbacks (2m/5m/4m) mirror cinema_path_editor.js's CPE_CONE_CORR_RAMP_M/HOLD_M/DECAY_M
-        // authoring defaults — first-guess numbers, not settled (see that file's own comment).
+        // Fallbacks (2m/12m/6m) mirror cinema_path_editor.js's CPE_CONE_CORR_RAMP_M/HOLD_M/DECAY_M
+        // authoring defaults — first-guess numbers, not settled (see that file's own comment; hold/
+        // decay raised 2026-08-27 per user feedback after first live use).
         var rampM = (c.ramp != null && isFinite(c.ramp)) ? c.ramp : 2;
-        var holdM = (c.hold != null && isFinite(c.hold)) ? c.hold : 5;
-        var decayM = (c.decay != null && isFinite(c.decay)) ? c.decay : 4;
+        var holdM = (c.hold != null && isFinite(c.hold)) ? c.hold : 8;
+        var decayM = (c.decay != null && isFinite(c.decay)) ? c.decay : 5;
         _corrArc.push({ s: sArc, dir: c.dir,
           rampFrac: Math.min(0.45, rampM / Math.max(1e-3, totalLen)),
           holdFrac: holdM / Math.max(1e-3, totalLen),
