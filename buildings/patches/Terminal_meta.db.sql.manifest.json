@@ -1,12 +1,12 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-17T06:37:14.178Z",
+  "generated_at": "2026-08-27T01:13:30.328Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-s21-terminal-data",
-    "sha": "ccc83a41ca14a01defbdee612e131408925868b7",
+    "worktree": "/tmp/wt-storey-oci",
+    "sha": "515b520de8a67a85d03c6651d8794fded997e3d5",
     "behind_origin_main": 0,
-    "ahead_origin_main": 2,
+    "ahead_origin_main": 1,
     "clean": true,
     "dirty_paths": []
   },
@@ -32,7 +32,18 @@
     "size": "569945",
     "last-modified": "Sun, 16 Aug 2026 16:59:05 GMT"
   },
-  "verification": null,
+  "verification": {
+    "cmd": "node scripts/probe_s18_elevation_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§S18_DEPLOY gate-db PASS — 67 storey datums survive the room compile, 23 names -> 15 bands"
+    ]
+  },
   "verdict": "PASS",
-  "failures": []
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-27T01:13:38.625Z",
+    "etag": "a2399f72-5f2b-4843-9fcb-610302d276ff",
+    "verified": true
+  }
 }
