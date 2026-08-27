@@ -1345,10 +1345,15 @@ async function setupScene(A) {
         // So: evict ONLY for QuotaExceededError, the one failure eviction can actually relieve.
         var _res = await _attemptWrite();
         var _ok = _res.ok;
-        if (!_ok && _res.name && _res.name !== 'QuotaExceededError') {
-          console.warn(`[S203] §CACHE_WRITE_UNFIXABLE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
-            ` err=${_res.err} — eviction cannot help this; cache left INTACT`);
-        } else if (!_ok) {
+        // §CACHE_EVICT_ONLY_ON_QUOTA_STRICT: require the POSITIVE match before evicting. A blank/
+        // missing name — tx.onabort firing with tx.error null, or tx.oncomplete firing with
+        // _writeOk still false (neither is provably a quota shortfall) — must default to "leave the
+        // cache intact", not fall through to eviction. The previous form
+        // (`_res.name && _res.name !== 'QuotaExceededError'`) only excluded ONE named non-quota case
+        // and let every UNNAMED failure reach the evict branch below — the same blind-evict-on-any-
+        // abort defect §CACHE_EVICT_ONLY_ON_QUOTA was written to retire, just narrowed to a smaller
+        // trigger set instead of closed.
+        if (!_ok && _res.name === 'QuotaExceededError') {
           for (var _try = 0; !_ok && _try < 4; _try++) {
             var _dropped = await A._evictOldest(cacheDb, 4);
             if (!_dropped) break;                     // nothing left to give up — stop, don't spin
@@ -1357,6 +1362,9 @@ async function setupScene(A) {
             _ok = _res.ok;
           }
           if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} err=${_res.err || 'unknown'} — still failing after LRU eviction`);
+        } else if (!_ok) {
+          console.warn(`[S203] §CACHE_WRITE_UNFIXABLE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+            ` err=${_res.err || '(no error name — treated as unfixable, not evicted)'} — eviction cannot help this; cache left INTACT`);
         }
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
