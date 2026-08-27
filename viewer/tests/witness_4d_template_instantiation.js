@@ -24,6 +24,10 @@ const SQLJS_DIST = path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist')
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
 const ScheduleGate = require(path.join(VIEWER_DIR, 'schedule_gate.js'));
 global.ScheduleGate = ScheduleGate;
+// §I.5c / §I.5j(b) — without this, schedule_author.js's `global.SupportSweep` lookup misses and
+// §TPL_LAYER_ORDER logs §TPL_LAYER_ORDER_FAIL and returns null: the layer pass this witness exists
+// to judge never runs, and every invariant below was scoring a grid built in raw solve order.
+global.SupportSweep = require(path.join(VIEWER_DIR, 'support_sweep.js'));
 const ScheduleAuthor = require(path.join(VIEWER_DIR, 'schedule_author.js'));
 
 const KIT = path.join(__dirname, '..', '..', 'witness_kit');

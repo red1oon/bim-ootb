@@ -1342,7 +1342,14 @@
           var lst = Gc.contacts[i2], b2 = [];
           if (lst) for (var q = 0; q < lst.length; q++) {
             var S2 = items[lst[q]], T2 = items[i2];
-            if (S2.bz < T2.bz - EPSl && S2.tz >= T2.bz - GAPl && S2.tz <= T2.bz + GAPl) b2.push(lst[q]);
+            // §I.5c FIX (bim-compiler 4D_MODEL_INTEGRITY.md) — this used to also require
+            // `S2.tz <= T2.bz + GAPl`, an upper bound that belongs only to auditFloating's WALL
+            // pool (§I.1 copy 3), applied here to EVERY contact. That discarded ~32% of Hospital's
+            // real bearing edges (supports whose top sits above the base they carry) from the
+            // layer pass's own graph, though it still claimed to run on "the SHIPPED contact
+            // graph's bearing relation". Now matches SupportSweep.contactGraph's own predicate
+            // (support_sweep.js `_ogSupportSweep`/`contactGraph`: no upper bound) exactly.
+            if (S2.bz < T2.bz - EPSl && S2.tz >= T2.bz - GAPl) b2.push(lst[q]);
           }
           below[i2] = b2;
         }
@@ -1403,7 +1410,9 @@
           for (var _q = 0; _q < _l2.length; _q++) {
             var _S = _it[_l2[_q]], _ss = _rm.schedule[_S.guid]; if (!_ss) continue;
             if (_taskOf[_S.guid] !== _taskOf[_T.guid]) continue;          // same task only
-            if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP && _S.tz <= _T.bz + SG.GAP)) continue;
+            // §I.5c FIX — same narrowing dropped as above, so the self-check judges the SAME
+            // population the pass now actually lays out, not a pre-filtered subset of it.
+            if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP)) continue;
             if (_ts.start < _ss.end - 1) _inv++;
           }
         }
