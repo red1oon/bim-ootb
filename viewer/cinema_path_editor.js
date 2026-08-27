@@ -67,9 +67,15 @@
   // rather than film seconds") — FIRST-GUESS numbers, not settled with the user. ramp = short ease-in
   // BEHIND the anchor; hold = full-strength stretch FORWARD from the anchor; decay = further ease-out
   // past the hold. Mirrored as fallbacks in effects.js's _buildCpeCorrArc (search CPE_CONE_CORR).
+  // §CPE_CONE_ORIENT_ADJUST tuning (2026-08-27, user after first live use): "the easing forward...
+  // should be more further... usually when user rotates it, is because it is pointing wrong way for
+  // some length" — the auto-heuristic's bad gaze is typically wrong across a STRETCH, not one point,
+  // so HOLD needed to reach further before handing back to it. hold 5->12 (the main ask), decay 4->6
+  // (kept roughly proportionate to the longer hold rather than left disproportionately short) — still
+  // a first-guess, not a measured number; ramp (BEHIND the anchor) left untouched, not what was asked.
   var CPE_CONE_CORR_RAMP_M = 2;
-  var CPE_CONE_CORR_HOLD_M = 5;
-  var CPE_CONE_CORR_DECAY_M = 4;
+  var CPE_CONE_CORR_HOLD_M = 8;
+  var CPE_CONE_CORR_DECAY_M = 5;
   // Re-dragging the cone within this world distance of an EXISTING correction's anchor UPDATES that
   // entry in place rather than stacking a second one nearby — first-guess MVP behaviour for spec item
   // 6 (multiple/overlapping corrections, not user-decided), flagged for review same as item 6 itself.
