@@ -483,11 +483,14 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0;
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, buildingScopeTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
       T.phases.forEach(function (p) {
+        // The within_level edge naming THIS phase as successor — computed once per phase, reused
+        // below both for the prevOnLevel chain and for the building-scope floor.
+        var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
         // _edge_scope_rule: a building-scope phase instantiates ONCE, on the lowest level. But its
         // ELEMENTS must all come with it — an element of a building-scope phase that happens to sit
         // on an upper storey belongs to that single task, it is not dropped. Silently losing it is
@@ -523,6 +526,20 @@
             if (need > start) start = need;
           }
         }
+        // §BUILDING_SCOPE_FLOOR (2026-08-27) — a scope:"building" phase (e.g. Substructure)
+        // instantiates exactly ONE task (line ~498), filed under whichever level sorts first. The
+        // ordinary within_level edge below only ever reaches THAT one level's chain, because
+        // prevOnLevel resets to null at the top of every level's own loop — every OTHER level's
+        // first phase never sees it. Not a Terminal-specific patch: this reads the template's own
+        // declared within_level/scope fields, so it applies to whatever phase is scope:"building",
+        // on any building. Measured on Terminal before this fix: the task graph was 5 disconnected
+        // chains, only 5/77 tasks reachable from Substructure (bim-compiler
+        // 4D_GANTT_TM_REFACTOR.md §FUTURE — live-log investigation, 2026-08-27).
+        var bTask = wl && byId[wl.pred] && byId[wl.pred].scope === 'building' ? buildingScopeTask[wl.pred] : null;
+        if (bTask && bTask !== prevOnLevel) {
+          var needB = bTask.eDays + (wl.lag_days || 0);
+          if (needB > start) start = needB;
+        }
         var t = {
           id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
           phase: p.name, storey: lv, level: li, phaseId: p.id,
@@ -530,13 +547,20 @@
           crewDays: pr.crewDays, bottleneck: pr.bottleneck, guids: c.guids
         };
         tasks.push(t); taskAt[k] = t;
+        if (p.scope === 'building') buildingScopeTask[p.id] = t;
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
         if (prevOnLevel) {
-          var wl = (T.dependencies.within_level || []).filter(function (ed) { return ed.succ === p.id; })[0];
           edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
+        }
+        // §BUILDING_SCOPE_FLOOR edge — see comment above. Skipped when prevOnLevel already IS the
+        // building-scope task (the one level it's naturally co-located with): the edge above
+        // already covers that case, and this would just be a duplicate of the same constraint.
+        if (bTask && bTask !== prevOnLevel) {
+          edges.push({ predId: bTask.id, succId: t.id, type: wl.type || 'FS',
+                       lagDays: wl.lag_days || 0, kind: 'building_scope' });
         }
         if (ladder[p.id] && li > 0) {
           var b2 = taskAt[p.name + '||' + levels[li - 1]];
