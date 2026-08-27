@@ -4060,8 +4060,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // emissive left on would follow the user back into navigation.
     if (A._bloomPass) A._bloomPass.enabled = false;
     _emberOff();
-    // §GLOW_LENS_QUAD: the fitted lens quad is still-only — always tear it down here.
-    _glowLensOff();
+    // §GLOW_LENS_QUAD: still-only content — always tear down on a REAL exit (!keepStaging). A
+    // bake-frame cancel (keepStaging=true) skips the dispose+rebuild when something is already
+    // staged AND the TM-visible fixture count is unchanged since the last stage — unlike the round
+    // sprite (camera-dependent eye-offset) and §NIGHT_STILL_LIGHTS (camera-frustum-dependent), the
+    // quad's geometry (position/size/yaw) is built ONLY from fixture world data + the TM-visibility
+    // gate, never from A.camera — an unchanged visible set means an unchanged quad, byte-identical
+    // to what is already staged. §R10, CPE_4D_PERF_MEM_FINDINGS.md §7.
+    if (keepStaging && (_glowLensMeshRect || _glowLensMeshRound) &&
+        _glowVisibleFixtureCount(A._tmIsVisible) === _glowLensStagedCount) {
+      console.log('§GLOW_LENS_QUAD skip (count unchanged ' + _glowLensStagedCount + ')');
+    } else {
+      _glowLensOff();
+    }
     // §GLOW_SPRITE_NAV_OFF (2026-08-07): the round sprite no longer restages for nav — live
     // navigation runs on the real point lights only now (see tools.js toggleNightMode). Still
     // torn down unconditionally so it can never survive into navigation.
@@ -4414,14 +4425,21 @@ async function setupEffects(A, renderer, scene, camera) {
   // placed fixtures grows tick by tick — rebuild the (small, ≤~1200-point) cloud only when that
   // count actually changes, not on every tick. isVisible === null (TM inactive) always matches
   // "everything" and is a no-op restage the first time it's seen after a buildup ends.
+  // §R10 (CPE_4D_PERF_MEM_FINDINGS.md §7): shared with the lens quad's own bake-frame skip-gate
+  // below — same predicate, one owner, so the two mechanisms can never disagree on "how many
+  // fixtures are visible right now."
+  function _glowVisibleFixtureCount(isVisible) {
+    var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
+    var n = 0;
+    for (var _gi = 0; _gi < allPos.length; _gi++) {
+      if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
+    }
+    return n;
+  }
   if (typeof A._tmVisSubscribe === 'function') {
     A._tmVisSubscribe(function(isVisible) {
       if (!_glowPoints || !A._nightMode) return;
-      var allPos = A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions() : [];
-      var n = 0;
-      for (var _gi = 0; _gi < allPos.length; _gi++) {
-        if (allPos[_gi].__guid == null || !isVisible || isVisible(allPos[_gi].__guid)) n++;
-      }
+      var n = _glowVisibleFixtureCount(isVisible);
       if (n === _glowStagedCount) return;
       _glowOff();
       _glowOn();
@@ -4477,6 +4495,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // rather than a single one-size-fits-all shape.
   var GLOW_LENS_ROUND_ASPECT = 1.25;
   var _glowLensMeshRect = null, _glowLensMeshRound = null;
+  var _glowLensStagedCount = -1;   // §R10 — fixture count the CURRENT quads were built with
   function _glowLensOn() {
     if (_glowLensMeshRect || _glowLensMeshRound) return;
     if (typeof A._nightFixtureWorldPositions !== 'function') return;
@@ -4488,6 +4507,9 @@ async function setupEffects(A, renderer, scene, camera) {
     // startStillRefine) staged every fixture's quad from frame 1, ignoring the 4D schedule. Same
     // predicate, same guid-null passthrough for the synthetic per-storey/tier-3 fallback.
     pos = pos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    // §R10 — recorded BEFORE the zero-check, same placement _glowStagedCount uses above, so a
+    // teardown-time comparison sees "0 visible" as a real, stable count rather than "unset".
+    _glowLensStagedCount = pos.length;
     if (!pos.length) { console.log('§GLOW_LENS_QUAD_GATE 0 fixtures placed yet — nothing to light'); return; }
     var geo = new THREE.PlaneGeometry(1, 1);
     var matRect = new THREE.MeshBasicMaterial({
