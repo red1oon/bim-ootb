@@ -483,7 +483,7 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, buildingScopeTask = {};
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, phaseLatestTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
       var cursor = 0;
@@ -526,19 +526,27 @@
             if (need > start) start = need;
           }
         }
-        // §BUILDING_SCOPE_FLOOR (2026-08-27) — a scope:"building" phase (e.g. Substructure)
-        // instantiates exactly ONE task (line ~498), filed under whichever level sorts first. The
-        // ordinary within_level edge below only ever reaches THAT one level's chain, because
-        // prevOnLevel resets to null at the top of every level's own loop — every OTHER level's
-        // first phase never sees it. Not a Terminal-specific patch: this reads the template's own
-        // declared within_level/scope fields, so it applies to whatever phase is scope:"building",
-        // on any building. Measured on Terminal before this fix: the task graph was 5 disconnected
-        // chains, only 5/77 tasks reachable from Substructure (bim-compiler
-        // 4D_GANTT_TM_REFACTOR.md §FUTURE — live-log investigation, 2026-08-27).
-        var bTask = wl && byId[wl.pred] && byId[wl.pred].scope === 'building' ? buildingScopeTask[wl.pred] : null;
-        if (bTask && bTask !== prevOnLevel) {
-          var needB = bTask.eDays + (wl.lag_days || 0);
-          if (needB > start) start = needB;
+        // §PHASE_WATERMARK_FLOOR (2026-08-27) — a level can start its own within_level chain with
+        // NOTHING real behind it: its declared predecessor phase has no LOCAL instance on this
+        // level (either it's scope:"building" and filed once elsewhere, or the level's own
+        // population simply skips that phase). Gate on whether THIS phase's OWN declared
+        // predecessor has a local instance — NOT on whether `prevOnLevel` is null. Those are
+        // different sets: a level can have SOME earlier phase locally (so `prevOnLevel` bridges to
+        // it, per `_empty_phase_rule`) while still lacking THIS phase's true declared predecessor
+        // specifically — MEASURED: Terminal "Ceiling Level Kedai" has local Architecture Envelope
+        // but no local Architecture Closeup, so MEP Final chain-bridged off Envelope alone
+        // (landing day 6) while Closeup's own real watermark elsewhere in the building reaches
+        // day 88. No level/storey reasoning either way — the exact failure class §E already names
+        // (fragmented/duplicate storey names make "nearest level" pick something unrelated): the
+        // phase SEQUENCE is already fully declared (`within_level`'s pred/succ chain), so track the
+        // LATEST-finishing task seen so far for each phase NAME as the walk proceeds bottom-up, and
+        // float an orphaned root against its declared predecessor's watermark directly. Not
+        // Terminal-specific — reads only the template's own declared fields, on any building.
+        var localPred = (wl && byId[wl.pred]) ? taskAt[byId[wl.pred].name + '||' + lv] : null;
+        var wmTask = (wl && byId[wl.pred] && !localPred) ? phaseLatestTask[byId[wl.pred].name] : null;
+        if (wmTask) {
+          var needW = wmTask.eDays + (wl.lag_days || 0);
+          if (needW > start) start = needW;
         }
         var t = {
           id: 'TASK_' + _slug(p.name) + '_' + _slug(lv),
@@ -547,7 +555,7 @@
           crewDays: pr.crewDays, bottleneck: pr.bottleneck, guids: c.guids
         };
         tasks.push(t); taskAt[k] = t;
-        if (p.scope === 'building') buildingScopeTask[p.id] = t;
+        if (!phaseLatestTask[p.name] || t.eDays > phaseLatestTask[p.name].eDays) phaseLatestTask[p.name] = t;
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
@@ -555,12 +563,10 @@
           edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
         }
-        // §BUILDING_SCOPE_FLOOR edge — see comment above. Skipped when prevOnLevel already IS the
-        // building-scope task (the one level it's naturally co-located with): the edge above
-        // already covers that case, and this would just be a duplicate of the same constraint.
-        if (bTask && bTask !== prevOnLevel) {
-          edges.push({ predId: bTask.id, succId: t.id, type: wl.type || 'FS',
-                       lagDays: wl.lag_days || 0, kind: 'building_scope' });
+        // §PHASE_WATERMARK_FLOOR edge — see comment above.
+        if (wmTask) {
+          edges.push({ predId: wmTask.id, succId: t.id, type: wl.type || 'FS',
+                       lagDays: wl.lag_days || 0, kind: 'phase_watermark' });
         }
         if (ladder[p.id] && li > 0) {
           var b2 = taskAt[p.name + '||' + levels[li - 1]];
