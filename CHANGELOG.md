@@ -4,6 +4,19 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.55.0](https://github.com/red1oon/bim-ootb/compare/v1.54.0...v1.55.0) (2026-08-27)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_CONE_ORIENT_ADJUST — drag the POV cone to fix a bad gaze, no stick added ([#1572](https://github.com/red1oon/bim-ootb/issues/1572)) ([e02de30](https://github.com/red1oon/bim-ootb/commit/e02de3027c53bc9dce1d3718ba76101c3d8df4fd))
+
+
+### 🐛 Fixes
+
+* **4d:** §PHASE_WATERMARK_FLOOR — gate on the phase's own predecessor, not prevOnLevel ([#1571](https://github.com/red1oon/bim-ootb/issues/1571)) ([37cf48f](https://github.com/red1oon/bim-ootb/commit/37cf48f613d85473ed16ecd5c279e9ece26ae52d))
+* **cpe:** §CPE_CONE_ORIENT_ADJUST — extend correction hold/decay, found+respected the rate-limiter's real ceiling ([#1573](https://github.com/red1oon/bim-ootb/issues/1573)) ([264314b](https://github.com/red1oon/bim-ootb/commit/264314b5911d1855d4cfd079f0dbb730b0e91a69))
+
 ## [1.54.0](https://github.com/red1oon/bim-ootb/compare/v1.53.0...v1.54.0) (2026-08-27)
 
 
