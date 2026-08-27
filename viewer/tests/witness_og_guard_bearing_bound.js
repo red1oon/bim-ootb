@@ -37,6 +37,11 @@ const path = require('path');
 const vm = require('vm');
 const initSqlJs = require('/home/red1/bim-ootb/node_modules/sql.js');
 const SQLJS_DIST = '/home/red1/bim-ootb/node_modules/sql.js/dist';
+// The SHIPPED gate module, for its exported supportPool() — this witness's detection pool is the
+// production pool, asked of its owner, never re-typed here (§I.4). NOTE this is the real module;
+// the `ScheduleGate: { CELL: 4 }` stub inside the vm sandbox below (~:114) is a deliberately
+// minimal fake for the guard-under-test and is a different object.
+const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 
 let pass = 0, fail = 0;
@@ -137,7 +142,25 @@ function detectionSet(scheduled) {
   scheduled.forEach(e => {
     // §PROMOTED_CARRIER_POOL (2026-08-11): detection pool = seq<=4 ∪ promoted slabs (audit parity,
     // finding-A fix — see time_machine.js _buildXraySupportCache).
-    if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
+    //
+    // §STAIR_FLIGHT_GRID_VISIBILITY, JUDGE TWIN (2026-08-27, §I.5a). W-OGB-3a asserts "guard and
+    // judge are one physics" — and this line used to make that true by RE-TYPING the guard's pool,
+    // which is a weaker thing than sharing its definition: two copies of the same mistake also read
+    // as "one physics". It now asks the OWNER (schedule_gate.js supportPool), so the parity is
+    // structural. This is the SEVENTH copy of that pool found; §I.5a counted six.
+    // Widening detection can only REDUCE W-OGB-2 violations, and it stays 0 on both fixtures.
+    //
+    // ⚠ WHAT THIS UNCOVERED, DEFERRED ON PURPOSE — see §I.5a in the spec. The matching pool fix in
+    // time_machine.js `_buildXraySupportCache` is NOT in this change. Applied, it makes W-OGB-3a
+    // fail with Terminal staged=0 -> 14 (isolated by reverting only that file: 9/0 green without
+    // it, 8/1 with it). Those 14 are not a harness artifact — they are real Terminal elements that
+    // start before a stair-flight carrier finishes, and they surface because the x-ray JUDGE would
+    // then see flights as carriers while the GUARD (`_ogSupportSweep`) still repairs against WALL
+    // carriers only. So guard and judge genuinely would not be one physics for this class, and the
+    // honest fix is a decision about whether the guard must repair stair-flight carriers too — not
+    // a re-baseline of this number. Landing the x-ray half without that decision would either
+    // break this witness or bake in an asymmetry it exists to forbid.
+    if (ScheduleGate.supportPool(e)) cellsFor(e, e.bz, e.tz).forEach(c => (grid[c] = grid[c] || []).push(e));
   });
   const withBearing = {};
   scheduled.forEach(T => {
