@@ -5216,6 +5216,14 @@ async function setupEffects(A, renderer, scene, camera) {
   // pattern as _cpeHose/_cpeBands above: set from ov.reveal in A.cinemaPathPlan, read inside
   // _cinemaPathPlan's own closure, saved/restored around the call so it never leaks between plans.
   var _cpeReveal = false;
+  // §CPE_CONE_ORIENT_ADJUST (bim-compiler prompts/CINEMA_PATH_EDITOR.md, 2026-08-27) — a small list of
+  // ANCHORED gaze corrections, independent of bands: each is {pos:{x,y,z}, dir:{x,y,z}, ramp, hold,
+  // decay} (world anchor, corrected unit direction, arc-length meters for the ease-in/hold/ease-out
+  // envelope). Not band-indexed like `lookAt` — the cone's position is scrub-driven and may sit
+  // anywhere along the walk, not necessarily at a band — so this rides its OWN small array on the
+  // override, same wrapper pattern as _cpeHose/_cpeBands/_cpeReveal above: set from ov.aimCorrections
+  // in A.cinemaPathPlan, read inside _cinemaPathPlan's own closure, saved/restored around the call.
+  var _cpeCorrections = null;
   // §CPE_DISCIPLINE_REVEAL — real, measured element counts, same 3-representation enumeration
   // A.filterDiscs already uses (panels.js §NAV_FIND_002) — never an invented discipline list.
   // Outer-scope and A.-exposed (not nested inside _cinemaPathPlan) so BOTH the plan builder here AND
@@ -6397,6 +6405,92 @@ async function setupEffects(A, renderer, scene, camera) {
       return null;
     }
     A._cpePinZonesDebug = function() { if (_pinZones === null) _buildPinZones(); return _pinZones; };   // witness hook, read-only
+
+    // ══ §CPE_CONE_ORIENT_ADJUST — anchored gaze corrections (2026-08-27) ═══════════════════════════
+    // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_CONE_ORIENT_ADJUST. Studied `_pinLookAtAt`
+    // above before writing this: deliberately a DIFFERENT code path, not a reuse of it, because a
+    // correction's anchor is NOT band-indexed — the POV cone's position is scrub-driven and may sit
+    // anywhere along the walk, not necessarily at a band centre. Same NEAREST-POINT-ON-`flowWp`
+    // technique `_buildPinZones` uses for a band's centre, applied to each correction's own captured
+    // world anchor instead, so a correction is defined against the SAME real, hosed curve the walk is
+    // actually sampled from (never a second, unhosed notion of "where along the path this is").
+    //
+    // Unlike a pin (a look-AT POINT, recomputed fresh every frame relative to the moving camera), a
+    // correction stores a fixed captured DIRECTION — the cone's rotation at the moment the user let
+    // go — and is blended in/out by an ASYMMETRIC, ARC-LENGTH-anchored envelope (spec item 5, user's
+    // own design): a short ease-in ramp BEHIND the anchor, held at full strength FORWARD from the
+    // anchor, then eased back down over a further decay length. Ramp/hold/decay ride on EACH entry
+    // (spec item 4's own field list), copied from cinema_path_editor.js's authoring-time constants at
+    // commit time — the fallbacks below only cover a malformed/pre-this-feature record.
+    var _corrArc = null;
+    function _buildCpeCorrArc() {
+      _corrArc = [];
+      if (!_cpeCorrections || !_cpeCorrections.length || !flowWp.length) return;
+      for (var ci = 0; ci < _cpeCorrections.length; ci++) {
+        var c = _cpeCorrections[ci];
+        if (!c || !c.pos || !c.dir) continue;
+        var best = 0, bd = Infinity;
+        for (var pi = 0; pi < flowWp.length; pi++) {
+          var dx = flowWp[pi].x - c.pos.x, dy = flowWp[pi].y - c.pos.y, dz = flowWp[pi].z - c.pos.z;
+          var d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) { bd = d; best = pi; }
+        }
+        var sArc = segLen[best] / totalLen;
+        // Fallbacks (2m/5m/4m) mirror cinema_path_editor.js's CPE_CONE_CORR_RAMP_M/HOLD_M/DECAY_M
+        // authoring defaults — first-guess numbers, not settled (see that file's own comment).
+        var rampM = (c.ramp != null && isFinite(c.ramp)) ? c.ramp : 2;
+        var holdM = (c.hold != null && isFinite(c.hold)) ? c.hold : 5;
+        var decayM = (c.decay != null && isFinite(c.decay)) ? c.decay : 4;
+        _corrArc.push({ s: sArc, dir: c.dir,
+          rampFrac: Math.min(0.45, rampM / Math.max(1e-3, totalLen)),
+          holdFrac: holdM / Math.max(1e-3, totalLen),
+          decayFrac: decayM / Math.max(1e-3, totalLen) });
+      }
+    }
+    // Read-only: the corrected DIRECTION and blend WEIGHT (0..1) in force at this e3, or null when no
+    // correction's window reaches this far. §CPE_CONE_ORIENT_ADJUST item 6 (multiple overlapping
+    // corrections — not user-decided): simplest reasonable MVP picked here, flagged for review — the
+    // NEAREST anchor (by |e3 - s|) wins outright where more than one window covers the same e3, no
+    // cross-correction blending.
+    function _cpeCorrectionAt(e3) {
+      if (_corrArc === null) _buildCpeCorrArc();
+      if (!_corrArc.length) return null;
+      var bestC = null, bestDist = Infinity, bestW = 0;
+      for (var i = 0; i < _corrArc.length; i++) {
+        var c = _corrArc[i];
+        var lo = c.s - c.rampFrac, hiHold = c.s + c.holdFrac, hi = hiHold + c.decayFrac;
+        if (e3 < lo - 1e-9 || e3 > hi + 1e-9) continue;
+        var w;
+        if (e3 < c.s) w = _cinemaSmoothstep((e3 - lo) / Math.max(1e-9, c.rampFrac));         // ease-in, 0->1, ends AT the anchor
+        else if (e3 <= hiHold) w = 1;                                                        // held, full strength
+        else w = 1 - _cinemaSmoothstep((e3 - hiHold) / Math.max(1e-9, c.decayFrac));         // eased back down
+        var dist = Math.abs(e3 - c.s);
+        if (bestC === null || dist < bestDist) { bestC = c; bestDist = dist; bestW = w; }
+      }
+      if (!bestC) return null;
+      return { dir: bestC.dir, w: bestW };
+    }
+    // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
+    // in this file (short-way yaw, linear pitch), simplified to return just a unit direction (no
+    // pivot, no antipodal-reference bookkeeping — a corrected gaze and the underlying path-follow gaze
+    // are never expected to be near-antipodal, unlike the look-back beat those two already handle).
+    function _cpeCorrDirBlend(ax, ay, az, bx, by, bz, w) {
+      if (w <= 0) return { x: ax, y: ay, z: az };
+      if (w >= 1) return { x: bx, y: by, z: bz };
+      var yawA = Math.atan2(az, ax), pitA = Math.atan2(ay, Math.hypot(ax, az));
+      var yawB = Math.atan2(bz, bx), pitB = Math.atan2(by, Math.hypot(bx, bz));
+      var raw = yawB - yawA;
+      var dYaw = raw - 2 * Math.PI * Math.round(raw / (2 * Math.PI));   // short way
+      var yaw = yawA + dYaw * w, pit = pitA + (pitB - pitA) * w, cp = Math.cos(pit);
+      return { x: Math.cos(yaw) * cp, y: Math.sin(pit), z: Math.sin(yaw) * cp };
+    }
+    A._cpeCorrectionsDebug = function() { if (_corrArc === null) _buildCpeCorrArc(); return _corrArc; };   // witness hook, read-only
+    // Witness hook, read-only: samples the REAL `_beat3Pose(e3)` at an arbitrary arc-fraction —
+    // exactly the product function §CPE_CONE_ORIENT_ADJUST's envelope blend runs inside (same
+    // precedent as `A._cpePinZonesDebug` above). Lets a witness sample the corrected region's gaze
+    // SHAPE directly in the arc-fraction space the envelope is actually defined in, without needing
+    // to invert tNorm -> e3 through _evenTurnRemap/_holdMap (private to this closure).
+    A._cpeBeat3PoseDebug = function(e3) { return _beat3Pose(e3); };
     // ══ §CINEMA_GAZE_SENSE (2026-07-27) — decide the look-back's turn DIRECTION ONCE per plan.
     // _cinemaGazeBlend used to make this choice PER FRAME: if |dYaw| crossed CINEMA_TURN_ANTIPODAL_RAD
     // it switched from the short way to the +2π way. That test is a step function of the walk
@@ -7912,6 +8006,17 @@ async function setupEffects(A, renderer, scene, camera) {
           if (_aimD) { _lx = _aimD.x; _ly = _aimD.y; _lz = _aimD.z; }
         }
         }
+        // §CPE_CONE_ORIENT_ADJUST: a user-dragged correction is the LAST word on the gaze at its own
+        // arc-length window, applied AFTER the pin/depth/path-follow chain above — a judgment call,
+        // not user-confirmed: the cone shows whatever the CURRENT combined gaze is (pin included), so
+        // dragging it corrects whatever is currently there, even inside an already-pinned zone. Zero
+        // cost/no-op on every plan with no corrections authored (_cpeCorrectionAt returns null
+        // instantly once `_corrArc` is built empty).
+        var _corr = _cpeCorrectionAt(e3);
+        if (_corr && _corr.w > 0) {
+          var _cb = _cpeCorrDirBlend(_lx, _ly, _lz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w);
+          _lx = _cb.x; _ly = _cb.y; _lz = _cb.z;
+        }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
         // should not be robotic abrupt stop and turn, it can play while doing both"): start blending
         // the look-at toward the pivot in the LAST CINEMA_TURN_OVERLAP fraction of the walk-out, so
@@ -8410,6 +8515,14 @@ async function setupEffects(A, renderer, scene, camera) {
                         hold: +(b.hold || 0), _stick: b._stick, _s: b._s,
                         lookAt: b.lookAt ? { x: b.lookAt.x, y: b.lookAt.y, z: b.lookAt.z } : null };
              }) : null,
+             // §CPE_CONE_ORIENT_ADJUST rides along for the same §CPE_REOPEN_NODE reason as `bands`
+             // above: the plan is what the editor RE-OPENS from, so a dropped field would silently
+             // discard every corrected gaze on the next OK.
+             aimCorrections: _cpeCorrections ? _cpeCorrections.map(function(c) {
+               return { pos: { x: c.pos.x, y: c.pos.y, z: c.pos.z }, dir: { x: c.dir.x, y: c.dir.y, z: c.dir.z },
+                        ramp: +(c.ramp != null ? c.ramp : 2), hold: +(c.hold != null ? c.hold : 5),
+                        decay: +(c.decay != null ? c.decay : 4) };
+             }) : null,
              flownPoints: flowWp.length, pathLen: totalLen, route: outRoute, authored: outRoute === 'authored',
              sec: { dive: _useSec.dive, spin: _useSec.spin, out: _useSec.out, pullout: _useSec.pullout,
                     flyback: _useSec.flyback, reveal: _useSec.reveal, rise: _useSec.rise },
@@ -8570,7 +8683,8 @@ async function setupEffects(A, renderer, scene, camera) {
       saved.push(_cpeGet(g));
       if (ov[k] != null && isFinite(ov[k])) _cpeSet(g, ov[k]);
     }
-    var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose, savedReveal = _cpeReveal;
+    var savedWp = _cpeWp, savedBands = _cpeBands, savedHose = _cpeHose, savedReveal = _cpeReveal,
+        savedCorr = _cpeCorrections;
     // §CPE_HOSE: ops ride the same override object the editor already stages and saves, so a hosed
     // path travels through Save / reload / bake by the existing seam — no second persistence path.
     _cpeHose = (ov.hose && ov.hose.length) ? ov.hose : null;
@@ -8579,12 +8693,15 @@ async function setupEffects(A, renderer, scene, camera) {
     // be ambiguous. Bands win because they carry the rigidity constraint that loose points cannot.
     if (ov.bands && ov.bands.length >= 2) { _cpeBands = ov.bands; _cpeWp = null; }
     _cpeReveal = !!ov.reveal;
+    // §CPE_CONE_ORIENT_ADJUST: same wrapper pattern as hose/reveal above — a plain array of plain
+    // correction objects, no rigidity/expansion concept like bands, so no precedence rule is needed.
+    _cpeCorrections = (ov.aimCorrections && ov.aimCorrections.length) ? ov.aimCorrections : null;
     try {
       return _cinemaPathPlan(durationSec);
     } finally {
       for (i = 0; i < _CPE_KEYS.length; i++) _cpeSet(_CPE_KEYS[i][1], saved[i]);
       _cpeWp = savedWp; _cpeBands = savedBands; _cpeHose = savedHose; _cpeSecOverride = savedSecOv;
-      _cpeReveal = savedReveal;
+      _cpeReveal = savedReveal; _cpeCorrections = savedCorr;
     }
   };
   A.cinemaPathPlanDerived = _cinemaPathPlan;   // unwrapped, for G1's byte-identity comparison
