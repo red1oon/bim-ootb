@@ -1121,8 +1121,19 @@
   // occurrence counts on shipped buildings are known.
   function auditFloating(elements, sched, classFilter, collectGuids, collectUnchecked) {
     var structGrid = {}, wallGrid = {}, i, c, cs, k, arr, S;
+    // §STAIR_FLIGHT_GRID_VISIBILITY, AUDIT TWIN (2026-08-27, §I.5a). This grid used to re-type
+    // `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)`, which is the scheduler's pool MINUS stair
+    // flights: IfcStairFlight carries sequence 6 (rates.js:259) so `seq<=4` is false, and the
+    // `else if` below only catches IfcWall* — so a flight landed in NEITHER grid and was invisible
+    // AS SUPPORT to this audit, while structIdxGrid (:787) and place() (:570) both admit it. That
+    // is a FALSE NEGATIVE: a target resting on a flight finds no bearing candidate, `se` stays 0,
+    // and :1204's `if (se > 0 && ...)` can never fire, so floating was UNDER-reported.
+    // The §S64 note at :1154 asserted "structGrid (p===0) ... already agrees with the gate". It did
+    // not — :787 and :1125 disagreed, 338 lines apart in one file. Now it does, because it no
+    // longer re-types the test at all: supportPool() (:1312) is the exported single definition and
+    // is verbatim the scheduler's inline pool. §I.4 — never a second copy.
     for (i = 0; i < elements.length; i++) { var e = elements[i];
-      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      if (supportPool(e)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); } }
     // buildingModelsSubstructure — "Gap B exemption DECIDED" (4D_SCHEDULE_PERFECTION.md 2026-08-11):
     // annotate, don't suppress. true iff ≥1 element resolves to phase==='Substructure' — seq===1 is

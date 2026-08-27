@@ -63,6 +63,26 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 // witness's own logged runs (repo convention, cf. witness_tm_geo_order_cycles.js floating=8): if
 // it moves EITHER way that is a real behavior change to examine, never to absorb silently.
 const BUILDINGS = [
+  // RE-LOCKED 2026-08-27 (§STAIR_FLIGHT_GRID_VISIBILITY audit twin, bim-compiler
+  // prompts/4D_MODEL_INTEGRITY.md §I.5a) — HHS 17->14, LTU_AHouse 626->624. Two baselines moved
+  // DOWN and, unlike §S64's rise, this is a COVERAGE GAIN, not a trade.
+  //   Cause: auditFloating's structGrid re-typed the scheduler's support pool MINUS stair flights
+  //   (IfcStairFlight is seq 6, so `seq<=4` misses it and the `else if` only catches IfcWall*), so
+  //   a flight was in NEITHER grid. It now calls the exported supportPool() — one definition, the
+  //   scheduler's own. Elements whose only candidate was a stair flight had ZERO candidates in
+  //   either pool and were therefore honest §SUPPORT_UNCHECKED findings; they now have a real one
+  //   and leave the exception set.
+  //   The exchange is exact and attributable by class, MEASURED both sides:
+  //     HHS        17->14  = IfcStairFlight 4->2, IfcSlab 5->4   (a flight resting on a flight had
+  //                          no candidate at all — the self-referential case the old pool excluded)
+  //     LTU_AHouse 626->624 = IfcWallStandardCase 355->353
+  //     Terminal / Hospital / Duplex / Clinic / JKR — class histograms BYTE-IDENTICAL, no move.
+  //   Direction check: this witness asserts `unchecked` (zero-candidate elements), which can only
+  //   FALL when a pool widens. The floating count, which this witness does not assert, moves the
+  //   other way for the same reason — +204 fleet-wide, measured in
+  //   viewer/tests/probe_stair_flight_support_pool.js. Both are the same false NEGATIVE being
+  //   repaired: the audit could not see a support the scheduler had already used.
+  //
   // Baselines RE-MEASURED 2026-08-11 (big-element follow-up, bigsup_after_fix2.log) after three
   // deliberate changes, each with its own delta reasoned below (first-run baselines in parens):
   //  (1) §HANG_NEAREST fallback (schedule_gate.js) — big pure-sink hangers (rod-suspended MEP etc.)
@@ -109,7 +129,7 @@ const BUILDINGS = [
   { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 36 },   // was bms:false/279; 32->36 §S64
   { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
-  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 17 },   // was 21; 13->17 §S64
+  { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 14 },   // was 21; 13->17 §S64; 17->14 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
   // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
   // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
@@ -123,7 +143,7 @@ const BUILDINGS = [
   // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
   // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
   // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
-  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 626 },   // 611->626 §S64
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 624 },   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 
