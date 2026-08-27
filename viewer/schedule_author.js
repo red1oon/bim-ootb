@@ -422,16 +422,32 @@
   //   { id, phase, storey, level, sDays, eDays, days, guids, crewDays, bottleneck }
   // and an edge is { predId, succId, type, lagDays, kind } — kind 'within_level' | 'across_levels'.
   // EVERY edge's lag comes from the TEMPLATE, never from the dates it constrains.
-  function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse) {
+  // §TPL_LEVEL_AXIS (2026-08-27) — `levelAxis` is the OPT-IN vertical-axis override. Omit it and
+  // this function behaves EXACTLY as before: the level key is collapse(e.storey) and the level order
+  // is `bandRank`. Supply { keyOf, rankOf } and the grid is keyed/ordered by that instead.
+  // WHY IT EXISTS: e.storey reaching this function has already been rewritten by
+  // _buildScheduleElements's assignStoreyByZ (line ~342), which replaces EVERY '_UNKNOWN' storey
+  // with the nearest real storey NAME by median centre-Z — so deriveBandRanks's own '_UNKNOWN'
+  // exclusion (schedule_gate.js:350) can never fire on this path: the bucket it guards is empty by
+  // the time it looks. LevelDeriver (viewer/lib/level_deriver.js) answers the same question from the
+  // FROZEN DB instead and is not exposed to that rewrite (see _deriverLevelAxis's header for the
+  // read-path proof). Default stays the old path until the swap is deliberately flipped.
+  function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse, levelAxis) {
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
     var minDays = (T.duration_rule && T.duration_rule.min_days) || 1;
     collapse = collapse || function (x) { return x; };
+    // Resolved ONCE. With levelAxis absent both of these are literally the expressions that were
+    // inline here before, so the flag-off path is unchanged by construction, not by inspection.
+    var keyOf = (levelAxis && levelAxis.keyOf) || function (el) { return collapse(el.storey); };
+    var rankOf = (levelAxis && levelAxis.rankOf) || function (k) {
+      return (bandRank && bandRank[k] != null) ? bandRank[k] : 1e9;
+    };
 
     // (phase, storey) -> { secs per trade, guids }
     var cell = {}, storeySeen = {};
     for (var i = 0; i < elements.length; i++) {
-      var e = elements[i], st = collapse(e.storey), ph = e.phase || '_UNPHASED';
+      var e = elements[i], st = keyOf(e), ph = e.phase || '_UNPHASED';
       storeySeen[st] = 1;
       var k = ph + '||' + st, c = cell[k] || (cell[k] = { secs: {}, guids: [] });
       var tr = (e.resource && e.resource !== '_DEFAULT') ? e.resource : '_DEFAULT';
@@ -441,8 +457,7 @@
     // levels bottom-up. bandRank is the SAME rank deriveBandRanks gives the movie, so "the level
     // below" means the same thing here as it does in the solver's own band gate.
     var levels = Object.keys(storeySeen).sort(function (a, b) {
-      var ra = bandRank && bandRank[a] != null ? bandRank[a] : 1e9;
-      var rb = bandRank && bandRank[b] != null ? bandRank[b] : 1e9;
+      var ra = rankOf(a), rb = rankOf(b);
       return ra - rb || (a < b ? -1 : a > b ? 1 : 0);
     });
 
@@ -974,6 +989,215 @@
     return { schedule: out, mapped: mapped, degenerateTasks: degenerate };
   }
 
+  // ══ §TPL_LEVEL_AXIS — the LevelDeriver vertical axis for the task grid (2026-08-27) ═══════════
+  // Implementing bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3 — Witness: §TPL_LEVEL_DISAGREE
+  //
+  // THE READ-PATH PROOF (verified 2026-08-27, the reason this swap REMOVES the defect instead of
+  // relocating it). assignStoreyByZ (line ~342) is a PURE LOCAL function: it returns a string that
+  // is stored only into the in-memory element literal's `storey:` field (line ~368). It issues no
+  // db.run and no UPDATE — `elements_meta.storey` on disk is never touched by it (the only writers
+  // of that column repo-wide are wizard_storeys.js, i.e. a deliberate user authoring act, and the
+  // importers). LevelDeriver.readLookups reads `SELECT guid, storey FROM elements_meta` STRAIGHT
+  // FROM THE FROZEN DB (level_deriver.js:67) and LevelDeriver.levelFor consumes only guid/base_z/
+  // top_z off the element object — it never reads el.storey. So the '_UNKNOWN' guard at
+  // level_deriver.js:178 sees the UNREWRITTEN value and actually fires, where the structurally
+  // identical guard in deriveBandRanks (schedule_gate.js:350) is dead code on this path.
+  //
+  // Returns { keyOf, rankOf, stats } for instantiateTemplate, or null (caller keeps the OLD path —
+  // never a silent half-swap).
+  function _deriverLevelAxis(db, elements, collapse, storeyMergeMap, label) {
+    var LD = (global && global.LevelDeriver) ||
+             (typeof globalThis !== 'undefined' && globalThis.LevelDeriver) ||
+             (typeof window !== 'undefined' && window.LevelDeriver) || null;
+    // NODE ONLY: the browser already loads lib/level_deriver.js via a <script> tag (viewer.html
+    // ~line 940) so LD is on window there. Under node a witness/probe that never required it would
+    // otherwise get a SILENT fallback to the old axis — which is exactly how the first flag-on run
+    // of the shipped witnesses came back byte-identical and looked like "no change" (2026-08-27).
+    // Resolving it here makes the module self-sufficient instead of trusting every caller to know.
+    if ((!LD || !LD.readLookups) && typeof require === 'function' && typeof __dirname !== 'undefined') {
+      try { LD = require(__dirname + '/lib/level_deriver.js'); } catch (e) {
+        console.log('§TPL_LEVEL_AXIS_REQUIRE_FAIL ' + ((e && e.message) || e));
+      }
+    }
+    if (!LD || !LD.readLookups) {
+      console.log('§TPL_LEVEL_AXIS_UNAVAILABLE label=' + label + ' — LevelDeriver not loaded; the task ' +
+        'grid STAYS on collapse(e.storey). Reported, not silently degraded (§S32.4 stop-and-report).');
+      return null;
+    }
+    var L = LD.readLookups(db);
+    var G = LD.buildGrid(L, elements);
+    G.medGap = LD.medianGap(G.grid);
+
+    // grid index -> a REAL declared storey name where that grid line carries one (so the Gantt keeps
+    // human floor names), else 'L<idx>' — location_axis.js's own convention for a derived level.
+    // Names are collapse()'d and merge-mapped exactly like the old axis, so a level the two axes
+    // AGREE on carries byte-identical text and the disagreement count below measures real
+    // disagreement, not a renaming.
+    var nameAt = {}, taken = {}, keyAt = {};
+    Object.keys(L.storeyNameCenterZ).forEach(function (nm) {
+      var z = L.storeyNameCenterZ[nm];
+      if (!isFinite(z) || !G.grid.length) return;
+      var i = LD.nearestIdx(G.grid, z);
+      if (Math.abs(G.grid[i] - z) > 1e-6) return;          // that name is not on this grid line
+      var c = collapse(nm);
+      if (storeyMergeMap && storeyMergeMap[c]) c = storeyMergeMap[c];
+      (nameAt[i] = nameAt[i] || []).push(c);
+    });
+    var collided = [];
+    Object.keys(nameAt).map(Number).sort(function (a, b) { return a - b; }).forEach(function (i) {
+      var cands = nameAt[i].slice().sort();
+      for (var q = 0; q < cands.length; q++) {
+        if (taken[cands[q]] == null) { keyAt[i] = cands[q]; taken[cands[q]] = i; break; }
+      }
+      // Every candidate name already belongs to a LOWER grid line — an ambiguous storey NAME sitting
+      // at two elevations (LevelDeriver reports these as ambiguousNames; measured 0 on this fleet).
+      // Keep the two levels DISTINCT rather than silently folding two floors into one task row.
+      if (keyAt[i] == null) { keyAt[i] = 'L' + i; collided.push(i + '<-' + cands.join('/')); }
+    });
+    function keyForIdx(idx) {
+      if (idx == null || idx < 0) return '_UNKNOWN';
+      return keyAt[idx] != null ? keyAt[idx] : 'L' + idx;
+    }
+
+    var idxOf = {}, keyByGuid = {}, tier = { T1: 0, T2: 0, T3: 0, T4: 0 }, overridden = 0;
+    var votes = {};
+    for (var i2 = 0; i2 < elements.length; i2++) {
+      var el = elements[i2];
+      var r = LD.levelFor(el, L.rawStorey[el.guid], L, G);
+      tier[r.tier] = (tier[r.tier] || 0) + 1;
+      if (r.overridden) overridden++;
+      var ix = (r.idx == null ? -1 : r.idx);
+      idxOf[el.guid] = ix;
+      // NAME VOTE (only used for grid lines that spatial_structure did not name — below). The vote
+      // is cast from the RAW DB storey, never e.storey, so a name assignStoreyByZ invented cannot
+      // win it. An element with no declared storey abstains; it has no name to contribute.
+      var rs0 = L.rawStorey[el.guid];
+      if (ix >= 0 && rs0 && rs0 !== '_UNKNOWN' && !/^unknown$/i.test(String(rs0))) {
+        var cn = collapse(rs0);
+        if (storeyMergeMap && storeyMergeMap[cn]) cn = storeyMergeMap[cn];
+        (votes[ix] = votes[ix] || {})[cn] = ((votes[ix] || {})[cn] || 0) + 1;
+      }
+    }
+    // §S34.1 measured: some buildings (Duplex, LTU_AHouse) carry storey NAMES on elements but no
+    // IfcBuildingStorey.Elevation at all, so buildGrid falls back to a uniform grid and the loop
+    // above named nothing. Rather than show the user "L0/L1/L2/L3" where the model plainly says
+    // "T/FDN / Level 1 / Level 2 / Roof", label each unnamed grid line with the MOST COMMON declared
+    // name among the elements that geometrically land on it. The level's IDENTITY stays geometric —
+    // this only supplies its LABEL, and the label is extracted from the data, never invented.
+    var voted = [];
+    Object.keys(votes).map(Number).sort(function (a, b) { return a - b; }).forEach(function (ix2) {
+      if (keyAt[ix2] != null) return;                       // spatial_structure already named it
+      var v = votes[ix2];
+      var best = Object.keys(v).sort(function (a, b) { return v[b] - v[a] || (a < b ? -1 : 1); })
+        .filter(function (nm) { return taken[nm] == null; })[0];
+      if (best == null) return;                             // every candidate belongs to a lower line
+      keyAt[ix2] = best; taken[best] = ix2;
+      voted.push(ix2 + '="' + best + '"(' + v[best] + '/' + Object.keys(v).reduce(function (s, k) { return s + v[k]; }, 0) + ')');
+    });
+    if (voted.length) console.log('§TPL_LEVEL_AXIS_NAMEVOTE label=' + label +
+      ' gridLines spatial_structure did not name, labelled by plurality of the RAW declared storey of ' +
+      'the elements on them: ' + voted.join(' '));
+    // re-key now that late names exist
+    for (var i4 = 0; i4 < elements.length; i4++) keyByGuid[elements[i4].guid] = keyForIdx(idxOf[elements[i4].guid]);
+    // rank = the grid index itself. The grid is the DECLARED floor lines in ascending order, so the
+    // index IS the floor order — no median-of-element-z election is needed to recover it (that
+    // election is what §BIMEYES measured as manufacturing band inversions).
+    var rank = {};
+    Object.keys(keyAt).forEach(function (i3) { rank[keyAt[i3]] = Number(i3); });
+
+    console.log('§TPL_LEVEL_AXIS label=' + label + ' source=LevelDeriver gridSource=' + G.source +
+      ' k=' + G.grid.length + ' levels=' + JSON.stringify(Object.keys(rank).sort(function (a, b) { return rank[a] - rank[b]; })) +
+      ' T1=' + tier.T1 + ' T2=' + tier.T2 + ' T3=' + tier.T3 + ' T4=' + tier.T4 +
+      ' geometryOverrides=' + overridden +
+      ' ambiguousNames=' + L.ambiguousNames.length +
+      ' nameCollisions=' + (collided.length ? JSON.stringify(collided) : '0'));
+    if (tier.T4) console.log('§TPL_LEVEL_AXIS_T4 label=' + label + ' n=' + tier.T4 +
+      ' elements have non-finite geometry and NO declared storey — they key to _UNKNOWN and sort LAST. ' +
+      'Counted, never defaulted onto a real floor (that defaulting is the defect this swap removes).');
+
+    return {
+      keyOf: function (el) { var k = keyByGuid[el.guid]; return k != null ? k : '_UNKNOWN'; },
+      rankOf: function (k) { return rank[k] != null ? rank[k] : 1e9; },
+      stats: { grid: G.grid, gridSource: G.source, tier: tier, overridden: overridden,
+               rank: rank, keyByGuid: keyByGuid, rawStorey: L.rawStorey }
+    };
+  }
+
+  // §TPL_LEVEL_DISAGREE — measure the two axes SIDE BY SIDE before trusting either (step 3 of the
+  // 2026-08-27 task; the §STATUS instrument rule: a swap that is not measured is a guess). Prints
+  // every element whose OLD key (collapse(assignStoreyByZ(...))) differs from the NEW one, bucketed,
+  // plus the share of those whose RAW db storey was absent/_UNKNOWN — i.e. the ones assignStoreyByZ
+  // FABRICATED a floor for. That last number is the direct tie to the measured fabrication rates.
+  function _logLevelDisagreement(elements, collapse, axis, label) {
+    if (!axis) return null;
+    var raw = axis.stats.rawStorey || {};
+    var n = elements.length, dis = 0, fabricated = 0, fabAndDisagree = 0;
+    var pairs = {}, samples = [];
+    for (var i = 0; i < n; i++) {
+      var e = elements[i];
+      var oldK = collapse(e.storey), newK = axis.keyOf(e);
+      var rs = raw[e.guid];
+      var wasFab = !rs || rs === '_UNKNOWN' || /^unknown$/i.test(String(rs));
+      if (wasFab) fabricated++;
+      if (oldK === newK) continue;
+      dis++;
+      if (wasFab) fabAndDisagree++;
+      var pk = oldK + ' -> ' + newK;
+      pairs[pk] = (pairs[pk] || 0) + 1;
+      if (samples.length < 12) samples.push({ guid: e.guid, cls: e.cls, rawStorey: rs == null ? null : rs,
+        old: oldK, 'new': newK, base_z: Number((e.base_z).toFixed(3)) });
+    }
+    // ⚠ THE RAW `disagree` COUNT OVERSTATES THE CHANGE AND MUST NOT BE THE HEADLINE. When a building
+    // has no IfcBuildingStorey.Elevation the derived grid lines get their labels from a plurality
+    // vote, so a level can come out correctly grouped but differently NAMED — and then every element
+    // on it counts as "disagreeing" purely because the text changed. Measured on Duplex before this
+    // split existed: 100.00% raw, of which only 9.56% was a real regrouping.
+    // STRUCTURAL disagreement is the honest number: map each OLD level to the NEW level that most of
+    // its elements went to, then count only the elements that did NOT follow their own level's
+    // plurality. That is invariant under relabeling and is what actually changes the task grid.
+    var domOf = {}, byOld = {};
+    for (var i5 = 0; i5 < n; i5++) {
+      var e5 = elements[i5], o5 = collapse(e5.storey), n5 = axis.keyOf(e5);
+      (byOld[o5] = byOld[o5] || {})[n5] = ((byOld[o5] || {})[n5] || 0) + 1;
+    }
+    Object.keys(byOld).forEach(function (o) {
+      var v = byOld[o];
+      domOf[o] = Object.keys(v).sort(function (a, b) { return v[b] - v[a] || (a < b ? -1 : 1); })[0];
+    });
+    var structural = 0, structFab = 0;
+    for (var i6 = 0; i6 < n; i6++) {
+      var e6 = elements[i6], o6 = collapse(e6.storey);
+      if (axis.keyOf(e6) === domOf[o6]) continue;
+      structural++;
+      var rs6 = raw[e6.guid];
+      if (!rs6 || rs6 === '_UNKNOWN' || /^unknown$/i.test(String(rs6))) structFab++;
+    }
+    var relabelOnly = dis - structural;
+
+    var pct = function (a) { return (100 * a / (n || 1)).toFixed(2) + '%'; };
+    var top = Object.keys(pairs).sort(function (a, b) { return pairs[b] - pairs[a]; }).slice(0, 12)
+      .reduce(function (o, k) { o[k] = pairs[k]; return o; }, {});
+    console.log('§TPL_LEVEL_DISAGREE label=' + label + ' n=' + n +
+      ' STRUCTURAL=' + structural + ' (' + pct(structural) + ' — elements that actually change level GROUP; this is the headline)' +
+      ' relabelOnly=' + relabelOnly + ' (' + pct(relabelOnly) + ' — same group, different level NAME)' +
+      ' rawKeyDiff=' + dis + ' (' + pct(dis) + ')' +
+      ' rawStoreyMissing=' + fabricated + ' (' + pct(fabricated) + ' — assignStoreyByZ INVENTED a floor name for these)' +
+      ' structuralAmongFabricated=' + structFab + '/' + fabricated +
+      ' structuralAmongDeclared=' + (structural - structFab) + '/' + (n - fabricated) +
+      ' distinctPairs=' + Object.keys(pairs).length);
+    console.log('§TPL_LEVEL_DISAGREE_MAP label=' + label + ' dominantOldToNew=' + JSON.stringify(domOf));
+    console.log('§TPL_LEVEL_DISAGREE_PAIRS label=' + label + ' ' + JSON.stringify(top));
+    samples.forEach(function (s) {
+      console.log('§TPL_LEVEL_DISAGREE_EG label=' + label + ' guid=' + s.guid + ' cls=' + s.cls +
+        ' rawDbStorey=' + JSON.stringify(s.rawStorey) + ' old="' + s.old + '" new="' + s['new'] + '" base_z=' + s.base_z);
+    });
+    if (structural === 0) console.log('§TPL_LEVEL_DISAGREE_VACUOUS label=' + label +
+      ' — no element changes level GROUP on this building (relabelOnly=' + relabelOnly + '). It cannot ' +
+      'tell the swap apart structurally; a 0 here is NOT evidence the swap is correct elsewhere (§S32.4 vacuity rule).');
+    return { n: n, disagree: dis, structural: structural, relabelOnly: relabelOnly,
+             fabricated: fabricated, fabAndDisagree: fabAndDisagree, structFab: structFab, pairs: pairs };
+  }
+
   // _writeTemplateSchedule — the §TEMPLATE_INSTANTIATE write path. Same tables, same schedule_id,
   // same idempotent rebuild as the legacy grouping path; the difference is WHERE the numbers come
   // from: task windows from 4D_template.json's duration_rule, task_sequences from its dependencies.
@@ -986,7 +1210,33 @@
       var c = SG.collapsePhase(st);
       return (storeyMergeMap && storeyMergeMap[c]) || c;
     }
-    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse);
+    // §TPL_LEVEL_AXIS opt-in. `opts.levelSource === 'deriver'` swaps the task grid's vertical axis
+    // to LevelDeriver; anything else (including absent) keeps the proven collapse(e.storey)/bandRank
+    // path byte-for-byte. `opts.levelProbe` measures the two axes against each other WITHOUT
+    // swapping — so the disagreement rate can be read off a shipped-behaviour run.
+    // TPL_LEVEL_SOURCE / TPL_LEVEL_PROBE env overrides exist so the SHIPPED witnesses can be run
+    // flag-on without forking them (node harness only — `process` is absent in the browser, so the
+    // live viewer can only ever be switched by an explicit opts.levelSource).
+    var _env = (typeof process !== 'undefined' && process && process.env) ? process.env : {};
+    var _srcOpt = opts.levelSource || _env.TPL_LEVEL_SOURCE || null;
+    var _wantAxis = (_srcOpt === 'deriver');
+    var _wantProbe = _wantAxis || !!opts.levelProbe || _env.TPL_LEVEL_PROBE === '1';
+    var _axis = null;
+    if (_wantProbe) {
+      _axis = _deriverLevelAxis(db, elements, collapse, storeyMergeMap, opts.label || 'building');
+      _logLevelDisagreement(elements, collapse, _axis, opts.label || 'building');
+    }
+    if (_wantAxis && !_axis) {
+      // Asked for the new axis, could not build it. Do NOT quietly serve the old one under the new
+      // name — say so, then fall back to the proven path.
+      console.log('§TPL_LEVEL_SOURCE requested=deriver effective=storey — FELL BACK (axis unavailable)');
+    }
+    var _useAxis = _wantAxis ? _axis : null;
+    // Emitted only when something was actually asked for, so a default run's §-log stays byte-for-byte
+    // what it was before this change (the flag-off identity the witnesses check).
+    if (_wantProbe) console.log('§TPL_LEVEL_SOURCE requested=' + (_srcOpt || 'storey') +
+      ' effective=' + (_useAxis ? 'deriver' : 'storey') + ' probe=on');
+    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _useAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
     // Absence is REPORTED, never silent — 4D_template.json's own instantiation rule, and the
@@ -2492,6 +2742,10 @@
     materializeZones: materializeZones,
     _buildScheduleElements: _buildScheduleElements,
     instantiateTemplate: instantiateTemplate,
+    // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
+    // own, without having to drive a whole materializeZones write to see them.
+    _deriverLevelAxis: _deriverLevelAxis,
+    _logLevelDisagreement: _logLevelDisagreement,
     remapSolveToTasks: remapSolveToTasks,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
