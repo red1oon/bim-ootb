@@ -22,7 +22,14 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1091';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1092';   // bump on each deploy; per-change detail is the git commit message.
+// v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
+// §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
+// now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
+// stage — its geometry never reads A.camera, unlike the round glow sprite and §NIGHT_STILL_LIGHTS
+// (both untouched, both correctly camera-dependent). effects.js?v=26->27, both in PRECACHE_ASSETS.
+// Witness: witness_glow_lens_stage_keep.js, 7/7 PASS (Duplex A/B: baseline 29 stage/remove cycles
+// in 28 frames -> fix 2 stages + 27 skips, last-frame rect/round counts byte-identical both sides).
 // v1090 (2026-08-27) §TPL_MODEL: rates/4D_template.json ADDED to PRECACHE_ASSETS (it defines the
 // canonical task grid and was never precached, so offline/cold-SW silently ran the dead deriveZones
 // path), plus schedule_author.js now names which model ran at the fork. Both are precached, so
