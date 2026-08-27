@@ -1,10 +1,10 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-08-17T06:37:28.023Z",
+  "generated_at": "2026-08-27T01:09:13.454Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-s21-hospital-data",
-    "sha": "225e0cbfe33e785554a182fec3b7f60532cfefce",
+    "worktree": "/tmp/wt-storey-oci",
+    "sha": "515b520de8a67a85d03c6651d8794fded997e3d5",
     "behind_origin_main": 0,
     "ahead_origin_main": 1,
     "clean": true,
@@ -32,7 +32,18 @@
     "size": "1382739",
     "last-modified": "Sat, 15 Aug 2026 17:27:50 GMT"
   },
-  "verification": null,
+  "verification": {
+    "cmd": "node scripts/probe_s18_elevation_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§S18_DEPLOY gate-db PASS — 56 storey datums survive the room compile, 8 names -> 8 bands"
+    ]
+  },
   "verdict": "PASS",
-  "failures": []
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-27T01:09:22.527Z",
+    "etag": "3342d90b-d667-44f6-84ed-102f5b44aeea",
+    "verified": true
+  }
 }
