@@ -319,9 +319,23 @@ function setupTools(A) {
           mat.opacity = 0.3;
           mat.side = THREE.DoubleSide;
         } else {
-          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent : false;
-          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity : 1;
-          mat.side = mat._origSide !== undefined ? mat._origSide : THREE.FrontSide;
+          // §XRAY_RESTORE_USERDATA_FIX: mat._origTransparent/_origOpacity/_origSide are only
+          // captured for materials that already existed in _matCache at the moment xray turned ON
+          // (the loop above). A material first created WHILE xray was already active
+          // (streaming.js:850 sets opacity=0.3 unconditionally at creation time, no _orig* ever
+          // recorded for it) restored here to the hardcoded default (opaque, FrontSide) instead of
+          // its real material — permanently flattening any such material transparent (e.g. glass)
+          // opaque for the rest of the session, since it then sits cached in A._matCache and is
+          // reused for every future element sharing the same cacheKey. streaming.js:848-849 already
+          // records the true per-material value in userData.origOpacity/origSide for EVERY material
+          // at creation time, xray-on-or-not — prefer that over the hardcoded default.
+          var _ud = mat.userData || {};
+          mat.transparent = mat._origTransparent !== undefined ? mat._origTransparent
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity < 1.0 : false);
+          mat.opacity = mat._origOpacity !== undefined ? mat._origOpacity
+            : (_ud.origOpacity !== undefined ? _ud.origOpacity : 1);
+          mat.side = mat._origSide !== undefined ? mat._origSide
+            : (_ud.origSide !== undefined ? _ud.origSide : THREE.FrontSide);
         }
         mat.needsUpdate = true;
       }
@@ -336,9 +350,14 @@ function setupTools(A) {
           m._origSide = m.side;
           m.transparent = true; m.opacity = 0.3; m.side = THREE.DoubleSide;
         } else {
-          m.transparent = m._origTransparent !== undefined ? m._origTransparent : false;
-          m.opacity = m._origOpacity !== undefined ? m._origOpacity : 1;
-          m.side = m._origSide !== undefined ? m._origSide : THREE.FrontSide;
+          // Same §XRAY_RESTORE_USERDATA_FIX as above, applied to the scene.traverse fallback path.
+          var _mud = m.userData || {};
+          m.transparent = m._origTransparent !== undefined ? m._origTransparent
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity < 1.0 : false);
+          m.opacity = m._origOpacity !== undefined ? m._origOpacity
+            : (_mud.origOpacity !== undefined ? _mud.origOpacity : 1);
+          m.side = m._origSide !== undefined ? m._origSide
+            : (_mud.origSide !== undefined ? _mud.origSide : THREE.FrontSide);
         }
         m.needsUpdate = true;
       });
