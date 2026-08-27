@@ -1303,7 +1303,9 @@ async function setupScene(A) {
         // guard with objectStoreNames.contains, since listing a non-existent store in
         // db.transaction([...]) throws synchronously and would break the whole write.
         var _hasRevalStore = cacheDb.objectStoreNames.contains('revalidation');
-        // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
+        // One write attempt under `key`. Resolves { ok, name, err } — the abort REASON, not just a
+        // boolean, because only ONE class of failure (a genuine quota shortfall) can be helped by
+        // throwing other entries away. See §CACHE_EVICT_ONLY_ON_QUOTA below.
         var _attemptWrite = function() {
           return new Promise(function(resolve) {
             var _writeOk = false;
@@ -1316,27 +1318,46 @@ async function setupScene(A) {
             const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
             req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
             req.onerror = function() {
-              // §S260b: Quota exceeded — let the tx abort so the caller evicts LRU and retries.
               console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
             tx.oncomplete = function() {
               if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-              resolve(_writeOk);
+              resolve({ ok: _writeOk });
             };
-            tx.onabort = function() { resolve(false); };
+            // Read tx.error. The old handler discarded it and every caller then ASSUMED "quota" —
+            // which is how a non-quota abort came to be reported as `quota too small` for months.
+            tx.onabort = function() {
+              var e = tx.error;
+              resolve({ ok: false, name: e ? e.name : '', err: e ? (e.name + ': ' + e.message) : '(tx.error was null)' });
+            };
           });
         };
-        // §CACHE_EVICT_LRU_RETRY (F3): on a quota abort, drop the OLDEST entries and try again —
-        // bounded. The old code .clear()'d the entire store, so one oversized write wiped every
-        // other cached building and turned the next open of ANY of them into a fresh download.
-        var _ok = await _attemptWrite();
-        for (var _try = 0; !_ok && _try < 4; _try++) {
-          var _dropped = await A._evictOldest(cacheDb, 4);
-          if (!_dropped) break;                       // nothing left to give up — stop, don't spin
-          console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
-          _ok = await _attemptWrite();
+        // §CACHE_EVICT_ONLY_ON_QUOTA (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — THE DATA-LOSS FIX.
+        // This ladder used to force-evict the 4 oldest entries after ANY abort and retry, up to 4
+        // times. MEASURED on Hospital: Hospital_geo.db is 239,702,016 bytes and Chrome caps a SINGLE
+        // IndexedDB value at 133,169,152 bytes (~127MiB), so its write aborts with
+        //   UnknownError: The serialized keys and/or value are too large (size=239702104, max=133169152)
+        // — a failure NO amount of eviction can fix. The ladder ran anyway and, with only 2 entries in
+        // the store, "drop the 4 oldest" dropped EVERYTHING — including buildings/Hospital_meta.db,
+        // the slot the Time Machine had just persisted a user's Gantt edit into. persistDb had
+        // correctly reported ok=true and logged §SCHED_PERSIST; the bytes were then deleted out from
+        // under it by this loop, and the next reload silently refetched the pristine network copy.
+        // So: evict ONLY for QuotaExceededError, the one failure eviction can actually relieve.
+        var _res = await _attemptWrite();
+        var _ok = _res.ok;
+        if (!_ok && _res.name && _res.name !== 'QuotaExceededError') {
+          console.warn(`[S203] §CACHE_WRITE_UNFIXABLE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+            ` err=${_res.err} — eviction cannot help this; cache left INTACT`);
+        } else if (!_ok) {
+          for (var _try = 0; !_ok && _try < 4; _try++) {
+            var _dropped = await A._evictOldest(cacheDb, 4);
+            if (!_dropped) break;                     // nothing left to give up — stop, don't spin
+            console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
+            _res = await _attemptWrite();
+            _ok = _res.ok;
+          }
+          if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} err=${_res.err || 'unknown'} — still failing after LRU eviction`);
         }
-        if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} — quota too small even after LRU eviction`);
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 

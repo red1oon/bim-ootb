@@ -2442,13 +2442,33 @@
             if (!idb || !idb.objectStoreNames.contains('dbs')) {
               console.warn('§SCHED_PERSIST_ERR no cache store url=' + url); resolve(false); return;
             }
-            var tx = idb.transaction('dbs', 'readwrite');
+            // §SCHED_PERSIST_LRU_TOUCH (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b): stamp 'timestamps'
+            // in the SAME transaction as the blob. Until this, persistDb wrote 'dbs' ONLY, so an
+            // edited slot kept whatever timestamp cachedFetch left on it at first download — making
+            // the ONE entry that holds unsaved user work the OLDEST entry in the store, i.e. the
+            // FIRST thing scene.js's LRU evictor throws away. Editing your schedule literally moved
+            // your data to the front of the deletion queue (MEASURED: after three persists the
+            // Hospital meta slot still had no timestamp of its own at all).
+            var _hasTs = idb.objectStoreNames.contains('timestamps');
+            var tx = idb.transaction(_hasTs ? ['dbs', 'timestamps'] : ['dbs'], 'readwrite');
             tx.objectStore('dbs').put(buf, key);
+            if (_hasTs) tx.objectStore('timestamps').put(Date.now(), key);
             tx.oncomplete = function () {
               console.log('§SCHED_PERSIST url=' + url + ' key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
               resolve(true);
             };
             tx.onerror = function () { console.warn('§SCHED_PERSIST_ERR tx ' + (tx.error && tx.error.message)); resolve(false); };
+            // §SCHED_PERSIST_ABORT — a tx that ABORTS fires neither oncomplete nor (always) onerror.
+            // Without this handler the promise never settled: _tmPersistEdit's .then() never ran, so
+            // a failed save logged NOTHING and told the user NOTHING. Chrome aborts here for real
+            // reasons — a single IDB value over ~127MiB (a big building's meta.db can reach it) or a
+            // genuine QuotaExceededError — and each one silently discarded the user's edit.
+            tx.onabort = function () {
+              var e = tx.error;
+              console.warn('§SCHED_PERSIST_ERR abort key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB' +
+                ' err=' + (e ? (e.name + ': ' + e.message) : '(tx.error was null)'));
+              resolve(false);
+            };
           }).catch(function (e) { console.warn('§SCHED_PERSIST_ERR open ' + (e && e.message)); resolve(false); });
         } catch (e) { console.warn('§SCHED_PERSIST_ERR', e); resolve(false); }
       }, delay);

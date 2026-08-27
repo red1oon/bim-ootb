@@ -22,7 +22,7 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1090';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1091';   // bump on each deploy; per-change detail is the git commit message.
 // v1090 (2026-08-27) §TPL_MODEL: rates/4D_template.json ADDED to PRECACHE_ASSETS (it defines the
 // canonical task grid and was never precached, so offline/cold-SW silently ran the dead deriveZones
 // path), plus schedule_author.js now names which model ran at the fork. Both are precached, so
