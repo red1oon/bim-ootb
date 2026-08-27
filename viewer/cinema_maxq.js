@@ -92,6 +92,26 @@
   var BUILDUP_EVEN_TEMPO = true;   // false restores §CPE_BUILDUP_WORK_PACED
   var _wpSched = null, _wpTried = false;
 
+  // ══ §CPE_BUILDUP_ONSET_BLEND (2026-08-27, CINEMA_PATH_EDITOR.md §CPE_BUILDUP_ONSET_BURST) ═════
+  // Re-raised by the user after §CPE_BUILDUP_ONSET_BURST (2026-08-13) was deprioritized, not fixed:
+  // "the movie is not reflecting the build up construction speed on the very first day... captures
+  // frames right away to days past... first few secs should take on Day 0 as most 4D rush onset."
+  // §CPE_BUILDUP_EVEN_TEMPO's day counter is still correct system-wide (kept, unchanged below) but a
+  // schedule that clusters completions early still LOOKS bursty under a pure calendar cursor —
+  // measured then: Duplex, 24.6% of the whole building already placed 5.5s into a 55s film. This is
+  // the minimal fix the prior write-up named and left unbuilt ("blend the cursor toward the
+  // already-present element-paced formula only within roughly the first ~10s of film... fading back
+  // to pure calendar-linear after") — scoped exactly to the user's own ask ("correct only the first
+  // 10 secs"), never reopening "two mechanisms compete for the whole film"
+  // (§CPE_BUILDUP_EVEN_TEMPO's own reason for retiring §CPE_BUILDUP_WORK_PACED as the default).
+  var ONSET_BLEND_SEC = 10;        // film seconds; user's own scoping, not invented
+  var _wpOnsetTried = false;       // separate one-shot arm flag — independent of _wpTried, which
+                                   // already gates BOTH the even-tempo mode-log AND the (unused
+                                   // while even-tempo is on) full-film work-pacing arm below; reusing
+                                   // it here would make _workPacingArm()'s own `_wpTried = true` first
+                                   // line silently suppress the even-tempo mode-log this same call
+                                   // still needs to print.
+
   function _workPacingArm() {
     _wpTried = true; _wpSched = null;
     if (typeof window.tmWorkSchedule !== 'function') {
@@ -112,21 +132,54 @@
     return true;
   }
 
-  // The cursor this frame should ask for. Pure function of the film fraction, so preview and bake
-  // cannot diverge and two runs of the same film ask for identical cursors.
-  function _workCursorAt(tFilm, bkState) {
+  // The cursor this frame should ask for. Pure function of (tFilm, bkState, totalSec) — `totalSec`
+  // is a per-plan constant (the film's own designed length), identical for preview and bake of the
+  // same film, so preview and bake still cannot diverge and two runs of the same film still ask for
+  // identical cursors. `totalSec` is optional (older call sites omit it) — onset blend simply stays
+  // off when it is not supplied, same DEGRADE-DON'T-DISABLE contract every other lever in this file
+  // already follows.
+  function _workCursorAt(tFilm, bkState, totalSec) {
     var t = Math.max(0, Math.min(1, tFilm));
+    var calMs = bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
     // §CPE_BUILDUP_EVEN_TEMPO — the straight line, before any schedule is consulted. Gated ahead of
     // _workPacingArm() so an even-tempo film never even arms work pacing: arming logs a mode line
     // that would then describe a pacing that is not in force, which is exactly the kind of log that
     // costs a live debugging round-trip.
     if (BUILDUP_EVEN_TEMPO) {
+      // §CPE_BUILDUP_ONSET_BLEND — onsetU is the ONSET_BLEND_SEC window expressed as a tFilm
+      // fraction of THIS film (so "10 seconds" means the same thing on a 30s and a 300s bake),
+      // capped at half the film so a very short test/preview clip can't blend past its midpoint.
+      var onsetU = (totalSec > 0) ? Math.min(0.5, ONSET_BLEND_SEC / totalSec) : 0;
+      if (onsetU > 0 && t < onsetU) {
+        if (!_wpOnsetTried) { _wpOnsetTried = true; _workPacingArm(); }
+        if (_wpSched) {
+          var _k = Math.max(1, Math.min(_wpSched.total, Math.round(t * _wpSched.total)));
+          var elMs = _wpSched.ends[_k - 1];
+          // w: 0 at t=0 (fully element-paced, matching the burst's own true completion order) ->
+          // 1 at t=onsetU (fully calendar-linear, handing off to §CPE_BUILDUP_EVEN_TEMPO cleanly —
+          // blendedMs === calMs exactly at the handoff instant, no seam).
+          var w = t / onsetU;
+          var blendedMs = elMs + (calMs - elMs) * w;
+          if (!_wpTried) {
+            _wpTried = true;
+            console.log('§CPE_BUILDUP_PACING mode=even-calendar+onset-blend (§CPE_BUILDUP_ONSET_BLEND) ' +
+              'onsetSec=' + ONSET_BLEND_SEC + '/' + totalSec.toFixed(1) + ' onsetU=' + onsetU.toFixed(4) +
+              ' — first ' + ONSET_BLEND_SEC + 's blend toward element-paced order, fading to pure ' +
+              'calendar by t=' + onsetU.toFixed(4) + '; day counter and the rest of the film unaffected');
+          }
+          return blendedMs;
+        }
+        // Work schedule unavailable (older time_machine.js / no usable schedule) — DEGRADE to pure
+        // calendar exactly as §CPE_BUILDUP_EVEN_TEMPO always has; _workPacingArm() already logged why.
+      }
       if (!_wpTried) {
         _wpTried = true;
         console.log('§CPE_BUILDUP_PACING mode=even-calendar (§CPE_BUILDUP_EVEN_TEMPO) — every film ' +
-          'second advances the SAME number of days; dwell/tempo is the path editor\'s job (sticks + timings)');
+          'second advances the SAME number of days; dwell/tempo is the path editor\'s job (sticks + timings)' +
+          (onsetU > 0 ? ' (onset-blend window armed but no usable work schedule — see §CPE_BUILDUP_PACING arm log above)'
+                      : ' (onset-blend inactive — no totalSec passed by this caller)'));
       }
-      return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
+      return calMs;
     }
     if (!_wpTried) _workPacingArm();
     if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
@@ -139,7 +192,7 @@
     return _wpSched.ends[k - 1];
   }
 
-  function _workPacingReset() { _wpSched = null; _wpTried = false; _fcIdx = null; }
+  function _workPacingReset() { _wpSched = null; _wpTried = false; _wpOnsetTried = false; _fcIdx = null; }
 
   // ══ §CPE_BUILDUP_TOPOUT (2026-08-02) — the ending beats dwell on the FINISHED building ═════════
   // User, on the 1761-frame Hospital bake: "the top roof solar panels never gets to be shown - it
@@ -1295,7 +1348,7 @@
           // §CPE_BUILDUP_WORK_PACED: was `projectStart + t*span` — linear in DAYS. Now linear in
           // ELEMENTS, so the building rises at an even rate regardless of how the derived 4D order
           // clusters its timestamps.
-          var _bkMs = _workCursorAt(_bkT, _bkState);
+          var _bkMs = _workCursorAt(_bkT, _bkState, nFrames / fps);
           window.tmSetCursor(_bkMs);
           // §CPE_GHOST_GROUND: same film fraction the cursor rides, so the ghost cannot drift out of
           // step with what is actually placed.

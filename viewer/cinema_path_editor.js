@@ -1479,7 +1479,10 @@
     if (!ts.active) return null;   // conservative: never arm TM from a scrub — see block comment
     var a = A();
     var bkTn = a.buildupTAt ? a.buildupTAt(tn, s.plan) : tn;
-    var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, ts)
+    // §CPE_BUILDUP_ONSET_BLEND: same durationSec the scrub's own plan was built with, so a scrub
+    // preview and the real bake agree on where the onset window ends.
+    var _totalSec = s.plan && s.plan.durationSec;
+    var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, ts, _totalSec)
       : (ts.projectStart + bkTn * (ts.projectEnd - ts.projectStart));
     window.tmSetCursor(bkMs);
     // Same order as step(): readout refreshed AFTER this call's tmSetCursor, reading the cursor this
@@ -2441,18 +2444,22 @@
           // §CPE_BUILDUP_TOPOUT: the same remap the bake applies — construction completes at the
           // closing-orbit boundary, so the rehearsal's ending shows the finished building too.
           var bkTn = a.buildupTAt ? a.buildupTAt(tn, _state.plan) : tn;
+          // §CPE_BUILDUP_ONSET_BLEND: same expression §CPE_GHOST_GROUND already uses below for its
+          // own totalSec — one value, reused, so onset blend and ghost-ground fade agree on the
+          // film's length instead of each computing their own.
+          var _totalSec = _titleTotalSec || dur / 1000;
           // §GHOST_GROUND_LIVE_TRIGGER: compute the cursor ONCE and reuse it for tmSetCursor,
           // ghostGroundAt and dayCounterLiveTick — previously each call re-derived it inline
           // (harmless when they agreed, but the ghost-ground trigger now needs the EXACT same
           // cursor value tmSetCursor just used, not a separately-recomputed one).
-          var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
+          var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev, _totalSec)
             : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart));
           window.tmSetCursor(bkMs);
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x. `bkMs` is the real cursor — §GHOST_GROUND_
           // LIVE_TRIGGER compares it directly to `firstAboveMs`, never a converted fraction.
-          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _titleTotalSec || dur / 1000, bkPrev, bkMs);
+          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _totalSec, bkPrev, bkMs);
           // Same cursor the buildup was just set to — never a second, separately-interpolated clock.
           if (_dayOn && a.dayCounterLiveTick) a.dayCounterLiveTick(bkMs);
         }
