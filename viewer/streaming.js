@@ -497,6 +497,7 @@ function setupStreaming(A) {
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
+      normal: 'textures/materials/concrete_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.5,     // world units per texture repeat
       normFactorRGB: [2.0755, 2.0755, 2.0755],  // §TRINORM_LINEAR — inverse LINEAR mean (grayscale tex)
       contrastBoost: 1.6
@@ -504,6 +505,7 @@ function setupStreaming(A) {
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
+      normal: 'textures/materials/plaster_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.0,
       normFactorRGB: [1.9428, 1.9262, 2.0172],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.5
@@ -511,6 +513,7 @@ function setupStreaming(A) {
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
+      normal: 'textures/materials/metal_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
       normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
@@ -677,6 +680,7 @@ function setupStreaming(A) {
       }
       var _diffuseTex = _triTex(triMat.diffuse, true);
       var _roughTex = _triTex(triMat.roughness, false);
+      var _normalTex = triMat.normal ? _triTex(triMat.normal, false) : null;
       var _triUvScale = 1.0 / triMat.tileMeters;
       var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
@@ -684,6 +688,8 @@ function setupStreaming(A) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
         shader.uniforms.uTriRoughness = { value: _roughTex };
+        shader.uniforms.uTriNormalMap = { value: _normalTex };
+        shader.uniforms.uTriNormalScale = { value: _normalTex ? 1.0 : 0.0 };
         shader.uniforms.uTriScale = { value: _triUvScale };
         shader.uniforms.uTriNorm = { value: _triNorm };
         shader.uniforms.uTriContrast = { value: _triContrast };
@@ -730,11 +736,44 @@ function setupStreaming(A) {
             'varying vec3 vTriWorldNormal;',
             'uniform sampler2D uTriDiffuse;',
             'uniform sampler2D uTriRoughness;',
+            'uniform sampler2D uTriNormalMap;',
+            'uniform float uTriNormalScale;',
             'uniform float uTriActive;',
             'uniform float uTriScale;',
             'uniform vec3 uTriNorm;',   // §TRIPLANAR_CAST_FIX — per-channel, was a scalar
             'uniform float uTriContrast;',
             'uniform float uPaintSeed;'
+          ].join('\n'))
+          .replace('#include <normal_fragment_maps>', [
+            '#include <normal_fragment_maps>',
+            // §TRIPLANAR_NORMAL (2026-08-30) — the missing third map. NOTICE.txt recorded the gap
+            // from day one: "Diffuse+roughness only (no normal/AO ... two-maps-only first pass)".
+            // Without it every fragment of a flat wall/floor/slab shares ONE surface normal, so the
+            // lighting term is CONSTANT across the whole surface: the texture tints the albedo and
+            // the light never varies. Measured on a real Alt+S Terminal frame: ceiling patch luma
+            // std 5.67, floor patch std 16.92 — flat, and no tuning can fix it because there is no
+            // relief for the light to catch. Same still-only uTriActive gate as the other two maps,
+            // so navigation still pays nothing.
+            // Whiteout/UDN blend: each axis sample is swizzled into world space and blended by the
+            // same triW weights the diffuse uses, then taken to VIEW space (three.js `normal` is
+            // view-space at this point).
+            'if (uTriActive > 0.5 && uTriNormalScale > 0.0) {',
+            '  vec3 nW = normalize(vTriWorldNormal);',
+            '  vec3 nTriW = pow(abs(nW), vec3(4.0));',
+            '  nTriW /= (nTriW.x + nTriW.y + nTriW.z + 1e-5);',
+            '  vec2 nUvX = vTriWorldPos.zy * uTriScale;',
+            '  vec2 nUvY = vTriWorldPos.xz * uTriScale;',
+            '  vec2 nUvZ = vTriWorldPos.xy * uTriScale;',
+            '  vec3 tX = texture2D(uTriNormalMap, nUvX).xyz * 2.0 - 1.0;',
+            '  vec3 tY = texture2D(uTriNormalMap, nUvY).xyz * 2.0 - 1.0;',
+            '  vec3 tZ = texture2D(uTriNormalMap, nUvZ).xyz * 2.0 - 1.0;',
+            '  tX = vec3(tX.xy + nW.zy, abs(tX.z) * nW.x);',
+            '  tY = vec3(tY.xy + nW.xz, abs(tY.z) * nW.y);',
+            '  tZ = vec3(tZ.xy + nW.xy, abs(tZ.z) * nW.z);',
+            '  vec3 triWorldN = normalize(tX.zyx * nTriW.x + tY.xzy * nTriW.y + tZ.xyz * nTriW.z);',
+            '  vec3 triViewN = normalize((viewMatrix * vec4(triWorldN, 0.0)).xyz);',
+            '  normal = normalize(mix(normal, triViewN, uTriNormalScale));',
+            '}'
           ].join('\n'))
           .replace('#include <roughnessmap_fragment>', [
             '#include <roughnessmap_fragment>',
@@ -792,6 +831,11 @@ function setupStreaming(A) {
         if (sh) {
           sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+          // §TRIPLANAR_NORMAL A/B switch, re-asserted here for the same reason uTriActive is
+          // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
+          // APP._triNormalOff = true reverts to the shipped two-map look with no reload.
+          if (sh.uniforms.uTriNormalMap && sh.uniforms.uTriNormalMap.value)
+            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : 1.0;
         }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
