@@ -887,7 +887,31 @@ async function setupScene(A) {
   // A._libHasNormals (streaming.js:868) honest after a merge.
   function _mergeTable(src, dst, table) {
     var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
-    if (!sCols || !dCols) return null;
+    if (!sCols) return null;
+    // §MERGE_CREATE 2026-08-30 — "fold only when the table exists on BOTH sides" silently threw away
+    // every incoming geometry BLOB whenever the two sides name that table differently: a server
+    // split geo.db carries `base_geometries`, a client-side IFC import carries
+    // `component_geometries` (import_db_builder.js:66). Neither name was ever on both sides, so
+    // _MERGE_GEO_TABLES folded NOTHING and the merged building saved with no geometry at all
+    // (W-MERGE-SAVE-ROUNDTRIP). The readers already accept either name (streaming.js:1162,1212), so
+    // materialising the source's own table in the destination is what makes the fold lossless.
+    // Only ever reached for the fixed _MERGE_META_TABLES/_MERGE_GEO_TABLES whitelist.
+    if (!dCols) {
+      var ddl = null;
+      try {
+        var dr = src.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='" +
+          table.replace(/'/g, "''") + "'");
+        if (dr && dr.length && dr[0].values.length) ddl = dr[0].values[0][0];
+      } catch (e) {}
+      if (!ddl) return null;
+      try { dst.run(ddl); } catch (e) {
+        console.warn('§MERGE_CREATE_FAIL table=' + table + ' ' + e.message); return null;
+      }
+      dCols = _mergeCols(dst, table);
+      if (!dCols) return null;
+      console.log('§MERGE_CREATE table=' + table + ' cols=' + dCols.length +
+        ' — destination had no such table, created from source schema');
+    }
     var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
     if (!cols.length) return null;
     var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
@@ -909,6 +933,51 @@ async function setupScene(A) {
       ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
       ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
     return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  // §MERGE_BLDCOL 2026-08-30 — LTU_AHouse_meta.db's elements_meta has NO `building` column
+  // (streaming.js:26-31, CPE_4D_PERF_MEM_FINDINGS §R6). Two consequences, both live bugs:
+  //   1. _mergeTable's destination-driven column intersection DROPS the incoming building name, so
+  //      a merged DB cannot say which rows are the new building.
+  //   2. the `GROUP BY m.building` centres query below throws (§HELPERS_QUERY_ERR), gets swallowed
+  //      by dbQuery, and leaves added=[] — the merged building is never registered, never streams.
+  // Add the column once, backfilling existing rows with the label the scene is ALREADY using for
+  // them (read off buildingCentres — extracted from live state, never invented), so both the live
+  // scene and every DB saved from it can name both buildings.
+  function _ensureBuildingCol(dst, src) {
+    var sCols = _mergeCols(src, 'elements_meta'), dCols = _mergeCols(dst, 'elements_meta');
+    if (!sCols || !dCols) return false;
+    if (dCols.indexOf('building') >= 0) return true;
+    if (sCols.indexOf('building') < 0) return false;   // neither side has it — nothing to preserve
+    var keys = Object.keys(A.buildingCentres || {});
+    var label = (keys.length === 1) ? keys[0]
+      : (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    try {
+      dst.run('ALTER TABLE elements_meta ADD COLUMN building TEXT');
+      dst.run('UPDATE elements_meta SET building = ? WHERE building IS NULL', [label]);
+      var n = 0;
+      try { n = dst.exec("SELECT COUNT(*) FROM elements_meta WHERE building = ?", [label])[0].values[0][0]; } catch (e) {}
+      // streaming.js probes this ONCE and caches — a stale `false` would keep every m.building
+      // query on the single-building fallback for the rest of the session.
+      A._buildingCol = true;
+      console.log('§MERGE_BLDCOL added=building backfill="' + label + '" rows=' + n);
+      return true;
+    } catch (e) { console.warn('§MERGE_BLDCOL_FAIL ' + e.message); return false; }
+  }
+
+  // The centres re-query both merge paths run in their step 6. Mirrors streaming.js:2501's
+  // _hasBuildingCol guard, which the merge copies were written without.
+  function _mergeCentresRows() {
+    var ok = A._hasBuildingCol ? A._hasBuildingCol(A.db) : true;
+    if (ok) {
+      return A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+    }
+    var label = (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    console.log('§MERGE_CENTRES_FALLBACK no building column — one building, one centre name="' + label + '"');
+    return A.dbQuery("SELECT '" + label.replace(/'/g, "''") + "', COUNT(*), " +
+      'AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+      'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid');
   }
 
   function _georefPin(db) {
@@ -965,6 +1034,7 @@ async function setupScene(A) {
 
     // ── §SM-7.1 step 3: fold the tables
     var stats = {};
+    _ensureBuildingCol(A.db, src);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
@@ -972,6 +1042,10 @@ async function setupScene(A) {
         if (s) stats[t] = s;
         else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
       });
+    } else {
+      // A.libDb is null in several streaming modes (streaming.js:2302,2479). Without this branch the
+      // geometry fold was skipped outright — the split sibling below always had it, this one didn't.
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     }
     console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
       ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
@@ -996,8 +1070,7 @@ async function setupScene(A) {
     for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
     var added = [];
     try {
-      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
-        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      var centres = _mergeCentresRows();
       for (var ci = 0; ci < centres.length; ci++) {
         var row = centres[ci];
         if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
@@ -1079,6 +1152,7 @@ async function setupScene(A) {
 
     // Fold tables: META_TABLES from srcMeta, GEO_TABLES from srcGeo — same _mergeTable helper, two sources.
     var stats = {};
+    _ensureBuildingCol(A.db, srcMeta);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
@@ -1111,8 +1185,7 @@ async function setupScene(A) {
     for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
     var added = [];
     try {
-      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
-        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      var centres = _mergeCentresRows();
       for (var ci = 0; ci < centres.length; ci++) {
         var row = centres[ci];
         if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
