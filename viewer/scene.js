@@ -887,7 +887,31 @@ async function setupScene(A) {
   // A._libHasNormals (streaming.js:868) honest after a merge.
   function _mergeTable(src, dst, table) {
     var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
-    if (!sCols || !dCols) return null;
+    if (!sCols) return null;
+    // §MERGE_CREATE 2026-08-30 — "fold only when the table exists on BOTH sides" silently threw away
+    // every incoming geometry BLOB whenever the two sides name that table differently: a server
+    // split geo.db carries `base_geometries`, a client-side IFC import carries
+    // `component_geometries` (import_db_builder.js:66). Neither name was ever on both sides, so
+    // _MERGE_GEO_TABLES folded NOTHING and the merged building saved with no geometry at all
+    // (W-MERGE-SAVE-ROUNDTRIP). The readers already accept either name (streaming.js:1162,1212), so
+    // materialising the source's own table in the destination is what makes the fold lossless.
+    // Only ever reached for the fixed _MERGE_META_TABLES/_MERGE_GEO_TABLES whitelist.
+    if (!dCols) {
+      var ddl = null;
+      try {
+        var dr = src.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='" +
+          table.replace(/'/g, "''") + "'");
+        if (dr && dr.length && dr[0].values.length) ddl = dr[0].values[0][0];
+      } catch (e) {}
+      if (!ddl) return null;
+      try { dst.run(ddl); } catch (e) {
+        console.warn('§MERGE_CREATE_FAIL table=' + table + ' ' + e.message); return null;
+      }
+      dCols = _mergeCols(dst, table);
+      if (!dCols) return null;
+      console.log('§MERGE_CREATE table=' + table + ' cols=' + dCols.length +
+        ' — destination had no such table, created from source schema');
+    }
     var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
     if (!cols.length) return null;
     var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
@@ -909,6 +933,51 @@ async function setupScene(A) {
       ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
       ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
     return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  // §MERGE_BLDCOL 2026-08-30 — LTU_AHouse_meta.db's elements_meta has NO `building` column
+  // (streaming.js:26-31, CPE_4D_PERF_MEM_FINDINGS §R6). Two consequences, both live bugs:
+  //   1. _mergeTable's destination-driven column intersection DROPS the incoming building name, so
+  //      a merged DB cannot say which rows are the new building.
+  //   2. the `GROUP BY m.building` centres query below throws (§HELPERS_QUERY_ERR), gets swallowed
+  //      by dbQuery, and leaves added=[] — the merged building is never registered, never streams.
+  // Add the column once, backfilling existing rows with the label the scene is ALREADY using for
+  // them (read off buildingCentres — extracted from live state, never invented), so both the live
+  // scene and every DB saved from it can name both buildings.
+  function _ensureBuildingCol(dst, src) {
+    var sCols = _mergeCols(src, 'elements_meta'), dCols = _mergeCols(dst, 'elements_meta');
+    if (!sCols || !dCols) return false;
+    if (dCols.indexOf('building') >= 0) return true;
+    if (sCols.indexOf('building') < 0) return false;   // neither side has it — nothing to preserve
+    var keys = Object.keys(A.buildingCentres || {});
+    var label = (keys.length === 1) ? keys[0]
+      : (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    try {
+      dst.run('ALTER TABLE elements_meta ADD COLUMN building TEXT');
+      dst.run('UPDATE elements_meta SET building = ? WHERE building IS NULL', [label]);
+      var n = 0;
+      try { n = dst.exec("SELECT COUNT(*) FROM elements_meta WHERE building = ?", [label])[0].values[0][0]; } catch (e) {}
+      // streaming.js probes this ONCE and caches — a stale `false` would keep every m.building
+      // query on the single-building fallback for the rest of the session.
+      A._buildingCol = true;
+      console.log('§MERGE_BLDCOL added=building backfill="' + label + '" rows=' + n);
+      return true;
+    } catch (e) { console.warn('§MERGE_BLDCOL_FAIL ' + e.message); return false; }
+  }
+
+  // The centres re-query both merge paths run in their step 6. Mirrors streaming.js:2501's
+  // _hasBuildingCol guard, which the merge copies were written without.
+  function _mergeCentresRows() {
+    var ok = A._hasBuildingCol ? A._hasBuildingCol(A.db) : true;
+    if (ok) {
+      return A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+    }
+    var label = (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    console.log('§MERGE_CENTRES_FALLBACK no building column — one building, one centre name="' + label + '"');
+    return A.dbQuery("SELECT '" + label.replace(/'/g, "''") + "', COUNT(*), " +
+      'AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+      'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid');
   }
 
   function _georefPin(db) {
@@ -965,6 +1034,7 @@ async function setupScene(A) {
 
     // ── §SM-7.1 step 3: fold the tables
     var stats = {};
+    _ensureBuildingCol(A.db, src);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
@@ -972,6 +1042,10 @@ async function setupScene(A) {
         if (s) stats[t] = s;
         else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
       });
+    } else {
+      // A.libDb is null in several streaming modes (streaming.js:2302,2479). Without this branch the
+      // geometry fold was skipped outright — the split sibling below always had it, this one didn't.
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     }
     console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
       ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
@@ -996,8 +1070,7 @@ async function setupScene(A) {
     for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
     var added = [];
     try {
-      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
-        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      var centres = _mergeCentresRows();
       for (var ci = 0; ci < centres.length; ci++) {
         var row = centres[ci];
         if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
@@ -1026,6 +1099,120 @@ async function setupScene(A) {
     if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
 
     // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
+    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergeStreamNext();
+    return true;
+  };
+
+  // Split-DB sibling of _mergeDbIntoScene — for a meta.db + geo.db pair opened as TWO separate
+  // blobs (a large/split-mode building has no single monolithic byte buffer to hand _mergeDbIntoScene).
+  // §BUG 2026-08-29: nothing called this before — split results were funnelled through the monolithic
+  // _openDbBytes/_mergeDbIntoScene path, which opens ONE SQL.Database and therefore only ever saw
+  // whichever single blob got passed in (see _openIfcFiles' old metaDb-only fallback). Same merge
+  // logic as _mergeDbIntoScene line-for-line, just META_TABLES read from srcMeta and GEO_TABLES from
+  // srcGeo instead of one shared src — _mergeTable/_georefPin are already source-agnostic, reused as-is.
+  A._mergeSplitDbIntoScene = async function(fileName, metaBytes, geoBytes) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var SQL = A._SQL || A.citySQL || A._citySQL;
+    if (!SQL) { console.log('§MERGE_SPLIT_FAIL reason=no_sql_factory'); if (A.status) A.status.textContent = 'Merge failed — sql.js not ready'; return false; }
+    if (!A.db) { console.log('§MERGE_SPLIT_FAIL reason=no_live_db'); return false; }
+    var srcMeta, srcGeo;
+    try { srcMeta = new SQL.Database(new Uint8Array(metaBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_meta ' + e.message); return false; }
+    try { srcGeo = new SQL.Database(new Uint8Array(geoBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_geo ' + e.message); try { srcMeta.close(); } catch (e2) {} return false; }
+
+    var before = Object.keys(A.buildingCentres || {});
+    var srcBlds = [];
+    try {
+      var br = srcMeta.exec('SELECT DISTINCT building FROM elements_meta');
+      if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
+    } catch (e) {}
+    console.log('§MERGE_SPLIT_START file=' + fileName + ' metaBytes=' + metaBytes.byteLength +
+      ' geoBytes=' + geoBytes.byteLength + ' srcBuildings=' + JSON.stringify(srcBlds) +
+      ' sceneBuildings=' + JSON.stringify(before));
+
+    // Frame rebase — same rule as _mergeDbIntoScene step 2, pinned off the META source
+    // (project_metadata/georef_offset_* lives with the metadata, not the geometry).
+    var pin = _georefPin(A.db), inc = _georefPin(srcMeta);
+    if (pin && inc) {
+      var dx = inc[0] - pin[0], dy = inc[1] - pin[1], dz = inc[2] - pin[2];
+      if (dx || dy || dz) {
+        try {
+          srcMeta.run('UPDATE element_transforms SET center_x = center_x + ?, center_y = center_y + ?, center_z = center_z + ?', [dx, dy, dz]);
+          console.log('§MERGE_SPLIT_GEOREF mode=rebase pin=(' + pin.join(',') + ') inc=(' + inc.join(',') + ') delta=(' + dx + ',' + dy + ',' + dz + ')');
+        } catch (e) { console.log('§MERGE_SPLIT_GEOREF mode=rebase_fail ' + e.message); }
+      } else {
+        console.log('§MERGE_SPLIT_GEOREF mode=same pin=(' + pin.join(',') + ')');
+      }
+    } else {
+      console.log('§MERGE_SPLIT_GEOREF mode=none pin=' + (pin ? '(' + pin.join(',') + ')' : 'absent') +
+        ' inc=' + (inc ? '(' + inc.join(',') + ')' : 'absent') + ' — each DB keeps its own coordinates');
+    }
+
+    // Fold tables: META_TABLES from srcMeta, GEO_TABLES from srcGeo — same _mergeTable helper, two sources.
+    var stats = {};
+    _ensureBuildingCol(A.db, srcMeta);
+    A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t); if (s) stats[t] = s; });
+    if (A.libDb) {
+      A._MERGE_GEO_TABLES.forEach(function(t) {
+        var s = _mergeTable(srcGeo, A.libDb, t);
+        if (s) stats[t] = s;
+        else if (A.libDb !== A.db) { var s2 = _mergeTable(srcGeo, A.db, t); if (s2) stats[t] = s2; }
+      });
+    } else {
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(srcGeo, A.db, t); if (s) stats[t] = s; });
+    }
+    console.log('§MERGE_SPLIT_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
+      ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t) { return !stats[t]; })));
+    if (!stats.elements_meta) {
+      console.error('§MERGE_SPLIT_FAIL reason=elements_meta_not_folded — schema read failed, nothing merged');
+      try { srcMeta.close(); } catch (e) {}
+      try { srcGeo.close(); } catch (e) {}
+      if (A.status) A.status.textContent = 'Merge failed — could not read ' + fileName;
+      return false;
+    }
+    if (!stats.elements_meta.added) {
+      console.log('§MERGE_SPLIT_WARN elements_meta added=0 — nothing new (all GUIDs already present)');
+    }
+    try { srcMeta.close(); } catch (e) {}
+    try { srcGeo.close(); } catch (e) {}
+
+    A.cityBuildingDbs = A.cityBuildingDbs || {};
+    srcBlds.forEach(function(n) { A.cityBuildingDbs[n] = { db: A.db, libDb: A.libDb }; });
+
+    var env = null;
+    for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
+    var added = [];
+    try {
+      var centres = _mergeCentresRows();
+      for (var ci = 0; ci < centres.length; ci++) {
+        var row = centres[ci];
+        if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
+        A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
+        if (env) A.buildingCentres[row[0]].envelope = env;
+        added.push(row[0]);
+      }
+    } catch (e) { console.log('§MERGE_SPLIT_CENTRES_FAIL ' + e.message); }
+    console.log('§MERGE_SPLIT_CENTRES before=' + before.length + ' after=' + Object.keys(A.buildingCentres).length +
+      ' added=' + JSON.stringify(added));
+
+    try {
+      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      A.totalElements = er.length ? er[0][0] : A.totalElements;
+      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      A.discCounts = {};
+      for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
+    } catch (e) {}
+    if (A.updateHUD) A.updateHUD();
+    if (A.populateBuildingList) A.populateBuildingList();
+    if (A._updateFogDensity) A._updateFogDensity();
+
+    var ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    console.log('§MERGE_SPLIT_DONE file=' + fileName + ' newBuildings=' + added.length +
+      ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
+    if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
+
     A._mergePending = (A._mergePending || []).concat(added);
     A._mergeStreamNext();
     return true;
@@ -1073,6 +1260,40 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // Split-DB sibling of _openDbBytes — for a meta.db + geo.db pair (from a local file-pair open, or
+  // a split-mode importMultiIFC result). Mirrors _openDbBytes' merge/replace branching exactly; the
+  // only difference is TWO source blobs, cached under the _meta.db/_geo.db naming convention
+  // streaming.js's §DB_SPLIT_DETECT already expects (same convention import.js's openImported already
+  // uses successfully for split records — this extends it to the file-picker/Open door and to
+  // _openIfcFiles' split branch below, neither of which had any split-aware path before).
+  A._openSplitDbBytes = async function(fileName, metaBytes, geoBytes) {
+    var open = Object.keys(A.buildingCentres || {});
+    if (A.db && open.length) {
+      var target = (A.activeBuilding && A.buildingCentres[A.activeBuilding]) ? A.activeBuilding : open[0];
+      var choice = await A._showMergeModal(fileName, target);
+      console.log('§MERGE_CHOICE file=' + fileName + ' target=' + target + ' action=' + choice.action);
+      if (choice.action === 'merge') { await A._mergeSplitDbIntoScene(fileName, metaBytes, geoBytes); return; }
+    } else {
+      console.log('§MERGE_SKIP reason=no_building_open — replace path');
+    }
+    var key = fileName.replace(/_meta\.db$/i, '').replace(/\.(db|sqlite)$/i, '');
+    var extractedUrl = 'import://' + key + '_extracted.db/v0';
+    var metaUrl = 'import://' + key + '_meta.db/v0';
+    var geoUrl = 'import://' + key + '_geo.db/v0';
+    var cacheDb = await A.openCacheDB();
+    if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
+    await new Promise(function(resolve) {
+      var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+      var store = tx.objectStore(A.CACHE_STORE);
+      store.put(metaBytes, metaUrl);
+      store.put(geoBytes, geoUrl);
+      store.put(metaBytes, extractedUrl);   // meta as primary — fast load, same as import.js's openImported
+      tx.oncomplete = resolve; tx.onerror = resolve;
+    });
+    console.log('§OPEN_DB_SPLIT cached key=' + key + ' meta=' + metaBytes.byteLength + ' geo=' + geoBytes.byteLength + ' → navigate');
+    location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1');
+  };
+
   // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
   // A.importMultiIFC (import.js:267), take the DB it produced, feed it into the same merge/replace
   // flow. §SM-5 named the ceiling and it is measured, not theoretical: a single ~1GB+ source file
@@ -1089,6 +1310,16 @@ async function setupScene(A) {
     console.log('§OPEN_IFC files=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){ return f.name; }).join(','));
     var out = await A.importMultiIFC(files);
     if (!out || !out.record) { console.log('§OPEN_IFC_FAIL reason=no_record_returned'); return; }
+    // §BUG 2026-08-29: a split-mode result (large building, e.g. LTU_AHouse 8-file merge) carries
+    // metaDb+geoDb as SEPARATE blobs — this used to take metaDb alone (`extractedDb || metaDb`) and
+    // silently drop geoDb, opening a metadata-only DB with zero mesh geometry. Route split results
+    // through _openSplitDbBytes instead, which keeps both halves.
+    if (out.split && out.record.metaDb && out.record.geoDb) {
+      console.log('§OPEN_IFC_DB building=' + out.buildingName + ' meta=' + out.record.metaDb.byteLength +
+        ' geo=' + out.record.geoDb.byteLength + ' split=true');
+      await A._openSplitDbBytes(out.buildingName + '_meta.db', new Uint8Array(out.record.metaDb), new Uint8Array(out.record.geoDb));
+      return;
+    }
     var bytes = out.record.extractedDb || out.record.metaDb;
     if (!bytes) { console.log('§OPEN_IFC_FAIL reason=no_db_bytes split=' + !!out.record.metaDb); return; }
     console.log('§OPEN_IFC_DB building=' + out.buildingName + ' bytes=' + bytes.byteLength + ' split=' + !!out.split);
@@ -1105,6 +1336,19 @@ async function setupScene(A) {
         for (var pi = 0; pi < picks.length; pi++) fsaFiles.push(await picks[pi].getFile());
         console.log('§OPEN_PICK mode=fsa n=' + fsaFiles.length + ' name=' + fsaFiles[0].name + ' bytes=' + fsaFiles[0].size);
         if (/\.ifc$/i.test(fsaFiles[0].name)) { await A._openIfcFiles(fsaFiles); return; }
+        // §BUG 2026-08-29: selecting a meta.db + geo.db pair together used to silently drop everything
+        // past fsaFiles[0] — picker return order isn't guaranteed alphabetical-by-role, so "geo.db"
+        // (no elements_meta at all) could load ALONE while meta.db (the actual data) was discarded.
+        // Detect the pair by name first, before falling into the single-file path.
+        var metaFile = fsaFiles.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile = fsaFiles.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (fsaFiles.length >= 2 && metaFile && geoFile) {
+          console.log('§OPEN_PICK_SPLIT meta=' + metaFile.name + ' geo=' + geoFile.name);
+          var metaBuf = new Uint8Array(await metaFile.arrayBuffer());
+          var geoBuf = new Uint8Array(await geoFile.arrayBuffer());
+          await A._openSplitDbBytes(metaFile.name, metaBuf, geoBuf);
+          return;
+        }
         var buf = await fsaFiles[0].arrayBuffer();
         await A._openDbBytes(fsaFiles[0].name, new Uint8Array(buf));
         return;
@@ -1117,7 +1361,19 @@ async function setupScene(A) {
       var file = input.files[0];
       console.log('§OPEN_PICK mode=input n=' + input.files.length + ' name=' + file.name + ' bytes=' + file.size);
       if (/\.ifc$/i.test(file.name)) { await A._openIfcFiles(input.files); }
-      else { var buf = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf)); }
+      else {
+        var files2 = Array.prototype.slice.call(input.files);
+        var metaFile2 = files2.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile2 = files2.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (files2.length >= 2 && metaFile2 && geoFile2) {
+          console.log('§OPEN_PICK_SPLIT mode=input meta=' + metaFile2.name + ' geo=' + geoFile2.name);
+          var metaBuf2 = new Uint8Array(await metaFile2.arrayBuffer());
+          var geoBuf2 = new Uint8Array(await geoFile2.arrayBuffer());
+          await A._openSplitDbBytes(metaFile2.name, metaBuf2, geoBuf2);
+        } else {
+          var buf2 = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf2));
+        }
+      }
       if (input.parentNode) document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
