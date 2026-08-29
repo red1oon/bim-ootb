@@ -329,7 +329,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // light already in this scene (no bounce anywhere in this pipeline — see PHOTOREAL_STILL_RENDER.md
   // GI history) and deliberately SHORT distance so it is a no-op anywhere the camera isn't already
   // close to a surface — not a general-purpose fill light, not meant to change any establishing shot.
-  var CAM_LIGHT_COLOR = 0xfff2e0, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
+  var CAM_LIGHT_COLOR = 0xffdca8, CAM_LIGHT_INTENSITY = 3, CAM_LIGHT_DISTANCE = 4, CAM_LIGHT_DECAY = 2;
   var CAM_LIGHT_FORWARD_OFFSET = 0.4;  // metres in front of the camera, toward the look target — off
                                         // the lens itself so it doesn't floodlight whatever the near
                                         // clip plane happens to be pressed against.
