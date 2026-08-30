@@ -126,6 +126,8 @@
   "setupClashSnag": "readonly",
   "setupConfig": "readonly",
   "setupCpeDayCounter": "readonly",
+    "setupCpePathOverview": "readonly",
+    "setupCpeResourcePanel": "readonly",
   "setupCpeRoomTitle": "readonly",
   "setupDLOD": "readonly",
   "setupDiff": "readonly",
