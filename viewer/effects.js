@@ -3736,6 +3736,28 @@ async function setupEffects(A, renderer, scene, camera) {
   // OutputPass still runs last, so AO composites in linear light (gammaCorrection=false).
   var STILL_AO_ENABLED = true;
   var STILL_AO_FRAMES = 24;       // n8ao accumulates 1 AO sample-set per still frame; 24 ≈ converged
+  var STILL_TAA_FRAMES = 16;      // TAA accumulateIndex target — the other half of the still fold
+
+  // ══ §MAXQ_FRAME_BUDGET (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R10) ═══════════════════
+  // THESE TWO NUMBERS ARE THE BAKE CLOCK. Every exported MaxQ frame pays a full still fold:
+  // STILL_TAA_FRAMES + STILL_AO_FRAMES = 16 + 24 = 40 composer renders. MEASURED on Hospital
+  // (3,447 frames, perFrameMs=1989): §STILL_REFINE ~1,200 ms = 62% and §PHOTO_AO ~450 ms = 23% —
+  // 85% of the frame, and 137,880 composer renders for one film. Nothing else in the pipeline is
+  // worth touching for bake speed; the session record already says so in as many words.
+  //
+  // A BAKE and a STILL are not the same job. An Alt+S still is ONE frame a human studies, so it
+  // keeps the full 40. A bake is thousands of frames that flick past at 15 fps, where TAA and AO
+  // convergence past a point is invisible and simply costs hours. So the budget is overridable, and
+  // ONLY the bake overrides it — A._stillBudget is set by cinema_maxq around the frame loop and
+  // cleared on every exit path, so Alt+S is bit-for-bit unchanged.
+  //
+  // Read ONCE per fold into a local: a budget that changed mid-loop would split a single frame
+  // across two settings and make the film inconsistent frame to frame.
+  function _stillBudget() {
+    var b = A._stillBudget;
+    return { taa: (b && b.taa > 0) ? Math.round(b.taa) : STILL_TAA_FRAMES,
+             ao:  (b && b.ao  > 0) ? Math.round(b.ao)  : STILL_AO_FRAMES };
+  }
   // §PHOTO_AO_TUNE (2026-07-16, real-GPU A/B at STILL quality — PHOTO_AO_TUNE_r{8_i6,5_i4,3_i4,
   // 1p5_i3}_2026-07-16.png, identical frozen pose/beauty, only AO varied): radius=8/intensity=6 was
   // kept THEN — the earlier "broad mottle / reads busy" verdict it was compared against was
@@ -4057,7 +4079,8 @@ async function setupEffects(A, renderer, scene, camera) {
       ao.pass.firstFrame();
       ao.adapter.enabled = true;
       var sig = _camSig(), f = 0, renderMs = 0;
-      console.log('§PHOTO_AO start frames=' + STILL_AO_FRAMES + ' radius=' + STILL_AO_RADIUS +
+      var _aoFrames = _stillBudget().ao;    // §MAXQ_FRAME_BUDGET — read once, cannot split this fold
+      console.log('§PHOTO_AO start frames=' + _aoFrames + ' radius=' + STILL_AO_RADIUS +
         ' intensity=' + STILL_AO_INTENSITY + ' denoiseRadius=' + ao.pass.configuration.denoiseRadius +
         ' denoiseSamples=' + ao.pass.configuration.denoiseSamples + ' (still-only fold — Alt+G untouched)');
       (function stepAO() {
@@ -4070,7 +4093,7 @@ async function setupEffects(A, renderer, scene, camera) {
         A._composer.render();
         renderMs += performance.now() - r0;
         f++;
-        if (f >= STILL_AO_FRAMES) {
+        if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' (frozen with AO — stays until interaction)');
           A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
@@ -4756,7 +4779,12 @@ async function setupEffects(A, renderer, scene, camera) {
     _stillRestartLogged = false;
     var _triCount = _setTriplanarActive(true);
     _applyPhotoStaging();
-    console.log('§STILL_REFINE start samples=16 triplanarMaterials=' + _triCount);
+    // §MAXQ_FRAME_BUDGET — read the fold's budget ONCE here; a change mid-fold would split one
+    // frame across two settings. A bake sets A._stillBudget; Alt+S leaves it null and gets 16/24.
+    var _taaFrames = _stillBudget().taa;
+    console.log('§STILL_REFINE start samples=' + _taaFrames + ' triplanarMaterials=' + _triCount +
+      (A._stillBudget ? ' §MAXQ_FRAME_BUDGET taa=' + _taaFrames + ' ao=' + _stillBudget().ao +
+       ' (bake budget — Alt+S stills are unaffected)' : ''));
     // §PHOTO_ENVMAP_STALE safety net: the fresh dusk env map is 2s-throttled (scene.js
     // A.updateSky), but a fast/cached accumulate can finish (and stop calling _reassertPhotoEnvMap
     // via step() below) before that 2s elapses — one extra guaranteed pass past the throttle
@@ -4808,7 +4836,7 @@ async function setupEffects(A, renderer, scene, camera) {
       }
       A._composer.render();
       var idx = A._taaPass.accumulateIndex;
-      if (idx >= 16) { _finishStillRefine(idx); return; }
+      if (idx >= _taaFrames) { _finishStillRefine(idx); return; }   // §MAXQ_FRAME_BUDGET
       _stillRefineRAF = requestAnimationFrame(step);
     }
     _stillRefineRAF = requestAnimationFrame(step);

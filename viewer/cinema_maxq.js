@@ -479,6 +479,28 @@
   var MAXQ_V = 'v22';
   console.log('§MAXQ_LOADED ' + MAXQ_V + ' — full changelog moved to this file\'s own comment above (search any §TAG)');
   var MAXQ_N_FRAMES = 360, MAXQ_FPS = 15;  // 24s clip (360/15) — opts-overridable
+  // ══ §MAXQ_FRAME_BUDGET (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R10) ═══════════════════
+  // A BAKE and a STILL are not the same job, and they were paying the same bill. Alt+S is ONE frame
+  // a human studies; a bake is thousands that flick past at 15 fps. Both were folding
+  // 16 TAA + 24 AO = 40 composer renders per frame — MEASURED as 85% of Hospital's perFrameMs=1989
+  // (§STILL_REFINE ~1,200 = 62%, §PHOTO_AO ~450 = 23%) and 137,880 composer renders for one film.
+  // These are the ONLY two numbers that move the bake clock; the session record already says not to
+  // expect HUD or smoothing work to touch it.
+  // Chosen by MEASUREMENT, not by taste — witness_maxq_frame_budget.js + score_frame_budget.py,
+  // HHS_Office_Federated, one SEEDED page load per condition, scored against a CONTROL run at the
+  // full 16/24 on its own fresh load. Noise floor RMS 0.21 (0-255 luma):
+  //     taa=12 ao=16  28 renders  RMS 0.21   AT THE FLOOR
+  //     taa= 8 ao=12  20 renders  RMS 0.24   AT THE FLOOR   <-- shipped
+  //     taa= 8 ao= 8  16 renders  RMS 0.37   AT THE FLOOR
+  //     taa= 4 ao= 8  12 renders  RMS 21.33  DISTINGUISHABLE — a real loss, rejected
+  // So 40 renders and 20 renders are the SAME IMAGE to within a fifth of one luma level, and the
+  // floor is real: 4/8 is 100x above it, which is what a genuine difference looks like here.
+  // 8/8 also measured at the floor and would be 55%. Shipping 8/12 anyway — one AO step of MARGIN,
+  // because this is ONE pose on ONE building and AO is exactly what interior corners lean on. The
+  // margin costs 75 ms/frame (1,164 vs 1,089); that is the deliberate price of the sample size.
+  // Alt+S is UNTOUCHED: A._stillBudget is set only around the bake's frame loop and cleared on
+  // every exit path, so a still keeps all 40 renders.
+  var MAXQ_STILL_BUDGET = { taa: 8, ao: 12 };
   var SETTLE_MS = 250;   // teardown→restage settle. Flicker fix, PoC-proven: without it the next
                          // staging captures mid-restore sun-tint/exposure values as "original"
                          // and the whole building oscillates color frame-to-frame.
@@ -511,6 +533,9 @@
       }
     } catch (e) { console.log('§MAXQ_WAKELOCK denied: ' + e.message); }
   }
+  // §MAXQ_FRAME_BUDGET — the bake's cheaper fold must never outlive the bake. Paired with every
+  // _wakeRelease() call site, which is this file's existing "the run is over" marker.
+  function _bakeBudgetRelease() { try { window.APP._stillBudget = null; } catch (e) {} }
   function _wakeRelease() {
     try { if (_wakeLock && !_wakeLock.released) _wakeLock.release(); } catch (e) {}
     _wakeLock = null;
@@ -967,6 +992,12 @@
     // not inherit the first one's pauses or its unconverged count and report someone else's health.
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
+    // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
+    A._stillBudget = { taa: MAXQ_STILL_BUDGET.taa, ao: MAXQ_STILL_BUDGET.ao };
+    console.log('§MAXQ_FRAME_BUDGET taa=' + A._stillBudget.taa + ' ao=' + A._stillBudget.ao +
+      ' renders/frame=' + (A._stillBudget.taa + A._stillBudget.ao) + ' (was 16+24=40) — bake only,' +
+      ' Alt+S stills keep the full fold');
     _wakeAcquire();
     _dampHold();   // §CINEMA_DAMPING_BLEED — the preview and the bake are both authored cameras
     // §MAXQ_STREAM_FIRST (user report, LTU_AHouse/122k: preview was SEEN showing boxes — initial
@@ -995,7 +1026,7 @@
       console.log('§MAXQ_CANCEL during stream-wait — nothing baked, nothing saved');
       _status('🎬 MaxQ cancelled');
       _active = false; _cancel = false; A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       return;
     }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
@@ -1108,7 +1139,7 @@
       console.log('§MAXQ_CANCEL during ' + where + ' — nothing baked, nothing saved');
       _status('🎬 MaxQ cancelled during ' + where);
       _active = false; _cancel = false; A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
     }
     // ══ §CPE_PREVIEW_REDUNDANT (user, 2026-07-28, after flying it: "I see the initial preview is
     // redundant. Straight showing this is good as preview button is always there and serving well.
@@ -1139,7 +1170,7 @@
     // editor and re-claimed on OK. Gated by G11 — proven released, not merely described as released.
     if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false) {
       A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       console.log('§CPE_LOCKS released for editing (maxqActive=false, wake+damping released)');
       _status('🎬 Edit the path, then OK to record');
       var _cpeRes = null;
@@ -1153,7 +1184,7 @@
         console.log('§MAXQ_CANCEL from path editor — nothing baked, nothing saved');
         _status('🎬 Cancelled');
         _active = false; _cancel = false; A._maxqActive = false;
-        _wakeRelease(); _dampRelease();
+        _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
         return;
       }
       if (_cpeRes && _cpeRes.override) {
@@ -1767,7 +1798,7 @@
       // swallowed as a cancel-toggle. Cleanup must never gate the ability to retry.
       _active = false; _cancel = false;
       A._maxqActive = false;
-      _wakeRelease(); _dampRelease();
+      _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       await _idbDestroy(db);
     }
   }
