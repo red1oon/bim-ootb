@@ -135,6 +135,11 @@ const _watchdog = setTimeout(() => { console.log('\n§W-RTC TIMEOUT — killed a
       // G-RTC-5: [phase] at draw time, through the REAL compositor via a capturing ctx stub
       const painted = [];
       const stub = { save() {}, restore() {}, fillRect() {}, fillText(t) { painted.push(t); },
+                     // §CPE_LABEL_PANEL_SYNC: the caption now draws a measured, rounded plate.
+                     // Stub these so this witness exercises the REAL path instead of the
+                     // no-measureText fallback — it still asserts only the CAPTION text.
+                     measureText(t) { return { width: t.length * 10 }; },
+                     beginPath() {}, roundRect() {}, fill() {},
                      set globalAlpha(v) {}, set fillStyle(v) {}, set font(v) {},
                      set textAlign(v) {}, set textBaseline(v) {} };
       const prevPhase = A.tmFrontierPhase;
@@ -165,6 +170,11 @@ const _watchdog = setTimeout(() => { console.log('\n§W-RTC TIMEOUT — killed a
       // and feed `.name` into the SAME `A.roomTitleCompositeOntoCanvas` (:486) via a capturing
       // stub — the exact two-call chain that reaches the exported frame bytes.
       const bakeStub = { save() {}, restore() {}, fillRect() {}, fillText(t) { bakePainted.push(t); },
+                     // §CPE_LABEL_PANEL_SYNC: the caption now draws a measured, rounded plate.
+                     // Stub these so this witness exercises the REAL path instead of the
+                     // no-measureText fallback — it still asserts only the CAPTION text.
+                     measureText(t) { return { width: t.length * 10 }; },
+                     beginPath() {}, roundRect() {}, fill() {},
                          set globalAlpha(v) {}, set fillStyle(v) {}, set font(v) {},
                          set textAlign(v) {}, set textBaseline(v) {} };
       var bakePainted = [];

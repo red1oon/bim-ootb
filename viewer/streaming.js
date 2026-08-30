@@ -21,6 +21,165 @@ function setupStreaming(A) {
 
   // drawBuildingBoxes() retired — replaced by per-element _drawBboxPlaceholders()
   A.drawBuildingBoxes = function() {};
+  var _idx16Saved = 0, _idx16Geoms = 0;
+
+  // ══ §MEP_SMOOTH_NORMALS (2026-08-30, user: "we know that may ducts, dome, are not fully rounded"
+  // … "it must not impact non curve intending surfaces") ═══════════════════════════════════════
+  // MEASURED FIRST (§SHADE_PROBE, Clinic, 448 real streamed geometries): every class ships hard
+  // per-face normals — weldRatio 0.107-0.29 and splitNormal 96-100% — so `flatShading: false` is
+  // silently overridden by the data, because with no shared vertices there is nothing to average.
+  // The decisive number is distinctNormals: IfcFlowFitting 114.3, IfcFlowTerminal 128.6,
+  // IfcFlowController 189.0 — richly tessellated shapes whose roundness is being thrown away by
+  // flat shading, recoverable with ZERO new triangles. IfcFlowSegment is 10.3 over 26 triangles: a
+  // genuine 10-sided prism, so its SHADING improves here but its silhouette cannot, and straight
+  // ducts will gain less than fittings do. Every box class reports distinctNormals = 7, which is
+  // what makes the gate below safe by construction rather than by tuning.
+  //
+  // TWO GATES, because a crease angle alone is not enough: an 8-sided duct's facets are 45 deg
+  // apart, so any threshold able to smooth it would also round a 45 deg roof ridge or chamfer.
+  //   1. CLASS — only curve-intending IFC classes are eligible, ever. A wall is never a candidate
+  //      regardless of its geometry, which is the user's constraint met by construction.
+  //   2. CREASE — inside those classes, a vertex keeps its own face normal when the smoothed result
+  //      would swing more than CREASE_DEG away, so duct flanges and end caps stay crisp.
+  //
+  // IN PLACE, BY DESIGN — NO WELD, NO RE-INDEX. Merged meshes carry many elements and `ranges`
+  // addresses them by idxStart/idxCount; picking, per-element hide, the BVH and §TRIPLANAR's own
+  // vTriWorldNormal all read that layout. Rewriting normal VALUES touches none of it. Welding would
+  // renumber vertices and break all four, which is the "no side effects" line the user drew.
+  var MEP_CURVE_CLASSES = {
+    IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1, IfcFlowController: 1,
+    IfcFlowMovingDevice: 1, IfcFlowStorageDevice: 1, IfcValve: 1,
+    IfcPipeSegment: 1, IfcPipeFitting: 1, IfcDuctSegment: 1, IfcDuctFitting: 1
+  };
+  var CREASE_DEG = 55;   // above an 8-sided prism's 45 deg facet step, below a 90 deg box corner
+  // §MEP_SMOOTH_MEASURED_GATE (2026-08-30, user: "The rounding shading is still not fully working.
+  // Many cylindrical type candidates can be smoothly curved."). A class list can only ever name the
+  // shapes someone thought of — MEASURED on the user's Hospital bake it reached just 96 geometries,
+  // and round columns, domes, tanks and curtain-wall mullions are all cylindrical yet none are
+  // IfcFlow*. The gate is now THE SHAPE ITSELF, using the separation §SHADE_PROBE already measured:
+  // curve-intending geometry carries 36-189 distinct facet directions (IfcFlowController 189.0,
+  // IfcFlowTerminal 128.6, IfcFlowFitting 114.3, IfcColumn 36.3) while EVERY box-like class measured
+  // exactly 7 (IfcWallStandardCase, IfcPlate, IfcMember, IfcDoor). 16 sits in the empty middle of
+  // that gap, so "must not impact non curve intending surfaces" holds by measurement, not by a name
+  // I had to guess. The class list stays as an OR: a 10-sided duct (IfcFlowSegment, 10.3) is
+  // genuinely curve-intending and would fail a pure-shape test.
+  var CURVE_MIN_DISTINCT = 16;
+  var DISTINCT_SAMPLE_CAP = 1500;   // stride-sampled: this runs once per staging, never per frame
+  function _distinctNormals(nor, idx, start, count) {
+    var seen = {}, n = 0, step = Math.max(1, Math.floor(count / DISTINCT_SAMPLE_CAP)), i, vi, k;
+    for (i = start; i < start + count; i += step) {
+      vi = idx ? idx.getX(i) : i;
+      k = Math.round(nor.getX(vi) * 8) + ',' + Math.round(nor.getY(vi) * 8) + ',' + Math.round(nor.getZ(vi) * 8);
+      if (!seen[k]) { seen[k] = 1; if (++n > 64) return n; }   // early out: well past the threshold
+    }
+    return n;
+  }
+  A.mepSmoothNormals = function() {
+    if (!A.scene) return null;
+    var t0 = performance.now(), cosCrease = Math.cos(CREASE_DEG * Math.PI / 180);
+    var geomsTouched = 0, rangesTouched = 0, vertsSmoothed = 0, vertsKeptHard = 0, skippedNoNormal = 0;
+    var seen = new Set();
+    A.scene.traverse(function(o) {
+      if (!o.isMesh || !o.geometry) return;
+      var g = o.geometry;
+      if (seen.has(g.uuid)) return;
+      seen.add(g.uuid);
+      var pos = g.attributes && g.attributes.position, nor = g.attributes && g.attributes.normal;
+      if (!pos || !nor) { skippedNoNormal++; return; }
+      var idx = g.index; if (!idx) return;
+      // Which index spans are eligible? A merged mesh mixes elements, so the gate is applied per
+      // RANGE (which records its own ifcClass), never per mesh — a duct sharing a merged bucket
+      // with a wall must not drag the wall in with it.
+      var spans = [];
+      // Ranges live in A._mergedMeta keyed by mesh.id (:1924), NOT on userData — checked, because
+      // reading the wrong place would leave every merged mesh with no eligible span and the gate
+      // would silently do nothing on exactly the buildings that need it.
+      var rngs = A._mergedMeta && A._mergedMeta[o.id];
+      if (rngs && rngs.length) {
+        // Judged per RANGE, never per mesh: a merged bucket mixes elements, and a mesh full of boxes
+        // would score a high distinct-normal count in aggregate while every individual box is 7.
+        for (var ri = 0; ri < rngs.length; ri++) {
+          var rg = rngs[ri];
+          if (MEP_CURVE_CLASSES[rg.ifcClass] ||
+              _distinctNormals(nor, idx, rg.idxStart, rg.idxCount) >= CURVE_MIN_DISTINCT) {
+            spans.push([rg.idxStart, rg.idxCount]);
+          }
+        }
+      } else {
+        // §MEP_SMOOTH_GATE_SCOPE (2026-08-30 — caught by G-MEP-2, which failed with 5,233,835
+        // non-curve vertices changed; the previous revision of this branch judged ANY rangeless mesh
+        // whole). A BATCHED mesh holds hundreds of elements in one geometry: hundreds of boxes score
+        // a high distinct-normal count IN AGGREGATE while every individual box is 7, so the shape
+        // test caught the lot and smoothed real walls. That is exactly the regression the user's
+        // "must not impact non curve intending surfaces" forbids.
+        //
+        // The shape test is therefore only allowed where a single ELEMENT is being judged: a mesh
+        // carrying its own ifc_class is one element. A multi-element mesh with no ranges cannot be
+        // resolved into elements here, so it falls back to the CLASS gate alone — narrower, but
+        // never wrong. Coverage lost this way is a reason to expose ranges for batched meshes, not
+        // a reason to smooth a wall.
+        var cls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        var singleElement = !!cls;
+        if (MEP_CURVE_CLASSES[cls] ||
+            (singleElement && _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT)) {
+          spans.push([0, idx.count]);
+        }
+      }
+      if (!spans.length) return;
+      var acc = new Map(), k, i, a, b, c;
+      function key(i2) {
+        return (Math.round(pos.getX(i2) * 1e4)) + ',' + (Math.round(pos.getY(i2) * 1e4)) + ',' +
+               (Math.round(pos.getZ(i2) * 1e4));
+      }
+      // pass 1 — accumulate area-weighted face normals per shared POSITION
+      for (var s2 = 0; s2 < spans.length; s2++) {
+        for (i = spans[s2][0]; i + 2 < spans[s2][0] + spans[s2][1]; i += 3) {
+          a = idx.getX(i); b = idx.getX(i + 1); c = idx.getX(i + 2);
+          var ax = pos.getX(a), ay = pos.getY(a), az = pos.getZ(a);
+          var e1x = pos.getX(b) - ax, e1y = pos.getY(b) - ay, e1z = pos.getZ(b) - az;
+          var e2x = pos.getX(c) - ax, e2y = pos.getY(c) - ay, e2z = pos.getZ(c) - az;
+          var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+          var tri = [a, b, c];
+          for (var t2 = 0; t2 < 3; t2++) {
+            k = key(tri[t2]);
+            var e = acc.get(k);
+            if (!e) { e = [0, 0, 0]; acc.set(k, e); }
+            e[0] += nx; e[1] += ny; e[2] += nz;   // unnormalised = area weighted, the standard rule
+          }
+        }
+      }
+      // pass 2 — write back, crease-limited
+      var wrote = 0;
+      for (var s3 = 0; s3 < spans.length; s3++) {
+        for (i = spans[s3][0]; i < spans[s3][0] + spans[s3][1]; i++) {
+          var vi = idx.getX(i);
+          var e2 = acc.get(key(vi)); if (!e2) continue;
+          var L = Math.sqrt(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+          if (!(L > 1e-12)) continue;
+          var sx = e2[0] / L, sy = e2[1] / L, sz = e2[2] / L;
+          var ox = nor.getX(vi), oy = nor.getY(vi), oz = nor.getZ(vi);
+          if (sx * ox + sy * oy + sz * oz < cosCrease) { vertsKeptHard++; continue; }  // hard edge
+          nor.setXYZ(vi, sx, sy, sz); wrote++;
+        }
+      }
+      if (wrote) {
+        vertsSmoothed += wrote; rangesTouched += spans.length; geomsTouched++;
+        nor.needsUpdate = true;
+        // §NORMAL_REPAIR_GPU_UPLOAD (same file, ~:1004) already learned that needsUpdate alone does
+        // not always reach the GPU for a cached geometry — drop the renderer's cached properties so
+        // buffers rebind, exactly as that fix does.
+        if (A.renderer && A.renderer.properties) A.renderer.properties.remove(g);
+      }
+    });
+    var out = { geomsTouched: geomsTouched, rangesTouched: rangesTouched, vertsSmoothed: vertsSmoothed,
+                vertsKeptHard: vertsKeptHard, ms: +(performance.now() - t0).toFixed(1) };
+    console.log('§MEP_SMOOTH_NORMALS geoms=' + geomsTouched + ' ranges=' + rangesTouched +
+      ' vertsSmoothed=' + vertsSmoothed + ' vertsKeptHard=' + vertsKeptHard +
+      ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
+      (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
+      ' | §IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB');
+    return out;
+  };   // §IDX16 tally, reported by A.mepSmoothNormals' log line
 
   // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.4 — Witness: W-OCC3-LTU.
   // CPE_4D_PERF_MEM_FINDINGS.md §R6 measured the blocker: the 2026-08-10 re-extracted
@@ -1783,7 +1942,19 @@ function setupStreaming(A) {
         const mergedGeo = new THREE.BufferGeometry();
         mergedGeo.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
         if (mergedNorm) mergedGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
-        mergedGeo.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
+        // §IDX16 (2026-08-30) — a Uint32 index addressing fewer than 65,536 vertices spends twice
+        // the bytes it needs. MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB
+        // geometry footprint, against a 1,226 MB heap. The guard is exact (totalVerts, the count
+        // this very buffer was sized from), so a geometry that genuinely needs 32-bit keeps it —
+        // this can never truncate an index. Nothing downstream reads the index's TYPE: `ranges`
+        // stores idxStart/idxCount as plain numbers and three.js re-reads .count/.array either way.
+        var _mIdx = mergedIdx;
+        if (totalVerts < 65536) {
+          _mIdx = new Uint16Array(totalIdx);
+          for (var _q = 0; _q < totalIdx; _q++) _mIdx[_q] = mergedIdx[_q];
+          _idx16Saved += totalIdx * 2; _idx16Geoms++;
+        }
+        mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
         const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
