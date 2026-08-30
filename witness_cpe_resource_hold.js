@@ -1,4 +1,4 @@
-// WITNESS — §CPE_PIE_HOLD (bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_PIE_HOLD).
+// WITNESS — §CPE_PIE_HOLD + §CPE_STATS_TAIL (bim-compiler prompts/CINEMA_PATH_EDITOR.md).
 //
 // ISSUE IT PROVES/DISPROVES: the composition pie DISAPPEARED for the whole silent tail of a bake
 // (after §CPE_BUILDUP_TOPOUT no trade is active, resourcePanelAt correctly returns null, and the
@@ -82,6 +82,36 @@ const gapHeld = A.resourcePanelHoldAt(at(12), gapOps, PS, PE);
 
 const sig = (info) => info ? info.rows.map(r => r.trade + ':' + r.heads).sort().join(',') : null;
 
+// ── §CPE_STATS_TAIL. ISSUE IT PROVES/DISPROVES: on the user's own Hospital bake the day counter
+// pinned at 315/315 from u≈0.45 and the pie showed one static trade (Finisher ×4) for the remaining
+// ≈125 s of a 229.8 s film — over HALF the film with nothing new on screen. §CPE_BIG_STATS could
+// not reach it: its trigger was "the pie is honestly empty", and Finisher ops run to the last day so
+// the pie is never empty. User's ruling: round 1 HOLDS and never intersperses; every highlight
+// belongs in the Reveal 2nd round.
+const frozenMid = A.resourcePanelFrozenAt(at(20), ops, PS, PE);      // trades still start/end ahead
+const frozenTail = A.resourcePanelFrozenAt(at(45), ops, PS, PE);     // past every boundary
+// the Hospital shape: staffed to the very last day, so the pie is NEVER empty but IS frozen
+// Finisher runs to the LAST day and the cursor parks there, exactly as the bake's buildup remap
+// leaves it (MEASURED: Day 315/315 with Finisher ×4 for the last ~125 s of the user's film).
+const hOps = ops.filter(o => o.r).concat(
+  Array.from({ length: 12 }, () => ({ s: PS + (DAYS - 6) * D, e: PE, r: 'FINISHER' })));
+hOps.sort((a, b) => a.s - b.s);
+const hLive = A.resourcePanelAt(at(DAYS - 1), hOps, PS, PE);
+const hFrozen = A.resourcePanelFrozenAt(at(DAYS - 1), hOps, PS, PE);
+const cards = [{ big: '63,182', label: 'elements coordinated', src: 'elements_meta' },
+               { big: '8', label: 'levels', src: 'elements_meta.storey' },
+               { big: '315', label: 'day programme', src: 'bake _bkState' }];
+const seenSlots = new Set(); let rosterSlots = 0, cardSlots = 0, faded = false;
+for (let t = 0; t < (cards.length + 1) * 4.5; t += 0.25) {
+  const sh = A.tailPanelAt(cards, t, hLive);
+  if (!sh) continue;
+  seenSlots.add(sh.idx);
+  if (sh.roster) rosterSlots++; else cardSlots++;
+  if (sh.opacity < 0.99) faded = true;
+}
+const rotN = A.tailPanelAt(cards, 0, hLive);
+const noCards = A.tailPanelAt(null, 0, hLive);      // cards unbuildable -> roster still revolves
+
 // ── draw: does the pie reach the canvas in BOTH modes?
 const W = 1852, H = 960;
 const off = () => OFFSCREEN.reduce((a, x) => ({ fills: a.fills + x._rec.fills, strokes: a.strokes + x._rec.strokes,
@@ -94,6 +124,11 @@ OFFSCREEN = []; const c2 = mkCtx(W, H); A.bigStatsCompositeOntoCanvas(c2, W, H, 
 const o2 = off();
 OFFSCREEN = []; const c3 = mkCtx(W, H); A.bigStatsCompositeOntoCanvas(c3, W, H, card, 1, 'tr', 60, null);
 const o3 = off();
+// the roster slot must draw the LIST (avatars + ×N), not a number
+OFFSCREEN = []; const c4 = mkCtx(W, H);
+A.bigStatsCompositeOntoCanvas(c4, W, H, A.tailPanelAt(cards, 0, hLive), 1, 'tr', 60, hLive);
+const o4 = off();
+const rosterTexts = c4._rec.texts.concat(o4.texts);
 const capHeld = o1.texts.concat(o2.texts).concat(c1._rec.texts).concat(c2._rec.texts);
 
 console.log('='.repeat(84) + '\n§CPE_PIE_HOLD witness — synthetic programme, ' + DAYS +
@@ -113,6 +148,13 @@ console.log('  draw: resource panel blits=' + c1._rec.images + ' offscreen wedge
   ' | stats+held blits=' + c2._rec.images + ' cardFills=' + c2._rec.fills +
   ' | stats alone blits=' + c3._rec.images + ' cardFills=' + c3._rec.fills);
 console.log('  captions seen: ' + JSON.stringify(capHeld.filter(t => /^day /.test(t))));
+console.log('  frozen: mid-programme=' + frozenMid + '  past-every-boundary=' + frozenTail +
+  '  |  Hospital shape (staffed to the last day): pieEmpty=' + (hLive === null) + ' frozen=' + hFrozen +
+  ' rows=' + JSON.stringify(sig(hLive)));
+console.log('  rotation: slots=' + (rotN && rotN.n) + ' (1 roster + ' + cards.length + ' cards)  reached=' +
+  seenSlots.size + '  rosterHits=' + rosterSlots + ' cardHits=' + cardSlots + ' fades=' + faded +
+  '  noCardsFallback=' + (noCards ? 'roster n=' + noCards.n : 'null'));
+console.log('  roster slot draws: ' + JSON.stringify(rosterTexts.filter(t => /on site|×/.test(t))));
 
 const G = [
   ['G-HOLD-1  a staffed day returns the LIVE composition (held=false), identical to resourcePanelAt',
@@ -133,7 +175,20 @@ const G = [
   ['G-HOLD-8  a held pie is captioned with the day it is from (a past day must say so)',
     capHeld.some(t => t === 'day ' + (lastStaffed.dayKey + 1))],
   ['G-HOLD-9  the pie bitmap is cached ACROSS both modes — the second panel re-blits, never re-renders',
-    o2.fills === 0 && c2._rec.images > 0]
+    o2.fills === 0 && c2._rec.images > 0],
+  ['G-TAIL-1  a cursor with a later op boundary is NOT frozen (round 1 keeps the trade list)',
+    frozenMid === false],
+  ['G-TAIL-2  staffed to the LAST day -> pie NOT empty yet IS frozen (the Hospital case the cards could not reach)',
+    hLive !== null && hLive.totalHeads > 0 && hFrozen === true],
+  ['G-TAIL-3  the empty-pie case still reports frozen (§CPE_PIE_HOLD subsumed, not regressed)',
+    frozenTail === true],
+  ['G-TAIL-4  the rotation reaches every slot, roster included, and fades',
+    !!rotN && rotN.n === cards.length + 1 && seenSlots.size === cards.length + 1 &&
+    rosterSlots > 0 && cardSlots > 0 && faded === true],
+  ['G-TAIL-5  the roster slot draws the trade LIST (avatars + ×N), not a number',
+    rosterTexts.some(t => /on site$/.test(t)) && rosterTexts.some(t => /^×\d+$/.test(t))],
+  ['G-TAIL-6  no cards buildable -> the roster still revolves rather than the panel going blank',
+    !!noCards && noCards.n === 1 && !!noCards.roster]
 ];
 let pass = 0;
 G.forEach(([n, v]) => { console.log('  ' + (v ? 'PASS' : 'FAIL') + '  ' + n); if (v) pass++; });
