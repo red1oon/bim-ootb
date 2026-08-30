@@ -371,6 +371,7 @@ async function setupEffects(A, renderer, scene, camera) {
                                        // paired with the roof-corner twin spot, not just the dim baseline
   var _photoRoofCorners = [], _photoRoofSpotA = null, _photoRoofSpotB = null;
   var _photoSparkles = [];  // [{sprite:THREE.Sprite, mid3:{x,y,z}(three), normalThree:{x,z}}]
+  var _glowFirstMs = null, _glowSkipLogged = false;   // §GLOW_BUILDUP_EARLY_OUT
   var _sparkleTexCache = null;
   var PHOTO_SPARKLE_DOT_MIN = 0.90;   // half-vector/normal alignment needed before any glint shows
   var PHOTO_SPARKLE_SCALE_MAX = 8;    // world-units sprite size at perfect alignment
@@ -3572,6 +3573,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // disturbed. Runs ONCE per staging, not per frame — idempotent, so a re-stage costs a no-op
     // pass rather than a second smoothing.
     if (!A._mepSmoothDone && A.mepSmoothNormals) { A.mepSmoothNormals(); A._mepSmoothDone = true; }
+    // §GLOW_BUILDUP_EARLY_OUT — re-armed per staging: a different building or a re-generated
+    // timeline has different fixture placement times, and a stale number would skip frames that
+    // should light.
+    _glowFirstMs = null; _glowSkipLogged = false; A._glowQuadZeroLogged = false;
     _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
@@ -4340,6 +4345,43 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._tmOverlayRegister) A._tmOverlayRegister();   // idempotent — ensures window.__tmOverlaySync exists even without a billboard nameplate
     var allPos = A._nightFixtureWorldPositions();
     if (!allPos || !allPos.length) { console.log('§PHOTO_GLOW_SPRITE no luminaires in this building — nothing to light'); return; }
+    // ══ §GLOW_BUILDUP_EARLY_OUT (2026-08-30) — MEASURED on the user's live Hospital bake ═════════
+    // Every frame logged "§PHOTO_GLOW_SPRITE_GATE 0/1274 fixtures placed yet — nothing to light",
+    // then "§GLOW_LENS_QUAD staged rect=0 round=0 … 0 draw call(s)". Across 3,447 frames that is
+    // 3,447 x 1,274 = ~4.4 MILLION _tmIsVisible() calls plus the staging that follows, to produce
+    // nothing at all — light fixtures are MEP Final, so they are unplaced for most of a buildup.
+    //
+    // The gate is EXACT, not a heuristic: tmGuidEndTs() gives each element's placement timestamp,
+    // so the earliest fixture placement is a single number. Before that cursor NO fixture can be
+    // visible, and the filter below cannot return anything. Computed once per staging, compared
+    // once per frame. If the map is unavailable the old path runs unchanged — no regression.
+    if (_glowFirstMs === null && typeof window.tmGuidEndTs === 'function') {
+      try {
+        var _ends = window.tmGuidEndTs(), _fm = Infinity, _gi;
+        if (_ends) {
+          for (_gi = 0; _gi < allPos.length; _gi++) {
+            var _g = allPos[_gi].__guid;
+            if (_g == null) { _fm = -Infinity; break; }   // synthetic fallback fixture: always lit
+            var _e = _ends[_g];
+            if (_e != null && _e < _fm) _fm = _e;
+          }
+        }
+        _glowFirstMs = isFinite(_fm) ? _fm : (_fm === -Infinity ? -Infinity : undefined);
+        console.log('§GLOW_BUILDUP_EARLY_OUT armed firstFixtureMs=' +
+          (_glowFirstMs === -Infinity ? 'always-lit(synthetic)' : _glowFirstMs) +
+          ' fixtures=' + allPos.length + ' — frames before this skip the whole gate');
+      } catch (e) { _glowFirstMs = undefined; }
+    }
+    if (_glowFirstMs != null && _glowFirstMs !== -Infinity && typeof window.tmGetState === 'function') {
+      var _tms = window.tmGetState();
+      if (_tms && _tms.active && _tms.cursor < _glowFirstMs) {
+        if (!_glowSkipLogged) { _glowSkipLogged = true;
+          console.log('§GLOW_BUILDUP_EARLY_OUT skipping — cursor is before the first fixture placement; ' +
+            'logged once, not once per frame'); }
+        _glowStagedCount = 0;
+        return;
+      }
+    }
     // §GLOW_BUILDUP_GATE (2026-08-07, user: MaxQ buildup bakes showed every fixture lit from
     // Day 1 — "all the lights are lighted and not following the buildup schedule"). A fixture with
     // no guid (the synthetic per-storey fallback — no real element to gate against) always glows;
@@ -4606,6 +4648,12 @@ async function setupEffects(A, renderer, scene, camera) {
     if (meshRound.instanceColor) meshRound.instanceColor.needsUpdate = true;
     if (rectN) { A.scene.add(meshRect); _glowLensMeshRect = meshRect; }
     if (roundN) { A.scene.add(meshRound); _glowLensMeshRound = meshRound; }
+    // §GLOW_BUILDUP_EARLY_OUT — this logged rect=0 round=0 on all 3,447 frames of the user's
+    // Hospital bake. Say it once: a repeated line carrying no new information hides the ones that do.
+    if (rectN === 0 && roundN === 0) {
+      if (!A._glowQuadZeroLogged) { A._glowQuadZeroLogged = true;
+        console.log('§GLOW_LENS_QUAD staged rect=0 round=0 — nothing placed yet; logged once, not per frame'); }
+    } else
     console.log('§GLOW_LENS_QUAD staged rect=' + rectN + ' round=' + roundN + ' (' + exits +
       ' exit signs left on the round sprite, ' + skippedTier2 +
       ' tier-2 overhead-picks skipped — PL only, no quad), ' + ((rectN ? 1 : 0) + (roundN ? 1 : 0)) +
