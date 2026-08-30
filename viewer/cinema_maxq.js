@@ -757,40 +757,32 @@
     // frame was rendered with, captured by the caller immediately before this call.
     // §CPE_RESOURCE_PANEL — drawn between the counter and the overview, one column, one corner.
     // Same never-kills-a-bake contract as the box below it.
-    var _resH = 0;
+    // §CPE_HUD_ORDER (2026-08-30, user after seeing a real baked frame): counter -> PATH BOX -> pie.
+    // The path box answers "where am I", which a viewer tracks continuously, so it sits directly
+    // under the clock; the pie is a readout you consult rather than follow, so it goes below.
+    // ONE running offset builds the column so the three can never overlap or leave a gap.
+    var _gapY = Math.round(h * 0.012);
+    var _stackY = 0;
+    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
+      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
+      _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
+    } catch (eOvD) {
+      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
+        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
+    }
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) try {
-      var _rGap = Math.round(h * 0.012), _rStack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _rStack = A.dayCounterBoxSize(h).h + _rGap;
-      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _rStack);
-      _resH = Math.round(h * 0.26) + _rGap;
+      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _stackY);
     } catch (eRp) {
       if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
         console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
     }
     if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) try {
-      var _sGap = Math.round(h * 0.012), _sStack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _sStack = A.dayCounterBoxSize(h).h + _sGap;
-      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _sStack);
-      _resH = Math.round(h * 0.24) + _sGap;
+      // §CPE_PIE_HOLD — statInfo.held is the composition the pie holds beside the card.
+      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _stackY, statInfo.held);
     } catch (eBs) {
       if (!A._bsDrawErrLogged) { A._bsDrawErrLogged = true;
         console.warn('§CPE_BIG_STATS_ERR draw: ' + eBs.message + ' — card skipped, frames continue'); }
-    }
-    // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE — same contract as the prepare block: a draw failure
-    // costs this frame's box, never the frame and never the bake. Logged once, not 3,048 times.
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
-      // §CPE_HUD_STACK — same corner as the day counter, stacked beneath it. The counter's height
-      // is ASKED FOR, never recomputed here (cpe_day_counter.js owns that arithmetic). When the
-      // counter is off for this bake the column simply starts at the margin.
-      var _gap = Math.round(h * 0.012), _stack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) {
-        _stack = A.dayCounterBoxSize(h).h + _gap;
-      }
-      _stack += _resH;   // §CPE_HUD_STACK: counter, then resources, then the path box
-      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stack);
-    } catch (eOvD) {
-      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
-        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
@@ -1387,6 +1379,7 @@
       // Rides the same Label ON checkbox and refuses honestly when there is no schedule to read.
       try {
         if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
+          A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1576,15 +1569,23 @@
         // honestly empty) the same slot revolves big headline numbers instead. The switch is the
         // pie's OWN emptiness, not a hardcoded film fraction — a building whose work runs to the
         // last frame keeps the pie the whole way, with no second opinion about when topout was.
-        var _resInfo = null, _statInfo = null;
-        if (_resOps && _bkState && A.resourcePanelAt) {
-          var _ri = A.resourcePanelAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
-          if (_ri) _resInfo = { info: _ri, pos: _ovPos };
+        // §CPE_PIE_HOLD (user, 2026-08-30): "make the pie part not to disappear but hold when there
+        // is silent info." resourcePanelHoldAt returns today's real composition while trades work,
+        // and the most recent REAL one (held=true, dimmed, captioned with its day) once they stop —
+        // so the pie keeps its column through the whole reveal and the card revolves beside it.
+        var _resInfo = null, _statInfo = null, _holdInfo = null;
+        if (_resOps && _bkState && A.resourcePanelHoldAt) {
+          _holdInfo = A.resourcePanelHoldAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
         }
-        if (!_resInfo && _bigCards && A.bigStatsAt) {
+        if (_holdInfo && !_holdInfo.held) {
+          _resInfo = { info: _holdInfo, pos: _ovPos };        // trades are working: pie + trade list
+        } else if (_bigCards && A.bigStatsAt) {
           var _si = A.bigStatsAt(_bigCards, i / fps);
-          if (_si) _statInfo = { shown: _si, pos: _ovPos };
+          if (_si) _statInfo = { shown: _si, pos: _ovPos, held: _holdInfo };   // held pie + card
         }
+        // No cards could be built from this building's sources — hold the pie rather than leave the
+        // slot empty, which is the disappearance the user reported.
+        if (!_resInfo && !_statInfo && _holdInfo) _resInfo = { info: _holdInfo, pos: _ovPos };
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -1668,6 +1669,14 @@
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
       _workPacingReset();
+      // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
+      // showing today's. A bake where this equals framesDone means no day was ever staffed and the
+      // whole panel was a hold: that is a schedule problem, not a HUD one, and must be visible.
+      console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
+        (framesDone ? ' (' + Math.round((A._resHoldFrames || 0) / framesDone * 100) + '% of the film)' : '') +
+        ((A._resHoldFrames || 0) === 0 ? ' — trades were active for every frame, the pie was never held'
+          : ((A._resHoldFrames || 0) >= framesDone ? ' ⚠ NO frame had a live crew — the pie held throughout'
+             : ' — pie holds the last real crew through the silent tail')));
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
