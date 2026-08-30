@@ -27,6 +27,9 @@
 function setupCpeResourcePanel(A) {
   var POS = { tr: 1, tl: 1, br: 1, bl: 1 };
   var MS_PER_DAY = 86400000;
+  // §CPE_PIE_HOLD — how far a HELD composition (one from a past day) is dimmed. It stays
+  // legible, but a viewer can see at a glance that it is not today's crew.
+  var HELD_DIM = 0.60;
 
   // Trade colours — distinct hues, readable small. Keyed on the resource ids rates.js already uses.
   var TRADE_COLOR = {
@@ -97,6 +100,60 @@ function setupCpeResourcePanel(A) {
     return { rows: rows, totalHeads: total, progress: elapsed,
              dayKey: Math.floor((cursorMs - projectStartMs) / MS_PER_DAY),
              ratesPresent: !!LR };
+  };
+
+  // ══ §CPE_PIE_HOLD (2026-08-30, user ruling) ══════════════════════════════════════════════════
+  // User: "make the pie part not to disappear but hold when there is silent info."
+  //
+  // MEASURED FIRST (persisted ~/.cache/bim4d task windows, no probe launched): Hospital 318 days,
+  // Clinic 111, Terminal 97, HHS 50, Duplex 13 — **ZERO** days with no task active on any of them.
+  // So the silence is not a mid-programme gap; it is the post-§CPE_BUILDUP_TOPOUT half (topoutU=0.524
+  // on the user's own Hospital bake), where no trade is active and the pie vanished entirely.
+  //
+  // This layers a HOLD on top of resourcePanelAt WITHOUT changing it — that function stays the pure
+  // live-day truth its witness gates, so "who is on site today" and "who was on site last" can never
+  // be confused in the log. Pure: no module state, no carried-forward numbers. The held composition
+  // is the REAL composition of the most recent staffed day, recomputed by the same arithmetic at
+  // that day's cursor — nothing averaged, decayed or extrapolated.
+  //   • progress stays LIVE — elapsed programme fraction is still true after topout, so the ring
+  //     keeps filling on the real cursor while the wedges hold.
+  //   • held=true + heldDayKey travel with the info so the panel can dim it and print the day it is
+  //     from. A held pie is a claim about a PAST day and must say so.
+  //   • nothing staffed yet at this cursor -> null. No fabricated composition, ever.
+  A.resourcePanelHoldAt = function (cursorMs, ops, projectStartMs, projectEndMs) {
+    var live = A.resourcePanelAt(cursorMs, ops, projectStartMs, projectEndMs);
+    var todayKey = Math.floor((cursorMs - projectStartMs) / MS_PER_DAY);
+    if (live) { live.held = false; live.heldDayKey = todayKey; live.heldDays = 0; return live; }
+    if (!ops || !ops.length || !(projectEndMs > projectStartMs)) return null;
+    // Most recent staffed activity at or before this cursor's day. Same prefix scan the live path
+    // uses (ops are sorted by start_ts), so a held frame costs no more than a live one.
+    var dayEnd = projectStartMs + (todayKey + 1) * MS_PER_DAY;
+    var lastEnd = -Infinity, i, o, e;
+    for (i = 0; i < ops.length; i++) {
+      o = ops[i];
+      if (o.s >= dayEnd) break;
+      if (!o.r) continue;
+      e = (o.e == null ? o.s : o.e);
+      if (e > lastEnd) lastEnd = e;
+    }
+    if (!isFinite(lastEnd)) return null;      // nothing has ever been staffed before now
+    // The day containing that end HAD that op running, so this recomputation cannot come back empty
+    // for the reason the live call did — but if it somehow does, refuse rather than draw a blank ring.
+    var held = A.resourcePanelAt(Math.min(lastEnd, dayEnd - 1), ops, projectStartMs, projectEndMs);
+    if (!held) return null;
+    held.held = true;
+    held.heldDayKey = held.dayKey;
+    held.heldDays = todayKey - held.dayKey;
+    held.dayKey = todayKey;
+    held.progress = Math.max(0, Math.min(1, (cursorMs - projectStartMs) / (projectEndMs - projectStartMs)));
+    if (!A._resHoldLogged) {
+      A._resHoldLogged = true;
+      console.log('§CPE_RESOURCE_HOLD first hold at day=' + (todayKey + 1) + ' holding day=' +
+        (held.heldDayKey + 1) + ' (' + held.heldDays + ' days back) heads=' + held.totalHeads +
+        ' trades=' + held.rows.length + ' — pie holds, ring stays live');
+    }
+    A._resHoldFrames = (A._resHoldFrames || 0) + 1;
+    return held;
   };
 
   // Sun azimuth from the REAL scene light, so the cylinder's highlight and its dropped shadow fall
@@ -209,24 +266,69 @@ function setupCpeResourcePanel(A) {
     return { card: cards[idx], idx: idx, n: cards.length, opacity: Math.max(0, fade) };
   };
 
-  A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY) {
-    if (!ctx || !shown || !shown.card || !(opacity > 0)) return;
-    var c = shown.card;
+  // ── The panel BOX. §CPE_PIE_HOLD: both modes call this, so the slot cannot change size, corner or
+  // stack position when the content inside it swaps from the trade list to a revolving stat card.
+  function _box(w, h, pos, stackY) {
     var bw = Math.round(h * 0.36), bh = Math.round(h * 0.24);
     var margin = Math.round(h * 0.028);
     var at = (pos && POS[pos]) ? pos : 'tr';
     var sy = stackY || 0;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
-    var y = (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy;
-    var rad = Math.round(bh * 0.09);
+    return { bw: bw, bh: bh, rad: Math.round(bh * 0.09),
+             x: (at === 'tl' || at === 'bl') ? margin : w - margin - bw,
+             y: (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy };
+  }
+
+  // ── Frosted plate. Cheap only HERE: _captureFrame has already drawn the rendered frame into this
+  // context, so the pixels behind the panel exist and can be blurred back over themselves. ONE
+  // implementation for both modes — the plate must not change tone as the content swaps.
+  function _plate(ctx, B) {
+    var glass = _glass(ctx, B.x, B.y, B.bw, B.bh, B.rad);
+    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad);
+    ctx.fillStyle = glass ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad);
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // ── The pie + ring are static for a whole calendar day, so they are rendered once into an
+  // offscreen canvas and blitted. The user's own instruction: "yes reprint if no change".
+  // Cached across BOTH modes, so a held pie costs nothing extra for the whole reveal.
+  var _pieKey = null, _pieCanvas = null;
+  function _pie(ctx, B, info) {
+    var lit = A.resourcePanelLightDir();
+    var key = (info.held ? 'H' : 'L') +
+              (info.heldDayKey == null ? info.dayKey : info.heldDayKey) +
+              '|' + B.bw + 'x' + B.bh + '|' + info.rows.length + '|' + info.totalHeads +
+              '|' + info.progress.toFixed(3) + '|' + lit.x.toFixed(2) + ',' + lit.y.toFixed(2);
+    if (_pieKey !== key || !_pieCanvas) { _pieCanvas = _pieBitmap(B.bw, B.bh, info, lit); _pieKey = key; }
+    if (!_pieCanvas) return;
+    ctx.save();
+    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad); ctx.clip();
+    ctx.drawImage(_pieCanvas, B.x, B.y);
+    ctx.restore();
+  }
+
+  // §CPE_BIG_STATS + §CPE_PIE_HOLD. `heldInfo` (optional) is the composition the pie holds while the
+  // cards revolve — pass what A.resourcePanelHoldAt returned. With it, the pie keeps its column and
+  // the card takes the content column; without it the card falls back to the full width it had
+  // before the hold existed, so an older caller still renders correctly.
+  A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY, heldInfo) {
+    if (!ctx || !shown || !shown.card || !(opacity > 0)) return;
+    var c = shown.card;
+    var B = _box(w, h, pos, stackY);
+    var bw = B.bw, bh = B.bh, x = B.x, y = B.y, rad = B.rad;
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);
-    var glass = _glass(ctx, x, y, bw, bh, rad);
-    _round(ctx, x, y, bw, bh, rad);
-    ctx.fillStyle = glass ? 'rgba(0,0,0,0.30)' : 'rgba(0,0,0,0.45)';
-    ctx.fill();
-    _round(ctx, x, y, bw, bh, rad);
-    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
+    _plate(ctx, B);
+
+    // The pie does NOT leave when the trades do — it holds the last real composition in exactly the
+    // place it occupied all through the build, dimmed and captioned with the day it is from.
+    var G = _geom(bw, bh);
+    var colX = x + Math.round(bh * 0.13), colW = bw - Math.round(bh * 0.13) * 2;
+    if (heldInfo && heldInfo.rows && heldInfo.rows.length && heldInfo.totalHeads > 0) {
+      _pie(ctx, B, heldInfo);
+      colX = x + G.lx; colW = G.availW;
+    }
 
     ctx.save();
     _round(ctx, x, y, bw, bh, rad); ctx.clip();
@@ -235,23 +337,23 @@ function setupCpeResourcePanel(A) {
     var F = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
     // THE NUMBER — as large as will fit, because the whole point is grasping it at a glance.
     var big = Math.round(bh * 0.42), tw;
-    do { ctx.font = '800 ' + big + 'px ' + F; tw = ctx.measureText(c.big).width; if (tw <= bw - pad * 2) break; big -= 2; }
+    do { ctx.font = '800 ' + big + 'px ' + F; tw = ctx.measureText(c.big).width; if (tw <= colW) break; big -= 2; }
     while (big > 14);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.fillStyle = '#fff';
     var baseY = y + pad + big * 0.86;
-    ctx.fillText(c.big, x + pad, baseY);
+    ctx.fillText(c.big, colX, baseY);
     ctx.font = '600 ' + Math.round(bh * 0.105) + 'px ' + F;
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillText(_fit(ctx, c.label, bw - pad * 2), x + pad, baseY + Math.round(bh * 0.17));
+    ctx.fillText(_fit(ctx, c.label, colW), colX, baseY + Math.round(bh * 0.17));
     if (c.sub) {
       ctx.font = '500 ' + Math.round(bh * 0.085) + 'px ' + F;
       ctx.fillStyle = 'rgba(255,255,255,0.60)';
-      ctx.fillText(_fit(ctx, c.sub, bw - pad * 2), x + pad, baseY + Math.round(bh * 0.30));
+      ctx.fillText(_fit(ctx, c.sub, colW), colX, baseY + Math.round(bh * 0.30));
     }
     // dots: which of the revolving cards this is, so a viewer knows more are coming
     var dr = Math.max(2, Math.round(bh * 0.016)), gap = dr * 3, i2;
-    var dx = x + pad, dy = y + bh - pad * 0.7;
+    var dx = colX, dy = y + bh - pad * 0.7;
     for (i2 = 0; i2 < shown.n; i2++) {
       ctx.beginPath(); ctx.arc(dx + i2 * gap, dy, dr, 0, Math.PI * 2);
       ctx.fillStyle = (i2 === shown.idx) ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.28)';
@@ -278,90 +380,58 @@ function setupCpeResourcePanel(A) {
     } catch (e) { return false; }
   }
 
-  var _cacheKey = null, _cacheCanvas = null;
-
   // ── The ONLY place the panel is drawn, so live preview and baked video cannot disagree.
+  // Same box, same plate, same pie column as the stat-card mode — only the content column differs.
   A.resourcePanelCompositeOntoCanvas = function (ctx, w, h, info, opacity, pos, stackY) {
     if (!ctx || !info || !(opacity > 0)) return;
-    var bw = Math.round(h * 0.36), bh = Math.round(h * 0.24);
-    var margin = Math.round(h * 0.028);
-    var at = (pos && POS[pos]) ? pos : 'tr';
-    var sy = stackY || 0;
-    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
-    var y = (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy;
-    var rad = Math.round(bh * 0.09);
-
+    var B = _box(w, h, pos, stackY);
     ctx.save();
     ctx.globalAlpha = Math.min(1, opacity);
-
-    // ── Frosted glass. Cheap only HERE: _captureFrame has already drawn the rendered frame into
-    // this context, so the pixels behind the panel exist and can be blurred back over themselves.
-    var glass = false;
-    try {
-      if (typeof ctx.filter === 'string' && typeof document !== 'undefined' && document.createElement) {
-        var tmp = document.createElement('canvas');
-        tmp.width = bw; tmp.height = bh;
-        tmp.getContext('2d').drawImage(ctx.canvas, x, y, bw, bh, 0, 0, bw, bh);
-        ctx.save();
-        _round(ctx, x, y, bw, bh, rad); ctx.clip();
-        ctx.filter = 'blur(9px)';
-        ctx.drawImage(tmp, x - 9, y - 9, bw + 18, bh + 18);   // overscan: no dark halo at the edge
-        ctx.filter = 'none';
-        ctx.restore();
-        glass = true;
-      }
-    } catch (e) { glass = false; }
-    _round(ctx, x, y, bw, bh, rad);
-    ctx.fillStyle = glass ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.45)';
-    ctx.fill();
-    _round(ctx, x, y, bw, bh, rad);
-    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
-
-    // ── The pie + ring are static for a whole calendar day, so they are rendered once into an
-    // offscreen canvas and blitted. The user's own instruction: "yes reprint if no change".
-    var lit = A.resourcePanelLightDir();
-    var key = info.dayKey + '|' + bw + 'x' + bh + '|' + info.rows.length + '|' +
-              info.progress.toFixed(3) + '|' + lit.x.toFixed(2) + ',' + lit.y.toFixed(2);
-    if (_cacheKey !== key || !_cacheCanvas) {
-      _cacheCanvas = _renderPanel(bw, bh, info, lit);
-      _cacheKey = key;
-    }
-    if (_cacheCanvas) {
-      ctx.save();
-      _round(ctx, x, y, bw, bh, rad); ctx.clip();
-      ctx.drawImage(_cacheCanvas, x, y);
-      ctx.restore();
-    }
+    _plate(ctx, B);
+    _pie(ctx, B, info);
+    ctx.save();
+    _round(ctx, B.x, B.y, B.bw, B.bh, B.rad); ctx.clip();
+    ctx.translate(B.x, B.y);
+    _drawList(ctx, B.bw, B.bh, info);
+    ctx.restore();
     ctx.restore();
   };
 
-  function _renderPanel(bw, bh, info, lit) {
+  // §CPE_PIE_HOLD — ONE panel, ONE geometry, in BOTH modes: [ pie + ring ] | [ content ].
+  // The pie's position is computed here and nowhere else, so the trade list and the revolving stat
+  // card sit in exactly the same column and the pie cannot move or vanish between them.
+  // §CPE_RESOURCE_PANEL_LAYOUT (2026-08-30, found by rendering a real frame, not by reading): the
+  // pie was sized from panel HEIGHT and the list took whatever was left over — which at 216x187 was
+  // 3.5 PIXELS. Trade names rendered as one letter each and "36 on site" was clipped mid-word. The
+  // content column's width is RESERVED FIRST and the pie fits into the remainder, so the text can
+  // never be squeezed out no matter how the panel is proportioned. Widened again after a real baked
+  // frame showed "Conc...", "Steel...", "Pipefit..." all truncating.
+  function _geom(bw, bh) {
+    var pad = Math.round(bh * 0.10);
+    var listW = Math.max(Math.round(bw * 0.56), 110);
+    var pieW = bw - listW - Math.round(pad * 1.4);
+    var R = Math.max(10, Math.min(pieW / 2 / 1.22, (bh - pad * 2) / 2 * 0.82));
+    return { pad: pad, listW: listW, pieW: pieW, cx: pad + pieW / 2, cy: bh / 2,
+             R: R, RY: R * 0.52, depth: Math.max(4, R * 0.30),
+             lx: bw - listW, availW: listW - pad };
+  }
+
+  // The pie + ring ONLY, on a transparent bitmap — cached and shared by both panel modes.
+  // When info.held is true the wedges are dimmed and the day they are from is printed under them:
+  // a held pie is a claim about a PAST day and must say so on screen (§CPE_PIE_HOLD rule 2).
+  // The ring is NOT dimmed — elapsed programme fraction is still live and true after topout.
+  function _pieBitmap(bw, bh, info, lit) {
     var c = document.createElement('canvas');
     c.width = bw; c.height = bh;
     var g = c.getContext('2d');
-    // §CPE_RESOURCE_PANEL_LAYOUT (2026-08-30, found by rendering a real frame, not by reading): the
-    // pie was sized from panel HEIGHT and the list took whatever was left over — which at 216x187
-    // was 3.5 PIXELS. Trade names rendered as one letter each and "36 on site" was clipped mid-word.
-    // The list's width is now RESERVED FIRST and the pie fits into the remainder, so the text column
-    // can never be squeezed out no matter how the panel is proportioned.
-    var pad = Math.round(bh * 0.10);
-    // §CPE_RESOURCE_PANEL_LAYOUT — widened after a real baked frame showed "Conc...", "Steel...",
-    // "Pipefit..." all truncating. A trade name a client cannot read is the same failure as a
-    // placeholder storey: the card is there but says nothing. The pie takes the remainder.
-    var listW = Math.max(Math.round(bw * 0.56), 110);
-    var pieW = bw - listW - Math.round(pad * 1.4);
-    var cy = bh / 2;
-    var R = Math.max(10, Math.min(pieW / 2 / 1.22, (bh - pad * 2) / 2 * 0.82));
-    var cx = pad + pieW / 2;
-    var RY = R * 0.52;                 // squashed = the cylinder seen at an angle
-    var depth = Math.max(4, R * 0.30); // extruded skirt height
+    var G = _geom(bw, bh);
+    var cx = G.cx, cy = G.cy, R = G.R, RY = G.RY, depth = G.depth;
 
     // ══ 1. Progress ring — the outer perimeter. The elapsed arc is solid; the balance is an EMPTY
     // GLASS CYLINDER (the user's phrase): a translucent wall with a rim highlight, so the remainder
     // reads as "still to build" rather than as chart background.
     var ringR = R * 1.20, ringRY = RY * 1.20, ringW = Math.max(3, R * 0.13);
     var a0 = -Math.PI / 2, a1 = a0 + info.progress * Math.PI * 2;
-    // glass shell, full circle first
     g.save();
     g.lineWidth = ringW;
     g.strokeStyle = 'rgba(255,255,255,0.13)';
@@ -371,7 +441,6 @@ function setupCpeResourcePanel(A) {
     g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1;
     _ellipseArc(g, cx, cy, ringR, ringRY, 0, Math.PI * 2); g.stroke();
     g.restore();
-    // filled portion — skirt then top, so the fill reads as a solid wall inside the glass
     if (info.progress > 0.001) {
       g.save();
       g.lineWidth = ringW;
@@ -386,6 +455,8 @@ function setupCpeResourcePanel(A) {
     // face, then a specular arc on the sun side. Standard 2D cylinder construction — and at this
     // size it reads more solid than a real lit mesh would, because the scene's own lighting is
     // near-uniform (the §TRIPLANAR_NORMAL lesson: 4.3% under flat light).
+    g.save();
+    if (info.held) g.globalAlpha = HELD_DIM;
     var acc = -Math.PI / 2, i, row, frac, col;
     for (i = 0; i < info.rows.length; i++) {
       row = info.rows[i];
@@ -406,21 +477,37 @@ function setupCpeResourcePanel(A) {
       acc += frac * Math.PI * 2;
     }
     // specular arc on the sun side of the top face
-    g.save();
     g.strokeStyle = 'rgba(255,255,255,0.30)'; g.lineWidth = Math.max(1, R * 0.06);
     var sa = Math.atan2(lit.y, lit.x);
     _ellipseArc(g, cx, cy, R * 0.88, RY * 0.88, sa - 0.55, sa + 0.55); g.stroke();
     g.restore();
 
-    // ══ 3. Avatar + qty rows. The staffage PNGs already vendored are office/street people
-    // (sitting formal, walking with shopping) — wrong for a trade, so the figure is drawn: a
-    // hard-hat silhouette tinted per trade. Zero assets, crisp at any export size.
-    var lx = bw - listW;
-    var availW = listW - pad;
+    // ══ 3. The held caption. Only drawn when the composition is NOT today's.
+    if (info.held) {
+      var fs = Math.max(8, Math.round(bh * 0.062));
+      g.font = '600 ' + fs + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = 'rgba(255,255,255,0.62)';
+      g.fillText('day ' + ((info.heldDayKey || 0) + 1), cx,
+                 Math.min(bh - fs * 0.8, cy + ringRY + depth + fs * 1.05));
+      g.textAlign = 'left';
+    }
+    return c;
+  }
+
+  // ══ 4. Avatar + qty rows, drawn live into the panel's own space (translated by the caller).
+  // The staffage PNGs already vendored are office/street people (sitting formal, walking with
+  // shopping) — wrong for a trade, so the figure is drawn: a hard-hat silhouette tinted per trade.
+  // Zero assets, crisp at any export size.
+  function _drawList(g, bw, bh, info) {
+    var G = _geom(bw, bh), pad = G.pad, lx = G.lx, availW = G.availW;
     var fs = Math.max(9, Math.round(bh * 0.085));
     var rowH = Math.round(fs * 1.55);
     var maxRows = Math.max(1, Math.floor((bh - pad * 2 - fs * 1.4) / rowH));
-    g.textBaseline = 'middle';
+    var i, row, col;
+    g.save();
+    if (info.held) g.globalAlpha = HELD_DIM;
+    g.textAlign = 'left'; g.textBaseline = 'middle';
     g.font = '700 ' + Math.round(fs * 1.15) + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
     g.fillStyle = '#fff';
     g.fillText(info.totalHeads + ' on site', lx, pad + fs * 0.7);
@@ -443,7 +530,7 @@ function setupCpeResourcePanel(A) {
       g.fillStyle = 'rgba(255,255,255,0.55)';
       g.fillText('+' + (info.rows.length - maxRows) + ' more', lx + fs * 1.05, ry);
     }
-    return c;
+    g.restore();
   }
 
   // A hard-hat worker silhouette — helmet, head, shoulders. Deliberately simple: it must read at
