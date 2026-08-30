@@ -4,6 +4,19 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.56.0](https://github.com/red1oon/bim-ootb/compare/v1.55.0...v1.56.0) (2026-08-29)
+
+
+### ✨ Features
+
+* **photo:** §TRIPLANAR_NORMAL — the missing third PBR map + warm cam fill ([#1579](https://github.com/red1oon/bim-ootb/issues/1579)) ([5099f74](https://github.com/red1oon/bim-ootb/commit/5099f74c539ed9593038124c4d66ea2728cf3c0f))
+
+
+### 🐛 Fixes
+
+* **merge:** merged IFC lost its geometry on save — geo fold died on a table-name mismatch ([#1578](https://github.com/red1oon/bim-ootb/issues/1578)) ([f8ddeb3](https://github.com/red1oon/bim-ootb/commit/f8ddeb395ec4bf10d6ef1f4490fd9d9979c634ad))
+* **open:** meta.db+geo.db pair silently dropped one half — both the Open picker and the ([#1576](https://github.com/red1oon/bim-ootb/issues/1576)) ([141c1c5](https://github.com/red1oon/bim-ootb/commit/141c1c526cbc81eadbea8d870236135667e44d4a))
+
 ## [1.55.0](https://github.com/red1oon/bim-ootb/compare/v1.54.0...v1.55.0) (2026-08-27)
 
 
