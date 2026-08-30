@@ -757,40 +757,31 @@
     // frame was rendered with, captured by the caller immediately before this call.
     // §CPE_RESOURCE_PANEL — drawn between the counter and the overview, one column, one corner.
     // Same never-kills-a-bake contract as the box below it.
-    var _resH = 0;
+    // §CPE_HUD_ORDER (2026-08-30, user after seeing a real baked frame): counter -> PATH BOX -> pie.
+    // The path box answers "where am I", which a viewer tracks continuously, so it sits directly
+    // under the clock; the pie is a readout you consult rather than follow, so it goes below.
+    // ONE running offset builds the column so the three can never overlap or leave a gap.
+    var _gapY = Math.round(h * 0.012);
+    var _stackY = 0;
+    if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _stackY = A.dayCounterBoxSize(h).h + _gapY;
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
+      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stackY);
+      _stackY += Math.round(h * 0.20) + _gapY;   // the box's own bh, from cpe_path_overview.js
+    } catch (eOvD) {
+      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
+        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
+    }
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) try {
-      var _rGap = Math.round(h * 0.012), _rStack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _rStack = A.dayCounterBoxSize(h).h + _rGap;
-      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _rStack);
-      _resH = Math.round(h * 0.26) + _rGap;
+      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _stackY);
     } catch (eRp) {
       if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
         console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
     }
     if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) try {
-      var _sGap = Math.round(h * 0.012), _sStack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _sStack = A.dayCounterBoxSize(h).h + _sGap;
-      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _sStack);
-      _resH = Math.round(h * 0.24) + _sGap;
+      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _stackY);
     } catch (eBs) {
       if (!A._bsDrawErrLogged) { A._bsDrawErrLogged = true;
         console.warn('§CPE_BIG_STATS_ERR draw: ' + eBs.message + ' — card skipped, frames continue'); }
-    }
-    // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE — same contract as the prepare block: a draw failure
-    // costs this frame's box, never the frame and never the bake. Logged once, not 3,048 times.
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
-      // §CPE_HUD_STACK — same corner as the day counter, stacked beneath it. The counter's height
-      // is ASKED FOR, never recomputed here (cpe_day_counter.js owns that arithmetic). When the
-      // counter is off for this bake the column simply starts at the margin.
-      var _gap = Math.round(h * 0.012), _stack = 0;
-      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) {
-        _stack = A.dayCounterBoxSize(h).h + _gap;
-      }
-      _stack += _resH;   // §CPE_HUD_STACK: counter, then resources, then the path box
-      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stack);
-    } catch (eOvD) {
-      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
-        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }

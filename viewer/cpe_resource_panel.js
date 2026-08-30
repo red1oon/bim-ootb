@@ -345,7 +345,10 @@ function setupCpeResourcePanel(A) {
     // The list's width is now RESERVED FIRST and the pie fits into the remainder, so the text column
     // can never be squeezed out no matter how the panel is proportioned.
     var pad = Math.round(bh * 0.10);
-    var listW = Math.max(Math.round(bw * 0.46), 96);
+    // §CPE_RESOURCE_PANEL_LAYOUT — widened after a real baked frame showed "Conc...", "Steel...",
+    // "Pipefit..." all truncating. A trade name a client cannot read is the same failure as a
+    // placeholder storey: the card is there but says nothing. The pie takes the remainder.
+    var listW = Math.max(Math.round(bw * 0.56), 110);
     var pieW = bw - listW - Math.round(pad * 1.4);
     var cy = bh / 2;
     var R = Math.max(10, Math.min(pieW / 2 / 1.22, (bh - pad * 2) / 2 * 0.82));
