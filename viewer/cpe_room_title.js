@@ -821,10 +821,35 @@ function setupCpeRoomTitle(A) {
     var bandH = fontPx * 2.2;
     var y = h - bandH * 1.4;
     ctx.globalAlpha = opacity;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, y, w, bandH);
+    var font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+
+    // §CPE_LABEL_PANEL_SYNC (2026-08-30, user: "The bottom label should also be synch style, same
+    // font and panelling"). Was a full-bleed black band across the frame while the day counter and
+    // §CPE_PATH_OVERVIEW both sit on rounded, text-hugging plates — three overlays, two visual
+    // languages. Now the same plate: same 0.45 black, same 0.22-of-height corner radius, same
+    // padX/padY rhythm cpe_day_counter.js already established. The FONT was already identical;
+    // only the panelling diverged.
+    //
+    // Falls back to the original band when the context cannot measure text — the collective-caption
+    // witness drives this function through a minimal capturing stub, and a layout change must never
+    // be able to break a test that is asserting the CAPTION, not the plate.
+    var plate = (typeof ctx.measureText === 'function');
+    if (plate) {
+      ctx.font = font;
+      var tw = ctx.measureText(text).width;
+      var padX = Math.round(fontPx * 0.85), padY = Math.round(fontPx * 0.55);
+      var boxW = Math.min(w - Math.round(h * 0.056), tw + padX * 2);
+      var boxH = padY * 2 + fontPx;
+      var bx = Math.round((w - boxW) / 2), by = Math.round(y + (bandH - boxH) / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, boxW, boxH, Math.round(boxH * 0.22)); ctx.fill(); }
+      else ctx.fillRect(bx, by, boxW, boxH);
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, y, w, bandH);
+    }
     ctx.fillStyle = '#fff';
-    ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    ctx.font = font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, w / 2, y + bandH / 2);

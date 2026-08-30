@@ -3566,6 +3566,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // the top of this function) already ran before this exists — those materials fall back to the
     // sky env map for one tick, then upgrade to this probe on the next accumulation frame via
     // _reassertPhotoEnvMap (which runs every tick regardless of the once-only boost flag).
+    // §MEP_SMOOTH_NORMALS — curved MEP reads faceted because the shipped normals are hard
+    // per-face on every class (§SHADE_PROBE: splitNormal 96-100%). Class-gated + crease-limited,
+    // rewriting normal VALUES in place only, so nothing downstream that reads the vertex layout is
+    // disturbed. Runs ONCE per staging, not per frame — idempotent, so a re-stage costs a no-op
+    // pass rather than a second smoothing.
+    if (!A._mepSmoothDone && A.mepSmoothNormals) { A.mepSmoothNormals(); A._mepSmoothDone = true; }
     _buildRoomProbe();
     console.log('§PHOTO_STAGING on nightWasOn=' + _photoNightWasOn);
   }
@@ -6446,6 +6452,8 @@ async function setupEffects(A, renderer, scene, camera) {
     var _corrArc = null;
     function _buildCpeCorrArc() {
       _corrArc = [];
+      _corrSorted = null;   // §CPE_CORR_BRUSH_STROKE: the ordered view is derived from _corrArc, so a
+                            // re-plan must invalidate it or a stale stroke order would outlive its edit
       if (!_cpeCorrections || !_cpeCorrections.length || !flowWp.length) return;
       for (var ci = 0; ci < _cpeCorrections.length; ci++) {
         var c = _cpeCorrections[ci];
@@ -6474,23 +6482,52 @@ async function setupEffects(A, renderer, scene, camera) {
     // corrections — not user-decided): simplest reasonable MVP picked here, flagged for review — the
     // NEAREST anchor (by |e3 - s|) wins outright where more than one window covers the same e3, no
     // cross-correction blending.
+    // §CPE_CORR_BRUSH_STROKE (2026-08-30 — USER RULING, replaces the decaying envelope above).
+    // User: "once dragged to face an angle, its forward path should persist uniformly and gracefully
+    // overriding previous cam face values… It is like a new brush stroke over an old one. 'Staying'
+    // POV certainty is thus important for user to plan out an intended path."
+    //
+    // WHY THE OLD MODEL COULD NOT STAY, structurally rather than as a tuning miss: each correction
+    // was ramp(2m) -> hold(8m) -> decay(5m), so it governed ~15m and then FADED BACK to the
+    // path-follow gaze it had just been used to overrule. On the user's own 89.5m Hospital walk
+    // (§CPE_WALK_BUDGET totalLen=89.53m) that is ~17% of the route; the other 83% silently reverted.
+    // No hold/decay value fixes that — a decay term means "return to the old value" by definition,
+    // which is the opposite of a brush stroke.
+    //
+    // THE MODEL NOW: strokes, ordered along the path. The LAST anchor at or before e3 owns the gaze
+    // and holds it FORWARD INDEFINITELY — to the next stroke, or to the end of the walk. Arriving at
+    // a stroke crossfades from whatever was in force (the previous stroke's direction, or the
+    // path-follow gaze for the first one) over that stroke's own ramp, so an override is graceful
+    // rather than a snap. `hold` and `decay` are therefore no longer consulted; they are left on the
+    // records because saved plans carry them and a future model may want them again.
+    var _corrSorted = null;
     function _cpeCorrectionAt(e3) {
       if (_corrArc === null) _buildCpeCorrArc();
       if (!_corrArc.length) return null;
-      var bestC = null, bestDist = Infinity, bestW = 0;
-      for (var i = 0; i < _corrArc.length; i++) {
-        var c = _corrArc[i];
-        var lo = c.s - c.rampFrac, hiHold = c.s + c.holdFrac, hi = hiHold + c.decayFrac;
-        if (e3 < lo - 1e-9 || e3 > hi + 1e-9) continue;
-        var w;
-        if (e3 < c.s) w = _cinemaSmoothstep((e3 - lo) / Math.max(1e-9, c.rampFrac));         // ease-in, 0->1, ends AT the anchor
-        else if (e3 <= hiHold) w = 1;                                                        // held, full strength
-        else w = 1 - _cinemaSmoothstep((e3 - hiHold) / Math.max(1e-9, c.decayFrac));         // eased back down
-        var dist = Math.abs(e3 - c.s);
-        if (bestC === null || dist < bestDist) { bestC = c; bestDist = dist; bestW = w; }
+      if (_corrSorted === null) {
+        _corrSorted = _corrArc.slice().sort(function (a, b) { return a.s - b.s; });
       }
-      if (!bestC) return null;
-      return { dir: bestC.dir, w: bestW };
+      // the last stroke whose ramp has begun
+      var act = -1, i;
+      for (i = 0; i < _corrSorted.length; i++) {
+        if (e3 >= _corrSorted[i].s - _corrSorted[i].rampFrac - 1e-9) act = i; else break;
+      }
+      if (act < 0) return null;                       // before the first stroke — path-follow, untouched
+      var c = _corrSorted[act];
+      var ramp = Math.max(1e-9, c.rampFrac);
+      var t = Math.min(1, Math.max(0, (e3 - (c.s - ramp)) / ramp));
+      var k = _cinemaSmoothstep(t);
+      if (act === 0) {
+        // First stroke: crossfade OUT of the underlying path-follow gaze, then hold at full strength
+        // for the rest of the walk. This is the "stays" the user asked for.
+        return { dir: c.dir, w: k };
+      }
+      // Later stroke: full authority throughout (w=1) — what changes is WHICH direction, crossfaded
+      // from the stroke it is painting over, so the handover is smooth and never drops back to the
+      // path-follow gaze in between.
+      var prev = _corrSorted[act - 1];
+      var d = _cpeCorrDirBlend(prev.dir.x, prev.dir.y, prev.dir.z, c.dir.x, c.dir.y, c.dir.z, k);
+      return { dir: d, w: 1 };
     }
     // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
     // in this file (short-way yaw, linear pitch), simplified to return just a unit direction (no

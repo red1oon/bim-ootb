@@ -8962,6 +8962,26 @@
     return { active: _active, cursor: _cursor, projectStart: _projectStart, projectEnd: _projectEnd };
   };
 
+  // §TM_OPS_SNAPSHOT (2026-08-30) — read-only, additive. §CPE_RESOURCE_PANEL needs, per calendar
+  // day, which trades are working; _ops already carries exactly that (start_ts/_end_ts/resource,
+  // written at :4918) and is module-private. Returns a compact copy so no caller can mutate the
+  // real timeline. Nothing here derives, re-orders or re-dates anything — that is this file's job
+  // and it has one already.
+  window.tmOpsSnapshot = function() {
+    var out = new Array(_ops.length);
+    for (var i = 0; i < _ops.length; i++) {
+      // The trade lives in `parameters`, not on the row: loadOps (:102) builds each op as
+      // {id,start_ts,op_type,end_ts,parameters,input_guids,output_guid}, and injectGantt writes
+      // `resource` INTO that params JSON (:4918). Reading o.resource returned undefined on every
+      // op — MEASURED: §CPE_RESOURCE_PANEL withResource=0 of 16,114 on Clinic. `_end_ts` was the
+      // same mistake: it is params._end_ts, already resolved into end_ts here.
+      var pm = _ops[i].parameters;
+      out[i] = { s: _ops[i].start_ts, e: _ops[i].end_ts,
+                 r: (pm && pm.resource) || null };
+    }
+    return out;
+  };
+
   // ══ §MAXQ_TIME / §CPE_BUILDUP — drive the construction state from an external baker ═══════════
   // Spec: bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME (mode D) + prompts/
   // CINEMA_PATH_EDITOR.md §CPE_BUILDUP. User 2026-07-28: "this construction bit is a checkbox to

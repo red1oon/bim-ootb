@@ -1843,7 +1843,18 @@ async function setupScene(A) {
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setIndex(new THREE.BufferAttribute(fArr, 1));
+      // §IDX16 (2026-08-30) — the per-element build site. The merged path got this first, and the
+      // witness caught that it was the WRONG one to fix alone: 300 of 448 Clinic geometries were
+      // still Uint32 while addressing fewer than 65,536 vertices, so the saving measured 0.0 MB.
+      // MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB geometry footprint against a
+      // 1,226 MB heap. Guard is exact — vertex count, from the buffer just built — so a geometry
+      // that genuinely needs 32-bit keeps it and an index can never be truncated.
+      var _vCount = positions.length / 3, _fIdx = fArr;
+      if (_vCount < 65536 && !(fArr instanceof Uint16Array)) {
+        _fIdx = new Uint16Array(fArr.length);
+        for (var _fi = 0; _fi < fArr.length; _fi++) _fIdx[_fi] = fArr[_fi];
+      }
+      geo.setIndex(new THREE.BufferAttribute(_fIdx, 1));
       if (nBlob && nBlob.byteLength >= 12) {
         // Precomputed normals — apply same Y↔Z swap as positions
         const nArr = new Float32Array(nBlob.buffer, nBlob.byteOffset, nBlob.byteLength / 4);

@@ -739,7 +739,7 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo) {
+  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -751,6 +751,37 @@
     }
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       A.dayCounterCompositeOntoCanvas(ctx, w, h, dayInfo, 1, dayInfo.pos);
+    }
+    // §CPE_PATH_OVERVIEW — drawn LAST so its backdrop-blur samples the finished frame and never
+    // smears the caption or the counter into its own glass. `ovInfo.pose` is the REAL pose this
+    // frame was rendered with, captured by the caller immediately before this call.
+    // §CPE_RESOURCE_PANEL — drawn between the counter and the overview, one column, one corner.
+    // Same never-kills-a-bake contract as the box below it.
+    var _resH = 0;
+    if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) try {
+      var _rGap = Math.round(h * 0.012), _rStack = 0;
+      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _rStack = A.dayCounterBoxSize(h).h + _rGap;
+      A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, 1, resInfo.pos, _rStack);
+      _resH = Math.round(h * 0.26) + _rGap;
+    } catch (eRp) {
+      if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
+        console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
+    }
+    // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE — same contract as the prepare block: a draw failure
+    // costs this frame's box, never the frame and never the bake. Logged once, not 3,048 times.
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) try {
+      // §CPE_HUD_STACK — same corner as the day counter, stacked beneath it. The counter's height
+      // is ASKED FOR, never recomputed here (cpe_day_counter.js owns that arithmetic). When the
+      // counter is off for this bake the column simply starts at the margin.
+      var _gap = Math.round(h * 0.012), _stack = 0;
+      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) {
+        _stack = A.dayCounterBoxSize(h).h + _gap;
+      }
+      _stack += _resH;   // §CPE_HUD_STACK: counter, then resources, then the path box
+      A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, 1, ovInfo.pos, _stack);
+    } catch (eOvD) {
+      if (!A._ovDrawErrLogged) { A._ovDrawErrLogged = true;
+        console.warn('§CPE_PATH_OVERVIEW_ERR draw: ' + eOvD.message + ' — box skipped, frames continue'); }
     }
     return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
   }
@@ -1008,6 +1039,10 @@
     // every consumer — the preview, the bake loop, and anything added later — flies the clip through
     // the same function, and there is no second notion of "which part of the film this is".
     var _clip = null, _buildup = false, _bkState = null, _roomTitle = false, _titleSegs = null, _reveal = false;
+    // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
+    // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
+    // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
+    var _ovPath = null, _ovPos = 'tl', _resOps = null;
     var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
@@ -1155,6 +1190,10 @@
         // that never opened the editor) means TOP RIGHT, which is what shipped, so nothing re-bakes
         // differently by accident.
         _dayPos = _ov.dayCounter || 'tr';
+        // §CPE_PATH_OVERVIEW — follows the DAY COUNTER's corner by default (§CPE_HUD_STACK):
+        // the user's ruling is one top/down/left/right preference for the whole column, not a
+        // separate corner per overlay.
+        _ovPos = _ov.pathOverview || _dayPos;   // §CPE_HUD_STACK: one corner preference for the column
         var _wpN = _ov.bands ? _ov.bands.length * 2 : (_ov.waypoints ? _ov.waypoints.length : '?');
         console.log('§CPE_APPLIED total=' + _cpeRes.durationSec.toFixed(1) + 's frames=' + nFrames +
           ' waypoints=' + _wpN + ' saved=' + !!_cpeRes.saved);
@@ -1305,6 +1344,49 @@
         catch (eT) { console.warn('§CPE_ROOM_TITLE_ERR ' + eT.message); _titleSegs = null; }
       }
       t0 = _etaPrev = performance.now();
+      // §CPE_PATH_OVERVIEW — prepared ONCE here, never in the loop. The projection, the path
+      // polyline and the envelope are all static by design, so the per-frame cost is two projected
+      // points (camera position + look target) and a triangle. Gated on the Label ON checkbox per
+      // the user's ruling. The envelope traverse is a single Box3 pass at bake START — one ~48k
+      // element walk against a multi-minute bake, not a per-frame cost.
+      // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE (2026-08-30 — real failure, user's HHS bake aborted
+      // here). This block referenced `_ovCam`, a variable an earlier edit of mine had deleted along
+      // with the Box3 envelope traverse it belonged to. The ReferenceError threw between
+      // §CPE_ROOM_TITLE_COLLECTIVE and the frame loop, so a 3,048-frame bake set up staging, the
+      // schedule, the buildup and the captions — then stopped without capturing a single frame and
+      // without printing a §CPE_PATH_OVERVIEW line at all. The missing log line is what located it.
+      //
+      // The variable is fixed below, but the REAL fix is this try/catch: a decorative corner box
+      // must never be able to abort a bake. Any failure here now costs the box, not the film.
+      try {
+        if (_roomTitle && A.pathOverviewPrepare && plan && plan.waypoints) {
+          // Framing is the crafted stick span only (§CPE_PATH_OVERVIEW_FRAME, user ruling), so no
+          // camera trajectory is sampled or passed — the head is clamped to the panel edge instead.
+          _ovPath = A.pathOverviewPrepare(plan, null, null);
+          console.log('§CPE_PATH_OVERVIEW ' + (_ovPath
+            ? ('on waypoints=' + _ovPath.wpCount + ' pos=' + _ovPos)
+            : 'INCONCLUSIVE reason=no-path-to-draw (plan has <2 waypoints) — box omitted, not blank'));
+        } else if (!_roomTitle) {
+          console.log('§CPE_PATH_OVERVIEW off — rides the Label ON checkbox, which is off for this bake');
+        }
+      } catch (eOv) {
+        _ovPath = null;
+        console.warn('§CPE_PATH_OVERVIEW_ERR ' + eOv.message + ' — box disabled, bake continues');
+      }
+      // §CPE_RESOURCE_PANEL — the ops snapshot is taken ONCE (read-only copy, §TM_OPS_SNAPSHOT);
+      // per frame only the day's composition is recomputed, and the pie bitmap is cached on dayKey.
+      // Rides the same Label ON checkbox and refuses honestly when there is no schedule to read.
+      try {
+        if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
+          _resOps = window.tmOpsSnapshot();
+          console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
+            ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
+            : 'INCONCLUSIVE reason=no-ops — panel omitted, not blank'));
+        } else if (_roomTitle) {
+          console.log('§CPE_RESOURCE_PANEL INCONCLUSIVE reason=' +
+            (!_bkState ? 'no-buildup-timeline' : 'no-ops-snapshot') + ' — panel omitted, not blank');
+        }
+      } catch (eR) { _resOps = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -1462,7 +1544,24 @@
         if (!_titleInfo) {
           _titleInfo = (_titleSegs && A.roomTitleOpacityAt) ? A.roomTitleOpacityAt(_titleSegs, i / fps) : null;
         }
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo);
+        // §CPE_PATH_OVERVIEW — the pose is read HERE, after every camera write for this frame and
+        // immediately before the capture, so the head marks the shot that was actually rendered.
+        // §CPE_POV_MARKER's rule (cinema_path_editor.js:3789): read the REAL transform, never
+        // re-derive it from the path parameter.
+        var _ovInfo = null;
+        if (_ovPath && A.camera) {
+          _ovInfo = { ov: _ovPath, pos: _ovPos,
+                      pose: { pos: { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z },
+                              target: (A.controls && A.controls.target)
+                                ? { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z }
+                                : null } };
+        }
+        var _resInfo = null;
+        if (_resOps && _bkState && A.resourcePanelAt) {
+          var _ri = A.resourcePanelAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
+          if (_ri) _resInfo = { info: _ri, pos: _ovPos };
+        }
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right
