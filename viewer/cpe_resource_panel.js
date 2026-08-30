@@ -156,6 +156,40 @@ function setupCpeResourcePanel(A) {
     return held;
   };
 
+  // ══ §CPE_STATS_TAIL (2026-08-30, user ruling) ═══════════════════════════════════════════════
+  // User, on BIM_MaxQ_Hospital_1788092317604.mp4: "there is ample unused timing to display more
+  // info after Finishes."
+  //
+  // MEASURED on that mp4: the day counter's digits stop changing at u≈0.45 (Day 315/315) and the
+  // pie shows one static trade — 4 on site, Finisher ×4 — for the remaining ≈125 s. Over HALF the
+  // film. §CPE_BIG_STATS could not reach it because its handover trigger is "the pie is honestly
+  // empty", and on this schedule Finisher ops run to the last day so the pie is never empty.
+  //
+  // The right test is not emptiness, it is whether the schedule CAN still change. Frozen ⟺ no op
+  // boundary — a start or an end — remains between this cursor and the end of the film. Then the
+  // composition is fixed for every frame that follows and the column is showing a number that will
+  // never move again. resourcePanelAt returning null is a SPECIAL CASE of this, so §CPE_PIE_HOLD is
+  // subsumed, not replaced. Read off the ops array only: never a film fraction, never a topout
+  // constant. A building whose work runs to the last frame never freezes and keeps its trade list.
+  // Boundaries are compared against the END OF THE CURSOR'S DAY, not the instant: the panel is a
+  // per-day readout, so an op that starts or ends later TODAY changes nothing about what any
+  // following frame will show. This also covers the real shape — the buildup parks the cursor on the
+  // final day for the whole reveal, with the last trade still running on it (MEASURED: Hospital
+  // 315/315 with Finisher ×4 from u≈0.45 to the last frame).
+  A.resourcePanelFrozenAt = function (cursorMs, ops, projectStartMs, projectEndMs) {
+    if (!ops || !ops.length || !(projectEndMs > projectStartMs)) return false;
+    var dayEnd = projectStartMs + (Math.floor((cursorMs - projectStartMs) / MS_PER_DAY) + 1) * MS_PER_DAY;
+    var i, o, e;
+    for (i = 0; i < ops.length; i++) {
+      o = ops[i];
+      if (!o.r) continue;
+      if (o.s > dayEnd && o.s <= projectEndMs) return false;        // a trade still starts ahead
+      e = (o.e == null ? o.s : o.e);
+      if (e > dayEnd && e <= projectEndMs) return false;            // a trade still finishes ahead
+    }
+    return true;
+  };
+
   // Sun azimuth from the REAL scene light, so the cylinder's highlight and its dropped shadow fall
   // on the same side as every shadow in the frame behind it — and track the Alt+C noon->dusk arc.
   // Returns a 2D unit direction in panel space, or a sane default when there is no sun to read.
@@ -312,8 +346,23 @@ function setupCpeResourcePanel(A) {
   // cards revolve — pass what A.resourcePanelHoldAt returned. With it, the pie keeps its column and
   // the card takes the content column; without it the card falls back to the full width it had
   // before the hold existed, so an older caller still renders correctly.
+  // §CPE_STATS_TAIL — the tail rotation is [ roster ] + cards, so the trade list with its avatars
+  // and ×N is ONE of the revolving slots rather than being replaced by them. Nothing the panel used
+  // to say is lost to the cards; the dead half of the film just gains everything else.
+  A.tailPanelAt = function (cards, filmSec, info) {
+    var nCards = cards ? cards.length : 0;
+    var hasRoster = !!(info && info.rows && info.rows.length);
+    var n = nCards + (hasRoster ? 1 : 0);
+    if (!n) return null;
+    var idx = Math.floor(filmSec / CARD_SECONDS) % n;
+    var u = (filmSec % CARD_SECONDS) / CARD_SECONDS;
+    var fade = Math.max(0, Math.min(1, Math.min(u, 1 - u) / 0.12));
+    if (hasRoster && idx === 0) return { roster: info, idx: idx, n: n, opacity: fade };
+    return { card: cards[idx - (hasRoster ? 1 : 0)], idx: idx, n: n, opacity: fade };
+  };
+
   A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY, heldInfo) {
-    if (!ctx || !shown || !shown.card || !(opacity > 0)) return;
+    if (!ctx || !shown || !(shown.card || shown.roster) || !(opacity > 0)) return;
     var c = shown.card;
     var B = _box(w, h, pos, stackY);
     var bw = B.bw, bh = B.bh, x = B.x, y = B.y, rad = B.rad;
@@ -334,6 +383,14 @@ function setupCpeResourcePanel(A) {
     _round(ctx, x, y, bw, bh, rad); ctx.clip();
     ctx.globalAlpha = Math.min(1, opacity) * shown.opacity;   // the card itself fades, the plate does not
     var pad = Math.round(bh * 0.13);
+    // §CPE_STATS_TAIL — the roster slot draws the real trade list, not a number, so the avatars and
+    // the ×N counts stay in the rotation instead of being replaced by the cards.
+    if (shown.roster) {
+      ctx.save(); ctx.translate(x, y); _drawList(ctx, bw, bh, shown.roster); ctx.restore();
+      _dots(ctx, x + G.lx, y + bh - pad * 0.7, bh, shown);
+      ctx.restore(); ctx.restore();
+      return;
+    }
     var F = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
     // THE NUMBER — as large as will fit, because the whole point is grasping it at a glance.
     var big = Math.round(bh * 0.42), tw;
@@ -351,17 +408,20 @@ function setupCpeResourcePanel(A) {
       ctx.fillStyle = 'rgba(255,255,255,0.60)';
       ctx.fillText(_fit(ctx, c.sub, colW), colX, baseY + Math.round(bh * 0.30));
     }
-    // dots: which of the revolving cards this is, so a viewer knows more are coming
+    _dots(ctx, colX, y + bh - pad * 0.7, bh, shown);
+    ctx.restore();
+    ctx.restore();
+  };
+
+  // dots: which of the revolving slots this is, so a viewer knows more are coming
+  function _dots(ctx, dx, dy, bh, shown) {
     var dr = Math.max(2, Math.round(bh * 0.016)), gap = dr * 3, i2;
-    var dx = colX, dy = y + bh - pad * 0.7;
     for (i2 = 0; i2 < shown.n; i2++) {
       ctx.beginPath(); ctx.arc(dx + i2 * gap, dy, dr, 0, Math.PI * 2);
       ctx.fillStyle = (i2 === shown.idx) ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.28)';
       ctx.fill();
     }
-    ctx.restore();
-    ctx.restore();
-  };
+  }
 
   // shared frosted-glass backdrop — one implementation for both panel modes
   function _glass(ctx, x, y, bw, bh, rad) {

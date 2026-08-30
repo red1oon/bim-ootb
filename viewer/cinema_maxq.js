@@ -1044,6 +1044,8 @@
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
     var _ovPath = null, _ovPos = 'tl', _resOps = null, _bigCards = null;
+    // §CPE_STATS_TAIL — the Reveal 2nd round's film fraction, read off the plan's own topout.
+    var _revealU = null;
     var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
@@ -1314,6 +1316,7 @@
           if (!_bkState) { console.warn('§CPE_BUILDUP_SKIP reason=no timeline to follow — baking without the buildup'); _buildup = false; }
           if (_bkState) {
             var _top = _buildupTopoutU(plan);
+            _revealU = _top.u;   // §CPE_STATS_TAIL — where the Reveal 2nd round starts
             console.log('§CPE_BUILDUP_TOPOUT topoutU=' + _top.u.toFixed(3) + ' src=' + _top.src +
               ' — construction completes at the closing-orbit boundary; the pull-back shows the' +
               ' topping-out and the orbit circles the FINISHED building (solar-panel lesson 2026-08-02)');
@@ -1380,6 +1383,7 @@
       try {
         if (_roomTitle && A.resourcePanelAt && typeof window.tmOpsSnapshot === 'function' && _bkState) {
           A._resHoldFrames = 0; A._resHoldLogged = false;   // §CPE_PIE_HOLD counts are per-bake
+          A._statTailFrames = 0; A._statTailLogged = false; // §CPE_STATS_TAIL, same
           _resOps = window.tmOpsSnapshot();
           console.log('§CPE_RESOURCE_PANEL ' + (_resOps && _resOps.length
             ? ('on ops=' + _resOps.length + ' rates=' + (!!(window.LABOR_RATES)) + ' pos=' + _ovPos)
@@ -1569,23 +1573,43 @@
         // honestly empty) the same slot revolves big headline numbers instead. The switch is the
         // pie's OWN emptiness, not a hardcoded film fraction — a building whose work runs to the
         // last frame keeps the pie the whole way, with no second opinion about when topout was.
-        // §CPE_PIE_HOLD (user, 2026-08-30): "make the pie part not to disappear but hold when there
-        // is silent info." resourcePanelHoldAt returns today's real composition while trades work,
-        // and the most recent REAL one (held=true, dimmed, captioned with its day) once they stop —
-        // so the pie keeps its column through the whole reveal and the card revolves beside it.
+        // §CPE_PIE_HOLD + §CPE_STATS_TAIL — TWO ROUNDS, and the user's ruling is that they behave
+        // differently (2026-08-30): "In the first round, if nothing is added, that last info holds
+        // and wait till a new one arrives, not intersperse" … "[the highlights] should all be in
+        // play during the 'Reveal' 2nd round."
+        //   ROUND 1 (buildup, u < topoutU): the panel is the schedule and NOTHING rotates. If the
+        //     day has no staffed op the last real composition HOLDS until a new one arrives.
+        //   ROUND 2 (the Reveal, u >= topoutU): the schedule has topped out and the counter is
+        //     pinned — MEASURED at ≈125 s of the user's 229.8 s Hospital film — so the whole set of
+        //     highlights revolves here, with the roster as one of the slots so nothing is lost.
+        // The boundary is the plan's own topout (§CPE_BUILDUP_TOPOUT), not a new constant. With no
+        // plan beats to read it degrades to "the ops can no longer change" — DEGRADE, DON'T DISABLE.
         var _resInfo = null, _statInfo = null, _holdInfo = null;
         if (_resOps && _bkState && A.resourcePanelHoldAt) {
           _holdInfo = A.resourcePanelHoldAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
         }
-        if (_holdInfo && !_holdInfo.held) {
-          _resInfo = { info: _holdInfo, pos: _ovPos };        // trades are working: pie + trade list
-        } else if (_bigCards && A.bigStatsAt) {
-          var _si = A.bigStatsAt(_bigCards, i / fps);
-          if (_si) _statInfo = { shown: _si, pos: _ovPos, held: _holdInfo };   // held pie + card
+        var _inReveal = (_revealU != null)
+          ? (nFrames > 1 ? (i / (nFrames - 1)) >= _revealU : false)
+          : !!(_resOps && _bkState && A.resourcePanelFrozenAt &&
+               A.resourcePanelFrozenAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd));
+        if (!_inReveal) {
+          if (_holdInfo) _resInfo = { info: _holdInfo, pos: _ovPos };   // round 1: hold, never rotate
+        } else if (A.tailPanelAt) {
+          var _si = A.tailPanelAt(_bigCards, i / fps, _holdInfo);
+          if (_si) {
+            _statInfo = { shown: _si, pos: _ovPos, held: _holdInfo };
+            A._statTailFrames = (A._statTailFrames || 0) + 1;
+            if (!A._statTailLogged) {
+              A._statTailLogged = true;
+              console.log('§CPE_STATS_TAIL reveal round entered at frame ' + i + '/' + nFrames +
+                ' u=' + (nFrames > 1 ? (i / (nFrames - 1)).toFixed(3) : '1.000') +
+                ' boundary=' + (_revealU != null ? 'topoutU ' + _revealU.toFixed(3) : 'ops-frozen (no plan beats)') +
+                ' slots=' + _si.n + ' (roster' + (_bigCards ? ' + ' + _bigCards.length + ' cards' : ', NO cards built') + ')');
+            }
+          } else if (_holdInfo) {
+            _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
+          }
         }
-        // No cards could be built from this building's sources — hold the pie rather than leave the
-        // slot empty, which is the disappearance the user reported.
-        if (!_resInfo && !_statInfo && _holdInfo) _resInfo = { info: _holdInfo, pos: _ovPos };
         var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -1677,6 +1701,13 @@
         ((A._resHoldFrames || 0) === 0 ? ' — trades were active for every frame, the pie was never held'
           : ((A._resHoldFrames || 0) >= framesDone ? ' ⚠ NO frame had a live crew — the pie held throughout'
              : ' — pie holds the last real crew through the silent tail')));
+      // §CPE_STATS_TAIL — how much of the film the Reveal round reclaimed. 0 on a bake whose plan
+      // has no topout AND whose ops never freeze: that is the case where the dead tail stays dead.
+      console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
+        (framesDone ? ' (' + Math.round((A._statTailFrames || 0) / framesDone * 100) + '% of the film)' : '') +
+        ((A._statTailFrames || 0) === 0
+          ? ' — the Reveal round never revolved: no topout on the plan and the ops never froze'
+          : ' — highlights in play for the whole Reveal round, roster included'));
       // ══ §MAXQ_QUALITY — the run states its own health, ALWAYS, before anything is stitched.
       // The defect this exists for is a film that looks complete and plays fine while its last
       // seconds are visually dead. A degraded bake must never finish quietly: `unconverged` is the
