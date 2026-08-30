@@ -739,7 +739,7 @@
   // §CPE_DAY_COUNTER: dayInfo ({day,totalDays} or null) rides the SAME 2D context for the SAME
   // reason as titleInfo — this is the only point that reaches the exported bytes. Drawn after the
   // caption; they occupy different corners (lower-third vs top right) so neither can clip the other.
-  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo) {
+  function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo) {
     var A = window.APP;
     if (A._composer) A._composer.render();
     var c = document.createElement('canvas');
@@ -766,6 +766,15 @@
     } catch (eRp) {
       if (!A._resDrawErrLogged) { A._resDrawErrLogged = true;
         console.warn('§CPE_RESOURCE_PANEL_ERR draw: ' + eRp.message + ' — panel skipped, frames continue'); }
+    }
+    if (statInfo && statInfo.shown && A.bigStatsCompositeOntoCanvas) try {
+      var _sGap = Math.round(h * 0.012), _sStack = 0;
+      if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterBoxSize) _sStack = A.dayCounterBoxSize(h).h + _sGap;
+      A.bigStatsCompositeOntoCanvas(ctx, w, h, statInfo.shown, 1, statInfo.pos, _sStack);
+      _resH = Math.round(h * 0.24) + _sGap;
+    } catch (eBs) {
+      if (!A._bsDrawErrLogged) { A._bsDrawErrLogged = true;
+        console.warn('§CPE_BIG_STATS_ERR draw: ' + eBs.message + ' — card skipped, frames continue'); }
     }
     // §CPE_PATH_OVERVIEW_NEVER_KILLS_A_BAKE — same contract as the prepare block: a draw failure
     // costs this frame's box, never the frame and never the bake. Logged once, not 3,048 times.
@@ -1042,7 +1051,7 @@
     // §CPE_PATH_OVERVIEW — prepared ONCE (the box is static by design, the user's own word), then
     // only the camera head is projected per frame. Rides the Label ON checkbox: the user's ruling
     // was "It is user's choice as its the Label ON option", so it needs no toggle of its own.
-    var _ovPath = null, _ovPos = 'tl', _resOps = null;
+    var _ovPath = null, _ovPos = 'tl', _resOps = null, _bigCards = null;
     var _dayPos = 'tr';
     function _tFilm(tNorm) { return _clip ? _clip.in + tNorm * (_clip.out - _clip.in) : tNorm; }
     function poseAt(tNorm) {
@@ -1386,7 +1395,13 @@
           console.log('§CPE_RESOURCE_PANEL INCONCLUSIVE reason=' +
             (!_bkState ? 'no-buildup-timeline' : 'no-ops-snapshot') + ' — panel omitted, not blank');
         }
-      } catch (eR) { _resOps = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
+        // §CPE_BIG_STATS — the second half's cards, built ONCE from real sources. The pie answers
+        // "who is on site today", which is dead after §CPE_BUILDUP_TOPOUT: construction has finished
+        // and no trade is active, so the panel drew nothing for the whole reveal round.
+        if (_roomTitle && A.bigStatsBuild && _bkState) {
+          _bigCards = A.bigStatsBuild(_resOps, _bkState.projectStart, _bkState.projectEnd);
+        }
+      } catch (eR) { _resOps = null; _bigCards = null; console.warn('§CPE_RESOURCE_PANEL_ERR ' + eR.message + ' — panel disabled, bake continues'); }
       for (var i = 0; i < nFrames; i++) {
         if (_cancel) { console.log('§MAXQ_CANCEL i=' + i); break; }
         // §MAXQ_CONTEXT_LOSS: scene.js's webglcontextlost handler (§S266) sets this — capturing
@@ -1556,12 +1571,21 @@
                                 ? { x: A.controls.target.x, y: A.controls.target.y, z: A.controls.target.z }
                                 : null } };
         }
-        var _resInfo = null;
+        // §CPE_BIG_STATS — ONE panel slot, two answers. While trades are working it is the
+        // composition pie; once the programme has topped out (nothing is being built, so the pie is
+        // honestly empty) the same slot revolves big headline numbers instead. The switch is the
+        // pie's OWN emptiness, not a hardcoded film fraction — a building whose work runs to the
+        // last frame keeps the pie the whole way, with no second opinion about when topout was.
+        var _resInfo = null, _statInfo = null;
         if (_resOps && _bkState && A.resourcePanelAt) {
           var _ri = A.resourcePanelAt(_bkMs, _resOps, _bkState.projectStart, _bkState.projectEnd);
           if (_ri) _resInfo = { info: _ri, pos: _ovPos };
         }
-        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo);
+        if (!_resInfo && _bigCards && A.bigStatsAt) {
+          var _si = A.bigStatsAt(_bigCards, i / fps);
+          if (_si) _statInfo = { shown: _si, pos: _ovPos };
+        }
+        var blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo);
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
         // connection out from under it (confirmed live: two consecutive rAF gaps of 29s and 67s right

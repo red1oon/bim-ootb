@@ -111,6 +111,173 @@ function setupCpeResourcePanel(A) {
     return { x: sp.x / L, y: -sp.z / L };
   };
 
+  // ══ §CPE_BIG_STATS (2026-08-30, user ruling) ═════════════════════════════════════════════════
+  // User: "During reveal, all disciplines already landed, so why say 'how much of it is there?'"
+  // then "The panel continue giving revolving big stats for BIM clients to grasp."
+  //
+  // The composition pie answers "who is on site today", which is a real question during the WALK
+  // and a dead one after §CPE_BUILDUP_TOPOUT (topoutU=0.524 on the user's own Hospital bake):
+  // construction is finished, no trade is active, and the panel correctly drew nothing for the
+  // whole second half. So the second half asks a different question and gets a different answer —
+  // one BIG number at a time, cycled, sized to be read from across a room by someone who does not
+  // use the software.
+  //
+  // EVERY CARD IS EXTRACTED, NONE ARE COMPUTED HERE. Counts come from elements_meta (the same
+  // A.db the centres bootstrap already queries), the programme from the bake's own _bkState, the
+  // workforce from the ops snapshot + rates.js. A card whose source is missing is DROPPED, never
+  // filled with a plausible number — §CPE_BIG_STATS logs which cards were built from what.
+  var _cards = null, _cardsKey = null;
+  var CARD_SECONDS = 4.5;   // long enough to read a number and its label, short enough to keep moving
+
+  A.bigStatsBuild = function (ops, projectStartMs, projectEndMs) {
+    var out = [], LR = _rates();
+    function q(sql) {
+      try { if (!A.db) return null; var r = A.db.exec(sql); return r.length ? r[0].values : null; }
+      catch (e) { return null; }
+    }
+    var tot = q("SELECT COUNT(*) FROM elements_meta");
+    if (tot && tot[0]) out.push({ big: (+tot[0][0]).toLocaleString(), label: 'elements coordinated', src: 'elements_meta' });
+
+    var mep = null;
+    var disc = q("SELECT discipline, COUNT(*) FROM elements_meta WHERE discipline IS NOT NULL AND discipline<>'' GROUP BY 1 ORDER BY 2 DESC");
+    if (disc && disc.length) {
+      out.push({ big: String(disc.length), label: 'disciplines federated',
+                 sub: disc.slice(0, 3).map(function (d) { return d[0] + ' ' + (+d[1]).toLocaleString(); }).join('   '),
+                 src: 'elements_meta.discipline' });
+      var i;
+      for (i = 0; i < disc.length; i++) if (disc[i][0] === 'MEP') mep = disc[i][1];
+      if (mep) out.push({ big: (+mep).toLocaleString(), label: 'MEP elements resolved', src: 'elements_meta.discipline=MEP' });
+    }
+    // §CPE_BIG_STATS_PLACEHOLDER_GUARD (2026-08-30, caught by the witness on Clinic, which produced
+    // the card "102  MEP on Unknown"). 'Unknown' is a placeholder the extractor writes when a storey
+    // could not be resolved — fine in a data table, unusable on a card a client reads. These stats
+    // are advert-register: a headline nobody can act on is worse than one fewer card. Excluded from
+    // BOTH the densest-level card and the level COUNT, so "8 levels" cannot be inflated by a bucket
+    // that is not a level.
+    var NOT_PLACEHOLDER = " AND storey IS NOT NULL AND storey<>'' AND LOWER(storey) NOT IN ('unknown','none','n/a','-') ";
+    var st = q("SELECT storey, COUNT(*) FROM elements_meta WHERE discipline='MEP'" + NOT_PLACEHOLDER + "GROUP BY 1 ORDER BY 2 DESC LIMIT 1");
+    // Also dropped when it merely restates the MEP total — the same number twice in a rotation reads
+    // as a bug, not as two facts (Clinic showed 102 then 102).
+    if (st && st[0] && (!mep || +st[0][1] < +mep)) {
+      out.push({ big: (+st[0][1]).toLocaleString(), label: 'MEP on ' + st[0][0], sub: 'densest level',
+                 src: 'elements_meta storey x MEP' });
+    }
+    var lv = q("SELECT COUNT(DISTINCT storey) FROM elements_meta WHERE 1=1" + NOT_PLACEHOLDER);
+    if (lv && lv[0] && +lv[0][0] > 0) out.push({ big: String(+lv[0][0]), label: 'levels', src: 'elements_meta.storey' });
+
+    if (projectEndMs > projectStartMs) {
+      var days = Math.max(1, Math.ceil((projectEndMs - projectStartMs) / MS_PER_DAY));
+      out.push({ big: String(days), label: 'day programme',
+                 sub: new Date(projectStartMs).toISOString().slice(0, 10) + '  →  ' + new Date(projectEndMs).toISOString().slice(0, 10),
+                 src: 'bake _bkState' });
+    }
+    // Peak workforce — the same capped-crew arithmetic resourcePanelAt uses, sampled per day, so the
+    // headline can never exceed what §CREW_CAP_FINAL says the site could actually staff.
+    if (ops && ops.length && projectEndMs > projectStartMs && LR) {
+      var peak = 0, peakDay = null, d, info;
+      var totalDays = Math.ceil((projectEndMs - projectStartMs) / MS_PER_DAY);
+      var step = Math.max(1, Math.floor(totalDays / 60));
+      for (d = 0; d < totalDays; d += step) {
+        info = A.resourcePanelAt(projectStartMs + d * MS_PER_DAY, ops, projectStartMs, projectEndMs);
+        if (info && info.totalHeads > peak) { peak = info.totalHeads; peakDay = d + 1; }
+      }
+      if (peak > 0) out.push({ big: String(peak), label: 'peak workforce', sub: 'day ' + peakDay, src: 'ops x rates.js crew caps' });
+    }
+    // 5D — the client-facing numbers. Taken from §HR_COST's own computation (A._hrCost, exposed in
+    // time_machine.js), never re-derived here: cost is the schedule's labour content and this file
+    // must not become a second opinion about it. Absent = card dropped, not estimated.
+    if (A._hrCost && A._hrCost.total > 0) {
+      out.push({ big: (A._hrCost.total).toLocaleString(), label: 'labour cost committed',
+                 sub: A._hrCost.trades + ' trades  ·  time-phased, not a bill of quantities',
+                 src: '§HR_COST' });
+      out.push({ big: Math.round(A._hrCost.personDays).toLocaleString(), label: 'person-days of labour',
+                 src: '§HR_COST' });
+    }
+    console.log('§CPE_BIG_STATS cards=' + out.length + (out.length
+      ? ' [' + out.map(function (c) { return c.label; }).join(' | ') + ']'
+      : ' INCONCLUSIVE — no source available (A.db=' + !!A.db + ' ops=' + (ops ? ops.length : 0) + '); panel omitted, not blank'));
+    return out.length ? out : null;
+  };
+
+  // Which card is on screen at this film second, and its fade. Pure — the witness gates the rotation
+  // without a bake, same contract dayCounterAt keeps.
+  A.bigStatsAt = function (cards, filmSec) {
+    if (!cards || !cards.length) return null;
+    var idx = Math.floor(filmSec / CARD_SECONDS) % cards.length;
+    var u = (filmSec % CARD_SECONDS) / CARD_SECONDS;
+    var fade = Math.min(1, Math.min(u, 1 - u) / 0.12);   // ease in and out, held flat between
+    return { card: cards[idx], idx: idx, n: cards.length, opacity: Math.max(0, fade) };
+  };
+
+  A.bigStatsCompositeOntoCanvas = function (ctx, w, h, shown, opacity, pos, stackY) {
+    if (!ctx || !shown || !shown.card || !(opacity > 0)) return;
+    var c = shown.card;
+    var bw = Math.round(h * 0.36), bh = Math.round(h * 0.24);
+    var margin = Math.round(h * 0.028);
+    var at = (pos && POS[pos]) ? pos : 'tr';
+    var sy = stackY || 0;
+    var x = (at === 'tl' || at === 'bl') ? margin : w - margin - bw;
+    var y = (at === 'bl' || at === 'br') ? h - margin - bh - sy : margin + sy;
+    var rad = Math.round(bh * 0.09);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, opacity);
+    var glass = _glass(ctx, x, y, bw, bh, rad);
+    _round(ctx, x, y, bw, bh, rad);
+    ctx.fillStyle = glass ? 'rgba(0,0,0,0.30)' : 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    _round(ctx, x, y, bw, bh, rad);
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.save();
+    _round(ctx, x, y, bw, bh, rad); ctx.clip();
+    ctx.globalAlpha = Math.min(1, opacity) * shown.opacity;   // the card itself fades, the plate does not
+    var pad = Math.round(bh * 0.13);
+    var F = 'BlinkMacSystemFont,"Segoe UI",Roboto,-apple-system,sans-serif';
+    // THE NUMBER — as large as will fit, because the whole point is grasping it at a glance.
+    var big = Math.round(bh * 0.42), tw;
+    do { ctx.font = '800 ' + big + 'px ' + F; tw = ctx.measureText(c.big).width; if (tw <= bw - pad * 2) break; big -= 2; }
+    while (big > 14);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    var baseY = y + pad + big * 0.86;
+    ctx.fillText(c.big, x + pad, baseY);
+    ctx.font = '600 ' + Math.round(bh * 0.105) + 'px ' + F;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillText(_fit(ctx, c.label, bw - pad * 2), x + pad, baseY + Math.round(bh * 0.17));
+    if (c.sub) {
+      ctx.font = '500 ' + Math.round(bh * 0.085) + 'px ' + F;
+      ctx.fillStyle = 'rgba(255,255,255,0.60)';
+      ctx.fillText(_fit(ctx, c.sub, bw - pad * 2), x + pad, baseY + Math.round(bh * 0.30));
+    }
+    // dots: which of the revolving cards this is, so a viewer knows more are coming
+    var dr = Math.max(2, Math.round(bh * 0.016)), gap = dr * 3, i2;
+    var dx = x + pad, dy = y + bh - pad * 0.7;
+    for (i2 = 0; i2 < shown.n; i2++) {
+      ctx.beginPath(); ctx.arc(dx + i2 * gap, dy, dr, 0, Math.PI * 2);
+      ctx.fillStyle = (i2 === shown.idx) ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.28)';
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.restore();
+  };
+
+  // shared frosted-glass backdrop — one implementation for both panel modes
+  function _glass(ctx, x, y, bw, bh, rad) {
+    try {
+      if (typeof ctx.filter !== 'string' || typeof document === 'undefined' || !document.createElement) return false;
+      var tmp = document.createElement('canvas');
+      tmp.width = bw; tmp.height = bh;
+      tmp.getContext('2d').drawImage(ctx.canvas, x, y, bw, bh, 0, 0, bw, bh);
+      ctx.save();
+      _round(ctx, x, y, bw, bh, rad); ctx.clip();
+      ctx.filter = 'blur(9px)';
+      ctx.drawImage(tmp, x - 9, y - 9, bw + 18, bh + 18);
+      ctx.filter = 'none';
+      ctx.restore();
+      return true;
+    } catch (e) { return false; }
+  }
+
   var _cacheKey = null, _cacheCanvas = null;
 
   // ── The ONLY place the panel is drawn, so live preview and baked video cannot disagree.

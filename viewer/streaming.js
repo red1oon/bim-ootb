@@ -64,7 +64,14 @@ function setupStreaming(A) {
   // I had to guess. The class list stays as an OR: a 10-sided duct (IfcFlowSegment, 10.3) is
   // genuinely curve-intending and would fail a pure-shape test.
   var CURVE_MIN_DISTINCT = 16;
-  var DISTINCT_SAMPLE_CAP = 1500;   // stride-sampled: this runs once per staging, never per frame
+  // §MEP_SMOOTH_PERF (2026-08-30) — MEASURED 18,718 ms on Hospital (14,075 spans, 25.2M vertices),
+  // which is 18.7 s added to every Alt+S and every bake stage. Unacceptable next to a bake the user
+  // already called slow. Two costs, both cut here rather than accepted:
+  //   1. gate sampling — 1500 samples per span existed to count distinct facet directions, but the
+  //      decision is only "is this nearer 7 or nearer 16+". 192 samples settle that; the early-out
+  //      at >64 distinct usually stops far sooner.
+  //   2. the position map — see _smoothKey below.
+  var DISTINCT_SAMPLE_CAP = 192;
   function _distinctNormals(nor, idx, start, count) {
     var seen = {}, n = 0, step = Math.max(1, Math.floor(count / DISTINCT_SAMPLE_CAP)), i, vi, k;
     for (i = start; i < start + count; i += step) {
@@ -80,7 +87,7 @@ function setupStreaming(A) {
     var geomsTouched = 0, rangesTouched = 0, vertsSmoothed = 0, vertsKeptHard = 0, skippedNoNormal = 0;
     var seen = new Set();
     A.scene.traverse(function(o) {
-      if (!o.isMesh || !o.geometry) return;
+      if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh) || !o.geometry) return;
       var g = o.geometry;
       if (seen.has(g.uuid)) return;
       seen.add(g.uuid);
@@ -105,6 +112,39 @@ function setupStreaming(A) {
             spans.push([rg.idxStart, rg.idxCount]);
           }
         }
+      } else if (o.isBatchedMesh) {
+        // §MEP_SMOOTH_BATCHED (2026-08-30 — the gap the user's Hospital bake exposed). Hospital
+        // reports §CONTRACT_CHECK batch=38169 instanced=25013 merged=0: NO merged meshes at all, so
+        // the ranges branch above never fires and §MEP_SMOOTH_NORMALS did not even log there. The
+        // fix is not to relax the single-element rule but to satisfy it: a BatchedMesh holds each
+        // element's geometry as its OWN entry, so `_geometryInfo[gid]` (vertexStart/vertexCount +
+        // index start/count) IS a single element's span inside the shared buffer. Judging one entry
+        // is judging one element, exactly the safety condition G-MEP-2 enforces.
+        // Private three.js field, so it is feature-detected: if the shape is not what r184/185
+        // provides, the mesh is skipped rather than guessed at.
+        var gi = o._geometryInfo;
+        if (gi && gi.length) {
+          for (var bi = 0; bi < gi.length; bi++) {
+            var e = gi[bi];
+            var iStart = (e.start != null) ? e.start : e.indexStart;
+            var iCount = (e.count != null) ? e.count : e.indexCount;
+            if (iStart == null || !(iCount > 0)) continue;
+            if (_distinctNormals(nor, idx, iStart, iCount) >= CURVE_MIN_DISTINCT) spans.push([iStart, iCount]);
+          }
+        } else if (!A._bmShapeWarned) {
+          A._bmShapeWarned = true;
+          console.warn('§MEP_SMOOTH_BATCHED INCONCLUSIVE — BatchedMesh exposes no _geometryInfo; ' +
+            'batched elements skipped rather than judged as one mesh');
+        }
+      } else if (o.isInstancedMesh) {
+        // An InstancedMesh's geometry IS one element's shape — that is what instancing means, one
+        // geometry repeated N times. So judging it whole IS judging a single element, and smoothing
+        // it correctly affects every instance of that same shape. A wall instanced 500 times still
+        // measures 7 distinct facet directions and fails the threshold, so the box case is safe.
+        var icls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        if (MEP_CURVE_CLASSES[icls] || _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT) {
+          spans.push([0, idx.count]);
+        }
       } else {
         // §MEP_SMOOTH_GATE_SCOPE (2026-08-30 — caught by G-MEP-2, which failed with 5,233,835
         // non-curve vertices changed; the previous revision of this branch judged ANY rangeless mesh
@@ -127,9 +167,20 @@ function setupStreaming(A) {
       }
       if (!spans.length) return;
       var acc = new Map(), k, i, a, b, c;
+      // §MEP_SMOOTH_PERF — was a 3-part STRING key built per vertex: on Hospital that is ~75M string
+      // concatenations and the bulk of the 18.7 s. Now a single number. Positions are quantised to
+      // 0.1 mm exactly as before (1e4), then folded into one integer; the multipliers are the
+      // standard large primes used for spatial hashing, and the value is kept inside the safe
+      // integer range so it can key a Map without allocating.
+      // A hash CAN collide, unlike the string it replaces. The consequence is bounded and local:
+      // two genuinely separate vertices would average their normals, shading one vertex slightly
+      // wrong on one element — it cannot move geometry, cross the class gate, or affect a
+      // non-curve surface. G-MEP-2 still measures the real output either way.
       function key(i2) {
-        return (Math.round(pos.getX(i2) * 1e4)) + ',' + (Math.round(pos.getY(i2) * 1e4)) + ',' +
-               (Math.round(pos.getZ(i2) * 1e4));
+        var qx = Math.round(pos.getX(i2) * 1e4);
+        var qy = Math.round(pos.getY(i2) * 1e4);
+        var qz = Math.round(pos.getZ(i2) * 1e4);
+        return ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) >>> 0;
       }
       // pass 1 — accumulate area-weighted face normals per shared POSITION
       for (var s2 = 0; s2 < spans.length; s2++) {
@@ -177,7 +228,11 @@ function setupStreaming(A) {
       ' vertsSmoothed=' + vertsSmoothed + ' vertsKeptHard=' + vertsKeptHard +
       ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
       (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
-      ' | §IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB');
+      '');
+    // §IDX16 reports SEPARATELY (2026-08-30): it used to ride the line above, so on Hospital —
+    // where this pass did not fire at all — its saving was invisible rather than absent.
+    console.log('§IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB' +
+      (_idx16Geoms === 0 ? ' (merged path unused on this building — the per-element site in scene.js carries it)' : ''));
     return out;
   };   // §IDX16 tally, reported by A.mepSmoothNormals' log line
 

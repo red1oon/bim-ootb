@@ -22,7 +22,7 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1102';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1105';   // bump on each deploy; per-change detail is the git commit message.
 // v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
 // §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
 // now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last

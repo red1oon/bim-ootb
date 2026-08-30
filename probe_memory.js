@@ -14,11 +14,11 @@ const MB=n=>(n/1048576).toFixed(1)+' MB';
           '--js-flags=--expose-gc'],
     protocolTimeout:900000});
   const p=await b.newPage(); await p.setViewport({width:900,height:500});
-  await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
+  await p.goto(process.env.URL || `http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
     {waitUntil:'domcontentloaded',timeout:120000});
   await p.waitForFunction(()=>window.APP&&window.APP.scene,{timeout:180000});
   await p.waitForFunction(()=>window.APP.streaming===true||(window.APP.streamQueue||[]).length>0,
-    {timeout:120000,polling:250}).catch(()=>{});
+    {timeout:300000,polling:250}).catch(()=>{});
   await p.waitForFunction(()=>!window.APP.streaming||(window.APP.streamIdx>=(window.APP.streamQueue||[]).length),
     {timeout:900000,polling:1000}).catch(()=>{});
   const r=await p.evaluate(()=>{

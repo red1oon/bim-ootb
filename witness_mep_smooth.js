@@ -28,7 +28,7 @@ process.on('unhandledRejection',e=>{console.error('UNHANDLED_REJECTION: '+(e&&e.
     // snapshot every normal, tagged by whether its vertex belongs to a curve-class range
     const snap=[]; const seen=new Set();
     A.scene.traverse(o=>{
-      if(!o.isMesh||!o.geometry||!o.geometry.attributes.normal||!o.geometry.index) return;
+      if(!(o.isMesh||o.isBatchedMesh||o.isInstancedMesh)||!o.geometry||!o.geometry.attributes.normal||!o.geometry.index) return;
       const g=o.geometry; if(seen.has(g.uuid)) return; seen.add(g.uuid);
       // MUST mirror the pass's gate EXACTLY, fallback included. The first run of this witness
       // read only merged ranges and reported curveVerts=0 while the pass smoothed 172,143 — so it
@@ -37,6 +37,24 @@ process.on('unhandledRejection',e=>{console.error('UNHANDLED_REJECTION: '+(e&&e.
       // is measuring itself.
       const rngs=(A._mergedMeta&&A._mergedMeta[o.id])||null;
       const curveVerts=new Set();
+      // §MEP_SMOOTH_BATCHED — the witness must cover the paths the CODE covers or it cannot catch
+      // this gap class again. Hospital is 100% batched+instanced (merged=0) and the previous
+      // revision of this witness only understood merged ranges, so a total no-op there would have
+      // scored a clean PASS. Curvature is still measured INDEPENDENTLY per span.
+      const meas=(st,ct)=>{ const seen=new Set(), n=g.attributes.normal, step=Math.max(1,Math.floor(ct/1500));
+        for(let i=st;i<st+ct;i+=step){ const v=g.index.getX(i);
+          seen.add(Math.round(n.getX(v)*8)+','+Math.round(n.getY(v)*8)+','+Math.round(n.getZ(v)*8));
+          if(seen.size>64) break; }
+        return seen.size; };
+      if(o.isBatchedMesh && o._geometryInfo && o._geometryInfo.length){
+        o._geometryInfo.forEach(e=>{ const st=(e.start!=null)?e.start:e.indexStart,
+                                     ct=(e.count!=null)?e.count:e.indexCount;
+          if(st==null||!(ct>0)) return;
+          if(meas(st,ct)>=16) for(let i=st;i<st+ct;i++) curveVerts.add(g.index.getX(i)); });
+      } else if(o.isInstancedMesh){
+        const icls=(o.userData&&(o.userData.ifc_class||o.userData.ifcClass))||'';
+        if(CURVE[icls]||meas(0,g.index.count)>=16) for(let i=0;i<g.index.count;i++) curveVerts.add(g.index.getX(i));
+      } else
       if(rngs&&rngs.length){ rngs.forEach(rg=>{ if(CURVE[rg.ifcClass]){
         for(let i=rg.idxStart;i<rg.idxStart+rg.idxCount;i++) curveVerts.add(g.index.getX(i)); }}); }
       else { const cls=(o.userData&&(o.userData.ifc_class||o.userData.ifcClass))||'';
