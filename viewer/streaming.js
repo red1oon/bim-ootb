@@ -823,13 +823,33 @@ function setupStreaming(A) {
     // metals/glass stay glossy by ratio. Floor at 0.08 so nothing becomes a mirror artefact.
     var _rough = stdMat ? stdMat.rough : 0.55;
     opts.roughness = Math.max(0.08, _rough * 0.75);
-    opts.metalness = stdMat ? stdMat.metal : 0.08; // §refl: slight metal lift gives surfaces real specular response
+    // §GLASS_NOT_METAL (2026-08-30): STD_MAT is chosen by ifc_class ALONE, so an element carrying a
+    // real, transparent IFC material still got its class's OPAQUE PBR. Measured on live Clinic: the
+    // IDENTICAL IFC material `0.000,0.502,0.753,0.100` renders two different ways purely by class —
+    //   IfcWindow → metalness 0.00, envMapIntensity 0.6   (correct clear glass, 58 elements)
+    //   IfcPlate  → metalness 0.70, envMapIntensity 0.05  (STD_MAT "steel plate", 167 elements)
+    // — so 167 of Clinic's 225 glass panels rendered as metal: at metalness 0.7 the diffuse albedo is
+    // suppressed and envInt 0.05 leaves almost nothing to reflect, i.e. "loss of glass / no longer
+    // see thru" (§A), with no X-ray involved. §S265c's "trust IFC data" was only ever applied to
+    // COLOUR; alpha<1 is the IFC itself declaring the surface transparent, and in a metal/rough
+    // workflow a transparent surface is BY DEFINITION not a metal (metals are opaque). So when the
+    // element's own material says a<1, the opaque class default does not describe it — drop the
+    // metalness rather than let a steel-plate preset override real glazing.
+    opts.metalness = (a < 1.0) ? 0.0 : (stdMat ? stdMat.metal : 0.08); // §refl: slight metal lift gives surfaces real specular response
     opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
     // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
     // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
     // whose unusually high metalness otherwise lets the sky's real, strongly-blue PMREM reflection
     // dominate the hue over their own correctly-trusted real IFC albedo — see STD_MAT comments above.
-    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = (stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6; }
+    // §GLASS_NOT_METAL: the envInt overrides exist ONLY to stop a high-metalness class letting the
+    // sky's real blue PMREM reflection dominate its albedo (§HOSPITAL_BLUE_TINT / §PIPE_DUCT_BLUE_TINT
+    // above). A transparent surface has metalness 0 here, so that reason does not apply to it — and
+    // 0.05 on glass kills the reflection that makes glazing read as glass at all. Use the global 0.6.
+    if (A._envMap) {
+      opts.envMap = A._envMap;
+      opts.envMapIntensity = (a < 1.0) ? 0.6
+        : ((stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6);
+    }
     const mat = new THREE.MeshStandardMaterial(opts);
     // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
     // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
@@ -842,7 +862,12 @@ function setupStreaming(A) {
     // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
     // the real photo texture takes over that job, stacking both would double-bump the normal
     // with two uncorrelated patterns.
-    var triMat = (ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null;
+    // §GLASS_NOT_METAL: TRIPLANAR_MAT is also class-keyed, so IfcPlate glazing was being given
+    // _TRI_METAL (`metal_color_1k.jpg`) — a brushed-metal weathering texture painted onto glass
+    // (visible in the user's own log as `§TRIPLANAR_INIT class=IfcPlate tex=…/metal_color_1k.jpg`).
+    // A transparent surface never wants an opaque material's surface-wear texture.
+    var triMat = (a < 1.0) ? null
+      : ((ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null);
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
