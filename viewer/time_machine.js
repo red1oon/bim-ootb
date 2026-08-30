@@ -4785,6 +4785,11 @@
       _hrTotal += _cost; _hrPD += _pd;
       _hrLog.push(_hr + ' personDays=' + _pd.toFixed(1) + ' @' + _hrR.rate_per_day + '/d = ' + Math.round(_cost));
     }
+    // §HR_COST_EXPOSE (2026-08-30) — additive, read-only. §CPE_BIG_STATS wants the 5D headline for
+    // a client-facing card, and the only honest source is the number this block already computed.
+    // Re-deriving cost in the panel would be a second opinion about the schedule's own labour
+    // content, which this file's header forbids.
+    A()._hrCost = { total: Math.round(_hrTotal), personDays: +_hrPD.toFixed(1), trades: _hrLog.length };
     console.log('§HR_COST total=' + Math.round(_hrTotal) + ' personDays=' + _hrPD.toFixed(1) +
       ' across ' + _hrLog.length + ' trades — ' + _hrLog.join(' | ') +
       ' (crew count changes WHEN this lands, not the total)');
