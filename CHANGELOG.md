@@ -4,6 +4,28 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.57.0](https://github.com/red1oon/bim-ootb/compare/v1.56.0...v1.57.0) (2026-08-30)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_STATS_TAIL — two rounds, and only the Reveal round revolves ([#1587](https://github.com/red1oon/bim-ootb/issues/1587)) ([230459c](https://github.com/red1oon/bim-ootb/commit/230459c15bd4a3c82bcccfc92ebe7b4a559ae825))
+* **cpe:** resource panel + path overview box + curve smoothing + brush-stroke gaze ([#1580](https://github.com/red1oon/bim-ootb/issues/1580)) ([9b44e04](https://github.com/red1oon/bim-ootb/commit/9b44e047f54bc5ae7d69da0d81d3153e02c92d6a))
+
+
+### 🐛 Fixes
+
+* **cpe:** §CPE_HUD_ORDER — path box above the pie, untruncate trade names ([#1584](https://github.com/red1oon/bim-ootb/issues/1584)) ([25c8adc](https://github.com/red1oon/bim-ootb/commit/25c8adc03ab2ae6aef5c05795fea3fbcf479067a))
+* **cpe:** §CPE_PIE_HOLD — the pie holds the last real crew instead of vanishing ([#1586](https://github.com/red1oon/bim-ootb/issues/1586)) ([9057414](https://github.com/red1oon/bim-ootb/commit/9057414227f6b783f75e2eae406bfb1abf0db7d7))
+* **render:** transparent IFC materials were given their class's opaque METAL preset ([#1585](https://github.com/red1oon/bim-ootb/issues/1585)) ([81f5e4d](https://github.com/red1oon/bim-ootb/commit/81f5e4da5fcbdb73cbbf49a025d2aa7cf67ef979))
+
+
+### ⚡ Performance
+
+* **bake:** §GLOW_BUILDUP_EARLY_OUT + §CPE_BIG_STATS revolving value cards ([#1583](https://github.com/red1oon/bim-ootb/issues/1583)) ([a977fbc](https://github.com/red1oon/bim-ootb/commit/a977fbcb124eda94326b96d206cf1285d7f3e9f2))
+* **bake:** §R10 §MAXQ_FRAME_BUDGET — a baked frame costs 20 renders, not 40 ([#1588](https://github.com/red1oon/bim-ootb/issues/1588)) ([742ea66](https://github.com/red1oon/bim-ootb/commit/742ea66bd8733b251ee86a19bbefdeca602a2d01))
+* **mep:** reach Hospital's batched/instanced elements, halve the cost ([#1582](https://github.com/red1oon/bim-ootb/issues/1582)) ([8df684b](https://github.com/red1oon/bim-ootb/commit/8df684b97dd9a340b11ad6490ed5ff52e4ad4648))
+
 ## [1.56.0](https://github.com/red1oon/bim-ootb/compare/v1.55.0...v1.56.0) (2026-08-29)
 
 
