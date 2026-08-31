@@ -400,18 +400,73 @@ function setupCpeResourcePanel(A) {
     ctx.fillStyle = '#fff';
     var baseY = y + pad + big * 0.86;
     ctx.fillText(c.big, colX, baseY);
-    ctx.font = '600 ' + Math.round(bh * 0.105) + 'px ' + F;
+    // §CPE_CARD_FIT (2026-09-01, found in the user's OWN Hospital bake, not by reading): once
+    // §CPE_PIE_HOLD gave the pie its own permanent column, the card's text column narrowed from
+    // bw-2*pad (286 px at h=960) to availW (171 px) — and the labels started truncating:
+    // "labour cost ..." and "9 trades  ·  time-...". That is the SAME defect §CPE_HUD_ORDER already
+    // fixed once for the trade names, and the file's own ruling applies unchanged: a label a client
+    // cannot read is the same failure as a placeholder storey — the card is there but says nothing.
+    // SHRINK BEFORE ELLIPSIS. The number above already does exactly this; the label and sub simply
+    // never did, because at 286 px they never had to. Ellipsis stays as the last resort so a
+    // pathologically long sub still cannot overflow the panel.
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillText(_fit(ctx, c.label, colW), colX, baseY + Math.round(bh * 0.17));
+    _fitText(ctx, c.label, colX, baseY + Math.round(bh * 0.17), colW,
+             Math.round(bh * 0.105), Math.round(bh * 0.072), '600', F);
     if (c.sub) {
-      ctx.font = '500 ' + Math.round(bh * 0.085) + 'px ' + F;
+      // The sub is a full sentence ("9 trades · time-phased, not a bill of quantities" = 48 chars).
+      // At 171 px even the floor size cannot fit it on one line, and the real bake cut it mid-word
+      // at "time-phased, n…". There IS vertical room — the dots sit at bh-pad*0.7 and the sub starts
+      // at 0.30*bh — so it wraps to a second line instead of losing the caveat it exists to carry.
       ctx.fillStyle = 'rgba(255,255,255,0.60)';
-      ctx.fillText(_fit(ctx, c.sub, colW), colX, baseY + Math.round(bh * 0.30));
+      _wrapText(ctx, c.sub, colX, baseY + Math.round(bh * 0.30), colW,
+                Math.round(bh * 0.085), Math.round(bh * 0.058), '500', F, 2);
     }
     _dots(ctx, colX, y + bh - pad * 0.7, bh, shown);
     ctx.restore();
     ctx.restore();
   };
+
+  // §CPE_CARD_FIT — shrink to fit, then ellipsis only if still over. `floor` is the smallest size
+  // still worth printing; below that the text is decoration, so it gets the ellipsis instead.
+  function _fitText(ctx, text, x, y, maxW, size, floor, weight, F) {
+    var px = size;
+    while (px > floor) {
+      ctx.font = weight + ' ' + px + 'px ' + F;
+      if (ctx.measureText(text).width <= maxW) break;
+      px -= 1;
+    }
+    ctx.font = weight + ' ' + px + 'px ' + F;
+    ctx.fillText(_fit(ctx, text, maxW), x, y);
+    return px;
+  }
+
+  // §CPE_CARD_FIT — shrink, then wrap across at most `maxLines`, then ellipsis on the last line.
+  // Word-boundary wrap: a mid-word break reads as a rendering bug, which is the whole complaint.
+  function _wrapText(ctx, text, x, y, maxW, size, floor, weight, F, maxLines) {
+    var px = size;
+    // shrink first — one readable line beats two small ones
+    while (px > floor) {
+      ctx.font = weight + ' ' + px + 'px ' + F;
+      if (ctx.measureText(text).width <= maxW) break;
+      px -= 1;
+    }
+    ctx.font = weight + ' ' + px + 'px ' + F;
+    if (ctx.measureText(text).width <= maxW) { ctx.fillText(text, x, y); return px; }
+    var words = String(text).split(/\s+/), lines = [], cur = '';
+    for (var i = 0; i < words.length; i++) {
+      var next = cur ? cur + ' ' + words[i] : words[i];
+      if (ctx.measureText(next).width <= maxW || !cur) { cur = next; }
+      else { lines.push(cur); cur = words[i]; if (lines.length === maxLines) break; }
+    }
+    if (cur && lines.length < maxLines) lines.push(cur);
+    for (var j = 0; j < lines.length; j++) {
+      var last = (j === lines.length - 1);
+      var overflowed = last && (lines.length === maxLines) &&
+                       (words.join(' ').indexOf(lines[j]) + lines[j].length < words.join(' ').length);
+      ctx.fillText(overflowed ? _fit(ctx, lines[j] + ' …', maxW) : lines[j], x, y + j * Math.round(px * 1.25));
+    }
+    return px;
+  }
 
   // dots: which of the revolving slots this is, so a viewer knows more are coming
   function _dots(ctx, dx, dy, bh, shown) {
