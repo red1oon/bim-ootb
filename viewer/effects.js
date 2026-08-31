@@ -2209,6 +2209,56 @@ async function setupEffects(A, renderer, scene, camera) {
     if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 6000 });
     else setTimeout(run, 4000);
   })();
+  // ══ §PHOTO_PREWARM (§R11, bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md) ══════════════════════
+  // User, 2026-09-01, on a real v1111 Hospital session: "it seems slow to come on first time."
+  //
+  // MEASURED from that session's own log — the FIRST Alt+S costs ~27 s and every one after it ~7 s:
+  //   §MEP_SMOOTH_NORMALS ms=8923.6   (once per session, 23,735,190 verts over 1,705 geoms)
+  //   §STILL_REFINE done elapsedMs=17933 first vs 6868 second
+  //   §PHOTO_AO done totalMs=576      (not worth touching — 2% of the press)
+  // The 20 s gap is ALL one-time work that happened to be sitting on the press. Two causes:
+  //   1. the smoothing pass itself, 8.9 s;
+  //   2. assets arriving DURING the fold — the run logged §STILL_REFINE_RESTART TWICE, with
+  //      §LAYER2_HDRI_READY and §GROUND_MAP key=earth landing in between, and every restart throws
+  //      away the samples accumulated so far.
+  //
+  // So this is a SCHEDULING change, not a behaviour change: the same work, done at idle once the
+  // model is fully streamed (streaming.js calls this from the point its own comment already calls
+  // "the model is fully streamed here"). The staging path KEEPS its own call as a fallback — if
+  // prewarm has not run yet, the first Alt+S still does the work itself. DEGRADE, DON'T DISABLE.
+  //
+  // Idle, not eager: requestIdleCallback with a timeout, the same idiom §PHOTO_STAFFAGE_PRELOAD
+  // above already uses, so a user who never presses Alt+S pays nothing on the interactive path.
+  A._photoPrewarm = function () {
+    if (A._photoPrewarmDone) return false;   // idempotent — streaming can flush more than once
+    A._photoPrewarmDone = true;
+    var run = function () {
+      var t0 = performance.now(), did = [], skipped = [];
+      try {
+        if (!A._mepSmoothDone && A.mepSmoothNormals) {
+          A.mepSmoothNormals(); A._mepSmoothDone = true; did.push('mepSmooth');
+        } else skipped.push('mepSmooth(already done)');
+      } catch (e) { skipped.push('mepSmooth:' + e.message); }
+      // Both of these are cached+idempotent, and both were landing mid-fold and restarting it.
+      try { _ensureHdriEnvMap(); did.push('hdri'); } catch (e) { skipped.push('hdri:' + e.message); }
+      try {
+        // The ground texture is loaded by tools.js on staging; warming the HTTP cache here is the
+        // whole cost of it and needs no handle into that module.
+        if (typeof fetch === 'function') {
+          fetch('textures/ground/earth_1k.jpg', { cache: 'force-cache' }).then(function (r) { return r && r.blob(); })
+            .catch(function () {});
+          did.push('groundTex');
+        }
+      } catch (e) { skipped.push('groundTex:' + e.message); }
+      console.log('§PHOTO_PREWARM ms=' + Math.round(performance.now() - t0) +
+        ' did=[' + did.join(',') + ']' + (skipped.length ? ' skipped=[' + skipped.join(',') + ']' : '') +
+        ' — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)');
+    };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 8000 });
+    else setTimeout(run, 2000);
+    return true;
+  };
+
   // ══ §BILLBOARD_ART (2026-07-28, user: "make it pick a png image i can place later in the same
   // DB folder. For now just 'RUANG IKLAN UNTUK DI SEWA'… if no image, it gives that notice.")
   //

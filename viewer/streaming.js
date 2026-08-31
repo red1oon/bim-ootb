@@ -2122,6 +2122,12 @@ function setupStreaming(A) {
     // §BILLBOARD_ALWAYS: the model is fully streamed here, so any billboard element in the DB can
     // now be read and given its face. Idempotent and a no-op for buildings that have no billboard.
     if (A._billboardAutoBuild) A._billboardAutoBuild();
+    // §PHOTO_PREWARM (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R11): the model is fully
+    // streamed here, which is the EARLIEST point the curve-smoothing pass can legally run — it
+    // walks streamed geometry. MEASURED on the user's own Hospital session: that pass costs
+    // 8,923.6 ms and it was being paid on the first Alt+S press, not here. Same idempotent,
+    // no-op-if-absent contract as the billboard build above.
+    if (A._photoPrewarm) A._photoPrewarm();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
