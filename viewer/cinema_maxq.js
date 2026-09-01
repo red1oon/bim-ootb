@@ -1628,14 +1628,23 @@
         } else if (A.tailPanelAt) {
           var _si = A.tailPanelAt(_bigCards, i / fps, _holdInfo);
           if (_si) {
-            _statInfo = { shown: _si, pos: _ovPos, held: _holdInfo };
+            // §CPE_PIE_FLYOUT_DROP (2026-09-01, user: "during last fly out, the last pie is not
+            // needed. Remove to give max space to the revolving highlights."): in the Reveal round
+            // the held pie is NOT drawn — held:null — so the cards and the roster slot take the
+            // full panel width. The boundary is THIS branch's own _inReveal (topoutU / ops-frozen
+            // degrade), no new constant, so the drop can never diverge from the rotation. Round 1
+            // is untouched: §CPE_PIE_HOLD still owns every frame before the boundary. The crew is
+            // NOT lost — tailPanelAt above still receives _holdInfo, so the roster stays one of
+            // the revolving slots (§CPE_STATS_TAIL), now full-width like the cards.
+            _statInfo = { shown: _si, pos: _ovPos, held: null };
             A._statTailFrames = (A._statTailFrames || 0) + 1;
             if (!A._statTailLogged) {
               A._statTailLogged = true;
               console.log('§CPE_STATS_TAIL reveal round entered at frame ' + i + '/' + nFrames +
                 ' u=' + (nFrames > 1 ? (i / (nFrames - 1)).toFixed(3) : '1.000') +
                 ' boundary=' + (_revealU != null ? 'topoutU ' + _revealU.toFixed(3) : 'ops-frozen (no plan beats)') +
-                ' slots=' + _si.n + ' (roster' + (_bigCards ? ' + ' + _bigCards.length + ' cards' : ', NO cards built') + ')');
+                ' slots=' + _si.n + ' (roster' + (_bigCards ? ' + ' + _bigCards.length + ' cards' : ', NO cards built') + ')' +
+                ' pie=dropped (§CPE_PIE_FLYOUT_DROP)');
             }
           } else if (_holdInfo) {
             _resInfo = { info: _holdInfo, pos: _ovPos };   // nothing to revolve — hold, never blank
