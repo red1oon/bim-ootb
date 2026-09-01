@@ -15,7 +15,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await page.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${DB}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.APP && window.APP.startStillRefine, { timeout: 240000 });
   await sleep(10000);
-  await page.waitForFunction(() => { try { return window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms')[0][0] > 0; } catch(e){ return false; } }, { timeout: 180000, polling: 2000 });
+  // §V-003: bound the polling window and space out requests so a stalled/slow DB
+  // can't be hammered with rapid concurrent dbQuery calls for minutes on end.
+  await page.waitForFunction(() => { try { return window.APP.dbQuery('SELECT COUNT(*) FROM element_transforms')[0][0] > 0; } catch(e){ return false; } }, { timeout: 60000, polling: 5000 });
   let n0=-1, st=0; for (let i=0;i<90;i++){ const n=await page.evaluate(()=>Object.keys(window.APP.guidMap).length); st=(n===n0&&n>0)?st+1:0; if(st>=3)break; n0=n; await sleep(2000);}    
   const db = await page.evaluate(() => {
     const q = s => { try { return window.APP.dbQuery(s) || []; } catch(e){ return []; } };
