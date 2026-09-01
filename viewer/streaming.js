@@ -680,6 +680,35 @@ function setupStreaming(A) {
   // material_rgba), so adding it to the batch key would add ZERO buckets (244→244, 160→160, 65→65)
   // — every bucket therefore carries exactly ONE name and taking items[0]'s is exact, not an
   // approximation (unlike `batchCls`, which really is items[0]'s of a possibly mixed-class bucket).
+  // §WALL_SIDE (2026-09-01, PHOTOREAL_STILL_RENDER.md §WALL_SIDE_AND_LIGHT_FLOOR): class-keyed
+  // material side, derived from the fleet winding census (§WALL_WINDING_MEASURE + this session's
+  // per-class re-census, census_{Terminal,Hospital}.log): a class is FrontSide iff its pooled
+  // (sheet + mixed-winding + inverted + open-negative) fraction is <= 2.0% of elements-with-
+  // geometry across both measured buildings, population >= 30 (T1). Sheet-heavy classes measured
+  // ABOVE T1 keep DoubleSide because a one-sided sheet is invisible from one side under FrontSide
+  // regardless of winding: IfcPipeFitting 20.4%, IfcDuctFitting 14.9%, IfcBuildingElementProxy
+  // 16.4% (and 18.9% of Hospital's drawn triangles), IfcWindow 32.7%, IfcDoor 2.1%,
+  // IfcFlowTerminal 5.1%, IfcFlowController/IfcController/IfcRampFlight/IfcRoof under population.
+  // Unlisted classes default DoubleSide (conservative). `side` is a pure function of
+  // (ifcClass, a<1.0) and ifcClass is already a cacheKey dimension below -> cannot fragment the
+  // material cache (asserted by witness_wall_side_light_floor.js M1).
+  // §WALL_SIDE_PICK_GATE: IfcLightFixture was in the census-derived list (0% winding defect,
+  // 2,086 elements) but is WITHDRAWN by the S3 pick witness: a ray whose origin sits inside a
+  // recessed fixture shell (M_Plain Recessed Lighting Fixture 600x600, Hospital ray
+  // out|IfcElectricAppliance|1cL9Mv$oTAD8jv7e2bmYul) first-hit the fixture's own interior back
+  // face under DoubleSide; FrontSide culls that self-hit and resolves to the diffuser beyond it.
+  // The gate is mechanical: any first-hit divergence drops the class (§WWSLF_PICK_DIVERGE line,
+  // wwslf_assert.log 2026-09-01). Winding did not fail here — pick behaviour did.
+  var FRONT_SIDE_CLASSES = {
+    IfcAirTerminal: 1, IfcAlarm: 1, IfcBeam: 1, IfcCableCarrierFitting: 1,
+    IfcCableCarrierSegment: 1, IfcColumn: 1, IfcCovering: 1, IfcDistributionControlElement: 1,
+    IfcDuctSegment: 1, IfcElectricAppliance: 1, IfcFireSuppressionTerminal: 1, IfcFooting: 1,
+    IfcFurniture: 1, IfcMember: 1, IfcPipeSegment: 1, IfcPlate: 1,
+    IfcRailing: 1, IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcSwitchingDevice: 1,
+    IfcValve: 1, IfcWall: 1, IfcWallStandardCase: 1
+  };
+  A._frontSideClasses = FRONT_SIDE_CLASSES; // exposed for witness assertions, read-only
+
   A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
@@ -997,7 +1026,18 @@ function setupStreaming(A) {
     // element's own material says a<1, the opaque class default does not describe it — drop the
     // metalness rather than let a steel-plate preset override real glazing.
     opts.metalness = (a < 1.0) ? 0.0 : (stdMat ? stdMat.metal : 0.08); // §refl: slight metal lift gives surfaces real specular response
-    opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
+    // §WALL_SIDE (2026-09-01): class-keyed side — see FRONT_SIDE_CLASSES above. This corrects
+    // §S260d's premise "IFC geometry has inconsistent normals — DoubleSide ensures pick works":
+    // MEASURED FALSE in §WALL_WINDING_MEASURE (PHOTOREAL_STILL_RENDER.md) — no geo DB ships a
+    // normals column, computeVertexNormals() derives the shading normal FROM the winding, and the
+    // winding is consistent (uniformly-inverted meshes fleet-wide: 2 of 111,610 = 0.003%).
+    // FrontSide on the measured-closed classes gives back-face-correct shading + backface-culling;
+    // DoubleSide stays for the sheet-heavy classes where a one-sided face must render both ways.
+    // Pick integrity across the flip is witness-gated (witness_wall_side_light_floor.js S3).
+    // Transparent path (a<1.0, above) already forced DoubleSide and is untouched.
+    if (a >= 1.0) {
+      opts.side = (ifcClass && FRONT_SIDE_CLASSES[ifcClass]) ? THREE.FrontSide : THREE.DoubleSide;
+    }
     // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
     // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
     // whose unusually high metalness otherwise lets the sky's real, strongly-blue PMREM reflection
@@ -1302,7 +1342,11 @@ function setupStreaming(A) {
       console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
     mat.userData.origOpacity = a;
-    mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
+    // §WALL_SIDE: record the RESOLVED side (before any x-ray override below). The old line
+    // (`a < 1.0 ? DoubleSide : FrontSide`) claimed FrontSide for every opaque material while the
+    // material was actually created DoubleSide — a latent mismatch against the x-ray restore
+    // fallback chain (tools.js:337/359). mat.side here IS the class-keyed resolved value.
+    mat.userData.origSide = mat.side;
     if (A.xrayOn) { mat.transparent = true; mat.opacity = 0.3; mat.side = THREE.DoubleSide; }
     if (A.wireOn) { mat.wireframe = true; }
     if (A.sectionOn) { mat.clippingPlanes = [A.sectionPlane]; mat.clipShadows = true; }

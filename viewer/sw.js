@@ -22,7 +22,12 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1117';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1118';   // bump on each deploy; per-change detail is the git commit message.
+// v1118 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
+// derived FRONT_SIDE_CLASSES, T1<=2% defect; §S260d "inconsistent normals" premise corrected —
+// measured false) + scene.js ambient/hemi lowered to the derived light floor so away-from-sun
+// faces darken. viewer.html streaming.js?v=65->66 + scene.js?v=57->58 bumped in the SAME commit.
+// Witness: witness_wall_side_light_floor.js (pick integrity + no-vanish + perf/mem gates).
 // MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
 // the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
 // take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
