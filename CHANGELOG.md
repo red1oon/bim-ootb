@@ -4,6 +4,22 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.57.1](https://github.com/red1oon/bim-ootb/compare/v1.57.0...v1.57.1) (2026-09-01)
+
+
+### 🐛 Fixes
+
+* **cpe:** §CPE_AIM_DEPTH_FREEZE — the correction window blends from a FIXED gaze, frozen at the window's own edges ([#1598](https://github.com/red1oon/bim-ootb/issues/1598)) ([0984e37](https://github.com/red1oon/bim-ootb/commit/0984e37081c07afea0cd9f9afb9aee322d0137af))
+* **cpe:** §CPE_CARD_FIT — stat-card text truncated once the pie took its column ([#1592](https://github.com/red1oon/bim-ootb/issues/1592)) ([8ebfe82](https://github.com/red1oon/bim-ootb/commit/8ebfe8237a0d642c3a79370f33b0383483b572db))
+* **cpe:** §CPE_CORR_BRANCH — the 110 deg correction snap was a 2*pi branch flip, not the envelope ([#1597](https://github.com/red1oon/bim-ootb/issues/1597)) ([3c58a48](https://github.com/red1oon/bim-ootb/commit/3c58a480234945735dde9a182d47497e3d7b5e4d))
+* **palette:** §SUNGLASS_GROUPING_RULES — storey bands ramp by geometric ordinal; brown material-injection tip on the scrub ([#1594](https://github.com/red1oon/bim-ootb/issues/1594)) ([df0c462](https://github.com/red1oon/bim-ootb/commit/df0c4626ae264babdd95db2097554eac57ff9ade))
+* **viewer:** §CPE_MATERIAL_KEY — triplanar keys material_name FIRST, ifc_class as fallback ([#1595](https://github.com/red1oon/bim-ootb/issues/1595)) ([cd999e6](https://github.com/red1oon/bim-ootb/commit/cd999e61c33a4e973c4c048efddf743d448c594f))
+
+
+### ⚡ Performance
+
+* **still:** §R11 §PHOTO_PREWARM — take the one-time work off the first Alt+S ([#1590](https://github.com/red1oon/bim-ootb/issues/1590)) ([4876c22](https://github.com/red1oon/bim-ootb/commit/4876c2274fdf25b41088b58785055792a93e419b))
+
 ## [1.57.0](https://github.com/red1oon/bim-ootb/compare/v1.56.0...v1.57.0) (2026-08-30)
 
 
