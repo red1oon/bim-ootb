@@ -1954,6 +1954,7 @@
         if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter'].forEach(function(fk) {
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
+        window.__maxqResolvedOverride = ov;   // for the runner's post-bake pose assertion
         console.log('§CLI_BAKE_RESOLVED source=' + src + ' bands=' + (ov.bands ? ov.bands.length : 0) +
           ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
           ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +

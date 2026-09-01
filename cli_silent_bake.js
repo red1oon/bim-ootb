@@ -201,6 +201,14 @@ const server = http.createServer((req, res) => {
   // start the bake WITHOUT holding a CDP call open for hours: fire, then poll a page global.
   const bakeOpts = { name: PLAN_NAME || undefined, flags: FLAGS, frames: FRAMES, fps: FPS };
   if (OV_FILE) bakeOpts.override = JSON.parse(fs.readFileSync(OV_FILE, 'utf8'));
+  // The plan reads the live camera basis (§CPE_PREVIEW_DIVERGENCE) — save the pre-bake camera so
+  // the post-bake pose assertion can rebuild the SAME plan the bake built, not one based at the
+  // film's final pose (the loop leaves the camera at the last frame).
+  await page.evaluate(() => {
+    const A = window.APP;
+    window.__maxqCamSave = { px: A.camera.position.x, py: A.camera.position.y, pz: A.camera.position.z,
+                             tx: A.controls.target.x, ty: A.controls.target.y, tz: A.controls.target.z };
+  });
   await page.evaluate(o => {
     window.__bakeResult = null;
     window.__maxqBake(o).then(r => { window.__bakeResult = { ok: true, r }; })
@@ -239,6 +247,45 @@ const server = http.createServer((req, res) => {
     log(`§CLI_BAKE_FRAMES poses=${per.n} meanMs=${per.meanMs} p50Ms=${per.p50} worstMs=${per.worstMs}`);
     fs.writeFileSync(OUT.replace(/\.[a-z0-9]+$/i, '') + '_poses.json',
       JSON.stringify(await page.evaluate(() => window.__maxqPoseLog)));
+    // ── §CLI_SILENT_BAKE item 4, the numeric assertion — did the STORED path drive the camera? ──
+    // (a) rebuild the override plan at the pre-bake camera basis: flown poses must reproduce it
+    //     to ~0 (same code path — catches plumbing loss);
+    // (b) build the DERIVED plan (explicit null override): the flown track must DIFFER from it
+    //     (a bake that silently ignored the passed path would match derived and fail here);
+    // (c) the flown track must pass near every stored band anchor (ties to the DB rows themselves).
+    const chk = await page.evaluate((fpsUsed) => {
+      const A = window.APP, L = window.__maxqPoseLog, ov = window.__maxqResolvedOverride;
+      if (!L || L.length < 2 || !ov) return { skip: 'no poses or no resolved override' };
+      if (ov.clip) return { skip: 'clip window set — t-mapping not identity, check by hand' };
+      const cs = window.__maxqCamSave;
+      A.camera.position.set(cs.px, cs.py, cs.pz); A.controls.target.set(cs.tx, cs.ty, cs.tz);
+      A.camera.lookAt(cs.tx, cs.ty, cs.tz); A.camera.updateMatrixWorld(true); A.controls.update();
+      const n = L[L.length - 1][0] + 1;
+      const planOv = A.cinemaPathPlan(n / fpsUsed, ov);
+      const planDrv = A.cinemaPathPlan(n / fpsUsed, null);
+      let maxErr = 0, sumDrv = 0;
+      for (const r of L) {
+        const t = n > 1 ? r[0] / (n - 1) : 0;
+        const p = planOv.poseAt(t), d = planDrv.poseAt(t);
+        maxErr = Math.max(maxErr, Math.hypot(r[1] - p.x, r[2] - p.y, r[3] - p.z),
+                          Math.hypot(r[4] - p.tx, r[5] - p.ty, r[6] - p.tz));
+        sumDrv += Math.hypot(r[1] - d.x, r[2] - d.y, r[3] - d.z);
+      }
+      const bandDist = (ov.bands || []).map(b => {
+        let m = 1e9;
+        for (const r of L) m = Math.min(m, Math.hypot(r[1] - b.c.x, r[2] - b.c.y, r[3] - b.c.z));
+        return +m.toFixed(2);
+      });
+      return { n, maxErrM: +maxErr.toFixed(4), rmsVsDerivedM: +(sumDrv / L.length).toFixed(2), bandDist };
+    }, FPS || 15).catch(e => ({ skip: 'check threw: ' + e.message }));
+    if (chk.skip) log('§CLI_BAKE_POSECHECK INCONCLUSIVE ' + chk.skip);
+    else {
+      const pass = chk.maxErrM < 0.05;
+      const differs = chk.rmsVsDerivedM > 1.0;
+      log(`§CLI_BAKE_POSECHECK frames=${chk.n} maxErrVsOverridePlanM=${chk.maxErrM} (${pass ? 'MATCH' : '⚠ MISMATCH'})` +
+          ` meanDistVsDerivedPlanM=${chk.rmsVsDerivedM} (${differs ? 'differs — the stored path, not the derived one' : '⚠ INDISTINGUISHABLE from derived — inconclusive discriminator'})` +
+          ` bandAnchorMinDistM=[${chk.bandDist.join(',')}]`);
+    }
   }
   const heapMB = S.heap.map(x => x / 1048576);
   if (heapMB.length) log(`§CLI_BAKE_HEAP samples=${heapMB.length} minMB=${Math.min(...heapMB).toFixed(0)} maxMB=${Math.max(...heapMB).toFixed(0)} lastMB=${heapMB[heapMB.length - 1].toFixed(0)}`);
