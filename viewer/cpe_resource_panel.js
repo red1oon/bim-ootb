@@ -372,11 +372,16 @@ function setupCpeResourcePanel(A) {
 
     // The pie does NOT leave when the trades do — it holds the last real composition in exactly the
     // place it occupied all through the build, dimmed and captioned with the day it is from.
+    // §CPE_PIE_FLYOUT_DROP (2026-09-01): the Reveal round now passes heldInfo=null on purpose —
+    // the pie is not drawn there at all and the content keeps this full-width column. The held-pie
+    // path below still serves any caller that passes a composition (round 1 semantics unchanged).
     var G = _geom(bw, bh);
     var colX = x + Math.round(bh * 0.13), colW = bw - Math.round(bh * 0.13) * 2;
+    var pieDrawn = false;
     if (heldInfo && heldInfo.rows && heldInfo.rows.length && heldInfo.totalHeads > 0) {
       _pie(ctx, B, heldInfo);
       colX = x + G.lx; colW = G.availW;
+      pieDrawn = true;
     }
 
     ctx.save();
@@ -386,8 +391,10 @@ function setupCpeResourcePanel(A) {
     // §CPE_STATS_TAIL — the roster slot draws the real trade list, not a number, so the avatars and
     // the ×N counts stay in the rotation instead of being replaced by the cards.
     if (shown.roster) {
-      ctx.save(); ctx.translate(x, y); _drawList(ctx, bw, bh, shown.roster); ctx.restore();
-      _dots(ctx, x + G.lx, y + bh - pad * 0.7, bh, shown);
+      // §CPE_PIE_FLYOUT_DROP — with no pie drawn the roster list takes the full width too, and the
+      // slot dots move to the list's own left edge instead of the old right column.
+      ctx.save(); ctx.translate(x, y); _drawList(ctx, bw, bh, shown.roster, !pieDrawn); ctx.restore();
+      _dots(ctx, x + (pieDrawn ? G.lx : G.pad), y + bh - pad * 0.7, bh, shown);
       ctx.restore(); ctx.restore();
       return;
     }
@@ -614,8 +621,12 @@ function setupCpeResourcePanel(A) {
   // The staffage PNGs already vendored are office/street people (sitting formal, walking with
   // shopping) — wrong for a trade, so the figure is drawn: a hard-hat silhouette tinted per trade.
   // Zero assets, crisp at any export size.
-  function _drawList(g, bw, bh, info) {
-    var G = _geom(bw, bh), pad = G.pad, lx = G.lx, availW = G.availW;
+  // §CPE_PIE_FLYOUT_DROP — `fullW` (optional, Reveal-round roster slot only): no pie is on the
+  // panel, so the list starts at the left pad and spans the whole plate instead of the 0.56 column
+  // §CPE_HUD_ORDER reserved beside the pie. Round-1 callers pass nothing and are unchanged.
+  function _drawList(g, bw, bh, info, fullW) {
+    var G = _geom(bw, bh), pad = G.pad, lx = fullW ? G.pad : G.lx,
+        availW = fullW ? bw - G.pad * 2 : G.availW;
     var fs = Math.max(9, Math.round(bh * 0.085));
     var rowH = Math.round(fs * 1.55);
     var maxRows = Math.max(1, Math.floor((bh - pad * 2 - fs * 1.4) / rowH));
