@@ -1620,6 +1620,15 @@ function setupTools(A) {
   };
 
   A._nightUpdateLights = function() {
+    // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
+    // BEFORE the _nightMode gate so a night-off session still cleans up.
+    if (A._nightBakePool && !A._maxqActive) {
+      for (var _di = 0; _di < A._nightBakePool.length; _di++) {
+        A.scene.remove(A._nightBakePool[_di]); A._nightBakePool[_di].dispose();
+      }
+      console.log('§NIGHT_BAKE_POOL disposed n=' + A._nightBakePool.length + ' — bake over, nav path restored');
+      A._nightBakePool = null;
+    }
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
     var camPos = A.camera.position;
@@ -1686,6 +1695,49 @@ function setupTools(A) {
         }
       }
       needed = picked.map(function(p) { return { pos: p }; });
+    }
+    // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
+    // prompts/CINEMA_PATH_EDITOR.md §CLI_SILENT_BAKE stage 4): during a MaxQ bake the in-frustum
+    // fixture census changes nearly every frame (the camera flies the path while the buildup keeps
+    // placing fixtures), and EVERY add/remove changes the scene's point-light COUNT — a shader
+    // DEFINE, so three.js recompiles every program in the scene. MEASURED (s4_300.log, Hospital
+    // 1854x963, RTX 4060 headless): count-stable frames fold in 0.8-1.3 s — even at the full 200
+    // lights — while every count-changed frame costs 13-53 s (21 §MAXQ_FRAME_TIMEOUTs, per-frame
+    // climbing to 26.4 s, a 9 h projection for a film whose budget is 2 h). §NIGHT_LIGHT_CHURN_FIX
+    // above already named this exact recompile cost but its delta reuse still lets the COUNT move.
+    // FIX, bake-only (gate A._maxqActive): the pool size is FROZEN at the still cap for the whole
+    // bake — created once, assigned per frame by slot (position/color/intensity are uniform
+    // updates, no recompile), unused slots dim to intensity 0 (contributes nothing — quality-
+    // identical). Interactive navigation and Alt+S keep the churn-fix path below, untouched.
+    if (A._maxqActive) {
+      if (!A._nightBakePool) {
+        var _poolN = Math.min(200, Math.max(1, allPos.length));
+        A._nightBakePool = [];
+        for (var _bi = 0; _bi < _poolN; _bi++) {
+          var _bl = new THREE.PointLight(0xffe4b5, 0, NIGHT_LIGHT_RANGE, NIGHT_LIGHT_DECAY);
+          A.scene.add(_bl);
+          A._nightBakePool.push(_bl);
+        }
+        console.log('§NIGHT_BAKE_POOL created n=' + _poolN +
+          ' — point-light COUNT frozen for the bake; unused slots ride at intensity 0');
+      }
+      var _pool = A._nightBakePool;
+      for (var _pi = 0; _pi < _pool.length; _pi++) {
+        var _f = needed[_pi];
+        if (_f) {
+          var _dist = camPos.distanceTo(_f.pos);
+          var _fade = Math.min(1.0, _dist / 15);
+          var _floor = A._nightNearFadeFloor;
+          _pool[_pi].position.copy(_f.pos);
+          _pool[_pi].color.set(_f.pos.__color || 0xffe4b5);
+          _pool[_pi].intensity = NIGHT_LIGHT_INTENSITY * (_floor + (1 - _floor) * _fade) * (A._nightPLScale || 1);   // §STAGED_PL_CUT
+        } else {
+          _pool[_pi].intensity = 0;
+        }
+      }
+      A._nightLights = _pool.slice();
+      if (A.markDirty) A.markDirty();
+      return;
     }
     // §NIGHT_LIGHT_CHURN_FIX (2026-08-08): this used to dispose EVERY light and rebuild the whole
     // set from scratch on every call — called on every 5m of camera travel while night mode is on,
