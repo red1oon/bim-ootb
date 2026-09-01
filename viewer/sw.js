@@ -22,7 +22,7 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1113';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1114';   // bump on each deploy; per-change detail is the git commit message.
 // v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
 // §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
 // now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
@@ -167,6 +167,9 @@ const CACHE_VERSION = 'v1113';   // bump on each deploy; per-change detail is th
 // v1041 (2026-08-16) §GROUND_DETAIL: ground normal/roughness maps + detail multiply + blotch
 // (tools.js?v=40, ground_config.json?v=2, 6 new textures/ground/*.jpg). Collided with #1387's
 // independent v1040 — took one past it, per this file's KEEP-BOTH/take-the-higher convention.
+// v1114 (2026-09-01) §CPE_MATERIAL_KEY: streaming.js triplanar texture lookup now keys the
+// element's OWN authored material_name FIRST and falls back to ifc_class (viewer.html
+// streaming.js?v=64->65 bumped in the same commit, per the v1030 lesson below).
 // v1040 (2026-08-16) §CROSSTASK_JUDGE_PARITY: time_machine.js _cjpJudgeParity after _ogSupportSweep
 // — window-bounded judge-rule repair, captured floating 3090 -> 656 across the 7 buildings.
 // Collided with the independent same-day v1039 bump on main (#1385/#1386) — took one past it, per

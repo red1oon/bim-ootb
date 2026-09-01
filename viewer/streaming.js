@@ -274,6 +274,28 @@ function setupStreaming(A) {
     return base.replace(/\.db$/i, '').replace(/_(meta|geo|extracted)$/i, '') || 'building';
   };
 
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // `elements_meta.material_name` is the element's own authored IFC material. It is NOT universal:
+  // some older/partial DBs have no such column at all (measured: every `*_library.db` and
+  // `*_geo.db`, plus deploy/buildings/LTUAHouse_extracted.db, which has no elements_meta table).
+  // Selecting a missing column throws and would kill streaming outright, so probe ONCE per DB and
+  // substitute a literal NULL when absent — identical shape to A._hasBuildingCol (§17.17.4).
+  A._matNameCol = undefined;
+  A._hasMatNameCol = function(db) {
+    if (A._matNameCol !== undefined) return A._matNameCol;
+    if (!db) return false;              // unknown yet — assume absent, i.e. today's behaviour
+    try {
+      var res = db.exec("PRAGMA table_info(elements_meta)");
+      var cols = (res && res.length) ? res[0].values.map(function(r) { return r[1]; }) : [];
+      A._matNameCol = cols.indexOf('material_name') !== -1;
+      console.log('§MATNAME_COL present=' + A._matNameCol);
+    } catch (e) {
+      console.log('§MATNAME_COL_PROBE_ERR ' + (e && e.message));
+      A._matNameCol = false;            // probe failed ⇒ do not change behaviour
+    }
+    return A._matNameCol;
+  };
+
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
     for (const [name, bc] of Object.entries(A.buildingCentres)) {
@@ -318,12 +340,21 @@ function setupStreaming(A) {
             try { await A._rangeDb.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
             catch(e) { A._hasBbox = false; }
           }
-          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+          // §CPE_MATERIAL_KEY: bbox slots are now ALWAYS emitted (NULL when the columns are absent)
+          // so material_name can live at a FIXED slot 16 — slots 0-15 keep the §BBOX_ROW_SHIFT
+          // 16-slot layout byte-for-byte, and `A._hasBbox ? r[13] : null` below still reads null.
+          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
+          if (A._matNameCol === undefined) {
+            try { await A._rangeDb.exec("SELECT material_name FROM elements_meta LIMIT 1"); A._matNameCol = true; }
+            catch(e) { A._matNameCol = false; }
+            console.log('§MATNAME_COL present=' + A._matNameCol + ' path=range');
+          }
+          var matNameCol = A._matNameCol ? ', m.material_name' : ', NULL';
           var result = await A._rangeDb.exec(`
             SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                    t.center_x, t.center_y, t.center_z,
                    t.rotation_x, t.rotation_y, t.rotation_z,
-                   m.storey, m.ifc_class, m.element_name${bboxCols}
+                   m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN element_transforms t ON t.guid = m.guid
@@ -376,15 +407,18 @@ function setupStreaming(A) {
         try { A.db.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
         catch(e) { A._hasBbox = false; }
       }
-      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+      // §CPE_MATERIAL_KEY: always 3 bbox slots (NULL when absent) so material_name is at a FIXED
+      // slot 16 — see the range-path comment above.
+      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
       // §17.17.4 (W-OCC3-LTU): on a DB with no `building` column the predicate becomes 1=1 and the
       // bind list drops with it — every row IS this building by definition of the fallback.
       const _bldOk = A._hasBuildingCol(A.db);
+      const matNameCol = A._hasMatNameCol(A.db) ? ', m.material_name' : ', NULL';
       const rows = A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
-               m.storey, m.ifc_class, m.element_name${bboxCols}
+               m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
@@ -576,7 +610,68 @@ function setupStreaming(A) {
     return { code: code, r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 };
   }
 
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint) {
+  // ── §CPE_MATERIAL_KEY helpers (CINEMA_PATH_EDITOR.md, 2026-09-01) ────────────────────────────
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // ONE owner for "is this surface transparent". §GLASS_NOT_METAL's rule (alpha<1 ⇒ never an opaque
+  // wear texture) is evaluated from this and nothing else.
+  A._alphaOf = function(rgbaStr) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1) return 1.0;
+    var parts = rgbaStr.split(',').map(Number);
+    return (parts.length >= 4 && parts[3] < 1.0) ? parts[3] : 1.0;
+  };
+  // ONE owner for "which triplanar texture does this element get, and WHICH KEY decided".
+  // name FIRST, ifc_class as fallback, alpha guard ahead of both. Returns src ∈
+  // {name, class, alpha-none, none}. `INCONCLUSIVE` when the maps have not been published yet
+  // (no material has ever been built) — so a caller can never read a 0 as a real answer.
+  A._triResolve = function(alpha, ifcClass, matName) {
+    var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
+    if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
+    if (alpha < 1.0) return { mat: null, src: 'alpha-none' };
+    var n = (matName && byName[matName]) ? byName[matName] : null;
+    if (n) return { mat: n, src: 'name' };
+    var c = (ifcClass && byClass[ifcClass]) ? byClass[ifcClass] : null;
+    if (c) return { mat: c, src: 'class' };
+    return { mat: null, src: 'none' };
+  };
+  // Shipped §-log rollup, fired once at stream-complete. PRIMAL LAW 3: the log is the primary
+  // evidence, so the numbers a witness asserts are emitted by the running app, not re-derived.
+  // Reports NO-OP (no element resolved by name — the change did nothing on this building) and
+  // VACUOUS (nothing was judged) explicitly, per PRIMAL LAW 4.
+  A._triSrcTally = function() {
+    var q = A.streamQueue || [];
+    if (!q.length) { console.log('§TRI_SRC_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' rows=0 — nothing judged'); return null; }
+    if (!A._TRIPLANAR_BY_NAME) { console.log('§TRI_SRC_TALLY INCONCLUSIVE bld=' + (A.activeBuilding || '?') + ' — no material was ever built'); return null; }
+    var bySrc = { name: 0, class: 0, 'alpha-none': 0, none: 0 };
+    var namesHit = {}, named = 0, approxNamed = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i];
+      var mn = row[16] || '';
+      if (mn) { named++; if (mn.charAt(0) === '≈') approxNamed++; }
+      var res = A._triResolve(A._alphaOf(row[2]), row[11] || '', mn);
+      bySrc[res.src] = (bySrc[res.src] || 0) + 1;
+      if (res.src === 'name') namesHit[mn] = (namesHit[mn] || 0) + 1;
+    }
+    var distinct = Object.keys(namesHit);
+    var textured = bySrc.name + bySrc['class'];
+    console.log('§TRI_SRC_TALLY bld=' + (A.activeBuilding || '?') + ' rows=' + q.length +
+      ' named=' + named + ' approx_named=' + approxNamed +
+      ' by_name=' + bySrc.name + ' by_class=' + bySrc['class'] +
+      ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
+      ' textured=' + textured + ' distinct_names_resolved=' + distinct.length +
+      (bySrc.name === 0 ? ' NO-OP — no element resolved by material_name on this building' : ''));
+    distinct.sort(function(x, y) { return namesHit[y] - namesHit[x]; });
+    for (var d = 0; d < distinct.length; d++)
+      console.log('§TRI_SRC_NAME name="' + distinct[d] + '" n=' + namesHit[distinct[d]] +
+        ' tex=' + A._TRIPLANAR_BY_NAME[distinct[d]].diffuse);
+    return { bySrc: bySrc, namesHit: namesHit, rows: q.length, named: named, approxNamed: approxNamed };
+  };
+
+  // §CPE_MATERIAL_KEY: `matName` = elements_meta.material_name for this bucket. Measured on
+  // Terminal/Hospital/Clinic: material_name is fully determined by (storey, discipline,
+  // material_rgba), so adding it to the batch key would add ZERO buckets (244→244, 160→160, 65→65)
+  // — every bucket therefore carries exactly ONE name and taking items[0]'s is exact, not an
+  // approximation (unlike `batchCls`, which really is items[0]'s of a possibly mixed-class bucket).
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName) {
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -776,15 +871,72 @@ function setupStreaming(A) {
       IfcValve: _TRI_METAL
     };
 
+    // §CPE_MATERIAL_KEY (CINEMA_PATH_EDITOR.md, 2026-09-01) — the element's OWN authored IFC
+    // material name, consulted BEFORE its ifc_class. Same defect family as §GLASS_NOT_METAL: the
+    // class alone was deciding a question the element itself already answers. Terminal carries
+    // material_name on 48,428/48,428 elements (41 distinct, 0 of them the synthetic `≈ ` colour
+    // labels Hospital/Clinic/HHS carry) — none of it was reaching this function.
+    //
+    // GROUNDING RULES, so this stays presentation-authoring and not invention:
+    //  1. Only the THREE texture sets that already exist in viewer/textures/materials/ are used.
+    //     No new asset is introduced; a name whose substance has no texture stays unmapped.
+    //  2. A key is a name that DENOTES A MATERIAL SUBSTANCE. Component names ("Seat Base", "Fin"),
+    //     colour words ("Red", "Grigio"), placeholders ("Default", "<Unnamed>") and Revit TYPE
+    //     names are not materials and are deliberately absent.
+    //  3. Absent ⇒ fall through to TRIPLANAR_MAT[ifcClass] ⇒ byte-identical to today.
+    //
+    // The trap this map is shaped around, measured on Terminal_meta.db:
+    // `Basic Wall:A_Wall_Ext_150mm_BrickPlaster_V1` covers 7,714 elements but only 327 (4.2%) are
+    // IfcWall — it is a wall-TYPE name leaked onto elements hosted in that wall (IfcPipeFitting
+    // 4,243, IfcDuctFitting 713, IfcDuctSegment 568, IfcLightFixture 486, IfcAirTerminal 286…).
+    // Keying it to plaster would strip metal off 5,892 MEP elements that §TRIPLANAR_MEP_GAPS
+    // deliberately textured. It is NOT a material name, so it is NOT here.
+    var TRIPLANAR_BY_NAME = {
+      // ── Metal ── (Terminal counts in comments; substance is in the name itself)
+      'Metal Deck': _TRI_METAL,                                   // 33,756
+      'Silver': _TRI_METAL,                                       //  4,263
+      'Copper': _TRI_METAL,                                       //  1,169
+      'Aluminum': _TRI_METAL,                                     //    256
+      'Steel, Paint Finish, Ivory, Glossy': _TRI_METAL,           //    157
+      'Rastelli Rubinetterie - Metal - Brass - Bronze': _TRI_METAL, //   41
+      'Metal - Steel, Polished': _TRI_METAL,                      //     24
+      'Door Handle - Aluminium': _TRI_METAL,                      //      9
+      'Metal - Generic - Black Finish': _TRI_METAL,               //      4
+      'Metal Panel': _TRI_METAL,                                  //      2
+      'Steel - Zurn Industries - Stainless - Type 304': _TRI_METAL, //     1
+      'Metal-WATTS-ASTM A-536 Ductile Iron-Blue': _TRI_METAL,     //      1
+      'Metal - IEC - Steel': _TRI_METAL,                          //      1
+      // ── Concrete ──
+      'Concrete - Cast-in-Place Concrete - 45 MPa': _TRI_CONCRETE, //   448
+      'Concrete, C12/15': _TRI_CONCRETE,                          //      1
+      // ── Plaster / board finishes (the JKR ceiling family) ──
+      'jkrAR_clg-f_(pv60)-3 600mm x 600mm PVC Laminated Gypsum Board': _TRI_PLASTER,      // 34
+      'jkrAR_clg-f_(cf60)-3 1220 x 1220 x 4.5mm Papan simen gentian': _TRI_PLASTER,       // 22
+      'jkrAR_clg-f_(pv60)-3 600mm x 1200mm PVC Laminated Gypsum Board(1)': _TRI_PLASTER,  // 15
+      'jkrAR_clg-f_(sk)-2 Skim Coat Plastering': _TRI_PLASTER                             // 11
+    };
+    // §CPE_MATERIAL_KEY: publish the SAME two objects (not copies) so the rollup below and any
+    // witness resolve through one implementation instead of re-deriving the rule. Ownership rule,
+    // CLAUDE.md §PRIMAL LAW 0: one owner per question.
+    A._TRIPLANAR_MAT = TRIPLANAR_MAT;
+    A._TRIPLANAR_BY_NAME = TRIPLANAR_BY_NAME;
+
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '');
+    // §CPE_MATERIAL_KEY: matName joins the cache key (two elements with the same rgba+class but
+    // different authored materials must not share one material object). It is appended LAST so the
+    // `rgba|class` prefix every existing reader uses (witness_glass_not_metal, effects.js) is
+    // untouched, and its `Ifc` is de-capitalised because time_machine.js:2485 decides night-glow by
+    // `_mk.indexOf('IfcWindow') >= 0` — a SUBSTRING scan of the whole composite key. An authored
+    // material literally containing an Ifc class name would otherwise silently join the bloom set.
+    // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc');
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
       const parts = rgbaStr.split(',').map(Number);
       r = parts[0]; g = parts[1]; b = parts[2];
-      if (parts.length >= 4 && parts[3] < 1.0) a = parts[3];
     }
+    a = A._alphaOf(rgbaStr);   // §CPE_MATERIAL_KEY: one owner for "is this surface transparent"
     // §S265c: Trust IFC data. Only NULL (no color assigned) gets class fallback.
     // For grey buildings (Terminal/LTU), user applies Sunglasses slider on demand.
     var stdMat = (ifcClass && STD_MAT[ifcClass]) ? STD_MAT[ifcClass] : null;
@@ -866,8 +1018,13 @@ function setupStreaming(A) {
     // _TRI_METAL (`metal_color_1k.jpg`) — a brushed-metal weathering texture painted onto glass
     // (visible in the user's own log as `§TRIPLANAR_INIT class=IfcPlate tex=…/metal_color_1k.jpg`).
     // A transparent surface never wants an opaque material's surface-wear texture.
-    var triMat = (a < 1.0) ? null
-      : ((ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null);
+    // §CPE_MATERIAL_KEY: name FIRST, class as fallback. The alpha guard above is evaluated before
+    // both and is unchanged — a transparent surface never gets an opaque wear texture, whatever it
+    // is called. `_triSrc` is recorded so the witness can assert WHICH key decided, not just that
+    // some texture appeared.
+    var _triR = A._triResolve(a, ifcClass, matName);
+    var triMat = _triR.mat;
+    var _triSrc = _triR.src;
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
@@ -1079,8 +1236,15 @@ function setupStreaming(A) {
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
       A._triplanarMaterials.push(mat);
-      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
+      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse +
+        ' src=' + _triSrc + ' name=' + (matName || ''));   // §CPE_MATERIAL_KEY
     }
+    // §CPE_MATERIAL_KEY: which key decided, recorded on the material itself so a witness can assert
+    // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
+    // never putting the shader object in userData.
+    mat.userData._triSrc = _triSrc;
+    mat.userData._triTex = triMat ? triMat.diffuse : '';
+    mat.userData._matName = matName || '';
     // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
     // still-refine pass — gated at RUNTIME by uEntActive (re-asserted every frame from
     // A._stillRefineActive via onBeforeRender, exactly like §TRIPLANAR_RECOMPILE_FIX self-heals),
@@ -1287,6 +1451,7 @@ function setupStreaming(A) {
           A._bboxCleared = false;
         }
         A.streaming = false;
+        if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
         // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
         // broken normal data, confirmed by direct readback) but does NOT change the rendered
         // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
@@ -1541,6 +1706,7 @@ function setupStreaming(A) {
         storey: storey || '', ifcClass,
         matVariant: A._entourageVariant(ifcClass, elementName),
         mepHint: A._mepNameHint(elementName),
+        matName: row[16] || '',   // §CPE_MATERIAL_KEY — fixed slot 16, after the 16-slot bbox layout
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
@@ -1770,7 +1936,7 @@ function setupStreaming(A) {
         }
       } else {
         // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint);
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName);
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -1823,7 +1989,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1902,7 +2068,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName);
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -2037,7 +2203,7 @@ function setupStreaming(A) {
         mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null);
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '');
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -2191,7 +2357,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName);
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -2213,7 +2379,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName);
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -2360,6 +2526,7 @@ function setupStreaming(A) {
       var storey = row[10] || '', ifcClass = row[11] || '';
       var matVariant = A._entourageVariant(ifcClass, row[12]);
       var mepHint = A._mepNameHint(row[12]);
+      var matName = row[16] || '';   // §CPE_MATERIAL_KEY
       if (!hash || !A.meshCache[hash]) continue;
       // Skip elements already in InstancedMesh
       if (instancedGuids.has(guid)) continue;
@@ -2368,7 +2535,7 @@ function setupStreaming(A) {
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint, matName: matName });
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -2390,7 +2557,7 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint);
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName);
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -3025,6 +3192,10 @@ function setupStreaming(A) {
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};
+    // §CPE_MATERIAL_KEY: the material_name column probe is per-DB, so a scene reset (which is where
+    // a DIFFERENT db gets opened) must re-probe rather than carry a stale answer — the exact
+    // stale-cache hazard §MERGE_BLDCOL calls out for A._buildingCol.
+    A._matNameCol = undefined;
     // §MERGED_GUID: merged identity dies with the meshes it addressed (index ranges are per-mesh).
     A._mergedMeta = {};
     A._mergedIndex = {};
