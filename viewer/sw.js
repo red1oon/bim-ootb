@@ -22,7 +22,19 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1115';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1116';   // bump on each deploy; per-change detail is the git commit message.
+// MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
+// the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
+// take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
+// gets its OWN bump rather than riding v1115 (§CRISIS LESSON 4, the twice-missed rule).
+// v1116 (2026-09-01) §CPE_CORR_BRANCH: viewer/effects.js changed — _cpeCorrDirBlend's 2*pi branch is
+// now resolved ONCE per correction stroke (a port of §CINEMA_GAZE_SENSE's fix) instead of per sample
+// by round(raw/2pi), which is a step function of the underlying gaze and snapped the camera 110.44 deg
+// in ONE sample on Hospital where the walk's own worst sample is 13.28. effects.js is in
+// PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=27->28 in the SAME PR — without that
+// second bump a stale ?v= URL keeps serving the pre-fix file (the failure at v-note "why is this still
+// blue" below). Witness: witness_cpe_corr_brush.js 8/8 on Hospital, with an in-run A/B
+// (A._cpeCorrBranchOff) measuring 110.436 -> 13.114 deg/sample.
 // v1115 (2026-09-01) §CPE_MATERIAL_KEY: streaming.js triplanar texture lookup now keys the
 // element's OWN authored material_name FIRST and falls back to ifc_class (viewer.html
 // streaming.js?v=64->65 bumped in the same commit, per the v1030 lesson below).

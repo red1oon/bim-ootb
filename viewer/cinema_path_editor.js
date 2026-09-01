@@ -73,9 +73,25 @@
   // so HOLD needed to reach further before handing back to it. hold 5->12 (the main ask), decay 4->6
   // (kept roughly proportionate to the longer hold rather than left disproportionately short) — still
   // a first-guess, not a measured number; ramp (BEHIND the anchor) left untouched, not what was asked.
-  var CPE_CONE_CORR_RAMP_M = 2;
-  var CPE_CONE_CORR_HOLD_M = 8;
-  var CPE_CONE_CORR_DECAY_M = 5;
+  // §CPE_CORR_FRACTION (2026-09-01, USER RULING) — a correction's reach is a SHARE OF THE WALK,
+  // not a distance in metres.
+  //
+  // MEASURED, which is why the unit changed: the metre-based defaults (2/8/12 = 22 m) were chosen
+  // against a walk believed to be 89.5 m — a figure taken from a §CPE_WALK_BUDGET code comment that
+  // does NOT reproduce. The real beat-3 walks are Duplex 13.85 m, HHS_Office 27.40 m, Hospital
+  // 39.43 m (invariant to film duration: 39.43 m at both 60 s and 150 s). So 22 m was 159% / 80% /
+  // 56% of the walk — a takeover on every building in the fleet, which is the exact thing the
+  // bounded model exists to prevent. No single metre value can be a local edit on both a 13.85 m
+  // and a 39.43 m walk; at 30% of the route that is 4 m and 12 m, a 3x spread.
+  //
+  // As a fraction, one drag feels the same on every model — which is what matters while authoring.
+  // 4% in, 12% held, 18% out = 34% of the route:
+  //     Duplex   13.85 m -> 0.6 / 1.7 / 2.5 m
+  //     HHS      27.40 m -> 1.1 / 3.3 / 4.9 m
+  //     Hospital 39.43 m -> 1.6 / 4.7 / 7.1 m
+  var CPE_CONE_CORR_RAMP_F = 0.04;
+  var CPE_CONE_CORR_HOLD_F = 0.12;
+  var CPE_CONE_CORR_DECAY_F = 0.18;
   // Re-dragging the cone within this world distance of an EXISTING correction's anchor UPDATES that
   // entry in place rather than stacking a second one nearby — first-guess MVP behaviour for spec item
   // 6 (multiple/overlapping corrections, not user-decided), flagged for review same as item 6 itself.
@@ -2861,13 +2877,14 @@
     var updating = idx >= 0 && bd < CPE_CONE_CORR_MERGE_M;
     _undoPush(updating ? 'cone re-correct' : 'cone correction');
     var entry = { pos: { x: pos.x, y: pos.y, z: pos.z }, dir: { x: dir.x, y: dir.y, z: dir.z },
-                  ramp: CPE_CONE_CORR_RAMP_M, hold: CPE_CONE_CORR_HOLD_M, decay: CPE_CONE_CORR_DECAY_M };
+                  rampF: CPE_CONE_CORR_RAMP_F, holdF: CPE_CONE_CORR_HOLD_F, decayF: CPE_CONE_CORR_DECAY_F };
     if (updating) _state.corrections[idx] = entry; else _state.corrections.push(entry);
     _state.staged = false;
     console.log('§CPE_CONE_CORRECTION ' + (updating ? 'update' : 'add') +
       ' pos=(' + pos.x.toFixed(2) + ',' + pos.y.toFixed(2) + ',' + pos.z.toFixed(2) + ')' +
       ' dir=(' + dir.x.toFixed(3) + ',' + dir.y.toFixed(3) + ',' + dir.z.toFixed(3) + ')' +
-      ' ramp=' + CPE_CONE_CORR_RAMP_M + 'm hold=' + CPE_CONE_CORR_HOLD_M + 'm decay=' + CPE_CONE_CORR_DECAY_M + 'm' +
+      ' rampF=' + CPE_CONE_CORR_RAMP_F + ' holdF=' + CPE_CONE_CORR_HOLD_F + ' decayF=' + CPE_CONE_CORR_DECAY_F +
+      ' (share of the walk, §CPE_CORR_FRACTION)' +
       ' count=' + _state.corrections.length + ' — anchored to path arc-length, never adds/moves a band (spec item 8)');
     _markPreviewStale();
     _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
