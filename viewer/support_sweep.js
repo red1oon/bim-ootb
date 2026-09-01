@@ -545,6 +545,7 @@
       // whole point; only a bar a planner actually RESIZED (duration changed >1 day) still takes
       // the gap-clamp re-spacing below.
       var _identD = 86400000, _identSkipped = 0, _identRescaled = 0;
+      var _tieSpreadTasks = 0, _tieSpreadEls = 0;   // §BUILDUP_TIE_SPREAD counters
       Object.keys(_taskItems).forEach(function (tid) {
         var arr = _taskItems[tid];
         var w = _win[tid];
@@ -593,17 +594,55 @@
         // pad — reduces to the identity (byte-identical to the pre-existing formula) whenever
         // nothing gets clamped, since target === clampedSum in that case.
         var pad = Math.max(0, target - clampedSum) / N;
+        // ══ §BUILDUP_TIE_SPREAD (2026-09-01, user: floor slabs "seems to come on all at once") ═══
+        // A task whose elements all carry the SAME raw start makes every rawValGaps[i>0] zero, so
+        // target = clampedSum = 0, pad = 0, and the loop below writes item.s = w.s for EVERY
+        // element — an N-way tie by construction, in the one function whose whole job is spreading.
+        //
+        // WHY THAT POPS: the reveal is a pure timestamp compare (time_machine.js:1232,
+        // `op.end_ts <= cursorMs`), and the bake steps the cursor linearly in calendar ms. There is
+        // no per-frame element budget anywhere, so every op tied on one instant becomes visible on
+        // ONE frame — 1 element or 5,000, same frame. MEASURED on Hospital: Superstructure/Level 7A
+        // is 64 elements in a 1-day window, Level 4 is 394 in 5 days; a whole storey of slabs lands
+        // together. §CPE_BUILDUP_WORK_PACED cannot help — it maps a film fraction to a TIMESTAMP
+        // (cinema_maxq.js:186-192), so a tied run still resolves to one instant — and it is off by
+        // default anyway (BUILDUP_EVEN_TEMPO = true). The old §PLAYBACK-STAGGER layer that used to
+        // cover this was removed at time_machine.js:5077 and never replaced.
+        //
+        // THE FIX IS A FLOOR, NOT A SCHEDULER (user's own constraint: "I rather it be a sort change
+        // as any scheduler work can be impactful, unless we have good separation of concern"). This
+        // touches no cursor, no task window, no reveal logic — only the spacing this function
+        // already computes, in the file that already owns "spread elements across a task window".
+        // Elements keep the order `arr` was sorted into on line 572, which already carries a stable
+        // guid tie-break, so the result is deterministic run to run.
+        //
+        // Engages ONLY when degenerate: a task whose elements already spread across at least half
+        // their window is byte-identical to before (spreadFloor stays 0).
+        var TIE_MIN_FRAC = 0.5;      // first-guess, same status as _GANTT_GAP_CLAMP_K above; the
+                                     // §BUILDUP_TIE_SPREAD log line reports what it actually did
+        var spreadFloor = 0;
+        if (N > 1 && target < tSpan * TIE_MIN_FRAC) {
+          spreadFloor = (tSpan * TIE_MIN_FRAC - target) / (N - 1);
+          _tieSpreadTasks++; _tieSpreadEls += N;
+        }
         var cursor = w.s;
         for (var pi = 0; pi < N; pi++) {
           var item = arr[pi];
           var scaledDur = Math.max(60000, Math.floor(Math.max(0, item.e - item.s) * durFactor));
-          cursor += clampedGap[pi] + pad;
+          cursor += clampedGap[pi] + pad + (pi > 0 ? spreadFloor : 0);
           item.s = Math.floor(cursor);
           item.e = item.s + scaledDur;       // never zero/negative duration (floor already >=60000)
         }
       });
+      // §BUILDUP_TIE_SPREAD — say how much of the fleet actually needed the floor. 0 tasks means
+      // every task already had real spacing and this pass changed nothing.
+      console.log('§BUILDUP_TIE_SPREAD tasks=' + _tieSpreadTasks + ' elements=' + _tieSpreadEls +
+        ' minFrac=' + 0.5 + (_tieSpreadTasks === 0
+          ? ' — no degenerate task; every element already had distinct spacing'
+          : ' — these tasks had ALL elements on one instant and would have popped in a single frame'));
       // §S58: this was a console.log; the counts are RETURNED and the wrapper prints the same line.
-      return { skipped: _identSkipped, rescaled: _identRescaled };
+      return { skipped: _identSkipped, rescaled: _identRescaled,
+               tieSpreadTasks: _tieSpreadTasks, tieSpreadEls: _tieSpreadEls };
       }
 
   var API = {
