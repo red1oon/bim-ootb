@@ -103,6 +103,24 @@
   .bim-panel .bim-slider-row input[type=range] {
     flex: 1; accent-color: #4fc3f7; cursor: pointer; min-width: 0;
   }
+  /* §SUNGLASS_BROWN_TRACK (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+     §SESSION_2026-09-01C): the palette scrub's LAST segment (ticks 98-100 → 97%..100% of the
+     0-100 range) is saddle-brown — the affordance that the tip does something special (material
+     injection). Custom track for THIS slider only; the other sliders keep the native accent. */
+  #sunglass-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; }
+  #sunglass-slider::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #4fc3f7; margin-top: -4px; border: none;
+  }
+  #sunglass-slider::-moz-range-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, rgba(79,195,247,0.35) 0%, rgba(79,195,247,0.35) 97%, rgb(139,69,19) 97%, rgb(139,69,19) 100%);
+  }
+  #sunglass-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #4fc3f7; border: none; }
   .bim-panel .bim-slider-val {
     width: 36px; text-align: right; font-size: 11px; color: #4fc3f7;
     flex-shrink: 0; opacity: 0; transition: opacity 0.3s;
@@ -840,7 +858,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="streaming.js?v=65" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=8" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="panels.js?v=44" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
-<script src="tools.js?v=42" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
+<script src="tools.js?v=43" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=30" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=1" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
 <script src="cpe_room_title.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_room_title.js — room titles disabled')"></script>

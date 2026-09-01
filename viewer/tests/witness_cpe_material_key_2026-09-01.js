@@ -22,6 +22,10 @@
 //      SYNTHETIC colour approximations, not authored materials. None may ever key a texture.
 //   6. The live render path really consults the new key — a material built by the real streaming
 //      run must carry userData._triSrc === 'name'.
+//   7. The §SUNGLASS palette was OFF while measuring. §SUNGLASS_TRIPLANAR_TINT (concurrent palette
+//      lane, measured 2026-09-01) found material.clone() in _recolorMesh DROPS the triplanar
+//      onBeforeCompile hook on 347/347 sampled originals — an ACTIVE palette REPLACES the texture
+//      with a flat colour rather than tinting it, which could score this fix a false no-op.
 //
 // SELF-FAILURE (PRIMAL LAW 4): the run prints NO-OP when no element resolved by name, VACUOUS when
 // a building's population was empty, and INCONCLUSIVE — never PASS — when nothing was judged. The
@@ -97,7 +101,8 @@ const BUILDINGS = [
         src: A._matCache[k].userData ? A._matCache[k].userData._triSrc : undefined,
         tex: A._matCache[k].userData ? A._matCache[k].userData._triTex : undefined,
         name: A._matCache[k].userData ? A._matCache[k].userData._matName : undefined }));
-      return { mats, streamed: A.streamedCount || 0, rowLen: (A.streamQueue && A.streamQueue[0]) ? A.streamQueue[0].length : 0 };
+      return { mats, streamed: A.streamedCount || 0, rowLen: (A.streamQueue && A.streamQueue[0]) ? A.streamQueue[0].length : 0,
+               palTick: A._ambienceTick || 0, palMeshes: (A._sunglassBackups && A._sunglassBackups.length) || 0 };
     });
     const byName = live.mats.filter(m => m.src === 'name');
     const byClass = live.mats.filter(m => m.src === 'class');
@@ -111,6 +116,16 @@ const BUILDINGS = [
     V(byName.length > 0, 'THE FIX IS LIVE: at least one material on the real render path was decided by material_name',
       byName.length + ' of ' + live.mats.length + ' materials' + (byName.length === 0 ? ' — NO-OP' : ''));
     V(live.mats.every(m => m.src !== undefined), 'every cached material records WHICH key decided it');
+    // §SUNGLASS_TRIPLANAR_TINT (concurrent palette lane, measured 2026-09-01): _recolorMesh's
+    // material.clone() DROPS the triplanar onBeforeCompile hook, so an ACTIVE palette REPLACES the
+    // texture with a flat colour instead of tinting it. A palette left on during this run would make
+    // the screen disagree with the resolver and could score this fix a false no-op — so the palette
+    // state is asserted OFF, not assumed off.
+    S('   §MATKEY_PALETTE_STATE tick=' + live.palTick + ' recoloured_meshes=' + live.palMeshes +
+      (live.palTick === 0 ? '  (Off — resolved texture is what is on screen)' : '  ⚠ ACTIVE'));
+    V(live.palTick === 0 && live.palMeshes === 0,
+      'the §SUNGLASS palette was OFF for this measurement (an active palette REPLACES the triplanar texture, §SUNGLASS_TRIPLANAR_TINT)',
+      'tick=' + live.palTick + ' recoloured=' + live.palMeshes);
   } else {
     S('   ⚠ Tier B INCONCLUSIVE — Terminal never finished streaming, nothing was judged on the live path');
   }

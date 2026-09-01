@@ -631,6 +631,46 @@ function setupTools(A) {
     return g;
   };
 
+  // §SUNGLASS_GROUPING_RULES (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+  // §SESSION_2026-09-01C): ordinal groupings (storey) are coloured by ORDINAL POSITION on a
+  // monotonic ramp, never by the alphabetic/size rank the categorical bands use. The ordinal is
+  // EXTRACTED from geometry — world bbox-centre Y per mesh, median per group — not parsed from
+  // storey names (which sort "First Floor" before "TOF Footing" on Clinic).
+  A._paletteMeshY = function(mesh) {
+    if (mesh.__paletteY !== undefined) return mesh.__paletteY;
+    var box = null;
+    try {
+      if (mesh.isInstancedMesh || mesh.isBatchedMesh) {
+        if (!mesh.boundingBox) mesh.computeBoundingBox();   // unions all instances, local space
+        box = mesh.boundingBox;
+      } else if (mesh.geometry) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        box = mesh.geometry.boundingBox;
+      }
+    } catch (e) { box = null; }
+    if (!box || !isFinite(box.min.y) || !isFinite(box.max.y)) { mesh.__paletteY = null; return null; }
+    var c = box.getCenter(new THREE.Vector3());
+    mesh.updateWorldMatrix(true, false);
+    mesh.localToWorld(c);
+    mesh.__paletteY = c.y;
+    return mesh.__paletteY;
+  };
+
+  // Keys of `groups` sorted by real vertical position (median member centre-Y), ascending.
+  // Deterministic: name tiebreak; groups with no measurable geometry sort last.
+  A._storeyOrdinalKeys = function(groups) {
+    var keys = Object.keys(groups);
+    var elev = {};
+    keys.forEach(function(k) {
+      var ys = [];
+      groups[k].forEach(function(m) { var y = A._paletteMeshY(m); if (y !== null) ys.push(y); });
+      ys.sort(function(a, b) { return a - b; });
+      elev[k] = ys.length ? ys[Math.floor(ys.length / 2)] : Infinity;
+    });
+    keys.sort(function(a, b) { return (elev[a] - elev[b]) || (a < b ? -1 : 1); });
+    return { keys: keys, elev: elev };
+  };
+
   A.updateAmbience = function(val) {
     var tick = Math.round(Number(val));
     A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
@@ -672,6 +712,24 @@ function setupTools(A) {
       });
     }
 
+    // §SUNGLASS_GROUPING_RULES: monotonic RAMP for ORDINAL groupings — the colour index is the
+    // ordinal position (lowest storey darkest), not the alphabetic rank + cycling palette that
+    // applyPalette keeps for categorical groupings. Hue h0→h1 and lightness 0.36→0.78 both
+    // strictly increase with elevation; `sub` keeps its in-band meaning as saturation depth.
+    function applyRamp(groups, ord, h0, h1, sub) {
+      var n = Math.max(ord.keys.length - 1, 1);
+      ord.keys.forEach(function(k, i) {
+        var t = ord.keys.length === 1 ? 0.5 : i / n;
+        var color = new THREE.Color().setHSL(h0 + (h1 - h0) * t,
+                                             Math.min(0.45 + sub * 0.02, 0.9),
+                                             0.36 + 0.42 * t);
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      console.log('[S200] §SUNGLASS_ORDINAL ' + ord.keys.map(function(k) {
+        return k + '@' + (isFinite(ord.elev[k]) ? ord.elev[k].toFixed(2) : 'inf');
+      }).join(' < '));
+    }
+
     if (tick <= 10) {
       // ── 1-10: Warm pastels by IFC class, subtle contrast growing ──
       phase = 'Warm';
@@ -697,20 +755,20 @@ function setupTools(A) {
       strategy = keys.length + ' types';
 
     } else if (tick <= 45) {
-      // ── 31-45: Warm pastels by storey ──
+      // ── 31-45: Warm RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES — was alphabetic cycle) ──
       phase = 'Storey warm';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, warmPastel, tick - 31);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.02, 0.13, tick - 31);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 55) {
-      // ── 46-55: Cool pastels by storey ──
+      // ── 46-55: Cool RAMP by storey ORDINAL (§SUNGLASS_GROUPING_RULES) ──
       phase = 'Storey cool';
       var g = A._groupBy(allMeshes, 'storey');
-      var keys = Object.keys(g).sort();
-      applyPalette(g, keys, coolPastel, tick - 46);
-      strategy = keys.length + ' storeys';
+      var ord = A._storeyOrdinalKeys(g);
+      applyRamp(g, ord, 0.50, 0.66, tick - 46);
+      strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 65) {
       // ── 56-65: Earth by discipline ──

@@ -653,7 +653,16 @@ function setupStreaming(A) {
     }
     var distinct = Object.keys(namesHit);
     var textured = bySrc.name + bySrc['class'];
+    // §SUNGLASS_TRIPLANAR_TINT (measured by the concurrent palette lane, 2026-09-01): _recolorMesh's
+    // material.clone() DROPS the triplanar onBeforeCompile hook on 347/347 sampled originals, so an
+    // ACTIVE palette REPLACES the texture with a flat colour rather than tinting it. This tally is
+    // computed from the resolver, not from what is on screen, so a live palette cannot corrupt the
+    // numbers — but a reader comparing them against the screen must know the palette state, so it is
+    // stated here rather than left to be guessed. tick 0 = Off.
+    var _palTick = A._ambienceTick || 0;
+    var _palMeshes = (A._sunglassBackups && A._sunglassBackups.length) || 0;
     console.log('§TRI_SRC_TALLY bld=' + (A.activeBuilding || '?') + ' rows=' + q.length +
+      ' palette_tick=' + _palTick + ' palette_recoloured=' + _palMeshes +
       ' named=' + named + ' approx_named=' + approxNamed +
       ' by_name=' + bySrc.name + ' by_class=' + bySrc['class'] +
       ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
