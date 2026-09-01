@@ -109,6 +109,10 @@ for (let t = 0; t < (cards.length + 1) * 4.5; t += 0.25) {
   if (sh.roster) rosterSlots++; else cardSlots++;
   if (sh.opacity < 0.99) faded = true;
 }
+// §CPE_CARD_FIT — the exact card the user's bake truncated, drawn into the narrow column the held
+// pie leaves behind. The witness reads back what was actually PRINTED, not what was passed in.
+const longCard = { big: '1,771,249', label: 'labour cost committed',
+                   sub: '9 trades  ·  time-phased, not a bill of quantities', src: '§HR_COST' };
 const rotN = A.tailPanelAt(cards, 0, hLive);
 const noCards = A.tailPanelAt(null, 0, hLive);      // cards unbuildable -> roster still revolves
 
@@ -129,6 +133,9 @@ OFFSCREEN = []; const c4 = mkCtx(W, H);
 A.bigStatsCompositeOntoCanvas(c4, W, H, A.tailPanelAt(cards, 0, hLive), 1, 'tr', 60, hLive);
 const o4 = off();
 const rosterTexts = c4._rec.texts.concat(o4.texts);
+OFFSCREEN = []; const c5 = mkCtx(W, H);
+A.bigStatsCompositeOntoCanvas(c5, W, H, { card: longCard, idx: 3, n: 10, opacity: 1 }, 1, 'tr', 60, hLive);
+const cardTexts = c5._rec.texts.concat(off().texts);
 const capHeld = o1.texts.concat(o2.texts).concat(c1._rec.texts).concat(c2._rec.texts);
 
 console.log('='.repeat(84) + '\n§CPE_PIE_HOLD witness — synthetic programme, ' + DAYS +
@@ -155,6 +162,7 @@ console.log('  rotation: slots=' + (rotN && rotN.n) + ' (1 roster + ' + cards.le
   seenSlots.size + '  rosterHits=' + rosterSlots + ' cardHits=' + cardSlots + ' fades=' + faded +
   '  noCardsFallback=' + (noCards ? 'roster n=' + noCards.n : 'null'));
 console.log('  roster slot draws: ' + JSON.stringify(rosterTexts.filter(t => /on site|×/.test(t))));
+console.log('  long card prints:  ' + JSON.stringify(cardTexts));
 
 const G = [
   ['G-HOLD-1  a staffed day returns the LIVE composition (held=false), identical to resourcePanelAt',
@@ -188,7 +196,15 @@ const G = [
   ['G-TAIL-5  the roster slot draws the trade LIST (avatars + ×N), not a number',
     rosterTexts.some(t => /on site$/.test(t)) && rosterTexts.some(t => /^×\d+$/.test(t))],
   ['G-TAIL-6  no cards buildable -> the roster still revolves rather than the panel going blank',
-    !!noCards && noCards.n === 1 && !!noCards.roster]
+    !!noCards && noCards.n === 1 && !!noCards.roster],
+  // §CPE_CARD_FIT — the real Hospital bake showed "labour cost ..." and "9 trades  ·  time-..."
+  // truncating once the pie took its own column. Shrink-before-ellipsis must print the WHOLE label.
+  ['G-CARD-1  a long card label is printed IN FULL beside the pie, not ellipsised',
+    cardTexts.includes('labour cost committed')],
+  ['G-CARD-2  no card text on the panel ends in an ellipsis',
+    !cardTexts.some(function (t) { return /…$/.test(t); })],
+  ['G-CARD-3  the long sub WRAPS to a second line — the caveat survives, nothing is lost',
+    cardTexts.join(' ').indexOf('a bill of quantities') >= 0]
 ];
 let pass = 0;
 G.forEach(([n, v]) => { console.log('  ' + (v ? 'PASS' : 'FAIL') + '  ' + n); if (v) pass++; });
