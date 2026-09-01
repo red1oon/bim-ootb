@@ -167,6 +167,12 @@ const server = http.createServer((req, res) => {
     !window.APP.streaming, { timeout: 900000, polling: 1000 });
   log('§CLI_BAKE_LOADED building=' + await page.evaluate(() => window.APP.activeBuilding +
     ' meshes=' + (window.APP.scene ? window.APP.scene.children.length : -1)));
+  // §R11: §PHOTO_PREWARM runs on requestIdleCallback (timeout 8s) after streaming completes.
+  // Give it its window BEFORE the bake so the claim is observable as shipped — the fallback path
+  // (first fold doing the work itself) would mask it. Proceed after 20s either way, with a note.
+  for (let w = 0; w < 20 && !S.claims.PHOTO_PREWARM; w++) await new Promise(r => setTimeout(r, 1000));
+  log(S.claims.PHOTO_PREWARM ? '§CLI_BAKE_PREWARM_SEEN ' + S.claims.PHOTO_PREWARM[0].slice(0, 200)
+      : '§CLI_BAKE_PREWARM_SEEN none after 20s — the bake fold will do the work itself (fallback path)');
 
   // provable GPU identity (FUNDAMENTAL LAW: report the real context, not the flag we asked for)
   const gl = await page.evaluate(() => {
