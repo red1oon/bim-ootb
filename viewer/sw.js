@@ -22,7 +22,10 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1114';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1115';   // bump on each deploy; per-change detail is the git commit message.
+// v1115 (2026-09-01) §CPE_MATERIAL_KEY: streaming.js triplanar texture lookup now keys the
+// element's OWN authored material_name FIRST and falls back to ifc_class (viewer.html
+// streaming.js?v=64->65 bumped in the same commit, per the v1030 lesson below).
 // v1114 (2026-09-01) §SUNGLASS_GROUPING_RULES + §SUNGLASS_BROWN_TRACK (bim-compiler
 // prompts/CINEMA_PATH_EDITOR.md §SESSION_2026-09-01C): palette storey bands (ticks 31-55) now a
 // monotonic ramp keyed on the storey's geometric ordinal (median world-Y), not alphabetic rank +
