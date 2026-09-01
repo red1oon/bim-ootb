@@ -6576,6 +6576,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // (spec item 4's own field list), copied from cinema_path_editor.js's authoring-time constants at
     // commit time — the fallbacks below only cover a malformed/pre-this-feature record.
     var _corrArc = null;
+    // §CPE_CORR_BRANCH: non-null ONLY while _resolveCorrBranch() reads a stroke's entry gaze. While it
+    // is set, _beat3Pose fills it with the UNCORRECTED look direction and returns immediately — which
+    // is both how the probe gets the exact vector _cpeCorrDirBlend will be handed, and how the
+    // re-entrant call is stopped from reaching _cpeCorrectionAt again.
+    var _corrRefProbe = null;
     function _buildCpeCorrArc() {
       _corrArc = [];
       _corrSorted = null;   // §CPE_CORR_BRUSH_STROKE: the ordered view is derived from _corrArc, so a
@@ -6604,8 +6609,64 @@ async function setupEffects(A, renderer, scene, camera) {
         _corrArc.push({ s: sArc, dir: c.dir,
           rampFrac: Math.min(0.45, _frac(c.rampF, c.ramp, 0.04)),
           holdFrac: _frac(c.holdF, c.hold, 0.12),
-          decayFrac: _frac(c.decayF, c.decay, 0.18) });
+          decayFrac: _frac(c.decayF, c.decay, 0.18),
+          refD: 0 });                       // §CPE_CORR_BRANCH — resolved just below, once per stroke
       }
+      _resolveCorrBranch();
+    }
+    // ══ §CPE_CORR_BRANCH (2026-09-01) — PORT of §CINEMA_GAZE_SENSE onto the correction blend.
+    // Implementing prompts/CINEMA_PATH_EDITOR.md §CPE_CORR_BRANCH — Witness: witness_cpe_corr_brush.js
+    // G-BR-6.
+    //
+    // MEASURED DEFECT (Hospital, 39.43 m walk, 900 arc samples, anchor s=0.4387, ramp 4%): the naive
+    // short-way yaw in _cpeCorrDirBlend below picks its 2*pi branch with round(raw / 2pi), and `raw`
+    // is yawB (the authored, FIXED correction) minus yawA (the underlying pin/depth/path-follow gaze,
+    // which MOVES every sample). round() is therefore a STEP FUNCTION of yawA: the sample raw crosses
+    // +-pi, dYaw moves by 2*pi, and the blended yaw moves by 2*pi*w in ONE sample. Two such crossings
+    // land inside the ramp on the reference plan — at w=0.1309 (predicted 47.11 deg, measured 42.16)
+    // and at w=0.3424 (predicted 123.28 deg, measured 110.44). That second one IS the 111 deg snap
+    // that held this branch at 6/7, against a walk whose own peak is 13.28 deg/sample. Prediction and
+    // measurement differ only by the cos(pitch) foreshortening of a yaw step read as a 3-D angle.
+    // The trigger is a correction authored NEAR-ANTIPODAL IN YAW to the gaze underneath it (|raw|
+    // within 2 deg of 180 for ~40 consecutive samples) — precisely the case _cpeCorrDirBlend's own
+    // comment declared out of scope ("never expected to be near-antipodal"). That assumption is false.
+    //
+    // THE FIX, identical in kind to §CINEMA_GAZE_SENSE's: resolve the branch ONCE per stroke, from the
+    // geometry at the moment that stroke's blend STARTS, and then take each per-sample `raw` as the
+    // representative NEAREST that reference. Constant branch => no step function => no snap. A plain
+    // great-circle slerp also removes it (11.982 deg/sample measured) but was REJECTED on the numbers:
+    // it swings the pitch 4.8 deg past what the uncorrected walk itself reaches in that span
+    // (-81.10 vs -76.32), where this port stays inside the base envelope (-71.19). See the spec.
+    //
+    // The reference is the UNCORRECTED gaze at e3 = s - rampFrac, i.e. the very vector
+    // _cpeCorrDirBlend is handed there — read through a one-shot re-entrant _beat3Pose probe that
+    // returns BEFORE the correction step (see _corrRefProbe in _beat3Pose). Plan-time and
+    // order-independent: a witness may sample e3 in any order and get the same curve.
+    function _resolveCorrBranch() {
+      if (!_corrArc.length) return;
+      var lines = [];
+      for (var i = 0; i < _corrArc.length; i++) {
+        var c = _corrArc[i];
+        var e3 = Math.max(0, Math.min(1, c.s - c.rampFrac));
+        var probe = { x: 0, y: 0, z: 0, hit: false };
+        _corrRefProbe = probe;
+        try { _beat3Pose(e3); } catch (e) { probe.hit = false; } finally { _corrRefProbe = null; }
+        if (!probe.hit) { c.refD = 0; lines.push(i + ':NO-PROBE'); continue; }   // degrades to the old short way
+        // Witness-only A/B (default OFF, same read-only-hook precedent as A._cpeCorrectionsDebug):
+        // refD=0 is exactly the pre-fix naive short way, so witness_cpe_corr_brush.js can measure the
+        // defect and the fix in ONE run instead of asserting a fix against a number from an older
+        // session. CLAUDE.md: "every test must name the issue it proves or disproves."
+        if (A._cpeCorrBranchOff) { c.refD = 0; lines.push(i + ':BRANCH-OFF(witness A/B)'); continue; }
+        var yawA = Math.atan2(probe.z, probe.x), yawB = Math.atan2(c.dir.z, c.dir.x);
+        var d = yawB - yawA;
+        c.refD = d - 2 * Math.PI * Math.round(d / (2 * Math.PI));
+        lines.push(i + ':s=' + c.s.toFixed(4) + ' entryE3=' + e3.toFixed(4) +
+          ' refDeltaDeg=' + (c.refD * 180 / Math.PI).toFixed(2) +
+          ' nearAntipodal=' + (Math.abs(Math.abs(c.refD) - Math.PI) < 0.35));
+      }
+      console.log('§CPE_CORR_BRANCH strokes=' + _corrArc.length +
+        ' (branch chosen ONCE per stroke; per-sample deltas taken as the representative NEAREST it) ' +
+        lines.join(' | '));
     }
     // Read-only: the corrected DIRECTION and blend WEIGHT (0..1) in force at this e3, or null when no
     // correction's window reaches this far. §CPE_CONE_ORIENT_ADJUST item 6 (multiple overlapping
@@ -6682,19 +6743,26 @@ async function setupEffects(A, renderer, scene, camera) {
         t = (e3 - (best.s + hold)) / decay;
         w = 1 - _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
       }
-      return { dir: best.dir, w: w };
+      return { dir: best.dir, w: w, refD: best.refD || 0 };   // §CPE_CORR_BRANCH: the stroke's own branch
     }
     // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
-    // in this file (short-way yaw, linear pitch), simplified to return just a unit direction (no
-    // pivot, no antipodal-reference bookkeeping — a corrected gaze and the underlying path-follow gaze
-    // are never expected to be near-antipodal, unlike the look-back beat those two already handle).
-    function _cpeCorrDirBlend(ax, ay, az, bx, by, bz, w) {
+    // in this file (linear pitch), simplified to return just a unit direction (no pivot).
+    // ⚠ The original comment here claimed no antipodal bookkeeping was needed because "a corrected
+    // gaze and the underlying path-follow gaze are never expected to be near-antipodal". MEASURED
+    // FALSE, 2026-09-01 — that is exactly what happened, and it cost 110.44 deg in one sample. The
+    // branch is now supplied by the caller as `refD`, resolved once per stroke by _resolveCorrBranch
+    // above (§CPE_CORR_BRANCH). refD=0 reproduces the old plain short-way behaviour exactly, which is
+    // the correct degradation for a stroke whose entry gaze could not be probed.
+    function _cpeCorrDirBlend(ax, ay, az, bx, by, bz, w, refD) {
       if (w <= 0) return { x: ax, y: ay, z: az };
       if (w >= 1) return { x: bx, y: by, z: bz };
+      refD = (refD != null && isFinite(refD)) ? refD : 0;
       var yawA = Math.atan2(az, ax), pitA = Math.atan2(ay, Math.hypot(ax, az));
       var yawB = Math.atan2(bz, bx), pitB = Math.atan2(by, Math.hypot(bx, bz));
       var raw = yawB - yawA;
-      var dYaw = raw - 2 * Math.PI * Math.round(raw / (2 * Math.PI));   // short way
+      // §CPE_CORR_BRANCH: the representative of `raw` NEAREST this stroke's fixed reference — NOT the
+      // short way, which is a step function of yawA and snaps by 2*pi*w the sample raw crosses +-pi.
+      var dYaw = raw - 2 * Math.PI * Math.round((raw - refD) / (2 * Math.PI));
       var yaw = yawA + dYaw * w, pit = pitA + (pitB - pitA) * w, cp = Math.cos(pit);
       return { x: Math.cos(yaw) * cp, y: Math.sin(pit), z: Math.sin(yaw) * cp };
     }
@@ -8239,9 +8307,18 @@ async function setupEffects(A, renderer, scene, camera) {
         // dragging it corrects whatever is currently there, even inside an already-pinned zone. Zero
         // cost/no-op on every plan with no corrections authored (_cpeCorrectionAt returns null
         // instantly once `_corrArc` is built empty).
+        // §CPE_CORR_BRANCH probe tap. `_corrRefProbe` is non-null ONLY inside _resolveCorrBranch, so
+        // this is dead weight (one null test) on every normal frame. It sits HERE, immediately before
+        // the correction, because the vector the probe must return is precisely the `a` argument
+        // _cpeCorrDirBlend receives — reading it any later would fold in the correction being resolved,
+        // and reading it via the returned pose would fold in the turnW3 hand-off blend below.
+        if (_corrRefProbe) {
+          _corrRefProbe.x = _lx; _corrRefProbe.y = _ly; _corrRefProbe.z = _lz; _corrRefProbe.hit = true;
+          return null;                        // never reaches a caller: only _resolveCorrBranch sets the probe
+        }
         var _corr = _cpeCorrectionAt(e3);
         if (_corr && _corr.w > 0) {
-          var _cb = _cpeCorrDirBlend(_lx, _ly, _lz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w);
+          var _cb = _cpeCorrDirBlend(_lx, _ly, _lz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w, _corr.refD);
           _lx = _cb.x; _ly = _cb.y; _lz = _cb.z;
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside

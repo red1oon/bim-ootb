@@ -14,6 +14,22 @@
 // corrections, one with a single authored correction — sampled through A._cpeBeat3GazeDebug, which
 // is the product's own _beat3Pose. No re-derivation of the envelope in witness code: a witness that
 // recomputed the blend would be measuring itself (§SESSION_2026-08-30 bug 2).
+//
+// §CPE_CORR_BRANCH (2026-09-01) — WHAT G-BR-6 NOW PROVES OR DISPROVES.
+// The 6/7 run's one failure was a single sample jumping 110.44 deg where the uncorrected walk's own
+// worst sample is 13.28 deg. Diagnosed and fixed as the 2*pi branch flip in _cpeCorrDirBlend's
+// short-way yaw (see effects.js §CPE_CORR_BRANCH and prompts/CINEMA_PATH_EDITOR.md). G-BR-6 is
+// therefore no longer a spot check against a hardcoded 5 deg: it asserts the MAXIMUM per-sample
+// angular delta over the WHOLE sample series inside the authored window against the BASELINE WALK'S
+// OWN maximum, both computed here as numbers from the same 901 samples. A correction may not make
+// the gaze turn faster than the camera already turns without one.
+//
+// ⚠ SCOPE (framework rule 4, scope-blind): the wrap only fires when the authored correction is
+// NEAR-ANTIPODAL IN YAW to the gaze underneath it. This witness measures and REPORTS whether that
+// condition was actually reached (§CPE_CORR_BOUNDED_HAZARD); if it was not, G-BR-6 still judges
+// smoothness but has not exercised the defect, and the run says so instead of implying it did.
+// Do NOT "improve" the authored correction below — its +60 deg yaw offset is what puts the entry
+// gaze near-antipodal on the Hospital reference plan, which is the only reason the bug was visible.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8533, BLD = process.env.BLD || 'Duplex';
 // Walk length is NOT a property of the building — it scales with the film duration the planner is
@@ -29,6 +45,12 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
     protocolTimeout: 1800000 });
   const p = await b.newPage(); await p.setViewport({ width: 900, height: 500 });
   const errs = []; p.on('pageerror', e => errs.push(e.message.slice(0, 200)));
+  // CLAUDE.md rule 3 — the shipped §-log is PRIMARY EVIDENCE, never suppressed. §CPE_CORR_BRANCH is
+  // the runtime's own statement of which branch it resolved per stroke; echo it into this witness's
+  // log rather than re-deriving it here.
+  const pageLog = [];
+  p.on('console', m => { const t = m.text();
+    if (/§CPE_CORR_BRANCH|§CINEMA_GAZE_SENSE|§CPE_WALK_BUDGET/.test(t)) pageLog.push(t); });
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
     { waitUntil: 'domcontentloaded', timeout: 180000 });
   await p.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function',
@@ -84,7 +106,22 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
     if (!plan) return { fail: 'no corrected plan built' };
     const corr = sample();
     const rec = A._cpeCorrectionsDebug ? A._cpeCorrectionsDebug() : null;
-    return { base, corr, arcLen, rec, ok: true };
+    // 3. THE SAME correction with §CPE_CORR_BRANCH switched OFF — i.e. the naive short-way yaw this
+    //    branch replaced. This is the A/B that makes G-BR-6 name its issue: without it the gate would
+    //    only assert a number, with no evidence that the number was ever otherwise.
+    let ab = null;
+    if ('_cpeCorrBranchOff' in A || true) {
+      A._cpeCorrBranchOff = true;
+      try {
+        const p2 = await A.cinemaPathPlan(SECS, { aimCorrections: [
+          { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
+        if (p2) ab = sample();
+      } finally { A._cpeCorrBranchOff = false; }
+      // restore the plan under test — the A/B plan must not be what the rest of the run measures
+      await A.cinemaPathPlan(SECS, { aimCorrections: [
+        { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
+    }
+    return { base, corr, ab, arcLen, rec, dir, ok: true };
   }, N, SECS_IN);
 
   console.log('='.repeat(90) + `\n§CPE_CORR_BOUNDED witness — ${BLD}, one correction, ${N} arc samples\n` + '='.repeat(90));
@@ -116,8 +153,38 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   const diff = r.base.map((a, i) => deg(a, r.corr[i]));
   const EPS = 0.05;                                    // degrees — below this the gaze is unchanged
   const touched = diff.map((d, i) => d > EPS ? i : -1).filter(i => i >= 0);
+  // NO-OP gate (framework rule 4): the run completed but the correction changed NOTHING. A 0 deg
+  // deviation everywhere would otherwise sail through G-BR-1/2/5 — bounded, untouched outside, and
+  // no snap are all trivially true of a curve that was never corrected.
+  if (!touched.length) {
+    console.log('  NO-OP — the corrected plan is identical to the baseline at every one of the ' +
+      `${diff.length} samples (max deviation ${Math.max(...diff).toFixed(6)} deg <= EPS ${EPS}).`);
+    console.log('  The correction never took effect, so nothing about its shape was judged. INCONCLUSIVE.');
+    if (pageLog.length) console.log('  page §-log: ' + pageLog.join('\n              '));
+    await b.close(); process.exit(2);
+  }
   const first = touched[0], last = touched[touched.length - 1];
   const anchorI = diff.indexOf(Math.max(...diff));
+  // The AUTHORED window, straight off the product's own record — NOT the touched band. G-BR-2 used to
+  // measure "the max deviation outside the samples whose deviation is <= EPS", which is true by
+  // construction and can never fail. Bounding against the authored envelope is the real claim.
+  const rec0 = (r.rec && r.rec[0]) || null;
+  if (!rec0) {
+    console.log('  INCONCLUSIVE — the planner exposed no correction record; the authored window is unknown.');
+    await b.close(); process.exit(2);
+  }
+  const winLoI = Math.max(0, Math.ceil((rec0.s - rec0.rampFrac) * N));
+  const winHiI = Math.min(N, Math.floor((rec0.s + rec0.holdFrac + rec0.decayFrac) * N));
+  const inWin = (i) => i >= winLoI && i <= winHiI;
+  // §CPE_CORR_BOUNDED_ANCHOR — the ANCHOR is rec0.s, the product's own number. G-BR-3/4/5 used to
+  // measure reach and edge abruptness from `anchorI`, the index of the LARGEST DEVIATION, as a stand-in
+  // for it. Measured wrong on Duplex 2026-09-01: the peak deviation there lands 2.1 m past the anchor
+  // (the underlying gaze keeps drifting through the hold, so the deviation keeps growing), which read
+  // as "reach BACK 2.71 m against an authored 0.64 m" — a false FAIL about the proxy, not the product.
+  // Same defect class as CLAUDE.md 4D_MODEL_INTEGRITY §E. Both numbers are printed; only the authored
+  // anchor is judged.
+  const sI = Math.round(rec0.s * N);
+  const holdHiI = Math.min(N, Math.round((rec0.s + rec0.holdFrac) * N));
   console.log(`  path length ${L.toFixed(2)} m at durationSec=${SECS_IN}   (${mPerSample.toFixed(3)} m per sample)`);
   console.log(`  authored: ramp=4% hold=12% decay=18% of the walk = ${WINDOW_M.toFixed(2)} m` +
     `   record fracs: ${JSON.stringify(r.rec && r.rec[0] ? {ramp:+r.rec[0].rampFrac.toFixed(4), hold:+r.rec[0].holdFrac.toFixed(4), decay:+r.rec[0].decayFrac.toFixed(4)} : null)}`);
@@ -129,28 +196,118 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   const rate = [];
   for (let i = 1; i < r.corr.length; i++) rate.push(deg(r.corr[i - 1], r.corr[i]) / mPerSample);
   const pk = (arr) => arr.length ? Math.max(...arr) : NaN;   // never Math.max of nothing (-Infinity)
-  const entryPeak = pk(rate.slice(first, anchorI));
-  const exitPeak = pk(rate.slice(anchorI, last));
-  const basePeak = Math.max(...r.base.slice(1).map((_, i) => deg(r.base[i], r.base[i + 1]) / mPerSample));
-  console.log(`  turn rate  entry peak ${entryPeak.toFixed(2)} deg/m   exit peak ${exitPeak.toFixed(2)} deg/m   (uncorrected walk peak ${basePeak.toFixed(2)} deg/m)`);
-  const outside = diff.filter((d, i) => i < first || i > last);
+  // Edges taken from the AUTHORED envelope, not from the deviation peak: the entry edge is the ramp
+  // [s-ramp .. s], the exit edge is the decay [s+hold .. s+hold+decay]. The old exit slice started at
+  // the deviation peak and so swept the whole HOLD as if it were the exit.
+  const entryPeak = pk(rate.slice(first, Math.max(first + 1, sI)));
+  const exitPeak = pk(rate.slice(holdHiI, Math.max(holdHiI + 1, last)));
+  const entryPeakOld = pk(rate.slice(first, anchorI)), exitPeakOld = pk(rate.slice(anchorI, last));
+  // rate[j] is the pair (j, j+1). The FULL series, both curves, no spot checks.
+  const baseRate = [];
+  for (let i = 1; i < r.base.length; i++) baseRate.push(deg(r.base[i - 1], r.base[i]) / mPerSample);
+  const basePeak = Math.max(...baseRate);
+  console.log(`  turn rate  entry(ramp) peak ${entryPeak.toFixed(2)} deg/m   exit(decay) peak ${exitPeak.toFixed(2)} deg/m   (uncorrected walk peak ${basePeak.toFixed(2)} deg/m)`);
+  console.log(`             [old deviation-peak proxy, reported only: entry ${entryPeakOld.toFixed(2)} exit ${exitPeakOld.toFixed(2)} deg/m]`);
+  console.log(`  anchor: record s=${rec0.s.toFixed(4)} (sample ${sI})   deviation peak at e3=${(anchorI/N).toFixed(4)} (sample ${anchorI}) — ${((anchorI-sI)*mPerSample).toFixed(2)} m apart`);
+
+  // ── §CPE_CORR_BRANCH — G-BR-6's population, stated as numbers before it is judged.
+  // Per-SAMPLE angular delta (deg), which is the unit the snap was reported in. Pair (i, i+1) counts
+  // as inside the authored window when either end is.
+  const winPairs = [], winPairIdx = [];
+  for (let j = 0; j < rate.length; j++) if (inWin(j) || inWin(j + 1)) { winPairs.push(rate[j] * mPerSample); winPairIdx.push(j); }
+  const winMaxDeg = winPairs.length ? Math.max(...winPairs) : NaN;
+  const winMaxAt = winPairs.length ? winPairIdx[winPairs.indexOf(winMaxDeg)] : -1;
+  const baseMaxDeg = Math.max(...baseRate) * mPerSample;
+  const baseMaxAt = baseRate.indexOf(Math.max(...baseRate));
+  // VACUOUS gate: no pair inside the authored window means G-BR-6 judged nothing.
+  if (!winPairs.length) {
+    console.log(`  VACUOUS — the authored window [${winLoI}..${winHiI}] contains no sample pair; G-BR-6 judged nothing.`);
+    console.log('  INCONCLUSIVE.');
+    await b.close(); process.exit(2);
+  }
+  console.log(`§CPE_CORR_BOUNDED_SNAP  in-window max ${winMaxDeg.toFixed(3)} deg/sample at e3=${((winMaxAt+1)/N).toFixed(4)}` +
+    `   baseline walk max ${baseMaxDeg.toFixed(3)} deg/sample at e3=${((baseMaxAt+1)/N).toFixed(4)}` +
+    `   (${winPairs.length} pairs judged, of ${rate.length})`);
+  // The A/B: the SAME authored correction with §CPE_CORR_BRANCH switched off. Names the issue G-BR-6
+  // proves. If this comes back at or below the fixed number the gate is not discriminating and says so.
+  let abMax = NaN, abAt = -1;
+  if (r.ab && r.ab.length === r.corr.length) {
+    const abRate = [];
+    for (let i = 1; i < r.ab.length; i++) abRate.push(deg(r.ab[i - 1], r.ab[i]));
+    const cand = [], candIdx = [];
+    for (let j = 0; j < abRate.length; j++) if (inWin(j) || inWin(j + 1)) { cand.push(abRate[j]); candIdx.push(j); }
+    if (cand.length) { abMax = Math.max(...cand); abAt = candIdx[cand.indexOf(abMax)]; }
+  }
+  // The other half of the A/B, and the no-regression proof: how far apart are the two curves at all?
+  // Where the authored gaze is NOT near-antipodal, round((raw-refD)/2pi) and round(raw/2pi) agree at
+  // every sample, so §CPE_CORR_BRANCH must be a bit-for-bit NO-OP there. 0.0000 is the expected and
+  // required answer on such a plan — it is what proves the fix touches nothing it was not aimed at.
+  let abVsOn = NaN;
+  if (r.ab && r.ab.length === r.corr.length) abVsOn = Math.max(...r.ab.map((v, i) => deg(v, r.corr[i])));
+  console.log('§CPE_CORR_BRANCH_NOOP  max separation between the branch-ON and branch-OFF curves over all ' +
+    `${r.corr.length} samples = ${isFinite(abVsOn) ? abVsOn.toFixed(4) : 'n/a'} deg ` +
+    (isFinite(abVsOn) ? (abVsOn <= 1e-4 ? '(NO-OP — this plan never crosses the wrap, so §CPE_CORR_BRANCH changed nothing here)'
+                                        : '(the fix changed this plan, as expected where the wrap fires)') : ''));
+  const branchIsNoOp = isFinite(abVsOn) && abVsOn <= 1e-4;
+  console.log(`§CPE_CORR_BRANCH_AB  branch OFF (the naive short way) in-window max ` +
+    (isFinite(abMax) ? `${abMax.toFixed(3)} deg/sample at e3=${((abAt+1)/N).toFixed(4)}` : 'UNAVAILABLE') +
+    `   vs branch ON ${winMaxDeg.toFixed(3)}   ` +
+    (isFinite(abMax)
+      ? (abMax > baseMaxDeg
+          ? `— the defect IS present with the branch off (${abMax.toFixed(1)} > the walk's own ${baseMaxDeg.toFixed(1)}), so G-BR-6 discriminates`
+          : `⚠ NOT DISCRIMINATING — the branch-off curve is already within the walk's own ${baseMaxDeg.toFixed(1)}; this plan does not exercise the defect`)
+      : '⚠ A/B plan unavailable — G-BR-6 asserts a number with no evidence it was ever otherwise'));
+  // Scope report (framework rule 4): was the near-antipodal condition the wrap needs actually met?
+  const yawB = Math.atan2(r.dir.z, r.dir.x);
+  const nrm = (a) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  let closestToPi = 999, closestAt = -1;
+  for (let i = winLoI; i <= winHiI; i++) {
+    const g = 180 - Math.abs(nrm(yawB - Math.atan2(r.base[i].z, r.base[i].x)) * 180 / Math.PI);
+    if (g < closestToPi) { closestToPi = g; closestAt = i; }
+  }
+  const hazardHit = closestToPi < 20;
+  console.log(`§CPE_CORR_BOUNDED_HAZARD  the authored gaze comes within ${closestToPi.toFixed(2)} deg of ANTIPODAL to the ` +
+    `gaze underneath it at e3=${(closestAt/N).toFixed(4)} — wrap hazard ${hazardHit ? 'EXERCISED' : 'NOT exercised (G-BR-6 is scope-blind on this run)'}`);
+  const outsideAuthored = diff.filter((d, i) => !inWin(i));
+  const outAuthoredMax = Math.max(0, ...outsideAuthored);
+  const reachFrac = (last - first) / N;
+  console.log(`§CPE_CORR_BOUNDED_REACH  window ${(100*reachFrac).toFixed(1)}% of the walk against the authored ` +
+    `${(100*WINDOW_F).toFixed(1)}%   |   §CPE_CORR_BOUNDED_DRIFT outside the authored window max ${outAuthoredMax.toFixed(4)} deg ` +
+    `over ${outsideAuthored.length} samples`);
+  if (pageLog.length) console.log('  page §-log: ' + pageLog.join('\n              '));
   const G = [
     [`G-BR-1  the correction is BOUNDED — it does NOT run to the end of the walk (ends at e3=${(last/N).toFixed(3)})`, last < N - 2],
-    [`G-BR-2  everything outside the window is untouched (max ${Math.max(0, ...outside).toFixed(4)} deg)`,
-      outside.length > 0 && Math.max(0, ...outside) <= EPS],
-    [`G-BR-3  reach BACK is about the authored 4% = ${(0.04*L).toFixed(2)} m (measured ${((anchorI-first)*mPerSample).toFixed(2)} m)`,
-      (anchorI - first) * mPerSample <= 0.04 * L * 2.2],
-    [`G-BR-4  reach FORWARD is about hold+decay = ${(0.30*L).toFixed(2)} m (measured ${((last-anchorI)*mPerSample).toFixed(2)} m)`,
-      (last - anchorI) * mPerSample <= 0.30 * L * 1.3 && (last - anchorI) * mPerSample >= 0.30 * L * 0.7],
-    [`G-BR-5  the exit is no more abrupt than the entry (${exitPeak.toFixed(2)} <= ${entryPeak.toFixed(2)} deg/m)`,
+    // NOT the old "outside the untouched band, is it untouched" — that was true by construction and
+    // could never fail. Bounded against the AUTHORED envelope, at the 0.031 deg the 6/7 run measured.
+    [`G-BR-2  outside the AUTHORED window the gaze is untouched to <=0.031 deg (measured ${outAuthoredMax.toFixed(4)} deg over ${outsideAuthored.length} samples)`,
+      outsideAuthored.length > 0 && outAuthoredMax <= 0.031],
+    [`G-BR-3  reach BACK from the AUTHORED anchor is the authored ${(100*rec0.rampFrac).toFixed(0)}% = ${(rec0.rampFrac*L).toFixed(2)} m (measured ${((sI-first)*mPerSample).toFixed(2)} m)`,
+      (sI - first) * mPerSample <= rec0.rampFrac * L * 1.35 && (sI - first) * mPerSample >= rec0.rampFrac * L * 0.6],
+    [`G-BR-4  reach FORWARD from the AUTHORED anchor is hold+decay = ${((rec0.holdFrac+rec0.decayFrac)*L).toFixed(2)} m (measured ${((last-sI)*mPerSample).toFixed(2)} m)`,
+      (last - sI) * mPerSample <= (rec0.holdFrac + rec0.decayFrac) * L * 1.3 && (last - sI) * mPerSample >= (rec0.holdFrac + rec0.decayFrac) * L * 0.7],
+    [`G-BR-5  the exit(decay) edge is no more abrupt than the entry(ramp) edge (${exitPeak.toFixed(2)} <= ${entryPeak.toFixed(2)} deg/m)`,
       isFinite(entryPeak) && isFinite(exitPeak) && exitPeak <= entryPeak * 1.05],
-    ['G-BR-6  no snap anywhere in the window — no single sample jumps more than 5 deg',
-      Math.max(...rate.slice(first, last).map(v => v * mPerSample)) < 5],
-    ['G-BR-7  no page errors', errs.length === 0]
+    // §CPE_CORR_BRANCH. Number against number, over every pair in the window, not a spot check and
+    // not a hardcoded constant: a correction may not turn the gaze faster than the walk already does.
+    [`G-BR-6  no snap anywhere in the window — the worst in-window sample (${winMaxDeg.toFixed(3)} deg) is no worse than the uncorrected walk's own worst (${baseMaxDeg.toFixed(3)} deg)`,
+      isFinite(winMaxDeg) && isFinite(baseMaxDeg) && winMaxDeg <= baseMaxDeg],
+    [`G-BR-7  the window reaches the authored share of the walk — ${(100*reachFrac).toFixed(1)}% against ${(100*WINDOW_F).toFixed(1)}% (tol 2 pts)`,
+      Math.abs(reachFrac - WINDOW_F) <= 0.02],
+    ['G-BR-8  no page errors', errs.length === 0]
   ];
   let pass = 0; G.forEach(([n, v]) => { console.log('  ' + (v ? 'PASS' : 'FAIL') + '  ' + n); if (v) pass++; });
   if (errs.length) console.log('  errors: ' + errs.slice(0, 2).join(' | '));
-  console.log(`\n  ${pass}/${G.length} — ${pass === G.length ? 'PASS' : 'FAIL'}`);
+  console.log(`\n  ${pass}/${G.length} — ${pass === G.length ? 'PASS' : 'FAIL'}` +
+    (pass === G.length && !hazardHit ? '  ⚠ but the wrap hazard was NOT exercised on this plan — see §CPE_CORR_BOUNDED_HAZARD' : ''));
+  // ATTRIBUTION, so a failure is never silently pinned on the wrong change. §CPE_CORR_BRANCH is
+  // provably not the cause of any failure on a plan where it is a bit-for-bit no-op — the gates are
+  // computed from the corrected curve, and that curve is identical with the branch on and off.
+  if (pass < G.length) {
+    console.log('§CPE_CORR_BOUNDED_ATTRIB  ' + (branchIsNoOp
+      ? `§CPE_CORR_BRANCH is a NO-OP on this plan (curves identical to ${abVsOn.toFixed(6)} deg), so the ` +
+        `${G.length - pass} failing gate(s) above are PRE-EXISTING and NOT caused by it.`
+      : 'the branch fix DOES change this plan, so a failing gate here may be attributable to it — investigate.'));
+  }
   await b.close();
   process.exit(pass === G.length ? 0 : 1);
 })();

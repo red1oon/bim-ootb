@@ -22,7 +22,15 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1113';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1114';   // bump on each deploy; per-change detail is the git commit message.
+// v1114 (2026-09-01) §CPE_CORR_BRANCH: viewer/effects.js changed — _cpeCorrDirBlend's 2*pi branch is
+// now resolved ONCE per correction stroke (a port of §CINEMA_GAZE_SENSE's fix) instead of per sample
+// by round(raw/2pi), which is a step function of the underlying gaze and snapped the camera 110.44 deg
+// in ONE sample on Hospital where the walk's own worst sample is 13.28. effects.js is in
+// PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=27->28 in the SAME PR — without that
+// second bump a stale ?v= URL keeps serving the pre-fix file (the failure at v-note "why is this still
+// blue" below). Witness: witness_cpe_corr_brush.js 8/8 on Hospital, with an in-run A/B
+// (A._cpeCorrBranchOff) measuring 110.436 -> 13.114 deg/sample.
 // v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
 // §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
 // now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
