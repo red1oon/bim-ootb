@@ -30,6 +30,16 @@
 // smoothness but has not exercised the defect, and the run says so instead of implying it did.
 // Do NOT "improve" the authored correction below — its +60 deg yaw offset is what puts the entry
 // gaze near-antipodal on the Hospital reference plan, which is the only reason the bug was visible.
+//
+// §CPE_AIM_DEPTH_FREEZE (2026-09-01) — WHAT G-FRZ-1..4 PROVE OR DISPROVE. Inside the window the
+// blend-from used to be the LIVE pin/depth/path-follow gaze, and §CPE_AIM_DEPTH kept re-aiming it
+// (measured 126-140 deg inside one Hospital ramp, leaking a 13.114 deg/sample wobble through 1-w).
+// The from-direction is now FROZEN at the window's own edges. G-FRZ-1: it really is constant
+// (every sample sits on the fixed curve; red control: the freeze-OFF curve must NOT fit). G-FRZ-2:
+// the wobble is measurably reduced (ON vs OFF in ONE run — a no-op dressed as a fix must say
+// NO-OP). G-FRZ-3: the dead-end rescue §CPE_AIM_DEPTH exists for still works OUTSIDE the window,
+// judged only where its trigger genuinely fires. G-FRZ-4: the frozen gaze does not stare into a
+// nearer wall than the live one anywhere in the window (product raycaster, not eyes).
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8533, BLD = process.env.BLD || 'Duplex';
 // Walk length is NOT a property of the building — it scales with the film duration the planner is
@@ -50,7 +60,7 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   // log rather than re-deriving it here.
   const pageLog = [];
   p.on('console', m => { const t = m.text();
-    if (/§CPE_CORR_BRANCH|§CINEMA_GAZE_SENSE|§CPE_WALK_BUDGET/.test(t)) pageLog.push(t); });
+    if (/§CPE_CORR_BRANCH|§CINEMA_GAZE_SENSE|§CPE_WALK_BUDGET|§CPE_AIM_DEPTH_FREEZE/.test(t)) pageLog.push(t); });
   await p.goto(`http://localhost:${PORT}/viewer/viewer.html?db=/buildings/${BLD}_extracted.db`,
     { waitUntil: 'domcontentloaded', timeout: 180000 });
   await p.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function',
@@ -93,6 +103,8 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
     // remove the confound, do not try to measure through it.
     let plan = await A.cinemaPathPlan(SECS, { aimCorrections: [] });
     if (!plan) return { fail: 'no plan built' };
+    // §CINEMA_BEAT_OVERLAP zone start = 1 - this; the debug hooks exist only once a plan is built.
+    const turnOverlap = (A._cpeBeat3GazeDebug(0) || {}).turnOverlap;
     const base = sample();
     const arcLen = base[0].arcLen;
     // 2. one correction, anchored mid-walk, aimed 60 deg off the baseline gaze there
@@ -104,24 +116,79 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
     plan = await A.cinemaPathPlan(SECS, { aimCorrections: [
       { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
     if (!plan) return { fail: 'no corrected plan built' };
-    const corr = sample();
+    const corr = sample();   // §CPE_AIM_DEPTH_FREEZE is ON by default — this IS the freeze-on curve
     const rec = A._cpeCorrectionsDebug ? A._cpeCorrectionsDebug() : null;
+    // 2b. §CPE_AIM_DEPTH_FREEZE A/B — the SAME plan with the freeze switched off (apply-time flag,
+    //     no rebuild: _cpeCorrectionAt reads it per call), i.e. the pre-freeze live blend-from.
+    //     One run, both curves — the gate names the issue it proves (CLAUDE.md).
+    let frzOff = null;
+    A._cpeAimFreezeOff = true;
+    try { frzOff = sample(); } finally { A._cpeAimFreezeOff = false; }
+    // 2c. gaze-direction CLEARANCE in the window, freeze ON vs OFF, through the product's own
+    //     raycaster hook (A._cpeGazeClearDebug) — the nose-against-the-wall number. Every 3rd
+    //     sample bounds the ray count.
+    const rec0i = rec && rec[0];
+    let clearRows = null;
+    if (rec0i && typeof A._cpeGazeClearDebug === 'function') {
+      const lo = Math.max(0, Math.ceil((rec0i.s - rec0i.rampFrac) * N));
+      const hi = Math.min(N, Math.floor((rec0i.s + rec0i.holdFrac + rec0i.decayFrac) * N));
+      clearRows = [];
+      for (let i = lo; i <= hi; i += 3) {
+        const on = A._cpeGazeClearDebug(i / N);
+        A._cpeAimFreezeOff = true;
+        const off = A._cpeGazeClearDebug(i / N);
+        A._cpeAimFreezeOff = false;
+        clearRows.push({ e3: i / N, on, off });
+      }
+    }
+    // 2d. the dead-end case §CPE_AIM_DEPTH exists for, measured OUTSIDE the window: where does the
+    //     forward-clearance trigger genuinely fire, and does the aim rule still turn the gaze toward
+    //     depth there (aimOff A/B, gaze clearance before/after)? Product probes only.
+    let deadEnd = null;
+    if (rec0i && typeof A._probeAimDepth === 'function') {
+      const firing = [];
+      for (let i = 0; i <= 90; i++) {
+        const e3 = i / 90;
+        const outside = e3 < rec0i.s - rec0i.rampFrac || e3 > rec0i.s + rec0i.holdFrac + rec0i.decayFrac;
+        if (!outside) continue;
+        const d = A._probeAimDepth(e3);
+        if (d && d.fired && d.w > 0.5) firing.push({ e3, w: d.w, fwdClear: d.fwdClear, clearM: d.clearM });
+      }
+      if (firing.length) {
+        const f = firing.sort((a, b) => (a.fwdClear - b.fwdClear))[0];   // tightest dead-end
+        const n = (gz) => { const dx = gz.target.x - gz.pos.x, dy = gz.target.y - gz.pos.y, dz = gz.target.z - gz.pos.z;
+          const L = Math.hypot(dx, dy, dz); return { x: dx / L, y: dy / L, z: dz / L }; };
+        const gOn = n(A._cpeBeat3GazeDebug(f.e3));
+        const cOn = A._cpeGazeClearDebug ? A._cpeGazeClearDebug(f.e3) : null;
+        A.__cpeAimOff = true;
+        const gOff = n(A._cpeBeat3GazeDebug(f.e3));
+        const cOff = A._cpeGazeClearDebug ? A._cpeGazeClearDebug(f.e3) : null;
+        A.__cpeAimOff = false;
+        deadEnd = { firingN: firing.length, e3: f.e3, w: f.w, fwdClear: f.fwdClear, clearM: f.clearM,
+          turnDeg: Math.acos(Math.max(-1, Math.min(1, gOn.x * gOff.x + gOn.y * gOff.y + gOn.z * gOff.z))) * 180 / Math.PI,
+          clearOn: cOn, clearOff: cOff };
+      } else deadEnd = { firingN: 0 };
+    }
     // 3. THE SAME correction with §CPE_CORR_BRANCH switched OFF — i.e. the naive short-way yaw this
     //    branch replaced. This is the A/B that makes G-BR-6 name its issue: without it the gate would
     //    only assert a number, with no evidence that the number was ever otherwise.
+    //    ⚠ §CPE_AIM_DEPTH_FREEZE must ALSO be off here: with the from-direction frozen,
+    //    round(raw/2pi) has nothing to step on (raw is constant per phase), so the freeze would MASK
+    //    the wrap defect and §CPE_CORR_BRANCH_AB would silently stop discriminating.
     let ab = null;
     if ('_cpeCorrBranchOff' in A || true) {
       A._cpeCorrBranchOff = true;
+      A._cpeAimFreezeOff = true;
       try {
         const p2 = await A.cinemaPathPlan(SECS, { aimCorrections: [
           { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
         if (p2) ab = sample();
-      } finally { A._cpeCorrBranchOff = false; }
+      } finally { A._cpeCorrBranchOff = false; A._cpeAimFreezeOff = false; }
       // restore the plan under test — the A/B plan must not be what the rest of the run measures
       await A.cinemaPathPlan(SECS, { aimCorrections: [
         { pos: g.pos, dir: dir, rampF: 0.04, holdF: 0.12, decayF: 0.18 }] });
     }
-    return { base, corr, ab, arcLen, rec, dir, ok: true };
+    return { base, corr, frzOff, clearRows, deadEnd, ab, arcLen, rec, dir, turnOverlap, ok: true };
   }, N, SECS_IN);
 
   console.log('='.repeat(90) + `\n§CPE_CORR_BOUNDED witness — ${BLD}, one correction, ${N} arc samples\n` + '='.repeat(90));
@@ -242,9 +309,15 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   // Where the authored gaze is NOT near-antipodal, round((raw-refD)/2pi) and round(raw/2pi) agree at
   // every sample, so §CPE_CORR_BRANCH must be a bit-for-bit NO-OP there. 0.0000 is the expected and
   // required answer on such a plan — it is what proves the fix touches nothing it was not aimed at.
+  // §CPE_AIM_DEPTH_FREEZE correction to this comparison: `ab` is sampled branch-OFF **and
+  // freeze-OFF** (the freeze would mask the wrap — constant from-direction gives round() nothing to
+  // step on), so isolating the BRANCH means comparing it against the freeze-OFF branch-ON curve,
+  // never against the shipped default — comparing against `corr` here once read the freeze's own
+  // 2.79 deg as "the branch fix changes Duplex" and mis-attributed a pre-existing failure.
+  const branchOnFrzOff = (r.frzOff && r.frzOff.length === r.corr.length) ? r.frzOff : r.corr;
   let abVsOn = NaN;
-  if (r.ab && r.ab.length === r.corr.length) abVsOn = Math.max(...r.ab.map((v, i) => deg(v, r.corr[i])));
-  console.log('§CPE_CORR_BRANCH_NOOP  max separation between the branch-ON and branch-OFF curves over all ' +
+  if (r.ab && r.ab.length === r.corr.length) abVsOn = Math.max(...r.ab.map((v, i) => deg(v, branchOnFrzOff[i])));
+  console.log('§CPE_CORR_BRANCH_NOOP  max separation between the branch-ON and branch-OFF curves (both freeze-OFF, isolating the branch) over all ' +
     `${r.corr.length} samples = ${isFinite(abVsOn) ? abVsOn.toFixed(4) : 'n/a'} deg ` +
     (isFinite(abVsOn) ? (abVsOn <= 1e-4 ? '(NO-OP — this plan never crosses the wrap, so §CPE_CORR_BRANCH changed nothing here)'
                                         : '(the fix changed this plan, as expected where the wrap fires)') : ''));
@@ -268,6 +341,142 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   const hazardHit = closestToPi < 20;
   console.log(`§CPE_CORR_BOUNDED_HAZARD  the authored gaze comes within ${closestToPi.toFixed(2)} deg of ANTIPODAL to the ` +
     `gaze underneath it at e3=${(closestAt/N).toFixed(4)} — wrap hazard ${hazardHit ? 'EXERCISED' : 'NOT exercised (G-BR-6 is scope-blind on this run)'}`);
+
+  // ── §CPE_AIM_DEPTH_FREEZE (2026-09-01, bim-compiler prompts/CINEMA_PATH_EDITOR.md
+  // §CPE_AIM_DEPTH_FREEZE) — inside the window the blend-from is now FROZEN at the window's own
+  // edges (entry gaze through ramp+hold, exit gaze through decay). Four claims, judged below:
+  // constancy, wobble reduction, dead-end preservation outside the window, no clearance regression.
+  const frzGates = [];   // appended into G; a claim whose population is degenerate prints
+                         // NO-OP/VACUOUS/INCONCLUSIVE instead of silently passing (framework rule 4).
+  // How far apart are the ON and OFF curves at all? 0 => the freeze changed NOTHING => NO-OP.
+  let frzSep = NaN, frzSepAt = -1;
+  if (r.frzOff && r.frzOff.length === r.corr.length) {
+    frzSep = 0;
+    for (let i = winLoI; i <= winHiI; i++) { const d = deg(r.corr[i], r.frzOff[i]); if (d > frzSep) { frzSep = d; frzSepAt = i / N; } }
+  }
+  const frzIsNoOp = isFinite(frzSep) && frzSep <= 1e-4;
+  console.log(`§CPE_AIM_FREEZE_NOOP  max separation freeze-ON vs freeze-OFF in the window = ` +
+    (isFinite(frzSep) ? `${frzSep.toFixed(4)} deg at e3=${frzSepAt.toFixed(4)}` : 'UNAVAILABLE (no OFF curve)') +
+    (frzIsNoOp ? ' — NO-OP: the freeze changed nothing on this plan; its gates below are INCONCLUSIVE, not PASS' : ''));
+  if (r.frzOff && !frzIsNoOp) {
+    // WOBBLE: in-window max per-sample step, ON (the shipped default curve `corr`, already in
+    // winMaxDeg) vs OFF; plus the per-sample JERK (second difference), the wiggle the user sees.
+    const offRate = [];
+    for (let i = 1; i < r.frzOff.length; i++) offRate.push(deg(r.frzOff[i - 1], r.frzOff[i]));
+    let offWinMax = 0, offWinAt = -1;
+    for (let j = 0; j < offRate.length; j++) if (inWin(j) || inWin(j + 1)) { if (offRate[j] > offWinMax) { offWinMax = offRate[j]; offWinAt = j; } }
+    const jerkOf = (rt) => { let m = 0; for (let j = 1; j < rt.length; j++) if ((inWin(j) || inWin(j + 1))) m = Math.max(m, Math.abs(rt[j] - rt[j - 1])); return m; };
+    const onRateDeg = rate.map(v => v * mPerSample);
+    const jerkOn = jerkOf(onRateDeg), jerkOff = jerkOf(offRate);
+    console.log(`§CPE_AIM_FREEZE_WOBBLE  in-window max ON ${winMaxDeg.toFixed(3)} vs OFF ${offWinMax.toFixed(3)} deg/sample` +
+      ` (OFF peak at e3=${((offWinAt+1)/N).toFixed(4)})   jerk ON ${jerkOn.toFixed(3)} vs OFF ${jerkOff.toFixed(3)} deg/sample²`);
+    // Non-regression is judged on EVERY plan; the REDUCTION claim only where the live from-motion
+    // actually moved the curve (frzSep) — on a quiet plan there is nothing to reduce and demanding
+    // -20% would fail a no-harm no-op (measured: Duplex sep 2.79 deg, peaks 7.767 vs 7.757 —
+    // quiet; Hospital sep 26.63 deg, peaks 7.791 vs 13.114 — the wobble is real there). The 5 deg
+    // scope line sits between those two measured clusters and is PRINTED, same treatment as the
+    // hazard's own 20 deg line above.
+    frzGates.push([`G-FRZ-2a the freeze never WORSENS the in-window peak step — ON ${winMaxDeg.toFixed(3)} <= 1.05 x OFF ${offWinMax.toFixed(3)} + 0.01 deg/sample`,
+      isFinite(winMaxDeg) && offWinMax > 0 && winMaxDeg <= offWinMax * 1.05 + 0.01]);
+    if (frzSep > 5) {
+      frzGates.push([`G-FRZ-2b the freeze REDUCES the in-window peak step by >=20% where the live from-motion is real (sep ${frzSep.toFixed(2)} deg > 5) — ON ${winMaxDeg.toFixed(3)} <= 0.8 x OFF ${offWinMax.toFixed(3)} deg/sample`,
+        isFinite(winMaxDeg) && winMaxDeg <= offWinMax * 0.8]);
+    } else {
+      console.log(`§CPE_AIM_FREEZE_WOBBLE  reduction claim INCONCLUSIVE on this plan — the freeze only moves the curve ${frzSep.toFixed(2)} deg (<5), a QUIET window with nothing above the crossfade floor to reduce; only non-regression (G-FRZ-2a) is judged.`);
+    }
+    // CONSTANCY: every strictly-in-phase sample must lie on the fixed curve blend(from, authored, w)
+    // — w INVERTED from the sample's own pitch (the product's pitch is linear in w), from/refD read
+    // off the product's own record. The samples are the product's; this curve is the DEFINITION of
+    // "fixed-from". RED CONTROL: the freeze-OFF samples must NOT fit the same curve (live blend-from
+    // moves), which is what proves this check can fail.
+    const blendRef = (a, bx, by, bz, w, refD) => {
+      if (w <= 0) return { x: a.x, y: a.y, z: a.z };
+      if (w >= 1) return { x: bx, y: by, z: bz };
+      const yawA = Math.atan2(a.z, a.x), pitA = Math.atan2(a.y, Math.hypot(a.x, a.z));
+      const yawB = Math.atan2(bz, bx), pitB = Math.atan2(by, Math.hypot(bx, bz));
+      const raw = yawB - yawA;
+      const dYaw = raw - 2 * Math.PI * Math.round((raw - refD) / (2 * Math.PI));
+      const yw = yawA + dYaw * w, pt = pitA + (pitB - pitA) * w, cp = Math.cos(pt);
+      return { x: Math.cos(yw) * cp, y: Math.sin(pt), z: Math.sin(yw) * cp };
+    };
+    // Samples past e3 = 1 - turnOverlap are EXCLUDED: §CINEMA_BEAT_OVERLAP blends the gaze toward
+    // the orbit AFTER the correction step, so the composed gaze there is no longer the pure
+    // correction curve — measured as a false 7.48 deg "non-constancy" on Duplex, whose decay tail
+    // crosses that product boundary (read from the product via _cpeBeat3GazeDebug, not hardcoded).
+    const overlapLoI = (r.turnOverlap != null && isFinite(r.turnOverlap)) ? Math.floor((1 - r.turnOverlap) * N) : N + 1;
+    const fitErr = (curve, from, lo, hi) => {
+      if (!from) return NaN;
+      const pitA = Math.atan2(from.y, Math.hypot(from.x, from.z));
+      const pitB = Math.atan2(r.dir.y, Math.hypot(r.dir.x, r.dir.z));
+      let mx = 0, n = 0;
+      for (let i = lo + 1; i < Math.min(hi, overlapLoI); i++) {
+        const s = curve[i];
+        const pit = Math.atan2(s.y, Math.hypot(s.x, s.z));
+        if (Math.abs(pitB - pitA) < 1e-3) continue;      // pitch channel too flat to invert here
+        const w = Math.max(0, Math.min(1, (pit - pitA) / (pitB - pitA)));
+        mx = Math.max(mx, deg(s, blendRef(from, r.dir.x, r.dir.y, r.dir.z, w, rec0.refD || 0)));
+        n++;
+      }
+      return n ? mx : NaN;
+    };
+    const eDir = rec0.entryDir, xDir = rec0.exitDir;
+    if (!eDir || !xDir) {
+      console.log('§CPE_AIM_FREEZE_CONST  INCONCLUSIVE — the record carries no frozen entry/exit dir ' +
+        `(entry=${!!eDir} exit=${!!xDir}); the product degraded to the live blend-from and constancy was not judged.`);
+    } else {
+      const rampErrOn = fitErr(r.corr, eDir, winLoI, sI), decayErrOn = fitErr(r.corr, xDir, holdHiI, winHiI);
+      const rampErrOff = fitErr(r.frzOff, eDir, winLoI, sI), decayErrOff = fitErr(r.frzOff, xDir, holdHiI, winHiI);
+      // The frozen dirs must BE the uncorrected gaze at the window edges (baseline curve, nearest
+      // sample; 1.0 deg tolerance covers the half-sample rounding at the local base turn rate).
+      const eVsBase = deg(eDir, r.base[Math.max(0, Math.round((rec0.s - rec0.rampFrac) * N))]);
+      const xVsBase = deg(xDir, r.base[Math.min(N, Math.round((rec0.s + rec0.holdFrac + rec0.decayFrac) * N))]);
+      console.log(`§CPE_AIM_FREEZE_CONST  fixed-from fit: ON ramp ${isFinite(rampErrOn)?rampErrOn.toFixed(4):'n/a'} / decay ${isFinite(decayErrOn)?decayErrOn.toFixed(4):'n/a'} deg` +
+        `   red control OFF ramp ${isFinite(rampErrOff)?rampErrOff.toFixed(3):'n/a'} / decay ${isFinite(decayErrOff)?decayErrOff.toFixed(3):'n/a'} deg` +
+        `   entryDirVsBase ${eVsBase.toFixed(3)} exitDirVsBase ${xVsBase.toFixed(3)} deg` +
+        (overlapLoI <= winHiI ? `   (samples past e3=${(overlapLoI/N).toFixed(3)} excluded: §CINEMA_BEAT_OVERLAP orbit hand-off, applied after the correction)` : ''));
+      frzGates.push([`G-FRZ-1  the blend-from is CONSTANT across the window — every in-phase sample sits on the fixed entry/exit->authored curve to <=0.05 deg (ON ramp ${isFinite(rampErrOn)?rampErrOn.toFixed(4):'n/a'}, decay ${isFinite(decayErrOn)?decayErrOn.toFixed(4):'n/a'}) and the frozen dirs equal the uncorrected edge gazes to <=1.0 deg — red control: the OFF curve does NOT fit (ramp ${isFinite(rampErrOff)?rampErrOff.toFixed(2):'n/a'} deg)`,
+        isFinite(rampErrOn) && rampErrOn <= 0.05 && isFinite(decayErrOn) && decayErrOn <= 0.05 &&
+        eVsBase <= 1.0 && xVsBase <= 1.0 && isFinite(rampErrOff) && rampErrOff > 1.0]);
+    }
+  } else if (!r.frzOff) {
+    console.log('§CPE_AIM_FREEZE_WOBBLE  INCONCLUSIVE — no freeze-OFF curve was sampled; nothing was judged.');
+  }
+  // CLEARANCE (nose-against-the-wall): the freeze must not create frames staring into a nearer wall
+  // than the live blend already did. Product raycaster, in-window, both curves.
+  if (r.clearRows && r.clearRows.length) {
+    const ok = r.clearRows.filter(c => c.on != null && c.off != null);
+    if (!ok.length) {
+      console.log('§CPE_AIM_FREEZE_CLEAR  INCONCLUSIVE — the clearance hook returned null on every sample; nothing was judged.');
+    } else {
+      const minOn = ok.reduce((s, v) => v.on < s.on ? v : s), minOff = ok.reduce((s, v) => v.off < s.off ? v : s);
+      let worst = null;
+      ok.forEach(v => { const d = v.off - v.on; if (!worst || d > worst.off - worst.on) worst = v; });
+      console.log(`§CPE_AIM_FREEZE_CLEAR  in-window gaze clearance minima: ON ${minOn.on.toFixed(2)} m @e3=${minOn.e3.toFixed(3)}` +
+        `  OFF ${minOff.off.toFixed(2)} m @e3=${minOff.e3.toFixed(3)}  worst per-sample drop ` +
+        (worst ? `${(worst.off - worst.on).toFixed(2)} m @e3=${worst.e3.toFixed(3)} (${worst.off.toFixed(2)} -> ${worst.on.toFixed(2)} m)` : 'n/a') +
+        `  (${ok.length} rays/curve)`);
+      frzGates.push([`G-FRZ-4  no clearance regression — min gaze clearance frozen ${minOn.on.toFixed(2)} m >= live ${minOff.off.toFixed(2)} m - 0.05 (nose-against-the-wall not reintroduced)`,
+        minOn.on >= minOff.off - 0.05]);
+    }
+  } else {
+    console.log('§CPE_AIM_FREEZE_CLEAR  INCONCLUSIVE — no clearance rows (hook missing?); nothing was judged.');
+  }
+  // DEAD-END: outside the window the depth rule is untouched and must still rescue a wall-facing
+  // look-ahead. Judged only where the trigger GENUINELY fires (fwdClear < clearM, the product's own
+  // numbers) — otherwise VACUOUS, stated, not passed.
+  if (r.deadEnd) {
+    if (r.deadEnd.firingN === 0) {
+      console.log('§CPE_AIM_FREEZE_DEADEND  VACUOUS — §CPE_AIM_DEPTH never fires (w>0.5) outside the window on this plan; the dead-end claim was NOT judged.');
+    } else {
+      const d = r.deadEnd;
+      console.log(`§CPE_AIM_FREEZE_DEADEND  fires at ${d.firingN} outside-window probes; tightest e3=${d.e3.toFixed(3)}: ` +
+        `fwdClear ${d.fwdClear.toFixed(2)} m < clearM ${d.clearM.toFixed(2)} m, depth turns the gaze ${d.turnDeg.toFixed(2)} deg ` +
+        `(aimOff A/B), gaze clearance ${d.clearOff != null ? d.clearOff.toFixed(2) : 'n/a'} -> ${d.clearOn != null ? d.clearOn.toFixed(2) : 'n/a'} m`);
+      frzGates.push([`G-FRZ-3  dead-end rescue PRESERVED outside the window — trigger genuinely fires (${d.fwdClear.toFixed(2)} < ${d.clearM.toFixed(2)} m) and depth still turns the gaze ${d.turnDeg.toFixed(2)} deg toward clearance (${d.clearOff != null && d.clearOn != null ? d.clearOff.toFixed(2) + ' -> ' + d.clearOn.toFixed(2) + ' m' : 'clearance n/a'})`,
+        d.fwdClear < d.clearM && d.turnDeg > 1 &&
+        (d.clearOn == null || d.clearOff == null || d.clearOn >= d.clearOff - 0.05)]);
+    }
+  }
   const outsideAuthored = diff.filter((d, i) => !inWin(i));
   const outAuthoredMax = Math.max(0, ...outsideAuthored);
   const reachFrac = (last - first) / N;
@@ -293,7 +502,11 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
       isFinite(winMaxDeg) && isFinite(baseMaxDeg) && winMaxDeg <= baseMaxDeg],
     [`G-BR-7  the window reaches the authored share of the walk — ${(100*reachFrac).toFixed(1)}% against ${(100*WINDOW_F).toFixed(1)}% (tol 2 pts)`,
       Math.abs(reachFrac - WINDOW_F) <= 0.02],
-    ['G-BR-8  no page errors', errs.length === 0]
+    ['G-BR-8  no page errors', errs.length === 0],
+    // §CPE_AIM_DEPTH_FREEZE gates — only the ones whose population was real (a degenerate one
+    // printed NO-OP/VACUOUS/INCONCLUSIVE above and is deliberately NOT in this list, so it can
+    // never count as PASS).
+    ...frzGates
   ];
   let pass = 0; G.forEach(([n, v]) => { console.log('  ' + (v ? 'PASS' : 'FAIL') + '  ' + n); if (v) pass++; });
   if (errs.length) console.log('  errors: ' + errs.slice(0, 2).join(' | '));
