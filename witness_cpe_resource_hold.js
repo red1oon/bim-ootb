@@ -20,14 +20,19 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 
 // ── a recording 2D context: counts draw calls the way witness_big_stats.js does in the browser
 function mkCtx(w, h) {
-  const rec = { fills: 0, strokes: 0, images: 0, texts: [] };
+  // §CPE_PIE_FLYOUT_DROP additions: positions are recorded, not just counts — textXY (where every
+  // string landed), imageArgs (arg-count per blit: the pie blit is the only 3-arg drawImage, the
+  // glass blur is 5-arg), rects (every roundRect = the plate/clip box), arcs (the slot dots).
+  const rec = { fills: 0, strokes: 0, images: 0, texts: [], textXY: [], imageArgs: [], rects: [], arcs: [] };
   const ctx = {
     canvas: { width: w, height: h }, filter: 'none', font: '', fillStyle: '', strokeStyle: '',
     lineWidth: 1, globalAlpha: 1, textAlign: 'left', textBaseline: 'alphabetic', _rec: rec,
     save() {}, restore() {}, translate() {}, clip() {}, beginPath() {}, closePath() {},
-    moveTo() {}, lineTo() {}, arc() {}, arcTo() {}, ellipse() {}, roundRect() {},
+    moveTo() {}, lineTo() {}, arc(ax, ay) { rec.arcs.push([ax, ay]); }, arcTo() {}, ellipse() {},
+    roundRect(rx, ry, rw, rh, rr) { rec.rects.push([rx, ry, rw, rh, rr]); },
     fill() { rec.fills++; }, stroke() { rec.strokes++; },
-    drawImage() { rec.images++; }, fillText(t) { rec.texts.push(String(t)); },
+    drawImage() { rec.images++; rec.imageArgs.push(arguments.length); },
+    fillText(t, tx, ty) { rec.texts.push(String(t)); rec.textXY.push([String(t), tx, ty]); },
     measureText(t) { return { width: String(t).length * 6 }; }
   };
   return ctx;
@@ -138,6 +143,91 @@ A.bigStatsCompositeOntoCanvas(c5, W, H, { card: longCard, idx: 3, n: 10, opacity
 const cardTexts = c5._rec.texts.concat(off().texts);
 const capHeld = o1.texts.concat(o2.texts).concat(c1._rec.texts).concat(c2._rec.texts);
 
+// ── §CPE_PIE_FLYOUT_DROP. ISSUE IT PROVES/DISPROVES: the user's ask, 2026-09-01 — "during last
+// fly out, the last pie is not needed. Remove to give max space to the revolving highlights."
+// Does the Reveal round (a) draw ZERO pie on every fly-out frame while round 1 keeps it on every
+// frame before the boundary, (b) hand the revolving cards AND the roster slot the full plate
+// width, un-truncated (§CPE_CARD_FIT re-proven at the new width), (c) keep the plate box itself
+// byte-identical so the §CPE_HUD_ORDER stack cannot open a hole where the pie was?
+const pieBlits = (c) => c._rec.imageArgs.filter((n) => n === 3).length;   // _pie blit = drawImage(canvas,x,y)
+
+// frame sweep — the predicate is cinema_maxq.js's own `_inReveal` (u >= _revealU), copied verbatim,
+// on the Hospital-shaped programme (staffed to the last day, so round 1 always has a LIVE pie).
+const nF = 200, revealU = 0.60, fpsW = 15;
+const holdI = A.resourcePanelHoldAt(at(DAYS - 1), hOps, PS, PE);
+let boundaryFrame = null, prePie = 0, preJudged = 0, revPieFrames = 0, revJudged = 0;
+for (let i = 0; i < nF; i++) {
+  const inReveal = nF > 1 ? (i / (nF - 1)) >= revealU : false;
+  OFFSCREEN = []; const cf = mkCtx(W, H);
+  if (!inReveal) {
+    if (holdI) A.resourcePanelCompositeOntoCanvas(cf, W, H, holdI, 1, 'tr', 60);
+    preJudged++; if (pieBlits(cf) === 1) prePie++;
+  } else {
+    if (boundaryFrame === null) boundaryFrame = i;
+    const si = A.tailPanelAt(cards, i / fpsW, holdI);
+    if (si) A.bigStatsCompositeOntoCanvas(cf, W, H, si, 1, 'tr', 60, null);   // the shipped wiring: held=null
+    revJudged++; if (pieBlits(cf) > 0) revPieFrames++;
+  }
+}
+const fdVacuous = (preJudged === 0 || revJudged === 0);
+
+// measured column width: the longest label printed WITHOUT an ellipsis, beside the pie vs full
+// width. 6 px/char stub -> printed-in-full iff len*6 <= colW, so maxChars*6 brackets the real colW.
+function maxFullChars(heldArg) {
+  let best = 0;
+  for (let n = 10; n <= 60; n++) {
+    OFFSCREEN = []; const cx = mkCtx(W, H);
+    const probe = { big: '9', label: 'L'.repeat(n), src: 'probe' };
+    A.bigStatsCompositeOntoCanvas(cx, W, H, { card: probe, idx: 0, n: 1, opacity: 1 }, 1, 'tr', 60, heldArg);
+    if (cx._rec.texts.includes(probe.label)) best = n;
+  }
+  return best;
+}
+const charsHeld = maxFullChars(hLive), charsFull = maxFullChars(null);
+const bwPx = Math.round(H * 0.36), bhPx = Math.round(H * 0.24);
+const colWheld = charsHeld * 6, colWfull = charsFull * 6;                 // lower bounds, 6px quanta
+
+// §CPE_CARD_FIT re-run at the FULL width — the exact card the user's bake truncated, held=null.
+OFFSCREEN = []; const c6 = mkCtx(W, H);
+A.bigStatsCompositeOntoCanvas(c6, W, H, { card: longCard, idx: 3, n: 10, opacity: 1 }, 1, 'tr', 60, null);
+const fullCardTexts = c6._rec.texts.concat(off().texts);
+
+// roster slot at full width — a long trade name that ellipsises beside the pie must print in full
+// without it, and the heading + dots must move from the right column (G.lx) to the left pad (G.pad).
+const longRoster = { rows: [{ trade: 'HVAC_TECH', label: 'Mechanical Ventilation & Ductwork', heads: 18 }],
+                     totalHeads: 18, held: false, progress: 0.9, dayKey: 50 };
+OFFSCREEN = []; const c7 = mkCtx(W, H);   // beside the pie (old geometry)
+A.bigStatsCompositeOntoCanvas(c7, W, H, { roster: longRoster, idx: 0, n: 10, opacity: 1 }, 1, 'tr', 60, hLive);
+OFFSCREEN = []; const c8 = mkCtx(W, H);   // pie-less (the fly-out)
+A.bigStatsCompositeOntoCanvas(c8, W, H, { roster: longRoster, idx: 0, n: 10, opacity: 1 }, 1, 'tr', 60, null);
+const padPx = Math.round(bhPx * 0.10), lxPx = bwPx - Math.max(Math.round(bwPx * 0.56), 110);
+const boxX = W - Math.round(H * 0.028) - bwPx, boxY = Math.round(H * 0.028) + 60;
+const headAt = (c, wantX) => c._rec.textXY.some(([t, tx]) => /on site$/.test(t) && tx === wantX);
+const dotsAt = (c, wantX) => c._rec.arcs.some(([ax, ay]) => ax === wantX && ay === boxY + bhPx - Math.round(bhPx * 0.13) * 0.7);
+
+// stack closure — every roundRect (plate + clips) across ALL modes is the SAME box rect, so the
+// §CPE_HUD_ORDER column keeps exactly the y-extent it had and nothing can gap or overlap.
+const rectKey = (r) => r.join(',');
+const allRects = [c1, c2, c3, c6, c7, c8].map((c) => [...new Set(c._rec.rects.map(rectKey))]);
+const boxRect = [boxX, boxY, bwPx, bhPx, Math.round(bhPx * 0.09)].join(',');
+const rectsIdentical = allRects.every((rs) => rs.length === 1 && rs[0] === boxRect);
+const inBox = (c) => c._rec.textXY.every(([, tx, ty]) =>
+  (tx >= boxX && tx <= boxX + bwPx && ty >= boxY && ty <= boxY + bhPx) ||
+  (tx >= 0 && tx <= bwPx && ty >= 0 && ty <= bhPx));   // roster texts are plate-local (translate)
+const drawsInBox = inBox(c6) && inBox(c8);
+
+// wiring — the shipped reveal branch itself: held must be null and the entered-log must say so.
+const maxqSrc = fs.readFileSync(path.join(__dirname, 'viewer/cinema_maxq.js'), 'utf8');
+const revealAt = maxqSrc.indexOf('tailPanelAt(_bigCards');
+const revealBlock = maxqSrc.slice(revealAt, maxqSrc.indexOf('_captureFrame(w, h,', revealAt));
+const wiringOk = /held:\s*null/.test(revealBlock) && !/held:\s*_holdInfo/.test(revealBlock) &&
+                 revealBlock.indexOf('pie=dropped') >= 0;
+
+// NO-OP guard — if the pie-less mode renders identically to the held mode, the change did nothing.
+const bigXfull = c6._rec.textXY.find(([t]) => t === longCard.big);
+const bigXheld = c5._rec.textXY.find(([t]) => t === longCard.big);
+const fdNoop = !(pieBlits(c5) === 1 && pieBlits(c6) === 0 && bigXfull && bigXheld && bigXfull[1] < bigXheld[1]);
+
 console.log('='.repeat(84) + '\n§CPE_PIE_HOLD witness — synthetic programme, ' + DAYS +
   ' days, topout day ' + TOPOUT + ', ' + ops.length + ' ops\n' + '='.repeat(84));
 console.log('  live  day 7  : ' + JSON.stringify(sig(live)) + '  heads=' + (live && live.totalHeads) + ' held=' + (live && live.held));
@@ -163,6 +253,23 @@ console.log('  rotation: slots=' + (rotN && rotN.n) + ' (1 roster + ' + cards.le
   '  noCardsFallback=' + (noCards ? 'roster n=' + noCards.n : 'null'));
 console.log('  roster slot draws: ' + JSON.stringify(rosterTexts.filter(t => /on site|×/.test(t))));
 console.log('  long card prints:  ' + JSON.stringify(cardTexts));
+console.log('  §CPE_PIE_FLYOUT_DROP sweep: frames=' + nF + ' boundary=' + boundaryFrame +
+  ' (u>=' + revealU + ')  pieBefore=' + prePie + '/' + preJudged +
+  '  pieDuringFlyout=' + revPieFrames + '/' + revJudged + (fdVacuous ? '  VACUOUS' : ''));
+console.log('  §CPE_PIE_FLYOUT_DROP width: colW beside pie >= ' + colWheld + 'px (' + charsHeld +
+  ' chars) -> full >= ' + colWfull + 'px (' + charsFull + ' chars) of bw=' + bwPx +
+  'px  fraction ' + (colWheld / bwPx).toFixed(3) + ' -> ' + (colWfull / bwPx).toFixed(3) +
+  '  (derived exact: ' + (bwPx - 2 * Math.round(bhPx * 0.13)) + 'px = ' +
+  ((bwPx - 2 * Math.round(bhPx * 0.13)) / bwPx).toFixed(3) + ')');
+console.log('  §CPE_PIE_FLYOUT_DROP full-width card prints: ' + JSON.stringify(fullCardTexts));
+console.log('  §CPE_PIE_FLYOUT_DROP roster: besidePie name=' +
+  JSON.stringify(c7._rec.texts.find(t => /^Mechanical/.test(t) || /…$/.test(t))) +
+  ' @lx=' + lxPx + '  pieLess name=' + JSON.stringify(c8._rec.texts.find(t => /^Mechanical/.test(t))) +
+  ' @pad=' + padPx);
+console.log('  §CPE_PIE_FLYOUT_DROP stack: plate rect ' + boxRect + ' identical across 6 modes=' +
+  rectsIdentical + '  drawsInsideBox=' + drawsInBox);
+console.log('  §CPE_PIE_FLYOUT_DROP verdict=' + (fdVacuous ? 'VACUOUS'
+  : fdNoop ? 'NO-OP' : (revPieFrames === 0 && prePie === preJudged ? 'judged' : 'WRONG')));
 
 const G = [
   ['G-HOLD-1  a staffed day returns the LIVE composition (held=false), identical to resourcePanelAt',
@@ -204,7 +311,29 @@ const G = [
   ['G-CARD-2  no card text on the panel ends in an ellipsis',
     !cardTexts.some(function (t) { return /…$/.test(t); })],
   ['G-CARD-3  the long sub WRAPS to a second line — the caveat survives, nothing is lost',
-    cardTexts.join(' ').indexOf('a bill of quantities') >= 0]
+    cardTexts.join(' ').indexOf('a bill of quantities') >= 0],
+  // §CPE_PIE_FLYOUT_DROP — user 2026-09-01: "during last fly out, the last pie is not needed.
+  // Remove to give max space to the revolving highlights."
+  ['G-FD-1   the pie is PRESENT on every frame before the boundary (round 1 untouched), not vacuous',
+    !fdVacuous && prePie === preJudged && preJudged > 0 && boundaryFrame === Math.ceil(revealU * (nF - 1))],
+  ['G-FD-2   the pie is ABSENT on every fly-out frame, roster slots included',
+    !fdVacuous && revJudged > 0 && revPieFrames === 0],
+  ['G-FD-3   the card column measurably WIDENED to the full plate (>= 0.80·bw, was ~0.49·bw)',
+    colWfull >= Math.round(bwPx * 0.80) && colWfull > colWheld && colWheld <= Math.round(bwPx * 0.52)],
+  ['G-FD-4   §CPE_CARD_FIT re-proven at the new width: label IN FULL, no ellipsis, sub complete',
+    fullCardTexts.includes('labour cost committed') && !fullCardTexts.some(t => /…$/.test(t)) &&
+    fullCardTexts.join(' ').indexOf('a bill of quantities') >= 0],
+  ['G-FD-5   the roster slot takes the full width: long trade name whole, heading+dots at the left pad',
+    c7._rec.texts.some(t => /…$/.test(t)) && c8._rec.texts.includes('Mechanical Ventilation & Ductwork') &&
+    headAt(c7, lxPx) && headAt(c8, padPx) && dotsAt(c7, boxX + lxPx) && dotsAt(c8, boxX + padPx)],
+  ['G-FD-6   the stack CLOSES UP: one identical plate rect in all modes, every draw inside it',
+    rectsIdentical && drawsInBox],
+  ['G-FD-7   fullW did NOT leak into round 1: the resource panel still blits the pie and lists at the reserved column',
+    pieBlits(c1) === 1 && c1._rec.textXY.some(([t, tx]) => /on site$/.test(t) && tx === lxPx)],
+  ['G-FD-8   the shipped reveal branch wires held:null and logs pie=dropped (§ line for the next bake)',
+    wiringOk],
+  ['G-FD-9   NO-OP guard: pie-less and held modes DIFFER (blits 0 vs 1, colX moved left)',
+    !fdNoop]
 ];
 let pass = 0;
 G.forEach(([n, v]) => { console.log('  ' + (v ? 'PASS' : 'FAIL') + '  ' + n); if (v) pass++; });
