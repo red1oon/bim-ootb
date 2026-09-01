@@ -22,7 +22,7 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1116';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1117';   // bump on each deploy; per-change detail is the git commit message.
 // MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
 // the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
 // take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it

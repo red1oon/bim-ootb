@@ -6652,6 +6652,20 @@ async function setupEffects(A, renderer, scene, camera) {
         _corrRefProbe = probe;
         try { _beat3Pose(e3); } catch (e) { probe.hit = false; } finally { _corrRefProbe = null; }
         if (!probe.hit) { c.refD = 0; lines.push(i + ':NO-PROBE'); continue; }   // degrades to the old short way
+        // §CPE_AIM_DEPTH_FREEZE (2026-09-01, prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_FREEZE):
+        // KEEP the probed entry VECTOR, not just its yaw — it is the frozen from-direction for the
+        // ramp+hold — and probe the window EXIT the same way for the decay's frozen target. The
+        // decay then lands bit-exactly on the live gaze at the window's end (the vector was probed
+        // AT that e3), so the freeze introduces no seam. MEASURED need (probe_aim_freeze.js,
+        // Hospital): the live from-direction re-aims 126-140 deg INSIDE one ramp (§CPE_AIM_DEPTH
+        // reacting to 0.1-0.4 m forward clearance), leaking a 13.114 deg/sample wobble through
+        // (1-w); frozen fixed-to-fixed the worst step is the crossfade's own 7.79.
+        c.entryDir = { x: probe.x, y: probe.y, z: probe.z };
+        var e3x = Math.max(0, Math.min(1, c.s + c.holdFrac + c.decayFrac));
+        var probeX = { x: 0, y: 0, z: 0, hit: false };
+        _corrRefProbe = probeX;
+        try { _beat3Pose(e3x); } catch (ex) { probeX.hit = false; } finally { _corrRefProbe = null; }
+        c.exitDir = probeX.hit ? { x: probeX.x, y: probeX.y, z: probeX.z } : null;
         // Witness-only A/B (default OFF, same read-only-hook precedent as A._cpeCorrectionsDebug):
         // refD=0 is exactly the pre-fix naive short way, so witness_cpe_corr_brush.js can measure the
         // defect and the fix in ONE run instead of asserting a fix against a number from an older
@@ -6667,6 +6681,22 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§CPE_CORR_BRANCH strokes=' + _corrArc.length +
         ' (branch chosen ONCE per stroke; per-sample deltas taken as the representative NEAREST it) ' +
         lines.join(' | '));
+      // §CPE_AIM_DEPTH_FREEZE — the runtime's own statement of what got frozen, per stroke. A
+      // stroke reporting entry=MISS (or exit=MISS) blends from the LIVE base in that phase, i.e.
+      // pre-freeze behaviour — that is the degrade path, and this line is how a log reader sees it.
+      var frz = [];
+      for (var fi = 0; fi < _corrArc.length; fi++) {
+        var fc = _corrArc[fi];
+        var span = (fc.entryDir && fc.exitDir)
+          ? (Math.acos(Math.max(-1, Math.min(1, fc.entryDir.x * fc.exitDir.x +
+              fc.entryDir.y * fc.exitDir.y + fc.entryDir.z * fc.exitDir.z))) * 180 / Math.PI).toFixed(2)
+          : 'n/a';
+        frz.push(fi + ':entry=' + (fc.entryDir ? 'ok' : 'MISS') + ' exit=' + (fc.exitDir ? 'ok' : 'MISS') +
+          ' entryVsExitDeg=' + span);
+      }
+      console.log('§CPE_AIM_DEPTH_FREEZE strokes=' + _corrArc.length +
+        ' (blend-from FROZEN at the window edges: entry gaze through ramp+hold, exit gaze through decay) ' +
+        frz.join(' | '));
     }
     // Read-only: the corrected DIRECTION and blend WEIGHT (0..1) in force at this e3, or null when no
     // correction's window reaches this far. §CPE_CONE_ORIENT_ADJUST item 6 (multiple overlapping
@@ -6743,7 +6773,16 @@ async function setupEffects(A, renderer, scene, camera) {
         t = (e3 - (best.s + hold)) / decay;
         w = 1 - _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
       }
-      return { dir: best.dir, w: w, refD: best.refD || 0 };   // §CPE_CORR_BRANCH: the stroke's own branch
+      // §CPE_AIM_DEPTH_FREEZE: the frozen from-direction for this phase — entry gaze through
+      // ramp+hold, exit gaze through the decay. The switch between the two happens at the hold
+      // boundary, where the from-weight is zero (w=1 → the blend returns the authored direction
+      // regardless), so it is continuous by construction. null → live base (edge probe failed, or
+      // the witness A/B switch A._cpeAimFreezeOff is on) — exactly the pre-freeze behaviour.
+      var from = null;
+      if (!A._cpeAimFreezeOff) {
+        from = (e3 <= best.s + hold) ? (best.entryDir || null) : (best.exitDir || null);
+      }
+      return { dir: best.dir, w: w, refD: best.refD || 0, from: from };   // §CPE_CORR_BRANCH: the stroke's own branch
     }
     // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
     // in this file (linear pitch), simplified to return just a unit direction (no pivot).
@@ -6783,8 +6822,33 @@ async function setupEffects(A, renderer, scene, camera) {
     // which is exactly the trap this hook's first cut fell into.
     A._cpeBeat3GazeDebug = function(e3) {
       var t = _beat3Pose(e3);
+      // `turnOverlap`: §CINEMA_BEAT_OVERLAP's own constant, read-only — the walk's last fraction
+      // blends the gaze toward the orbit AFTER the correction step, so a witness judging the pure
+      // correction curve must know where that zone begins instead of hardcoding a copy of it
+      // (§CPE_AIM_DEPTH_FREEZE G-FRZ-1 measured 7.48 deg of "non-constancy" on Duplex that was
+      // really this hand-off, because that walk's decay tail crosses e3 = 1 - overlap).
       return { pos: { x: t.x, y: t.y, z: t.z },
-               target: { x: t.tx, y: t.ty, z: t.tz }, arcLen: totalLen };
+               target: { x: t.tx, y: t.ty, z: t.tz }, arcLen: totalLen,
+               turnOverlap: CINEMA_TURN_OVERLAP };
+    };
+    // §CPE_AIM_DEPTH_FREEZE witness hook, read-only: metres of clearance along the COMPOSED gaze at
+    // e3 — the same ray a viewer would look along — using the product's own fan raycaster and mesh
+    // set (`_cinemaFanMeshes`, "the ONLY where-is-open-space source"). This is what lets a witness
+    // assert the nose-against-the-wall claim from product state instead of a witness-side mesh
+    // approximation. Returns CINEMA_FAN_FAR when nothing is hit, null when it cannot judge (no
+    // meshes / degenerate gaze) — a caller must treat null as INCONCLUSIVE, never as "clear".
+    A._cpeGazeClearDebug = function(e3) {
+      var t = _beat3Pose(e3);
+      var dx = t.tx - t.x, dy = t.ty - t.y, dz = t.tz - t.z, dL = Math.hypot(dx, dy, dz);
+      if (!(dL > 1e-9)) return null;
+      var meshes = _cinemaFanMeshes();
+      if (!meshes.length) return null;
+      if (!_cineFanRay) { _cineFanRay = new THREE.Raycaster(); _cineFanRay.firstHitOnly = true; }
+      _cineFanRay.set(new THREE.Vector3(t.x, t.y, t.z), new THREE.Vector3(dx / dL, dy / dL, dz / dL));
+      _cineFanRay.far = CINEMA_FAN_FAR;
+      var hits = null;
+      try { hits = _cineFanRay.intersectObjects(meshes, true); } catch (e) { return null; }
+      return (hits && hits.length) ? hits[0].distance : CINEMA_FAN_FAR;
     };
     // ══ §CINEMA_GAZE_SENSE (2026-07-27) — decide the look-back's turn DIRECTION ONCE per plan.
     // _cinemaGazeBlend used to make this choice PER FRAME: if |dYaw| crossed CINEMA_TURN_ANTIPODAL_RAD
@@ -8318,7 +8382,14 @@ async function setupEffects(A, renderer, scene, camera) {
         }
         var _corr = _cpeCorrectionAt(e3);
         if (_corr && _corr.w > 0) {
-          var _cb = _cpeCorrDirBlend(_lx, _ly, _lz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w, _corr.refD);
+          // §CPE_AIM_DEPTH_FREEZE (2026-09-01): blend from the FIXED gaze captured at the window's
+          // own edge instead of the live one — inside the window §CPE_AIM_DEPTH kept re-aiming the
+          // from-direction (measured 126-140 deg inside one ramp on Hospital) and that motion
+          // leaked through (1-w) as a 13.114 deg/sample wobble. With `from` the window is a
+          // fixed-to-fixed crossfade; from=null degrades to the live base (pre-freeze behaviour).
+          var _cfx = _lx, _cfy = _ly, _cfz = _lz;
+          if (_corr.from) { _cfx = _corr.from.x; _cfy = _corr.from.y; _cfz = _corr.from.z; }
+          var _cb = _cpeCorrDirBlend(_cfx, _cfy, _cfz, _corr.dir.x, _corr.dir.y, _corr.dir.z, _corr.w, _corr.refD);
           _lx = _cb.x; _ly = _cb.y; _lz = _cb.z;
         }
         // §CINEMA_BEAT_OVERLAP (2026-07-20, "no abruptness... even the path when reaching outside
