@@ -911,11 +911,22 @@
 
       var mp4 = window.MP4Mux.mux({ width: ew, height: eh, fps: fps, avcC: avcC, samples: chunks });
       var blob = new Blob([mp4], { type: 'video/mp4' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.mp4';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+      var _dlName = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.mp4';
+      // §CLI_SILENT_BAKE item 3 — the a.click() below is INERT headless. When a scripted runner
+      // installed __maxqDeliverBlob, hand it the finished bytes so node writes + asserts the file.
+      if (typeof window.__maxqDeliverBlob === 'function') {
+        try {
+          await window.__maxqDeliverBlob(blob, _dlName, 'video/mp4');
+          window.__maxqDeliveredBytes = blob.size;
+          console.log('§MAXQ_DELIVERED bytes=' + blob.size + ' name=' + _dlName);
+        } catch (eDl) { console.warn('§MAXQ_DELIVER_FAIL ' + eDl.message); }
+      } else {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = _dlName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+      }
       console.log('§MAXQ_DONE frames=' + framesDone + ' bytes=' + blob.size + ' type=video/mp4 codec=' + chosen);
       _status('🎬 MaxQ mp4 saved (' + (blob.size / 1e6).toFixed(1) + ' MB) — plays on iPhone/WhatsApp');
       return true;
@@ -955,11 +966,22 @@
     rec.stop();
     await stopped;
     var blob = new Blob(chunks, { type: mime });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.webm';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+    var _dlName = 'BIM_MaxQ_' + (A.activeBuilding || 'building') + '_' + Date.now() + '.webm';
+    // §CLI_SILENT_BAKE item 3 — same delivery seam as _stitchMp4: the fallback container must be
+    // capturable headlessly too (§MAXQ_MP4_FALLBACK is expected there, not a blocker).
+    if (typeof window.__maxqDeliverBlob === 'function') {
+      try {
+        await window.__maxqDeliverBlob(blob, _dlName, mime);
+        window.__maxqDeliveredBytes = blob.size;
+        console.log('§MAXQ_DELIVERED bytes=' + blob.size + ' name=' + _dlName);
+      } catch (eDl2) { console.warn('§MAXQ_DELIVER_FAIL ' + eDl2.message); }
+    } else {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = _dlName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 2000);
+    }
     console.log('§MAXQ_DONE frames=' + framesDone + ' bytes=' + blob.size + ' type=' + mime);
     _status('🎬 MaxQ movie saved (' + (blob.size / 1e6).toFixed(1) + ' MB)');
   }
@@ -1168,12 +1190,12 @@
     // user editing for five minutes would otherwise hold a screen wake lock and run Terminal/Hospital
     // at full detail with no LOD the entire time. So all three are released for the duration of the
     // editor and re-claimed on OK. Gated by G11 — proven released, not merely described as released.
-    if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false) {
+    var _cpeRes = null;
+    if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false && !opts.override) {
       A._maxqActive = false;
       _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       console.log('§CPE_LOCKS released for editing (maxqActive=false, wake+damping released)');
       _status('🎬 Edit the path, then OK to record');
-      var _cpeRes = null;
       try {
         _cpeRes = await A.cinemaPathEditor.open({ plan: plan, durationSec: nFrames / fps, fps: fps });
       } catch (eE) { console.warn('§CPE_FAIL ' + eE.message + ' — proceeding with the derived path'); }
@@ -1187,7 +1209,44 @@
         _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
         return;
       }
-      if (_cpeRes && _cpeRes.override) {
+      if (!(_cpeRes && _cpeRes.override)) {
+        // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
+        // literally the same object, so the film is byte-identical to one recorded without the
+        // editor existing. The default cost of this feature is one click and nothing else.
+        console.log('§CPE_APPLIED none — derived plan unchanged (guardrail 2: OK is a no-op)');
+      }
+    } else if (opts.override) {
+      // ══ §CLI_SILENT_BAKE item 2 (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md) — a
+      // scripted bake hands the stored override straight in, and it becomes the SAME _cpeRes shape
+      // the editor returns, so the application block below runs unchanged for both sources: one
+      // code path, no second format, no drift. The editor path stays byte-identical (its gate
+      // above merely adds `&& !opts.override`).
+      var _ovIn = opts.override;
+      var _durIn;
+      if (opts.frames) {
+        // An explicit frame count wins outright — durationSec must reproduce it exactly, because
+        // the application block below re-derives nFrames from durationSec (round-trip identity).
+        _durIn = nFrames / fps;
+      } else {
+        _durIn = (typeof _ovIn._total === 'number' && isFinite(_ovIn._total) && _ovIn._total > 0)
+          ? _ovIn._total : nFrames / fps;
+        // §CPE_PACING, applied to the OVERRIDE plan: a stored _total that predates caller-added
+        // reveal/hose flags must still buy those beats real frames — the plan's own naturalTotal
+        // is the authority, same contract as the derived path above.
+        try {
+          var _pIn = A.cinemaPathPlan(_durIn, _ovIn);
+          if (_pIn && _pIn.naturalTotal && isFinite(_pIn.naturalTotal) && _pIn.naturalTotal > 0)
+            _durIn = _pIn.naturalTotal;
+        } catch (eOvP) { console.warn('§MAXQ_OVERRIDE_IN plan-probe failed: ' + eOvP.message); }
+      }
+      _cpeRes = { action: 'ok', override: _ovIn, durationSec: _durIn, saved: false };
+      console.log('§MAXQ_OVERRIDE_IN source=' + (opts.overrideSource || 'caller') +
+        ' bands=' + (_ovIn.bands ? _ovIn.bands.length : 0) +
+        ' hoseOps=' + (_ovIn.hose ? _ovIn.hose.length : 0) +
+        ' buildup=' + (_ovIn.buildup ? 1 : 0) + ' roomTitle=' + (_ovIn.roomTitle ? 1 : 0) +
+        ' reveal=' + (_ovIn.reveal ? 1 : 0) + ' durationSec=' + _durIn.toFixed(1));
+    }
+    if (_cpeRes && _cpeRes.override) {
         // Constant speed means an edited path generally changes the total, so the frame count is
         // re-derived from it (item 11 — this is the render cost the editor surfaced).
         var _framesWas = nFrames;
@@ -1256,12 +1315,6 @@
         // `_runPreview` STAYS — the `opts.editor === false` branch above (scripted/witness bakes: no
         // panel, therefore no Preview button) is the one caller that still needs a rehearsal, and
         // `opts.preview` keeps its meaning for it.
-      } else {
-        // Guardrail 2: OK with no edit re-uses the plan object computed before the editor opened —
-        // literally the same object, so the film is byte-identical to one recorded without the
-        // editor existing. The default cost of this feature is one click and nothing else.
-        console.log('§CPE_APPLIED none — derived plan unchanged (guardrail 2: OK is a no-op)');
-      }
     }
     var db = null;
     var framesDone = 0;
@@ -1461,6 +1514,11 @@
         A.camera.position.set(pose.x, pose.y, pose.z);
         A.controls.target.set(pose.tx, pose.ty, pose.tz);
         A.controls.update();
+        // §CLI_SILENT_BAKE item 4 — dev pose tap: undefined in every user session. A scripted
+        // runner records the REAL pose each frame and asserts it numerically against the stored
+        // path (a bake that runs but ignores the passed path is the silent failure this catches).
+        if (typeof window.__maxqPoseTap === 'function')
+          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz); } catch (ePT) {}
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
@@ -1848,6 +1906,62 @@
       // §CPE_MAXQ_STATUS_DAY_LABEL — exposed for the witness (gates the pure formatter directly,
       // same precedent as the other pure functions on this line, instead of sitting through a bake).
       window.APP.maxqStatusDayRoomSegs = _maxqStatusDayRoomSegs;
+      // ══ §CLI_SILENT_BAKE item 1 (spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md) — dev-only
+      // scripted entry, defined ONLY when the launcher pre-set __MAXQ_SILENT before any page
+      // script ran (puppeteer evaluateOnNewDocument), so no user session ever sees it. Resolves
+      // the stored path — object | named IndexedDB plan | the building DB's own cinema_path
+      // table — into the ONE _buildOverride() shape and hands it to start(). No second schema.
+      if (window.__MAXQ_SILENT) window.__maxqBake = async function(o) {
+        o = o || {};
+        var a = window.APP;
+        var ov = null, src = null;
+        if (o.override) { ov = o.override; src = 'caller-object'; }
+        else if (o.name) {
+          var bld = a.activeBuilding || a.buildingName || 'building';
+          var rec = await new Promise(function(res, rej) {
+            var rq = indexedDB.open('bim_ootb_cinema_paths', 1);
+            rq.onupgradeneeded = function() {
+              var d = rq.result;
+              if (!d.objectStoreNames.contains('paths')) d.createObjectStore('paths', { keyPath: 'key' });
+            };
+            rq.onsuccess = function() {
+              var db = rq.result;
+              try {
+                var g = db.transaction('paths', 'readonly').objectStore('paths').get(bld + '|' + o.name);
+                g.onsuccess = function() { db.close(); res(g.result || null); };
+                g.onerror = function() { db.close(); rej(g.error || new Error('idb-get-failed')); };
+              } catch (e) { db.close(); rej(e); }
+            };
+            rq.onerror = function() { rej(rq.error || new Error('idb-open-failed')); };
+          });
+          if (!rec || !rec.override) throw new Error('no stored plan "' + o.name + '" for building ' + bld);
+          ov = rec.override; src = 'idb:' + bld + '|' + o.name;
+        } else {
+          // The PORTABLE store: trigger effects.js's own lazy _cpeLoadFromDb via a throwaway
+          // plan, then read the staged result — the shipped loader, never a re-implementation.
+          // Guard FIRST: _cpeLoadFromDb latches _cpeLoaded=true on entry, so probing before the
+          // DB is open would permanently blind this session to the stored path (found live on the
+          // very first CLI smoke run, 2026-09-01 — the runner's readiness wait raced the load).
+          if (!a.db) throw new Error('building DB not open yet — wait for load before __maxqBake');
+          if (typeof a.cinemaPathPlan === 'function') try { a.cinemaPathPlan(60); } catch (ePl) {}
+          var staged = (a._getCinemaPathEdit && a._getCinemaPathEdit()) || null;
+          if (!staged) throw new Error('no stored path: cinema_path table absent/empty and no plan named');
+          ov = staged; src = 'db:cinema_path';
+        }
+        // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
+        // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
+        var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter'].forEach(function(fk) {
+          if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
+        });
+        console.log('§CLI_BAKE_RESOLVED source=' + src + ' bands=' + (ov.bands ? ov.bands.length : 0) +
+          ' total=' + (ov._total != null ? (+ov._total).toFixed(1) : '?') + 's' +
+          ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
+          ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'tr'));
+        await start({ editor: false, preview: false, override: ov, overrideSource: src,
+                      frames: o.frames, fps: o.fps, forceWebm: o.forceWebm });
+        return { source: src, deliveredBytes: window.__maxqDeliveredBytes || 0 };
+      };
       clearInterval(_attach);
     }
   }, 500);
