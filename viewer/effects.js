@@ -6591,16 +6591,20 @@ async function setupEffects(A, renderer, scene, camera) {
           if (d < bd) { bd = d; best = pi; }
         }
         var sArc = segLen[best] / totalLen;
-        // Fallbacks (2m/12m/6m) mirror cinema_path_editor.js's CPE_CONE_CORR_RAMP_M/HOLD_M/DECAY_M
-        // authoring defaults — first-guess numbers, not settled (see that file's own comment; hold/
-        // decay raised 2026-08-27 per user feedback after first live use).
-        var rampM = (c.ramp != null && isFinite(c.ramp)) ? c.ramp : 2;
-        var holdM = (c.hold != null && isFinite(c.hold)) ? c.hold : 8;
-        var decayM = (c.decay != null && isFinite(c.decay)) ? c.decay : 5;
+        // §CPE_CORR_FRACTION — reach is a SHARE OF THE WALK (rampF/holdF/decayF on the record).
+        // LEGACY: records authored before 2026-09-01 carry metres (ramp/hold/decay) and are still
+        // honoured by converting against this plan's own totalLen — DEGRADE, DON'T DISABLE, so a
+        // saved plan keeps working without a migration. Defaults match the editor's constants.
+        var L = Math.max(1e-3, totalLen);
+        function _frac(fv, mv, dflt) {
+          if (fv != null && isFinite(fv)) return fv;
+          if (mv != null && isFinite(mv)) return mv / L;      // legacy metres
+          return dflt;
+        }
         _corrArc.push({ s: sArc, dir: c.dir,
-          rampFrac: Math.min(0.45, rampM / Math.max(1e-3, totalLen)),
-          holdFrac: holdM / Math.max(1e-3, totalLen),
-          decayFrac: decayM / Math.max(1e-3, totalLen) });
+          rampFrac: Math.min(0.45, _frac(c.rampF, c.ramp, 0.04)),
+          holdFrac: _frac(c.holdF, c.hold, 0.12),
+          decayFrac: _frac(c.decayF, c.decay, 0.18) });
       }
     }
     // Read-only: the corrected DIRECTION and blend WEIGHT (0..1) in force at this e3, or null when no
@@ -6627,33 +6631,58 @@ async function setupEffects(A, renderer, scene, camera) {
     // rather than a snap. `hold` and `decay` are therefore no longer consulted; they are left on the
     // records because saved plans carry them and a future model may want them again.
     var _corrSorted = null;
+    // §CPE_CORR_BOUNDED (2026-09-01 — USER RULING, supersedes the unbounded stroke above).
+    // User: "you probably can see my concern is during such editing, how to gracefully not overwrite
+    // too far out. So, if u agree, we can return to before, just that it should smoothen out more
+    // gracefully as it was abit abruptive before."
+    //
+    // So: BOUNDED again — ramp in, hold, decay out, then the gaze is path-follow's again and the
+    // rest of the walk is untouched. That is what makes a correction an EDIT rather than a takeover,
+    // which is the whole point while authoring.
+    //
+    // WHAT ACTUALLY MADE THE OLD ONE ABRUPT — the mechanism, not the tuning. Both edges were already
+    // smoothstepped, and a smoothstep's peak slope is 1.5/L, so the old exit (1.5/5m = 0.30 per m)
+    // was GENTLER in weight than its own entry (1.5/2m = 0.75 per m). The abruptness is not in w at
+    // all: during `hold` the gaze is PINNED to a fixed world direction while the camera keeps
+    // walking, so the path-follow gaze underneath drifts away the whole time. The decay then has to
+    // give back every degree of that accumulated divergence over its own length. Longer hold => more
+    // to undo => a harsher exit, at any decay value. Decay therefore has to scale with hold, not sit
+    // at a constant, and DECAY_M is raised to match (see cinema_path_editor.js's constants).
+    //
+    // `hold` and `decay` are read off each record again — they were kept on the records through the
+    // unbounded era precisely so this could come back without a migration.
     function _cpeCorrectionAt(e3) {
       if (_corrArc === null) _buildCpeCorrArc();
       if (!_corrArc.length) return null;
       if (_corrSorted === null) {
         _corrSorted = _corrArc.slice().sort(function (a, b) { return a.s - b.s; });
       }
-      // the last stroke whose ramp has begun
-      var act = -1, i;
+      // Nearest anchor wins where two windows overlap — unchanged MVP rule from
+      // §CPE_CONE_ORIENT_ADJUST item 6, still flagged as not user-decided.
+      var best = null, bestD = Infinity, i, c, ramp, hold, decay, w, t;
       for (i = 0; i < _corrSorted.length; i++) {
-        if (e3 >= _corrSorted[i].s - _corrSorted[i].rampFrac - 1e-9) act = i; else break;
+        c = _corrSorted[i];
+        ramp = Math.max(1e-9, c.rampFrac);
+        hold = Math.max(0, c.holdFrac);
+        decay = Math.max(1e-9, c.decayFrac);
+        if (e3 < c.s - ramp || e3 > c.s + hold + decay) continue;   // outside this stroke's window
+        var d = Math.abs(e3 - c.s);
+        if (d < bestD) { bestD = d; best = c; }
       }
-      if (act < 0) return null;                       // before the first stroke — path-follow, untouched
-      var c = _corrSorted[act];
-      var ramp = Math.max(1e-9, c.rampFrac);
-      var t = Math.min(1, Math.max(0, (e3 - (c.s - ramp)) / ramp));
-      var k = _cinemaSmoothstep(t);
-      if (act === 0) {
-        // First stroke: crossfade OUT of the underlying path-follow gaze, then hold at full strength
-        // for the rest of the walk. This is the "stays" the user asked for.
-        return { dir: c.dir, w: k };
+      if (!best) return null;                    // outside every window — path-follow, untouched
+      ramp = Math.max(1e-9, best.rampFrac);
+      hold = Math.max(0, best.holdFrac);
+      decay = Math.max(1e-9, best.decayFrac);
+      if (e3 < best.s) {                          // ease IN
+        t = (e3 - (best.s - ramp)) / ramp;
+        w = _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
+      } else if (e3 <= best.s + hold) {           // HOLD at full authority
+        w = 1;
+      } else {                                    // ease OUT, back to path-follow
+        t = (e3 - (best.s + hold)) / decay;
+        w = 1 - _cinemaSmoothstep(Math.min(1, Math.max(0, t)));
       }
-      // Later stroke: full authority throughout (w=1) — what changes is WHICH direction, crossfaded
-      // from the stroke it is painting over, so the handover is smooth and never drops back to the
-      // path-follow gaze in between.
-      var prev = _corrSorted[act - 1];
-      var d = _cpeCorrDirBlend(prev.dir.x, prev.dir.y, prev.dir.z, c.dir.x, c.dir.y, c.dir.z, k);
-      return { dir: d, w: 1 };
+      return { dir: best.dir, w: w };
     }
     // Generic yaw/pitch-lerp direction blend — same technique _dirBlend/_cinemaGazeBlend already use
     // in this file (short-way yaw, linear pitch), simplified to return just a unit direction (no
@@ -6676,6 +6705,19 @@ async function setupEffects(A, renderer, scene, camera) {
     // SHAPE directly in the arc-fraction space the envelope is actually defined in, without needing
     // to invert tNorm -> e3 through _evenTurnRemap/_holdMap (private to this closure).
     A._cpeBeat3PoseDebug = function(e3) { return _beat3Pose(e3); };
+    // §CPE_CORR_BOUNDED witness hook, read-only: the camera POSITION and its look-AT target at the
+    // same e3, so a witness can measure the real gaze ANGLE in degrees — a target-point delta alone
+    // cannot tell a small turn far away from a big turn nearby. Same precedent as the hook above.
+    // `arcLen` lets the witness convert arc-fraction into METRES, which is the unit the ramp/hold/
+    // decay constants are actually authored in.
+    // _beat3Pose returns _cinemaGazeBlend's shape: POSITION in x/y/z and the look-at TARGET in
+    // tx/ty/tz. Reading t.x/t.y/t.z as the target yields position === target — a zero-length gaze —
+    // which is exactly the trap this hook's first cut fell into.
+    A._cpeBeat3GazeDebug = function(e3) {
+      var t = _beat3Pose(e3);
+      return { pos: { x: t.x, y: t.y, z: t.z },
+               target: { x: t.tx, y: t.ty, z: t.tz }, arcLen: totalLen };
+    };
     // ══ §CINEMA_GAZE_SENSE (2026-07-27) — decide the look-back's turn DIRECTION ONCE per plan.
     // _cinemaGazeBlend used to make this choice PER FRAME: if |dYaw| crossed CINEMA_TURN_ANTIPODAL_RAD
     // it switched from the short way to the +2π way. That test is a step function of the walk
