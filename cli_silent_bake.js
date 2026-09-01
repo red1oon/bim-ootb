@@ -74,17 +74,24 @@ const server = http.createServer((req, res) => {
   const swv = (fs.readFileSync(path.join(ROOT, 'viewer/sw.js'), 'utf8').match(/CACHE_VERSION = '([^']+)'/) || [])[1];
   log(`§CLI_BAKE_ENV root=${ROOT} commit=${commit} sw=${swv} db=${DB} gpu=${GPU} out=${OUT}`);
 
+  // MEASURED 2026-09-01 (gl_probe, this machine): headless '--use-angle=vulkan' = NO-CONTEXT;
+  // plain headless = SwiftShader; '--use-angle=gl-egl' = Intel UHD via Mesa; gl-egl PLUS
+  // __EGL_VENDOR_LIBRARY_FILENAMES=10_nvidia.json = the real RTX 4060 ("ANGLE (NVIDIA Corporation,
+  // NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)"), fully headless, no X needed.
   const gpuArgs = {
     sw: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-    real: ['--use-angle=vulkan', '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan',
-           '--ignore-gpu-blocklist', '--enable-gpu-rasterization'],
-    headful: []
+    real: ['--use-angle=gl-egl', '--ignore-gpu-blocklist'],
+    intel: ['--use-angle=gl-egl', '--ignore-gpu-blocklist'],
+    headful: ['--disable-backgrounding-occluded-windows']   // §MAXQ_HIDDEN_PAUSE parks hidden tabs
   }[GPU] || [];
+  const gpuEnv = GPU === 'real'
+    ? { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' } : {};
   const extra = (arg('chrome-args', '') || '').split(/\s+/).filter(Boolean);
   const browser = await puppeteer.launch({
     headless: GPU === 'headful' ? false : true,
     userDataDir: PROFILE,
     protocolTimeout: 15 * 60 * 1000,
+    env: Object.assign({}, process.env, gpuEnv),
     args: ['--no-sandbox', '--hide-crash-restore-bubble', `--window-size=${W + 20},${H + 120}`]
       .concat(gpuArgs, extra)
   });
