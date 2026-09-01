@@ -22,15 +22,17 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1119';   // bump on each deploy; per-change detail is the git commit message.
-// MERGE NOTE (2026-09-01, second of the day): both this branch and origin/main (#1599
-// §CPE_PIE_FLYOUT_DROP) took v1118 concurrently — resolved by the standing sw.js rule again:
-// KEEP BOTH, take the HIGHER version, separate change gets its OWN bump -> this one is v1119.
+const CACHE_VERSION = 'v1120';   // bump on each deploy; per-change detail is the git commit message.
+// MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
+// version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
 // derived FRONT_SIDE_CLASSES, T1<=2% defect; §S260d "inconsistent normals" premise corrected —
 // measured false) + scene.js ambient/hemi lowered to the derived light floor so away-from-sun
 // faces darken. viewer.html streaming.js?v=65->66 + scene.js?v=57->58 bumped in the SAME commit.
 // Witness: witness_wall_side_light_floor.js (pick integrity + no-vanish + perf/mem gates).
+// v1120 (2026-09-01) §CLI_SILENT_BAKE (cinema_maxq.js?v=9 dev-only scripted bake entry) +
+// §NIGHT_BAKE_POOL (tools.js?v=44 — point-light COUNT frozen during a MaxQ bake; measured
+// 13-53 s/frame shader-recompile churn on the first headless Hospital bake, s4_300.log).
 // MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
 // the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
 // take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
