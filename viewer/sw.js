@@ -22,8 +22,12 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1114';   // bump on each deploy; per-change detail is the git commit message.
-// v1114 (2026-09-01) §CPE_CORR_BRANCH: viewer/effects.js changed — _cpeCorrDirBlend's 2*pi branch is
+const CACHE_VERSION = 'v1116';   // bump on each deploy; per-change detail is the git commit message.
+// MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
+// the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
+// take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
+// gets its OWN bump rather than riding v1115 (§CRISIS LESSON 4, the twice-missed rule).
+// v1116 (2026-09-01) §CPE_CORR_BRANCH: viewer/effects.js changed — _cpeCorrDirBlend's 2*pi branch is
 // now resolved ONCE per correction stroke (a port of §CINEMA_GAZE_SENSE's fix) instead of per sample
 // by round(raw/2pi), which is a step function of the underlying gaze and snapped the camera 110.44 deg
 // in ONE sample on Hospital where the walk's own worst sample is 13.28. effects.js is in
@@ -31,6 +35,15 @@ const CACHE_VERSION = 'v1114';   // bump on each deploy; per-change detail is th
 // second bump a stale ?v= URL keeps serving the pre-fix file (the failure at v-note "why is this still
 // blue" below). Witness: witness_cpe_corr_brush.js 8/8 on Hospital, with an in-run A/B
 // (A._cpeCorrBranchOff) measuring 110.436 -> 13.114 deg/sample.
+// v1115 (2026-09-01) §CPE_MATERIAL_KEY: streaming.js triplanar texture lookup now keys the
+// element's OWN authored material_name FIRST and falls back to ifc_class (viewer.html
+// streaming.js?v=64->65 bumped in the same commit, per the v1030 lesson below).
+// v1114 (2026-09-01) §SUNGLASS_GROUPING_RULES + §SUNGLASS_BROWN_TRACK (bim-compiler
+// prompts/CINEMA_PATH_EDITOR.md §SESSION_2026-09-01C): palette storey bands (ticks 31-55) now a
+// monotonic ramp keyed on the storey's geometric ordinal (median world-Y), not alphabetic rank +
+// cycling list; class/disc bands byte-identical. Palette scrub track paints ticks 98-100 brown
+// (material-injection affordance). tools.js?v=42->43, viewer.html CSS — both in PRECACHE_ASSETS.
+// Witness: witness_sunglass_grouping_rules.js.
 // v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
 // §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame §GLOW_LENS_QUAD rebuild (viewer/effects.js)
 // now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
