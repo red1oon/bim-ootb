@@ -175,7 +175,17 @@ async function setupScene(A) {
 
   // Lighting
   // §S276: Physically-correct intensities (legacy × π). Tuned with ACESFilmic @ exposure 0.45.
-  const ambient = new THREE.AmbientLight(0xffffff, 0.785);
+  // §WALL_SIDE_AND_LIGHT_FLOOR (2026-09-01, PHOTOREAL_STILL_RENDER.md): ambient 0.785->0.386 and
+  // hemi 1.257->0.617 — NOT hand-tuned. Derived: the old non-directional fill measured 1.756
+  // ambient-equivalent units on a vertical wall (in-page single-light probe renders, linear:
+  // hemi contributes 0.611/unit at horizontal N, envMap 0.203 at intensity 0.6) against a sun
+  // term of 2.820 (4.4 x 0.958 x the 0.669 max horizontal N·L of this sun vector), so an
+  // away-facing wall held 38% of a sun-facing one's light and could never read dark. Target
+  // contrast 0.25 wants k=0.475 on (ambient, hemi); the interior floor (p25 fill retention
+  // >= 0.55) binds first at k=0.491 — declared conflict, clamped at the floor: achieved
+  // contrast 0.255. One k scales both lights jointly to preserve the colour balance; sun and
+  // envMapIntensity untouched. Witness: witness_wall_side_light_floor.js (§WWSLF_DERIVE line).
+  const ambient = new THREE.AmbientLight(0xffffff, 0.386);
   scene.add(ambient);
   A.ambient = ambient;
 
@@ -185,7 +195,7 @@ async function setupScene(A) {
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 1.257);
+  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.617);
   scene.add(hemi);
   A.hemi = hemi;
 
