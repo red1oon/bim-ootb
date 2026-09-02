@@ -712,6 +712,57 @@ function setupTools(A) {
       });
     }
 
+    // ══ §MEP_DISC_PALETTE (2026-09-02) ══════════════════════════════════════════════════════════
+    // Spec: bim-compiler prompts/RESUME_2026-09-02_FILM_REVIEW.md §MEP_SYNTHETIC_PALETTE.
+    // User, 2026-09-02: "On Hospital or any building having zero usable material_name, can the
+    // synthetic colouring be more MEP standard? ... All i want is minimalist better coluring
+    // surface rules."
+    //
+    // ⚠ THIS MAPPING IS AN AUTHORED CHOICE, NOT AN INDUSTRY STANDARD. Saying otherwise would be
+    // invention (PRIME RULE). No MEP colour convention exists anywhere in the model data: Hospital's
+    // 6,664 `material_name` rows are 100% `≈`-prefixed synthetic approximations (`≈ Grey`), and
+    // there is no IfcSystem / `system` column on ANY shipped building DB (grepped, 2026-09-02).
+    // So the KEY is EXTRACTED — `elements_meta.discipline`, non-null on 100% of rows on all six
+    // shipped buildings — while the discipline→colour ASSIGNMENT is authored. It is not authored
+    // HERE, though: it reuses `A.DISC_COLORS` (config.js) VERBATIM, the same map the discipline HUD
+    // bars (panels.js), the bbox placeholders (streaming.js) and city/measure already paint with.
+    // The win is CONSISTENCY, not novelty — a discipline now gets the same colour in the film that
+    // the viewer's own legend gives it.
+    //
+    // MINIMALIST, and checkable rather than asserted: ONE hue per discipline. No cycling, no
+    // per-element hue, no per-class subdivision. A building's palette is therefore exactly as large
+    // as its discipline count (measured: Hospital 6, LTU_AHouse 8, Clinic 6, JKR 7, HHS 3, Duplex 5)
+    // — never a 40-hue soup. `sub` (0-9 across the band) keeps the in-band meaning it has in
+    // applyPalette: deepen saturation, darken lightness. It shifts no hue, so the hue COUNT is
+    // invariant across the whole band and the witness can assert it at any tick.
+    // A discipline outside A.DISC_COLORS (VALID_DISCS carries 29 codes, the colour map 12) falls
+    // back to the existing earthTone cycle rather than going uncoloured — counted in the log.
+    function applyDiscPalette(groups, keys, sub) {
+      var used = {}, mapped = 0, fell = 0, shown = [];
+      keys.forEach(function(k) {
+        var hex = (A.DISC_COLORS && A.DISC_COLORS[k] != null) ? A.DISC_COLORS[k] : null;
+        var color = new THREE.Color();
+        if (hex != null) { color.setHex(hex); mapped++; }
+        else { var p = earthTone[fell % earthTone.length]; color.setHSL(p[0], p[1], p[2]); fell++; }
+        var hsl = { h: 0, s: 0, l: 0 };
+        color.getHSL(hsl);
+        color.setHSL(hsl.h, Math.min(1, hsl.s + sub * 0.05), Math.max(0, hsl.l - sub * 0.03));
+        var hexStr = '#' + color.getHexString();
+        used[hexStr] = (used[hexStr] || 0) + 1;
+        shown.push(k + '=' + hexStr + (hex == null ? '(fallback)' : ''));
+        groups[k].forEach(function(m) { A._recolorMesh(m, color); });
+      });
+      var hues = Object.keys(used).length;
+      // Self-failure: a VACUOUS population and a hue COLLISION are different failures and must read
+      // differently. Neither may print as a quiet success.
+      console.log('[S200] §MEP_DISC_PALETTE discs=' + keys.length + ' distinctHues=' + hues +
+        ' fromLegend=' + mapped + ' fallback=' + fell + ' sub=' + sub +
+        (keys.length === 0 ? ' ⚠ VACUOUS — no discipline group to colour, nothing judged'
+          : hues === keys.length ? ' — one hue per discipline, no collision'
+          : ' ⚠ COLLISION ' + keys.length + ' discs share only ' + hues + ' hues') +
+        ' [' + shown.join(' ') + ']');
+    }
+
     // §SUNGLASS_GROUPING_RULES: monotonic RAMP for ORDINAL groupings — the colour index is the
     // ordinal position (lowest storey darkest), not the alphabetic rank + cycling palette that
     // applyPalette keeps for categorical groupings. Hue h0→h1 and lightness 0.36→0.78 both
@@ -771,11 +822,14 @@ function setupTools(A) {
       strategy = ord.keys.length + ' storeys';
 
     } else if (tick <= 65) {
-      // ── 56-65: Earth by discipline ──
+      // ── 56-65: discipline, painted with the viewer's OWN legend (§MEP_DISC_PALETTE) ──
+      // Was: applyPalette(g, keys, earthTone, tick - 56) — an alphabetic-rank cycle through a
+      // generic 10-entry earth ramp, so a discipline's colour depended on which OTHER disciplines
+      // happened to be in the building and never matched the HUD's own discipline bars.
       phase = 'Discipline';
       var g = A._groupBy(allMeshes, 'disc');
       var keys = Object.keys(g).sort();
-      applyPalette(g, keys, earthTone, tick - 56);
+      applyDiscPalette(g, keys, tick - 56);
       strategy = keys.length + ' discs';
 
     } else if (tick <= 80) {

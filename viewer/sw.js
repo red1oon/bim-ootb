@@ -22,7 +22,7 @@
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1120';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1121';   // bump on each deploy; per-change detail is the git commit message.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
@@ -33,6 +33,12 @@ const CACHE_VERSION = 'v1120';   // bump on each deploy; per-change detail is th
 // v1120 (2026-09-01) §CLI_SILENT_BAKE (cinema_maxq.js?v=9 dev-only scripted bake entry) +
 // §NIGHT_BAKE_POOL (tools.js?v=44 — point-light COUNT frozen during a MaxQ bake; measured
 // 13-53 s/frame shader-recompile churn on the first headless Hospital bake, s4_300.log).
+// v1121 (2026-09-02) §MEP_DISC_PALETTE: the §SUNGLASS discipline band (ticks 56-65) paints from
+// A.DISC_COLORS — the viewer's OWN legend — instead of an alphabetic cycle through a generic earth
+// ramp (tools.js?v=44->45), and streaming.js?v=66->67 sets userData.disc on discipline-UNIFORM
+// InstancedMeshes so they stop falling into §SUNGLASS's 'Unknown' bucket. The disc->colour mapping
+// is an AUTHORED choice reusing an existing in-repo table, NOT an industry MEP standard — no such
+// convention exists in the model data. Witness: viewer/tests/witness_mep_disc_palette.js.
 // MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
 // the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
 // take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
