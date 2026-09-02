@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// WITNESS — §TPL_MOVIE_BINDS_BARS: the movie plays inside the bars the 4D template authored.
+// WITNESS — §TPL_MOVIE_BINDS_BARS: every element is REMAPPED inside the bar the 4D template
+// authored. ⚠ NOT "the movie plays inside the bars" (the original title, corrected 2026-09-02,
+// queue item A-0): this judges `displaySchedule`, and viewer/time_machine.js has ZERO readers of
+// that map (§TM_REVEAL_SHIPPED). The bar-binding of the PLAYED layer is W-RWB
+// (witness_tm_reveal_within_bar.js, §TM_REVEAL_TILED) — that is the witness for the film.
 // Spec: bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S70.
 //
 // WHICH LAYER THIS PROVES (WITNESS_INTERFACE_FRAMEWORK.md §CRISIS LESSON 1):
