@@ -31,7 +31,18 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1125';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1126';   // bump on each deploy; per-change detail is the git commit message.
+// v1126 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
+// HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
+// envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
+// instead of the uniform grey metal the metal triplanar texture multiplied out of the shipped
+// achromatic off-white default. §MEP_DISC_TINT's `!rgbaStr` gate + its 3-class DISC_TINT_CLASSES
+// list are subsumed by ONE owner, A._mepDiscAlbedo. viewer.html streaming.js?v=67->68 bumped in
+// the SAME commit (§CRISIS LESSON 4 — a precached streaming.js is served past a CACHE_VERSION bump
+// without its own ?v= change). The disc->hue mapping is an AUTHORED choice reusing A.DISC_COLORS
+// verbatim, NOT a published MEP standard — no such convention exists in the model data.
+// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 54/54, five buildings, red
+// control + tier-1 byte-identity on the user's own fire-red lever (1300/1300 elements).
 // v1125 (rebase of PR #1318 onto origin/main) §GANTT_CACHE_ERR_STACK: time_machine.js's
 // injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
 // loadOps) instead of the bare error message, which could not locate a live user's GUID-key
