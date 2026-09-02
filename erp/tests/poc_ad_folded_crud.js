@@ -45,7 +45,16 @@ const credit = upd.fields.find(f => f.col === 'so_creditlimit');
 const grp = upd.fields.find(f => f.col === 'c_bp_group_id');
 ok('amount → number', credit && credit.type === 'number', credit && credit.type);
 ok('tableDirect → fk with ref = column minus _id', grp && grp.type === 'fk' && grp.ref === 'c_bp_group', grp && (grp.type + '/' + grp.ref));
-ok('string → string + required carried from IsMandatory', upd.fields.find(f => f.col === 'value').type === 'string' && upd.fields.find(f => f.col === 'value').required === true);
+// §P7 P7.1 (ERP_IDEMPIERE_UX_PARITY.md §P7-EXTRACT E5 — W-PARITY-MANDATORY-CREATE): this assertion USED to read
+//   "value … required === true". It froze the pre-port contract: GridField.isMandatory(boolean):377-385 exempts
+//   ColumnName.equals("Value") in a WINDOW, whatever AD_Column.IsMandatory says ("persistence layer manages
+//   them"), so the faithful fold is required===false WITH the exemption recorded. `name` is the CONTROL — also
+//   IsMandatory='Y', not on the exempt list — so this now judges BOTH arms and cannot pass by the port firing
+//   too widely. The claim is unchanged (IsMandatory reaches the spec); the oracle moved to the Java's.
+const vF = upd.fields.find(f => f.col === 'value'), nF = upd.fields.find(f => f.col === 'name');
+ok('string → string; IsMandatory reaches the spec (name required) …', vF.type === 'string' && nF.required === true, 'name.required=' + nF.required);
+ok('… but ColumnName "Value" is window-EXEMPT per GridField.isMandatory:380 → required=false + tag',
+   vF.required === false && vF.mandatoryexempt === 'Value', 'value.required=' + vF.required + ' tag=' + vF.mandatoryexempt);
 // §P2 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.3, W-PARITY-REFLIST) — LEG-1 RETIRED 2026-09-02: a Yes-No
 //   is a Y/N control ('yesno'), a List is an AD_Ref_List select ('list'). This assertion used to PIN the leg ("folds to STRING").
 ok('Yes-No (AD_Reference_ID=20) folds to YESNO (a Y/N control) — not fk, and no longer string (LEG-1 retired)', upd.fields.find(f => f.col === 'iscustomer').type === 'yesno', upd.fields.find(f => f.col === 'iscustomer').type);

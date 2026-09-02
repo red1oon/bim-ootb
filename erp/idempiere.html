@@ -660,6 +660,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _viewMode = 'grid';    // 'grid' | 'form'
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
+  var _recByLevel = {};      // §P7 — tabLevel -> the selected RECORD (the window context a detail tab reads)
   var _lastFoldCreated = []; // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
                               // most recent _overlayListTip() fold's `created` synthetic-pk list (ascending
                               // opId order — see CORE.listTip in crud_overlay.js). CRUD_CREATE ops never carry
@@ -935,7 +936,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
                             : users.filter(function (u) { return (u.name || '').toLowerCase().indexOf(ql) >= 0; })[0];
     if (!m) { console.log('§IDEMPIERE-AUTOLOGIN miss q=' + q); return false; }
     var roles = SES.rolesForUser(db, m.id); if (!roles.length) return false;
-    var rid = roles[0].id, orgs = SES.orgsForRole(db, rid), oid = orgs.length ? orgs[0].id : 0;
+    // §P7 (ERP_IDEMPIERE_UX_PARITY.md §P7-RESULT — Witness: W-PARITY-MANDATORY-CREATE): an UNATTENDED
+    //   deep-link login must land on an org that can actually author a document. `orgsForRole` sorts
+    //   `ORDER BY oa.AD_Org_ID`, so `*` (AD_Org_ID 0) always came first — but the dictionary itself says `*`
+    //   is never a document Organization: AD_Val_Rule 130, bound to AD_Org_ID on all five document tabs,
+    //   reads `AD_Org.AD_Org_ID <> 0 AND AD_Org.IsSummary='N'`, and GridField.validateValueNoDirect:1219-1229
+    //   NULLS a default the lookup rejects → GridTable.getMandatory:1985 then reports FillMandatory. So a
+    //   `*` context cannot save a Sales Order in iDempiere either; picking it for an unattended login was an
+    //   artifact of our id-ordering (iDempiere's own Login.getOrgs:234 orders `BY o.Name`). The INTERACTIVE
+    //   picker still offers `*` — a user who chooses it gets iDempiere's behaviour, unchanged.
+    var rid = roles[0].id, orgs = SES.orgsForRole(db, rid);
+    var realOrgs = orgs.filter(function (o) { return Number(o.id) !== 0; });
+    var oid = realOrgs.length ? realOrgs[0].id : (orgs.length ? orgs[0].id : 0);
+    console.log('§AUTOLOGIN-ORG picked=' + oid + ' of [' + orgs.map(function (o) { return o.id; }).join(',') +
+                '] realOrgs=' + realOrgs.length + ' (AD_Val_Rule 130: a document org is never 0)');
     _loginUser = m;
     _session = SES.buildContext(db, m.id, { roleId: rid, orgId: oid });
     if (!_session) return false;
@@ -1237,7 +1251,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _openWins[windowId] = { win: win, name: name || win.name };
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
-    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {};
+    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {};
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
     _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
@@ -1733,7 +1747,27 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var lvl = tab.tabLevel || 0;
     var rec = _records[_recIdx];
     _selByLevel[lvl] = rec ? recVal(rec, _keyCol(tab)) : null;
+    // §P7 P7.6 (ERP_IDEMPIERE_UX_PARITY.md §P7-SPEC — W-PARITY-MANDATORY-CREATE): keep the selected ROW, not
+    //   just its key. iDempiere's GridTab.setCurrentRow pushes EVERY column of the selected row into the window
+    //   Env (GridField.setValue → updateContext), which is what a detail tab's @token@ DefaultValue and its
+    //   val rules read. _selByLevel alone carried only the parent key, so a child New could resolve nothing.
+    _recByLevel[lvl] = rec || null;
     Object.keys(_selByLevel).forEach(function (L) { if (Number(L) > lvl) delete _selByLevel[L]; });
+    Object.keys(_recByLevel).forEach(function (L) { if (Number(L) > lvl) delete _recByLevel[L]; });
+  }
+  // _winCtx — the WINDOW context for the tab about to be folded: the PARENT row's columns (lower-cased) for a
+  //   detail tab, then the Env globals filling what it lacks. Mirrors Env.getContext's "WindowNo|TabNo|Column"
+  //   → "WindowNo|Column" fallback (org.compiere.util.Env), which is why a line sees its header's values.
+  function _winCtxFor(tab) {
+    var ctx = {}, lvl = (tab && tab.tabLevel) || 0, k;
+    var prec = lvl > 0 ? _recByLevel[lvl - 1] : null;
+    if (prec) for (k in prec) if (Object.prototype.hasOwnProperty.call(prec, k) && prec[k] != null && String(prec[k]) !== '') ctx[String(k).toLowerCase()] = prec[k];
+    var put = function (n, v) { if (v != null && String(v) !== '' && (ctx[n] == null || String(ctx[n]) === '')) ctx[n] = v; };
+    put('ad_client_id', (_session && _session.client) ? _session.client.id : null);
+    put('ad_org_id', (_session && _session.org) ? _session.org.id : null);
+    put('ad_user_id', (_session && _session.user) ? _session.user.id : null);
+    put('date', (new Date()).toISOString().slice(0, 10));
+    return ctx;
   }
   function renderActiveTab() {
     _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
@@ -3069,6 +3103,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try { var rr = (window.ADParser && db) ? window.ADParser.resolveReference(db, id) : null; return (rr && rr.type === 'list') ? rr.options : null; }
       catch (eRef) { return null; }
     };
+    // §P7 P7.6 — the window context (parent row + Env globals) the AD DefaultValue expressions resolve from,
+    //   and the same map crud_overlay's _valRuleCtx reads for a detail tab's @token@ val rules (APP._winCtx).
+    ctx.win = _winCtxFor(tab);
+    try { window.APP = window.APP || {}; window.APP._winCtx = ctx.win; } catch (eW) {}
     var spec = window.__crud.core.foldCrudSpec(tab.fields, {
       key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList });
     window.__crud.registerFolded(tn, spec);

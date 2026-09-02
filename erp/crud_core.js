@@ -696,7 +696,12 @@
   //   control). else (10 String · 14 Text · …) → string.
   function mapRefDisplayType(rid) {
     switch (Number(rid)) {
-      case 11: case 12: case 22: case 29: return 'number';
+      // §P7 P7.3 (ERP_IDEMPIERE_UX_PARITY.md §P7-EXTRACT E4 — W-PARITY-MANDATORY-CREATE): 37 CostPrice is
+      // NUMERIC in iDempiere (DisplayType.java:329-333 isNumeric = {Amount 12, Number 22, CostPrice 37,
+      // Integer 11, Quantity 29}; SystemIDs.java:132 REFERENCE_DATATYPE_COSTPRICE = 37). It fell through to
+      // `string` here, which is why C_OrderLine's mandatory PriceEntered/PriceActual/PriceList rendered as
+      // un-defaulted text boxes instead of the `0` GridField.defaultFromDatatype:1044-1047 gives them.
+      case 11: case 12: case 22: case 29: case 37: return 'number';
       case 15: case 16: case 24: return 'date';
       case 18: case 19: case 30: return 'fk';
       case 13: return 'id'; case 28: return 'button';
@@ -719,10 +724,47 @@
       default: return 'string';   // string · text · char · unknown
     }
   }
+  // ── §P7 (ERP_IDEMPIERE_UX_PARITY.md §P7-EXTRACT E5 — Witness: W-PARITY-MANDATORY-CREATE) ────────────────
+  // gridFieldMandatoryExempt — a FAITHFUL port of GridField.isMandatory(boolean):377-385. In a WINDOW,
+  // iDempiere never treats these five column shapes as mandatory, whatever AD_Column.IsMandatory says,
+  // "(persistence layer manages them)":
+  //     if (m_gridTab != null && ( (m_vo.IsKey && ColumnName.endsWith("_ID"))
+  //        || ColumnName.startsWith("Created") || ColumnName.startsWith("Updated")
+  //        || ColumnName.equals("Value") || ColumnName.equals("DocumentNo")
+  //        || ColumnName.equals("M_AttributeSetInstance_ID")   //  0 is valid
+  //        )) return false;
+  // This is why turning the create-time mandatory check on does NOT need "New-time defaults for DocumentNo
+  // and M_AttributeSetInstance_ID" — iDempiere does not require them either. Case-sensitive on purpose: the
+  // Java compares the raw AD ColumnName, so the AD casing is what is tested (not our lower-cased spec.col).
+  function gridFieldMandatoryExempt(columnName, isKey) {
+    var c = String(columnName == null ? '' : columnName);
+    if (isKey && /_ID$/.test(c)) return 'key_id';
+    if (c.indexOf('Created') === 0) return 'Created*';
+    if (c.indexOf('Updated') === 0) return 'Updated*';
+    if (c === 'Value') return 'Value';
+    if (c === 'DocumentNo') return 'DocumentNo';
+    if (c === 'M_AttributeSetInstance_ID') return 'M_AttributeSetInstance_ID';
+    return null;
+  }
+  // §P7 P7.2 — a FAITHFUL port of GridField.defaultFromDatatype():1022-1051, the LAST stage of
+  // getDefault()'s "123457" priority chain (GridField.java:98). SOURCE ORDER IS LOAD-BEARING: the `_ID` →
+  // null test (:1038-1041) precedes the numeric → "0" test (:1044-1047), so NO *_ID column ever gets 0 here
+  // — M_AttributeSetInstance_ID included (its 0 comes from MOrderLine, not the grid). Returns null when the
+  // stage yields nothing, so the caller leaves the field empty rather than inventing a value.
+  //     Button non-_ID → "N" (:1027-1030) · YesNo → "N" (:1033-1036) · _ID → null · numeric → "0"
+  function gridFieldDatatypeDefault(columnName, refId, type) {
+    var c = String(columnName == null ? '' : columnName), r = Number(refId);
+    if (r === 28 && !/_ID$/.test(c)) return 'N';
+    if (r === 20 || type === 'yesno') return 'N';
+    if (/_ID$/.test(c)) return null;
+    if (type === 'number') return '0';               // type already folds DisplayType.isNumeric (incl. 37, P7.3)
+    return null;
+  }
   function foldCrudSpec(adFields, opts) {
     opts = opts || {};
     var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
     var forVerb = opts.forVerb || 'update';
+    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [];   // §P7 — witness seams, emitted once per fold
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
@@ -732,8 +774,12 @@
       // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
       // read-only table/tab are always read-only.
       var readonly = !!f.isReadOnly || roTable || (forVerb === 'update' && f.isUpdateable === false);
+      // §P7 P7.1 — GridField.isMandatory():377-385's window exemptions, before anything else reads `required`.
+      var exempt = gridFieldMandatoryExempt(f.columnName, !!f.isKey);
+      if (exempt) exemptLog.push(String(f.columnName) + ':' + exempt);
       var spec = { col: String(f.columnName).toLowerCase(), label: f.name || f.columnName, type: type,
-                   required: !!f.isMandatory, readonly: readonly };
+                   required: !!f.isMandatory && !exempt, readonly: readonly };
+      if (exempt) spec.mandatoryexempt = exempt;
       // DEFAULTS: resolve the well-known AD context variables iDempiere's Env fills on New (@#AD_Client_ID@,
       // @#AD_Org_ID@, @#Date@) from opts.ctx — so a mandatory system column (AD_Client_ID/AD_Org_ID) doesn't block a
       // folded create; keep PLAIN literals (0/N/Y/DR…); drop any OTHER unevaluated expression (@SQL=…, functions) —
@@ -746,6 +792,42 @@
         else if (ds === '@#AD_Org_ID@' && ctx.orgId != null) spec.default = ctx.orgId;
         else if (ds === '@#Date@' && ctx.today) spec.default = ctx.today;
         else if (!/[@()]/.test(ds)) spec.default = d;
+        else {
+          // §P7 P7.7 — GridField.defaultFromExpression():875-913, the DefaultValue-expression stage (3) of
+          // getDefault()'s "123457" chain, now resolved against the WINDOW context instead of dropped.
+          // Faithful to the Java: tokenize on `,;` (:884); `@SysDate@` → now (:888-889); `@…@` → Env.parseContext
+          // with ignoreUnparsable=false, so an unresolved token yields "" and the NEXT token is tried (:890-891,
+          // :904); a quoted 'String' has its quotes stripped (:892-893); the first non-empty wins (:907).
+          // `@SQL=` is stage 2 and is NOT run here (no db in a pure fold) — named in §P7-NOT-BUILT.
+          // ctx.win is the window context the host supplies: on a DETAIL tab it is the PARENT row (plus Env
+          // globals), which is what fills C_OrderLine's @C_BPartner_Location_ID@ / @DateOrdered@ /
+          // @M_Warehouse_ID@ / @AD_Client_ID@ / @AD_Org_ID@ — five AD-mandatory line columns.
+          var win = ctx.win || {}, resolved = null;
+          if (ds.indexOf('@SQL=') !== 0) {
+            ds.split(/[,;]/).some(function (tokRaw) {
+              var tok = String(tokRaw).trim(); if (!tok) return false;
+              var v = null;
+              if (tok === '@SysDate@') v = ctx.today || null;
+              else if (tok.indexOf('@') >= 0) {
+                var m = /^@([#$]?[A-Za-z0-9_]+)@$/.exec(tok);
+                if (m) { var w = win[String(m[1]).toLowerCase()]; if (w == null) w = win[String(m[1]).toLowerCase().replace(/^[#$]/, '')]; v = (w == null || String(w) === '') ? null : w; }
+              } else if (tok.indexOf("'") >= 0) v = tok.replace(/'/g, ' ').trim();
+              else v = tok;
+              if (v != null && String(v) !== '') { resolved = v; return true; }
+              return false;
+            });
+          }
+          if (resolved != null) { spec.default = resolved; spec.defaultsource = 'expression'; exprLog.push(spec.col + '="' + ds + '"→' + resolved); }
+          else if (ds.indexOf('@') >= 0) unresolvedLog.push(spec.col + '="' + ds + '"');
+        }
+      }
+      // §P7 P7.2 — the DATA-TYPE stage of GridField.getDefault(), reached ONLY when no earlier stage
+      // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
+      // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
+      // "0" and "N" are NOT empty), which is exactly why an untouched New can be required-checked at all.
+      if (!Object.prototype.hasOwnProperty.call(spec, 'default')) {
+        var dtd = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
+        if (dtd != null) { spec.default = dtd; spec.defaultsource = 'datatype'; dtLog.push(spec.col + '=' + dtd); }
       }
       if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
       // §P3 (ERP_IDEMPIERE_UX_PARITY.md §P3-SPEC P3.3 — Witness: W-PARITY-VALRULE): carry the lookup's
@@ -773,6 +855,15 @@
       if (f.seqNo != null) spec.seq = f.seqNo;
       return spec;
     });
+    // §P7 — the two ports made witnessable per fold (a 0 on either is a real, reportable value, not silence).
+    if (typeof console !== 'undefined') {
+      console.log('§GRIDFIELD-EXEMPT key=' + (opts.key || '?') + ' n=' + exemptLog.length + ' cols=[' + exemptLog.join(',') +
+                  '] (GridField.isMandatory:377-385)');
+      console.log('§GRIDFIELD-DATATYPE-DEFAULT key=' + (opts.key || '?') + ' n=' + dtLog.length + ' [' + dtLog.join(',') +
+                  '] (GridField.defaultFromDatatype:1022-1051)');
+      console.log('§GRIDFIELD-EXPR-DEFAULT key=' + (opts.key || '?') + ' resolved=' + exprLog.length + ' [' + exprLog.join(' · ') +
+                  '] unresolved=' + unresolvedLog.length + ' [' + unresolvedLog.join(' · ') + '] (GridField.defaultFromExpression:875-913)');
+    }
     return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
              verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
   }
@@ -1095,6 +1186,8 @@
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
     foldCrudSpec: foldCrudSpec, mapRefType: mapRefType, mapRefDisplayType: mapRefDisplayType,   // S2B: AD-folded CRUD spec (general, not curated)
     mergeCuratedWithFold: mergeCuratedWithFold,                                  // §P1 (W-PARITY-FIELDSET): AD field set + curated pins/verbs
+    gridFieldMandatoryExempt: gridFieldMandatoryExempt,                          // §P7 (W-PARITY-MANDATORY-CREATE): GridField.isMandatory:377-385
+    gridFieldDatatypeDefault: gridFieldDatatypeDefault,                          // §P7: GridField.defaultFromDatatype:1022-1051
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,
