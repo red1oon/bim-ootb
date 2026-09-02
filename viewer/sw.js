@@ -31,7 +31,7 @@
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1125';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1126';   // bump on each deploy; per-change detail is the git commit message.
 // v1125 (rebase of PR #1318 onto origin/main) §GANTT_CACHE_ERR_STACK: time_machine.js's
 // injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
 // loadOps) instead of the bare error message, which could not locate a live user's GUID-key
