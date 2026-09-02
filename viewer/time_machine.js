@@ -8719,7 +8719,14 @@
       _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
-      console.warn('§GANTT_CACHE_ERR ' + e.message);
+      // §GANTT_CACHE_ERR_STACK (2026-08-12) — this handler wraps the WHOLE async activate body
+      // (cache read, _materializeNativeSchedule, injectGantt, loadOps, cachePut), so a message
+      // alone cannot say which. Live user report: "Cannot read properties of undefined (reading
+      // '3iM76qwej9Tf9ttHcbQp2z')" — a GUID used as a key on an undefined object, recovered by the
+      // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
+      // stack and the phase so the next occurrence names its own line.
+      console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
