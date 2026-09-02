@@ -92,7 +92,11 @@ function hardClamp(win, s) {
   // first pass over ALL elements before the write loop). Reproduced here exactly: same two-pass
   // shape, driven by the same real _cap, so the extracted function runs unmodified.
   function buildRescaler(_winGroups) {
-    const ctx = vm.createContext({ _cap, _winGroups, Math, console, isFinite });
+    // §TM_REVEAL_TILED (2026-09-02): the shipped function now consults `_tiledPlay` (the tiled
+    // within-bar layout) before its affine fallback. This witness proves the AFFINE FALLBACK, so the
+    // map is null here — exactly the state of an imported/captured/baselined schedule live
+    // (display_authored=0). The tiled path has its own witness: witness_tm_reveal_within_bar.js.
+    const ctx = vm.createContext({ _cap, _winGroups, _tiledPlay: null, Math, console, isFinite });
     return vm.runInContext('(' + rescaleSlice + ')', ctx);
   }
 

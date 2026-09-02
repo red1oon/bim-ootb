@@ -4217,6 +4217,76 @@
     return out;
   }
 
+  // ══ §TM_REVEAL_TILED (2026-09-02, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §FUTURE item 2,
+  // §TM_REVEAL_SHIPPED) — WHERE inside its bar each element PLAYS. ════════════════════════════
+  // Witness: viewer/tests/witness_tm_reveal_within_bar.js (W-RWB). Probe: scripts/probe_tm_reveal_shipped.js.
+  //
+  // THE FINDING. materializeZones returns `displaySchedule` (= ScheduleAuthor.remapSolveToTasks:
+  // support-layer bands, duration-weighted tiling — §TPL_MOVIE_BINDS_BARS "every element now plays
+  // inside the bar that claims it") and this file never read it. The kernel_ops timestamps the
+  // scrubber and the film actually play were written by injectGantt's _tmRescaleToTaskWindow: a
+  // per-task AFFINE of the CPM group's raw [min,max] onto the template window. CpmSchedule's GLOBAL
+  // per-resource crew pools give a task's members a raw span of up to 434 d for a 35-day bar
+  // (Hospital TASK_MEP_Rough_in_Level_1), so the affine squashed the group's core into a sliver and
+  // left the rest of the bar empty. Measured on the shipped chain (sliced live functions, no
+  // browser): dead air (bar lit, NOTHING in progress) mean 44/63/63/71% of every bar on Duplex/HHS/
+  // Hospital/Terminal, worst 99.9%; Hospital TASK_MEP_Final_Level_5 n=564 days=3 reveal deciles
+  // [3.5,0,0,0,0,0,0,0,0,96.5]; 553 Hospital footings on 200 distinct instants inside the first
+  // half of an 11-day bar, days 6-11 empty. User, 2026-09-02: "the sub structure and floor slabs
+  // are appearing all one shot instead of nicer progressive animation."
+  //
+  // THE FIX. Call the verb the codebase already owns for this question (4D_MODEL_INTEGRITY.md §I
+  // "where inside its task?") instead of re-deriving a layout here: remapSolveToTasks with the CPM
+  // display times as the solve and NO layer map — one band per task, members in CPM start order
+  // (ties on guid), each element's width its own CPM-duration share, tiled edge-to-edge across the
+  // task's real window. Monotone, so every ordering CPM established survives — the exact property
+  // the affine was chosen for (measured: 0 order violations over 119k adjacent pairs, 4 buildings);
+  // no dead air by construction (measured 0.0% on all four); no number invented (widths are the
+  // durations the solve computed, windows are the template's). §S50's cell order stays the live
+  // precedence carrier — this changes SPACING, never order. Gated on schedules.display_authored=1
+  // (our own authored windows — the same flag §CAP_RESCALE_SKIP/§OG_SWEEP_SKIP key on); imported/
+  // captured/baselined schedules keep the affine byte-identically, as does any element this map
+  // misses. Task windows, dates, crews, cost and the film cursor are untouched.
+  //
+  // WHAT IT DOES NOT DO, ON PURPOSE: a superstructure level's slab SET stays compact — _installSecs
+  // prices every IfcSlab at a flat 823 s (0.8% of Hospital L3's labour) and the cell order lays a
+  // level out trade-by-trade — both rulings, neither this function's to change (spec §D).
+  function _tmTilePlayWithinTasks(disp, cap, displayAuthored) {
+    if (!cap || !cap.win || !cap.guidTask) {
+      console.log('§TM_REVEAL_TILED skip reason=no dated task windows (_cap null) — affine rescale kept');
+      return null;
+    }
+    if (!displayAuthored) {
+      console.log('§TM_REVEAL_TILED skip reason=schedule not display-authored (imported/captured/baselined windows) — affine rescale kept');
+      return null;
+    }
+    var SA = (typeof window !== 'undefined' && window.ScheduleAuthor) ||
+             (typeof ScheduleAuthor !== 'undefined' ? ScheduleAuthor : null);
+    if (!SA || typeof SA.remapSolveToTasks !== 'function') {
+      console.log('§TM_REVEAL_TILED skip reason=ScheduleAuthor.remapSolveToTasks unavailable — affine rescale kept');
+      return null;
+    }
+    var base = cap.base;
+    if (!isFinite(base)) { base = Infinity; for (var k0 in cap.win) if (cap.win[k0].s < base) base = cap.win[k0].s; }
+    var tasks = [], byTid = {}, skipped = 0;
+    for (var g in cap.guidTask) {
+      var tid = cap.guidTask[g], w = cap.win[tid];
+      if (!w || !disp[g]) { skipped++; continue; }
+      var t = byTid[tid];
+      if (!t) { t = byTid[tid] = { id: tid, sDays: (w.s - base) / 86400000, eDays: (w.e - base) / 86400000, guids: [] }; tasks.push(t); }
+      t.guids.push(g);
+    }
+    if (!tasks.length) {
+      console.log('§TM_REVEAL_TILED skip reason=no element resolves to a dated task — affine rescale kept');
+      return null;
+    }
+    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null);
+    console.log('§TM_REVEAL_TILED tasks=' + tasks.length + ' mapped=' + r.mapped + ' skipped=' + skipped +
+      ' degenerate=' + r.degenerateTasks +
+      ' — each element plays its own CPM-duration share of its bar, CPM order kept, no dead air (was: per-task affine, §TM_ELEMENT_WINDOW_RESCALE)');
+    return r.schedule;
+  }
+
   // _twoTierRemap (retired §S20 Part B, 2026-08-17, 4D_GANTT_TM_REFACTOR.md) — the legacy
   // two-tier (Substructure/Superstructure/Architecture-serial, then audit-physics-regate) display
   // orchestrator. Reachable ONLY via _displayTimeline's now-deleted fallback branch — confirmed
@@ -4888,7 +4958,23 @@
         if (s.end > g.max) g.max = s.end;
       });
     }
+    // §TM_REVEAL_TILED — same DB flag §CAP_RESCALE_SKIP / §OG_SWEEP_SKIP key on (display_authored=1:
+    // the windows are our own authored ones), read HERE because the tiling decides WHERE inside its
+    // bar each element is written, i.e. before the write loop, not in the overlay pass after it.
+    var _playDisplayAuthored = false;
+    try {
+      var _pdaR = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
+      _playDisplayAuthored = !!(_pdaR.length && _pdaR[0].values.length);
+    } catch (ePda) { /* legacy DB without the column — affine rescale stays */ }
+    var _tiledPlay = _tmTilePlayWithinTasks(_disp, _cap, _playDisplayAuthored);
     function _tmRescaleToTaskWindow(guid, s) {
+      // §TM_REVEAL_TILED — the tiled interval wins when one exists (see _tmTilePlayWithinTasks).
+      // Everything below is the affine fallback, byte-identical for every element and every
+      // schedule the tiling does not cover (imported/captured/baselined windows, unmapped guids).
+      if (_tiledPlay && _tiledPlay[guid]) {
+        var _tp = _tiledPlay[guid];
+        return { start: _tp.start, end: _tp.end, clamped: true, tiled: true };
+      }
       if (!_cap) return s;
       var taskId = _cap.guidTask[guid];
       var win = (taskId != null) ? _cap.win[taskId] : null;
@@ -4912,11 +4998,12 @@
     db.run('BEGIN');
     var _gStmt = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
     var _projEnd = baseMs;
-    var _windowClamped = 0, _windowUncovered = 0;
+    var _windowClamped = 0, _windowUncovered = 0, _windowTiled = 0;   // §TM_REVEAL_TILED: tiled ⊂ clamped
     elements.forEach(function(el) {
       var s = _disp[el.guid] || { start: _schedEnd, end: _schedEnd + 60000 };   // §4D_NOGEO park at the DISPLAY end (§TIER_SERIAL), was baseMs (day 0)
       var bound = _tmRescaleToTaskWindow(el.guid, s);
       if (bound.clamped) _windowClamped++; else if (!_cap || _cap.guidTask[el.guid] == null) _windowUncovered++;
+      if (bound.tiled) _windowTiled++;   // §TM_REVEAL_TILED
       s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
@@ -4928,7 +5015,8 @@
     });
     _gStmt.free();
     console.log('§TM_ELEMENT_WINDOW_BIND total=' + elements.length + ' clamped=' + _windowClamped +
-      ' uncovered=' + _windowUncovered + ' (uncovered = no resolvable real task window, prior behavior kept)');
+      ' tiled=' + _windowTiled + ' uncovered=' + _windowUncovered +
+      ' (tiled = §TM_REVEAL_TILED laid it out inside its bar; clamped-not-tiled = affine fallback; uncovered = no resolvable real task window, prior behavior kept)');
     _s4Mark('insertLoop');
     db.run('COMMIT');
     resourceCursor['_end'] = _projEnd;   // feed the endDate computation below (Math.max over values)
@@ -8262,7 +8350,8 @@
   // huts going first before the walls" AFTER a hard reset, because §GANTT_CACHE_HIT served a
   // gantt:v4 entry generated under the old ordering. A hard reset cannot clear it — the entry is in
   // IndexedDB, not the HTTP cache. This bump is that fix's second half.
-  var _GANTT_CACHE_VERSION = 37;   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
+  var _GANTT_CACHE_VERSION = 38;   // §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
                                    // the DISPLAY timeline + strict-bar sweep skipped on that path —

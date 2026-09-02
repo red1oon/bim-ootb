@@ -21,8 +21,14 @@
 // now floored at its own members' crew-days (5 over-committed windows across 4 buildings -> 0/135).
 // schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
 // separate change needs its own bump (§CRISIS LESSON 4).
+// v1121 (2026-09-02) §TM_REVEAL_TILED (4D_GANTT_TM_REFACTOR.md §FUTURE item 2 / §TM_REVEAL_SHIPPED):
+// time_machine.js changed — kernel_ops timestamps are now tiled inside each task bar (CPM order,
+// own-duration width, no dead air) instead of the per-task affine that left 44-71% of every bar
+// empty and piled a floor's slabs into one instant. time_machine.js is in PRECACHE_ASSETS, so an
+// installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
+// with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v1120';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1121';   // bump on each deploy; per-change detail is the git commit message.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
