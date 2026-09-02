@@ -1,16 +1,20 @@
-// WITNESS — §CPE_STICK_HOLD + §CPE_AIM_LATCH: a hold buys the turn its time, density×depth aims it,
-// and the latch keeps it aimed to the end of the clip.
-// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_STICK_HOLD + §CPE_AIM_LATCH.
+// WITNESS — §CPE_STICK_HOLD: a hold costs exactly its authored seconds and really parks the camera.
+// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_STICK_HOLD +
+//       bim-compiler prompts/RESUME_2026-09-02_FILM_REVIEW.md §AIM_DEPTH_RETIREMENT.
 //
 // USER'S OWN STATEMENT OF THE FEATURE (2026-08-01): "putting hold at 1 sec (put that as default for
 // the last stick) will teach them 'ah, it slows a sec stop a sec, then ease out while the cam is
 // turning to the building'", and "while aimed already at a centre, and when the path continues, it
 // should remain so ... ie at perpendicular angle".
 //
-// WHAT WAS ALREADY THERE, and is NOT what this tests: the aim TARGET (density × depth,
-// `_aimDepthSubject` w = c.n * d) and the PERPENDICULAR projection. Both correct as built — the user
-// corrected a session that called the projection a defect. This file tests only the three gaps:
-// there was no hold, the aim weight decayed, and it was tapered to zero over the final 25%.
+// ⚠ RE-SCOPED 2026-09-02, §CPE_AIM_DEPTH_RETIRED — AND THE OLD CLAIM IS WITHDRAWN, NOT RELABELLED.
+// This file used to also witness §CPE_AIM_LATCH and the hold's AIM half (`_holdBoostAt`, which
+// existed only to feed `_aimDepthApply`). §CPE_AIM_DEPTH is retired on the user's directive ("its
+// best to leave alone its pointing along its path ... to stay simple and predictable"), so both are
+// GONE from effects.js. The half of the user's 2026-08-01 sentence that said "while the cam is
+// turning to the building" is therefore NO LONGER DELIVERED BY A HOLD, and this witness says so in
+// G-SH-5 rather than quietly passing a weaker test. The turn at a stop is now AUTHORED — put a
+// §CPE_AIM_PIN on the held band's own Voronoi zone — not automatic.
 //
 //   G-SH-1  end-to-end column: a hold set on a band survives plan → override → replan. RED: the
 //           field does not exist, so it is dropped everywhere it is copied.
@@ -22,10 +26,16 @@
 //   G-SH-4  NO JERK BUYING IT: peak deg/frame and the position step across the hold window stay
 //           inside the bounds §CPE_EVEN_TURN already gates. The raised-cosine dip must not trade a
 //           stall for a whip — a flat freeze WOULD, which is why the shape is what it is.
-//   G-SH-5  THE TURN HAPPENS DURING THE STOP: with the camera stationary, the gaze still rotates
-//           across the hold window (rotation is the only thing it can be). RED: no hold exists.
-//   G-SH-6  IT REMAINS SO: the aim weight is non-decreasing along the walk (the latch) and is still
-//           non-zero at the FINAL walk frame. RED: `wSeam` forces it to 0 across the last 25%.
+//   G-SH-5  (RE-SCOPED) THE HOLD IS A PURE RATE DIP: the camera is genuinely parked across the stop
+//           AND — because every surviving gaze rule is indexed by travel, which a hold stops — the
+//           gaze is CONSTANT there on an unpinned path. This is the ruled outcome of
+//           §CPE_AIM_DEPTH_RETIRED, stated as a number so the cost is visible instead of implied.
+//           RED: a non-zero rotation would mean some automatic rule still steers a parked camera.
+//           VACUOUS if no stop window is found; the gate must not read as PASS then.
+//   G-SH-6  (RE-SCOPED, red control for the retirement) THE AIM HALF IS GONE: over a full plan and
+//           walk sampling, effects.js emits NO §CPE_AIM_DEPTH / §CPE_AIM_DEPTH_SERIES / §CPE_AIM_
+//           LATCH line and exposes no A._probeAimDepth hook. RED (i.e. this gate failing) is exactly
+//           what a partial retirement looks like.
 //   G-SH-7  a freshly seeded path carries hold=0 on EVERY band (2026-08-02: an unset hold is no hold).
 //   G-SH-8  no regression: naturalTotal == sum(naturalSec.*), replan deterministic, and a path with
 //           every hold 0 is BYTE-IDENTICAL to the same path planned with no hold field at all.
@@ -278,41 +288,59 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       `(cap ${capDeg.toFixed(3)} deg/sample)` +
       `\n        ${(logs.filter(l => l.startsWith('§CPE_GAZE_CONSTANT_RATE')).slice(-1)[0] || 'no §CPE_GAZE_CONSTANT_RATE line').slice(0, 210)}`);
 
-    // ── G-SH-5 ────────────────────────────────────────────────────────────────────────────────
-    // BOTH halves are required, and the stationary half is what makes this a real gate: on
-    // origin/main the "slowest point" window still travels 2.89m, so a turn measured there proves
-    // nothing about a hold. Demand the camera be genuinely parked — under 10% of the distance it
-    // would cover at mean speed over the same samples — AND the gaze to have moved.
+    // ── G-SH-5 (RE-SCOPED 2026-09-02, §CPE_AIM_DEPTH_RETIRED) ────────────────────────────────
+    // The stationary half is unchanged and is still what makes this a real gate: on origin/main the
+    // "slowest point" window still travels 2.89m, so anything measured there without the parked test
+    // proves nothing about a hold. Demand the camera be genuinely parked — under 10% of the distance
+    // it would cover at mean speed over the same samples.
+    //
+    // The SECOND half is now the opposite assertion, and deliberately so. With §CPE_AIM_DEPTH gone
+    // there is no automatic rule that can steer a parked camera: every surviving gaze rule (path
+    // follow, the §CPE_SEAM_CONTINUOUS open blend, §CPE_AIM_PIN, the correction window) is indexed
+    // by e3, the TRAVEL fraction, and a hold stops travel. So on this unpinned, uncorrected test
+    // path the rotation across the stop MUST be ~0. Reported as a number, not implied: this is the
+    // measured price of the retirement.
     const ts = res.turnAtStop;
     const expectM = ts ? s.meanStep * ts.samples : 0;
     const parked = !!ts && ts.movedM < expectM * 0.10;
-    // The claim is the OUTCOME the user described — "ease out while the cam is turning to the
-    // building" — so it passes if the camera is ON the building through the stop: either it rotated
-    // onto it during the hold, or it was already there and had nothing to turn. What it must NOT do
-    // is sit parked pointing AWAY, which is the failure this gate exists to catch.
-    const onBulk = !!ts && ts.offBulkEnd <= 90 && ts.offBulkEnd <= ts.offBulkStart + 1.0;
-    P('G-SH-5 through the stop the camera is ON the building (it turned onto it, or was already there)',
-      parked && onBulk,
-      ts ? `camera parked=${parked} (moved ${ts.movedM.toExponential(2)}m over ${ts.samples} samples; ` +
-           `at mean speed it would have covered ${expectM.toFixed(2)}m). Gaze off the building bulk: ` +
-           `${ts.offBulkStart.toFixed(1)}deg → ${ts.offBulkEnd.toFixed(1)}deg across the stop ` +
-           `(rotation ${ts.deg.toFixed(2)}deg). Already-aimed paths legitimately show ~0 rotation — ` +
-           `the aim rules saturate (maxBlend 1.00) well before the stick, so the turn has happened by then.`
-         : 'no stop window found to measure');
+    // 0.5 deg, not 0 — the sampler walks TIME and the stall window's own end samples still carry a
+    // sub-sample of residual travel; the pre-retirement measurement of a genuinely parked camera
+    // with nothing to turn toward was 0.02 deg (this file's own dog-leg comment above).
+    const gazeFrozen = !!ts && ts.deg < 0.5;
+    if (!ts) {
+      P('G-SH-5 VACUOUS — no stop window found, nothing was judged', false,
+        'INCONCLUSIVE: the hold produced no stalled samples, so neither the parked test nor the ' +
+        'frozen-gaze test ran. This is not a PASS.');
+    } else {
+      P('G-SH-5 the hold is a PURE RATE DIP: camera parked, and the gaze is constant across it',
+        parked && gazeFrozen,
+        `camera parked=${parked} (moved ${ts.movedM.toExponential(2)}m over ${ts.samples} samples; ` +
+        `at mean speed it would have covered ${expectM.toFixed(2)}m). Gaze rotation across the stop ` +
+        `= ${ts.deg.toFixed(3)} deg (must be ~0 — §CPE_AIM_DEPTH_RETIRED: no automatic rule steers a ` +
+        `parked camera any more). Gaze off the building bulk ${ts.offBulkStart.toFixed(1)}deg → ` +
+        `${ts.offBulkEnd.toFixed(1)}deg, reported as INFO only — where the frozen gaze happens to ` +
+        `point is now a property of the authored path, not of the hold. To turn the camera at a ` +
+        `stop, pin the held band (§CPE_AIM_PIN).`);
+    }
 
-    // ── G-SH-6 ────────────────────────────────────────────────────────────────────────────────
-    // Read the latch straight off the aim series the film actually uses.
-    const depthSeries = logs.filter(l => l.startsWith('§CPE_AIM_DEPTH_SERIES')).slice(-1)[0] || '';
-    const densSeries = logs.filter(l => l.startsWith('§CPE_AIM_SERIES')).slice(-1)[0] || '';
-    const latchLine = logs.filter(l => l.startsWith('§CPE_AIM_LATCH')).slice(-1)[0] || '';
-    const aimEnd = logs.filter(l => l.startsWith('§CPE_AIM_DEPTH ') || l.startsWith('§CPE_AIM_DENSITY '));
-    const taperGone = aimEnd.length > 0 && !aimEnd.some(l => /seamTaper=0\.0[0-9]/.test(l));
-    P('G-SH-6 it REMAINS so: the aim is latched (never weakens) and is still live at the final walk frame',
-      !!latchLine && taperGone,
-      latchLine ? `${latchLine.slice(0, 150)}; ${aimEnd.length} aim frames logged, none showing a ` +
-                  `collapsed seamTaper (the old rule forced 0 over the last 25%)`
-                : `no §CPE_AIM_LATCH line — the latch does not exist. depth series: ` +
-                  `${depthSeries.slice(0, 110)}`);
+    // ── G-SH-6 (RE-SCOPED 2026-09-02) — red control for §CPE_AIM_DEPTH_RETIRED ────────────────
+    // The old gate read §CPE_AIM_LATCH / §CPE_AIM_DEPTH_SERIES off the film's own log to prove the
+    // aim was latched. Those lines no longer exist, and a witness that merely stopped looking for
+    // them would go silent on a partial retirement. So it now asserts their ABSENCE, plus the
+    // absence of the product's own depth probe hook — the same evidence read the opposite way.
+    const depthAny = logs.filter(l => l.startsWith('§CPE_AIM_DEPTH_SERIES') ||
+                                      l.startsWith('§CPE_AIM_DEPTH ') ||
+                                      l.startsWith('§CPE_AIM_LATCH') ||
+                                      l.startsWith('§CPE_AIM_GRID') ||
+                                      l.startsWith('§CPE_AIM_SERIES') ||
+                                      l.startsWith('§CPE_AIM_DENSITY '));
+    const probeGone = await page.evaluate(() => typeof window.APP._probeAimDepth === 'undefined');
+    P('G-SH-6 §CPE_AIM_DEPTH_RETIRED: no automatic aim rule survives — no aim §-line, no probe hook',
+      depthAny.length === 0 && probeGone === true,
+      `aim §-lines seen over the whole run: ${depthAny.length}` +
+      (depthAny.length ? ` → ${depthAny.slice(0, 3).map(l => l.slice(0, 90)).join(' | ')}` : ' (none)') +
+      `; A._probeAimDepth removed=${probeGone}. Total console lines scanned=${logs.length} ` +
+      `(a zero here with zero lines scanned would be vacuous — it is not).`);
 
     // ── G-SH-7 ────────────────────────────────────────────────────────────────────────────────
     // The default lives in the editor's seeding, so read the constant the editor exposes.

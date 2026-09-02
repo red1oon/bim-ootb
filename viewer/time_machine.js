@@ -9768,12 +9768,14 @@
     return out;
   };
 
-  // §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13) — per-guid completion time, bim-compiler
-  // prompts/CINEMA_PATH_EDITOR.md §CPE_AIM_DEPTH_BUILDUP. The aim system (effects.js) needs to know
-  // whether a SPECIFIC element is placed by a given cursor, not just how many ops are done in total
-  // (tmWorkSchedule/tmPlacedCount above) — otherwise its candidate-facade search during a buildup
-  // bake can still pick unbuilt geometry. One pass, read-only, same guid-extraction every other _ops
-  // reader in this file already uses (tmGroundSchedule, tmOrderByCameraPath) — not a new convention.
+  // Per-guid completion time — "is this SPECIFIC element placed by a given cursor", as opposed to
+  // "how many ops are done in total" (tmWorkSchedule/tmPlacedCount above). One pass, read-only,
+  // same guid-extraction every other _ops reader in this file already uses (tmGroundSchedule,
+  // tmOrderByCameraPath) — not a new convention.
+  // ORIGIN: §CPE_AIM_DEPTH_BUILDUP candidate 2 (2026-08-13), so §CPE_AIM_DEPTH's candidate-facade
+  // search could not pick unbuilt geometry during a buildup bake. THAT CALLER IS GONE
+  // (§CPE_AIM_DEPTH_RETIRED, 2026-09-02). This function STAYS: effects.js:4479's glow-lens
+  // first-placement gate is a live, independent consumer — checked before writing this note.
   // MIN, not last-write: if a guid is touched by more than one op (uncommon but not assumed absent),
   // it counts as placed from its EARLIEST completion, matching "when does this first become real".
   window.tmGuidEndTs = function() {
