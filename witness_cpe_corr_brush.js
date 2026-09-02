@@ -37,9 +37,17 @@
 // The from-direction is now FROZEN at the window's own edges. G-FRZ-1: it really is constant
 // (every sample sits on the fixed curve; red control: the freeze-OFF curve must NOT fit). G-FRZ-2:
 // the wobble is measurably reduced (ON vs OFF in ONE run — a no-op dressed as a fix must say
-// NO-OP). G-FRZ-3: the dead-end rescue §CPE_AIM_DEPTH exists for still works OUTSIDE the window,
-// judged only where its trigger genuinely fires. G-FRZ-4: the frozen gaze does not stare into a
+// NO-OP). G-FRZ-3: see the retirement note below. G-FRZ-4: the frozen gaze does not stare into a
 // nearer wall than the live one anywhere in the window (product raycaster, not eyes).
+//
+// §CPE_AIM_DEPTH_RETIRED (2026-09-02, prompts/RESUME_2026-09-02_FILM_REVIEW.md §AIM_DEPTH_RETIREMENT)
+// — G-FRZ-3 IS WITHDRAWN, NOT SILENTLY DROPPED. It asserted that the dead-end rescue still worked
+// outside the window. That rescue no longer exists: §CPE_AIM_DEPTH was retired on user directive
+// and `A._probeAimDepth` / `A.__cpeAimOff` are gone with it, so the gate's own probe cannot run.
+// The run now PRINTS the withdrawal (§CPE_AIM_FREEZE_DEADEND RETIRED) instead of skipping in
+// silence — a gate that quietly disappears is the scope-blind failure mode framework rule 4 names.
+// G-FRZ-1/2/4 are UNAFFECTED and still judge the freeze: it is kept deliberately, because the
+// from-direction can still move where a window overlaps a pinned zone or the _openU seam blend.
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const PORT = process.env.PORT || 8533, BLD = process.env.BLD || 'Duplex';
 // Walk length is NOT a property of the building — it scales with the film duration the planner is
@@ -464,7 +472,11 @@ process.on('unhandledRejection', e => { console.error('UNHANDLED: ' + (e && e.st
   // DEAD-END: outside the window the depth rule is untouched and must still rescue a wall-facing
   // look-ahead. Judged only where the trigger GENUINELY fires (fwdClear < clearM, the product's own
   // numbers) — otherwise VACUOUS, stated, not passed.
-  if (r.deadEnd) {
+  if (!r.deadEnd) {
+    console.log('§CPE_AIM_FREEZE_DEADEND  RETIRED — §CPE_AIM_DEPTH was retired 2026-09-02 (user ' +
+      'directive: path-follow only). There is no dead-end rescue left to preserve, so G-FRZ-3 is ' +
+      'WITHDRAWN rather than judged. This is a scope statement, not a PASS and not a failure.');
+  } else {
     if (r.deadEnd.firingN === 0) {
       console.log('§CPE_AIM_FREEZE_DEADEND  VACUOUS — §CPE_AIM_DEPTH never fires (w>0.5) outside the window on this plan; the dead-end claim was NOT judged.');
     } else {

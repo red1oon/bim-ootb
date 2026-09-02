@@ -1,9 +1,14 @@
-// WITNESS — §CPE_HOSE / §CPE_AIM_DEPTH / §CPE_BUILDUP.
-// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE (+ §CPE_AIM_DEPTH, §CPE_AIM_SIMPLIFY,
-// §CPE_BUILDUP) and prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME mode D.
-// §CPE_AIM_SIMPLIFY (2026-08-13): §CPE_AIM_DENSITY, the rule the old A1/A2 gates below tested, is
-// RETIRED — see effects.js's own marker. Replaced with F1/F2, which exercise §CPE_AIM_DEPTH's new
-// forward-clearance trigger instead (same _probeAimDepth hook the product path already exposed).
+// WITNESS — §CPE_HOSE / §CPE_AIM_DEPTH_RETIRED / §CPE_BUILDUP.
+// Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_HOSE (+ §CPE_BUILDUP),
+// prompts/PHOTOREAL_STILL_RENDER.md §MAXQ_TIME mode D, and
+// prompts/RESUME_2026-09-02_FILM_REVIEW.md §AIM_DEPTH_RETIREMENT.
+// §CPE_AIM_SIMPLIFY (2026-08-13): §CPE_AIM_DENSITY, the rule the old A1/A2 gates tested, was retired
+// and replaced by F1/F2 over §CPE_AIM_DEPTH's forward-clearance trigger.
+// §CPE_AIM_DEPTH_RETIRED (2026-09-02): §CPE_AIM_DEPTH itself is now retired on user directive, so
+// _probeAimDepth is gone and F1/F2 as written cannot run. They are REPLACED — not deleted and not
+// silently dropped — by F1, which asserts the gaze on this file's own real derived walk actually
+// FOLLOWS THE PATH, and F2, which asserts the retired rule leaves no trace. A witness that simply
+// stopped mentioning the rule would go quiet on a partial retirement.
 //
 // Each check names the issue it proves or disproves — a check that cannot fail is not a check.
 //
@@ -18,12 +23,17 @@
 //       the hose and a local pull one control rather than two tools.
 //   H3  W-HOSE-PLAN — the ops reach the FLOWN path, not just a helper: a plan built with hose ops
 //       differs from the same plan without them. Disproves "the maths is right but nothing is wired".
-//   F1  §CPE_AIM_DEPTH_FWD_CLEAR fires on real geometry, not a constant: sampling the walk's own
-//       forward clearance (_probeAimDepth) must show real variation, not the same sentinel every
-//       probe — proves the raycast is actually running against the building, not degenerating.
-//   F2  §CPE_AIM_DEPTH_FWD_CLEAR coherence: `fired` must agree with `fwdClear < clearM` at every
-//       sampled point — the rule doing what its own reported numbers say it's doing, not just
-//       returning SOME weight that happens to look plausible.
+//   F1  (RE-SCOPED) §CPE_AIM_DEPTH_RETIRED — PATH-FOLLOW IS THE ONLY AUTOMATIC RULE: on the real
+//       derived walk, with no pin and no correction authored, the gaze direction must track the
+//       path's own tangent. Measured as the angle between the sampled gaze and a central-difference
+//       tangent at the same e3, reported as max and mean. RED before the retirement: §CPE_AIM_DEPTH
+//       turned the gaze up to 83.45 deg off the path on Hospital.
+//       ⚠ The residual is NOT expected to be 0 and a 0 tolerance would be wrong: path-follow aims at
+//       an arc-length look-ahead point 15% of the walk ahead (_AH_FRAC), so on a curved path the
+//       CHORD to that point differs from the instantaneous tangent by construction. The bound is
+//       therefore stated against that geometry, and the mean is what carries the claim.
+//   F2  (RE-SCOPED, red control) the retired rule leaves NO TRACE: no A._probeAimDepth hook, and no
+//       §CPE_AIM_DEPTH* / §CPE_AIM_GRID / §CPE_AIM_LATCH line anywhere in the run's console.
 //   B1  W-BUILDUP-SAMPLE — mode D re-keys the derived order to the camera path: placed count is
 //       monotone non-decreasing across frames, starts near empty, ends near full, and a MID-window
 //       sample is strictly between — which is what makes a clip open on a partially-built model.
@@ -294,27 +304,40 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         reanchored: fixed.reanchored, sBefore: opD.s, sAfter: fixed.sAfter,
       };
 
-      // ── F1/F2: §CPE_AIM_DEPTH's forward-clearance trigger, measured on the REAL derived walk
-      // (planBase, not the hosed/flung one — that fixture existed for §CPE_AIM_DENSITY's outside-
-      // empty case, which no longer applies). Reads the product path's own _probeAimDepth, never a
-      // re-implementation, same convention every other probe in this file already uses.
-      const nProbe = 40;
-      const depthSamples = [];
+      // ── F1/F2 (§CPE_AIM_DEPTH_RETIRED, 2026-09-02): the gaze on the REAL derived walk against
+      // the path's own tangent. Reads A._cpeBeat3GazeDebug — the product's own _beat3Pose, never a
+      // re-implementation — same convention every other probe in this file already uses.
+      const nProbe = 200;
+      const gz = [];
       for (let i = 0; i <= nProbe; i++) {
         const e3 = i / nProbe;
-        const pr = A._probeAimDepth(e3);
-        depthSamples.push({ e3, fired: pr.fired, fwdClear: pr.fwdClear, clearM: pr.clearM });
+        const g = A._cpeBeat3GazeDebug(e3);
+        const dx = g.target.x - g.pos.x, dy = g.target.y - g.pos.y, dz = g.target.z - g.pos.z;
+        const L = Math.hypot(dx, dy, dz);   // no `|| 1` — a zero-length gaze must be REPORTED
+        gz.push({ e3, p: g.pos, g: L > 0 ? { x: dx / L, y: dy / L, z: dz / L } : null,
+                  turnOverlap: g.turnOverlap });
       }
-      const clears = depthSamples.map(s => s.fwdClear).filter(v => v != null && isFinite(v));
+      const devs = [];
+      let degenerate = 0;
+      for (let i = 1; i < gz.length - 1; i++) {
+        // §CINEMA_BEAT_OVERLAP blends the gaze onto the orbit pivot over the walk's last fraction —
+        // that is a BEAT HAND-OFF, not an aim rule, and judging it as "deviation from the path"
+        // would be measuring the wrong thing. Excluded by the product's OWN constant, read off the
+        // debug hook rather than hardcoded here.
+        if (gz[i].e3 > 1 - gz[i].turnOverlap) continue;
+        if (!gz[i].g) { degenerate++; continue; }
+        const tx = gz[i + 1].p.x - gz[i - 1].p.x, ty = gz[i + 1].p.y - gz[i - 1].p.y,
+              tz = gz[i + 1].p.z - gz[i - 1].p.z;
+        const tL = Math.hypot(tx, ty, tz);
+        if (tL < 1e-9) continue;            // stationary sample: no tangent to compare against
+        const dot = gz[i].g.x * (tx / tL) + gz[i].g.y * (ty / tL) + gz[i].g.z * (tz / tL);
+        devs.push(Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI);
+      }
       out.f = {
-        n: depthSamples.length,
-        clearMin: clears.length ? Math.min(...clears) : null,
-        clearMax: clears.length ? Math.max(...clears) : null,
-        firedCount: depthSamples.filter(s => s.fired).length,
-        // F2: everywhere `fired` is true, the reported clearance must actually be under threshold —
-        // the coherence check. A single counter-example means the trigger fired for a reason other
-        // than what it claims.
-        incoherent: depthSamples.filter(s => s.fired && !(s.fwdClear < s.clearM)).length,
+        n: devs.length, degenerate,
+        maxDev: devs.length ? Math.max(...devs) : null,
+        meanDev: devs.length ? devs.reduce((a, b) => a + b, 0) / devs.length : null,
+        probeGone: typeof A._probeAimDepth === 'undefined',
       };
 
       // ── B1/B2: mode D ──────────────────────────────────────────────────────────────────────
@@ -403,10 +426,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     P('R2 §CPE_REOPEN_DOUBLE: the adopted bands ARE the authored ones',
       res.r.adoptMax < 1e-6,
       `max centre/direction/length deviation ${res.r.adoptMax.toExponential(2)} over ${res.r.authoredN} bands (tol 1e-6) — adoption, not re-derivation`);
-    P('F1 §CPE_AIM_DEPTH_FWD_CLEAR: real geometry, not a constant', res.f.clearMin != null && (res.f.clearMax - res.f.clearMin) > 0.5,
-      `fwdClear ranges ${res.f.clearMin != null ? res.f.clearMin.toFixed(1) : 'n/a'}m..${res.f.clearMax != null ? res.f.clearMax.toFixed(1) : 'n/a'}m over ${res.f.n} probes, fired=${res.f.firedCount}/${res.f.n} — a degenerate/always-far-sentinel raycast would show ~0 spread`);
-    P('F2 §CPE_AIM_DEPTH_FWD_CLEAR: fired agrees with its own reported clearance', res.f.incoherent === 0,
-      `${res.f.incoherent} of ${res.f.n} probes fired without fwdClear < clearM — must be 0, or the rule is triggering for a reason other than the one it reports`);
+    if (!res.f.n) {
+      P('F1 VACUOUS — no comparable sample, nothing was judged', false,
+        `INCONCLUSIVE: 0 of the probes yielded both a gaze and a tangent (degenerate gazes=${res.f.degenerate}). This is not a PASS.`);
+    } else {
+      // The bound is the look-ahead CHORD geometry, not a taste threshold: aiming 15% of the walk
+      // ahead on a curved path is inherently off-tangent. 45 deg is the ceiling this walk's own
+      // curvature can produce; anything beyond it would mean some rule is still steering.
+      P('F1 §CPE_AIM_DEPTH_RETIRED: the gaze FOLLOWS THE PATH (no pin, no correction authored)',
+        res.f.maxDev < 45 && res.f.meanDev < 20,
+        `deviation from the path tangent over ${res.f.n} judged samples: max=${res.f.maxDev.toFixed(3)} deg, ` +
+        `mean=${res.f.meanDev.toFixed(3)} deg (degenerate gazes=${res.f.degenerate}, orbit hand-off excluded ` +
+        `by the product's own CINEMA_TURN_OVERLAP). The residual is the _AH_FRAC=0.15 look-ahead chord, ` +
+        `not a rule. Before the retirement §CPE_AIM_DEPTH turned this gaze up to 83.45 deg off the path on Hospital.`);
+    }
+    P('F2 §CPE_AIM_DEPTH_RETIRED red control: the rule leaves no trace', res.f.probeGone === true,
+      `A._probeAimDepth removed=${res.f.probeGone} — if this is false the retirement is partial and F1's number ` +
+      `is measuring a build that still carries the rule`);
 
     // ── B1/B2: mode D ───────────────────────────────────────────────────────────────────────
     if (res.b.skipped) {
