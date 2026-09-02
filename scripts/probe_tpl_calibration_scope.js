@@ -73,6 +73,16 @@ function run(bld) {
   const c = CACHE.read(bld);
   if (!c) { console.log('§TPL_CALIB_SCOPE bld=' + bld + ' INCONCLUSIVE — no current cache (run scripts/cache_4d_run.js ' + bld + ')'); return null; }
   if (!c.els || !c.els.length) { console.log('§TPL_CALIB_SCOPE bld=' + bld + ' INCONCLUSIVE — cache has no elements'); return null; }
+  // §CACHE_PLAYED_LAYER (2026-09-02, queue item A-9) — every cache reader must name the layer it
+  // judged. This one is layer-INDEPENDENT and says so: it re-instantiates the TEMPLATE from the
+  // cached ELEMENTS (installSecs) and checks its arms against the shipped §AUTHOR_TPL totalDays in
+  // the cached LOG. It reads neither schedule map, so no re-pointing was needed — but "I read no
+  // layer" is itself an attribution, and an unstated one is what let a whole class of measurement
+  // judge the wrong map for four weeks.
+  console.log('§TPL_CALIB_LAYER bld=' + bld + ' layer=NONE — this probe judges cached ELEMENTS ' +
+    '(installSecs) + the shipped §AUTHOR_TPL log line; it reads neither the played nor the display ' +
+    'schedule map, so its numbers are unaffected by §CACHE_PLAYED_LAYER. cacheHasPlayedLayer=' +
+    (c.play ? 'yes' : 'NO (rebuild with --force)'));
 
   // ── arms ────────────────────────────────────────────────────────────────────────────────────
   const base = arm(c.els, SHIFT_H, 1);                                   // shipped, as deployed

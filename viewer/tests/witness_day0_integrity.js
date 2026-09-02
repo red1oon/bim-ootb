@@ -29,6 +29,15 @@
 // The judge is REQUIRED from viewer/support_sweep.js and never re-derived here (4D_MODEL_INTEGRITY
 // §G.0). The ground exemption is the SHIPPED one, schedule_gate.js:1210 `T.seq !== 1`.
 // Input is the PERSISTED run (scripts/cache_4d_run.js) — the pipeline is not re-run per witness.
+//
+// ⚠ WHICH LAYER (§CACHE_PLAYED_LAYER, 2026-09-02, queue item A-9). C2/C3/C4 are questions about
+// WHEN AN ELEMENT APPEARS ON SCREEN, so they must be asked of the map the screen actually plays.
+// Until this date they read the cache's `sched` key = materializeZones' displaySchedule, and
+// §TM_REVEAL_SHIPPED measured that viewer/time_machine.js has ZERO readers of that map. Those
+// verdicts described a layer nobody plays: the fleet table `claims=13 PASS=4 FAIL=5 INCONCLUSIVE=4`
+// is VOID as a statement about the film (queue item A-0). The layer is now selected through
+// CACHE.layerOf() and PRINTED ON EVERY LINE — `LAYER=display` re-points this witness at the old map
+// deliberately, and it still says so. C1 is band geometry and is layer-independent by construction.
 'use strict';
 const path = require('path'), os = require('os');
 const ROOT = path.join(__dirname, '..', '..');
@@ -43,9 +52,12 @@ const DAY_MS = 86400000;
 const MEP_WINDOW_D = process.env.MEP_WINDOW_D ? Number(process.env.MEP_WINDOW_D) : 3;
 
 // A claim that cannot say INCONCLUSIVE is not a claim. `pop` is the population it judged.
-function claim(id, bld, pop, bad, detail) {
+// `layer` is the map it judged it ON — a claim that cannot name its own input cannot report being
+// pointed at the wrong one (§CACHE_PLAYED_LAYER).
+function claim(id, bld, pop, bad, detail, layer) {
   const verdict = pop === 0 ? 'INCONCLUSIVE' : (bad === 0 ? 'PASS' : 'FAIL');
   console.log('§W_D0 ' + id + ' ' + bld.padEnd(22) + verdict.padEnd(13) +
+    'layer=' + String(layer).padEnd(9) +
     'judged=' + String(pop).padEnd(7) + 'bad=' + String(bad).padEnd(7) + (detail || ''));
   return verdict;
 }
@@ -53,7 +65,16 @@ function claim(id, bld, pop, bad, detail) {
 function run(bld) {
   const r = CACHE.read(bld);
   if (!r) { console.log('§W_D0 CACHE_MISS ' + bld + ' — run: node scripts/cache_4d_run.js ' + bld); return ['INCONCLUSIVE']; }
-  const els = r.els, sched = r.sched;
+  const L = CACHE.layerOf(r);
+  console.log('§W_D0_LAYER ' + bld.padEnd(22) + 'layer=' + L.id + ' key=' + L.key +
+    ' — ' + L.desc + (L.missing ? '  ⛔ ABSENT from this cache' : ''));
+  if (L.missing) {
+    console.log('§W_D0 CACHE_LAYER_MISSING ' + bld + ' layer=' + L.id +
+      ' — this cache predates §CACHE_PLAYED_LAYER. Rebuild: node scripts/cache_4d_run.js --force ' + bld +
+      '. NOT falling back to the other layer: that substitution is the defect A-9 removed.');
+    return ['INCONCLUSIVE'];
+  }
+  const els = r.els, sched = L.map, LAY = L.id;
   const EPS = SG.EPS, GAP = SG.GAP;
   const G = SS.contactGraph(els);
   if (!G.ok) { console.log('§W_D0 JUDGE_UNAVAILABLE ' + bld); return ['INCONCLUSIVE']; }
@@ -101,7 +122,7 @@ function run(bld) {
       ? 'spatial_structure ABSENT from this DB — the model declares no storeys to check against'
       : 'declaredStoreys=' + declared + ' scheduledBands=' + bands.length + ' excess=' + excess) +
     ' datumCollisions=' + collide +
-    (collisions.length ? ' [' + collisions.slice(0, 4).join(' | ') + ']' : '')));
+    (collisions.length ? ' [' + collisions.slice(0, 4).join(' | ') + ']' : ''), 'n/a-geometry'));
 
   // ── C2 DAY-0 PURITY + C3 DAY-0 SUPPORT ─────────────────────────────────────────────────────
   const cur = t0 + DAY_MS;
@@ -122,7 +143,7 @@ function run(bld) {
   out.push(claim('C2_DAY0_PURITY', bld, onScreen, impure,
     'modelsSubstructure=' + modelsSub + ' phases{' +
     Object.entries(phaseHist).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ') + '}' +
-    (impure ? '  INTRUDERS{' + Object.entries(impureCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : '')));
+    (impure ? '  INTRUDERS{' + Object.entries(impureCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : ''), LAY));
 
   let judged = 0, hanging = 0; const hangCls = {};
   for (let i = 0; i < els.length; i++) {
@@ -139,7 +160,7 @@ function run(bld) {
     if (!held) { hanging++; hangCls[T.cls] = (hangCls[T.cls] || 0) + 1; }
   }
   out.push(claim('C3_DAY0_SUPPORT', bld, judged, hanging,
-    (hanging ? 'hanging{' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : 'nothing on screen is unheld')));
+    (hanging ? 'hanging{' + Object.entries(hangCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : 'nothing on screen is unheld'), LAY));
 
   // ── C4 NO EARLY MEP ────────────────────────────────────────────────────────────────────────
   const mepCur = t0 + MEP_WINDOW_D * DAY_MS;
@@ -150,14 +171,15 @@ function run(bld) {
     if (/^MEP/.test(els[i].phase || '')) { mep++; mepCls[els[i].cls] = (mepCls[els[i].cls] || 0) + 1; }
   }
   out.push(claim('C4_NO_EARLY_MEP', bld, inWin, mep, 'window=' + MEP_WINDOW_D + 'd' +
-    (mep ? ' MEP{' + Object.entries(mepCls).map(([k, n]) => k + ':' + n).join(' ') + '}' : '')));
+    (mep ? ' MEP{' + Object.entries(mepCls).map(([k, n]) => k + ':' + n).join(' ') + '}' : ''), LAY));
   return out;
 }
 
 const all = [];
 for (const b of BUILDINGS) { all.push.apply(all, run(b)); console.log(''); }
 const fail = all.filter(v => v === 'FAIL').length, inc = all.filter(v => v === 'INCONCLUSIVE').length;
-console.log('§W_D0_VERDICT claims=' + all.length + ' PASS=' + (all.length - fail - inc) +
+console.log('§W_D0_VERDICT layer=' + (process.env.LAYER || 'played') +
+  ' claims=' + all.length + ' PASS=' + (all.length - fail - inc) +
   ' FAIL=' + fail + ' INCONCLUSIVE=' + inc + '  ' +
   (fail ? 'RED' : inc ? 'NOT GREEN — a claim judged nothing; an empty population is not a pass' : 'GREEN'));
 process.exit(fail ? 1 : 0);
