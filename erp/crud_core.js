@@ -142,8 +142,14 @@
         if (!/^\d{4}-\d{2}-\d{2}/.test(String(val))) return 'type:date';
         break;
       case 'list':
-        var opts = (f.ref && store.__meta && store.__meta[f.ref]) ? store.__meta[f.ref] : null;
+        // §P2 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.5, W-PARITY-REFLIST): an AD-folded List carries its own
+        // AD_Ref_List option map (f.options); the curated store's __meta[f.ref] is the legacy source.
+        var opts = f.options || ((f.ref && store && store.__meta && store.__meta[f.ref]) ? store.__meta[f.ref] : null);
         if (opts && !opts.hasOwnProperty(String(val))) return 'list:not-an-option';
+        break;
+      case 'yesno':
+        // §P2: DisplayType 20 may only ever persist 'Y' or 'N' (iDempiere YesNo column semantics).
+        if (String(val) !== 'Y' && String(val) !== 'N') return 'yesno:not-Y/N';
         break;
       case 'fk':
         if (!isFinite(Number(val))) return 'type:fk';
@@ -608,11 +614,23 @@
   // select always landed on the FIRST __meta key (DR); gatherVals then read DR off a CO order and the save
   // diff emitted a docstatus flip the user never touched (the silent-corruption bug, UI_UNPARK_RESUME B-3).
   // A current value missing from the ref map is PREPENDED (kept), never silently swapped for the first option.
+  // §P2 (W-PARITY-REFLIST): `optsMap` may also be the ORDERED array [{value,name}] an AD_Ref_List fold produces —
+  // a plain object would re-order numeric-like values (PriorityRule 3/5/7 → JS integer-key ordering), so the array
+  // form is the order-preserving one. Same output shape either way.
   function listOptions(optsMap, cur) {
-    var keys = Object.keys(optsMap || {}), c = cur == null ? '' : String(cur);
+    var c = cur == null ? '' : String(cur), keys, labelOf;
+    if (Array.isArray(optsMap)) {
+      var names = {}; keys = [];
+      optsMap.forEach(function (o) { if (!o) return; var v = String(o.value); keys.push(v); names[v] = o.name; });
+      labelOf = function (k) { return names[k]; };
+    } else {
+      keys = Object.keys(optsMap || {});
+      labelOf = function (k) { return optsMap && optsMap[k]; };
+    }
     if (c !== '' && keys.indexOf(c) < 0) keys.unshift(c);
     return keys.map(function (k) {
-      return { value: k, label: k + (optsMap && optsMap[k] ? ' · ' + optsMap[k] : ''), selected: c !== '' && k === c };
+      var n = labelOf(k);
+      return { value: k, label: k + (n ? ' · ' + n : ''), selected: c !== '' && k === c };
     });
   }
 
@@ -667,19 +685,20 @@
   //   the raw AD_Reference_ID (ADParser exposes `referenceId`) so it is correct even where the renderer's coarse
   //   REF_TYPES string is imperfect (e.g. 20=Yes-No, 18=Table). Returns null for an unknown id (→ string fallback).
   //   number: 11 Integer · 12 Amount · 22 Number · 29 Quantity. date: 15 Date · 16 DateTime · 24 Time. fk: 18 Table ·
-  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). else (10 String · 14 Text ·
-  //   17 List · 20 Yes-No · …) → string (LEG-1: list/yesno render as an editable text of the raw value; AD_Ref_List
-  //   option-fold is a named follow-on).
+  //   19 TableDir · 30 Search. id: 13 ID (hidden PK) · 28 Button (dropped by the caller). list: 17 List (AD_Ref_List
+  //   options — §P2, LEG-1 retired 2026-09-02, ERP_IDEMPIERE_UX_PARITY.md §IMPL P2.3). yesno: 20 Yes-No (a Y/N
+  //   control). else (10 String · 14 Text · …) → string.
   function mapRefDisplayType(rid) {
     switch (Number(rid)) {
       case 11: case 12: case 22: case 29: return 'number';
       case 15: case 16: case 24: return 'date';
       case 18: case 19: case 30: return 'fk';
       case 13: return 'id'; case 28: return 'button';
+      case 17: return 'list'; case 20: return 'yesno';
       // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
-      // fallback (where 20=Yes-No is mislabelled 'table'→fk): 10 String · 14 Text · 17 List · 20 Yes-No · 21 Location
-      // · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment · 34 Memo · 35 PAttribute · 38 PrinterName.
-      case 10: case 14: case 17: case 20: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
+      // fallback: 10 String · 14 Text · 21 Location · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
+      // · 34 Memo · 35 PAttribute · 38 PrinterName.
+      case 10: case 14: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }
   }
@@ -690,7 +709,8 @@
       case 'date': case 'datetime': return 'date';
       case 'tableDirect': case 'table': case 'search': return 'fk';
       case 'id': return 'id'; case 'button': return 'button';
-      default: return 'string';   // string · text · char · list · yesno · unknown
+      case 'list': return 'list'; case 'yesno': return 'yesno';   // §P2 — LEG-1 retired
+      default: return 'string';   // string · text · char · unknown
     }
   }
   function foldCrudSpec(adFields, opts) {
@@ -722,11 +742,64 @@
         else if (!/[@()]/.test(ds)) spec.default = d;
       }
       if (type === 'fk') spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+      // §P2 (W-PARITY-REFLIST): a List column's option set is its AD_Reference_Value_ID's AD_Ref_List rows. The
+      // fold stays PURE — the host supplies opts.refList(id) → [{value,name}] (ADParser.resolveReference, active
+      // rows, ordered per AD_Reference.IsOrderByValue). optionList keeps that order for rendering; options is the
+      // validator's membership map. Absent resolver → the editor still renders a select of the raw value.
+      if (type === 'list') {
+        if (f.referenceValueId != null) spec.refListId = f.referenceValueId;
+        var rl = (typeof opts.refList === 'function' && f.referenceValueId != null) ? opts.refList(f.referenceValueId) : null;
+        if (rl && rl.length) {
+          spec.optionList = rl.map(function (o) { return { value: String(o.value), name: o.name == null ? '' : String(o.name) }; });
+          spec.options = {}; spec.optionList.forEach(function (o) { spec.options[o.value] = o.name; });
+        }
+      }
       if (f.displayLogic != null && String(f.displayLogic).trim() !== '') spec.displaylogic = f.displayLogic;
+      // §P1 (W-PARITY-FIELDSET): the other two AD logic strings, now selected by ad_parser.getFields (P2.1); the
+      // evaluator (effectiveFlags) already understood these keys — they simply never arrived.
+      if (f.readOnlyLogic != null && String(f.readOnlyLogic).trim() !== '') spec.readonlylogic = f.readOnlyLogic;
+      if (f.mandatoryLogic != null && String(f.mandatoryLogic).trim() !== '') spec.mandatorylogic = f.mandatoryLogic;
+      if (f.seqNo != null) spec.seq = f.seqNo;
       return spec;
     });
     return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
              verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
+  }
+
+  // ── §P1 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P1.1 — Witness: W-PARITY-FIELDSET) ─────────────────────────────
+  // mergeCuratedWithFold — retire the curated-5 hand list as the FIELD SET without retiring what it alone can
+  // express. PURE. The AD fold is the source of WHICH fields exist; the curated entry contributes verbs/docAction/
+  // ownerGated/cas (the O2C contract nine merged PRs closed against) and the PIN ORDER of its own columns.
+  //   fields = [curated fields, in curated order, each layered with the AD sibling's displaylogic/readonlylogic/
+  //             mandatorylogic/seq when the curated carries none]
+  //          ++ [every folded field whose col is not curated, in AD SeqNo (fold) order]
+  // Curated type/required/readonly/default/validation/ref are NOT overridden: measured 2026-09-02, the AD marks
+  // GrandTotal IsReadOnly on tabs 186/263 while docAction.requires needs it typed (totals are not engine-derived
+  // yet) — an attribute override would make a Sales Order un-completable (§IMPL F3).
+  function mergeCuratedWithFold(curated, folded) {
+    if (!curated) return folded || null;
+    if (!folded || !folded.fields) return curated;
+    var out = {}, k;
+    for (k in curated) if (Object.prototype.hasOwnProperty.call(curated, k) && k !== 'fields') out[k] = curated[k];
+    var byCol = {};
+    (folded.fields || []).forEach(function (f) { byCol[String(f.col).toLowerCase()] = f; });
+    var pinned = (curated.fields || []).map(function (cf) {
+      var o = {}; for (k in cf) if (Object.prototype.hasOwnProperty.call(cf, k)) o[k] = cf[k];
+      var ad = byCol[String(cf.col).toLowerCase()];
+      if (ad) {
+        ['displaylogic', 'readonlylogic', 'mandatorylogic'].forEach(function (lk) {
+          if ((o[lk] == null || String(o[lk]).trim() === '') && ad[lk] != null && String(ad[lk]).trim() !== '') o[lk] = ad[lk];
+        });
+        if (o.seq == null && ad.seq != null) o.seq = ad.seq;
+      }
+      return o;
+    });
+    var seen = {}; pinned.forEach(function (p) { seen[String(p.col).toLowerCase()] = 1; });
+    var appended = (folded.fields || []).filter(function (f) { return !seen[String(f.col).toLowerCase()]; });
+    out.fields = pinned.concat(appended);
+    out.merged = true; out.pinned = pinned.length; out.appended = appended.length;
+    out.adFields = (folded.fields || []).length; out.curatedFields = (curated.fields || []).length;
+    return out;
   }
 
   // ═══ The formerly-STRANDED pure block (§S60) — these lived BELOW the DOM half’s node return in
@@ -1003,7 +1076,8 @@
 
   var CORE = {
     entriesOf: entriesOf, verbEnabled: verbEnabled, defaultsFor: defaultsFor,
-    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType,                          // S2B: AD-folded CRUD spec (general, not curated)
+    foldCrudSpec: foldCrudSpec, mapRefType: mapRefType, mapRefDisplayType: mapRefDisplayType,   // S2B: AD-folded CRUD spec (general, not curated)
+    mergeCuratedWithFold: mergeCuratedWithFold,                                  // §P1 (W-PARITY-FIELDSET): AD field set + curated pins/verbs
     validateField: validateField, validate: validate, effectiveFlags: effectiveFlags, cleanVals: cleanVals, buildOp: buildOp,
     docActionOutcome: docActionOutcome, legalDocActions: legalDocActions, kernelParamsFor: kernelParamsFor, readTip: readTip, tipValues: tipValues,
     normDateValue: normDateValue, buildDocActionGroup: buildDocActionGroup, docLabel: docLabel,

@@ -3057,8 +3057,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
                 orgId: (_session && _session.org) ? _session.org.id : null,
                 today: (new Date()).toISOString().slice(0, 10) };
+    // §P2.7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-REFLIST): a List column's option set
+    //   is its AD_Reference_Value_ID's AD_Ref_List rows — resolved by the SAME ADParser.resolveReference the read
+    //   view already uses (active rows, ordered per AD_Reference.IsOrderByValue). Handed to the pure fold as a resolver.
+    var refList = function (id) {
+      try { var rr = (window.ADParser && db) ? window.ADParser.resolveReference(db, id) : null; return (rr && rr.type === 'list') ? rr.options : null; }
+      catch (eRef) { return null; }
+    };
     var spec = window.__crud.core.foldCrudSpec(tab.fields, {
-      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx });
+      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList });
     window.__crud.registerFolded(tn, spec);
     console.log('§S2B-FOLD table=' + tn + ' verb=' + (forVerb || 'update') + ' verbs=[' + (spec.verbs || []).join(',') + '] fields=' + (spec.fields || []).length + ' isView=' + spec.isView + ' tabRO=' + !!tab.isReadOnly);
     return spec;
@@ -3073,9 +3080,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   seam, so entryFor resolves. ensureStore first (so _curatedHas sees the loaded crud_ops; a curated doc table
   //   is NEVER folded — its docPolicy entry wins). forVerb shapes the readonly set. Degrades to a bare run() if the
   //   overlay predates the seam (older cache) — the host seam then logs its own honest skip.
+  // §P1 P1.3 (ERP_IDEMPIERE_UX_PARITY.md §IMPL F1 — W-PARITY-FIELDSET): the fold is now registered for EVERY table,
+  //   curated ones included — crud_overlay's entryFor merges the AD field set with the curated pins/verbs/docPolicy
+  //   (CORE.mergeCuratedWithFold). Pre-fix a curated table was never folded, which is why the five document windows
+  //   rendered 8/7/7/4/4 hand-listed fields instead of their AD tabs' 60/59/51/81/13. Guarded to the CURRENT tab's
+  //   own table so a host seam invoked for another key never registers a foreign fold under it.
   function _withFoldedEntry(tn, forVerb, run) {
     var es = window.__crud && window.__crud.ensureStore;
-    var go = function () { if (!_curatedHas(tn)) _foldCrudSpecForTab(_curTab(), forVerb); run(); };
+    var go = function () {
+      var ct = _curTab();
+      if (ct && ct.tableName && String(ct.tableName).toLowerCase() === String(tn).toLowerCase()) _foldCrudSpecForTab(ct, forVerb);
+      else if (!_curatedHas(tn)) _foldCrudSpecForTab(ct, forVerb);
+      run();
+    };
     if (typeof es === 'function') es(go); else go();
   }
   // withBundle — the overlay's read source on iDempiere = THIS window's seed db (immutable baseline).
