@@ -178,13 +178,43 @@ function build(bld, force) {
         // compare "storeys the model declares" against "bands the schedule invents" without a
         // tolerance constant anywhere. Absent on some shipped DBs (Duplex/Hospital have no
         // spatial_structure table at all) — absent must be REPORTED as absent, never guessed.
+        //
+        // ⚠ §STOREY_PROVENANCE (2026-09-02, queue B-1 / bim-compiler 4D_MODEL_INTEGRITY.md §J.6.2
+        // W3). `object_type` is persisted with the row because these are NOT always what a reader
+        // assumes. MEASURED on the shipped fleet: 6 of 6 Terminal and 3 of 3 HHS IfcBuildingStorey
+        // rows carry object_type='COMPILED' with STC_* guids — they are compile_rooms.py output,
+        // not an IFC declaration. A claim that compares "bands the schedule uses" against these and
+        // calls the difference "levels the schedule invented" is comparing against a derived
+        // artifact. It cannot say so unless the provenance travels with the row, so it does.
+        //
+        // ⚠ §STOREY_DATUM shape tolerance (PR #1551, merged forward 2026-09-02). TWO COLUMN SHAPES
+        // exist in the fleet and BOTH carry the same fact: `elevation` (the extractor writes it now,
+        // and buildings/patches/*.sql backfills it) or `center_z` (older shipped DBs, where the
+        // storey row is a placement point with size_z 0/NULL). A fixed column list asked for one
+        // shape and THREW on the other, reporting declaredStoreys=ABSENT on the very run where
+        // §STOREY_DATUM said mode=DECLARED — two log lines from one run contradicting each other.
+        // So the columns are read BY NAME off the result set instead of being named in the SELECT:
+        // every shape resolves, and a missing column is a null field, never a throw.
+        // ⚠ THE ROW SET IS DELIBERATELY UNFILTERED, exactly as before. #1551's draft filtered
+        // `WHERE elevation IS NOT NULL`, which would silently drop the 3 COMPILED rows from a
+        // patched Duplex and change C1's `declaredStoreys` count — i.e. move a verdict. Provenance
+        // and datum are ADDED to each row; which rows exist is unchanged.
         try {
-          const q = db.exec("SELECT name,center_z,size_z FROM spatial_structure WHERE type='IfcBuildingStorey'");
+          const q = db.exec("SELECT * FROM spatial_structure WHERE type='IfcBuildingStorey'");
           if (q.length) {
-            const c = q[0].columns, ni = c.indexOf('name'), zi = c.indexOf('center_z'), si = c.indexOf('size_z');
-            storeys = q[0].values.map(v => ({ name: v[ni], center_z: v[zi], size_z: v[si] }));
+            const c = q[0].columns, at = (v, n) => { const i = c.indexOf(n); return i >= 0 ? v[i] : null; };
+            storeys = q[0].values.map(v => {
+              const ele = at(v, 'elevation'), cz = at(v, 'center_z');
+              return { name: at(v, 'name'), center_z: cz, size_z: at(v, 'size_z'),
+                object_type: at(v, 'object_type'),
+                elevation: ele,
+                // the datum this row asserts, and which column asserted it — never invented: null
+                // when the row carries neither, so a reader can tell "no datum" from "datum 0".
+                datum: ele != null ? ele : cz,
+                source: ele != null ? 'elevation' : (cz != null ? 'center_z' : null) };
+            });
           }
-        } catch (e) { storeys = null; }   // no table / no columns — reported, not invented
+        } catch (e) { storeys = null; }   // no table at all — reported, not invented
         db.close();
       } catch (e) { err = e; }
       console.log = _l; console.warn = _w;

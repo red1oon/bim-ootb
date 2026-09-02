@@ -141,7 +141,9 @@
   // never silently inherits the generic union (the exact error the per-table narrowing exists to kill).
   // Optional per-table fields (H2_ISOMORPH_TAIL — defaults preserve the six walked tables exactly):
   //   block: which Completed-narrowing arm applies ('inout'|'invoice'|'payment'|'journal'|'alloc'|'cash'|
-  //          'bankstmt'); absent = the movement-style arm for the original six, generic-only for the tail.
+  //          'bankstmt'|'rma'|'banktransfer'|'depositbatch'); absent = generic-only fall-through. The last
+  //          three were ADDED by ERP_IDEMPIERE_UX_PARITY.md §P6 — they are real getValidActions arms that
+  //          sat past the oracle's old parse window (:1248), so both sides wrongly said "fall-through".
   //   vo:    per-fromStatus void OUTCOME map (parsed from the class's voidIt); absent = the H-2 default
   //          (unprocessed→VO, processed→RE reversal delegation).
   //   rc/ra: false when the class's reverseCorrectIt/reverseAccrualIt can never return true; absent = true.
@@ -171,10 +173,11 @@
            vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
         // MBankStatement.voidIt:506-602 voids unprocessed AND completed (period-gated :679), never sets
         // RE; RC:629-645/RA:650-666 always false; reActivateIt:670-696 period+doctype gated → true
-    661: { name: 'M_RMA',           reActivate: false, rc: false, ra: false,
+    661: { name: 'M_RMA',           reActivate: false, rc: false, ra: false, block: 'rma',
            vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
-        // generic-only (no getValidActions block); MRMA.voidIt:681-754 → VO (live-shipment data gate
-        // :686-690, named); RC:760/RA:781/RE:802 always false
+        // getValidActions:1302-1309 (IDEMPIERE-98 "Implement void for completed RMAs") → CO offers Void,
+        // UNGATED; MRMA.voidIt:681-754 → VO (live-shipment data gate :686-690, named); RC:760/RA:781/RE:802
+        // always false. §P6: was modelled generic-only — the block is real, the oracle just could not see it.
     702: { name: 'M_Requisition',   reActivate: false, rc: false, ra: false,
            vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
         // generic-only; MRequisition.voidIt:401-418 delegates closeIt→true→VO; RC:480/RA:501 always
@@ -183,14 +186,17 @@
            vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
         // generic-only; MTimeExpense.voidIt:433-451 delegates closeIt→true→VO; RC:480/RA:502/RE:524 false
     // 0-seed classes (FSM source-parse only — stored-replay honestly n/a, H2_ISOMORPH_TAIL table):
-    200246: { name: 'C_BankTransfer', reActivate: false, rc: false, ra: false,
+    200246: { name: 'C_BankTransfer', reActivate: false, rc: false, ra: false, block: 'banktransfer',
               vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
-        // MBankTransfer.voidIt:315-337 voids child payments→true→VO; RC:356-374/RA:379-397 reverse child
-        // payments yet RETURN FALSE (the parsed quirk); reActivateIt:402-415 always false
-    200056: { name: 'C_DepositBatch', reActivate: true, rc: false, ra: false,
+        // getValidActions:1313-1320 → CO offers Void, UNGATED; MBankTransfer.voidIt:315-337 voids child
+        // payments→true→VO; RC:356-374/RA:379-397 reverse child payments yet RETURN FALSE (the parsed
+        // quirk); reActivateIt:402-415 always false
+    200056: { name: 'C_DepositBatch', reActivate: true, rc: false, ra: false, block: 'depositbatch',
               vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
-        // MDepositBatch.voidIt:203-257 terminal-reject + bank-statement-line gate → VO; RC:552/RA:558
-        // stubs return false; reActivateIt:564-598 gated → true
+        // getValidActions:1323-1330 → CO offers Void + ReActivate, BOTH UNGATED (this arm carries no
+        // canReactivateThisDocType test, unlike invoice/payment/journal/bankstmt — do NOT gate it on
+        // iscanbereactivated); MDepositBatch.voidIt:203-257 terminal-reject + bank-statement-line gate → VO;
+        // RC:552/RA:558 stubs return false; reActivateIt:564-598 gated → true
     623: { name: 'M_ProjectIssue', reActivate: false },
         // MProjectIssue delegates to DocActionDelegate (:377-417) and REGISTERS Reverse_Correct/Accrual
         // callables (doReverse, :126-127) → RC/RA→RE and void = the H-2 default delegation (delegate
@@ -240,8 +246,14 @@
         a.push('VO');
       } else if (blk === 'bankstmt') {                                  // BankStatement :1185-1198 (periodOpen frames BOTH)
         if (po) { if (canReact) a.push('RE'); a.push('VO'); }
+      } else if (blk === 'rma') {                                       // RMA :1302-1309 (IDEMPIERE-98) — CO→Void
+        a.push('VO');                                                   // UNGATED: no periodOpen/canReact test
+      } else if (blk === 'banktransfer') {                              // BankTransfer :1313-1320 — CO→Void
+        a.push('VO');                                                   // UNGATED
+      } else if (blk === 'depositbatch') {                              // DepositBatch :1323-1330 — CO→Void+ReActivate
+        a.push('VO', 'RE');                                             // BOTH UNGATED (no canReactivateThisDocType)
       }
-      // no block (M_RMA / M_Requisition / S_TimeExpense / the 0-seed tail) = generic-only:
+      // no block (M_Requisition / S_TimeExpense / M_ProjectIssue / the FA tail) = generic-only:
       // getValidActions falls through, completed docs offer just the :1050-1053 Close.
     }
     return a;

@@ -39,7 +39,7 @@ const RW = 320, RH = 240;
 const COV_GATE = 0.88;      // >= 88% of the 25 sample rays must land on the target element
 const T3_MEAN = 0.70, T3_P25 = 0.55;   // interior floors — §WALL_SIDE_AND_LIGHT_FLOOR SPEC S3/T3
 const SEP_TOL = 0.02;       // staged separation must reach plain-nav separation within this
-const GROUPS = ['sun', 'ambient', 'hemi', 'env', 'pl', 'camlight'];
+const GROUPS = ['sun', 'ambient', 'hemi', 'env', 'pl', 'camlight', 'emissive'];
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
   '.db': 'application/octet-stream', '.png': 'image/png', '.css': 'text/css', '.wasm': 'application/wasm',
@@ -240,6 +240,19 @@ function toolkit({ RW, RH }) {
       const ls = W.pointLights();
       if (!W._plI) W._plI = new Map(ls.map(l => [l.uuid, l.intensity]));
       ls.forEach(l => { const v = W._plI.get(l.uuid); l.intensity = on ? (v === undefined ? l.intensity : v) : 0; });
+    } else if (g === 'emissive') {
+      // Night-mode fixture/window GLOW is emissive GEOMETRY, not a light — it is invisible to a
+      // light-only decomposition. The first interior decomposition closed at 0.441 with it missing,
+      // which is the witness saying it could not account for 56% of the light. Traverse the whole
+      // scene, not just _matCache, because the glow quads are their own meshes.
+      if (!W._emis) {
+        W._emis = [];
+        A.scene.traverse(o => {
+          const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+          ms.forEach(m => { if (m && m.emissive && m.emissiveIntensity !== undefined) W._emis.push({ m, i: m.emissiveIntensity }); });
+        });
+      }
+      W._emis.forEach(e => { e.m.emissiveIntensity = on ? e.i : 0; e.m.needsUpdate = true; });
     } else if (g === 'env') {
       const mats = Object.values(A._matCache);
       if (!W._envI) W._envI = new Map(mats.map(m => [m.uuid, m.envMapIntensity]));
