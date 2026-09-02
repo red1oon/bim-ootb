@@ -458,7 +458,7 @@
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
             if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['Updated'] = _fmtKernelTs(opTs);
-            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['UpdatedBy'] = p.actor;
+            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['updatedby'] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
           }
         } else if (type === 'CRUD_DELETE') {
           if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
