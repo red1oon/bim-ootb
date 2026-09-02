@@ -110,6 +110,27 @@ function setupCpeResourcePanel(A) {
   // So the silence is not a mid-programme gap; it is the post-§CPE_BUILDUP_TOPOUT half (topoutU=0.524
   // on the user's own Hospital bake), where no trade is active and the pie vanished entirely.
   //
+  // ⚠ §PIE_HOLD_PREDICATE — CORRECTED 2026-09-02. THE TWO SENTENCES ABOVE MEASURE THE WRONG THING
+  // and their conclusion ("not a mid-programme gap") is FALSE on Hospital. They count days with no
+  // TASK active (42 task windows). This panel never reads tasks: it reads the per-element op array
+  // and `resourcePanelAt` below SKIPS every op without a trade (`if (!o.r) continue;`). The real
+  // predicate is therefore "no STAFFED ELEMENT op is active on this day" — and element ops are short
+  // sub-windows INSIDE a task window (§TM_ELEMENT_WINDOW_BIND total=63415 clamped=63182), so a task
+  // window can be continuously "active" while days inside it place no element at all.
+  // MEASURED LIVE, windowed Hospital bake 2026-09-02 (stored path, buildup+label+reveal):
+  //   §CPE_RESOURCE_PANEL on ops=63417 rates=true
+  //   §CPE_RESOURCE_PANEL INCONCLUSIVE ops=63417 withResource=63415 day=[2026-09-06]
+  //     opsSpan=[2026-07-31..2027-09-07] rates=true — no trade is active on this day
+  //   §CPE_RESOURCE_HOLD first hold at day=137 holding day=133 (4 days back) heads=4 trades=1
+  // 63,415 of 63,417 ops DO carry a resource, so the null is NOT a missing-trade defect: Hospital's
+  // derived build order genuinely contains idle days — the earliest at ≈day 37 and a 4-day stretch at
+  // days 134-137. The stage-5 film logged §CPE_PIE_HOLD heldFrames=283/2027 (14%) for this reason.
+  // The hold firing MID-PROGRAMME is this feature working as designed against a real gap, not a bug,
+  // and it supersedes the "it will NOT fire on Hospital" expectation recorded elsewhere.
+  // (Whether the 4D generator SHOULD leave idle days inside a task window is a schedule-lane
+  // question, not a HUD one — do not "fix" it here.)
+  // Full reconciliation: bim-compiler prompts/CINEMA_PATH_EDITOR.md §PIE_HOLD_PREDICATE.
+  //
   // This layers a HOLD on top of resourcePanelAt WITHOUT changing it — that function stays the pure
   // live-day truth its witness gates, so "who is on site today" and "who was on site last" can never
   // be confused in the log. Pure: no module state, no carried-forward numbers. The held composition
