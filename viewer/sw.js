@@ -39,6 +39,12 @@ const CACHE_VERSION = 'v1121';   // bump on each deploy; per-change detail is th
 // v1120 (2026-09-01) §CLI_SILENT_BAKE (cinema_maxq.js?v=9 dev-only scripted bake entry) +
 // §NIGHT_BAKE_POOL (tools.js?v=44 — point-light COUNT frozen during a MaxQ bake; measured
 // 13-53 s/frame shader-recompile churn on the first headless Hospital bake, s4_300.log).
+// v1121 (2026-09-02) §MEP_DISC_PALETTE: the §SUNGLASS discipline band (ticks 56-65) paints from
+// A.DISC_COLORS — the viewer's OWN legend — instead of an alphabetic cycle through a generic earth
+// ramp (tools.js?v=44->45), and streaming.js?v=66->67 sets userData.disc on discipline-UNIFORM
+// InstancedMeshes so they stop falling into §SUNGLASS's 'Unknown' bucket. The disc->colour mapping
+// is an AUTHORED choice reusing an existing in-repo table, NOT an industry MEP standard — no such
+// convention exists in the model data. Witness: viewer/tests/witness_mep_disc_palette.js.
 // MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
 // the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
 // take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
