@@ -429,10 +429,11 @@
          '<button class=cfb id=cfCancel>Cancel</button><button class="cfb cfsave" id=cfSave>' + (verb === 'create' ? 'Create' : 'Save') + '</button></div>';
     fhost = form; _inlineHost = null;                           // modal mount (Glass/Gravity ring path)
     form.innerHTML = h; form.className = 'open';
-    populateRefs(e);
+    populateRefs(e, orig);                                      // §P3 — orig is the window context the @token@ feed reads
     applyAdLogic(e);                                            // §AD-LOGIC-LIVE — initial show/hide/enable/require off the AD
     var body = form.querySelector('.cfbody');                   // …and re-apply on every edit so the form REACTS like iDempiere
-    if (body) { body.addEventListener('input', function () { applyAdLogic(e); }); body.addEventListener('change', function () { applyAdLogic(e); }); }
+    if (body) { body.addEventListener('input', function () { applyAdLogic(e); });
+                body.addEventListener('change', function () { applyAdLogic(e); populateRefs(e, orig, { valRuleOnly: true }); }); }
     // §CRUD-CALLOUT (S2/J4) — on a create form, a field change fires the AD callout (price/defaults FILL like
     //   iDempiere: e.g. C_BPartner_ID → bill-to + price list). Fires AFTER applyAdLogic; derived siblings filled.
     if (verb === 'create' && body) body.addEventListener('change', function (ev) {
@@ -554,9 +555,57 @@
     }
     return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro + (f.readonly ? ' title="derived — read-only"' : '') + '>';
   }
+  // ── §P3 AD_Val_Rule (ERP_IDEMPIERE_UX_PARITY.md §IMPL-P3 — Witness: W-PARITY-VALRULE) ────────────────────
+  // _valRuleCtx — the @token@ context feed, and the ONLY new logic this item adds; the evaluator itself is the
+  // already-witnessed build/erp/ad_valrule.js (W-VALRULE), run verbatim below. iDempiere's window context is
+  // EVERY column of the row under edit plus the Env globals, so the RECORD comes first and the globals fill
+  // only what it lacks. AD tokens are CamelCase and our rows are lowercase, so that case mapping lives HERE —
+  // it is our storage detail, not the engine's — resolved against the rule's own token list.
+  // A token whose value is absent OR EMPTY is deliberately left OUT, so the engine reports it unresolved and
+  // the E3 arm fires (Env.java:1641-1645 + MLookup.java:1128-1140: an unparsable token empties the clause and
+  // the lookup is CLEARED). Never defaulted to something plausible — that would offer rows iDempiere hides.
+  function _valRuleCtx(code, e, rec) {
+    var VR = global.AdValRule, low = {}, k;
+    if (rec) for (k in rec) if (rec[k] != null) low[String(k).toLowerCase()] = rec[k];
+    var vals = gatherVals(e);
+    for (k in vals) if (vals[k] != null && String(vals[k]) !== '') low[String(k).toLowerCase()] = vals[k];
+    var app = global.APP || {};
+    var fill = function (n, v) { if (v != null && String(v) !== '' && (low[n] == null || String(low[n]) === '')) low[n] = v; };
+    fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
+    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
+    // the per-window Sales/Purchase signal idempiere.html already extracts from the active AD_Tab's own
+    // WhereClause — reuse it, do NOT write a second reader (_docCtx owns this question).
+    if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') fill('issotrx', app._createIsSOTrx);
+    var ctx = {};
+    ((VR && VR.tokensIn(code)) || []).forEach(function (tok) {
+      var v = low[String(tok).toLowerCase().replace(/^[#$]/, '')];
+      if (v != null && String(v) !== '') ctx[tok] = v;
+    });
+    return ctx;
+  }
+  // _valRuleFilter — run the SHIPPED interpreter through the SAME better-sqlite3 shim the beforeSave hooks
+  // use (_mvB3), so the witnessed engine executes verbatim in the browser and there is no second evaluator.
+  function _valRuleFilter(db, f, e, rec) {
+    var VR = global.AdValRule;
+    if (!VR || f.valruleid == null || !f.ref) return null;
+    var b3 = _mvB3(db), row = null;
+    try { row = b3.prepare('SELECT ad_val_rule_id,name,type,code FROM ad_val_rule WHERE ad_val_rule_id=?').get(Number(f.valruleid)); } catch (e0) {}
+    if (!row || row.code == null) return { verdict: 'no-rule-row', id: f.valruleid, ctx: {} };
+    var ctx = _valRuleCtx(row.code, e, rec), res;
+    try { res = VR.evalValRule(b3, Number(f.valruleid), { ctx: ctx, table: f.ref }); }
+    catch (e1) { return { verdict: 'engine-error:' + String((e1 && e1.message) || e1).slice(0, 60), id: f.valruleid, name: row.name, ctx: ctx }; }
+    if (!res.ok) return { verdict: res.deferred, id: res.id, name: res.name, unresolved: res.unresolved || [], ctx: ctx };
+    return { verdict: 'applied', id: res.id, name: res.name, sql: res.sql, ctx: ctx };
+  }
+
   // list options from __meta; fk options from the ref table via the page bundle (truth-bound).
-  function populateRefs(e) {
+  // rec (§P3) = the row under edit, the window context the @token@ feed reads. opts.valRuleOnly re-runs ONLY
+  // the val-rule'd fk pickers (a dependent lookup refresh, e.g. C_BPartner_ID → C_BPartner_Location_ID) —
+  // a full re-run would reset every list select back to its render-time data-cur and lose the user's choice.
+  function populateRefs(e, rec, opts) {
+    var only = !!(opts && opts.valRuleOnly);
     (e.fields || []).forEach(function (f) {
+      if (only && !(f.type === 'fk' && f.valruleid != null && !f.readonly)) return;
       var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (!el || el.tagName !== 'SELECT') return;
       if (f.type === 'list') {
         // W-CRUD-DOCSTATUS render arm: the record's CURRENT value must render SELECTED (pre-fix the select
@@ -597,14 +646,56 @@
         withBundle(function (db) {
           try {
             var t = f.ref, pk = t + '_id', nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
-            var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' ORDER BY ' + pk + ' LIMIT 200');
-            if (!res.length) return;
-            // §P2/§P1 (§IMPL F5): a lookup ALWAYS offers an empty choice when the field is not mandatory or has no
-            // value yet — pre-fix an empty fk landed on row 1 and cleanVals persisted it on CREATE (harmless at 8
-            // curated fields, catastrophic at 81: a payment against the first invoice/charge/project…).
+            // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
+            // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
+            // ValidationCode, appended to the lookup query; that is all this does.
+            var vr = _valRuleFilter(db, f, e, rec), where = '', noRows = false, before = null, admitted = null;
+            if (vr) {
+              try { var bq = db.exec('SELECT COUNT(*) FROM ' + t); before = bq.length ? bq[0].values[0][0] : null; } catch (eb) {}
+              if (vr.verdict === 'applied') where = ' WHERE (' + vr.sql + ')';
+              // E3 — an unresolved @token@ CLEARS the lookup (MLookup.java:1128-1140, "Loader NOT Validated").
+              // iDempiere shows NO rows here; it does not silently show all of them. Matching that IS the item.
+              else if (vr.verdict === 'unresolved-tokens') noRows = true;
+              // any other verdict (empty/unsafe/sql-token/no-bound-table/engine-error) is OUR interpreter's
+              // limit, not iDempiere's verdict — degrade to the UNFILTERED picker and say so in the log, rather
+              // than hiding rows iDempiere does show. Named, never silent.
+            }
+            var res = [];
+            if (!noRows) {
+              try { res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + where + ' ORDER BY ' + pk + ' LIMIT 200'); }
+              catch (ew) {                                    // a clause naming a column this narrower seed lacks
+                if (vr) vr.verdict = 'where-failed:' + String((ew && ew.message) || ew).slice(0, 60);
+                where = ''; res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' ORDER BY ' + pk + ' LIMIT 200');
+              }
+            }
+            // f.admitted — the UNLIMITED admitted id-set, so validateField (P3.6) still rejects an excluded row
+            // when a legal one sorts past the picker's LIMIT 200. Same clause, so the OFFERED set and the
+            // ACCEPTED set are one set by construction and cannot drift apart.
+            if (vr && vr.verdict === 'applied') {
+              try {
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + vr.sql + ')'), am = {};
+                if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
+                admitted = am;
+              } catch (ea) {}
+            } else if (noRows) admitted = {};                 // nothing is admitted while the lookup is not validated
+            f.admitted = admitted;
+            var rows = res.length ? res[0].values : [];
+            // §P2/§P1 (§IMPL F5), PRESERVED and strengthened: a lookup ALWAYS offers an empty choice when the
+            // field is not mandatory, has no value yet, OR its current value is not in the offered set — pre-fix
+            // an empty fk landed on row 1 and cleanVals persisted it on CREATE (harmless at 8 curated fields,
+            // catastrophic at 81: a payment against the first invoice/charge/project…). Filtering can now make a
+            // previously-shown value unmatched, so that third case must offer the blank too, never fall to row 1.
             var kEmpty = (keep === '' || keep == null);
-            var blankFk = (!f.required || kEmpty) ? '<option value=""' + (kEmpty ? ' selected' : '') + '></option>' : '';
-            el.innerHTML = blankFk + res[0].values.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
+            var hasKeep = !kEmpty && rows.some(function (r) { return String(r[0]) === String(keep); });
+            var blankSel = (kEmpty || !hasKeep);
+            var blankFk = (!f.required || blankSel) ? '<option value=""' + (blankSel ? ' selected' : '') + '></option>' : '';
+            if (vr) console.log('§VALRULE col=' + f.col + ' vr=' + vr.id + ' rule="' + (vr.name || '') + '" table=' + t +
+              ' before=' + before + ' after=' + (admitted ? Object.keys(admitted).length : (noRows ? 0 : before)) +
+              ' offered=' + rows.length + ' verdict=' + vr.verdict +
+              (vr.unresolved && vr.unresolved.length ? ' unresolved=[' + vr.unresolved.join(',') + ']' : '') +
+              ' ctx=' + JSON.stringify(vr.ctx || {}) + ' kept=' + (hasKeep ? keep : '(blank)'));
+            if (!rows.length && !noRows) return;              // no data at all → leave the raw-value option as-is
+            el.innerHTML = blankFk + rows.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
           } catch (er) {}
         });
       }
@@ -756,7 +847,7 @@
       h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(f.label || f.col) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
     });
     host.innerHTML = h; host.classList.add('idmp-inline-crud');
-    populateRefs(e);
+    populateRefs(e, orig);                                      // §P3 — see renderForm
     applyAdLogic(e);
     // baseline = the values AS RENDERED (populateRefs picks the selected option, fieldInput normalizes dates/numbers),
     //   so a freshly-mounted form reads CLEAN — dirty is a true user delta, not a render-normalization artifact.
@@ -764,6 +855,9 @@
     host.addEventListener('input', function () { applyAdLogic(e); _refreshInlineDirty(); });
     host.addEventListener('change', function (ev) {
       applyAdLogic(e);
+      // §P3 — a DEPENDENT lookup refresh: changing @C_BPartner_ID@ must re-narrow C_BPartner_Location_ID.
+      // valRuleOnly, because a full re-run would reset every list select to its render-time data-cur.
+      populateRefs(e, orig, { valRuleOnly: true });
       if (verb === 'create') { var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null; var col = el ? el.getAttribute('data-col') : null; if (col) fireCreateCallout(e, col); }
       _refreshInlineDirty();
     });
@@ -890,7 +984,7 @@
         var prevFhost = fhost; fhost = hostTd;
         hostTd.innerHTML = '<div class="ic-cell">' + fieldInput(f, orig[f.col]) + '<span class="cfe" data-col="' + esc(f.col) + '"></span></div>';
         hostTd.classList.add('idmp-cell-edit');
-        populateRefs(e);                                     // list/fk options (every col but ours → el null → skipped)
+        populateRefs(e, orig);                               // list/fk options (every col but ours → el null → skipped)
         var input = hostTd.querySelector('[data-col="' + f.col + '"]');
         var baseline = input ? _getVal(input) : (orig[f.col] == null ? '' : orig[f.col]);   // AS-RENDERED (selected option / normalized date / Y-N)
         fhost = prevFhost;                                   // references captured — restore the module host immediately

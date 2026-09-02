@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v774';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v775';   // bump on each deploy; per-change detail is the git commit message.
 // v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
 // (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
 // owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
@@ -54,6 +54,7 @@ const PRECACHE_ASSETS = [
   'ad_parser.js',
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   'ad_table_map.js',
+  'ad_valrule.js',   // §P3 — AD_Val_Rule interpreter feeding the live FK pickers (W-PARITY-VALRULE)
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
   'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
   'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
