@@ -77,7 +77,12 @@ const fx = (v, n) => (v == null || !isFinite(v)) ? 'n/a' : v.toFixed(n == null ?
 
   const b = await puppeteer.launch({
     headless: 'new',
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox', '--enable-unsafe-swiftshader'],
+    args: process.env.GPU_REAL
+      // §CLI_BAKE_GL's own wiring (--gpu real): real NVIDIA GL through ANGLE's gl-egl backend, paired
+      // with __EGL_VENDOR_LIBRARY_FILENAMES in the environment. Same probe, no bake — swiftshader is
+      // 10-50x slower and could not finish a Hospital load in 50 min under concurrent load.
+      ? ['--use-gl=angle', '--use-angle=gl-egl', '--no-sandbox', '--ignore-gpu-blocklist']
+      : ['--use-gl=angle', '--use-angle=swiftshader', '--no-sandbox', '--enable-unsafe-swiftshader'],
     protocolTimeout: 1800000,
   });
   const p = await b.newPage();
